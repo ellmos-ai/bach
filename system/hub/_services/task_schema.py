@@ -167,3 +167,24 @@ def ensure_task_creation_origin(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc).lower():
                 raise
+
+
+def ensure_task_result_contract_columns(conn: sqlite3.Connection) -> None:
+    """Add optional result limits and the active correction request reference."""
+    table = conn.execute(
+        "SELECT type FROM sqlite_master WHERE name = 'tasks'"
+    ).fetchone()
+    if not table or table[0] != "table":
+        raise RuntimeError("Task-Migration abgebrochen: tasks-Tabelle fehlt.")
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    for name, declaration in (
+        ("result_max_chars", "INTEGER"),
+        ("result_correction_request_id", "INTEGER"),
+    ):
+        if name not in columns:
+            try:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {declaration}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise

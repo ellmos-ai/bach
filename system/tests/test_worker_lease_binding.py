@@ -534,3 +534,122 @@ def test_explicit_assignment_preserves_required_and_excluded_tags(tags, expected
         "enabled": True, "categories": ["WORKER"], "priorities": ["P1", "P2"],
         "tags": ["ready"], "exclude_tags": ["waiting", "delegated"]}}
     assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is expected
+
+
+def _binding_with_output_limit(mem_db, result_max_chars):
+    columns = {row[1] for row in mem_db.execute("PRAGMA table_info(tasks)")}
+    if "result_max_chars" not in columns:
+        mem_db.execute("ALTER TABLE tasks ADD COLUMN result_max_chars INTEGER")
+        mem_db.commit()
+    task_id = _insert_task(mem_db, "Bounded worker task")
+    mem_db.execute("UPDATE tasks SET result_max_chars=? WHERE id=?", (result_max_chars, task_id))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    return WorkerLeaseBinding.acquire(
+        client, task_id, worker_id="limited-worker@HOST", host="HOST",
+        generation="limited-generation", is_current=lambda: True,
+        stop_event=threading.Event(), clock=lambda: T0,
+    )
+
+
+@pytest.mark.parametrize("attempted_limit", [None, 2000])
+def test_worker_update_cannot_loosen_output_limit(mem_db, attempted_limit):
+    binding = _binding_with_output_limit(mem_db, 1000)
+    before = binding._client.task_snapshot(binding.task_id)
+    with pytest.raises(LeaseError, match="Ausgabelimit"):
+        binding.execute_task_manage({
+            "action": "update", "task_id": binding.task_id,
+            "result_max_chars": attempted_limit,
+        })
+    assert binding._client.task_snapshot(binding.task_id) == before
+    assert binding.task_snapshot()["result_max_chars"] == 1000
+    binding.assert_active()
+    assert not binding.closed
+
+
+@pytest.mark.parametrize("attempted_limit", [None, 2000])
+def test_exec_tool_returns_recoverable_limit_denial_without_update(
+    request, monkeypatch, attempted_limit
+):
+    from hub._services.chat import bach_tools
+
+    binding = _binding_with_output_limit(request.getfixturevalue("mem_db"), 1000)
+    before = binding._client.task_snapshot(binding.task_id)
+    update_calls = []
+    original_update = binding._client.update
+
+    def track_update(*args, **kwargs):
+        update_calls.append((args, kwargs))
+        return original_update(*args, **kwargs)
+
+    monkeypatch.setattr(binding._client, "update", track_update)
+    message = bach_tools.exec_tool(
+        "task_manage",
+        {"action": "update", "task_id": binding.task_id,
+         "result_max_chars": attempted_limit},
+        mode="safe",
+        worker_task_binding=binding,
+    )
+
+    assert message == "Das Task-Ausgabelimit darf von einem Worker nicht gelockert werden."
+    assert update_calls == []
+    assert binding._client.task_snapshot(binding.task_id) == before
+    assert binding.task_snapshot()["result_max_chars"] == 1000
+    binding.assert_active()
+    assert not binding.closed
+
+
+@pytest.mark.parametrize(("old_limit", "new_limit"), [(1000, 500), (None, 500)])
+def test_worker_update_can_keep_or_tighten_output_limit(mem_db, old_limit, new_limit):
+    binding = _binding_with_output_limit(mem_db, old_limit)
+    previous_version = binding.task_snapshot()["task_version"]
+    binding.execute_task_manage({
+        "action": "update", "task_id": binding.task_id,
+        "result_max_chars": new_limit,
+    })
+    current = binding._client.task_snapshot(binding.task_id)
+    assert current["result_max_chars"] == new_limit
+    assert current["task_version"] != previous_version
+    binding.assert_active()
+    assert not binding.closed
+
+
+def test_bound_prompt_keeps_missing_and_null_correction_pointer_legacy_identical():
+    from hub._services.chat.telegram_chat import _bound_worker_prompt
+
+    class Binding:
+        task_id = 42001
+        def __init__(self, snapshot):
+            self._snapshot = snapshot
+            self.context_calls = 0
+        def task_snapshot(self):
+            return dict(self._snapshot)
+        def correction_context(self):
+            self.context_calls += 1
+            raise AssertionError("Legacy prompt must not request correction context")
+
+    missing = Binding({"id": 42001, "title": "Legacy"})
+    null = Binding({"id": 42001, "title": "Legacy", "result_correction_request_id": None})
+    assert _bound_worker_prompt(missing, "Prompt") == _bound_worker_prompt(null, "Prompt")
+    assert missing.context_calls == null.context_calls == 0
+
+
+@pytest.mark.parametrize("pointer", ["8", True, False, 0])
+def test_bound_prompt_rejects_malformed_non_null_correction_pointer(pointer):
+    from hub._services.chat.telegram_chat import _bound_worker_prompt
+
+    class Binding:
+        task_id = 42001
+        def __init__(self):
+            self.context_calls = 0
+        def task_snapshot(self):
+            return {"id": 42001, "title": "Malformed", "result_correction_request_id": pointer}
+        def correction_context(self):
+            self.context_calls += 1
+            return {"task_id": self.task_id, "correction": None}
+
+    binding = Binding()
+    with pytest.raises(RuntimeError, match="Korrekturkontext"):
+        _bound_worker_prompt(binding, "Prompt")
+    assert binding.context_calls == 0

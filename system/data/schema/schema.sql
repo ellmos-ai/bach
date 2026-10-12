@@ -2376,6 +2376,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_session ON session_snapshots(session_id
 CREATE INDEX IF NOT EXISTS idx_snapshots_type ON session_snapshots(snapshot_type);
 CREATE INDEX IF NOT EXISTS idx_task_history_action ON task_history(action);
 CREATE INDEX IF NOT EXISTS idx_task_history_task_id ON task_history(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_history_task_action_id ON task_history(task_id, action, id DESC);
 
 -- ── INJECTORS ─────────────────────────────────────────────────────────
 

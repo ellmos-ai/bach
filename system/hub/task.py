@@ -33,6 +33,7 @@ from .base import BaseHandler
 from .lang import t
 from ._services.task_schema import (
     ensure_task_creation_origin,
+    ensure_task_result_contract_columns,
     ensure_task_due_date,
     task_has_due_date,
     ensure_task_claim_columns,
@@ -100,6 +101,8 @@ class TaskHandler(BaseHandler):
             "claim": "Task exklusiv beanspruchen (bach task claim <id> --by <name> [--lease SECONDS])",
             "release": "Task-Claim freigeben (bach task release <id> --by <name>)",
             "reap": "Abgelaufene in_progress-Claims zuruecksetzen (bach task reap [--lease SECONDS])",
+            "result-history": "Verifizierte Ergebnis-, Abnahme- und Korrekturhistorie anzeigen",
+            "result-correct": "Aktuelles Review-Ergebnis mit dedizierter Korrekturberechtigung zurückgeben",
             "sweep": "Alias fuer reap",
             "taskplan": "TASKPLAN-Bridge status/list/import",
             "help": t("hilfe", default="Hilfe anzeigen")
@@ -174,6 +177,12 @@ class TaskHandler(BaseHandler):
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
             return self._edit(args)
+        elif operation == "result-history":
+            return self._result_history(args)
+        elif operation == "result-correct":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Korrekturanfrage gespeichert"
+            return self._result_correct(args)
         elif operation == "done":
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
@@ -279,7 +288,8 @@ class TaskHandler(BaseHandler):
             return False, (
                 "Usage: bach task add <titel> [--priority P1-P4] "
                 "[--description TEXT] [--due YYYY-MM-DD] "
-                "[--assigned NAME] [--required-model MODEL] [--assigned-slot SLOT] [--local|--remote]"
+                "[--assigned NAME] [--required-model MODEL] [--assigned-slot SLOT] "
+                "[--result-max-chars 1-3000] [--local|--remote]"
             )
         
         title = self._sanitize_title(clean_args[0])
@@ -289,6 +299,7 @@ class TaskHandler(BaseHandler):
         due_date = None
         required_model = None
         assigned_slot = None
+        result_max_chars = None
         assigned_to = None
         creation_origin = None
         
@@ -325,6 +336,24 @@ class TaskHandler(BaseHandler):
                 assigned_to = clean_args[i].split("=", 1)[1].strip().upper()
                 if not assigned_to or assigned_to.startswith("-"):
                     return False, "Fehler: --assigned erwartet einen Namen"
+                i += 1
+            elif clean_args[i] == "--result-max-chars":
+                if i + 1 >= len(clean_args):
+                    return False, "Fehler: --result-max-chars erwartet eine Ganzzahl von 1 bis 3000"
+                try:
+                    result_max_chars = int(clean_args[i + 1])
+                except ValueError:
+                    return False, "Fehler: --result-max-chars erwartet eine Ganzzahl von 1 bis 3000"
+                if not 1 <= result_max_chars <= 3000:
+                    return False, "Fehler: --result-max-chars muss zwischen 1 und 3000 liegen"
+                i += 2
+            elif clean_args[i].startswith("--result-max-chars="):
+                try:
+                    result_max_chars = int(clean_args[i].split("=", 1)[1])
+                except ValueError:
+                    return False, "Fehler: --result-max-chars erwartet eine Ganzzahl von 1 bis 3000"
+                if not 1 <= result_max_chars <= 3000:
+                    return False, "Fehler: --result-max-chars muss zwischen 1 und 3000 liegen"
                 i += 1
             elif clean_args[i] in ("--required-model", "--assigned-slot"):
                 if i + 1 >= len(clean_args) or not clean_args[i + 1].strip():
@@ -374,6 +403,7 @@ class TaskHandler(BaseHandler):
                             "due_date": due_date,
                             "required_model": required_model,
                             "assigned_slot": assigned_slot,
+                            "result_max_chars": result_max_chars,
                             "creation_origin": creation_origin,
                             "created_by": socket.gethostname().split(".")[0].lower(),
                         }
@@ -386,26 +416,28 @@ class TaskHandler(BaseHandler):
                                 ensure_task_due_date(conn)
                                 ensure_task_slot_columns(conn)
                                 ensure_task_creation_origin(conn)
+                                ensure_task_result_contract_columns(conn)
                                 existing = assert_local_task_id_available(
                                     conn, task_id, title
                                 )
                                 if existing is None:
                                     conn.execute(f"""
                                         INSERT INTO tasks
-                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin{assignment_column})
-                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?{assignment_value})
-                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin, *assignment_params))
+                                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, result_max_chars, created_at, source, creation_origin{assignment_column})
+                                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), ?, ?{assignment_value})
+                                    """, (task_id, title, priority, category, description, due_date, required_model, assigned_slot, result_max_chars, f"rheingold:{rheingold_url}", creation_origin, *assignment_params))
                                 else:
                                     # Existing mirrors are acknowledgements, never a
                                     # licence to overwrite a local or leased task.
                                     current = conn.execute(
                                         "SELECT priority, category, description, due_date, "
-                                        "required_model, assigned_slot, source, creation_origin, "
+                                        "required_model, assigned_slot, result_max_chars, source, creation_origin, "
                                         "assigned_to FROM tasks WHERE id = ?", (task_id,)
                                     ).fetchone()
                                     expected = (priority, category, description, due_date,
-                                        required_model, assigned_slot, f"rheingold:{rheingold_url}", creation_origin)
-                                    if tuple(current[:8]) != expected or (assigned_to is not None and current[8] != assigned_to):
+                                        required_model, assigned_slot, result_max_chars,
+                                        f"rheingold:{rheingold_url}", creation_origin)
+                                    if tuple(current[:9]) != expected or (assigned_to is not None and current[9] != assigned_to):
                                         raise RheingoldTaskCollision("Bestehende lokale Task stimmt nicht mit dem Lead-ACK überein; unverändert erhalten")
                                 conn.commit()
 
@@ -422,13 +454,14 @@ class TaskHandler(BaseHandler):
                     ensure_task_due_date(conn)
                     ensure_task_slot_columns(conn)
                     ensure_task_creation_origin(conn)
+                    ensure_task_result_contract_columns(conn)
                     min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                     draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                     conn.execute(f"""
                         INSERT INTO tasks
-                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin{assignment_column})
-                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?{assignment_value})
-                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin, *assignment_params))
+                            (id, title, priority, category, description, status, due_date, required_model, assigned_slot, result_max_chars, created_at, source, creation_origin{assignment_column})
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), ?, ?{assignment_value})
+                    """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, result_max_chars, draft_hash, creation_origin, *assignment_params))
                     conn.commit()
 
                 due_text = f" (fällig: {due_date})" if due_date else ""
@@ -449,13 +482,14 @@ class TaskHandler(BaseHandler):
                 ensure_task_due_date(conn)
                 ensure_task_slot_columns(conn)
                 ensure_task_creation_origin(conn)
+                ensure_task_result_contract_columns(conn)
                 min_id = conn.execute("SELECT MIN(id) FROM tasks WHERE id < 0").fetchone()[0]
                 draft_id = (min_id - 1) if (min_id is not None and min_id < 0) else -1
                 conn.execute(f"""
                     INSERT INTO tasks
-                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, source, creation_origin{assignment_column})
-                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?, ?{assignment_value})
-                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, draft_hash, creation_origin, *assignment_params))
+                        (id, title, priority, category, description, status, due_date, required_model, assigned_slot, result_max_chars, created_at, source, creation_origin{assignment_column})
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), ?, ?{assignment_value})
+                """, (draft_id, title, priority, category, description, due_date, required_model, assigned_slot, result_max_chars, draft_hash, creation_origin, *assignment_params))
                 conn.commit()
 
             due_text = f" (fällig: {due_date})" if due_date else ""
@@ -469,11 +503,12 @@ class TaskHandler(BaseHandler):
             ensure_task_due_date(conn)
             ensure_task_slot_columns(conn)
             ensure_task_creation_origin(conn)
+            ensure_task_result_contract_columns(conn)
             cursor = conn.execute(f"""
                 INSERT INTO tasks
-                    (title, priority, category, description, status, due_date, required_model, assigned_slot, created_at, creation_origin{assignment_column})
-                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, datetime('now'), ?{assignment_value})
-            """, (title, priority, category, description, due_date, required_model, assigned_slot, creation_origin, *assignment_params))
+                    (title, priority, category, description, status, due_date, required_model, assigned_slot, result_max_chars, created_at, creation_origin{assignment_column})
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), ?{assignment_value})
+            """, (title, priority, category, description, due_date, required_model, assigned_slot, result_max_chars, creation_origin, *assignment_params))
             task_id = cursor.lastrowid
             conn.commit()
 
@@ -485,6 +520,7 @@ class TaskHandler(BaseHandler):
                 'priority': priority, 'category': category,
                 'due_date': due_date,
                 'required_model': required_model, 'assigned_slot': assigned_slot,
+                'result_max_chars': result_max_chars,
                 **({'assigned_to': assigned_to} if assigned_to is not None else {}),
             })
         except Exception:
@@ -492,6 +528,76 @@ class TaskHandler(BaseHandler):
 
         due_text = f" (fällig: {due_date})" if due_date else ""
         return True, f"[OK] Task {task_id} erstellt: {title}{due_text}"
+
+    def _result_history(self, args: List[str]) -> Tuple[bool, str]:
+        if not args:
+            return False, "Usage: bach task result-history <id> [--limit 1-50] [--before EVENT-ID]"
+        try:
+            task_id = int(args[0]); limit = 20; before = None; i = 1
+            while i < len(args):
+                if args[i] in ("--limit", "--before") and i + 1 < len(args):
+                    value = int(args[i + 1])
+                    if args[i] == "--limit": limit = value
+                    else: before = value
+                    i += 2
+                else:
+                    return False, f"Unbekannte Option: {args[i]}"
+        except ValueError:
+            return False, "Task-ID und Historiencursor müssen Ganzzahlen sein"
+        try:
+            from ._services.task_lease_client import TaskLeaseClient
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                page = client.task_result_history(task_id, before_event_id=before, limit=limit)
+            return True, json.dumps(page, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            return False, f"Result-Historie nicht verfügbar: {exc}"
+
+    def _result_correct(self, args: List[str]) -> Tuple[bool, str]:
+        if not args:
+            return False, "Usage: bach task result-correct <id> [--note TEXT]"
+        try:
+            task_id = int(args[0])
+        except ValueError:
+            return False, "Ungültige Task-ID"
+        note = None; i = 1
+        while i < len(args):
+            if args[i] == "--note" and i + 1 < len(args):
+                note = args[i + 1]; i += 2
+            elif args[i].startswith("--note="):
+                note = args[i].split("=", 1)[1]; i += 1
+            else:
+                return False, f"Unbekannte Option: {args[i]}"
+        if note is None:
+            note = input("Korrekturhinweis (1–1200 Zeichen): ")
+        if not note.strip() or len(note) > 1200 or "\x00" in note:
+            return False, "Korrekturhinweis muss 1 bis 1200 Zeichen enthalten"
+        try:
+            from getpass import getpass
+            from ._services.task_lease_client import TaskLeaseClient
+            operator_token = getpass("Result-Operator-Token: ")
+            if not operator_token:
+                return False, "Korrekturanfrage nicht autorisiert"
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                snapshot = client.task_result_snapshot(task_id, operator_token=operator_token)
+                if snapshot.get("operator_capabilities", {}).get("request_correction") is not True:
+                    return False, "Dieses Operatorprofil darf Ergebnisse nur annehmen, nicht korrigieren"
+                record = snapshot.get("result")
+                if not isinstance(record, dict) or record.get("reason") != "awaiting_review":
+                    return False, "Nur das aktuelle, noch nicht angenommene Review-Ergebnis kann korrigiert werden"
+                print(f"Task #{task_id}; Ergebnis {record['result_id']} · SHA-256 {record['result_sha256']}")
+                if input("Korrekturanfrage für genau dieses Ergebnis speichern? [ja/nein] ").strip().casefold() not in {"ja", "j"}:
+                    return False, "Korrekturanfrage abgebrochen"
+                import uuid
+                request = {
+                    "result_id": record["result_id"], "result_sha256": record["result_sha256"],
+                    "generation": record["generation"], "fence": record["fence"],
+                    "task_version": snapshot["task_version"], "status_revision": snapshot["status_revision"],
+                    "request_id": str(uuid.uuid4()), "correction_note": note,
+                }
+                ack = client.request_result_correction(task_id, request, operator_token=operator_token)
+            return True, json.dumps(ack, ensure_ascii=False)
+        except Exception as exc:
+            return False, f"Korrekturanfrage nicht bestätigt: {exc}"
 
     @staticmethod
     def _normalize_due_date(value: str) -> Optional[str]:
@@ -520,6 +626,8 @@ class TaskHandler(BaseHandler):
         assigned_to = None
         required_model = None
         assigned_slot = None
+        result_max_chars = None
+        result_max_chars_set = False
         slot_fields_set = set()
         
         i = 1
@@ -536,6 +644,34 @@ class TaskHandler(BaseHandler):
             elif args[i] in ["--assigned", "-a"] and i + 1 < len(args):
                 assigned_to = args[i + 1].lower()
                 i += 2
+            elif args[i] == "--result-max-chars":
+                if i + 1 >= len(args):
+                    return False, "Fehler: --result-max-chars erwartet 1 bis 3000 oder 'none'"
+                raw = args[i + 1].strip().lower()
+                result_max_chars_set = True
+                if raw == "none":
+                    result_max_chars = None
+                else:
+                    try:
+                        result_max_chars = int(raw)
+                    except ValueError:
+                        return False, "Fehler: --result-max-chars erwartet 1 bis 3000 oder 'none'"
+                    if not 1 <= result_max_chars <= 3000:
+                        return False, "Fehler: --result-max-chars muss zwischen 1 und 3000 liegen"
+                i += 2
+            elif args[i].startswith("--result-max-chars="):
+                raw = args[i].split("=", 1)[1].strip().lower()
+                result_max_chars_set = True
+                if raw == "none":
+                    result_max_chars = None
+                else:
+                    try:
+                        result_max_chars = int(raw)
+                    except ValueError:
+                        return False, "Fehler: --result-max-chars erwartet 1 bis 3000 oder 'none'"
+                    if not 1 <= result_max_chars <= 3000:
+                        return False, "Fehler: --result-max-chars muss zwischen 1 und 3000 liegen"
+                i += 1
             elif args[i] in ("--required-model", "--assigned-slot"):
                 if i + 1 >= len(args):
                     return False, f"Fehler: {args[i]} erwartet einen Wert"
@@ -559,12 +695,14 @@ class TaskHandler(BaseHandler):
                 i += 1
         
         # Pruefen ob mindestens eine Option angegeben wurde
-        if title is None and description is None and category is None and assigned_to is None and not slot_fields_set:
-            return False, "Mindestens eine Option angeben: --title, --description, --category, --assigned, --required-model, --assigned-slot"
+        if title is None and description is None and category is None and assigned_to is None and not slot_fields_set and not result_max_chars_set:
+            return False, "Mindestens eine Option angeben: --title, --description, --category, --assigned, --required-model, --assigned-slot, --result-max-chars"
         
         with self._get_db() as conn:
             if slot_fields_set:
                 ensure_task_slot_columns(conn)
+            if result_max_chars_set:
+                ensure_task_result_contract_columns(conn)
             # Pruefen ob Task existiert
             existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if not existing:
@@ -599,6 +737,9 @@ class TaskHandler(BaseHandler):
             if "assigned_slot" in slot_fields_set:
                 field_values["assigned_slot"] = assigned_slot
                 changes.append(f"Slot -> {assigned_slot or 'frei'}")
+            if result_max_chars_set:
+                field_values["result_max_chars"] = result_max_chars
+                changes.append(f"Ergebnislimit -> {result_max_chars if result_max_chars is not None else 'keine zusätzliche Begrenzung'}")
 
             # now ueber SQLite (nicht Python-datetime): task.py nutzt durchgaengig
             # datetime('now') (UTC) fuer created_at/updated_at -- ein Python-seitiges

@@ -28,6 +28,7 @@ PAGE_READS = {
     "/tasks": ["/api/tasks", "/api/task-assignees"],
     "/agenten/running": ["/api/system/core-agents", "/api/system/core-agents/timeline"],
     "/agenten/blueprints": ["/api/agent-studio/blueprints"],
+    "/agenten/subscription-agents": ["/api/agent-studio/blueprints", "/api/capabilities/skills/library"],
     "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills"],
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
     "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
@@ -49,12 +50,18 @@ PAGE_READS = {
     "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/system/cluster-cockpit", "/api/setup/ocean-map", "/api/settings/theme",
                  "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
 }
+# Required actions retain their HTTP method; compose is a preview POST, never a GET.
+PAGE_ACTIONS = {
+    "/agenten/subscription-agents": ["POST /api/agent-studio/subscription-agents/compose"],
+}
+
 # Optional reads (the page stays usable without them, so they never make it unavailable): layout reads and user-triggered or
 # detail reads. Only the four pages below are derived from the ellmos-system-gui page-reads manifest (cf42ef02,
 # public/page-reads.v1.json, frozen in tests/test_gui_capabilities_page_reads.py); the other pages stay hand-written until the
 # manifest is consumed for all pages (#2087 G2).
 PAGE_OPTIONAL_READS = {
     "/": LAYOUT_READS,
+    "/agenten/subscription-agents": ["/api/tasks", "/api/gui/capabilities"] + LAYOUT_READS,
     "/agenten/sessions": ["/api/user-inbox", "/api/assignees", "/api/task-assignees", "/api/tasks/{task_id}"] + LAYOUT_READS,
     "/artefakte": ["/api/artifacts/content", "/api/artifacts/download"] + LAYOUT_READS,
     "/settings": ["/api/domains/pins", "/api/gui/brand"],
@@ -82,7 +89,7 @@ def declaration(routes, kit, brand, modules, *, public_paths=(), module_sources=
                 "reason": "route_registered_runtime_not_probed"})
     pages = []
     for path, reads in PAGE_READS.items():
-        required = ["GET " + read for read in reads]
+        required = ["GET " + read for read in reads] + PAGE_ACTIONS.get(path, [])
         missing = [read for read in required if read not in registered]
         pages.append({"id": path.strip("/").replace("/", ".") or "home", "path": path,
             "status": "unavailable" if missing else "configured",

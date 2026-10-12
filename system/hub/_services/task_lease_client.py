@@ -122,6 +122,15 @@ class LeaseConnectionError(LeaseError):
     """Verbindung zum Lead-Server fehlgeschlagen oder Timeout."""
 
 
+class TaskResultOperationError(LeaseError):
+    """Stable, redacted error returned by the result operator API."""
+
+    def __init__(self, status, code, message):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
 class LeaseOfflineDeadlineExceeded(LeaseError):
     """Lokale Sicherheitsfrist (local_deadline) für Offline-Arbeit überschritten."""
 
@@ -509,6 +518,12 @@ class TaskLeaseClient:
         if task_id is not None and data["id"] != task_id:
             raise LeaseProtocolError("Readback passt nicht zur angefragten Task")
         _version(data.get("task_version"), required=True)
+        if "result_max_chars" in data:
+            limit = data["result_max_chars"]
+            if limit is not None and (
+                type(limit) is not int or not 1 <= limit <= 3000
+            ):
+                raise LeaseProtocolError("Ungültiges Task-Ergebnislimit im Readback")
         return {key: value for key, value in data.items()
                 if key not in {"claim_id", "claim_request_id", "claim_task_version"}}
 
@@ -535,18 +550,88 @@ class TaskLeaseClient:
                     conn.close()
         return self._public_snapshot(data, task_id)
 
-    def task_result_snapshot(self, task_id):
+    def task_capabilities(self):
+        """Read versioned task-field capabilities; old APIs fail closed."""
+        expected = {
+            "schema": "bach.task-capabilities.v1",
+            "result_max_chars": {
+                "supported": True,
+                "min": 1,
+                "max": 3000,
+                "nullable": True,
+            },
+        }
+        if self.mode == "remote":
+            status, data = self._http_request("GET", "/api/task-capabilities")
+            if status != 200:
+                raise LeaseProtocolError("Task-Fähigkeiten nicht verfügbar")
+        else:
+            data = expected
+        if data != expected:
+            raise LeaseProtocolError("Task-Fähigkeiten nicht kanonisch bestätigt")
+        return data
+
+    def task_correction_context(self, task_id, *, lease_id, fence, task_version, generation):
+        """Read a pending correction under the exact live task lease; never retries."""
+        _identity(task_id)
+        if (not isinstance(lease_id, str) or not lease_id or type(fence) is not int or fence <= 0
+                or not isinstance(task_version, str) or not isinstance(generation, str)):
+            raise LeaseProtocolError("Task-Korrekturbindung ungültig")
+        if self.mode == "remote":
+            from urllib.parse import urlencode
+            query = urlencode({"fence": fence, "task_version": task_version, "generation": generation})
+            status, data = self._http_request(
+                "GET", f"/api/tasks/{task_id}/lease/correction-context?{query}",
+                headers={"X-Lease-Id": lease_id},
+            )
+            if status != 200:
+                raise LeaseProtocolError("Task-Korrekturkontext nicht bestätigt")
+        else:
+            from .task_result_service import read_correction_context, CorrectionContextDenied
+            conn = self._get_local_connection()
+            try:
+                data = read_correction_context(conn, task_id, lease_id=lease_id, fence=fence,
+                                               task_version=task_version, generation=generation)
+            except CorrectionContextDenied:
+                raise LeaseProtocolError("Task-Korrekturkontext nicht bestätigt") from None
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-correction-context.v1"
+                or data.get("task_id") != task_id or data.get("fence") != fence
+                or data.get("task_version") != task_version or data.get("generation") != generation):
+            raise LeaseProtocolError("Task-Korrekturkontext nicht kanonisch bestätigt")
+        correction = data.get("correction")
+        if correction is not None:
+            if not isinstance(correction, dict):
+                raise LeaseProtocolError("Task-Korrekturquelle nicht kanonisch bestätigt")
+            source = correction.get("source_result")
+            if (type(correction.get("correction_id")) is not int
+                    or type(correction.get("correction_round")) is not int
+                    or not isinstance(correction.get("correction_note"), str)
+                    or not isinstance(source, dict) or type(source.get("result_id")) is not int
+                    or not isinstance(source.get("text"), str)
+                    or source.get("result_sha256") != hashlib.sha256(source["text"].encode("utf-8")).hexdigest()
+                    or type(source.get("fence")) is not int or not isinstance(source.get("generation"), str)
+                    or not isinstance(source.get("task_version"), str)):
+                raise LeaseProtocolError("Task-Korrekturquelle nicht kanonisch bestätigt")
+        return data
+
+    def task_result_snapshot(self, task_id, *, operator_token=None):
         """Fresh canonical result/acceptance, never a provider or receipt cache."""
         _identity(task_id)
+        if operator_token is not None and (not isinstance(operator_token, str) or not operator_token.strip()):
+            raise LeaseProtocolError("Result-Operator-Token ist ungültig")
+        headers = {"X-BACH-Result-Operator": operator_token} if operator_token is not None else None
         if self.mode == "remote":
-            status, data = self._http_request("GET", f"/api/tasks/{task_id}/result")
+            status, data = self._http_request("GET", f"/api/tasks/{task_id}/result", headers=headers)
             if status != 200:
                 self._raise_denied(task_id, data)
         else:
             from .task_result_service import read_result
             conn = self._get_local_connection()
             try:
-                data = read_result(conn, task_id)
+                data = read_result(conn, task_id, operator_token=operator_token)
             finally:
                 if self._conn is None:
                     conn.close()
@@ -568,6 +653,108 @@ class TaskLeaseClient:
                     or record.get("accepted_status_event_id") != data["status_revision"]
                     or not record.get("accepted_by") or type(record.get("acceptance_event_id")) is not int):
                 raise LeaseProtocolError("Aktuelle kanonische Abnahme nicht bestätigt")
+        capabilities = data.get("operator_capabilities")
+        if capabilities is not None and (
+            not isinstance(capabilities, dict)
+            or type(capabilities.get("accept_result")) is not bool
+            or type(capabilities.get("request_correction")) is not bool
+        ):
+            raise LeaseProtocolError("Result-Operatorfähigkeiten nicht kanonisch bestätigt")
+        return data
+
+    def task_result_history(self, task_id, *, before_event_id=None, limit=20):
+        _identity(task_id)
+        if before_event_id is not None and (type(before_event_id) is not int or before_event_id <= 0):
+            raise LeaseProtocolError("Ungültiger Result-Historiencursor")
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise LeaseProtocolError("Result-Historienlimit muss zwischen 1 und 50 liegen")
+        if self.mode == "remote":
+            from urllib.parse import urlencode
+            query = {"limit": limit}
+            if before_event_id is not None:
+                query["before_event_id"] = before_event_id
+            status, data = self._http_request(
+                "GET", f"/api/tasks/{task_id}/result/history?{urlencode(query)}")
+            if status != 200:
+                self._raise_denied(task_id, data)
+        else:
+            from .task_result_service import read_result_history
+            conn = self._get_local_connection()
+            try:
+                data = read_result_history(conn, task_id, before_event_id=before_event_id, limit=limit)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        events = data.get("events") if isinstance(data, dict) else None
+        if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-history.v1"
+                or data.get("task_id") != task_id or not isinstance(events, list)
+                or len(events) > limit or type(data.get("has_more")) is not bool):
+            raise LeaseProtocolError("Result-Historie nicht kanonisch bestätigt")
+        ids = []
+        for event in events:
+            if (not isinstance(event, dict) or type(event.get("event_id")) is not int
+                    or event["event_id"] <= 0 or not isinstance(event.get("occurred_at"), str)):
+                raise LeaseProtocolError("Result-Historienereignis unvollständig")
+            ids.append(event["event_id"])
+            if event.get("type") == "result_submitted":
+                result = event.get("result")
+                if (not isinstance(result, dict) or type(result.get("result_id")) is not int
+                        or not isinstance(result.get("text"), str)
+                        or result.get("result_sha256") != hashlib.sha256(result["text"].encode("utf-8")).hexdigest()):
+                    raise LeaseProtocolError("Historisches Originalergebnis nicht bestätigt")
+            elif event.get("type") == "result_accepted":
+                result = event.get("result")
+                if not isinstance(result, dict) or type(result.get("result_id")) is not int:
+                    raise LeaseProtocolError("Historische Abnahme nicht bestätigt")
+            elif event.get("type") == "correction_requested":
+                correction = event.get("correction")
+                if (not isinstance(correction, dict) or type(correction.get("correction_id")) is not int
+                        or not isinstance(correction.get("note"), str)):
+                    raise LeaseProtocolError("Historische Korrektur nicht bestätigt")
+            else:
+                raise LeaseProtocolError("Unbekannter Result-Historientyp")
+        if ids != sorted(set(ids), reverse=True):
+            raise LeaseProtocolError("Result-Historie ist nicht absteigend sortiert")
+        cursor = data.get("next_before_event_id")
+        if data["has_more"]:
+            if (len(events) != limit or not events or type(cursor) is not int
+                    or cursor != events[-1]["event_id"]):
+                raise LeaseProtocolError("Result-Historiencursor passt nicht zur Seite")
+        elif cursor is not None:
+            raise LeaseProtocolError("Unerwarteter Result-Historiencursor")
+        return data
+
+    def request_result_correction(self, task_id, payload, *, operator_token):
+        _identity(task_id)
+        if not isinstance(payload, dict) or not isinstance(operator_token, str) or not operator_token.strip():
+            raise LeaseProtocolError("Korrekturanfrage oder Operator-Token ungültig")
+        headers = {"X-BACH-Result-Operator": operator_token}
+        if self.mode == "remote":
+            status, data = self._http_request("POST", f"/api/tasks/{task_id}/result/correction",
+                                              payload=payload, headers=headers)
+            if status != 200:
+                detail = data.get("detail") if isinstance(data, dict) else None
+                if isinstance(detail, dict):
+                    raise TaskResultOperationError(status, detail.get("code", "denied"),
+                                                   detail.get("message", "Korrekturanfrage abgelehnt"))
+                raise TaskResultOperationError(status, "denied", "Korrekturanfrage abgelehnt")
+        else:
+            from .task_result_service import request_result_correction
+            conn = self._get_local_connection()
+            try:
+                data = request_result_correction(conn, task_id, payload, operator_token=operator_token)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-correction-request.v1"
+                or data.get("task_id") != task_id or data.get("request_id") != payload.get("request_id")
+                or type(data.get("correction_id")) is not int or data["correction_id"] <= 0
+                or type(data.get("correction_round")) is not int or data["correction_round"] <= 0
+                or data.get("source_result_id") != payload.get("result_id")
+                or data.get("source_result_sha256") != payload.get("result_sha256")
+                or data.get("status") != "pending" or type(data.get("replayed")) is not bool):
+            raise LeaseProtocolError("Korrektur-ACK passt nicht zur Anfrage")
+        _version(data.get("next_task_version"), required=True)
         return data
 
     def task_candidates(self, *, limit=100, offset=0):

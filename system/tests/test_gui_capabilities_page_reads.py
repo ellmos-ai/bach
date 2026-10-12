@@ -130,6 +130,8 @@ def test_exact_paths_do_not_catalog_sibling_routes():
 
 def test_new_page_reads_make_pages_configured_and_missing_route_makes_them_unavailable():
     routes = [_Route(read, {"GET"}) for reads in caps.PAGE_READS.values() for read in reads]
+    routes += [_Route(action.split(" ", 1)[1], {action.split(" ", 1)[0]})
+               for actions in caps.PAGE_ACTIONS.values() for action in actions]
     _, out = _cataloged(routes)
     assert all(p["status"] == "configured" for p in out["pages"])
     _, out = _cataloged([r for r in routes if r.path != "/api/setup/ocean-map"])

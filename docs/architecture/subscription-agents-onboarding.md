@@ -33,9 +33,16 @@ Composer lädt die gespeicherte Quelle über den vorhandenen
 `blueprint_service._execution_blueprint`-Validator aus der kanonischen BACH-DB,
 mit einer read-only Verbindung. Eine fehlende oder inzwischen veraltete Revision
 wird abgelehnt; Rollenprompt, Skills und Konfiguration können nicht vom Request
-überschrieben werden. Die SHA-256 bindet die tatsächlich verwendete Projektion,
-nicht die vollständige Datenbankzeile. Der lokale Datenbankpfad wird nicht
-ausgegeben.
+überschrieben werden. Die SHA-256 bindet die tatsächlich verwendete, typisierte Projektion,
+nicht die vollständige Datenbankzeile oder unveränderte Rohquelle. Die
+Contractus-Projektion ist mit bach.contractus-projection.v1 markiert und
+normalisiert nur bekannte Preset-/Seed-Aliase. Preset-ID, Titel und
+Beschreibung werden getrennt typisiert und in der Projektion gebunden, aber
+nicht in den Prompt übernommen. Widersprüchliche Aliaswerte, unbekannte
+Felder und verschachtelte contractus.execution-Werte werden abgewiesen.
+task_type und task_types bleiben getrennte Angaben. Die
+Contractus-Sektion im Prompt ist deklarativ und erteilt keine Laufzeit-,
+Werkzeug- oder Startfreigabe. Der lokale Datenbankpfad wird nicht ausgegeben.
 
 ## Transportvertrag
 
@@ -44,7 +51,7 @@ Requestschema: `bach.subscription-agent-onboarding.request.v1`.
 ```json
 {
   "schema": "bach.subscription-agent-onboarding.request.v1",
-  "target_client": {"client_id": "codex-cli", "host": "client-host"},
+  "target_client": {"client_id": "codex-cli", "host": "client-host", "workspace": "/path/to/project"},
   "blueprint": {"id": 7, "version": 3},
   "selected_skill_ids": ["quellenpruefung"],
   "user_task": "Fasse die Belege mit echten Umlauten zusammen.",
@@ -64,11 +71,13 @@ bach subscription_agents compose <Request-JSON-Datei>
 
 `bach_api.get_app().execute("subscription_agents", "compose", [request_path])`
 läuft durch denselben automatisch entdeckten Handler und denselben Composer.
-Eine spätere HTTP-Route kann `SubscriptionAgentsComposer.compose(request)` direkt
-aufrufen. Dieses Paket registriert keine HTTP-Route; die bestehende Route
+Der bestehende HTTP-Adapter ruft denselben Composer über
+`POST /api/agent-studio/subscription-agents/compose` auf und ist im
+BACH-Server-Quellstand gemountet. Die bestehende Route
 `POST /api/agent-studio/synthesize-prompt` bleibt beim bisherigen Blueprint-Prompt.
-Eine künftige Remote-Integration braucht vor Freigabe einen eigenen Authentifizierungs-
-und Datenschutzvertrag für die ausgewählten lokalen Inhalte.
+Geräte-, Body- und Fehlergrenzen beschreibt
+`subscription-agents-http-transport.md`; produktiver Dienst- und
+Browsernachweis bleiben getrennte Abnahmen.
 
 Antwortschema: `bach.subscription-agent-onboarding.preview.v1`. Die Antwort
 enthält `prompt`, Zeichen- und UTF-8-Bytezahl, festes Promptlimit,
@@ -104,8 +113,23 @@ stoppen die Erstellung der Vorschau mit einem verständlichen Fehler.
 
 Geänderte Komponenten sind `hub._services.subscription_agents_composer`, der
 automatisch entdeckte `hub.subscription_agents`-Handler, fokussierte Tests und
-diese Architekturdokumentation. Gemeinsame HTTP-Router und GUI-Dateien bleiben
-außerhalb dieses Pakets. Vor einer Integration sind die Quell-/Testabnahme auf
-dem vorgesehenen Mac, ein separater HTTP-Aufrufvertrag und die Darstellung des
-Vorschau-Status im GUI erforderlich. Ein grüner Komposertest würde weder
+diese Architekturdokumentation. Der vorhandene HTTP-Adapter und sein
+BACH-Servermount konsumieren den Composer; die Frontend-Seite lebt im
+gemeinsamen GUI-Repository. Neben der Quell-/Testabnahme auf dem vorgesehenen
+Mac bleiben die produktive Geräte-/Browserabnahme, die Darstellung des
+Vorschau-Status und der tatsächliche Ocean-Adapter zu prüfen. Ein grüner Komposertest würde weder
 Providerverfügbarkeit noch Berechtigungen oder reale Agentenausführung belegen.
+
+## Arbeitskontext und Bootquellen
+
+`target_client.workspace` ist ein optionales einzeiliges Metadatum bis
+1.024 Zeichen. Der Composer prüft weder die Existenz noch den Zugriff und
+liest oder erstellt dort keine Datei. Anfragen ohne das Feld behalten ihre
+bisherige Zielclient-Projektion. Zielclient und Zielhost bleiben Nutzereingaben,
+kein attestierter Launcher- oder Fähigkeitsnachweis.
+
+Boot- und Onboarding-Skills müssen aus der tatsächlichen Skillbibliothek
+ausgewählt werden. Eine historische Root-SKILL.md oder ein fehlender
+BACH-Skill wird nicht als aktuell geprüfte Bootquelle vorausgesetzt. Die
+vollständige Bootquellen-Abnahme bleibt offen, bis passende Quellen
+empirisch geprüft und eingebunden sind.

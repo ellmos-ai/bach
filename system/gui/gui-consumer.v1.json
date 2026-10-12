@@ -1,12 +1,12 @@
 {
   "schema": "ellmos.bach.gui-consumer.v1",
   "id": "ellmos-system-gui",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "status": "pinned_release",
   "source": {
     "repository": "ellmos-ai/ellmos-system-gui",
-    "commit": "daac428d25c93c319489748f541d9c4459c233e7",
-    "archive_sha256": "156aa9897c542c9751589f40689e37c29a135d4b1b364efdc4770f35401bd95a",
+    "commit": "8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c",
+    "archive_sha256": "9a10008b9506a7b69a09e1c7b8bf9f8c5ab0075358e5da17b8295ca816697d12",
     "dist_manifest_schema": "ellmos-system-gui.dist.v1"
   },
   "required_backend_routes": [
