@@ -32,23 +32,35 @@ verify_installed_dist() prüft das konfigurierte Dist-Verzeichnis anhand von Com
 vollständiger Dateiliste und Datei-Hashes. Ein Quellpin allein belegt keine Installation
 oder Live-Auslieferung.
 
-## Mac-Rollout-Prüfung für den 0.2.20-Kandidaten
+## Aktueller Source-Pin: GUI 0.2.21
 
-Der geprüfte Kandidat bindet Commit daac428d25c93c319489748f541d9c4459c233e7,
-das ZIP ellmos-system-gui-0.2.20-daac428d25c9.zip und 195 Dateien mit 26 HTML-Seiten.
-Vor einer separat freigegebenen Aktivierung sind ZIP-SHA, eingebettetes Dist-Manifest,
-exakte Dateiliste und alle Hashes zu prüfen. Die Dist wird in einem unveränderlichen,
-versionsgebundenen Verzeichnis bereitgestellt; ein vorhandenes Auslieferungsverzeichnis
-wird nicht überschrieben.
+Der veröffentlichte Release v0.2.21 bindet Commit 8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c,
+das ZIP ellmos-system-gui-0.2.21-8ea653e0061f.zip und die SHA-256-Prüfsumme
+9a10008b9506a7b69a09e1c7b8bf9f8c5ab0075358e5da17b8295ca816697d12. Das Release-Manifest
+führt 197 Dateien, darunter 26 HTML-Seiten. Der Consumer-Pin und der operative Kit-Pin
+müssen Commit, Archiv-SHA-256, Dist-Manifest-Schema und Seitenzahl identisch binden.
 
-Für den Wechsel müssen kit_manifest.json und die LaunchAgent-Variable
-ELLMOS_SYSTEM_GUI_DIST dieselbe Release-Identität erwarten. Während einer
-zwischenzeitlichen Abweichung muss die API den Dist als unverifiziert melden; der
-Rollout gilt erst nach GET /api/gui/kit-manifest und GET /api/gui/capabilities
-mit passendem Commit, vollständiger Verifikation und 26 Seiten als technisch bestätigt.
-Der bisherige Pin, die LaunchAgent-Konfiguration und die unveränderte vorherige Dist
-bleiben für einen abgestimmten Rollback erhalten. Diese Beschreibung ist ein Prüfplan,
-kein Installations- oder Neustartnachweis.
+Diese Release-Identität ist ein Quell-/Kit-Pin. Sie belegt allein keine Installation,
+keine aktive LaunchAgent-Konfiguration und keine Live-Auslieferung. Dafür bleibt die
+separate Prüfung des tatsächlich konfigurierten Dist-Verzeichnisses samt vollständiger
+Dateiliste und Datei-Hashes erforderlich.
+
+## Historischer Rollout-Plan für GUI 0.2.20
+
+Der damalige Pin band Commit daac428d25c93c319489748f541d9c4459c233e7, das ZIP
+ellmos-system-gui-0.2.20-daac428d25c9.zip und 195 Dateien mit 26 HTML-Seiten. Beim
+damaligen Wechsel waren ZIP-SHA, eingebettetes Dist-Manifest, exakte Dateiliste und alle
+Hashes zu prüfen. Die Dist sollte in einem unveränderlichen, versionsgebundenen
+Verzeichnis bereitgestellt und ein vorhandenes Auslieferungsverzeichnis nicht
+überschrieben werden.
+
+Der damalige Rollout-Plan verlangte dieselbe Release-Identität in kit_manifest.json und
+ELLMOS_SYSTEM_GUI_DIST. Die API sollte während einer Abweichung den Dist als
+unverifiziert melden; die technische Bestätigung sollte erst nach GET
+/api/gui/kit-manifest und GET /api/gui/capabilities mit passendem Commit, vollständiger
+Verifikation und 26 Seiten erfolgen. Pin, LaunchAgent-Konfiguration und vorherige Dist
+sollten für einen abgestimmten Rollback erhalten bleiben. Das dokumentiert den früheren
+Plan und ist kein Installations- oder Neustartnachweis für 0.2.20 oder 0.2.21.
 
 Die Subscription-Agents-Seite kann ohne die separat gemountete BACH-Route nicht
 komponieren; die Oberfläche muss diese Funktion als nicht verfügbar anzeigen. Der
