@@ -166,3 +166,8 @@ llmauto @ git+https://github.com/ellmos-ai/marblerun.git@e136ab3a632bcd663a510ef
 # package (Vahid Vaezian 1.0, 2018-08-10) that wins any `>=0.1.1` resolution
 # -- dependency confusion, T-20260913-920596893.
 # ============================================================
+
+# [POLARIS DECISION WRITER] Optional human-confirmed writer for the shared decisions chain.
+# Exact reviewed P2 merge; installation does not start a service or register a resource.
+# Host service configuration must select server role, exact agent@host and device bindings.
+decision-clicker @ git+https://github.com/ellmos-ai/decision-clicker.git@0ebff86aa34188b1bddb67d172c8daf45c3bc8a6
