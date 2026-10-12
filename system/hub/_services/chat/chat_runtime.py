@@ -267,6 +267,42 @@ class _SnapshotStoreAdapter:
 
 
 
+_SAFE_FAILURE_REASON_CODES = frozenset({
+    "local_reserve_invalid_policy",
+    "local_reserve_unknown_model",
+    "local_reserve_unsupported_provider",
+    "local_reserve_missing_model_budget",
+    "local_reserve_model_budget_conflict",
+    "local_reserve_budget_exceeds_host",
+    "local_reserve_resource_policy_changed",
+    "local_reserve_reserve_wait_expired",
+})
+
+
+def _local_reserve_failure(exc: BaseException) -> tuple[str | None, str]:
+    """Project only the reserve service's finite public decision vocabulary."""
+    from hub._services.chat.local_resource_reserve import LocalReserveError
+    if not isinstance(exc, LocalReserveError):
+        return None, ""
+    prefix = "Lokale Ressourcenfreigabe: "
+    message = str(exc)
+    decision = message[len(prefix):] if message.startswith(prefix) else ""
+    code = f"local_reserve_{decision}" if decision else ""
+    if code not in _SAFE_FAILURE_REASON_CODES:
+        return None, "Lokale Ressourcenfreigabe fehlgeschlagen"
+    safe_messages = {
+        "local_reserve_reserve_wait_expired": "Lokale Ressourcenreserve wurde nicht rechtzeitig frei",
+        "local_reserve_budget_exceeds_host": "Lokales Modell überschreitet das verfügbare Hostbudget",
+        "local_reserve_resource_policy_changed": "Ressourcenrichtlinie änderte sich während der Prüfung",
+        "local_reserve_invalid_policy": "Ressourcenrichtlinie ist nicht verifizierbar",
+        "local_reserve_unknown_model": "Lokales Modell ist nicht verifizierbar",
+        "local_reserve_unsupported_provider": "Lokaler Anbieter wird nicht unterstützt",
+        "local_reserve_missing_model_budget": "Modellbudget fehlt",
+        "local_reserve_model_budget_conflict": "Modellbudget stimmt nicht mit dem beobachteten Ziel überein",
+    }
+    return code, safe_messages[code]
+
+
 class FailedAnswer(str):
     """Antworttext, der aus einer gefangenen Backend-Ausnahme stammt.
 
@@ -295,10 +331,13 @@ class FailedAnswer(str):
     STATUS_SUCCESS = "success"
     STATUS_FAILED = "failed"
 
-    def __new__(cls, value, *, backend_error=None):
+    def __new__(cls, value, *, backend_error=None, reason_code=None):
         from hub._services.llm.backend_errors import normalize_backend_error
         answer = super().__new__(cls, value)
         answer.backend_error = normalize_backend_error(backend_error)
+        answer.reason_code = (
+            reason_code if isinstance(reason_code, str) and reason_code in _SAFE_FAILURE_REASON_CODES else None
+        )
         return answer
 
     @classmethod
@@ -346,13 +385,13 @@ class FailedAnswer(str):
 
     @classmethod
     def from_exception(cls, exc: BaseException) -> "FailedAnswer":
-        """Gefangene Ausnahme als Fehlschlag-Antwort, mit ihrem Typnamen.
-
-        Der Typ steht immer davor, nicht nur wenn ``str(exc)`` leer ist:
-        ``httpx.ReadTimeout`` und Verwandte haben keinen Text, und auch bei
-        vorhandener Meldung sagt der Typ, ob die Leitung stand, das Modell
-        schwieg oder der Aufruf falsch war.
-        """
+        """Convert a caught failure, redacting reserve details to a finite code."""
+        reason_code, safe_message = _local_reserve_failure(exc)
+        if reason_code is not None:
+            return cls(f"{cls.PREFIX}{safe_message}", reason_code=reason_code)
+        from hub._services.chat.local_resource_reserve import LocalReserveError
+        if isinstance(exc, LocalReserveError):
+            return cls(f"{cls.PREFIX}{safe_message}")
         return cls(f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "))
 
 
@@ -750,6 +789,12 @@ class ChatRuntime(_ModuleChatRuntime):
                     active_backend, *args, **call_kwargs
                 )
             except Exception as exc:
+                # The persistent core is explicitly pinned to its selected local
+                # model; reserve exhaustion must not silently downgrade or route elsewhere.
+                from hub._services.chat.local_resource_reserve import LocalReserveError
+                if (getattr(session, "chat_id", None) == "buddha_always_on"
+                        and isinstance(exc, LocalReserveError)):
+                    raise
                 # A self-managed CLI can finish tool effects before an exception.
                 # Without a typed no-tool receipt, the failure cannot authorize retry.
                 if (getattr(active_backend, "manages_own_tools", False)
@@ -857,7 +902,10 @@ class ChatRuntime(_ModuleChatRuntime):
                 if isinstance(content, FailedAnswer):
                     item[FailedAnswer.STATUS_KEY] = FailedAnswer.STATUS_FAILED
                 elif status == FailedAnswer.STATUS_FAILED and isinstance(content, str):
-                    item["content"] = FailedAnswer(content, backend_error=item.get("backend_error"))
+                    item["content"] = FailedAnswer(
+                        content, backend_error=item.get("backend_error"),
+                        reason_code=item.get("reason_code"),
+                    )
                 elif status == FailedAnswer.STATUS_SUCCESS:
                     if isinstance(content, str) and content.strip().startswith(FailedAnswer.PREFIX):
                         item["content"] = SuccessfulAnswer(content)
@@ -875,7 +923,7 @@ class ChatRuntime(_ModuleChatRuntime):
         """Remove runtime-only status metadata before a provider call."""
         return [
             {key: value for key, value in message.items()
-              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error")}
+              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error", "reason_code")}
             for message in messages
         ]
 
@@ -906,6 +954,11 @@ class ChatRuntime(_ModuleChatRuntime):
                 item.pop("backend_error", None)
                 if detail is not None and status == FailedAnswer.STATUS_FAILED:
                     item["backend_error"] = detail
+                reason_code = getattr(content, "reason_code", None) or item.get("reason_code")
+                item.pop("reason_code", None)
+                if (status == FailedAnswer.STATUS_FAILED and isinstance(reason_code, str)
+                        and reason_code in _SAFE_FAILURE_REASON_CODES):
+                    item["reason_code"] = reason_code
             stored.append(item)
         return stored
 
@@ -1797,6 +1850,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         try:
             if self._process_priority(chat_id, work_priority) == "background":
                 self._reset_task_completion_receipts(chat_id)
+                # A previous task's resolved model is not evidence for this run.
+                self.get_session(chat_id).resolved_model = None
             if agent_context is not None:
                 self.bind_profile_session(chat_id, agent_context)
             return await self._process_turn(
@@ -1928,16 +1983,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     selected_backend,
                     msgs, think=session.think, model=selected_model
                 )
-                resolved = result.get("model") or getattr(selected_backend, "last_resolved_model", None)
-                if resolved:
-                    session.resolved_model = str(resolved)
+                answer = _managed_backend_answer(result)
+                resolved = result.get("model") if isinstance(result, dict) else None
+                if (not FailedAnswer.looks_like(answer) and isinstance(resolved, str) and resolved.strip()):
+                    session.resolved_model = resolved
                     if chat_id:
                         try:
                             from hub._services.chat.slots_config import update_slot
-                            update_slot(str(chat_id), {"resolved_model": str(resolved)})
+                            update_slot(str(chat_id), {"resolved_model": resolved})
                         except Exception:
                             pass
-                answer = _managed_backend_answer(result)
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
@@ -2097,17 +2152,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
 
-            resolved_model = result.get("model") or getattr(selected_backend, "last_resolved_model", None)
-            if resolved_model:
-                session.resolved_model = str(resolved_model)
-                cid = getattr(session, "chat_id", "")
-                if cid:
-                    try:
-                        from hub._services.chat.slots_config import update_slot
-                        update_slot(cid, {"resolved_model": str(resolved_model)})
-                    except Exception:
-                        pass
-
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
                 # gefangene Ausnahme: derselbe Typ, damit der Idle-Worker ihn
@@ -2119,6 +2163,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else ""),
                     backend_error=result.get("backend_error"),
                 )
+
+            resolved_model = result.get("model") if isinstance(result, dict) else None
+            if isinstance(resolved_model, str) and resolved_model.strip():
+                session.resolved_model = resolved_model
+                cid = getattr(session, "chat_id", "")
+                if cid:
+                    try:
+                        from hub._services.chat.slots_config import update_slot
+                        update_slot(cid, {"resolved_model": resolved_model})
+                    except Exception:
+                        pass
 
             if self._context_voll(
                 result, session, context_limit=context_limit

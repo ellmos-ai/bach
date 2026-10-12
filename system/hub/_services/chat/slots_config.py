@@ -777,11 +777,27 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
 
     if slot_id in slots:
         slot = slots[slot_id]
+        previous_profile_version = None
+        if slot_id == "buddha_always_on":
+            previous_profile_version = _persistent_core_profile_version(
+                _always_on_execution_slot_from_config(cfg)
+            )
         for k, v in updates.items():
             if k == "providers" and isinstance(v, dict):
                 slot.setdefault("providers", {}).update(v)
             else:
                 slot[k] = v
+        if slot_id == "buddha_always_on" and slot.get("persistent_opt_in") is True:
+            current_profile_version = _persistent_core_profile_version(
+                _always_on_execution_slot_from_config(cfg)
+            )
+            if current_profile_version != previous_profile_version:
+                # Any edit to consent-bound execution inputs revokes the prior
+                # approval, even if a later edit restores the same values.
+                slot["persistent_opt_in"] = False
+                slot.pop("persistent_opt_in_id", None)
+                slot.pop("persistent_opt_in_profile_version", None)
+                slot.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
         save_slots_config(cfg, path)
         return slot
 
@@ -1166,6 +1182,11 @@ def change_core_system_agent(
         raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
     slot = config["slots"][slot_id]
+    previous_persistent_profile_version = None
+    if slot_id == "buddha_always_on":
+        previous_persistent_profile_version = _persistent_core_profile_version(
+            _always_on_execution_slot_from_config(config)
+        )
     if reset:
         if changes:
             raise ValueError("Reset akzeptiert keine gleichzeitigen Änderungen")
@@ -1182,6 +1203,15 @@ def change_core_system_agent(
             raise RuntimeError("model_socket_registry_unavailable")
     slot.update(updates)
     _validated_model_fallback_profile(slot)
+    if slot_id == "buddha_always_on" and slot.get("persistent_opt_in") is True:
+        current_profile_version = _persistent_core_profile_version(
+            _always_on_execution_slot_from_config(config)
+        )
+        if current_profile_version != previous_persistent_profile_version:
+            slot["persistent_opt_in"] = False
+            slot.pop("persistent_opt_in_id", None)
+            slot.pop("persistent_opt_in_profile_version", None)
+            slot.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
     if model_fields_changed and "model_sockets" in config:
         from . import model_sockets
         model_sockets._reconcile_profile_bindings(config, slot_id)
@@ -1826,6 +1856,30 @@ def _worker_profile_version(worker: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _persistent_core_profile_version(worker: dict[str, Any]) -> str:
+    """Bind Always-On consent to its profile, excluding controller task state."""
+    if worker.get("id") != "buddha_always_on":
+        raise ValueError("Always-On-Profil ist nicht eindeutig")
+    return _worker_profile_version({**worker, "task_id": None})
+
+
+def _is_supported_persistent_local_core_worker(worker: dict[str, Any]) -> bool:
+    backend = worker.get("backend")
+    model = worker.get("model")
+    if (backend != "ollama" or not isinstance(model, str)
+            or not model.strip() or "\x00" in model or len(model) > 192
+            or _MODEL_FALLBACK.fullmatch(model) is None or model.lower().endswith(":cloud")):
+        return False
+    try:
+        # Persistent core recovery must keep the explicitly selected primary
+        # model; it must never walk an automatic smaller-model fallback.
+        if _validated_model_fallback_profile(worker):
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def _is_supported_persistent_cloud_worker(worker: dict[str, Any]) -> bool:
     backend = worker.get("backend")
     model = worker.get("model")
@@ -1863,7 +1917,11 @@ def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
 
 
 def worker_configuration_snapshot(worker_id: str, *, path: str | None = None) -> dict[str, Any]:
-    worker = get_worker_slot(worker_id, path=path)
+    if worker_id == "buddha_always_on":
+        config = load_slots_config(path, strict=True)
+        worker = _always_on_execution_slot_from_config(config)
+    else:
+        worker = get_worker_slot(worker_id, path=path)
     if not worker:
         raise KeyError("Workerprofil nicht gefunden")
     return _worker_configuration(worker)
@@ -2110,6 +2168,34 @@ def persistent_worker_startup_snapshot(path: str | None = None) -> dict[str, Any
 def change_worker_configuration(worker_id: str, expected_version: str, changes: dict[str, Any],
                                 *, path: str | None = None) -> dict[str, Any]:
     config = load_slots_config(path, strict=True)
+    if worker_id == "buddha_always_on":
+        worker = _always_on_execution_slot_from_config(config)
+        current = _worker_configuration(worker)
+        if expected_version != current["configuration_version"]:
+            raise RuntimeError("configuration_version_conflict")
+        if (not isinstance(changes, dict) or set(changes) != {"persistent_opt_in"}
+                or type(changes["persistent_opt_in"]) is not bool):
+            raise ValueError("Nur die getrennte Dauerbetriebsfreigabe ist für Always-On editierbar")
+        stored = config["slots"]["buddha_always_on"]
+        if changes["persistent_opt_in"] is True:
+            if stored.get("persistent_opt_in") is True:
+                return current
+            if stored.get("status") != "idle" or stored.get("enabled") is not True:
+                raise RuntimeError("worker_not_idle")
+            if not _is_supported_persistent_local_core_worker(worker):
+                raise ValueError("Always-On benötigt ein gültiges lokales Modellziel")
+            stored["persistent_opt_in"] = True
+            stored["persistent_opt_in_id"] = uuid.uuid4().hex
+            stored["persistent_opt_in_profile_version"] = _persistent_core_profile_version(worker)
+            stored.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+        else:
+            stored["persistent_opt_in"] = False
+            stored.pop("persistent_opt_in_id", None)
+            stored.pop("persistent_opt_in_profile_version", None)
+            stored.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+        save_slots_config(config, path)
+        return _worker_configuration(_always_on_execution_slot_from_config(config))
+
     workers = [w for w in config.get("dynamic_workers", []) if isinstance(w, dict) and w.get("id") == worker_id]
     if len(workers) != 1:
         raise KeyError("Workerprofil nicht eindeutig gefunden")

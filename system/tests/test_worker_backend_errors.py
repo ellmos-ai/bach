@@ -599,3 +599,300 @@ def test_bounded_reader_works_without_python311_timeout_api(monkeypatch):
             yield b'{"error":"monthly usage limit reached"}'
     result = asyncio.run(read_error_payload(Response(), timeout_seconds=1))
     assert result == {"error": "monthly usage limit reached"}
+
+@pytest.mark.parametrize(("retries", "waited", "expected"), [
+    (0, 0, 60), (1, 60, 120), (2, 180, 240), (3, 420, None), (2, 661, None),
+])
+def test_always_on_local_reserve_retry_is_consent_and_profile_bound(
+        retries, waited, expected):
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    slot = {
+        **slots.DEFAULT_CORE_SLOTS["buddha_always_on"],
+        "type": "continuous", "status": "running", "enabled": True,
+        "persistent_opt_in": True, "persistent_opt_in_id": "a" * 32,
+    }
+    slot["persistent_opt_in_profile_version"] = slots._persistent_core_profile_version(slot)
+    code = "local_reserve_reserve_wait_expired"
+    assert control._worker_backend_retry_delay(
+        slot, None, model=slot["model"], retries=retries, waited_seconds=waited,
+        reason_code=code,
+    ) == expected
+
+    stale = {**slot, "persistent_opt_in_profile_version": "b" * 64}
+    assert control._worker_backend_retry_delay(
+        stale, None, model=slot["model"], retries=0, waited_seconds=0, reason_code=code,
+    ) is None
+    changed = {**slot, "model": "qwen3.5:4b"}
+    assert control._worker_backend_retry_delay(
+        changed, None, model=slot["model"], retries=0, waited_seconds=0, reason_code=code,
+    ) is None
+    assert control._worker_backend_retry_delay(
+        slot, None, model=slot["model"], retries=0, waited_seconds=0,
+        reason_code="local_reserve_budget_exceeds_host",
+    ) is None
+
+
+def test_local_reserve_failure_reason_is_redacted_structured_and_persisted():
+    from hub._services.chat.local_resource_reserve import LocalReserveError
+
+    answer = FailedAnswer.from_exception(LocalReserveError(
+        "Lokale Ressourcenfreigabe: reserve_wait_expired SECRET_PATH"
+    ))
+    assert answer.reason_code is None
+    assert "SECRET_PATH" not in str(answer)
+    assert "SECRET_PATH" not in json.dumps(ChatRuntime._messages_for_store([
+        {"role": "assistant", "content": answer, "answer_status": "failed"},
+    ]))
+
+    answer = FailedAnswer.from_exception(LocalReserveError(
+        "Lokale Ressourcenfreigabe: reserve_wait_expired"
+    ))
+    assert answer.reason_code == "local_reserve_reserve_wait_expired"
+    stored = json.loads(json.dumps(ChatRuntime._messages_for_store([
+        {"role": "assistant", "content": answer, "answer_status": "failed"},
+    ])))
+    assert stored[0]["reason_code"] == "local_reserve_reserve_wait_expired"
+    restored = ChatRuntime._restore_message_status(stored)
+    assert restored[0]["content"].reason_code == "local_reserve_reserve_wait_expired"
+    assert "reason_code" not in ChatRuntime._messages_for_backend(restored)[0]
+    assert FailedAnswer("safe", reason_code={"unknown": True}).reason_code is None
+
+
+def test_local_core_reserve_wait_does_not_enter_configured_model_fallback(monkeypatch):
+    from hub._services.chat.local_resource_reserve import LocalReserveError
+
+    class Backend:
+        name = "ollama"
+        manages_own_tools = False
+        def get_default_model(self):
+            return "qwen3.8:27b-mlx"
+
+    runtime = ChatRuntime(Backend())
+    session = type("Session", (), {"chat_id": "buddha_always_on"})()
+    monkeypatch.setattr(runtime, "_native_model_fallback_route", lambda *a, **kw: {
+        "targets": [
+            {"backend": "ollama", "model": "qwen3.8:27b-mlx"},
+            {"backend": "ollama", "model": "qwen3.5:4b"},
+        ], "index": 0,
+    })
+    calls = []
+    async def reserve_wait(*args, **kwargs):
+        calls.append(kwargs.get("model"))
+        raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
+    monkeypatch.setattr(runtime, "_chat_with_compute_turn", reserve_wait)
+    from hub._services.chat import model_sockets
+    monkeypatch.setattr(model_sockets, "resolve_fallback_backend", lambda _target: pytest.fail(
+        "Core-Reservefehler darf keinen Fallback aufrufen"
+    ))
+    with pytest.raises(LocalReserveError):
+        asyncio.run(runtime._chat_with_configured_fallbacks(
+            session, runtime.backend, "qwen3.8:27b-mlx", [], tools=[], think=False,
+        ))
+    assert calls == ["qwen3.8:27b-mlx"]
+
+
+def test_background_process_clears_previous_resolved_model(monkeypatch):
+    class Backend:
+        name = "fixture-cloud"
+        def get_default_model(self):
+            return "fixture-cloud-model"
+
+    runtime = ChatRuntime(Backend())
+    session = runtime.get_session("buddha_always_on")
+    session.resolved_model = "stale-previous-model"
+    async def inspect_turn(*args, **kwargs):
+        assert session.resolved_model is None
+        return "ok"
+    monkeypatch.setattr(runtime, "_process_turn", inspect_turn)
+    result = asyncio.run(runtime.process(
+        "fixture", "buddha_always_on", work_priority="background",
+    ))
+    assert result == "ok"
+    assert session.resolved_model is None
+
+
+def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
+        tmp_path, monkeypatch):
+    import sqlite3
+
+    from hub._services.chat.chat_runtime import ChatSession, SuccessfulAnswer
+    from hub._services.chat.local_resource_reserve import LocalReserveError
+    from hub._services.task_lease_client import TaskLeaseClient
+
+    from system.tests.test_task_lease_client import _init_db
+
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    worker_id = "buddha_always_on"
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    slots.update_slot(worker_id, {"resolved_model": "stale-controller-model"}, path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    def projected_resolved_model():
+        agents = slots.core_system_agents_snapshot(path)["agents"]
+        return next(agent["resolved_model"] for agent in agents if agent["id"] == worker_id)
+    assert projected_resolved_model() == "stale-controller-model"
+    before = slots.worker_configuration_snapshot(worker_id, path=path)
+    slots.change_worker_configuration(
+        worker_id, before["configuration_version"], {"persistent_opt_in": True}, path=path,
+    )
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    conn.execute(
+        "INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+        "VALUES (42,'Always-On reserve fixture','pending','P1','INBOX','BACH',?)",
+        (worker_id,),
+    )
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+
+    backend = OllamaBackend(default_model="qwen3.8:27b-mlx")
+    backend_calls = []
+    async def backend_chat(*args, **kwargs):
+        backend_calls.append(kwargs)
+        raise AssertionError("synthetic recovery test must not perform inference")
+    monkeypatch.setattr(backend, "chat", backend_chat)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(control, "runtime", runtime)
+    session = ChatSession()
+    session.chat_id = worker_id
+    monkeypatch.setattr(runtime, "get_session", lambda _id: session)
+    monkeypatch.setattr(
+        control, "_snapshot_chat_backend",
+        lambda *args, **kwargs: (backend, "qwen3.8:27b-mlx"),
+    )
+    attempts, fences, waits = [], [], []
+
+    async def process(*args, **kwargs):
+        binding = session.worker_task_binding
+        assert binding.task_id == 42 and not binding.closed
+        assert projected_resolved_model() == ""
+        attempts.append(binding)
+        fences.append(binding._ack.fence)
+        if len(attempts) == 1:
+            return FailedAnswer.from_exception(LocalReserveError(
+                "Lokale Ressourcenfreigabe: reserve_wait_expired"
+            ))
+        binding.execute_task_manage({
+            "action": "submit_result", "task_id": 42, "result": "synthetic completion",
+        })
+        session.resolved_model = "qwen3.8:27b-mlx"
+        return SuccessfulAnswer("synthetic completion")
+
+    monkeypatch.setattr(runtime, "process", process)
+    monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *args, **kwargs: False)
+
+    def wait_without_lease(worker, seconds, *, expected_persistent_binding=None):
+        waits.append(seconds)
+        assert expected_persistent_binding is not None
+        assert worker.task_binding is None and worker.lease_supervisor is None
+        assert session.worker_task_binding is None
+        assert client.read(42).leased is False
+        current = slots.get_always_on_execution_slot(path)
+        assert control._persistent_local_retry_binding(current) == expected_persistent_binding
+        slots.update_slot(worker_id, {"resolved_model": "stale-between-task-generations"}, path)
+        assert projected_resolved_model() == "stale-between-task-generations"
+        return True
+
+    monkeypatch.setattr(control, "_wait_worker_backend_retry", wait_without_lease)
+    thread = None
+    try:
+        response, code = control.start_worker_execution(worker_id)
+        assert code == 200 and response["ok"] is True
+        thread = control._WORKER_EXECUTIONS[worker_id].thread
+        thread.join(8)
+        assert not thread.is_alive()
+        assert len(attempts) == 2 and len(waits) == 1
+        assert fences[0] != fences[1]
+        assert waits == [60]
+        assert backend_calls == []
+        assert client.read(42).leased is False
+        assert projected_resolved_model() == "qwen3.8:27b-mlx"
+        task = client.task_snapshot(42)
+        assert task["status"] == "review"
+        history = slots.get_activity_history(path=path)
+        assert "local_reserve_reserve_wait_expired" in json.dumps(history)
+        assert "resolved_model" not in json.dumps(history[0])
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_CONTROLS[worker_id].stop_event.set()
+            thread.join(8)
+        conn.close()
+
+
+def test_always_on_retry_wait_stops_when_bound_consent_changes(monkeypatch):
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    slot = {
+        **slots.DEFAULT_CORE_SLOTS["buddha_always_on"],
+        "type": "continuous", "status": "running", "enabled": True,
+        "persistent_opt_in": True, "persistent_opt_in_id": "c" * 32,
+    }
+    slot["persistent_opt_in_profile_version"] = slots._persistent_core_profile_version(slot)
+    expected = control._persistent_local_retry_binding(slot)
+    assert expected is not None
+    worker = control._WorkerControl("buddha_always_on", slot_policy_reader=lambda: slot)
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {worker.worker_id: worker})
+    assert control._wait_worker_backend_retry(
+        worker, 0, expected_persistent_binding=expected,
+    ) is True
+
+    slot["persistent_opt_in"] = False
+    assert control._wait_worker_backend_retry(
+        worker, 0, expected_persistent_binding=expected,
+    ) is False
+
+
+def test_worker_activity_does_not_copy_cached_resolved_model(monkeypatch):
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    worker = control._WorkerControl("activity-fixture", slot_policy_reader=lambda: {
+        "id": "activity-fixture", "model": "qwen3.8:27b-mlx",
+        "resolved_model": "stale-cache-model",
+    })
+    monkeypatch.setattr(control, "_WORKER_CONTROLS", {worker.worker_id: worker})
+    monkeypatch.setattr(control, "_worker_metadata_available", lambda _worker_id: True)
+    monkeypatch.setattr(control, "_execution_worker_slot", lambda _worker_id: {
+        "model": "qwen3.8:27b-mlx", "resolved_model": "stale-cache-model",
+    })
+    recorded = []
+    monkeypatch.setattr(control, "record_activity", lambda *args, **kwargs: recorded.append((args, kwargs)))
+    assert control._record_worker_activity(worker, "synthetic", "ok", {"reason_code": "safe_code"})
+    details = recorded[0][0][3]
+    assert details == {"reason_code": "safe_code", "model": "qwen3.8:27b-mlx"}
+    assert "resolved_model" not in details
+
+
+@pytest.mark.parametrize(("result", "expected_model"), [
+    ({"error": "synthetic failure", "model": "stale-error-model"}, None),
+    ({"content": "ok"}, None),
+    ({"content": "ok", "model": "explicit-current-model"}, "explicit-current-model"),
+])
+def test_runtime_reports_only_current_successful_response_model(
+        monkeypatch, result, expected_model):
+    class Backend:
+        name = "fixture-cloud"
+        manages_own_tools = True
+        last_resolved_model = "stale-backend-cache"
+        def get_default_model(self):
+            return "fixture-model"
+        async def chat(self, *args, **kwargs):
+            return result
+
+    backend = Backend()
+    runtime = ChatRuntime(backend)
+    monkeypatch.setattr(runtime, "_worker_backend_gate", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runtime, "_context_limit_for_backend", lambda *args, **kwargs: 4096)
+    async def dispatch(*args, **kwargs):
+        return await backend.chat(*args, **kwargs)
+    monkeypatch.setattr(runtime, "_chat_with_compute_turn", dispatch)
+    answer = asyncio.run(runtime.process(
+        "fixture", "buddha_always_on", work_priority="background",
+    ))
+    session = runtime.get_session("buddha_always_on")
+    if result.get("error"):
+        assert FailedAnswer.looks_like(answer)
+    assert session.resolved_model == expected_model

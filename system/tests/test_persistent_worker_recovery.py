@@ -792,3 +792,108 @@ def test_manual_buddha_stop_isolated_from_cloud_profiles_and_monitor(monkeypatch
             if worker_thread is not None and worker_thread.is_alive():
                 control.stop_event.set()
                 worker_thread.join(timeout=1)
+
+# The core Always-On worker uses the same explicit CAS as dynamic persistent
+# profiles, while retaining its canonical system-slot identity.
+def _always_on_core(tmp_path):
+    path = str(tmp_path / "always-on-slots.json")
+    slots.initialize_slots_config(path)
+    return path, "buddha_always_on"
+
+
+def _opt_in_core(path):
+    current = slots.worker_configuration_snapshot("buddha_always_on", path=path)
+    return slots.change_worker_configuration(
+        "buddha_always_on", current["configuration_version"],
+        {"persistent_opt_in": True}, path=path,
+    )
+
+
+def test_always_on_persistent_opt_in_is_local_and_cas_bound(tmp_path):
+    path, worker_id = _always_on_core(tmp_path)
+    before = slots.worker_configuration_snapshot(worker_id, path=path)
+    opted = _opt_in_core(path)
+    stored = slots.get_slot(worker_id, path)
+    assert opted["persistent_opt_in"] is True
+    assert stored["persistent_opt_in"] is True
+    assert len(stored["persistent_opt_in_id"]) == 32
+    assert stored["persistent_opt_in_profile_version"] == slots._persistent_core_profile_version(
+        slots.get_always_on_execution_slot(path)
+    )
+    with pytest.raises(RuntimeError, match="configuration_version_conflict"):
+        slots.change_worker_configuration(
+            worker_id, before["configuration_version"], {"persistent_opt_in": False}, path=path,
+        )
+
+
+@pytest.mark.parametrize(("backend", "model", "fallbacks"), [
+    ("ollama-cloud", "qwen3.8:27b-mlx", []),
+    ("lmstudio", "qwen3.8:27b-mlx", []),
+    ("ollama", "qwen3.8:27b-mlx:cloud", []),
+    ("ollama", "qwen3.8:27b-mlx", [{"backend": "ollama", "model": "qwen3.5:4b"}]),
+])
+def test_always_on_persistent_opt_in_rejects_unsupported_or_fallback_routes(
+        tmp_path, backend, model, fallbacks):
+    path, worker_id = _always_on_core(tmp_path)
+    slots.update_slot(worker_id, {
+        "backend": backend, "model": model, "model_fallbacks": fallbacks,
+    }, path)
+    current = slots.worker_configuration_snapshot(worker_id, path=path)
+    with pytest.raises(ValueError, match="lokales Modellziel"):
+        slots.change_worker_configuration(
+            worker_id, current["configuration_version"], {"persistent_opt_in": True}, path=path,
+        )
+    stored = slots.get_slot(worker_id, path)
+    assert stored.get("persistent_opt_in") is not True
+    assert "persistent_opt_in_id" not in stored
+
+
+def test_always_on_profile_edit_revokes_consent_and_restoring_does_not_resurrect(
+        tmp_path, monkeypatch):
+    from hub._services import skill_source_service
+
+    path, worker_id = _always_on_core(tmp_path)
+    monkeypatch.setattr(skill_source_service, "check_write_locks", lambda _path: None)
+    _opt_in_core(path)
+    original = slots.get_slot(worker_id, path)["model"]
+    intent_id = slots.get_slot(worker_id, path)["persistent_opt_in_id"]
+
+    slots.update_slot(worker_id, {"model": original + "-changed"}, path)
+    changed = slots.get_slot(worker_id, path)
+    assert changed["persistent_opt_in"] is False
+    assert "persistent_opt_in_id" not in changed
+    assert "persistent_opt_in_profile_version" not in changed
+    assert CHECKPOINT_FIELD not in changed
+
+    slots.update_slot(worker_id, {"model": original}, path)
+    restored = slots.get_slot(worker_id, path)
+    assert restored["model"] == original
+    assert restored["persistent_opt_in"] is False
+    assert "persistent_opt_in_id" not in restored
+
+    # The second Core-profile CAS writer must revoke the same consent binding.
+    _opt_in_core(path)
+    before = slots.core_system_agents_snapshot(path)
+    slots.change_core_system_agent(
+        worker_id, before["configuration_version"], {"model": original + "-cas-change"}, path=path,
+    )
+    changed_by_cas = slots.get_slot(worker_id, path)
+    assert changed_by_cas["persistent_opt_in"] is False
+    assert "persistent_opt_in_id" not in changed_by_cas
+    assert intent_id != slots.get_slot(worker_id, path).get("persistent_opt_in_id")
+
+
+def test_always_on_status_and_controller_task_changes_preserve_profile_consent(tmp_path):
+    path, worker_id = _always_on_core(tmp_path)
+    _opt_in_core(path)
+    intent_id = slots.get_slot(worker_id, path)["persistent_opt_in_id"]
+    slots.update_slot(worker_id, {
+        "status": "running", "task_id": 481, "current_activity": "Task gebunden",
+    }, path)
+    running = slots.get_slot(worker_id, path)
+    assert running["persistent_opt_in"] is True
+    assert running["persistent_opt_in_id"] == intent_id
+    slots.update_slot(worker_id, {"status": "idle", "task_id": None}, path)
+    idle = slots.get_slot(worker_id, path)
+    assert idle["persistent_opt_in"] is True
+    assert idle["persistent_opt_in_id"] == intent_id

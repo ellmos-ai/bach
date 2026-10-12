@@ -844,8 +844,6 @@ def _record_worker_activity(
         det = dict(details or {})
         try:
             slot = _execution_worker_slot(control.worker_id)
-            if slot.get("resolved_model"):
-                det.setdefault("resolved_model", slot["resolved_model"])
             if slot.get("model"):
                 det.setdefault("model", slot["model"])
         except Exception:
@@ -859,14 +857,56 @@ _WORKER_BACKEND_RETRY_BASE_SECONDS = 60
 _WORKER_BACKEND_RETRY_BUDGET_SECONDS = 900
 
 
-def _worker_backend_retry_delay(slot, detail, *, model, retries, waited_seconds):
-    """Bound recovery of an admitted Cloud worker; never infer a quota reset."""
+def _persistent_local_retry_binding(slot):
+    """Return a strict consent/profile binding for the single local core worker."""
+    if (not isinstance(slot, dict) or slot.get("id") != "buddha_always_on"
+            or slot.get("type") != "continuous" or slot.get("status") != "running"
+            or slot.get("enabled") is not True or slot.get("persistent_opt_in") is not True
+            or slot.get("backend") != "ollama"):
+        return None
+    intent_id = slot.get("persistent_opt_in_id")
+    profile_version = slot.get("persistent_opt_in_profile_version")
+    if (not isinstance(intent_id, str) or len(intent_id) != 32
+            or any(ch not in "0123456789abcdef" for ch in intent_id)
+            or not isinstance(profile_version, str) or len(profile_version) != 64
+            or any(ch not in "0123456789abcdef" for ch in profile_version)):
+        return None
+    try:
+        from hub._services.chat.slots_config import (
+            _is_supported_persistent_local_core_worker,
+            _persistent_core_profile_version,
+        )
+        current_version = _persistent_core_profile_version(slot)
+        if (not _is_supported_persistent_local_core_worker(slot)
+                or current_version != profile_version):
+            return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {"intent_id": intent_id, "profile_version": profile_version}
+
+
+def _worker_backend_retry_delay(
+    slot, detail, *, model, retries, waited_seconds, reason_code=None,
+):
+    """Bound recovery of Cloud rate limits and explicitly opted-in local reserve waits."""
+    if type(retries) is not int or retries < 0 or retries >= _WORKER_BACKEND_RETRY_LIMIT:
+        return None
+    if type(waited_seconds) not in {int, float} or waited_seconds < 0:
+        return None
+    if reason_code is not None:
+        if (reason_code != "local_reserve_reserve_wait_expired"
+                or _persistent_local_retry_binding(slot) is None
+                or model != slot.get("model")
+                or not isinstance(model, str) or model.lower().endswith(":cloud")):
+            return None
+        delay = _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries)
+        return delay if waited_seconds + delay <= _WORKER_BACKEND_RETRY_BUDGET_SECONDS else None
+
     from hub._services.llm.backend_errors import normalize_backend_error
     error = normalize_backend_error(detail)
-    if (slot.get("type") not in {"continuous", "persistent"}
+    if (not isinstance(slot, dict) or slot.get("type") not in {"continuous", "persistent"}
             or not str(model).lower().endswith(":cloud")
-            or not error or error["kind"] != "rate_limited"
-            or retries >= _WORKER_BACKEND_RETRY_LIMIT):
+            or not error or error["kind"] != "rate_limited"):
         return None
     delay = max(_WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries),
                 error.get("retry_after_seconds", 0))
@@ -875,17 +915,29 @@ def _worker_backend_retry_delay(slot, detail, *, model, retries, waited_seconds)
     return delay
 
 
-def _wait_worker_backend_retry(control: _WorkerControl, seconds: float) -> bool:
-    """Wait without a task lease, watching stop, generation, policy and TTL."""
+def _wait_worker_backend_retry(
+    control: _WorkerControl, seconds: float, *, expected_persistent_binding=None,
+) -> bool:
+    """Wait lease-free while watching stop, generation, consent binding and TTL."""
     deadline = time.monotonic() + seconds
     while not control.stop_event.is_set():
         control.last_heartbeat_at = datetime.now(timezone.utc).isoformat()
         with _WORKER_CONTROL_LOCK:
             if _WORKER_CONTROLS.get(control.worker_id) is not control:
                 return False
-        slot = control.slot_policy_reader()
+        try:
+            slot = control.slot_policy_reader()
+        except Exception:
+            # For a consent-bound local wait, unreadable authority terminates it.
+            if expected_persistent_binding is not None:
+                return False
+            raise
         if not slot or slot.get("status") in {"paused", "idle", "stopping", "expired"}:
             return False
+        if expected_persistent_binding is not None:
+            current_binding = _persistent_local_retry_binding(slot)
+            if current_binding != expected_persistent_binding:
+                return False
         if slot.get("enabled", True) is not True:
             _update_worker_slot(control, {"status": "idle", "current_activity": "Worker ist deaktiviert"})
             return False
@@ -3717,8 +3769,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
         try:
             if control.stop_event.is_set():
                 return
-            _update_worker_slot(control, {"status": "running", "auto_paused": False,
-                "current_activity": "Starte Routine...", "backend_error": None})
+            if _update_worker_slot(control, {
+                    "status": "running",
+                    "auto_paused": False,
+                    "current_activity": "Starte Routine...",
+                    "backend_error": None,
+                    "resolved_model": "",
+            }) is None:
+                return
             _record_worker_activity(control, f"Worker gestartet: {w.get('name')}", "running")
             if control.stop_event.is_set():
                 return
@@ -3828,9 +3886,16 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             break
                         continue
                     newly_acquired_binding = control.task_binding
-                    if _update_worker_slot(control, {"task_id": control.task_binding.task_id}) is None:
+                    if _update_worker_slot(control, {
+                            "task_id": control.task_binding.task_id,
+                            "resolved_model": "",
+                    }) is None:
                         break
-                    current_slot = {**current_slot, "task_id": control.task_binding.task_id}
+                    current_slot = {
+                        **current_slot,
+                        "task_id": control.task_binding.task_id,
+                        "resolved_model": "",
+                    }
                 control.task_binding.assert_active()
                 if assignment_open and str(assignment_task_id) != str(control.task_binding.task_id):
                     finish_assignment(current_assignment, status="released", result="role_authorized",
@@ -3914,11 +3979,6 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     finally:
                         loop.close()
 
-                resolved = (getattr(worker_session, "resolved_model", None)
-                            or getattr(target_backend, "last_resolved_model", None))
-                if resolved:
-                    _update_worker_slot(control, {"resolved_model": str(resolved)})
-
                 if control.stop_event.is_set():
                     break
                 if control.lease_supervisor.failure is not None:
@@ -3932,7 +3992,11 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 if FailedAnswer.looks_like(ans):
                     from hub._services.llm.backend_errors import normalize_backend_error
                     detail = normalize_backend_error(getattr(ans, "backend_error", None))
-                    error_activity = detail["message"] if detail else ans_str[:120]
+                    failure_reason = getattr(ans, "reason_code", None)
+                    if failure_reason == "local_reserve_reserve_wait_expired":
+                        error_activity = "Lokale Ressourcenreserve wurde nicht rechtzeitig frei"
+                    else:
+                        error_activity = detail["message"] if detail else ans_str[:120]
                     worker_error = RuntimeError("Backendantwort fehlgeschlagen")
                     control.start_error = "backend_error"
                     _update_worker_slot(control, {
@@ -3940,16 +4004,29 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         "current_activity": error_activity,
                         "backend_error": detail,
                     })
+                    activity_details = {"backend_error": detail} if detail else {}
+                    if failure_reason in {
+                            "local_reserve_invalid_policy", "local_reserve_unknown_model",
+                            "local_reserve_unsupported_provider", "local_reserve_missing_model_budget",
+                            "local_reserve_model_budget_conflict", "local_reserve_budget_exceeds_host",
+                            "local_reserve_resource_policy_changed", "local_reserve_reserve_wait_expired"}:
+                        activity_details["reason_code"] = failure_reason
                     _record_worker_activity(
                         control,
-                        error_activity if detail else f"Block {run_count}: {ans_str[:55]}",
+                        error_activity if detail or failure_reason else f"Block {run_count}: {ans_str[:55]}",
                         "error",
-                        {"backend_error": detail} if detail else None,
+                        activity_details or None,
                     )
                     retry_delay = _worker_backend_retry_delay(
                         current_slot, detail, model=model, retries=backend_retries,
-                        waited_seconds=backend_waited_seconds,
+                        waited_seconds=backend_waited_seconds, reason_code=failure_reason,
                     )
+                    persistent_retry_binding = (
+                        _persistent_local_retry_binding(current_slot)
+                        if failure_reason == "local_reserve_reserve_wait_expired" else None
+                    )
+                    if failure_reason == "local_reserve_reserve_wait_expired" and persistent_retry_binding is None:
+                        retry_delay = None
                     dispatches = getattr(control.task_binding, "tool_dispatch_count", None)
                     retry_before_tools = type(dispatches) is int and dispatches == 0
                     if not control.task_binding.closed and not retry_before_tools:
@@ -3991,7 +4068,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         worker_error = None
                         control.start_error = None
                         _record_worker_activity(control, waiting, "pending")
-                        if not _wait_worker_backend_retry(control, retry_delay):
+                        if persistent_retry_binding is None:
+                            retry_waited = _wait_worker_backend_retry(control, retry_delay)
+                        else:
+                            retry_waited = _wait_worker_backend_retry(
+                                control, retry_delay,
+                                expected_persistent_binding=persistent_retry_binding,
+                            )
+                        if not retry_waited:
                             return
                         # The next iteration rechecks policy, expiry, model,
                         # creator/dependency gates and acquires a fresh fence.
@@ -4001,11 +4085,16 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         _update_worker_slot(control, {"current_activity":
                             f"{error_activity} Wiederaufnahme begrenzt beendet; erneut ausdrücklich starten."})
                     return
+                resolved = getattr(worker_session, "resolved_model", None)
+                if isinstance(resolved, str) and resolved.strip():
+                    _update_worker_slot(control, {"resolved_model": resolved})
                 if backend_retries:
                     backend_retries = 0
                     backend_waited_seconds = 0
                     _update_worker_slot(control, {"backend_error": None})
-                if not _record_worker_activity(control, f"Block {run_count}: {ans_str[:55]}", "ok"):
+                success_details = {"resolved_model": resolved} if isinstance(resolved, str) and resolved.strip() else None
+                if not _record_worker_activity(
+                        control, f"Block {run_count}: {ans_str[:55]}", "ok", success_details):
                     break
 
                 # Only this run's authoritative Release/Decompose ACK
