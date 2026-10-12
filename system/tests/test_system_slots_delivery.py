@@ -4,6 +4,7 @@ import json
 import sqlite3
 import threading
 from contextlib import AsyncExitStack
+from pathlib import Path
 from unittest.mock import AsyncMock
 from types import SimpleNamespace
 
@@ -17,10 +18,28 @@ from gui.api import core_system_agents as api, worker_status_adapter as adapter
 
 @pytest.fixture
 def config_file(tmp_path, monkeypatch):
+    from hub._services import skill_source_service
+
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
+    resolved_target = Path(path).resolve()
+
+    def fixture_lock_guard(target):
+        if Path(target).resolve() != resolved_target:
+            raise PermissionError("test lock guard denies paths outside the isolated config")
+
+    # The test owns exactly this temporary config target; every other path stays denied.
+    monkeypatch.setattr(skill_source_service, "check_write_locks", fixture_lock_guard)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     return path
+
+
+def test_config_fixture_lock_guard_only_allows_exact_temporary_target(config_file, tmp_path):
+    from hub._services import skill_source_service
+
+    assert skill_source_service.check_write_locks(Path(config_file)) is None
+    with pytest.raises(PermissionError, match="outside the isolated config"):
+        skill_source_service.check_write_locks(tmp_path / "other.json")
 
 
 def test_system_defaults_include_transparent_personal_assistant(config_file):

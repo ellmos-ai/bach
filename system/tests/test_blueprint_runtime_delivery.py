@@ -1,6 +1,7 @@
 """Blueprint persistence and controller contracts; all state is isolated."""
 import json
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -14,8 +15,18 @@ from gui.api import worker_status_adapter as adapter
 
 @pytest.fixture
 def state(tmp_path, monkeypatch):
+    from hub._services import skill_source_service
+
     path = str(tmp_path / 'slots.json')
     slots.initialize_slots_config(path)
+    resolved_target = Path(path).resolve()
+
+    def fixture_lock_guard(target):
+        if Path(target).resolve() != resolved_target:
+            raise PermissionError("test lock guard denies paths outside the isolated config")
+
+    # Only the fixture's exact temporary config is treated as known-unlocked.
+    monkeypatch.setattr(skill_source_service, 'check_write_locks', fixture_lock_guard)
     monkeypatch.setattr(slots, 'DEFAULT_SLOTS_FILE', path)
     conn = sqlite3.connect(tmp_path / 'blueprints.db')
     conn.row_factory = sqlite3.Row
