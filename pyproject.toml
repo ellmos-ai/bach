@@ -25,3 +25,7 @@ py-modules = ["bach", "bach_api", "bach_report_client"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.data-files]
+"share/ellmos-bach/starters/windows" = ["start/agents/windows/*.bat"]
+"share/ellmos-bach/starters/posix" = ["start/agents/posix/*.sh"]
