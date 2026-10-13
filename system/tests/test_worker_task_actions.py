@@ -2,10 +2,121 @@
 import asyncio
 
 import pytest
-
-from system.tests.test_worker_lease_binding import binding, mem_db
 from hub._services.chat.worker_task_actions import WorkerTaskActions
 from hub._services.task_lease_client import LeaseProtocolError
+
+from system.tests.test_worker_lease_binding import (
+    binding as binding,  # noqa: PLC0414 - explicit pytest fixture export
+)
+from system.tests.test_worker_lease_binding import (
+    mem_db as mem_db,  # noqa: PLC0414 - explicit pytest fixture export
+)
+
+
+@pytest.fixture
+def runtime_binding(mem_db):
+    """Real Runtime/Trace uses the authority clock, unlike frozen lease unit tests."""
+    import threading
+
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import TaskLeaseClient
+
+    from system.tests.test_task_lease_client import _insert_task
+
+    mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.commit()
+    task_id = _insert_task(mem_db)
+    instance = WorkerLeaseBinding.acquire(
+        TaskLeaseClient(conn=mem_db), task_id,
+        worker_id="physical-worker@HOST", host="HOST",
+        generation="generation-1", is_current=lambda: True,
+        stop_event=threading.Event(),
+    )
+    yield instance
+    if instance._active:
+        instance.return_lease()
+
+
+def test_expired_authority_lease_blocks_trace_without_task_or_tool_effect(
+    runtime_binding, monkeypatch,
+):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    from hub._services import task_lease
+    from hub._services.chat.worker_tool_trace import digest_json
+
+    instance = runtime_binding
+    before = instance._client.task_snapshot(instance.task_id)
+    expiry = datetime.fromisoformat(instance._ack.expires_at.replace("Z", "+00:00"))
+    assert expiry.tzinfo is not None
+    expired_now = expiry + timedelta(seconds=1)
+    assert expired_now > datetime.now(timezone.utc)
+    # The local caller can still be live while the canonical trace authority
+    # observes expiry. Dispatch must require both proofs, never caller time alone.
+    instance.assert_active()
+    assert not instance._client.read(instance.task_id, now=expired_now).leased
+    monkeypatch.setattr(task_lease, "_utcnow", lambda: expired_now)
+    arguments = {"action": "update", "task_id": instance.task_id, "title": "Must not change"}
+    with pytest.raises(LeaseProtocolError, match="Trace-Start"):
+        instance.trace_tool_started(
+            source="normal-loop", request_id=uuid.uuid4().hex,
+            tool_name="task_manage", arguments_sha256=digest_json(arguments),
+        )
+    assert instance._client.tool_trace_events(instance.task_id)["events"] == []
+    assert instance._client.task_snapshot(instance.task_id) == before
+    assert instance.tool_dispatch_count == 0
+    assert not instance.completed_task_ids and not instance.reviewed_task_ids
+
+
+def _runtime_tool_reply(tool_calls, *, serialized):
+    """Keep Wire-format history separate from normalized Runtime dispatch data."""
+    import json
+
+    raw_calls = [
+        {"function": {
+            **call["function"],
+            "arguments": json.dumps(call["function"]["arguments"])
+            if serialized else call["function"]["arguments"],
+        }}
+        for call in tool_calls
+    ]
+    return {
+        "content": "", "tool_calls": tool_calls,
+        "raw_message": {"role": "assistant", "content": "", "tool_calls": raw_calls},
+    }
+
+
+def test_openai_adapter_normalizes_wire_arguments_before_runtime(monkeypatch):
+    import json
+    from unittest.mock import AsyncMock, MagicMock
+
+    import httpx
+    from hub._services.llm.model_backend import OpenAIBackend
+
+    arguments = {"action": "decompose", "task_id": 1, "subtasks": [{"title": "Teilauftrag"}]}
+    wire_call = {
+        "id": "fixture-call", "type": "function",
+        "function": {"name": "task_manage", "arguments": json.dumps(arguments)},
+    }
+    message = {"role": "assistant", "content": "", "tool_calls": [wire_call]}
+    response = MagicMock()
+    response.json.return_value = {"choices": [{"message": message}], "model": "isolated-model"}
+    client = MagicMock()
+    client.post = AsyncMock(return_value=response)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda: client)
+
+    result = asyncio.run(OpenAIBackend(
+        base_url="http://fixture.invalid/api", api_key="test-fixture",
+        default_model="isolated-model",
+    ).chat([{"role": "user", "content": "Auftrag"}]))
+    assert result["tool_calls"][0]["function"]["arguments"] == arguments
+    assert isinstance(result["tool_calls"][0]["function"]["arguments"], dict)
+    assert result["raw_message"]["tool_calls"][0]["function"]["arguments"] == json.dumps(arguments)
+    client.post.assert_awaited_once()
+
 
 
 def requested(binding):
@@ -116,6 +227,7 @@ def test_committed_decomposition_with_lost_ack_never_confirms(binding, monkeypat
 @pytest.mark.parametrize("already_running", [False, True])
 def test_requested_action_without_tools_refuses_inference(binding, already_running):
     from unittest.mock import AsyncMock
+
     from hub._services.chat.chat_runtime import ChatRuntime, FailedAnswer
     backend = type("Backend", (), {"get_default_model": lambda self: "isolated-model",
                                    "chat": AsyncMock(return_value={"content": "FERTIG"})})()
@@ -137,8 +249,8 @@ def test_requested_action_without_tools_refuses_inference(binding, already_runni
 @pytest.mark.parametrize("tool_action", ["decompose", "done", "text", "update-then-decompose"])
 @pytest.mark.parametrize("serialized", [False, True])
 @pytest.mark.parametrize("handoff", [False, True])
-def test_real_runtime_boundary_and_tool_ack(binding, monkeypatch, tool_action, serialized, handoff):
-    import json
+def test_real_runtime_boundary_and_tool_ack(runtime_binding, monkeypatch, tool_action, serialized, handoff):
+    binding = runtime_binding
     from hub._services.chat import bach_tools
     from hub._services.chat.chat_runtime import ChatRuntime
     calls = []
@@ -154,22 +266,20 @@ def test_real_runtime_boundary_and_tool_ack(binding, monkeypatch, tool_action, s
             if tool_action == "decompose" and len(calls) == 2:
                 args = {"action": "submit_result", "task_id": binding.task_id,
                         "result": f"Zerlegungsplan: Teilaufgaben {binding.decomposition_receipt['created_ids']} zur Ausführung angelegt; Umsetzung und Abnahme sind offen."}
-                tools = [{"function": {"name": "task_manage", "arguments": json.dumps(args) if serialized else args}}]
-                return {"content": "", "tool_calls": tools,
-                        "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}
+                tools = [{"function": {"name": "task_manage", "arguments": args}}]
+                return _runtime_tool_reply(tools, serialized=serialized)
             args = {"action": "decompose" if tool_action == "update-then-decompose" else tool_action,
                     "task_id": binding.task_id}
             if tool_action == "done":
                 args["result"] = "Konkretes Ergebnis statt angeforderter Zerlegung"
             if tool_action in {"decompose", "update-then-decompose"}:
                 args["subtasks"] = [{"title": "Teilauftrag"}]
-            tools = [{"function": {"name": "task_manage", "arguments": json.dumps(args) if serialized else args}}]
+            tools = [{"function": {"name": "task_manage", "arguments": args}}]
             if tool_action == "update-then-decompose":
                 update = {"action": "update", "task_id": binding.task_id, "title": "Inhalt geändert"}
                 tools.insert(0, {"function": {"name": "task_manage",
-                                             "arguments": json.dumps(update) if serialized else update}})
-            return {"content": "", "tool_calls": tools,
-                    "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}
+                                             "arguments": update}})
+            return _runtime_tool_reply(tools, serialized=serialized)
         def tool_response_message(self, content, tool_call_id=""):
             return {"role": "tool", "content": content}
     runtime = ChatRuntime(Backend())
@@ -182,6 +292,7 @@ def test_real_runtime_boundary_and_tool_ack(binding, monkeypatch, tool_action, s
     session.worker_task_actions = actions
     if handoff:
         from unittest.mock import AsyncMock
+
         from hub._services.chat.worker_handoff import WorkerHandoff
         session.worker_handoff = WorkerHandoff("worker-bound", "generation-1")
         session.worker_handoff.request("generation-1")
