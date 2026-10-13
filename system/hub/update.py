@@ -51,6 +51,34 @@ from hub.lang import t
 VERSION_FILE = "version.json"
 
 
+
+def _parse_migration_run_args(args) -> tuple[list[str] | None, bool]:
+    """Parses only the exact-filename selector; generic CLI/API args stay unchanged."""
+    args = list(args or [])
+    selected = []
+    dry_run = False
+    index = 0
+    while index < len(args):
+        value = args[index]
+        if value in ("--dry-run", "-n"):
+            dry_run = True
+            index += 1
+            continue
+        if value == "--only":
+            index += 1
+            if index >= len(args) or not isinstance(args[index], str) or args[index].startswith("--"):
+                raise ValueError("--only benötigt einen exakten Migrationsdateinamen")
+            selected.append(args[index])
+            index += 1
+            continue
+        if isinstance(value, str) and value.startswith("--only="):
+            selected.append(value[len("--only="):])
+            index += 1
+            continue
+        raise ValueError(f"Unerwartetes Argument für migrations run: {value}")
+    return selected or None, dry_run
+
+
 class UpdateHandler(BaseHandler):
     """Handler fuer bach update Operationen."""
 
@@ -99,7 +127,11 @@ class UpdateHandler(BaseHandler):
         elif operation == "migrations":
             sub = args[0] if args else "list"
             if sub == "run":
-                return self._run_migrations(dry_run)
+                try:
+                    only, requested_dry_run = _parse_migration_run_args(args[1:])
+                except ValueError as exc:
+                    return False, str(exc)
+                return self._run_migrations(dry_run or requested_dry_run, only=only)
             if sub == "baseline":
                 return self._baseline_migrations(args[1:], dry_run)
             return self._list_migrations()
@@ -185,7 +217,7 @@ class UpdateHandler(BaseHandler):
         lines = ["=== UPDATE APPLY ===", ""]
         if dry_run:
             lines.extend([
-                "[DRY-RUN] Wuerde folgende Schritte ausfuehren:",
+                "[DRY-RUN] Würde folgende Schritte ausfuehren:",
                 "  1. Backup erstellen", "  2. Git pull",
                 "  3. Migrationen ausfuehren", "  4. System verifizieren",
                 "  5. version.json aktualisieren",
@@ -248,7 +280,7 @@ class UpdateHandler(BaseHandler):
             f"  Datum: {datetime.fromtimestamp(target.stat().st_mtime)}",
         ]
         if dry_run:
-            lines.append("\n  [DRY-RUN] Wuerde bach.db aus Backup wiederherstellen.")
+            lines.append("\n  [DRY-RUN] Würde bach.db aus Backup wiederherstellen.")
             return True, "\n".join(lines)
         import zipfile
         try:
@@ -483,49 +515,101 @@ class UpdateHandler(BaseHandler):
             lines.append("\n  Naechster Schritt: bach update migrations run")
         return True, "\n".join(lines)
 
-    def _run_migrations(self, dry_run: bool = False) -> tuple:
-        """Fuehrt ausstehende Migrationen aus (Tracking: _migrations-Tabelle)."""
-        applied = self._applied_migrations()
+    def _run_migrations(self, dry_run: bool = False, only=None) -> tuple:
+        """Runs all pending migrations by default or an exact selected subset."""
+        import sqlite3
+
+        from core.db import (
+            MigrationSelectionError,
+            read_applied_migration_filenames,
+            select_pending_migration_names,
+            snapshot_migration_sources,
+            validate_migration_request,
+            verify_migration_source_snapshot,
+        )
         available = self._get_available_migrations()
-        pending = [m for m in available if m not in applied]
+        try:
+            # Syntax, exact names and selected file type are checked before any
+            # DB access. Applied-state is then read through a read-only SQLite URI.
+            validate_migration_request(self.migrations_dir, available, only)
+            applied = read_applied_migration_filenames(self.db_path)
+            pending, selected, untouched = select_pending_migration_names(available, applied, only)
+            snapshots = snapshot_migration_sources(self.migrations_dir, selected)
+            for source in snapshots.values():
+                verify_migration_source_snapshot(source)
+        except Exception as exc:  # noqa: BLE001 - all invalid preflight paths fail closed
+            return False, f"Migrationsauswahl vor Änderungen abgewiesen ({type(exc).__name__}): {exc}"
         if not pending:
+            if not dry_run and self.db_path.exists():
+                try:
+                    self._mark_applied([])
+                except sqlite3.Error as exc:
+                    return False, f"Migrationstracking konnte nicht vorbereitet werden ({type(exc).__name__})."
             return True, "Keine ausstehenden Migrationen."
+        if only is not None and not selected:
+            return True, "Keine ausstehenden ausgewählten Migrationen."
+
         lines = [f"{len(pending)} ausstehende Migration(en):"]
-        if not dry_run and self.db_path.exists() and self.db_path.stat().st_size > 0:
+        if only is not None:
+            lines.append(f"  Ausgewählt: {len(selected)} | Unberührt: {len(untouched)}")
+        for name in selected:
+            lines.append(f"  [AUSGEWÄHLT] {name}")
+        for name in untouched:
+            lines.append(f"  [UNBERÜHRT] {name}")
+        if dry_run:
+            lines.extend(f"  [DRY-RUN] Würde ausführen: {name}" for name in selected)
+            if not selected:
+                lines.append("  Keine Migration ausgewählt.")
+            return True, "\n".join(lines)
+
+        # Preserve the previous runner order for an existing database: its tracking
+        # table was created before the backup. Selection and source validation have
+        # already completed, so invalid requests remain write-free.
+        if self.db_path.exists():
+            try:
+                self._mark_applied([])
+            except Exception as exc:
+                lines.append(f"  [!!] Migrationstracking konnte nicht vorbereitet werden ({type(exc).__name__}).")
+                return False, "\n".join(lines)
+
+        if self.db_path.exists() and self.db_path.stat().st_size > 0:
             from core.db import backup_before_migration
             try:
-                backup = backup_before_migration(self.db_path, pending)
-            except Exception as e:
-                lines.append(f"  [!!] Sicherung fehlgeschlagen ({type(e).__name__}: {e}) "
-                             "-- keine Migration ausgefuehrt.")
+                for source in snapshots.values():
+                    verify_migration_source_snapshot(source)
+                backup = backup_before_migration(self.db_path, selected)
+            except Exception as exc:  # noqa: BLE001 - any backup failure must stop migrations
+                lines.append(f"  [!!] Sicherung/Vorprüfung fehlgeschlagen ({type(exc).__name__}: {exc}) "
+                             "-- keine Migration ausgeführt.")
                 return False, "\n".join(lines)
             lines.append(f"  Sicherung: {backup}")
-        for mig_name in pending:
+        try:
+            for source in snapshots.values():
+                verify_migration_source_snapshot(source)
+        except MigrationSelectionError as exc:
+            lines.append(f"  [!!] Migrationsquelle vor Ausführung geändert ({type(exc).__name__}: {exc})")
+            return False, "\n".join(lines)
+        for mig_name in selected:
             mig_file = self.migrations_dir / mig_name
-            if not mig_file.exists():
-                lines.append(f"  [!!] {mig_name}: Datei nicht gefunden")
-                continue
-            if dry_run:
-                lines.append(f"  [DRY-RUN] Wuerde ausfuehren: {mig_name}")
-                continue
             try:
+                source = snapshots[mig_name]
                 if mig_file.suffix == ".sql":
-                    self._run_sql_migration(mig_file)
+                    self._run_sql_migration(mig_file, source.content.decode("utf-8"))
                 elif mig_file.suffix == ".py":
-                    self._run_py_migration(mig_file)
+                    self._run_py_migration(mig_file, source_snapshot=source)
                 self._mark_applied([mig_name])
                 lines.append(f"  [OK] {mig_name}")
-            except Exception as e:
-                lines.append(f"  [!!] {mig_name}: {e}")
+            except Exception as exc:
+                lines.append(f"  [!!] {mig_name}: {exc}")
                 lines.append("  Migration abgebrochen (Reihenfolge!). Bestands-DB? "
-                             "'bach update migrations baseline --through NNN' pruefen.")
+                             "'bach update migrations baseline --through NNN' prüfen.")
                 return False, "\n".join(lines)
         return True, "\n".join(lines)
 
-    def _run_sql_migration(self, sql_file: Path):
+    def _run_sql_migration(self, sql_file: Path, sql_text: str | None = None):
         """Fuehrt eine SQL-Migration aus."""
         import sqlite3
-        sql = sql_file.read_text(encoding="utf-8")
+        sql = sql_file.read_text(encoding="utf-8") if sql_text is None else sql_text
         conn = sqlite3.connect(str(self.db_path))
         try:
             conn.executescript(sql)
@@ -533,20 +617,26 @@ class UpdateHandler(BaseHandler):
         finally:
             conn.close()
 
-    def _run_py_migration(self, py_file: Path):
-        """Fuehrt eine Python-Migration aus."""
+    def _run_py_migration(self, py_file: Path, source_snapshot=None):
+        """Fuehrt eine Python-Migration aus; optional aus geprüften Snapshot-Bytes."""
         spec = importlib.util.spec_from_file_location(
             f"migration_{py_file.stem}", py_file
         )
         if not spec or not spec.loader:
             raise RuntimeError(f"Kann {py_file.name} nicht laden")
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        if source_snapshot is None:
+            spec.loader.exec_module(module)
+        else:
+            from core.db import verify_migration_source_snapshot
+            verify_migration_source_snapshot(source_snapshot)
+            exec(source_snapshot.compiled, module.__dict__)  # noqa: S102 - executes hash-pinned migration bytes
         # Gemeinsame Entry-Point-Konvention mit core/db.py (PR-#10-Review
         # Befund 2): run_migration(conn)/run(conn)/migrate(db_path)/
         # upgrade(db_path)/main(). Vorher rief dieser Pfad run_migration()
         # OHNE conn auf und kannte migrate/upgrade gar nicht.
         import sqlite3
+
         from core.db import dispatch_py_migration
         conn = sqlite3.connect(str(self.db_path))
         try:
