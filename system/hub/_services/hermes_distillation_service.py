@@ -24,8 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from .learning_review_service import (
-    ensure_review_schema, project_candidate, proposal_binding,
-    prohibit_legacy_promotion, record_review,
+    confidence_projection, ensure_review_schema, project_candidate,
+    proposal_binding, prohibit_legacy_promotion, record_review,
 )
 
 # ═══════════════════════════════════════════════════════════════
@@ -49,7 +49,8 @@ class DistilledLesson:
     title: str
     solution: str
     is_active: int = 0
-    confidence: float = 0.9
+    confidence: float | None = None
+    confidence_status: str = "not_measured"
 
 
 @dataclass
@@ -63,7 +64,8 @@ class SkillCandidate:
     trigger_phrases: list[str] = field(default_factory=list)
     frontmatter: dict[str, Any] = field(default_factory=dict)
     content: str = ""
-    confidence: float = 0.85
+    confidence: float | None = None
+    confidence_status: str = "not_measured"
     source_session: str | None = None
     noise_reduction_ratio: float = 0.0
     status: str = "pending"  # pending, approved, rejected
@@ -173,7 +175,7 @@ class HermesDistillationService:
                 trigger_phrases TEXT,
                 frontmatter TEXT,
                 content TEXT NOT NULL,
-                confidence REAL DEFAULT 0.85,
+                confidence REAL,
                 source_session TEXT,
                 noise_reduction_ratio REAL DEFAULT 0.0,
                 status TEXT DEFAULT 'pending',
@@ -518,7 +520,8 @@ class HermesDistillationService:
                 "distilled_by": "hermes",
                 "source_session": session_id or "adhoc_transcript",
                 "distilled_at": now_iso,
-                "confidence": 0.88,
+                "confidence": None,
+                "confidence_status": "not_measured",
                 "noise_reduction_percent": cleaned.noise_reduction_percent
             }
         }
@@ -536,7 +539,8 @@ provenance:
   distilled_by: hermes
   source_session: {session_id or 'adhoc_transcript'}
   distilled_at: "{now_iso}"
-  confidence: 0.88
+  confidence: null
+  confidence_status: not_measured
   noise_reduction_percent: {cleaned.noise_reduction_percent}
 ---
 
@@ -577,7 +581,8 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
             trigger_phrases=triggers,
             frontmatter=frontmatter_dict,
             content=markdown_body,
-            confidence=0.88,
+            confidence=None,
+            confidence_status="not_measured",
             source_session=session_id,
             noise_reduction_ratio=round(cleaned.noise_reduction_percent / 100.0, 3),
             status="pending",
@@ -702,6 +707,24 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
     # E. KANDIDATEN-VERWALTUNG & HUMAN-IN-THE-LOOP APPROVAL
     # ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _project_lesson_drafts(drafts):
+        if not isinstance(drafts, list):
+            return drafts
+        projected = []
+        for draft in drafts:
+            if not isinstance(draft, dict):
+                projected.append(draft)
+                continue
+            item = dict(draft)
+            item["confidence_status"] = confidence_projection(
+                item.get("confidence"), present="confidence" in item
+            )
+            if item["confidence_status"] == "unavailable":
+                item["confidence"] = None
+            projected.append(item)
+        return projected
+
     def list_candidates(self, status: str = "pending", limit: int = 50) -> list[dict[str, Any]]:
         """Liefert Skill-Kandidaten aus der DB."""
         self.ensure_schema()
@@ -728,7 +751,9 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
                     item["frontmatter"] = json.loads(item.get("frontmatter") or "{}")
                 except (json.JSONDecodeError, TypeError):
                     item["frontmatter"] = {}
-                item["lessons_draft"] = json.loads(item["lessons_draft_json"])
+                item["lessons_draft"] = self._project_lesson_drafts(
+                    json.loads(item["lessons_draft_json"])
+                )
                 candidates.append(item)
             return candidates
         finally:
@@ -755,7 +780,9 @@ Aktiviere diesen Skill bei folgenden Anfragen oder Stichworten:
                 item["frontmatter"] = json.loads(item.get("frontmatter") or "{}")
             except (json.JSONDecodeError, TypeError):
                 item["frontmatter"] = {}
-            item["lessons_draft"] = json.loads(item["lessons_draft_json"])
+            item["lessons_draft"] = self._project_lesson_drafts(
+                json.loads(item["lessons_draft_json"])
+            )
             return item
         finally:
             conn.close()

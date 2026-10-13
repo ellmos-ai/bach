@@ -651,7 +651,9 @@ class LearningPromotionService:
             raise LearningPromotionUnavailable("Hermes-Lessonentwürfe sind ungültig oder zu umfangreich.")
         clean, seen = [], set()
         for draft in drafts:
-            if not isinstance(draft, dict) or set(draft) - {"category","title","solution","is_active","confidence"}:
+            if not isinstance(draft, dict) or set(draft) - {
+                    "category", "title", "solution", "is_active", "confidence",
+                    "confidence_status"}:
                 raise LearningPromotionUnavailable("Lesson-Entwurf enthält unbekannte Felder.")
             category, title, solution = draft.get("category"), draft.get("title"), draft.get("solution")
             if (not isinstance(category,str) or not _CATEGORY.fullmatch(category)
@@ -663,9 +665,18 @@ class LearningPromotionService:
             if key in seen:
                 raise LearningPromotionConflict("Der Kandidat enthält doppelte Lesson-Titel.")
             seen.add(key)
-            confidence = draft.get("confidence", 0.0)
-            if type(confidence) not in (int,float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            confidence = draft.get("confidence")
+            confidence_status = draft.get("confidence_status")
+            if confidence is not None and (
+                    type(confidence) not in (int, float) or not math.isfinite(confidence)
+                    or not 0 <= confidence <= 1):
                 raise LearningPromotionUnavailable("Lesson-Konfidenz ist ungültig.")
+            if confidence_status not in (None, "not_measured", "legacy_heuristic_unvalidated"):
+                raise LearningPromotionUnavailable("Lesson-Konfidenzstatus ist ungültig.")
+            if confidence_status == "not_measured" and confidence is not None:
+                raise LearningPromotionUnavailable("Nicht erhobene Lesson-Konfidenz darf keinen Zahlenwert tragen.")
+            if confidence_status == "legacy_heuristic_unvalidated" and confidence is None:
+                raise LearningPromotionUnavailable("Historischer Heuristikwert fehlt.")
             clean.append({"category":category,"title":title.strip(),"solution":solution.strip()})
         if not clean:
             raise LearningPromotionUnavailable("Diese Hermes-Revision enthält keine freizugebenden Lessons.")
@@ -673,8 +684,20 @@ class LearningPromotionService:
 
     @staticmethod
     def _lesson_snapshot(row):
-        return {"id":row["id"],"category":row["category"],"title":row["title"],
-                "solution":row["solution"],"is_active":row["is_active"]}
+        snapshot = {"id": row["id"], "category": row["category"], "title": row["title"],
+                    "solution": row["solution"], "is_active": row["is_active"]}
+        if "confidence" in row.keys():
+            snapshot["confidence"] = row["confidence"]
+        return snapshot
+
+    @staticmethod
+    def _lesson_target_digest(snapshot, *, include_confidence=None):
+        fields = ("category", "title", "solution")
+        if include_confidence is None:
+            include_confidence = "confidence" in snapshot
+        if include_confidence:
+            fields += ("confidence",)
+        return _digest_json({key: snapshot[key] for key in fields})
 
     def _promote_lessons(self, candidate_id, revision, digest, request_id, expected_version, actor):
         if expected_version != "absent":
@@ -715,6 +738,7 @@ class LearningPromotionService:
                     stamp=_stamp()
                     values={"category":draft["category"],"title":draft["title"],
                             "solution":draft["solution"],"is_active":1}
+                    if "confidence" in columns: values["confidence"] = None
                     if "created_at" in columns: values["created_at"]=stamp
                     if "updated_at" in columns: values["updated_at"]=stamp
                     names=list(values)
@@ -723,7 +747,7 @@ class LearningPromotionService:
                         [values[name] for name in names])
                     row=conn.execute("SELECT * FROM memory_lessons WHERE id=?",(cur.lastrowid,)).fetchone()
                     snap=self._lesson_snapshot(row)
-                    target_digest=_digest_json({k:snap[k] for k in ("category","title","solution")})
+                    target_digest = self._lesson_target_digest(snap)
                     conn.execute("""INSERT INTO learning_promotion_items
                         (provider,promotion_request_id,target_kind,ordinal,target_key,target_digest,target_snapshot_json)
                         VALUES ('hermes',?,'lessons',?,?,?,?)""",
@@ -1047,18 +1071,39 @@ class LearningPromotionService:
                 row=conn.execute("SELECT * FROM memory_lessons WHERE id=?",(int(item["target_key"]),)).fetchone()
                 if row is None:
                     raise LearningPromotionConflict("Promovierte Lesson fehlt; Rücknahme bleibt gesperrt.")
-                snap=self._lesson_snapshot(row)
-                target_digest=_digest_json({k:snap[k] for k in ("category","title","solution")})
-                if target_digest != item["target_digest"]:
+                snap = self._lesson_snapshot(row)
+                try:
+                    expected_snapshot = json.loads(item["target_snapshot_json"])
+                    if not isinstance(expected_snapshot, dict):
+                        raise TypeError("invalid snapshot")
+                    if expected_snapshot.get("id") != int(item["target_key"]):
+                        raise ValueError("snapshot target mismatch")
+                    include_confidence = "confidence" in expected_snapshot
+                    expected_digest = self._lesson_target_digest(
+                        expected_snapshot, include_confidence=include_confidence
+                    )
+                    target_digest = self._lesson_target_digest(
+                        snap, include_confidence=include_confidence
+                    )
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    raise LearningPromotionConflict(
+                        "Lesson-Promotionreceipt ist ungültig; Rücknahme bleibt gesperrt."
+                    ) from None
+                if (expected_digest != item["target_digest"]
+                        or target_digest != item["target_digest"]):
                     raise LearningPromotionConflict("Lesson-Inhalt wurde seit der Promotion verändert.")
                 if snap["is_active"] == 1:
                     updates=["is_active=0"]; params=[]
                     if "updated_at" in columns:
                         updates.append("updated_at=?"); params.append(_stamp())
-                    params.extend([row["id"],row["category"],row["title"],row["solution"]])
-                    cur=conn.execute(
-                        f"UPDATE memory_lessons SET {','.join(updates)} WHERE id=? AND category IS ? AND title=? AND solution=? AND is_active=1",
-                        params)
+                    where = "id=? AND category IS ? AND title=? AND solution=? AND is_active=1"
+                    params.extend([row["id"], row["category"], row["title"], row["solution"]])
+                    if include_confidence:
+                        where += " AND confidence IS ?"
+                        params.append(expected_snapshot["confidence"])
+                    cur = conn.execute(
+                        f"UPDATE memory_lessons SET {','.join(updates)} WHERE {where}", params
+                    )
                     if cur.rowcount!=1:
                         raise LearningPromotionConflict("Lesson-Aktivstatus änderte sich; Rücknahme-CAS abgelehnt.")
                     disabled+=1
