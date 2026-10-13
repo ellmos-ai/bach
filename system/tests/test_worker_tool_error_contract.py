@@ -3,6 +3,7 @@ import asyncio
 import json
 import sqlite3
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -24,6 +25,9 @@ GENERATION = "a" * 32
 TOOL = {"type": "function", "function": {
     "name": "synthetic_tool", "description": "synthetic", "parameters": {"type": "object", "properties": {}}
 }}
+TASK_MANAGE_TOOL = {"type": "function", "function": {
+    "name": "task_manage", "description": "bound task action", "parameters": {"type": "object", "properties": {}}
+}}
 
 
 class _Binding:
@@ -35,6 +39,8 @@ class _Binding:
         self.fail_start = fail_start
         self.fail_phase = fail_phase
         self.events = []
+        self.quarantine_events = []
+        self.task_manage_calls = 0
 
     def assert_active(self):
         if not self.active:
@@ -51,7 +57,16 @@ class _Binding:
         if phase == self.fail_phase:
             raise RuntimeError("private trace detail")
 
+    def execute_task_manage(self, *_args, **_kwargs):
+        self.task_manage_calls += 1
+        return "unexpected task dispatch"
+
+    def quarantine_lease(self):
+        self.quarantine_events.append("canonical_quarantine")
+        return True
+
     def invalidate(self):
+        self.quarantine_events.append("local_invalidate")
         self.active = False
 
 
@@ -59,6 +74,16 @@ def _relay(monkeypatch, binding, execute):
     relay = WorkerToolBridge(binding, mode="safe")
     monkeypatch.setattr(relay._provider, "get_tools", lambda _mode: [TOOL])
     monkeypatch.setattr(relay._provider, "execute", execute)
+    return relay
+
+
+def _task_manage_relay(monkeypatch, binding):
+    relay = WorkerToolBridge(binding, mode="safe")
+    monkeypatch.setattr(relay._provider, "get_tools", lambda _mode: [TASK_MANAGE_TOOL])
+    monkeypatch.setattr(
+        relay._provider, "execute",
+        lambda name, args, mode: exec_tool(name, args, mode, worker_task_binding=binding),
+    )
     return relay
 
 
@@ -72,6 +97,32 @@ def _observe(client):
 
     client._http = observed
     return calls
+
+
+@pytest.fixture
+def isolated_worker_binding(tmp_path, monkeypatch):
+    from hub._services import task_lease_client
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import TaskLeaseClient
+
+    from system.tests.test_task_lease_service import _connect, _create_db, _insert
+
+    database = tmp_path / "canonical-worker-task.db"
+    _create_db(database)
+    conn = _connect(database)
+    task_id = _insert(conn, title="Synthetic relay quarantine task", assigned_to="BACH")
+    conn.close()
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
+    client = TaskLeaseClient(db_path=database)
+    binding = WorkerLeaseBinding.acquire(
+        client, task_id, worker_id="tool-error-worker@HOST", host="HOST",
+        generation="b" * 32, is_current=lambda: True,
+        stop_event=threading.Event(),
+    )
+    yield binding
+    if binding._active:
+        binding.return_lease()
 
 
 def test_tool_error_text_is_a_legacy_string_with_finite_trusted_metadata():
@@ -139,6 +190,7 @@ def test_trace_start_failure_is_not_started_quarantined_without_receipt(monkeypa
     assert outcome.error["effect_state"] == "not_started"
     assert outcome.error["correlation"]["receipt_id"] is None
     assert binding.active is False
+    assert binding.quarantine_events == ["local_invalidate"]
 
 
 def test_provider_exception_is_unknown_quarantined_and_redacted(monkeypatch):
@@ -161,6 +213,7 @@ def test_provider_exception_is_unknown_quarantined_and_redacted(monkeypatch):
     assert secret not in outcome.result and secret not in json.dumps(outcome.error)
     assert [event[0] for event in binding.events] == ["started", "failed"]
     assert binding.active is False
+    assert binding.quarantine_events == ["canonical_quarantine", "local_invalidate"]
 
 
 def test_explicit_unknown_producer_error_is_preserved_but_not_receipted(monkeypatch):
@@ -328,6 +381,106 @@ def test_read_file_content_with_denial_prefix_is_an_ordinary_success(tmp_path, m
     assert result == "BLOCKIERT: das ist Dateiinhalt\n"
     assert envelope_for(result, {"request_id": uuid.uuid4().hex, "generation": GENERATION,
                                  "task_id": TASK_ID, "receipt_id": None}) is None
+
+
+@pytest.mark.parametrize(("action", "expected_code", "expected_reason"), [
+    ("unsupported-operation", "tool_policy_denied", "unsupported_action"),
+    ([], "invalid_task_arguments", "invalid_arguments"),
+    ({"nested": True}, "invalid_task_arguments", "invalid_arguments"),
+    (True, "invalid_task_arguments", "invalid_arguments"),
+    (None, "invalid_task_arguments", "invalid_arguments"),
+])
+def test_bound_task_manage_rejects_bad_action_before_dispatch_and_acknowledges(
+    monkeypatch, action, expected_code, expected_reason
+):
+    binding = _Binding()
+    with _task_manage_relay(monkeypatch, binding) as relay:
+        client = WorkerToolClient.from_environment(relay.private_environment())
+        calls = _observe(client)
+        outcome = client.call_detailed("task_manage", {"action": action})
+    assert calls == ["/call", "/ack"]
+    assert outcome.is_error is True and outcome.quarantined is False
+    assert outcome.error["code"] == expected_code
+    assert outcome.error["reason"] == expected_reason
+    assert outcome.error["effect_state"] == "not_applied"
+    assert outcome.error["correlation"]["receipt_id"]
+    assert binding.task_manage_calls == 0
+    assert binding.active is True
+    assert binding.quarantine_events == []
+    assert [event[0] for event in binding.events] == ["started", "returned", "acknowledged"]
+    assert "unsupported-operation" not in outcome.result
+
+
+def test_unknown_bridge_effect_receives_canonical_blocked_ack_and_failed_trace(
+    isolated_worker_binding, monkeypatch
+):
+    binding = isolated_worker_binding
+    secret = "RAW_VENDOR_EXCEPTION_SECRET"
+
+    def fail(*_args):
+        raise RuntimeError(secret)
+
+    with _relay(monkeypatch, binding, fail) as relay:
+        outcome = WorkerToolClient.from_environment(relay.private_environment()).call_detailed(
+            "synthetic_tool", {})
+    snapshot = binding._client.task_snapshot(binding.task_id)
+    lease = binding._client.read(binding.task_id)
+    trace = binding._client.tool_trace_events(binding.task_id)["events"]
+    assert snapshot["status"] == "blocked" and lease.leased is False
+    assert [event["phase"] for event in trace] == ["started", "failed"]
+    assert outcome.quarantined is True
+    assert outcome.error["code"] == "tool_execution_unconfirmed"
+    assert outcome.error["effect_state"] == "unknown"
+    assert outcome.error["correlation"]["receipt_id"] is None
+    assert "blocked" not in json.dumps(outcome.error).casefold()
+    assert secret not in outcome.result and secret not in json.dumps(outcome.error)
+    assert binding._active is False
+
+
+@pytest.mark.parametrize(("fault", "expected_status", "expected_leased"), [
+    ("before_commit", "in_progress", True),
+    ("after_commit", "blocked", False),
+])
+def test_unknown_bridge_release_ack_loss_never_claims_pending_or_retry(
+    isolated_worker_binding, monkeypatch, fault, expected_status, expected_leased
+):
+    from hub._services.task_lease_client import LeaseConnectionError
+
+    binding = isolated_worker_binding
+    secret = "RAW_RELEASE_ACK_EXCEPTION_SECRET"
+    native_release = binding._client.release
+
+    def lose_ack(*args, **kwargs):
+        assert kwargs.get("outcome") == "blocked"
+        if fault == "before_commit":
+            raise LeaseConnectionError(secret)
+        native_release(*args, **kwargs)
+        raise LeaseConnectionError(secret)
+
+    monkeypatch.setattr(binding._client, "release", lose_ack)
+    executions = []
+
+    def fail(*_args):
+        executions.append("once")
+        raise RuntimeError("RAW_TOOL_EXCEPTION_SECRET")
+
+    with _relay(monkeypatch, binding, fail) as relay:
+        client = WorkerToolClient.from_environment(relay.private_environment())
+        first = client.call_detailed("synthetic_tool", {})
+        second = client.call_detailed("synthetic_tool", {})
+    snapshot = binding._client.task_snapshot(binding.task_id)
+    lease = binding._client.read(binding.task_id)
+    trace = binding._client.tool_trace_events(binding.task_id)["events"]
+    assert executions == ["once"]
+    assert snapshot["status"] == expected_status and snapshot["status"] != "pending"
+    assert lease.leased is expected_leased
+    assert [event["phase"] for event in trace] == ["started", "failed"]
+    assert binding._active is False
+    for outcome in (first, second):
+        assert outcome.quarantined is True
+        assert outcome.error["effect_state"] == "unknown"
+        assert "blocked" not in json.dumps(outcome.error).casefold()
+        assert secret not in outcome.result and secret not in json.dumps(outcome.error)
 
 
 def test_partial_edit_write_is_unknown_and_redacted(tmp_path, monkeypatch):

@@ -137,6 +137,14 @@ class WorkerToolBridge:
                 self.binding.trace_tool_phase(trace_identity, "failed")
             except Exception:  # noqa: BLE001, S110 -- Trace failure details are deliberately suppressed before quarantine.
                 pass
+        if isinstance(error, dict) and error.get("effect_state") == "unknown":
+            try:
+                # Ask the bound authority to block an uncertain dispatched task
+                # before revoking the local transport binding. The response below
+                # never claims that the canonical release ACK was received.
+                self.binding.quarantine_lease()
+            except Exception:  # noqa: BLE001, S110 -- Canonical quarantine failures stay unknown and are not exposed.
+                pass
         try:
             self.binding.invalidate()
         except Exception:  # noqa: BLE001, S110 -- Binding invalidation details are deliberately suppressed during quarantine.

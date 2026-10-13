@@ -1263,6 +1263,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 if not isinstance(args, dict):
                     return ToolErrorText("Ungültige Task-Werkzeugargumente.", code="invalid_task_arguments")
                 action = args.get("action", "list")
+                if not isinstance(action, str):
+                    return ToolErrorText("Taskaktion muss Text sein.", code="invalid_task_arguments")
+                if action not in ("list", "detail", "done", "submit_result", "update", "decompose", "add"):
+                    return _tool_policy_denial("unsupported_action", "BLOCKIERT: Taskaktion wird nicht unterstützt.")
                 if action in ("done", "submit_result"):
                     if type(args.get("task_id")) is not int:
                         return ToolErrorText("task_id muss eine numerische Ganzzahl sein.", code="invalid_task_arguments")

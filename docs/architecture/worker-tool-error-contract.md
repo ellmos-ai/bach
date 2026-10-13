@@ -30,11 +30,17 @@ and sends a receipt.
 
 A quarantined /call response keeps the existing HTTP 503 behavior and
 contains the exact response keys plus quarantined: true. Its receipt_id and
-the envelope correlation's receipt_id are both null. This form is accepted
-only for a valid not_started or unknown envelope. Trace-start failure can
-prove the target tool was not started. Provider, execution, returned-trace,
-transport, and acknowledgement uncertainty remains unknown; it is never
-retried. No receipt is invented to make an unknown outcome look confirmed.
+the envelope correlation's receipt_id are both null. Here quarantined means
+that the local transport/binding is isolated; it does not assert a canonical
+lease status. For an unknown effect, the bridge asks the bound lease authority
+to release with outcome=blocked before local invalidation. Only a valid native
+release ACK confirms blocked/unleased. If the ACK is missing or invalid, the
+result remains unknown, the local binding stays disabled, and no pending or
+retry status is claimed. Trace-start failure can prove the target tool was
+not started and only locally invalidates the binding. Provider, execution,
+returned-trace, transport, and acknowledgement uncertainty remains unknown;
+it is never retried. No receipt is invented to make an unknown outcome look
+confirmed.
 
 ## Bounded producer catalogue
 
@@ -46,9 +52,13 @@ exception text, credentials, source paths, and provider-specific policy text
 are not sent in the structured envelope.
 
 not_applied is reserved for an explicit pre-effect guard or validation
-failure. not_started means the tool was not dispatched. unknown means the
-action or its acknowledgement may have happened. This version does not
-claim applied for any error.
+failure. For a bound task_manage call, it describes the bound task operation,
+not whether the surrounding tool relay was dispatched. The action must be a
+string from the native action set (list, detail, done, submit_result, update,
+decompose, add); an invalid type or unsupported string is rejected before
+invoking the bound task operation with not_applied. A not_started state means
+the tool was not dispatched. unknown means the action or its acknowledgement
+may have happened. This version does not claim applied for any error.
 
 Timeouts, exceptions, non-success HTTP replies, and nonzero subprocess exits
 after dispatch return the bounded unknown-effect error. Each shell/process
@@ -69,9 +79,10 @@ keeps the display text in text content.
 
 ## Integration boundary
 
-This seven-file package covers the producer, local relay, client, and MCP
-transport. The normal chat dispatcher and HTTP/GUI callers are outside this
-source scope. Until B's chat_runtime.py/Telegram and C's unified_api.py
+This eight-file package covers the producer, local relay, client, MCP
+transport, focused contract tests, and architecture note. The normal chat
+dispatcher and HTTP/GUI callers are outside this source scope. Until B's
+chat_runtime.py/Telegram and C's unified_api.py
 integrations preserve typed metadata before string coercion, result digesting,
 and tool-finish handling, this package is not a complete end-to-end
 application rollout. Existing trace, policy, quarantine, authentication, and
