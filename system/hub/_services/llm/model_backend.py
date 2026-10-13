@@ -643,8 +643,17 @@ class HermesBackend(OpenAIBackend):
             headers["X-Title"] = self.app_name
         return headers
 
+    def _error_provider(self):
+        """Diagnostic identity only; endpoint/model/retry selection is unchanged."""
+        from urllib.parse import urlsplit
+        try:
+            return "openrouter" if urlsplit(self.base_url).hostname == "openrouter.ai" else "hermes"
+        except ValueError:
+            return "hermes"
+
     async def chat(self, messages, tools=None, think=True, model=None):
         import httpx
+        from hub._services.llm.backend_errors import BackendRequestFailure
 
         headers = self._get_headers()
         target_model = model or self.default_model
@@ -673,12 +682,8 @@ class HermesBackend(OpenAIBackend):
                     data = r.json()
                     break
                 except httpx.HTTPStatusError as exc:
-                    err_text = ""
-                    try:
-                        err_json = exc.response.json()
-                        err_text = err_json.get("error", {}).get("message") or str(err_json)
-                    except Exception:
-                        err_text = exc.response.text[:500]
+                    failure = BackendRequestFailure.from_httpx(exc, provider=self._error_provider())
+                    error_message = failure.backend_error["message"]
 
                     # Retry on 429 (Rate Limit) or transient 5xx server errors
                     if exc.response.status_code in (429, 502, 503, 529) and attempt < max_retries - 1:
@@ -692,25 +697,27 @@ class HermesBackend(OpenAIBackend):
                         if delay is None:
                             delay = base_delay * (2 ** attempt)
                         log.warning(
-                            f"Hermes/OpenRouter Rate Limit / Server Error ({exc.response.status_code}): {err_text}. "
+                            f"{error_message} "
                             f"Warte {delay:.1f}s vor Wiederholungsversuch ({attempt + 1}/{max_retries - 1})..."
                         )
                         await asyncio.sleep(delay)
                         continue
 
-                    log.error(f"Hermes/OpenRouter API-Fehler ({exc.response.status_code}): {err_text}")
-                    raise RuntimeError(f"Hermes/OpenRouter Fehler ({exc.response.status_code}): {err_text}") from exc
+                    log.error("%s", error_message)
+                    raise failure from None
                 except httpx.RequestError as exc:
+                    failure = BackendRequestFailure.from_httpx(exc, provider=self._error_provider())
+                    error_message = failure.backend_error["message"]
                     if attempt < max_retries - 1:
                         delay = base_delay * (2 ** attempt)
                         log.warning(
-                            f"Hermes/OpenRouter Verbindungsfehler ({exc}). "
+                            f"{error_message} "
                             f"Warte {delay:.1f}s vor Wiederholungsversuch ({attempt + 1}/{max_retries - 1})..."
                         )
                         await asyncio.sleep(delay)
                         continue
-                    log.error(f"Hermes/OpenRouter Verbindungsfehler nach {max_retries} Versuchen: {exc}")
-                    raise RuntimeError(f"Hermes/OpenRouter Verbindungsfehler: {exc}") from exc
+                    log.error("%s Nach %d Versuchen.", error_message, max_retries)
+                    raise failure from None
 
         if not data:
             raise RuntimeError("Hermes/OpenRouter lieferte keine Daten")
