@@ -1590,3 +1590,42 @@ async def test_operator_confirmation_rejects_untrusted_or_malformed_proofs(proof
 
     with pytest.raises(ReportHostPortError):
         await BachOperatorConfirmationPort(Verifier()).verify_confirmation("confirmation-opaque-2", binding)
+
+
+@pytest.mark.asyncio
+async def test_local_report_refuses_prompt_larger_than_context_window(tmp_path, monkeypatch):
+    # Ollama would silently drop the front of an oversized prompt (the report
+    # instructions); the host port must refuse before any model dispatch.
+    local, runtime, backend, delegated, _probes, _states = _local_report_runtime(tmp_path, monkeypatch)
+    backend.num_ctx = 4096
+    pin = await local.pin_route(
+        "run-route-context", expected_mode="local", request_mode="local",
+        allow_fallback=False, local_only=True,
+    )
+    with pytest.raises(ReportHostPortError) as exc:
+        await local.generate(
+            "x" * 20_000, run_id="run-route-context", mode="local", request_mode="local",
+            route_id=pin["route_id"], route_ref=pin["route_ref"],
+            allow_fallback=False, local_only=True,
+        )
+    assert exc.value.reason_code == "source_extraction_incomplete"
+    assert delegated == []
+    assert not runtime.sessions
+
+
+@pytest.mark.asyncio
+async def test_local_report_counts_system_prompt_against_context_window(tmp_path, monkeypatch):
+    local, _runtime, backend, delegated, _probes, _states = _local_report_runtime(tmp_path, monkeypatch)
+    backend.num_ctx = 8192
+    pin = await local.pin_route(
+        "run-route-system", expected_mode="local", request_mode="local",
+        allow_fallback=False, local_only=True,
+    )
+    with pytest.raises(ReportHostPortError) as exc:
+        await local.generate(
+            "short", run_id="run-route-system", mode="local", request_mode="local",
+            route_id=pin["route_id"], route_ref=pin["route_ref"],
+            allow_fallback=False, local_only=True, system_prompt="y" * 20_000,
+        )
+    assert exc.value.reason_code == "source_extraction_incomplete"
+    assert delegated == []
