@@ -1851,7 +1851,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if self._process_priority(chat_id, work_priority) == "background":
                 self._reset_task_completion_receipts(chat_id)
                 # A previous task's resolved model is not evidence for this run.
-                self.get_session(chat_id).resolved_model = None
+                # Do not create a chat session before local compute admission.
+                cached_session = self.sessions.get(chat_id)
+                if cached_session is not None:
+                    cached_session.resolved_model = None
             if agent_context is not None:
                 self.bind_profile_session(chat_id, agent_context)
             return await self._process_turn(

@@ -867,8 +867,8 @@ def test_worker_activity_does_not_copy_cached_resolved_model(monkeypatch):
 
 
 @pytest.mark.parametrize(("result", "expected_model"), [
-    ({"error": "synthetic failure", "model": "stale-error-model"}, None),
-    ({"content": "ok"}, None),
+    ({"error": "synthetic failure", "model": "stale-error-model"}, ""),
+    ({"content": "ok"}, ""),
     ({"content": "ok", "model": "explicit-current-model"}, "explicit-current-model"),
 ])
 def test_runtime_reports_only_current_successful_response_model(
