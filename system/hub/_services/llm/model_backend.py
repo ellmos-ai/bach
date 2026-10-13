@@ -835,7 +835,7 @@ class HermesBackend(OpenAIBackend):
 class OpenRouterBackend(HermesBackend):
     """OpenRouter provider with explicit model IDs and a safe free router default.
 
-    ``openrouter/free`` is sent to OpenRouter unchanged. The provider, rather
+    openrouter/free is sent to OpenRouter unchanged. The provider, rather
     than this client, chooses a free model for each request. In particular,
     this class never substitutes a locally selected model for that router ID.
     """
@@ -866,10 +866,25 @@ class OpenRouterBackend(HermesBackend):
         catalog = get_openrouter_catalog()
         return [item["id"] for item in catalog.get("models", []) if item.get("id")]
 
+    @staticmethod
+    def _require_catalog_selection(model_id: str) -> None:
+        from hub._services.llm.openrouter_catalog import (
+            OpenRouterCatalogError,
+            get_openrouter_catalog,
+        )
+
+        catalog = get_openrouter_catalog(model_id=model_id)
+        selection = catalog.get("selection")
+        if not isinstance(selection, dict) or selection.get("allowed") is not True:
+            code = selection.get("reason") if isinstance(selection, dict) else None
+            raise OpenRouterCatalogError(
+                code if isinstance(code, str) else "catalog_invalid_schema"
+            )
+
     async def chat(self, messages, tools=None, think=True, model=None):
         target_model = str(model or self.default_model).strip()
-        if target_model != "openrouter/free" and target_model not in self.list_models():
-            raise ValueError("OpenRouter-Modell ist nicht aktuell als kostenlos bestätigt")
+        if target_model != "openrouter/free":
+            self._require_catalog_selection(target_model)
         return await super().chat(
             messages=messages,
             tools=tools,
@@ -885,8 +900,11 @@ class OpenRouterBackend(HermesBackend):
         if not str(self.api_key or "").strip():
             return False, "Key fehlt"
         target_model = str(model or self.default_model).strip()
-        if target_model != "openrouter/free" and target_model not in self.list_models():
-            return False, "Kostenlosigkeit nicht bestätigt"
+        if target_model != "openrouter/free":
+            try:
+                self._require_catalog_selection(target_model)
+            except ValueError as exc:
+                return False, str(exc)
         return super().availability(model=target_model, timeout=timeout)
 
 
