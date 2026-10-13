@@ -653,3 +653,166 @@ def test_bound_prompt_rejects_malformed_non_null_correction_pointer(pointer):
     with pytest.raises(RuntimeError, match="Korrekturkontext"):
         _bound_worker_prompt(binding, "Prompt")
     assert binding.context_calls == 0
+
+
+@pytest.mark.parametrize("args", [{}, {"action": "list"}])
+def test_task_manage_list_returns_only_the_bound_task(binding, monkeypatch, args):
+    foreign_id = binding.task_id + 1000
+    foreign_title = "Foreign task title must stay private"
+    candidates_calls = []
+
+    def foreign_candidates(*, limit):
+        candidates_calls.append(limit)
+        return {"tasks": [{"id": foreign_id, "title": foreign_title,
+                           "priority": "P1", "status": "pending"}]}
+
+    monkeypatch.setattr(binding._client, "task_candidates", foreign_candidates)
+    listed = binding.execute_task_manage(args)
+    assert candidates_calls == []
+    assert str(binding.task_id) in listed
+    assert str(foreign_id) not in listed
+    assert foreign_title not in listed
+
+
+def test_task_manage_detail_reads_only_the_bound_snapshot(binding, monkeypatch):
+    foreign_id = binding.task_id + 1000
+    reads = []
+    original = binding._client.task_snapshot
+
+    def tracked_snapshot(task_id):
+        reads.append(task_id)
+        if task_id != binding.task_id:
+            return {"id": task_id, "description": "Foreign secret"}
+        return original(task_id)
+
+    monkeypatch.setattr(binding._client, "task_snapshot", tracked_snapshot)
+    with pytest.raises(LeaseError) as exc:
+        binding.execute_task_manage({"action": "detail", "task_id": foreign_id})
+    assert reads == []
+    assert str(foreign_id) not in str(exc.value)
+    assert "Foreign secret" not in str(exc.value)
+
+    detail = binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+    assert reads == []
+    assert f"id: {binding.task_id}" in detail
+    assert "Foreign secret" not in detail
+
+
+@pytest.mark.parametrize(("backend", "model", "owner"), [
+    ("openrouter", "openrouter/free", "openrouter"),
+    ("ollama-cloud", "glm-5.3:cloud", "ollama-cloud"),
+])
+def test_external_profile_route_runs_bound_picker_to_review(
+        request, monkeypatch, backend, model, owner):
+    """Exercise each external alias through canonical selection and result review."""
+    conn = request.getfixturevalue("mem_db")
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import LeaseProtocolError, WorkerResultAck
+    from hub._services.task_schema import ensure_task_slot_columns
+
+    conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    ensure_task_slot_columns(conn)
+    task_id = _insert_task(conn, "Bound external profile task", "pending")
+    conn.execute(
+        "UPDATE tasks SET category = ?, priority = ?, assigned_to = ?, "
+        "assigned_slot = ?, required_model = ? WHERE id = ?",
+        ("WORKER", "P1", owner, f"profile-{backend}", model, task_id),
+    )
+    foreign_id = _insert_task(conn, "Unrelated private task", "pending")
+    conn.execute(
+        "UPDATE tasks SET category = ?, priority = ?, assigned_to = ? WHERE id = ?",
+        ("WORKER", "P1", "unrelated-owner", foreign_id),
+    )
+    conn.commit()
+
+    slot = {"id": f"profile-{backend}", "backend": backend, "model": model}
+    client = TaskLeaseClient(conn=conn)
+    native_acquire = WorkerLeaseBinding.acquire.__func__
+    automatic_acquires = []
+    def capture_acquire(cls, actual_client, actual_task_id, **kwargs):
+        automatic_acquires.append((actual_task_id, kwargs.get("automatic"), kwargs.get("slot")))
+        return native_acquire(cls, actual_client, actual_task_id, **kwargs)
+    monkeypatch.setattr(WorkerLeaseBinding, "acquire", classmethod(capture_acquire))
+    binding = WorkerLeaseBinding.acquire_next(
+        client, slot, worker_id=f"fixture-{backend}@HOST", host="HOST",
+        generation="fixture-generation-1", is_current=lambda: True,
+        stop_event=threading.Event(), clock=lambda: T0,
+    )
+    assert automatic_acquires == [(task_id, True, slot)]
+    from hub._services.task_lease_client import LeaseAck
+    assert isinstance(binding._ack, LeaseAck)
+    assert binding.task_id == task_id
+    own = client.read(task_id, lease_id=binding._ack.lease_id, now=T0)
+    assert own.own is True and own.leased is True and own.fence == binding._ack.fence
+
+    listing = binding.execute_task_manage({"action": "list"})
+    detail = binding.execute_task_manage({"action": "detail", "task_id": task_id})
+    assert "Bound external profile task" in listing and "Unrelated private task" not in listing
+    assert "Bound external profile task" in detail and "Unrelated private task" not in detail
+    with pytest.raises(LeaseProtocolError):
+        binding.execute_task_manage({"action": "detail", "task_id": foreign_id})
+
+    actual_submit = client.submit_result
+    acknowledgements = []
+    def capture_submit(*args, **kwargs):
+        acknowledgement = actual_submit(*args, **kwargs)
+        acknowledgements.append(acknowledgement)
+        return acknowledgement
+    monkeypatch.setattr(client, "submit_result", capture_submit)
+    message = binding.execute_task_manage({
+        "action": "submit_result", "task_id": task_id,
+        "result": "Bound route produced a reviewable result with sources and limits.",
+    })
+    assert "wartet in Review" in message
+    assert len(acknowledgements) == 1 and isinstance(acknowledgements[0], WorkerResultAck)
+    result_ack = acknowledgements[0]
+    assert result_ack.release.outcome == "review" and result_ack.release.status == "review"
+    assert result_ack.record["task_id"] == task_id
+    assert result_ack.record["generation"] == "fixture-generation-1"
+    assert result_ack.record["fence"] == binding._ack.fence
+    assert result_ack.record["task_version"] == binding._ack.task_version
+    assert binding.closed and binding.reviewed_task_ids == (task_id,)
+    approve_result(binding, conn=conn)
+    assert binding.completed_task_ids == (task_id,)
+
+
+@pytest.mark.parametrize(("backend", "model", "owner"), [
+    ("openrouter", "openrouter/free", "openrouter"),
+    ("ollama-cloud", "glm-5.3:cloud", "ollama-cloud"),
+])
+@pytest.mark.parametrize("mismatch", ["owner", "slot", "model"])
+def test_external_profile_acquire_rejects_mismatched_route(
+        request, backend, model, owner, mismatch):
+    conn = request.getfixturevalue("mem_db")
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import LeaseError
+    from hub._services.task_schema import ensure_task_slot_columns
+
+    conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    ensure_task_slot_columns(conn)
+    task_id = _insert_task(conn, "Profile route mismatch", "pending")
+    values = {"assigned_to": owner, "assigned_slot": f"profile-{backend}",
+              "required_model": model}
+    if mismatch == "owner":
+        values["assigned_to"] = "another-provider"
+    elif mismatch == "slot":
+        values["assigned_slot"] = "different-profile"
+    else:
+        values["required_model"] = "different-model"
+    conn.execute(
+        "UPDATE tasks SET category = ?, priority = ?, assigned_to = ?, "
+        "assigned_slot = ?, required_model = ? WHERE id = ?",
+        ("WORKER", "P1", values["assigned_to"], values["assigned_slot"],
+         values["required_model"], task_id),
+    )
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    slot = {"id": f"profile-{backend}", "backend": backend, "model": model}
+    with pytest.raises(LeaseError):
+        WorkerLeaseBinding.acquire(
+            client, task_id, worker_id=f"fixture-{backend}@HOST", host="HOST",
+            generation="fixture-generation-1", is_current=lambda: True,
+            stop_event=threading.Event(), clock=lambda: T0,
+            slot=slot, automatic=True,
+        )
+    assert client.read(task_id, now=T0).leased is False
