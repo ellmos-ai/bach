@@ -453,6 +453,10 @@ class TaskLeaseClient:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
+        """Let subclasses opt in to one validated server-error response shape."""
+        return False
+
     def _http_request(self, method, path, payload=None, headers=None):
         if not self._device_token:
             raise LeaseDeniedError(0, "device_auth_required", {})
@@ -482,7 +486,7 @@ class TaskLeaseClient:
             raise LeaseProtocolError("Lead-ACK muss ein Objekt sein")
         if status in (401, 403):
             raise LeaseDeniedError(0, "device_auth_rejected", {})
-        if status >= 500:
+        if status >= 500 and not self._allows_server_error_response(status, parsed):
             raise LeaseConnectionError("Lead verweigert die Operation")
         return status, parsed
 

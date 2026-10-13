@@ -109,6 +109,13 @@ class ResourceNotFound(LookupError):
     """Ressource ist nicht registriert (HTTP 404)."""
 
 
+class ResourceLeaseSchemaUnavailable(RuntimeError):
+    code = "resource_lease_schema_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__("Ressourcen-Lease-Schema ist nicht verfügbar.")
+
+
 @dataclass(frozen=True)
 class ResourceLeaseConfig:
     profiles: Mapping[str, tuple[int, int]] = field(default_factory=lambda: dict(DEFAULT_PROFILES))
@@ -162,6 +169,47 @@ def _expected_columns() -> dict[str, dict[str, str]]:
 _EXPECTED_COLUMNS = _expected_columns()
 
 
+def _schema_columns() -> dict[str, frozenset[str]]:
+    """Vollstaendige DDL-Spalten je Tabelle, einschliesslich Primaerschluesseln."""
+    mem = sqlite3.connect(":memory:")
+    try:
+        for stmt in _DDL:
+            mem.execute(stmt)
+        out: dict[str, frozenset[str]] = {}
+        for table in ("resource_registry", "resource_leases", "resource_lease_events"):
+            out[table] = frozenset(
+                row[1] for row in mem.execute(f"PRAGMA table_info({table})")
+            )
+        return out
+    finally:
+        mem.close()
+
+
+_REQUIRED_SCHEMA_COLUMNS = _schema_columns()
+
+
+def _schema_primary_keys() -> dict[str, tuple[str, ...]]:
+    """Vollstaendige PK-Feldreihenfolge je Tabelle aus dem kanonischen DDL."""
+    mem = sqlite3.connect(":memory:")
+    try:
+        for stmt in _DDL:
+            mem.execute(stmt)
+        out: dict[str, tuple[str, ...]] = {}
+        for table in ("resource_registry", "resource_leases", "resource_lease_events"):
+            primary_key = [
+                (row[5], row[1])
+                for row in mem.execute(f"PRAGMA table_info({table})")
+                if row[5]
+            ]
+            out[table] = tuple(name for _ordinal, name in sorted(primary_key))
+        return out
+    finally:
+        mem.close()
+
+
+_REQUIRED_SCHEMA_PRIMARY_KEYS = _schema_primary_keys()
+
+
 def ensure_resource_lease_schema(conn: sqlite3.Connection) -> None:
     """Legt Tabellen an und ergaenzt fehlende Spalten additiv (idempotent). Laeuft
     innerhalb einer offenen Transaktion (Migration) ohne eigenes Commit, sonst in eigener."""
@@ -198,6 +246,34 @@ def ensure_resource_lease_schema(conn: sqlite3.Connection) -> None:
     except BaseException:
         conn.rollback()
         raise
+
+
+def require_resource_lease_schema(conn: sqlite3.Connection) -> None:
+    # Read-only metadata check: do not repair or open a write transaction here.
+    table_names = tuple(_REQUIRED_SCHEMA_COLUMNS)
+    placeholders = ",".join("?" for _ in table_names)
+    try:
+        rows = conn.execute(
+            f"SELECT name, type FROM sqlite_master WHERE name IN ({placeholders})", table_names
+        ).fetchall()
+        table_types = {row[0]: row[1] for row in rows}
+        for table, columns in _REQUIRED_SCHEMA_COLUMNS.items():
+            if table_types.get(table) != "table":
+                raise ResourceLeaseSchemaUnavailable()
+            quoted_table = '"' + table.replace('"', '""') + '"'
+            table_info = conn.execute(f"PRAGMA table_info({quoted_table})").fetchall()
+            present = {row[1] for row in table_info}
+            if not set(columns).issubset(present):
+                raise ResourceLeaseSchemaUnavailable()
+            primary_key = tuple(
+                name for _ordinal, name in sorted(
+                    (row[5], row[1]) for row in table_info if row[5]
+                )
+            )
+            if primary_key != _REQUIRED_SCHEMA_PRIMARY_KEYS[table]:
+                raise ResourceLeaseSchemaUnavailable()
+    except sqlite3.Error:
+        raise ResourceLeaseSchemaUnavailable() from None
 
 
 _validate_resource = core.validate_resource_name
@@ -599,7 +675,7 @@ def read_resource_lease(conn: sqlite3.Connection, resource: str, *, lease_id: st
     """Status ohne lease_id; ``own`` nur bei passender lease_id."""
     cfg = config or ResourceLeaseConfig.from_env()
     resource = _validate_resource(resource)
-    ensure_resource_lease_schema(conn)
+    require_resource_lease_schema(conn)
     now = now or core.utcnow()
     reg = _registry(conn, resource)
     row = _fetch(conn, "SELECT * FROM resource_leases WHERE resource = ?", (resource,)) or {

@@ -7,14 +7,17 @@ Es wird ausschliesslich gegen temporaere SQLite-Dateien getestet.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import multiprocessing
+import re
 import sqlite3
 import sys
 import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
@@ -26,6 +29,7 @@ from hub._services import lease_core as core
 from hub._services import resource_lease as rl
 from hub._services.resource_lease import (
     ResourceLeaseConfig,
+    ResourceLeaseSchemaUnavailable,
     ResourceNotFound,
     acquire_resource_lease,
     ensure_resource_lease_schema,
@@ -42,6 +46,7 @@ from hub._services.resource_lease_client import (
     ResourceLeaseDeniedError,
     ResourceLeaseExpiredError,
     ResourceLeaseLostError,
+    ResourceLeaseUnavailableError,
 )
 
 try:
@@ -894,3 +899,364 @@ def client_for_rebaseline(db_path, tmp_path, monkeypatch):
                         lambda token: {"id": 1, "name": "test-device"} if token == "star-fixture" else None)
     http = TestClient(srv.app, raise_server_exceptions=False, headers={"Authorization": "Bearer star-fixture"})
     return http, {"worker_id": SERVER, "host": "mac-studio", "request_id": _rid()}
+
+# ---------------------------------------------------------------------------
+# Read-only status schema gate
+# ---------------------------------------------------------------------------
+
+_READ_ONLY_SQL = re.compile(r"^\s*(?:SELECT|PRAGMA)\b", re.IGNORECASE)
+_WRITE_SQL = re.compile(
+    r"^\s*(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|CREATE|ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE|VACUUM|REINDEX|ATTACH|DETACH)\b",
+    re.IGNORECASE,
+)
+
+
+def _connect_readonly(path: Path, statements: list[str] | None = None) -> sqlite3.Connection:
+    uri = f"file:{quote(str(path.resolve()), safe=chr(47))}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=10.0)
+    conn.row_factory = sqlite3.Row
+    if statements is not None:
+        conn.set_trace_callback(statements.append)
+    return conn
+
+
+def _file_state(path: Path):
+    stat_result = path.stat()
+    return (
+        hashlib.sha256(path.read_bytes()).hexdigest(),
+        stat_result.st_size,
+        stat_result.st_mtime_ns,
+        tuple(sorted(entry.name for entry in path.parent.iterdir())),
+    )
+
+
+def _assert_read_only_trace(statements: list[str]) -> None:
+    assert statements
+    assert all(_READ_ONLY_SQL.match(statement) for statement in statements), statements
+    assert not any(_WRITE_SQL.match(statement) for statement in statements), statements
+    assert not any(statement.lstrip().upper().startswith("PRAGMA") and "=" in statement for statement in statements)
+
+
+def _create_schema_defective_resource_schema(
+    path: Path, table: str, defect: str
+) -> None:
+    assert table in {"resource_registry", "resource_leases", "resource_lease_events"}
+    assert defect in {"missing-column", "missing-primary-key"}
+    if defect == "missing-column":
+        assert table in {"resource_registry", "resource_leases"}
+    conn = sqlite3.connect(path)
+    try:
+        matched = False
+        for statement in rl._DDL:
+            table_prefix = f"CREATE TABLE IF NOT EXISTS {table} ("
+            if statement.lstrip().startswith(table_prefix):
+                if defect == "missing-column":
+                    malformed = statement.replace("resource TEXT PRIMARY KEY,\n", "", 1)
+                    expected_column = "resource"
+                elif table == "resource_lease_events":
+                    malformed = statement.replace(
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT,\n", "id INTEGER,\n", 1
+                    )
+                    expected_column = "id"
+                else:
+                    malformed = statement.replace(
+                        "resource TEXT PRIMARY KEY,\n", "resource TEXT,\n", 1
+                    )
+                    expected_column = "resource"
+                assert malformed != statement
+                statement = malformed
+                matched = True
+            conn.execute(statement)
+        assert matched
+        conn.commit()
+        table_info = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        columns = {row[1] for row in table_info}
+        primary_key = tuple(
+            name for _ordinal, name in sorted((row[5], row[1]) for row in table_info if row[5])
+        )
+        if defect == "missing-column":
+            assert expected_column not in columns
+        else:
+            assert expected_column in columns
+            assert expected_column not in primary_key
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("partial", [False, True], ids=["missing-schema", "partial-schema"])
+def test_status_requires_complete_schema_without_ddl_or_transaction(tmp_path, partial):
+    path = tmp_path / "schema.db"
+    setup = sqlite3.connect(path)
+    if partial:
+        setup.execute("CREATE TABLE resource_registry (resource TEXT PRIMARY KEY)")
+    else:
+        setup.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+    setup.commit()
+    setup.close()
+    before = _file_state(path)
+    statements = []
+    conn = _connect_readonly(path, statements)
+    transaction_before = conn.in_transaction
+    with pytest.raises(ResourceLeaseSchemaUnavailable):
+        read_resource_lease(conn, RES, config=CFG, now=T0)
+    assert conn.in_transaction is transaction_before is False
+    conn.close()
+    _assert_read_only_trace(statements)
+    assert _file_state(path) == before
+
+
+def test_registered_status_reads_are_readonly_for_unleased_active_and_released(tmp_path):
+    path = tmp_path / "registered.db"
+    setup = _connect(path)
+    ensure_resource_lease_schema(setup)
+    _register(setup)
+    setup.close()
+    now = datetime.now(timezone.utc)
+    statements = []
+
+    before = _file_state(path)
+    conn = _connect_readonly(path, statements)
+    idle = read_resource_lease(conn, RES, config=CFG, now=now).payload
+    assert conn.in_transaction is False
+    conn.close()
+    assert idle["leased"] is False
+    assert _file_state(path) == before
+
+    writer = _connect(path)
+    ack = _acq(writer, now=now).payload
+    writer.close()
+    before = _file_state(path)
+    conn = _connect_readonly(path, statements)
+    active = read_resource_lease(conn, RES, lease_id=ack["lease_id"], config=CFG, now=now + timedelta(seconds=1)).payload
+    assert conn.in_transaction is False
+    conn.close()
+    assert active["leased"] is True and active["own"] is True
+    assert _file_state(path) == before
+
+    writer = _connect(path)
+    _release(writer, ack, now + timedelta(seconds=2))
+    writer.close()
+    before = _file_state(path)
+    conn = _connect_readonly(path, statements)
+    released = read_resource_lease(conn, RES, config=CFG, now=now + timedelta(seconds=3)).payload
+    assert conn.in_transaction is False
+    conn.close()
+    assert released["leased"] is False
+    assert _file_state(path) == before
+    _assert_read_only_trace(statements)
+
+
+def test_resource_lease_local_maps_schema_unavailable_to_typed_error(tmp_path, monkeypatch):
+    from hub._services import task_lease_client as tlc
+
+    path = tmp_path / "unavailable.db"
+    setup = sqlite3.connect(path)
+    setup.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+    setup.commit()
+    setup.close()
+    statements = []
+    monkeypatch.setattr(tlc, "get_lead_config", lambda: {"mode": "lead", "lead_url": None})
+    with ResourceLeaseClient.for_db(lambda: _connect_readonly(path, statements)) as local:
+        with pytest.raises(ResourceLeaseUnavailableError) as local_error:
+            local.status(RES)
+    assert local_error.value.code == "resource_lease_schema_unavailable"
+
+    _assert_read_only_trace(statements)
+
+
+def test_resource_lease_remote_503_mapping_uses_inherited_urllib_transport():
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from hub._services.task_lease_client import LeaseDeniedError, TaskLeaseClient
+
+    def request(status, body, *, task_client=False):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, _format, *_args):
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}"
+            if task_client:
+                client = TaskLeaseClient(lead_url=url, device_token="synthetic-test-token")
+                return client._http_request("GET", "/api/tasks/1/lease")
+            client = ResourceLeaseClient(lead_url=url, device_token="synthetic-test-token")
+            return client.status(RES)
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+            server.server_close()
+
+    unavailable = json.dumps({"detail": {
+        "code": "resource_lease_schema_unavailable", "message": "safe"
+    }}).encode("utf-8")
+    other = json.dumps({"detail": {"code": "different_unavailable"}}).encode("utf-8")
+    top_level = json.dumps({"code": "resource_lease_schema_unavailable"}).encode("utf-8")
+    malformed_detail = json.dumps({"detail": "resource_lease_schema_unavailable"}).encode("utf-8")
+
+    with pytest.raises(ResourceLeaseUnavailableError) as exc:
+        request(503, unavailable)
+    assert exc.value.code == "resource_lease_schema_unavailable"
+
+    # The base task transport keeps its default 5xx behavior for the same body.
+    with pytest.raises(LeaseConnectionError):
+        request(503, unavailable, task_client=True)
+    with pytest.raises(LeaseConnectionError):
+        request(503, other)
+    with pytest.raises(LeaseConnectionError):
+        request(503, top_level)
+    with pytest.raises(LeaseConnectionError):
+        request(503, malformed_detail)
+    with pytest.raises(LeaseConnectionError):
+        request(500, unavailable)
+    for status in (401, 403):
+        with pytest.raises(LeaseDeniedError):
+            request(status, unavailable)
+    with pytest.raises(LeaseProtocolError):
+        request(503, b"{not-json")
+
+def test_resource_lease_cli_reports_schema_unavailable(tmp_path, monkeypatch):
+    from hub.lease import LeaseHandler
+    from hub._services import task_lease_client as tlc
+
+    path = tmp_path / "cli-unavailable.db"
+    setup = sqlite3.connect(path)
+    setup.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+    setup.commit()
+    setup.close()
+    before = _file_state(path)
+    statements = []
+    monkeypatch.setattr(tlc, "get_lead_config", lambda: {"mode": "lead", "lead_url": None})
+    handler = LeaseHandler(tmp_path)
+    monkeypatch.setattr(handler, "_canonical_db", path, raising=False)
+    monkeypatch.setattr(handler, "_get_db", lambda: _connect_readonly(path, statements))
+    ok, message = handler.handle(RES, ["status"])
+    assert not ok
+    assert message.startswith("[UNAVAILABLE]")
+    assert "[CONFLICT]" not in message
+    assert "sqlite_master" not in message and "resource_lease_events" not in message
+    _assert_read_only_trace(statements)
+    assert _file_state(path) == before
+
+
+@pytest.mark.parametrize(
+    ("missing_table", "defect"),
+    [
+        ("resource_registry", "missing-column"),
+        ("resource_leases", "missing-column"),
+        ("resource_registry", "missing-primary-key"),
+        ("resource_leases", "missing-primary-key"),
+        ("resource_lease_events", "missing-primary-key"),
+    ],
+    ids=[
+        "registry-missing-resource-column",
+        "leases-missing-resource-column",
+        "registry-resource-pk-removed",
+        "leases-resource-pk-removed",
+        "events-id-pk-removed",
+    ],
+)
+@pytest.mark.skipif(not FASTAPI_AVAILABLE, reason="fastapi nicht installiert")
+def test_http_get_rejects_incomplete_schema_without_ddl(
+    tmp_path, monkeypatch, missing_table, defect
+):
+    import gui.server as srv
+
+    path = tmp_path / f"{missing_table}-{defect}.db"
+    _create_schema_defective_resource_schema(path, missing_table, defect)
+    before = _file_state(path)
+    statements = []
+    connections = []
+    transaction_states = []
+
+    def read_only_bach_db():
+        conn = _connect_readonly(path, statements)
+        conn.set_trace_callback(
+            lambda statement: (
+                statements.append(statement),
+                transaction_states.append(conn.in_transaction),
+            )
+        )
+        connections.append(conn)
+        return conn
+
+    monkeypatch.setattr(srv, "BACH_DB", path)
+    monkeypatch.setattr(srv, "get_bach_db", read_only_bach_db)
+    monkeypatch.setattr(
+        srv, "validate_token",
+        lambda token: {"id": 1, "name": "test-device"} if token == "valid-token" else None,
+    )
+    client = TestClient(
+        srv.app, raise_server_exceptions=False,
+        headers={"Authorization": "Bearer valid-token"},
+    )
+    response = client.get(f"/api/resources/{RES}/lease")
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "code": "resource_lease_schema_unavailable",
+            "message": "Ressourcen-Lease-Schema ist nicht verfügbar.",
+        }
+    }
+    assert len(connections) == 1
+    assert transaction_states and not any(transaction_states)
+    _assert_read_only_trace(statements)
+    assert _file_state(path) == before
+
+
+@pytest.mark.skipif(not FASTAPI_AVAILABLE, reason="fastapi nicht installiert")
+def test_http_get_reports_schema_unavailable_without_ddl_and_keeps_auth(tmp_path, monkeypatch):
+    import gui.server as srv
+
+    path = tmp_path / "http-unavailable.db"
+    setup = sqlite3.connect(path)
+    setup.execute("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)")
+    setup.commit()
+    setup.close()
+    before = _file_state(path)
+    statements = []
+    connections = []
+    transaction_states = []
+
+    def read_only_bach_db():
+        conn = _connect_readonly(path, statements)
+        conn.set_trace_callback(
+            lambda statement: (
+                statements.append(statement),
+                transaction_states.append(conn.in_transaction),
+            )
+        )
+        connections.append(conn)
+        return conn
+
+    monkeypatch.setattr(srv, "BACH_DB", path)
+    monkeypatch.setattr(srv, "get_bach_db", read_only_bach_db)
+    monkeypatch.setattr(srv, "validate_token", lambda token: {"id": 1, "name": "test-device"} if token == "valid-token" else None)
+    authorized = TestClient(srv.app, raise_server_exceptions=False, headers={"Authorization": "Bearer valid-token"})
+    response = authorized.get(f"/api/resources/{RES}/lease")
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "code": "resource_lease_schema_unavailable",
+            "message": "Ressourcen-Lease-Schema ist nicht verfügbar.",
+        }
+    }
+    assert "sqlite_master" not in response.text and "resource_lease_events" not in response.text
+
+    anonymous = TestClient(srv.app, raise_server_exceptions=False)
+    denied = anonymous.get(f"/api/resources/{RES}/lease")
+    assert denied.status_code == 401
+    assert len(connections) == 1
+    assert transaction_states and not any(transaction_states)
+    _assert_read_only_trace(statements)
+    assert _file_state(path) == before

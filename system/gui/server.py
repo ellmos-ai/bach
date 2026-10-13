@@ -2705,10 +2705,19 @@ class ResourceLeaseRefRequest(BaseModel):
 
 def _run_resource_lease_op(op, *args, **kwargs):
     """Polarstern (BACH #2121): Ressourcen-Lease; Auth ueber DeviceAuthMiddleware."""
-    from hub._services.resource_lease import LeaseValidationError, ResourceNotFound
+    from hub._services.resource_lease import (
+        LeaseValidationError,
+        ResourceLeaseSchemaUnavailable,
+        ResourceNotFound,
+    )
     conn = get_bach_db()
     try:
         result = op(conn, *args, **kwargs)
+    except ResourceLeaseSchemaUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": "Ressourcen-Lease-Schema ist nicht verfügbar."},
+        ) from None
     except ResourceNotFound:
         raise HTTPException(status_code=404, detail="Ressource nicht registriert")
     except LeaseValidationError as exc:
