@@ -103,6 +103,12 @@ def test_real_source_schema0_ready_readonly(env, metadata):
         assert conn.execute("PRAGMA user_version").fetchone() == (0,)
 
 
+def test_core_source_pin_matches_checked_in_source(env):
+    core_source = SYSTEM / "core" / "db.py"
+    core_text = core_source.read_text(encoding="utf-8")
+    assert hashlib.sha256(core_text.encode("utf-8")).hexdigest() == env.r.CORE_DB_SHA256
+
+
 def test_constructor_explicit_no_home_no_mkdir(env):
     before = _tree(env.root)
     m = _manager(env)
