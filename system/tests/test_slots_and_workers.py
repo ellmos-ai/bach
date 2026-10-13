@@ -2351,8 +2351,19 @@ def test_resolved_model_tracking_and_activity_enrichment(tmp_path, monkeypatch):
         control._record_worker_activity(fake_ctrl, "Runde 1: Test", "ok")
         history = get_activity_history(source="worker-resolved-test", path=str(cfg_file))
         assert len(history) == 1
-        assert history[0]["details"]["resolved_model"] == "poolside/laguna-xs-2.1:free"
+        assert "resolved_model" not in history[0]["details"]
         assert history[0]["details"]["model"] == "openrouter/free"
+
+        current_resolution = "poolside/current-response:free"
+        control._record_worker_activity(
+            fake_ctrl, "Runde 2: aktuelle Antwort", "ok",
+            {"resolved_model": current_resolution},
+        )
+        history = get_activity_history(source="worker-resolved-test", path=str(cfg_file))
+        assert len(history) == 2
+        assert history[0]["details"]["resolved_model"] == current_resolution
+        assert history[0]["details"]["model"] == "openrouter/free"
+        assert "resolved_model" not in history[1]["details"]
     finally:
         control._WORKER_CONTROLS.pop("worker-resolved-test", None)
 

@@ -674,6 +674,21 @@ class TestComputeGate:
         assert backend.calls == 0, "Backend darf bei aktivem Lock nicht gerufen werden"
         assert "idle-worker" not in runtime.sessions, "kein Turn, kein Transkript-Eintrag"
 
+    def test_background_reset_clears_only_an_existing_session(self):
+        runtime, backend, run = self._run(lambda _backend: True)
+        session = runtime.get_session("idle-worker")
+        session.resolved_model = "stale/model"
+        session.messages.append({"role": "user", "content": "older turn"})
+        prior_messages = list(session.messages)
+
+        with pytest.raises(ComputeLocked):
+            run(runtime.process("Aufgabe", "idle-worker"))
+
+        assert runtime.sessions["idle-worker"] is session
+        assert session.resolved_model is None
+        assert session.messages == prior_messages
+        assert backend.calls == 0
+
     def test_free_lock_behaves_exactly_as_before(self):
         runtime, backend, run = self._run(lambda _backend: False)
         assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
