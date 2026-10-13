@@ -1,13 +1,32 @@
 # Ocean–BACH-Transferplan
 
-Stand: 9. Oktober 2026. Dieser Plan beschreibt den begrenzten Integrationsauftrag und die anschließenden Modultransfers. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+Stand: 13. Oktober 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+
+## Rückmodularisierung: Start und Entwicklungsregel
+
+Der Nutzer hat die Rückmodularisierung am 13. Oktober 2026 ausdrücklich gestartet. Neue Fachlogik entsteht bevorzugt direkt in einem passenden bestehenden ellmos-/Ocean-Modul. Fehlt ein sinnvoller Modulort, wird eine abgegrenzte Fähigkeit als neues Modul geplant. BACH konsumiert den gepinnten Provider über schmale Adapter; gemeinsame Module bleiben unabhängig von BACH nutzbar.
+
+Würde eine Aufgabe eine neue Fachlogik innerhalb einer noch monolithischen BACH-Struktur verlangen, gehört die Übertragung der beteiligten Fähigkeit möglichst gleich zum Auftrag. Dazu darf der Schnitt über die ursprünglich angefragte Einzeländerung hinausgehen. Gemeinsam genutzte Strukturen werden soweit nötig mit entkoppelt. Der gemeinsame GUI-Ausbau, der tatsächliche Ocean-Anschluss und die priorisierte Hintergrundarbeit werden dabei weitergeführt.
+
+Pro Änderung wird ein zusammenhängender Fähigkeitsschnitt mit folgenden Nachweisen bearbeitet:
+
+- Vorhandene BACH-Implementierung, gemeinsame Aufrufer, native Datenhoheit und kanonisches Zielmodul bestimmen; keinen zweiten Store, Scheduler, Modellrouter oder Governance-Kern einführen.
+- Fachlogik und gemeinsame Verträge upstream entwickeln; BACH-spezifische CLI-, API-, GUI- und Betriebsadapter erhalten und an denselben Provider anschließen.
+- Pins, Modulmanifest, Installerprofil und vollständige Abhängigkeiten nachführen. Private Rezepte, Berichtpipelines und Nutzerdaten bleiben in privaten Repositories beziehungsweise lokaler Konfiguration.
+- Vertragstests, unabhängiges Review, betroffene Endpunkte und tatsächliche Konsumenten prüfen. Source, Installation, Laufzeit, fachliche Abnahme und Gerätetest getrennt ausweisen.
+- Vor Umschaltung Rückfallweg sichern; Altteile nach bestätigter Parität in [DEPRICATED.md](DEPRICATED.md) führen. Entfernung bleibt ein überprüfter Schritt.
+- Ist der vollständige Schnitt durch eine konkrete Sperre, fehlenden Vertrag oder Datenmigration verhindert, die begrenzte BACH-Zwischenlösung kapseln und mit Blockade, Zielmodul und Folgetask dokumentieren.
+
+Die 64 geplanten Folgeaufgaben in der TaskDB werden einzeln je betroffenem Fähigkeitsschnitt gesteuert. Der Phasenstart meldet keine Transfers als erledigt und ersetzt keine bestehenden Rechte-, Lock- oder Abnahmeverträge.
+
+Der geplante annotierte Release `v3.15.0` **BACH meets Ocean – BACH fließt ins Meer** markiert den GUI-Übergang und den Beginn dieser Phase. Der Tag behauptet keinen vollständigen Ocean-Cutover und keine abgeschlossene Modularisierung. Am 13. Oktober ist dieser Tag noch nicht veröffentlicht; Task #2071 führt den Release, #2099 liefert Zuarbeit. Die Startentscheidung gilt bereits, während die Release-Abnahmen gemäß [Meilensteinvertrag](docs/operations/BACH-3.15.0-MILESTONE.md) weiterlaufen.
 
 ## Umfang des aktuellen Auftrags
 
 - Gemeinsame GUI aus `ellmos-system-gui`, konsumiert über einen festen Quellcommit, ein Releasearchiv und dessen SHA-256.
 - Gemeinsamer Installer mit getrennten Produktprofilen für BACH und Ocean. Ocean bleibt die einzige Engine für Fetch, Place, Activate und Rollback.
 - Erster begrenzter Modultransfer: `policy-registry` als lesender kanonischer Provider. Das umfasst Registry-, Quellen- und effektive Policy-Metadaten. Schreibende Governance ist eine getrennte, ausdrücklich freizugebende Fähigkeit.
-- Weitere Transfers sind geplant. Nach Zusammenführung gleicher Modulquellen entstehen 64 Aufgaben; keine dieser Aufgaben ist dadurch bereits umgesetzt.
+- Weitere Transfers sind geplant. Nach Zusammenführung gleicher Modulquellen sind 64 Folgeaufgaben in der TaskDB geplant; ihre Planung bestätigt keine Umsetzung.
 
 ## Ersttransfer: policy-registry
 
@@ -62,4 +81,4 @@ Offene Abnahmen bleiben in der TaskDB. Ein erfolgreicher Testlauf ersetzt keinen
 
 ## GUI-Meilenstein 3.15.0 und weitere Reihenfolge
 
-Der [Meilensteinvertrag](docs/operations/BACH-3.15.0-MILESTONE.md) bindet GUI 0.2.19/e909dd92, Verbraucherprüfung, sicheren Mac-Deploy und anschließenden BACH-Tag. Ein veröffentlichtes GUI-Paket ist noch keine produktive BACH- oder Ocean-Abnahme. Nach dem GUI-Umzug folgt der tatsächliche Ocean-Adapteranschluss; danach werden BACH-Fähigkeiten einzeln modularisiert. Die 64 Transferaufgaben bleiben einzeln gesteuert. Die alte web/-Kopie ist keine zweite Entwicklungsquelle; ihre vorhandenen Rückweg-/Testcaller müssen vor endgültiger Entfernung gesondert abgenommen werden.
+Der [Meilensteinvertrag](docs/operations/BACH-3.15.0-MILESTONE.md) bindet GUI 0.2.19/e909dd92, Verbraucherprüfung, sicheren Mac-Deploy und anschließenden BACH-Tag. Ein veröffentlichtes GUI-Paket ist noch keine produktive BACH- oder Ocean-Abnahme. Der gemeinsame GUI-Umzug und der tatsächliche Ocean-Adapteranschluss werden weiter abgenommen. Seit der Startentscheidung vom 13. Oktober werden beteiligte BACH-Fähigkeiten bereits im jeweiligen Auftrag rückmodularisiert; neue gemeinsame Fachlogik wird direkt upstream gebaut. Die 64 Transferaufgaben bleiben einzeln gesteuert. Die alte web/-Kopie ist keine zweite Entwicklungsquelle; ihre vorhandenen Rückweg-/Testcaller müssen vor endgültiger Entfernung gesondert abgenommen werden.
