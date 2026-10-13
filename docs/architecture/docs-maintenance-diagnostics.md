@@ -3,10 +3,17 @@
 ## Zuständigkeit und Betriebsgrenze
 
 Die Dokumentationspflege wird durch den vorhandenen ellmos-scheduler-Owner
-koordiniert. Dieser Patch ergänzt keinen zweiten Zeitplaner und aktiviert keinen
-Dienst. launch-plan beschreibt nur eine mögliche LaunchAgent-Konfiguration;
-installed=false und started=false bleiben die maßgeblichen Readbacks. Eine
-Installation oder ein Laufzeitneustart braucht eine eigene Integrationsfreigabe.
+koordiniert. launch-plan beschreibt eine mögliche LaunchAgent-Konfiguration und
+aktiviert keinen Dienst. Seine Felder installed=false und started=false gelten
+ausschließlich für diesen Plan. Sie sind keine Aussage darüber, ob eine native
+Instanz bereits installiert ist oder läuft.
+
+Ein Installationsnachweis benötigt einen gesonderten Readback der tatsächlich
+bereitgestellten Artefakte, Konfiguration und Dienstregistrierung. Ein validierter
+Prozess-/Heartbeatnachweis belegt dagegen den Lauf zum angegebenen
+Beobachtungszeitpunkt; er bestätigt keinen Installations- oder Startvollzug durch
+den beschriebenen Plan. Installation und Laufzeitneustart brauchen weiterhin
+eine eigene Integrationsfreigabe. Ein gemessener Lauf erzeugt diese Freigabe nicht.
 
 Der Delta-Dispatcher vergleicht einen Quellstand mit dem gespeicherten Cursor,
 ordnet geänderte Pfade begrenzten Dokumentationspaketen zu und dispatcht höchstens
@@ -14,21 +21,26 @@ ein Paket pro Tick. Die Task- und Ergebnisautorität bleibt bei der nativen
 Task-API. Ein Cursor- oder Dispatch-Readback ist kein Beleg für eine fachliche
 Korrektur.
 
-## Exakter Review-Handoff
+## Exakter Review-Handoff und BACH-Aufgabenwiedererkennung
 
-Eine vorhandene Aufgabe im Status review kann als bereits dispatcht/recovered
-wiedererkannt werden, wenn ihre vollständige Identität zur erzeugten Doku-Aufgabe
-passt: Titel, Beschreibung einschließlich Quellrevision und Dateiliste,
-Kategorie WORKER, gebundener Slot und erforderliches Modell. Ein nicht leerer Wert im Feld assigned_to ist bei dieser exakten
-Übereinstimmung zulässig. Die Identität des Assignee wird dabei nicht als
-menschlich verifiziert. So wird ein bestehender Review-Handoff nicht als
-konkurrierende Aufgabe dupliziert.
+Der Dispatcher verlangt für jede Wiedererkennung die vollständige erzeugte
+Aufgabenidentität: Titel, Beschreibung einschließlich Quellrevision und
+Dateiliste, Kategorie WORKER, Slotbindung und erforderliches Modell.
 
-Diese Wiedererkennung ist lesend. Sie ändert weder Task noch Assignee, akzeptiert
-kein Ergebnis und setzt weder last_review_success noch last_repair_success.
-Der Status bleibt review, und semantic_review_completed bleibt false.
-Abweichende Beschreibung, Kategorie, Slot, Modell oder Status sowie ein leerer
-Assignee bleiben ein Binding-Konflikt; es wird keine Ersatzaufgabe angelegt.
+Bei normalisiertem assigned_to=bach kann eine passende vorhandene Aufgabe
+unabhängig von ihrem Status wiedererkannt werden. Für andere Assignees ist
+hingegen der Status review und eine nicht leere Zuordnung erforderlich.
+Die Assignee-Identität wird dadurch nicht als menschlich verifiziert.
+Die exakte Wiedererkennung verhindert eine konkurrierende Ersatzaufgabe.
+
+Diese Wiedererkennung ist lesend. Sie ändert weder Taskstatus noch Assignee,
+akzeptiert kein Ergebnis und setzt weder last_review_success noch
+last_repair_success. Sie belegt keine abgeschlossene fachliche Prüfung.
+Beim Review-Handoff bleibt review erhalten; im BACH-Fall bleibt der tatsächlich
+gelesene Status unverändert. Abweichende Beschreibung, Kategorie, Slot- oder
+Modellbindung sowie eine leere Zuordnung bleiben ein Binding-Konflikt.
+Bei einer nicht zu BACH gehörenden Zuordnung ist auch ein anderer Status als
+review ein Binding-Konflikt; es wird keine Ersatzaufgabe angelegt.
 
 ## Fehlerbeleg und lokale Logs
 
@@ -71,6 +83,16 @@ started=false.
 
 Ein Dienst gilt erst dann als laufend, wenn ein unabhängiger Status-Readback
 Prozessidentität, aktuellen Heartbeat, Checkout-/Konfigurationsidentität und
-gültige Ownership bestätigt. Ein Fehlerbeleg diagnostiziert einen fehlgeschlagenen
-Versuch, ersetzt aber weder Heartbeat noch last_success oder next_due.
-Review und sichere fachliche Korrektur bleiben getrennte Schritte.
+gültige Ownership bestätigt. Der Beleg gilt für seinen Beobachtungszeitpunkt;
+ein gespeicherter Snapshot ist kein ungeprüfter Echtzeitstatus.
+
+last_success wird aus dem zuletzt ausgewählten Run eines Jobs projiziert:
+Nur wenn dieser succeeded ist, wird dessen finished_at übernommen.
+last_success=null bedeutet deshalb nur, dass dieses Readback keinen erfolgreichen
+Abschluss als last_success ausweist. Eine frühere erfolgreiche Ausführung kann
+weiterhin in der Runhistorie stehen. Daraus folgt weder, dass der Job nie
+ausgeführt wurde, noch dass er zuvor nie erfolgreich war.
+Ein Fehlerbeleg diagnostiziert einen fehlgeschlagenen Versuch, ersetzt aber
+weder Heartbeat noch last_success oder next_due. Ein erfolgreicher Delta-Dispatch
+belegt keine abgeschlossene fachliche Dokuprüfung oder Reparatur. Review und
+sichere fachliche Korrektur bleiben getrennte Schritte.
