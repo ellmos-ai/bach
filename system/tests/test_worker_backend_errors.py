@@ -630,6 +630,19 @@ def test_always_on_local_reserve_retry_is_consent_and_profile_bound(
         slot, None, model=slot["model"], retries=0, waited_seconds=0,
         reason_code="local_reserve_budget_exceeds_host",
     ) is None
+    new_code = "local_reserve_reserve_wait_lease_return_required"
+    assert control._worker_backend_retry_delay(
+        slot, None, model=slot["model"], retries=0, waited_seconds=0,
+        reason_code=new_code,
+    ) is None
+    assert control._worker_backend_retry_delay(
+        slot, None, model=slot["model"], retries=0, waited_seconds=0,
+        reason_code=new_code, pre_effect_verified=True,
+    ) == 60
+    assert control._worker_backend_retry_delay(
+        slot, None, model=slot["model"], retries=3, waited_seconds=420,
+        reason_code=new_code, pre_effect_verified=True,
+    ) is None
 
 
 def test_local_reserve_failure_reason_is_redacted_structured_and_persisted():
@@ -655,6 +668,18 @@ def test_local_reserve_failure_reason_is_redacted_structured_and_persisted():
     restored = ChatRuntime._restore_message_status(stored)
     assert restored[0]["content"].reason_code == "local_reserve_reserve_wait_expired"
     assert "reason_code" not in ChatRuntime._messages_for_backend(restored)[0]
+    new_code = "local_reserve_reserve_wait_lease_return_required"
+    answer = FailedAnswer.from_exception(LocalReserveError(
+        "Lokale Ressourcenfreigabe: reserve_wait_lease_return_required"
+    ))
+    assert answer.reason_code == new_code
+    new_stored = json.loads(json.dumps(ChatRuntime._messages_for_store([
+        {"role": "assistant", "content": answer, "answer_status": "failed"},
+    ])))
+    assert new_stored[0]["reason_code"] == new_code
+    assert ChatRuntime._restore_message_status(new_stored)[0]["content"].reason_code == new_code
+    assert "reason_code" not in ChatRuntime._messages_for_backend(
+        ChatRuntime._restore_message_status(new_stored))[0]
     assert FailedAnswer("safe", reason_code={"unknown": True}).reason_code is None
 
 
@@ -678,7 +703,7 @@ def test_local_core_reserve_wait_does_not_enter_configured_model_fallback(monkey
     calls = []
     async def reserve_wait(*args, **kwargs):
         calls.append(kwargs.get("model"))
-        raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
+        raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
     monkeypatch.setattr(runtime, "_chat_with_compute_turn", reserve_wait)
     from hub._services.chat import model_sockets
     monkeypatch.setattr(model_sockets, "resolve_fallback_backend", lambda _target: pytest.fail(
@@ -714,19 +739,67 @@ def test_background_process_clears_previous_resolved_model(monkeypatch):
 def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
         tmp_path, monkeypatch):
     import sqlite3
+    import threading
+    from datetime import timedelta
 
-    from hub._services.chat.chat_runtime import ChatSession, SuccessfulAnswer
+    from hub._services.chat.chat_runtime import ChatSession
     from hub._services.chat.local_resource_reserve import LocalReserveError
     from hub._services.task_lease_client import TaskLeaseClient
 
     from system.tests.test_task_lease_client import _init_db
 
     control = importlib.import_module("hub._services.chat.telegram_chat")
+    real_datetime = datetime
+    simulated_clock = {"offset_seconds": 0}
+    class SimulatedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return real_datetime.now(tz) + timedelta(seconds=simulated_clock["offset_seconds"])
+    monkeypatch.setattr(slots, "datetime", SimulatedDateTime)
+    monkeypatch.setattr(control, "datetime", SimulatedDateTime)
     worker_id = "buddha_always_on"
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     slots.update_slot(worker_id, {"resolved_model": "stale-controller-model"}, path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    controller_cas_readbacks = []
+    original_controller_update = slots.update_persistent_core_controller_state
+    def tracked_controller_update(
+            expected_profile_version, expected_intent_id, expected_checkpoint,
+            checkpoint, expected_recovery_state, recovery_state, **kwargs):
+        previous_phase = (expected_recovery_state.get("phase")
+                          if isinstance(expected_recovery_state, dict) else None)
+        new_phase = recovery_state.get("phase") if isinstance(recovery_state, dict) else None
+        if previous_phase == "active" and new_phase == "reserve_wait":
+            ack = original_controller_update(
+                expected_profile_version, expected_intent_id, expected_checkpoint,
+                checkpoint, expected_recovery_state, recovery_state, **kwargs)
+            after_ack = slots.load_slots_config(path, strict=True)["slots"][worker_id]
+            assert after_ack[slots.PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD] == checkpoint
+            assert after_ack[slots.PERSISTENT_CORE_RECOVERY_FIELD] == recovery_state
+            assert ack["checkpoint"] == checkpoint and ack["recovery_state"] == recovery_state
+            assert slots._persistent_core_profile_version(after_ack) == expected_profile_version
+            controller_cas_readbacks.append("reserve_wait_ack_readback")
+            return ack
+        if previous_phase == "reserve_wait" and new_phase == "active":
+            before_second_cas = slots.load_slots_config(path, strict=True)["slots"][worker_id]
+            assert before_second_cas[slots.PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD] == expected_checkpoint
+            assert before_second_cas[slots.PERSISTENT_CORE_RECOVERY_FIELD] == expected_recovery_state
+            assert slots._persistent_core_profile_version(before_second_cas) == expected_profile_version
+            ack = original_controller_update(
+                expected_profile_version, expected_intent_id, expected_checkpoint,
+                checkpoint, expected_recovery_state, recovery_state, **kwargs)
+            after_second_cas = slots.load_slots_config(path, strict=True)["slots"][worker_id]
+            assert after_second_cas[slots.PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD] == checkpoint
+            assert after_second_cas[slots.PERSISTENT_CORE_RECOVERY_FIELD] == recovery_state
+            assert ack["checkpoint"] == checkpoint and ack["recovery_state"] == recovery_state
+            assert slots._persistent_core_profile_version(after_second_cas) == expected_profile_version
+            controller_cas_readbacks.append("active_cas_ack_readback")
+            return ack
+        return original_controller_update(
+            expected_profile_version, expected_intent_id, expected_checkpoint,
+            checkpoint, expected_recovery_state, recovery_state, **kwargs)
+    monkeypatch.setattr(slots, "update_persistent_core_controller_state", tracked_controller_update)
     def projected_resolved_model():
         agents = slots.core_system_agents_snapshot(path)["agents"]
         return next(agent["resolved_model"] for agent in agents if agent["id"] == worker_id)
@@ -750,49 +823,171 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
     conn.commit()
     client = TaskLeaseClient(conn=conn)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    settlement_events = []
+    original_return_lease = WorkerLeaseBinding.return_lease
+    def tracked_return_lease(binding, *args, **kwargs):
+        result = original_return_lease(binding, *args, **kwargs)
+        if binding.task_id == 42 and result:
+            settlement_events.append("lease_returned")
+        return result
+    monkeypatch.setattr(WorkerLeaseBinding, "return_lease", tracked_return_lease)
+    original_finish_assignment = control.finish_assignment
+    def tracked_finish_assignment(*args, **kwargs):
+        result = original_finish_assignment(*args, **kwargs)
+        if (kwargs.get("status") == "error"
+                and kwargs.get("result") == "backend_error"
+                and kwargs.get("reason") == "temporary_rate_limit"):
+            settlement_events.append("assignment_finished")
+        return result
+    monkeypatch.setattr(control, "finish_assignment", tracked_finish_assignment)
 
     backend = OllamaBackend(default_model="qwen3.8:27b-mlx")
     backend_calls = []
-    async def backend_chat(*args, **kwargs):
-        backend_calls.append(kwargs)
-        raise AssertionError("synthetic recovery test must not perform inference")
-    monkeypatch.setattr(backend, "chat", backend_chat)
-    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
-    monkeypatch.setattr(control, "runtime", runtime)
     session = ChatSession()
     session.chat_id = worker_id
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(control, "runtime", runtime)
     monkeypatch.setattr(runtime, "get_session", lambda _id: session)
+    monkeypatch.setattr(runtime, "_get_bach_context", lambda _text: "")
+    monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *_args: "")
+
+    # Keep the real ChatRuntime.process and reserve boundary. Only the model and
+    # capacity ports are synthetic; the first probe blocks before dispatch.
+    from hub._services.chat import local_resource_reserve
+    current_slot = slots.get_always_on_execution_slot(path)
+    model = current_slot["model"]
+    gib = local_resource_reserve.GIB
+    policy_version = "a" * 64
+    policy = {
+        "schema": local_resource_reserve.SCHEMA,
+        "enabled": True,
+        "memory_reserve_bytes": gib,
+        "disk_reserve_bytes": gib,
+        "wait_seconds": 60,
+        "poll_seconds": 1,
+        "models": {
+            model: {
+                "digest": "d" * 64,
+                "weight_budget_bytes": gib,
+                "kv_headroom_bytes": gib,
+                "overhead_bytes": gib,
+                "num_ctx": 16384,
+            }
+        },
+    }
+    monkeypatch.setattr(
+        local_resource_reserve, "read_policy", lambda: (policy, policy_version),
+    )
+
+    def capacity_receipt(state, memory_available):
+        return {
+            "schema": local_resource_reserve.SCHEMA,
+            "state": state,
+            "admitted": state == "ready",
+            "enforced": True,
+            "retryable": state != "ready",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "policy_version": policy_version,
+            "model": model,
+            "wait_seconds": 60,
+            "poll_seconds": 1,
+            "memory_total_bytes": 8 * gib,
+            "memory_available_bytes": memory_available,
+            "memory_required_bytes": 4 * gib,
+            "disk_free_bytes": {"taskdb": 8 * gib, "runtime": 8 * gib, "slots": 8 * gib},
+            "disk_reserve_bytes": gib,
+            "weight_request_bytes": gib,
+            "resident_weight_credit": False,
+        }
+
+    blocked_receipt = capacity_receipt("waiting_memory_reserve", 3 * gib)
+    ready_receipt = capacity_receipt("ready", 5 * gib)
+    capacity_wait_completed = False
+    probe_observations = []
+    probe_calls = []
+
+    async def synthetic_capacity_probe(_backend, _model):
+        probe_calls.append("ready" if capacity_wait_completed else "blocked")
+        return ready_receipt if capacity_wait_completed else blocked_receipt
+
+    monkeypatch.setattr(local_resource_reserve, "probe", synthetic_capacity_probe)
+
+    def ready_capacity_probe(slot):
+        assert capacity_wait_completed
+        worker_control = control._WORKER_CONTROLS[worker_id]
+        assert worker_control.task_binding is None and worker_control.lease_supervisor is None
+        assert client.read(42).leased is False
+        observed = slots._persistent_core_capacity_observation(
+            ready_receipt, worker=slot, expected_state="ready",
+        )
+        probe_observations.append(observed)
+        return ready_receipt, observed
+
+    monkeypatch.setattr(control, "_persistent_core_capacity_probe", ready_capacity_probe)
     monkeypatch.setattr(
         control, "_snapshot_chat_backend",
         lambda *args, **kwargs: (backend, "qwen3.8:27b-mlx"),
     )
     attempts, fences, waits = [], [], []
 
-    async def process(*args, **kwargs):
+    async def backend_chat(*args, **kwargs):
+        backend_calls.append(kwargs)
+        current = control._WORKER_CONTROLS[worker_id]
         binding = session.worker_task_binding
-        assert binding.task_id == 42 and not binding.closed
-        assert projected_resolved_model() == ""
-        attempts.append(binding)
-        fences.append(binding._ack.fence)
-        if len(attempts) == 1:
-            return FailedAnswer.from_exception(LocalReserveError(
-                "Lokale Ressourcenfreigabe: reserve_wait_expired"
-            ))
-        binding.execute_task_manage({
-            "action": "submit_result", "task_id": 42, "result": "synthetic completion",
-        })
-        session.resolved_model = "qwen3.8:27b-mlx"
-        return SuccessfulAnswer("synthetic completion")
+        assert binding is current.task_binding
+        assert binding is not None and binding.task_id == 42 and not binding.closed
+        assert session._worker_model_dispatch_binding is binding
+        assert binding.tool_dispatch_count == 0
+        if binding not in attempts:
+            attempts.append(binding)
+            fences.append(binding._ack.fence)
+        assert len(backend_calls) == 1
+        persisted = slots.load_slots_config(path, strict=True)["slots"][worker_id]
+        persisted_checkpoint = persisted[slots.PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD]
+        persisted_recovery = persisted[slots.PERSISTENT_CORE_RECOVERY_FIELD]
+        assert persisted_checkpoint == current.persistent_core_checkpoint
+        assert persisted_recovery["phase"] == "active"
+        assert persisted_recovery["retry_count"] == 1
+        assert slots._persistent_core_profile_version(persisted) == (
+            current.persistent_core_profile_version
+        )
+        assert controller_cas_readbacks == [
+            "reserve_wait_ack_readback", "active_cas_ack_readback",
+        ]
+        raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
 
-    monkeypatch.setattr(runtime, "process", process)
+    monkeypatch.setattr(backend, "chat", backend_chat)
     monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *args, **kwargs: False)
-
     def wait_without_lease(worker, seconds, *, expected_persistent_binding=None):
         waits.append(seconds)
         assert expected_persistent_binding is not None
-        assert worker.task_binding is None and worker.lease_supervisor is None
+        first_binding = session._local_reserve_failure_binding
+        assert first_binding is not None
+        if first_binding not in attempts:
+            attempts.append(first_binding)
+            fences.append(first_binding._ack.fence)
+        assert len(attempts) == 1
+        assert first_binding is attempts[0]
+        assert session._local_reserve_failure_control is not None
+        assert session._local_reserve_failure_reason_code == (
+            "local_reserve_reserve_wait_lease_return_required"
+        )
+        assert attempts[0].tool_dispatch_count == 0
         assert session.worker_task_binding is None
+        assert worker.task_binding is None and worker.lease_supervisor is None
         assert client.read(42).leased is False
+        assert settlement_events[:2] == ["lease_returned", "assignment_finished"]
+        stored_wait = slots.load_slots_config(path, strict=True)["slots"][worker_id][
+            slots.PERSISTENT_CORE_RECOVERY_FIELD
+        ]
+        assert stored_wait["phase"] == "reserve_wait"
+        assert stored_wait["reason_code"] == (
+            "local_reserve_reserve_wait_lease_return_required"
+        )
+        nonlocal capacity_wait_completed
+        capacity_wait_completed = True
+        simulated_clock["offset_seconds"] = 61
         current = slots.get_always_on_execution_slot(path)
         assert control._persistent_local_retry_binding(current) == expected_persistent_binding
         slots.update_slot(worker_id, {"resolved_model": "stale-between-task-generations"}, path)
@@ -802,21 +997,39 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait_without_lease)
     thread = None
     try:
-        response, code = control.start_worker_execution(worker_id)
-        assert code == 200 and response["ok"] is True
+        startup_snapshot = slots.persistent_core_startup_snapshot()
+        admission = control._persistent_core_begin_admission(
+            startup_snapshot, threading.Event(), ready_receipt,
+        )
+        assert admission["state"] == "admitted", admission
+        stored_core = slots.load_slots_config(path, strict=True)["slots"][worker_id]
+        checkpoint = stored_core.get(slots.PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+        recovery_state = stored_core.get(slots.PERSISTENT_CORE_RECOVERY_FIELD)
+        assert checkpoint["phase"] == "admitted"
+        assert recovery_state["phase"] == "active"
         thread = control._WORKER_EXECUTIONS[worker_id].thread
         thread.join(8)
         assert not thread.is_alive()
         assert len(attempts) == 2 and len(waits) == 1
         assert fences[0] != fences[1]
+        assert attempts[0] is not attempts[1]
+        assert attempts[0].tool_dispatch_count == attempts[1].tool_dispatch_count == 0
+        assert len(backend_calls) == 1
+        assert probe_calls[0] == "blocked" and "ready" in probe_calls[1:]
         assert waits == [60]
-        assert backend_calls == []
+        assert len(probe_observations) == 1
+        assert probe_observations[0]["state"] == "ready"
+        assert len(backend_calls) == 1
+        assert session._worker_model_dispatch_binding is attempts[1]
         assert client.read(42).leased is False
-        assert projected_resolved_model() == "qwen3.8:27b-mlx"
+        assert projected_resolved_model() == ""
+        assert session._local_reserve_failure_reason_code is None
         task = client.task_snapshot(42)
-        assert task["status"] == "review"
+        assert task["status"] == "pending"
         history = slots.get_activity_history(path=path)
-        assert "local_reserve_reserve_wait_expired" in json.dumps(history)
+        encoded_history = json.dumps(history)
+        assert "local_reserve_reserve_wait_lease_return_required" in encoded_history
+        assert "local_reserve_reserve_wait_expired" in encoded_history
         assert "resolved_model" not in json.dumps(history[0])
     finally:
         if thread is not None and thread.is_alive():
@@ -896,3 +1109,161 @@ def test_runtime_reports_only_current_successful_response_model(
     if result.get("error"):
         assert FailedAnswer.looks_like(answer)
     assert session.resolved_model == expected_model
+
+
+def test_persistent_core_pre_effect_reserve_returns_typed_failure_without_model_call(
+        tmp_path, monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    from hub._services.chat import local_model_admission, local_resource_reserve
+    from hub._services.chat.local_resource_reserve import LocalReserveError
+
+    worker = {
+        **slots.DEFAULT_CORE_SLOTS["buddha_always_on"],
+        "id": "buddha_always_on", "type": "continuous", "status": "running",
+        "enabled": True, "persistent_opt_in": True, "persistent_opt_in_id": "a" * 32,
+    }
+    profile_version = slots._persistent_core_profile_version(worker)
+    worker["persistent_opt_in_profile_version"] = profile_version
+    physical = "worker-" + "4" * 32
+    checkpoint = {
+        "schema": "bach.persistent-worker-controller.v2",
+        "phase": "admitted", "worker_id": worker["id"],
+        "service_instance": "1" * 32, "start_request_id": "2" * 32,
+        "intent_id": worker["persistent_opt_in_id"], "profile_version": profile_version,
+        "trace_contract_sha256": "b" * 64, "generation": "3" * 32,
+        "physical_worker_id": physical, "lease_worker_id": physical + "@HOST",
+    }
+    recovery = {
+        "schema": "bach.persistent-core-recovery.v1", "phase": "active",
+        "worker_id": worker["id"], "intent_id": worker["persistent_opt_in_id"],
+        "profile_version": profile_version, "retry_count": 0, "waited_seconds": 0,
+        "capacity_state": "waiting_memory_reserve", "capacity_policy_version": "c" * 64,
+        "capacity_fingerprint": "d" * 64,
+        "checkpoint_sha256": slots._persistent_checkpoint_sha256(checkpoint),
+    }
+    assert slots._valid_persistent_worker_controller_checkpoint(checkpoint)
+    assert slots._valid_persistent_core_recovery_state(
+        recovery, worker=worker, checkpoint=checkpoint)
+
+    snapshot = {
+        "state": "prior_generation_unsettled", "worker_id": worker["id"],
+        "intent_id": worker["persistent_opt_in_id"], "profile_version": profile_version,
+        "checkpoint": checkpoint, "recovery_state": recovery, "slot": worker,
+    }
+    monkeypatch.setattr(slots, "persistent_core_startup_snapshot", lambda: snapshot)
+
+    gib = local_resource_reserve.GIB
+    model = worker["model"]
+    policy_version = "c" * 64
+    policy = {
+        "schema": local_resource_reserve.SCHEMA, "enabled": True,
+        "memory_reserve_bytes": gib, "disk_reserve_bytes": gib,
+        "wait_seconds": 60, "poll_seconds": 1,
+        "models": {model: {
+            "digest": "e" * 64, "weight_budget_bytes": gib,
+            "kv_headroom_bytes": gib, "overhead_bytes": gib, "num_ctx": 16384,
+        }},
+    }
+    monkeypatch.setattr(local_resource_reserve, "read_policy", lambda: (policy, policy_version))
+    blocked = {
+        "schema": local_resource_reserve.SCHEMA,
+        "state": "waiting_memory_reserve", "admitted": False, "enforced": True,
+        "retryable": True, "checked_at": datetime.now(timezone.utc).isoformat(),
+        "policy_version": policy_version, "model": model, "wait_seconds": 60,
+        "poll_seconds": 1, "memory_total_bytes": 8 * gib,
+        "memory_available_bytes": 3 * gib, "memory_required_bytes": 4 * gib,
+        "disk_free_bytes": {"taskdb": 8 * gib, "runtime": 8 * gib, "slots": 8 * gib},
+        "disk_reserve_bytes": gib, "weight_request_bytes": gib,
+        "resident_weight_credit": False,
+    }
+    composed = local_model_admission.compose_admission_receipt(
+        blocked, binding=None, require_model_socket=False,
+    )
+
+    class Binding:
+        tool_dispatch_count = 0
+        closed = False
+        stop_requested = False
+        def assert_active(self):
+            return None
+
+    binding = Binding()
+    startup = threading.Event()
+    startup.set()
+    stop = threading.Event()
+    control = SimpleNamespace(
+        worker_id="buddha_always_on", task_binding=binding, stop_event=stop,
+        persistent_core_startup_confirmed=startup, persistent_core_startup_cancelled=False,
+        persistent_core_intent_id=worker["persistent_opt_in_id"],
+        persistent_core_profile_version=profile_version,
+        persistent_core_checkpoint=checkpoint, persistent_core_recovery_state=recovery,
+    )
+    runtime = ChatRuntime(object())
+    session = runtime.get_session("buddha_always_on")
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    session._persistent_core_model_call_control = control
+    monkeypatch.setattr(runtime, "get_session", lambda _chat_id: session)
+    monkeypatch.setattr(runtime, "_worker_backend_gate", lambda *args: None)
+    monkeypatch.setattr(runtime, "_uses_local_compute", lambda _backend: True)
+
+    async def prepared(_backend, _model, *, chat_id=None):
+        return composed, None
+    monkeypatch.setattr(runtime, "prepare_inference_call", prepared)
+
+    class Backend:
+        name = "ollama"
+        manages_own_tools = False
+        def __init__(self):
+            self.calls = 0
+        def get_default_model(self):
+            return model
+        async def chat(self, *args, **kwargs):
+            self.calls += 1
+            return "must not be called"
+
+    backend = Backend()
+    token = runtime._compute_turn_context.set(("buddha_always_on", "background"))
+    try:
+        with pytest.raises(LocalReserveError, match="reserve_wait_lease_return_required"):
+            asyncio.run(runtime._chat_with_compute_turn(
+                backend, [{"role": "user", "content": "synthetic"}], model=model,
+            ))
+    finally:
+        runtime._compute_turn_context.reset(token)
+    assert backend.calls == 0
+    assert session._local_reserve_failure_reason_code == (
+        "local_reserve_reserve_wait_lease_return_required"
+    )
+    assert session._local_reserve_failure_binding is binding
+    assert session._local_reserve_failure_control is control
+    assert session._local_reserve_failure_receipt == blocked
+
+    # Every uncertainty gate must turn the special path off.
+    assert runtime._persistent_core_pre_effect_reserve_receipt(
+        session=session, binding=binding, backend=backend, model=model,
+        priority="background", receipt=composed,
+    ) == blocked
+    binding.tool_dispatch_count = 1
+    assert runtime._persistent_core_pre_effect_reserve_receipt(
+        session=session, binding=binding, backend=backend, model=model,
+        priority="background", receipt=composed,
+    ) is None
+    binding.tool_dispatch_count = 0
+    session._worker_model_dispatch_binding = binding
+    assert runtime._persistent_core_pre_effect_reserve_receipt(
+        session=session, binding=binding, backend=backend, model=model,
+        priority="background", receipt=composed,
+    ) is None
+    session._worker_model_dispatch_binding = None
+    assert runtime._persistent_core_pre_effect_reserve_receipt(
+        session=session, binding=binding, backend=backend, model=model,
+        priority="foreground", receipt=composed,
+    ) is None
+    snapshot["profile_version"] = "f" * 64
+    assert runtime._persistent_core_pre_effect_reserve_receipt(
+        session=session, binding=binding, backend=backend, model=model,
+        priority="background", receipt=composed,
+    ) is None

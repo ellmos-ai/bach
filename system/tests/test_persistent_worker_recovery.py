@@ -258,6 +258,9 @@ def test_private_startup_admission_uses_profile_version_scope(tmp_path, monkeypa
     _opt_in(path, worker_id)
     profile = _startup_profile(path)
     assert profile["state"] == "ready"
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    worker = slots.get_worker_slot(worker_id, path=path)
+    profile = {**profile, "task_id": worker.get("task_id")}
     version_scopes = []
     read_worker = slots.system_worker_at_version
 
@@ -279,9 +282,86 @@ def test_private_startup_admission_uses_profile_version_scope(tmp_path, monkeypa
 
     generation = "1" * 32
     physical_worker_id = "worker-" + "2" * 32
+    start_request_id = "a" * 32
+    pending = {
+        "schema": "bach.persistent-worker-controller.v2",
+        "phase": "admission_pending",
+        "worker_id": worker_id,
+        "service_instance": telegram_chat._WORKER_SERVICE_INSTANCE,
+        "start_request_id": start_request_id,
+        "intent_id": profile["intent_id"],
+        "profile_version": profile["profile_version"],
+        "trace_contract_sha256": "b" * 64,
+        "generation": generation,
+        "physical_worker_id": physical_worker_id,
+        "lease_worker_id": f"{physical_worker_id}@{socket.gethostname()}",
+    }
+    _store_checkpoint(path, worker_id, pending)
     response, status = telegram_chat._start_worker_execution(
         worker_id,
-        start_request_id="a" * 32,
+        start_request_id=start_request_id,
+        expected_service_instance=telegram_chat._WORKER_SERVICE_INSTANCE,
+        expected_configuration_version=profile["configuration_version"],
+        _startup_stop_event=threading.Event(),
+        _startup_generation=generation,
+        _startup_physical_worker_id=physical_worker_id,
+        _startup_lease_worker_id=f"{physical_worker_id}@{socket.gethostname()}",
+        _startup_profile_version=True,
+        _startup_persistent_cloud_profile=profile,
+        _startup_persistent_cloud_checkpoint=pending,
+    )
+    assert status == 200
+    assert response["ok"] is True
+    assert response["execution"]["generation"] == generation
+    assert version_scopes == ["worker_profile"]
+
+
+def test_persistent_cloud_startup_without_binding_fails_before_registry_or_effects(
+        tmp_path, isolated_task_client, monkeypatch):
+    import socket
+
+    from hub._services.chat import telegram_chat
+
+    path, worker_id = _cloud_worker(tmp_path)
+    _opt_in(path, worker_id)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    client, database, connect, insert = isolated_task_client
+    task_id = _insert_task(database, connect, insert)
+    profile = _startup_profile(path)
+    assert profile["state"] == "ready"
+    assert profile["reason"] == "explicit_opt_in"
+
+    class TrackingRegistry(dict):
+        def __init__(self):
+            super().__init__()
+            self.registrations = []
+
+        def __setitem__(self, key, value):
+            self.registrations.append(key)
+            super().__setitem__(key, value)
+
+    controls = TrackingRegistry()
+    executions = TrackingRegistry()
+    active_threads = TrackingRegistry()
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", controls)
+    monkeypatch.setattr(telegram_chat, "_WORKER_EXECUTIONS", executions)
+    monkeypatch.setattr(telegram_chat, "_ACTIVE_WORKER_THREADS", active_threads)
+
+    client_reads = []
+    monkeypatch.setattr(telegram_chat, "_native_task_client", lambda: (client_reads.append(True) or client))
+    backend_snapshots = []
+    monkeypatch.setattr(telegram_chat, "_snapshot_chat_backend",
+                        lambda *args, **kwargs: backend_snapshots.append((args, kwargs)))
+    starts = []
+    monkeypatch.setattr(telegram_chat, "_start_reserved_worker_execution",
+                        lambda *args: (starts.append(args) or ({"ok": True}, 200)))
+
+    request_id = "8" * 32
+    generation = "9" * 32
+    physical_worker_id = "worker-" + "a" * 32
+    response, status = telegram_chat._start_worker_execution(
+        worker_id,
+        start_request_id=request_id,
         expected_service_instance=telegram_chat._WORKER_SERVICE_INSTANCE,
         expected_configuration_version=profile["configuration_version"],
         _startup_stop_event=threading.Event(),
@@ -290,10 +370,20 @@ def test_private_startup_admission_uses_profile_version_scope(tmp_path, monkeypa
         _startup_lease_worker_id=f"{physical_worker_id}@{socket.gethostname()}",
         _startup_profile_version=True,
     )
-    assert status == 200
-    assert response["ok"] is True
-    assert response["execution"]["generation"] == generation
-    assert version_scopes == ["worker_profile"]
+
+    assert status == 403
+    assert response["error_code"] == "persistent_admission_binding_required"
+    assert response["admission"] == {
+        "admitted": False, "worker_id": worker_id, "start_request_id": request_id,
+        "service_instance": telegram_chat._WORKER_SERVICE_INSTANCE,
+    }
+    assert controls.registrations == []
+    assert executions.registrations == []
+    assert active_threads.registrations == []
+    assert not client_reads
+    assert not backend_snapshots
+    assert not starts
+    assert client.read(task_id).leased is False
 
 
 def test_present_trace_contract_fingerprint_is_strictly_shaped():
@@ -367,6 +457,352 @@ def _insert_task(database, connect, insert, *, title="Recovery task", status="pe
     finally:
         conn.close()
 
+
+@pytest.mark.parametrize("unknown_ack", [False, True], ids=["confirmed-readback", "unknown-cas-ack"])
+def test_persistent_cloud_worker_waits_for_admitted_checkpoint_readback(
+        tmp_path, isolated_task_client, monkeypatch, unknown_ack):
+    from hub import rheingold
+    from hub._services.chat import telegram_chat
+
+    path, worker_id = _cloud_worker(tmp_path)
+    _opt_in(path, worker_id)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    client, database, connect, insert = isolated_task_client
+    task_id = _insert_task(database, connect, insert)
+    monkeypatch.setattr(telegram_chat, "_native_task_client", lambda: client)
+    monkeypatch.setattr(rheingold, "get_lead_config", lambda: {"mode": "lead"})
+    monkeypatch.setattr(telegram_chat, "_persistent_worker_trace_contract", lambda: {
+        "schema": "bach.worker-tool-trace.v1", "source_sha256": "a" * 64,
+    })
+    monkeypatch.setattr(telegram_chat, "_active_worker_ids", lambda: set())
+    for name in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(telegram_chat, name, {})
+
+    started = threading.Event()
+    admitted_written = threading.Event()
+    return_ack = threading.Event()
+    readback_confirmed = threading.Event()
+    effect_seen = threading.Event()
+    effects = []
+    thread_errors = []
+    worker_threads = []
+
+    def start_reserved(control, slot, _custom_prompt):
+        control.launch_attempted = True
+
+        def run_after_gate():
+            try:
+                started.set()
+                if not telegram_chat._await_worker_startup_admission(control):
+                    return
+                assert readback_confirmed.is_set()
+                binding = telegram_chat._acquire_worker_task(
+                    control, slot, control.physical_worker_id,
+                )
+                if binding is not None:
+                    effects.append(("claim", binding.task_id, binding._ack.fence))
+                    effect_seen.set()
+                    binding.return_lease()
+            except Exception as exc:  # noqa: BLE001 -- thread failure is forwarded to test assertions
+                thread_errors.append(type(exc).__name__)
+            finally:
+                control.done_event.set()
+
+        worker_thread = threading.Thread(target=run_after_gate, daemon=True)
+        worker_threads.append(worker_thread)
+        control.thread = worker_thread
+        control.worker_thread_started = True
+        telegram_chat._ACTIVE_WORKER_THREADS[slot["id"]] = worker_thread
+        worker_thread.start()
+        return {"ok": True}, 200
+
+    monkeypatch.setattr(telegram_chat, "_start_reserved_worker_execution", start_reserved)
+    monkeypatch.setattr(telegram_chat, "_persistent_worker_trace_contract", lambda: {
+        "schema": "bach.worker-tool-trace.v1", "source_sha256": "a" * 64,
+    })
+    real_set_checkpoint = slots.set_persistent_worker_controller_checkpoint
+
+    def tracked_checkpoint(*args, **kwargs):
+        checkpoint = args[5] if len(args) > 5 else kwargs.get("checkpoint")
+        result = real_set_checkpoint(*args, **kwargs)
+        if isinstance(checkpoint, dict) and checkpoint.get("phase") == "admitted":
+            admitted_written.set()
+            if unknown_ack:
+                raise RuntimeError("synthetic unknown commit acknowledgement")
+            assert return_ack.wait(3)
+        return result
+
+    monkeypatch.setattr(slots, "set_persistent_worker_controller_checkpoint", tracked_checkpoint)
+    real_readback = telegram_chat._persistent_cloud_admission_readback
+
+    def tracked_readback(*args, **kwargs):
+        result = real_readback(*args, **kwargs)
+        if result:
+            readback_confirmed.set()
+        return result
+
+    monkeypatch.setattr(telegram_chat, "_persistent_cloud_admission_readback", tracked_readback)
+    startup_stop = threading.Event()
+    results = []
+    caller = threading.Thread(
+        target=lambda: results.append(
+            telegram_chat._resume_persistent_cloud_workers_at_startup(startup_stop)
+        ),
+        daemon=True,
+    )
+    caller.start()
+    try:
+        assert started.wait(3)
+        if unknown_ack:
+            caller.join(3)
+            assert not caller.is_alive()
+            assert results[0]["profiles"][0]["state"] == "start_unconfirmed"
+            assert admitted_written.is_set()
+            assert not readback_confirmed.is_set()
+            assert not effect_seen.wait(0.2)
+            assert effects == []
+            assert client.read(task_id).leased is False
+            stored = slots.get_worker_slot(worker_id, path=path)
+            assert stored[CHECKPOINT_FIELD]["phase"] == "admitted"
+        else:
+            assert admitted_written.wait(3)
+            assert not readback_confirmed.is_set()
+            assert not effect_seen.wait(0.2)
+            assert effects == []
+            assert client.read(task_id).leased is False
+            return_ack.set()
+            caller.join(3)
+            assert not caller.is_alive()
+            assert results[0]["profiles"][0]["state"] == "admitted"
+            assert readback_confirmed.is_set()
+            assert effect_seen.wait(3)
+            assert effects and effects[0][0:2] == ("claim", task_id)
+            for worker_thread in worker_threads:
+                worker_thread.join(3)
+            assert client.read(task_id).leased is False
+        assert thread_errors == []
+    finally:
+        return_ack.set()
+        startup_stop.set()
+        caller.join(3)
+        for worker_thread in worker_threads:
+            worker_thread.join(3)
+
+
+def test_persistent_cloud_optout_after_readback_stays_closed_before_assignment(
+        tmp_path, isolated_task_client, monkeypatch):
+    import time
+
+    from hub import rheingold
+    from hub._services.chat import telegram_chat
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    path, worker_id = _cloud_worker(tmp_path)
+    _opt_in(path, worker_id)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    client, database, connect, insert = isolated_task_client
+    task_id = _insert_task(database, connect, insert)
+    monkeypatch.setattr(telegram_chat, "_native_task_client", lambda: client)
+    monkeypatch.setattr(rheingold, "get_lead_config", lambda: {"mode": "lead"})
+    monkeypatch.setattr(telegram_chat, "_persistent_worker_trace_contract", lambda: {
+        "schema": "bach.worker-tool-trace.v1", "source_sha256": "a" * 64,
+    })
+    monkeypatch.setattr(telegram_chat, "_active_worker_ids", lambda: set())
+    for name in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(telegram_chat, name, {})
+
+    class SyntheticBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.chat_calls = 0
+
+        async def chat(self, *_args, **_kwargs):
+            self.chat_calls += 1
+            return "synthetic response"
+
+    backend = SyntheticBackend()
+    backend_snapshots = []
+    assignments = []
+    task_acquires = []
+    readback_revoked = threading.Event()
+    readback_calls = 0
+    real_acquire = client.acquire
+
+    def counted_acquire(*args, **kwargs):
+        task_acquires.append((args, kwargs))
+        return real_acquire(*args, **kwargs)
+
+    monkeypatch.setattr(client, "acquire", counted_acquire)
+    monkeypatch.setattr(telegram_chat, "runtime", ChatRuntime(backend, session_store=None))
+    monkeypatch.setattr(
+        telegram_chat,
+        "_snapshot_chat_backend",
+        lambda *_args, **_kwargs: (backend_snapshots.append(True) or backend, "provider/free-model"),
+    )
+    monkeypatch.setattr(
+        telegram_chat,
+        "begin_assignment",
+        lambda **kwargs: (assignments.append(kwargs) or {"assignment_id": "synthetic"}),
+    )
+    monkeypatch.setattr(telegram_chat, "finish_assignment", lambda *_args, **_kwargs: None)
+    real_readback = telegram_chat._persistent_cloud_admission_readback
+
+    def readback_then_opt_out(*args, **kwargs):
+        nonlocal readback_calls
+        result = real_readback(*args, **kwargs)
+        readback_calls += 1
+        if result and not readback_revoked.is_set():
+            current = slots.worker_configuration_snapshot(worker_id, path=path)
+            slots.change_worker_configuration(
+                worker_id, current["configuration_version"],
+                {"persistent_opt_in": False}, path=path,
+            )
+            readback_revoked.set()
+        return result
+
+    monkeypatch.setattr(
+        telegram_chat, "_persistent_cloud_admission_readback", readback_then_opt_out,
+    )
+    startup_stop = threading.Event()
+    results = []
+    caller = threading.Thread(
+        target=lambda: results.append(
+            telegram_chat._resume_persistent_cloud_workers_at_startup(startup_stop)
+        ),
+        daemon=True,
+    )
+    caller.start()
+    try:
+        caller.join(5)
+        assert not caller.is_alive()
+        assert results[0]["profiles"][0]["state"] == "start_unconfirmed"
+        assert readback_revoked.is_set() and readback_calls >= 1
+        assert assignments == []
+        assert backend_snapshots == []
+        assert backend.chat_calls == 0
+        assert task_acquires == []
+        assert client.read(task_id).leased is False
+        current = slots.get_worker_slot(worker_id, path=path)
+        assert current["persistent_opt_in"] is False
+        assert CHECKPOINT_FIELD not in current
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            thread = telegram_chat._ACTIVE_WORKER_THREADS.get(worker_id)
+            if thread is None or not getattr(thread, "is_alive", lambda: False)():
+                break
+            time.sleep(0.01)
+        thread = telegram_chat._ACTIVE_WORKER_THREADS.get(worker_id)
+        assert thread is None or not getattr(thread, "is_alive", lambda: False)()
+    finally:
+        startup_stop.set()
+        caller.join(3)
+        thread = telegram_chat._ACTIVE_WORKER_THREADS.get(worker_id)
+        if thread is not None and getattr(thread, "is_alive", lambda: False)():
+            thread.join(3)
+
+
+
+def test_persistent_cloud_claim_guard_rechecks_optout_after_gate(tmp_path, isolated_task_client, monkeypatch):
+    import socket
+
+    from hub._services.chat import telegram_chat
+
+    path, worker_id = _cloud_worker(tmp_path)
+    _opt_in(path, worker_id)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    client, database, connect, insert = isolated_task_client
+    task_id = _insert_task(database, connect, insert)
+    monkeypatch.setattr(telegram_chat, "_native_task_client", lambda: client)
+
+    worker = slots.get_worker_slot(worker_id, path=path)
+    profile = {**_startup_profile(path), "task_id": worker.get("task_id")}
+    request_id = "5" * 32
+    generation = "6" * 32
+    physical_worker_id = "worker-" + "7" * 32
+    lease_worker_id = f"{physical_worker_id}@{socket.gethostname()}"
+    pending = _checkpoint(worker, "admission_pending")
+    pending.update({
+        "service_instance": telegram_chat._WORKER_SERVICE_INSTANCE,
+        "start_request_id": request_id,
+        "generation": generation,
+        "physical_worker_id": physical_worker_id,
+        "lease_worker_id": lease_worker_id,
+    })
+    _store_checkpoint(path, worker_id, pending)
+    worker = slots.get_worker_slot(worker_id, path=path)
+    admitted = {**pending, "phase": "admitted"}
+    config = slots.worker_configuration_snapshot(worker_id, path=path)
+    slots.set_persistent_worker_controller_checkpoint(
+        worker_id, config["configuration_version"], slots._worker_profile_version(worker),
+        worker["persistent_opt_in_id"], pending, admitted, path=path,
+    )
+
+    cloud_binding = {"profile": profile, "checkpoint": dict(pending)}
+    control = telegram_chat._WorkerControl(
+        worker_id,
+        generation=generation,
+        physical_worker_id=physical_worker_id,
+        lease_worker_id=lease_worker_id,
+        start_request_id=request_id,
+        admitted_worker={"id": worker_id, "type": worker.get("type")},
+        slot_policy_reader=telegram_chat._execution_slot_reader(
+            worker, persistent_cloud_binding=cloud_binding,
+        ),
+        startup_admission_required=True,
+        persistent_cloud_admission_binding=cloud_binding,
+    )
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", {worker_id: control})
+    monkeypatch.setattr(telegram_chat, "_WORKER_EXECUTIONS", {worker_id: control})
+    monkeypatch.setattr(telegram_chat, "_ACTIVE_WORKER_THREADS", {})
+
+    assert telegram_chat._persistent_cloud_admission_readback(worker_id, profile, admitted)
+    assert telegram_chat._confirm_persistent_startup_gate(
+        worker_id, request_id, generation, admitted_checkpoint=admitted,
+    )
+    assert control.startup_admission_confirmed.is_set()
+    assert cloud_binding["checkpoint"] == admitted
+
+    current = slots.worker_configuration_snapshot(worker_id, path=path)
+    slots.change_worker_configuration(
+        worker_id, current["configuration_version"], {"persistent_opt_in": False}, path=path,
+    )
+
+    acquired = []
+    snapshots = []
+    candidates = []
+    real_acquire = client.acquire
+    real_snapshot = client.task_snapshot
+    real_candidates = client.task_candidates
+
+    def counted_acquire(*args, **kwargs):
+        acquired.append((args, kwargs))
+        return real_acquire(*args, **kwargs)
+
+    def counted_snapshot(*args, **kwargs):
+        snapshots.append((args, kwargs))
+        return real_snapshot(*args, **kwargs)
+
+    def counted_candidates(*args, **kwargs):
+        result = real_candidates(*args, **kwargs)
+        candidates.extend(item["id"] for item in result["tasks"])
+        return result
+
+    monkeypatch.setattr(client, "acquire", counted_acquire)
+    monkeypatch.setattr(client, "task_snapshot", counted_snapshot)
+    monkeypatch.setattr(client, "task_candidates", counted_candidates)
+    current_slot = slots.get_worker_slot(worker_id, path=path)
+    with pytest.raises(RuntimeError, match="Persistente Worker-Freigabe"):
+        telegram_chat._acquire_worker_task(control, current_slot, physical_worker_id)
+
+    assert task_id in candidates
+    assert acquired == []
+    assert snapshots == []
+    assert client.read(task_id).leased is False
+    assert control.task_binding is None
+    current = slots.get_worker_slot(worker_id, path=path)
+    assert current["persistent_opt_in"] is False
+    assert CHECKPOINT_FIELD not in current
 
 def _reconcile(path, worker_id, contract, client, monkeypatch):
     from hub._services.chat import telegram_chat
@@ -672,10 +1108,13 @@ def test_manual_buddha_stop_isolated_from_cloud_profiles_and_monitor(monkeypatch
         yield lambda: None
 
     monkeypatch.setattr(slots, "worker_admission_transaction", no_revision_write)
-    monkeypatch.setattr(
-        slots, "system_worker_at_version",
-        lambda worker_id, version, *, version_scope: dict(profiles[worker_id]),
-    )
+    def system_worker_at_version(worker_id, version, *, version_scope, persistent_intent_id=None):
+        # The native helper accepts this keyword on both persistent and legacy paths.
+        # These fixtures intentionally model legacy starts with no persistent intent.
+        assert persistent_intent_id is None
+        return dict(profiles[worker_id])
+
+    monkeypatch.setattr(slots, "system_worker_at_version", system_worker_at_version)
     monkeypatch.setattr(chat, "_execution_worker_slot", lambda worker_id: profiles.get(worker_id))
     monkeypatch.setattr(chat, "_WORKER_CONTROLS", {})
     monkeypatch.setattr(chat, "_ACTIVE_WORKER_THREADS", {})
@@ -743,8 +1182,8 @@ def test_manual_buddha_stop_isolated_from_cloud_profiles_and_monitor(monkeypatch
                 _startup_profile_version=profile_version,
             )
 
-        failed_response, failed_status = start_profile("cloud-profile-a", "a", profile_version=True)
-        active_response, active_status = start_profile("cloud-profile-b", "b", profile_version=True)
+        failed_response, failed_status = start_profile("cloud-profile-a", "a", profile_version=False)
+        active_response, active_status = start_profile("cloud-profile-b", "b", profile_version=False)
         buddha_response, buddha_status = start_profile("buddha_always_on", "c", profile_version=False)
         failed = controls["cloud-profile-a"]
         active = controls["cloud-profile-b"]
@@ -897,3 +1336,128 @@ def test_always_on_status_and_controller_task_changes_preserve_profile_consent(t
     idle = slots.get_slot(worker_id, path)
     assert idle["persistent_opt_in"] is True
     assert idle["persistent_opt_in_id"] == intent_id
+
+
+def _capacity_policy(model):
+    from hub._services.chat.local_resource_reserve import GIB, SCHEMA
+
+    return {
+        "schema": SCHEMA,
+        "enabled": True,
+        "memory_reserve_bytes": GIB,
+        "disk_reserve_bytes": GIB,
+        "wait_seconds": 60,
+        "poll_seconds": 1,
+        "models": {
+            model: {
+                "digest": "d" * 64,
+                "weight_budget_bytes": GIB,
+                "kv_headroom_bytes": GIB,
+                "overhead_bytes": GIB,
+                "num_ctx": 16384,
+            }
+        },
+    }
+
+
+def _capacity_receipt(model, *, state="ready", checked_at=None, policy_version="a" * 64,
+                      memory_available=None, disk_free=None):
+    from hub._services.chat.local_resource_reserve import GIB, SCHEMA
+
+    return {
+        "schema": SCHEMA,
+        "state": state,
+        "admitted": state == "ready",
+        "enforced": True,
+        "retryable": state != "ready",
+        "checked_at": checked_at or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "policy_version": policy_version,
+        "model": model,
+        "wait_seconds": 60,
+        "poll_seconds": 1,
+        "memory_total_bytes": 8 * GIB,
+        "memory_available_bytes": memory_available if memory_available is not None else 5 * GIB,
+        "memory_required_bytes": 4 * GIB,
+        "disk_free_bytes": disk_free or {"taskdb": 8 * GIB, "runtime": 8 * GIB, "slots": 8 * GIB},
+        "disk_reserve_bytes": GIB,
+        "weight_request_bytes": GIB,
+        "resident_weight_credit": False,
+    }
+
+
+def test_core_capacity_reauthorization_requires_fresh_current_semantic_ready_probe(
+        tmp_path, monkeypatch):
+    from hub._services.chat import local_resource_reserve
+
+    path, _ = _always_on_core(tmp_path)
+    _opt_in_core(path)
+    worker = slots.get_always_on_execution_slot(path)
+    model = worker["model"]
+    policy = _capacity_policy(model)
+    policy_version = "a" * 64
+    monkeypatch.setattr(local_resource_reserve, "read_policy",
+                        lambda: (policy, policy_version))
+
+    blocked = _capacity_receipt(
+        model, state="waiting_memory_reserve", policy_version=policy_version,
+        memory_available=3 * local_resource_reserve.GIB,
+    )
+    baseline = slots._persistent_core_capacity_observation(
+        blocked, worker=worker, expected_state="waiting_memory_reserve")
+    ready = _capacity_receipt(model, policy_version=policy_version)
+    observed = slots._persistent_core_capacity_observation(
+        ready, worker=worker, expected_state="ready")
+    assert baseline is not None and baseline["state"] == "waiting_memory_reserve"
+    assert observed is not None and observed["state"] == "ready"
+    assert observed["fingerprint"] != baseline["fingerprint"]
+
+    recovery_state = {
+        "phase": "capacity_wait",
+        "capacity_state": baseline["state"],
+        "capacity_policy_version": baseline["policy_version"],
+        "capacity_fingerprint": baseline["fingerprint"],
+    }
+    proof = {
+        "schema": "bach.persistent-core-capacity-reauthorization.v1",
+        "receipt": ready,
+        "previous_state": baseline["state"],
+        "previous_policy_version": baseline["policy_version"],
+        "previous_fingerprint": baseline["fingerprint"],
+    }
+    assert slots._valid_persistent_core_capacity_reauthorization(
+        proof, worker=worker, recovery_state=recovery_state)
+
+    stale = dict(ready, checked_at=(
+        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=121)
+    ).isoformat())
+    assert slots._persistent_core_capacity_observation(
+        stale, worker=worker, expected_state="ready") is None
+    future = dict(ready, checked_at=(
+        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)
+    ).isoformat())
+    assert slots._persistent_core_capacity_observation(
+        future, worker=worker, expected_state="ready") is None
+
+    # A plausible ready receipt from a different policy cannot reset this wait.
+    altered_policy = dict(policy, memory_reserve_bytes=2 * local_resource_reserve.GIB)
+    altered_version = "b" * 64
+    monkeypatch.setattr(local_resource_reserve, "read_policy",
+                        lambda: (altered_policy, altered_version))
+    altered_ready = _capacity_receipt(
+        model, policy_version=altered_version, memory_available=6 * local_resource_reserve.GIB,
+    )
+    altered_ready["memory_required_bytes"] = 5 * local_resource_reserve.GIB
+    assert slots._persistent_core_capacity_observation(
+        altered_ready, worker=worker, expected_state="ready") is not None
+    altered_proof = {**proof, "receipt": altered_ready}
+    assert not slots._valid_persistent_core_capacity_reauthorization(
+        altered_proof, worker=worker, recovery_state=recovery_state)
+
+    # An arbitrary state/fingerprint change or RAM reading that remains below
+    # the configured threshold is not a fresh capacity-ready transition.
+    still_waiting = _capacity_receipt(
+        model, state="waiting_memory_reserve", policy_version=altered_version,
+        memory_available=4 * local_resource_reserve.GIB,
+    )
+    assert slots._persistent_core_capacity_observation(
+        still_waiting, worker=worker, expected_state="ready") is None

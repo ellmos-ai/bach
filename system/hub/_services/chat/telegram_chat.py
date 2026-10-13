@@ -25,7 +25,7 @@ import functools
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import ipaddress
 import json
 import logging
@@ -248,6 +248,18 @@ class _WorkerControl:
     sequence_creator_authority: Any = None
     creator_delegation: Any = None
     startup_recovery: bool = False
+    startup_admission_required: bool = False
+    startup_admission_confirmed: threading.Event = field(default_factory=threading.Event)
+    startup_admission_cancelled: bool = False
+    persistent_cloud_admission_binding: dict[str, Any] | None = None
+    persistent_core_intent_id: str | None = None
+    persistent_core_startup_confirmed: threading.Event = field(default_factory=threading.Event)
+    persistent_core_startup_cancelled: bool = False
+    persistent_core_profile_version: str | None = None
+    persistent_core_checkpoint: dict[str, Any] | None = None
+    persistent_core_recovery_state: dict[str, Any] | None = None
+    persistent_core_capacity_exhausted: bool = False
+    persistent_core_capacity_receipt: dict[str, Any] | None = None
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     queue_status: Any = None
@@ -260,6 +272,10 @@ class _WorkerControl:
     def __post_init__(self):
         self.handoff = WorkerHandoff(self.worker_id, self.generation)
         self.task_actions = WorkerTaskActions(self.worker_id, self.generation)
+        if self.persistent_core_intent_id is None:
+            self.persistent_core_startup_confirmed.set()
+        if not self.startup_admission_required:
+            self.startup_admission_confirmed.set()
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -449,8 +465,25 @@ def _execution_worker_configuration(slot: dict):
     return configuration
 
 
-def _execution_slot_reader(slot: dict):
+def _execution_slot_reader(slot: dict, *, persistent_cloud_binding=None):
     worker_id = slot["id"]
+    if persistent_cloud_binding is not None:
+        def read_persistent_cloud():
+            from hub._services.chat.slots_config import worker_admission_transaction
+
+            try:
+                with worker_admission_transaction():
+                    current = _persistent_cloud_admission_slot_snapshot(
+                        worker_id,
+                        persistent_cloud_binding.get("profile"),
+                        persistent_cloud_binding.get("checkpoint"),
+                    )
+            except Exception as exc:
+                raise RuntimeError("Persistente Worker-Freigabe nicht verifizierbar") from exc
+            if current is None:
+                raise RuntimeError("Persistente Worker-Freigabe wurde geändert oder widerrufen")
+            return current
+        return read_persistent_cloud
     if worker_id != "buddha_always_on" and not slot.get("system"):
         return lambda: _execution_worker_slot(worker_id)
 
@@ -524,7 +557,12 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         return WorkerLeaseBinding.acquire_next(
             client, slot, worker_id=lease_worker_id, host=host,
             generation=control.generation, is_current=is_current, stop_event=control.stop_event,
-            policy_guard=_execution_slot_reader(slot) if slot.get("id") == "buddha_always_on" or slot.get("system") else None,
+            policy_guard=(
+                control.slot_policy_reader
+                if control.persistent_cloud_admission_binding is not None
+                else (_execution_slot_reader(slot)
+                      if slot.get("id") == "buddha_always_on" or slot.get("system") else None)
+            ),
             _creator_delegation=control.creator_delegation,
             deferred_versions=control.deferred_task_versions,
             observe_queue=observe_queue,
@@ -885,8 +923,70 @@ def _persistent_local_retry_binding(slot):
     return {"intent_id": intent_id, "profile_version": profile_version}
 
 
+def _persistent_pre_effect_reserve_retry_binding(worker_session, control, slot, model):
+    """Revalidate the exact first-call reserve denial before returning its task lease."""
+    reason = "local_reserve_reserve_wait_lease_return_required"
+    if (worker_session is None or control is None or control.task_binding is None
+            or getattr(worker_session, "_local_reserve_failure_reason_code", None) != reason
+            or getattr(worker_session, "_local_reserve_failure_control", None) is not control):
+        return None
+    binding = control.task_binding
+    if (getattr(worker_session, "worker_task_binding", None) is not binding
+            or getattr(worker_session, "_local_reserve_failure_binding", None) is not binding
+            or getattr(worker_session, "_worker_model_dispatch_binding", None) is binding
+            or getattr(binding, "closed", True) is not False
+            or type(getattr(binding, "tool_dispatch_count", None)) is not int
+            or binding.tool_dispatch_count != 0
+            or getattr(binding, "stop_requested", True) is not False
+            or getattr(control, "persistent_core_startup_cancelled", True) is not False
+            or control.persistent_core_intent_id is None
+            or control.persistent_core_profile_version is None
+            or getattr(control, "stop_event", None) is None
+            or control.stop_event.is_set()
+            or getattr(control, "lease_supervisor", None) is None
+            or control.lease_supervisor.binding is not binding
+            or control.lease_supervisor.failure is not None):
+        return None
+    receipt = getattr(worker_session, "_local_reserve_failure_receipt", None)
+    if not isinstance(receipt, dict):
+        return None
+    try:
+        binding.assert_active()
+        from hub._services.chat import slots_config
+        snapshot = slots_config.persistent_core_startup_snapshot()
+        worker = snapshot.get("slot") if isinstance(snapshot, dict) else None
+        configured = _persistent_local_retry_binding(worker)
+        if (not isinstance(worker, dict) or configured is None
+                or configured != {
+                    "intent_id": control.persistent_core_intent_id,
+                    "profile_version": control.persistent_core_profile_version,
+                }
+                or model != slot.get("model") or model != worker.get("model")
+                or snapshot.get("state") != "prior_generation_unsettled"
+                or snapshot.get("worker_id") != "buddha_always_on"
+                or snapshot.get("intent_id") != control.persistent_core_intent_id
+                or snapshot.get("profile_version") != control.persistent_core_profile_version
+                or snapshot.get("checkpoint") != control.persistent_core_checkpoint
+                or snapshot.get("recovery_state") != control.persistent_core_recovery_state
+                or worker.get("persistent_opt_in") is not True
+                or worker.get("status") != "running"):
+            return None
+        from hub._services.chat.slots_config import (
+            _persistent_core_capacity_observation,
+        )
+        observation = _persistent_core_capacity_observation(
+            receipt, worker=worker, expected_state=receipt.get("state"))
+    except Exception:  # noqa: BLE001 -- invalid capacity receipt must not re-enable retry
+        return None
+    if observation is None or observation.get("state") not in {
+            "waiting_memory_reserve", "waiting_disk_reserve"}:
+        return None
+    return configured
+
+
 def _worker_backend_retry_delay(
     slot, detail, *, model, retries, waited_seconds, reason_code=None,
+    pre_effect_verified=False,
 ):
     """Bound recovery of Cloud rate limits and explicitly opted-in local reserve waits."""
     if type(retries) is not int or retries < 0 or retries >= _WORKER_BACKEND_RETRY_LIMIT:
@@ -894,7 +994,12 @@ def _worker_backend_retry_delay(
     if type(waited_seconds) not in {int, float} or waited_seconds < 0:
         return None
     if reason_code is not None:
-        if (reason_code != "local_reserve_reserve_wait_expired"
+        local_retry_reason = (
+            reason_code == "local_reserve_reserve_wait_expired"
+            or (reason_code == "local_reserve_reserve_wait_lease_return_required"
+                and pre_effect_verified is True)
+        )
+        if (not local_retry_reason
                 or _persistent_local_retry_binding(slot) is None
                 or model != slot.get("model")
                 or not isinstance(model, str) or model.lower().endswith(":cloud")):
@@ -954,6 +1059,30 @@ def _wait_worker_backend_retry(
             return True
         control.stop_event.wait(min(1.0, remaining))
     return False
+
+
+
+def _wait_persistent_core_capacity(control: _WorkerControl, expected_binding):
+    """Poll only read-only local capacity; do not claim another task while blocked."""
+    while not control.stop_event.is_set():
+        try:
+            slot = control.slot_policy_reader()
+        except Exception:  # noqa: BLE001 -- unavailable slot authority stops the wait
+            return None
+        if _persistent_local_retry_binding(slot) != expected_binding:
+            return None
+        receipt, observation = _persistent_core_capacity_probe(slot)
+        if observation is not None and observation.get("state") == "ready":
+            return receipt, observation
+        if _update_worker_slot(control, {
+                "status": "running",
+                "current_activity": "Wartet ohne Task-Lease auf bestätigte lokale Ressourcenreserve",
+        }) is None:
+            return None
+        if not _wait_worker_backend_retry(
+                control, 30, expected_persistent_binding=expected_binding):
+            return None
+    return None
 
 
 def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> bool:
@@ -3581,7 +3710,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            _startup_generation: str | None = None,
                            _startup_physical_worker_id: str | None = None,
                            _startup_lease_worker_id: str | None = None,
-                           _startup_profile_version: bool = False) -> tuple[dict, int]:
+                           _startup_profile_version: bool = False,
+                           _startup_persistent_intent_id: str | None = None,
+                           _startup_persistent_cloud_profile: dict | None = None,
+                           _startup_persistent_cloud_checkpoint: dict | None = None) -> tuple[dict, int]:
     """Reserve one observable admission before role checks or physical launch."""
     if not isinstance(worker_id, str) or not worker_id:
         return {"error": "id erforderlich"}, 400
@@ -3601,12 +3733,62 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
             return {"error": "Private Startidentität ist ungültig"}, 400
     if (type(_startup_profile_version) is not bool
             or (_startup_profile_version and
-                (expected_configuration_version is None or not valid_startup_identity))):
+                (expected_configuration_version is None or not valid_startup_identity))
+            or (_startup_persistent_intent_id is not None
+                and (_startup_profile_version is not True
+                     or worker_id != "buddha_always_on"
+                     or not isinstance(_startup_persistent_intent_id, str)
+                     or re.fullmatch(r"[0-9a-f]{32}", _startup_persistent_intent_id) is None))):
         return {"error": "Private Startidentität ist ungültig"}, 400
     request_id = start_request_id if start_request_id is not None else uuid.uuid4().hex
     if (not isinstance(request_id, str) or len(request_id) != 32
             or any(char not in "0123456789abcdef" for char in request_id)):
         return {"error": "Ungültige Start-Request-ID"}, 400
+    if (_startup_persistent_cloud_profile is None) != (_startup_persistent_cloud_checkpoint is None):
+        return {"error": "Private Dauerbetriebsbindung ist ungültig"}, 400
+    cloud_binding = None
+    if _startup_persistent_cloud_profile is not None:
+        profile = _startup_persistent_cloud_profile
+        checkpoint = _startup_persistent_cloud_checkpoint
+        checkpoint_fields = {
+            "schema", "phase", "worker_id", "service_instance", "start_request_id",
+            "intent_id", "profile_version", "trace_contract_sha256", "generation",
+            "physical_worker_id", "lease_worker_id",
+        }
+        if (
+            _startup_profile_version is not True
+            or worker_id == "buddha_always_on"
+            or _startup_persistent_intent_id is not None
+            or not isinstance(profile, dict)
+            or set(profile) != {
+                "worker_id", "state", "reason", "configuration_version",
+                "profile_version", "intent_id", "task_id",
+            }
+            or profile.get("worker_id") != worker_id
+            or profile.get("state") != "ready"
+            or profile.get("reason") != "explicit_opt_in"
+            or profile.get("configuration_version") != expected_configuration_version
+            or not isinstance(profile.get("intent_id"), str)
+            or re.fullmatch(r"[0-9a-f]{32}", profile["intent_id"]) is None
+            or not isinstance(profile.get("profile_version"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", profile["profile_version"]) is None
+            or not isinstance(checkpoint, dict)
+            or set(checkpoint) != checkpoint_fields
+            or checkpoint.get("schema") != "bach.persistent-worker-controller.v2"
+            or checkpoint.get("phase") != "admission_pending"
+            or checkpoint.get("worker_id") != worker_id
+            or checkpoint.get("service_instance") != _WORKER_SERVICE_INSTANCE
+            or checkpoint.get("start_request_id") != request_id
+            or checkpoint.get("intent_id") != profile.get("intent_id")
+            or checkpoint.get("profile_version") != profile.get("profile_version")
+            or checkpoint.get("generation") != _startup_generation
+            or checkpoint.get("physical_worker_id") != _startup_physical_worker_id
+            or checkpoint.get("lease_worker_id") != _startup_lease_worker_id
+            or not isinstance(checkpoint.get("trace_contract_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", checkpoint["trace_contract_sha256"]) is None
+        ):
+            return {"error": "Private Dauerbetriebsbindung ist ungültig"}, 400
+        cloud_binding = {"profile": dict(profile), "checkpoint": dict(checkpoint)}
 
     def rejected(response, status):
         # This synchronous response proves only that this exact request was
@@ -3642,11 +3824,29 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     # sets this private flag after validating its generation identity.
                     version_scope = "worker_profile" if _startup_profile_version else "core"
                     slot = system_worker_at_version(
-                        worker_id, expected_configuration_version, version_scope=version_scope)
+                        worker_id, expected_configuration_version, version_scope=version_scope,
+                        persistent_intent_id=_startup_persistent_intent_id)
                 else:
                     slot = _execution_worker_slot(worker_id)
                 if not slot or slot.get("id") != worker_id:
                     return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+                if (_startup_profile_version and worker_id != "buddha_always_on"
+                        and not slot.get("system") and cloud_binding is None):
+                    return rejected({
+                        "error": "Persistenter Cloudstart braucht eine gebundene Opt-in-Freigabe",
+                        "error_code": "persistent_admission_binding_required",
+                    }, 403)
+                if cloud_binding is not None:
+                    if slot.get("system"):
+                        return rejected({"error": "Private Dauerbetriebsbindung ist ungültig"}, 400)
+                    cloud_snapshot = _persistent_cloud_admission_slot_snapshot(
+                        worker_id, cloud_binding["profile"], cloud_binding["checkpoint"])
+                    if cloud_snapshot is None:
+                        return rejected({
+                            "error": "Persistente Cloudfreigabe wurde geändert oder widerrufen",
+                            "error_code": "persistent_admission_unavailable",
+                        }, 409)
+                    slot = cloud_snapshot
                 if slot.get("enabled", True) is not True:
                     return rejected({"error": "Worker ist deaktiviert"}, 403)
                 control = _WorkerControl(
@@ -3656,8 +3856,12 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     lease_worker_id=_startup_lease_worker_id,
                     start_request_id=request_id,
                     admitted_worker={"id": worker_id, "type": slot.get("type")},
-                    slot_policy_reader=_execution_slot_reader(slot),
+                    slot_policy_reader=_execution_slot_reader(
+                        slot, persistent_cloud_binding=cloud_binding),
                     sequence_creator_authority=_creator_authority,
+                    startup_admission_required=_startup_profile_version,
+                    persistent_cloud_admission_binding=cloud_binding,
+                    persistent_core_intent_id=_startup_persistent_intent_id,
                 )
                 if _startup_stop_event is not None:
                     # Every startup worker gets a private Stop signal linked to
@@ -3721,6 +3925,149 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
     return {**response, "execution": worker_execution_receipt(worker_id, request_id)}, status
 
 
+def _await_worker_startup_admission(control):
+    """Block persistent startup effects until the exact admission is confirmed."""
+    if control.startup_admission_required:
+        while not control.startup_admission_confirmed.wait(0.1):
+            if control.stop_event.is_set():
+                return False
+        return not control.startup_admission_cancelled and not control.stop_event.is_set()
+    if control.persistent_core_intent_id is not None:
+        while not control.persistent_core_startup_confirmed.wait(0.1):
+            if control.stop_event.is_set():
+                return False
+        return not control.persistent_core_startup_cancelled and not control.stop_event.is_set()
+    return not control.stop_event.is_set()
+
+
+def _confirm_persistent_startup_gate(
+        worker_id, request_id, generation, *, admitted_checkpoint=None):
+    """Open the exact generation only while its persisted authorization is current."""
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        if (control is None or not control.startup_admission_required
+                or control.start_request_id != request_id or control.generation != generation
+                or control.startup_admission_cancelled or control.stop_event.is_set()):
+            return False
+        cloud_binding = control.persistent_cloud_admission_binding
+        if cloud_binding is not None:
+            pending = cloud_binding.get("checkpoint")
+            if (not isinstance(pending, dict) or pending.get("phase") != "admission_pending"
+                    or not isinstance(admitted_checkpoint, dict)
+                    or admitted_checkpoint != {**pending, "phase": "admitted"}):
+                return False
+            try:
+                from hub._services.chat.slots_config import worker_admission_transaction
+                with worker_admission_transaction():
+                    if _persistent_cloud_admission_slot_snapshot(
+                            worker_id, cloud_binding.get("profile"), admitted_checkpoint) is None:
+                        return False
+                    cloud_binding["checkpoint"] = dict(admitted_checkpoint)
+                    control.startup_admission_confirmed.set()
+                    control.persistent_core_startup_confirmed.set()
+                    return True
+            except Exception:  # noqa: BLE001 -- admission recheck failure keeps the gate closed
+                return False
+        if admitted_checkpoint is not None:
+            return False
+        control.startup_admission_confirmed.set()
+        control.persistent_core_startup_confirmed.set()
+        return True
+
+
+def _cancel_persistent_startup_gate(worker_id, request_id, generation):
+    """Cancel and release only one unconfirmed startup generation, never siblings."""
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        if (control is None or control.start_request_id != request_id
+                or control.generation != generation):
+            return False
+        control.startup_admission_cancelled = True
+        control.persistent_core_startup_cancelled = True
+        control.stop_event.set()
+        control.startup_admission_confirmed.set()
+        control.persistent_core_startup_confirmed.set()
+        return True
+
+
+def _persistent_cloud_admission_slot_snapshot(worker_id, profile, checkpoint):
+    """Return the exact current opted-in Cloud profile only for its bound checkpoint."""
+    from hub._services.chat.slots_config import (
+        DEFAULT_CORE_SLOTS,
+        PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
+        _is_supported_persistent_cloud_worker,
+        _valid_persistent_worker_controller_checkpoint,
+        _worker_configuration,
+        _worker_profile_version,
+        load_slots_config,
+    )
+    if (not isinstance(profile, dict) or profile.get("worker_id") != worker_id
+            or profile.get("state") != "ready" or profile.get("reason") != "explicit_opt_in"
+            or not isinstance(checkpoint, dict)
+            or checkpoint.get("phase") not in {"admission_pending", "admitted"}
+            or not _valid_persistent_worker_controller_checkpoint(checkpoint)
+            or checkpoint.get("worker_id") != worker_id
+            or checkpoint.get("intent_id") != profile.get("intent_id")
+            or checkpoint.get("profile_version") != profile.get("profile_version")):
+        return None
+    config = load_slots_config(strict=True)
+    workers = config.get("dynamic_workers")
+    slots = config.get("slots")
+    if not isinstance(workers, list) or not isinstance(slots, dict):
+        return None
+    matches = [item for item in workers
+               if isinstance(item, dict) and item.get("id") == worker_id]
+    if len(matches) != 1 or worker_id in slots or worker_id in DEFAULT_CORE_SLOTS:
+        return None
+    current = matches[0]
+    allowed_statuses = {"idle"} if checkpoint.get("phase") == "admission_pending" else {"idle", "running"}
+    original_task_id = profile.get("task_id", current.get("task_id"))
+    consent_profile = {**current, "task_id": original_task_id}
+    if not (
+        current.get("enabled", True) is True
+        and current.get("status") in allowed_statuses
+        and current.get("persistent_opt_in") is True
+        and current.get("persistent_opt_in_id") == profile.get("intent_id")
+        and _worker_profile_version(consent_profile) == profile.get("profile_version")
+        and current.get("persistent_opt_in_profile_version") == profile.get("profile_version")
+        and _is_supported_persistent_cloud_worker(current)
+        and _worker_configuration(consent_profile).get("configuration_version")
+            == profile.get("configuration_version")
+        and current.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD) == checkpoint
+    ):
+        return None
+    return dict(current)
+
+
+def _persistent_cloud_admission_readback(worker_id, profile, admitted):
+    """Verify the exact opted-in profile and admitted checkpoint under the config CAS lock."""
+    if not isinstance(admitted, dict) or admitted.get("phase") != "admitted":
+        return False
+    try:
+        from hub._services.chat.slots_config import worker_admission_transaction
+        with worker_admission_transaction():
+            return _persistent_cloud_admission_slot_snapshot(worker_id, profile, admitted) is not None
+    except Exception:  # noqa: BLE001 -- failed fresh Cloud readback cannot admit effects
+        return False
+
+
+def _persistent_core_admission_readback(snapshot, admitted, active_state):
+    """Verify persisted Core consent, checkpoint and recovery state after the CAS."""
+    try:
+        from hub._services.chat.slots_config import persistent_core_startup_snapshot
+        current = persistent_core_startup_snapshot()
+        return (
+            current.get("managed") is True
+            and current.get("profile_version") == snapshot.get("profile_version")
+            and current.get("intent_id") == snapshot.get("intent_id")
+            and current.get("checkpoint") == admitted
+            and current.get("recovery_state") == active_state
+            and current.get("state") == "prior_generation_unsettled"
+        )
+    except Exception:  # noqa: BLE001 -- failed fresh Core readback cannot admit effects
+        return False
+
+
 def _start_reserved_worker_execution(control, w, custom_prompt):
     worker_id = control.worker_id
     # Admission fixes the provider and execution policy for this generation.
@@ -3732,31 +4079,57 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
     if control.stop_event.is_set():
         return {"error": "Control wird beendet", "error_code": "startup_shutdown"}, 409
 
-    # Befehlsvertrag (agents_heart, Konzept 10.8): Rolle beglaubigen und
-    # Assignment eröffnen, bevor der Worker-Thread startet (fail-closed).
-    sub_mode = (w.get("sub_mode") or "").strip().lower()
+    # A startup-gated persistent Cloud assignment is an effect: create it only
+    # after the exact admitted checkpoint has been revalidated.
     worker_instance_id = control.physical_worker_id or f"worker-{uuid.uuid4().hex}"
     expected_lease_worker_id = f"{worker_instance_id}@{socket.gethostname()}"
     if control.lease_worker_id is not None and control.lease_worker_id != expected_lease_worker_id:
         return {"error": "Persistierte Lease-Worker-Identität stimmt nicht"}, 409
     control.physical_worker_id = worker_instance_id
     control.lease_worker_id = control.lease_worker_id or expected_lease_worker_id
-    try:
-        board_assignment = begin_assignment(
-            role_id=(sub_mode or "task_worker"),
-            mode=(w.get("mode") or "full"),
+    defer_assignment_until_gate = control.persistent_cloud_admission_binding is not None
+
+    def _begin_assignment_for(assignment_slot):
+        return begin_assignment(
+            role_id=((assignment_slot.get("sub_mode") or "task_worker").strip().lower()),
+            mode=(assignment_slot.get("mode") or "full"),
             agent_instance_id=worker_instance_id,
-            backend_id=w.get("backend") or "ollama",
-            model_id=w.get("model") or "qwen3.8:27b-mlx",
+            backend_id=assignment_slot.get("backend") or "ollama",
+            model_id=assignment_slot.get("model") or "qwen3.8:27b-mlx",
             slot_id=worker_id,
-            task_id=(w.get("task_id") if w.get("task_id") is not None else 0),
+            task_id=(assignment_slot.get("task_id")
+                     if assignment_slot.get("task_id") is not None else 0),
             session_id=worker_id,
             initiated_by=f"board:{worker_id}",
         )
-    except AssignmentDenied as exc:
-        return {"error": f"Assignment verweigert: {exc}"}, 400
-    except ValueError as exc:
-        return {"error": f"Assignment unvollständig: {exc}"}, 400
+
+    board_assignment = None
+    if not defer_assignment_until_gate:
+        try:
+            board_assignment = _begin_assignment_for(w)
+        except AssignmentDenied as exc:
+            return {"error": f"Assignment verweigert: {exc}"}, 400
+        except ValueError as exc:
+            return {"error": f"Assignment unvollständig: {exc}"}, 400
+
+    def _begin_persistent_cloud_assignment():
+        from hub._services.chat.slots_config import worker_admission_transaction
+
+        with _WORKER_CONTROL_LOCK:
+            if (_WORKER_CONTROLS.get(worker_id) is not control or control.stop_event.is_set()
+                    or not control.startup_admission_confirmed.is_set()):
+                raise RuntimeError("Persistente Cloudzulassung ist nicht mehr aktuell")
+            with worker_admission_transaction():
+                binding = control.persistent_cloud_admission_binding
+                if binding is None:
+                    raise RuntimeError("Persistente Cloudzulassung fehlt")
+                if not isinstance(binding, dict):
+                    raise TypeError("Persistente Cloudzulassung ist ungültig")
+                assignment_slot = _persistent_cloud_admission_slot_snapshot(
+                    worker_id, binding.get("profile"), binding.get("checkpoint"))
+                if assignment_slot is None:
+                    raise RuntimeError("Persistente Cloudzulassung wurde widerrufen")
+                return _begin_assignment_for(assignment_slot), assignment_slot
 
     def _run_worker_job():
         control.worker_thread_started = True
@@ -3765,10 +4138,25 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
         worker_session = None
         current_assignment = board_assignment
         assignment_task_id = w.get("task_id") or 0
-        assignment_open = True
+        assignment_open = board_assignment is not None
         try:
+            if not _await_worker_startup_admission(control):
+                return
             if control.stop_event.is_set():
                 return
+            if defer_assignment_until_gate:
+                try:
+                    current_assignment, admitted_slot = _begin_persistent_cloud_assignment()
+                except Exception:  # noqa: BLE001 -- unknown admission leaves no task or model effect
+                    control.start_error = "persistent_admission_unconfirmed"
+                    return
+                assignment_task_id = admitted_slot.get("task_id") or 0
+                assignment_open = True
+                try:
+                    control.slot_policy_reader()
+                except Exception:  # noqa: BLE001 -- a revoked profile cannot continue this generation
+                    control.start_error = "persistent_admission_revoked"
+                    return
             if _update_worker_slot(control, {
                     "status": "running",
                     "auto_paused": False,
@@ -3826,8 +4214,15 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
 
             prompt_to_run = initial_prompt
             run_count = 0
-            backend_retries = 0
-            backend_waited_seconds = 0
+            initial_recovery = control.persistent_core_recovery_state
+            backend_retries = (
+                initial_recovery.get("retry_count", 0)
+                if isinstance(initial_recovery, dict) else 0
+            )
+            backend_waited_seconds = (
+                initial_recovery.get("waited_seconds", 0)
+                if isinstance(initial_recovery, dict) else 0
+            )
 
             while True:
                 newly_acquired_binding = None
@@ -3953,6 +4348,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
+                worker_session = None
                 try:
                     worker_session = runtime.get_session(worker_id)
                     worker_session.worker_slot_reader = control.slot_policy_reader
@@ -3960,6 +4356,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     worker_session.worker_task_actions = control.task_actions
                     worker_session.worker_task_binding = control.task_binding
                     worker_session.require_task_binding = True
+                    worker_session._persistent_core_model_call_control = (
+                        control if control.persistent_core_intent_id is not None else None
+                    )
                     bound_prompt = _bound_worker_prompt(control.task_binding, prompt_to_run)
                     # Empty queue polling is not a model block or a failed
                     # task attempt. Count only actual runtime submissions.
@@ -3974,6 +4373,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         )
                     )
                 finally:
+                    if worker_session is not None:
+                        worker_session._persistent_core_model_call_control = None
                     try:
                         loop.run_until_complete(loop.shutdown_asyncgens())
                     finally:
@@ -3995,8 +4396,21 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     failure_reason = getattr(ans, "reason_code", None)
                     if failure_reason == "local_reserve_reserve_wait_expired":
                         error_activity = "Lokale Ressourcenreserve wurde nicht rechtzeitig frei"
+                    elif failure_reason == "local_reserve_reserve_wait_lease_return_required":
+                        error_activity = (
+                            "Lokale Ressourcenreserve erfordert Rückgabe der Task-Lease vor dem Warten"
+                        )
                     else:
                         error_activity = detail["message"] if detail else ans_str[:120]
+                    # Validate before the transient status update below changes
+                    # the on-disk slot from running to error.
+                    pre_effect_retry_binding = (
+                        _persistent_pre_effect_reserve_retry_binding(
+                            worker_session, control, current_slot, model,
+                        )
+                        if failure_reason == "local_reserve_reserve_wait_lease_return_required"
+                        else None
+                    )
                     worker_error = RuntimeError("Backendantwort fehlgeschlagen")
                     control.start_error = "backend_error"
                     _update_worker_slot(control, {
@@ -4009,7 +4423,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             "local_reserve_invalid_policy", "local_reserve_unknown_model",
                             "local_reserve_unsupported_provider", "local_reserve_missing_model_budget",
                             "local_reserve_model_budget_conflict", "local_reserve_budget_exceeds_host",
-                            "local_reserve_resource_policy_changed", "local_reserve_reserve_wait_expired"}:
+                            "local_reserve_resource_policy_changed", "local_reserve_reserve_wait_expired",
+                            "local_reserve_reserve_wait_lease_return_required"}:
                         activity_details["reason_code"] = failure_reason
                     _record_worker_activity(
                         control,
@@ -4020,15 +4435,33 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     retry_delay = _worker_backend_retry_delay(
                         current_slot, detail, model=model, retries=backend_retries,
                         waited_seconds=backend_waited_seconds, reason_code=failure_reason,
+                        pre_effect_verified=pre_effect_retry_binding is not None,
                     )
-                    persistent_retry_binding = (
-                        _persistent_local_retry_binding(current_slot)
-                        if failure_reason == "local_reserve_reserve_wait_expired" else None
-                    )
-                    if failure_reason == "local_reserve_reserve_wait_expired" and persistent_retry_binding is None:
+                    persistent_retry_binding = None
+                    if (failure_reason == "local_reserve_reserve_wait_expired"
+                            and control.persistent_core_intent_id is not None):
+                        persistent_retry_binding = _persistent_local_retry_binding(current_slot)
+                    elif (failure_reason == "local_reserve_reserve_wait_lease_return_required"
+                            and control.persistent_core_intent_id is not None):
+                        persistent_retry_binding = pre_effect_retry_binding
+                    if (failure_reason in {
+                            "local_reserve_reserve_wait_expired",
+                            "local_reserve_reserve_wait_lease_return_required",
+                        } and persistent_retry_binding is None):
                         retry_delay = None
                     dispatches = getattr(control.task_binding, "tool_dispatch_count", None)
                     retry_before_tools = type(dispatches) is int and dispatches == 0
+                    if (control.persistent_core_intent_id is not None
+                            and failure_reason in {
+                                "local_reserve_reserve_wait_expired",
+                                "local_reserve_reserve_wait_lease_return_required",
+                            } and persistent_retry_binding is not None):
+                        receipt = getattr(worker_session, "_local_reserve_failure_receipt", None)
+                        if isinstance(receipt, dict):
+                            control.persistent_core_capacity_receipt = dict(receipt)
+                        if (retry_delay is None and backend_retries >= _WORKER_BACKEND_RETRY_LIMIT
+                                and retry_before_tools):
+                            control.persistent_core_capacity_exhausted = True
                     if not control.task_binding.closed and not retry_before_tools:
                         # No persisted tool transcript or idempotency contract
                         # can prove that re-running initial_prompt is safe.
@@ -4056,9 +4489,62 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                               result="backend_error", reason="temporary_rate_limit")
                             assignment_open = False
                         worker_session.worker_task_binding = None
-                        control.task_binding = None
-                        backend_retries += 1
-                        backend_waited_seconds += retry_delay
+                        if persistent_retry_binding is not None:
+                            previous = control.persistent_core_recovery_state
+                            checkpoint = control.persistent_core_checkpoint
+                            receipt = control.persistent_core_capacity_receipt
+                            if (not isinstance(previous, dict) or previous.get("phase") != "active"
+                                    or not isinstance(checkpoint, dict) or not isinstance(receipt, dict)):
+                                return
+                            from hub._services.chat.slots_config import (
+                                _persistent_core_capacity_observation,
+                                update_persistent_core_controller_state,
+                            )
+                            observation = _persistent_core_capacity_observation(
+                                receipt, worker=current_slot,
+                                expected_state=receipt.get("state"),
+                            )
+                            if observation is None or observation["state"] not in {
+                                    "waiting_memory_reserve", "waiting_disk_reserve"}:
+                                return
+                            backend_retries += 1
+                            backend_waited_seconds += retry_delay
+                            core_snapshot = {
+                                "intent_id": control.persistent_core_intent_id,
+                                "profile_version": control.persistent_core_profile_version,
+                                "recovery_state": previous,
+                            }
+                            reserve_state = _core_recovery_record(
+                                core_snapshot, "reserve_wait", checkpoint=checkpoint,
+                                retry_count=backend_retries,
+                                waited_seconds=backend_waited_seconds,
+                                capacity_state=observation["state"],
+                                capacity_policy_version=observation["policy_version"],
+                                capacity_fingerprint=observation["fingerprint"],
+                                retry_after=(datetime.now(timezone.utc)
+                                             + timedelta(seconds=retry_delay)).isoformat(),
+                                retry_seconds=int(retry_delay),
+                                reason_code=failure_reason,
+                                tool_dispatch_count=0,
+                                lease_returned=True,
+                                assignment_finished=True,
+                            )
+                            try:
+                                update_persistent_core_controller_state(
+                                    control.persistent_core_profile_version,
+                                    control.persistent_core_intent_id,
+                                    checkpoint, checkpoint, previous, reserve_state,
+                                    capacity_observation=receipt,
+                                )
+                            except Exception:  # noqa: BLE001 -- failed capacity checkpoint CAS stops the worker loop
+                                return
+                            control.persistent_core_recovery_state = reserve_state
+                            control.task_binding = None
+                            control.persistent_core_capacity_receipt = None
+                        else:
+                            control.task_binding = None
+                            backend_retries += 1
+                            backend_waited_seconds += retry_delay
                         waiting = (f"{error_activity} Warte {retry_delay:g} Sekunden; "
                                    f"Wiederaufnahme {backend_retries}/{_WORKER_BACKEND_RETRY_LIMIT}.")
                         if _update_worker_slot(control, {
@@ -4077,6 +4563,41 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             )
                         if not retry_waited:
                             return
+                        if persistent_retry_binding is not None:
+                            ready_observation = _wait_persistent_core_capacity(
+                                control, persistent_retry_binding
+                            )
+                            if ready_observation is None:
+                                return
+                            previous = control.persistent_core_recovery_state
+                            checkpoint = control.persistent_core_checkpoint
+                            if not isinstance(previous, dict) or previous.get("phase") != "reserve_wait":
+                                return
+                            active_state = _core_recovery_record(
+                                {
+                                    "intent_id": control.persistent_core_intent_id,
+                                    "profile_version": control.persistent_core_profile_version,
+                                    "recovery_state": previous,
+                                },
+                                "active", checkpoint=checkpoint,
+                                retry_count=previous["retry_count"],
+                                waited_seconds=previous["waited_seconds"],
+                                capacity_state=previous["capacity_state"],
+                                capacity_policy_version=previous["capacity_policy_version"],
+                                capacity_fingerprint=previous["capacity_fingerprint"],
+                            )
+                            from hub._services.chat.slots_config import (
+                                update_persistent_core_controller_state,
+                            )
+                            try:
+                                update_persistent_core_controller_state(
+                                    control.persistent_core_profile_version,
+                                    control.persistent_core_intent_id,
+                                    checkpoint, checkpoint, previous, active_state,
+                                )
+                            except Exception:  # noqa: BLE001 -- failed checkpoint CAS blocks resumed work
+                                return
+                            control.persistent_core_recovery_state = active_state
                         # The next iteration rechecks policy, expiry, model,
                         # creator/dependency gates and acquires a fresh fence.
                         prompt_to_run = initial_prompt
@@ -4088,6 +4609,49 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 resolved = getattr(worker_session, "resolved_model", None)
                 if isinstance(resolved, str) and resolved.strip():
                     _update_worker_slot(control, {"resolved_model": resolved})
+                if control.persistent_core_intent_id is not None and backend_retries > 0:
+                    previous = control.persistent_core_recovery_state
+                    checkpoint = control.persistent_core_checkpoint
+                    if (not isinstance(previous, dict) or previous.get("phase") != "active"
+                            or not isinstance(checkpoint, dict)):
+                        worker_error = RuntimeError("Persistenter Worker-Fortschritt nicht gebunden")
+                        control.start_error = "persistent_progress_unconfirmed"
+                        return
+                    from hub._services.chat.slots_config import (
+                        update_persistent_core_controller_state,
+                    )
+                    progressed = _core_recovery_record(
+                        {
+                            "intent_id": control.persistent_core_intent_id,
+                            "profile_version": control.persistent_core_profile_version,
+                            "recovery_state": previous,
+                        },
+                        "active", checkpoint=checkpoint,
+                        retry_count=0, waited_seconds=0,
+                        capacity_state=None, capacity_policy_version=None,
+                        capacity_fingerprint=None,
+                    )
+                    progress_proof = {
+                        "schema": "bach.persistent-core-progress.v1",
+                        "checkpoint_sha256": previous["checkpoint_sha256"],
+                        "generation": checkpoint["generation"],
+                        "run_sequence": run_count,
+                        "response_received": True,
+                    }
+                    try:
+                        update_persistent_core_controller_state(
+                            control.persistent_core_profile_version,
+                            control.persistent_core_intent_id,
+                            checkpoint, checkpoint, previous, progressed,
+                            progress_proof=progress_proof,
+                        )
+                    except Exception:  # noqa: BLE001 -- missing progress proof stops continuation
+                        worker_error = RuntimeError("Persistenter Worker-Fortschritt nicht bestätigt")
+                        control.start_error = "persistent_progress_unconfirmed"
+                        return
+                    control.persistent_core_recovery_state = progressed
+                    backend_retries = 0
+                    backend_waited_seconds = 0
                 if backend_retries:
                     backend_retries = 0
                     backend_waited_seconds = 0
@@ -4239,6 +4803,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 _update_worker_slot(control, {"status": "error", "current_activity": f"Fehler: {exc}"})
                 _record_worker_activity(control, f"Fehler: {exc}", "error")
         finally:
+            persistent_lease_returned = False
+            persistent_assignment_finished = False
             # Cleanup failures cannot skip assignment closure, registry removal,
             # or the physical thread's terminal acknowledgement. A missing
             # Return ACK stays an error; expiry remains canonical.
@@ -4265,6 +4831,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 try:
                     if not control.task_binding.return_lease():
                         cleanup_error = True
+                    else:
+                        persistent_lease_returned = True
                 except Exception:
                     cleanup_error = True
                     log.warning("Worker-Taskfreigabe konnte nicht bestätigt werden", exc_info=True)
@@ -4308,9 +4876,64 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 if assignment_open:
                     finish_assignment(current_assignment, status=_as_status,
                                       result=_as_result, reason=_as_reason)
+                    assignment_open = False
+                    persistent_assignment_finished = True
             except Exception:
+                cleanup_error = True
                 log.warning(f"Worker {worker_id}: finish_assignment fehlgeschlagen",
                             exc_info=True)
+            if (control.persistent_core_capacity_exhausted
+                    and control.persistent_core_intent_id is not None
+                    and not cleanup_error and not control.stop_event.is_set()
+                    and persistent_lease_returned and persistent_assignment_finished):
+                previous = control.persistent_core_recovery_state
+                checkpoint = control.persistent_core_checkpoint
+                receipt = control.persistent_core_capacity_receipt
+                dispatches = getattr(control.task_binding, "tool_dispatch_count", None)
+                if (isinstance(previous, dict) and previous.get("phase") == "active"
+                        and previous.get("retry_count") == _WORKER_BACKEND_RETRY_LIMIT
+                        and isinstance(checkpoint, dict) and isinstance(receipt, dict)
+                        and type(dispatches) is int and dispatches == 0):
+                    from hub._services.chat.slots_config import (
+                        _persistent_core_capacity_observation,
+                        update_persistent_core_controller_state,
+                    )
+                    observed = _persistent_core_capacity_observation(
+                        receipt, worker=w, expected_state=receipt.get("state")
+                    )
+                    if observed is not None and observed["state"] in {
+                            "waiting_memory_reserve", "waiting_disk_reserve"}:
+                        core_snapshot = {
+                            "intent_id": control.persistent_core_intent_id,
+                            "profile_version": control.persistent_core_profile_version,
+                            "recovery_state": previous,
+                        }
+                        capacity_wait = _core_recovery_record(
+                            core_snapshot, "capacity_wait", checkpoint=checkpoint,
+                            retry_count=previous["retry_count"],
+                            waited_seconds=previous["waited_seconds"],
+                            capacity_state=observed["state"],
+                            capacity_policy_version=observed["policy_version"],
+                            capacity_fingerprint=observed["fingerprint"],
+                            reason_code="local_reserve_retry_budget_exhausted",
+                            tool_dispatch_count=0, lease_returned=True,
+                            assignment_finished=True,
+                        )
+                        try:
+                            update_persistent_core_controller_state(
+                                control.persistent_core_profile_version,
+                                control.persistent_core_intent_id,
+                                checkpoint, checkpoint, previous, capacity_wait,
+                                capacity_observation=receipt,
+                            )
+                            control.persistent_core_recovery_state = capacity_wait
+                            control.persistent_core_capacity_exhausted = False
+                            _update_worker_slot(control, {
+                                "status": "error",
+                                "current_activity": "Wartet auf bestätigte lokale Ressourcenreserve",
+                            })
+                        except Exception:  # noqa: BLE001 -- unconfirmed wait checkpoint remains blocked
+                            log.warning("Persistenter Ressourcenwartepunkt nicht bestätigt")
             if control.stop_event.is_set():
                 _write_revocation_receipt(
                     control,
@@ -5983,6 +6606,9 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
             outcomes.append({"worker_id": worker_id, "state": "not_started",
                              "reason": "profile_unavailable"})
             continue
+        # The profile hash includes task_id at opt-in; retain that original value
+        # while the controller later uses task_id for its active lease context.
+        profile = {**profile, "task_id": slot.get("task_id")}
         pending = {
             "schema": "bach.persistent-worker-controller.v2",
             "phase": "admission_pending",
@@ -6016,8 +6642,11 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
                 _startup_physical_worker_id=physical_worker_id,
                 _startup_lease_worker_id=lease_worker_id,
                 _startup_profile_version=True,
+                _startup_persistent_cloud_profile=profile,
+                _startup_persistent_cloud_checkpoint=pending,
             )
         except Exception as exc:
+            _cancel_persistent_startup_gate(worker_id, request_id, generation)
             outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
                              "reason": type(exc).__name__})
             continue
@@ -6036,6 +6665,15 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
                     worker_id, profile["configuration_version"], profile["profile_version"],
                     profile["intent_id"], pending, admitted)
             except Exception:
+                _cancel_persistent_startup_gate(worker_id, request_id, generation)
+                outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
+                                 "reason": "checkpoint_readback_failed",
+                                 "generation": generation})
+                continue
+            if (not _persistent_cloud_admission_readback(worker_id, profile, admitted)
+                    or not _confirm_persistent_startup_gate(
+                        worker_id, request_id, generation, admitted_checkpoint=admitted)):
+                _cancel_persistent_startup_gate(worker_id, request_id, generation)
                 outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
                                  "reason": "checkpoint_readback_failed",
                                  "generation": generation})
@@ -6054,6 +6692,7 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
             and admission.get("start_request_id") == request_id
         )
         if proven_rejection:
+            _cancel_persistent_startup_gate(worker_id, request_id, generation)
             try:
                 set_persistent_worker_controller_checkpoint(
                     worker_id, profile["configuration_version"], profile["profile_version"],
@@ -6068,19 +6707,410 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
             outcomes.append({"worker_id": worker_id, "state": "not_started",
                              "reason": safe_error_code or "start_rejected"})
             continue
+        _cancel_persistent_startup_gate(worker_id, request_id, generation)
         outcomes.append({"worker_id": worker_id, "state": "start_unconfirmed",
                          "reason": "unknown_start_result"})
     return {"state": "checked", "profiles": outcomes}
 
-def _resume_always_on_at_startup(stop_event):
-    """Resume only the persisted local Always-On policy through native admission."""
+
+def _persistent_core_capacity_probe(slot):
+    """Read-only preflight. The model boundary still rechecks the host gate."""
+    try:
+        import asyncio
+
+        from hub._services.agent_manage_service import verified_local_agent_model
+        from hub._services.chat import local_resource_reserve, slots_config
+
+        selected, model = _snapshot_chat_backend(
+            "buddha_always_on", worker_slot=slot, read_only=True
+        )
+        if (model != slot.get("model") or not verified_local_agent_model(selected, model)):
+            return {"state": "local_model_unverified"}, None
+        receipt = asyncio.run(local_resource_reserve.probe(selected, model))
+        state = receipt.get("state") if isinstance(receipt, dict) else None
+        if state not in {"ready", "waiting_memory_reserve", "waiting_disk_reserve"}:
+            return {"state": "capacity_unavailable"}, None
+        validated = slots_config._persistent_core_capacity_observation(
+            receipt, worker=slot, expected_state=state
+        )
+        if validated is None:
+            return {"state": "capacity_unavailable"}, None
+        return receipt, validated
+    except Exception as exc:  # noqa: BLE001 -- capacity probe failure is unavailable
+        return {"state": f"capacity_probe_{type(exc).__name__}"}, None
+
+
+def _persistent_core_reconciliation_proof(snapshot, trace_contract):
+    """Build the existing two-read, no-old-lease/no-old-trace settlement proof."""
+    worker_id = "buddha_always_on"
+    checkpoint = snapshot.get("checkpoint")
+    recovery_state = snapshot.get("recovery_state")
+    slot = snapshot.get("slot")
+    if (not isinstance(checkpoint, dict) or not isinstance(recovery_state, dict)
+            or not isinstance(slot, dict) or worker_id in _active_worker_ids()
+            or not isinstance(trace_contract, dict)
+            or trace_contract.get("schema") != "bach.worker-tool-trace.v1"
+            or trace_contract.get("source_sha256") != checkpoint.get("trace_contract_sha256")
+            ):
+        return None
+    try:
+        import hashlib
+        import json
+
+        from hub._services.chat.slots_config import persistent_core_startup_snapshot
+
+        fresh = persistent_core_startup_snapshot()
+        if any(fresh.get(key) != snapshot.get(key) for key in (
+                "profile_version", "intent_id", "checkpoint", "recovery_state", "status")):
+            return None
+        status = fresh.get("status")
+        if status not in {"idle", "running", "error"}:
+            return None
+        client = _native_task_client()
+        first = _persistent_worker_reconciliation_scan(client, checkpoint, status)
+        if first["active_old_lease"] or first["old_generation_trace"] or first["identity_conflict"]:
+            return None
+        second = _persistent_worker_reconciliation_scan(client, checkpoint, status)
+        if (second["active_old_lease"] or second["old_generation_trace"]
+                or second["identity_conflict"] or first["sha256"] != second["sha256"]):
+            return None
+        checkpoint_raw = json.dumps(
+            checkpoint, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        recovery_raw = json.dumps(
+            recovery_state, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return {
+            "schema": "bach.persistent-core-reconciliation.v1",
+            "worker_id": worker_id,
+            "profile_version": snapshot["profile_version"],
+            "intent_id": snapshot["intent_id"],
+            "status_before": status,
+            "generation": checkpoint["generation"],
+            "lease_worker_id": checkpoint["lease_worker_id"],
+            "trace_contract_sha256": checkpoint["trace_contract_sha256"],
+            "checkpoint_sha256": hashlib.sha256(checkpoint_raw).hexdigest(),
+            "recovery_state_sha256": hashlib.sha256(recovery_raw).hexdigest(),
+            "stable_scan_sha256": first["sha256"],
+            "stable_scans": 2,
+            "candidate_count": second["candidate_count"],
+            "complete": first["complete"] is True and second["complete"] is True,
+            "stable": True,
+            "active_old_lease": False,
+            "old_generation_trace": False,
+        }
+    except Exception:  # noqa: BLE001 -- incomplete reconciliation evidence cannot clear state
+        return None
+
+
+def _core_recovery_record(snapshot, phase, *, checkpoint=None,
+                          retry_count=None, waited_seconds=None,
+                          capacity_state=None, capacity_policy_version=None,
+                          capacity_fingerprint=None, **fields):
+    from hub._services.chat.slots_config import _persistent_checkpoint_sha256
+
+    previous = snapshot.get("recovery_state")
+    return {
+        "schema": "bach.persistent-core-recovery.v1",
+        "phase": phase,
+        "worker_id": "buddha_always_on",
+        "intent_id": snapshot["intent_id"],
+        "profile_version": snapshot["profile_version"],
+        "retry_count": (previous.get("retry_count", 0) if retry_count is None
+                        and isinstance(previous, dict) else retry_count or 0),
+        "waited_seconds": (previous.get("waited_seconds", 0) if waited_seconds is None
+                           and isinstance(previous, dict) else waited_seconds or 0),
+        "capacity_state": capacity_state,
+        "capacity_policy_version": capacity_policy_version,
+        "capacity_fingerprint": capacity_fingerprint,
+        **({"checkpoint_sha256": _persistent_checkpoint_sha256(checkpoint)}
+           if checkpoint is not None else {}),
+        **fields,
+    }
+
+
+def _persistent_core_settle_old_generation(snapshot, observation, trace_contract):
+    """Reconcile first, then clear the old generation without resetting its budget."""
+    from hub._services.chat.slots_config import update_persistent_core_controller_state
+
+    checkpoint = snapshot.get("checkpoint")
+    recovery = snapshot.get("recovery_state")
+    if not isinstance(checkpoint, dict) or not isinstance(recovery, dict):
+        return None
+    proof = _persistent_core_reconciliation_proof(snapshot, trace_contract)
+    if proof is None:
+        return None
+    phase = recovery.get("phase")
+    retry_count = recovery.get("retry_count", 0)
+    waited = recovery.get("waited_seconds", 0)
+    cap_state = recovery.get("capacity_state")
+    cap_policy = recovery.get("capacity_policy_version")
+    cap_fingerprint = recovery.get("capacity_fingerprint")
+    capacity_proof = None
+    reset_budget = phase == "capacity_wait" or (phase == "active" and retry_count >= 3)
+    if reset_budget:
+        receipt, observed = observation
+        if observed is None or observed.get("state") != "ready":
+            return None
+        capacity_proof = {
+            "schema": "bach.persistent-core-capacity-reauthorization.v1",
+            "receipt": receipt,
+            "previous_state": cap_state,
+            "previous_policy_version": cap_policy,
+            "previous_fingerprint": cap_fingerprint,
+        }
+        retry_count = 0
+        waited = 0
+    elif phase == "reserve_wait":
+        retry_after = datetime.fromisoformat(
+            recovery["retry_after"].replace("Z", "+00:00")
+        )
+        if retry_after.tzinfo is None:
+            retry_after = retry_after.replace(tzinfo=timezone.utc)
+        if retry_after > datetime.now(timezone.utc):
+            return None
+    ready = _core_recovery_record(
+        snapshot, "ready", retry_count=retry_count, waited_seconds=waited,
+        capacity_state=cap_state, capacity_policy_version=cap_policy,
+        capacity_fingerprint=cap_fingerprint,
+    )
+    try:
+        return update_persistent_core_controller_state(
+            snapshot["profile_version"], snapshot["intent_id"], checkpoint, None,
+            recovery, ready, reconciliation_proof=proof,
+            capacity_proof=capacity_proof,
+        )
+    except Exception:  # noqa: BLE001 -- failed checkpoint persistence cannot confirm settlement
+        return None
+
+
+def _persistent_core_begin_admission(snapshot, stop_event, receipt):
+    """Persist pending before start; release the task thread only after ACK+CAS."""
+    from hub._services.chat.slots_config import (
+        persistent_core_startup_snapshot,
+        update_persistent_core_controller_state,
+    )
+
+    if stop_event.is_set():
+        return {"state": "shutdown", "retry": False}
+    fresh = persistent_core_startup_snapshot()
+    if any(fresh.get(key) != snapshot.get(key) for key in (
+            "profile_version", "intent_id", "checkpoint", "recovery_state", "status")):
+        return {"state": "profile_changed", "retry": False}
+    generation = uuid.uuid4().hex
+    request_id = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"bach:persistent-core:{_WORKER_SERVICE_INSTANCE}:{snapshot['intent_id']}:"
+        f"{snapshot['profile_version']}:{generation}",
+    ).hex
+    physical_worker_id = f"worker-{uuid.uuid4().hex}"
+    lease_worker_id = f"{physical_worker_id}@{socket.gethostname()}"
+    trace_contract = _persistent_worker_trace_contract()
+    if not isinstance(trace_contract, dict):
+        return {"state": "blocked", "reason": "trace_contract_unavailable", "retry": False}
+    pending = {
+        "schema": "bach.persistent-worker-controller.v2",
+        "phase": "admission_pending",
+        "worker_id": "buddha_always_on",
+        "service_instance": _WORKER_SERVICE_INSTANCE,
+        "start_request_id": request_id,
+        "intent_id": snapshot["intent_id"],
+        "profile_version": snapshot["profile_version"],
+        "trace_contract_sha256": trace_contract["source_sha256"],
+        "generation": generation,
+        "physical_worker_id": physical_worker_id,
+        "lease_worker_id": lease_worker_id,
+    }
+    previous = snapshot.get("recovery_state")
+    retry_count = previous.get("retry_count", 0) if isinstance(previous, dict) else 0
+    waited = previous.get("waited_seconds", 0) if isinstance(previous, dict) else 0
+    cap_state = previous.get("capacity_state") if isinstance(previous, dict) else None
+    cap_policy = previous.get("capacity_policy_version") if isinstance(previous, dict) else None
+    cap_fingerprint = previous.get("capacity_fingerprint") if isinstance(previous, dict) else None
+    pending_state = _core_recovery_record(
+        snapshot, "admission_pending", checkpoint=pending,
+        retry_count=retry_count, waited_seconds=waited,
+        capacity_state=cap_state, capacity_policy_version=cap_policy,
+        capacity_fingerprint=cap_fingerprint,
+    )
+    try:
+        update_persistent_core_controller_state(
+            snapshot["profile_version"], snapshot["intent_id"], None, pending,
+            previous, pending_state,
+        )
+    except Exception:  # noqa: BLE001 -- pending CAS failure prevents startup effects
+        return {"state": "start_unconfirmed", "reason": "pending_checkpoint_failed", "retry": False}
+    if stop_event.is_set():
+        return {"state": "start_unconfirmed", "reason": "shutdown_after_pending", "retry": False}
+
+    response, status = _start_worker_execution(
+        "buddha_always_on",
+        start_request_id=request_id,
+        expected_service_instance=_WORKER_SERVICE_INSTANCE,
+        expected_configuration_version=snapshot["profile_version"],
+        _startup_stop_event=stop_event,
+        _startup_generation=generation,
+        _startup_physical_worker_id=physical_worker_id,
+        _startup_lease_worker_id=lease_worker_id,
+        _startup_profile_version=True,
+        _startup_persistent_intent_id=snapshot["intent_id"],
+    )
+    execution = response.get("execution") if isinstance(response, dict) else None
+    matching = (
+        isinstance(execution, dict)
+        and execution.get("service_instance") == _WORKER_SERVICE_INSTANCE
+        and execution.get("start_request_id") == request_id
+        and execution.get("generation") == generation
+        and status in {200, 202}
+        and execution.get("state") in {"starting", "running", "stopping"}
+    )
+    if matching:
+        admitted = {**pending, "phase": "admitted"}
+        active_state = _core_recovery_record(
+            snapshot, "active", checkpoint=admitted,
+            retry_count=retry_count, waited_seconds=waited,
+            capacity_state=cap_state, capacity_policy_version=cap_policy,
+            capacity_fingerprint=cap_fingerprint,
+        )
+        try:
+            result = update_persistent_core_controller_state(
+                snapshot["profile_version"], snapshot["intent_id"], pending, admitted,
+                pending_state, active_state,
+            )
+        except Exception:  # noqa: BLE001 -- unknown admitted CAS result fails closed
+            result = None
+        readback_ok = result is not None and _persistent_core_admission_readback(
+            snapshot, admitted, active_state,
+        )
+        confirmed = False
+        with _WORKER_CONTROL_LOCK:
+            control = _WORKER_CONTROLS.get("buddha_always_on")
+            if (readback_ok and control is not None
+                    and control.generation == generation
+                    and control.start_request_id == request_id
+                    and control.startup_admission_required
+                    and not control.startup_admission_cancelled
+                    and not control.stop_event.is_set()):
+                control.persistent_core_recovery_state = active_state
+                control.persistent_core_checkpoint = admitted
+                control.persistent_core_profile_version = snapshot["profile_version"]
+                control.startup_admission_confirmed.set()
+                control.persistent_core_startup_confirmed.set()
+                confirmed = True
+        if not confirmed:
+            _cancel_persistent_startup_gate("buddha_always_on", request_id, generation)
+            return {"state": "start_unconfirmed", "reason": "admission_checkpoint_failed", "retry": False}
+        return {"state": "admitted", "generation": generation, "retry": True}
+
+    admission = response.get("admission") if isinstance(response, dict) else None
+    exact_rejection = (
+        isinstance(admission, dict)
+        and admission.get("admitted") is False
+        and admission.get("worker_id") == "buddha_always_on"
+        and admission.get("service_instance") == _WORKER_SERVICE_INSTANCE
+        and admission.get("start_request_id") == request_id
+        and type(status) is int and 400 <= status <= 599
+    )
+    if exact_rejection:
+        ready = _core_recovery_record(
+            snapshot, "ready", retry_count=retry_count, waited_seconds=waited,
+            capacity_state=cap_state, capacity_policy_version=cap_policy,
+            capacity_fingerprint=cap_fingerprint,
+        )
+        rejection = {
+            "schema": "bach.persistent-core-admission-rejection.v1",
+            "worker_id": "buddha_always_on",
+            "service_instance": _WORKER_SERVICE_INSTANCE,
+            "start_request_id": request_id,
+            "status": status,
+            "admitted": False,
+        }
+        try:
+            update_persistent_core_controller_state(
+                snapshot["profile_version"], snapshot["intent_id"], pending, None,
+                pending_state, ready, admission_rejection=rejection,
+            )
+        except Exception:  # noqa: BLE001 -- rejection CAS failure prevents retry
+            return {"state": "start_unconfirmed", "reason": "rejection_checkpoint_failed", "retry": False}
+        _cancel_persistent_startup_gate("buddha_always_on", request_id, generation)
+        return {"state": "not_started", "reason": "admission_rejected", "retry": True}
+
+    _cancel_persistent_startup_gate("buddha_always_on", request_id, generation)
+    # Unknown outcomes keep admission_pending; a later monitor tick cannot replay it.
+    return {"state": "start_unconfirmed", "reason": "unknown_start_result", "retry": False}
+
+
+def _resume_persistent_core_worker_at_startup(stop_event):
+    """Recover only the explicitly opted-in Core worker; never claim while reserve-waiting."""
+    from hub._services.chat.slots_config import persistent_core_startup_snapshot
     from hub.rheingold import get_lead_config
-    from hub._services.chat.slots_config import always_on_startup_snapshot
+
+    if stop_event.is_set():
+        return {"state": "shutdown", "retry": False}
+    if get_lead_config().get("mode") != "lead":
+        return {"state": "not_lead", "retry": False}
+    snapshot = persistent_core_startup_snapshot()
+    if snapshot.get("managed") is not True:
+        return {"state": "unmanaged", "retry": False}
+    if snapshot.get("state") in {"disabled", "blocked"}:
+        return {"state": snapshot["state"], "reason": snapshot.get("reason"), "retry": False}
+    if snapshot.get("state") == "waiting_cooldown":
+        return {"state": "waiting_cooldown", "retry": True}
+    if "buddha_always_on" in _active_worker_ids():
+        control = _WORKER_CONTROLS.get("buddha_always_on")
+        return {"state": "running", "generation": control.generation if control else None,
+                "retry": True}
+    recovery = snapshot.get("recovery_state")
+    checkpoint = snapshot.get("checkpoint")
+    phase = recovery.get("phase") if isinstance(recovery, dict) else None
+    if phase == "admission_pending":
+        return {"state": "blocked", "reason": "admission_unconfirmed", "retry": False}
+    if phase == "reserve_wait":
+        retry_after = datetime.fromisoformat(recovery["retry_after"].replace("Z", "+00:00"))
+        if retry_after.tzinfo is None:
+            retry_after = retry_after.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) < retry_after:
+            return {"state": "waiting_reserve", "retry": True}
+    slot = snapshot.get("slot")
+    receipt, observation = _persistent_core_capacity_probe(slot)
+    if observation is None:
+        state = receipt.get("state", "capacity_unavailable")
+        return {"state": "waiting_capacity", "reason": state, "retry": True}
+    if observation["state"] != "ready":
+        # Keep the persisted active checkpoint until its worker has returned
+        # the lease and finished its assignment; never infer those ACKs from a
+        # startup scan.
+        return {"state": "waiting_capacity", "reason": observation["state"], "retry": True}
+    if stop_event.is_set():
+        return {"state": "shutdown", "retry": False}
+
+    if isinstance(checkpoint, dict):
+        if not isinstance(recovery, dict):
+            return {"state": "blocked", "reason": "controller_state_missing", "retry": False}
+        trace_contract = _persistent_worker_trace_contract()
+        settled = _persistent_core_settle_old_generation(
+            snapshot, (receipt, observation), trace_contract
+        )
+        if settled is None:
+            return {"state": "prior_generation_unsettled", "reason": "native_reconciliation_required",
+                    "retry": True}
+        snapshot = persistent_core_startup_snapshot()
+        if snapshot.get("state") != "ready" or snapshot.get("checkpoint") is not None:
+            return {"state": "profile_changed", "retry": False}
+    return _persistent_core_begin_admission(snapshot, stop_event, receipt)
+
+def _resume_always_on_at_startup(stop_event):
+    """Resume the explicitly opted-in Core worker or retain legacy startup behavior."""
+    from hub.rheingold import get_lead_config
+    from hub._services.chat.slots_config import always_on_startup_snapshot, persistent_core_startup_snapshot
     from hub._services.agent_manage_service import verified_local_agent_model
     if stop_event.is_set():
         return {"state": "shutdown", "retry": False}
     if get_lead_config().get("mode") != "lead":
         return {"state": "not_lead", "retry": False}
+    core_policy = persistent_core_startup_snapshot()
+    if core_policy.get("managed") is True:
+        return _resume_persistent_core_worker_at_startup(stop_event)
     policy = always_on_startup_snapshot()
     slot = policy["slot"]
     if (slot.get("enabled") is not True
@@ -6146,6 +7176,7 @@ def _start_always_on_startup_monitor(server):
                 # A provider may still be booting. Do not log credentials or URLs.
                 log.warning("Always-On-Start noch nicht verifizierbar (%s)", type(exc).__name__)
                 result = {"state": "unverifiable", "retry": True}
+            server.persistent_core_startup_result = result
             if not result["retry"]:
                 log.info("Always-On-Startprüfung: %s", result["state"])
                 return
