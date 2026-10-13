@@ -2182,6 +2182,15 @@ def _memory_fact_write():
         }) from None
 
 
+def _memory_fact_confidence_status(value: Any) -> str:
+    """Describe stored fact values without inferring a Hermes heuristic."""
+    if value is None:
+        return "not_measured"
+    if type(value) in (int, float) and 0 <= value <= 1 and isfinite(value):
+        return "stored_unvalidated"
+    return "unavailable"
+
+
 @router.get("/memory/facts")
 async def get_memory_facts(limit: int = 50, category: Optional[str] = None):
     """Liefert Faktenwissen aus memory_facts."""
@@ -2196,7 +2205,15 @@ async def get_memory_facts(limit: int = 50, category: Optional[str] = None):
             query += " ORDER BY id DESC LIMIT ?"
             params.append(limit)
             rows = conn.execute(query, params).fetchall()
-            facts = [dict(r) for r in rows]
+            facts = []
+            for row in rows:
+                item = dict(row)
+                item["confidence_status"] = _memory_fact_confidence_status(
+                    item.get("confidence")
+                )
+                if item["confidence_status"] == "unavailable":
+                    item["confidence"] = None
+                facts.append(item)
         return {"facts": facts, "count": len(facts), "allowed_categories": list(MEMORY_FACT_CATEGORIES)}
     except sqlite3.Error:
         logger.exception("Fehler beim Abruf von memory_facts")

@@ -9,7 +9,9 @@ from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from hub._services.learning_source_service import LearningSourceService, SOURCE_SCHEMA
-from hub._services.learning_review_service import LearningConflict
+from hub._services.learning_review_service import (
+    LearningConflict, project_candidate, proposal_binding,
+)
 from hub._services.hermes_distillation_service import HermesDistillationService
 from hub._services.skill_source_service import read_skill
 
@@ -580,3 +582,80 @@ def test_http_auth_precedes_source_read(ctx, monkeypatch):
     result = client.post("/api/learning/sources/store", json=data, headers={"Authorization": "Bearer isolated-test-token"})
     assert result.status_code == 200 and calls[0]["actor"] == "device:7"
     assert result.json()["persisted"] and not result.json()["targets_published"]
+
+
+def _persisted_hermes_row(ctx):
+    svc, data, _, _, db = ctx
+    result = svc.analyze(copy.deepcopy(data), actor="device:7", persist=True)
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM hermes_skill_candidates WHERE id=?",
+            (result["candidate_id"],),
+        ).fetchone()
+    return dict(row)
+
+
+def test_legacy_numeric_confidence_keeps_proposal_bytes_and_is_unvalidated(ctx):
+    row = _persisted_hermes_row(ctx)
+    row["confidence"] = 0.0
+    payload, digest = proposal_binding("hermes", row)
+    row["proposal_json"] = payload
+    row["candidate_digest"] = digest
+
+    projected = project_candidate("hermes", row)
+
+    assert projected["confidence"] == 0.0
+    assert projected["confidence_status"] == "legacy_heuristic_unvalidated"
+    assert projected["proposal_json"] == payload
+    assert projected["candidate_digest"] == digest
+    assert proposal_binding("hermes", projected) == (payload, digest)
+    assert "confidence_status" not in json.loads(payload)["candidate"]
+    json.dumps(projected, allow_nan=False)
+
+
+@pytest.mark.parametrize("invalid", [True, float("nan"), float("inf")])
+def test_invalid_legacy_confidence_is_unavailable_and_json_safe(ctx, invalid):
+    row = _persisted_hermes_row(ctx)
+    row["confidence"] = invalid
+
+    projected = project_candidate("hermes", row)
+
+    assert projected["confidence"] is None
+    assert projected["confidence_status"] == "unavailable"
+    json.dumps(projected, allow_nan=False)
+
+
+@pytest.mark.parametrize("oversized", [10**400, -(10**400)])
+def test_large_legacy_confidence_projects_unavailable_in_candidate_and_draft_lists(
+    ctx, oversized
+):
+    _, _, _, _, database = ctx
+    row = _persisted_hermes_row(ctx)
+    candidate_id = row["id"]
+
+    row["confidence"] = oversized
+    direct = project_candidate("hermes", row)
+    assert direct["confidence"] is None
+    assert direct["confidence_status"] == "unavailable"
+    json.dumps(direct, allow_nan=False)
+
+    drafts = [{
+        "category": "general",
+        "title": "Legacy confidence value",
+        "solution": "Keep the original draft available for review.",
+        "confidence": oversized,
+    }]
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            "UPDATE hermes_skill_candidates SET lessons_draft_json=? WHERE id=?",
+            (json.dumps(drafts, separators=(",", ":")), candidate_id),
+        )
+
+    hermes = HermesDistillationService(database)
+    detail = hermes.get_candidate(candidate_id)
+    listed = next(item for item in hermes.list_candidates("all") if item["id"] == candidate_id)
+    for projected in (detail, listed):
+        assert projected["lessons_draft"][0]["confidence"] is None
+        assert projected["lessons_draft"][0]["confidence_status"] == "unavailable"
+        json.dumps(projected, allow_nan=False)
