@@ -87,6 +87,41 @@ class TestToolProvider:
     def test_provider_satisfies_the_module_protocol(self):
         assert isinstance(bach_tools.BachToolProvider(), ellmos_chat.ToolProvider)
 
+    def test_unbound_provider_keeps_pr372_legacy_read_file_schema(self):
+        import copy
+
+        from hub._services.chat import bach_tools
+
+        original = copy.deepcopy(next(
+            tool for tool in bach_tools.TOOLS_SAFE if tool["function"]["name"] == "read_file"
+        ))
+        provider_tool = next(
+            tool for tool in bach_tools.BachToolProvider().get_tools("safe")
+            if tool["function"]["name"] == "read_file"
+        )
+        properties = provider_tool["function"]["parameters"]["properties"]
+        assert provider_tool == original
+        assert "line_numbers" in properties
+        assert "output_format" not in properties
+        assert next(
+            tool for tool in bach_tools.TOOLS_SAFE if tool["function"]["name"] == "read_file"
+        ) == original
+
+    def test_exact_read_only_allowlist_without_fenced_binding_keeps_legacy_schema(self):
+        from hub._services.chat import bach_tools
+
+        provider = bach_tools.BachToolProvider(
+            worker_task_binding=None,
+            allowed_tools={"read_file", "search_text", "task_manage"},
+        )
+        read_file = next(
+            tool for tool in provider.get_tools("safe")
+            if tool["function"]["name"] == "read_file"
+        )
+        properties = read_file["function"]["parameters"]["properties"]
+        assert "line_numbers" in properties
+        assert "output_format" not in properties
+
     def test_safe_and_full_surfaces_are_bachs_own(self):
         provider = bach_tools.BachToolProvider()
         safe = {t["function"]["name"] for t in provider.get_tools("safe")}
