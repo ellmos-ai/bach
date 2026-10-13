@@ -19,6 +19,7 @@ from hub._services.docs.maintenance_runtime import (
     STATUS_SCHEMA,
     CanonicalLockGuard,
     MaintenanceRuntime,
+    SchedulerFacadeUnavailable,
     process_owner,
     readonly_status,
     validate_config,
@@ -1607,6 +1608,123 @@ def test_busy_skips_native_engine_and_task_api(tmp_path, monkeypatch):
     assert not (tmp_path / "scheduler.db").exists()
 
 
+def test_job_receipts_use_scheduler_facade_last_success_without_store_access():
+    success_at = "2026-10-12T10:15:00+00:00"
+    rows = [
+        {
+            "id": "bach.docs.delta",
+            "is_active": True,
+            "next_run": "2026-10-13T10:00:00+00:00",
+            "last_result": "failed",
+            "last_success": success_at,
+        },
+        {
+            "id": "bach.docs.routine.help_forensic",
+            "is_active": False,
+            "next_run": "2026-10-20T10:00:00+00:00",
+            "last_success": None,
+        },
+        {"id": "other.job"},
+    ]
+
+    class AdapterFacade:
+        def __init__(self):
+            self.calls = 0
+
+        def jobs(self):
+            self.calls += 1
+            return rows
+
+        @property
+        def store(self):
+            raise AssertionError("job receipts must use the scheduler facade")
+
+    adapter = AdapterFacade()
+    service = SimpleNamespace(adapter=adapter)
+    assert MaintenanceRuntime.job_receipts(service) == [
+        {
+            "id": "bach.docs.delta",
+            "enabled": True,
+            "next_due_at": "2026-10-13T10:00:00+00:00",
+            "last_success": success_at,
+        },
+        {
+            "id": "bach.docs.routine.help_forensic",
+            "enabled": False,
+            "next_due_at": "2026-10-20T10:00:00+00:00",
+            "last_success": None,
+        },
+    ]
+    assert adapter.calls == 1
+
+
+@pytest.mark.parametrize(
+    "adapter",
+    [
+        SimpleNamespace(store=object()),
+        SimpleNamespace(
+            jobs=lambda: [
+                {
+                    "id": "bach.docs.delta",
+                    "is_active": True,
+                    "next_run": "2026-10-13T10:00:00+00:00",
+                }
+            ]
+        ),
+        SimpleNamespace(
+            jobs=lambda: [
+                {
+                    "id": "bach.docs.delta",
+                    "is_active": True,
+                    "next_run": "2026-10-13T10:00:00+00:00",
+                    "last_success": 1,
+                }
+            ]
+        ),
+    ],
+)
+def test_job_receipts_fail_closed_without_valid_last_success_facade(adapter):
+    with pytest.raises(SchedulerFacadeUnavailable):
+        MaintenanceRuntime.job_receipts(SimpleNamespace(adapter=adapter))
+
+
+def test_prepare_rejects_scheduler_without_projection_before_store_access(
+    tmp_path, monkeypatch
+):
+    from hub._services.docs import maintenance_runtime as module
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(config(tmp_path)), encoding="utf-8")
+    (tmp_path / "system/data").mkdir(parents=True)
+    service = MaintenanceRuntime(
+        tmp_path,
+        tmp_path / "scheduler.db",
+        tmp_path / "runtime",
+        config_path,
+        task_api=FakeTasks(),
+        result_reader=result,
+        guard=lambda _: None,
+        clock=lambda: NOW,
+    )
+    store_calls = []
+
+    class Store:
+        def list_jobs(self):
+            store_calls.append("list")
+            return []
+
+        def add_job(self, *_args, **_kwargs):
+            store_calls.append("add")
+
+    adapter = SimpleNamespace(store=Store())
+    monkeypatch.setattr(module, "routine_definitions", lambda *_args: [])
+    monkeypatch.setattr(module, "create_documentation_scheduler", lambda *_args, **_kwargs: adapter)
+    with pytest.raises(SchedulerFacadeUnavailable):
+        service._prepare()
+    assert store_calls == []
+    assert not (tmp_path / "scheduler.db").exists()
+
+
 def test_native_module_runs_only_docs_job(tmp_path):
     pytest.importorskip("ellmos_scheduler")
     cp = tmp_path / "config.json"
@@ -1652,7 +1770,14 @@ def test_native_module_runs_only_docs_job(tmp_path):
     assert service.tick()["runs"] == []
     jobs = service.adapter.store.list_jobs()
     assert len(jobs) == 5
-    assert len(service.job_receipts()) == 5
+    first_success_at = next(
+        row["finished_at"]
+        for row in service.run_receipts()
+        if row["job_id"] == first["runs"][0]["job_id"]
+    )
+    receipts = {row["id"]: row for row in service.job_receipts()}
+    assert len(receipts) == 5
+    assert receipts["bach.docs.delta"]["last_success"] == first_success_at
     assert len(service.run_receipts()) == 1
     assert len(service.run_receipts()[0]["run_id"]) == 64
     assert service.adapter.service.registry.names() == ("bach-docs",)
@@ -1690,6 +1815,9 @@ def test_native_module_runs_only_docs_job(tmp_path):
     service.dispatcher.snapshot = failed_snapshot
     failure = service.tick()
     assert failure["runs"][0]["status"] == "failed"
+    assert failure["runs"][0]["job_id"] == "bach.docs.delta"
+    latest_success = {row["id"]: row for row in service.job_receipts()}
+    assert latest_success["bach.docs.delta"]["last_success"] == first_success_at
     restarted = MaintenanceRuntime(
         tmp_path,
         tmp_path / "scheduler.db",
