@@ -1761,6 +1761,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if is_live_path_blocked(p):
                 return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Schreibpfad ist nicht freigegeben.")
             if is_safe_write_path(p, mode):
+                if mode == "plan":
+                    return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Schreibzugriff ist im Planmodus nicht freigegeben.")
                 return _tool_policy_denial("write_path_denied", "BLOCKIERT: Schreibpfad ist nicht freigegeben.")
             if worker_task_binding is not None:
                 from hub._services.chat.worker_write_guard import authorize_mutation

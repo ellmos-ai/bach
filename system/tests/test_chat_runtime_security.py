@@ -411,6 +411,7 @@ def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path,
     import regex
     from hub import worker_git
     from hub._services.chat import worker_write_guard as guard
+    from hub._services.chat.worker_tool_errors import ToolErrorText
 
     repo = tmp_path / "repo"
     worktrees = tmp_path / "worktrees"
@@ -489,8 +490,14 @@ def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path,
         allowed_tools={"search_text", "start_task_worktree"},
     )
 
-    assert result == "BLOCKIERT: Suchmuster überschreitet das Zeitlimit"
-    assert "Tool-Fehler" not in result
+    assert type(result) is ToolErrorText
+    assert str(result) == "Werkzeugausführung nicht bestätigt; Wirkung unbekannt."
+    assert result._code == "bach_tool_effect_unconfirmed"
+    assert result._source == "bach_tools"
+    assert result._reason == "reason_unavailable"
+    assert result._effect_state == "unknown"
+    assert "synthetic regex timeout" not in str(result)
+    assert str(repo) not in str(result)
     assert len(opened) == 1
     stream, file_descriptor = opened[0]
     assert stream.closed
