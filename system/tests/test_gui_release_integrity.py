@@ -61,11 +61,16 @@ def test_consumer_catalog_preserves_modules_and_does_not_claim_readiness():
     route = SimpleNamespace(path="/api/tasks", methods={"GET", "POST"})
     result = declaration([route], {"verified": False}, {}, {"tasks": {"adapter_registered": True}})
     assert result["schema"] == "ellmos.gui.capabilities.v1" and isinstance(result["modules"], dict)
-    assert len(result["pages"]) == 22 and result["gui"]["status"] == "unverified"
+    assert len(result["pages"]) == 23 and result["gui"]["status"] == "unverified"
     assert all(e["verification_scope"] == "adapter" and not e["runtime_verified"] for e in result["endpoints"])
     tasks = next(p for p in result["pages"] if p["path"] == "/tasks")
     assert tasks["status"] == "unavailable" and tasks["missing"] == ["GET /api/task-assignees"]
     assert result["module_sources"] == []
+    subscription = next(p for p in result["pages"] if p["path"] == "/agenten/subscription-agents")
+    assert subscription["status"] == "unavailable"
+    assert "POST /api/agent-studio/subscription-agents/compose" in subscription["requires"]
+    assert "POST /api/agent-studio/subscription-agents/compose" in subscription["missing"]
+
 
 
 def test_explicit_release_precedes_legacy_build_even_if_it_is_missing(tmp_path):
@@ -84,7 +89,7 @@ def test_configured_release_expands_host_home(monkeypatch, tmp_path):
     assert resolve_gui_distribution(tmp_path / "gui", "$GUI_RELEASE_ROOT/dist") == tmp_path / "dist"
 
 
-def test_gui_consumer_and_kit_pin_bind_same_0221_release():
+def test_gui_consumer_and_kit_pin_bind_same_023_release():
     repo = Path(__file__).resolve().parents[2]
     consumer = json.loads((repo / "system/gui/gui-consumer.v1.json").read_text(encoding="utf-8"))
     kit = get_pinned_kit_manifest(repo / "system/gui/kit_manifest.json")
@@ -92,18 +97,18 @@ def test_gui_consumer_and_kit_pin_bind_same_0221_release():
     assert consumer["schema"] == "ellmos.bach.gui-consumer.v1"
     assert consumer["id"] == "ellmos-system-gui"
     assert consumer["status"] == "pinned_release"
-    assert consumer["version"] == "0.2.21"
+    assert consumer["version"] == "0.2.23"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c",
-        "archive_sha256": "9a10008b9506a7b69a09e1c7b8bf9f8c5ab0075358e5da17b8295ca816697d12",
+        "commit": "99cde50dfaa0f0306b6c5b70aebc4161db0fc71c",
+        "archive_sha256": "18cd12c95157e05098a3105ff5ea446238d4ac6642f8aa89e38344878f85f893",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }
     assert kit["verified"] is True  # Identity metadata only; installed bytes are verified separately.
     assert kit["version"] == consumer["version"]
     assert kit["pinned_source_commit"] == consumer["source"]["commit"]
     assert kit["release_archive_sha256"] == consumer["source"]["archive_sha256"]
-    assert kit["release_archive"] == "ellmos-system-gui-0.2.21-8ea653e0061f.zip"
+    assert kit["release_archive"] == "ellmos-system-gui-0.2.23-99cde50dfaa0.zip"
     assert kit["dist_manifest_schema"] == "ellmos-system-gui.dist.v1"
     assert kit["expected_page_count"] == 26
     assert "installed" not in kit
