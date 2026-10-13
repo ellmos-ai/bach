@@ -326,3 +326,7 @@ Dieses Projekt ist eine **unentgeltliche Open-Source-Schenkung** im Sinne der §
 Nutzung auf eigenes Risiko. Keine Wartungszusage, keine Verfügbarkeitsgarantie, keine Gewähr für Fehlerfreiheit oder Eignung für einen bestimmten Zweck.
 
 This project is an unpaid open-source donation. Liability is limited to intent and gross negligence (§ 521 German Civil Code). Use at your own risk. No warranty, no maintenance guarantee, no fitness-for-purpose assumed.
+
+## Portable agent starter files
+
+`start/agents/windows/` ships START, SYSTEM-AUDITOR, TICKET-MASTER, PINGPONG and MULTI-BOT `.bat` files; `start/agents/posix/` ships their shell equivalents. The wheel includes them in `share/ellmos-bach/starters/`. They delegate to the existing TASKPLAN Startcenter and module role contracts. Install the reviewed TASKPLAN version with Startcenter and the optional role modules first. These files set no personal paths, accounts, models or trusted automation. They do not register or start background jobs during installation. Run START to choose a role. PingPong requires an explicit sync root/own slot and supports its verified Codex/Claude adapters; MULTI-BOT uses the public githubbot-core package. For previews pass `--dry-run --provider codex`; missing modules produce an installation hint.
