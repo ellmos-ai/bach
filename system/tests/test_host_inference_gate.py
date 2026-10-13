@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: MIT
 """Isolated host coordination checks; fake backends never make model calls."""
 import asyncio
+import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -90,6 +91,133 @@ asyncio.run(run())
                 child.communicate(timeout=5)
 
 
+def test_cross_process_fifo_with_three_to_one_foreground_fairness(tmp_path):
+    gate_root = tmp_path / "gate"
+    script = tmp_path / "queued_inference.py"
+    target = {
+        "socket_id": "socket-test",
+        "binding_id": "binding-test",
+        "agent_id": "worker-test",
+        "backend": "ollama",
+        "model": "fixture:small",
+    }
+    script.write_text('''
+import asyncio, json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from hub._services.chat.host_inference_gate import HostInferenceGate
+root = Path(sys.argv[2])
+name, priority = sys.argv[3], sys.argv[4]
+target = {
+    "socket_id": "socket-test",
+    "binding_id": "binding-test",
+    "agent_id": "worker-test",
+    "backend": "ollama",
+    "model": "fixture:small",
+}
+async def run():
+    async with HostInferenceGate(root).turn(name, priority, model_target=target):
+        with (root / "order.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(name) + "\\n")
+        (root / (name + ".entered")).touch()
+        while not (root / (name + ".continue")).exists():
+            await asyncio.sleep(.005)
+asyncio.run(run())
+''', encoding="utf-8")
+    gate_root.mkdir()
+    children = []
+    waiters = []
+    queued = [
+        ("fg1", "foreground"),
+        ("fg2", "foreground"),
+        ("fg3", "foreground"),
+        ("fg4", "foreground"),
+        ("bg1", "background"),
+        ("bg2", "background"),
+    ]
+    trace = gate_root / "order.jsonl"
+
+    def observed_order():
+        if not trace.exists():
+            return []
+        return [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
+
+    def start(name, priority):
+        child = subprocess.Popen(
+            [sys.executable, str(script), str(SYSTEM_ROOT), str(gate_root), name, priority],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            cwd=str(tmp_path),
+        )
+        children.append(child)
+        if name != "holder":
+            waiters.append((name, child))
+        return child
+
+    def failed_waiter():
+        entered = set(observed_order())
+        return next(
+            ((name, child) for name, child in waiters
+             if child.poll() is not None and name not in entered),
+            None,
+        )
+
+    try:
+        holder = start("holder", "background")
+        _until(lambda: (gate_root / "holder.entered").exists() or holder.poll() is not None)
+        assert holder.poll() is None
+
+        digest = hashlib.sha256(json.dumps(
+            {"bound": True, "model_target": target},
+            ensure_ascii=True, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        for index, (name, priority) in enumerate(queued, start=1):
+            child = start(name, priority)
+            _until(lambda count=index, process=child:
+                   len(list(gate_root.glob("ticket-*.json"))) == count
+                   or process.poll() is not None)
+            assert child.poll() is None
+            tickets = list(gate_root.glob("ticket-*.json"))
+            assert len(tickets) == index
+            records = [
+                json.loads(path.read_text(encoding="utf-8")) for path in tickets
+            ]
+            record = max(records, key=lambda item: item["sequence"])
+            assert record["priority"] == priority
+            assert record["target_sha256"] == digest
+            assert target["model"] not in json.dumps(record)
+
+        (gate_root / "holder.continue").touch()
+        expected = ["holder", "fg1", "fg2", "fg3", "bg1", "fg4", "bg2"]
+        for index, name in enumerate(expected[1:], start=2):
+            _until(lambda expected_count=index:
+                   len(observed_order()) >= expected_count or failed_waiter() is not None)
+            order = observed_order()
+            if len(order) < index:
+                failed = failed_waiter()
+                details = None
+                if failed is not None:
+                    failed_name, failed_child = failed
+                    out, err = failed_child.communicate()
+                    details = (failed_name, failed_child.returncode, out, err)
+                raise AssertionError(f"Queued process exited before admission: {details!r}; order={order!r}")
+            assert order[index - 1] == name, order
+            (gate_root / (name + ".continue")).touch()
+
+        for child in children:
+            out, err = child.communicate(timeout=10)
+            assert child.returncode == 0, (out, err)
+        assert observed_order() == expected
+    finally:
+        (gate_root / "holder.continue").touch()
+        for name, _ in queued:
+            (gate_root / (name + ".continue")).touch()
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+            child.communicate(timeout=5)
+
+
 def test_waiter_cancellation_removes_only_own_request(tmp_path):
     from hub._services.chat.host_inference_gate import HostInferenceGate
 
@@ -119,7 +247,7 @@ def test_dead_foreground_waiter_does_not_block_background(tmp_path):
     gate = HostInferenceGate(tmp_path)
     tmp_path.mkdir(exist_ok=True)
     stale = tmp_path / "foreground-stale.json"
-    stale.write_text(json.dumps({"pid": 2147483647, "created": 0}), encoding="utf-8")
+    stale.write_text(json.dumps({"pid": 2147483647, "created": 1.0}), encoding="utf-8")
 
     async def run():
         async with gate.turn("worker", "background"):
@@ -132,9 +260,148 @@ def test_reused_pid_waiter_is_removed(tmp_path):
     from hub._services.chat.host_inference_gate import HostInferenceGate
     gate = HostInferenceGate(tmp_path)
     stale = tmp_path / "foreground-reused.json"
-    stale.write_text(json.dumps({"pid": os.getpid(), "created": 0}), encoding="utf-8")
+    stale.write_text(json.dumps({"pid": os.getpid(), "created": 1.0}), encoding="utf-8")
     assert gate.status()["foreground_waiters"] == 0
     assert not stale.exists()
+
+
+@pytest.mark.parametrize("created_json", ["NaN", "Infinity", "-Infinity", "-1", "0"])
+def test_invalid_legacy_marker_fails_closed_before_liveness(tmp_path, monkeypatch, created_json):
+    import hub._services.chat.host_inference_gate as gate_module
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    gate = HostInferenceGate(tmp_path)
+    marker = tmp_path / "foreground-invalid.json"
+    marker.write_text(
+        f'{{"pid":{os.getpid()},"created":{created_json}}}', encoding="utf-8"
+    )
+    probes = []
+
+    def forbidden_liveness_probe(pid):
+        probes.append(pid)
+        pytest.fail("invalid process creation time must fail before PID probing")
+
+    monkeypatch.setattr(gate_module.psutil, "Process", forbidden_liveness_probe)
+    with pytest.raises(RuntimeError, match="Ungültiger Inferenz-Koordinationsbeleg"):
+        gate._legacy_foreground_count_locked(set())
+
+    assert probes == []
+    assert marker.is_file()
+
+
+def test_mixed_live_legacy_foreground_markers_are_preserved(tmp_path):
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    gate = HostInferenceGate(tmp_path)
+    identity = gate._identity()
+    ticket_id = "a" * 32
+    legacy = tmp_path / "foreground-legacy.json"
+    queued = tmp_path / f"foreground-{ticket_id}.json"
+    legacy.write_text(json.dumps(identity), encoding="utf-8")
+    queued.write_text(json.dumps({**identity, "ticket_id": ticket_id}), encoding="utf-8")
+
+    assert gate._legacy_foreground_count_locked({ticket_id}) == 1
+    assert legacy.is_file()
+    assert queued.is_file()
+
+
+def test_live_legacy_foreground_marker_blocks_new_background(tmp_path):
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    gate = HostInferenceGate(tmp_path)
+    tmp_path.mkdir(exist_ok=True)
+    marker = tmp_path / "foreground-legacy.json"
+    marker.write_text(json.dumps(gate._identity()), encoding="utf-8")
+    entered = []
+
+    async def run():
+        async def background():
+            async with gate.turn("background", "background"):
+                entered.append(True)
+
+        pending = asyncio.create_task(background())
+        for _ in range(100):
+            if list(tmp_path.glob("ticket-*.json")):
+                break
+            await asyncio.sleep(.01)
+        assert list(tmp_path.glob("ticket-*.json"))
+        assert gate.status()["foreground_waiters"] == 1
+        assert not entered
+        marker.unlink()
+        await asyncio.wait_for(pending, 1)
+
+    asyncio.run(run())
+    assert entered == [True]
+
+
+def test_reused_pid_queue_ticket_is_removed(tmp_path):
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    gate = HostInferenceGate(tmp_path)
+    ticket = tmp_path / ("ticket-" + "a" * 32 + ".json")
+    ticket.write_text(json.dumps({
+        "schema": "bach.local-inference-ticket.v1",
+        "ticket_id": "a" * 32,
+        "pid": os.getpid(),
+        "created": 1.0,
+        "priority": "foreground",
+        "sequence": 1,
+        "target_sha256": "b" * 64,
+    }), encoding="utf-8")
+
+    assert gate._foreground_waiters() == 0
+    assert not ticket.exists()
+
+
+def test_crashed_foreground_waiter_is_reaped_without_blocking_background(tmp_path):
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    gate_root = tmp_path / "gate"
+    script = tmp_path / "queued_waiter.py"
+    child_entered = tmp_path / "child-entered"
+    script.write_text('''
+import asyncio, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from hub._services.chat.host_inference_gate import HostInferenceGate
+root = Path(sys.argv[2])
+async def run():
+    async with HostInferenceGate(root).turn("crashed-waiter", "foreground"):
+        Path(sys.argv[3]).touch()
+        await asyncio.sleep(30)
+asyncio.run(run())
+''', encoding="utf-8")
+
+    async def run():
+        async with HostInferenceGate(gate_root).turn("holder", "background"):
+            child = await asyncio.create_subprocess_exec(
+                sys.executable, str(script), str(SYSTEM_ROOT), str(gate_root),
+                str(child_entered),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            try:
+                for _ in range(500):
+                    if list(gate_root.glob("ticket-*.json")) or child.returncode is not None:
+                        break
+                    await asyncio.sleep(.01)
+                assert child.returncode is None
+                assert list(gate_root.glob("ticket-*.json"))
+                assert not child_entered.exists()
+                child.terminate()
+                await asyncio.wait_for(child.communicate(), timeout=5)
+                assert HostInferenceGate(gate_root).status()["foreground_waiters"] == 0
+                assert not list(gate_root.glob("ticket-*.json"))
+                assert not list(gate_root.glob("foreground-*.json"))
+            finally:
+                if child.returncode is None:
+                    child.terminate()
+                await asyncio.wait_for(child.communicate(), timeout=5)
+        async with HostInferenceGate(gate_root).turn("next", "background"):
+            assert HostInferenceGate(gate_root).status()["chat_id"] == "next"
+
+    asyncio.run(run())
 
 
 def test_owned_process_death_releases_inference_lock(tmp_path, monkeypatch):

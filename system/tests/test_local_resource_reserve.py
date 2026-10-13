@@ -325,6 +325,7 @@ def test_runtime_wait_retains_input_and_returns_torch_without_model_call(tmp_pat
             status = runtime.compute_turn_status()
             assert status["active"] is False and not calls
             assert status["resource_waiters"][0]["chat_id"] == "worker"
+            assert not HostInferenceGate().root.exists()
             assert await task == {"content": "result"}
         finally:
             runtime._compute_turn_context.reset(token)
@@ -344,6 +345,7 @@ def test_cloud_target_bypasses_host_gate_even_on_loopback(tmp_path, monkeypatch)
     monkeypatch.setattr(reserve, "probe", forbidden)
     monkeypatch.setattr(backend, "chat", chat)
     assert asyncio.run(runtime._chat_with_compute_turn(backend, []))["content"] == "external"
+    assert not HostInferenceGate().root.exists()
 
 
 def test_metadata_target_change_returns_owner_before_external_call(tmp_path, monkeypatch):
@@ -645,7 +647,7 @@ def test_root_api_shim_resource_paths_without_database_access(tmp_path, operatio
                 }},
             }
             path = reserve.policy_path()
-            path.parent.mkdir(parents=True)
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(policy), encoding="utf-8")
 
             async def fake_metadata(*args):
