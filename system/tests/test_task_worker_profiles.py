@@ -289,3 +289,104 @@ def test_http_stale_catalog_cannot_create_task(task_http, configured_profiles):
     assert response.status_code == 409
     with sqlite3.connect(path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(("backend", "model", "owner"), [
+    ("openrouter", "openrouter/free", "OPENROUTER"),
+    ("ollama-cloud", "glm-5.3:cloud", "OLLAMA-CLOUD"),
+])
+def test_verified_profile_assignment_roundtrips_to_worker_picker(
+        configured_profiles, backend, model, owner, tmp_path, monkeypatch):
+    _, profile, observed, save, _ = configured_profiles
+    profile.update(backend=backend, model=model)
+    observed.update(backend=backend, model=model)
+    save()
+
+    core = slots.core_system_agents_snapshot()
+    profiles = api.dynamic_worker_snapshot(core)
+    blueprints = {"configuration_version": core["configuration_version"],
+                  "templates": [], "blueprints": []}
+    catalog = api.project_targets(core, blueprints, profiles)
+    target = next(item for item in catalog["targets"]
+                  if item["id"] == "worker:" + profile["id"])
+    profile_slot = next(item for item in profiles["agents"] if item["id"] == profile["id"])
+
+    assert target["assignable"] is True
+    assert target["binding"] == {"assigned_slot": profile["id"], "assigned_to": owner,
+                                 "required_model": model}
+
+    # Exercise the shipped CLI edit path: it lowercases --assigned while keeping
+    # the slot and model values exact. The resulting real row must still be
+    # selectable by the worker's canonical picker.
+    from hub.task import TaskHandler
+    db_path = tmp_path / "bach.db"
+    system_root = Path(__file__).resolve().parents[1]
+    schema = (system_root / "data/schema/schema.sql").read_text(encoding="utf-8")
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(schema)
+        cursor = conn.execute(
+            "INSERT INTO tasks (title, status, category, priority, assigned_to) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("CLI route roundtrip", "pending", "WORKER", "P1", "user"),
+        )
+        task_id = cursor.lastrowid
+    handler = TaskHandler(tmp_path)
+    handler.db_path = db_path
+    monkeypatch.setenv("BACH_RHEINGOLD_DISABLED", "1")
+    ok, message = handler.handle("edit", [str(task_id), "--assigned", owner,
+        "--assigned-slot", profile["id"], "--required-model", model])
+    assert ok, message
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cli_task = dict(conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
+    assert cli_task["assigned_to"] == owner.lower()
+    assert cli_task["assigned_slot"] == profile["id"]
+    assert cli_task["required_model"] == model
+
+    # Let the real queue picker and WorkerLeaseBinding acquire the CLI-written
+    # row, receive the canonical TaskLeaseClient ACK, then return this fixture
+    # lease without involving any production worker.
+    import threading
+
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import TaskLeaseClient
+
+    from system.tests.test_task_lease_client_review import T0
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        client = TaskLeaseClient(conn=conn)
+        binding = WorkerLeaseBinding.acquire_next(
+            client, profile_slot, worker_id=f"fixture-{backend}@HOST", host="HOST",
+            generation="fixture-generation-1", is_current=lambda: True,
+            stop_event=threading.Event(), clock=lambda: T0,
+        )
+        assert binding.task_id == task_id
+        assert client.read(task_id, lease_id=binding._ack.lease_id, now=T0).own is True
+        assert binding.return_lease() is True
+    finally:
+        conn.close()
+
+    task = {"id": 42002, **target["binding"], "category": "GUI", "priority": "P3"}
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    assert WorkerLeaseBinding._selection_rejection_reason(task, profile_slot) is None
+    assert WorkerLeaseBinding._selection_rejection_reason(cli_task, profile_slot) is None
+
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_slot": "different-worker"}, profile_slot) == "slot_binding"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "required_model": "different-model"}, profile_slot) == "model_binding"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_to": "codex"}, profile_slot) == "ownership"
+
+
+def test_external_profile_without_verified_runtime_is_not_assignable(configured_profiles):
+    _, _, observed, _, _ = configured_profiles
+    observed["runtime_verified"] = False
+    core = slots.core_system_agents_snapshot()
+    profiles = api.dynamic_worker_snapshot(core)
+    catalog = api.project_targets(
+        core, {"configuration_version": core["configuration_version"],
+               "templates": [], "blueprints": []}, profiles)
+    target = next(item for item in catalog["targets"] if item["id"] == "worker:worker-free")
+    assert target["assignable"] is False
