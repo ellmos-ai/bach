@@ -74,7 +74,7 @@ def confidence_projection(value, *, present=True):
         return "unavailable"
     if value is None:
         return "not_measured"
-    if type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1:
+    if type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value):
         return "legacy_heuristic_unvalidated"
     return "unavailable"
 

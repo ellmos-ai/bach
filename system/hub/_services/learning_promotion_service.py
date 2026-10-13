@@ -668,8 +668,8 @@ class LearningPromotionService:
             confidence = draft.get("confidence")
             confidence_status = draft.get("confidence_status")
             if confidence is not None and (
-                    type(confidence) not in (int, float) or not math.isfinite(confidence)
-                    or not 0 <= confidence <= 1):
+                    type(confidence) not in (int, float) or not 0 <= confidence <= 1
+                    or not math.isfinite(confidence)):
                 raise LearningPromotionUnavailable("Lesson-Konfidenz ist ungültig.")
             if confidence_status not in (None, "not_measured", "legacy_heuristic_unvalidated"):
                 raise LearningPromotionUnavailable("Lesson-Konfidenzstatus ist ungültig.")

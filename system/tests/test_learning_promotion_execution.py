@@ -1244,3 +1244,26 @@ def test_skill_promotion_rejects_inconsistent_or_duplicate_frontmatter(database,
 
     assert not (root / skill_name / "SKILL.md").exists()
     assert row_count(database, "learning_promotions") == 0
+
+
+@pytest.mark.parametrize(
+    "confidence",
+    [10**400, -(10**400)],
+    ids=["huge-positive", "huge-negative"],
+)
+def test_hermes_lesson_promotion_rejects_oversized_confidence_before_write(
+    database, confidence
+):
+    _, candidate = hermes_reviewed(database, skill_name="oversized-lesson-confidence")
+    draft = dict(candidate["lessons_draft"][0])
+    draft["confidence"] = confidence
+    service = promotion_service(database)
+
+    with pytest.raises(
+        LearningPromotionUnavailable,
+        match="Lesson-Konfidenz ist ungültig",
+    ):
+        service._lesson_drafts({"lessons_draft_json": json.dumps([draft])})
+
+    assert row_count(database, "memory_lessons") == 0
+    assert row_count(database, "learning_promotions") == 0

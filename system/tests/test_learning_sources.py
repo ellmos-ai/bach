@@ -624,3 +624,38 @@ def test_invalid_legacy_confidence_is_unavailable_and_json_safe(ctx, invalid):
     assert projected["confidence"] is None
     assert projected["confidence_status"] == "unavailable"
     json.dumps(projected, allow_nan=False)
+
+
+@pytest.mark.parametrize("oversized", [10**400, -(10**400)])
+def test_large_legacy_confidence_projects_unavailable_in_candidate_and_draft_lists(
+    ctx, oversized
+):
+    _, _, _, _, database = ctx
+    row = _persisted_hermes_row(ctx)
+    candidate_id = row["id"]
+
+    row["confidence"] = oversized
+    direct = project_candidate("hermes", row)
+    assert direct["confidence"] is None
+    assert direct["confidence_status"] == "unavailable"
+    json.dumps(direct, allow_nan=False)
+
+    drafts = [{
+        "category": "general",
+        "title": "Legacy confidence value",
+        "solution": "Keep the original draft available for review.",
+        "confidence": oversized,
+    }]
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            "UPDATE hermes_skill_candidates SET lessons_draft_json=? WHERE id=?",
+            (json.dumps(drafts, separators=(",", ":")), candidate_id),
+        )
+
+    hermes = HermesDistillationService(database)
+    detail = hermes.get_candidate(candidate_id)
+    listed = next(item for item in hermes.list_candidates("all") if item["id"] == candidate_id)
+    for projected in (detail, listed):
+        assert projected["lessons_draft"][0]["confidence"] is None
+        assert projected["lessons_draft"][0]["confidence_status"] == "unavailable"
+        json.dumps(projected, allow_nan=False)
