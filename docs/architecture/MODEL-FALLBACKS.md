@@ -23,3 +23,14 @@ Tasks mit `required_model` bleiben an dieses Modell gebunden und wechseln nicht 
 ## Abnahmegrenze
 
 Die fokussierten Tests prüfen CAS/Validierung, den echten Backendresolver mit bereits geladenem Factory-Zugriff und echten Backendklassen, Provider-/Modell-/Endpoint-Identität, Projektion lokaler und externer Ziele, Bindungsableitung aus dem echten Legacy-Projektionsformat für ein ausgewähltes lokales Fallback, den normalen Toolloop sowie Teilantwort-, Quoten-, self-managed-CLI- und Taskbindungsgrenzen. Sie rufen keine echten Modellanbieter auf. Damit ist weder ein konkreter Modelllauf noch eine Kapazitätsmessung, ein Fackel-Livezustand oder ein Produktivdeploy nachgewiesen.
+
+
+## OpenRouter-Free-Katalog
+
+Der Katalogdienst hält Modell- und Preisnachweise höchstens 300 Sekunden im Prozesscache. Ein nicht aus dem Cache bedienter Katalogabruf kann höchstens zwei HTTP-GETs ausführen. Jeder GET verwendet die bestehende HTTPX-Timeoutgrenze von sechs Sekunden. Das ist eine Phasengrenze pro Request und keine garantierte Gesamtzeit für DNS, Verbindungsaufbau, Lesen und beide Versuche zusammen.
+
+Nur HTTPX-Timeouts, Netzwerkfehler und die festen temporären HTTP-Statuscodes 408, 425, 429, 500, 502, 503 und 504 dürfen einen zweiten Katalogabruf auslösen. 401/403, andere HTTP-Fehler und ungültige Katalogantworten werden nicht wiederholt. Die öffentliche Projektion verwendet feste `failure_code`-Werte wie `catalog_timeout`, `catalog_transport_error`, `catalog_http_transient`, `catalog_auth_rejected`, `catalog_http_error` und `catalog_invalid_schema`; ein `status_code` erscheint nur für die erlaubte Statusliste. Providertexte, Antwortkörper, URLs, Header und Zugangsdaten werden nicht übernommen.
+
+Der Router `openrouter/free` bleibt ein unveränderter Anbieter-Selektor. Eine einzelne Modell-ID wird nur zugelassen, wenn sie auf `:free` endet, die Preisfelder `prompt` und `completion` vorliegen und alle veröffentlichten Preisfelder endliche numerische Nullen enthalten. Ein fehlender Katalogeintrag bedeutet nur „nicht aufgeführt“; er beweist keinen Preis. Ein vorhandener Eintrag mit fehlenden oder ungültigen Preisfeldern wird getrennt von einem tatsächlich beobachteten Nichtnullpreis abgelehnt. Mehrdeutige Doppeleinträge bleiben ebenfalls gesperrt.
+
+Nach einem fehlgeschlagenen Refresh werden zuvor gecachte individuelle IDs nicht weiter zugelassen. Die öffentliche Katalogliste enthält dann nur den Router und eine feste Fehlerklasse. Ein erfolgreicher Wiederholungsabruf kann die nachfolgende normale Anfrage einmal freigeben; der Katalogdienst wiederholt weder Inferenz noch Werkzeugaufrufe.
