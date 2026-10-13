@@ -32,7 +32,23 @@ verify_installed_dist() prüft das konfigurierte Dist-Verzeichnis anhand von Com
 vollständiger Dateiliste und Datei-Hashes. Ein Quellpin allein belegt keine Installation
 oder Live-Auslieferung.
 
-## Aktueller Source-Pin: GUI 0.2.22
+## Aktueller Source-Pin: GUI 0.2.23
+
+Der veröffentlichte Release v0.2.23 bindet Commit 99cde50dfaa0f0306b6c5b70aebc4161db0fc71c,
+das ZIP ellmos-system-gui-0.2.23-99cde50dfaa0.zip und die SHA-256-Prüfsumme
+18cd12c95157e05098a3105ff5ea446238d4ac6642f8aa89e38344878f85f893.
+Das Release-Manifest führt 197 Dateien, darunter 26 HTML-Seiten.
+
+Die Konfidenzanzeige unterscheidet ungemessene Werte, gespeicherte unverifizierte Fakten
+und unverifizierte Hermes-Heuristiken. Sie ersetzt keine Messung oder native Lernabnahme.
+Die Aktivierung benötigt kompatible Backendprojektionen und Lesson-Promotion-Verträge;
+die Integration aus BACH PR #377 und dieser Verbraucher-Pin sind gemeinsam zu prüfen.
+Insbesondere müssen null, ungültige sowie übergroße Werte ohne erfundene Prozentwerte
+oder Fehler projiziert werden. Ein Pin oder Katalogeintrag belegt weder Installation
+noch produktive Aktivierung. Vorherige Dist, Pin und LaunchAgent-Konfiguration bleiben
+für einen koordinierten Rollback erhalten.
+
+## Historischer Source-Pin: GUI 0.2.22
 
 Der veröffentlichte Release v0.2.22 bindet Commit cb0784089d723f80aa7f508b741198419a4bde82,
 das ZIP ellmos-system-gui-0.2.22-cb0784089d72.zip und die SHA-256-Prüfsumme
