@@ -45,6 +45,12 @@ TASK_STATES = {
     "cancelled",
     "blocked",
 }
+
+
+class SchedulerFacadeUnavailable(RuntimeError):
+    """The scheduler facade lacks the required last-success projection."""
+
+
 TRUSTED_LOCK_TOOLS = {
     # Verified native lock-master a807cad; Windows canonical scripts 2026-10-10.
     (
@@ -939,6 +945,8 @@ class MaintenanceRuntime:
             self._executor,
             worker_id=f"maintenance:{socket.gethostname()}:{os.getpid()}",
         )
+        if not callable(getattr(adapter, "jobs", None)):
+            raise SchedulerFacadeUnavailable("scheduler_jobs_projection_unavailable")
         jobs = [row for row in adapter.store.list_jobs() if row["id"] == JOB_ID]
         expected = {"kind": "interval", "seconds": self.config["interval_seconds"]}
         payload = {"schema": "bach.docs-delta-job.v1"}
@@ -1100,20 +1108,32 @@ class MaintenanceRuntime:
     def job_receipts(self):
         if self.adapter is None:
             return []
-        # Native store is consulted only by the owner, never by the read-only API.
-        latest = self.adapter.store.latest_runs_by_job()
-        return [
-            {
-                "id": row["id"],
-                "enabled": bool(row["enabled"]),
-                "next_due_at": row["next_due_at"],
-                "last_success": latest.get(row["id"], {}).get("finished_at")
-                if latest.get(row["id"], {}).get("status") == "succeeded"
-                else None,
-            }
-            for row in self.adapter.store.list_jobs()
-            if row["id"].startswith("bach.docs.")
-        ]
+        jobs_projection = getattr(self.adapter, "jobs", None)
+        if not callable(jobs_projection):
+            raise SchedulerFacadeUnavailable("scheduler_jobs_projection_unavailable")
+        rows = jobs_projection()
+        if not isinstance(rows, list):
+            raise SchedulerFacadeUnavailable("scheduler_jobs_projection_invalid")
+        receipts = []
+        for row in rows:
+            if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+                raise SchedulerFacadeUnavailable("scheduler_jobs_projection_invalid")
+            if not row["id"].startswith("bach.docs."):
+                continue
+            if not all(key in row for key in ("is_active", "next_run", "last_success")):
+                raise SchedulerFacadeUnavailable("scheduler_last_success_unavailable")
+            last_success = row["last_success"]
+            if last_success is not None and not isinstance(last_success, str):
+                raise SchedulerFacadeUnavailable("scheduler_last_success_invalid")
+            receipts.append(
+                {
+                    "id": row["id"],
+                    "enabled": bool(row["is_active"]),
+                    "next_due_at": row["next_run"],
+                    "last_success": last_success,
+                }
+            )
+        return receipts
 
     def run_receipts(self):
         if self.adapter is None:
