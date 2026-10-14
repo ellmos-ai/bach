@@ -5,6 +5,7 @@ the surface telegram_chat.py, the tray and the GUI ``/chat`` page rely on."""
 from __future__ import annotations
 
 import asyncio
+import copy
 import sqlite3
 import sys
 from pathlib import Path
@@ -30,19 +31,99 @@ CHAT_RUNTIME_SRC = (
 class _Backend:
     manages_own_tools = False
 
-    def __init__(self, script=None):
+    def __init__(self, script=None, on_chat=None):
         self.script = list(script or [])
+        self.on_chat = on_chat
         self.seen_tools: list[list[str]] = []
+        self.seen_tool_schemas: list[list[dict]] = []
+        self.seen_models: list[str | None] = []
 
     def get_default_model(self):
         return "test-model"
 
     async def chat(self, messages, tools=None, think=True, model=None):
         self.seen_tools.append([t["function"]["name"] for t in (tools or [])])
-        return self.script.pop(0) if self.script else {"content": "Antwort"}
+        self.seen_tool_schemas.append(copy.deepcopy(tools or []))
+        self.seen_models.append(model)
+        if self.on_chat is not None:
+            self.on_chat(tools or [], model)
+        if self.script:
+            response = self.script.pop(0)
+            if isinstance(response, BaseException):
+                raise response
+            return response
+        return {"content": "Antwort"}
 
     def tool_response_message(self, content, tool_call_id=""):
         return {"role": "tool", "content": content}
+
+
+_READ_ONLY_REVIEW_TOOLS = ["read_file", "search_text", "task_manage"]
+
+
+def _live_bound_worker(runtime, chat_id, *, allowed_tools=None, required_model=""):
+    from datetime import datetime, timedelta, timezone
+    from threading import Event
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import LeaseAck, ToolTraceStartAck
+
+    class _TraceClient:
+        def __init__(self):
+            self.started = []
+            self.phases = []
+
+        def tool_trace_start(self, identity, **kwargs):
+            self.started.append(identity)
+            return ToolTraceStartAck(
+                schema="bach.worker-tool-trace-start.v1", accepted=True,
+                event_id=len(self.started), task_id=identity.task_id,
+                request_id=identity.request_id, phase="started",
+                completion_token="test-only-completion-token",
+            )
+
+        def tool_trace_phase(self, identity, phase, **kwargs):
+            self.phases.append((identity.tool_name, phase))
+            return {"accepted": True}
+
+    class _TestBinding(WorkerLeaseBinding):
+        @property
+        def completed_task_ids(self):
+            return ()
+
+    now = datetime.now(timezone.utc)
+    task_id = 42001
+    version = "a" * 64
+    generation = "test-generation-2197"
+    snapshot = {
+        "id": task_id, "task_id": task_id, "assigned_to": "BACH",
+        "assigned_slot": "", "required_model": required_model,
+        "task_version": version,
+    }
+    ack = LeaseAck(
+        task_id=task_id, lease_id="00000000-0000-4000-8000-000000000001", fence=1,
+        worker_id="readonly-reviewer@ASUS-GEI", host="ASUS-GEI",
+        issued_at=now.isoformat(), expires_at=(now + timedelta(minutes=10)).isoformat(),
+        ttl_profile="M", server_now=now.isoformat(), local_receive_time=now,
+        task_version=version, result_generation=generation,
+    )
+    trace_client = _TraceClient()
+    binding = _TestBinding(
+        trace_client, snapshot, ack, generation=generation,
+        is_current=lambda: True, stop_event=Event(), clock=lambda: now,
+    )
+    profile = {
+        "id": chat_id, "enabled": True, "allow_tools": True,
+        "allowed_tools": list(allowed_tools) if allowed_tools is not None else list(_READ_ONLY_REVIEW_TOOLS),
+        "skill_refs": [], "backend": "openrouter", "model": "test-model",
+        "model_fallbacks": [],
+    }
+    session = runtime.get_session(chat_id)
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    session.worker_slot_reader = lambda: dict(profile)
+    session.custom_system_prompt = "isolated runtime caller fixture"
+    runtime._get_bach_context = lambda *args: ""
+    return binding, profile, trace_client, session
 
 
 @pytest.fixture
@@ -86,6 +167,41 @@ class TestSeamIsThin:
 class TestToolProvider:
     def test_provider_satisfies_the_module_protocol(self):
         assert isinstance(bach_tools.BachToolProvider(), ellmos_chat.ToolProvider)
+
+    def test_unbound_provider_keeps_pr372_legacy_read_file_schema(self):
+        import copy
+
+        from hub._services.chat import bach_tools
+
+        original = copy.deepcopy(next(
+            tool for tool in bach_tools.TOOLS_SAFE if tool["function"]["name"] == "read_file"
+        ))
+        provider_tool = next(
+            tool for tool in bach_tools.BachToolProvider().get_tools("safe")
+            if tool["function"]["name"] == "read_file"
+        )
+        properties = provider_tool["function"]["parameters"]["properties"]
+        assert provider_tool == original
+        assert "line_numbers" in properties
+        assert "output_format" not in properties
+        assert next(
+            tool for tool in bach_tools.TOOLS_SAFE if tool["function"]["name"] == "read_file"
+        ) == original
+
+    def test_exact_read_only_allowlist_without_fenced_binding_keeps_legacy_schema(self):
+        from hub._services.chat import bach_tools
+
+        provider = bach_tools.BachToolProvider(
+            worker_task_binding=None,
+            allowed_tools={"read_file", "search_text", "task_manage"},
+        )
+        read_file = next(
+            tool for tool in provider.get_tools("safe")
+            if tool["function"]["name"] == "read_file"
+        )
+        properties = read_file["function"]["parameters"]["properties"]
+        assert "line_numbers" in properties
+        assert "output_format" not in properties
 
     def test_safe_and_full_surfaces_are_bachs_own(self):
         provider = bach_tools.BachToolProvider()
@@ -136,6 +252,13 @@ class TestToolProvider:
         assert await runtime.process("wie spät?", "c1") == "fertig"
         assert "get_datetime" in backend.seen_tools[0]
         assert "bach_command" in backend.seen_tools[0]
+        legacy_read_file = next(
+            tool for tool in backend.seen_tool_schemas[0]
+            if tool["function"]["name"] == "read_file"
+        )
+        properties = legacy_read_file["function"]["parameters"]["properties"]
+        assert "line_numbers" in properties
+        assert "output_format" not in properties
 
     @pytest.mark.asyncio
     async def test_full_mode_session_is_offered_the_full_surface(self):
@@ -146,6 +269,126 @@ class TestToolProvider:
 
         await runtime.process("los", "c1")
         assert "execute_command" in backend.seen_tools[0]
+
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("required_model", ["", "test-model"])
+    async def test_bound_readonly_schema_is_rebuilt_for_each_fallback_request(
+        self, monkeypatch, required_model,
+    ):
+        httpx = pytest.importorskip("httpx")
+        from hub._services.chat import model_sockets
+
+        profile_box = {}
+        def primary_attempt(_tools, _model):
+            profile_box["profile"]["allowed_tools"] = ["search_text", "task_manage"]
+
+        primary = _Backend([httpx.ConnectError("test-only pre-answer failure")], on_chat=primary_attempt)
+        fallback = _Backend([{"content": "fallback answer"}])
+        runtime = ChatRuntime(primary)
+        binding, profile, _, session = _live_bound_worker(
+            runtime, "review-worker", required_model=required_model,
+        )
+        profile_box["profile"] = profile
+        runtime._native_model_fallback_route = lambda _session, _backend, _model: {
+            "targets": [
+                {"backend": "openrouter", "model": "test-model"},
+                {"backend": "openrouter", "model": "test-model"},
+            ],
+            "index": 0,
+        }
+        monkeypatch.setattr(model_sockets, "resolve_fallback_backend", lambda _target: fallback)
+
+        answer = await runtime.process("review", "review-worker", backend=primary, model="test-model")
+
+        assert answer == "fallback answer"
+        assert primary.seen_models == ["test-model"]
+        assert fallback.seen_models == ["test-model"]
+        first_read = next(t for t in primary.seen_tool_schemas[0] if t["function"]["name"] == "read_file")
+        first_props = first_read["function"]["parameters"]["properties"]
+        assert first_props["output_format"]["enum"] == ["ellmos.read-evidence.v1"]
+        assert "line_numbers" not in first_props
+        assert all(t["function"]["name"] != "read_file" for t in fallback.seen_tool_schemas[0])
+        assert session.worker_task_binding is binding
+
+    @pytest.mark.asyncio
+    async def test_runtime_dispatch_uses_same_binding_and_refreshes_schema_after_read(
+        self, monkeypatch, tmp_path,
+    ):
+        import json
+
+        source = tmp_path / "review.txt"
+        source.write_text("alpha\nbeta\n", encoding="utf-8")
+        backend = _Backend([
+            {"tool_calls": [{"function": {"name": "read_file", "arguments": {
+                "path": str(source), "output_format": "ellmos.read-evidence.v1",
+            }}}]},
+            {"content": "done"},
+        ])
+        runtime = ChatRuntime(backend)
+        binding, profile, trace_client, _session = _live_bound_worker(runtime, "review-worker")
+        fake_formatter = lambda text, **_kwargs: json.dumps({"schema": "ellmos.read-evidence.v1", "text": text})
+        monkeypatch.setattr(bach_tools, "_read_evidence_formatter", lambda: fake_formatter)
+        monkeypatch.setattr(
+            bach_tools, "_format_read_evidence_within_budget",
+            lambda _formatter, text, **_kwargs: json.dumps({"schema": "ellmos.read-evidence.v1", "text": text}),
+        )
+        original_exec_tool = chat_runtime.exec_tool
+        dispatch_context = []
+        def recording_exec_tool(name, args, mode, **kwargs):
+            dispatch_context.append((name, kwargs.get("worker_task_binding"), kwargs.get("allowed_tools")))
+            result = original_exec_tool(name, args, mode, **kwargs)
+            if name == "read_file":
+                profile["allowed_tools"] = ["search_text", "task_manage"]
+            return result
+        monkeypatch.setattr(chat_runtime, "exec_tool", recording_exec_tool)
+
+        answer = await runtime.process("read the source", "review-worker", backend=backend, model="test-model")
+
+        assert answer == "done"
+        assert len(dispatch_context) == 1
+        name, dispatched_binding, dispatched_tools = dispatch_context[0]
+        assert name == "read_file"
+        assert dispatched_binding is binding
+        assert set(dispatched_tools) == set(_READ_ONLY_REVIEW_TOOLS)
+        assert [(identity.tool_name, identity.task_id, identity.fence) for identity in trace_client.started] == [
+            ("read_file", 42001, 1),
+        ]
+        assert trace_client.phases == [("read_file", "returned"), ("read_file", "acknowledged")]
+        first_read = next(t for t in backend.seen_tool_schemas[0] if t["function"]["name"] == "read_file")
+        assert first_read["function"]["parameters"]["properties"]["output_format"]["enum"] == [
+            "ellmos.read-evidence.v1",
+        ]
+        assert all(t["function"]["name"] != "read_file" for t in backend.seen_tool_schemas[1])
+
+    @pytest.mark.asyncio
+    async def test_revoked_binding_blocks_fallback_request_schema(self, monkeypatch):
+        httpx = pytest.importorskip("httpx")
+        from hub._services.chat import model_sockets
+
+        binding_box = {}
+        def revoke_before_fallback(_tools, _model):
+            binding_box["binding"].invalidate()
+
+        primary = _Backend([httpx.ConnectError("test-only pre-answer failure")], on_chat=revoke_before_fallback)
+        fallback = _Backend([{"content": "must not run"}])
+        runtime = ChatRuntime(primary)
+        binding, _profile, _, _session = _live_bound_worker(runtime, "review-worker")
+        binding_box["binding"] = binding
+        runtime._native_model_fallback_route = lambda _session, _backend, _model: {
+            "targets": [
+                {"backend": "openrouter", "model": "test-model"},
+                {"backend": "openrouter", "model": "test-model"},
+            ],
+            "index": 0,
+        }
+        monkeypatch.setattr(model_sockets, "resolve_fallback_backend", lambda _target: fallback)
+
+        answer = await runtime.process("review", "review-worker", backend=primary, model="test-model")
+
+        assert "Taskbindung" in str(answer) or "Workerlauf" in str(answer)
+        assert len(primary.seen_tool_schemas) == 1
+        assert fallback.seen_tool_schemas == []
 
 
 # ---------------------------------------------------------------------------

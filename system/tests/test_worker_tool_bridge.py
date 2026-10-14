@@ -13,9 +13,10 @@ from hub._services.chat.worker_tool_bridge import WorkerToolBridge
 
 @pytest.fixture
 def bridge(tmp_path, monkeypatch):
-    from system.tests.test_task_lease_service import _create_db, _connect, _insert
     from hub._services import task_lease_client
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+    from system.tests.test_task_lease_service import _connect, _create_db, _insert
     database = tmp_path / "canonical.db"
     _create_db(database)
     conn = _connect(database)
@@ -28,6 +29,173 @@ def bridge(tmp_path, monkeypatch):
         stop_event=threading.Event(), clock=lambda: datetime.now(timezone.utc))
     with WorkerToolBridge(binding, mode="safe") as relay:
         yield relay
+
+
+_READ_ONLY_PROFILE_TOOLS = ("read_file", "search_text", "task_manage")
+
+
+def _make_fenced_readonly_worker(
+    tmp_path, monkeypatch, *, backend="openrouter", model="openrouter/free",
+    required_model="", profile_tools=_READ_ONLY_PROFILE_TOOLS, model_fallbacks=None,
+):
+    from hub._services import task_lease_client
+    from hub._services.chat import chat_runtime, telegram_chat, slots_config
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+    from system.tests.test_task_lease_service import _connect, _create_db, _insert
+
+    database = tmp_path / "fenced-readonly-worker.db"
+    _create_db(database)
+    conn = _connect(database)
+    conn.execute("ALTER TABLE tasks ADD COLUMN assigned_slot TEXT")
+    conn.execute("ALTER TABLE tasks ADD COLUMN required_model TEXT")
+    task_id = _insert(conn, title="BACH-owned read-only worker fixture", assigned_to="BACH")
+    conn.execute(
+        "UPDATE tasks SET assigned_slot = ?, required_model = ? WHERE id = ?",
+        ("", required_model, task_id),
+    )
+    conn.commit()
+    conn.close()
+
+    profile_id = "readonly-" + backend.replace("-", "_")
+    profile = {
+        "id": profile_id,
+        "name": "Isolated read-only worker",
+        "backend": backend,
+        "model": model,
+        "status": "running",
+        "enabled": True,
+        "allow_tools": True,
+        "allowed_tools": list(profile_tools),
+        "task_prompt": "fixture profile only",
+        "expires_at": None,
+    }
+    if model_fallbacks is not None:
+        profile["model_fallbacks"] = model_fallbacks
+    slots_path = tmp_path / "slots.json"
+    config = slots_config._fresh_slots_config()
+    config["dynamic_workers"] = [profile]
+    slots_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(
+        slots_config, "_resolve_path",
+        lambda path=None: __import__("pathlib").Path(path).expanduser() if path else slots_path,
+    )
+
+    live_reads = []
+    original_slot_reader = telegram_chat._execution_worker_slot
+    def counted_slot_read(worker_id):
+        current = original_slot_reader(worker_id)
+        live_reads.append(worker_id)
+        return current
+    monkeypatch.setattr(telegram_chat, "_execution_worker_slot", counted_slot_read)
+    reader = telegram_chat._execution_slot_reader(profile)
+    session = ChatSession()
+    session.chat_id = profile_id
+    session.worker_slot_reader = reader
+    session.require_task_binding = True
+    assert ChatRuntime._refresh_worker_tools(session) is None
+    assert session.allowed_tools == list(profile_tools)
+    admitted_slot = reader()
+    assert live_reads == [profile_id, profile_id]
+    assert admitted_slot["backend"] == backend and admitted_slot["model"] == model
+    assert admitted_slot.get("model_fallbacks", []) == (model_fallbacks or [])
+
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
+    binding = WorkerLeaseBinding.acquire_next(
+        task_lease_client.TaskLeaseClient(db_path=database), admitted_slot,
+        worker_id=f"{profile_id}@HOST", host="HOST", generation="b" * 32,
+        is_current=lambda: True, stop_event=threading.Event(),
+        clock=lambda: datetime.now(timezone.utc),
+    )
+    assert binding._snapshot["assigned_to"] == "BACH"
+    assert binding._snapshot.get("assigned_slot") == ""
+    assert (binding._snapshot.get("required_model") or "") == required_model
+    binding.assert_active()
+    session.worker_task_binding = binding
+    from hub._services.llm.model_backend import OllamaBackend, OpenRouterBackend
+    if backend == "openrouter":
+        selected_backend = OpenRouterBackend(api_key="fixture-only", default_model=model)
+    else:
+        endpoint = "https://ollama.example.invalid" if backend == "ollama-cloud" else "http://127.0.0.1:11434"
+        selected_backend = OllamaBackend(base_url=endpoint, default_model=model, num_ctx=512)
+    def live_runtime_guard():
+        reads_before = len(live_reads)
+        problem = ChatRuntime._worker_backend_gate(session, selected_backend, model)
+        if len(live_reads) != reads_before + 2:
+            raise RuntimeError("Live-Workerprofil wurde nicht an beiden Laufzeitgrenzen gelesen")
+        if problem is not None:
+            raise RuntimeError("Gebundene Workerfreigabe ist nicht mehr aktuell")
+    monkeypatch.setattr(
+        chat_runtime, "_ALLOWED_FS_ROOTS",
+        (*chat_runtime._ALLOWED_FS_ROOTS, tmp_path.resolve()),
+    )
+    return binding, session, profile, slots_path, live_runtime_guard
+
+
+@pytest.fixture
+def fenced_readonly_bridge(tmp_path, monkeypatch):
+    binding, session, _profile, _slots_path, live_guard = _make_fenced_readonly_worker(tmp_path, monkeypatch)
+    with WorkerToolBridge(
+        binding, mode="safe", guard=live_guard, allowed_tools=session.allowed_tools,
+    ) as relay:
+        yield relay
+
+def _install_fake_read_evidence_formatter(monkeypatch):
+    import sys
+    from types import ModuleType
+
+    module = ModuleType("ellmos_chat.read_evidence")
+    module.READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
+    module.MAX_LINES = 200
+    module.MAX_CHARS = 4000
+
+    def format_read_evidence(
+        text, *, start_line, source_eof, start_char_offset=0, max_lines=200,
+        max_chars=4000, source_complete=False, source_sha256=None,
+    ):
+        values = text.splitlines()
+        if text == "":
+            values = []
+        emitted = []
+        remaining = max_chars
+        for index, value in enumerate(values[:max_lines]):
+            offset = start_char_offset if index == 0 else 0
+            piece = value[:remaining]
+            emitted.append({
+                "line": start_line + index, "char_offset": offset,
+                "text": piece, "line_complete": source_eof,
+            })
+            remaining -= len(piece)
+        payload = {
+            "schema": module.READ_EVIDENCE_SCHEMA,
+            "start_line": emitted[0]["line"] if emitted else None,
+            "end_line": emitted[-1]["line"] if emitted else None,
+            "lines": emitted,
+            "eof": source_eof,
+            "truncated": not source_eof,
+            "truncation_reason": None if source_eof else "source_chunk",
+            "next_cursor": None if source_eof else {
+                "line": (emitted[-1]["line"] if emitted else start_line),
+                "char_offset": (emitted[-1]["char_offset"] + len(emitted[-1]["text"]) if emitted else start_char_offset),
+            },
+            "source_complete": False,
+            "source_sha256": None,
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    module.format_read_evidence = format_read_evidence
+    monkeypatch.setitem(sys.modules, "ellmos_chat.read_evidence", module)
+
+
+def call_tool(bridge, name, arguments, previous=None):
+    return request(bridge, "/call", {
+        "request_id": uuid.uuid4().hex,
+        "previous_receipt": previous,
+        "name": name,
+        "arguments": arguments,
+    })
 
 
 def request(bridge, path, payload=None, token=None):
@@ -58,6 +226,226 @@ def test_authentication_and_private_scope(bridge):
     settings = bridge.private_environment()
     assert settings["BACH_WORKER_TOOL_TOKEN"] not in str(tools)
     assert bridge.binding._ack.lease_id not in str(tools)
+
+
+def test_bound_readonly_worker_gets_separate_v1_schema_without_global_mutation(
+    fenced_readonly_bridge,
+):
+    import copy
+
+    from hub._services.chat import bach_tools
+
+    global_tool = next(
+        tool for tool in bach_tools.TOOLS_SAFE if tool["function"]["name"] == "read_file"
+    )
+    before = copy.deepcopy(global_tool)
+    tools = request(fenced_readonly_bridge, "/tools")["tools"]
+    read_file = next(tool for tool in tools if tool["function"]["name"] == "read_file")
+    schema = read_file["function"]["parameters"]
+    assert schema["required"] == ["path", "output_format"]
+    assert schema["properties"]["output_format"]["enum"] == ["ellmos.read-evidence.v1"]
+    assert schema["additionalProperties"] is False
+    assert {"read_file", "search_text", "task_manage"} <= {tool["function"]["name"] for tool in tools}
+    assert "start_task_worktree" not in {tool["function"]["name"] for tool in tools}
+    assert global_tool == before
+
+
+@pytest.mark.parametrize(("backend", "model", "required_model", "fallbacks"), [
+    ("openrouter", "openrouter/free", "", [{"backend": "ollama", "model": "qwen3.5:4b"}]),
+    ("ollama-cloud", "glm-5.3:cloud", "glm-5.3:cloud", None),
+    ("ollama", "qwen3.5:4b", "", [{"backend": "openrouter", "model": "openrouter/free"}]),
+])
+def test_read_evidence_profile_is_provider_neutral_for_bach_tasks(
+    tmp_path, monkeypatch, backend, model, required_model, fallbacks,
+):
+    binding, session, _profile, _slots_path, live_guard = _make_fenced_readonly_worker(
+        tmp_path, monkeypatch, backend=backend, model=model,
+        required_model=required_model, model_fallbacks=fallbacks,
+    )
+    with WorkerToolBridge(binding, mode="safe", guard=live_guard,
+                           allowed_tools=session.allowed_tools) as relay:
+        tools = request(relay, "/tools")["tools"]
+        read_file = next(tool for tool in tools if tool["function"]["name"] == "read_file")
+        schema = read_file["function"]["parameters"]
+        assert schema["required"] == ["path", "output_format"]
+        assert schema["properties"]["output_format"]["enum"] == ["ellmos.read-evidence.v1"]
+        assert binding._snapshot["assigned_to"] == "BACH"
+        assert binding._snapshot.get("assigned_slot") == ""
+        assert (binding._snapshot.get("required_model") or "") == required_model
+
+
+def test_other_live_worker_allowlist_keeps_legacy_read_file_schema(tmp_path, monkeypatch):
+    allowed = ("read_file", "search_text")
+    binding, session, _profile, _slots_path, live_guard = _make_fenced_readonly_worker(
+        tmp_path, monkeypatch, profile_tools=allowed,
+    )
+    with WorkerToolBridge(binding, mode="safe", guard=live_guard,
+                           allowed_tools=session.allowed_tools) as relay:
+        tools = request(relay, "/tools")["tools"]
+        read_file = next(tool for tool in tools if tool["function"]["name"] == "read_file")
+        properties = read_file["function"]["parameters"]["properties"]
+        assert "line_numbers" in properties
+        assert "output_format" not in properties
+
+def test_missing_formatter_returns_unavailable_before_path_or_file_io(
+    fenced_readonly_bridge, tmp_path, monkeypatch,
+):
+    import builtins
+
+    from hub._services.chat import bach_tools
+
+    path = tmp_path / "must-not-open.txt"
+    path.write_text("private fixture", encoding="utf-8")
+    open_calls = []
+    path_checks = []
+    def unexpected_open(*args, **kwargs):
+        open_calls.append(args)
+        raise AssertionError("missing formatter must fail before file I/O")
+    def unexpected_path_check(*args, **kwargs):
+        path_checks.append(args)
+        raise AssertionError("missing formatter must fail before path authorization")
+    monkeypatch.setattr(bach_tools, "_read_evidence_formatter", lambda: None)
+    monkeypatch.setattr(bach_tools, "_fs_root_allowed", unexpected_path_check)
+    monkeypatch.setattr(builtins, "open", unexpected_open)
+    result = call_tool(fenced_readonly_bridge, "read_file", {
+        "path": str(path), "output_format": "ellmos.read-evidence.v1",
+    })
+    assert json.loads(result["result"]) == {
+        "schema": "bach.read-evidence-capability.v1",
+        "requested_schema": "ellmos.read-evidence.v1",
+        "available": False,
+        "reason_code": "formatter_capability_unverified",
+    }
+    assert open_calls == [] and path_checks == []
+    acknowledge(fenced_readonly_bridge, result)
+
+
+@pytest.mark.parametrize("formatter_mode", ["fake", "installed"])
+def test_versioned_read_result_survives_bridge_and_mcp(formatter_mode, fenced_readonly_bridge,
+                                                               tmp_path, monkeypatch):
+    from hub._services.chat import bach_tools
+
+    if formatter_mode == "fake":
+        _install_fake_read_evidence_formatter(monkeypatch)
+    elif bach_tools._read_evidence_formatter() is None:
+        pytest.skip("Exact upstream formatter is injected only in isolated candidate conformance QA")
+    path = tmp_path / "read-evidence.txt"
+    base = {"path": str(path), "output_format": "ellmos.read-evidence.v1"}
+    if formatter_mode == "installed":
+        path.write_text("αβγ\r\nsecond line\r\nthird\r\n", encoding="utf-8", newline="")
+    else:
+        path.write_text("BACH v1 content\n", encoding="utf-8")
+    tools = request(fenced_readonly_bridge, "/tools")["tools"]
+    tool = next(tool for tool in tools if tool["function"]["name"] == "read_file")
+    assert "output_format" in tool["function"]["parameters"]["required"]
+
+    # The MCP subprocess uses the ordinary bridge/client string transport; the
+    # formatter runs in the bound provider process and its JSON is not reparsed.
+    import asyncio
+    import sys
+    from pathlib import Path as FilePath
+    pytest.importorskip("mcp")
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    script = FilePath(__file__).resolve().parents[1] / "hub/_services/chat/worker_tool_mcp.py"
+    async def run():
+        async with stdio_client(StdioServerParameters(
+            command=sys.executable, args=["-X", "utf8", str(script)],
+            env=fenced_readonly_bridge.private_environment(),
+        )) as streams, ClientSession(*streams) as session:
+                await session.initialize()
+                mcp_tools = await session.list_tools()
+                assert "read_file" in {item.name for item in mcp_tools.tools}
+                if formatter_mode == "installed":
+                    pages = []
+                    for cursor in (
+                        {"start_line": 1, "start_char_offset": 1, "max_lines": 1, "max_chars": 1},
+                        {"start_line": 1, "start_char_offset": 2, "max_lines": 1, "max_chars": 20},
+                        {"start_line": 2, "start_char_offset": 0, "max_lines": 1, "max_chars": 20},
+                        {"start_line": 3, "start_char_offset": 0, "max_lines": 1, "max_chars": 20},
+                    ):
+                        answer = await session.call_tool("read_file", base | cursor)
+                        assert not answer.isError
+                        output = answer.content[0].text
+                        assert len(output) <= 4000
+                        payload = json.loads(output)
+                        assert payload["schema"] == "ellmos.read-evidence.v1"
+                        assert payload["source_complete"] is False
+                        assert payload["source_sha256"] is None
+                        pages.append(payload)
+                        assert fenced_readonly_bridge.private_environment()["BACH_WORKER_TOOL_TOKEN"] not in output
+                    assert pages[0]["lines"] == [{
+                        "line": 1, "char_offset": 1, "text": "β", "line_complete": False,
+                    }]
+                    assert pages[0]["truncation_reason"] == "max_chars"
+                    assert pages[0]["next_cursor"] == {"line": 1, "char_offset": 2}
+                    assert pages[1]["lines"][0]["text"] == "γ"
+                    assert pages[1]["truncation_reason"] == "max_lines"
+                    assert pages[1]["next_cursor"] == {"line": 2, "char_offset": 0}
+                    assert pages[2]["lines"][0]["text"] == "second line"
+                    assert pages[2]["next_cursor"] == {"line": 3, "char_offset": 0}
+                    assert pages[3]["lines"] == [{
+                        "line": 3, "char_offset": 0, "text": "third", "line_complete": True,
+                    }]
+                    assert pages[3]["eof"] is True and pages[3]["next_cursor"] is None
+                    large_path = tmp_path / "read-evidence-budget.txt"
+                    large_path.write_text(("é" * 1500 + "\r\n") * 4, encoding="utf-8", newline="")
+                    large_answer = await session.call_tool("read_file", {
+                        "path": str(large_path), "output_format": "ellmos.read-evidence.v1",
+                    })
+                    assert not large_answer.isError
+                    large_output = large_answer.content[0].text
+                    assert len(large_output) <= 4000
+                    large_payload = json.loads(large_output)
+                    assert large_payload["truncated"] is True
+                    assert large_payload["next_cursor"] is not None
+                    assert sum(len(row["text"]) for row in large_payload["lines"]) <= 4000
+                    cursor = large_payload["next_cursor"]
+                    continuation = await session.call_tool("read_file", {
+                        "path": str(large_path), "output_format": "ellmos.read-evidence.v1",
+                        "start_line": cursor["line"], "start_char_offset": cursor["char_offset"],
+                    })
+                    assert not continuation.isError
+                    next_payload = json.loads(continuation.content[0].text)
+                    assert next_payload["lines"][0]["line"] == cursor["line"]
+                    assert next_payload["lines"][0]["char_offset"] == cursor["char_offset"]
+                else:
+                    answer = await session.call_tool("read_file", base | {
+                        "start_line": 1, "start_char_offset": 0,
+                    })
+                    assert not answer.isError
+                    output = answer.content[0].text
+                    payload = json.loads(output)
+                    assert payload["schema"] == "ellmos.read-evidence.v1"
+                    assert payload["source_complete"] is False
+                    assert payload["source_sha256"] is None
+                    assert payload["lines"][0]["text"] == "BACH v1 content"
+                    assert fenced_readonly_bridge.private_environment()["BACH_WORKER_TOOL_TOKEN"] not in output
+    asyncio.run(run())
+    events = fenced_readonly_bridge.binding._client.tool_trace_events(
+        fenced_readonly_bridge.binding.task_id,
+    )["events"]
+    assert [event["phase"] for event in events[-3:]] == ["started", "returned", "acknowledged"]
+    assert "BACH v1 content" not in json.dumps(events)
+
+
+def test_versioned_read_requires_schema_before_file_io(fenced_readonly_bridge, tmp_path, monkeypatch):
+    import builtins
+
+    from hub._services.chat import bach_tools
+
+    open_calls = []
+    def unexpected_open(*args, **kwargs):
+        open_calls.append(args)
+        raise AssertionError("reviewer without the required schema must not open a file")
+    monkeypatch.setattr(bach_tools, "_fs_root_allowed", lambda *_: pytest.fail("path check should not run"))
+    monkeypatch.setattr(builtins, "open", unexpected_open)
+    result = call_tool(fenced_readonly_bridge, "read_file", {"path": str(tmp_path / "no-open.txt")})
+    payload = json.loads(result["result"])
+    assert payload["reason_code"] == "versioned_format_required"
+    assert open_calls == []
+    acknowledge(fenced_readonly_bridge, result)
 
 
 def test_actual_completion_and_explicit_relay_ack(bridge):
