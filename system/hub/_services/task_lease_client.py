@@ -454,15 +454,28 @@ class TaskLeaseClient:
         return conn
 
     def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
-        """Let subclasses opt in to one validated server-error response shape."""
+        """Let existing subclasses opt in to their one validated error shape."""
         return False
 
-    def _http_request(self, method, path, payload=None, headers=None):
-        if not self._device_token:
-            raise LeaseDeniedError(0, "device_auth_required", {})
-        req_headers = {"Accept": "application/json", "Authorization": f"Bearer {self._device_token}"}
-        if headers:
+    def _allows_result_service_server_error(
+        self, status: int, payload: dict[str, Any], method: str, path: str
+    ) -> bool:
+        """Result-service clients may opt in to one exact route-specific 503 DTO."""
+        return False
+
+    def _http_request_core(self, method, path, payload=None, headers=None, *, service_auth=False):
+        if service_auth:
+            if (not isinstance(headers, dict) or "X-BACH-Result-Service" not in headers
+                    or "Authorization" in headers or "Cookie" in headers):
+                raise LeaseProtocolError("Service-Anmeldung ist nicht kanonisch")
+            req_headers = {"Accept": "application/json"}
             req_headers.update(headers)
+        else:
+            if not self._device_token:
+                raise LeaseDeniedError(0, "device_auth_required", {})
+            req_headers = {"Accept": "application/json", "Authorization": f"Bearer {self._device_token}"}
+            if headers:
+                req_headers.update(headers)
         data = None
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
@@ -484,11 +497,21 @@ class TaskLeaseClient:
             raise LeaseProtocolError("Lead lieferte kein gültiges JSON-ACK") from None
         if not isinstance(parsed, dict):
             raise LeaseProtocolError("Lead-ACK muss ein Objekt sein")
-        if status in (401, 403):
+        if status in (401, 403) and not service_auth:
             raise LeaseDeniedError(0, "device_auth_rejected", {})
-        if status >= 500 and not self._allows_server_error_response(status, parsed):
+        allowed_error = (
+            self._allows_server_error_response(status, parsed)
+            or (service_auth and self._allows_result_service_server_error(status, parsed, method, path))
+        )
+        if status >= 500 and not allowed_error:
             raise LeaseConnectionError("Lead verweigert die Operation")
         return status, parsed
+
+    def _http_request(self, method, path, payload=None, headers=None):
+        return self._http_request_core(method, path, payload, headers, service_auth=False)
+
+    def _http_service_request(self, method, path, payload=None, headers=None):
+        return self._http_request_core(method, path, payload, headers, service_auth=True)
 
     def _call(self, name, task_id, payload=None, *, config=None, now=None, headers=None):
         _identity(task_id)
@@ -1143,3 +1166,265 @@ class TaskLeaseClient:
         classes = {"stale_fence": LeaseStaleFenceError, "expired": LeaseExpiredError,
                    "max_total_reached": LeaseMaxTotalReachedError}
         raise classes.get(reason, LeaseDeniedError)(task_id, reason, safe_payload)
+
+
+
+_RESULT_SERVICE_SAFE_ERRORS = {
+    "service_credential_invalid": "Service-Anmeldung ungültig",
+    "service_revoked": "Service wurde widerrufen",
+    "service_scope_denied": "Service-Scope lehnt die Aktion ab",
+    "scope_denied": "Service-Scope lehnt die Aktion ab",
+    "self_review": "Eigene Ergebnisse dürfen nicht geprüft werden",
+    "producer_binding_missing": "Ergebnisherkunft ist nicht bestätigt",
+    "invalid_request": "Service-Anfrage ist ungültig",
+    "ambiguous_credentials": "Mehrdeutige Ergebnisanmeldung",
+    "service_revision_required": "Service-Scope-Version muss bestätigt werden",
+    "service_revision_conflict": "Service-Scope hat sich geändert; bitte neu laden",
+    "result_changed_reload": "Ergebnis oder Task hat sich geändert; bitte neu laden",
+    "task_not_revisable": "Task ist für diese Aktion nicht freigegeben",
+    "correction_request_invalid": "Korrekturanfrage ist ungültig",
+    "result_service_unavailable": "Ergebnisreview-Dienst ist nicht verfügbar",
+    "result_history_unavailable": "Ergebnisverlauf ist nicht verfügbar",
+    "task_not_found": "Task nicht gefunden",
+}
+
+
+class TaskResultServiceClient(TaskLeaseClient):
+    """Result-service client; general task and worker APIs are unavailable."""
+
+    def __init__(self, *, service_token, **kwargs):
+        if (not isinstance(service_token, str)
+                or re.fullmatch(r"[A-Za-z0-9_-]{43,256}", service_token) is None):
+            raise LeaseProtocolError("Service-Anmeldung ist ungültig")
+        configured_device_token = kwargs.pop("device_token", None)
+        if configured_device_token:
+            raise LeaseProtocolError("Service-Client akzeptiert keine Geräteanmeldung")
+        self._result_service_token = service_token
+        super().__init__(**kwargs)
+        # TaskLeaseClient also reads ambient BACH_DEVICE_TOKEN. This adapter must
+        # keep that worker/operator credential out of its identity entirely.
+        self._device_token = None
+
+    def _deny_general_task_api(self, *_args, **_kwargs):
+        raise LeaseProtocolError("Service-Client darf keine allgemeine Task-API verwenden")
+
+    # These inherited paths can use a device bearer remotely or direct SQLite
+    # locally. Result-service methods below bypass them and use service auth.
+    _http_request = _deny_general_task_api
+    _call = _deny_general_task_api
+    _acquire_native_creator = _deny_general_task_api
+    task_snapshot = _deny_general_task_api
+    task_capabilities = _deny_general_task_api
+    task_correction_context = _deny_general_task_api
+    task_candidates = _deny_general_task_api
+    tool_trace_start = _deny_general_task_api
+    tool_trace_phase = _deny_general_task_api
+    tool_trace_events = _deny_general_task_api
+
+    def _allows_result_service_server_error(self, status, payload, method, path):
+        if status != 503:
+            return False
+        route = path.split("?", 1)[0]
+        if re.fullmatch(r"/api/tasks/[1-9][0-9]*/result(?:/history|/correction|/accept)?", route) is None:
+            return False
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        return (isinstance(detail, dict) and set(payload) == {"detail"}
+                and set(detail) == {"code", "message"}
+                and detail.get("code") == "result_service_unavailable"
+                and isinstance(detail.get("message"), str) and len(detail["message"]) <= 200)
+
+    def _service_headers(self, revision=None):
+        headers = {"X-BACH-Result-Service": self._result_service_token}
+        if revision is not None:
+            if type(revision) is not int or revision <= 0:
+                raise LeaseProtocolError("Service-Scope-Version muss bestätigt werden")
+            headers["X-BACH-Result-Service-Revision"] = str(revision)
+        return headers
+
+    def _service_error(self, status, payload):
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        code = detail.get("code") if isinstance(detail, dict) else None
+        if not isinstance(code, str) or code not in _RESULT_SERVICE_SAFE_ERRORS:
+            code = "service_request_denied"
+            message = "Service-Anfrage wurde abgelehnt"
+        else:
+            message = _RESULT_SERVICE_SAFE_ERRORS[code]
+        raise TaskResultOperationError(status, code, message)
+
+    def _service_http(self, method, path, payload=None, revision=None):
+        status, data = self._http_service_request(
+            method, path, payload=payload, headers=self._service_headers(revision))
+        if status != 200:
+            self._service_error(status, data)
+        return data
+
+    @staticmethod
+    def _validate_service_capabilities(data, task_id):
+        if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-readback.v1"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or data.get("verified") is not True or type(data.get("status_revision")) is not int
+                or "operator_capabilities" in data):
+            raise LeaseProtocolError("Service-Readback ist nicht kanonisch bestätigt")
+        _version(data.get("task_version"), required=True)
+        capabilities = data.get("service_capabilities")
+        if (not isinstance(capabilities, dict)
+                or capabilities.get("schema") != "bach.task-result-service-capabilities.v1"
+                or type(capabilities.get("revision")) is not int or capabilities["revision"] <= 0
+                or not isinstance(capabilities.get("actions"), dict)
+                or set(capabilities["actions"]) != {"read", "history", "accept", "correction"}
+                or any(type(value) is not bool for value in capabilities["actions"].values())
+                or not isinstance(capabilities.get("reasons"), dict)
+                or not set(capabilities["reasons"]) <= set(capabilities["actions"])
+                or any(capabilities["actions"].get(key) is not False
+                       for key in capabilities["reasons"])):
+            raise LeaseProtocolError("Service-Fähigkeiten sind nicht kanonisch bestätigt")
+        record = data.get("result")
+        if record is not None and (
+                not isinstance(record, dict) or record.get("schema") != "bach.worker-result.v1"
+                or type(record.get("task_id")) is not int or record["task_id"] != task_id
+                or not isinstance(record.get("result"), str)
+                or record.get("result_sha256") != hashlib.sha256(record["result"].encode("utf-8")).hexdigest()
+                or type(record.get("accepted")) is not bool):
+            raise LeaseProtocolError("Kanonischer Ergebnisinhalt nicht bestätigt")
+        return data
+
+    def task_result_snapshot(self, task_id):
+        _identity(task_id)
+        if self.mode == "remote":
+            data = self._service_http("GET", f"/api/tasks/{task_id}/result")
+        else:
+            from .task_result_service import read_result
+            conn = self._get_local_connection()
+            try:
+                data = read_result(conn, task_id, service_token=self._result_service_token)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        return self._validate_service_capabilities(data, task_id)
+
+    def task_result_history(self, task_id, *, before_event_id=None, limit=20):
+        _identity(task_id)
+        if before_event_id is not None and (type(before_event_id) is not int or before_event_id <= 0):
+            raise LeaseProtocolError("Ungültiger Result-Historiencursor")
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise LeaseProtocolError("Result-Historienlimit muss zwischen 1 und 50 liegen")
+        if self.mode == "remote":
+            from urllib.parse import urlencode
+            query = {"limit": limit}
+            if before_event_id is not None:
+                query["before_event_id"] = before_event_id
+            data = self._service_http("GET", f"/api/tasks/{task_id}/result/history?{urlencode(query)}")
+        else:
+            from .task_result_service import read_result_history
+            conn = self._get_local_connection()
+            try:
+                data = read_result_history(conn, task_id, before_event_id=before_event_id,
+                                          limit=limit, service_token=self._result_service_token)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        events = data.get("events") if isinstance(data, dict) else None
+        if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-history.v1"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or not isinstance(events, list) or len(events) > limit
+                or type(data.get("has_more")) is not bool
+                or type(data.get("service_revision")) is not int or data["service_revision"] <= 0):
+            raise LeaseProtocolError("Service-Historie ist nicht kanonisch bestätigt")
+        ids = []
+        for event in events:
+            if (not isinstance(event, dict) or type(event.get("event_id")) is not int
+                    or event["event_id"] <= 0 or not isinstance(event.get("occurred_at"), str)):
+                raise LeaseProtocolError("Service-Historienereignis unvollständig")
+            ids.append(event["event_id"])
+            if event.get("type") == "result_submitted":
+                result = event.get("result")
+                if (not isinstance(result, dict) or type(result.get("result_id")) is not int
+                        or not isinstance(result.get("text"), str)
+                        or result.get("result_sha256") != hashlib.sha256(result["text"].encode("utf-8")).hexdigest()):
+                    raise LeaseProtocolError("Historisches Originalergebnis nicht bestätigt")
+            elif event.get("type") == "result_accepted":
+                result = event.get("result")
+                if (not isinstance(result, dict) or type(result.get("result_id")) is not int
+                        or not isinstance(result.get("result_sha256"), str)):
+                    raise LeaseProtocolError("Historische Abnahme nicht bestätigt")
+            elif event.get("type") == "correction_requested":
+                correction = event.get("correction")
+                if (not isinstance(correction, dict) or type(correction.get("correction_id")) is not int
+                        or not isinstance(correction.get("note"), str)):
+                    raise LeaseProtocolError("Historische Korrektur nicht bestätigt")
+            else:
+                raise LeaseProtocolError("Unbekannter Result-Historientyp")
+        if ids != sorted(set(ids), reverse=True):
+            raise LeaseProtocolError("Service-Historie ist nicht absteigend sortiert")
+        cursor = data.get("next_before_event_id")
+        if data["has_more"]:
+            if len(events) != limit or not events or type(cursor) is not int or cursor != events[-1]["event_id"]:
+                raise LeaseProtocolError("Service-Historiencursor passt nicht zur Seite")
+        elif cursor is not None:
+            raise LeaseProtocolError("Unerwarteter Service-Historiencursor")
+        return data
+
+    def request_result_correction(self, task_id, payload, *, service_revision):
+        _identity(task_id)
+        if not isinstance(payload, dict):
+            raise LeaseProtocolError("Korrekturanfrage ist ungültig")
+        if self.mode == "remote":
+            data = self._service_http("POST", f"/api/tasks/{task_id}/result/correction",
+                                      payload=payload, revision=service_revision)
+        else:
+            from .task_result_service import request_result_correction
+            conn = self._get_local_connection()
+            try:
+                data = request_result_correction(conn, task_id, payload,
+                    service_token=self._result_service_token, service_revision=service_revision)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-correction-request.v1"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or data.get("request_id") != payload.get("request_id")
+                or type(data.get("correction_id")) is not int or data["correction_id"] <= 0
+                or type(data.get("correction_round")) is not int or data["correction_round"] <= 0
+                or data.get("source_result_id") != payload.get("result_id")
+                or data.get("source_result_sha256") != payload.get("result_sha256")
+                or data.get("status") != "pending" or type(data.get("replayed")) is not bool
+                or data.get("service_revision") != service_revision):
+            raise LeaseProtocolError("Service-Korrektur-ACK passt nicht zur Anfrage")
+        _version(data.get("next_task_version"), required=True)
+        return data
+
+    def accept_result(self, task_id, *, result_id, digest, task_version, status_revision,
+                      service_revision):
+        _identity(task_id)
+        if (type(result_id) is not int or result_id <= 0
+                or not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or type(status_revision) is not int or status_revision < 0
+                or type(service_revision) is not int or service_revision <= 0):
+            raise LeaseProtocolError("Service-Abnahme-CAS ist ungültig")
+        _version(task_version, required=True)
+        payload = {"result_id": result_id, "result_sha256": digest,
+                   "task_version": task_version, "status_revision": status_revision}
+        if self.mode == "remote":
+            data = self._service_http("POST", f"/api/tasks/{task_id}/result/accept",
+                                      payload=payload, revision=service_revision)
+        else:
+            from .task_result_service import accept_result
+            conn = self._get_local_connection()
+            try:
+                data = accept_result(conn, task_id, result_id, digest=digest,
+                    task_version=task_version, status_revision=status_revision,
+                    service_token=self._result_service_token, service_revision=service_revision)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict)
+                or data.get("schema") != "bach.task-result-service-acceptance.v1"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or data.get("result_id") != result_id or data.get("result_sha256") != digest
+                or data.get("task_version") != task_version
+                or data.get("source_status_revision") != status_revision
+                or type(data.get("accepted_status_revision")) is not int
+                or data.get("accepted_status_revision") <= status_revision
+                or data.get("accepted") is not True or data.get("service_revision") != service_revision):
+            raise LeaseProtocolError("Service-Abnahme-ACK passt nicht zur Anfrage")
+        return data

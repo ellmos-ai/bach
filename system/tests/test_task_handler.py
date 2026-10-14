@@ -862,3 +862,95 @@ class TestHelpers:
 
     def test_sanitize_title_whitespace(self, handler):
         assert handler._sanitize_title("  too   many   spaces  ") == "too many spaces"
+
+
+class TestResultServiceCommands:
+    @staticmethod
+    def _snapshot(*, correction=True, accept=True):
+        return {
+            "schema": "bach.task-result-readback.v1", "task_id": 42,
+            "task_version": "a" * 64, "status_revision": 13, "status": "review", "verified": True,
+            "result": {"result_id": 9, "result_sha256": "b" * 64, "generation": "worker-generation",
+                       "fence": 7, "task_version": "a" * 64, "reason": "awaiting_review", "accepted": False},
+            "service_capabilities": {"schema": "bach.task-result-service-capabilities.v1", "revision": 3,
+                "actions": {"read": True, "history": True, "accept": accept, "correction": correction},
+                "reasons": {}},
+        }
+
+    @staticmethod
+    def _install_client(monkeypatch, *, snapshot, ack):
+        from hub._services import task_lease_client
+        calls = []
+        class FakeClient:
+            def __enter__(self): return self
+            def __exit__(self, *_): return None
+            @classmethod
+            def for_task_db(cls, _factory, *, service_token):
+                calls.append(("credential", service_token))
+                return cls()
+            def task_result_snapshot(self, task_id):
+                calls.append(("snapshot", task_id)); return snapshot
+            def task_result_history(self, task_id, *, before_event_id=None, limit=20):
+                calls.append(("history", task_id, before_event_id, limit)); return ack
+            def request_result_correction(self, task_id, payload, *, service_revision):
+                calls.append(("correction", task_id, payload, service_revision)); return ack
+            def accept_result(self, task_id, **kwargs):
+                calls.append(("accept", task_id, kwargs)); return ack
+        monkeypatch.setattr(task_lease_client, "TaskResultServiceClient", FakeClient)
+        monkeypatch.setattr("getpass.getpass", lambda _prompt: "S" * 43)
+        return calls
+
+    def test_service_history_uses_scoped_client_without_printing_credential(self, handler, monkeypatch, capsys):
+        token = "S" * 43
+        calls = self._install_client(monkeypatch, snapshot=self._snapshot(), ack={"schema": "bach.task-result-history.v1", "events": []})
+        ok, output = handler.handle("result-service-history", ["42", "--limit", "5"])
+        assert ok is True and '"events": []' in output
+        assert calls == [("credential", token), ("history", 42, None, 5)]
+        assert token not in output and token not in capsys.readouterr().out
+
+    def test_service_correction_requires_exact_read_and_correction_capability(self, handler, monkeypatch):
+        calls = self._install_client(monkeypatch, snapshot=self._snapshot(correction=False), ack={})
+        monkeypatch.setattr("builtins.input", lambda _prompt: pytest.fail("denied scope must not prompt"))
+        ok, output = handler.handle("result-service-correct", ["42", "--note", "Quelle prüfen"])
+        assert ok is False and "darf Ergebnisse nicht korrigieren" in output
+        assert [entry[0] for entry in calls] == ["credential", "snapshot"]
+
+    def test_service_correction_confirms_result_cas_before_mutation(self, handler, monkeypatch, capsys):
+        ack = {"schema": "bach.task-result-correction-request.v1", "correction_id": 12}
+        calls = self._install_client(monkeypatch, snapshot=self._snapshot(), ack=ack)
+        monkeypatch.setattr("builtins.input", lambda _prompt: "ja")
+        ok, output = handler.handle("result-service-correct", ["42", "--note", "Quelle prüfen"])
+        assert ok is True and '"correction_id": 12' in output
+        mutation = next(entry for entry in calls if entry[0] == "correction")
+        assert mutation[1] == 42 and mutation[3] == 3
+        assert mutation[2]["result_id"] == 9 and mutation[2]["result_sha256"] == "b" * 64
+        assert mutation[2]["status_revision"] == 13 and mutation[2]["correction_note"] == "Quelle prüfen"
+        assert "S" * 43 not in output and "SHA-256" in capsys.readouterr().out
+
+    def test_service_accept_requires_own_scope_and_returns_bound_ack(self, handler, monkeypatch):
+        ack = {"schema": "bach.task-result-service-acceptance.v1", "accepted": True, "result_id": 9}
+        calls = self._install_client(monkeypatch, snapshot=self._snapshot(accept=False), ack=ack)
+        monkeypatch.setattr("builtins.input", lambda _prompt: pytest.fail("denied scope must not prompt"))
+        ok, output = handler.handle("result-service-accept", ["42"])
+        assert ok is False and "darf Ergebnisse nicht annehmen" in output
+        assert [entry[0] for entry in calls] == ["credential", "snapshot"]
+
+        calls = self._install_client(monkeypatch, snapshot=self._snapshot(), ack=ack)
+        monkeypatch.setattr("builtins.input", lambda _prompt: "ja")
+        ok, output = handler.handle("result-service-accept", ["42"])
+        assert ok is True and '"accepted": true' in output
+        mutation = next(entry for entry in calls if entry[0] == "accept")
+        assert mutation[1] == 42 and mutation[2]["result_id"] == 9
+        assert mutation[2]["status_revision"] == 13 and mutation[2]["service_revision"] == 3
+
+
+def test_result_service_commands_are_listed_in_every_translation():
+    from pathlib import Path
+
+    help_root = Path(__file__).resolve().parents[1] / "docs" / "help"
+    for language in ("", "_en", "_es", "_ja", "_ru", "_zh"):
+        filename = "tasks" + language + ".txt"
+        content = (help_root / filename).read_text(encoding="utf-8")
+        assert "result-service-history <ID> [--limit 1-50] [--before EVENT-ID]" in content
+        assert "result-service-correct <ID> [--note TEXT]" in content
+        assert "result-service-accept <ID>" in content

@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS tasks (
         started_at TEXT,
         completed_at TEXT,
         updated_at TEXT
-    , dist_type INTEGER DEFAULT 0, modified_by TEXT DEFAULT NULL, depends_on TEXT DEFAULT NULL, created_by TEXT DEFAULT 'user', assigned_to TEXT DEFAULT 'OLLAMA', project TEXT, source TEXT, image_data TEXT);
+    , dist_type INTEGER DEFAULT 0, modified_by TEXT DEFAULT NULL, depends_on TEXT DEFAULT NULL, created_by TEXT DEFAULT 'user', assigned_to TEXT DEFAULT 'OLLAMA', project TEXT, source TEXT, image_data TEXT, result_correction_request_id INTEGER);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 
@@ -2792,3 +2792,49 @@ CREATE INDEX IF NOT EXISTS idx_memory_lessons_delivery_selection ON memory_lesso
 CREATE INDEX IF NOT EXISTS idx_memory_lesson_feedback_lesson ON memory_lesson_feedback(lesson_id);
 CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_lesson ON memory_lesson_deliveries(lesson_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_memory_lesson_deliveries_batch_order ON memory_lesson_deliveries(delivery_key, id);
+
+
+-- Scoped result-review records are opt-in; schema declaration grants no service.
+CREATE TABLE IF NOT EXISTS task_result_corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL, request_id TEXT NOT NULL, correction_round INTEGER NOT NULL,
+    source_result_id INTEGER NOT NULL, source_result_sha256 TEXT NOT NULL,
+    source_generation TEXT NOT NULL, source_fence INTEGER NOT NULL,
+    source_task_version TEXT NOT NULL, source_status_revision INTEGER NOT NULL,
+    correction_note TEXT NOT NULL, requested_by_device_id INTEGER, requested_by_service_id TEXT,
+    requested_at TEXT NOT NULL, event_id INTEGER, next_task_version TEXT,
+    CHECK ((requested_by_device_id IS NOT NULL AND requested_by_service_id IS NULL)
+        OR (requested_by_device_id IS NULL AND requested_by_service_id IS NOT NULL)),
+    UNIQUE(task_id, request_id), UNIQUE(task_id, correction_round)
+);
+CREATE TABLE IF NOT EXISTS task_result_services (
+    service_id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, issuer_id TEXT NOT NULL,
+    principal_id TEXT NOT NULL, generation TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision > 0),
+    status TEXT NOT NULL CHECK(status IN ('active','revoked')), created_at TEXT NOT NULL, revoked_at TEXT
+);
+CREATE TABLE IF NOT EXISTS task_result_service_scopes (
+    scope_id INTEGER PRIMARY KEY AUTOINCREMENT, service_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('read','history','accept','correction')),
+    task_id INTEGER, category TEXT, created_at TEXT NOT NULL,
+    CHECK ((task_id IS NOT NULL AND category IS NULL) OR (task_id IS NULL AND category IS NOT NULL)),
+    FOREIGN KEY(service_id) REFERENCES task_result_services(service_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS task_result_service_producer_bindings (
+    result_id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, result_sha256 TEXT NOT NULL,
+    generation TEXT NOT NULL, fence INTEGER NOT NULL, task_version TEXT NOT NULL,
+    producer_principal TEXT NOT NULL, issuer_id TEXT NOT NULL, submission_event_id INTEGER, bound_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS task_result_service_audit (
+    audit_id INTEGER PRIMARY KEY AUTOINCREMENT, service_id TEXT NOT NULL, service_revision INTEGER NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('accept','correction')), task_id INTEGER NOT NULL,
+    result_id INTEGER NOT NULL, result_sha256 TEXT NOT NULL, task_version TEXT NOT NULL,
+    status_revision INTEGER NOT NULL, decision_schema TEXT NOT NULL, decision_reason TEXT NOT NULL,
+    policy_distribution TEXT NOT NULL, policy_version TEXT NOT NULL, policy_sha256 TEXT NOT NULL,
+    event_id INTEGER, occurred_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_result_service_scopes_revision
+    ON task_result_service_scopes(service_id, revision, action, task_id);
+CREATE INDEX IF NOT EXISTS idx_task_result_service_producer_task
+    ON task_result_service_producer_bindings(task_id, result_id);
+CREATE INDEX IF NOT EXISTS idx_task_result_service_audit_task
+    ON task_result_service_audit(task_id, audit_id DESC);

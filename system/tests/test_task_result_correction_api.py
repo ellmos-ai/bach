@@ -146,7 +146,7 @@ def test_api_capabilities_history_cas_correction_and_context(api_review):
     )
     assert correction["schema"] == "bach.task-result-correction-request.v1"
     assert correction["status"] == "pending" and correction["replayed"] is False
-    history = asyncio.run(server.read_task_result_history(task_id, limit=50))
+    history = asyncio.run(server.read_task_result_history(task_id, _request(), limit=50))
     assert history["schema"] == "bach.task-result-history.v1"
     assert any(
         event["type"] == "result_submitted"
@@ -264,7 +264,7 @@ def test_history_index_gap_returns_unavailable_without_read_side_schema_write(ap
     keeper.commit()
 
     with pytest.raises(HTTPException) as unavailable:
-        asyncio.run(server.read_task_result_history(task_id, limit=20))
+        asyncio.run(server.read_task_result_history(task_id, _request(), limit=20))
     assert unavailable.value.status_code == 503
     assert unavailable.value.detail["code"] == "result_history_unavailable"
     assert keeper.execute(
@@ -300,7 +300,7 @@ def test_native_naive_v1_timestamp_is_normalized_with_lease_parser(api_review):
                    (raw_timestamp, submitted["result_id"]))
     keeper.commit()
 
-    history = asyncio.run(server.read_task_result_history(task_id, limit=20))
+    history = asyncio.run(server.read_task_result_history(task_id, _request(), limit=20))
     event = next(item for item in history["events"]
                  if item["type"] == "result_submitted")
     assert event["occurred_at"] == _fmt(parse_ts(raw_timestamp))

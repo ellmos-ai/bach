@@ -6,11 +6,19 @@ argument or cached Done receipt grants that authority.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
+import importlib.metadata
+import importlib.util
+import inspect
 import json
 import re
-import uuid
 import sqlite3
+import sys
+import threading
+import uuid
+from pathlib import Path
 
 
 class ResultConflict(ValueError):
@@ -42,6 +50,148 @@ class ResultCorrectionConflict(ResultCorrectionError):
 class CorrectionContextDenied(Exception):
     """A task-bound worker cannot prove the current correction context."""
     pass
+
+
+class ResultServiceUnavailable(RuntimeError):
+    """The separately installed result-review policy or schema is unavailable."""
+
+
+class ResultServicePermissionDenied(PermissionError):
+    """The scoped result-service credential or policy denies this action."""
+    def __init__(self, message, *, code="service_scope_denied"):
+        super().__init__(message)
+        self.code = code
+
+
+class ResultServiceConflict(ResultCorrectionError):
+    """The service scope revision or reviewed result changed before the write."""
+
+
+_RESULT_SERVICE_ACTIONS = frozenset({"read", "history", "accept", "correction"})
+_RESULT_SERVICE_POLICY_INPUT_SCHEMA = "task-result-review-input.v1"
+_RESULT_SERVICE_POLICY_DECISION_SCHEMA = "task-result-service-review-decision.v1"
+_RESULT_SERVICE_POLICY_REASON_CODES = frozenset({
+    "allow", "scope_denied", "self_review", "producer_binding_missing",
+    "service_revoked", "invalid_request",
+})
+_RESULT_SERVICE_POLICY_RELATIVE_PATH = "tools/task_result_review_policy.py"
+_RESULT_SERVICE_POLICY_MODULES = {}
+_RESULT_SERVICE_POLICY_LOCK = threading.RLock()
+
+
+def _load_result_service_review_policy():
+    """Load only the RECORD-verified file from the installed Open Ocean package."""
+    with _RESULT_SERVICE_POLICY_LOCK:
+        try:
+            distribution = importlib.metadata.distribution("open-ocean")
+            name = str(distribution.metadata.get("Name") or "").casefold().replace("_", "-")
+            version = str(distribution.version or "").strip()
+            if name != "open-ocean" or not version:
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+            relative = _RESULT_SERVICE_POLICY_RELATIVE_PATH
+            files = distribution.files
+            if files is None:
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+            matches = [entry for entry in files
+                       if str(entry).replace(chr(92), "/") == relative]
+            if len(matches) != 1:
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+            file_hash = matches[0].hash
+            if file_hash is None or file_hash.mode != "sha256" or not file_hash.value:
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+
+            target = Path(distribution.locate_file(relative))
+            if target.is_symlink() or not target.is_file():
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+            resolved = target.resolve(strict=True)
+            distribution_root = Path(distribution.locate_file("")).resolve(strict=True)
+            if distribution_root not in resolved.parents:
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+
+            # Read through one no-follow descriptor, bound the file, and execute
+            # these exact verified bytes so importlib cannot reopen a changed path.
+            import os
+            import stat
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(resolved, flags)
+            try:
+                before = os.fstat(descriptor)
+                if not stat.S_ISREG(before.st_mode) or before.st_size > 131072:
+                    raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+                chunks = []
+                remaining = 131073
+                while remaining:
+                    chunk = os.read(descriptor, min(remaining, 32768))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                source = b"".join(chunks)
+                after = os.fstat(descriptor)
+            finally:
+                os.close(descriptor)
+            path_stat = resolved.lstat()
+            identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            identity_path = (path_stat.st_dev, path_stat.st_ino, path_stat.st_size, path_stat.st_mtime_ns)
+            if (identity_before != identity_after or identity_before != identity_path
+                    or len(source) != before.st_size or len(source) > 131072):
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+
+            digest = hashlib.sha256(source).hexdigest()
+            observed = base64.urlsafe_b64encode(hashlib.sha256(source).digest()).decode("ascii").rstrip("=")
+            if not hmac.compare_digest(observed, file_hash.value):
+                raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+            cache_key = (str(resolved), version, digest)
+            module = _RESULT_SERVICE_POLICY_MODULES.get(cache_key)
+            if module is None:
+                import types
+                module_name = "_bach_open_ocean_result_policy_" + digest[:20]
+                module = types.ModuleType(module_name)
+                module.__file__ = str(resolved)
+                module.__package__ = ""
+                sys.modules[module_name] = module
+                try:
+                    exec(compile(source, str(resolved), "exec"), module.__dict__)  # noqa: S102 - exact bounded bytes passed RECORD and SHA-256 checks
+                except Exception:
+                    sys.modules.pop(module_name, None)
+                    raise
+                function = getattr(module, "evaluate_service_review", None)
+                if (getattr(module, "INPUT_SCHEMA", None) != _RESULT_SERVICE_POLICY_INPUT_SCHEMA
+                        or getattr(module, "DECISION_SCHEMA", None) != _RESULT_SERVICE_POLICY_DECISION_SCHEMA
+                        or not callable(function)
+                        or tuple(inspect.signature(function).parameters)
+                        != ("scope", "task", "producer_binding", "reviewer_subject", "action")
+                        or set(getattr(module, "REASON_CODES", ())) != _RESULT_SERVICE_POLICY_REASON_CODES):
+                    sys.modules.pop(module_name, None)
+                    raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+                _RESULT_SERVICE_POLICY_MODULES[cache_key] = module
+                if len(_RESULT_SERVICE_POLICY_MODULES) > 8:
+                    oldest = next(iter(_RESULT_SERVICE_POLICY_MODULES))
+                    _RESULT_SERVICE_POLICY_MODULES.pop(oldest, None)
+            provenance = {"distribution": name, "version": version, "source_sha256": digest}
+            return module, provenance
+        except ResultServiceUnavailable:
+            raise
+        except Exception:  # noqa: BLE001 - metadata, I/O and import errors are deliberately redacted fail-closed
+            raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar") from None
+
+
+def _evaluate_result_service_policy(scope, task, producer_binding, reviewer_subject, action):
+    policy, provenance = _load_result_service_review_policy()
+    try:
+        decision = policy.evaluate_service_review(scope, task, producer_binding, reviewer_subject, action)
+    except Exception:  # noqa: BLE001 - policy failures are deliberately redacted fail-closed
+        raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar") from None
+    if (not isinstance(decision, dict)
+            or set(decision) != {"schema", "allowed", "reason_code"}
+            or decision.get("schema") != _RESULT_SERVICE_POLICY_DECISION_SCHEMA
+            or type(decision.get("allowed")) is not bool
+            or type(decision.get("reason_code")) is not str
+            or decision["reason_code"] not in _RESULT_SERVICE_POLICY_REASON_CODES
+            or decision["allowed"] != (decision["reason_code"] == "allow")):
+        raise ResultServiceUnavailable("Ergebnisreview-Richtlinie nicht verfügbar")
+    return decision, provenance
 
 
 def ensure_result_schema(conn):
@@ -111,6 +261,157 @@ def _table_exists(conn, name):
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
+_RESULT_SERVICE_REQUIRED_COLUMNS = {
+    "task_result_services": {"service_id", "token_hash", "issuer_id", "principal_id", "generation", "revision", "status"},
+    "task_result_service_scopes": {"scope_id", "service_id", "revision", "action", "task_id", "category"},
+    "task_result_service_producer_bindings": {"result_id", "task_id", "result_sha256", "generation", "fence", "task_version", "producer_principal", "issuer_id", "submission_event_id"},
+    "task_result_service_audit": {"service_id", "service_revision", "action", "task_id", "result_id", "result_sha256", "task_version", "status_revision", "decision_schema", "decision_reason", "policy_distribution", "policy_version", "policy_sha256", "event_id", "occurred_at"},
+    "task_result_corrections": {"id", "task_id", "request_id", "correction_round", "source_result_id", "source_result_sha256", "source_generation", "source_fence", "source_task_version", "source_status_revision", "correction_note", "requested_by_device_id", "requested_by_service_id", "requested_at", "event_id", "next_task_version"},
+}
+_RESULT_SERVICE_SCOPE_SCHEMA = "task-result-service-scope.v1"
+_RESULT_SERVICE_TARGET_SCHEMA = "bach.task-result-review-target.v1"
+_RESULT_SERVICE_PRODUCER_SCHEMA = "bach.task-result-producer-binding.v1"
+_RESULT_SERVICE_REVIEWER_SCHEMA = "bach.task-result-service-principal.v1"
+_RESULT_SERVICE_ISSUER = "bach.result-service.v1"
+_RESULT_PRODUCER_ISSUER = "bach.native-task-lease.v1"
+
+
+def _result_service_schema_present(conn):
+    """Read-only schema gate. Request paths never create or migrate these tables."""
+    try:
+        for table, expected in _RESULT_SERVICE_REQUIRED_COLUMNS.items():
+            if not _table_exists(conn, table):
+                return False
+            columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if not expected <= columns:
+                return False
+        task_columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        result_columns = {row[1] for row in conn.execute("PRAGMA table_info(worker_task_results)")}
+        return ({"id", "status", "category", "claim_id", "claim_fence", "claim_task_version",
+                 "claim_result_generation", "result_correction_request_id"} <= task_columns
+                and {"id", "task_id", "fence", "generation", "task_version", "result_sha256",
+                     "submission_event_id"} <= result_columns)
+    except sqlite3.Error:
+        return False
+
+
+def _result_service_token_hash(token):
+    if (not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43,256}", token) is None):
+        raise ResultServicePermissionDenied("Service-Credential fehlt oder ist ungültig", code="service_credential_invalid")
+    return hashlib.sha256(token.encode("ascii")).hexdigest()
+
+
+def _result_service_context(conn, token, *, expected_revision=None):
+    if not _result_service_schema_present(conn):
+        raise ResultServiceUnavailable("Ergebnisreview-Schema ist nicht verfügbar")
+    token_hash = _result_service_token_hash(token)
+    row = _dict_row(conn.execute(
+        "SELECT service_id,issuer_id,principal_id,generation,revision,status "
+        "FROM task_result_services WHERE token_hash=?", (token_hash,)))
+    if row is None:
+        raise ResultServicePermissionDenied("Service-Credential fehlt oder ist ungültig", code="service_credential_invalid")
+    if row.get("status") != "active":
+        raise ResultServicePermissionDenied("Service wurde widerrufen", code="service_revoked")
+    if (row.get("issuer_id") != _RESULT_SERVICE_ISSUER
+            or not isinstance(row.get("service_id"), str) or not row["service_id"]
+            or not isinstance(row.get("principal_id"), str) or not row["principal_id"]
+            or not isinstance(row.get("generation"), str) or not row["generation"]
+            or type(row.get("revision")) is not int or row["revision"] <= 0):
+        raise ResultServiceUnavailable("Service-Identität ist nicht kanonisch")
+    if expected_revision is not None and (
+            type(expected_revision) is not int or expected_revision != row["revision"]):
+        raise ResultServiceConflict("service_revision_conflict", "Service-Scope hat sich geändert; bitte neu laden")
+    scope_rows = conn.execute(
+        "SELECT action,task_id,category FROM task_result_service_scopes "
+        "WHERE service_id=? AND revision=? ORDER BY scope_id", (row["service_id"], row["revision"])
+    ).fetchall()
+    entries = []
+    for action, task_id, category in scope_rows:
+        if not isinstance(action, str) or action not in _RESULT_SERVICE_ACTIONS:
+            raise ResultServiceUnavailable("Service-Scope ist nicht kanonisch")
+        entry = {"action": action}
+        if type(task_id) is int and task_id > 0 and category is None:
+            entry["task_id"] = task_id
+        elif (task_id is None and isinstance(category, str) and category.strip()
+              and "\x00" not in category and len(category) <= 128
+              and category.strip() not in {"*", "all"}):
+            entry["category"] = category
+        else:
+            raise ResultServiceUnavailable("Service-Scope ist nicht kanonisch")
+        entries.append(entry)
+    return {
+        "service_id": row["service_id"], "revision": row["revision"],
+        "scope": {"schema": _RESULT_SERVICE_SCOPE_SCHEMA, "service_id": row["service_id"],
+                  "revision": row["revision"], "entries": entries},
+        "reviewer": {"schema": _RESULT_SERVICE_REVIEWER_SCHEMA, "service_id": row["service_id"],
+                     "issuer_id": row["issuer_id"], "principal_id": row["principal_id"],
+                     "generation": row["generation"], "revision": row["revision"], "status": row["status"]},
+    }
+
+
+def _result_service_producer_binding(conn, record):
+    if not isinstance(record, dict):
+        return None
+    result_id = record.get("result_id", record.get("id"))
+    if type(result_id) is not int:
+        return None
+    row = _dict_row(conn.execute(
+        "SELECT result_id,task_id,result_sha256,generation,fence,task_version,"
+        "producer_principal,issuer_id FROM task_result_service_producer_bindings WHERE result_id=?",
+        (result_id,)))
+    if row is None:
+        return None
+    return {
+        "schema": _RESULT_SERVICE_PRODUCER_SCHEMA, "issuer_id": row["issuer_id"],
+        "task_id": row["task_id"], "result_id": row["result_id"],
+        "result_sha256": row["result_sha256"], "generation": row["generation"],
+        "fence": row["fence"], "task_version": row["task_version"],
+        "producer_principal": row["producer_principal"],
+    }
+
+
+def _result_service_target(task, record):
+    from .task_lease import task_content_version
+    if record is None:
+        return {"schema": _RESULT_SERVICE_TARGET_SCHEMA, "task_id": task["id"],
+                "category": task.get("category"), "result_id": None, "result_sha256": None,
+                "generation": None, "fence": None, "task_version": None}
+    result_id = record.get("result_id", record.get("id"))
+    return {"schema": _RESULT_SERVICE_TARGET_SCHEMA, "task_id": task["id"],
+            "category": task.get("category"), "result_id": result_id,
+            "result_sha256": record.get("result_sha256"), "generation": record.get("generation"),
+            "fence": record.get("fence"), "task_version": record.get("task_version") or task_content_version(task)}
+
+
+def _authorize_result_service(conn, context, task, record, action):
+    if (record is not None
+            and record.get("result_id", record.get("id")) is None):
+        raise ResultServicePermissionDenied("Ergebnisherkunft ist nicht bestätigt", code="producer_binding_missing")
+    target = _result_service_target(task, record)
+    binding = _result_service_producer_binding(conn, record) if record is not None else None
+    decision, provenance = _evaluate_result_service_policy(
+        context["scope"], target, binding, context["reviewer"], action)
+    if not decision["allowed"]:
+        reason = decision["reason_code"]
+        message = ("Ergebnisherkunft ist nicht bestätigt" if reason == "producer_binding_missing"
+                   else "Service-Scope oder Prüferbindung lehnt diese Aktion ab")
+        raise ResultServicePermissionDenied(message, code=reason)
+    return target, binding, provenance
+
+
+def _result_service_audit(conn, *, context, action, target, status_revision, provenance, now, event_id=None):
+    conn.execute("""INSERT INTO task_result_service_audit
+        (service_id,service_revision,action,task_id,result_id,result_sha256,task_version,
+         status_revision,decision_schema,decision_reason,policy_distribution,policy_version,
+         policy_sha256,event_id,occurred_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (context["service_id"], context["revision"], action, target["task_id"],
+         target["result_id"], target["result_sha256"], target["task_version"],
+         status_revision, _RESULT_SERVICE_POLICY_DECISION_SCHEMA, "allow",
+         provenance["distribution"], provenance["version"], provenance["source_sha256"],
+         event_id, now))
+
+
 def _has_results(conn):
     return _table_exists(conn, "worker_task_results")
 
@@ -147,11 +448,30 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     from .task_lease import task_content_version
     generation, text, digest = validate_submission(payload, max_chars=max_chars)
     ensure_result_schema(conn)
+    version = task_content_version(row)
     cursor = conn.execute("""INSERT INTO worker_task_results
         (task_id,fence,generation,task_version,result,result_sha256,submitted_by,submitted_at)
         VALUES (?,?,?,?,?,?,?,?)""", (row["id"], row["claim_fence"], generation,
-        task_content_version(row), text, digest, worker, now))
-    return {"schema": "bach.worker-result.v1", "result_id": cursor.lastrowid,
+        version, text, digest, worker, now))
+    result_id = cursor.lastrowid
+    binding_columns = {item[1] for item in conn.execute(
+        "PRAGMA table_info(task_result_service_producer_bindings)")}
+    claimed_by = row.get("claimed_by")
+    claim_generation = row.get("claim_result_generation")
+    claim_id = row.get("claim_id")
+    if ({"result_id", "task_id", "result_sha256", "generation", "fence", "task_version",
+         "producer_principal", "issuer_id", "submission_event_id", "bound_at"} <= binding_columns
+            and isinstance(claimed_by, str) and claimed_by and worker == claimed_by
+            and isinstance(claim_id, str) and claim_id
+            and isinstance(claim_generation, str) and claim_generation == generation
+            and type(row.get("claim_fence")) is int and row["claim_fence"] > 0
+            and row.get("claim_task_version") == version):
+        conn.execute("""INSERT INTO task_result_service_producer_bindings
+            (result_id,task_id,result_sha256,generation,fence,task_version,producer_principal,
+             issuer_id,submission_event_id,bound_at) VALUES (?,?,?,?,?,?,?,?,NULL,?)""",
+            (result_id, row["id"], digest, generation, row["claim_fence"], version,
+             claimed_by, _RESULT_PRODUCER_ISSUER, now))
+    return {"schema": "bach.worker-result.v1", "result_id": result_id,
             "task_id": row["id"], "fence": row["claim_fence"], "generation": generation,
             "task_version": task_content_version(row), "result_sha256": digest,
             "result": text, "accepted": False}
@@ -164,6 +484,9 @@ def result_reference(record):
 def finish_submission(conn, record, event_id):
     conn.execute("UPDATE worker_task_results SET submission_event_id=? WHERE id=?",
                  (event_id, record["result_id"]))
+    if _table_exists(conn, "task_result_service_producer_bindings"):
+        conn.execute("UPDATE task_result_service_producer_bindings SET submission_event_id=? "
+                     "WHERE result_id=?", (event_id, record["result_id"]))
     record["submission_event_id"] = event_id
     record["status_revision"] = _status_revision(conn, record["task_id"])
     return record
@@ -254,8 +577,24 @@ def _correction_operator_device_id(conn, operator_token):
     return row[0]
 
 
-def read_result(conn, task_id, *, operator_token=None):
-    """Read task, result and status event from one SQLite snapshot; never migrate."""
+def _result_service_capabilities(conn, context, task, record):
+    actions = {}
+    reasons = {}
+    for action in sorted(_RESULT_SERVICE_ACTIONS):
+        try:
+            _authorize_result_service(conn, context, task, record, action)
+            actions[action] = True
+        except ResultServicePermissionDenied as exc:
+            actions[action] = False
+            reasons[action] = exc.code
+    return {"schema": "bach.task-result-service-capabilities.v1",
+            "revision": context["revision"], "actions": actions, "reasons": reasons}
+
+
+def read_result(conn, task_id, *, operator_token=None, service_token=None):
+    """Read task and result from one snapshot; service access is separately scoped."""
+    if service_token is not None and operator_token is not None:
+        raise ResultServicePermissionDenied("Mehrdeutige Ergebnisanmeldung", code="ambiguous_credentials")
     owns_transaction = not conn.in_transaction
     if owns_transaction:
         conn.execute("BEGIN")
@@ -265,16 +604,33 @@ def read_result(conn, task_id, *, operator_token=None):
         if task is None:
             raise ResultConflict("Task nicht vorhanden")
         revision = _status_revision(conn, task_id)
-        operator_capabilities = _operator_capabilities(conn, operator_token)
+        service_context = _result_service_context(conn, service_token) if service_token is not None else None
+        operator_capabilities = _operator_capabilities(conn, operator_token) if service_context is None else None
         record = (_dict_row(conn.execute("SELECT * FROM worker_task_results WHERE task_id=? "
                                         "ORDER BY id DESC LIMIT 1", (task_id,)))
                   if _has_results(conn) else None)
         if record is None:
             result = _legacy_result(conn, task_id)
-            return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
-                    "task_version": task_content_version(task), "status": task["status"],
-                    "status_revision": revision, "result": result, "verified": True,
-                    "operator_capabilities": operator_capabilities}
+            if service_context is not None and result is not None:
+                raise ResultServicePermissionDenied("Legacy-Ergebnis ohne vertrauenswürdige Produzentenbindung",
+                                                    code="producer_binding_missing")
+            service_capabilities = None
+            if service_context is not None:
+                _authorize_result_service(conn, service_context, task, None, "read")
+                service_capabilities = _result_service_capabilities(conn, service_context, task, None)
+            response = {"schema": "bach.task-result-readback.v1", "task_id": task_id,
+                        "task_version": task_content_version(task), "status": task["status"],
+                        "status_revision": revision, "result": result, "verified": True}
+            if service_context is None:
+                response["operator_capabilities"] = operator_capabilities
+            else:
+                response["service_capabilities"] = service_capabilities
+            return response
+
+        service_capabilities = None
+        if service_context is not None:
+            _authorize_result_service(conn, service_context, task, record, "read")
+            service_capabilities = _result_service_capabilities(conn, service_context, task, record)
         same_content = task_content_version(task) == record["task_version"]
         same_fence = int(task.get("claim_fence") or 0) == record["fence"]
         same_digest = hashlib.sha256(record["result"].encode("utf-8")).hexdigest() == record["result_sha256"]
@@ -298,10 +654,14 @@ def read_result(conn, task_id, *, operator_token=None):
                       reason=("accepted" if accepted else "task_content_changed" if not same_content
                               else "fence_changed" if not same_fence else "result_content_changed" if not same_digest
                               else "awaiting_review" if task["status"] == "review" else "acceptance_not_current"))
-        return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
-                "task_version": task_content_version(task), "status": task["status"],
-                "status_revision": revision, "result": record, "verified": True,
-                "operator_capabilities": operator_capabilities}
+        response = {"schema": "bach.task-result-readback.v1", "task_id": task_id,
+                    "task_version": task_content_version(task), "status": task["status"],
+                    "status_revision": revision, "result": record, "verified": True}
+        if service_context is None:
+            response["operator_capabilities"] = operator_capabilities
+        else:
+            response["service_capabilities"] = service_capabilities
+        return response
     finally:
         if owns_transaction:
             conn.rollback()
@@ -347,28 +707,71 @@ def _correction_ack(row, *, replayed=False):
     }
 
 
-def request_result_correction(conn, task_id, payload, *, operator_token):
-    """Atomically return the exact current review result to pending with a new task version."""
+def request_result_correction(conn, task_id, payload, *, operator_token=None,
+                              service_token=None, service_revision=None):
+    """Return the exact current review result under an operator or scoped-service CAS."""
     if type(task_id) is not int or task_id <= 0:
         raise ResultCorrectionValidation("correction_request_invalid", "task_id ist ungültig")
     request = _validate_correction_payload(payload)
+    service_mode = service_token is not None
+    if service_mode == (operator_token is not None):
+        raise ResultServicePermissionDenied("Genau eine Ergebnisanmeldung erforderlich", code="ambiguous_credentials")
     if conn.in_transaction:
         raise ResultCorrectionConflict("task_not_revisable", "Korrektur braucht eine eigene kanonische Transaktion")
     from .task_lease import task_content_version, _history, _utcnow, _local_naive
     from hub.task_audit import apply_task_field_changes
-    prechecked_device_id = _correction_operator_device_id(conn, operator_token)
-    if prechecked_device_id is None:
-        raise ResultPermissionDenied("Korrekturfreigabe fehlt oder wurde widerrufen")
-    if not _task_lease_context_schema_present(conn):
-        raise ResultCorrectionConflict("task_not_revisable", "Task-Lease-Schema ist nicht verfügbar")
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        device_id = _correction_operator_device_id(conn, operator_token)
-        if device_id is None or device_id != prechecked_device_id:
+
+    prechecked_device_id = None
+    prechecked_service = None
+    prechecked_provenance = None
+    if service_mode:
+        if type(service_revision) is not int or service_revision <= 0:
+            raise ResultServiceConflict("service_revision_required", "Service-Scope-Version muss bestätigt werden")
+        prechecked_service = _result_service_context(conn, service_token, expected_revision=service_revision)
+        if not _task_lease_context_schema_present(conn) or not _result_service_schema_present(conn):
+            raise ResultServiceUnavailable("Korrektur-Schema ist nicht verfügbar")
+        pre_observed = read_result(conn, task_id)
+        pre_record = pre_observed.get("result")
+        pre_task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if pre_task is None:
+            raise ResultCorrectionConflict("task_not_revisable", "Task ist nicht vorhanden")
+        _, _, prechecked_provenance = _authorize_result_service(
+            conn, prechecked_service, pre_task, pre_record, "correction")
+    else:
+        prechecked_device_id = _correction_operator_device_id(conn, operator_token)
+        if prechecked_device_id is None:
             raise ResultPermissionDenied("Korrekturfreigabe fehlt oder wurde widerrufen")
         if not _task_lease_context_schema_present(conn):
             raise ResultCorrectionConflict("task_not_revisable", "Task-Lease-Schema ist nicht verfügbar")
-        ensure_result_correction_schema(conn)
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if service_mode:
+            service_context = _result_service_context(conn, service_token, expected_revision=service_revision)
+            if (service_context["service_id"] != prechecked_service["service_id"]
+                    or service_context["revision"] != prechecked_service["revision"]):
+                raise ResultServiceConflict("service_revision_conflict", "Service-Scope hat sich geändert; bitte neu laden")
+            if not _task_lease_context_schema_present(conn) or not _result_service_schema_present(conn):
+                raise ResultServiceUnavailable("Korrektur-Schema ist nicht verfügbar")
+            service_id = service_context["service_id"]
+            device_id = None
+            actor = f"operator-service:{service_id}"
+            required_correction_columns = _RESULT_SERVICE_REQUIRED_COLUMNS["task_result_corrections"]
+            correction_columns = {item[1] for item in conn.execute("PRAGMA table_info(task_result_corrections)")}
+            if not required_correction_columns <= correction_columns:
+                raise ResultServiceUnavailable("Korrektur-Schema ist nicht verfügbar")
+        else:
+            device_id = _correction_operator_device_id(conn, operator_token)
+            if device_id is None or device_id != prechecked_device_id:
+                raise ResultPermissionDenied("Korrekturfreigabe fehlt oder wurde widerrufen")
+            if not _task_lease_context_schema_present(conn):
+                raise ResultCorrectionConflict("task_not_revisable", "Task-Lease-Schema ist nicht verfügbar")
+            ensure_result_correction_schema(conn)
+            service_id = None
+            service_context = None
+            actor = f"operator-device:{device_id}"
+            correction_columns = {item[1] for item in conn.execute("PRAGMA table_info(task_result_corrections)")}
+
         existing = _dict_row(conn.execute(
             "SELECT * FROM task_result_corrections WHERE task_id=? AND request_id=?",
             (task_id, request["request_id"]),
@@ -382,18 +785,26 @@ def request_result_correction(conn, task_id, payload, *, operator_token):
                 and existing["source_task_version"] == request["task_version"]
                 and existing["source_status_revision"] == request["status_revision"]
                 and existing["correction_note"] == request["correction_note"]
-                and existing["requested_by_device_id"] == device_id
+                and existing.get("requested_by_device_id") == device_id
+                and (existing.get("requested_by_service_id") if "requested_by_service_id" in existing else None) == service_id
             )
             if not same:
                 raise ResultCorrectionConflict("request_id_conflict", "request_id wurde bereits anders verwendet")
             conn.commit()
-            return _correction_ack(existing, replayed=True)
+            ack = _correction_ack(existing, replayed=True)
+            if service_mode:
+                ack["service_revision"] = service_context["revision"]
+            return ack
 
         observed = read_result(conn, task_id)
         record = observed.get("result")
         task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
         if task is None:
             raise ResultCorrectionConflict("task_not_revisable", "Task ist nicht vorhanden")
+        service_provenance = prechecked_provenance
+        if service_mode:
+            _, _, service_provenance = _authorize_result_service(
+                conn, service_context, task, record, "correction")
         if (observed.get("status") != "review" or observed.get("status_revision") != request["status_revision"]
                 or observed.get("task_version") != request["task_version"]
                 or not isinstance(record, dict) or record.get("result_id") is None
@@ -414,22 +825,35 @@ def request_result_correction(conn, task_id, payload, *, operator_token):
             "SELECT COALESCE(MAX(correction_round),0)+1 FROM task_result_corrections WHERE task_id=?",
             (task_id,),
         ).fetchone()[0])
-        cursor = conn.execute(
-            """INSERT INTO task_result_corrections
-               (task_id,request_id,correction_round,source_result_id,source_result_sha256,
-                source_generation,source_fence,source_task_version,source_status_revision,
-                correction_note,requested_by_device_id,requested_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (task_id, request["request_id"], correction_round, request["result_id"],
-             request["result_sha256"], request["generation"], request["fence"],
-             request["task_version"], request["status_revision"], request["correction_note"],
-             device_id, stamp),
-        )
+        if "requested_by_service_id" in correction_columns:
+            cursor = conn.execute(
+                """INSERT INTO task_result_corrections
+                   (task_id,request_id,correction_round,source_result_id,source_result_sha256,
+                    source_generation,source_fence,source_task_version,source_status_revision,
+                    correction_note,requested_by_device_id,requested_by_service_id,requested_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (task_id, request["request_id"], correction_round, request["result_id"],
+                 request["result_sha256"], request["generation"], request["fence"],
+                 request["task_version"], request["status_revision"], request["correction_note"],
+                 device_id, service_id, stamp),
+            )
+        else:
+            if service_mode:
+                raise ResultServiceUnavailable("Korrektur-Schema ist nicht verfügbar")
+            cursor = conn.execute(
+                """INSERT INTO task_result_corrections
+                   (task_id,request_id,correction_round,source_result_id,source_result_sha256,
+                    source_generation,source_fence,source_task_version,source_status_revision,
+                    correction_note,requested_by_device_id,requested_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (task_id, request["request_id"], correction_round, request["result_id"],
+                 request["result_sha256"], request["generation"], request["fence"],
+                 request["task_version"], request["status_revision"], request["correction_note"],
+                 device_id, stamp),
+            )
         correction_id = cursor.lastrowid
-        apply_task_field_changes(
-            conn, task_id, task, {"status": "pending"}, changed_by=f"operator-device:{device_id}",
-            now=stamp, allow_reopen=True,
-        )
+        apply_task_field_changes(conn, task_id, task, {"status": "pending"}, changed_by=actor,
+                                 now=stamp, allow_reopen=True)
         pointer = conn.execute(
             "UPDATE tasks SET result_correction_request_id=? WHERE id=? AND status='pending' "
             "AND (claim_id IS NULL OR claim_id='') AND result_correction_request_id IS ?",
@@ -439,7 +863,7 @@ def request_result_correction(conn, task_id, payload, *, operator_token):
             raise ResultCorrectionConflict("result_changed_reload", "Task hat sich während der Korrektur geändert")
         next_task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
         next_version = task_content_version(next_task)
-        event_id = _history(conn, task_id, "result_correction_request", f"operator-device:{device_id}", now,
+        event_id = _history(conn, task_id, "result_correction_request", actor, now,
             {"correction_id": correction_id, "request_id": request["request_id"],
              "correction_round": correction_round, "result_id": request["result_id"],
              "result_sha256": request["result_sha256"], "generation": request["generation"],
@@ -448,11 +872,18 @@ def request_result_correction(conn, task_id, payload, *, operator_token):
              "next_task_version": next_version})
         conn.execute("UPDATE task_result_corrections SET event_id=?,next_task_version=? WHERE id=?",
                      (event_id, next_version, correction_id))
+        if service_mode:
+            _result_service_audit(conn, context=service_context, action="correction",
+                target=_result_service_target(task, record), status_revision=request["status_revision"],
+                provenance=service_provenance, now=stamp, event_id=event_id)
         if next_task.get("status") != "pending" or next_task.get("result_correction_request_id") != correction_id:
             raise ResultCorrectionConflict("task_not_revisable", "Korrekturanfrage konnte nicht bestätigt werden")
         conn.commit()
         row = _dict_row(conn.execute("SELECT * FROM task_result_corrections WHERE id=?", (correction_id,)))
-        return _correction_ack(row)
+        ack = _correction_ack(row)
+        if service_mode:
+            ack["service_revision"] = service_context["revision"]
+        return ack
     except BaseException:
         if conn.in_transaction:
             conn.rollback()
@@ -490,6 +921,14 @@ def _correction_audit_matches(row, detail):
     note = expected["correction_note"]
     next_version = expected["next_task_version"]
     device_id = row.get("requested_by_device_id")
+    service_id = row.get("requested_by_service_id")
+    if service_id is not None:
+        actor_valid = (isinstance(service_id, str) and bool(service_id)
+                       and device_id is None
+                       and row.get("event_changed_by") == f"operator-service:{service_id}")
+    else:
+        actor_valid = (type(device_id) is int and device_id > 0
+                       and row.get("event_changed_by") == f"operator-device:{device_id}")
     if (type(correction_id) is not int or correction_id <= 0
             or type(correction_round) is not int or correction_round <= 0
             or type(source_result_id) is not int or source_result_id <= 0
@@ -501,8 +940,7 @@ def _correction_audit_matches(row, detail):
             or type(status_revision) is not int or status_revision < 0
             or not isinstance(note, str) or not note.strip() or len(note) > 1200 or "\x00" in note
             or not isinstance(next_version, str) or re.fullmatch(r"[a-f0-9]{64}", next_version) is None
-            or type(device_id) is not int or device_id <= 0
-            or row.get("event_changed_by") != f"operator-device:{device_id}"):
+            or not actor_valid):
         return False
     audit_time = _canonical_history_timestamp(row.get("event_changed_at"), None)
     ledger_time = _canonical_history_timestamp(row.get("source_timestamp"), None)
@@ -555,7 +993,7 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
                        NULL AS source_generation, NULL AS source_fence,
                        NULL AS source_task_version, NULL AS source_status_revision,
                        NULL AS correction_note, NULL AS request_id,
-                       NULL AS requested_by_device_id, NULL AS correction_next_task_version
+                       NULL AS requested_by_device_id, NULL AS requested_by_service_id, NULL AS correction_next_task_version
                 FROM task_history AS h INDEXED BY idx_task_history_task_action_id
                 JOIN worker_task_results AS r INDEXED BY {result_index}
                   ON r.task_id = h.task_id AND r.{event_column} = h.id
@@ -569,6 +1007,8 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
             params.append(scan_limit + 1)
 
     if _table_exists(conn, "task_result_corrections"):
+        correction_columns = {row[1] for row in conn.execute("PRAGMA table_info(task_result_corrections)")}
+        service_actor = "c.requested_by_service_id" if "requested_by_service_id" in correction_columns else "NULL"
         branch = f"""
             SELECT h.id AS event_id, 'correction_requested' AS event_type,
                    h.new_value AS event_new_value, h.changed_at AS event_changed_at,
@@ -583,6 +1023,7 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
                    c.source_status_revision AS source_status_revision,
                    c.correction_note AS correction_note, c.request_id AS request_id,
                    c.requested_by_device_id AS requested_by_device_id,
+                   {service_actor} AS requested_by_service_id,
                    c.next_task_version AS correction_next_task_version
             FROM task_history AS h INDEXED BY idx_task_history_task_action_id
             LEFT JOIN task_result_corrections AS c INDEXED BY idx_task_result_corrections_task_event_desc
@@ -612,7 +1053,7 @@ def _canonical_history_timestamp(value, fallback):
     return None
 
 
-def read_result_history(conn, task_id, *, before_event_id=None, limit=20):
+def read_result_history(conn, task_id, *, before_event_id=None, limit=20, service_token=None):
     if type(task_id) is not int or task_id <= 0:
         raise ResultCorrectionValidation("history_request_invalid", "task_id ist ungültig")
     if before_event_id is not None and (type(before_event_id) is not int or before_event_id <= 0):
@@ -623,8 +1064,19 @@ def read_result_history(conn, task_id, *, before_event_id=None, limit=20):
     if owns_transaction:
         conn.execute("BEGIN")
     try:
-        if conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone() is None:
+        task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if task is None:
             raise ResultConflict("Task nicht vorhanden")
+        service_context = _result_service_context(conn, service_token) if service_token is not None else None
+        if service_context is not None:
+            latest = _dict_row(conn.execute("SELECT * FROM worker_task_results WHERE task_id=? ORDER BY id DESC LIMIT 1",
+                                            (task_id,))) if _has_results(conn) else None
+            if latest is None:
+                legacy = _legacy_result(conn, task_id)
+                if legacy is not None:
+                    raise ResultServicePermissionDenied("Legacy-Ergebnis ohne vertrauenswürdige Produzentenbindung",
+                                                        code="producer_binding_missing")
+            _authorize_result_service(conn, service_context, task, latest, "history")
         if _history_index_gaps(conn):
             raise ResultHistoryUnavailable("Ergebnisverlauf ist mit dem aktuellen Datenbankschema nicht verfügbar")
         scan_limit = _history_scan_limit(limit)
@@ -707,6 +1159,18 @@ def read_result_history(conn, task_id, *, before_event_id=None, limit=20):
                 raise ResultHistoryUnavailable("Ergebnisverlauf enthält einen unbekannten Ereignistyp")
 
         events.sort(key=lambda event: event["event_id"], reverse=True)
+        if service_context is not None:
+            for event in events:
+                if event["type"] == "result_submitted" or event["type"] == "result_accepted":
+                    result_id = event["result"]["result_id"]
+                else:
+                    result_id = event["correction"]["source_result_id"]
+                source = _dict_row(conn.execute(
+                    "SELECT * FROM worker_task_results WHERE id=? AND task_id=?", (result_id, task_id)))
+                if source is None:
+                    raise ResultServicePermissionDenied("Historisches Ergebnis ohne verifizierbare Produzentenbindung",
+                                                        code="producer_binding_missing")
+                _authorize_result_service(conn, service_context, task, source, "history")
         if complete_before is not None and len(events) <= limit:
             raise ResultHistoryUnavailable(
                 "Ergebnisverlauf ist innerhalb des begrenzten Suchfensters unvollständig"
@@ -714,8 +1178,11 @@ def read_result_history(conn, task_id, *, before_event_id=None, limit=20):
         has_more = len(events) > limit
         page = events[:limit]
         next_before = page[-1]["event_id"] if has_more and page else None
-        return {"schema": "bach.task-result-history.v1", "task_id": task_id,
-                "events": page, "next_before_event_id": next_before, "has_more": has_more}
+        response = {"schema": "bach.task-result-history.v1", "task_id": task_id,
+                    "events": page, "next_before_event_id": next_before, "has_more": has_more}
+        if service_context is not None:
+            response["service_revision"] = service_context["revision"]
+        return response
     finally:
         if owns_transaction:
             conn.rollback()
@@ -824,6 +1291,7 @@ def active_correction_request(conn, task_id):
         "correction_note": request.get("correction_note"),
         "request_id": request.get("request_id"),
         "requested_by_device_id": request.get("requested_by_device_id"),
+        "requested_by_service_id": request.get("requested_by_service_id"),
         "source_timestamp": request.get("requested_at"),
         "event_changed_at": audit.get("changed_at"),
         "event_changed_by": audit.get("changed_by"),
@@ -890,38 +1358,80 @@ def assert_completion_allowed(conn, task_id, acceptance=None, *, changes=None):
     raise ResultConflict("Worker-Ergebnis braucht eine getrennte Abnahme des aktuellen Inhalts")
 
 
-def accept_result(conn, task_id, result_id, *, digest, task_version, status_revision, operator_token):
-    """Authenticated operator decision, correlated and committed atomically."""
+def accept_result(conn, task_id, result_id, *, digest, task_version, status_revision,
+                  operator_token=None, service_token=None, service_revision=None):
+    """Accept the exact current result as an operator or scoped service transaction."""
     if (type(result_id) is not int or result_id <= 0 or type(status_revision) is not int
             or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
             or not isinstance(task_version, str) or not re.fullmatch(r"[a-f0-9]{64}", task_version)):
         raise ResultConflict("Ungültige Ergebnisabnahme")
+    service_mode = service_token is not None
+    if service_mode == (operator_token is not None):
+        raise ResultServicePermissionDenied("Genau eine Ergebnisanmeldung erforderlich", code="ambiguous_credentials")
     if conn.in_transaction:
         raise ResultConflict("Abnahme benötigt eine eigene kanonische Transaktion")
+    service_precheck = None
+    service_provenance = None
+    if service_mode:
+        if type(service_revision) is not int or service_revision <= 0:
+            raise ResultServiceConflict("service_revision_required", "Service-Scope-Version muss bestätigt werden")
+        service_precheck = _result_service_context(conn, service_token, expected_revision=service_revision)
+        if not _result_service_schema_present(conn):
+            raise ResultServiceUnavailable("Ergebnisreview-Schema ist nicht verfügbar")
+        pre_task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if pre_task is None:
+            raise ResultConflict("Task nicht vorhanden")
+        pre_result = _dict_row(conn.execute("SELECT * FROM worker_task_results WHERE id=? AND task_id=?",
+                                            (result_id, task_id)))
+        if pre_result is None:
+            raise ResultConflict("Ergebnis hat sich seit dem Lesen verändert")
+        _, _, service_provenance = _authorize_result_service(
+            conn, service_precheck, pre_task, pre_result, "accept")
+
     conn.execute("BEGIN IMMEDIATE")
     try:
-        # Resolve the separate principal under the SAME write lock as acceptance.
-        # General device enrollment, first device, and loopback confer no right.
-        if (not isinstance(operator_token, str) or not operator_token.strip()
-                or len(operator_token) > 256
-                or not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
-                                    "AND name='task_result_operators'").fetchone()):
-            raise ResultPermissionDenied("Persönliche Ergebnisfreigabe erforderlich")
-        from gui.device_auth import _hash_token
-        principal = conn.execute("SELECT d.id FROM devices d JOIN task_result_operators o "
-                                 "ON o.device_id=d.id WHERE d.token_hash=? AND d.status='active'",
-                                 (_hash_token(operator_token),)).fetchone()
-        if principal is None:
-            raise ResultPermissionDenied("Ergebnisfreigabe fehlt oder wurde widerrufen")
-        actor = f"operator-device:{principal[0]}"
+        service_context = None
+        if service_mode:
+            service_context = _result_service_context(conn, service_token, expected_revision=service_revision)
+            if (service_context["service_id"] != service_precheck["service_id"]
+                    or service_context["revision"] != service_precheck["revision"]
+                    or not _result_service_schema_present(conn)):
+                raise ResultServiceUnavailable("Service-Scope oder Ergebnisreview-Schema hat sich geändert")
+            principal_id = service_context["service_id"]
+            actor = f"operator-service:{principal_id}"
+        else:
+            # Existing personal-operator semantics stay separate from the service contract.
+            if (not isinstance(operator_token, str) or not operator_token.strip()
+                    or len(operator_token) > 256
+                    or not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                        "AND name='task_result_operators'").fetchone()):
+                raise ResultPermissionDenied("Persönliche Ergebnisfreigabe erforderlich")
+            from gui.device_auth import _hash_token
+            principal = conn.execute("SELECT d.id FROM devices d JOIN task_result_operators o "
+                                     "ON o.device_id=d.id WHERE d.token_hash=? AND d.status='active'",
+                                     (_hash_token(operator_token),)).fetchone()
+            if principal is None:
+                raise ResultPermissionDenied("Ergebnisfreigabe fehlt oder wurde widerrufen")
+            principal_id = principal[0]
+            actor = f"operator-device:{principal_id}"
+
         from .task_lease import _history, _utcnow, _local_naive
         from hub.task_audit import apply_task_field_changes
-        observed = read_result(conn, task_id); record = observed["result"]
+        observed = read_result(conn, task_id)
+        record = observed["result"]
+        row = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if service_mode:
+            if row is None:
+                raise ResultConflict("Task nicht vorhanden")
+            _, _, service_provenance = _authorize_result_service(
+                conn, service_context, row, _dict_row(conn.execute(
+                    "SELECT * FROM worker_task_results WHERE id=? AND task_id=?", (result_id, task_id))), "accept")
         if (not record or record.get("result_id") != result_id or record.get("result_sha256") != digest
                 or observed["task_version"] != task_version or observed["status_revision"] != status_revision
                 or record.get("task_version") != task_version or record.get("reason") != "awaiting_review"):
             raise ResultConflict("Ergebnis oder Auftrag seit dem Lesen verändert; neu laden")
-        row = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if row is None:
+            raise ResultConflict("Task nicht vorhanden")
         if row.get("claim_id") or row["status"] != "review":
             raise ResultConflict("Nur ein freigegebenes Review-Ergebnis kann abgenommen werden")
         now = _utcnow()
@@ -934,9 +1444,30 @@ def accept_result(conn, task_id, result_id, *, digest, task_version, status_revi
         conn.execute("UPDATE worker_task_results SET accepted_by=?,accepted_at=?,"
                      "accepted_status_event_id=?,acceptance_event_id=? WHERE id=?",
                      (actor, _local_naive(now), revision, acceptance_event, result_id))
-        result = read_result(conn, task_id)
-        if result["result"].get("accepted") is not True:
-            raise ResultConflict("Kanonische Ergebnisabnahme nicht bestätigt")
+        if service_mode:
+            target = _result_service_target(row, {"result_id": result_id, "result_sha256": digest,
+                "generation": record.get("generation"), "fence": record.get("fence"),
+                "task_version": record.get("task_version")})
+            _result_service_audit(conn, context=service_context, action="accept", target=target,
+                status_revision=status_revision, provenance=service_provenance,
+                now=_local_naive(now), event_id=acceptance_event)
+        if service_mode:
+            result = {
+                "schema": "bach.task-result-service-acceptance.v1",
+                "task_id": task_id,
+                "result_id": result_id,
+                "result_sha256": digest,
+                "task_version": task_version,
+                "source_status_revision": status_revision,
+                "accepted_status_revision": revision,
+                "acceptance_event_id": acceptance_event,
+                "accepted": True,
+                "service_revision": service_context["revision"],
+            }
+        else:
+            result = read_result(conn, task_id)
+            if result["result"].get("accepted") is not True:
+                raise ResultConflict("Kanonische Ergebnisabnahme nicht bestätigt")
         conn.commit()
         return result
     except BaseException:

@@ -49,6 +49,12 @@ CLI-BEFEHLE (bach task)
   reopen <ID>       Öffnet erledigte Task(s) erneut (Multi-ID)
   delete <ID>       Löscht Task(s) permanent (Multi-ID)
   priority <ID> <P> Ändert Priorität (P1-P4)
+  result-service-history <ID> [--limit N] [--before EVENT-ID]
+                    Ergebnisverlauf mit enger Service-Anmeldung lesen
+  result-service-correct <ID> [--note TEXT]
+                    Genau das angezeigte Review-Ergebnis zur Korrektur zurückgeben
+  result-service-accept <ID>
+                    Genau das angezeigte Review-Ergebnis separat annehmen
   assign <ID>       Zuweisung an Partner (--to GEMINI/COPILOT/etc.)
   depends <ID>      Zeigt Abhängigkeiten an
     --on <X>        Fügt Abhängigkeit hinzu (Task wartet auf X)
@@ -85,6 +91,15 @@ LIBRARY-API BEISPIELE
   # Abhängigkeiten
   task.depends(306, "--on", "305")  # Task 306 wartet auf 305
   task.depends(306)                 # Abhängigkeiten anzeigen
+
+
+Ergebnis-Service-Befehle lesen die Service-Anmeldung verdeckt per getpass. Der
+Service besitzt nur die ausdrücklich gespeicherten Task-/Kategorie- und
+Aktionsrechte. Korrektur und Annahme benötigen zusätzlich die Leseberechtigung,
+damit die CLI den Ergebnis-Hash und die aktuelle CAS-Version anzeigen kann.
+Vor beiden Schreibaktionen bindet eine Bestätigung Task-ID, Ergebnis-ID und
+SHA-256; die Anmeldung wird weder ausgegeben noch gespeichert. Die vier Rechte
+read, history, correction und accept sind voneinander getrennt.
 
 KOORDINATION UND WORKER-ROUTING
 ------------------------------
@@ -123,3 +138,29 @@ SIEHE AUCH
   docs/help/delegate.txt    Delegation an Partner
   docs/help/maintain.txt    Integritäts-Prüfung und Cleanup
   bach --help ati      Der Automated Tool Incorporator
+
+
+ERGEBNIS-REVIEW MIT SEPARATER SERVICE-IDENTITÄT
+------------------------------------------------
+Die Service-Credential wird verdeckt abgefragt. Die CLI zeigt sie nicht an und
+speichert sie nicht. Sie ist kein allgemeines Geräte-/API-Token; diese Befehle
+legen keine Credentials an. Jeder Zugriff braucht einen eigenen Scope für eine
+ausdrückliche Task-ID oder Kategorie. Leserecht, Verlauf, Korrektur und Annahme
+sind getrennt; ein Recht gewährt kein anderes.
+
+  result-service-history <ID> [--limit 1-50] [--before EVENT-ID]
+    Liest nur den autorisierten Verlauf und ändert keinen Taskstatus. Erfordert
+    den Scope history.
+  result-service-correct <ID> [--note TEXT]
+    Fordert eine Korrektur für das aktuelle Review-Ergebnis an. Erfordert read
+    und correction. Die CLI zeigt Ergebnis-ID und SHA-256 und fragt vor dem
+    Senden der aktuellen Task-/Ergebnis-/CAS-Werte nach Bestätigung.
+    Der Hinweis umfasst 1 bis 1200 Zeichen.
+  result-service-accept <ID>
+    Nimmt das aktuelle Review-Ergebnis an. Erfordert read und accept. Die CLI
+    zeigt Ergebnis-ID und SHA-256 und fragt vor dem Senden der exakten
+    Task-/Ergebnis-/CAS-Werte nach Bestätigung.
+
+Fehlender Scope, fehlende Produzentenbindung, Schema oder Richtlinie führen zu
+Ablehnung bzw. „nicht verfügbar“; es gibt keinen breiten Token- oder Legacy-
+Fallback.
