@@ -154,6 +154,9 @@ pywin32>=311              # Windows COM interface (pdf_schwaerzer_pro)
 # ============================================================
 pytest>=9.0.2             # Test runner (system/tests/, BACH_Dev/tests/)
 
+# [PIPELINE COORDINATION] Read-only general Hybrid-C catalogue/host/shadow adapter.
+# Enable explicitly with BACH_PIPELINE_COORDINATION_ENABLED=1; no model or queue starts.
+open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@aed43d76215e1b97affa52fe51c0474ad5549051
 # [GOVERNANCE] Canonical read-only provider; enable explicitly in host configuration.
 policy-registry @ git+https://github.com/ellmos-ai/policy-registry.git@2c4896b70cb39e2e24748b384d5d0cc7fcd15a16
 llmauto @ git+https://github.com/ellmos-ai/marblerun.git@e136ab3a632bcd663a510ef1c2ed666f6300b6bf

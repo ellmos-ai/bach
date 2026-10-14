@@ -13,6 +13,30 @@ and can be executed manually or time-controlled.
 OPERATIONS
 -----------
 
+resources / catalog / host / capacity / shadow
+  Shared read-only Hybrid-C coordination from the optional Ocean module.
+  Covers compute, services, media and software builds; translation is one consumer.
+  Install the reviewed pin:
+    pip install "open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@aed43d76215e1b97affa52fe51c0474ad5549051"
+  Then set BACH_PIPELINE_COORDINATION_ENABLED=1 in the host environment.
+  Missing or mismatched providers produce HOLD without a legacy-path fallback.
+  Usage:
+    bach pipeline catalog
+    bach pipeline host
+    bach pipeline capacity --reserve-ram-bytes 4294967296 --reserve-cpu-units 1 --reserve-disk-bytes 10737418240 --capacity-directory /absolute/local/directory
+    bach pipeline shadow --jobs jobs.json --reserve-ram-bytes 4294967296 --reserve-disk-bytes 10737418240
+  Jobs require an explicit Ocean projection; no automatic queue discovery occurs.
+  Structured API without session startup: from bach_api import pipeline; pipeline.catalog()
+  pipeline.shadow("jobs.json", reserve_ram_bytes=4294967296, reserve_disk_bytes=10737418240)
+  pipeline.capacity(reserve_ram_bytes=4294967296, reserve_cpu_units=1, reserve_disk_bytes=10737418240, directory="/absolute/local/directory")
+  capacity measures CPU counter deltas and checks explicit RAM/CPU/disk reserves.
+  OBSERVED confirms the observation call only; data.state may be HOLD. Unverified
+  Windows Job or Linux cgroup limits never establish reserve verification.
+  Start authorization stays false. The pin also includes HostController; this
+  read-only projection does not activate it.
+  These read-only operations create no task claims, starts, model calls or schedules.
+  They do not replace production resource acceptance.
+
 list-available
   Shows all available pipeline definitions (JSON files in pipelines/).
   Specifies ID, Name, Type, Description and Schedule.

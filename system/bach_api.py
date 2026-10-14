@@ -895,6 +895,47 @@ class _ThemeProxy(_HandlerProxy):
 session = _SessionProxy()
 
 # Handler-Proxies (haeufigste)
+class _PipelineProxy(_HandlerProxy):
+    """Structured read-only Ocean projections without booting a BACH session/DB."""
+
+    def _execute(self, operation, *args):
+        from hub._services.ocean_pipeline_adapter import observe
+        return observe(operation, args)
+
+    def available_operations(self):
+        from hub._services.ocean_pipeline_adapter import OPERATIONS
+        return sorted(OPERATIONS)
+
+    def _observe(self, operation, *args):
+        success, report = self._execute(operation, *args)
+        if not success:
+            raise BachAPIError(report["reason"])
+        return report
+
+    def resources(self):
+        return self._observe("resources")
+
+    def catalog(self):
+        return self._observe("catalog")
+
+    def host(self):
+        return self._observe("host")
+
+    def capacity(self, *, reserve_ram_bytes, reserve_cpu_units, reserve_disk_bytes, directory, sample_seconds=0.25):
+        return self._observe("capacity", "--reserve-ram-bytes", str(reserve_ram_bytes),
+                             "--reserve-cpu-units", str(reserve_cpu_units),
+                             "--reserve-disk-bytes", str(reserve_disk_bytes),
+                             "--capacity-directory", str(directory), "--sample-seconds", str(sample_seconds))
+
+    def shadow(self, jobs, *, reserve_ram_bytes, reserve_disk_bytes, catalog=None):
+        args = ["--jobs", str(jobs), "--reserve-ram-bytes", str(reserve_ram_bytes),
+                "--reserve-disk-bytes", str(reserve_disk_bytes)]
+        if catalog is not None:
+            args.extend(["--catalog", str(catalog)])
+        return self._observe("shadow", *args)
+
+
+pipeline = _PipelineProxy("pipeline")
 task = _TaskProxy("task")
 memory = _MemoryProxy("memory")
 backup = _HandlerProxy("backup")
@@ -1156,6 +1197,7 @@ __all__ = [
     "get_app",
     "session",
     "task",
+    "pipeline",
     "memory",
     "backup",
     "steuer",
