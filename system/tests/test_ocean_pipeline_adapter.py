@@ -163,3 +163,17 @@ def test_real_cli_entrypoint_uses_pinned_provider_without_startup(installed_prov
     monkeypatch.setattr(sys, "argv", ["bach", "pipeline", "catalog"])
     assert cli.main() == 0
     assert len(json.loads(capsys.readouterr().out)["data"]["pipelines"]) == 15
+
+
+def test_api_introspection_raw_and_unknown_calls_never_boot_app(monkeypatch, capsys):
+    import bach_api
+    monkeypatch.setattr(bach_api, "get_app", lambda: pytest.fail("API introspection booted App"))
+    monkeypatch.delenv("BACH_PIPELINE_COORDINATION_ENABLED", raising=False)
+    assert set(bach_api.pipeline.available_operations()) == adapter.OPERATIONS
+    assert adapter.OPERATIONS <= set(dir(bach_api.pipeline))
+    for call in (lambda: bach_api.pipeline.raw("catalog"), lambda: bach_api.pipeline("catalog")):
+        success, report = call()
+        assert not success and report["state"] == "HOLD"
+    report = bach_api.pipeline.run("forbidden")
+    assert report["reason"] == "unknown_read_only_operation"
+    assert "HOLD" in capsys.readouterr().out

@@ -898,9 +898,16 @@ session = _SessionProxy()
 class _PipelineProxy(_HandlerProxy):
     """Structured read-only Ocean projections without booting a BACH session/DB."""
 
-    def _observe(self, operation, *args):
+    def _execute(self, operation, *args):
         from hub._services.ocean_pipeline_adapter import observe
-        success, report = observe(operation, args)
+        return observe(operation, args)
+
+    def available_operations(self):
+        from hub._services.ocean_pipeline_adapter import OPERATIONS
+        return sorted(OPERATIONS)
+
+    def _observe(self, operation, *args):
+        success, report = self._execute(operation, *args)
         if not success:
             raise BachAPIError(report["reason"])
         return report
