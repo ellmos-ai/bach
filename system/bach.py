@@ -1131,6 +1131,12 @@ def main():
         print(f"BACH {_read_bach_version()}")
         return 0
 
+    # Ocean observations must not bootstrap BACH, pull transit state, tick
+    # activity or create log files, including when the optional provider is absent.
+    if (len(cli_args) >= 2 and cli_args[0] in {"pipeline", "--pipeline"}
+            and cli_args[1] in {"resources", "catalog", "host", "shadow"}):
+        return _handle_pipeline(cli_args[1], cli_args[2:])
+
     # Never bootstrap missing worker restrictions as a side effect of a
     # normal chat/read/startup. Recovery requires this explicit operator call.
     if cli_args == ["--init-slots"]:

@@ -130,3 +130,36 @@ def test_structured_api_and_cli_share_real_provider_without_session(installed_pr
     assert "pipeline" in bach_api.__all__
     success, raw = PipelineCoordinationHandler(tmp_path).handle("catalog", [], dry_run=True)
     assert success and json.loads(raw) == report
+
+
+@pytest.mark.parametrize("command", ["pipeline", "--pipeline"])
+@pytest.mark.parametrize("operation", ["resources", "catalog", "host", "shadow"])
+def test_real_cli_entrypoint_bypasses_all_startup_before_provider_gate(monkeypatch, capsys, command, operation):
+    import bach as cli
+
+    def refuse(*args, **kwargs):
+        pytest.fail("read-only pipeline command reached global BACH startup")
+
+    monkeypatch.delenv("BACH_PIPELINE_COORDINATION_ENABLED", raising=False)
+    for name in ("get_logger", "_run_prosync_startup", "_track_activity", "_get_app", "_run_injectors"):
+        monkeypatch.setattr(cli, name, refuse)
+    args = [command, operation]
+    if operation == "shadow":
+        args.extend(["--jobs", "not-read.json", "--reserve-ram-bytes", "1", "--reserve-disk-bytes", "1"])
+    monkeypatch.setattr(sys, "argv", ["bach", *args])
+    assert cli.main() == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["state"] == "HOLD" and report["reason"] == "pipeline_coordination_disabled"
+
+
+def test_real_cli_entrypoint_uses_pinned_provider_without_startup(installed_provider, monkeypatch, capsys):
+    import bach as cli
+
+    def refuse(*args, **kwargs):
+        pytest.fail("read-only pipeline command reached global BACH startup")
+
+    for name in ("get_logger", "_run_prosync_startup", "_track_activity", "_get_app", "_run_injectors"):
+        monkeypatch.setattr(cli, name, refuse)
+    monkeypatch.setattr(sys, "argv", ["bach", "pipeline", "catalog"])
+    assert cli.main() == 0
+    assert len(json.loads(capsys.readouterr().out)["data"]["pipelines"]) == 15
