@@ -1461,3 +1461,313 @@ def test_core_capacity_reauthorization_requires_fresh_current_semantic_ready_pro
     )
     assert slots._persistent_core_capacity_observation(
         still_waiting, worker=worker, expected_state="ready") is None
+
+@pytest.fixture
+def core_reconciliation_fixture(tmp_path, isolated_task_client, monkeypatch):
+    """Bind real Core snapshots and scans to private configuration/TaskDB files."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from hub._services.chat import telegram_chat
+
+    client, database, connect, insert = isolated_task_client
+
+    def prepare(status="running"):
+        path, worker_id = _always_on_core(tmp_path)
+        _opt_in_core(path)
+        initial = slots.persistent_core_startup_snapshot(path)
+        contract = telegram_chat._persistent_worker_trace_contract()
+        assert contract is not None, "The real normal-loop trace contract is required"
+        checkpoint = _checkpoint(
+            initial["slot"], "admitted", trace_hash=contract["source_sha256"],
+        )
+        checkpoint["profile_version"] = initial["profile_version"]
+        recovery = telegram_chat._core_recovery_record(
+            initial, "active", checkpoint=checkpoint,
+        )
+        config = slots.load_slots_config(path, strict=True)
+        config["slots"][worker_id].update({
+            "status": status,
+            CHECKPOINT_FIELD: checkpoint,
+            slots.PERSISTENT_CORE_RECOVERY_FIELD: recovery,
+        })
+        slots.save_slots_config(config, path)
+        monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+        monkeypatch.setattr(telegram_chat, "_active_worker_ids", lambda: set())
+        monkeypatch.setattr(telegram_chat, "_native_task_client", lambda: client)
+        monkeypatch.setattr(
+            telegram_chat, "_start_worker_execution",
+            lambda *args, **kwargs: pytest.fail("Reconciliation must not start a worker"),
+        )
+
+        task_id = _insert_task(database, connect, insert, title="Core reconciliation")
+        # Initialize fixture service schemas before taking the read-only observation.
+        client.task_snapshot(task_id)
+        client.read(task_id)
+        client.tool_trace_events(task_id)
+        snapshot = slots.persistent_core_startup_snapshot()
+        assert snapshot["state"] == "prior_generation_unsettled"
+        assert snapshot["slot"]["status"] == status
+        assert slots._valid_persistent_core_recovery_state(
+            recovery, worker=snapshot["slot"], checkpoint=checkpoint,
+        )
+        scans = []
+        original_scan = telegram_chat._persistent_worker_reconciliation_scan
+
+        def observe_scan(*args):
+            result = original_scan(*args)
+            scans.append(result)
+            return result
+
+        monkeypatch.setattr(
+            telegram_chat, "_persistent_worker_reconciliation_scan", observe_scan,
+        )
+        return SimpleNamespace(
+            chat=telegram_chat, path=Path(path), snapshot=snapshot,
+            contract=contract, client=client, task_id=task_id, scans=scans,
+            checkpoint=checkpoint, recovery=recovery, database=database,
+        )
+
+    return prepare
+
+
+@pytest.mark.parametrize("status", ["idle", "running", "error"])
+def test_persistent_core_reconciliation_consumes_real_snapshot_status(
+        core_reconciliation_fixture, status):
+    case = core_reconciliation_fixture(status)
+    config_before = case.path.read_bytes()
+    task_before = case.client.task_snapshot(case.task_id)
+    lease_before = case.client.read(case.task_id)
+    assert case.snapshot["status"] == case.snapshot["slot"]["status"] == status
+
+    proof = case.chat._persistent_core_reconciliation_proof(
+        case.snapshot, case.contract,
+    )
+
+    assert proof is not None
+    assert proof["status_before"] == status
+    assert proof["stable_scans"] == 2 and proof["complete"] is True
+    assert len(case.scans) == 2
+    assert all(scan["complete"] is True for scan in case.scans)
+    assert case.scans[0]["sha256"] == case.scans[1]["sha256"]
+    assert slots._valid_persistent_core_reconciliation_proof(
+        proof, worker=case.snapshot["slot"], checkpoint=case.checkpoint,
+        recovery_state=case.recovery,
+    )
+    assert case.path.read_bytes() == config_before
+    assert case.client.task_snapshot(case.task_id) == task_before
+    after = case.client.read(case.task_id)
+    assert (after.leased, after.fence) == (lease_before.leased, lease_before.fence)
+
+
+def test_persistent_core_reconciliation_rejects_real_snapshot_status_drift(
+        core_reconciliation_fixture):
+    case = core_reconciliation_fixture("running")
+    slots.update_slot("buddha_always_on", {"status": "error"}, path=str(case.path))
+    assert slots.persistent_core_startup_snapshot()["status"] == "error"
+    before = case.path.read_bytes()
+
+    assert case.chat._persistent_core_reconciliation_proof(
+        case.snapshot, case.contract,
+    ) is None
+    assert case.scans == []
+    assert case.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("gate", [
+    "active_old_lease", "old_generation_trace", "identity_conflict",
+])
+def test_persistent_core_reconciliation_preserves_native_lease_trace_identity_gates(
+        core_reconciliation_fixture, gate):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.chat.worker_tool_trace import digest_json
+
+    case = core_reconciliation_fixture()
+    generation = "6" * 32 if gate == "identity_conflict" else case.checkpoint["generation"]
+    binding = WorkerLeaseBinding.acquire(
+        case.client, case.task_id, worker_id=case.checkpoint["lease_worker_id"],
+        host="HOST", generation=generation, is_current=lambda: True,
+        stop_event=threading.Event(),
+    )
+    try:
+        if gate != "active_old_lease":
+            binding.trace_tool_started(
+                source="normal-loop", request_id="5" * 32, tool_name="search_text",
+                arguments_sha256=digest_json({"query": "synthetic trace only"}),
+            )
+            assert binding.return_lease() is True
+        before = case.path.read_bytes()
+        task_before = case.client.task_snapshot(case.task_id)
+        lease_before = case.client.read(case.task_id)
+
+        assert case.chat._persistent_core_reconciliation_proof(
+            case.snapshot, case.contract,
+        ) is None
+        assert len(case.scans) == 1 and case.scans[0][gate] is True
+        assert case.path.read_bytes() == before
+        assert case.client.task_snapshot(case.task_id) == task_before
+        after = case.client.read(case.task_id)
+        assert (after.leased, after.fence) == (lease_before.leased, lease_before.fence)
+    finally:
+        if not binding.closed:
+            assert binding.return_lease() is True
+
+
+def test_persistent_core_reconciliation_rejects_incomplete_native_inventory(
+        core_reconciliation_fixture, monkeypatch):
+    case = core_reconciliation_fixture()
+    monkeypatch.setattr(case.client, "task_candidates", lambda **kwargs: {
+        "tasks": [], "total": 1, "has_more": False, "offset": 0,
+    })
+    before = case.path.read_bytes()
+
+    assert case.chat._persistent_core_reconciliation_proof(
+        case.snapshot, case.contract,
+    ) is None
+    assert case.scans == []
+    assert case.path.read_bytes() == before
+
+
+def test_persistent_core_reconciliation_requires_two_stable_native_scans(
+        core_reconciliation_fixture, monkeypatch):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+    case = core_reconciliation_fixture()
+    original = case.chat._persistent_worker_reconciliation_scan
+
+    def change_after_first_scan(*args):
+        result = original(*args)
+        if len(case.scans) == 1:
+            binding = WorkerLeaseBinding.acquire(
+                case.client, case.task_id, worker_id="fixture-other@OTHER",
+                host="OTHER", generation="6" * 32, is_current=lambda: True,
+                stop_event=threading.Event(),
+            )
+            assert binding.return_lease() is True
+        return result
+
+    monkeypatch.setattr(
+        case.chat, "_persistent_worker_reconciliation_scan", change_after_first_scan,
+    )
+    before = case.path.read_bytes()
+
+    assert case.chat._persistent_core_reconciliation_proof(
+        case.snapshot, case.contract,
+    ) is None
+    assert len(case.scans) == 2
+    assert all(scan["complete"] is True for scan in case.scans)
+    assert case.scans[0]["sha256"] != case.scans[1]["sha256"]
+    assert case.path.read_bytes() == before
+
+
+def _core_settlement_observation(case):
+    """Observe configuration and fixture TaskDB bytes plus public task/lease data."""
+    task = case.client.task_snapshot(case.task_id)
+    lease = case.client.read(case.task_id)
+    lease_fields = {
+        key: getattr(lease, key)
+        for key in ("task_id", "status", "leased", "fence", "holder", "task_version")
+    }
+    return {
+        "configuration": case.path.read_bytes(),
+        "task_database": case.database.read_bytes(),
+        "task": json.dumps(task, sort_keys=True).encode(),
+        "lease": json.dumps(lease_fields, sort_keys=True).encode(),
+    }
+
+
+@pytest.mark.parametrize("status", ["idle", "running", "error"])
+def test_persistent_core_reconciliation_settles_only_matching_current_status(
+        core_reconciliation_fixture, status):
+    case = core_reconciliation_fixture(status)
+    before = _core_settlement_observation(case)
+
+    result = case.chat._persistent_core_settle_old_generation(
+        case.snapshot, (None, None), case.contract,
+    )
+
+    assert result is not None
+    assert result["status"] == "idle" and result["checkpoint"] is None
+    assert result["recovery_state"]["phase"] == "ready"
+    current = slots.persistent_core_startup_snapshot()
+    assert current["state"] == "ready" and current["checkpoint"] is None
+    assert current["intent_id"] == case.snapshot["intent_id"]
+    assert current["profile_version"] == case.snapshot["profile_version"]
+    assert current["slot"]["persistent_opt_in"] is True
+    assert len(case.scans) == 2
+    assert all(scan["complete"] is True for scan in case.scans)
+    assert case.scans[0]["sha256"] == case.scans[1]["sha256"]
+    after = _core_settlement_observation(case)
+    assert after["configuration"] != before["configuration"]
+    for key in ("task_database", "task", "lease"):
+        assert after[key] == before[key]
+
+
+@pytest.mark.parametrize("changed_status", ["error", "paused"])
+@pytest.mark.parametrize("race_point", [
+    "during_second_scan", "after_second_scan", "after_proof_before_cas",
+])
+def test_persistent_core_reconciliation_settlement_rejects_late_status_drift(
+        core_reconciliation_fixture, monkeypatch, race_point, changed_status):
+    case = core_reconciliation_fixture("running")
+    changed = []
+
+    def change_status():
+        assert not changed
+        slots.update_slot(
+            "buddha_always_on", {"status": changed_status}, path=str(case.path),
+        )
+        assert slots.get_always_on_execution_slot(str(case.path))["status"] == changed_status
+        changed.append(_core_settlement_observation(case))
+
+    if race_point == "during_second_scan":
+        original = case.client.task_candidates
+        calls = 0
+
+        def candidates(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                change_status()
+            return original(**kwargs)
+
+        monkeypatch.setattr(case.client, "task_candidates", candidates)
+    elif race_point == "after_second_scan":
+        original = case.chat._persistent_worker_reconciliation_scan
+
+        def scan(*args):
+            result = original(*args)
+            if len(case.scans) == 2:
+                change_status()
+            return result
+
+        monkeypatch.setattr(case.chat, "_persistent_worker_reconciliation_scan", scan)
+    else:
+        original = slots.update_persistent_core_controller_state
+
+        def before_cas(*args, **kwargs):
+            proof = kwargs["reconciliation_proof"]
+            assert proof["status_before"] == "running"
+            assert slots._valid_persistent_core_reconciliation_proof(
+                proof, worker=slots.persistent_core_startup_snapshot()["slot"],
+                checkpoint=case.checkpoint, recovery_state=case.recovery,
+            )
+            change_status()
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(slots, "update_persistent_core_controller_state", before_cas)
+
+    result = case.chat._persistent_core_settle_old_generation(
+        case.snapshot, (None, None), case.contract,
+    )
+
+    assert len(changed) == 1
+    assert result is None
+    assert len(case.scans) == 2
+    assert all(scan["complete"] is True for scan in case.scans)
+    assert case.scans[0]["sha256"] == case.scans[1]["sha256"]
+    assert _core_settlement_observation(case) == changed[0]
+    current = slots.persistent_core_startup_snapshot()
+    assert current["status"] == changed_status
+    assert current["checkpoint"] == case.checkpoint
+    assert current["recovery_state"] == case.recovery

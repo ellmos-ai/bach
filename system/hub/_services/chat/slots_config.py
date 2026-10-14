@@ -2245,6 +2245,7 @@ def persistent_core_startup_snapshot(path: str | None = None) -> dict[str, Any]:
         "profile_version": profile_version,
         "intent_id": intent_id if isinstance(intent_id, str) else None,
         "slot": worker,
+        "status": worker.get("status"),
         "managed": managed,
     }
     if recovery is not None and isinstance(recovery, dict) and recovery.get("phase") == "revoked":
@@ -2605,6 +2606,7 @@ def _valid_persistent_core_reconciliation_proof(
         and proof.get("active_old_lease") is False
         and proof.get("old_generation_trace") is False
         and proof.get("status_before") in {"idle", "running", "error"}
+        and proof.get("status_before") == worker.get("status")
         and (recovery_state.get("phase") != "reserve_wait"
              or proof.get("status_before") == "error")
     )
