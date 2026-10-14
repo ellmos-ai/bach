@@ -820,8 +820,8 @@ def _handle_pipeline(sub_cmd, args):
     try:
         from hub.pipeline import _handle_pipeline as handle_pipeline_command
         full_args = [sub_cmd] + args if sub_cmd else args
-        handle_pipeline_command(full_args)
-        return 0
+        result = handle_pipeline_command(full_args)
+        return result if type(result) is int else 0
     except Exception as e:
         print(f"[ERROR] Pipeline: {e}")
         import traceback

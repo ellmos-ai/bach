@@ -13,6 +13,23 @@ and can be executed manually or time-controlled.
 OPERATIONS
 -----------
 
+resources / catalog / host / shadow
+  Shared read-only Hybrid-C coordination from the optional Ocean module.
+  Covers compute, services, media and software builds; translation is one consumer.
+  Install the reviewed pin:
+    pip install "open-ocean @ git+https://github.com/ellmos-ai/open-ocean.git@eda57bdb49e257f1aa4fbda65317876a00211eb9"
+  Then set BACH_PIPELINE_COORDINATION_ENABLED=1 in the host environment.
+  Missing or mismatched providers produce HOLD without a legacy-path fallback.
+  Usage:
+    bach pipeline catalog
+    bach pipeline host
+    bach pipeline shadow --jobs jobs.json --reserve-ram-bytes 4294967296 --reserve-disk-bytes 10737418240
+  Jobs require an explicit Ocean projection; no automatic queue discovery occurs.
+  Structured API without session startup: from bach_api import pipeline; pipeline.catalog()
+  pipeline.shadow("jobs.json", reserve_ram_bytes=4294967296, reserve_disk_bytes=10737418240)
+  These read-only operations create no task claims, starts, model calls or schedules.
+  They do not replace production resource acceptance.
+
 list-available
   Shows all available pipeline definitions (JSON files in pipelines/).
   Specifies ID, Name, Type, Description and Schedule.

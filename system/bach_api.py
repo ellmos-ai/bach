@@ -895,6 +895,34 @@ class _ThemeProxy(_HandlerProxy):
 session = _SessionProxy()
 
 # Handler-Proxies (haeufigste)
+class _PipelineProxy(_HandlerProxy):
+    """Structured read-only Ocean projections without booting a BACH session/DB."""
+
+    def _observe(self, operation, *args):
+        from hub._services.ocean_pipeline_adapter import observe
+        success, report = observe(operation, args)
+        if not success:
+            raise BachAPIError(report["reason"])
+        return report
+
+    def resources(self):
+        return self._observe("resources")
+
+    def catalog(self):
+        return self._observe("catalog")
+
+    def host(self):
+        return self._observe("host")
+
+    def shadow(self, jobs, *, reserve_ram_bytes, reserve_disk_bytes, catalog=None):
+        args = ["--jobs", str(jobs), "--reserve-ram-bytes", str(reserve_ram_bytes),
+                "--reserve-disk-bytes", str(reserve_disk_bytes)]
+        if catalog is not None:
+            args.extend(["--catalog", str(catalog)])
+        return self._observe("shadow", *args)
+
+
+pipeline = _PipelineProxy("pipeline")
 task = _TaskProxy("task")
 memory = _MemoryProxy("memory")
 backup = _HandlerProxy("backup")
@@ -1156,6 +1184,7 @@ __all__ = [
     "get_app",
     "session",
     "task",
+    "pipeline",
     "memory",
     "backup",
     "steuer",

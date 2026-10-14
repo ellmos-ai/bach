@@ -29,6 +29,32 @@ _SYSTEM_ROOT = next(
 if str(_SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(_SYSTEM_ROOT))
 from hub.bach_paths import BACH_DB
+from hub.base import BaseHandler
+
+
+class PipelineCoordinationHandler(BaseHandler):
+    """Discoverable read-only Ocean surface; legacy pipeline execution stays separate."""
+
+    @property
+    def profile_name(self):
+        return "pipeline"
+
+    @property
+    def target_file(self):
+        return self.base_path / "pipelines"
+
+    def get_operations(self):
+        return {
+            "resources": "Ocean-Ressourcenvertrag anzeigen (lesend)",
+            "catalog": "Allgemeinen Pipelinekatalog anzeigen (lesend)",
+            "host": "Aktuellen Host messen (keine Startzulassung)",
+            "shadow": "Explizite Jobs mit Systemreserven prüfen (kein Start)",
+        }
+
+    def handle(self, operation, args, dry_run=False):
+        from hub._services.ocean_pipeline_adapter import observe
+        success, result = observe(operation, args)
+        return success, json.dumps(result, ensure_ascii=False, sort_keys=True)
 
 
 class PipelineHandler:
@@ -562,6 +588,11 @@ def _handle_pipeline(argv):
     """
     import sys
 
+    if argv and argv[0] in {"resources", "catalog", "host", "shadow"}:
+        success, report = PipelineCoordinationHandler(_SYSTEM_ROOT).handle(argv[0], argv[1:])
+        print(report)
+        return 0 if success else 2
+
     # Pfade ermitteln
     script_dir = Path(__file__).parent.parent  # system/
     db_path = BACH_DB
@@ -579,6 +610,9 @@ def _handle_pipeline(argv):
         print("  run <id>            Pipeline ausführen (Phase 3)")
         print("  schedule <id>       Scheduler aktivieren (Phase 3)")
         print("  unschedule <id>     Scheduler deaktivieren (Phase 3)")
+        print("  resources/catalog   Ocean-Vertrag und allgemeiner Pipelinekatalog (lesend)")
+        print("  host                Aktuellen Host messen (lesend)")
+        print("  shadow --jobs ...   Explizite Jobs und Reserven prüfen (kein Start)")
         return
 
     command = argv[0]
