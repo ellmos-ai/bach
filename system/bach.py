@@ -1134,7 +1134,7 @@ def main():
     # Ocean observations must not bootstrap BACH, pull transit state, tick
     # activity or create log files, including when the optional provider is absent.
     if (len(cli_args) >= 2 and cli_args[0] in {"pipeline", "--pipeline"}
-            and cli_args[1] in {"resources", "catalog", "host", "shadow"}):
+            and cli_args[1] in {"resources", "catalog", "host", "capacity", "shadow"}):
         return _handle_pipeline(cli_args[1], cli_args[2:])
 
     # Never bootstrap missing worker restrictions as a side effect of a

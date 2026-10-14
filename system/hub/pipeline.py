@@ -48,6 +48,7 @@ class PipelineCoordinationHandler(BaseHandler):
             "resources": "Ocean-Ressourcenvertrag anzeigen (lesend)",
             "catalog": "Allgemeinen Pipelinekatalog anzeigen (lesend)",
             "host": "Aktuellen Host messen (keine Startzulassung)",
+            "capacity": "RAM-/CPU-Spielraum mit ausdrücklichen Reserven beobachten (kein Start)",
             "shadow": "Explizite Jobs mit Systemreserven prüfen (kein Start)",
         }
 
@@ -588,7 +589,7 @@ def _handle_pipeline(argv):
     """
     import sys
 
-    if argv and argv[0] in {"resources", "catalog", "host", "shadow"}:
+    if argv and argv[0] in {"resources", "catalog", "host", "capacity", "shadow"}:
         success, report = PipelineCoordinationHandler(_SYSTEM_ROOT).handle(argv[0], argv[1:])
         print(report)
         return 0 if success else 2
@@ -612,6 +613,7 @@ def _handle_pipeline(argv):
         print("  unschedule <id>     Scheduler deaktivieren (Phase 3)")
         print("  resources/catalog   Ocean-Vertrag und allgemeiner Pipelinekatalog (lesend)")
         print("  host                Aktuellen Host messen (lesend)")
+        print("  capacity --reserve-* ...   CPU-/RAM-Spielraum mit Reserven beobachten (kein Start)")
         print("  shadow --jobs ...   Explizite Jobs und Reserven prüfen (kein Start)")
         return
 

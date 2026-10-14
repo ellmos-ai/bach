@@ -13,20 +13,26 @@ und können manuell oder zeitgesteuert ausgeführt werden.
 OPERATIONEN
 ===========
 
-resources / catalog / host / shadow
+resources / catalog / host / capacity / shadow
   Gemeinsame lesende Hybrid-C-Koordination aus dem optionalen Ocean-Modul.
   Katalog: Compute, Services, Medien und Softwarebuilds; Übersetzung ist ein Verbraucher.
   Installation der geprüften Version:
-    pip install "open-ocean @ git+https://github.com/ellmos-ai/open-ocean.git@eda57bdb49e257f1aa4fbda65317876a00211eb9"
+    pip install "open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@aed43d76215e1b97affa52fe51c0474ad5549051"
   Danach in der Hostumgebung BACH_PIPELINE_COORDINATION_ENABLED=1 setzen.
   Ohne passenden Provider: HOLD, kein stiller Ersatz durch den alten Pipelinepfad.
   Verwendung:
     bach pipeline catalog
     bach pipeline host
+    bach pipeline capacity --reserve-ram-bytes 4294967296 --reserve-cpu-units 1 --reserve-disk-bytes 10737418240 --capacity-directory /absoluter/lokaler/ordner
     bach pipeline shadow --jobs jobs.json --reserve-ram-bytes 4294967296 --reserve-disk-bytes 10737418240
   Jobs müssen ausdrücklich als Ocean-Projektion vorliegen; keine automatische Queue-Suche.
   API ohne Sessionstart: from bach_api import pipeline; pipeline.catalog()
   pipeline.shadow("jobs.json", reserve_ram_bytes=4294967296, reserve_disk_bytes=10737418240)
+  pipeline.capacity(reserve_ram_bytes=4294967296, reserve_cpu_units=1, reserve_disk_bytes=10737418240, directory="/absoluter/lokaler/ordner")
+  capacity misst CPU-Zählerdifferenzen und prüft RAM-/CPU-/Diskreserven. OBSERVED
+  bestätigt nur den Messaufruf; data.state kann HOLD sein. Ungeprüfte Windows-Job-
+  oder Linux-cgroup-Grenzen geben keine Reserve frei. Startberechtigung bleibt false.
+  Der Pin liefert auch den HostController mit; dieser lesende Port aktiviert ihn nicht.
   Diese Zugänge messen und planen lesend. Sie erzeugen keine Taskclaims, Starts,
   Modellaufrufe oder Zeitpläne und ersetzen keine produktive Ressourcenabnahme.
 

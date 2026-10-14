@@ -15,10 +15,10 @@ from importlib import metadata, util
 from pathlib import Path
 from urllib.parse import urlsplit
 
-PIN = "eda57bdb49e257f1aa4fbda65317876a00211eb9"
+PIN = "aed43d76215e1b97affa52fe51c0474ad5549051"
 VERSION = "0.1.2"
 REPOSITORY = "https://github.com/ellmos-ai/open-ocean"
-OPERATIONS = frozenset({"resources", "catalog", "host", "shadow"})
+OPERATIONS = frozenset({"resources", "catalog", "host", "capacity", "shadow"})
 
 
 class PipelineProviderUnavailable(RuntimeError):
@@ -46,7 +46,8 @@ def _provider():
         if not spec or not spec.origin or Path(spec.origin).resolve() != expected or not expected.is_file():
             raise PipelineProviderUnavailable("pipeline_provider_import_mismatch")
         modules = {}
-        for name in ("ocean_resources", "ocean_resources.host", "ocean_resources.pipelines", "ocean_resources.__main__"):
+        for name in ("ocean_resources", "ocean_resources.host", "ocean_resources.capacity",
+                     "ocean_resources.pipelines", "ocean_resources.__main__"):
             module = importlib.import_module(name)
             relative = name.replace(".", "/") + ".py" if "." in name else "ocean_resources/__init__.py"
             if Path(module.__file__).resolve() != Path(dist.locate_file(relative)).resolve():
@@ -92,7 +93,7 @@ def observe(operation: str, args=()) -> tuple[bool, dict]:
     if operation not in OPERATIONS:
         return False, {**envelope, "state": "HOLD", "reason": "unknown_read_only_operation"}
     try:
-        if operation != "shadow" and args:
+        if operation not in {"shadow", "capacity"} and args:
             raise ValueError("operation takes no arguments")
         options = None
         if operation == "shadow":
@@ -101,6 +102,14 @@ def observe(operation: str, args=()) -> tuple[bool, dict]:
             parser.add_argument("--catalog")
             parser.add_argument("--reserve-ram-bytes", required=True, type=int)
             parser.add_argument("--reserve-disk-bytes", required=True, type=int)
+            options = parser.parse_args(list(args))
+        elif operation == "capacity":
+            parser = _Parser(add_help=False, allow_abbrev=False)
+            parser.add_argument("--reserve-ram-bytes", required=True, type=int)
+            parser.add_argument("--reserve-cpu-units", required=True, type=int)
+            parser.add_argument("--reserve-disk-bytes", required=True, type=int)
+            parser.add_argument("--capacity-directory", required=True)
+            parser.add_argument("--sample-seconds", type=float, default=0.25)
             options = parser.parse_args(list(args))
         modules = _provider()
         host = modules["ocean_resources.host"]
@@ -111,6 +120,12 @@ def observe(operation: str, args=()) -> tuple[bool, dict]:
             report = pipelines.catalog_document()
         elif operation == "host":
             report = host.sample_host().to_dict()
+        elif operation == "capacity":
+            capacity = modules["ocean_resources.capacity"]
+            policy = capacity.CapacityPolicy(options.reserve_ram_bytes, options.reserve_cpu_units,
+                                             options.reserve_disk_bytes, Path(options.capacity_directory),
+                                             sample_seconds=options.sample_seconds)
+            report = capacity.NativeCapacitySensor(policy).observe()
         else:
             budget = pipelines.ResourceBudget(options.reserve_ram_bytes, options.reserve_disk_bytes)
             jobs = _read_json(options.jobs)

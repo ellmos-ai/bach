@@ -62,6 +62,7 @@ def test_shadowed_import_is_rejected_before_loading_provider(monkeypatch, tmp_pa
 @pytest.mark.parametrize("operation,args", [
     ("run", []), ("schedule", []), ("catalog", ["--run"]),
     ("shadow", ["--jobs", "private-unread.json"]),
+    ("capacity", []), ("capacity", ["--reserve-ram-bytes", "1"]),
 ])
 def test_no_mutation_operation_or_implicit_shadow_defaults(monkeypatch, operation, args):
     monkeypatch.setattr(adapter, "_provider", lambda: pytest.fail("invalid request reached provider"))
@@ -133,7 +134,7 @@ def test_structured_api_and_cli_share_real_provider_without_session(installed_pr
 
 
 @pytest.mark.parametrize("command", ["pipeline", "--pipeline"])
-@pytest.mark.parametrize("operation", ["resources", "catalog", "host", "shadow"])
+@pytest.mark.parametrize("operation", ["resources", "catalog", "host", "capacity", "shadow"])
 def test_real_cli_entrypoint_bypasses_all_startup_before_provider_gate(monkeypatch, capsys, command, operation):
     import bach as cli
 
@@ -146,6 +147,9 @@ def test_real_cli_entrypoint_bypasses_all_startup_before_provider_gate(monkeypat
     args = [command, operation]
     if operation == "shadow":
         args.extend(["--jobs", "not-read.json", "--reserve-ram-bytes", "1", "--reserve-disk-bytes", "1"])
+    elif operation == "capacity":
+        args.extend(["--reserve-ram-bytes", "1", "--reserve-cpu-units", "1", "--reserve-disk-bytes", "1",
+                     "--capacity-directory", str(SYSTEM_ROOT)])
     monkeypatch.setattr(sys, "argv", ["bach", *args])
     assert cli.main() == 2
     report = json.loads(capsys.readouterr().out)
@@ -177,3 +181,43 @@ def test_api_introspection_raw_and_unknown_calls_never_boot_app(monkeypatch, cap
     report = bach_api.pipeline.run("forbidden")
     assert report["reason"] == "unknown_read_only_operation"
     assert "HOLD" in capsys.readouterr().out
+
+
+def test_native_capacity_api_uses_same_pinned_observer_without_db(installed_provider, tmp_path, monkeypatch):
+    import bach_api
+    monkeypatch.setattr(bach_api, "get_app", lambda: pytest.fail("capacity booted App"))
+    result = bach_api.pipeline.capacity(reserve_ram_bytes=1048576, reserve_cpu_units=1,
+                                        reserve_disk_bytes=1048576, directory=tmp_path.resolve())
+    assert result["state"] == "OBSERVED" and result["start_authorized"] is False
+    data = result["data"]
+    assert data["schema"] == "ocean-native-capacity.v1"
+    assert data["start_authorized"] is False and data["models_started"] == data["queue_writes"] == 0
+    assert data["state"] in {"HOLD", "CANDIDATE"}
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_real_cli_capacity_bypasses_startup_with_pinned_native_sensor(installed_provider, tmp_path, monkeypatch, capsys):
+    import bach as cli
+    def refuse(*args, **kwargs):
+        pytest.fail("capacity command reached global BACH startup")
+    for name in ("get_logger", "_run_prosync_startup", "_track_activity", "_get_app", "_run_injectors"):
+        monkeypatch.setattr(cli, name, refuse)
+    monkeypatch.setattr(sys, "argv", ["bach", "pipeline", "capacity", "--reserve-ram-bytes", "1048576",
+                                      "--reserve-cpu-units", "1", "--reserve-disk-bytes", "1048576",
+                                      "--capacity-directory", str(tmp_path.resolve())])
+    assert cli.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["read_only"] and result["start_authorized"] is False
+    assert result["data"]["schema"] == "ocean-native-capacity.v1"
+    assert result["data"]["start_authorized"] is False
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("reserve,interval", [(0, 0.25), (1, 0), (1, float("nan"))])
+def test_invalid_capacity_policy_never_reaches_native_measurements(installed_provider, monkeypatch, tmp_path, reserve, interval):
+    modules = adapter._provider()
+    monkeypatch.setattr(modules["ocean_resources.capacity"], "sample_host", lambda *a: pytest.fail("invalid policy sampled host"))
+    success, report = adapter.observe("capacity", ["--reserve-ram-bytes", str(reserve), "--reserve-cpu-units", "1",
+                                                  "--reserve-disk-bytes", "1", "--sample-seconds", str(interval),
+                                                  "--capacity-directory", str(tmp_path.resolve())])
+    assert not success and report["state"] == "HOLD"

@@ -921,6 +921,12 @@ class _PipelineProxy(_HandlerProxy):
     def host(self):
         return self._observe("host")
 
+    def capacity(self, *, reserve_ram_bytes, reserve_cpu_units, reserve_disk_bytes, directory, sample_seconds=0.25):
+        return self._observe("capacity", "--reserve-ram-bytes", str(reserve_ram_bytes),
+                             "--reserve-cpu-units", str(reserve_cpu_units),
+                             "--reserve-disk-bytes", str(reserve_disk_bytes),
+                             "--capacity-directory", str(directory), "--sample-seconds", str(sample_seconds))
+
     def shadow(self, jobs, *, reserve_ram_bytes, reserve_disk_bytes, catalog=None):
         args = ["--jobs", str(jobs), "--reserve-ram-bytes", str(reserve_ram_bytes),
                 "--reserve-disk-bytes", str(reserve_disk_bytes)]
