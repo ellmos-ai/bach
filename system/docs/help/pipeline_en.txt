@@ -17,7 +17,7 @@ resources / catalog / host / capacity / shadow
   Shared read-only Hybrid-C coordination from the optional Ocean module.
   Covers compute, services, media and software builds; translation is one consumer.
   Install the reviewed pin:
-    pip install "open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@aed43d76215e1b97affa52fe51c0474ad5549051"
+    pip install "open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@217f2ff48910202e88d869886771af136f24eef1"
   Then set BACH_PIPELINE_COORDINATION_ENABLED=1 in the host environment.
   Missing or mismatched providers produce HOLD without a legacy-path fallback.
   Usage:
@@ -32,8 +32,9 @@ resources / catalog / host / capacity / shadow
   capacity measures CPU counter deltas and checks explicit RAM/CPU/disk reserves.
   OBSERVED confirms the observation call only; data.state may be HOLD. Unverified
   Windows Job or Linux cgroup limits never establish reserve verification.
-  Start authorization stays false. The pin also includes HostController; this
-  read-only projection does not activate it.
+  Start authorization stays false. The pin includes HostController, reviewed CPU
+  profiles and HostService/HostClient. This read-only projection starts neither
+  the transport nor any job. Imports never establish production resource approval.
   These read-only operations create no task claims, starts, model calls or schedules.
   They do not replace production resource acceptance.
 

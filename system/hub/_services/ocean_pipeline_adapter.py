@@ -15,7 +15,7 @@ from importlib import metadata, util
 from pathlib import Path
 from urllib.parse import urlsplit
 
-PIN = "aed43d76215e1b97affa52fe51c0474ad5549051"
+PIN = "217f2ff48910202e88d869886771af136f24eef1"
 VERSION = "0.1.2"
 REPOSITORY = "https://github.com/ellmos-ai/open-ocean"
 OPERATIONS = frozenset({"resources", "catalog", "host", "capacity", "shadow"})
