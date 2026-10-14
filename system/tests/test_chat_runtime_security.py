@@ -400,6 +400,20 @@ class _ReaderCapabilityBinding:
         return None
 
 
+def test_unverified_binding_with_exact_readonly_tools_keeps_legacy_schema():
+    from hub._services.chat import bach_tools
+
+    tools = bach_tools.BachToolProvider(
+        worker_task_binding=_ReaderCapabilityBinding(),
+        require_task_binding=True,
+        allowed_tools={"read_file", "search_text", "task_manage"},
+    ).get_tools("safe")
+    read_file = next(tool for tool in tools if tool["function"]["name"] == "read_file")
+    properties = read_file["function"]["parameters"]["properties"]
+    assert "line_numbers" in properties
+    assert "output_format" not in properties
+
+
 def test_model_argument_cannot_activate_task_code_reader(tmp_path):
     source = tmp_path / "ordinary-authorized-reader.txt"
     source.write_text("existing private workflow remains readable\n", encoding="utf-8")

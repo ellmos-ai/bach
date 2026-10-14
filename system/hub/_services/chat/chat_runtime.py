@@ -1475,8 +1475,26 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         return capacity_receipt
 
+    def _bound_worker_tools_for_request(self, session, backend, *, enabled: bool) -> list[dict]:
+        """Build the request schema from the already-refreshed bound session."""
+        if enabled is not True or session.allow_tools is not True:
+            return []
+        default_model = getattr(backend, "get_default_model", None)
+        if not callable(default_model):
+            default_model = None
+        provider = BachToolProvider(
+            self.bach_app,
+            default_model,
+            worker_task_binding=getattr(session, "worker_task_binding", None),
+            require_task_binding=getattr(session, "require_task_binding", False),
+            allowed_tools=getattr(session, "allowed_tools", None),
+            agent_operations=self.agent_operations,
+        )
+        return provider.get_tools(session.mode)
+
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
+        tool_rounds_enabled = kwargs.pop("_tool_rounds_enabled", None)
         turn_context = self._compute_turn_context.get()
         def check_binding():
             if turn_context:
@@ -1488,6 +1506,17 @@ class ChatRuntime(_ModuleChatRuntime):
                     problem = self._worker_backend_gate(session, backend, kwargs.get("model"))
                     if problem is not None:
                         raise RuntimeError(str(problem))
+                    if (
+                        tool_rounds_enabled is not None
+                        and "tools" in kwargs
+                        and getattr(session, "worker_task_binding", None) is not None
+                        and not getattr(backend, "manages_own_tools", False)
+                    ):
+                        # Rebuild at the actual backend boundary after the live
+                        # profile/lease check; this also runs for each fallback.
+                        kwargs["tools"] = self._bound_worker_tools_for_request(
+                            session, backend, enabled=tool_rounds_enabled,
+                        )
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
         binding = getattr(session, "worker_task_binding", None)
@@ -2311,6 +2340,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
+                    _tool_rounds_enabled=max_rounds > 0,
                 )
                 if selected_backend is not previous_backend or selected_model != previous_model:
                     context_limit = self._context_limit_for_backend(selected_backend, selected_model)
