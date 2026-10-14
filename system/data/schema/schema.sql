@@ -2808,9 +2808,14 @@ CREATE TABLE IF NOT EXISTS task_result_corrections (
     UNIQUE(task_id, request_id), UNIQUE(task_id, correction_round)
 );
 CREATE TABLE IF NOT EXISTS task_result_services (
-    service_id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, issuer_id TEXT NOT NULL,
-    principal_id TEXT NOT NULL, generation TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision > 0),
-    status TEXT NOT NULL CHECK(status IN ('active','revoked')), created_at TEXT NOT NULL, revoked_at TEXT
+    service_id TEXT PRIMARY KEY,
+    credential_scheme TEXT NOT NULL CHECK (credential_scheme = 'argon2id-v1'),
+    credential_salt BLOB NOT NULL CHECK (length(credential_salt) = 16),
+    credential_verifier BLOB NOT NULL CHECK (length(credential_verifier) = 32),
+    issuer_id TEXT NOT NULL, principal_id TEXT NOT NULL, generation TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
+    status TEXT NOT NULL CHECK (status IN ('active','revoked')),
+    created_at TEXT NOT NULL, revoked_at TEXT
 );
 CREATE TABLE IF NOT EXISTS task_result_service_scopes (
     scope_id INTEGER PRIMARY KEY AUTOINCREMENT, service_id TEXT NOT NULL, revision INTEGER NOT NULL,

@@ -885,8 +885,8 @@ class TestResultServiceCommands:
             def __enter__(self): return self
             def __exit__(self, *_): return None
             @classmethod
-            def for_task_db(cls, _factory, *, service_token):
-                calls.append(("credential", service_token))
+            def for_task_db(cls, _factory, *, service_id, service_token):
+                calls.append(("credential", service_id, service_token))
                 return cls()
             def task_result_snapshot(self, task_id):
                 calls.append(("snapshot", task_id)); return snapshot
@@ -903,15 +903,15 @@ class TestResultServiceCommands:
     def test_service_history_uses_scoped_client_without_printing_credential(self, handler, monkeypatch, capsys):
         token = "S" * 43
         calls = self._install_client(monkeypatch, snapshot=self._snapshot(), ack={"schema": "bach.task-result-history.v1", "events": []})
-        ok, output = handler.handle("result-service-history", ["42", "--limit", "5"])
+        ok, output = handler.handle("result-service-history", ["42", "--service-id", "reviewer-fixture", "--limit", "5"])
         assert ok is True and '"events": []' in output
-        assert calls == [("credential", token), ("history", 42, None, 5)]
+        assert calls == [("credential", "reviewer-fixture", token), ("history", 42, None, 5)]
         assert token not in output and token not in capsys.readouterr().out
 
     def test_service_correction_requires_exact_read_and_correction_capability(self, handler, monkeypatch):
         calls = self._install_client(monkeypatch, snapshot=self._snapshot(correction=False), ack={})
         monkeypatch.setattr("builtins.input", lambda _prompt: pytest.fail("denied scope must not prompt"))
-        ok, output = handler.handle("result-service-correct", ["42", "--note", "Quelle prüfen"])
+        ok, output = handler.handle("result-service-correct", ["42", "--service-id", "reviewer-fixture", "--note", "Quelle prüfen"])
         assert ok is False and "darf Ergebnisse nicht korrigieren" in output
         assert [entry[0] for entry in calls] == ["credential", "snapshot"]
 
@@ -919,7 +919,7 @@ class TestResultServiceCommands:
         ack = {"schema": "bach.task-result-correction-request.v1", "correction_id": 12}
         calls = self._install_client(monkeypatch, snapshot=self._snapshot(), ack=ack)
         monkeypatch.setattr("builtins.input", lambda _prompt: "ja")
-        ok, output = handler.handle("result-service-correct", ["42", "--note", "Quelle prüfen"])
+        ok, output = handler.handle("result-service-correct", ["42", "--service-id", "reviewer-fixture", "--note", "Quelle prüfen"])
         assert ok is True and '"correction_id": 12' in output
         mutation = next(entry for entry in calls if entry[0] == "correction")
         assert mutation[1] == 42 and mutation[3] == 3
@@ -931,17 +931,50 @@ class TestResultServiceCommands:
         ack = {"schema": "bach.task-result-service-acceptance.v1", "accepted": True, "result_id": 9}
         calls = self._install_client(monkeypatch, snapshot=self._snapshot(accept=False), ack=ack)
         monkeypatch.setattr("builtins.input", lambda _prompt: pytest.fail("denied scope must not prompt"))
-        ok, output = handler.handle("result-service-accept", ["42"])
+        ok, output = handler.handle("result-service-accept", ["42", "--service-id", "reviewer-fixture"])
         assert ok is False and "darf Ergebnisse nicht annehmen" in output
         assert [entry[0] for entry in calls] == ["credential", "snapshot"]
 
         calls = self._install_client(monkeypatch, snapshot=self._snapshot(), ack=ack)
         monkeypatch.setattr("builtins.input", lambda _prompt: "ja")
-        ok, output = handler.handle("result-service-accept", ["42"])
+        ok, output = handler.handle("result-service-accept", ["42", "--service-id", "reviewer-fixture"])
         assert ok is True and '"accepted": true' in output
         mutation = next(entry for entry in calls if entry[0] == "accept")
         assert mutation[1] == 42 and mutation[2]["result_id"] == 9
         assert mutation[2]["status_revision"] == 13 and mutation[2]["service_revision"] == 3
+
+
+def test_service_id_is_required_and_nul_note_is_rejected_before_prompt(handler, monkeypatch):
+    ok, output = handler.handle("result-service-history", ["42"])
+    assert ok is False and "Service-ID ist erforderlich" in output
+    monkeypatch.setattr("getpass.getpass", lambda _prompt: pytest.fail("must not prompt"))
+    ok, output = handler.handle(
+        "result-service-correct",
+        ["42", "--service-id", "reviewer-fixture", "--note", "ungueltig\x00note"],
+    )
+    assert ok is False and "1 bis 1200 Zeichen" in output
+
+
+@pytest.mark.parametrize(
+    "service_id",
+    [None, 7, "", " leading", "trailing ", "x" * 129, "bad\x00id"],
+)
+def test_result_service_cli_rejects_invalid_service_id_before_prompt(handler, monkeypatch, service_id):
+    def fail_prompt(_prompt):
+        pytest.fail("invalid service identity must be rejected before prompting")
+
+    monkeypatch.setattr("getpass.getpass", fail_prompt)
+    monkeypatch.setattr("builtins.input", fail_prompt)
+    commands = [
+        ("result-service-history", ["42", "--service-id", service_id]),
+        ("result-service-correct", ["42", "--service-id", service_id, "--note", "Beleg prüfen"]),
+        ("result-service-accept", ["42", "--service-id", service_id]),
+    ]
+    for command, args in commands:
+        ok, output = handler.handle(command, args)
+        assert ok is False
+        expected = "Service-ID ist erforderlich" if not service_id else "Service-ID ist ung\u00fcltig"
+        assert expected in output
 
 
 def test_result_service_commands_are_listed_in_every_translation():
@@ -951,6 +984,6 @@ def test_result_service_commands_are_listed_in_every_translation():
     for language in ("", "_en", "_es", "_ja", "_ru", "_zh"):
         filename = "tasks" + language + ".txt"
         content = (help_root / filename).read_text(encoding="utf-8")
-        assert "result-service-history <ID> [--limit 1-50] [--before EVENT-ID]" in content
-        assert "result-service-correct <ID> [--note TEXT]" in content
-        assert "result-service-accept <ID>" in content
+        assert "result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]" in content
+        assert "result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]" in content
+        assert "result-service-accept <ID> --service-id SERVICE-ID" in content

@@ -1192,13 +1192,16 @@ _RESULT_SERVICE_SAFE_ERRORS = {
 class TaskResultServiceClient(TaskLeaseClient):
     """Result-service client; general task and worker APIs are unavailable."""
 
-    def __init__(self, *, service_token, **kwargs):
-        if (not isinstance(service_token, str)
+    def __init__(self, *, service_id, service_token, **kwargs):
+        if (not isinstance(service_id, str) or not service_id.strip()
+                or service_id != service_id.strip() or len(service_id) > 128 or "\x00" in service_id
+                or not isinstance(service_token, str)
                 or re.fullmatch(r"[A-Za-z0-9_-]{43,256}", service_token) is None):
             raise LeaseProtocolError("Service-Anmeldung ist ungültig")
         configured_device_token = kwargs.pop("device_token", None)
         if configured_device_token:
             raise LeaseProtocolError("Service-Client akzeptiert keine Geräteanmeldung")
+        self._result_service_id = service_id
         self._result_service_token = service_token
         super().__init__(**kwargs)
         # TaskLeaseClient also reads ambient BACH_DEVICE_TOKEN. This adapter must
@@ -1234,7 +1237,8 @@ class TaskResultServiceClient(TaskLeaseClient):
                 and isinstance(detail.get("message"), str) and len(detail["message"]) <= 200)
 
     def _service_headers(self, revision=None):
-        headers = {"X-BACH-Result-Service": self._result_service_token}
+        headers = {"X-BACH-Result-Service-ID": self._result_service_id,
+                   "X-BACH-Result-Service": self._result_service_token}
         if revision is not None:
             if type(revision) is not int or revision <= 0:
                 raise LeaseProtocolError("Service-Scope-Version muss bestätigt werden")
@@ -1296,7 +1300,8 @@ class TaskResultServiceClient(TaskLeaseClient):
             from .task_result_service import read_result
             conn = self._get_local_connection()
             try:
-                data = read_result(conn, task_id, service_token=self._result_service_token)
+                data = read_result(conn, task_id, service_id=self._result_service_id,
+                                    service_token=self._result_service_token)
             finally:
                 if self._conn is None:
                     conn.close()
@@ -1319,7 +1324,8 @@ class TaskResultServiceClient(TaskLeaseClient):
             conn = self._get_local_connection()
             try:
                 data = read_result_history(conn, task_id, before_event_id=before_event_id,
-                                          limit=limit, service_token=self._result_service_token)
+                                          limit=limit, service_id=self._result_service_id,
+                                          service_token=self._result_service_token)
             finally:
                 if self._conn is None:
                     conn.close()
@@ -1376,7 +1382,8 @@ class TaskResultServiceClient(TaskLeaseClient):
             conn = self._get_local_connection()
             try:
                 data = request_result_correction(conn, task_id, payload,
-                    service_token=self._result_service_token, service_revision=service_revision)
+                    service_id=self._result_service_id, service_token=self._result_service_token,
+                    service_revision=service_revision)
             finally:
                 if self._conn is None:
                     conn.close()
@@ -1413,7 +1420,8 @@ class TaskResultServiceClient(TaskLeaseClient):
             try:
                 data = accept_result(conn, task_id, result_id, digest=digest,
                     task_version=task_version, status_revision=status_revision,
-                    service_token=self._result_service_token, service_revision=service_revision)
+                    service_id=self._result_service_id, service_token=self._result_service_token,
+                    service_revision=service_revision)
             finally:
                 if self._conn is None:
                     conn.close()

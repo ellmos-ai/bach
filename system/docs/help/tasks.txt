@@ -49,11 +49,11 @@ CLI-BEFEHLE (bach task)
   reopen <ID>       Öffnet erledigte Task(s) erneut (Multi-ID)
   delete <ID>       Löscht Task(s) permanent (Multi-ID)
   priority <ID> <P> Ändert Priorität (P1-P4)
-  result-service-history <ID> [--limit N] [--before EVENT-ID]
+  result-service-history <ID> --service-id SERVICE-ID [--limit N] [--before EVENT-ID]
                     Ergebnisverlauf mit enger Service-Anmeldung lesen
-  result-service-correct <ID> [--note TEXT]
+  result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]
                     Genau das angezeigte Review-Ergebnis zur Korrektur zurückgeben
-  result-service-accept <ID>
+  result-service-accept <ID> --service-id SERVICE-ID
                     Genau das angezeigte Review-Ergebnis separat annehmen
   assign <ID>       Zuweisung an Partner (--to GEMINI/COPILOT/etc.)
   depends <ID>      Zeigt Abhängigkeiten an
@@ -146,17 +146,18 @@ Die Service-Credential wird verdeckt abgefragt. Die CLI zeigt sie nicht an und
 speichert sie nicht. Sie ist kein allgemeines Geräte-/API-Token; diese Befehle
 legen keine Credentials an. Jeder Zugriff braucht einen eigenen Scope für eine
 ausdrückliche Task-ID oder Kategorie. Leserecht, Verlauf, Korrektur und Annahme
-sind getrennt; ein Recht gewährt kein anderes.
+sind getrennt; ein Recht gewährt kein anderes. Die CLI fragt das Service-
+Credential verdeckt ab und übergibt es nie als Befehlsargument.
 
-  result-service-history <ID> [--limit 1-50] [--before EVENT-ID]
+  result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]
     Liest nur den autorisierten Verlauf und ändert keinen Taskstatus. Erfordert
     den Scope history.
-  result-service-correct <ID> [--note TEXT]
+  result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]
     Fordert eine Korrektur für das aktuelle Review-Ergebnis an. Erfordert read
     und correction. Die CLI zeigt Ergebnis-ID und SHA-256 und fragt vor dem
     Senden der aktuellen Task-/Ergebnis-/CAS-Werte nach Bestätigung.
     Der Hinweis umfasst 1 bis 1200 Zeichen.
-  result-service-accept <ID>
+  result-service-accept <ID> --service-id SERVICE-ID
     Nimmt das aktuelle Review-Ergebnis an. Erfordert read und accept. Die CLI
     zeigt Ergebnis-ID und SHA-256 und fragt vor dem Senden der exakten
     Task-/Ergebnis-/CAS-Werte nach Bestätigung.

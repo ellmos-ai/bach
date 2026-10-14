@@ -59,15 +59,17 @@ la muestra ni la guarda. No es un token general de dispositivo/API y estos
 comandos no emiten credenciales. Cada acción requiere su propio alcance explícito
 por ID de tarea o categoría; una acción no concede las demás.
 
-  result-service-history <ID> [--limit 1-50] [--before EVENT-ID]
+  Los tres comandos requieren --service-id. La credencial se solicita de
+  forma oculta; no se pasa como argumento del comando.
+  result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]
     Lee únicamente el historial autorizado; no cambia el estado de la tarea.
     Requiere el alcance history.
-  result-service-correct <ID> [--note TEXT]
+  result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]
     Solicita corregir el resultado actual en revisión. Requiere los alcances read
     y correction. La CLI muestra el ID del resultado y su SHA-256 y pide
     confirmación antes de enviar los valores exactos de tarea/resultado/CAS.
     La nota admite de 1 a 1200 caracteres.
-  result-service-accept <ID>
+  result-service-accept <ID> --service-id SERVICE-ID
     Acepta el resultado actual en revisión. Requiere los alcances read y accept.
     La CLI muestra el ID y el SHA-256 y pide confirmación antes de enviar los
     valores exactos de tarea/resultado/CAS.

@@ -202,6 +202,12 @@ def test_literal_sidecars_refused_no_recovery(env, suffix):
     assert _tree(env.root) == before
 
 
+def test_checked_in_schema_matches_declared_source_pin(env):
+    source = SYSTEM / "data/schema/schema.sql"
+    digest = hashlib.sha256(source.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    assert digest == env.r.SCHEMA_SHA256
+
+
 def test_hash_bound_source_refusal(env):
     db = _canonical(env)
     source = env.root / "schema.sql"

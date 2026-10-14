@@ -86,6 +86,21 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if staged is not None:
         raise RuntimeError("task_result_corrections_054 already exists")
+    existing_service = conn.execute(
+        "SELECT type FROM sqlite_master WHERE name='task_result_services'"
+    ).fetchone()
+    if existing_service is not None:
+        if existing_service[0] != "table":
+            raise RuntimeError("task_result_services has an unknown legacy layout")
+        service_info = list(conn.execute("PRAGMA table_info(task_result_services)"))
+        service_columns = {row[1] for row in service_info}
+        expected_service_columns = {
+            "service_id", "credential_scheme", "credential_salt", "credential_verifier",
+            "issuer_id", "principal_id", "generation", "revision", "status", "created_at", "revoked_at",
+        }
+        service_primary_key = [row[1] for row in service_info if row[5]]
+        if service_columns != expected_service_columns or service_primary_key != ["service_id"]:
+            raise RuntimeError("task_result_services has an incompatible credential layout")
     task_columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
     if not task_columns:
         raise RuntimeError("tasks table is unavailable")
@@ -95,7 +110,9 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
     _migrate_corrections(conn)
     conn.execute("""CREATE TABLE IF NOT EXISTS task_result_services (
         service_id TEXT PRIMARY KEY,
-        token_hash TEXT NOT NULL UNIQUE,
+        credential_scheme TEXT NOT NULL CHECK (credential_scheme = 'argon2id-v1'),
+        credential_salt BLOB NOT NULL CHECK (length(credential_salt) = 16),
+        credential_verifier BLOB NOT NULL CHECK (length(credential_verifier) = 32),
         issuer_id TEXT NOT NULL,
         principal_id TEXT NOT NULL,
         generation TEXT NOT NULL,

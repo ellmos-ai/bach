@@ -60,15 +60,17 @@ CLI コマンド (バッチ タスク)
 対する個別の明示的なスコープが必要です。一つのアクションが他を許可する
 ことはありません。
 
-  result-service-history <ID> [--limit 1-50] [--before EVENT-ID]
+  3つのコマンドには --service-id が必要です。資格情報は非表示の入力で
+  読み取り、コマンド引数として渡しません。
+  result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]
     許可された履歴を読み取ります。タスク状態は変更しません。
     history アクションのスコープが必要です。
-  result-service-correct <ID> [--note TEXT]
+  result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]
     現在のレビュー結果について修正を依頼します。read と correction の
     両方のスコープが必要です。CLI は結果 ID と SHA-256 を表示し、
     タスク/結果/CAS の値を送信する前に確認を求めます。注記は 1～1200
     文字です。
-  result-service-accept <ID>
+  result-service-accept <ID> --service-id SERVICE-ID
     現在のレビュー結果を受け入れます。read と accept の両方のスコープが
     必要です。CLI は結果 ID と SHA-256 を表示し、正確なタスク/結果/CAS
     値を送信する前に確認を求めます。

@@ -66,6 +66,16 @@ from .rheingold import (
 )
 
 
+def _valid_result_service_id(service_id):
+    return (
+        isinstance(service_id, str)
+        and bool(service_id.strip())
+        and service_id == service_id.strip()
+        and len(service_id) <= 128
+        and "\x00" not in service_id
+    )
+
+
 class TaskHandler(BaseHandler):
     """Handler fuer Task-Verwaltung"""
     
@@ -611,19 +621,38 @@ class TaskHandler(BaseHandler):
 
     def _result_service_history(self, args: list[str]) -> tuple[bool, str]:
         if not args:
-            return False, "Usage: bach task result-service-history <id> [--limit 1-50] [--before EVENT-ID]"
+            return False, "Usage: bach task result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]"
         try:
-            task_id = int(args[0]); limit = 20; before = None; i = 1
+            task_id = int(args[0])
+            limit = 20
+            before = None
+            service_id = None
+            i = 1
             while i < len(args):
-                if args[i] in ("--limit", "--before") and i + 1 < len(args):
-                    value = int(args[i + 1])
-                    if args[i] == "--limit": limit = value
-                    else: before = value
+                if args[i] in ("--limit", "--before", "--service-id") and i + 1 < len(args):
+                    option, value = args[i], args[i + 1]
+                    if option == "--limit":
+                        limit = int(value)
+                    elif option == "--before":
+                        before = int(value)
+                    else:
+                        if service_id is not None:
+                            return False, "Service-ID darf nur einmal angegeben werden"
+                        service_id = value
                     i += 2
+                elif args[i].startswith("--service-id="):
+                    if service_id is not None:
+                        return False, "Service-ID darf nur einmal angegeben werden"
+                    service_id = args[i].split("=", 1)[1]
+                    i += 1
                 else:
                     return False, f"Unbekannte Option: {args[i]}"
+            if not service_id:
+                return False, "Service-ID ist erforderlich"
+            if not _valid_result_service_id(service_id):
+                return False, "Service-ID ist ung\u00fcltig"
         except ValueError:
-            return False, "Task-ID und Historiencursor müssen Ganzzahlen sein"
+            return False, "Task-ID, Historiencursor und Limit müssen Ganzzahlen sein"
         try:
             from getpass import getpass
 
@@ -631,7 +660,8 @@ class TaskHandler(BaseHandler):
             token = getpass("Ergebnis-Service-Credential: ")
             if not token:
                 return False, "Service-Historie nicht autorisiert"
-            with TaskResultServiceClient.for_task_db(self._get_db, service_token=token) as client:
+            with TaskResultServiceClient.for_task_db(
+                    self._get_db, service_id=service_id, service_token=token) as client:
                 page = client.task_result_history(task_id, before_event_id=before, limit=limit)
             return True, json.dumps(page, ensure_ascii=False, indent=2)
         except Exception:  # noqa: BLE001 - hide service credentials and provider details at the CLI boundary
@@ -639,19 +669,37 @@ class TaskHandler(BaseHandler):
 
     def _result_service_correct(self, args: list[str]) -> tuple[bool, str]:
         if not args:
-            return False, "Usage: bach task result-service-correct <id> [--note TEXT]"
+            return False, "Usage: bach task result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]"
         try:
             task_id = int(args[0])
         except ValueError:
             return False, "Ungültige Task-ID"
-        note = None; i = 1
+        note = None
+        service_id = None
+        i = 1
         while i < len(args):
-            if args[i] == "--note" and i + 1 < len(args):
-                note = args[i + 1]; i += 2
+            if args[i] == "--service-id" and i + 1 < len(args):
+                if service_id is not None:
+                    return False, "Service-ID darf nur einmal angegeben werden"
+                service_id = args[i + 1]
+                i += 2
+            elif args[i].startswith("--service-id="):
+                if service_id is not None:
+                    return False, "Service-ID darf nur einmal angegeben werden"
+                service_id = args[i].split("=", 1)[1]
+                i += 1
+            elif args[i] == "--note" and i + 1 < len(args):
+                note = args[i + 1]
+                i += 2
             elif args[i].startswith("--note="):
-                note = args[i].split("=", 1)[1]; i += 1
+                note = args[i].split("=", 1)[1]
+                i += 1
             else:
                 return False, f"Unbekannte Option: {args[i]}"
+        if not service_id:
+            return False, "Service-ID ist erforderlich"
+        if not _valid_result_service_id(service_id):
+            return False, "Service-ID ist ung\u00fcltig"
         if note is None:
             note = input("Korrekturhinweis (1–1200 Zeichen): ")
         if not note.strip() or len(note) > 1200 or "\x00" in note:
@@ -663,7 +711,8 @@ class TaskHandler(BaseHandler):
             token = getpass("Ergebnis-Service-Credential: ")
             if not token:
                 return False, "Service-Korrektur nicht autorisiert"
-            with TaskResultServiceClient.for_task_db(self._get_db, service_token=token) as client:
+            with TaskResultServiceClient.for_task_db(
+                    self._get_db, service_id=service_id, service_token=token) as client:
                 snapshot = client.task_result_snapshot(task_id)
                 capabilities = snapshot["service_capabilities"]
                 if capabilities["actions"].get("correction") is not True:
@@ -689,12 +738,31 @@ class TaskHandler(BaseHandler):
             return False, "Service-Korrekturanfrage nicht bestätigt; Ergebnis unverändert neu laden"
 
     def _result_service_accept(self, args: list[str]) -> tuple[bool, str]:
-        if len(args) != 1:
-            return False, "Usage: bach task result-service-accept <id>"
+        if not args:
+            return False, "Usage: bach task result-service-accept <ID> --service-id SERVICE-ID"
         try:
             task_id = int(args[0])
         except ValueError:
             return False, "Ungültige Task-ID"
+        service_id = None
+        i = 1
+        while i < len(args):
+            if args[i] == "--service-id" and i + 1 < len(args):
+                if service_id is not None:
+                    return False, "Service-ID darf nur einmal angegeben werden"
+                service_id = args[i + 1]
+                i += 2
+            elif args[i].startswith("--service-id="):
+                if service_id is not None:
+                    return False, "Service-ID darf nur einmal angegeben werden"
+                service_id = args[i].split("=", 1)[1]
+                i += 1
+            else:
+                return False, f"Unbekannte Option: {args[i]}"
+        if not service_id:
+            return False, "Service-ID ist erforderlich"
+        if not _valid_result_service_id(service_id):
+            return False, "Service-ID ist ung\u00fcltig"
         try:
             from getpass import getpass
 
@@ -702,7 +770,8 @@ class TaskHandler(BaseHandler):
             token = getpass("Ergebnis-Service-Credential: ")
             if not token:
                 return False, "Service-Abnahme nicht autorisiert"
-            with TaskResultServiceClient.for_task_db(self._get_db, service_token=token) as client:
+            with TaskResultServiceClient.for_task_db(
+                    self._get_db, service_id=service_id, service_token=token) as client:
                 snapshot = client.task_result_snapshot(task_id)
                 capabilities = snapshot["service_capabilities"]
                 if capabilities["actions"].get("accept") is not True:

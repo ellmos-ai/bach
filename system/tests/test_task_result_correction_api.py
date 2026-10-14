@@ -98,13 +98,82 @@ def api_review(tmp_path, monkeypatch):
     keeper.close()
 
 
-def _request(token=None, lease_id=None):
+def _request(token=None, lease_id=None, *, service_id=None, service_token=None):
     headers = {}
     if token is not None:
         headers["X-BACH-Result-Operator"] = token
     if lease_id is not None:
         headers["X-Lease-Id"] = lease_id
+    if service_id is not None:
+        headers["X-BACH-Result-Service-ID"] = service_id
+    if service_token is not None:
+        headers["X-BACH-Result-Service"] = service_token
     return SimpleNamespace(headers=headers)
+
+
+def test_service_identity_headers_are_forwarded_and_required_by_middleware(api_review, monkeypatch):
+    server, _keeper, task_id, _client, _submitted, _read_token, _correction_token = api_review
+    service_id = "service-api-fixture"
+    service_token = "S" * 43
+    seen = []
+
+    def fake_read(conn, actual_task_id, **kwargs):
+        seen.append(("read", actual_task_id, kwargs))
+        return {"schema": "read-fixture"}
+
+    def fake_history(conn, actual_task_id, **kwargs):
+        seen.append(("history", actual_task_id, kwargs))
+        return {"schema": "history-fixture", "events": []}
+
+    from hub._services import task_result_service
+
+    monkeypatch.setattr(task_result_service, "read_result", fake_read)
+    monkeypatch.setattr(task_result_service, "read_result_history", fake_history)
+    request = _request(service_id=service_id, service_token=service_token)
+    assert asyncio.run(server.read_task_result(task_id, request)) == {"schema": "read-fixture"}
+    assert asyncio.run(server.read_task_result_history(task_id, request)) == {
+        "schema": "history-fixture", "events": []
+    }
+    assert seen[0][2]["service_id"] == service_id
+    assert seen[0][2]["service_token"] == service_token
+    assert seen[1][2]["service_id"] == service_id
+    assert seen[1][2]["service_token"] == service_token
+
+    middleware = server.DeviceAuthMiddleware(app=object())
+
+    def request_for(path, headers, method="GET"):
+        return SimpleNamespace(
+            url=SimpleNamespace(path=path, scheme="http", netloc="example.test"),
+            method=method,
+            headers=headers,
+            cookies={},
+            state=SimpleNamespace(),
+        )
+
+    async def call_next(_request):
+        return "passed"
+
+    incomplete = asyncio.run(middleware.dispatch(
+        request_for("/api/tasks/42/result", {"X-BACH-Result-Service": service_token}),
+        call_next,
+    ))
+    assert incomplete.status_code == 403
+    unrelated = asyncio.run(middleware.dispatch(
+        request_for("/api/tasks/42/lease", {
+            "X-BACH-Result-Service-ID": service_id,
+            "X-BACH-Result-Service": service_token,
+        }),
+        call_next,
+    ))
+    assert unrelated.status_code == 403
+    allowed = asyncio.run(middleware.dispatch(
+        request_for("/api/tasks/42/result", {
+            "X-BACH-Result-Service-ID": service_id,
+            "X-BACH-Result-Service": service_token,
+        }),
+        call_next,
+    ))
+    assert allowed == "passed"
 
 
 def test_api_capabilities_history_cas_correction_and_context(api_review):

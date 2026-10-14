@@ -59,15 +59,17 @@ BACH имеет ДВА параллельных пути доступа — об
 данные. Для каждого действия нужен отдельный явный scope по ID задачи или
 категории; одно действие не разрешает остальные.
 
-  result-service-history <ID> [--limit 1-50] [--before EVENT-ID]
+  Для всех трёх команд требуется --service-id. Секрет вводится скрытым
+  запросом и не передаётся как аргумент команды.
+  result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]
     Читает только разрешенную историю и не меняет состояние задачи.
     Требуется scope history.
-  result-service-correct <ID> [--note TEXT]
+  result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]
     Запрашивает исправление текущего результата на проверке. Нужны оба scope:
     read и correction. CLI показывает ID результата и SHA-256 и запрашивает
     подтверждение перед отправкой точных значений задачи/результата/CAS.
     Примечание: от 1 до 1200 символов.
-  result-service-accept <ID>
+  result-service-accept <ID> --service-id SERVICE-ID
     Принимает текущий результат на проверке. Нужны оба scope: read и accept.
     CLI показывает ID и SHA-256 и запрашивает подтверждение перед отправкой
     точных значений задачи/результата/CAS.

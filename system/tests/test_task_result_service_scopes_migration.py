@@ -102,6 +102,35 @@ def test_unknown_legacy_correction_layout_rolls_back_without_partial_tables():
         conn.close()
 
 
+def test_upgrade_refuses_legacy_service_credential_layout_without_mutation():
+    conn = _legacy_connection()
+    try:
+        conn.execute("CREATE TABLE task_result_services ("
+            "service_id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE,"
+            "issuer_id TEXT NOT NULL, principal_id TEXT NOT NULL, generation TEXT NOT NULL,"
+            "revision INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT)")
+        conn.execute("INSERT INTO task_result_services VALUES"
+            "('legacy-service','a','issuer','principal','generation',1,'active','created',NULL)")
+        conn.commit()
+        before_schema = tuple(conn.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+        ))
+        before_tasks = tuple(conn.execute("SELECT * FROM tasks ORDER BY id"))
+        before_corrections = tuple(conn.execute("SELECT * FROM task_result_corrections ORDER BY id"))
+        before_services = tuple(conn.execute("SELECT * FROM task_result_services ORDER BY service_id"))
+        with __import__("pytest").raises(RuntimeError, match="incompatible credential layout"):
+            MIGRATION.run_migration(conn)
+        assert conn.in_transaction is False
+        assert tuple(conn.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+        )) == before_schema
+        assert tuple(conn.execute("SELECT * FROM tasks ORDER BY id")) == before_tasks
+        assert tuple(conn.execute("SELECT * FROM task_result_corrections ORDER BY id")) == before_corrections
+        assert tuple(conn.execute("SELECT * FROM task_result_services ORDER BY service_id")) == before_services
+    finally:
+        conn.close()
+
+
 def test_upgrade_refuses_preexisting_correction_stage_table_without_mutation():
     conn = _legacy_connection()
     try:

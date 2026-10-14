@@ -222,6 +222,7 @@ def test_result_service_uses_real_http_error_parser_and_exact_503_allowlist(monk
     thread.start()
     try:
         client = TaskResultServiceClient(
+            service_id="service-fixture",
             service_token=service_token,
             lead_url=f"http://127.0.0.1:{server.server_port}",
         )
@@ -243,6 +244,7 @@ def test_result_service_uses_real_http_error_parser_and_exact_503_allowlist(monk
         assert len(server.seen) == 4
         for path, headers in server.seen:
             assert headers.get("x-bach-result-service") == service_token
+            assert headers.get("x-bach-result-service-id") == "service-fixture"
             assert "authorization" not in headers and "cookie" not in headers
         assert server.seen[1][1].get("x-bach-result-service-revision") == "4"
     finally:
@@ -251,11 +253,21 @@ def test_result_service_uses_real_http_error_parser_and_exact_503_allowlist(monk
         thread.join(timeout=2)
 
 
+@pytest.mark.parametrize(
+    "service_id",
+    [None, 7, "", " leading", "trailing ", "x" * 129, "bad\x00id"],
+)
+def test_result_service_client_rejects_invalid_service_ids(service_id):
+    with pytest.raises(LeaseProtocolError, match="Service-Anmeldung ist ungültig"):
+        TaskResultServiceClient(service_id=service_id, service_token="S" * 43)
+
+
 def test_service_client_blocks_inherited_general_task_api_and_device_identity(monkeypatch):
     from hub._services import task_lease_client as client_module
 
     monkeypatch.setenv("BACH_DEVICE_TOKEN", "ambient-device-fixture")
     client = TaskResultServiceClient(
+        service_id="service-fixture",
         service_token="S" * 43,
         lead_url="https://lead.example",
     )
@@ -293,7 +305,7 @@ def test_service_client_blocks_inherited_general_task_api_and_device_identity(mo
     # The private native creator path bypasses _call in TaskLeaseClient. A
     # service client must deny it before opening a local TaskDB connection.
     local_db_calls = []
-    local_client = TaskResultServiceClient(service_token="S" * 43, conn=object())
+    local_client = TaskResultServiceClient(service_id="service-fixture", service_token="S" * 43, conn=object())
     local_client._mode = "local"
     monkeypatch.setattr(
         local_client, "_get_local_connection",
@@ -312,6 +324,7 @@ def test_service_client_blocks_inherited_general_task_api_and_device_identity(mo
 
     with pytest.raises(LeaseProtocolError, match="keine Geräteanmeldung"):
         TaskResultServiceClient(
+            service_id="service-fixture",
             service_token="S" * 43,
             device_token="explicit-device-fixture",
             lead_url="https://lead.example",

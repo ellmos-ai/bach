@@ -262,7 +262,9 @@ def _table_exists(conn, name):
 
 
 _RESULT_SERVICE_REQUIRED_COLUMNS = {
-    "task_result_services": {"service_id", "token_hash", "issuer_id", "principal_id", "generation", "revision", "status"},
+    "task_result_services": {"service_id", "credential_scheme", "credential_salt",
+                             "credential_verifier", "issuer_id", "principal_id",
+                             "generation", "revision", "status", "created_at", "revoked_at"},
     "task_result_service_scopes": {"scope_id", "service_id", "revision", "action", "task_id", "category"},
     "task_result_service_producer_bindings": {"result_id", "task_id", "result_sha256", "generation", "fence", "task_version", "producer_principal", "issuer_id", "submission_event_id"},
     "task_result_service_audit": {"service_id", "service_revision", "action", "task_id", "result_id", "result_sha256", "task_version", "status_revision", "decision_schema", "decision_reason", "policy_distribution", "policy_version", "policy_sha256", "event_id", "occurred_at"},
@@ -274,17 +276,28 @@ _RESULT_SERVICE_PRODUCER_SCHEMA = "bach.task-result-producer-binding.v1"
 _RESULT_SERVICE_REVIEWER_SCHEMA = "bach.task-result-service-principal.v1"
 _RESULT_SERVICE_ISSUER = "bach.result-service.v1"
 _RESULT_PRODUCER_ISSUER = "bach.native-task-lease.v1"
+_RESULT_SERVICE_CREDENTIAL_SCHEME = "argon2id-v1"
+_RESULT_SERVICE_ARGON2_SALT_BYTES = 16
+_RESULT_SERVICE_ARGON2_VERIFIER_BYTES = 32
+_RESULT_SERVICE_ARGON2_MEMORY_COST_KIB = 19 * 1024
+_RESULT_SERVICE_ARGON2_ITERATIONS = 2
+_RESULT_SERVICE_ARGON2_LANES = 1
 
 
 def _result_service_schema_present(conn):
-    """Read-only schema gate. Request paths never create or migrate these tables."""
+    "Read-only schema gate. Request paths never create or migrate these tables."
     try:
         for table, expected in _RESULT_SERVICE_REQUIRED_COLUMNS.items():
             if not _table_exists(conn, table):
                 return False
-            columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            table_info = list(conn.execute(f"PRAGMA table_info({table})"))
+            columns = {row[1] for row in table_info}
             if not expected <= columns:
                 return False
+            if table == "task_result_services":
+                primary_key = [row[1] for row in table_info if row[5]]
+                if primary_key != ["service_id"]:
+                    return False
         task_columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
         result_columns = {row[1] for row in conn.execute("PRAGMA table_info(worker_task_results)")}
         return ({"id", "status", "category", "claim_id", "claim_fence", "claim_task_version",
@@ -295,21 +308,56 @@ def _result_service_schema_present(conn):
         return False
 
 
-def _result_service_token_hash(token):
-    if (not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43,256}", token) is None):
-        raise ResultServicePermissionDenied("Service-Credential fehlt oder ist ungültig", code="service_credential_invalid")
-    return hashlib.sha256(token.encode("ascii")).hexdigest()
+def _result_service_token_bytes(token):
+    if not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43,256}", token) is None:
+        raise ResultServicePermissionDenied("Service-Credential fehlt oder ist ungültig",
+                                            code="service_credential_invalid")
+    return token.encode("ascii")
 
 
-def _result_service_context(conn, token, *, expected_revision=None):
+def _verify_result_service_credential(token, scheme, salt, verifier):
+    if scheme != _RESULT_SERVICE_CREDENTIAL_SCHEME:
+        raise ResultServiceUnavailable("Service-Credentialformat ist nicht verfügbar")
+    if (not isinstance(salt, bytes) or len(salt) != _RESULT_SERVICE_ARGON2_SALT_BYTES
+            or not isinstance(verifier, bytes)
+            or len(verifier) != _RESULT_SERVICE_ARGON2_VERIFIER_BYTES):
+        raise ResultServiceUnavailable("Service-Credentialformat ist nicht verfügbar")
+    try:
+        from cryptography.exceptions import InvalidKey, UnsupportedAlgorithm
+        from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+    except ImportError:
+        raise ResultServiceUnavailable("Service-Credentialprüfung ist nicht verfügbar") from None
+    try:
+        Argon2id(salt=salt, length=_RESULT_SERVICE_ARGON2_VERIFIER_BYTES,
+                 iterations=_RESULT_SERVICE_ARGON2_ITERATIONS,
+                 lanes=_RESULT_SERVICE_ARGON2_LANES,
+                 memory_cost=_RESULT_SERVICE_ARGON2_MEMORY_COST_KIB).verify(
+                     _result_service_token_bytes(token), verifier)
+    except ResultServicePermissionDenied:
+        raise
+    except InvalidKey:
+        raise ResultServicePermissionDenied("Service-Credential fehlt oder ist ungültig",
+                                            code="service_credential_invalid") from None
+    except (UnsupportedAlgorithm, MemoryError, ValueError, TypeError):
+        raise ResultServiceUnavailable("Service-Credentialprüfung ist nicht verfügbar") from None
+
+
+def _result_service_context(conn, service_id, token, *, expected_revision=None):
     if not _result_service_schema_present(conn):
         raise ResultServiceUnavailable("Ergebnisreview-Schema ist nicht verfügbar")
-    token_hash = _result_service_token_hash(token)
+    if (not isinstance(service_id, str) or not service_id.strip()
+            or service_id != service_id.strip() or len(service_id) > 128 or "\x00" in service_id):
+        raise ResultServicePermissionDenied("Service-Identität fehlt oder ist ungültig",
+                                            code="service_credential_invalid")
     row = _dict_row(conn.execute(
-        "SELECT service_id,issuer_id,principal_id,generation,revision,status "
-        "FROM task_result_services WHERE token_hash=?", (token_hash,)))
+        "SELECT service_id,credential_scheme,credential_salt,credential_verifier,"
+        "issuer_id,principal_id,generation,revision,status "
+        "FROM task_result_services WHERE service_id=?", (service_id,)))
     if row is None:
-        raise ResultServicePermissionDenied("Service-Credential fehlt oder ist ungültig", code="service_credential_invalid")
+        raise ResultServicePermissionDenied("Service-Credential fehlt oder ist ungültig",
+                                            code="service_credential_invalid")
+    _verify_result_service_credential(token, row["credential_scheme"],
+                                      row["credential_salt"], row["credential_verifier"])
     if row.get("status") != "active":
         raise ResultServicePermissionDenied("Service wurde widerrufen", code="service_revoked")
     if (row.get("issuer_id") != _RESULT_SERVICE_ISSUER
@@ -591,9 +639,9 @@ def _result_service_capabilities(conn, context, task, record):
             "revision": context["revision"], "actions": actions, "reasons": reasons}
 
 
-def read_result(conn, task_id, *, operator_token=None, service_token=None):
+def read_result(conn, task_id, *, operator_token=None, service_id=None, service_token=None):
     """Read task and result from one snapshot; service access is separately scoped."""
-    if service_token is not None and operator_token is not None:
+    if (service_id is not None or service_token is not None) and operator_token is not None:
         raise ResultServicePermissionDenied("Mehrdeutige Ergebnisanmeldung", code="ambiguous_credentials")
     owns_transaction = not conn.in_transaction
     if owns_transaction:
@@ -604,7 +652,7 @@ def read_result(conn, task_id, *, operator_token=None, service_token=None):
         if task is None:
             raise ResultConflict("Task nicht vorhanden")
         revision = _status_revision(conn, task_id)
-        service_context = _result_service_context(conn, service_token) if service_token is not None else None
+        service_context = _result_service_context(conn, service_id, service_token) if service_id is not None or service_token is not None else None
         operator_capabilities = _operator_capabilities(conn, operator_token) if service_context is None else None
         record = (_dict_row(conn.execute("SELECT * FROM worker_task_results WHERE task_id=? "
                                         "ORDER BY id DESC LIMIT 1", (task_id,)))
@@ -708,12 +756,12 @@ def _correction_ack(row, *, replayed=False):
 
 
 def request_result_correction(conn, task_id, payload, *, operator_token=None,
-                              service_token=None, service_revision=None):
+                              service_id=None, service_token=None, service_revision=None):
     """Return the exact current review result under an operator or scoped-service CAS."""
     if type(task_id) is not int or task_id <= 0:
         raise ResultCorrectionValidation("correction_request_invalid", "task_id ist ungültig")
     request = _validate_correction_payload(payload)
-    service_mode = service_token is not None
+    service_mode = service_id is not None or service_token is not None
     if service_mode == (operator_token is not None):
         raise ResultServicePermissionDenied("Genau eine Ergebnisanmeldung erforderlich", code="ambiguous_credentials")
     if conn.in_transaction:
@@ -727,7 +775,7 @@ def request_result_correction(conn, task_id, payload, *, operator_token=None,
     if service_mode:
         if type(service_revision) is not int or service_revision <= 0:
             raise ResultServiceConflict("service_revision_required", "Service-Scope-Version muss bestätigt werden")
-        prechecked_service = _result_service_context(conn, service_token, expected_revision=service_revision)
+        prechecked_service = _result_service_context(conn, service_id, service_token, expected_revision=service_revision)
         if not _task_lease_context_schema_present(conn) or not _result_service_schema_present(conn):
             raise ResultServiceUnavailable("Korrektur-Schema ist nicht verfügbar")
         pre_observed = read_result(conn, task_id)
@@ -747,7 +795,7 @@ def request_result_correction(conn, task_id, payload, *, operator_token=None,
     conn.execute("BEGIN IMMEDIATE")
     try:
         if service_mode:
-            service_context = _result_service_context(conn, service_token, expected_revision=service_revision)
+            service_context = _result_service_context(conn, service_id, service_token, expected_revision=service_revision)
             if (service_context["service_id"] != prechecked_service["service_id"]
                     or service_context["revision"] != prechecked_service["revision"]):
                 raise ResultServiceConflict("service_revision_conflict", "Service-Scope hat sich geändert; bitte neu laden")
@@ -1053,7 +1101,7 @@ def _canonical_history_timestamp(value, fallback):
     return None
 
 
-def read_result_history(conn, task_id, *, before_event_id=None, limit=20, service_token=None):
+def read_result_history(conn, task_id, *, before_event_id=None, limit=20, service_id=None, service_token=None):
     if type(task_id) is not int or task_id <= 0:
         raise ResultCorrectionValidation("history_request_invalid", "task_id ist ungültig")
     if before_event_id is not None and (type(before_event_id) is not int or before_event_id <= 0):
@@ -1067,7 +1115,7 @@ def read_result_history(conn, task_id, *, before_event_id=None, limit=20, servic
         task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
         if task is None:
             raise ResultConflict("Task nicht vorhanden")
-        service_context = _result_service_context(conn, service_token) if service_token is not None else None
+        service_context = _result_service_context(conn, service_id, service_token) if service_id is not None or service_token is not None else None
         if service_context is not None:
             latest = _dict_row(conn.execute("SELECT * FROM worker_task_results WHERE task_id=? ORDER BY id DESC LIMIT 1",
                                             (task_id,))) if _has_results(conn) else None
@@ -1359,13 +1407,13 @@ def assert_completion_allowed(conn, task_id, acceptance=None, *, changes=None):
 
 
 def accept_result(conn, task_id, result_id, *, digest, task_version, status_revision,
-                  operator_token=None, service_token=None, service_revision=None):
+                  operator_token=None, service_id=None, service_token=None, service_revision=None):
     """Accept the exact current result as an operator or scoped service transaction."""
     if (type(result_id) is not int or result_id <= 0 or type(status_revision) is not int
             or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
             or not isinstance(task_version, str) or not re.fullmatch(r"[a-f0-9]{64}", task_version)):
         raise ResultConflict("Ungültige Ergebnisabnahme")
-    service_mode = service_token is not None
+    service_mode = service_id is not None or service_token is not None
     if service_mode == (operator_token is not None):
         raise ResultServicePermissionDenied("Genau eine Ergebnisanmeldung erforderlich", code="ambiguous_credentials")
     if conn.in_transaction:
@@ -1375,7 +1423,7 @@ def accept_result(conn, task_id, result_id, *, digest, task_version, status_revi
     if service_mode:
         if type(service_revision) is not int or service_revision <= 0:
             raise ResultServiceConflict("service_revision_required", "Service-Scope-Version muss bestätigt werden")
-        service_precheck = _result_service_context(conn, service_token, expected_revision=service_revision)
+        service_precheck = _result_service_context(conn, service_id, service_token, expected_revision=service_revision)
         if not _result_service_schema_present(conn):
             raise ResultServiceUnavailable("Ergebnisreview-Schema ist nicht verfügbar")
         pre_task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
@@ -1392,7 +1440,7 @@ def accept_result(conn, task_id, result_id, *, digest, task_version, status_revi
     try:
         service_context = None
         if service_mode:
-            service_context = _result_service_context(conn, service_token, expected_revision=service_revision)
+            service_context = _result_service_context(conn, service_id, service_token, expected_revision=service_revision)
             if (service_context["service_id"] != service_precheck["service_id"]
                     or service_context["revision"] != service_precheck["revision"]
                     or not _result_service_schema_present(conn)):
