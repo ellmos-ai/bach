@@ -17,7 +17,7 @@ resources / catalog / host / capacity / shadow
   Gemeinsame lesende Hybrid-C-Koordination aus dem optionalen Ocean-Modul.
   Katalog: Compute, Services, Medien und Softwarebuilds; Übersetzung ist ein Verbraucher.
   Installation der geprüften Version:
-    pip install "open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@aed43d76215e1b97affa52fe51c0474ad5549051"
+    pip install "open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@217f2ff48910202e88d869886771af136f24eef1"
   Danach in der Hostumgebung BACH_PIPELINE_COORDINATION_ENABLED=1 setzen.
   Ohne passenden Provider: HOLD, kein stiller Ersatz durch den alten Pipelinepfad.
   Verwendung:
@@ -32,7 +32,9 @@ resources / catalog / host / capacity / shadow
   capacity misst CPU-Zählerdifferenzen und prüft RAM-/CPU-/Diskreserven. OBSERVED
   bestätigt nur den Messaufruf; data.state kann HOLD sein. Ungeprüfte Windows-Job-
   oder Linux-cgroup-Grenzen geben keine Reserve frei. Startberechtigung bleibt false.
-  Der Pin liefert auch den HostController mit; dieser lesende Port aktiviert ihn nicht.
+  Der Pin enthält HostController, geprüfte CPU-Profile und HostService/HostClient.
+  Dieser lesende Port startet weder den Transport noch einen Auftrag.
+  Ein Profil- oder Transportimport ist keine produktive Ressourcenfreigabe.
   Diese Zugänge messen und planen lesend. Sie erzeugen keine Taskclaims, Starts,
   Modellaufrufe oder Zeitpläne und ersetzen keine produktive Ressourcenabnahme.
 
