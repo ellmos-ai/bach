@@ -84,6 +84,7 @@ jobs:
         run: |
           python -m venv --system-site-packages "$RUNNER_TEMP/worker-policy-tests"
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -m pip install pystray Pillow
+          python -c "import subprocess; p = subprocess.run(['git', 'config', '--get-regexp', r'^filter\..*\.(process|clean|smudge)$'], capture_output=True, text=True); print('Host Git filter definitions:', len(p.stdout.splitlines())); assert p.returncode in (0, 1)"
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py system/tests/test_worker_execution_evidence.py system/tests/test_worker_execution_runtime.py system/tests/test_worker_scope_snapshot.py system/tests/test_worker_scope_evidence.py system/tests/test_worker_scope_integration.py
 
       - name: Native MarbleRun and task result authority

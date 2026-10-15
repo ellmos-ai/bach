@@ -19,7 +19,7 @@ ORIGIN = "https://github.com/ellmos-ai/bach"
 def _git(args, cwd):
     return subprocess.run(
         ["git", *args], cwd=cwd, check=True, capture_output=True,
-        text=True, encoding="utf-8", timeout=10,
+        text=True, encoding="utf-8", timeout=10, env=guard._scope_git_env(),
     )
 
 
@@ -347,3 +347,75 @@ def test_gitlink_entry_is_rejected_before_any_status_read(scope_repo, monkeypatc
 
     _assert_unavailable(snapshot, "submodule_scope_unsupported")
     assert not any(args and args[0] == "status" for args in observed_calls)
+
+
+@pytest.fixture(autouse=True)
+def hermetic_snapshot_git_environment(monkeypatch):
+    """Keep unrelated host filters out while retaining local repo config checks."""
+    import os
+
+    original_sanitizer = guard._scope_git_env
+
+    def isolated_environment():
+        env = original_sanitizer()
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        return env
+
+    monkeypatch.setattr(guard, "_scope_git_env", isolated_environment)
+    # Tests can inspect the production sanitizer itself, before test-only isolation.
+    return original_sanitizer
+
+
+def test_repo_local_clean_filter_is_rejected_before_marker_command_runs(
+    scope_repo, tmp_path, monkeypatch
+):
+    import shlex
+
+    target = scope_repo["target"]
+    (target / ".gitattributes").write_text(
+        "README.md filter=bach-scope-local-probe\n", encoding="utf-8"
+    )
+    _git(["add", ".gitattributes"], target)
+    _git(["commit", "-m", "bind local filter probe"], target)
+    (target / "README.md").write_text("changed content for clean filter\n", encoding="utf-8")
+
+    marker = tmp_path / "local-filter-executed.txt"
+    monkeypatch.setenv("BACH_SCOPE_FILTER_MARKER", str(marker))
+    script = (
+        "import os,pathlib,sys; "
+        "pathlib.Path(os.environ['BACH_SCOPE_FILTER_MARKER']).write_text('ran'); "
+        "sys.stdout.write(sys.stdin.read())"
+    )
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
+    _git(["config", "--local", "filter.bach-scope-local-probe.clean", command], target)
+
+    snapshot = _snapshot(scope_repo)
+
+    _assert_unavailable(snapshot, "git_unavailable")
+    assert not marker.exists()
+
+
+def test_original_git_environment_sanitizer_strips_host_git_vars_and_keeps_bach(
+    monkeypatch, hermetic_snapshot_git_environment
+):
+    import os
+
+    inherited_git_names = {key for key in os.environ if key.startswith("GIT_")} | {
+        "GIT_CONFIG", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
+        "GIT_SHALLOW_FILE", "GIT_ATTR_SOURCE",
+    }
+    for key in inherited_git_names:
+        monkeypatch.setenv(key, "inherited-host-value")
+    monkeypatch.setenv("BACH_SCOPE_TEST_PRESERVED", "bach-value")
+
+    sanitized = hermetic_snapshot_git_environment()
+
+    safe_git = {
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+    }
+    assert {key: value for key, value in sanitized.items()
+            if key.startswith("GIT_")} == safe_git
+    assert sanitized["BACH_SCOPE_TEST_PRESERVED"] == "bach-value"
