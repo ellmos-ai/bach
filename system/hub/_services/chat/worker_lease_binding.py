@@ -46,6 +46,8 @@ class WorkerLeaseBinding:
         self._completion_result = None
         self._submission_expected = None
         self._review_ack = None
+        self._model_execution_pending = None
+        self._model_execution_candidate = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
         # Cumulative for this lease, not reset by model block boundaries.
@@ -301,6 +303,7 @@ class WorkerLeaseBinding:
         # No DB/HTTP work while holding controller or binding locks.
         observed = self._client.task_result_snapshot(self.task_id)
         current = observed.get("result")
+        reconstructed = False
         if record is None and expected is not None:
             if current is None:
                 raise LeaseProtocolError("Ergebnisabgabe nach fehlendem ACK noch nicht geklärt")
@@ -315,13 +318,18 @@ class WorkerLeaseBinding:
                     self._completion_result = copy.deepcopy(current)
                     self._closed = True
                     self._active = False
+                    reconstructed = True
         if record is not None:
             if (not isinstance(current, dict) or any(current.get(key) != record.get(key)
                     for key in ("result_id", "task_id", "fence", "generation", "task_version", "result_sha256"))):
                 raise LeaseProtocolError("Kanonische Ergebnisbindung nicht mehr bestätigt")
             if current.get("accepted") is True:
+                if reconstructed:
+                    self._link_confirmed_model_execution()
                 return {**empty, "completed_task_ids": (self.task_id,), "result": current}
             if current.get("reason") == "awaiting_review":
+                if reconstructed:
+                    self._link_confirmed_model_execution()
                 return {**empty, "reviewed_task_ids": (self.task_id,), "result": current}
             raise LeaseProtocolError("Aktuelle Ergebnisabnahme nicht bestätigt")
         elif (isinstance(review, LeaseReleaseAck) and review.released is True
@@ -425,6 +433,77 @@ class WorkerLeaseBinding:
     def invalidate(self):
         with self._lock:
             self._active = False
+            self._model_execution_pending = None
+            self._model_execution_candidate = None
+
+    def begin_model_execution(self, *, backend_id, requested_model, slot_id, request_sha256):
+        """Start optional private evidence for this exact live binding and call."""
+        with self._lock:
+            # A new attempt, including a fallback, supersedes the prior answer.
+            self._model_execution_pending = None
+            self._model_execution_candidate = None
+            if (not self._active or self._closed or not self._is_current()
+                    or self._stop_event.is_set() or self._ack.result_generation != self._generation):
+                return None
+            start = getattr(self._client, "_start_model_execution", None)
+            if not callable(start):
+                return None
+            try:
+                handle = start(self, backend_id=backend_id, requested_model=requested_model,
+                               slot_id=slot_id, request_sha256=request_sha256)
+            except Exception:
+                # Evidence is optional for the existing personal review path.
+                return None
+            if handle is not None:
+                self._model_execution_pending = handle
+            return handle
+
+    def _discard_model_execution_candidate(self):
+        """A real new dispatch invalidates an older answer even without evidence."""
+        with self._lock:
+            self._model_execution_pending = None
+            self._model_execution_candidate = None
+
+    def finish_model_execution(self, handle, *, result=None, failed=False):
+        """Confirm a returned backend answer; a CLI may already have submitted."""
+        with self._lock:
+            if handle is None or self._model_execution_pending is not handle:
+                return False
+            self._model_execution_pending = None
+            finish = getattr(self._client, "_finish_model_execution", None)
+            if not callable(finish):
+                return False
+            if (failed or not self._is_current() or self._stop_event.is_set()
+                    or self._ack.result_generation != self._generation):
+                try:
+                    finish(self, handle, failed=True)
+                except Exception:
+                    pass
+                return False
+            try:
+                confirmed = finish(self, handle, result=result, failed=False) is True
+            except Exception:
+                return False
+            if not confirmed:
+                return False
+            self._model_execution_candidate = handle
+            if self._completion_result is not None:
+                self._link_confirmed_model_execution()
+            return True
+
+    def _link_confirmed_model_execution(self):
+        """Attach a confirmed answer to the canonical submitted result, if any."""
+        try:
+            handle = self._model_execution_candidate
+            if (handle is None or self._completion_result is None or not self._is_current()
+                    or self._stop_event.is_set() or self._ack.result_generation != self._generation):
+                return False
+            link = getattr(self._client, "_link_model_execution", None)
+            if not callable(link):
+                return False
+            return link(self, handle) is True
+        except Exception:
+            return False
 
     def heartbeat(self, *, renew_due=False):
         with self._lock:
@@ -607,6 +686,7 @@ class WorkerLeaseBinding:
                 self._review_ack = release.release
                 self._closed = True
                 self._active = False
+                self._link_confirmed_model_execution()
                 return f"Task #{self.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
             if action == "update":
                 allowed = {"title", "description", "category", "priority", "depends_on",

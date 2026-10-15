@@ -483,6 +483,8 @@ def read_result(conn, task_id, *, operator_token=None):
                               else "fence_changed" if not same_fence else "result_content_changed" if not same_digest
                                else "submission_receipt_invalid" if not release_valid
                               else "awaiting_review" if task["status"] == "review" else "acceptance_not_current"))
+        from .worker_execution_evidence import read_execution_evidence
+        record["execution"] = read_execution_evidence(conn, record)
         return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
                 "task_version": task_content_version(task), "status": task["status"],
                 "status_revision": revision, "result": record, "verified": True,
