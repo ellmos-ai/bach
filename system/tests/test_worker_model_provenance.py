@@ -166,6 +166,7 @@ def test_missing_or_invalid_provider_model_keeps_execution_available_but_unknown
 def test_openai_backend_reported_model_flows_through_binding_and_ledger(
     worker_context, monkeypatch, provider_model, expected_observed, expected_provenance,
 ):
+    context = worker_context
     import httpx
     from hub._services.llm.model_backend import OpenAIBackend
 
