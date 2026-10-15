@@ -19,6 +19,7 @@ from gui.api.agent_history import router as agent_history_router  # noqa: E402
 from gui.api.task_assignment import router as task_assignment_router
 from gui.api.unified_api import router as unified_router
 from gui.api.user_inbox import build_router as build_user_inbox_router  # noqa: E402
+from gui.api.worker_policy import router as worker_policy_router  # noqa: E402
 
 # Frozen excerpt of ellmos-system-gui public/page-reads.v1.json at GUI51 commit 77d42f93c85eb66d1e74361535c13f6e18e4e288:
 # (method, path, required).
@@ -80,9 +81,10 @@ PINNED_OPTIONAL = {page: caps.PAGE_OPTIONAL_READS[page] for page in MANIFEST_PAG
 def _get_routes():
     # The unified router is not mounted under `from gui import server` (circular import in the test process), so the route
     # sources (the user-inbox router is built without a store) are read directly.
+    # Worker-policy endpoints are also read from their owning router: broad-suite app setup can vary mount state/order.
     found = set()
     for source in (server.app.routes, unified_router.routes, agent_history_router.routes,
-                   task_assignment_router.routes,
+                   task_assignment_router.routes, worker_policy_router.routes,
                    build_user_inbox_router(lambda: None).routes):
         for route in source:
             if "GET" in (getattr(route, "methods", None) or ()):
@@ -92,7 +94,8 @@ def _get_routes():
 
 def _get_route_methods():
     sources = (server.app.routes, unified_router.routes, agent_history_router.routes,
-               task_assignment_router.routes, build_user_inbox_router(lambda: None).routes)
+               task_assignment_router.routes, worker_policy_router.routes,
+               build_user_inbox_router(lambda: None).routes)
     return {(method, route.path) for source in sources for route in source
             for method in (getattr(route, "methods", None) or ())}
 
