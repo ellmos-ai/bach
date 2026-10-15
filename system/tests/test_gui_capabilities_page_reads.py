@@ -20,9 +20,9 @@ from gui.api.task_assignment import router as task_assignment_router
 from gui.api.unified_api import router as unified_router
 from gui.api.user_inbox import build_router as build_user_inbox_router  # noqa: E402
 
-# Frozen excerpt of ellmos-system-gui public/page-reads.v1.json at GUI51 commit 2cffaef6d339f11175f9c2ad030c02729c151d8b:
+# Frozen excerpt of ellmos-system-gui public/page-reads.v1.json at GUI51 commit 77d42f93c85eb66d1e74361535c13f6e18e4e288:
 # (method, path, required).
-MANIFEST_SOURCE = "ellmos-system-gui 2cffaef6d339f11175f9c2ad030c02729c151d8b public/page-reads.v1.json"
+MANIFEST_SOURCE = "ellmos-system-gui 77d42f93c85eb66d1e74361535c13f6e18e4e288 public/page-reads.v1.json"
 MANIFEST_LAYOUT = [
     ("GET", "/api/gui/brand", False), ("GET", "/api/gui/backend-origin", False), ("GET", "/api/domains/pins", False),
     ("POST", "/api/domains/{id}/pin", False),
