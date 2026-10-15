@@ -20,15 +20,23 @@ from gui.api.task_assignment import router as task_assignment_router
 from gui.api.unified_api import router as unified_router
 from gui.api.user_inbox import build_router as build_user_inbox_router  # noqa: E402
 
-# Frozen excerpt of ellmos-system-gui public/page-reads.v1.json at commit cf42ef02 (PR ellmos-system-gui#35): (method, path, required).
-# Only these four pages are derived from the manifest; every other page of PAGE_READS stays hand-written (#2087 G2).
-MANIFEST_SOURCE = "ellmos-system-gui cf42ef02 public/page-reads.v1.json"
+# Frozen excerpt of ellmos-system-gui public/page-reads.v1.json at GUI51 commit 2cffaef6d339f11175f9c2ad030c02729c151d8b:
+# (method, path, required).
+MANIFEST_SOURCE = "ellmos-system-gui 2cffaef6d339f11175f9c2ad030c02729c151d8b public/page-reads.v1.json"
 MANIFEST_LAYOUT = [
     ("GET", "/api/gui/brand", False), ("GET", "/api/gui/backend-origin", False), ("GET", "/api/domains/pins", False),
     ("POST", "/api/domains/{id}/pin", False),
 ]
 MANIFEST_PAGES = {
     "/": [("GET", "/api/agent-studio/blueprints", True), ("GET", "/api/tasks", True)],
+    "/tasks": [
+        ("GET", "/api/tasks", True), ("GET", "/api/task-assignees", True),
+        ("GET", "/api/assignees", False), ("GET", "/api/tasks/{id}/result", False),
+        ("GET", "/api/tasks/{id}/result/history", False), ("GET", "/api/task-capabilities", False),
+        ("GET", "/api/tasks/{id}", False), ("GET", "/api/tasks/{id}/worker-policy", False),
+        # GUI51 reads the same task detail from both the detail panel and task-creation form.
+        ("GET", "/api/tasks/{id}", False),
+    ],
     "/agenten/sessions": [
         ("GET", "/api/agent-history/sessions", True), ("GET", "/api/agent-history/sessions/{snapshot_id}", True),
         ("GET", "/api/agent-history/tasks", True), ("GET", "/api/memory/sessions", True), ("GET", "/api/agents", True),
@@ -38,7 +46,8 @@ MANIFEST_PAGES = {
     "/artefakte": [("GET", "/api/artefakte", True), ("GET", "/api/artifacts/content", False),
                    ("GET", "/api/artifacts/download", False)],
     "/settings": [
-        ("GET", "/api/gui/backend-origin", True), ("GET", "/api/system/cluster-cockpit", True),
+        ("GET", "/api/gui/backend-origin", True), ("GET", "/api/system/worker-policy", False),
+        ("PUT", "/api/system/worker-policy", False), ("GET", "/api/system/cluster-cockpit", False),
         ("GET", "/api/setup/ocean-map", True), ("GET", "/api/settings/theme", True),
         ("GET", "/api/learning/nemofold/stats", True), ("GET", "/api/learning/nemofold/candidates", True),
         ("GET", "/api/system/external-artifacts", True), ("PUT", "/api/settings/theme", False),
@@ -57,8 +66,8 @@ def _derived(page):
     """(required GET paths, optional GET paths) of a page: its own entries plus the layout ones; a read that is required on the
     page is not repeated as optional."""
     own = MANIFEST_PAGES[page]
-    required = [p for m, p, r in own if m == "GET" and r]
-    optional = [p for m, p, r in own if m == "GET" and not r]
+    required = list(dict.fromkeys(p for m, p, r in own if m == "GET" and r))
+    optional = list(dict.fromkeys(p for m, p, r in own if m == "GET" and not r))
     optional += [p for m, p, r in MANIFEST_LAYOUT if m == "GET" and p not in required and p not in optional]
     return required, optional
 
@@ -80,7 +89,14 @@ def _get_routes():
     return found
 
 
-def test_four_pages_equal_the_gui_manifest_required_and_optional():
+def _get_route_methods():
+    sources = (server.app.routes, unified_router.routes, agent_history_router.routes,
+               task_assignment_router.routes, build_user_inbox_router(lambda: None).routes)
+    return {(method, route.path) for source in sources for route in source
+            for method in (getattr(route, "methods", None) or ())}
+
+
+def test_pinned_pages_equal_the_gui_manifest_required_and_optional_reads():
     for page in MANIFEST_PAGES:
         required, optional = _derived(page)
         assert sorted(map(_n, caps.PAGE_READS[page])) == sorted(map(_n, required)), (page, "required", MANIFEST_SOURCE)
@@ -103,6 +119,22 @@ def test_every_pinned_read_has_a_bach_route_and_a_declared_prefix():
         for read in reads:
             assert read in routes, f"{page}: no GET route {read}"
             assert read.startswith(caps.PREFIXES) or f"GET {read}" in caps.EXACT_READS, f"{page}: {read} is not declared"
+
+
+def test_worker_policy_reads_and_writes_are_optional_but_cataloged():
+    settings = {"GET /api/system/worker-policy", "PUT /api/system/worker-policy"}
+    task = {"GET /api/tasks/{task_id}/worker-policy", "PUT /api/tasks/{task_id}/worker-policy"}
+    actual = _get_route_methods()
+    assert {tuple(item.split(" ", 1)) for item in settings | task} <= actual
+    routes = [_Route("/api/system/worker-policy", {"GET", "PUT"}),
+              _Route("/api/tasks/{task_id}/worker-policy", {"GET", "PUT"})]
+    cataloged, out = _cataloged(routes)
+    assert settings | task <= cataloged
+    pages = {p["path"]: p for p in out["pages"]}
+    assert "GET /api/system/worker-policy" not in pages["/settings"]["requires"]
+    assert "GET /api/tasks/{task_id}/worker-policy" not in pages["/tasks"]["requires"]
+    assert "/api/system/worker-policy" in caps.PAGE_OPTIONAL_READS["/settings"]
+    assert "/api/tasks/{task_id}/worker-policy" in caps.PAGE_OPTIONAL_READS["/tasks"]
 
 
 class _Route:
