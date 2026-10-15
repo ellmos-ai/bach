@@ -6,7 +6,6 @@ exercise the real private bridge over loopback and a real temporary lease.
 """
 import asyncio
 import json
-import sqlite3
 import threading
 import urllib.request
 import uuid
@@ -60,20 +59,27 @@ def _submit_response(binding, result="Isoliertes Ergebnis für Review"):
 
 
 @pytest.fixture
-def task_state(monkeypatch):
-    from system.tests.test_task_lease_client import _init_db, _insert_task
+def task_state(tmp_path, monkeypatch):
+    from system.tests.test_task_lease_service import _create_db, _connect, _insert
+    from hub._services import task_lease_client
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    _init_db(conn)
-    conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
-    conn.commit()
-    client = TaskLeaseClient(conn=conn)
-    state = {"conn": conn, "client": client, "bindings": [], "current": {"value": True}}
+    database = tmp_path / "canonical.db"
+    _create_db(database)
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
+    client = TaskLeaseClient(db_path=database)
+    state = {"database": database, "client": client, "bindings": [], "current": {"value": True}}
+
+    def add_task(title):
+        conn = _connect(database)
+        try:
+            return _insert(conn, title=title, status="pending", assigned_to="BACH")
+        finally:
+            conn.close()
 
     def make_binding(*, generation=None, current=None, title="Execution evidence task"):
-        task_id = _insert_task(conn, title=title)
+        task_id = add_task(title)
         current = current if current is not None else {"value": True}
         binding = WorkerLeaseBinding.acquire(
             client, task_id, worker_id="isolated-runtime-worker@HOST", host="HOST",
@@ -94,7 +100,6 @@ def task_state(monkeypatch):
     for binding in reversed(state["bindings"]):
         if binding._active:
             binding.return_lease()
-    conn.close()
 
 
 def _runtime(backend, monkeypatch, *, chat_id=CHAT_ID):
@@ -218,6 +223,21 @@ def _cli_submit(environment, binding):
     assert ack["acknowledged"] is True
 
 
+async def _wait_for_cli_entry(call, entered):
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+    except asyncio.TimeoutError:
+        if call.done():
+            try:
+                early_answer = call.result()
+            except BaseException as exc:
+                pytest.fail(f"CLI runtime ended before bridge submit: {type(exc).__name__}: {exc}")
+            pytest.fail(f"CLI runtime ended before bridge submit: {early_answer!r}")
+        call.cancel()
+        await asyncio.gather(call, return_exceptions=True)
+        pytest.fail("CLI runtime stayed pending without reaching the bridge submit")
+
+
 def _cli_runtime(task_state, monkeypatch, *, chat_id=CHAT_ID):
     binding = task_state["binding"]
     backend = CLIBackend(cli_name="claude", cli_path="isolated-fake-cli", default_model="sonnet")
@@ -256,7 +276,7 @@ def test_cli_execution_is_linked_only_after_physical_return_and_not_after_failur
 
     async def run_case():
         call = asyncio.create_task(runtime.process("CLI executes a bound task", CHAT_ID))
-        await asyncio.wait_for(entered.wait(), timeout=5)
+        await _wait_for_cli_entry(call, entered)
         assert during["result"]["execution"]["availability"] == "unavailable"
         if outcome == "success":
             release.set()
@@ -300,7 +320,7 @@ def test_cli_return_cannot_link_after_binding_generation_or_stop_changes(
 
     async def run_case():
         call = asyncio.create_task(runtime.process("Wait for the CLI return", CHAT_ID))
-        await asyncio.wait_for(entered.wait(), timeout=5)
+        await _wait_for_cli_entry(call, entered)
         if change == "binding_swap":
             replacement, _ = task_state["make_binding"](title="Replacement task")
             session.worker_task_binding = replacement
