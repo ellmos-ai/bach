@@ -1528,9 +1528,14 @@ class ChatRuntime(_ModuleChatRuntime):
                 # Keep the exact binding object alive; token/id surrogates can be reused.
                 session._worker_model_dispatch_binding = current_binding
 
+        def model_request_digest():
+            canonical = json.dumps({"args": args, "kwargs": kwargs},
+                                   sort_keys=True, separators=(",", ":"),
+                                   ensure_ascii=False, allow_nan=False)
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
         async def dispatch_model_call(*, bound=False, agent_kwargs=None):
             """Record only an actual backend attempt, including fallback calls."""
-            mark_model_dispatch()
             call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             handle = None
             if call_binding is not None and call_binding is dispatch_binding:
@@ -1539,10 +1544,7 @@ class ChatRuntime(_ModuleChatRuntime):
                     from hub._services.llm.model_backend import backend_identifier
 
                     # Hash the exact provider-facing request; never persist its contents.
-                    canonical = json.dumps({"args": args, "kwargs": kwargs},
-                                           sort_keys=True, separators=(",", ":"),
-                                           ensure_ascii=False, allow_nan=False)
-                    request_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+                    request_sha256 = model_request_digest()
                     handle = call_binding.begin_model_execution(
                         backend_id=backend_identifier(backend),
                         requested_model=kwargs.get("model") or backend.get_default_model(),
@@ -1552,6 +1554,28 @@ class ChatRuntime(_ModuleChatRuntime):
                     # The optional evidence path must not turn a model call into an error.
                     handle = None
             try:
+                # Optional persistence can wait for a writer. Recheck the
+                # task/policy/stop/deadline boundary after that wait, before
+                # starting the actual model operation.
+                check_binding()
+                if ((turn_context and self.get_session(turn_context[0]) is not session)
+                        or getattr(session, "worker_task_binding", None) is not dispatch_binding
+                        or call_binding is not dispatch_binding):
+                    raise RuntimeError("worker_model_binding_changed")
+                if handle is not None:
+                    try:
+                        same_request = model_request_digest() == request_sha256
+                    except Exception:
+                        same_request = False
+                    if not same_request:
+                        # A refreshed profile can legitimately narrow tools.
+                        # Keep the call usable, but never attest the older hash.
+                        try:
+                            call_binding.finish_model_execution(handle, failed=True)
+                        except Exception:
+                            pass
+                        handle = None
+                mark_model_dispatch()
                 if bound:
                     result = await backend.chat_bound(
                         *args, **kwargs, binding=call_binding, mode=session.mode,

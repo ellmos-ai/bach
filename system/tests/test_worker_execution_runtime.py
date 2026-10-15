@@ -116,6 +116,20 @@ def _result_snapshot(binding):
     return binding._client.task_result_snapshot(binding.task_id)["result"]
 
 
+def _execution_rows(task_state, task_id):
+    from system.tests.test_task_lease_service import _connect
+
+    conn = _connect(task_state["database"])
+    try:
+        return conn.execute(
+            "SELECT phase, result_id FROM worker_model_executions "
+            "WHERE task_id=? ORDER BY started_event_id",
+            (task_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
 def _assert_available_execution(binding, *, backend_id, model):
     result = _result_snapshot(binding)
     assert result is not None and result["accepted"] is False
@@ -150,6 +164,82 @@ def test_cloud_response_links_actual_call_to_submitted_result(task_state, monkey
     result = _result_snapshot(binding)
     assert result["execution"]["execution_id"] == evidence["execution_id"]
     assert result["accepted"] is False and result["submission"]["availability"] == "available"
+
+
+@pytest.mark.parametrize("change", ["stop", "generation", "deadline", "binding_swap"])
+def test_dispatch_rechecks_authority_after_real_execution_ledger_start(
+    task_state, monkeypatch, change,
+):
+    binding = task_state["binding"]
+    backend = FakeOpenAIBackend(response={"content": "must not dispatch after authority changed"})
+    runtime = _runtime(backend, monkeypatch)
+    session = runtime.get_session(CHAT_ID)
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    assert session._worker_model_dispatch_binding is None
+
+    real_begin = binding.begin_model_execution
+    replacement = {}
+
+    def begin_then_change_authority(**kwargs):
+        handle = real_begin(**kwargs)
+        assert handle is not None  # The real isolated ledger start committed.
+        if change == "stop":
+            binding._stop_event.set()
+        elif change == "generation":
+            task_state["current"]["value"] = False
+        elif change == "deadline":
+            binding._clock = lambda: binding._ack.local_deadline
+        else:
+            other_binding, _ = task_state["make_binding"](title="Replacement binding")
+            replacement["binding"] = other_binding
+            session.worker_task_binding = other_binding
+        return handle
+
+    monkeypatch.setattr(binding, "begin_model_execution", begin_then_change_authority)
+    answer = asyncio.run(runtime.process("Dispatch must recheck its authority", CHAT_ID))
+
+    assert isinstance(answer, FailedAnswer)
+    assert backend.calls == []
+    assert _result_snapshot(binding) is None
+    assert session._worker_model_dispatch_binding is None
+    rows = _execution_rows(task_state, binding.task_id)
+    assert len(rows) == 1
+    assert rows[0]["phase"] == "failed"
+    assert rows[0]["result_id"] is None
+
+
+def test_tool_grant_narrowing_after_real_ledger_start_dispatches_without_execution_evidence(
+    task_state, monkeypatch,
+):
+    binding = task_state["binding"]
+    backend = FakeOpenAIBackend(response={"content": "ordinary response after tool grant narrowed"})
+    runtime = _runtime(backend, monkeypatch)
+    session = runtime.get_session(CHAT_ID)
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    session.allowed_tools = None
+
+    real_begin = binding.begin_model_execution
+
+    def begin_then_narrow_grants(**kwargs):
+        handle = real_begin(**kwargs)
+        assert handle is not None  # Use the real ledger start, not a synthetic handle.
+        session.allowed_tools = []
+        return handle
+
+    monkeypatch.setattr(binding, "begin_model_execution", begin_then_narrow_grants)
+    answer = asyncio.run(runtime.process("Continue with a narrower tool grant", CHAT_ID))
+
+    assert answer == "ordinary response after tool grant narrowed"
+    assert len(backend.calls) == 1
+    assert backend.calls[0][1] == []
+    assert session._worker_model_dispatch_binding is binding
+    assert _result_snapshot(binding) is None
+    rows = _execution_rows(task_state, binding.task_id)
+    assert len(rows) == 1
+    assert rows[0]["phase"] == "failed"
+    assert rows[0]["result_id"] is None
 
 
 def test_permitted_fallback_links_only_fallback_after_primary_preanswer_failure(
