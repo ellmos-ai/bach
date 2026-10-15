@@ -242,6 +242,50 @@ def test_tool_grant_narrowing_after_real_ledger_start_dispatches_without_executi
     assert rows[0]["result_id"] is None
 
 
+def test_stop_after_real_failed_ledger_finish_blocks_dispatch_after_tool_hash_drift(
+    task_state, monkeypatch,
+):
+    binding = task_state["binding"]
+    backend = FakeOpenAIBackend(response={"content": "must not dispatch after stop"})
+    runtime = _runtime(backend, monkeypatch)
+    session = runtime.get_session(CHAT_ID)
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    session.allowed_tools = None
+    assert session._worker_model_dispatch_binding is None
+
+    real_begin = binding.begin_model_execution
+    real_finish = binding.finish_model_execution
+    finish_calls = []
+
+    def begin_then_narrow_grants(**kwargs):
+        handle = real_begin(**kwargs)
+        assert handle is not None  # The real isolated ledger start committed.
+        session.allowed_tools = []
+        return handle
+
+    def finish_then_request_stop(handle, *, result=None, failed=False):
+        outcome = real_finish(handle, result=result, failed=failed)
+        finish_calls.append((failed, outcome))
+        if failed:
+            binding._stop_event.set()
+        return outcome
+
+    monkeypatch.setattr(binding, "begin_model_execution", begin_then_narrow_grants)
+    monkeypatch.setattr(binding, "finish_model_execution", finish_then_request_stop)
+    answer = asyncio.run(runtime.process("Stop after failed ledger finish", CHAT_ID))
+
+    assert isinstance(answer, FailedAnswer)
+    assert finish_calls == [(True, False)]
+    assert backend.calls == []
+    assert session._worker_model_dispatch_binding is None
+    assert _result_snapshot(binding) is None
+    rows = _execution_rows(task_state, binding.task_id)
+    assert len(rows) == 1
+    assert rows[0]["phase"] == "failed"
+    assert rows[0]["result_id"] is None
+
+
 def test_permitted_fallback_links_only_fallback_after_primary_preanswer_failure(
     task_state, monkeypatch,
 ):

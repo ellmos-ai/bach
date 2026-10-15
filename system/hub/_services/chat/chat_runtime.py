@@ -1534,6 +1534,13 @@ class ChatRuntime(_ModuleChatRuntime):
                                    ensure_ascii=False, allow_nan=False)
             return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+        def check_dispatch_binding(call_binding):
+            check_binding()
+            if ((turn_context and self.get_session(turn_context[0]) is not session)
+                    or getattr(session, "worker_task_binding", None) is not dispatch_binding
+                    or call_binding is not dispatch_binding):
+                raise RuntimeError("worker_model_binding_changed")
+
         async def dispatch_model_call(*, bound=False, agent_kwargs=None):
             """Record only an actual backend attempt, including fallback calls."""
             call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
@@ -1557,11 +1564,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 # Optional persistence can wait for a writer. Recheck the
                 # task/policy/stop/deadline boundary after that wait, before
                 # starting the actual model operation.
-                check_binding()
-                if ((turn_context and self.get_session(turn_context[0]) is not session)
-                        or getattr(session, "worker_task_binding", None) is not dispatch_binding
-                        or call_binding is not dispatch_binding):
-                    raise RuntimeError("worker_model_binding_changed")
+                check_dispatch_binding(call_binding)
                 if handle is not None:
                     try:
                         same_request = model_request_digest() == request_sha256
@@ -1575,6 +1578,8 @@ class ChatRuntime(_ModuleChatRuntime):
                         except Exception:
                             pass
                         handle = None
+                        # Even retiring an obsolete receipt can wait on SQLite.
+                        check_dispatch_binding(call_binding)
                 mark_model_dispatch()
                 if bound:
                     result = await backend.chat_bound(
