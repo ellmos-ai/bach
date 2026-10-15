@@ -80,7 +80,11 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py
+          PYSTRAY_BACKEND: dummy
+        run: |
+          python -m venv --system-site-packages "$RUNNER_TEMP/worker-policy-tests"
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -m pip install pystray Pillow
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py
 
       - name: Native MarbleRun and task result authority
         env:
