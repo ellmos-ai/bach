@@ -29,7 +29,8 @@ class WorkerResultLimitLockedError(LeaseProtocolError):
 
 
 class WorkerLeaseBinding:
-    def __init__(self, client, snapshot, ack, *, generation, is_current, stop_event, clock=None, policy_guard=None):
+    def __init__(self, client, snapshot, ack, *, generation, is_current, stop_event,
+                 clock=None, policy_guard=None, _review_grant=None):
         self._client = client
         self._snapshot = copy.deepcopy(snapshot)
         self._ack = ack
@@ -37,6 +38,7 @@ class WorkerLeaseBinding:
         self._is_current = is_current
         self._stop_event = stop_event
         self._policy_guard = policy_guard
+        self._review_grant = _review_grant
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._injected_clock = clock is not None
         self._lock = threading.RLock()
@@ -58,7 +60,7 @@ class WorkerLeaseBinding:
     @classmethod
     def acquire(cls, client, task_id, *, worker_id, host, generation, is_current,
                 stop_event, clock=None, slot=None, automatic=False, policy_guard=None, _creator_delegation=None,
-                deferred_versions=None):
+                deferred_versions=None, _review_grant=None):
         if not generation or not is_current() or stop_event.is_set():
             raise LeaseProtocolError("Workerlauf ist nicht mehr aktiv")
         if policy_guard is not None:
@@ -66,13 +68,26 @@ class WorkerLeaseBinding:
         snapshot = client.task_snapshot(task_id)
         if automatic and (deferred_versions or {}).get(task_id) == snapshot["task_version"]:
             raise _TaskDoesNotMatch("Zurückgegebene Task-Version wartet auf eine Inhaltsänderung")
-        matches = cls._automatic_matches_slot if automatic else cls._matches_slot
-        if slot is not None and not matches(snapshot, slot):
-            raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
+        if _review_grant is not None:
+            if (getattr(_review_grant, "task_id", None) != task_id
+                    or getattr(_review_grant, "generation", None) != generation
+                    or getattr(_review_grant, "worker_id", None) != worker_id
+                    or getattr(_review_grant, "host", None) != host
+                    or slot is None
+                    or getattr(_review_grant, "slot_id", None) != slot.get("id")
+                    or not cls._matches_review_slot(snapshot, slot)):
+                raise _TaskDoesNotMatch("Reviewtask passt nicht zur gebundenen Reviewerroute")
+        else:
+            matches = cls._automatic_matches_slot if automatic else cls._matches_slot
+            if slot is not None and not matches(snapshot, slot):
+                raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
         kwargs = {"now": clock()} if clock is not None else {}
         if _creator_delegation is None:
-            ack = client.acquire(task_id, worker_id=worker_id, host=host,
-                                 task_version=snapshot["task_version"], result_generation=generation, **kwargs)
+            acquire_kwargs = dict(worker_id=worker_id, host=host,
+                task_version=snapshot["task_version"], result_generation=generation, **kwargs)
+            if _review_grant is not None:
+                acquire_kwargs["_review_grant"] = _review_grant
+            ack = client.acquire(task_id, **acquire_kwargs)
         else:
             if (_creator_delegation.task_id != task_id or _creator_delegation.generation != generation
                     or _creator_delegation.worker_id != worker_id or _creator_delegation.host != host):
@@ -80,7 +95,17 @@ class WorkerLeaseBinding:
             ack = client._acquire_native_creator(task_id, delegation=_creator_delegation,
                 worker_id=worker_id, host=host, task_version=snapshot["task_version"], **kwargs)
         return cls(client, snapshot, ack, generation=generation, is_current=is_current,
-                   stop_event=stop_event, clock=clock, policy_guard=policy_guard)
+                   stop_event=stop_event, clock=clock, policy_guard=policy_guard,
+                   _review_grant=_review_grant)
+
+    @classmethod
+    def _matches_review_slot(cls, snapshot, slot):
+        """Keep physical slot/model constraints while review policy owns category routing."""
+        if not isinstance(slot, dict):
+            return False
+        review_slot = dict(slot)
+        review_slot["pickup_filter"] = {"enabled": False}
+        return cls._selection_rejection_reason(snapshot, review_slot) is None
 
     @staticmethod
     def _matches_slot(snapshot, slot):
@@ -170,17 +195,20 @@ class WorkerLeaseBinding:
         return None
 
     @classmethod
-    def acquire_next(cls, client, slot, *, observe_queue=None, **kwargs):
+    def acquire_next(cls, client, slot, *, observe_queue=None, review_route=None,
+                     review_requested_model=None, **kwargs):
         """Acquire the actual configured/next canonical task before any inference."""
         from .worker_queue_status import QueueObservation
         observation = QueueObservation(client, observe_queue, kwargs.get("clock"))
         try:
-            return cls._acquire_next_observed(client, slot, observation, **kwargs)
+            return cls._acquire_next_observed(client, slot, observation,
+                review_route=review_route, review_requested_model=review_requested_model, **kwargs)
         finally:
             observation.publish()
 
     @classmethod
-    def _acquire_next_observed(cls, client, slot, observation, **kwargs):
+    def _acquire_next_observed(cls, client, slot, observation, *, review_route=None,
+                               review_requested_model=None, **kwargs):
         from .worker_queue_status import ACQUIRE_DENIALS
         explicit = slot.get("task_id")
         if explicit not in (None, "", 0, "0"):
@@ -189,8 +217,33 @@ class WorkerLeaseBinding:
             observation.candidate(explicit)
             observation.record["matched_count"] += 1
             observation.record["attempted_count"] += 1
+            review_grant = None
+            if getattr(client, "mode", None) == "local":
+                metadata_reader = getattr(client, "_review_task_metadata", None)
+                grant_issuer = getattr(client, "_issue_review_grant", None)
+                try:
+                    metadata = metadata_reader(explicit) if callable(metadata_reader) else None
+                except Exception:
+                    metadata = None
+                if (isinstance(metadata, dict) and metadata.get("review_task_id") == explicit
+                        and callable(grant_issuer) and isinstance(review_route, dict)
+                        and isinstance(review_requested_model, str)
+                        and isinstance(slot, dict) and isinstance(slot.get("id"), str)):
+                    clock = kwargs.get("clock") or (lambda: datetime.now(timezone.utc))
+                    try:
+                        review_grant = grant_issuer(explicit,
+                            worker_id=kwargs.get("worker_id"), host=kwargs.get("host"),
+                            generation=kwargs.get("generation"), slot_id=slot["id"],
+                            route=review_route, requested_model=review_requested_model,
+                            is_current=kwargs.get("is_current"),
+                            stop_event=kwargs.get("stop_event"), clock=clock)
+                    except Exception:
+                        review_grant = None
             try:
-                binding = cls.acquire(client, explicit, slot=slot, **kwargs)
+                acquire_kwargs = dict(kwargs)
+                if review_grant is not None:
+                    acquire_kwargs["_review_grant"] = review_grant
+                binding = cls.acquire(client, explicit, slot=slot, **acquire_kwargs)
             except LeaseDeniedError as exc:
                 if exc.reason in ACQUIRE_DENIALS:
                     observation.denied(exc.reason)
@@ -232,10 +285,95 @@ class WorkerLeaseBinding:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:
+                reviewed = cls._acquire_review_next(client, slot, observation,
+                    review_route=review_route, review_requested_model=review_requested_model,
+                    **kwargs)
+                if reviewed is not None:
+                    return reviewed
                 observation.waiting()
                 return None
             if not page["tasks"]:
-                raise LeaseProtocolError("Kanonische Task-Seite hat keinen Fortschritt")
+                # A remote canonical page may contain only excluded reserved
+                # review markers. Advancing preserves normal pagination; the
+                # local queue filters them in SQL before this point.
+                if offset >= 100_000:
+                    raise LeaseProtocolError("Kanonische Task-Seite hat keinen Fortschritt")
+            offset += 100
+
+    @classmethod
+    def _acquire_review_next(cls, client, slot, observation, *, review_route=None,
+                             review_requested_model=None, **kwargs):
+        """Review pickup runs only after every eligible ordinary task was tried."""
+        if (getattr(client, "mode", None) != "local" or not isinstance(review_route, dict)
+                or not isinstance(review_requested_model, str) or not review_requested_model.strip()
+                or not callable(getattr(client, "_review_candidates", None))
+                or not callable(getattr(client, "_issue_review_grant", None))):
+            return None
+        worker_id, host = kwargs.get("worker_id"), kwargs.get("host")
+        generation, is_current = kwargs.get("generation"), kwargs.get("is_current")
+        stop_event = kwargs.get("stop_event")
+        if (not isinstance(slot, dict) or not isinstance(slot.get("id"), str)
+                or not slot["id"] or not callable(is_current)
+                or stop_event is None or not callable(getattr(stop_event, "is_set", None))):
+            return None
+        clock = kwargs.get("clock") or (lambda: datetime.now(timezone.utc))
+        deferred_versions = kwargs.get("deferred_versions") or {}
+        offset = 0
+        while True:
+            if not is_current() or stop_event.is_set():
+                raise LeaseProtocolError("Workerlauf ist nicht mehr aktiv")
+            try:
+                page = client._review_candidates(limit=100, offset=offset)
+            except Exception:
+                return None
+            if (not isinstance(page, dict) or not isinstance(page.get("tasks"), list)
+                    or type(page.get("has_more")) is not bool or page.get("offset") != offset):
+                return None
+            observation.record["scanned_pages"] += 1
+            for task in page["tasks"]:
+                if not isinstance(task, dict) or type(task.get("id")) is not int:
+                    continue
+                observation.candidate(task["id"])
+                reason = cls._selection_rejection_reason(
+                    task, {**slot, "pickup_filter": {"enabled": False}})
+                if reason:
+                    observation.reject(reason if reason in {"slot_binding", "model_binding",
+                        "explicit_slot_required", "ownership"} else "ownership")
+                    continue
+                if deferred_versions.get(task["id"]) == task.get("task_version"):
+                    observation.reject("deferred_version")
+                    continue
+                try:
+                    grant = client._issue_review_grant(task["id"], worker_id=worker_id,
+                        host=host, generation=generation, slot_id=slot["id"],
+                        route=review_route, requested_model=review_requested_model,
+                        is_current=is_current, stop_event=stop_event, clock=clock)
+                except Exception:
+                    grant = None
+                if grant is None:
+                    observation.reject("ownership")
+                    continue
+                observation.record["matched_count"] += 1
+                observation.record["attempted_count"] += 1
+                try:
+                    binding = cls.acquire(client, task["id"], slot=slot, automatic=True,
+                        _review_grant=grant, **kwargs)
+                    observation.acquired(binding)
+                    return binding
+                except _TaskDoesNotMatch:
+                    observation.reject("changed_selection")
+                except LeaseDeniedError as exc:
+                    if exc.reason == "conflict":
+                        observation.denied(exc.reason)
+                        raise
+                    if exc.reason not in {"held", "not_claimable", "creator_priority",
+                                           "stale_task_version", "already_held_by_caller"}:
+                        raise
+                    observation.reject(exc.reason)
+            if not page["has_more"]:
+                return None
+            if offset >= 100_000:
+                raise LeaseProtocolError("Review-Taskseite hat keinen Fortschritt")
             offset += 100
 
     @property
@@ -438,22 +576,36 @@ class WorkerLeaseBinding:
             self._active = False
             self._model_execution_pending = None
             self._model_execution_candidate = None
+            if self._review_grant is not None:
+                self._review_grant._last_answer = None
 
-    def begin_model_execution(self, *, backend_id, requested_model, slot_id, request_sha256):
+    def begin_model_execution(self, *, backend_id, requested_model, slot_id, request_sha256,
+                              route_sha256=None):
         """Start optional private evidence for this exact live binding and call."""
         with self._lock:
             # A new attempt, including a fallback, supersedes the prior answer.
             self._model_execution_pending = None
             self._model_execution_candidate = None
+            if self._review_grant is not None:
+                self._review_grant._last_answer = None
             if (not self._active or self._closed or not self._is_current()
                     or self._stop_event.is_set() or self._ack.result_generation != self._generation):
+                return None
+            if self._review_grant is not None and (
+                    backend_id != self._review_grant.route.get("backend_id")
+                    or requested_model != self._review_grant.requested_model
+                    or slot_id != self._review_grant.slot_id
+                    or route_sha256 != self._review_grant.route.get("route_sha256")):
                 return None
             start = getattr(self._client, "_start_model_execution", None)
             if not callable(start):
                 return None
             try:
-                handle = start(self, backend_id=backend_id, requested_model=requested_model,
-                               slot_id=slot_id, request_sha256=request_sha256)
+                start_kwargs = {"backend_id": backend_id, "requested_model": requested_model,
+                                "slot_id": slot_id, "request_sha256": request_sha256}
+                if route_sha256 is not None:
+                    start_kwargs["route_sha256"] = route_sha256
+                handle = start(self, **start_kwargs)
             except Exception:
                 # Evidence is optional for the existing personal review path.
                 return None
@@ -466,9 +618,12 @@ class WorkerLeaseBinding:
         with self._lock:
             self._model_execution_pending = None
             self._model_execution_candidate = None
+            if self._review_grant is not None:
+                self._review_grant._last_answer = None
 
-    def finish_model_execution(self, handle, *, result=None, failed=False):
+    def finish_model_execution(self, handle, *, result=None, failed=False, route_sha256=None):
         """Confirm a returned backend answer; a CLI may already have submitted."""
+        should_record_review = False
         with self._lock:
             if handle is None or self._model_execution_pending is not handle:
                 return False
@@ -478,21 +633,46 @@ class WorkerLeaseBinding:
                 return False
             if (failed or not self._is_current() or self._stop_event.is_set()
                     or self._ack.result_generation != self._generation):
+                if self._review_grant is not None:
+                    self._review_grant._last_answer = None
                 try:
-                    finish(self, handle, failed=True)
+                    finish_kwargs = {"failed": True}
+                    if route_sha256 is not None:
+                        finish_kwargs["route_sha256"] = route_sha256
+                    finish(self, handle, **finish_kwargs)
                 except Exception:
                     pass
                 return False
             try:
-                confirmed = finish(self, handle, result=result, failed=False) is True
+                finish_kwargs = {"result": result, "failed": False}
+                if route_sha256 is not None:
+                    finish_kwargs["route_sha256"] = route_sha256
+                confirmed = finish(self, handle, **finish_kwargs) is True
             except Exception:
+                if self._review_grant is not None:
+                    self._review_grant._last_answer = None
                 return False
             if not confirmed:
+                if self._review_grant is not None:
+                    self._review_grant._last_answer = None
                 return False
             self._model_execution_candidate = handle
+            if self._review_grant is not None:
+                try:
+                    self._review_grant._last_answer = copy.deepcopy(result)
+                except Exception:
+                    self._review_grant._last_answer = None
             if self._completion_result is not None:
                 self._link_confirmed_model_execution()
-            return True
+                should_record_review = self._review_grant is not None
+        if should_record_review:
+            record = getattr(self._client, "_record_result_review", None)
+            if callable(record):
+                try:
+                    record(self)
+                except Exception:
+                    pass
+        return True
 
     def _link_confirmed_model_execution(self):
         """Attach a confirmed answer to the canonical submitted result, if any."""
@@ -516,10 +696,12 @@ class WorkerLeaseBinding:
                     or self._ack.result_generation != self._generation):
                 return False
             result_id = self._completion_result.get("result_id")
-            if self._scope_captured_result_id == result_id:
-                # Only capture is cached. Every public result read still
-                # revalidates the current Git/lock state independently.
-                return True
+            already_captured = self._scope_captured_result_id == result_id
+        if already_captured:
+            # Only capture is cached. Every public result read still
+            # revalidates the current Git/lock state independently.
+            self._prepare_eligible_review_task()
+            return True
         capture = getattr(self._client, "_capture_task_scope", None)
         if not callable(capture):
             return False
@@ -530,11 +712,24 @@ class WorkerLeaseBinding:
                     if (self._completion_result is not None
                             and self._completion_result.get("result_id") == result_id):
                         self._scope_captured_result_id = result_id
+                self._prepare_eligible_review_task()
             return confirmed
         except Exception:
             # Missing/dirty worktrees cannot undo the committed submission or
             # prevent the existing personal acceptance/correction workflow.
             return False
+
+    def _prepare_eligible_review_task(self):
+        """Optional idempotent preparation; never nests Git/DB work under the binding lock."""
+        if self._review_grant is not None:
+            return None
+        prepare = getattr(self._client, "_prepare_review_task", None)
+        if not callable(prepare):
+            return None
+        try:
+            return prepare(self)
+        except Exception:
+            return None
 
     def heartbeat(self, *, renew_due=False):
         with self._lock:
@@ -661,6 +856,22 @@ class WorkerLeaseBinding:
             return True
 
     def execute_task_manage(self, args, *, _dispatch_marked=False):
+        """Dispatch a bound task operation, recording review only after releasing the binding lock."""
+        result = self._execute_task_manage_locked(args, _dispatch_marked=_dispatch_marked)
+        with self._lock:
+            submitted_review = (self._review_grant is not None
+                and self._completion_result is not None and self._review_ack is not None)
+        if submitted_review:
+            record = getattr(self._client, "_record_result_review", None)
+            if callable(record):
+                try:
+                    record(self)
+                except Exception:
+                    # A failed optional review receipt cannot undo the child submission.
+                    pass
+        return result
+
+    def _execute_task_manage_locked(self, args, *, _dispatch_marked=False):
         with self._lock:
             self.assert_active()
             # Native controller actions also need proof without a dispatcher.
@@ -670,6 +881,21 @@ class WorkerLeaseBinding:
             if not isinstance(args, dict):
                 raise LeaseProtocolError("Ungültige Task-Werkzeugargumente")
             action = args.get("action", "list")
+            if self._review_grant is not None:
+                if action == "detail":
+                    if (set(args) != {"action", "task_id"}
+                            or type(args.get("task_id")) is not int
+                            or args["task_id"] not in {self.task_id, self._review_grant.target_task_id}):
+                        raise LeaseProtocolError("Reviewdetail ist auf die eigene und Zieltask begrenzt")
+                    snapshot = (self.task_snapshot() if args["task_id"] == self.task_id
+                                else self._client.task_snapshot(args["task_id"]))
+                    allowed = ("id", "title", "description", "category", "priority", "project", "status")
+                    return "\n".join(f"{key}: {snapshot[key]}" for key in allowed if key in snapshot)
+                if (action != "submit_result"
+                        or set(args) != {"action", "task_id", "result"}
+                        or type(args.get("task_id")) is not int
+                        or args["task_id"] != self.task_id):
+                    raise LeaseProtocolError("Reviewtask erlaubt nur eigenes Detail oder eigenes submit_result")
             if action == "list":
                 if set(args) - {"action"}:
                     raise LeaseProtocolError("Taskliste ist auf die gebundene Task begrenzt")

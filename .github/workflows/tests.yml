@@ -76,7 +76,7 @@ jobs:
       - name: Install pinned shared worker-policy contract
         run: python -m pip install --no-deps ./.ci-sources/worker-policy
 
-      - name: Worker settings, provider provenance, result execution, project scope and lease observations
+      - name: Worker settings, independent result reviews, provider provenance and project scope
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
@@ -85,7 +85,7 @@ jobs:
           python -m venv --system-site-packages "$RUNNER_TEMP/worker-policy-tests"
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -m pip install pystray Pillow
           python -c "import subprocess; p = subprocess.run(['git', 'config', '--get-regexp', r'^filter\..*\.(process|clean|smudge)$'], capture_output=True, text=True); print('Host Git filter definitions:', len(p.stdout.splitlines())); assert p.returncode in (0, 1)"
-          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py system/tests/test_worker_execution_evidence.py system/tests/test_worker_execution_runtime.py system/tests/test_worker_scope_snapshot.py system/tests/test_worker_scope_evidence.py system/tests/test_worker_scope_integration.py system/tests/test_provider_model_provenance.py system/tests/test_worker_model_provenance.py system/tests/test_model_backend.py system/tests/test_ollama_stream.py
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py system/tests/test_worker_execution_evidence.py system/tests/test_worker_execution_runtime.py system/tests/test_worker_scope_snapshot.py system/tests/test_worker_scope_evidence.py system/tests/test_worker_scope_integration.py system/tests/test_provider_model_provenance.py system/tests/test_worker_model_provenance.py system/tests/test_model_backend.py system/tests/test_ollama_stream.py system/tests/test_worker_review_identity.py system/tests/test_worker_result_review.py system/tests/test_worker_review_runtime.py
 
       - name: Native MarbleRun and task result authority
         env:

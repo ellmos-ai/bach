@@ -217,7 +217,7 @@ def _persist(conn, key, values, *, actor):
                  ("worker_review_audit.v1:" + uuid.uuid4().hex, _canonical(event)))
 
 
-def write_global_policy(payload, *, actor, db_path=None):
+def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
     if not isinstance(payload, dict):
         raise ValueError("Policyobjekt erforderlich")
     reset = payload.get("reset_to_default") is True
@@ -232,6 +232,12 @@ def write_global_policy(payload, *, actor, db_path=None):
         before = _global(conn)
         if payload["configuration_version"] != before["configuration_version"]:
             raise PolicyConflict("Konfiguration wurde parallel geändert")
+        reviewers = _defaults()["policy"]["reviewers"] if reset else payload["policy"]["reviewers"]
+        if reviewers != before["policy"]["reviewers"]:
+            # Device enrollment permits ordinary settings, not granting model
+            # principals or Top-review rights. Reuse the explicit operator.
+            from .worker_review_identity import require_operator
+            actor = require_operator(conn, operator_token)
         values = None if reset else {key: payload[key] for key in ("policy", "selection")}
         _persist(conn, GLOBAL_KEY, values, actor=actor)
         return {"schema": GLOBAL_SCHEMA, "updated": True, "worker_started": False,

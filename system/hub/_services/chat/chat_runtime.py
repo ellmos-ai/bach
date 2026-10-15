@@ -209,11 +209,19 @@ from hub._services.chat.bach_tools import (
 log = logging.getLogger("bach.chat")
 
 
+def _effective_tool_grants(session):
+    """Narrow review runs independently of their configurable slot grants."""
+    grants = getattr(session, "allowed_tools", None)
+    binding = getattr(session, "worker_task_binding", None)
+    from .bach_tools import _review_tool_grants
+    return _review_tool_grants(binding, grants)
+
+
 def _tool_dispatch_kwargs(session, agent_operations):
     """Build dispatcher context only from trusted runtime session state."""
     binding = getattr(session, "worker_task_binding", None)
     require_binding = getattr(session, "require_task_binding", False)
-    grants = getattr(session, "allowed_tools", None)
+    grants = _effective_tool_grants(session)
     kwargs = {}
     if agent_operations is not None:
         # Preserve the existing managed-agent contract.
@@ -1488,7 +1496,7 @@ class ChatRuntime(_ModuleChatRuntime):
             default_model,
             worker_task_binding=getattr(session, "worker_task_binding", None),
             require_task_binding=getattr(session, "require_task_binding", False),
-            allowed_tools=getattr(session, "allowed_tools", None),
+            allowed_tools=_effective_tool_grants(session),
             agent_operations=self.agent_operations,
         )
         return provider.get_tools(session.mode)
@@ -1507,6 +1515,14 @@ class ChatRuntime(_ModuleChatRuntime):
                     problem = self._worker_backend_gate(session, backend, kwargs.get("model"))
                     if problem is not None:
                         raise RuntimeError(str(problem))
+                    review_binding = getattr(session, "worker_task_binding", None)
+                    if getattr(review_binding, "_review_grant", None) is not None:
+                        from hub._services.llm.controller_route import route_snapshot
+                        guard = getattr(review_binding._client, "_guard_review_dispatch", None)
+                        if not callable(guard) or not guard(
+                                review_binding, route=route_snapshot(backend),
+                                requested_model=kwargs.get("model") or backend.get_default_model()):
+                            raise RuntimeError("worker_review_authority_changed")
                     if (
                         tool_rounds_enabled is not None
                         and "tools" in kwargs
@@ -1545,6 +1561,9 @@ class ChatRuntime(_ModuleChatRuntime):
             """Record only an actual backend attempt, including fallback calls."""
             call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             handle = None
+            from hub._services.llm.controller_route import route_snapshot
+            dispatch_route = route_snapshot(backend)
+            dispatch_route_stamp = getattr(backend, "_controller_route", None)
             if call_binding is not None and call_binding is dispatch_binding:
                 try:
                     call_binding._discard_model_execution_candidate()
@@ -1556,6 +1575,7 @@ class ChatRuntime(_ModuleChatRuntime):
                         backend_id=backend_identifier(backend),
                         requested_model=kwargs.get("model") or backend.get_default_model(),
                         slot_id=session.chat_id, request_sha256=request_sha256,
+                        route_sha256=dispatch_route["route_sha256"] if dispatch_route else None,
                     )
                 except Exception:
                     # The optional evidence path must not turn a model call into an error.
@@ -1585,7 +1605,7 @@ class ChatRuntime(_ModuleChatRuntime):
                     result = await backend.chat_bound(
                         *args, **kwargs, binding=call_binding, mode=session.mode,
                         guard=check_binding, bach_app=self.bach_app,
-                        allowed_tools=getattr(session, "allowed_tools", None),
+                        allowed_tools=_effective_tool_grants(session),
                         **(agent_kwargs or {}),
                     )
                 else:
@@ -1603,6 +1623,9 @@ class ChatRuntime(_ModuleChatRuntime):
                     try:
                         call_binding.finish_model_execution(
                             handle, result=None if failed else result, failed=failed,
+                            route_sha256=(dispatch_route["route_sha256"]
+                                if dispatch_route and getattr(backend, "_controller_route", None) is dispatch_route_stamp
+                                and route_snapshot(backend) == dispatch_route else None),
                         )
                     except Exception:
                         pass
@@ -2268,7 +2291,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 answer = FailedAnswer.from_exception(e)
         else:
             tools = tools_for_mode(session.mode, bound_worker=session.worker_task_binding is not None) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
-            grants = getattr(session, "allowed_tools", None)
+            grants = _effective_tool_grants(session)
             if grants is not None:
                 tools = [tool for tool in tools if tool["function"]["name"] in grants]
             answer = await self._tool_loop(
@@ -2547,7 +2570,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
                     )
                 binding = getattr(session, "worker_task_binding", None)
-                grants = getattr(session, "allowed_tools", None)
+                grants = _effective_tool_grants(session)
                 if grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)

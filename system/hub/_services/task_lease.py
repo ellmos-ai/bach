@@ -422,11 +422,12 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
                   request_id: str, ttl_profile: str | None = None, intent: str = "",
                   task_version: str | None = None, result_generation: str | None = None,
                   device: str | None = None, config: LeaseConfig | None = None,
-                  now: datetime | None = None) -> LeaseResult:
+                  now: datetime | None = None, _review_grant: object | None = None) -> LeaseResult:
     """Vertrag §5.1. Gewährt höchstens einen lebenden Lease pro Task."""
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=request_id, ttl_profile=ttl_profile, intent=intent,
-        task_version=task_version, result_generation=result_generation, device=device, config=config, now=now)
+        task_version=task_version, result_generation=result_generation, device=device, config=config, now=now,
+        _review_grant=_review_grant)
 
 
 def _native_creator_grant(conn, binding, row, version):
@@ -486,7 +487,8 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
                    task_version: str | None = None, device: str | None = None,
                    config: LeaseConfig | None = None, now: datetime | None = None,
                    creator_delegation: _NativeCreatorBinding | None = None,
-                   result_generation: str | None = None) -> LeaseResult:
+                   result_generation: str | None = None,
+                   _review_grant: object | None = None) -> LeaseResult:
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     worker_id, host = _validate_worker(worker_id, host)
@@ -510,6 +512,32 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
         if task_version is not None and task_version != version:
             conn.rollback()
             return _deny(task_id, "stale_task_version", now)
+        # Review jobs share this tasks table, but a task marker alone never
+        # grants authority. Only the private local grant can pass the review
+        # validator; an ordinary task can never consume a review grant.
+        try:
+            from hub._services import worker_result_review
+        except ImportError:  # pragma: no cover - Paketimport aus system/hub
+            try:
+                from . import worker_result_review
+            except ImportError:
+                conn.rollback()
+                return _deny(task_id, "not_claimable", now)
+        try:
+            review_marker = worker_result_review.review_task_marker(conn, task_id)
+            if review_marker:
+                if (_review_grant is None or result_generation != getattr(_review_grant, "generation", None)
+                        or not worker_result_review.validate_review_acquire(
+                        conn, row, worker_id=worker_id, host=host, grant=_review_grant, now=now)):
+                    conn.rollback()
+                    return _deny(task_id, "not_claimable", now)
+            elif _review_grant is not None:
+                conn.rollback()
+                return _deny(task_id, "not_claimable", now)
+        except Exception:  # noqa: BLE001 -- Review authority fails closed.
+            conn.rollback()
+            return _deny(task_id, "not_claimable", now)
+        review_authorized = bool(review_marker)
         state = _lease_state(row, now, cfg)
         grant = None
         if creator_delegation is not None:
@@ -567,7 +595,8 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
         created = parse_ts(row.get("created_at"))
         if created is not None and cfg.creator_window_seconds > 0 and created <= now + timedelta(seconds=60):
             until = created + timedelta(seconds=cfg.creator_window_seconds)
-            if now < until and not _is_creator(worker_id, row.get("created_by")) and grant is None:
+            if (now < until and not _is_creator(worker_id, row.get("created_by"))
+                    and grant is None and not review_authorized):
                 conn.rollback()
                 return _deny(task_id, "creator_priority", now, until=_fmt(until))
 
