@@ -1681,6 +1681,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
+                or path == "/api/system/worker-policy"
+                or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")
                 or (path == "/api/settings/theme" and request.method == "PUT")):
@@ -1811,6 +1813,8 @@ else:
 try:
     from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
     app.include_router(core_system_agents_router)
+    from gui.api.worker_policy import router as worker_policy_router
+    app.include_router(worker_policy_router)
     from gui.api.model_sockets import router as model_sockets_router
     app.include_router(model_sockets_router)
     from gui.api.agent_history import router as agent_history_router

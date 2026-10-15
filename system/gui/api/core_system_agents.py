@@ -34,13 +34,15 @@ def _snapshot() -> dict[str, Any]:
                 and isinstance(live.get("agents"), list)):
             by_id = {item["id"]: item for item in live["agents"] if isinstance(item, dict) and "id" in item}
             fields = ("living", "running", "worker_active", "runtime_verified", "runtime_reason_code", "status",
-                      "current_tool", "tool_round", "execution", "task_id", "pause_info")
+                      "current_tool", "tool_round", "execution", "task_id", "active_task_id", "generation", "pause_info")
             for agent in result["agents"]:
                 current = by_id.get(agent["id"], {})
                 agent.update({key: current[key] for key in fields if key in current})
     except Exception:
         # Missing runtime evidence must remain unknown, never a Ready badge.
         pass
+    from hub._services.worker_policy_settings import attach_active_task_leases
+    result["agents"] = attach_active_task_leases(result["agents"])
     result["blueprints"] = [
         {
             "blueprint_id": "system:" + agent["id"],

@@ -405,6 +405,11 @@ class BACHTray:
         task_id = execution.get("active_task_id")
         if type(task_id) is int and task_id > 0:
             safe["active_task_id"] = task_id
+            holder = execution.get("lease_worker_id")
+            if (safe["state"] == "running" and safe["terminal"] is False
+                    and isinstance(holder, str)
+                    and re.fullmatch(r"worker-[0-9a-f]{32}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}", holder)):
+                safe["lease_worker_id"] = holder
         return safe
 
     @staticmethod

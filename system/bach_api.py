@@ -955,6 +955,7 @@ help = _HandlerProxy("help")
 update = _HandlerProxy("update")
 email = _HandlerProxy("email")
 theme = _ThemeProxy("theme")
+worker_policy = _HandlerProxy("worker-policy")
 
 # App-Instanz fuer direkten Zugriff
 app = get_app
@@ -1216,6 +1217,7 @@ __all__ = [
     "update",
     "email",
     "theme",
+    "worker_policy",
     "app",
     "db",
     "hooks",
