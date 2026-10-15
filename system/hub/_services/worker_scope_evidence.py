@@ -22,6 +22,7 @@ _READ_SCHEMA = "bach.worker-scope-evidence.v1"
 _REVISION_SCHEMA = "bach.worker-result-revision.v1"
 _EVENT_ACTION = "worker_result_scope_capture"
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
+_SUBMISSION_REVISION = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SNAPSHOT_KEYS = frozenset({
     "schema", "availability", "task_id", "repository", "origin", "branch",
@@ -196,7 +197,7 @@ def read_scope_evidence(conn, record) -> dict:
     if (not isinstance(record, dict) or record.get("reason") not in {"awaiting_review", "accepted"}
             or record.get("submission", {}).get("availability") != "available"
             or not isinstance(record.get("submission_revision"), str)
-            or not _HEX.fullmatch(record["submission_revision"])):
+            or not _SUBMISSION_REVISION.fullmatch(record["submission_revision"])):
         return _unavailable("submission_not_current")
     try:
         table = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
@@ -289,7 +290,7 @@ def _project_scope_record(data, *, repo_root=None, worktrees_dir=None) -> dict:
     if (type(data.get("task_id")) is not int or data["task_id"] <= 0
             or type(data.get("scope_event_id")) is not int or data["scope_event_id"] <= 0
             or not isinstance(data.get("submission_revision"), str)
-            or not _HEX.fullmatch(data["submission_revision"])
+            or not _SUBMISSION_REVISION.fullmatch(data["submission_revision"])
             or not isinstance(data.get("scope_receipt_sha256"), str)
             or not _HEX.fullmatch(data["scope_receipt_sha256"])
             or not _snapshot_valid(data.get("snapshot"), data["task_id"])):

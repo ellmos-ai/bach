@@ -108,6 +108,11 @@ def _read(context):
 
 
 def _scope_row(context, result_id):
+    table = context["conn"].execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='worker_scope_evidence'"
+    ).fetchone()
+    if table is None:
+        return None
     return context["conn"].execute(
         "SELECT * FROM worker_scope_evidence WHERE result_id=?", (result_id,)
     ).fetchone()
@@ -119,6 +124,7 @@ def test_scope_capture_is_result_bound_event_backed_and_idempotent(
     context = worker_context
     binding = context["binding"]
     _, record = _review_submission(context)
+    assert re.fullmatch(r"sha256:[a-f0-9]{64}", record["submission_revision"])
     snapshot = _scope_snapshot(context["task_id"])
     calls = _install_snapshot(monkeypatch, context, snapshot, observe_transaction=True)
 
