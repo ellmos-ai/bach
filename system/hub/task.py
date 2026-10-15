@@ -102,6 +102,7 @@ class TaskHandler(BaseHandler):
             "release": "Task-Claim freigeben (bach task release <id> --by <name>)",
             "reap": "Abgelaufene in_progress-Claims zuruecksetzen (bach task reap [--lease SECONDS])",
             "result-history": "Verifizierte Ergebnis-, Abnahme- und Korrekturhistorie anzeigen",
+            "result-policy": "Aktuelle Abschlussentscheidung lesend prüfen (kein Taskabschluss)",
             "result-correct": "Aktuelles Review-Ergebnis mit dedizierter Korrekturberechtigung zurückgeben",
             "sweep": "Alias fuer reap",
             "taskplan": "TASKPLAN-Bridge status/list/import",
@@ -179,6 +180,8 @@ class TaskHandler(BaseHandler):
             return self._edit(args)
         elif operation == "result-history":
             return self._result_history(args)
+        elif operation == "result-policy":
+            return self._result_policy(args)
         elif operation == "result-correct":
             if dry_run:
                 return True, "[DRY-RUN] Keine Korrekturanfrage gespeichert"
@@ -528,6 +531,49 @@ class TaskHandler(BaseHandler):
 
         due_text = f" (fällig: {due_date})" if due_date else ""
         return True, f"[OK] Task {task_id} erstellt: {title}{due_text}"
+
+    def _result_policy(self, args: List[str]) -> Tuple[bool, str]:
+        """Read the canonical completion decision without creating or changing a DB."""
+        usage = "Usage: bach task result-policy <id> [--json]"
+        if len(args) not in (1, 2) or (len(args) == 2 and args[1] != "--json"):
+            return False, usage
+        try:
+            task_id = int(args[0])
+            if task_id <= 0:
+                return False, usage
+        except ValueError:
+            return False, usage
+        json_output = "--json" in args
+        try:
+            from ._services.worker_completion_policy import evaluate_current_result
+            # URI mode=ro also prevents sqlite from creating an absent database.
+            uri = Path(self.db_path).resolve().as_uri() + "?mode=ro"
+            conn = sqlite3.connect(uri, uri=True)
+            try:
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA query_only=1")
+                result = evaluate_current_result(conn, task_id)
+            finally:
+                conn.close()
+        except (ImportError, sqlite3.Error, ValueError, RuntimeError) as exc:
+            reason = ("completion_service_unavailable" if isinstance(exc, ImportError)
+                      else "completion_read_unavailable")
+            if json_output:
+                return False, json.dumps({
+                    "schema": "bach.worker-completion-evaluation.v1",
+                    "availability": "unavailable", "task_id": task_id,
+                    "decision": None, "reason": reason,
+                }, ensure_ascii=False, indent=2)
+            return False, "Abschlussprüfung nicht verfügbar; kein Task wurde geändert."
+        if json_output:
+            # Successful observation is not permission to finish the task.
+            return True, json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
+        decision = result.get("decision") or {}
+        state = decision.get("state") or result.get("availability", "unavailable")
+        reason = decision.get("reason") or result.get("reason", "unavailable")
+        return True, (f"Task #{task_id} · Abschlussprüfung: {state}\n"
+                      f"Grund: {reason}\n"
+                      "Nur gelesen; kein Taskabschluss oder sonstiger Schreibvorgang.")
 
     def _result_history(self, args: List[str]) -> Tuple[bool, str]:
         if not args:
@@ -1912,6 +1958,7 @@ Befehle:
   bach task taskplan list            TASKPLAN-Tasks anzeigen
   bach task taskplan import <id...>   BACH-Tasks idempotent spiegeln
   bach task show <id>                Task-Details
+  bach task result-policy <id>       Abschlussentscheidung nur lesen [--json]
   bach task delete <id> [id2...]     Task(s) loeschen
   bach task priority <id> <P1-P4>    Prioritaet aendern
   bach task claim <id> --by <name>   Task exklusiv beanspruchen [--lease SECONDS]

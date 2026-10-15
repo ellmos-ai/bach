@@ -264,6 +264,9 @@ class _WorkerControl:
     persistent_core_capacity_receipt: dict[str, Any] | None = None
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
+    completion_poll_index: int = 0
+    completion_poll_at: dict[int, float] = field(default_factory=dict)
+    completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
     lease_supervisor: Any = None
     supports_step_actions: bool = False
@@ -391,6 +394,109 @@ def _retain_worker_task_receipts(control: _WorkerControl) -> None:
     with _WORKER_CONTROL_LOCK:
         if control.task_binding is binding and has_receipt:
             control.task_result_bindings[binding.task_id] = binding
+
+
+def _poll_worker_completion(control: _WorkerControl) -> bool:
+    """Reconcile retained submissions and honor the current policy's claim gate.
+
+    All Git, HTTP, and SQLite work runs outside the controller lock. Older
+    balanced results are revisited in bounded round-robin batches so expiry
+    and later external approvals can advance without another queue.
+    """
+    now = time.monotonic()
+    with _WORKER_CONTROL_LOCK:
+        current = control.task_binding
+        bindings = list(control.task_result_bindings.values())
+        if not bindings:
+            return True
+        index = control.completion_poll_index % len(bindings)
+        selected = [bindings[(index + offset) % len(bindings)]
+                    for offset in range(min(4, len(bindings)))]
+        control.completion_poll_index = (index + len(selected)) % len(bindings)
+        next_at = dict(control.completion_poll_at)
+        blocked = dict(control.completion_poll_blocked)
+    if current is not None and current not in selected:
+        selected.insert(0, current)
+    may_claim = True
+    for binding in selected:
+        if control.stop_event.is_set():
+            return False
+        if binding.submitted_result is None:
+            continue  # An old release-only review is not a managed submission.
+        if now < next_at.get(binding.task_id, 0) and (
+                binding is not current or blocked.get(binding.task_id) is True):
+            if binding is current:
+                may_claim = False
+            continue
+        client = binding._client
+        reconcile = getattr(client, "_reconcile_task_completion", None)
+        outcome = None
+        try:
+            if callable(reconcile):
+                outcome = reconcile(binding.task_id)
+        except Exception:
+            log.warning("Abschlussneubewertung für Task #%s nicht bestätigt", binding.task_id)
+        with _WORKER_CONTROL_LOCK:
+            # A held claim gate is retried within a minute; archived balanced
+            # results need at most five-minute checks. This avoids unbounded
+            # GitHub API requests on the normal ten-second queue poll.
+            control.completion_poll_at[binding.task_id] = now + (
+                60 if binding is current else 300)
+        if binding is not current:
+            continue
+        decision = outcome.get("decision") if isinstance(outcome, dict) else None
+        if isinstance(decision, dict) and type(decision.get("worker_may_claim_next")) is bool:
+            may_claim = decision["worker_may_claim_next"]
+            with _WORKER_CONTROL_LOCK:
+                control.completion_poll_blocked[binding.task_id] = not may_claim
+            continue
+        # A correction has already reopened the parent, or Done has been
+        # accepted. The review-only wait no longer applies in either state.
+        try:
+            observed = client.task_result_snapshot(binding.task_id)
+            record = observed.get("result") or {}
+            if getattr(client, "mode", None) == "remote" and record.get("completion_policy_version") == 1:
+                lead = observed.get("completion_evaluation") or {}
+                lead_decision = lead.get("decision") or {}
+                submitted = binding.submitted_result or {}
+                exact = (observed.get("task_id") == binding.task_id
+                    and type(record.get("result_id")) is int
+                    and record["result_id"] == submitted.get("result_id")
+                    and record.get("result_sha256") == submitted.get("result_sha256")
+                    and record.get("generation") == submitted.get("generation")
+                    and record.get("fence") == submitted.get("fence")
+                    and record.get("task_version") == submitted.get("task_version")
+                    and type(record.get("result_revision")) is str
+                    and re.fullmatch(r"[a-f0-9]{64}", record["result_revision"]) is not None
+                    and record["result_revision"] == lead.get("result_revision")
+                    and record.get("submission", {}).get("availability") == "available"
+                    and record.get("reason") in {"awaiting_review", "accepted"}
+                    and observed.get("status") in {"review", "done", "completed"}
+                    and observed.get("task_version") == lead.get("task_version")
+                    and observed.get("status_revision") == lead.get("status_revision")
+                    and lead.get("task_id") == binding.task_id
+                    and lead.get("result_id") == record["result_id"]
+                    and lead.get("availability") == "available")
+                if (exact and type(lead_decision.get("worker_may_claim_next")) is bool
+                        and lead_decision["worker_may_claim_next"] is True):
+                    with _WORKER_CONTROL_LOCK:
+                        control.completion_poll_blocked[binding.task_id] = False
+                    continue
+                may_claim = False
+                with _WORKER_CONTROL_LOCK:
+                    control.completion_poll_blocked[binding.task_id] = True
+                continue
+            if (record.get("completion_policy_version") == 0
+                    or observed.get("status") in {"pending", "done", "completed"}):
+                with _WORKER_CONTROL_LOCK:
+                    control.completion_poll_blocked[binding.task_id] = False
+                continue
+        except Exception:
+            pass
+        may_claim = False  # Unknown current V1 policy never authorizes a claim.
+        with _WORKER_CONTROL_LOCK:
+            control.completion_poll_blocked[binding.task_id] = True
+    return may_claim
 
 
 def _finish_worker_result_review(control: _WorkerControl) -> None:
@@ -4339,6 +4445,13 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     if control.lease_supervisor is not None:
                         control.lease_supervisor.close()
                         control.lease_supervisor = None
+                    if not _poll_worker_completion(control):
+                        if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                "current_activity": "Ergebnis wartet auf kanonische Abschlussprüfung"}) is None:
+                            break
+                        if control.stop_event.wait(10):
+                            break
+                        continue
                     control.task_binding = _acquire_worker_task(control, current_slot, worker_instance_id)
                     if control.task_binding is None:
                         from hub._services.chat.worker_queue_status import (

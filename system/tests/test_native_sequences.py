@@ -19,7 +19,8 @@ from hub._services import skill_source_service
 # The focused Mac run starts in system/, whereas CI starts at repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from system.tests.test_task_lease_client import _init_db, mem_db
-from system.tests.test_worker_lease_binding import binding, approve_result
+from system.tests.test_worker_lease_binding import binding, completion_binding, approve_result
+from system.tests.worker_completion_fixtures import CompletionHarness
 
 
 @pytest.fixture
@@ -30,7 +31,9 @@ def store(tmp_path, monkeypatch):
     _init_db(db)
     db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     db.commit(); db.close()
-    return SequenceStore(path)
+    result = SequenceStore(path)
+    result._completion_test_harness = CompletionHarness(tmp_path, monkeypatch)
+    return result
 
 
 @pytest.fixture
@@ -73,6 +76,11 @@ class IsolatedNative:
             start_request_id=kwargs["start_request_id"],generation=generation,worker_id=physical_worker,host="test")
         binding=WorkerLeaseBinding.acquire(client,slot["task_id"],worker_id=physical_worker,host="test",slot=slot,
             generation=generation,is_current=lambda:True,stop_event=threading.Event(),_creator_delegation=delegated)
+        actual_backend = "ollama" if slot["backend"] == "ollama-cloud" else slot["backend"]
+        self.store._completion_test_harness.prepare(binding, db,
+            backend_id=actual_backend, requested_model=slot["model"],
+            observed_model=slot["model"], slot_id=worker_id)
+        binding._test_completion_harness = self.store._completion_test_harness
         output="Ergebnis "+str(len(self.calls))+" · Müller & Söhne"
         binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":output})
         assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
@@ -117,7 +125,9 @@ def start_payload(chain):
 
 
 def wait(controller,run_id):
-    controller._threads[run_id].join(10)
+    # The isolated transport completes real V1 execution, scope, and policy
+    # evidence synchronously before the sequence thread can observe it.
+    controller._threads[run_id].join(60)
     assert not controller._threads[run_id].is_alive()
     return controller.get_run(run_id)
 
@@ -204,7 +214,7 @@ def test_missing_result_or_foreign_generation_never_admits_next_step(store,profi
     controller,transport=service(store,profiles);transport.fail_result=fault=="result";transport.foreign_receipt=fault=="receipt"
     chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
     if fault == "result":
-        assert transport.observed.wait(5)
+        assert transport.observed.wait(30)
         run=controller.get_run(payload["request_id"])
         assert controller._threads[payload["request_id"]].is_alive()
         assert run["cursor"] == 0 and len(transport.calls) == 1
@@ -220,7 +230,7 @@ def test_missing_result_or_foreign_generation_never_admits_next_step(store,profi
 def test_stop_is_durable_and_waits_for_the_exact_native_terminal(store,profiles):
     controller,transport=service(store,profiles);transport.hold=True
     chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
-    assert transport.observed.wait(5)
+    assert transport.observed.wait(30)
     controller.stop(payload["request_id"]);run=wait(controller,payload["request_id"])
     assert run["phase"]=="stopped" and run["stop_requested"] is True
     assert len(transport.calls)==1 and transport.cancelled==[transport.calls[0][0]]
@@ -228,7 +238,7 @@ def test_stop_is_durable_and_waits_for_the_exact_native_terminal(store,profiles)
 
 def test_no_mutation_of_a_chain_with_a_live_run(store,profiles):
     controller,transport=service(store,profiles);transport.hold=True
-    chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload);assert transport.observed.wait(5)
+    chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload);assert transport.observed.wait(30)
     try:
         with pytest.raises(SequenceConflict):store.delete_chain(chain["id"],chain["version"])
         with pytest.raises(SequenceConflict):store.save_chain(draft(),chain_id=chain["id"],expected_version=chain["version"])
@@ -322,7 +332,7 @@ def test_pending_409_stop_keeps_observing_until_physical_terminal(store,profiles
         return receipt
     monkeypatch.setattr(transport.gateway,"stop_worker",stop);monkeypatch.setattr(transport.gateway,"observe_worker",observe)
     chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
-    assert transport.observed.wait(5);controller.stop(payload["request_id"])
+    assert transport.observed.wait(30);controller.stop(payload["request_id"])
     run=wait(controller,payload["request_id"])
     assert run["phase"]=="stopped" and observations_after_stop==4 and len(transport.calls)==1
 
@@ -352,7 +362,9 @@ def test_stop_at_supervisor_exit_is_handed_over_without_second_click(store,profi
     monkeypatch.setattr(transport.gateway,"observe_worker",observe);monkeypatch.setattr(store,"checkpoint",checkpoint)
     chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
     try:
-        assert exited.wait(5)
+        # This observes the first execution after the synchronous V1 evidence
+        # gate. The separate release_exit handshake above stays bounded to 5s.
+        assert exited.wait(30)
         assert controller.get_run(payload["request_id"])["phase"]=="unconfirmed"
         controller.stop(payload["request_id"])
     finally:release_exit.set()
@@ -374,7 +386,7 @@ def test_unrelated_409_stop_never_counts_as_pending_acceptance(store,profiles,mo
         return False,worker,receipt,409
     monkeypatch.setattr(transport.gateway,"stop_worker",stop)
     chain=store.save_chain(draft());payload=start_payload(chain);controller.start(chain["id"],payload)
-    assert transport.observed.wait(5);controller.stop(payload["request_id"])
+    assert transport.observed.wait(30);controller.stop(payload["request_id"])
     run=wait(controller,payload["request_id"])
     assert run["phase"]=="unconfirmed" and "cancellation_unconfirmed" in run["reason"] and len(transport.calls)==1
 
@@ -426,7 +438,8 @@ def test_task_and_step_binding_roll_back_together(store):
         assert db.execute("SELECT COUNT(*) FROM native_sequence_creator_delegations").fetchone()[0]==0
 
 
-def test_semantic_output_is_atomic_with_review_and_requires_separate_acceptance(binding,mem_db):
+def test_semantic_output_is_atomic_with_review_and_requires_separate_acceptance(completion_binding,mem_db):
+    binding=completion_binding
     binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Tatsächliches Ergebnis · üöäß"})
     record=binding.submitted_result
     history=mem_db.execute("SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'",(binding.task_id,)).fetchone()
@@ -446,7 +459,8 @@ def test_invalid_output_never_completes_a_task(binding,value):
     assert binding._client.task_snapshot(binding.task_id)["status"]=="in_progress"
 
 
-def test_lost_submission_ack_reconstructs_exact_review_without_mutation_retry(binding,monkeypatch):
+def test_lost_submission_ack_reconstructs_exact_review_without_mutation_retry(completion_binding,monkeypatch):
+    binding=completion_binding
     original=binding._client.submit_result
     calls=[]
     def lost(*args,**kw):
@@ -472,7 +486,8 @@ def test_gui_without_device_request_never_dispatches_or_writes():
     assert failure.value.status_code==401
 
 
-def test_result_handoff_requires_physical_thread_end_and_exact_request(binding,monkeypatch):
+def test_result_handoff_requires_physical_thread_end_and_exact_request(completion_binding,monkeypatch):
+    binding=completion_binding
     from hub._services.chat import telegram_chat as control
     binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Fachliches Ergebnis"})
     approve_result(binding)

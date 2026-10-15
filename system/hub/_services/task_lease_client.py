@@ -494,6 +494,20 @@ class TaskLeaseClient:
             if self._conn is None:
                 conn.close()
 
+    def _reconcile_task_completion(self, task_id):
+        """Local controller hook; remote workers never assert completion facts."""
+        if self.mode != "local" or type(task_id) is not int or task_id <= 0:
+            return None
+        from .worker_completion_policy import reconcile_current_result
+        conn = self._get_local_connection()
+        try:
+            if conn.in_transaction:
+                return None
+            return reconcile_current_result(conn, task_id)
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _prepare_review_task(self, binding):
         """Create an eligible result-review task only in the canonical local TaskDB."""
         if self.mode != "local" or getattr(binding, "_client", None) is not self:
@@ -595,10 +609,16 @@ class TaskLeaseClient:
         from .worker_result_review import record_review
         conn = self._get_local_connection()
         try:
-            return record_review(conn, binding)
+            evidence = record_review(conn, binding)
         finally:
             if self._conn is None:
                 conn.close()
+        if isinstance(evidence, dict) and evidence.get("availability") == "recorded":
+            try:
+                self._reconcile_task_completion(evidence["task_id"])
+            except Exception:
+                pass
+        return evidence
 
     def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
         """Let subclasses opt in to one validated server-error response shape."""
