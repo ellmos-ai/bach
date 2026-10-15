@@ -341,7 +341,7 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
         # The native holder name is an observation identity, never a lease
         # capability. Emit it only for this controller's current bound task.
         if (state == "running" and binding is not None and not binding.closed
-                and binding.generation == control.generation
+                and getattr(binding, "generation", None) == control.generation
                 and _WORKER_CONTROLS.get(worker_id) is control
                 and control.physical_worker_id
                 and control.lease_worker_id == f"{control.physical_worker_id}@{socket.gethostname()}"):
