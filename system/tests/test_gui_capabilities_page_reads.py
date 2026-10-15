@@ -42,6 +42,7 @@ MANIFEST_PAGES = {
         ("GET", "/api/agent-history/tasks", True), ("GET", "/api/memory/sessions", True), ("GET", "/api/agents", True),
         ("GET", "/api/user-inbox", False), ("PATCH", "/api/user-inbox/{id}", False), ("GET", "/api/task-assignees", False),
         ("GET", "/api/assignees", False), ("POST", "/api/tasks", False), ("GET", "/api/tasks/{id}", False),
+        ("GET", "/api/task-capabilities", False),
     ],
     "/artefakte": [("GET", "/api/artefakte", True), ("GET", "/api/artifacts/content", False),
                    ("GET", "/api/artifacts/download", False)],
