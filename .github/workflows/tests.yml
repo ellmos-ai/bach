@@ -69,7 +69,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ellmos-ai/task-master
-          ref: 5924b71b2a93e59e625b5c9afaa6e84966bf49d3
+          ref: 5e7582a97217e28b1897200e27c959cac2309078
           path: .ci-sources/worker-policy
           persist-credentials: false
 

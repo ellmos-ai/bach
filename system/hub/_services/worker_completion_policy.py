@@ -184,6 +184,29 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
                 result_revision=revision, observer=github_observer)
         review = record.get("model_review", {})
         review_status = (review.get("status") if review.get("availability") == "available" else None)
+        # A configured independent reviewer can make the semantic finding for
+        # an unstructured task. This is a reviewer judgment, never a machine
+        # criterion proof or a personal user approval. The canonical reader
+        # already binds it to the actual child verdict, identity and revision.
+        semantic_review_met = (
+            contract.get("reason") == "contract_not_predeclared"
+            and review.get("schema") == "bach.worker-result-review-evidence.v1"
+            and review.get("availability") == "available"
+            and review_status == "approved" and review.get("independent") is True
+            and review.get("task_id") == task_id
+            and review.get("result_id") == record["result_id"]
+            and review.get("result_revision") == revision
+            and review.get("reviewer_asserted_task_contract_met") is True)
+        task_contract_met = contract["met"] is True or (
+            contract.get("reason") == "contract_not_predeclared"
+            and (contract_attested or semantic_review_met))
+        contract_finding = {
+            "met": task_contract_met,
+            "source": "predeclared_criteria" if contract["met"] is True else
+                      "operator_attestation" if task_contract_met and contract_attested else
+                      "independent_model_review" if semantic_review_met else "unconfirmed",
+            "review_task_id": review.get("review_task_id") if semantic_review_met else None,
+        }
         status_map = {"approved": kernel.ReviewStatus.APPROVED,
                       "findings": kernel.ReviewStatus.FINDINGS,
                       "rejected": kernel.ReviewStatus.REJECTED}
@@ -206,8 +229,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             result_revision=revision if github.get("status") in {"verified", "rejected"} else None)
         context = kernel.WorkerReviewContext(task_id=str(task_id), author_id=author_id,
             result_revision=revision, lease_valid=True, fence_valid=True,
-            locks_clear=True, task_contract_met=contract["met"] is True or (
-                contract.get("reason") == "contract_not_predeclared" and contract_attested),
+            locks_clear=True, task_contract_met=task_contract_met,
             result_evidence_valid=True, user_review_required=bool(user_required),
             github_pr_review_required=github_required, result_age_seconds=_age_seconds(record.get("submitted_at")),
             review=review_record, user_review=user_record, external_review=external_record)
@@ -220,6 +242,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             "result_sha256": record["result_sha256"], "task_version": observed["task_version"],
             "status_revision": observed["status_revision"], "reason": decision["reason"],
             "decision": decision, "contract": contract, "contract_attested": contract_attested,
+            "contract_finding": contract_finding,
             "user_review_required": bool(user_required), "user_approved": user_approved,
             "github_pr_review_required": github_required, "github": github}
     except (sqlite3.Error, KeyError, TypeError, ValueError, AttributeError,

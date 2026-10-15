@@ -186,7 +186,7 @@ def _paths(world):
             "worktrees_dir": world["tree"]["worktrees"]}
 
 
-def _record_independent_review(world, *, status="approved"):
+def _record_independent_review(world, *, status="approved", read_current_evidence=True):
     conn, client, task_id = world["conn"], world["client"], world["task_id"]
     prepared = review.prepare_review_task(conn, world["binding"], **_paths(world))
     assert prepared is not None
@@ -222,7 +222,16 @@ def _record_independent_review(world, *, status="approved"):
     assert child.finish_model_execution(handle, result=answer, route_sha256=TOP_ROUTE) is True
     child.execute_task_manage({"action": "submit_result", "task_id": review_task_id,
                                "result": verdict})
-    evidence = review.record_review(conn, child, **_paths(world))
+    if not read_current_evidence:
+        # Automatic correction consumes the current target revision. Its
+        # caller verifies the historical review and canonical correction.
+        return review_task_id
+    # The real submit hook may already have recorded the review and completed
+    # both tasks. Read its durable receipt before trying an open-target write.
+    evidence = review.read_review_evidence(conn, read_result(conn, task_id)["result"])
+    if evidence.get("availability") != "recorded":
+        evidence = review.record_review(conn, child, **_paths(world))
+    assert evidence is not None
     assert evidence["availability"] == "recorded"
     assert evidence["reviewer_id"] == TOP_REVIEWER
     assert evidence["independent"] is True
@@ -1054,6 +1063,150 @@ def test_missing_contract_never_completes(completion_world):
     assert no_contract["decision"]["state"] == "result_incomplete"
     reconcile_current_result(missing["conn"], missing["task_id"], **_paths(missing))
     assert read_result(missing["conn"], missing["task_id"])["status"] == "review"
+
+
+@pytest.mark.parametrize("mode", ["simple_task", "balanced", "high_security"])
+def test_unstructured_task_finishes_through_independent_review_without_personal_approval(
+    completion_world, monkeypatch, mode
+):
+    """Actual review evidence drives the existing controller hook, without a user event."""
+    from hub import worker_git
+
+    world = completion_world(mode=mode, contract_min_chars=None)
+    conn, task_id = world["conn"], world["task_id"]
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: world["tree"]["repo"])
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: world["tree"]["worktrees"])
+    before = evaluate_current_result(conn, task_id, **_paths(world))
+    assert before["decision"]["completion_allowed"] is False
+    evidence = _record_independent_review(world)
+    assert evidence["reviewer_asserted_task_contract_met"] is True
+
+    completed = world["client"]._reconcile_task_completion(task_id)
+    assert completed["availability"] == "available"
+    assert completed["status"] == "done"
+    assert completed["contract"]["met"] is False  # No invented machine proof.
+    assert completed["contract_attested"] is False
+    assert completed["user_approved"] is False
+    assert completed["contract_finding"] == {
+        "met": True, "source": "independent_model_review",
+        "review_task_id": evidence["review_task_id"],
+    }
+    assert read_result(conn, task_id)["result"]["accepted"] is True
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? AND action IN "
+        "('worker_user_review','worker_contract_attestation')", (task_id,)).fetchone()[0] == 0
+    assert world["client"]._reconcile_task_completion(task_id)["status"] == "done"
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+        "AND action='result_acceptance'", (task_id,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("gate", ["user", "github"])
+def test_independent_semantic_finding_never_supplies_a_mandatory_external_approval(
+    completion_world, gate
+):
+    world = completion_world(mode="balanced", contract_min_chars=None,
+        user_review=gate == "user", github_required=gate == "github")
+    _record_independent_review(world)
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract_finding"]["source"] == "independent_model_review"
+    assert observed["contract_finding"]["met"] is True
+    assert observed["user_approved"] is False
+    assert observed["decision"]["completion_allowed"] is False
+    reconcile_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert read_result(world["conn"], world["task_id"])["status"] == "review"
+
+
+@pytest.mark.parametrize("invalid_contract", ["", "{}", "not-json", "unmet-criterion"])
+def test_independent_review_cannot_replace_invalid_or_unmet_machine_criteria(
+    completion_world, invalid_contract
+):
+    world = completion_world(mode="balanced",
+        contract_min_chars=300 if invalid_contract == "unmet-criterion" else None,
+        contract_json_override=None if invalid_contract == "unmet-criterion" else invalid_contract)
+    _record_independent_review(world)
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract_finding"] == {
+        "met": False, "source": "unconfirmed", "review_task_id": None,
+    }
+    assert observed["decision"]["completion_allowed"] is False
+    reconcile_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert read_result(world["conn"], world["task_id"])["status"] == "review"
+
+
+@pytest.mark.parametrize("review_status", ["findings", "rejected"])
+def test_adverse_review_never_establishes_semantic_task_contract(
+    completion_world, review_status
+):
+    world = completion_world(mode="balanced", contract_min_chars=None)
+    evidence = _record_independent_review(world, status=review_status)
+    assert evidence["reviewer_asserted_task_contract_met"] is False
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract_finding"]["met"] is False
+    assert observed["decision"]["completion_allowed"] is False
+
+
+@pytest.mark.parametrize("contract_min_chars", [None, 300], ids=["missing-contract", "failed-contract"])
+@pytest.mark.parametrize(("mode", "review_status"), [
+    ("simple_task", "rejected"), ("balanced", "rejected"),
+    ("high_security", "rejected"), ("high_security", "findings"),
+])
+def test_unmet_contract_adverse_review_requeues_once_and_allows_fresh_generation(
+    completion_world, monkeypatch, mode, review_status, contract_min_chars
+):
+    from hub import worker_git
+    from hub._services.task_result_service import active_correction_request
+
+    world = completion_world(mode=mode, contract_min_chars=contract_min_chars)
+    conn, client, task_id = world["conn"], world["client"], world["task_id"]
+    observed = evaluate_current_result(conn, task_id, **_paths(world))
+    assert observed["contract_finding"]["met"] is False
+    assert observed["decision"]["completion_allowed"] is False
+    old_result_id = observed["result_id"]
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: world["tree"]["repo"])
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: world["tree"]["worktrees"])
+    # The actual child Submit -> review receipt -> SDK reconciliation must
+    # perform this transition, without an explicit test-side Reconcile call.
+    review_task_id = _record_independent_review(
+        world, status=review_status, read_current_evidence=False)
+    assert read_result(conn, task_id)["status"] == "pending"
+    request = active_correction_request(conn, task_id)
+    assert request is not None and request["source_result_id"] == old_result_id
+    assert conn.execute("SELECT requested_by_device_id FROM task_result_corrections "
+        "WHERE task_id=?", (task_id,)).fetchone()[0] == 0
+    recorded = conn.execute("SELECT receipt,receipt_sha256,event_id FROM worker_result_model_reviews "
+        "WHERE target_task_id=? AND target_result_id=? AND review_task_id=?",
+        (task_id, old_result_id, review_task_id)).fetchone()
+    assert recorded is not None
+    receipt = json.loads(recorded[0])
+    assert review._digest(receipt) == recorded[1]
+    assert receipt["status"] == review_status
+    assert receipt["reviewer_asserted_task_contract_met"] is False
+    assert receipt["target_revision"] == observed["result_revision"]
+    assert receipt["reviewer_id"] == TOP_REVIEWER != receipt["author_id"]
+    event = conn.execute("SELECT new_value FROM task_history WHERE id=? AND task_id=? "
+        "AND action='worker_result_model_review'", (recorded[2], task_id)).fetchone()
+    assert event is not None and json.loads(event[0])["receipt_sha256"] == recorded[1]
+    decisions = conn.execute("SELECT new_value FROM task_history WHERE task_id=? "
+        "AND action='worker_completion_decision'", (task_id,)).fetchall()
+    assert len(decisions) == 1
+    decision = json.loads(decisions[0][0])["decision"]
+    assert decision["state"] == "correction_required"
+    assert decision["completion_allowed"] is False
+    reconcile_current_result(conn, task_id, **_paths(world))
+    assert conn.execute("SELECT COUNT(*) FROM task_result_corrections WHERE task_id=?",
+                        (task_id,)).fetchone()[0] == 1
+    fresh = WorkerLeaseBinding.acquire(client, task_id,
+        worker_id="completion-author@HOST", host="HOST", generation="unmet-rework-generation-2",
+        is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    fresh.execute_task_manage({"action": "submit_result", "task_id": task_id,
+                               "result": "Fresh correction submission with its own result revision."})
+    current = read_result(conn, task_id)
+    assert current["status"] == "review"
+    assert current["result"]["result_id"] != old_result_id
+    assert current["result"]["generation"] == "unmet-rework-generation-2"
+    assert current["result"]["submission"]["availability"] == "available"
+    assert current["result"]["accepted"] is False
+    assert conn.execute("SELECT COUNT(*) FROM task_result_corrections WHERE task_id=?",
+                        (task_id,)).fetchone()[0] == 1
 
 
 def test_stale_task_content_never_completes(completion_world):
