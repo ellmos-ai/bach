@@ -418,7 +418,9 @@ def _policy_correction(conn, task, record, observed, now, decision_event,
     actor = "native-worker-completion-policy"
     summary = record.get("model_review", {}).get("summary")
     summary = summary.strip()[:800] if isinstance(summary, str) else ""
-    note = (f"Policy-Korrektur ({reason}) für Ergebnisrevision {result_revision}. "
+    revision_label = (f"Ergebnisrevision {result_revision}" if result_revision is not None
+                      else f"Abgaberevision {record['submission_revision']}")
+    note = (f"Policy-Korrektur ({reason}) für {revision_label}. "
             + summary).strip()[:1200]
     correction_round = int(conn.execute(
         "SELECT COALESCE(MAX(correction_round),0)+1 FROM task_result_corrections WHERE task_id=?",
@@ -458,6 +460,149 @@ def _policy_correction(conn, task, record, observed, now, decision_event,
                  (decision_event, decision_sha, record["result_id"]))
 
 
+def _definitely_missing_task_tree(task_id, *, repo_root=None, worktrees_dir=None):
+    """Prove absence of both the canonical path and its Git registration."""
+    from .chat.worker_write_guard import _fresh_locks, _paths, _run_readonly
+    from pathlib import Path
+    try:
+        repo, root = _paths(repo_root, worktrees_dir)
+        if not root.is_dir() or root.resolve(strict=True) != root:
+            return False
+        target = root / f"task-{task_id}"
+        try:
+            target.lstat()  # Includes dangling links, which must never count as absent.
+        except FileNotFoundError:
+            pass
+        else:
+            return False
+        # The normal scope writer also requires a clean canonical lock scan.
+        # Unknown or occupied scopes must not be converted into corrections.
+        _fresh_locks(repo, root, target)
+        raw = _run_readonly(["git", "worktree", "list", "--porcelain"], repo)
+        registrations = [block for block in raw.split("\n\n") if block.startswith("worktree ")]
+        if not registrations:
+            return False
+        for block in registrations:
+            lines = block.splitlines()
+            path = Path(lines[0][9:])
+            if (path.resolve(strict=False) == target
+                    or f"branch refs/heads/bach-task/{task_id}" in lines):
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def _missing_scope_candidate(conn, task_id, *, repo_root=None, worktrees_dir=None):
+    """Read only: an actual V1 release whose task tree cannot still be captured."""
+    from .worker_completion_contract import parse_contract
+    from .worker_result_review import review_task_marker
+    from .task_lease import task_content_version
+    try:
+        observed = read_result(conn, task_id)
+        record = observed.get("result")
+        if (not isinstance(record, dict) or record.get("completion_policy_version") != 1
+                or review_task_marker(conn, task_id)
+                or observed.get("status") != "review"
+                or record.get("reason") != "awaiting_review"
+                or record.get("submission", {}).get("availability") != "available"
+                or record.get("scope", {}).get("availability") != "unavailable"
+                or record.get("scope", {}).get("reason") != "scope_not_recorded"):
+            return None
+        submission_revision = record.get("submission_revision")
+        execution = record.get("execution") or {}
+        if (type(submission_revision) is not str
+                or re.fullmatch(r"sha256:[a-f0-9]{64}", submission_revision) is None
+                or execution.get("availability") != "available"
+                or type(execution.get("execution_revision")) is not str
+                or not _HEX.fullmatch(execution["execution_revision"])):
+            return None
+        task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if (task is None or task.get("status") != "review" or task.get("claim_id")
+                or task_content_version(task) != observed.get("task_version")):
+            return None
+        # A lost scope row with a persisted capture event is corrupted evidence,
+        # not proof that the task worktree was never captured.
+        if conn.execute("SELECT 1 FROM task_history WHERE task_id=? "
+                "AND action='worker_result_scope_capture' AND id>? LIMIT 1",
+                (task_id, record["submission_event_id"])).fetchone() is not None:
+            return None
+        contract = parse_contract(task.get("completion_contract_json"))
+        if not contract or not any(item["kind"] == "git_blob_sha256" for item in contract["criteria"]):
+            return None
+        policy_view, global_view = _settings_snapshot(conn, task_id)
+        frozen = record["submission"].get("policy", {})
+        if (frozen.get("availability") != "available"
+                or frozen.get("configuration_version") != policy_view["configuration_version"]
+                or frozen.get("policy") != global_view["policy"]
+                or frozen.get("override") != policy_view["override"]
+                or frozen.get("user_review_required") != policy_view["effective"]["user_review_required"]):
+            return None
+        identity = identity_snapshot(conn)
+        author_id = principal_for_execution(identity, execution)
+        if author_id is None:
+            return None
+        if not _definitely_missing_task_tree(task_id, repo_root=repo_root,
+                                              worktrees_dir=worktrees_dir):
+            return None
+        return {"task": task, "record": record, "observed": observed,
+                "author_id": author_id,
+                "identity_configuration_version": identity["configuration_version"],
+                "db_evidence_sha256": _db_fingerprint(record)}
+    except (sqlite3.Error, KeyError, TypeError, ValueError, AttributeError,
+            settings.PolicyUnavailable):
+        return None
+
+
+def _reconcile_missing_scope(conn, task_id, *, repo_root=None, worktrees_dir=None):
+    """Reopen only a submitted task with proven, permanent missing scope."""
+    from .task_result_service import ResultConflict
+    from .task_lease import _history, _utcnow
+    before = _missing_scope_candidate(conn, task_id, repo_root=repo_root,
+                                      worktrees_dir=worktrees_dir)
+    if before is None:
+        return None
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        current = _missing_scope_candidate(conn, task_id, repo_root=repo_root,
+                                           worktrees_dir=worktrees_dir)
+        if (current is None or current["db_evidence_sha256"] != before["db_evidence_sha256"]
+                or current["observed"]["task_version"] != before["observed"]["task_version"]
+                or current["observed"]["status_revision"] != before["observed"]["status_revision"]
+                or current["author_id"] != before["author_id"]
+                or current["identity_configuration_version"] != before["identity_configuration_version"]):
+            raise ResultConflict("Fehlender Task-Arbeitsbaum nicht mehr stabil bestätigt")
+        record, observed, task = current["record"], current["observed"], current["task"]
+        detail = {"schema": SCHEMA, "task_id": task_id,
+            "result_id": record["result_id"], "result_sha256": record["result_sha256"],
+            "result_revision": None, "task_version": observed["task_version"],
+            "status_revision": observed["status_revision"],
+            "generation": record["generation"], "fence": record["fence"],
+            "submission_revision": record["submission_revision"],
+            "evidence_guard": {"schema": "bach.worker-missing-scope-guard.v1",
+                "reason": "scope_not_recorded", "task_tree": "definitively_absent",
+                "execution_revision": record["execution"]["execution_revision"],
+                "author_id": current["author_id"]},
+            "decision": {"state": "correction_required", "reason": "scope_evidence_missing",
+                         "completion_allowed": False, "worker_may_claim_next": True}}
+        decision_sha = _digest(detail)
+        now = _utcnow()
+        event = _history(conn, task_id, "worker_completion_decision",
+            "native-worker-completion-policy", now,
+            {"receipt_sha256": decision_sha, **detail})
+        _policy_correction(conn, task, record, observed, now, event, decision_sha,
+                           None, "scope_evidence_missing")
+        conn.commit()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    return {"schema": SCHEMA, "availability": "available", "task_id": task_id,
+            "result_id": record["result_id"], "result_revision": None,
+            "decision": detail["decision"], "reason": "scope_evidence_missing",
+            "status": "pending"}
+
+
 def reconcile_current_result(conn, task_id, *, repo_root=None, worktrees_dir=None,
                              github_observer=None, operator_token=None,
                              expected=None) -> dict:
@@ -475,6 +620,11 @@ def reconcile_current_result(conn, task_id, *, repo_root=None, worktrees_dir=Non
                 "status_revision"))):
         raise ResultConflict("Ergebnis seit der Operatoransicht verändert; neu laden")
     if evaluation["availability"] != "available":
+        if expected is None and evaluation.get("reason") == "full_result_revision_unavailable":
+            correction = _reconcile_missing_scope(conn, task_id, repo_root=repo_root,
+                                                   worktrees_dir=worktrees_dir)
+            if correction is not None:
+                return correction
         return evaluation
     decision = evaluation["decision"]
     if decision["state"] not in {"completed", "completed_unreviewed", "correction_required"}:

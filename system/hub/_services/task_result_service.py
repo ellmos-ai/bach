@@ -749,7 +749,81 @@ def request_result_correction(conn, task_id, payload, *, operator_token):
         raise
 
 
-def _correction_audit_matches(row, detail):
+def _policy_correction_decision_matches(conn, row):
+    """Verify the immutable policy event behind a controller correction."""
+    digest = row.get("policy_decision_sha256")
+    correction_event = row.get("event_id")
+    if (type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+            or type(correction_event) is not int or correction_event <= 0):
+        return False
+    source = _dict_row(conn.execute("SELECT * FROM worker_task_results WHERE id=? AND task_id=?",
+        (row.get("source_result_id"), row.get("task_id"))))
+    if source is None:
+        return False
+    policy_event_id = source.get("completion_decision_event_id")
+    if (type(policy_event_id) is not int or not 0 < policy_event_id < correction_event
+            or source.get("completion_decision_sha256") != digest):
+        return False
+    event = _dict_row(conn.execute("SELECT * FROM task_history WHERE id=? AND task_id=?",
+        (policy_event_id, source["task_id"])))
+    if (event is None or event.get("action") != "worker_completion_decision"
+            or event.get("field_changed") != "lease" or event.get("old_value") is not None
+            or event.get("changed_by") != "native-worker-completion-policy"):
+        return False
+    try:
+        stored = json.loads(event["new_value"])
+        detail = {key: value for key, value in stored.items() if key != "receipt_sha256"}
+        if (stored.get("receipt_sha256") != digest or _receipt_digest(detail) != digest
+                or detail.get("schema") != "bach.worker-completion-evaluation.v1"
+                or type(detail.get("task_id")) is not int or detail["task_id"] != source["task_id"]
+                or type(detail.get("result_id")) is not int or detail["result_id"] != source["id"]
+                or detail.get("result_sha256") != source["result_sha256"]
+                or detail.get("task_version") != source["task_version"]
+                or detail.get("status_revision") != row.get("source_status_revision")
+                or detail.get("decision", {}).get("state") != "correction_required"
+                or detail["decision"].get("completion_allowed") is not False
+                or detail.get("status_revision") != source.get("submitted_status_event_id")
+                or not 0 < detail["status_revision"] < policy_event_id):
+            return False
+        guard = detail.get("evidence_guard")
+        if guard is None:
+            return (type(detail.get("result_revision")) is str
+                and re.fullmatch(r"[a-f0-9]{64}", detail["result_revision"]) is not None)
+        if (set(guard) != {"schema", "reason", "task_tree", "execution_revision", "author_id"}
+                or guard.get("schema") != "bach.worker-missing-scope-guard.v1"
+                or guard.get("reason") != "scope_not_recorded"
+                or guard.get("task_tree") != "definitively_absent"
+                or detail.get("result_revision") is not None
+                or detail.get("generation") != source["generation"]
+                or detail.get("fence") != source["fence"]
+                or detail["decision"] != {"state": "correction_required",
+                    "reason": "scope_evidence_missing", "completion_allowed": False,
+                    "worker_may_claim_next": True}):
+            return False
+        submission = _submission_readback(conn, source)
+        if submission.get("availability") != "available":
+            return False
+        revision = _submission_revision(source, submission["receipt_sha256"])
+        if revision != detail.get("submission_revision"):
+            return False
+        from .worker_execution_evidence import read_execution_evidence
+        historical = dict(source, result_id=source["id"], reason="awaiting_review",
+                          submission=submission, submission_revision=revision)
+        execution = read_execution_evidence(conn, historical)
+        if (execution.get("availability") != "available"
+                or execution.get("execution_revision") != guard["execution_revision"]
+                or execution.get("model_principal_id") != guard["author_id"]):
+            return False
+        if _table_exists(conn, "worker_scope_evidence") and conn.execute(
+                "SELECT 1 FROM worker_scope_evidence WHERE result_id=?",
+                (source["id"],)).fetchone() is not None:
+            return False
+        return True
+    except (TypeError, ValueError, KeyError, AttributeError, sqlite3.Error):
+        return False
+
+
+def _correction_audit_matches(conn, row, detail):
     """Bind every correction-ledger field to its event before exposing it."""
     expected = {
         "correction_id": row.get("correction_id"),
@@ -784,7 +858,8 @@ def _correction_audit_matches(row, detail):
     if policy_sha is not None:
         if (type(policy_sha) is not str or re.fullmatch(r"[a-f0-9]{64}", policy_sha) is None
                 or detail.get("policy_decision_sha256") != policy_sha or device_id != 0
-                or row.get("event_changed_by") != "native-worker-completion-policy"):
+                or row.get("event_changed_by") != "native-worker-completion-policy"
+                or not _policy_correction_decision_matches(conn, row)):
             return False
     if (type(correction_id) is not int or correction_id <= 0
             or type(correction_round) is not int or correction_round <= 0
@@ -841,7 +916,7 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
         )
         for event_type, event_column, timestamp, result_index, action in result_sources:
             branch = f"""
-                SELECT h.id AS event_id, '{event_type}' AS event_type,
+                SELECT h.id AS event_id, h.task_id AS task_id, '{event_type}' AS event_type,
                        h.new_value AS event_new_value, h.changed_at AS event_changed_at,
                        h.changed_by AS event_changed_by, {timestamp} AS source_timestamp,
                        r.id AS result_id, r.result AS result_text,
@@ -851,7 +926,8 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
                        NULL AS source_result_id, NULL AS source_result_sha256,
                        NULL AS source_generation, NULL AS source_fence,
                        NULL AS source_task_version, NULL AS source_status_revision,
-                       NULL AS correction_note, NULL AS request_id,
+                   NULL AS correction_note, NULL AS request_id,
+                   NULL AS policy_decision_sha256,
                        NULL AS requested_by_device_id, NULL AS correction_next_task_version
                 FROM task_history AS h INDEXED BY idx_task_history_task_action_id
                 JOIN worker_task_results AS r INDEXED BY {result_index}
@@ -866,8 +942,12 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
             params.append(scan_limit + 1)
 
     if _table_exists(conn, "task_result_corrections"):
+        correction_columns = {item[1] for item in conn.execute(
+            "PRAGMA table_info(task_result_corrections)")}
+        policy_column = ("c.policy_decision_sha256" if "policy_decision_sha256" in correction_columns
+                         else "NULL")
         branch = f"""
-            SELECT h.id AS event_id, 'correction_requested' AS event_type,
+            SELECT h.id AS event_id, h.task_id AS task_id, 'correction_requested' AS event_type,
                    h.new_value AS event_new_value, h.changed_at AS event_changed_at,
                    h.changed_by AS event_changed_by, c.requested_at AS source_timestamp,
                    NULL AS result_id, NULL AS result_text, NULL AS result_sha256,
@@ -879,6 +959,7 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
                    c.source_task_version AS source_task_version,
                    c.source_status_revision AS source_status_revision,
                    c.correction_note AS correction_note, c.request_id AS request_id,
+                   {policy_column} AS policy_decision_sha256,
                    c.requested_by_device_id AS requested_by_device_id,
                    c.next_task_version AS correction_next_task_version
             FROM task_history AS h INDEXED BY idx_task_history_task_action_id
@@ -990,7 +1071,7 @@ def read_result_history(conn, task_id, *, before_event_id=None, limit=20):
                 else:
                     raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Abnahmeereignis")
             elif row["event_type"] == "correction_requested":
-                if not _correction_audit_matches(row, detail):
+                if not _correction_audit_matches(conn, row, detail):
                     raise ResultHistoryUnavailable("Ergebnisverlauf enthält eine unbestätigte Korrektur")
                 audit_time = _canonical_history_timestamp(row.get("event_changed_at"), None)
                 events.append({"event_id": event_id, "type": "correction_requested",
@@ -1111,6 +1192,8 @@ def active_correction_request(conn, task_id):
         raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt") from None
     audit_row = {
         "correction_id": request.get("id"),
+        "event_id": event_id,
+        "task_id": task_id,
         "correction_round": request.get("correction_round"),
         "source_result_id": request.get("source_result_id"),
         "source_result_sha256": request.get("source_result_sha256"),
@@ -1127,7 +1210,7 @@ def active_correction_request(conn, task_id):
         "event_changed_by": audit.get("changed_by"),
         "correction_next_task_version": request.get("next_task_version"),
     }
-    if not _correction_audit_matches(audit_row, detail):
+    if not _correction_audit_matches(conn, audit_row, detail):
         raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
     if not _has_results(conn):
         raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")

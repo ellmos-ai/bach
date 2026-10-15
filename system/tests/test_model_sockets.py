@@ -422,6 +422,224 @@ def _bindings_for(agent_id):
     }
 
 
+def test_new_dynamic_worker_uses_existing_local_offer_without_starting(registry):
+    migrated()
+    before = slots.load_slots_config(strict=True)
+    worker = slots.add_worker({"name": "Pilot", "backend": "ollama", "model": "qwen3.8:27b-mlx",
+                               "sub_mode": "task_worker", "task_id": 2217}, path=registry)
+    after = slots.load_slots_config(strict=True)
+    proof = models.require_model_binding(worker["id"], "ollama", "qwen3.8:27b-mlx")
+    assert worker["status"] == "idle" and proof["agent_id"] == worker["id"]
+    assert proof["priority"] == "background"
+    assert len(_bindings_for(worker["id"])) == 1
+    assert after["model_sockets"]["sockets"] == before["model_sockets"]["sockets"]
+    assert all(after["model_sockets"]["bindings"][key] == value for key, value in
+               before["model_sockets"]["bindings"].items())
+    assert models.model_sockets_snapshot()["runtime_verified"] is False
+
+
+@pytest.mark.parametrize("kind", ["system", "blueprint", "sequence"])
+def test_new_system_agent_binds_only_offered_local_model(registry, kind):
+    migrated()
+    if kind == "system":
+        result = slots.create_system_slot(
+            {"name": "Lokaler Pilot", "backend": "ollama", "model": "qwen3.8:27b-mlx"},
+            version(), path=registry,
+        )
+    elif kind == "blueprint":
+        result = slots.materialize_system_blueprint(
+            2217, 1, {"worker_type": "once", "backend": "ollama", "model": "qwen3.8:27b-mlx"},
+            version(), path=registry,
+        )
+    else:
+        from hub._services.chat.sequence_store import digest
+        profile = slots.sequence_profile_snapshot(["buddha_developer"], path=registry)["profiles"]["buddha_developer"]
+        result = slots.materialize_sequence_slot(
+            "a" * 32, 0, profile, 2217, source_slot="buddha_developer",
+            expected_profile_digest=digest(profile), path=registry,
+        )
+    slot_id = result["slot_id"]
+    assert slots.get_system_slot(slot_id, registry)["status"] == "idle"
+    assert models.require_model_binding(slot_id, "ollama", "qwen3.8:27b-mlx")["priority"] == "background"
+
+
+@pytest.mark.parametrize("kind", ["worker", "system"])
+@pytest.mark.parametrize("offer", ["missing", "disabled"])
+def test_new_local_profile_rejects_unavailable_offer_without_partial_save(registry, kind, offer):
+    from pathlib import Path
+
+    migrated()
+    if offer == "disabled":
+        models.configure_model_socket(version(),
+                                      {"backend": "ollama", "model": "unavailable:8b", "enabled": False})
+    before = Path(registry).read_bytes()
+    with pytest.raises(ValueError, match="Modellangebot|Steckplatz"):
+        if kind == "worker":
+            slots.add_worker({"name": "Nicht startbar", "backend": "ollama", "model": "unavailable:8b"},
+                             path=registry)
+        else:
+            slots.create_system_slot({"name": "Nicht startbar", "backend": "ollama",
+                                      "model": "unavailable:8b"}, version(), path=registry)
+    assert Path(registry).read_bytes() == before
+
+
+def test_new_cloud_worker_has_no_local_socket_or_binding(registry):
+    migrated()
+    before = slots.load_slots_config(strict=True)["model_sockets"]
+    worker = slots.add_worker({"name": "Cloud", "backend": "ollama-cloud", "model": "gemma:cloud"},
+                              path=registry)
+    after = slots.load_slots_config(strict=True)["model_sockets"]
+    assert after == before
+    assert _bindings_for(worker["id"]) == {}
+    assert worker["status"] == "idle"
+
+
+def test_dynamic_worker_model_edit_reconciles_only_own_bindings(registry):
+    migrated()
+    models.configure_model_socket(version(), {"backend": "ollama", "model": "next:8b"})
+    worker = slots.add_worker({"name": "Edit", "backend": "ollama", "model": "qwen3.8:27b-mlx", "task_id": 2217},
+                              path=registry)
+    old_target = models.socket_id("ollama", "qwen3.8:27b-mlx", "test-host")
+    old_id = models._binding_id(worker["id"], old_target)
+    models.bind_model_agent(version(), worker["id"], old_target,
+                            {"priority": "foreground", "context_tokens": 4096})
+    foreign = {key: value for key, value in slots.load_slots_config(strict=True)["model_sockets"]["bindings"].items()
+               if value["agent_id"] != worker["id"]}
+    profile_version = slots.worker_configuration_snapshot(worker["id"])["configuration_version"]
+    slots.change_worker_configuration(worker["id"], profile_version,
+                                      {"model": "next:8b", "model_fallbacks": [
+                                          {"backend": "ollama", "model": "qwen3.8:27b-mlx"}]}, path=registry)
+    bindings = _bindings_for(worker["id"])
+    assert len(bindings) == 2 and bindings[old_id]["priority"] == "foreground"
+    assert bindings[old_id]["context_tokens"] == 4096
+    assert models.require_model_binding(worker["id"], "ollama", "next:8b")
+    profile_version = slots.worker_configuration_snapshot(worker["id"])["configuration_version"]
+    slots.change_worker_configuration(worker["id"], profile_version,
+                                      {"model_fallbacks": []}, path=registry)
+    assert old_id not in _bindings_for(worker["id"])
+    assert all(slots.load_slots_config(strict=True)["model_sockets"]["bindings"][key] == value
+               for key, value in foreign.items())
+
+
+@pytest.mark.parametrize("offer", ["missing", "disabled"])
+@pytest.mark.parametrize("field", ["model", "model_fallbacks"])
+def test_dynamic_model_edit_rejects_unavailable_target_without_partial_save(registry, offer, field):
+    from pathlib import Path
+
+    migrated()
+    worker = slots.add_worker({"name": "Edit", "backend": "ollama", "model": "qwen3.8:27b-mlx", "task_id": 2217},
+                              path=registry)
+    if offer == "disabled":
+        models.configure_model_socket(version(),
+                                      {"backend": "ollama", "model": "unavailable:8b", "enabled": False})
+    before = Path(registry).read_bytes()
+    profile_version = slots.worker_configuration_snapshot(worker["id"])["configuration_version"]
+    changes = ({"model": "unavailable:8b"} if field == "model" else
+               {"model_fallbacks": [{"backend": "ollama", "model": "unavailable:8b"}]})
+    with pytest.raises(ValueError, match="Modellangebot|Steckplatz"):
+        slots.change_worker_configuration(worker["id"], profile_version,
+                                          changes, path=registry)
+    assert Path(registry).read_bytes() == before
+    assert len(_bindings_for(worker["id"])) == 1
+
+
+def test_dynamic_worker_switch_to_cloud_removes_only_own_local_binding(registry):
+    migrated()
+    worker = slots.add_worker({"name": "Edit", "backend": "ollama", "model": "qwen3.8:27b-mlx", "task_id": 2217},
+                              path=registry)
+    before = slots.load_slots_config(strict=True)["model_sockets"]["bindings"]
+    foreign = {key: value for key, value in before.items() if value["agent_id"] != worker["id"]}
+    profile_version = slots.worker_configuration_snapshot(worker["id"])["configuration_version"]
+    slots.change_worker_configuration(worker["id"], profile_version,
+                                      {"backend": "ollama-cloud", "model": "gemma:cloud"}, path=registry)
+    after = slots.load_slots_config(strict=True)["model_sockets"]["bindings"]
+    assert after == foreign
+    assert _bindings_for(worker["id"]) == {}
+
+
+@pytest.mark.parametrize("operation", ["worker_create", "system_create", "worker_edit"])
+def test_migrated_missing_registry_rejects_new_local_profile_mutation(registry, operation):
+    from pathlib import Path
+
+    migrated()
+    worker = None
+    if operation == "worker_edit":
+        worker = slots.add_worker({"name": "Edit", "backend": "ollama", "model": "qwen3.8:27b-mlx", "task_id": 2217},
+                                  path=registry)
+    config = slots.load_slots_config(strict=True)
+    del config["model_sockets"]
+    slots.save_slots_config(config, registry)
+    before = Path(registry).read_bytes()
+    with pytest.raises(RuntimeError, match="model_socket_registry_unavailable"):
+        if operation == "worker_create":
+            slots.add_worker({"name": "Blocked", "backend": "ollama", "model": "qwen3.8:27b-mlx"},
+                             path=registry)
+        elif operation == "system_create":
+            slots.create_system_slot({"model": "qwen3.8:27b-mlx"}, version(), path=registry)
+        else:
+            profile_version = slots.worker_configuration_snapshot(worker["id"])["configuration_version"]
+            slots.change_worker_configuration(worker["id"], profile_version,
+                                              {"model": "qwen3.8:27b-mlx"}, path=registry)
+    assert Path(registry).read_bytes() == before
+
+
+@pytest.mark.parametrize("bad_version", ["4", True, None, 0])
+@pytest.mark.parametrize("operation", ["core", "create", "blueprint", "sequence",
+                                      "worker_create", "worker_edit"])
+def test_invalid_format_version_never_saves_a_model_binding(registry, bad_version, operation):
+    from pathlib import Path
+    from hub._services.chat.sequence_store import digest
+
+    migrated()
+    worker = None
+    worker_version = None
+    if operation == "worker_edit":
+        worker = slots.add_worker({"name": "Edit", "backend": "ollama", "model": "qwen3.8:27b-mlx", "task_id": 2217},
+                                  path=registry)
+        worker_version = slots.worker_configuration_snapshot(worker["id"])["configuration_version"]
+    profile = slots.sequence_profile_snapshot(["buddha_developer"], path=registry)["profiles"]["buddha_developer"]
+    config = slots.load_slots_config(strict=True)
+    config["version"] = bad_version
+    slots.save_slots_config(config, registry)
+    before = Path(registry).read_bytes()
+    core_version = slots._core_configuration_version(config)
+    with pytest.raises(ValueError, match="Konfigurationsformatversion|nicht lesbar"):
+        if operation == "core":
+            slots.change_core_system_agent("buddha_developer", core_version,
+                                           {"model": "qwen3.8:27b-mlx"}, path=registry)
+        elif operation == "create":
+            slots.create_system_slot({"model": "qwen3.8:27b-mlx"}, core_version, path=registry)
+        elif operation == "blueprint":
+            slots.materialize_system_blueprint(2217, 1,
+                {"worker_type": "once", "model": "qwen3.8:27b-mlx"}, core_version, path=registry)
+        elif operation == "sequence":
+            slots.materialize_sequence_slot("a" * 32, 0, profile, 2217,
+                source_slot="buddha_developer", expected_profile_digest=digest(profile), path=registry)
+        elif operation == "worker_create":
+            slots.add_worker({"name": "Blocked", "backend": "ollama", "model": "qwen3.8:27b-mlx"},
+                             path=registry)
+        else:
+            slots.change_worker_configuration(worker["id"], worker_version,
+                                              {"model": "qwen3.8:27b-mlx"}, path=registry)
+    assert Path(registry).read_bytes() == before
+
+
+def test_existing_disabled_binding_stays_disabled_on_worker_model_edit(registry):
+    migrated()
+    worker = slots.add_worker({"name": "Edit", "backend": "ollama", "model": "qwen3.8:27b-mlx", "task_id": 2217},
+                              path=registry)
+    target = models.socket_id("ollama", "qwen3.8:27b-mlx", "test-host")
+    models.bind_model_agent(version(), worker["id"], target,
+                            {"enabled": False, "context_tokens": 2048})
+    profile_version = slots.worker_configuration_snapshot(worker["id"])["configuration_version"]
+    slots.change_worker_configuration(worker["id"], profile_version,
+                                      {"model": "qwen3.8:27b-mlx"}, path=registry)
+    binding = next(iter(_bindings_for(worker["id"]).values()))
+    assert binding["enabled"] is False and binding["context_tokens"] == 2048
+    with pytest.raises(RuntimeError, match="model_socket_binding_unavailable"):
+        models.require_model_binding(worker["id"], "ollama", "qwen3.8:27b-mlx")
+
+
 def test_atomic_profile_rebind_updates_primary_and_fallback_once(registry, monkeypatch):
     from pathlib import Path
 

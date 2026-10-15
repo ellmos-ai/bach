@@ -21,6 +21,10 @@ from hub._services.task_result_service import (
     read_result_history,
     request_result_correction,
 )
+from system.tests.test_worker_completion_policy import completion_world, _paths
+from system.tests.test_worker_execution_evidence import worker_context
+from hub._services.worker_completion_policy import reconcile_current_result
+from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
 
 def _reviewed_result(conn, *, text="Ergebnis mit überprüfbaren Belegen", generation="generation-1"):
@@ -76,6 +80,50 @@ def _operator(conn, *, correction=False):
         connection=conn,
         can_request_correction=correction,
     )
+
+
+@pytest.mark.parametrize("tamper", ["digest", "event", "actor", "foreign_result"])
+def test_missing_scope_policy_correction_reader_rejects_broken_decision_link(
+    completion_world, tamper,
+):
+    world = completion_world(missing_scope=True)
+    conn, task_id = world["conn"], world["task_id"]
+    reconcile_current_result(conn, task_id, **_paths(world))
+    correction = conn.execute("SELECT id,source_result_id FROM task_result_corrections "
+                              "WHERE task_id=?", (task_id,)).fetchone()
+    assert correction is not None
+    if tamper == "digest":
+        conn.execute("UPDATE task_result_corrections SET policy_decision_sha256=? WHERE id=?",
+                     ("0" * 64, correction["id"]))
+        event = conn.execute("SELECT id,new_value FROM task_history WHERE task_id=? "
+                             "AND action='result_correction_request'", (task_id,)).fetchone()
+        detail = json.loads(event["new_value"])
+        detail["policy_decision_sha256"] = "0" * 64
+        conn.execute("UPDATE task_history SET new_value=? WHERE id=?",
+                     (json.dumps(detail, sort_keys=True), event["id"]))
+    elif tamper == "event":
+        conn.execute("UPDATE task_history SET new_value='{}' WHERE id=(SELECT "
+                     "completion_decision_event_id FROM worker_task_results WHERE id=?)",
+                     (correction["source_result_id"],))
+    elif tamper == "actor":
+        conn.execute("UPDATE task_history SET changed_by='foreign' WHERE id=(SELECT "
+                     "completion_decision_event_id FROM worker_task_results WHERE id=?)",
+                     (correction["source_result_id"],))
+    else:
+        conn.execute("UPDATE task_result_corrections SET source_result_id=source_result_id+100 "
+                     "WHERE id=?", (correction["id"],))
+    conn.commit()
+    retry = WorkerLeaseBinding.acquire(world["client"], task_id,
+        worker_id="completion-author@HOST", host="HOST",
+        generation="missing-scope-reader-retry", is_current=lambda: True,
+        stop_event=threading.Event())
+    exact = {"lease_id": retry._ack.lease_id, "fence": retry._ack.fence,
+             "task_version": retry.task_snapshot()["task_version"],
+             "generation": "missing-scope-reader-retry"}
+    with pytest.raises(CorrectionContextDenied):
+        read_correction_context(conn, task_id, **exact)
+    with pytest.raises(ResultHistoryUnavailable):
+        read_result_history(conn, task_id, limit=50)
 
 
 def test_correction_is_atomic_keeps_v1_result_and_starts_distinct_generation(mem_db):

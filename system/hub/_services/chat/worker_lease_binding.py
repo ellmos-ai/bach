@@ -731,10 +731,16 @@ class WorkerLeaseBinding:
                 evaluation = self._reconcile_confirmed_completion()
                 if not isinstance(evaluation, dict) or evaluation.get("status") == "review":
                     self._prepare_eligible_review_task()
+            else:
+                # A submitted Git task without a tree must reach the same
+                # canonical negative evidence guard as a later controller poll.
+                # The guard preserves unavailable/transient cases and the ACK.
+                self._reconcile_confirmed_completion()
             return confirmed
         except Exception:
-            # Missing/dirty worktrees cannot undo the committed submission or
-            # prevent the existing personal acceptance/correction workflow.
+            # Capture errors never undo a committed submission. The existing
+            # local evaluator alone may reopen proven missing-tree work.
+            self._reconcile_confirmed_completion()
             return False
 
     def _prepare_eligible_review_task(self):

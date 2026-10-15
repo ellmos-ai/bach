@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import subprocess
 import threading
 
 import pytest
@@ -21,7 +22,9 @@ from hub._services.task_result_service import (
     ResultConflict,
     ResultPermissionDenied,
     accept_result,
+    read_correction_context,
     read_result,
+    read_result_history,
 )
 from hub._services.task_lease_client import TaskLeaseClient
 from hub._services.task_schema import ensure_task_result_contract_columns
@@ -98,7 +101,7 @@ def completion_world(worker_context, tmp_path, monkeypatch):
     """Build a real local submission, execution receipt, and clean registered Git tree."""
     def build(*, mode="simple_task", contract_min_chars=12, contract_json_override=None,
               user_review=False, github_required=False, github_external_review=True,
-              review_expiry_seconds=None):
+              review_expiry_seconds=None, missing_scope=False):
         context = worker_context
         conn, client, task_id = context["conn"], context["client"], context["task_id"]
         old_binding = context["binding"]
@@ -151,6 +154,16 @@ def completion_world(worker_context, tmp_path, monkeypatch):
 
         monkeypatch.setattr(worker_write_guard, "_scope_git_env", isolated_test_git_environment)
         tree = _new_scope_repo(tmp_path, task_id=task_id)
+        if missing_scope:
+            # A real registered tree is removed through Git before submission;
+            # its missing receipt is not simulated by deleting evidence rows.
+            contract = json.dumps({"schema": "bach.worker-task-contract.v1",
+                "criteria": [{"kind": "git_blob_sha256", "path": "README.md",
+                    "sha256": hashlib.sha256(b"public base\n").hexdigest()}]},
+                sort_keys=True, separators=(",", ":"))
+            conn.execute("UPDATE tasks SET completion_contract_json=? WHERE id=?",
+                         (contract, task_id))
+            conn.commit()
         _install_lock_scanner(tmp_path, monkeypatch)
         native_snapshot = worker_scope_evidence.snapshot_task_scope
 
@@ -171,12 +184,16 @@ def completion_world(worker_context, tmp_path, monkeypatch):
         assert handle is not None
         assert binding.finish_model_execution(handle,
             result=_model_response(AUTHOR_OBSERVED), route_sha256=AUTHOR_ROUTE) is True
+        if missing_scope:
+            subprocess.run(["git", "worktree", "remove", "--force", str(tree["target"])],
+                cwd=tree["repo"], env=isolated_test_git_environment(), check=True,
+                capture_output=True, timeout=8)
         binding.execute_task_manage({"action": "submit_result", "task_id": task_id,
                                      "result": RESULT_TEXT})
-        assert worker_scope_evidence.capture_scope_evidence(conn, binding) is True
+        assert worker_scope_evidence.capture_scope_evidence(conn, binding) is not missing_scope
         target = worker_scope_evidence.project_scope_evidence(read_result(conn, task_id),
             repo_root=tree["repo"], worktrees_dir=tree["worktrees"])["result"]
-        assert target["result_revision"]
+        assert (target["result_revision"] is None) is missing_scope
         return {**context, "tree": tree, "target": target}
     return build
 
@@ -184,6 +201,14 @@ def completion_world(worker_context, tmp_path, monkeypatch):
 def _paths(world):
     return {"repo_root": world["tree"]["repo"],
             "worktrees_dir": world["tree"]["worktrees"]}
+
+
+def _correction_count(conn, task_id):
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='task_result_corrections'").fetchone() is None:
+        return 0
+    return conn.execute("SELECT COUNT(*) FROM task_result_corrections WHERE task_id=?",
+                        (task_id,)).fetchone()[0]
 
 
 def _record_independent_review(world, *, status="approved", read_current_evidence=True):
@@ -415,6 +440,150 @@ def test_rejected_independent_review_requests_one_correction(completion_world):
     assert read_result(conn, task_id)["status"] == "pending"
     assert conn.execute("SELECT COUNT(*) FROM task_result_corrections WHERE task_id=?",
                         (task_id,)).fetchone()[0] == 1
+    assert any(event["type"] == "correction_requested" for event in
+               read_result_history(conn, task_id, limit=50)["events"])
+
+
+def test_definitively_missing_task_tree_reopens_v1_for_real_correction(
+    completion_world, monkeypatch,
+):
+    world = completion_world(missing_scope=True)
+    conn, client, task_id = world["conn"], world["client"], world["task_id"]
+    source = read_result(conn, task_id)["result"]
+    assert source["submission"]["availability"] == "available"
+    assert source["execution"]["availability"] == "available"
+    assert source["scope"]["reason"] == "scope_not_recorded"
+    assert source["result_revision"] is None
+    assert world["binding"].closed is True
+    assert client.read(task_id).leased is False
+
+    outcome = reconcile_current_result(conn, task_id, **_paths(world))
+    assert outcome["decision"]["state"] == "correction_required"
+    assert outcome["decision"]["completion_allowed"] is False
+    assert outcome["result_revision"] is None
+    assert read_result(conn, task_id)["status"] == "pending"
+    correction = conn.execute("SELECT id,correction_note,policy_decision_sha256 "
+        "FROM task_result_corrections WHERE task_id=?", (task_id,)).fetchone()
+    assert source["submission_revision"] in correction["correction_note"]
+    assert "None" not in correction["correction_note"]
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+        "AND action='result_acceptance'", (task_id,)).fetchone()[0] == 0
+    assert reconcile_current_result(conn, task_id, **_paths(world))["availability"] == "unavailable"
+    assert conn.execute("SELECT COUNT(*) FROM task_result_corrections WHERE task_id=?",
+                        (task_id,)).fetchone()[0] == 1
+
+    retry = WorkerLeaseBinding.acquire(client, task_id, worker_id="completion-author@HOST",
+        host="HOST", generation="completion-correction-generation-2",
+        is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    from hub._services import task_lease
+    monkeypatch.setattr(task_lease, "_utcnow", lambda: T0)
+    context = read_correction_context(conn, task_id, lease_id=retry._ack.lease_id,
+        fence=retry._ack.fence, task_version=retry.task_snapshot()["task_version"],
+        generation="completion-correction-generation-2")
+    assert context["correction"]["correction_id"] == correction["id"]
+
+
+@pytest.mark.parametrize("capture_behavior", ["false", "raises"])
+def test_failed_optional_scope_capture_triggers_local_correction_without_losing_ack(
+    completion_world, monkeypatch, capture_behavior,
+):
+    world = completion_world(missing_scope=True)
+    conn, client, task_id, binding = (world["conn"], world["client"],
+                                      world["task_id"], world["binding"])
+    before = read_result(conn, task_id)["result"]
+    assert before["reason"] == "awaiting_review"
+    assert binding._review_ack.released is True
+    monkeypatch.setattr(client, "_reconcile_task_completion",
+        lambda requested: reconcile_current_result(conn, requested, **_paths(world)))
+    if capture_behavior == "raises":
+        def unavailable_capture(_binding):
+            raise RuntimeError("optional local Git reader failed")
+        monkeypatch.setattr(client, "_capture_task_scope", unavailable_capture)
+    assert binding.capture_confirmed_scope() is False
+    after = read_result(conn, task_id)
+    assert after["status"] == "pending"
+    assert after["result"]["result_id"] == before["result_id"]
+    assert after["result"]["submission_revision"] == before["submission_revision"]
+    assert binding._review_ack.released is True
+    assert after["result"]["accepted"] is False
+    assert _correction_count(conn, task_id) == 1
+    assert binding.capture_confirmed_scope() is False
+    assert _correction_count(conn, task_id) == 1
+
+
+@pytest.mark.parametrize("damage", ["existing_tree", "symlink", "recorded_scope", "legacy",
+                                     "execution", "identity", "receipt", "task",
+                                     "orphan_history", "lock_scanner", "git_command"])
+def test_missing_scope_guard_rejects_nonpermanent_or_untrusted_cases(
+    completion_world, damage, tmp_path, monkeypatch,
+):
+    world = completion_world(missing_scope=damage not in {"recorded_scope", "orphan_history"})
+    conn, task_id = world["conn"], world["task_id"]
+    if damage == "existing_tree":
+        world["tree"]["target"].mkdir()
+    elif damage == "symlink":
+        try:
+            os.symlink(world["tree"]["repo"], world["tree"]["target"],
+                       target_is_directory=True)
+        except OSError:
+            pytest.skip("Testbetriebssystem erlaubt keine temporären Symlinks")
+    elif damage in {"recorded_scope", "orphan_history"}:
+        subprocess.run(["git", "worktree", "remove", "--force", str(world["tree"]["target"])],
+            cwd=world["tree"]["repo"], env=worker_write_guard._scope_git_env(),
+            check=True, capture_output=True, timeout=8)
+        if damage == "orphan_history":
+            conn.execute("DELETE FROM worker_scope_evidence WHERE task_id=?", (task_id,))
+    elif damage == "legacy":
+        conn.execute("UPDATE worker_task_results SET completion_policy_version=0 WHERE task_id=?",
+                     (task_id,))
+    elif damage == "execution":
+        conn.execute("UPDATE worker_model_executions SET phase='failed' WHERE task_id=?",
+                     (task_id,))
+    elif damage == "identity":
+        settings._persist(conn, IDENTITY_KEY, [
+            _identity(STANDARD_REVIEWER, STANDARD_ROUTE, STANDARD_MODEL, STANDARD_OBSERVED)],
+            actor="completion-fixture")
+    elif damage == "receipt":
+        conn.execute("UPDATE worker_task_results SET result='tampered' WHERE task_id=?", (task_id,))
+    elif damage == "task":
+        conn.execute("UPDATE tasks SET title=title || ' changed' WHERE id=?", (task_id,))
+    elif damage == "lock_scanner":
+        _install_lock_scanner(tmp_path, monkeypatch,
+                              locks=[{"path": str(world["tree"]["worktrees"])}])
+    elif damage == "git_command":
+        def unavailable_git(*_args, **_kwargs):
+            raise RuntimeError("bounded local Git read failed")
+        monkeypatch.setattr(worker_write_guard, "_run_readonly", unavailable_git)
+    conn.commit()
+    outcome = reconcile_current_result(conn, task_id, **_paths(world))
+    assert outcome["availability"] == "unavailable"
+    assert read_result(conn, task_id)["status"] == "review"
+    assert _correction_count(conn, task_id) == 0
+
+
+def test_missing_scope_race_rolls_back_decision_and_correction(
+    completion_world, monkeypatch,
+):
+    from hub._services import worker_completion_policy as policy
+    world = completion_world(missing_scope=True)
+    original = policy._definitely_missing_task_tree
+    calls = 0
+
+    def tree_arrives(task_id, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            world["tree"]["target"].mkdir()
+        return original(task_id, **kwargs)
+
+    monkeypatch.setattr(policy, "_definitely_missing_task_tree", tree_arrives)
+    with pytest.raises(ResultConflict):
+        reconcile_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert calls == 2
+    assert read_result(world["conn"], world["task_id"])["status"] == "review"
+    assert _correction_count(world["conn"], world["task_id"]) == 0
+    assert world["conn"].execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+        "AND action='worker_completion_decision'", (world["task_id"],)).fetchone()[0] == 0
 
 
 def test_high_security_findings_create_one_correction_and_allow_a_fresh_submission(
