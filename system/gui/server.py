@@ -2531,9 +2531,13 @@ async def read_task_result(task_id: int, request: Request):
     try:
         if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
-        return read_result(conn, task_id, operator_token=operator_token)
+        data = read_result(conn, task_id, operator_token=operator_token)
     finally:
         conn.close()
+    # Scope inspection can invoke Git/lock scanners and must not hold SQLite.
+    import asyncio
+    from hub._services.worker_scope_evidence import project_scope_evidence
+    return await asyncio.to_thread(project_scope_evidence, data)
 
 
 @app.get("/api/tasks/{task_id}/result/history")

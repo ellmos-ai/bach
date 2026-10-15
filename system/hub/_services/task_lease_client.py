@@ -475,6 +475,18 @@ class TaskLeaseClient:
     def _link_model_execution(self, binding, handle):
         return self._model_execution_call("link_execution", binding, handle)
 
+    def _capture_task_scope(self, binding):
+        """Private local capture, never a remote worker self-attestation route."""
+        if self.mode != "local" or getattr(binding, "_client", None) is not self:
+            return False
+        from .worker_scope_evidence import capture_scope_evidence
+        conn = self._get_local_connection()
+        try:
+            return capture_scope_evidence(conn, binding)
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
         """Let subclasses opt in to one validated server-error response shape."""
         return False
@@ -658,9 +670,13 @@ class TaskLeaseClient:
             conn = self._get_local_connection()
             try:
                 data = read_result(conn, task_id, operator_token=operator_token)
+                outside_snapshot = not conn.in_transaction
             finally:
                 if self._conn is None:
                     conn.close()
+            if outside_snapshot:
+                from .worker_scope_evidence import project_scope_evidence
+                data = project_scope_evidence(data)
         if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-readback.v1"
                 or type(data.get("task_id")) is not int or data["task_id"] != task_id
                 or data.get("verified") is not True or type(data.get("status_revision")) is not int):

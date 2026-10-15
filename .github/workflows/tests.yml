@@ -76,7 +76,7 @@ jobs:
       - name: Install pinned shared worker-policy contract
         run: python -m pip install --no-deps ./.ci-sources/worker-policy
 
-      - name: Worker settings, device authorization, result receipts and lease observations
+      - name: Worker settings, result execution, project scope and lease observations
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
@@ -84,7 +84,7 @@ jobs:
         run: |
           python -m venv --system-site-packages "$RUNNER_TEMP/worker-policy-tests"
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -m pip install pystray Pillow
-          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py system/tests/test_worker_execution_evidence.py system/tests/test_worker_execution_runtime.py
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py system/tests/test_worker_execution_evidence.py system/tests/test_worker_execution_runtime.py system/tests/test_worker_scope_snapshot.py system/tests/test_worker_scope_evidence.py system/tests/test_worker_scope_integration.py
 
       - name: Native MarbleRun and task result authority
         env:
