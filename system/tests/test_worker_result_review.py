@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import threading
 
 import pytest
@@ -12,6 +13,7 @@ import pytest
 from hub._services import worker_policy_settings as settings
 from hub._services import worker_result_review as review
 from hub._services import worker_scope_evidence
+from hub._services.chat import worker_write_guard
 from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 from hub._services.task_lease_client import LeaseDeniedError
 from hub._services.task_result_service import read_result
@@ -78,6 +80,17 @@ def review_world(worker_context, tmp_path, monkeypatch):
     ], actor="test-operator")
     conn.commit()
 
+    native_git_environment = worker_write_guard._scope_git_env
+
+    def isolated_test_git_environment():
+        environment = native_git_environment()
+        environment["GIT_CONFIG_GLOBAL"] = os.devnull
+        environment["GIT_CONFIG_NOSYSTEM"] = "1"
+        return environment
+
+    # Exercise the real Git adapter against only this test repository. CI
+    # machines may have unrelated global/system Git clean filters installed.
+    monkeypatch.setattr(worker_write_guard, "_scope_git_env", isolated_test_git_environment)
     tree = _new_scope_repo(tmp_path, task_id=context["task_id"])
     _install_lock_scanner(tmp_path, monkeypatch)
     native_snapshot = worker_scope_evidence.snapshot_task_scope
