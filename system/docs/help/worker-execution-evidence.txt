@@ -13,10 +13,20 @@ und Taskprüfungen bleiben vorgeschaltet. Ein Fallback erhält einen eigenen
 Versuch. Eine fehlgeschlagene erste Route wird dadurch nicht erfolgreich.
 
 Gespeichert werden Backendkennung, angefordertes Modell, optional die vom
-Backend zurückgegebene Modellkennung, Slot, Generation, Fence, Zeitpunkte
+Provider tatsächlich zurückgemeldete Modellkennung, Slot, Generation, Fence, Zeitpunkte
 sowie SHA-256 der Anfrage und Antwort. Prompt, Antwort, Werkzeugargumente,
 Endpunkt-URL und private Lease-Kennung werden nicht gespeichert. Ein Modell
 ohne zurückgemeldete Modellkennung bleibt in diesem Feld unbekannt.
+
+provider_reported_model ist von model und last_resolved_model getrennt. Die
+beiden bestehenden Anzeigefelder können auf das angeforderte Modell zurückfallen
+und sind deshalb keine Quelle für observed_model. Nur eine gültige Kennung der
+aktuellen Providerantwort führt zu model_provenance=provider_reported. Fehlende
+oder ungültige Angaben ergeben observed_model=null und model_provenance=unknown.
+Ein vollständig abgeschlossener Ollama-Stream benötigt mindestens eine gültige,
+konsistente Modellangabe; widersprüchliche oder ungültige vorhandene Angaben
+bleiben unbekannt. CLI-Ausgabetext liefert keine solche Modellmetadatenquelle.
+Eine gültige Antwort bleibt auch ohne bekannte Modellkennung ein Ausführungsbeleg.
 
 Der private Prozesshandle bleibt ausschließlich im Controller und ist an
 das konkrete Binding-Objekt gebunden. Es gibt keinen öffentlichen Endpunkt,
@@ -43,10 +53,18 @@ nicht, dass eine Antwort fachlich alle Änderungen berücksichtigt hat.
 Abruf
 -----
 Der vorhandene Ergebnisabruf ergänzt result.execution mit dem Schema
-bach.worker-execution-evidence.v1. availability ist available oder unavailable.
+bach.worker-execution-evidence.v2. availability ist available oder unavailable.
 Bei available enthält der Beleg eine execution_revision und die korrelierten
 Ausführungsmetadaten. Bei unavailable nennt reason die fehlende oder ungültige
 Grundlage. Der Abruf legt keine Tabellen an und migriert keine Datenbank.
+
+Neue gespeicherte Receipts verwenden bach.worker-model-execution.v2 mit
+ausdrücklicher Modellprovenienz. Alte v1-Receipts und ihre Historie bleiben
+unverändert. Ihr Ausführungsbeleg kann weiterhin gültig sein; ihre bisherige
+Modellangabe wird im Abruf jedoch als observed_model=null mit
+model_provenance=legacy_unknown dargestellt. Sie wird nicht nachträglich als
+Providerangabe bestätigt. execution_revision bleibt an den unveränderten
+gespeicherten Beleg gebunden.
 
 Die additive Tabelle worker_model_executions verwendet dieselbe Taskdatenbank.
 Start, terminale Rückkehr und Ergebnisverknüpfung besitzen korrelierte

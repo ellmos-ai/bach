@@ -31,9 +31,10 @@ RAW_RESPONSE = "private response fixture; only its digest should be projected"
 
 
 def _response(*, content=RAW_RESPONSE, model=OBSERVED_MODEL, tool_calls=None, error=None):
-    # ModelBackend.chat returns normalized content/tool_calls/model fields;
+    # Adapter-provided response metadata is separate from the display model;
     # the OpenAI choices/message transport envelope is not this API contract.
-    response = {"model": model, "content": content, "tool_calls": tool_calls}
+    response = {"model": model, "provider_reported_model": model,
+                "content": content, "tool_calls": tool_calls}
     if error is not None:
         response["error"] = error
     return response
@@ -95,11 +96,12 @@ def _read(context):
 def _assert_execution_available(execution, record, binding, *, request_text=RAW_REQUEST,
                                 input_version=None, response_model=OBSERVED_MODEL):
     assert isinstance(execution, dict)
-    assert execution["schema"] == "bach.worker-execution-evidence.v1"
+    assert execution["schema"] == "bach.worker-execution-evidence.v2"
     assert execution["availability"] == "available"
     assert execution["backend_id"] == BACKEND
     assert execution["requested_model"] == REQUESTED_MODEL
     assert execution["observed_model"] == response_model
+    assert execution["model_provenance"] == ("unknown" if response_model is None else "provider_reported")
     assert execution["slot_id"] == SLOT_ID
     assert execution["generation"] == GENERATION
     assert execution["fence"] == binding._ack.fence
@@ -195,7 +197,7 @@ def test_cli_order_links_only_after_submit_then_valid_return(worker_context):
     snapshot, record = _read(context)
     assert snapshot["status"] == "review"
     assert record["accepted"] is False
-    assert record["execution"]["schema"] == "bach.worker-execution-evidence.v1"
+    assert record["execution"]["schema"] == "bach.worker-execution-evidence.v2"
     assert record["execution"]["availability"] == "unavailable"
 
     assert binding.finish_model_execution(handle, result=_response()) is True

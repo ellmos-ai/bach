@@ -14,11 +14,13 @@ import sqlite3
 import uuid
 
 from .task_lease import LeaseConfig, _fmt, _history, _load_for_holder, _local_naive
+from .model_provenance import reported_model
 
 _SEAL = object()
 _ACTOR = "native-model-controller"
-_SCHEMA = "bach.worker-model-execution.v1"
-_READ_SCHEMA = "bach.worker-execution-evidence.v1"
+_LEGACY_SCHEMA = "bach.worker-model-execution.v1"
+_SCHEMA = "bach.worker-model-execution.v2"
+_READ_SCHEMA = "bach.worker-execution-evidence.v2"
 _HEX = re.compile(r"[a-f0-9]{64}\Z")
 
 
@@ -149,7 +151,8 @@ def start_execution(conn, binding, *, backend_id, requested_model, slot_id, requ
             "task_id": binding.task_id, "fence": binding._ack.fence,
             "generation": binding.generation, "input_task_version": binding._snapshot["task_version"],
             "backend_id": backend_id, "requested_model": requested_model,
-            "observed_model": None, "slot_id": slot_id, "request_sha256": request_sha256,
+            "observed_model": None, "model_provenance": "unknown",
+            "slot_id": slot_id, "request_sha256": request_sha256,
             "response_sha256": None, "phase": "attempted", "started_at": _fmt(now), "returned_at": None}
         event = _history(conn, binding.task_id, "worker_model_execution_start", _ACTOR, now, receipt)
         conn.execute("INSERT INTO worker_model_executions "
@@ -187,7 +190,9 @@ def _answer(result):
                 return None
     if not ((isinstance(content, str) and content.strip()) or (isinstance(tools, list) and tools)):
         return None
-    observed = _metadata(result.get("model"), required=False)
+    # `model` is a compatibility/display field and may be a request fallback.
+    # Only the adapter's explicit current response field is an observation.
+    observed = reported_model(result.get("provider_reported_model"))
     return _digest(result), observed
 
 
@@ -218,6 +223,8 @@ def finish_execution(conn, binding, handle, *, result=None, failed=False):
         receipt.update(phase=phase, returned_at=_fmt(now),
                        response_sha256=answer[0] if valid else None,
                        observed_model=answer[1] if valid else None)
+        if receipt.get("schema") == _SCHEMA:
+            receipt["model_provenance"] = "provider_reported" if valid and answer[1] is not None else "unknown"
         digest = _digest(receipt)
         event = _history(conn, binding.task_id, "worker_model_execution_terminal", _ACTOR, now,
                          {"execution_id": row["id"], "phase": phase, "receipt_sha256": digest})
@@ -301,7 +308,7 @@ def read_execution_evidence(conn, record):
         receipt = json.loads(row["receipt"])
         if (not isinstance(receipt, dict) or _digest(receipt) != row["receipt_sha256"]
                 or type(receipt.get("task_id")) is not int or type(receipt.get("fence")) is not int
-                or receipt.get("schema") != _SCHEMA or receipt.get("execution_id") != row["id"]
+                or receipt.get("schema") not in {_LEGACY_SCHEMA, _SCHEMA} or receipt.get("execution_id") != row["id"]
                 or row["task_id"] != record["task_id"] or receipt.get("task_id") != record["task_id"]
                 or row["fence"] != record["fence"] or receipt.get("fence") != record["fence"]
                 or row["generation"] != record["generation"] or receipt.get("generation") != record["generation"]
@@ -317,6 +324,15 @@ def read_execution_evidence(conn, record):
         for key in ("observed_model", "slot_id"):
             _metadata(receipt.get(key), required=False)
         started = dict(receipt, phase="attempted", returned_at=None, response_sha256=None, observed_model=None)
+        legacy = receipt["schema"] == _LEGACY_SCHEMA
+        if not legacy:
+            observed = receipt.get("observed_model")
+            provenance = receipt.get("model_provenance")
+            if ((observed is None and provenance != "unknown")
+                    or (observed is not None and (provenance != "provider_reported"
+                        or reported_model(observed) != observed))):
+                return _unavailable("execution_evidence_invalid")
+            started["model_provenance"] = "unknown"
         terminal = {"execution_id": row["id"], "phase": "returned", "receipt_sha256": row["receipt_sha256"]}
         revision = _revision(row, record)
         linked = {"execution_id": row["id"], "execution_revision": revision,
@@ -329,6 +345,10 @@ def read_execution_evidence(conn, record):
         fields = ("execution_id", "backend_id", "requested_model", "observed_model", "slot_id",
                   "generation", "fence", "input_task_version", "request_sha256", "response_sha256", "started_at", "returned_at")
         return {"schema": _READ_SCHEMA, "availability": "available", **{k: receipt[k] for k in fields},
+            # v1 saved display fallbacks. Preserve its immutable execution proof,
+            # but never promote that legacy model value to a provider report.
+            "observed_model": None if legacy else receipt["observed_model"],
+            "model_provenance": "legacy_unknown" if legacy else receipt["model_provenance"],
             "execution_revision": revision, "submission_task_version": record["task_version"], "linked_at": row["linked_at"]}
     except sqlite3.DatabaseError:
         return _unavailable("execution_schema_unavailable")

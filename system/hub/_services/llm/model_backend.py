@@ -28,7 +28,9 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+
 from hub._services.limits import limit
+from hub._services.model_provenance import reported_model
 
 
 log = logging.getLogger(__name__)
@@ -213,6 +215,8 @@ class OllamaBackend(ModelBackend):
         last_activity = started
         probes = 0
         completed = False
+        reported_models: set[str] = set()
+        reported_model_invalid = False
 
         def aborted(error: str, *, backend_error=None) -> dict:
             content = "".join(content_parts)
@@ -228,6 +232,7 @@ class OllamaBackend(ModelBackend):
                 "raw_message": raw_message,
                 "prompt_tokens": prompt_tokens,
                 "error": error,
+                "provider_reported_model": None,
                 **({"backend_error": backend_error} if backend_error else {}),
             }
 
@@ -288,7 +293,14 @@ class OllamaBackend(ModelBackend):
                             try:
                                 chunk = json.loads(line)
                             except ValueError:
+                                reported_model_invalid = True
                                 continue
+                            if "model" in chunk:
+                                current_reported_model = reported_model(chunk["model"])
+                                if current_reported_model is None:
+                                    reported_model_invalid = True
+                                else:
+                                    reported_models.add(current_reported_model)
                             if chunk.get("error"):
                                 from hub._services.llm.backend_errors import classify_ollama_error
                                 detail = classify_ollama_error(chunk)
@@ -343,6 +355,10 @@ class OllamaBackend(ModelBackend):
             "raw_message": raw_message,
             "prompt_tokens": prompt_tokens,
             "model": selected_model,
+            "provider_reported_model": (
+                next(iter(reported_models))
+                if not reported_model_invalid and len(reported_models) == 1 else None
+            ),
         }
 
     def list_models(self) -> list[str]:
@@ -452,6 +468,7 @@ class OpenAIBackend(ModelBackend):
             "tool_calls": tool_calls,
             "raw_message": msg,
             "model": self.last_resolved_model,
+            "provider_reported_model": reported_model(resp.get("model")),
         }
 
     def list_models(self) -> list[str]:
@@ -794,6 +811,7 @@ class HermesBackend(OpenAIBackend):
             "tool_calls": tool_calls or None,
             "raw_message": res_msg,
             "model": self.last_resolved_model,
+            "provider_reported_model": reported_model(data.get("model")),
         }
 
     def availability(
@@ -981,6 +999,7 @@ class AnthropicBackend(ModelBackend):
             "tool_calls": tool_calls if tool_calls else None,
             "raw_message": resp,
             "model": self.last_resolved_model,
+            "provider_reported_model": reported_model(resp.get("model")),
         }
 
     def list_models(self) -> list[str]:
@@ -1104,6 +1123,7 @@ class CLIBackend(ModelBackend):
                 "content": content,
                 "tool_calls": None,
                 "raw_message": raw_message,
+                "provider_reported_model": None,
             }
             if error:
                 result["error"] = error
@@ -1112,6 +1132,7 @@ class CLIBackend(ModelBackend):
             "content": response,
             "tool_calls": None,
             "raw_message": {"content": response},
+            "provider_reported_model": None,
         }
 
     async def chat_bound(self, messages, tools=None, think=True, model=None, *,
