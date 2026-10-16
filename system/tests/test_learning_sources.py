@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 import sqlite3
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -301,6 +302,62 @@ def test_neutralization_stores_only_parameter_definitions(ctx):
     row = HermesDistillationService(svc.db_path).get_candidate(result["candidate_id"])
     assert value not in row["proposal_json"] and "<PROJECT_ROOT>" in row["content"]
     assert row["review_available"] and row["confidence"] is None
+
+
+def test_neutralization_long_non_email_finishes_in_bounded_child():
+    # Bound a potentially quadratic search without leaving a stuck test thread.
+    code = (
+        "from hub._services.learning_source_service import _neutralize; "
+        "text = '+' * 180000; "
+        "clean, definitions = _neutralize({'body': text}, []); "
+        "assert clean == {'body': text} and definitions == []; "
+        "print('neutralized:180000')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True,
+        encoding="utf-8", timeout=10, check=True,
+    )
+    assert result.stdout.strip() == "neutralized:180000"
+
+
+@pytest.mark.parametrize("address", [
+    "person+tag@example.test", "äöü+tag@beispiel.test",
+    "many.parts_and-tags@sub.example.test", "...@example.test",
+])
+@pytest.mark.parametrize("location", ["key", "value"])
+def test_neutralization_preserves_email_rejection(address, location):
+    from hub._services.learning_source_service import _neutralize
+
+    body = {address: "public"} if location == "key" else {"public": [address]}
+    with pytest.raises(ValueError, match="nicht neutralisierte"):
+        _neutralize(body, [])
+
+
+@pytest.mark.parametrize("character", ["+", ".", "-", "ä"])
+def test_neutralization_preserves_non_email_text(character):
+    from hub._services.learning_source_service import _neutralize
+
+    body = {"text": character * 1000}
+    assert _neutralize(body, []) == (body, [])
+
+
+def test_neutralization_rejects_long_local_part_with_email_suffix():
+    from hub._services.learning_source_service import _neutralize
+
+    with pytest.raises(ValueError, match="nicht neutralisierte"):
+        _neutralize("+" * 180000 + "@example.test", [])
+
+
+def test_neutralization_preserves_explicit_email_parameter():
+    from hub._services.learning_source_service import _neutralize
+
+    address = "person+tag@example.test"
+    clean, definitions = _neutralize(
+        {"contact": address},
+        [{"name": "CONTACT", "value": address, "description": "Kontaktadresse"}],
+    )
+    assert clean == {"contact": "<CONTACT>"}
+    assert definitions == [{"name": "CONTACT", "description": "Kontaktadresse"}]
 
 
 @pytest.mark.parametrize("leak", [r"C:\Users\Example\project", "/Users/example/project", "example@example.org", "api_key=secret"])

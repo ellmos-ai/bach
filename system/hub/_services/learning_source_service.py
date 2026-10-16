@@ -29,7 +29,8 @@ CONTRACT_SCHEMA = "bach.learning-candidate.v1"
 _ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}")
 _HASH = re.compile(r"[0-9a-f]{64}")
 _PRIVATE = re.compile(
-    r"(?:[A-Za-z]:[\\/]|/(?:Users|home)/|[\w.+-]+@[\w.-]+\.\w+|"
+    # Start the local part once per character run, not at every suffix of it.
+    r"(?:[A-Za-z]:[\\/]|/(?:Users|home)/|(?<![\w.+-])[\w.+-]+@[\w.-]+\.\w+|"
     r"\b(?:\d{1,3}\.){3}\d{1,3}\b)"
 )
 _SECRET = re.compile(
