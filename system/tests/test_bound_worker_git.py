@@ -320,19 +320,25 @@ def test_legacy_finish_cannot_overwrite_an_existing_canonical_holder(bridge, git
     bridge.binding.assert_active()
 
 
-@pytest.fixture
-def legacy_acquire_diagnostics(bridge, monkeypatch):
+@pytest.fixture(params=[None, "runner-" + "x" * 56 + ".local"], ids=["native-host", "long-fqdn"])
+def legacy_acquire_diagnostics(bridge, monkeypatch, request):
     """Keep the original acquire behavior and expose failures in isolated tests."""
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     original = WorkerLeaseBinding.acquire
     diagnostics = []
+    if request.param is not None:
+        monkeypatch.setattr(worker_git.socket, "gethostname", lambda: request.param)
 
     def acquire(cls, *args, **kwargs):
-        diagnostics.append({"stage": "acquire", "host": kwargs.get("host")})
+        diagnostics.append({"stage": "acquire", "host": kwargs.get("host"),
+                            "host_length": len(kwargs.get("host", ""))})
         try:
             binding = original(*args, **kwargs)
         except Exception as exc:
             diagnostics.append({"exception": type(exc).__name__, "message": str(exc)})
+            if exc.__context__ is not None:
+                diagnostics.append({"cause": type(exc.__context__).__name__,
+                                    "message": str(exc.__context__)})
             raise
         diagnostics.append({"stage": "acquired"})
         return binding
