@@ -159,7 +159,7 @@ def test_cloud_response_links_actual_call_to_submitted_result(task_state, monkey
 
     answer = asyncio.run(runtime.process("Führe die isolierte Aufgabe aus", CHAT_ID))
 
-    assert "wartet in Review" in str(answer)
+    assert "Abschlussstatus wird nach Policy ermittelt" in str(answer)
     assert len(backend.calls) == 1
     messages = json.dumps(backend.calls[0][0], ensure_ascii=False)
     assert binding._ack.lease_id not in messages
@@ -308,7 +308,7 @@ def test_permitted_fallback_links_only_fallback_after_primary_preanswer_failure(
 
     answer = asyncio.run(runtime.process("Erlaube den belegten Fallback", CHAT_ID))
 
-    assert "wartet in Review" in str(answer)
+    assert "Abschlussstatus wird nach Policy ermittelt" in str(answer)
     assert len(primary.calls) == 1 and len(fallback.calls) == 1
     evidence = _assert_available_execution(binding, backend_id="openrouter", model="fallback-model")
     assert evidence["backend_id"] != "openai"
