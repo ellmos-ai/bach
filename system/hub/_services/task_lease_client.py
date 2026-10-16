@@ -636,6 +636,22 @@ class TaskLeaseClient:
             if self._conn is None:
                 conn.close()
 
+    def _repair_machine_false_acceptance(self, task_id, *, expected, request_id,
+                                         repo_root=None, worktrees_dir=None):
+        """Local, private controller path for a proven machine false acceptance."""
+        if self.mode != "local":
+            return None
+        _identity(task_id)
+        from .machine_false_acceptance_recovery import repair_machine_false_acceptance
+        conn = self._get_local_connection()
+        try:
+            return repair_machine_false_acceptance(conn, task_id, expected=expected,
+                request_id=request_id, repo_root=repo_root,
+                worktrees_dir=worktrees_dir)
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
         """Let subclasses opt in to one validated server-error response shape."""
         return False

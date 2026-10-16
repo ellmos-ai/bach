@@ -63,7 +63,7 @@ def _request_hash(value):
 
 
 @pytest.fixture
-def review_world(worker_context, tmp_path, monkeypatch):
+def review_world(worker_context, tmp_path, monkeypatch, request):
     """Real SQLite submissions and registered clean Git worktree; no model calls."""
     context = worker_context
     conn, author = context["conn"], context["binding"]
@@ -93,7 +93,8 @@ def review_world(worker_context, tmp_path, monkeypatch):
     # Exercise the real Git adapter against only this test repository. CI
     # machines may have unrelated global/system Git clean filters installed.
     monkeypatch.setattr(worker_write_guard, "_scope_git_env", isolated_test_git_environment)
-    tree = _new_scope_repo(tmp_path, task_id=context["task_id"])
+    tree = _new_scope_repo(tmp_path, task_id=context["task_id"],
+                           pinned=getattr(request, "param", False))
     _install_lock_scanner(tmp_path, monkeypatch)
     native_snapshot = worker_scope_evidence.snapshot_task_scope
 
@@ -152,6 +153,93 @@ def _acquire_review(world, task_id, grant, stop, current, *, generation=REVIEW_G
         stop_event=stop, clock=lambda: T0,
         slot={"id": REVIEW_SLOT, "model": REVIEW_MODEL, "backend": "ollama"},
         automatic=True, _review_grant=grant)
+
+
+def _review_reader(world, monkeypatch):
+    from hub import worker_git
+
+    # Use the actual SDK grant/revision check with this isolated registered
+    # repository. The reviewer child deliberately has no worktree of its own.
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: world["tree"]["repo"])
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: world["tree"]["worktrees"])
+    child_id = _prepare(world)["review_task_id"]
+    grant, stop, current = _grant(world, child_id)
+    assert grant is not None
+    child = _acquire_review(world, child_id, grant, stop, current)
+    assert not (world["tree"]["worktrees"] / f"task-{child_id}").exists()
+    return child, stop
+
+
+@pytest.mark.parametrize("review_world", [True], indirect=True)
+def test_review_reads_registered_parent_without_starting_child_worktree(review_world, monkeypatch):
+    from hub._services.chat import bach_tools, telegram_chat
+
+    world = review_world
+    child, _stop = _review_reader(world, monkeypatch)
+    source = worker_write_guard.review_source_root(child)
+    assert source == world["tree"]["target"]
+    context = json.loads(telegram_chat._bound_worker_prompt(child, "ignored").splitlines()[-1])
+    assert context["review_source"]["worktree"] == str(source)
+    assert context["review_source"]["read_only"] is True
+    assert context["review_source"]["result_revision"] == world["target"]["result_revision"]
+    assert not (world["tree"]["worktrees"] / f"task-{child.task_id}").exists()
+    if not hasattr(os, "O_NOFOLLOW") or os.open not in os.supports_dir_fd:
+        pytest.skip("Secure descriptor-relative reading is exercised on POSIX")
+    grants = {"read_file", "search_text"}
+    answer = bach_tools.exec_tool("read_file", {"path": "README.md"}, "safe",
+        worker_task_binding=child, require_task_binding=True, allowed_tools=grants)
+    assert "public base" in answer and "BLOCKIERT" not in answer
+    found = bach_tools.exec_tool("search_text", {"path": ".", "pattern": "public base"}, "safe",
+        worker_task_binding=child, require_task_binding=True, allowed_tools=grants)
+    assert "public base" in found and "BLOCKIERT" not in found
+    denied = bach_tools.exec_tool("start_task_worktree", {"task_id": child.task_id}, "full",
+        worker_task_binding=child, require_task_binding=True,
+        allowed_tools={"read_file", "search_text", "start_task_worktree"})
+    assert "BLOCKIERT" in denied
+    assert not (world["tree"]["worktrees"] / f"task-{child.task_id}").exists()
+
+
+@pytest.mark.parametrize("review_world", [True], indirect=True)
+@pytest.mark.parametrize("tool", ["read_file", "search_text"])
+def test_review_cannot_fall_back_to_permissive_host_reader(review_world, monkeypatch, tmp_path, tool):
+    from hub._services.chat import bach_tools
+
+    child, _stop = _review_reader(review_world, monkeypatch)
+    outside = tmp_path / "unrelated.txt"
+    outside.write_text("Unrelated host content must stay private", encoding="utf-8")
+    # Even when the ordinary home reader would allow a path, the review grant
+    # must choose its registered parent scope and deny the escaped request.
+    monkeypatch.setattr(bach_tools, "_fs_root_allowed", lambda _path: True)
+    answer = bach_tools.exec_tool(tool, {"path": str(outside), "pattern": "Unrelated"}, "safe",
+        worker_task_binding=child, require_task_binding=True,
+        allowed_tools={"read_file", "search_text"})
+    assert "BLOCKIERT" in answer
+    assert "Unrelated host content" not in answer
+
+
+@pytest.mark.parametrize("review_world", [True], indirect=True)
+@pytest.mark.parametrize("damage", ["source_changed", "target_terminal", "child_stopped", "foreign_target"])
+def test_review_read_rechecks_current_target_and_child(review_world, monkeypatch, damage):
+    from hub._services.chat import bach_tools
+
+    world = review_world
+    child, stop = _review_reader(world, monkeypatch)
+    assert worker_write_guard.review_source_root(child) == world["tree"]["target"]
+    if damage == "source_changed":
+        (world["tree"]["target"] / "README.md").write_text("changed after submission\n", encoding="utf-8")
+    elif damage == "target_terminal":
+        world["conn"].execute("UPDATE tasks SET status='done' WHERE id=?", (world["task_id"],))
+        world["conn"].commit()
+    elif damage == "child_stopped":
+        stop.set()
+    else:
+        child._review_grant.target_task_id += 10000
+    for tool in ["read_file", "search_text"]:
+        answer = bach_tools.exec_tool(tool, {"path": "README.md", "pattern": "public"}, "safe",
+            worker_task_binding=child, require_task_binding=True,
+            allowed_tools={"read_file", "search_text"})
+        assert "BLOCKIERT" in answer
+        assert "public base" not in answer
 
 
 def test_real_git_author_submission_second_model_review_and_child_completion(review_world):
