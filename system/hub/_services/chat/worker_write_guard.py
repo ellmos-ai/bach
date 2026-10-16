@@ -514,6 +514,36 @@ def _task_relative_path(root: Path, candidate) -> Path:
     return cursor
 
 
+def review_source_root(binding, *, repo_root=None, worktrees_dir=None) -> Path:
+    """Resolve only a private review grant's current registered parent tree.
+
+    The child keeps its own lease. Reading the parent grants no parent lease,
+    write authority, alternate worktree or exemption from the public source pin.
+    """
+    from hub._services.worker_result_review import _grant_valid
+
+    tid = _task_id(getattr(binding, "task_id", None))
+    _fresh_lease(binding, tid)
+    grant = getattr(binding, "_review_grant", None)
+    if not _grant_valid(grant) or grant.task_id != tid:
+        raise WorkerWriteGuardError("Private aktuelle Reviewberechtigung fehlt")
+    client = getattr(binding, "_client", None)
+    check = getattr(client, "_guard_review_dispatch", None)
+    if not callable(check) or check(
+        binding, route=grant.route, requested_model=grant.requested_model,
+    ) is not True:
+        raise WorkerWriteGuardError("Review-Ziel, Ergebnisrevision oder Berechtigung ist nicht aktuell")
+    observed = client.task_result_snapshot(grant.target_task_id)
+    result = observed.get("result") if isinstance(observed, dict) else None
+    if (not isinstance(result, dict) or observed.get("status") != "review"
+            or result.get("result_id") != grant.target_result_id
+            or result.get("result_revision") != grant.target_revision
+            or result.get("scope", {}).get("availability") != "available"):
+        raise WorkerWriteGuardError("Review-Leseziel passt nicht zur gebundenen Ergebnisrevision")
+    repo, root = _paths(repo_root, worktrees_dir)
+    return _registered_tree(repo, root, _task_id(grant.target_task_id))
+
+
 def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, worktrees_dir=None) -> TaskReadScope:
     """Authorize a tool-level read under the exact public-pinned Task worktree."""
     if not callable(secret_check):
@@ -521,9 +551,15 @@ def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, wor
     tid = _task_id(getattr(binding, "task_id", None))
     _fresh_lease(binding, tid)
     repo, root = _paths(repo_root, worktrees_dir)
-    target = _registered_tree(repo, root, tid)
+    grant = getattr(binding, "_review_grant", None)
+    if grant is not None:
+        target = review_source_root(binding, repo_root=repo, worktrees_dir=root)
+        source_tid = _task_id(grant.target_task_id)
+    else:
+        target = _registered_tree(repo, root, tid)
+        source_tid = tid
     from hub import worker_git
-    registration = worker_git.read_task_public_source_registration(repo, target, tid)
+    registration = worker_git.read_task_public_source_registration(repo, target, source_tid)
     requested = _task_relative_path(target, candidate)
     if secret_check(requested):
         raise WorkerWriteGuardError("Task-Lesepfad ist als geheim eingestuft")
@@ -608,6 +644,10 @@ def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, wor
     else:
         raise WorkerWriteGuardError("Task-Lesepfad ist weder Datei noch freigegebenes Verzeichnis")
     _fresh_lease(binding, tid)
+    if grant is not None and review_source_root(
+        binding, repo_root=repo, worktrees_dir=root,
+    ) != target:
+        raise WorkerWriteGuardError("Review-Lesebereich hat sich während der Prüfung geändert")
     return TaskReadScope(
         root=target, requested=requested, files=tuple(sorted(files)),
         directories=frozenset(directories), provenance=provenance,

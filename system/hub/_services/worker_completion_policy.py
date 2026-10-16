@@ -182,31 +182,57 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             github = observe_github_review(github_contract,
                 head_oid=record["scope"]["snapshot"].get("head_oid"), task_id=str(task_id),
                 result_revision=revision, observer=github_observer)
-        review = record.get("model_review", {})
-        review_status = (review.get("status") if review.get("availability") == "available" else None)
+        review = record.get("model_review")
+        if not isinstance(review, dict):
+            review = {}
+        review_is_current = (
+            review.get("schema") == "bach.worker-result-review-evidence.v1"
+            and review.get("availability") == "available"
+            and type(review.get("status")) is str
+            and review.get("status") in {"approved", "findings", "rejected"}
+            and review.get("independent") is True
+            and type(review.get("task_id")) is int
+            and review.get("task_id") == task_id
+            and type(review.get("result_id")) is int
+            and review.get("result_id") == record["result_id"]
+            and type(review.get("result_revision")) is str
+            and review.get("result_revision") == revision
+            and type(review.get("review_task_id")) is int
+            and review.get("review_task_id") > 0
+            and type(review.get("reviewer_id")) is str
+            and bool(review.get("reviewer_id")))
+        review_status = review.get("status") if review_is_current else None
         # A configured independent reviewer can make the semantic finding for
         # an unstructured task. This is a reviewer judgment, never a machine
         # criterion proof or a personal user approval. The canonical reader
         # already binds it to the actual child verdict, identity and revision.
         semantic_review_met = (
             contract.get("reason") == "contract_not_predeclared"
-            and review.get("schema") == "bach.worker-result-review-evidence.v1"
-            and review.get("availability") == "available"
-            and review_status == "approved" and review.get("independent") is True
-            and review.get("task_id") == task_id
-            and review.get("result_id") == record["result_id"]
-            and review.get("result_revision") == revision
+            and review_is_current
+            and review_status == "approved"
             and review.get("reviewer_asserted_task_contract_met") is True)
-        task_contract_met = contract["met"] is True or (
-            contract.get("reason") == "contract_not_predeclared"
-            and (contract_attested or semantic_review_met))
+        adverse_review_contract_finding = (
+            review_is_current
+            and review_status in {"findings", "rejected"}
+            and review.get("reviewer_asserted_task_contract_met") is False)
+        task_contract_met = (False if adverse_review_contract_finding else
+            contract["met"] is True or (
+                contract.get("reason") == "contract_not_predeclared"
+                and (contract_attested or semantic_review_met)))
         contract_finding = {
             "met": task_contract_met,
-            "source": "predeclared_criteria" if contract["met"] is True else
+            "source": "independent_model_review" if adverse_review_contract_finding else
+                      "predeclared_criteria" if contract["met"] is True else
                       "operator_attestation" if task_contract_met and contract_attested else
                       "independent_model_review" if semantic_review_met else "unconfirmed",
-            "review_task_id": review.get("review_task_id") if semantic_review_met else None,
+            "review_task_id": (review.get("review_task_id")
+                               if adverse_review_contract_finding or semantic_review_met else None),
         }
+        if adverse_review_contract_finding:
+            contract_finding.update({
+                "review_status": review_status,
+                "reviewer_asserted_task_contract_met": False,
+            })
         status_map = {"approved": kernel.ReviewStatus.APPROVED,
                       "findings": kernel.ReviewStatus.FINDINGS,
                       "rejected": kernel.ReviewStatus.REJECTED}
@@ -215,7 +241,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             reviewer_id=review.get("reviewer_id") if review_status else None,
             task_id=str(task_id) if review_status else None,
             result_revision=revision if review_status else None,
-            independent=review_status is not None and review.get("independent") is True)
+            independent=review_is_current)
         user_record = kernel.UserReviewRecord(
             status=kernel.UserReviewStatus.APPROVED if user_approved else kernel.UserReviewStatus.PENDING,
             task_id=str(task_id) if user_approved else None,
