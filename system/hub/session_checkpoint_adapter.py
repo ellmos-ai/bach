@@ -59,9 +59,12 @@ def create(
     *,
     name: Optional[str] = None,
     source_ref: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> dict:
     """Collect BACH state read-only and create one checkpoint under namespace 'bach'."""
     payload = _adapter_payload(bach_db_path)
+    if session_id is not None:
+        payload["session_id"] = session_id
     checkpoint = store.create(
         namespace=NAMESPACE,
         session_id=payload["session_id"],

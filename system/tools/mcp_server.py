@@ -466,13 +466,22 @@ def session_startup() -> str:
 
 
 @mcp.tool()
-def session_shutdown() -> str:
+def session_shutdown(summary: str = "", session_id: str | None = None,
+                     partner: str | None = None) -> str:
     """Fuehrt das BACH-Shutdown-Protokoll aus.
 
-    Beendet die Session: Working Memory sichern, Auto-Summary,
-    Task-Statistik, Directory-Scan, Session-Speicherung.
+    Beendet genau eine offene Session. session_id erfordert partner;
+    mehrdeutige Auswahl wird vor Schreibzugriffen abgelehnt.
+    Bericht, Zeitfenster-Zaehler und Fortsetzung werden atomar gespeichert.
     """
-    return _execute("shutdown", "complete")
+    args = []
+    if session_id is not None:
+        args.append(f"--session={session_id}")
+    if partner is not None:
+        args.append(f"--partner={partner}")
+    if summary:
+        args.extend(["--", summary])
+    return _execute("shutdown", "complete", args)
 
 
 # ------------------------------------------------------------------

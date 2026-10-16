@@ -50,6 +50,7 @@ def checkpoint_after_create(
     *,
     name: str | None,
     source_ref: str | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """Create one additive carrier checkpoint after a legacy snapshot commit."""
     if _rollback_forced():
@@ -79,6 +80,7 @@ def checkpoint_after_create(
             bach_db_path,
             name=name,
             source_ref=source_ref,
+            session_id=session_id,
         )
     except Exception as exc:
         log.warning("session-checkpoint carrier create failed (fail-soft): %s", exc)

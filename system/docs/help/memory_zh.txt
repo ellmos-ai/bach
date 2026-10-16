@@ -324,3 +324,26 @@ TARGET 状态（正在进行中）：
 ---
 版本：1.3.0 |更新日期：2026-02-08
 （记录了连接器集成，添加了库 API + Headless API）
+
+
+当前会话契约 (2026-10-16)
+===================
+
+报告与结束操作使用同一个明确的会话和所属伙伴。
+--session=ID（别名 --session-id）必须同时提供 --partner=NAME（别名 --partner-id）。
+也支持将值作为独立参数传入。不提供ID时，选择结果必须唯一；存在多个未结束会话时拒绝操作。
+旧版无范围调用仅支持唯一会话。不存在、已结束或属于其他伙伴的ID会在写入前被拒绝。
+
+bach mem session --session=ID --partner=codex -- "报告"
+bach --shutdown --session=ID --partner=codex -- "摘要"
+
+API: memory.session("报告", session_id="ID", partner="codex")
+API: session.shutdown("摘要", session_id="ID", partner="codex")
+MCP: session_shutdown(summary="摘要", session_id="ID", partner="codex")
+-- 之后的内容按原文保存；API/MCP会自动添加分隔符。
+mem session保留会话的未结束状态。quick/emergency只保存便笺；quick表示暂停。
+complete将ended_at、报告、会话时间范围内的任务计数与继续上下文原子写入指定会话。
+同一伙伴后来创建的会话不会成为替代目标。签出失败会显示警告，已提交的结束仍报告成功。
+完整结束操作保留目录扫描和自动快照。
+结束时不再自动执行全局清理、压缩、导出或共享日志摘要。保留已有报告。
+BACH继续管理这些数据；helper仅是本地兼容层，不是另一套记忆存储。

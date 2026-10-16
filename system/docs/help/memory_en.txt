@@ -98,3 +98,29 @@ CORE COMMANDS:
 SEE ALSO
   docs/help/consolidation_en.txt    Memory consolidation
   docs/help/lessons.txt             Best practices & insights
+
+
+CURRENT SESSION CONTRACT (2026-10-16)
+=====================================
+
+Reports and shutdown address the same explicit session and partner.
+--session=ID (alias --session-id) requires --partner=NAME (alias --partner-id).
+Both flags also accept separate values. Without a session ID, selection must be
+unique; multiple open sessions are rejected. Unscoped legacy calls support only
+the unique single-session case. Missing, closed or foreign IDs fail before writes.
+
+bach mem session --session=ID --partner=codex -- "Report"
+bach --shutdown --session=ID --partner=codex -- "Summary"
+
+API: memory.session("Report", session_id="ID", partner="codex")
+API: session.shutdown("Summary", session_id="ID", partner="codex")
+MCP: session_shutdown(summary="Summary", session_id="ID", partner="codex")
+The -- separator preserves report text literally; API/MCP add it automatically.
+mem session keeps the session open. quick/emergency save a note only; quick is a
+pause. complete atomically stores ended_at, report, time-window task counts and
+continuation for the selected session. Concurrent successor sessions are untouched.
+A clock-out failure warns without reporting an already committed close as failed.
+Directory scans and automatic snapshots remain part of complete shutdown.
+Global cleanup, compression, exports and shared-autolog summaries no longer run
+automatically at shutdown. Existing reports are retained. BACH owns this data;
+the helper is local compatibility wiring, not another memory store.
