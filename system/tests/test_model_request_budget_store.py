@@ -424,7 +424,7 @@ def test_confirmed_task_updates_keep_one_run_and_request_counter(
     record = _admit(path, task_id=task_id, limit=5)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", str(path))
     binding = WorkerLeaseBinding.acquire(
-        client, task_id, worker_id=WORKER_ID, host="HOST",
+        client, task_id, worker_id=f"{WORKER_ID}@HOST", host="HOST",
         generation=record["generation"], is_current=lambda: True,
         stop_event=threading.Event(),
     )
