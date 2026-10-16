@@ -2580,6 +2580,12 @@ class TaskResultReconcileRequest(BaseModel):
     status_revision: StrictInt
 
 
+class LegacyReviewReopenRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_version: StrictStr
+    status_revision: StrictInt
+
+
 def _completion_evaluation_read(task_id: int):
     from hub._services.worker_completion_policy import evaluate_current_result
     conn = get_bach_db()
@@ -2698,6 +2704,41 @@ async def reconcile_task_result(task_id: int, body: TaskResultReconcileRequest, 
         raise HTTPException(status_code=403, detail=str(exc)) from None
     except ResultConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@app.post("/api/tasks/{task_id}/legacy-review/reopen")
+async def reopen_legacy_review_task(
+        task_id: int, body: LegacyReviewReopenRequest, request: Request):
+    """Single-task, correction-authorized CAS; no worker/result capability."""
+    from hub._services.legacy_review_reopen import reopen_legacy_review
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return reopen_legacy_review(
+                conn, task_id, task_version=body.task_version,
+                status_revision=body.status_revision, operator_token=operator_token)
+        finally:
+            conn.close()
+
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={
+            "code": "result_operator_correction_scope_required", "message": str(exc),
+        }) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "legacy_review_changed_reload", "message": str(exc),
+        }) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "legacy_review_request_invalid", "message": str(exc),
+        }) from None
 
 
 def _run_lease_op(op, *args, **kwargs):
