@@ -323,18 +323,18 @@ class _ModelRequestBudget:
     def reserve(self, binding) -> dict:
         from hub._services.chat.slots_config import ModelRequestBudgetError, reserve_model_request
         try:
-            snapshot = binding.task_snapshot()
+            task_id, task_version, confirmed_versions = binding.budget_task_version_evidence()
         except Exception as exc:
             raise ModelRequestBudgetError("Taskversion für Modellanfrage nicht lesbar") from exc
-        if (binding.task_id != self.task_id or snapshot.get("id") != self.task_id
-                or not isinstance(snapshot.get("task_version"), str)):
+        if task_id != self.task_id or not isinstance(task_version, str):
             from hub._services.chat.slots_config import ModelRequestBudgetError
             raise ModelRequestBudgetError("Feste Taskbindung ist nicht mehr aktuell")
         try:
             return reserve_model_request(
                 self.worker_id, service_instance=self.service_instance,
                 start_request_id=self.start_request_id, generation=self.generation,
-                task_id=self.task_id, task_version=snapshot["task_version"],
+                task_id=self.task_id, task_version=task_version,
+                confirmed_version_transitions=confirmed_versions,
                 configuration_version=self.configuration_version,
             )
         except ModelRequestBudgetError:

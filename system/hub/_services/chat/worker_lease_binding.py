@@ -54,6 +54,8 @@ class WorkerLeaseBinding:
         self._scope_captured_result_id = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
+        # Only native, versioned update ACKs may move a running budget's task pin.
+        self._budget_version_transitions = []
         # Cumulative for this lease, not reset by model block boundaries.
         # Starting a tool can have an effect even when its response is lost.
         self._tool_dispatch_count = 0
@@ -491,6 +493,13 @@ class WorkerLeaseBinding:
         with self._lock:
             return copy.deepcopy(self._snapshot)
 
+    def budget_task_version_evidence(self):
+        """Return the live binding version and its confirmed same-lease ACK chain."""
+        with self._lock:
+            self.assert_active()
+            return (self.task_id, self._snapshot["task_version"],
+                    tuple(self._budget_version_transitions))
+
     def correction_context(self):
         with self._lock:
             self._assert_authority_active()
@@ -558,6 +567,7 @@ class WorkerLeaseBinding:
             raise LeaseProtocolError("Neue Taskversion ist nicht bestaetigt") from None
         self._ack = current_ack
         self._snapshot["task_version"] = current_ack.task_version
+        self._budget_version_transitions.append((previous_version, current_ack.task_version))
 
     def renew(self):
         with self._lock:

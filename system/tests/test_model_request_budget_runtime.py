@@ -55,6 +55,10 @@ class _Binding:
     def task_snapshot(self):
         return {"id": self.task_id, "task_version": TASK_VERSION}
 
+    def budget_task_version_evidence(self):
+        self.assert_active()
+        return self.task_id, TASK_VERSION, ()
+
     def assert_active(self):
         if self.closed:
             raise RuntimeError("binding closed")

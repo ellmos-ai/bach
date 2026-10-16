@@ -413,6 +413,64 @@ def test_reservation_cas_rejects_foreign_or_changed_run_bindings(
     assert after == before
 
 
+def test_confirmed_task_updates_keep_one_run_and_request_counter(
+    tmp_path, monkeypatch, local_task_client,
+):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+    task_id, client, _conn = local_task_client
+    path = tmp_path / "slots.json"
+    _add_worker(path, task_id=task_id, limit=5)
+    record = _admit(path, task_id=task_id, limit=5)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", str(path))
+    binding = WorkerLeaseBinding.acquire(
+        client, task_id, worker_id=WORKER_ID, host="HOST",
+        generation=record["generation"], is_current=lambda: True,
+        stop_event=threading.Event(),
+    )
+    telegram = importlib.import_module("hub._services.chat.telegram_chat")
+    budget = telegram._ModelRequestBudget(
+        worker_id=WORKER_ID, service_instance=record["service_instance"],
+        start_request_id=record["start_request_id"], generation=record["generation"],
+        task_id=task_id, configuration_version=record["configuration_version"],
+    )
+
+    first = budget.reserve(binding)
+    original_version = first["task_version"]
+    binding.execute_task_manage({"action": "update", "task_id": task_id,
+                                 "description": "Erster bestätigter Stand"})
+    binding.execute_task_manage({"action": "update", "task_id": task_id,
+                                 "description": "Zweiter bestätigter Stand"})
+    current_version = binding.task_snapshot()["task_version"]
+    assert current_version != original_version
+    second = budget.reserve(binding)
+    assert second["start_request_id"] == first["start_request_id"]
+    assert second["task_version"] == current_version
+    assert second["reserved_count"] == first["reserved_count"] + 1 == 2
+    assert second["limit"] == first["limit"] == 5
+    binding.invalidate()
+    with pytest.raises(slots.ModelRequestBudgetError):
+        budget.reserve(binding)
+    assert slots.model_request_run_record(WORKER_ID, record["start_request_id"], str(path)) == second
+
+
+@pytest.mark.parametrize("transitions", [
+    (),
+    ((TASK_VERSION, "b" * 64),),
+    ((TASK_VERSION, "b" * 64), ("d" * 64, "c" * 64)),
+    (("d" * 64, "c" * 64),),
+])
+def test_unconfirmed_or_broken_version_path_cannot_spend_request(tmp_path, transitions):
+    path = tmp_path / "slots.json"
+    _add_worker(path, limit=5)
+    record = _admit(path, limit=5)
+    first = _reserve(path, record)
+    with pytest.raises(slots.ModelRequestBudgetError):
+        _reserve(path, first, task_version="c" * 64,
+                 confirmed_version_transitions=transitions)
+    assert slots.model_request_run_record(WORKER_ID, record["start_request_id"], str(path)) == first
+
+
 def test_separate_processes_can_reserve_only_the_last_slot_once(tmp_path):
     path = tmp_path / "slots.json"
     _add_worker(path, limit=3)
