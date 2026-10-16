@@ -879,6 +879,7 @@ def read_review_evidence(conn, record):
                 "child_result_id": row["child_result_id"],
                 "reviewer_id": receipt["reviewer_id"],
                 "status": receipt["status"], "summary": receipt["summary"],
+                "reviewer_asserted_task_contract_met": receipt["reviewer_asserted_task_contract_met"],
                 "independent": True, "event_id": row["event_id"]}
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,
             settings.PolicyUnavailable):

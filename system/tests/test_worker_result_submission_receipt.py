@@ -246,7 +246,7 @@ def _seed_preexisting_v0_result(conn, task_id, *, corrupt_release=False):
     return result_id
 
 
-def test_submission_release_read_and_separate_operator_acceptance(local_db):
+def test_submission_release_read_and_legacy_operator_request_cannot_accept_v1(local_db):
     conn, _ = local_db
     task_id = _insert_task(conn)
     client, task, lease, ack, requests = _submit(conn, task_id)
@@ -310,10 +310,15 @@ def test_submission_release_read_and_separate_operator_acceptance(local_db):
     assert lease.lease_id not in json.dumps(first, ensure_ascii=False)
 
     operator_token = _operator(conn)
-    accepted = _accept_current(conn, client, task_id, operator_token)
-    assert accepted["status"] == "done"
-    assert accepted["result"]["accepted"] is True
-    assert accepted["result"]["accepted_by"].startswith("operator-device:")
+    with pytest.raises(ResultConflict):
+        _accept_current(conn, client, task_id, operator_token)
+    still_review = client.task_result_snapshot(task_id)
+    assert still_review["status"] == "review"
+    assert still_review["result"]["accepted"] is False
+    assert conn.execute(
+        "SELECT COUNT(*) FROM task_history WHERE task_id=? AND action='result_acceptance'",
+        (task_id,),
+    ).fetchone()[0] == 0
 
 
 def test_submit_restores_plain_sqlite_row_factory(local_db):
@@ -613,7 +618,7 @@ def test_policy_snapshot_is_frozen_and_readback_does_not_create_schema(local_db)
     conn.execute("PRAGMA query_only=OFF")
 
 
-def test_missing_policy_store_is_metadata_only_until_explicit_operator_action(no_policy_store_db):
+def test_missing_policy_store_keeps_new_result_in_review(no_policy_store_db):
     conn, _ = no_policy_store_db
     task_id = _insert_task(conn)
     client, _, _, ack, _ = _submit(conn, task_id)
@@ -628,12 +633,12 @@ def test_missing_policy_store_is_metadata_only_until_explicit_operator_action(no
     assert record["submission_revision"].startswith("sha256:")
     assert conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()[0] == "review"
 
-    accepted = _accept_current(conn, client, task_id, _operator(conn))
-    assert accepted["result"]["accepted"] is True
-    assert accepted["status"] == "done"
+    with pytest.raises(ResultConflict):
+        _accept_current(conn, client, task_id, _operator(conn))
+    assert client.task_result_snapshot(task_id)["status"] == "review"
 
 
-def test_missing_optional_policy_contract_is_metadata_only(monkeypatch, local_db):
+def test_missing_optional_policy_contract_keeps_new_result_in_review(monkeypatch, local_db):
     from hub._services import worker_policy_settings as settings
 
     def unavailable_kernel():
@@ -656,10 +661,11 @@ def test_missing_optional_policy_contract_is_metadata_only(monkeypatch, local_db
     assert first["result"]["reason"] == "awaiting_review"
     assert first["status"] == "review"
 
-    accepted = _accept_current(conn, client, task_id, _operator(conn))
-    assert accepted["result"]["accepted"] is True
-    assert accepted["status"] == "done"
-    assert accepted["result"]["submission"]["policy"]["reason"] == "policy_contract_unavailable"
+    with pytest.raises(ResultConflict):
+        _accept_current(conn, client, task_id, _operator(conn))
+    still_review = client.task_result_snapshot(task_id)
+    assert still_review["status"] == "review"
+    assert still_review["result"]["submission"]["policy"]["reason"] == "policy_contract_unavailable"
 
 
 def test_correction_and_new_fence_make_old_submission_unacceptable(local_db):

@@ -25,6 +25,7 @@ Only telegram_chat.py imports this module directly; the tray and the GUI
 from __future__ import annotations
 
 import asyncio
+import copy
 from contextvars import ContextVar
 import hashlib
 import json
@@ -73,6 +74,50 @@ def tool_round_counter(round_num: int, max_rounds: int) -> str:
 def tool_round_warning_threshold(max_rounds: int) -> int:
     """Ab wie vielen Restrunden gewarnt wird: mindestens 2, sonst ein Fünftel."""
     return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
+
+
+def _completion_reserve_tools(tools, binding):
+    """Keep only an already offered task tool; never grant one from a prompt."""
+    actions = ["submit_result"] if getattr(binding, "_review_grant", None) is not None else [
+        "submit_result", "update", "decompose"]
+    result = []
+    for tool in tools:
+        function = tool.get("function", {}) if isinstance(tool, dict) else {}
+        if function.get("name") != "task_manage":
+            continue
+        narrowed = copy.deepcopy(tool)
+        action = narrowed.get("function", {}).get("parameters", {}).get("properties", {}).get("action")
+        if isinstance(action, dict):
+            action["enum"] = actions
+        result.append(narrowed)
+    return result
+
+
+def _completion_reserve_allows(name, arguments, binding):
+    if name != "task_manage" or not isinstance(arguments, dict):
+        return False
+    allowed = {"submit_result"} if getattr(binding, "_review_grant", None) is not None else {
+        "submit_result", "update", "decompose"}
+    return (arguments.get("action") in allowed
+            and type(arguments.get("task_id")) is int
+            and arguments["task_id"] == getattr(binding, "task_id", None))
+
+
+def _completion_reserve_hint(binding, remaining, *, task_tool_offered):
+    if not task_tool_offered:
+        instruction = ("Ein Task-Abgabewerkzeug ist nicht freigegeben. Melde nur den "
+                       "konkreten Blocker; behaupte keinen bestätigten Taskfortschritt.")
+    elif getattr(binding, "_review_grant", None) is not None:
+        instruction = ("Nutze nur das bereits erlaubte task_manage(action='submit_result') "
+                       "für die eigene Reviewtask, wenn ein tatsächlicher Befund vorliegt.")
+    else:
+        instruction = ("Nutze nur das bereits erlaubte task_manage: submit_result für ein "
+                       "tatsächlich belegtes Ergebnis, update für einen konkreten Zwischenstand "
+                       "oder decompose für bestätigbare Teilaufgaben ohne Elternabschluss.")
+    return (f"[ABSCHLUSSRESERVE: noch {remaining} Werkzeugrunde(n)] "
+            "Beginne keine neue Recherche oder Codeänderung. " + instruction +
+            " Falls der Befund nicht belegt ist, behaupte keinen Abschluss. "
+            "Freier Text ersetzt keinen bestätigten Task-Werkzeugaufruf.")
 
 
 def _resume_handoff_context(original, summary, *, background_task, has_tools,
@@ -1484,7 +1529,8 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         return capacity_receipt
 
-    def _bound_worker_tools_for_request(self, session, backend, *, enabled: bool) -> list[dict]:
+    def _bound_worker_tools_for_request(self, session, backend, *, enabled: bool,
+                                        completion_reserve: bool = False) -> list[dict]:
         """Build the request schema from the already-refreshed bound session."""
         if enabled is not True or session.allow_tools is not True:
             return []
@@ -1499,11 +1545,14 @@ class ChatRuntime(_ModuleChatRuntime):
             allowed_tools=_effective_tool_grants(session),
             agent_operations=self.agent_operations,
         )
-        return provider.get_tools(session.mode)
+        tools = provider.get_tools(session.mode)
+        return (_completion_reserve_tools(tools, session.worker_task_binding)
+                if completion_reserve else tools)
 
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         tool_rounds_enabled = kwargs.pop("_tool_rounds_enabled", None)
+        completion_reserve = kwargs.pop("_completion_reserve", False)
         turn_context = self._compute_turn_context.get()
         def check_binding():
             if turn_context:
@@ -1533,6 +1582,7 @@ class ChatRuntime(_ModuleChatRuntime):
                         # profile/lease check; this also runs for each fallback.
                         kwargs["tools"] = self._bound_worker_tools_for_request(
                             session, backend, enabled=tool_rounds_enabled,
+                            completion_reserve=completion_reserve,
                         )
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
@@ -1637,6 +1687,8 @@ class ChatRuntime(_ModuleChatRuntime):
             return result
 
         if binding is not None and getattr(backend, "manages_own_tools", False):
+            if completion_reserve:
+                raise RuntimeError("Abschlussreserve kann Backend-eigene Werkzeuge nicht begrenzen")
             agent_kwargs = {"agent_operations": self.agent_operations} if self.agent_operations is not None else {}
             return await dispatch_model_call(bound=True, agent_kwargs=agent_kwargs)
         if not self._uses_local_compute(backend):
@@ -2348,6 +2400,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.last_tools = []
         result = {}
         offered_tools = tools
+        reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
         background_task = turn_context is not None and turn_context[1] == "background"
         msgs.append({"role": "user", "content": tool_round_counter(0, max_rounds)})
@@ -2433,6 +2486,22 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         message.get("role") == "user" and message.get("content") == instruction for message in msgs):
                     msgs.append({"role": "user", "content": instruction})
 
+            binding = getattr(session, "worker_task_binding", None)
+            remaining_rounds = max_rounds - round_num
+            completion_reserve = (binding is not None and max_rounds > 0
+                                  and 0 < remaining_rounds <= 2)
+            if completion_reserve:
+                grants = _effective_tool_grants(session)
+                current_tools = (tool for tool in tools if grants is None
+                                 or tool.get("function", {}).get("name") in grants)
+                tools = _completion_reserve_tools(current_tools, binding)
+                if round_num not in reserve_notified_rounds:
+                    msgs.append({"role": "user", "content":
+                                 _completion_reserve_hint(binding, remaining_rounds,
+                                                          task_tool_offered=bool(tools))})
+                    reserve_notified_rounds.add(round_num)
+            offered_this_round = {tool.get("function", {}).get("name") for tool in tools}
+
             try:
                 previous_backend = selected_backend
                 previous_model = selected_model
@@ -2440,6 +2509,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
                     _tool_rounds_enabled=max_rounds > 0,
+                    _completion_reserve=completion_reserve,
                 )
                 if selected_backend is not previous_backend or selected_model != previous_model:
                     context_limit = self._context_limit_for_backend(selected_backend, selected_model)
@@ -2473,6 +2543,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if self._context_voll(
                 result, session, context_limit=context_limit
             ):
+                if completion_reserve:
+                    session.current_tool = ""
+                    return FailedAnswer.from_exception(RuntimeError(
+                        "Kontextfenster in der Abschlussreserve erschöpft"
+                    ))
                 if handoffs >= 2:
                     session.current_tool = ""
                     return FailedAnswer.from_exception(RuntimeError(
@@ -2506,7 +2581,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             tool_calls = result.get("tool_calls")
             if not tool_calls:
                 content = result.get("content", "") or "(keine Antwort)"
-                nxt, goal_checked = self._auto_next(content, auto_used, goal_checked)
+                nxt, goal_checked = ((None, goal_checked) if completion_reserve
+                                     else self._auto_next(content, auto_used, goal_checked))
                 if nxt is not None:
                     auto_used += 1
                     log.info(f"Auto-Continue [{auto_used}/{self.auto_continue}]")
@@ -2571,9 +2647,21 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     )
                 binding = getattr(session, "worker_task_binding", None)
                 grants = _effective_tool_grants(session)
-                if grants is not None and t_name not in grants:
+                reserve_denied = (completion_reserve and (t_name not in offered_this_round
+                                  or not _completion_reserve_allows(t_name, t_args, binding)
+                                  or (grants is not None and t_name not in grants)))
+                if not completion_reserve and grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
+                def dispatch_tool(name, arguments):
+                    if reserve_denied:
+                        return "BLOCKIERT: In der Abschlussreserve sind nur bestätigbare Task-Abschlussaktionen erlaubt."
+                    return exec_tool(
+                        name, arguments, session.mode,
+                        bach_app=self.bach_app,
+                        default_model=selected_model,
+                        **tool_kwargs,
+                    )
                 traced_outcome = None
                 if binding is not None:
                     from hub._services.chat.worker_tool_dispatch_trace import (
@@ -2583,12 +2671,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     )
                     traced_outcome = execute_normal_tool(
                         binding, t_name, t_args,
-                        lambda name, arguments: exec_tool(
-                            name, arguments, session.mode,
-                            bach_app=self.bach_app,
-                            default_model=selected_model,
-                            **tool_kwargs,
-                        ),
+                        dispatch_tool,
                     )
                     if traced_outcome.status != "returned":
                         binding.invalidate()
@@ -2598,12 +2681,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         )
                     t_result = traced_outcome.result
                 else:
-                    t_result = exec_tool(
-                        t_name, t_args, session.mode,
-                        bach_app=self.bach_app,
-                        default_model=selected_model,
-                        **tool_kwargs,
-                    )
+                    t_result = dispatch_tool(t_name, t_args)
                 tool_call_id = ""
                 if hasattr(selected_backend, "_last_tool_call_ids"):
                     ids = selected_backend._last_tool_call_ids
@@ -2675,6 +2753,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     "2. Was wurde im Code bereits geändert oder behoben?\n"
                     "3. Falls die Aufgabe noch nicht komplett gelöst ist: Welcher konkrete Folge-Task (z. B. 'Edit: ...') "
                     "wurde angelegt oder welche Schritte muss der nächste Lauf ausführen?"
+                    + ("\nDiese freie Zusammenfassung ist keine Taskabgabe; behaupte keine "
+                       "bestätigte Einreichung ohne task_manage-Beleg."
+                       if getattr(session, "worker_task_binding", None) is not None else "")
                 )
                 msgs.append({"role": "user", "content": final_prompt})
                 try:
@@ -2705,14 +2786,23 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
             if max_rounds > 0 and max_rounds - round_num <= tool_round_warning_threshold(max_rounds):
                 rest = max_rounds - round_num
-                nudge = (
-                    f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
-                    "Deine Werkzeugrunden sind fast aufgebraucht! "
-                    "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
-                    "Wenn du die Aufgabe in dieser Session nicht mehr fertigstellen kannst: "
-                    + SELF_DECOMPOSE_INSTRUCTION
-                )
-                msgs.append({"role": "user", "content": nudge})
+                if binding is None or rest > 2:
+                    if binding is None:
+                        nudge = (
+                            f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
+                            "Deine Werkzeugrunden sind fast aufgebraucht! "
+                            "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
+                            "Wenn du die Aufgabe in dieser Session nicht mehr fertigstellen kannst: "
+                            + SELF_DECOMPOSE_INSTRUCTION
+                        )
+                    else:
+                        nudge = (
+                            f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
+                            "Deine Werkzeugrunden sind fast aufgebraucht. "
+                            "Arbeite am konkreten Auftrag und sichere einen belegten Zwischenstand; "
+                            "wenn die Aufgabe zu groß ist: " + SELF_DECOMPOSE_INSTRUCTION
+                        )
+                    msgs.append({"role": "user", "content": nudge})
 
     def get_model_context_limit(self, model: str | None = None, backend: Any = None) -> int:
         """Dynamische Bestimmung des Kontextlimits je nach Modell und Backend."""

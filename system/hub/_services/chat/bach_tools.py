@@ -1758,6 +1758,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             return f"Task #{tid} nicht gefunden"
                         if str(existing["status"] or "").strip().lower() in COMPLETED_STATUSES:
                             return f"Task #{tid} war bereits erledigt."
+                        from hub._services.task_result_service import assert_completion_allowed
+                        assert_completion_allowed(conn, tid)
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                             # T-20260906-833218904: schliesst dieselbe task_history-Luecke
@@ -1809,6 +1811,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         updates.update(_task_route_fields(conn, args))
                         if not updates:
                             return "Keine Felder zum Aktualisieren angegeben"
+                        if str(updates.get("status") or "").strip().lower() in COMPLETED_STATUSES:
+                            from hub._services.task_result_service import assert_completion_allowed
+                            conn.execute("BEGIN IMMEDIATE")
+                            assert_completion_allowed(conn, tid, changes=updates)
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                              # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass):
@@ -1856,6 +1862,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             "open", "pending", "in_progress", "in-progress",
                         }:
                             return f"Task #{tid} nicht zerlegt: Eltern-Task ist nicht offen."
+                        if args.get("close_parent", True):
+                            from hub._services.task_result_service import assert_completion_allowed
+                            assert_completion_allowed(conn, tid, changes={"status": "completed"})
                         parent_dict = dict(parent)
                         p_desc = str(parent_dict.get("description") or "")
                         p_title = str(parent_dict.get("title") or "").strip()

@@ -7,6 +7,7 @@ from system.tests.test_task_lease_client import mem_db, _insert_task
 from system.tests.test_task_lease_client_review import T0
 from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError
 from system.tests.test_worker_tool_trace import binding as trace_binding
+from system.tests.worker_completion_fixtures import CompletionHarness
 
 
 @pytest.fixture
@@ -21,18 +22,26 @@ def binding(mem_db):
                                      stop_event=threading.Event(), clock=lambda: T0)
 
 
+@pytest.fixture
+def completion_binding(binding, tmp_path, monkeypatch):
+    harness = CompletionHarness(tmp_path, monkeypatch)
+    harness.prepare(binding, binding._client._conn)
+    binding._test_completion_harness = harness
+    return binding
+
+
 def approve_result(binding, conn=None):
     """Separate operator on the isolated authority; never a provider credential."""
     from gui.device_auth import create_task_result_operator
-    from hub._services.task_result_service import accept_result
     conn = conn if conn is not None else binding._client._conn
+    harness = getattr(binding, "_test_completion_harness", None)
+    assert isinstance(harness, CompletionHarness)
     observed = binding._client.task_result_snapshot(binding.task_id)
     record = observed["result"]
     token = create_task_result_operator(f"fixture-operator-{record['result_id']}", connection=conn)
-    accepted = accept_result(conn, binding.task_id, record["result_id"],
-        digest=record["result_sha256"], task_version=observed["task_version"],
-        status_revision=observed["status_revision"], operator_token=token)
+    accepted = harness.accept(binding, conn, token)
     assert accepted["result"]["accepted"] is True
+    assert accepted["status"] == "done"
     return accepted
 
 
@@ -68,7 +77,8 @@ def test_quarantine_blocks_requeue_and_never_falls_back_to_return(binding, monke
             binding.assert_active()
 
 
-def test_done_receipt_requires_submission_and_separate_authoritative_acceptance(binding):
+def test_done_receipt_requires_submission_and_separate_authoritative_acceptance(completion_binding):
+    binding = completion_binding
     with pytest.raises(LeaseError):
         binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
     binding.assert_active()
@@ -209,7 +219,8 @@ def test_missing_renew_ack_revokes_binding(binding, monkeypatch):
     assert binding.return_lease() is False
 
 
-def test_task_tool_dispatch_uses_private_binding_before_local_db(binding, monkeypatch):
+def test_task_tool_dispatch_uses_private_binding_before_local_db(completion_binding, monkeypatch):
+    binding = completion_binding
     from hub._services.chat import bach_tools
     monkeypatch.setattr(bach_tools, "_current_runtime_db", lambda: pytest.fail("projection path accessed"))
     result = bach_tools.exec_tool(
@@ -703,7 +714,7 @@ def test_task_manage_detail_reads_only_the_bound_snapshot(binding, monkeypatch):
     ("ollama-cloud", "glm-5.3:cloud", "ollama-cloud"),
 ])
 def test_external_profile_route_runs_bound_picker_to_review(
-        request, monkeypatch, backend, model, owner):
+        request, monkeypatch, tmp_path, backend, model, owner):
     """Exercise each external alias through canonical selection and result review."""
     conn = request.getfixturevalue("mem_db")
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
@@ -751,6 +762,12 @@ def test_external_profile_route_runs_bound_picker_to_review(
     assert "Bound external profile task" in detail and "Unrelated private task" not in detail
     with pytest.raises(LeaseProtocolError):
         binding.execute_task_manage({"action": "detail", "task_id": foreign_id})
+
+    harness = CompletionHarness(tmp_path, monkeypatch)
+    actual_backend = "ollama" if backend == "ollama-cloud" else backend
+    harness.prepare(binding, conn, backend_id=actual_backend, requested_model=model,
+                    observed_model=model, slot_id=f"profile-{backend}")
+    binding._test_completion_harness = harness
 
     actual_submit = client.submit_result
     acknowledgements = []

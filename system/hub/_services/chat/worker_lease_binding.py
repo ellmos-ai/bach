@@ -624,6 +624,7 @@ class WorkerLeaseBinding:
     def finish_model_execution(self, handle, *, result=None, failed=False, route_sha256=None):
         """Confirm a returned backend answer; a CLI may already have submitted."""
         should_record_review = False
+        should_reconcile = False
         with self._lock:
             if handle is None or self._model_execution_pending is not handle:
                 return False
@@ -665,6 +666,7 @@ class WorkerLeaseBinding:
             if self._completion_result is not None:
                 self._link_confirmed_model_execution()
                 should_record_review = self._review_grant is not None
+                should_reconcile = not should_record_review
         if should_record_review:
             record = getattr(self._client, "_record_result_review", None)
             if callable(record):
@@ -672,7 +674,19 @@ class WorkerLeaseBinding:
                     record(self)
                 except Exception:
                     pass
+        elif should_reconcile:
+            self._reconcile_confirmed_completion()
         return True
+
+    def _reconcile_confirmed_completion(self):
+        """Run optional local policy outside the binding lock and preserve ACKs."""
+        reconcile = getattr(self._client, "_reconcile_task_completion", None)
+        if callable(reconcile):
+            try:
+                return reconcile(self.task_id)
+            except Exception:
+                return None
+        return None
 
     def _link_confirmed_model_execution(self):
         """Attach a confirmed answer to the canonical submitted result, if any."""
@@ -700,7 +714,9 @@ class WorkerLeaseBinding:
         if already_captured:
             # Only capture is cached. Every public result read still
             # revalidates the current Git/lock state independently.
-            self._prepare_eligible_review_task()
+            evaluation = self._reconcile_confirmed_completion()
+            if not isinstance(evaluation, dict) or evaluation.get("status") == "review":
+                self._prepare_eligible_review_task()
             return True
         capture = getattr(self._client, "_capture_task_scope", None)
         if not callable(capture):
@@ -712,11 +728,19 @@ class WorkerLeaseBinding:
                     if (self._completion_result is not None
                             and self._completion_result.get("result_id") == result_id):
                         self._scope_captured_result_id = result_id
-                self._prepare_eligible_review_task()
+                evaluation = self._reconcile_confirmed_completion()
+                if not isinstance(evaluation, dict) or evaluation.get("status") == "review":
+                    self._prepare_eligible_review_task()
+            else:
+                # A submitted Git task without a tree must reach the same
+                # canonical negative evidence guard as a later controller poll.
+                # The guard preserves unavailable/transient cases and the ACK.
+                self._reconcile_confirmed_completion()
             return confirmed
         except Exception:
-            # Missing/dirty worktrees cannot undo the committed submission or
-            # prevent the existing personal acceptance/correction workflow.
+            # Capture errors never undo a committed submission. The existing
+            # local evaluator alone may reopen proven missing-tree work.
+            self._reconcile_confirmed_completion()
             return False
 
     def _prepare_eligible_review_task(self):

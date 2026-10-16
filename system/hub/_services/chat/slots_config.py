@@ -437,6 +437,9 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[
             data = json.loads(f.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("Slots-Konfiguration muss ein JSON-Objekt enthalten")
+            format_version = data.get("version", 1)
+            if type(format_version) is not int or format_version < 1:
+                raise ValueError("Ungültige Konfigurationsformatversion")
             slots = data.get("slots", {})
             if strict and not isinstance(slots, dict):
                 raise ValueError("Slots-Konfiguration enthält keine gültigen Core-Slots")
@@ -897,6 +900,18 @@ def _validated_model_fallback_profile(profile: Any) -> list[dict[str, str]]:
     return chain
 
 
+def _reconcile_available_model_bindings(config: dict[str, Any], agent_id: str) -> None:
+    """Reconcile local targets in the same profile mutation, without starting them."""
+    format_version = config.get("version", 1)
+    if type(format_version) is not int or format_version < 1:
+        raise ValueError("Ungültige Konfigurationsformatversion")
+    if format_version >= 4 and "model_sockets" not in config:
+        raise RuntimeError("model_socket_registry_unavailable")
+    if "model_sockets" in config:
+        from . import model_sockets
+        model_sockets._reconcile_profile_bindings(config, agent_id)
+
+
 def _core_configuration_version(config: dict[str, Any]) -> str:
     """Hash configuration while preserving every authority field.
 
@@ -1089,6 +1104,7 @@ def materialize_sequence_slot(run_id, cursor, profile, task_id, *, source_slot, 
         "task_id": task_id, "require_assigned_slot": True, "category": "all", "status": "idle",
         "chat_id": "", "current_activity": "", "auto_paused": False, "pause_counter": 0,
         "sequence_run_id": run_id, "sequence_cursor": cursor, "sequence_profile_digest": profile_digest}
+    _reconcile_available_model_bindings(config, slot_id)
     from hub._services.skill_source_service import check_write_locks
     check_write_locks(_resolve_path(path))
     save_slots_config(config, path)
@@ -1211,11 +1227,6 @@ def change_core_system_agent(
     else:
         updates = _validated_core_edits(changes, allow_memory_hook_opt_in=True)
     model_fields_changed = bool(set(updates) & {"backend", "model", "model_fallbacks"})
-    if model_fields_changed:
-        format_version = config.get("version", 1)
-        if (type(format_version) is int and format_version >= 4
-                and "model_sockets" not in config):
-            raise RuntimeError("model_socket_registry_unavailable")
     slot.update(updates)
     _validated_model_fallback_profile(slot)
     if slot_id == "buddha_always_on" and slot.get("persistent_opt_in") is True:
@@ -1230,9 +1241,8 @@ def change_core_system_agent(
             slot[PERSISTENT_CORE_RECOVERY_FIELD] = _persistent_core_revocation_state(
                 previous_persistent_profile_version
             )
-    if model_fields_changed and "model_sockets" in config:
-        from . import model_sockets
-        model_sockets._reconcile_profile_bindings(config, slot_id)
+    if model_fields_changed:
+        _reconcile_available_model_bindings(config, slot_id)
     from hub._services.skill_source_service import check_write_locks
     check_write_locks(target)
     save_slots_config(config, path)
@@ -1258,6 +1268,7 @@ def create_system_slot(changes: dict[str, Any], expected_version: str, *,
             "current_activity": "", "chat_id": "", "category": "all"}
     core.update(_validated_core_edits(changes) if changes else {})
     config["slots"][core["id"]] = core
+    _reconcile_available_model_bindings(config, core["id"])
     save_slots_config(config, path)
     return {"slot_id": core["id"], **core_system_agents_snapshot(path)}
 
@@ -1319,6 +1330,7 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
     if binding is not None:
         core["governance_binding"] = binding
     config["slots"][slot_id] = core
+    _reconcile_available_model_bindings(config, slot_id)
     save_slots_config(config, path)
     return {"slot_id": slot_id, **core_system_agents_snapshot(path)}
 
@@ -1751,6 +1763,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     }
 
     workers.append(worker)
+    _reconcile_available_model_bindings(cfg, worker_id)
     save_slots_config(cfg, path)
     log.info("Created dynamic worker %s (%s, sub_mode=%s, model=%s)", worker_id, name, sub_mode, model)
     return worker
@@ -2953,6 +2966,8 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         worker.pop("persistent_opt_in_id", None)
         worker.pop("persistent_opt_in_profile_version", None)
     worker.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+    if set(edits) & {"backend", "model", "model_fallbacks"}:
+        _reconcile_available_model_bindings(config, worker_id)
     save_slots_config(config, path)
     return _worker_configuration(worker)
 

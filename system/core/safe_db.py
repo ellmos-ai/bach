@@ -70,6 +70,28 @@ class SafeDBError(Exception):
     pass
 
 
+_TASK_COMPLETION_FIELDS = frozenset({
+    "require_user_review", "github_pr_review_required",
+    "completion_contract_json", "github_review_contract_json",
+})
+
+
+def _task_write_boundary(table, data, operation):
+    """Reserve task state and completion rules for the canonical task writers."""
+    if table.casefold() != "tasks":
+        return
+    fields = {key.casefold(): value for key, value in data.items()
+              if isinstance(key, str)}
+    if _TASK_COMPLETION_FIELDS.intersection(fields) or (
+            operation == "update" and "status" in fields):
+        raise SafeDBError(
+            "Für Aufgabenstatus und Abschlussregeln die Task-API verwenden")
+    if operation == "insert" and "status" in fields:
+        from hub.task_audit import COMPLETED_STATUSES
+        if str(fields["status"] or "").strip().casefold() in COMPLETED_STATUSES:
+            raise SafeDBError("Aufgaben im Endstatus über die Task-API erstellen und prüfen")
+
+
 class SafeDB:
     """Validierter DB-Zugriff mit Whitelist, Schema-Check und Audit-Log.
 
@@ -257,6 +279,7 @@ class SafeDB:
         self._validate_table(table)
         if not data:
             raise SafeDBError("Keine Daten zum Einfuegen")
+        _task_write_boundary(table, data, "insert")
 
         conn = self._connect()
         try:
@@ -295,6 +318,7 @@ class SafeDB:
             raise SafeDBError("Keine Daten zum Aktualisieren")
         if not where:
             raise SafeDBError("WHERE-Bedingung ist Pflicht bei UPDATE")
+        _task_write_boundary(table, data, "update")
 
         conn = self._connect()
         try:

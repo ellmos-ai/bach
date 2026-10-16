@@ -264,7 +264,9 @@ def _task_snapshot(conn, task_id):
     except (ValueError, TypeError) as exc:
         raise PolicyUnavailable("Gespeicherte Task-Regeln sind ungültig") from exc
     policy = validate_policy(global_snapshot["policy"])
-    inherited_review = row.get("require_user_review", False)
+    inherited_review = row.get("require_user_review")
+    if inherited_review is None:
+        inherited_review = False
     if type(inherited_review) not in (bool, int) or inherited_review not in (True, False, 0, 1):
         raise PolicyUnavailable("Geerbte Nutzerabnahme ist nicht bestätigt")
     def flag(name):
