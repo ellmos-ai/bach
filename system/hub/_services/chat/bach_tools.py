@@ -644,6 +644,11 @@ def _is_secret_path(p: Path) -> bool:
 def _task_code_reader_enabled(worker_task_binding, allowed_tools, mode: str) -> bool:
     if worker_task_binding is None or not isinstance(allowed_tools, (set, frozenset, tuple, list)):
         return False
+    # A review is deliberately unable to start a worktree. Its private grant
+    # must still select the strict task reader, never the generic home reader.
+    # The grant and current parent revision are validated on every actual read.
+    if getattr(worker_task_binding, "_review_grant", None) is not None:
+        return True
     if "start_task_worktree" not in allowed_tools:
         return False
     available = {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}

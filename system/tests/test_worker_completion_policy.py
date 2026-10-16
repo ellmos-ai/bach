@@ -90,16 +90,21 @@ def _model_response(model, *, content="Verified local model response", tool_call
             "content": content, "tool_calls": tool_calls}
 
 
-def _contract(min_chars=12):
+def _contract(min_chars=12, *, include_readme_blob=False):
+    criteria = [{"kind": "result_min_chars", "min_chars": min_chars}]
+    if include_readme_blob:
+        criteria.append({"kind": "git_blob_sha256", "path": "README.md",
+                         "sha256": hashlib.sha256(b"public base\n").hexdigest()})
     return json.dumps({"schema": "bach.worker-task-contract.v1",
-        "criteria": [{"kind": "result_min_chars", "min_chars": min_chars}]},
+        "criteria": criteria},
         sort_keys=True, separators=(",", ":"))
 
 
 @pytest.fixture
 def completion_world(worker_context, tmp_path, monkeypatch):
     """Build a real local submission, execution receipt, and clean registered Git tree."""
-    def build(*, mode="simple_task", contract_min_chars=12, contract_json_override=None,
+    def build(*, mode="simple_task", contract_min_chars=12, contract_git_blob=False,
+              contract_json_override=None,
               user_review=False, github_required=False, github_external_review=True,
               review_expiry_seconds=None, missing_scope=False):
         context = worker_context
@@ -134,7 +139,7 @@ def completion_world(worker_context, tmp_path, monkeypatch):
                 "required_checks": ["unit"], "min_approvals": 1,
                 "require_merged": False,
             }, sort_keys=True, separators=(",", ":"))
-        completion_contract = (_contract(contract_min_chars)
+        completion_contract = (_contract(contract_min_chars, include_readme_blob=contract_git_blob)
             if contract_min_chars is not None else None)
         if contract_json_override is not None:
             completion_contract = contract_json_override
@@ -211,7 +216,8 @@ def _correction_count(conn, task_id):
                         (task_id,)).fetchone()[0]
 
 
-def _record_independent_review(world, *, status="approved", read_current_evidence=True):
+def _record_independent_review(world, *, status="approved", task_contract_met=None,
+                               read_current_evidence=True):
     conn, client, task_id = world["conn"], world["client"], world["task_id"]
     prepared = review.prepare_review_task(conn, world["binding"], **_paths(world))
     assert prepared is not None
@@ -232,9 +238,12 @@ def _record_independent_review(world, *, status="approved", read_current_evidenc
     assert review.guard_review_dispatch(conn, child,
         route={"backend_id": "ollama", "route_sha256": TOP_ROUTE},
         requested_model=TOP_MODEL, **_paths(world)) is True
+    if task_contract_met is None:
+        task_contract_met = status == "approved"
+    assert type(task_contract_met) is bool
     verdict = json.dumps({"status": status,
         "summary": "Reviewbeleg mit konkreten Beobachtungen.",
-        "task_contract_met": status == "approved"}, ensure_ascii=False)
+        "task_contract_met": task_contract_met}, ensure_ascii=False)
     answer = _model_response(TOP_OBSERVED, content=None, tool_calls=[{
         "id": "completion-review-submit", "type": "function", "function": {
             "name": "task_manage", "arguments": json.dumps({
@@ -318,7 +327,8 @@ def test_balanced_policy_waits_for_an_independent_current_review(
     reconcile_current_result(conn, task_id, **_paths(world))
     assert read_result(conn, task_id)["status"] == "review"
 
-    evidence = _record_independent_review(world, status=review_status)
+    evidence = _record_independent_review(
+        world, status=review_status, task_contract_met=True)
     assert evidence["reviewer_id"] != AUTHOR
     ready = evaluate_current_result(conn, task_id, **_paths(world))
     assert ready["decision"]["state"] == "completed"
@@ -598,7 +608,7 @@ def test_high_security_findings_create_one_correction_and_allow_a_fresh_submissi
     assert world["binding"].closed is True
     assert client.read(task_id).leased is False
 
-    _record_independent_review(world, status="findings")
+    _record_independent_review(world, status="findings", task_contract_met=True)
     adverse = evaluate_current_result(conn, task_id, **_paths(world))
     assert adverse["decision"]["state"] == "correction_required"
     assert adverse["decision"]["reason"] == "high_security_findings"
@@ -1311,6 +1321,182 @@ def test_adverse_review_never_establishes_semantic_task_contract(
     observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
     assert observed["contract_finding"]["met"] is False
     assert observed["decision"]["completion_allowed"] is False
+
+
+@pytest.mark.parametrize("mode", ["simple_task", "balanced", "high_security"])
+@pytest.mark.parametrize("review_status", ["findings", "rejected"])
+def test_current_negative_review_vetoes_green_predeclared_contract_and_requeues(
+    completion_world, monkeypatch, mode, review_status
+):
+    from hub import worker_git
+    from hub._services.task_result_service import active_correction_request
+
+    world = completion_world(mode=mode, contract_min_chars=12, contract_git_blob=True)
+    conn, client, task_id = world["conn"], world["client"], world["task_id"]
+    before = evaluate_current_result(conn, task_id, **_paths(world))
+    assert before["contract"]["met"] is True
+    old_result_id = before["result_id"]
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: world["tree"]["repo"])
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: world["tree"]["worktrees"])
+
+    review_task_id = _record_independent_review(
+        world, status=review_status, task_contract_met=False, read_current_evidence=False)
+
+    assert read_result(conn, task_id)["status"] == "pending"
+    request = active_correction_request(conn, task_id)
+    assert request is not None and request["source_result_id"] == old_result_id
+    assert _correction_count(conn, task_id) == 1
+    recorded = conn.execute(
+        "SELECT receipt FROM worker_result_model_reviews WHERE target_task_id=? "
+        "AND target_result_id=? AND review_task_id=?",
+        (task_id, old_result_id, review_task_id),
+    ).fetchone()
+    assert recorded is not None
+    receipt = json.loads(recorded[0])
+    assert receipt["status"] == review_status
+    assert receipt["reviewer_asserted_task_contract_met"] is False
+    assert receipt["target_revision"] == before["result_revision"]
+    decision_rows = conn.execute(
+        "SELECT new_value FROM task_history WHERE task_id=? "
+        "AND action='worker_completion_decision'", (task_id,),
+    ).fetchall()
+    assert len(decision_rows) == 1
+    decision = json.loads(decision_rows[0][0])["decision"]
+    assert decision["state"] == "correction_required"
+    assert decision["completion_allowed"] is False
+    assert decision["dependents_may_start"] is False
+    assert decision["worker_may_claim_next"] is (mode != "high_security")
+    if review_status == "findings":
+        assert decision["reason"] == "review_findings_contract_not_met"
+
+
+def test_balanced_findings_with_positive_contract_attestation_remain_nonblocking(
+    completion_world
+):
+    world = completion_world(mode="balanced", contract_min_chars=12, contract_git_blob=True)
+    evidence = _record_independent_review(
+        world, status="findings", task_contract_met=True)
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert evidence["reviewer_asserted_task_contract_met"] is True
+    assert observed["contract"]["met"] is True
+    assert observed["contract_finding"]["met"] is True
+    assert observed["decision"]["state"] == "completed"
+    assert observed["decision"]["reason"] == "non_blocking_review_findings"
+    assert observed["decision"]["completion_allowed"] is True
+
+
+@pytest.mark.parametrize("mismatch", ["task_id", "result_id", "result_revision", "independent"])
+def test_noncurrent_negative_review_cannot_veto_a_green_contract(
+    completion_world, monkeypatch, mismatch
+):
+    from hub._services import worker_completion_policy as completion_policy
+
+    world = completion_world(mode="balanced", contract_min_chars=12, contract_git_blob=True)
+    real_read_result = completion_policy.read_result
+
+    def read_with_noncurrent_review(conn, task_id):
+        observed = real_read_result(conn, task_id)
+        record = observed.get("result")
+        if task_id == world["task_id"] and isinstance(record, dict):
+            projected = worker_scope_evidence.project_scope_evidence(
+                observed, **_paths(world))["result"]
+            review_evidence = {
+                "schema": "bach.worker-result-review-evidence.v1",
+                "availability": "available", "status": "findings",
+                "independent": True, "task_id": task_id,
+                "reviewer_id": TOP_REVIEWER,
+                "review_task_id": task_id + 100,
+                "result_id": record["result_id"],
+                "result_revision": projected["result_revision"],
+                "reviewer_asserted_task_contract_met": False,
+            }
+            if mismatch == "task_id":
+                review_evidence["task_id"] = task_id + 1
+            elif mismatch == "result_id":
+                review_evidence["result_id"] += 1
+            elif mismatch == "result_revision":
+                review_evidence["result_revision"] = "f" * 64
+            elif mismatch == "independent":
+                review_evidence["independent"] = False
+            record["model_review"] = review_evidence
+        return observed
+
+    monkeypatch.setattr(completion_policy, "read_result", read_with_noncurrent_review)
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract"]["met"] is True
+    assert observed["contract_finding"]["met"] is True
+    assert observed["contract_finding"]["source"] == "predeclared_criteria"
+    assert observed["decision"]["state"] != "correction_required"
+    assert observed["decision"]["reason"] != "review_findings_contract_not_met"
+
+
+@pytest.mark.parametrize(("review_status", "decision_reason"), [
+    ("findings", "review_findings_contract_not_met"),
+    ("rejected", "review_rejected"),
+])
+def test_external_github_approval_does_not_override_negative_contract_finding(
+    completion_world, monkeypatch, review_status, decision_reason
+):
+    from hub._services import worker_completion_policy as completion_policy
+
+    world = completion_world(mode="balanced", contract_min_chars=12,
+                             contract_git_blob=True, github_required=True,
+                             github_external_review=True)
+    conn, task_id = world["conn"], world["task_id"]
+    head = world["target"]["scope"]["snapshot"]["head_oid"]
+    real_read_result = completion_policy.read_result
+
+    def read_with_current_negative_review(connection, requested_task_id):
+        observed = real_read_result(connection, requested_task_id)
+        record = observed.get("result")
+        if requested_task_id == task_id and isinstance(record, dict):
+            projected = worker_scope_evidence.project_scope_evidence(
+                observed, **_paths(world))["result"]
+            record["model_review"] = {
+                "schema": "bach.worker-result-review-evidence.v1",
+                "availability": "available", "status": review_status,
+                "independent": True, "task_id": task_id,
+                "reviewer_id": TOP_REVIEWER,
+                "result_id": record["result_id"],
+                "result_revision": projected["result_revision"],
+                "review_task_id": task_id + 100,
+                "reviewer_asserted_task_contract_met": False,
+            }
+        return observed
+
+    def approved_github(number):
+        assert number == 17
+        return {
+            "pull": {"html_url": "https://github.com/ellmos-ai/bach/pull/17",
+                "head": {"sha": head},
+                "base": {"repo": {"full_name": "ellmos-ai/bach"}},
+                "user": {"login": "task-author"}, "draft": False, "state": "open"},
+            "reviews": [{"id": 901, "submitted_at": "2026-10-15T12:00:00Z",
+                "commit_id": head, "user": {"login": "independent-reviewer"},
+                "author_association": "MEMBER", "state": "APPROVED"}],
+            "checks": [{"head_sha": head, "name": "unit", "conclusion": "success"}],
+            "gate": {"reviewDecision": "APPROVED", "mergeStateStatus": "CLEAN"},
+        }
+
+    monkeypatch.setattr(completion_policy, "read_result", read_with_current_negative_review)
+    observed = evaluate_current_result(conn, task_id, github_observer=approved_github,
+                                      **_paths(world))
+    assert observed["contract"]["met"] is True
+    assert observed["github"]["availability"] == "available"
+    assert observed["github"]["status"] == "verified"
+    assert observed["contract_finding"]["met"] is False
+    assert observed["contract_finding"]["source"] == "independent_model_review"
+    assert observed["contract_finding"]["review_status"] == review_status
+    assert observed["contract_finding"]["reviewer_asserted_task_contract_met"] is False
+    assert observed["contract_finding"]["review_task_id"] == task_id + 100
+    assert observed["decision"]["state"] == "correction_required"
+    assert observed["decision"]["reason"] == decision_reason
+    assert observed["decision"]["completion_allowed"] is False
+    assert observed["decision"]["dependents_may_start"] is False
+    reconcile_current_result(conn, task_id, github_observer=approved_github,
+                             **_paths(world))
+    assert read_result(conn, task_id)["status"] == "pending"
+    assert _correction_count(conn, task_id) == 1
 
 
 @pytest.mark.parametrize("contract_min_chars", [None, 300], ids=["missing-contract", "failed-contract"])
