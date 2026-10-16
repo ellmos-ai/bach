@@ -1294,10 +1294,6 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Pfad außerhalb der erlaubten Wurzeln.")
                 if _is_secret_path(resolved):
                     return _tool_policy_denial("secret_path_denied", "BLOCKIERT: Secrets-Datei darf nicht gelesen werden.")
-            lines = min(int(args.get("lines", 50)), 200)
-            offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
-            end_line = offset + lines - 1
-                    return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
             if evidence_request is not None:
                 _, start_line, char_offset, max_lines, max_chars = evidence_request
                 try:
@@ -1369,25 +1365,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                 picked.append((line_number, line))
                 else:
                     with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
-                        picked = [line for i, line in enumerate(fh, start=1)
-                                  if offset <= i <= end_line]
-            except OSError:
-                return _tool_effect_unconfirmed()
-            except Exception:  # noqa: BLE001 - Lesefehler bleiben ohne Inhaltsausgabe.
-                return _tool_effect_unconfirmed()
-            return ("".join(picked) or "(keine Zeilen)")[:4000]
                         for line_number, line in enumerate(fh, start=1):
                             total_lines = line_number
                             if raw_offset <= line_number <= end_line:
                                 picked.append((line_number, line))
-            except OSError as e:
-                if task_code_capability:
-                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
-                return f"Fehler: {e}"
-            except Exception:  # noqa: BLE001 - Task-Lesefehler bleiben fail-closed.
-                if task_code_capability:
-                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
-                return "Fehler: Datei konnte nicht gelesen werden"
+            except OSError:
+                return _tool_effect_unconfirmed()
+            except Exception:  # noqa: BLE001 - Lesefehler bleiben ohne Inhaltsausgabe.
+                return _tool_effect_unconfirmed()
             if not line_numbers:
                 raw_text = "".join(line for _number, line in picked) or "(keine Zeilen)"
                 return raw_text[:MAX_READ_FILE_OUTPUT_CHARS]
