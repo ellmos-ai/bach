@@ -16,7 +16,8 @@ import uuid
 from . import worker_policy_settings as settings
 from .task_result_service import read_result
 from .worker_scope_evidence import project_scope_evidence
-from .worker_completion_contract import evaluate_contract, evaluate_worker_self_check
+from .worker_completion_contract import (evaluate_contract, evaluate_worker_self_check,
+    evaluate_worker_completion_assertion)
 from .worker_github_review import observe_github_review
 from .worker_review_identity import identity_snapshot, principal_for_execution
 
@@ -87,6 +88,30 @@ def _history_matches(conn, record, *, revision_field, event_field, action, statu
                       "task_id": record["task_id"], "result_id": record["result_id"],
                       "result_sha256": record["result_sha256"], "result_revision": revision,
                       "device_id": int(event["changed_by"].split(":", 1)[1])}
+
+
+def _completion_assertion_recorded(conn, record):
+    """Only submissions with their own contemporaneous audit marker qualify."""
+    before = record.get("submission_event_id")
+    if type(before) is not int or before <= 0:
+        return False
+    event = _row(conn.execute(
+        "SELECT id,task_id,action,field_changed,old_value,new_value,changed_by "
+        "FROM task_history WHERE task_id=? AND action='worker_completion_asserted' "
+        "AND id<? ORDER BY id DESC LIMIT 1", (record["task_id"], before)))
+    if (event is None or event["task_id"] != record["task_id"]
+            or event["field_changed"] != "lease" or event["old_value"] is not None
+            or event["changed_by"] != record.get("submitted_by")):
+        return False
+    try:
+        detail = json.loads(event["new_value"])
+    except (TypeError, ValueError):
+        return False
+    return detail == {"schema": "bach.worker-completion-assertion.v1",
+                      "task_id": record["task_id"], "result_id": record["result_id"],
+                      "result_sha256": record["result_sha256"],
+                      "generation": record["generation"], "fence": record["fence"],
+                      "task_version": record["task_version"]}
 
 
 def _age_seconds(value):
@@ -212,10 +237,16 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             and review_status == "approved"
             and review.get("reviewer_asserted_task_contract_met") is True)
         worker_self_check = evaluate_worker_self_check(record["result"])
+        worker_completion_assertion = evaluate_worker_completion_assertion(record["result"])
         simple_self_check_met = (
             policy_view["effective"]["effective_mode"] == "simple_task"
             and contract.get("reason") == "contract_not_predeclared"
             and worker_self_check["met"] is True)
+        simple_completion_asserted = (
+            policy_view["effective"]["effective_mode"] == "simple_task"
+            and contract.get("reason") == "contract_not_predeclared"
+            and worker_completion_assertion["met"] is True
+            and _completion_assertion_recorded(conn, record))
         adverse_review_contract_finding = (
             review_is_current
             and review_status in {"findings", "rejected"}
@@ -223,14 +254,17 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         task_contract_met = (False if adverse_review_contract_finding else
             contract["met"] is True or (
                 contract.get("reason") == "contract_not_predeclared"
-                and (contract_attested or semantic_review_met or simple_self_check_met)))
+                and (contract_attested or semantic_review_met or simple_self_check_met
+                     or simple_completion_asserted)))
         contract_finding = {
             "met": task_contract_met,
             "source": "independent_model_review" if adverse_review_contract_finding else
                       "predeclared_criteria" if contract["met"] is True else
                       "operator_attestation" if task_contract_met and contract_attested else
                       "independent_model_review" if semantic_review_met else
-                      "worker_self_check" if simple_self_check_met and task_contract_met else "unconfirmed",
+                      "worker_self_check" if simple_self_check_met and task_contract_met else
+                      "worker_completion_asserted" if simple_completion_asserted and task_contract_met else
+                      "unconfirmed",
             "review_task_id": (review.get("review_task_id")
                                if adverse_review_contract_finding or semantic_review_met else None),
         }
@@ -275,6 +309,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             "status_revision": observed["status_revision"], "reason": decision["reason"],
             "decision": decision, "contract": contract, "contract_attested": contract_attested,
             "worker_self_check": worker_self_check,
+            "worker_completion_assertion": worker_completion_assertion,
             "contract_finding": contract_finding,
             "user_review_required": bool(user_required), "user_approved": user_approved,
             "github_pr_review_required": github_required, "github": github}
@@ -679,6 +714,9 @@ def reconcile_current_result(conn, task_id, *, repo_root=None, worktrees_dir=Non
         task, record, observed = _same_db_result(conn, evaluation)
         if task is None:
             raise ResultConflict("Ergebnis, Task oder Konfiguration für Abschluss verändert")
+        if (evaluation["contract_finding"]["source"] == "worker_completion_asserted"
+                and not _completion_assertion_recorded(conn, record)):
+            raise ResultConflict("Fertigmeldung seit der Prüfung verändert")
         if expected is not None and (record["result_id"] != expected["result_id"]
                 or record["result_sha256"] != expected["result_sha256"]
                 or observed["task_version"] != expected["task_version"]

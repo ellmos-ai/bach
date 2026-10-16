@@ -1244,7 +1244,7 @@ def test_remote_controller_claim_gate_requires_exact_lead_completion_readback(
     assert _schema_objects(conn) == before_schema
 
 
-def test_missing_contract_never_completes(completion_world):
+def test_negative_self_check_does_not_submit_or_complete(completion_world):
     missing = completion_world(mode="simple_task", contract_min_chars=None, submit=False)
     conn, task_id = missing["conn"], missing["task_id"]
     before_release = conn.execute(
@@ -1252,7 +1252,7 @@ def test_missing_contract_never_completes(completion_world):
         (task_id,)).fetchone()[0]
     with pytest.raises(LeaseSelfCheckRequiredError):
         missing["binding"].execute_task_manage({"action": "submit_result", "task_id": task_id,
-                                                "result": RESULT_TEXT})
+                                                "result": _self_check(complete=False)})
     assert conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()[0] == "in_progress"
     assert read_result(conn, task_id)["result"] is None
     assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? AND action='lease_release'",
@@ -1263,7 +1263,7 @@ def test_missing_contract_never_completes(completion_world):
     assert read_result(conn, task_id)["result"] is None
 
 
-def test_simple_unstructured_task_accepts_only_explicit_complete_self_check(completion_world):
+def test_simple_unstructured_task_keeps_explicit_complete_self_check(completion_world):
     world = completion_world(mode="simple_task", contract_min_chars=None,
                              result_text=_self_check())
     observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
@@ -1276,15 +1276,64 @@ def test_simple_unstructured_task_accepts_only_explicit_complete_self_check(comp
     assert read_result(world["conn"], world["task_id"])["result"]["accepted"] is True
 
 
+def test_simple_plain_result_is_audited_completion_assertion(completion_world):
+    world = completion_world(mode="simple_task", contract_min_chars=None,
+                             result_text=RESULT_TEXT)
+    conn, task_id = world["conn"], world["task_id"]
+    observed = evaluate_current_result(conn, task_id, **_paths(world))
+    assert observed["worker_self_check"]["met"] is False
+    assert observed["worker_completion_assertion"] == {
+        "availability": "available", "reason": "worker_completion_asserted", "met": True}
+    assert observed["contract_finding"] == {"met": True,
+        "source": "worker_completion_asserted", "review_task_id": None}
+    assert observed["decision"]["completion_allowed"] is True
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+        "AND action='worker_completion_asserted'", (task_id,)).fetchone()[0] == 1
+    assert reconcile_current_result(conn, task_id, **_paths(world))["status"] == "done"
+    assert read_result(conn, task_id)["result"]["accepted"] is True
+
+
+def test_simple_plain_result_without_own_audit_marker_stays_in_review(completion_world):
+    world = completion_world(mode="simple_task", contract_min_chars=None,
+                             result_text=RESULT_TEXT)
+    conn, task_id = world["conn"], world["task_id"]
+    conn.execute("DELETE FROM task_history WHERE task_id=? "
+        "AND action='worker_completion_asserted'", (task_id,))
+    conn.commit()  # Simulate a historical prose result that predates this marker.
+    observed = evaluate_current_result(conn, task_id, **_paths(world))
+    assert observed["worker_completion_assertion"]["met"] is True
+    assert observed["contract_finding"]["met"] is False
+    assert observed["decision"]["completion_allowed"] is False
+    assert reconcile_current_result(conn, task_id, **_paths(world))["status"] != "done"
+    assert read_result(conn, task_id)["result"]["accepted"] is False
+
+
+@pytest.mark.parametrize("mode, contract_min_chars", [
+    ("balanced", None), ("high_security", None), ("simple_task", 3000),
+])
+def test_plain_assertion_does_not_replace_strict_mode_or_predeclared_contract(
+    completion_world, mode, contract_min_chars,
+):
+    world = completion_world(mode=mode, contract_min_chars=contract_min_chars,
+                             result_text=RESULT_TEXT)
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract_finding"]["source"] != "worker_completion_asserted"
+    assert observed["decision"]["completion_allowed"] is False
+    assert world["conn"].execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+        "AND action='worker_completion_asserted'", (world["task_id"],)).fetchone()[0] == 0
+
+
 @pytest.mark.parametrize("result_text", [
-    "Fertig: alles geprüft und vollständig erledigt.",
     _self_check(complete=False),
     _self_check(work="zu wenig"),
     _self_check(checks=[]),
     _self_check(work="konkrete erledigte Arbeit", checks=["konkrete Prüfung"]),
     _self_check(remaining=["Eine Pflichtprüfung ist noch offen."]),
+    '{"schema":"bach.worker-self-check.v1","complete":false',
+    "```\n" + _self_check(complete=False) + "\n```",
+    "Vorläufiger Stand:\n" + _self_check(remaining=["Pflichtarbeit ist offen."]),
 ])
-def test_simple_unstructured_partial_or_unproven_result_stays_incomplete(
+def test_simple_unstructured_negative_or_invalid_self_check_stays_incomplete(
     completion_world, result_text
 ):
     world = completion_world(mode="simple_task", contract_min_chars=None, submit=False)
@@ -1320,6 +1369,16 @@ def test_simple_self_check_does_not_bypass_explicit_hard_gate(completion_world, 
                              github_required=gate == "github")
     observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
     assert observed["contract_finding"]["source"] == "worker_self_check"
+    assert observed["decision"]["completion_allowed"] is False
+
+
+@pytest.mark.parametrize("gate", ["user", "github"])
+def test_simple_plain_assertion_does_not_bypass_explicit_hard_gate(completion_world, gate):
+    world = completion_world(mode="simple_task", contract_min_chars=None,
+                             result_text=RESULT_TEXT, user_review=gate == "user",
+                             github_required=gate == "github")
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract_finding"]["source"] == "worker_completion_asserted"
     assert observed["decision"]["completion_allowed"] is False
 
 

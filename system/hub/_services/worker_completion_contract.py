@@ -38,6 +38,27 @@ def evaluate_worker_self_check(result):
     return {"availability": "available", "reason": "worker_self_check_asserted", "met": True}
 
 
+def evaluate_worker_completion_assertion(result):
+    """Classify ordinary result prose as an assertion, never as verified work."""
+    unavailable = {"availability": "unavailable", "reason": "worker_completion_assertion_missing",
+                   "met": False}
+    if not isinstance(result, str) or not result.strip() or len(result) > 3000:
+        return unavailable
+    text = result.strip()
+    # An attempted structured self-check must satisfy its own complete/remaining
+    # fields. Invalid or negative JSON must not become a prose success.
+    if (SELF_CHECK_SCHEMA in text or text.startswith("{")
+            or text.casefold().startswith(("```json", "``` json"))):
+        return unavailable
+    try:
+        json.loads(text)
+    except (TypeError, ValueError):
+        pass
+    else:
+        return unavailable
+    return {"availability": "available", "reason": "worker_completion_asserted", "met": True}
+
+
 def parse_contract(raw):
     if not isinstance(raw, str) or not raw or len(raw) > 8192:
         return None

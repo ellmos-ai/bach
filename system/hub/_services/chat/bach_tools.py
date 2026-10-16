@@ -981,7 +981,7 @@ TOOLS_SAFE = [
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Für einfache Tasks ohne vorgegebenen Vertrag nur dieses JSON als ausdrücklichen Selbstcheck verwenden: {\"schema\":\"bach.worker-self-check.v1\",\"complete\":true,\"completed_work\":\"konkrete erledigte Arbeit\",\"checks\":[\"konkrete Prüfung\"],\"remaining_required_work\":[]}. Offene Pflichtarbeit oder Teilstand: kein submit_result; update(status='pending') nutzen. Andere Modi folgen ihrer Review-Regel."},
+        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Im einfachen Modus ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext als ausdrückliche Fertigmeldung; tatsächliche Arbeit und Prüfung nennen. Ein negativer oder unvollständiger JSON-Selbstcheck ist keine Fertigmeldung. Offene Pflichtarbeit oder Teilstand: kein submit_result; update(status='pending') nutzen. Andere Modi folgen ihrer Review-Regel."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
