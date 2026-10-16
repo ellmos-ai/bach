@@ -1670,7 +1670,15 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     except Exception:
                         return "Taskoperation nicht bestätigt; Taskbindung prüfen."
                 try:
-                    return worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
+                    response = worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
+                    # The operation has released its binding lock. Git must not
+                    # run inside the submission transaction or controller lock.
+                    try:
+                        worker_task_binding.capture_confirmed_scope()
+                    except Exception:
+                        # Optional evidence must never hide a confirmed ACK.
+                        pass
+                    return response
                 except WorkerResultLimitLockedError:
                     # This bounded policy denial is safe to explain and leaves the lease active.
                     return WorkerResultLimitLockedError.user_message

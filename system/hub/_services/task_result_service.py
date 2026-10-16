@@ -485,6 +485,11 @@ def read_result(conn, task_id, *, operator_token=None):
                               else "awaiting_review" if task["status"] == "review" else "acceptance_not_current"))
         from .worker_execution_evidence import read_execution_evidence
         record["execution"] = read_execution_evidence(conn, record)
+        from .worker_scope_evidence import read_scope_evidence
+        # Git is deliberately outside this SQLite snapshot. A recorded receipt
+        # is historical evidence until the local SDK/API revalidates its tree.
+        record["scope"] = read_scope_evidence(conn, record)
+        record["result_revision"] = None
         return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
                 "task_version": task_content_version(task), "status": task["status"],
                 "status_revision": revision, "result": record, "verified": True,

@@ -48,6 +48,7 @@ class WorkerLeaseBinding:
         self._review_ack = None
         self._model_execution_pending = None
         self._model_execution_candidate = None
+        self._scope_captured_result_id = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
         # Cumulative for this lease, not reset by model block boundaries.
@@ -326,10 +327,12 @@ class WorkerLeaseBinding:
             if current.get("accepted") is True:
                 if reconstructed:
                     self._link_confirmed_model_execution()
+                self.capture_confirmed_scope()
                 return {**empty, "completed_task_ids": (self.task_id,), "result": current}
             if current.get("reason") == "awaiting_review":
                 if reconstructed:
                     self._link_confirmed_model_execution()
+                self.capture_confirmed_scope()
                 return {**empty, "reviewed_task_ids": (self.task_id,), "result": current}
             raise LeaseProtocolError("Aktuelle Ergebnisabnahme nicht bestätigt")
         elif (isinstance(review, LeaseReleaseAck) and review.released is True
@@ -503,6 +506,34 @@ class WorkerLeaseBinding:
                 return False
             return link(self, handle) is True
         except Exception:
+            return False
+
+    def capture_confirmed_scope(self):
+        """Optional Git evidence after a canonical submission, outside locks."""
+        with self._lock:
+            if (self._completion_result is None or not self._is_current()
+                    or self._stop_event.is_set()
+                    or self._ack.result_generation != self._generation):
+                return False
+            result_id = self._completion_result.get("result_id")
+            if self._scope_captured_result_id == result_id:
+                # Only capture is cached. Every public result read still
+                # revalidates the current Git/lock state independently.
+                return True
+        capture = getattr(self._client, "_capture_task_scope", None)
+        if not callable(capture):
+            return False
+        try:
+            confirmed = capture(self) is True
+            if confirmed:
+                with self._lock:
+                    if (self._completion_result is not None
+                            and self._completion_result.get("result_id") == result_id):
+                        self._scope_captured_result_id = result_id
+            return confirmed
+        except Exception:
+            # Missing/dirty worktrees cannot undo the committed submission or
+            # prevent the existing personal acceptance/correction workflow.
             return False
 
     def heartbeat(self, *, renew_due=False):
