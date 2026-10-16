@@ -1555,7 +1555,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 if not any(token in cmd for token in ["bach-worktrees", "task-"]):
                     if err := is_live_path_blocked(cwd):
                         return err
-            log.info(f"FULL-CMD: {cmd}")
+            log.info("FULL-CMD: execution requested (payload omitted)")
             return run_shell_restricted(cmd, t, allowed=None)
 
         if name == "start_task_worktree":
@@ -2067,7 +2067,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 full_prompt = f"Kontext: {context}\n\nAufgabe: {prompt}"
             env = {**os.environ, "PYTHONIOENCODING": "utf-8",
                    "BACH_DELEGATION_DEPTH": str(depth + 1)}
-            log.info(f"DELEGATE -> {target} (depth={depth}): {prompt[:100]}")
+            log.info("DELEGATE -> %s (depth=%d)", target, depth)
             if target == "claude":
                 api_key = os.environ.get("ANTHROPIC_API_KEY", "")
                 if not api_key:
