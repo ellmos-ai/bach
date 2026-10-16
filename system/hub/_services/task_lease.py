@@ -816,9 +816,15 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         if cursor.rowcount != 1:
             conn.rollback()
             return _deny(task_id, "stale_fence", now)
+        release_detail = {"fence": fence, "outcome": outcome,
+                          "result_ref": result_ref, "note": note}
+        receipt = None
+        if submitted is not None:
+            from .task_result_service import prepare_submission_receipt
+            receipt = prepare_submission_receipt(conn, submitted)
+            release_detail["submission_receipt"] = receipt
         event_id = _history(conn, task_id, "lease_release", worker, now,
-                 {"fence": fence, "outcome": outcome, "result_ref": result_ref, "note": note},
-                 old_value="in_progress")
+                            release_detail, old_value="in_progress")
         after = _row(conn, task_id) or {}
         ack = {
             "released": True, "task_id": task_id, "outcome": outcome, "status": after.get("status"),
@@ -826,7 +832,7 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         }
         if submitted is not None:
             from .task_result_service import finish_submission
-            ack["worker_result"] = finish_submission(conn, submitted, event_id)
+            ack["worker_result"] = finish_submission(conn, submitted, event_id, receipt)
         conn.commit()
     except BaseException:
         if conn.in_transaction:

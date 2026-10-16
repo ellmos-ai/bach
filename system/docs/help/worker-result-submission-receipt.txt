@@ -1,0 +1,73 @@
+Nachweis einer Worker-Ergebnisabgabe
+====================================
+
+Dieser Baustein von #2210 ergänzt den bestehenden Ergebnisdienst. Er hält fest,
+welches Ergebnis unter welcher Taskversion, Workergeneration und Fence abgegeben
+wurde und welche Worker-Policy dabei gespeichert war. Die Task-, Ergebnis- und
+Korrekturverwaltung bleibt im bisherigen BACH-Speicher.
+
+Aussage des Belegs
+------------------------------------
+
+Der Lease-Service prüft die gültige Arbeitslease unter seiner Schreibtransaktion.
+Ergebnis, Statuswechsel nach review, Freigabe der Lease und Historienbeleg gehören
+zu derselben Transaktion. Der spätere Nachweis verlangt keine weiterhin aktive
+Claim-ID: Die Lease wurde bei der Abgabe bewusst zurückgegeben. Eine höhere Fence,
+ein geänderter Auftrag oder eine neue Korrekturrunde entwertet den alten aktuellen
+Ergebnisstand.
+
+Der Beleg verbindet Task und Ergebnis mit Generation, Fence, Taskversion,
+Ergebnisdigest, historischem Halternamen, Abgabezeit, Statusereignis und
+Release-Ereignis. Der Haltername stammt aus dem Lease-Request. Er bestätigt keine
+Modellidentität und verleiht keine Reviewerrechte.
+
+Zum Abgabezeitpunkt verfügbare globale Policy und Task-Overrides werden samt
+Konfigurationsversion festgehalten. Eine spätere Änderung der Einstellungen
+schreibt diese historische Konfiguration nicht um. Fehlt der optionale gemeinsame
+Policyvertrag oder der Konfigurationsspeicher, bleibt dies im Beleg ausdrücklich
+als nicht verfügbar erkennbar. Die Ergebnisabgabe bleibt möglich.
+
+Grenze zum Aufgabenabschluss
+------------------------------------
+
+Ein Abgabebeleg bestätigt die gespeicherte Submission und ihre Historie. Für einen
+fachlichen Abschluss fehlen weiterhin gesonderte Quellen für Scope und
+Projektzustand, Worktree-Fingerprint, aktuelle Locks, Vertragserfüllung,
+authentifizierte unabhängige Modellreview und gegebenenfalls GitHub-Abnahme.
+Eine PR-Adresse allein bestätigt keinen aktuellen Head, bestandene Checks oder
+eine Freigabe.
+
+Die gespeicherte Policy ist noch keine angewendete Policyentscheidung. Dieser
+Baustein erzeugt kein automatisches done und ersetzt keine vorgeschriebene
+Nutzerabnahme. Das bestehende Submit-Payload enthält weiterhin ausschließlich
+generation und result; der Worker kann keine eigenen Integritätsflags setzen.
+Der bestätigte Release bleibt review mit accepted=false.
+
+Kompatibilität und Betrieb
+------------------------------------
+
+Ältere Ergebniszeilen bleiben als Legacy lesbar. Neue Abgaben tragen eine eigene
+Versionskennung; fehlende Belegfelder machen sie nicht zu Altdaten. Sie erhalten keinen nachträglich
+erfundenen vollständigen Submissionbeleg. Neue Belege werden gegen die kanonische
+Ergebniszeile und die zugehörigen Historienereignisse geprüft. Beschädigte oder
+falsch zugeordnete Belege dürfen keine aktuelle Ergebnisabnahme ermöglichen.
+
+Schemaergänzungen erfolgen in den bestehenden expliziten Schemaschreibpfaden
+für Submission und Korrektur. Ergebnis-GETs verändern weder Schema noch Daten. Eine
+produktive Installation oder Migration wird durch diese Dokumentation nicht
+ausgeführt oder freigegeben.
+
+Readback und weitere Integration
+------------------------------------
+GET /api/tasks/{id}/result liefert unter result.submission die Verfügbarkeit
+des Abgabebelegs: available, unavailable oder legacy_release_only. Der Hash
+submission_revision bindet den historischen Abgabebeleg. Er ist noch keine
+vollständige result_revision für den gemeinsamen Abschlussvertrag; dazu fehlen
+die erwähnten Scope-, Projekt- und Arbeitsstandsbelege.
+
+Die Verfügbarkeit der eingefrorenen Policy steht getrennt unter
+result.submission.policy.availability. Unverfügbare optionale Policy-Metadaten
+sperren in diesem Baustein weder eine gültige Abgabe noch den bisherigen
+persönlichen Abnahme- und Korrekturweg. Ein beschädigter Submissionbeleg sperrt
+dagegen die Abnahme. Über das weitere automatische Abschlussverhalten wird
+hier noch keine Policyentscheidung gespeichert oder ausgeführt.

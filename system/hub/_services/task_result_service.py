@@ -12,6 +12,9 @@ import re
 import uuid
 import sqlite3
 
+SUBMISSION_RECEIPT_SCHEMA = "bach.worker-submission-receipt.v1"
+SUBMISSION_READBACK_SCHEMA = "bach.worker-submission-readback.v1"
+
 
 class ResultConflict(ValueError):
     """The result, task content or status changed since the operator read it."""
@@ -56,12 +59,21 @@ def ensure_result_schema(conn):
         submitted_by TEXT NOT NULL,
         submitted_at TEXT NOT NULL,
         submission_event_id INTEGER,
+        submission_receipt_version INTEGER NOT NULL DEFAULT 0,
+        submitted_status_event_id INTEGER,
+        submission_receipt_sha256 TEXT,
         accepted_by TEXT,
         accepted_at TEXT,
         accepted_status_event_id INTEGER,
         acceptance_event_id INTEGER,
         UNIQUE(task_id, fence)
     )""")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(worker_task_results)")}
+    for name, declaration in (("submission_receipt_version", "INTEGER NOT NULL DEFAULT 0"),
+                              ("submitted_status_event_id", "INTEGER"),
+                              ("submission_receipt_sha256", "TEXT")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE worker_task_results ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_submission_event "
                  "ON worker_task_results(task_id, submission_event_id DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_acceptance_event "
@@ -148,25 +160,191 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     generation, text, digest = validate_submission(payload, max_chars=max_chars)
     ensure_result_schema(conn)
     cursor = conn.execute("""INSERT INTO worker_task_results
-        (task_id,fence,generation,task_version,result,result_sha256,submitted_by,submitted_at)
-        VALUES (?,?,?,?,?,?,?,?)""", (row["id"], row["claim_fence"], generation,
+        (task_id,fence,generation,task_version,result,result_sha256,submitted_by,submitted_at,
+         submission_receipt_version)
+        VALUES (?,?,?,?,?,?,?,?,1)""", (row["id"], row["claim_fence"], generation,
         task_content_version(row), text, digest, worker, now))
     return {"schema": "bach.worker-result.v1", "result_id": cursor.lastrowid,
             "task_id": row["id"], "fence": row["claim_fence"], "generation": generation,
             "task_version": task_content_version(row), "result_sha256": digest,
-            "result": text, "accepted": False}
+            "submitted_by": worker, "submitted_at": now,
+            "submission_receipt_version": 1, "result": text, "accepted": False}
 
 
 def result_reference(record):
     return f"bach-task-result:{record['result_id']}:{record['result_sha256']}"
 
 
-def finish_submission(conn, record, event_id):
-    conn.execute("UPDATE worker_task_results SET submission_event_id=? WHERE id=?",
-                 (event_id, record["result_id"]))
+def _receipt_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
+        separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+
+
+def _submission_policy(conn, task_id):
+    """Freeze configuration from the submit transaction, not a later settings read."""
+    try:
+        from . import worker_policy_settings as settings
+    except ImportError:
+        return {"availability": "unavailable", "reason": "policy_contract_unavailable"}
+    original_row_factory = conn.row_factory
+    try:
+        # The lease service also accepts plain sqlite connections. Settings
+        # expect named rows; restore the caller's factory before returning.
+        conn.row_factory = sqlite3.Row
+        global_view = settings._global(conn)
+        task_view = settings._task_snapshot(conn, task_id)
+        return {"availability": "available", "contract_version": settings.CONTRACT,
+            "policy": global_view["policy"],
+            "global_configuration_version": global_view["configuration_version"],
+            "global_policy_source": global_view["policy_source"],
+            "override": task_view["override"],
+            "configuration_version": task_view["configuration_version"],
+            "policy_source": task_view["effective"]["policy_source"],
+            "override_present": task_view["effective"]["policy_source"] == "task_override",
+            "user_review_required": task_view["effective"]["user_review_required"]}
+    except sqlite3.Error:
+        return {"availability": "unavailable", "reason": "policy_store_unavailable"}
+    except (ValueError, TypeError, KeyError, AttributeError, settings.PolicyUnavailable):
+        return {"availability": "unavailable", "reason": "policy_contract_unavailable"}
+    finally:
+        conn.row_factory = original_row_factory
+
+
+def prepare_submission_receipt(conn, record):
+    """Bind the exact in-progress -> review event before release history is added."""
+    status_id = _status_revision(conn, record["task_id"])
+    status = conn.execute("SELECT old_value,new_value,changed_by,changed_at FROM task_history "
+        "WHERE id=? AND task_id=? AND action='status_change' AND field_changed='status'",
+        (status_id, record["task_id"])).fetchone()
+    if (type(status_id) is not int or status_id <= 0 or status is None
+            or tuple(status[:3]) != ("in_progress", "review", record["submitted_by"])
+            or not isinstance(status[3], str) or not status[3]):
+        raise ResultConflict("Submission-Statuswechsel ist nicht bestätigt")
+    return {"schema": SUBMISSION_RECEIPT_SCHEMA, "result_id": record["result_id"],
+        "task_id": record["task_id"], "fence": record["fence"],
+        "generation": record["generation"], "task_version": record["task_version"],
+        "result_sha256": record["result_sha256"], "submitted_by": record["submitted_by"],
+        "submitted_at": record["submitted_at"], "submitted_status_event_id": status_id,
+        "submitted_status_changed_at": status[3],
+        "policy": _submission_policy(conn, record["task_id"])}
+
+
+def _submission_revision(record, digest):
+    result_id = record.get("result_id", record.get("id"))
+    return "sha256:" + _receipt_digest({"schema": "bach.worker-submission-revision.v1",
+        "task_id": record["task_id"], "result_id": result_id,
+        "submission_event_id": record["submission_event_id"], "submission_receipt_sha256": digest})
+
+
+def finish_submission(conn, record, event_id, receipt):
+    digest = _receipt_digest(receipt)
+    cursor = conn.execute("UPDATE worker_task_results SET submission_event_id=?,"
+        "submitted_status_event_id=?,submission_receipt_sha256=? WHERE id=? AND task_id=? "
+        "AND submission_event_id IS NULL", (event_id, receipt["submitted_status_event_id"],
+        digest, record["result_id"], record["task_id"]))
+    if cursor.rowcount != 1:
+        raise ResultConflict("Submission-Beleg konnte nicht gespeichert werden")
     record["submission_event_id"] = event_id
-    record["status_revision"] = _status_revision(conn, record["task_id"])
+    record["submitted_status_event_id"] = receipt["submitted_status_event_id"]
+    record["submission_receipt_sha256"] = digest
+    record["status_revision"] = receipt["submitted_status_event_id"]
+    record["submission_revision"] = _submission_revision(record, digest)
+    record["submission"] = {"schema": SUBMISSION_READBACK_SCHEMA,
+        "availability": "available", "receipt_sha256": digest,
+        "submitted_status_event_id": receipt["submitted_status_event_id"],
+        "policy": receipt["policy"]}
     return record
+
+
+def _submission_readback(conn, record):
+    """Verify one historical submit without requiring its released claim to be live."""
+    invalid = {"schema": SUBMISSION_READBACK_SCHEMA, "availability": "unavailable",
+               "reason": "submission_receipt_invalid"}
+    event_id = record.get("submission_event_id")
+    if type(event_id) is not int or event_id <= 0:
+        return invalid
+    event = _dict_row(conn.execute("SELECT task_id,action,field_changed,old_value,"
+        "new_value,changed_by,changed_at FROM task_history WHERE id=?", (event_id,)))
+    if (event is None or type(record.get("id")) is not int or record["id"] <= 0
+            or type(record.get("task_id")) is not int or record["task_id"] <= 0
+            or type(record.get("fence")) is not int or record["fence"] <= 0
+            or event["task_id"] != record["task_id"] or event["action"] != "lease_release"
+            or event["field_changed"] != "lease" or event["old_value"] != "in_progress"
+            or event["changed_by"] != record["submitted_by"]
+            or event["changed_at"] != record["submitted_at"]):
+        return invalid
+    try:
+        detail = json.loads(event["new_value"])
+    except (TypeError, ValueError):
+        return invalid
+    if (not isinstance(detail, dict) or type(detail.get("fence")) is not int
+            or detail["fence"] != record["fence"] or detail.get("outcome") != "review"
+            or detail.get("result_ref") != result_reference({"result_id": record["id"],
+                "result_sha256": record["result_sha256"]}) or detail.get("note") != ""):
+        return invalid
+    receipt = detail.get("submission_receipt")
+    digest = record.get("submission_receipt_sha256")
+    status_id = record.get("submitted_status_event_id")
+    version = record.get("submission_receipt_version", 0)
+    if type(version) is not int or version not in (0, 1):
+        return invalid
+    if version == 0 and receipt is None and digest is None and status_id is None:
+        status = _dict_row(conn.execute("SELECT id,old_value,new_value,changed_by FROM task_history "
+            "WHERE task_id=? AND action='status_change' AND field_changed='status' AND id<? "
+            "ORDER BY id DESC LIMIT 1", (record["task_id"], event_id)))
+        if (status is None or status["old_value"] != "in_progress"
+                or status["new_value"] != "review"
+                or status["changed_by"] != record["submitted_by"]):
+            return invalid
+        return {"schema": SUBMISSION_READBACK_SCHEMA, "availability": "legacy_release_only",
+                "reason": "legacy_release_only"}
+    if version != 1:
+        return invalid
+    if (not isinstance(receipt, dict) or type(status_id) is not int or status_id <= 0
+            or status_id >= event_id or not isinstance(digest, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", digest)):
+        return invalid
+    if (type(receipt.get("result_id")) is not int or receipt["result_id"] <= 0
+            or type(receipt.get("task_id")) is not int or receipt["task_id"] <= 0
+            or type(receipt.get("fence")) is not int or receipt["fence"] <= 0
+            or type(receipt.get("submitted_status_event_id")) is not int
+            or receipt["submitted_status_event_id"] <= 0
+            or not isinstance(receipt.get("submitted_status_changed_at"), str)
+            or not receipt["submitted_status_changed_at"]):
+        return invalid
+    expected = {"schema": SUBMISSION_RECEIPT_SCHEMA, "result_id": record["id"],
+        "task_id": record["task_id"], "fence": record["fence"],
+        "generation": record["generation"], "task_version": record["task_version"],
+        "result_sha256": record["result_sha256"], "submitted_by": record["submitted_by"],
+        "submitted_at": record["submitted_at"], "submitted_status_event_id": status_id,
+        "submitted_status_changed_at": receipt["submitted_status_changed_at"],
+        "policy": receipt.get("policy")}
+    policy = receipt.get("policy")
+    try:
+        digest_matches = _receipt_digest(receipt) == digest
+    except (TypeError, ValueError, OverflowError):
+        digest_matches = False
+    if (receipt != expected or not isinstance(policy, dict)
+            or policy.get("availability") not in ("available", "unavailable")
+            or (policy["availability"] == "unavailable" and policy.get("reason") not in (
+                "policy_store_unavailable", "policy_contract_unavailable"))
+            or not digest_matches):
+        return invalid
+    status = _dict_row(conn.execute("SELECT id,task_id,action,field_changed,old_value,"
+        "new_value,changed_by,changed_at FROM task_history WHERE id=?", (status_id,)))
+    latest_before = conn.execute("SELECT MAX(id) FROM task_history WHERE task_id=? "
+        "AND action='status_change' AND field_changed='status' AND id<?",
+        (record["task_id"], event_id)).fetchone()
+    if (status is None or status["task_id"] != record["task_id"]
+            or status["action"] != "status_change" or status["field_changed"] != "status"
+            or status["old_value"] != "in_progress" or status["new_value"] != "review"
+            or status["changed_by"] != record["submitted_by"]
+            or status["changed_at"] != receipt["submitted_status_changed_at"]
+            or latest_before is None or latest_before[0] != status_id):
+        return invalid
+    return {"schema": SUBMISSION_READBACK_SCHEMA, "availability": "available",
+        "receipt_sha256": digest, "submitted_status_event_id": status_id,
+        "policy": policy}
 
 
 def _legacy_result(conn, task_id):
@@ -278,6 +456,8 @@ def read_result(conn, task_id, *, operator_token=None):
         same_content = task_content_version(task) == record["task_version"]
         same_fence = int(task.get("claim_fence") or 0) == record["fence"]
         same_digest = hashlib.sha256(record["result"].encode("utf-8")).hexdigest() == record["result_sha256"]
+        submission = _submission_readback(conn, record)
+        release_valid = submission["availability"] in {"available", "legacy_release_only"}
         decision = None
         if record["acceptance_event_id"] is not None:
             decision = conn.execute("SELECT changed_by,new_value FROM task_history WHERE id=? "
@@ -290,13 +470,18 @@ def read_result(conn, task_id, *, operator_token=None):
                     "status_revision": record["accepted_status_event_id"]})
         except (TypeError, ValueError):
             decision_matches = False
-        accepted = (task["status"] in {"done", "completed"} and same_content and same_fence
+        accepted = (task["status"] in {"done", "completed"} and release_valid
+                    and same_content and same_fence
                     and same_digest and decision_matches and bool(record["accepted_by"])
                     and record["accepted_status_event_id"] == revision)
+        submission_revision = (_submission_revision(record, submission["receipt_sha256"])
+                               if submission["availability"] == "available" else None)
         record.update(schema="bach.worker-result.v1", result_id=record.pop("id"),
-                      accepted=accepted, status_revision=revision,
+                      accepted=accepted, status_revision=revision, submission=submission,
+                      submission_revision=submission_revision,
                       reason=("accepted" if accepted else "task_content_changed" if not same_content
                               else "fence_changed" if not same_fence else "result_content_changed" if not same_digest
+                               else "submission_receipt_invalid" if not release_valid
                               else "awaiting_review" if task["status"] == "review" else "acceptance_not_current"))
         return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
                 "task_version": task_content_version(task), "status": task["status"],
@@ -878,6 +1063,8 @@ def assert_completion_allowed(conn, task_id, acceptance=None, *, changes=None):
     record = observed["result"]
     if not record or record.get("result_id") is None:
         return
+    if record.get("submission", {}).get("availability") not in {"available", "legacy_release_only"}:
+        raise ResultConflict("Submission-Beleg ist nicht gültig")
     from .task_lease import task_content_version
     if task_content_version({**current, **(changes or {})}) != record.get("task_version"):
         raise ResultConflict("Geänderter Auftrag benötigt eine neue Ergebnisabgabe und Abnahme")
