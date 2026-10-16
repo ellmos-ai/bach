@@ -19,7 +19,9 @@ from hub._services import skill_source_service
 # The focused Mac run starts in system/, whereas CI starts at repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from system.tests.test_task_lease_client import _init_db, mem_db
-from system.tests.test_worker_lease_binding import binding, completion_binding, approve_result
+from system.tests.test_worker_lease_binding import (
+    binding, completion_binding, approve_result, _self_check, _require_personal_review,
+)
 from system.tests.worker_completion_fixtures import CompletionHarness
 
 
@@ -81,8 +83,10 @@ class IsolatedNative:
             backend_id=actual_backend, requested_model=slot["model"],
             observed_model=slot["model"], slot_id=worker_id)
         binding._test_completion_harness = self.store._completion_test_harness
+        _require_personal_review(binding)
         output="Ergebnis "+str(len(self.calls))+" · Müller & Söhne"
-        binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":output})
+        binding.execute_task_manage({"action":"done","task_id":binding.task_id,
+                                     "result":_self_check(output)})
         assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
         approve_result(binding, db)
         self.results[worker_id]={**binding.completion_result,"schema":"bach.task-result.v1"}
@@ -160,7 +164,9 @@ def test_real_engine_uses_result_and_exactly_one_native_start_per_step(store,pro
     admitted=controller.start(chain["id"],payload);run=wait(controller,payload["request_id"])
     assert admitted["accepted"] is True and run["phase"]=="complete" and run["cursor"]==2
     assert len(transport.calls)==2 and "Ergebnis 1" in transport.calls[1][1]["custom_prompt"]
-    assert run["completed"][1]["output"].startswith("Ergebnis 2")
+    final_output = json.loads(run["completed"][1]["output"])
+    assert final_output["schema"] == "bach.worker-self-check.v1"
+    assert final_output["completed_work"].startswith("Ergebnis 2")
     assert slots.sequence_profile_snapshot(list(before))["profiles"]==before
     with store.connection() as db:
         tasks=db.execute("SELECT status,assigned_slot,created_by FROM tasks ORDER BY id").fetchall()
@@ -440,12 +446,14 @@ def test_task_and_step_binding_roll_back_together(store):
 
 def test_semantic_output_is_atomic_with_review_and_requires_separate_acceptance(completion_binding,mem_db):
     binding=completion_binding
-    binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Tatsächliches Ergebnis · üöäß"})
+    _require_personal_review(binding)
+    output=_self_check("Tatsächliches Ergebnis · üöäß fachlich geprüft.")
+    binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":output})
     record=binding.submitted_result
     history=mem_db.execute("SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'",(binding.task_id,)).fetchone()
     release=json.loads(history[0])
     assert release["result_ref"] == f"bach-task-result:{record['result_id']}:{record['result_sha256']}"
-    assert record["result"]=="Tatsächliches Ergebnis · üöäß"
+    assert record["result"]==output
     assert binding.completion_result is None and binding._client.task_snapshot(binding.task_id)["status"]=="review"
     approve_result(binding)
     assert binding.completion_result["accepted"] is True
@@ -461,15 +469,17 @@ def test_invalid_output_never_completes_a_task(binding,value):
 
 def test_lost_submission_ack_reconstructs_exact_review_without_mutation_retry(completion_binding,monkeypatch):
     binding=completion_binding
+    _require_personal_review(binding)
+    output=_self_check("Konkretes Ergebnis nach verlorenem ACK geprüft.")
     original=binding._client.submit_result
     calls=[]
     def lost(*args,**kw):
         calls.append((args,kw));original(*args,**kw);raise LeaseConnectionError("lost ack")
     monkeypatch.setattr(binding._client,"submit_result",lost)
-    with pytest.raises(LeaseConnectionError):binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Ergebnis"})
+    with pytest.raises(LeaseConnectionError):binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":output})
     assert binding.completion_result is None and not binding.completed_task_ids
     assert binding.reviewed_task_ids == (binding.task_id,) and len(calls) == 1
-    assert binding.closed and binding.submitted_result["result"] == "Ergebnis"
+    assert binding.closed and binding.submitted_result["result"] == output
     approve_result(binding)
     assert binding.completed_task_ids == (binding.task_id,) and len(calls) == 1
 
@@ -488,8 +498,10 @@ def test_gui_without_device_request_never_dispatches_or_writes():
 
 def test_result_handoff_requires_physical_thread_end_and_exact_request(completion_binding,monkeypatch):
     binding=completion_binding
+    _require_personal_review(binding)
     from hub._services.chat import telegram_chat as control
-    binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":"Fachliches Ergebnis"})
+    output=_self_check("Fachliches Ergebnis geprüft und übergeben.")
+    binding.execute_task_manage({"action":"done","task_id":binding.task_id,"result":output})
     approve_result(binding)
     run=control._WorkerControl("owned-worker",generation=binding.generation,start_request_id="a"*32)
     run.task_binding=binding
@@ -499,7 +511,7 @@ def test_result_handoff_requires_physical_thread_end_and_exact_request(completio
     with pytest.raises(ValueError):control.worker_execution_result("owned-worker","a"*32,binding.generation,binding.task_id)
     run.thread=SimpleNamespace(is_alive=lambda:False)
     with pytest.raises(ValueError):control.worker_execution_result("owned-worker","b"*32,binding.generation,binding.task_id)
-    assert control.worker_execution_result("owned-worker","a"*32,binding.generation,binding.task_id)["result"]=="Fachliches Ergebnis"
+    assert control.worker_execution_result("owned-worker","a"*32,binding.generation,binding.task_id)["result"]==output
 
 
 
