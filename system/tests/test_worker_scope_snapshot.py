@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -34,7 +35,7 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix=""):
     _git(["init", "-b", "main"], repo)
     _git(["config", "user.name", "Scope Test"], repo)
     _git(["config", "user.email", "scope-test@example.invalid"], repo)
-    (repo / "README.md").write_text("public base\n", encoding="utf-8")
+    (repo / "README.md").write_bytes(b"public base\n")
     _git(["add", "README.md"], repo)
     _git(["commit", "-m", "public base"], repo)
     _git(["remote", "add", "origin", ORIGIN + ".git"], repo)
@@ -92,6 +93,26 @@ def scope_repo(tmp_path, monkeypatch):
     tree = _new_scope_repo(tmp_path, pinned=False)
     _install_lock_scanner(tmp_path, monkeypatch)
     return tree
+
+
+def test_scope_fixture_preserves_exact_contract_bytes(tmp_path, monkeypatch):
+    native_environment = guard._scope_git_env
+
+    def isolated_environment():
+        environment = native_environment()
+        environment['GIT_CONFIG_GLOBAL'] = os.devnull
+        environment['GIT_CONFIG_NOSYSTEM'] = '1'
+        return environment
+
+    monkeypatch.setattr(guard, '_scope_git_env', isolated_environment)
+    tree = _new_scope_repo(tmp_path)
+    expected = b'public base\n'
+    assert (tree['repo'] / 'README.md').read_bytes() == expected
+    blob = subprocess.run(
+        ['git', 'show', 'HEAD:README.md'], cwd=tree['target'],
+        env=isolated_environment(), check=True, capture_output=True, timeout=10,
+    ).stdout
+    assert blob == expected
 
 
 def _snapshot(tree, *, repo=None, worktrees=None):
