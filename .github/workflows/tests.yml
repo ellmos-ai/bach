@@ -167,6 +167,7 @@ jobs:
             system/tests/test_chain_control.py \
             system/tests/test_chain_handler.py \
             system/tests/test_chat_runtime.py \
+            system/tests/test_chat_runtime_completion_reserve.py \
             system/tests/test_chat_runtime_task_manage.py \
             system/tests/test_chat_session_store.py \
             system/tests/test_claude_bridge_handler.py \
