@@ -647,7 +647,7 @@ class UnifiedSearch:
     def index_gardener(self, data_dir=None) -> Tuple[bool, str]:
         """Indexiert Gardener-Eintraege read-only in den Suchindex (M3, GUX-041).
 
-        Der Gardener (/Users/lukas/dev/gardener) wird NICHT importiert und
+        Das Gardener-Modul wird NICHT importiert und
         NICHT instanziiert (Gardener.__init__ legt Verzeichnisse/Tabellen an
         und schreibt). user.db und gardener.db werden direkt per sqlite3 im
         mode=ro geoeffnet und deren Tabelle 'everything' gelesen. observed_at
