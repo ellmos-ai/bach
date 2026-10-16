@@ -381,12 +381,15 @@ jobs:
       PYTEST_ADDOPTS: ''
       PYTEST_PLUGINS: ''
       GIT_CONFIG_NOSYSTEM: '1'
-      GIT_CONFIG_GLOBAL: ${{ runner.temp }}/bound-worker-git.config
       GIT_TERMINAL_PROMPT: '0'
     steps:
       - name: Isolate job Git configuration
         shell: bash
-        run: ': > "$GIT_CONFIG_GLOBAL"'
+        env:
+          GIT_CONFIG_GLOBAL: ${{ runner.temp }}/bound-worker-git.config
+        run: |
+          : > "$GIT_CONFIG_GLOBAL"
+          printf 'GIT_CONFIG_GLOBAL=%s\n' "$GIT_CONFIG_GLOBAL" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
