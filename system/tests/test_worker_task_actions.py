@@ -264,9 +264,11 @@ def test_real_runtime_boundary_and_tool_ack(runtime_binding, monkeypatch, tool_a
             if tool_action == "text":
                 return {"content": "FERTIG"}
             if tool_action == "decompose" and len(calls) == 2:
-                args = {"action": "submit_result", "task_id": binding.task_id,
-                        "result": f"Zerlegungsplan: Teilaufgaben {binding.decomposition_receipt['created_ids']} zur Ausführung angelegt; Umsetzung und Abnahme sind offen."}
-                tools = [{"function": {"name": "task_manage", "arguments": args}}]
+                description = binding.task_snapshot()["description"] + "\n[Stand: Teilaufgaben angelegt; Umsetzung offen.]"
+                tools = [{"function": {"name": "task_manage", "arguments": {
+                    "action": "update", "task_id": binding.task_id, "description": description}}},
+                    {"function": {"name": "task_manage", "arguments": {
+                    "action": "update", "task_id": binding.task_id, "status": "pending"}}}]
                 return _runtime_tool_reply(tools, serialized=serialized)
             args = {"action": "decompose" if tool_action == "update-then-decompose" else tool_action,
                     "task_id": binding.task_id}
@@ -301,8 +303,13 @@ def test_real_runtime_boundary_and_tool_ack(runtime_binding, monkeypatch, tool_a
     asyncio.run(runtime.process("Auftrag", "worker-bound", work_priority="background"))
     assert len(calls) == (2 if tool_action == "decompose" else 1)
     assert actions.snapshot()["state"] == ("confirmed" if tool_action == "decompose" else "error")
-    if tool_action in {"done", "decompose"}:
+    if tool_action == "done":
         assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
+    elif tool_action == "decompose":
+        assert not binding.completed_task_ids and not binding.reviewed_task_ids
+        current = binding._client.task_snapshot(binding.task_id)
+        assert current["status"] == "pending"
+        assert "Teilaufgaben angelegt; Umsetzung offen" in current["description"]
     elif tool_action == "text":
         assert not binding.closed
     if tool_action == "update-then-decompose":

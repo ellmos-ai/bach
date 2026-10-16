@@ -1617,9 +1617,11 @@ class ChatRuntime(_ModuleChatRuntime):
                     or call_binding is not dispatch_binding):
                 raise RuntimeError("worker_model_binding_changed")
 
-        async def dispatch_model_call(*, bound=False, agent_kwargs=None):
+        async def dispatch_model_call(*, bound=False, agent_kwargs=None,
+                                      parser_retry=False):
             """Record only an actual backend attempt, including fallback calls."""
             nonlocal args
+            original_args = args
             call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             handle = None
             from hub._services.llm.controller_route import route_snapshot
@@ -1628,6 +1630,7 @@ class ChatRuntime(_ModuleChatRuntime):
             budget = getattr(session, "model_request_budget", None) if session is not None else None
             if budget is not None:
                 from hub._services.chat.slots_config import ModelRequestBudgetError
+                from hub._services.llm.backend_errors import normalize_backend_error
                 from hub._services.chat.model_sockets import profile_backend_matches
                 from hub._services.llm.model_backend import OllamaBackend
                 selected_model = kwargs.get("model") or backend.get_default_model()
@@ -1726,6 +1729,31 @@ class ChatRuntime(_ModuleChatRuntime):
                         call_binding.finish_model_execution(handle, failed=True)
                     except Exception:
                         pass
+            # Ollama can reject malformed Qwen tool XML in its reserved error
+            # field before delivering any callable tool. One corrected attempt
+            # is useful, but it must pass this same durable reservation gate.
+            # The correction is never a backend-internal or uncounted retry.
+            parser_detail = (normalize_backend_error(result.get("backend_error"))
+                             if budget is not None and isinstance(result, dict) else None)
+            if (budget is not None and not parser_retry and not completion_reserve
+                    and type(backend) is OllamaBackend and kwargs.get("tools")
+                    and isinstance(result, dict) and result.get("error")
+                    and not result.get("content") and not result.get("thinking")
+                    and not result.get("tool_calls")
+                    and (result.get("raw_message") is None
+                         or (isinstance(result.get("raw_message"), dict)
+                             and not any(result["raw_message"].get(key) for key in
+                                         ("content", "thinking", "tool_calls"))))
+                    and parser_detail is not None
+                    and parser_detail["kind"] == "tool_parse_error"
+                    and budget.remaining() > 2):
+                if not original_args or type(original_args[0]) is not list:
+                    return result
+                args = ([*original_args[0], {"role": "user", "content":
+                    "Der vorherige Modellaufruf enthielt ein ungültiges Werkzeugformat. "
+                    "Bilde einen neuen, kurzen gültigen Werkzeugaufruf; "
+                    "Textparameter ohne XML-Beispiele."}], *original_args[1:])
+                return await dispatch_model_call(parser_retry=True)
             return result
 
         if binding is not None and getattr(backend, "manages_own_tools", False):
@@ -2539,9 +2567,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 max_rounds > 0 and 0 < remaining_rounds <= 2
                 or budget_remaining is not None and 0 < budget_remaining <= 2))
             if budget_remaining == 0:
-                return FailedAnswer(
-                    f"Modellanfragenbudget ausgeschöpft: Run {budget.start_request_id}, "
-                    "verbleibend 0")
+                return FailedAnswer.from_exception(
+                    ModelRequestBudgetError("Modellanfragenbudget ausgeschöpft; verbleibend 0"))
             if completion_reserve:
                 grants = _effective_tool_grants(session)
                 current_tools = (tool for tool in tools if grants is None
@@ -2804,6 +2831,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             # Turn-Awareness & Rundenlimit-Verwaltung:
             if max_rounds > 0 and round_num >= max_rounds:
                 session.current_tool = ""
+                # All tool outcomes in this round have already been consumed
+                # and acknowledged. A summary would be another backend request;
+                # do not pretend it is free when the durable run has no slot.
+                budget = getattr(session, "model_request_budget", None)
+                if budget is not None:
+                    try:
+                        budget_remaining = budget.remaining()
+                    except Exception:
+                        return FailedAnswer.from_exception(
+                            ModelRequestBudgetError("Modellanfragenbudget nicht verifizierbar"))
+                    if budget_remaining <= 0:
+                        return FailedAnswer.from_exception(
+                            ModelRequestBudgetError("Modellanfragenbudget ausgeschöpft; verbleibend 0"))
                 final_prompt = (
                     f"[SYSTEM-HINWEIS: Werkzeugrunden aufgebraucht ({round_num}/{max_rounds})]\n"
                     "Die maximale Anzahl an Werkzeugrunden für diese Sitzung ist erreicht. "

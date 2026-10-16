@@ -16,6 +16,10 @@ SUBMISSION_RECEIPT_SCHEMA = "bach.worker-submission-receipt.v1"
 SUBMISSION_READBACK_SCHEMA = "bach.worker-submission-readback.v1"
 
 
+class WorkerSelfCheckRequired(ValueError):
+    """A confirmed simple-task submission lacks its required full self-check."""
+
+
 class ResultConflict(ValueError):
     """The result, task content or status changed since the operator read it."""
 
@@ -176,6 +180,15 @@ def validate_submission(payload, *, max_chars=None):
 def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     from .task_lease import task_content_version
     generation, text, digest = validate_submission(payload, max_chars=max_chars)
+    if row.get("completion_contract_json") is None:
+        from .worker_result_review import review_task_marker
+        if not review_task_marker(conn, row["id"]):
+            frozen = _submission_policy(conn, row["id"])
+            if (frozen["availability"] == "available" and
+                    (frozen["override"].get("mode") or frozen["policy"]["default_mode"]) == "simple_task"):
+                from .worker_completion_contract import evaluate_worker_self_check
+                if evaluate_worker_self_check(text)["met"] is not True:
+                    raise WorkerSelfCheckRequired("Vollständiger Selbstcheck erforderlich")
     ensure_result_schema(conn)
     cursor = conn.execute("""INSERT INTO worker_task_results
         (task_id,fence,generation,task_version,result,result_sha256,submitted_by,submitted_at,

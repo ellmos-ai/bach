@@ -26,7 +26,7 @@ from hub._services.task_result_service import (
     read_result,
     read_result_history,
 )
-from hub._services.task_lease_client import TaskLeaseClient
+from hub._services.task_lease_client import LeaseSelfCheckRequiredError, TaskLeaseClient
 from hub._services.task_schema import ensure_task_result_contract_columns
 from hub._services.worker_completion_policy import (
     evaluate_current_result,
@@ -100,11 +100,18 @@ def _contract(min_chars=12, *, include_readme_blob=False):
         sort_keys=True, separators=(",", ":"))
 
 
+def _self_check(*, complete=True, work="Konkrete Aufgabe vollständig bearbeitet.",
+                checks=None, remaining=None):
+    return json.dumps({"schema": "bach.worker-self-check.v1", "complete": complete,
+        "completed_work": work, "checks": checks if checks is not None else ["Ergebnis geprüft."],
+        "remaining_required_work": remaining if remaining is not None else []}, ensure_ascii=False)
+
+
 @pytest.fixture
 def completion_world(worker_context, tmp_path, monkeypatch):
     """Build a real local submission, execution receipt, and clean registered Git tree."""
     def build(*, mode="simple_task", contract_min_chars=12, contract_git_blob=False,
-              contract_json_override=None,
+               contract_json_override=None, result_text=RESULT_TEXT, submit=True,
               user_review=False, github_required=False, github_external_review=True,
               review_expiry_seconds=None, missing_scope=False):
         context = worker_context
@@ -193,8 +200,10 @@ def completion_world(worker_context, tmp_path, monkeypatch):
             subprocess.run(["git", "worktree", "remove", "--force", str(tree["target"])],
                 cwd=tree["repo"], env=isolated_test_git_environment(), check=True,
                 capture_output=True, timeout=8)
+        if not submit:
+            return {**context, "tree": tree, "target": None}
         binding.execute_task_manage({"action": "submit_result", "task_id": task_id,
-                                     "result": RESULT_TEXT})
+                                      "result": result_text})
         assert worker_scope_evidence.capture_scope_evidence(conn, binding) is not missing_scope
         target = worker_scope_evidence.project_scope_evidence(read_result(conn, task_id),
             repo_root=tree["repo"], worktrees_dir=tree["worktrees"])["result"]
@@ -700,11 +709,12 @@ def test_user_review_does_not_replace_the_separate_task_contract_finding(complet
 
 
 def test_missing_contract_allows_revision_bound_user_and_contract_attestation(completion_world):
-    world = completion_world(contract_min_chars=None, user_review=True)
+    world = completion_world(contract_min_chars=None, user_review=True,
+                             result_text=_self_check())
     conn, task_id = world["conn"], world["task_id"]
     evaluation = evaluate_current_result(conn, task_id, **_paths(world))
     assert evaluation["contract"]["reason"] == "contract_not_predeclared"
-    assert evaluation["decision"]["state"] == "result_incomplete"
+    assert evaluation["decision"]["completion_allowed"] is False
 
     from system.tests.test_worker_result_submission_receipt import _operator
 
@@ -1235,16 +1245,96 @@ def test_remote_controller_claim_gate_requires_exact_lead_completion_readback(
 
 
 def test_missing_contract_never_completes(completion_world):
-    missing = completion_world(mode="simple_task", contract_min_chars=None)
-    no_contract = evaluate_current_result(missing["conn"], missing["task_id"], **_paths(missing))
-    assert no_contract["availability"] == "available"
-    assert no_contract["contract"]["availability"] == "unavailable"
-    assert no_contract["decision"]["state"] == "result_incomplete"
-    reconcile_current_result(missing["conn"], missing["task_id"], **_paths(missing))
-    assert read_result(missing["conn"], missing["task_id"])["status"] == "review"
+    missing = completion_world(mode="simple_task", contract_min_chars=None, submit=False)
+    conn, task_id = missing["conn"], missing["task_id"]
+    before_release = conn.execute(
+        "SELECT COUNT(*) FROM task_history WHERE task_id=? AND action='lease_release'",
+        (task_id,)).fetchone()[0]
+    with pytest.raises(LeaseSelfCheckRequiredError):
+        missing["binding"].execute_task_manage({"action": "submit_result", "task_id": task_id,
+                                                "result": RESULT_TEXT})
+    assert conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()[0] == "in_progress"
+    assert read_result(conn, task_id)["result"] is None
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? AND action='lease_release'",
+                        (task_id,)).fetchone()[0] == before_release
+    missing["binding"].execute_task_manage({"action": "update", "task_id": task_id,
+                                            "status": "pending"})
+    assert read_result(conn, task_id)["status"] == "pending"
+    assert read_result(conn, task_id)["result"] is None
 
 
-@pytest.mark.parametrize("mode", ["simple_task", "balanced", "high_security"])
+def test_simple_unstructured_task_accepts_only_explicit_complete_self_check(completion_world):
+    world = completion_world(mode="simple_task", contract_min_chars=None,
+                             result_text=_self_check())
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract"] == {"availability": "unavailable",
+                                    "reason": "contract_not_predeclared", "met": False}
+    assert observed["worker_self_check"]["met"] is True
+    assert observed["contract_finding"]["source"] == "worker_self_check"
+    assert observed["decision"]["completion_allowed"] is True
+    assert reconcile_current_result(world["conn"], world["task_id"], **_paths(world))["status"] == "done"
+    assert read_result(world["conn"], world["task_id"])["result"]["accepted"] is True
+
+
+@pytest.mark.parametrize("result_text", [
+    "Fertig: alles geprüft und vollständig erledigt.",
+    _self_check(complete=False),
+    _self_check(work="zu wenig"),
+    _self_check(checks=[]),
+    _self_check(work="konkrete erledigte Arbeit", checks=["konkrete Prüfung"]),
+    _self_check(remaining=["Eine Pflichtprüfung ist noch offen."]),
+])
+def test_simple_unstructured_partial_or_unproven_result_stays_incomplete(
+    completion_world, result_text
+):
+    world = completion_world(mode="simple_task", contract_min_chars=None, submit=False)
+    with pytest.raises(LeaseSelfCheckRequiredError):
+        world["binding"].execute_task_manage({"action": "submit_result",
+            "task_id": world["task_id"], "result": result_text})
+    assert read_result(world["conn"], world["task_id"])["result"] is None
+    assert world["conn"].execute("SELECT status FROM tasks WHERE id=?",
+        (world["task_id"],)).fetchone()[0] == "in_progress"
+
+
+def test_partial_update_returns_pending_without_review(completion_world):
+    world = completion_world(mode="simple_task", contract_min_chars=None, submit=False)
+    world["binding"].execute_task_manage({"action": "update", "task_id": world["task_id"],
+                                          "status": "pending"})
+    assert read_result(world["conn"], world["task_id"])["status"] == "pending"
+    assert read_result(world["conn"], world["task_id"])["result"] is None
+
+
+@pytest.mark.parametrize("mode", ["balanced", "high_security"])
+def test_self_check_does_not_replace_other_mode_reviews(completion_world, mode):
+    world = completion_world(mode=mode, contract_min_chars=None, result_text=_self_check())
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["worker_self_check"]["met"] is True
+    assert observed["contract_finding"]["met"] is False
+    assert observed["decision"]["completion_allowed"] is False
+
+
+@pytest.mark.parametrize("gate", ["user", "github"])
+def test_simple_self_check_does_not_bypass_explicit_hard_gate(completion_world, gate):
+    world = completion_world(mode="simple_task", contract_min_chars=None,
+                             result_text=_self_check(), user_review=gate == "user",
+                             github_required=gate == "github")
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["contract_finding"]["source"] == "worker_self_check"
+    assert observed["decision"]["completion_allowed"] is False
+
+
+def test_adverse_independent_review_overrides_simple_self_check(completion_world):
+    world = completion_world(mode="simple_task", contract_min_chars=None,
+                             result_text=_self_check())
+    _record_independent_review(world, status="findings", task_contract_met=False)
+    observed = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert observed["worker_self_check"]["met"] is True
+    assert observed["contract_finding"]["source"] == "independent_model_review"
+    assert observed["contract_finding"]["met"] is False
+    assert observed["decision"]["completion_allowed"] is False
+
+
+@pytest.mark.parametrize("mode", ["balanced", "high_security"])
 def test_unstructured_task_finishes_through_independent_review_without_personal_approval(
     completion_world, monkeypatch, mode
 ):
@@ -1510,11 +1600,13 @@ def test_unmet_contract_adverse_review_requeues_once_and_allows_fresh_generation
     from hub import worker_git
     from hub._services.task_result_service import active_correction_request
 
-    world = completion_world(mode=mode, contract_min_chars=contract_min_chars)
+    simple_without_contract = mode == "simple_task" and contract_min_chars is None
+    world = completion_world(mode=mode, contract_min_chars=contract_min_chars,
+                             result_text=_self_check() if simple_without_contract else RESULT_TEXT)
     conn, client, task_id = world["conn"], world["client"], world["task_id"]
     observed = evaluate_current_result(conn, task_id, **_paths(world))
-    assert observed["contract_finding"]["met"] is False
-    assert observed["decision"]["completion_allowed"] is False
+    assert observed["contract_finding"]["met"] is simple_without_contract
+    assert observed["decision"]["completion_allowed"] is simple_without_contract
     old_result_id = observed["result_id"]
     monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: world["tree"]["repo"])
     monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: world["tree"]["worktrees"])
@@ -1553,7 +1645,9 @@ def test_unmet_contract_adverse_review_requeues_once_and_allows_fresh_generation
         worker_id="completion-author@HOST", host="HOST", generation="unmet-rework-generation-2",
         is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
     fresh.execute_task_manage({"action": "submit_result", "task_id": task_id,
-                               "result": "Fresh correction submission with its own result revision."})
+                               "result": (_self_check(work="Korrigiertes Ergebnis samt neuer Revision erstellt.")
+                                          if simple_without_contract else
+                                          "Fresh correction submission with its own result revision.")})
     current = read_result(conn, task_id)
     assert current["status"] == "review"
     assert current["result"]["result_id"] != old_result_id
@@ -1728,7 +1822,8 @@ def test_task_audit_cannot_launder_an_ungated_v1_submission_after_result_loss(
 ):
     from hub.task_audit import apply_task_field_changes
 
-    world = completion_world(mode="simple_task", contract_min_chars=None)
+    world = completion_world(mode="simple_task", contract_min_chars=None,
+                             result_text=_self_check())
     conn, task_id = world["conn"], world["task_id"]
     current = read_result(conn, task_id)
     record = current["result"]

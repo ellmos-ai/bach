@@ -47,6 +47,11 @@ from hub._services.chat.worker_lease_binding import (
     WorkerLeaseBinding,
     WorkerResultLimitLockedError,
 )
+from hub._services.task_lease_client import (
+    LeaseConnectionError, LeaseDeniedError, LeaseProtocolError,
+    LeaseSelfCheckRequiredError,
+    TaskResultOperationError, _SAFE_DENIAL_REASONS,
+)
 from hub._services.limits import limit
 from hub._services.read_file_formatter import (
     MAX_READ_FILE_LINES,
@@ -56,6 +61,41 @@ from hub._services.read_file_formatter import (
 )
 
 log = logging.getLogger("bach.chat")
+
+_TASK_MANAGE_LOG_ACTIONS = frozenset({
+    "add", "decompose", "detail", "done", "list", "submit_result", "update",
+})
+
+
+def _log_bound_task_manage_denial(stage, binding, args, exc=None):
+    """Finite operator diagnosis; never log tool arguments, result or ACK text."""
+    action = args.get("action", "list") if type(args) is dict else None
+    action = action if type(action) is str and action in _TASK_MANAGE_LOG_ACTIONS else "other"
+    task_id = getattr(binding, "task_id", None)
+    task_id = task_id if type(task_id) is int and task_id > 0 else 0
+    generation = getattr(binding, "generation", None)
+    generation = generation if type(generation) is str and re.fullmatch(r"[0-9a-f]{32}", generation) else "unknown"
+    if isinstance(exc, WorkerResultLimitLockedError):
+        kind = "result_limit"
+    elif isinstance(exc, LeaseSelfCheckRequiredError):
+        kind = "self_check_required"
+    elif isinstance(exc, LeaseDeniedError):
+        kind = "lease_denied"
+    elif isinstance(exc, LeaseProtocolError):
+        kind = "lease_protocol"
+    elif isinstance(exc, LeaseConnectionError):
+        kind = "lease_connection"
+    elif isinstance(exc, TaskResultOperationError):
+        kind = "result_operation"
+    elif isinstance(exc, ValueError):
+        kind = "value_error"
+    else:
+        kind = "other"
+    reason = (exc.reason if isinstance(exc, LeaseDeniedError)
+              and type(exc.reason) is str and exc.reason in _SAFE_DENIAL_REASONS
+              else "none")
+    log.warning("bound_task_manage_denied stage=%s action=%s kind=%s reason=%s task_id=%d generation=%s",
+                stage, action, kind, reason, task_id, generation)
 
 _READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
 _READ_EVIDENCE_READ_ONLY_TOOLS = frozenset({"read_file", "search_text", "task_manage"})
@@ -937,11 +977,11 @@ TOOLS_SAFE = [
     }, ["query"]),
     _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
         "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
-                   "description": "list, add, detail, update, decompose; Worker geben mit submit_result (oder done als Alias) ein konkretes Ergebnis zur getrennten Review-Abnahme ab."},
+                   "description": "list, add, detail, update, decompose; submit_result (done als Alias) nur für ein fertiges Ergebnis. Teilstand mit update(status='pending') zurückgeben. Abschluss nach konfiguriertem Modus."},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Worker-Ergebnis bei submit_result/done, erforderlich, höchstens 3000 Zeichen: Befunde, Quellen, Prüfungen und verbleibende Grenzen. Atomar gespeichert mit Review; Abnahme erfolgt getrennt."},
+        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Für einfache Tasks ohne vorgegebenen Vertrag nur dieses JSON als ausdrücklichen Selbstcheck verwenden: {\"schema\":\"bach.worker-self-check.v1\",\"complete\":true,\"completed_work\":\"konkrete erledigte Arbeit\",\"checks\":[\"konkrete Prüfung\"],\"remaining_required_work\":[]}. Offene Pflichtarbeit oder Teilstand: kein submit_result; update(status='pending') nutzen. Andere Modi folgen ihrer Review-Regel."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
@@ -1667,10 +1707,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         if name == "task_manage":
             if worker_task_binding is not None:
                 if not isinstance(args, dict):
+                    _log_bound_task_manage_denial("arguments", worker_task_binding, args)
                     return "Ungültige Task-Werkzeugargumente."
                 action = args.get("action", "list")
                 if action in ("done", "submit_result"):
                     if type(args.get("task_id")) is not int:
+                        _log_bound_task_manage_denial("task_id_type", worker_task_binding, args)
                         return "task_id muss eine numerische Ganzzahl sein."
                     try:
                         from hub._services.task_result_service import validate_submission
@@ -1680,8 +1722,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             max_chars=worker_task_binding.task_snapshot().get("result_max_chars"),
                         )
                     except ValueError as exc:
+                        _log_bound_task_manage_denial("submission_validation", worker_task_binding, args, exc)
                         return str(exc)
-                    except Exception:
+                    except Exception as exc:
+                        _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
                         return "Taskoperation nicht bestätigt; Taskbindung prüfen."
                 try:
                     response = worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
@@ -1693,10 +1737,15 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         # Optional evidence must never hide a confirmed ACK.
                         pass
                     return response
-                except WorkerResultLimitLockedError:
+                except WorkerResultLimitLockedError as exc:
+                    _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     # This bounded policy denial is safe to explain and leaves the lease active.
                     return WorkerResultLimitLockedError.user_message
-                except Exception:
+                except LeaseSelfCheckRequiredError as exc:
+                    _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
+                    return LeaseSelfCheckRequiredError.user_message
+                except Exception as exc:
+                    _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     # Ownership, capability and unknown ACK failures stay generic.
                     return "Taskoperation nicht bestätigt; Taskbindung prüfen."
             if require_task_binding:

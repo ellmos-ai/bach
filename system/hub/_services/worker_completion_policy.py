@@ -1,8 +1,8 @@
 """Result-bound BACH adapter for the shared taskplan completion contract.
 
 Only canonical result, execution, scope, identity, operator and GitHub sources
-may supply policy facts. This module never treats a worker verdict as a task
-contract check or as personal approval.
+may supply policy facts. A structured worker self-check can assert completion
+for simple tasks; it is neither a machine criterion proof nor personal approval.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import uuid
 from . import worker_policy_settings as settings
 from .task_result_service import read_result
 from .worker_scope_evidence import project_scope_evidence
-from .worker_completion_contract import evaluate_contract
+from .worker_completion_contract import evaluate_contract, evaluate_worker_self_check
 from .worker_github_review import observe_github_review
 from .worker_review_identity import identity_snapshot, principal_for_execution
 
@@ -211,6 +211,11 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             and review_is_current
             and review_status == "approved"
             and review.get("reviewer_asserted_task_contract_met") is True)
+        worker_self_check = evaluate_worker_self_check(record["result"])
+        simple_self_check_met = (
+            policy_view["effective"]["effective_mode"] == "simple_task"
+            and contract.get("reason") == "contract_not_predeclared"
+            and worker_self_check["met"] is True)
         adverse_review_contract_finding = (
             review_is_current
             and review_status in {"findings", "rejected"}
@@ -218,13 +223,14 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         task_contract_met = (False if adverse_review_contract_finding else
             contract["met"] is True or (
                 contract.get("reason") == "contract_not_predeclared"
-                and (contract_attested or semantic_review_met)))
+                and (contract_attested or semantic_review_met or simple_self_check_met)))
         contract_finding = {
             "met": task_contract_met,
             "source": "independent_model_review" if adverse_review_contract_finding else
                       "predeclared_criteria" if contract["met"] is True else
                       "operator_attestation" if task_contract_met and contract_attested else
-                      "independent_model_review" if semantic_review_met else "unconfirmed",
+                      "independent_model_review" if semantic_review_met else
+                      "worker_self_check" if simple_self_check_met and task_contract_met else "unconfirmed",
             "review_task_id": (review.get("review_task_id")
                                if adverse_review_contract_finding or semantic_review_met else None),
         }
@@ -268,6 +274,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             "result_sha256": record["result_sha256"], "task_version": observed["task_version"],
             "status_revision": observed["status_revision"], "reason": decision["reason"],
             "decision": decision, "contract": contract, "contract_attested": contract_attested,
+            "worker_self_check": worker_self_check,
             "contract_finding": contract_finding,
             "user_review_required": bool(user_required), "user_approved": user_approved,
             "github_pr_review_required": github_required, "github": github}

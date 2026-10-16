@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from hub._services.task_lease_client import (
     LeaseError, LeaseDeniedError, LeaseMaxTotalReachedError, LeaseProtocolError,
+    LeaseSelfCheckRequiredError,
     LeaseReleaseAck, WorkerResultAck,
 )
 
@@ -528,6 +529,9 @@ class WorkerLeaseBinding:
             self.assert_active()
         try:
             return function(self.task_id, **self._ref(), **kwargs)
+        except LeaseSelfCheckRequiredError:
+            # This exact local validation ran before any result/status write.
+            raise
         except LeaseError as exc:
             if keep_max_total and isinstance(exc, LeaseMaxTotalReachedError):
                 # Known denial: the last confirmed lease still owns its
@@ -991,6 +995,9 @@ class WorkerLeaseBinding:
                     # A correlated explicit denial is not an ambiguous commit.
                     self._submission_expected = None
                     raise
+                except LeaseSelfCheckRequiredError:
+                    self._submission_expected = None
+                    raise
                 if (not isinstance(release, WorkerResultAck)
                         or release.release.released is not True
                         or release.release.task_id != self.task_id or release.release.fence != self._ack.fence
@@ -1002,7 +1009,7 @@ class WorkerLeaseBinding:
                 self._closed = True
                 self._active = False
                 self._link_confirmed_model_execution()
-                return f"Task #{self.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+                return f"Task #{self.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
             if action == "update":
                 allowed = {"title", "description", "category", "priority", "depends_on",
                            "assigned_to", "required_model", "assigned_slot", "status", "result_max_chars"}
@@ -1056,7 +1063,7 @@ class WorkerLeaseBinding:
                     subtasks = args.get("subtasks")
                     close_parent = args.get("close_parent", False)
                     if close_parent is not False:
-                        raise LeaseProtocolError("Worker-Zerlegung schließt den Parent nicht ab; Ergebnisabgabe und Abnahme erforderlich")
+                        raise LeaseProtocolError("Worker-Zerlegung schließt den Parent nicht ab; Teilstand zurückgeben")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in (
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")

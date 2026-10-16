@@ -39,9 +39,15 @@ def test_legacy_none_limit_keeps_digest_and_unbounded_prompt_unchanged():
     expected = (
         "Basis\n\nAktuell übernommener Auftrag: Task #9. "
         "Bearbeite ausschließlich diesen Auftrag. Gib dein fachliches Ergebnis mit "
-        "task_manage(action='submit_result', task_id=<ID>, result='<Befunde, Quellen, Prüfungen, offene Grenzen>') "
-        "ab. Das speichert Review und gibt die Task zurück; eine getrennte Operator-Abnahme entscheidet über Done. "
-        "Eine bloße Erledigungsbestätigung, update(status=done) oder close_parent=true ersetzen keine Abnahme.\n"
+        "task_manage(action='submit_result', task_id=<ID>, result='<fertiges Ergebnis>') "
+        "nur ab, wenn die Pflichtarbeit vollständig erledigt und geprüft ist. Bei Teilstand nutze "
+        "task_manage(action='update', status='pending'); Teilstand gehört nicht in Review. "
+        "Für einfache Tasks ohne vorgegebenen Vertrag muss result genau ein JSON-Selbstcheck sein: "
+        "{\"schema\":\"bach.worker-self-check.v1\",\"complete\":true,"
+        "\"completed_work\":\"konkrete erledigte Arbeit\",\"checks\":[\"konkrete Prüfung\"],"
+        "\"remaining_required_work\":[]}. Bei offenen Pflichtpunkten kein submit_result. "
+        "Der Abschluss folgt dem konfigurierten Modus; Nutzer- und GitHub-Freigaben bleiben eigenständig. "
+        "update(status=done) oder close_parent=true ersetzen keine Abnahme.\n"
         + json.dumps(content, ensure_ascii=False)
     )
     assert _bound_worker_prompt(LegacyBinding(), "Basis") == expected

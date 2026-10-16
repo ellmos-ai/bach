@@ -1,4 +1,4 @@
-"""Predeclared, bounded task criteria; model assertions are never evidence."""
+"""Predeclared criteria and a separately labelled simple-task self-check."""
 from __future__ import annotations
 
 import hashlib
@@ -6,8 +6,36 @@ import json
 import re
 
 SCHEMA = "bach.worker-task-contract.v1"
+SELF_CHECK_SCHEMA = "bach.worker-self-check.v1"
+_SELF_CHECK_EXAMPLES = {"konkrete erledigte arbeit", "konkrete prüfung"}
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
 _PATH = re.compile(r"(?!/)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_./-]{1,240}\Z")
+
+
+def evaluate_worker_self_check(result):
+    """Read an explicit completion assertion, not a machine-verified contract."""
+    missing = {"availability": "unavailable", "reason": "worker_self_check_missing", "met": False}
+    if not isinstance(result, str) or len(result) > 3000:
+        return missing
+    try:
+        value = json.loads(result)
+    except (TypeError, ValueError):
+        return missing
+    if (not isinstance(value, dict)
+            or set(value) != {"schema", "complete", "completed_work", "checks", "remaining_required_work"}
+            or value.get("schema") != SELF_CHECK_SCHEMA
+            or value.get("complete") is not True
+            or not isinstance(value.get("completed_work"), str)
+            or not 12 <= len(value["completed_work"].strip()) <= 1500
+            or value["completed_work"].strip().casefold() in _SELF_CHECK_EXAMPLES
+            or not isinstance(value.get("checks"), list)
+            or not 1 <= len(value["checks"]) <= 8
+            or any(not isinstance(check, str) or not 8 <= len(check.strip()) <= 300
+                   or check.strip().casefold() in _SELF_CHECK_EXAMPLES
+                   for check in value["checks"])
+            or value.get("remaining_required_work") != []):
+        return missing
+    return {"availability": "available", "reason": "worker_self_check_asserted", "met": True}
 
 
 def parse_contract(raw):
