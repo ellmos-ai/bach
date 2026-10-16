@@ -211,6 +211,9 @@ class OllamaBackend(ModelBackend):
         tool_calls: list = []
         last_message: dict = {}
         prompt_tokens = None
+        eval_tokens = None
+        done_reason = None
+        chunk_count = 0
         started = time.time()
         last_activity = started
         probes = 0
@@ -288,6 +291,7 @@ class OllamaBackend(ModelBackend):
 
                         now = time.time()
                         if line.strip():
+                            chunk_count = min(chunk_count + 1, 1_000_000)
                             last_activity = now
                             probes = 0
                             try:
@@ -316,7 +320,10 @@ class OllamaBackend(ModelBackend):
                                     tool_calls.extend(message["tool_calls"])
                             if chunk.get("prompt_eval_count") is not None:
                                 prompt_tokens = chunk["prompt_eval_count"]
+                            if chunk.get("eval_count") is not None:
+                                eval_tokens = chunk["eval_count"]
                             if chunk.get("done"):
+                                done_reason = chunk.get("done_reason")
                                 completed = True
                                 break
 
@@ -341,6 +348,24 @@ class OllamaBackend(ModelBackend):
         if not think and "</think>" in content:
             content = content.rsplit("</think>", 1)[1].strip()
         if not content and not tool_calls:
+            # The completed stream contained no usable answer. Log only bounded
+            # counters and a closed reason enum; never log model text or tools.
+            def bounded_count(value):
+                return value if type(value) is int and 0 <= value <= 1_000_000 else None
+
+            diagnostic = {
+                "done_reason": (done_reason if type(done_reason) is str
+                                and done_reason in {"stop", "length", "load", "unload"}
+                                else "unknown"),
+                "eval_count": bounded_count(eval_tokens),
+                "prompt_eval_count": bounded_count(prompt_tokens),
+                "thinking_present": bool(thinking_parts),
+                "thinking_chars": min(sum(len(part) for part in thinking_parts), 1_000_000),
+                "chunk_count": chunk_count,
+                "num_ctx": self.num_ctx,
+                "think_flag": think if type(think) is bool else None,
+            }
+            log.warning("ollama_empty_response %s", json.dumps(diagnostic, sort_keys=True))
             raise RuntimeError("Ollama lieferte eine leere Antwort")
         raw_message = dict(last_message or {"role": "assistant"})
         raw_message["content"] = content
