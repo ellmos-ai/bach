@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 from contextvars import ContextVar
+import hashlib
 import json
 import logging
 import os
@@ -1520,24 +1521,103 @@ class ChatRuntime(_ModuleChatRuntime):
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
         binding = getattr(session, "worker_task_binding", None)
+        dispatch_binding = binding
         def mark_model_dispatch():
             current_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             if current_binding is not None:
                 # Keep the exact binding object alive; token/id surrogates can be reused.
                 session._worker_model_dispatch_binding = current_binding
 
+        def model_request_digest():
+            canonical = json.dumps({"args": args, "kwargs": kwargs},
+                                   sort_keys=True, separators=(",", ":"),
+                                   ensure_ascii=False, allow_nan=False)
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+        def check_dispatch_binding(call_binding):
+            check_binding()
+            if ((turn_context and self.get_session(turn_context[0]) is not session)
+                    or getattr(session, "worker_task_binding", None) is not dispatch_binding
+                    or call_binding is not dispatch_binding):
+                raise RuntimeError("worker_model_binding_changed")
+
+        async def dispatch_model_call(*, bound=False, agent_kwargs=None):
+            """Record only an actual backend attempt, including fallback calls."""
+            call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
+            handle = None
+            if call_binding is not None and call_binding is dispatch_binding:
+                try:
+                    call_binding._discard_model_execution_candidate()
+                    from hub._services.llm.model_backend import backend_identifier
+
+                    # Hash the exact provider-facing request; never persist its contents.
+                    request_sha256 = model_request_digest()
+                    handle = call_binding.begin_model_execution(
+                        backend_id=backend_identifier(backend),
+                        requested_model=kwargs.get("model") or backend.get_default_model(),
+                        slot_id=session.chat_id, request_sha256=request_sha256,
+                    )
+                except Exception:
+                    # The optional evidence path must not turn a model call into an error.
+                    handle = None
+            try:
+                # Optional persistence can wait for a writer. Recheck the
+                # task/policy/stop/deadline boundary after that wait, before
+                # starting the actual model operation.
+                check_dispatch_binding(call_binding)
+                if handle is not None:
+                    try:
+                        same_request = model_request_digest() == request_sha256
+                    except Exception:
+                        same_request = False
+                    if not same_request:
+                        # A refreshed profile can legitimately narrow tools.
+                        # Keep the call usable, but never attest the older hash.
+                        try:
+                            call_binding.finish_model_execution(handle, failed=True)
+                        except Exception:
+                            pass
+                        handle = None
+                        # Even retiring an obsolete receipt can wait on SQLite.
+                        check_dispatch_binding(call_binding)
+                mark_model_dispatch()
+                if bound:
+                    result = await backend.chat_bound(
+                        *args, **kwargs, binding=call_binding, mode=session.mode,
+                        guard=check_binding, bach_app=self.bach_app,
+                        allowed_tools=getattr(session, "allowed_tools", None),
+                        **(agent_kwargs or {}),
+                    )
+                else:
+                    result = await backend.chat(*args, **kwargs)
+            except BaseException:
+                if handle is not None:
+                    try:
+                        call_binding.finish_model_execution(handle, failed=True)
+                    except Exception:
+                        pass
+                raise
+            if handle is not None:
+                failed = not isinstance(result, dict) or bool(result.get("error"))
+                if getattr(session, "worker_task_binding", None) is call_binding:
+                    try:
+                        call_binding.finish_model_execution(
+                            handle, result=None if failed else result, failed=failed,
+                        )
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        call_binding.finish_model_execution(handle, failed=True)
+                    except Exception:
+                        pass
+            return result
+
         if binding is not None and getattr(backend, "manages_own_tools", False):
             agent_kwargs = {"agent_operations": self.agent_operations} if self.agent_operations is not None else {}
-            mark_model_dispatch()
-            return await backend.chat_bound(
-                *args, **kwargs, binding=binding, mode=session.mode,
-                guard=check_binding, bach_app=self.bach_app,
-                allowed_tools=getattr(session, "allowed_tools", None),
-                **agent_kwargs,
-            )
+            return await dispatch_model_call(bound=True, agent_kwargs=agent_kwargs)
         if not self._uses_local_compute(backend):
-            mark_model_dispatch()
-            return await backend.chat(*args, **kwargs)
+            return await dispatch_model_call()
         selected_model = kwargs.get("model") or backend.get_default_model()
 
         chat_id, priority = turn_context or ("runtime", "foreground")
@@ -1584,8 +1664,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 receipt, _ = await self.prepare_inference_call(
                     backend, selected_model, chat_id=chat_id if turn_context else None)
                 if receipt is None:
-                    mark_model_dispatch()
-                    return await backend.chat(*args, **kwargs)
+                    return await dispatch_model_call()
                 if not policy_bound:
                     policy_version = receipt.get("policy_version")
                     policy_bound = True
@@ -1594,8 +1673,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 if receipt["state"] == "external_target":
                     with self._local_resource_waiters_lock:
                         self._local_resource_waiters.pop(chat_id, None)
-                    mark_model_dispatch()
-                    return await backend.chat(*args, **kwargs)
+                    return await dispatch_model_call()
                 require_retryable(receipt)
                 binding = getattr(session, "worker_task_binding", None) if session is not None else None
                 pre_effect_receipt = self._persistent_core_pre_effect_reserve_receipt(
@@ -1640,8 +1718,7 @@ class ChatRuntime(_ModuleChatRuntime):
                                 check_reserve_policy(receipt)
                                 with self._local_resource_waiters_lock:
                                     self._local_resource_waiters.pop(chat_id, None)
-                                mark_model_dispatch()
-                                return await backend.chat(*args, **kwargs)
+                                return await dispatch_model_call()
                             finally:
                                 self._leave_compute_turn(self._compute_turn_gate)
                     if receipt["state"] == "external_target":
@@ -1651,8 +1728,7 @@ class ChatRuntime(_ModuleChatRuntime):
                         check_reserve_policy(receipt)
                         with self._local_resource_waiters_lock:
                             self._local_resource_waiters.pop(chat_id, None)
-                        mark_model_dispatch()
-                        return await backend.chat(*args, **kwargs)
+                        return await dispatch_model_call()
                 # The host owner has been returned before reserve polling.
                 # We stay at this model-call boundary: previous tools and the
                 # task/session context are not replayed or reset.

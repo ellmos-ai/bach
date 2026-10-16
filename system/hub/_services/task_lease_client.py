@@ -453,6 +453,28 @@ class TaskLeaseClient:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _model_execution_call(self, operation, binding, *args, **kwargs):
+        """Private controller path; HTTP workers cannot self-attest model calls."""
+        if self.mode != "local" or getattr(binding, "_client", None) is not self:
+            return None if operation == "start_execution" else False
+        from . import worker_execution_evidence
+        conn = self._get_local_connection()
+        try:
+            return getattr(worker_execution_evidence, operation)(conn, binding, *args, **kwargs)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _start_model_execution(self, binding, *, backend_id, requested_model, slot_id, request_sha256):
+        return self._model_execution_call("start_execution", binding, backend_id=backend_id,
+            requested_model=requested_model, slot_id=slot_id, request_sha256=request_sha256)
+
+    def _finish_model_execution(self, binding, handle, *, result=None, failed=False):
+        return self._model_execution_call("finish_execution", binding, handle, result=result, failed=failed)
+
+    def _link_model_execution(self, binding, handle):
+        return self._model_execution_call("link_execution", binding, handle)
+
     def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
         """Let subclasses opt in to one validated server-error response shape."""
         return False

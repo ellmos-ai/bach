@@ -84,7 +84,7 @@ jobs:
         run: |
           python -m venv --system-site-packages "$RUNNER_TEMP/worker-policy-tests"
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -m pip install pystray Pillow
-          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py system/tests/test_worker_execution_evidence.py system/tests/test_worker_execution_runtime.py
 
       - name: Native MarbleRun and task result authority
         env:
