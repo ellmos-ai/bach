@@ -29,10 +29,11 @@ CONTRACT_SCHEMA = "bach.learning-candidate.v1"
 _ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}")
 _HASH = re.compile(r"[0-9a-f]{64}")
 _PRIVATE = re.compile(
-    # Start the local part once per character run, not at every suffix of it.
-    r"(?:[A-Za-z]:[\\/]|/(?:Users|home)/|(?<![\w.+-])[\w.+-]+@[\w.-]+\.\w+|"
+    r"(?:[A-Za-z]:[\\/]|/(?:Users|home)/|"
     r"\b(?:\d{1,3}\.){3}\d{1,3}\b)"
 )
+_EMAIL_LOCAL = re.compile(r"[\w.+-]+")
+_EMAIL_DOMAIN = re.compile(r"[\w.-]+\.\w+")
 _SECRET = re.compile(
     r"(?:\b(?:sk|ghp|github_pat|AKIA)[_-][A-Za-z0-9_-]{12,}|"
     r"(?i:authorization\s*:\s*bearer|api[_-]?key\s*[:=]|password\s*[:=]|"
@@ -227,6 +228,15 @@ def _guidance(roots=None):
     return sources
 
 
+def _contains_private_email(value):
+    # Consume each local-part run once; a failed domain must not retry its suffixes.
+    for local in _EMAIL_LOCAL.finditer(value):
+        end = local.end()
+        if end < len(value) and value[end] == "@" and _EMAIL_DOMAIN.match(value, end + 1):
+            return True
+    return False
+
+
 def _neutralize(value, parameters):
     if not isinstance(parameters, list) or len(parameters) > 30:
         raise ValueError("Begrenzte Parameterliste erforderlich")
@@ -248,7 +258,7 @@ def _neutralize(value, parameters):
         if isinstance(item, str):
             for original, placeholder in sorted(replacements, key=lambda pair: -len(pair[0])):
                 item = item.replace(original, placeholder)
-            if _PRIVATE.search(item) or _SECRET.search(item) or "\x00" in item:
+            if _PRIVATE.search(item) or _contains_private_email(item) or _SECRET.search(item) or "\x00" in item:
                 raise ValueError("Vorschlag enthält nicht neutralisierte Pfade, Accounts oder Credentials")
             return item
         if isinstance(item, list):

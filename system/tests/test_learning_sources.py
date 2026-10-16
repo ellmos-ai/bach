@@ -304,19 +304,22 @@ def test_neutralization_stores_only_parameter_definitions(ctx):
     assert row["review_available"] and row["confidence"] is None
 
 
-def test_neutralization_long_non_email_finishes_in_bounded_child():
+@pytest.mark.parametrize("case", ["local-run", "many-at-signs", "domain-run"])
+def test_neutralization_long_non_email_finishes_in_bounded_child(case):
     # Bound a potentially quadratic search without leaving a stuck test thread.
     code = (
-        "from hub._services.learning_source_service import _neutralize; "
-        "text = '+' * 180000; "
+        "import sys; from hub._services.learning_source_service import _neutralize; "
+        "cases = {'local-run': '+' * 180000, 'many-at-signs': 'a@' * 90000, "
+        "'domain-run': 'a@' + '.' * 179998}; text = cases[sys.argv[1]]; "
         "clean, definitions = _neutralize({'body': text}, []); "
         "assert clean == {'body': text} and definitions == []; "
         "print('neutralized:180000')"
     )
     result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True,
-        encoding="utf-8", timeout=10, check=True,
+        [sys.executable, "-c", code, case], capture_output=True, text=True,
+        encoding="utf-8", timeout=10, cwd=Path(__file__).resolve().parents[1], check=False,
     )
+    assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "neutralized:180000"
 
 
