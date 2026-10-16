@@ -372,7 +372,7 @@ jobs:
           - name: linux
             runner: [ubuntu-latest]
           - name: mac
-            runner: [self-hosted, macOS, ARM64, mac-studio]
+            runner: [macos-latest]
     env:
       PYTHONIOENCODING: utf-8
       PYTHONDONTWRITEBYTECODE: '1'
