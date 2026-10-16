@@ -134,10 +134,14 @@ def _assert_available_execution(binding, *, backend_id, model):
     result = _result_snapshot(binding)
     assert result is not None and result["accepted"] is False
     evidence = result["execution"]
-    assert evidence["schema"] == "bach.worker-execution-evidence.v1"
+    assert evidence["schema"] == "bach.worker-execution-evidence.v2"
     assert evidence["availability"] == "available"
     assert evidence["backend_id"] == backend_id
     assert evidence["requested_model"] == model
+    # These fake/CLI transports report no provider model metadata. An actual
+    # execution must stay usable without inferring identity from its request.
+    assert evidence["observed_model"] is None
+    assert evidence["model_provenance"] == "unknown"
     assert evidence["generation"] == binding.generation
     assert evidence["fence"] == binding._ack.fence
     assert evidence["request_sha256"] and len(evidence["request_sha256"]) == 64
