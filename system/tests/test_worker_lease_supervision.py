@@ -189,7 +189,7 @@ def test_max_total_denial_keeps_known_lease_valid_until_its_deadline(binding, mo
         binding.assert_active()
         return binding.execute_task_manage({"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis unter Lease-Überwachung"})
     supervisor = WorkerLeaseSupervisor(binding, poll_interval=.005, renew_interval=.005)
-    assert asyncio.run(supervisor.run(provider)) == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert asyncio.run(supervisor.run(provider)) == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert supervisor.failure is None
     assert len(calls) == 1  # Exhaustion is known; never retry Renew for this lease.
     assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)

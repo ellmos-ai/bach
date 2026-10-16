@@ -44,7 +44,7 @@ def test_bound_provider_executes_actual_fenced_completion(binding):
     provider = bach_tools.BachToolProvider(NoLegacyTaskApp(), worker_task_binding=binding,
                                           require_task_binding=True)
     result = provider.execute("task_manage", {"action": "done", "task_id": binding.task_id, "result": "Konkretes Ergebnis des Tool-Providers"}, "safe")
-    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
 
 
@@ -143,7 +143,7 @@ def test_real_native_process_accepts_only_actual_cli_completion_ack(binding, ser
     session.worker_task_binding = binding
     session.require_task_binding = True
     answer = asyncio.run(runtime.process("Auftrag", "worker-bound", work_priority="background"))
-    assert str(answer) == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert str(answer) == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert not runtime.get_last_task_completion_receipts("worker-bound")
     assert not binding.completed_task_ids
     assert binding.reviewed_task_ids == (binding.task_id,)

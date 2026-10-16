@@ -69,7 +69,7 @@ def test_runtime_uses_private_claude_transport_and_authoritative_completion(brid
     result = asyncio.run(runtime.process("Complete the bound task", "leased-chat", work_priority="background"))
     assert len(calls) == 1
     assert not bridge.binding.completed_task_ids and bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
-    assert "wartet in Review" in result
+    assert "Abschlussstatus wird nach Policy ermittelt" in result
 
 
 def test_direct_script_imports_and_launchagent_use_package_safe_entry():

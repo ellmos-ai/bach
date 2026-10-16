@@ -126,7 +126,7 @@ def test_actual_terminal_review_release_is_consumed_and_acked(binding, monkeypat
 
     monkeypatch.setattr(binding, "trace_tool_phase", phase)
     answer = _run(runtime, session, messages)
-    assert "wartet in Review" in answer
+    assert "Abschlussstatus wird nach Policy ermittelt" in answer
     assert len(calls) == 1
     assert binding.closed
     assert binding.completed_task_ids == ()
