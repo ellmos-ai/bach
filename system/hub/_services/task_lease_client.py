@@ -606,10 +606,12 @@ class TaskLeaseClient:
         """Persist only a canonical review linked to its local child submission."""
         if self.mode != "local" or getattr(binding, "_client", None) is not self:
             return None
-        from .worker_result_review import record_review
+        from .worker_result_review import record_review, cancel_obsolete_review_child
         conn = self._get_local_connection()
         try:
             evidence = record_review(conn, binding)
+            if evidence is None:
+                evidence = cancel_obsolete_review_child(conn, binding)
         finally:
             if self._conn is None:
                 conn.close()
@@ -619,6 +621,20 @@ class TaskLeaseClient:
             except Exception:
                 pass
         return evidence
+
+    def _recover_invalid_review_child(self, task_id, *, result_id, status_revision):
+        """Local controller recovery through the canonical correction writer."""
+        if self.mode != "local":
+            return None
+        _identity(task_id)
+        from .worker_result_review import recover_invalid_review_child
+        conn = self._get_local_connection()
+        try:
+            return recover_invalid_review_child(conn, task_id, result_id=result_id,
+                                                status_revision=status_revision)
+        finally:
+            if self._conn is None:
+                conn.close()
 
     def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
         """Let subclasses opt in to one validated server-error response shape."""
@@ -660,7 +676,7 @@ class TaskLeaseClient:
     def _call(self, name, task_id, payload=None, *, config=None, now=None, headers=None):
         _identity(task_id)
         if self.mode == "remote":
-            if isinstance(payload, dict) and "_review_grant" in payload:
+            if isinstance(payload, dict) and ({"_review_grant", "_review_binding"} & payload.keys()):
                 raise LeaseProtocolError("Private Reviewgrants dürfen nicht über HTTP gesendet werden")
             suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose", "update": "/update"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
@@ -1235,7 +1251,8 @@ class TaskLeaseClient:
         return {"schema": SCHEMA, "task_id": task_id, "events": events,
                 "count": len(events), "limit": limit, "offset": offset}
 
-    def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result, config=None, now=None):
+    def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result,
+                      config=None, now=None, _review_binding=None):
         from .task_result_service import validate_submission
         _identity(task_id, lease_id, fence)
         _version(task_version, required=True)
@@ -1246,6 +1263,7 @@ class TaskLeaseClient:
         data = self._call("release", task_id, {
             "lease_id": lease_id, "fence": fence, "task_version": task_version,
             "outcome": "review", "worker_result": {"generation": generation, "result": result},
+            **({"_review_binding": _review_binding} if _review_binding is not None else {}),
         }, config=config, now=now)
         record = data.get("worker_result")
         if (data.get("released") is not True or data.get("outcome") != "review"

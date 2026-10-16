@@ -16,12 +16,14 @@ from hub._services import worker_scope_evidence
 from hub._services.chat import worker_write_guard
 from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 from hub._services.task_lease_client import LeaseDeniedError
-from hub._services.task_result_service import read_result
+from hub._services.task_lease_client import LeaseProtocolError
+from hub._services.task_result_service import (CorrectionContextDenied,
+    active_correction_request, read_result)
 from hub._services.worker_review_identity import KEY as IDENTITY_KEY
 from system.tests.test_task_lease_client import mem_db
 from system.tests.test_task_lease_client_review import T0
 from system.tests.test_worker_execution_evidence import worker_context
-from system.tests.test_worker_scope_snapshot import _install_lock_scanner, _new_scope_repo
+from system.tests.test_worker_scope_snapshot import _git, _install_lock_scanner, _new_scope_repo
 
 
 AUTHOR = "principal:author"
@@ -143,10 +145,10 @@ def _grant(world, task_id, *, slot=REVIEW_SLOT, generation=REVIEW_GENERATION,
     return grant, stop, current
 
 
-def _acquire_review(world, task_id, grant, stop, current):
+def _acquire_review(world, task_id, grant, stop, current, *, generation=REVIEW_GENERATION):
     return WorkerLeaseBinding.acquire(
         world["client"], task_id, worker_id="review-worker@HOST", host="HOST",
-        generation=REVIEW_GENERATION, is_current=lambda: current["value"],
+        generation=generation, is_current=lambda: current["value"],
         stop_event=stop, clock=lambda: T0,
         slot={"id": REVIEW_SLOT, "model": REVIEW_MODEL, "backend": "ollama"},
         automatic=True, _review_grant=grant)
@@ -197,6 +199,309 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
         read_result(world["conn"], world["task_id"]), **_paths(world))
     assert stale["result"]["model_review"]["availability"] == "unavailable"
     assert review.record_review(world["conn"], child, **_paths(world)) is None
+
+
+@pytest.mark.parametrize("failure", ["no_return", "backend_error", "extra_call", "invalid_json",
+                                     "unconfirmed_route", "unknown_provider_model",
+                                     "terminal_history_tamper"])
+def test_review_submit_requires_one_confirmed_matching_structured_answer(review_world, failure):
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    grant, stop, current = _grant(world, task_id)
+    child = _acquire_review(world, task_id, grant, stop, current)
+    assert f"id: {task_id}" in child.execute_task_manage({"action": "detail", "task_id": task_id})
+    verdict = json.dumps({"status": "findings", "summary": "Quelle fehlt.",
+                          "task_contract_met": False}, ensure_ascii=False)
+    proposed = "Konkrete erledigte Arbeit am Zieltask." if failure == "invalid_json" else verdict
+    answer = _response(REVIEW_OBSERVED, verdict=(task_id, proposed))
+    if failure == "extra_call":
+        answer["tool_calls"].append(copy.deepcopy(answer["tool_calls"][0]))
+    if failure == "unknown_provider_model":
+        answer["provider_reported_model"] = None
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("review prompt"), route_sha256=REVIEW_ROUTE)
+    assert handle is not None
+    if failure != "no_return":
+        assert child.finish_model_execution(handle,
+            result=answer if failure != "backend_error" else None,
+            failed=failure == "backend_error",
+            route_sha256=AUTHOR_ROUTE if failure == "unconfirmed_route" else REVIEW_ROUTE) is (failure != "backend_error")
+    if failure == "terminal_history_tamper":
+        event_id = world["conn"].execute(
+            "SELECT terminal_event_id FROM worker_model_executions WHERE id=?",
+            (handle._execution_id,)).fetchone()[0]
+        world["conn"].execute("UPDATE task_history SET new_value='{}' WHERE id=?", (event_id,))
+        world["conn"].commit()
+    before = world["conn"].total_changes
+    with pytest.raises((LeaseProtocolError, LeaseDeniedError)) as denied:
+        child.execute_task_manage({"action": "submit_result", "task_id": task_id,
+                                   "result": proposed})
+    if failure in {"unconfirmed_route", "unknown_provider_model", "terminal_history_tamper"}:
+        assert isinstance(denied.value, LeaseDeniedError)
+        assert denied.value.reason == "completion_guard"
+    assert world["conn"].total_changes == before
+    assert read_result(world["conn"], task_id)["status"] == "in_progress"
+    assert read_result(world["conn"], task_id)["result"] is None
+    assert read_result(world["conn"], world["task_id"])["result"]["model_review"]["availability"] == "unavailable"
+
+
+def test_review_release_writer_rechecks_parent_after_model_return(review_world):
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    grant, stop, current = _grant(world, task_id)
+    child = _acquire_review(world, task_id, grant, stop, current)
+    verdict = json.dumps({"status": "findings", "summary": "Quellbeleg fehlt.",
+                          "task_contract_met": False}, ensure_ascii=False)
+    answer = _response(REVIEW_OBSERVED, verdict=(task_id, verdict))
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("review before parent change"), route_sha256=REVIEW_ROUTE)
+    assert handle is not None
+    assert child.finish_model_execution(handle, result=answer, route_sha256=REVIEW_ROUTE) is True
+    # A parent content edit after the real model return makes the old intent stale.
+    world["conn"].execute("UPDATE tasks SET title='Changed while reviewer answered' WHERE id=?",
+                          (world["task_id"],))
+    world["conn"].commit()
+    with pytest.raises(LeaseProtocolError):
+        child.execute_task_manage({"action": "submit_result", "task_id": task_id,
+                                   "result": verdict})
+    # Independently exercise the canonical release writer, not only the
+    # lock-free preflight in the bound tool path.
+    with pytest.raises(LeaseDeniedError):
+        child._operation(child._client.submit_result, generation=child.generation,
+                         result=verdict, _review_binding=child)
+    assert read_result(world["conn"], task_id)["status"] == "in_progress"
+    assert read_result(world["conn"], task_id)["result"] is None
+
+
+@pytest.mark.parametrize("drift", ["git", "git_dirty", "parent_status", "parent_content",
+                                     "full_revision", "full_revision_and_git", "git_unavailable"])
+def test_released_review_child_is_cancelled_only_for_proven_target_drift(
+        review_world, monkeypatch, drift):
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    grant, stop, current = _grant(world, task_id)
+    child = _acquire_review(world, task_id, grant, stop, current)
+    verdict = json.dumps({"status": "approved", "summary": "Geprüfte Arbeit.",
+                          "task_contract_met": True}, ensure_ascii=False)
+    answer = _response(REVIEW_OBSERVED, verdict=(task_id, verdict))
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("target may drift after release"), route_sha256=REVIEW_ROUTE)
+    assert handle is not None
+    assert child.finish_model_execution(handle, result=answer, route_sha256=REVIEW_ROUTE) is True
+    actual_record = world["client"]._record_result_review
+
+    def after_canonical_release(binding):
+        assert read_result(world["conn"], task_id)["status"] == "review"
+        if drift in {"git", "git_dirty"}:
+            (world["tree"]["target"] / "changed-after-submit.txt").write_text(
+                "new work\n", encoding="utf-8")
+            if drift == "git":
+                _git(["add", "changed-after-submit.txt"], world["tree"]["target"])
+                _git(["commit", "-m", "change target after review submission"],
+                     world["tree"]["target"])
+        elif drift == "parent_status":
+            world["conn"].execute("UPDATE tasks SET status='pending' WHERE id=?",
+                                  (world["task_id"],))
+            world["conn"].commit()
+        elif drift == "parent_content":
+            world["conn"].execute("UPDATE tasks SET title='changed after submit' WHERE id=?",
+                                  (world["task_id"],))
+            world["conn"].commit()
+        elif drift in {"full_revision", "full_revision_and_git"}:
+            # Model a different internally valid scope event with the same
+            # parent task status and result ID. The production capture API is
+            # immutable; this exercises a future/versioned receipt race.
+            from datetime import datetime, timezone
+            from hub._services.task_lease import _fmt, _history
+            old = world["conn"].execute("SELECT receipt FROM worker_scope_evidence "
+                "WHERE result_id=?", (world["target"]["result_id"],)).fetchone()
+            receipt = json.loads(old[0])
+            now = datetime.now(timezone.utc)
+            receipt["captured_at"] = _fmt(now)
+            digest = worker_scope_evidence._digest(receipt)
+            event = _history(world["conn"], world["task_id"],
+                "worker_result_scope_capture", "native-scope-controller", now,
+                worker_scope_evidence._event_detail(receipt, digest))
+            world["conn"].execute("UPDATE worker_scope_evidence SET receipt=?,"
+                "receipt_sha256=?,event_id=?,captured_at=? WHERE result_id=?",
+                (worker_scope_evidence._json(receipt), digest, event,
+                 receipt["captured_at"], world["target"]["result_id"]))
+            world["conn"].commit()
+            changed = worker_scope_evidence.project_scope_evidence(
+                read_result(world["conn"], world["task_id"]), **_paths(world))["result"]
+            assert changed["scope"]["availability"] == "available"
+            assert changed["result_id"] == world["target"]["result_id"]
+            assert changed["result_revision"] != world["target"]["result_revision"]
+            if drift == "full_revision_and_git":
+                (world["tree"]["target"] / "second-drift.txt").write_text(
+                    "changed too\n", encoding="utf-8")
+                _git(["add", "second-drift.txt"], world["tree"]["target"])
+                _git(["commit", "-m", "change target after scope revision"],
+                     world["tree"]["target"])
+        else:
+            monkeypatch.setattr(worker_scope_evidence, "snapshot_task_scope",
+                lambda *args, **kwargs: {"availability": "unavailable", "reason": "scanner_unknown"})
+        return actual_record(binding)
+
+    monkeypatch.setattr(world["client"], "_record_result_review", after_canonical_release)
+    tool_result = child.execute_task_manage({
+        "action": "submit_result", "task_id": task_id, "result": verdict})
+    unavailable = drift in {"git_dirty", "git_unavailable"}
+    assert ("wartet in Review" if unavailable else "wurde storniert") in tool_result
+    expected = "review" if unavailable else "cancelled"
+    assert read_result(world["conn"], task_id)["status"] == expected
+    assert read_result(world["conn"], task_id)["result"]["accepted"] is False
+    event_count = world["conn"].execute(
+        "SELECT COUNT(*) FROM task_history WHERE task_id=? "
+        "AND action='worker_result_review_obsolete'", (task_id,)).fetchone()[0]
+    assert event_count == (0 if unavailable else 1)
+    if not unavailable:
+        assert not any(row["id"] == task_id for row in review.list_review_candidates(world["conn"]))
+        assert world["conn"].execute("SELECT COUNT(*) FROM worker_result_model_reviews "
+            "WHERE review_task_id=?", (task_id,)).fetchone()[0] == 0
+        assert review.cancel_obsolete_review_child(world["conn"], child, **_paths(world)) is None
+        assert world["conn"].execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+            "AND action='worker_result_review_obsolete'", (task_id,)).fetchone()[0] == 1
+    assert read_result(world["conn"], world["task_id"])["result"]["accepted"] is False
+
+
+def test_obsolete_cancel_rejects_child_status_revision_race(review_world, monkeypatch):
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    grant, stop, current = _grant(world, task_id)
+    child = _acquire_review(world, task_id, grant, stop, current)
+    verdict = json.dumps({"status": "findings", "summary": "Erneut prüfen.",
+                          "task_contract_met": False}, ensure_ascii=False)
+    answer = _response(REVIEW_OBSERVED, verdict=(task_id, verdict))
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("review status race"), route_sha256=REVIEW_ROUTE)
+    assert handle is not None
+    assert child.finish_model_execution(handle, result=answer, route_sha256=REVIEW_ROUTE) is True
+    monkeypatch.setattr(world["client"], "_record_result_review", lambda binding: None)
+    assert "wartet in Review" in child.execute_task_manage({
+        "action": "submit_result", "task_id": task_id, "result": verdict})
+    before = read_result(world["conn"], task_id)["status_revision"]
+    (world["tree"]["target"] / "race.txt").write_text("changed\n", encoding="utf-8")
+    _git(["add", "race.txt"], world["tree"]["target"])
+    _git(["commit", "-m", "change target before cancel race"],
+         world["tree"]["target"])
+    actual_reason = review._obsolete_target_reason
+    first = {"value": True}
+
+    def between_precheck_and_writer(conn, found, grant, **kwargs):
+        reason = actual_reason(conn, found, grant, **kwargs)
+        if first["value"] and reason == "current_git_changed":
+            first["value"] = False
+            from hub.task_audit import apply_task_field_changes
+            row = dict(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
+            apply_task_field_changes(conn, task_id, row, {"status": "pending"},
+                                     changed_by="test-operator", allow_reopen=True)
+            row = dict(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
+            apply_task_field_changes(conn, task_id, row, {"status": "review"},
+                                     changed_by="test-operator", allow_reopen=True)
+            conn.commit()
+        return reason
+
+    monkeypatch.setattr(review, "_obsolete_target_reason", between_precheck_and_writer)
+    assert review.cancel_obsolete_review_child(world["conn"], child, **_paths(world)) is None
+    after = read_result(world["conn"], task_id)
+    assert after["status"] == "review" and after["status_revision"] > before
+    assert world["conn"].execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+        "AND action='worker_result_review_obsolete'", (task_id,)).fetchone()[0] == 0
+
+
+def _old_invalid_review_result(world, monkeypatch):
+    """Exercise the old canonical release without the new pre-submit guard."""
+    task_id = _prepare(world)["review_task_id"]
+    grant, stop, current = _grant(world, task_id)
+    child = _acquire_review(world, task_id, grant, stop, current)
+    bad = world["target"]["result"]
+    answer = _response(REVIEW_OBSERVED, verdict=(task_id, bad))
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("old review prompt"), route_sha256=REVIEW_ROUTE)
+    assert handle is not None
+    assert child.finish_model_execution(handle, result=answer, route_sha256=REVIEW_ROUTE) is True
+    child._submission_expected = {"task_id": task_id, "fence": child._ack.fence,
+        "generation": child.generation, "task_version": child._snapshot["task_version"],
+        "result_sha256": hashlib.sha256(bad.encode("utf-8")).hexdigest(), "result": bad}
+    # Materialize a real old V1 result through the pre-guard release path.
+    # Only this historical fixture suppresses today's reserved-child marker;
+    # all assertions and all subsequent operations use the production guard.
+    with monkeypatch.context() as historical:
+        historical.setattr(review, "review_task_marker", lambda *_: False)
+        ack = child._operation(child._client.submit_result,
+                               generation=child.generation, result=bad)
+    child._completion_result = copy.deepcopy(ack.record)
+    child._review_ack = ack.release
+    child._closed = True
+    child._active = False
+    assert child._link_confirmed_model_execution() is True
+    observed = read_result(world["conn"], task_id)
+    assert observed["status"] == "review"
+    assert observed["result"]["execution"]["availability"] == "available"
+    assert review.record_review(world["conn"], child, **_paths(world)) is None
+    return task_id, observed
+
+
+def test_old_invalid_review_child_requeues_with_verified_correction_and_replay_denied(review_world, monkeypatch):
+    world = review_world
+    task_id, observed = _old_invalid_review_result(world, monkeypatch)
+    result_id = observed["result"]["result_id"]
+    status_revision = observed["status_revision"]
+    recovered = world["client"]._recover_invalid_review_child(task_id,
+        result_id=result_id, status_revision=status_revision)
+    assert recovered["availability"] == "recorded"
+    assert recovered["status"] == "pending"
+    assert review.recover_invalid_review_child(world["conn"], task_id,
+        result_id=result_id, status_revision=status_revision, **_paths(world)) is None
+    correction = active_correction_request(world["conn"], task_id)
+    assert correction["source_result_id"] == result_id
+    assert "strukturierte Review-Abgabe" in correction["correction_note"]
+    assert read_result(world["conn"], task_id)["status"] == "pending"
+    assert read_result(world["conn"], world["task_id"])["result"]["model_review"]["availability"] == "unavailable"
+    assert review.list_review_candidates(world["conn"])[0]["id"] == task_id
+    fresh_generation = "review-generation-3"
+    fresh_grant, fresh_stop, fresh_current = _grant(world, task_id,
+        generation=fresh_generation)
+    assert fresh_grant is not None
+    fresh = _acquire_review(world, task_id, fresh_grant, fresh_stop, fresh_current,
+        generation=fresh_generation)
+    assert fresh.generation == fresh_generation
+    assert fresh._ack.fence > observed["result"]["fence"]
+    event_id = world["conn"].execute("SELECT completion_decision_event_id FROM worker_task_results "
+        "WHERE id=?", (result_id,)).fetchone()[0]
+    world["conn"].execute("UPDATE task_history SET changed_by='foreign' WHERE id=?", (event_id,))
+    world["conn"].commit()
+    with pytest.raises(CorrectionContextDenied):
+        active_correction_request(world["conn"], task_id)
+
+
+@pytest.mark.parametrize("mutation", ["foreign_identity", "live_child", "changed_target", "stale_status"])
+def test_invalid_review_recovery_rejects_unproven_context(review_world, monkeypatch, mutation):
+    world = review_world
+    task_id, observed = _old_invalid_review_result(world, monkeypatch)
+    if mutation == "foreign_identity":
+        from hub._services.worker_review_identity import identity_snapshot
+        bindings = identity_snapshot(world["conn"])["bindings"]
+        settings._persist(world["conn"], IDENTITY_KEY, bindings[:2], actor="test-operator")
+        world["conn"].commit()
+    elif mutation == "live_child":
+        world["conn"].execute("UPDATE tasks SET claim_id='foreign' WHERE id=?", (task_id,))
+        world["conn"].commit()
+    elif mutation == "changed_target":
+        (world["tree"]["target"] / "changed.txt").write_text("changed\n", encoding="utf-8")
+    else:
+        observed["status_revision"] += 1
+    before = world["conn"].total_changes
+    assert review.recover_invalid_review_child(world["conn"], task_id,
+        result_id=observed["result"]["result_id"],
+        status_revision=observed["status_revision"], **_paths(world)) is None
+    assert world["conn"].total_changes == before
 
 
 def test_review_task_creation_is_idempotent_and_stays_in_normal_task_table(review_world):
