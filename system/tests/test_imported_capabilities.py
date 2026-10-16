@@ -9,6 +9,7 @@ Verifies the correct functionality of all imported components and their Bach ada
 import sqlite3
 import tempfile
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -166,7 +167,7 @@ def test_contract_cockpit():
                 contract_number="TK-987654",
                 cost_monthly_cents=4990,
                 renewal_period_months=12,
-                cancellation_deadline="2026-10-15",
+                cancellation_deadline=(datetime.now(timezone.utc).date() + timedelta(days=16)).isoformat(),
                 document_path="/docs/contracts/telekom.pdf",
                 is_active=True,
                 notes="Fiber connection",
@@ -174,7 +175,7 @@ def test_contract_cockpit():
         )
         assert rec_id > 0
 
-        # Check cancellations within 30 days (today is 2026-09-29, deadline is 2026-10-15 = 16 days)
+        # A deadline 16 days after UTC today stays within the 30-day window.
         upcoming = service.list_upcoming_cancellations(within_days=30)
         assert len(upcoming) == 1
         assert upcoming[0].provider == "Telekom"
