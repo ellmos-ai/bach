@@ -42,7 +42,8 @@ permissions:
 
 jobs:
   pytest:
-    runs-on: ubuntu-latest
+    # Manual dispatch exercises the organization Mac runner; regular PR and push CI stays on Ubuntu.
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["self-hosted","macOS","ARM64","mac-studio"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
