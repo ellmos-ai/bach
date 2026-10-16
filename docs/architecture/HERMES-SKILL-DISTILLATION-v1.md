@@ -95,6 +95,13 @@ provenance:
 ...
 ```
 
+
+Das confidence-Feld mit dem Wert 0.88 im historischen Beispiel oben ist ein
+Altwert und kein validierter Messwert. Neue Hermes-Destillationen geben
+confidence: null und confidence_status: not_measured aus. Vorhandene numerische
+Werte werden als heuristische Altwerte gekennzeichnet; die Oberfläche stellt
+sie nicht als gemessen oder fachlich bestätigt dar.
+
 ---
 
 ## 5. API-Referenz (`/api/learning/hermes/*`)

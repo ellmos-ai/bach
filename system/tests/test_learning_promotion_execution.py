@@ -522,11 +522,14 @@ def test_hermes_lessons_publish_atomically_replay_and_revoke(database):
                 ("lessons-promote-0001", str(lesson_id)),
             ).fetchone()
             snapshot = json.loads(item[0])
+            # Legacy receipts omit confidence and retain their original digest contract.
             assert set(snapshot) == {"id", "category", "title", "solution", "is_active"}
             conn.execute(
                 "UPDATE memory_lessons SET reviewer_metadata=? WHERE id=?",
                 ("nach der Promotion ergänzt", lesson_id),
             )
+        # A later schema can add confidence without invalidating the old receipt.
+        conn.execute("ALTER TABLE memory_lessons ADD COLUMN confidence REAL")
         conn.commit()
 
     replay = service.promote(
@@ -560,6 +563,90 @@ def test_hermes_lessons_publish_atomically_replay_and_revoke(database):
                 (lesson_id,),
             ).fetchone()
             assert row == (0, "nach der Promotion ergänzt")
+
+
+def test_hermes_lesson_revoke_binds_null_confidence_and_blocks_numeric_change(database):
+    _, candidate = hermes_reviewed(database, skill_name="unmeasured-confidence-cas")
+    with sqlite3.connect(database) as conn:
+        conn.execute("ALTER TABLE memory_lessons ADD COLUMN confidence REAL")
+        conn.commit()
+    service = promotion_service(database)
+    promoted = service.promote(
+        "hermes", candidate["id"], target_kind="lessons",
+        expected_revision=candidate["candidate_revision"],
+        expected_digest=candidate["candidate_digest"],
+        request_id="confidence-cas-promote-01",
+        expected_target_version="absent",
+        actor="device:7",
+    )
+    assert promoted["target_ids"]
+    with sqlite3.connect(database) as conn:
+        item = conn.execute(
+            """SELECT target_snapshot_json FROM learning_promotion_items
+               WHERE promotion_request_id=? AND target_kind='lessons' AND target_key=?""",
+            ("confidence-cas-promote-01", str(promoted["target_ids"][0])),
+        ).fetchone()
+        assert json.loads(item[0])["confidence"] is None
+        conn.execute(
+            "UPDATE memory_lessons SET confidence=? WHERE id=?",
+            (0.75, promoted["target_ids"][0]),
+        )
+        conn.commit()
+
+    with pytest.raises(LearningPromotionConflict, match="verändert"):
+        service.revoke(
+            "hermes", candidate["id"], target_kind="lessons",
+            expected_revision=candidate["candidate_revision"],
+            expected_digest=candidate["candidate_digest"],
+            source_request_id="confidence-cas-promote-01",
+            request_id="confidence-cas-revoke-01",
+            actor="device:7",
+        )
+    assert row_count(database, "memory_lessons", "is_active=1") == len(promoted["target_ids"])
+    with sqlite3.connect(database) as conn:
+        assert conn.execute(
+            "SELECT confidence FROM memory_lessons WHERE id=?",
+            (promoted["target_ids"][0],),
+        ).fetchone() == (0.75,)
+
+
+def test_hermes_lesson_revoke_fails_closed_if_confidence_column_disappears(database):
+    _, candidate = hermes_reviewed(database, skill_name="confidence-schema-loss")
+    with sqlite3.connect(database) as conn:
+        conn.execute("ALTER TABLE memory_lessons ADD COLUMN confidence REAL")
+        conn.commit()
+    service = promotion_service(database)
+    promoted = service.promote(
+        "hermes", candidate["id"], target_kind="lessons",
+        expected_revision=candidate["candidate_revision"],
+        expected_digest=candidate["candidate_digest"],
+        request_id="confidence-schema-promote-01",
+        expected_target_version="absent",
+        actor="device:7",
+    )
+    assert promoted["target_ids"]
+    with sqlite3.connect(database) as conn:
+        conn.execute("ALTER TABLE memory_lessons RENAME TO memory_lessons_with_confidence")
+        conn.execute("""CREATE TABLE memory_lessons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, title TEXT,
+            solution TEXT, is_active INTEGER DEFAULT 1, created_at TEXT
+        )""")
+        conn.execute("""INSERT INTO memory_lessons(id,category,title,solution,is_active,created_at)
+            SELECT id,category,title,solution,is_active,created_at
+            FROM memory_lessons_with_confidence""")
+        conn.execute("DROP TABLE memory_lessons_with_confidence")
+        conn.commit()
+
+    with pytest.raises(LearningPromotionConflict, match="Promotionreceipt ist ungültig"):
+        service.revoke(
+            "hermes", candidate["id"], target_kind="lessons",
+            expected_revision=candidate["candidate_revision"],
+            expected_digest=candidate["candidate_digest"],
+            source_request_id="confidence-schema-promote-01",
+            request_id="confidence-schema-revoke-01",
+            actor="device:7",
+        )
+    assert row_count(database, "memory_lessons", "is_active=1") == len(promoted["target_ids"])
 
 
 def test_hermes_revoke_accepts_unchanged_manually_inactive_lesson(database):
@@ -1156,4 +1243,27 @@ def test_skill_promotion_rejects_inconsistent_or_duplicate_frontmatter(database,
         )
 
     assert not (root / skill_name / "SKILL.md").exists()
+    assert row_count(database, "learning_promotions") == 0
+
+
+@pytest.mark.parametrize(
+    "confidence",
+    [10**400, -(10**400)],
+    ids=["huge-positive", "huge-negative"],
+)
+def test_hermes_lesson_promotion_rejects_oversized_confidence_before_write(
+    database, confidence
+):
+    _, candidate = hermes_reviewed(database, skill_name="oversized-lesson-confidence")
+    draft = dict(candidate["lessons_draft"][0])
+    draft["confidence"] = confidence
+    service = promotion_service(database)
+
+    with pytest.raises(
+        LearningPromotionUnavailable,
+        match="Lesson-Konfidenz ist ungültig",
+    ):
+        service._lesson_drafts({"lessons_draft_json": json.dumps([draft])})
+
+    assert row_count(database, "memory_lessons") == 0
     assert row_count(database, "learning_promotions") == 0

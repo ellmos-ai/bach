@@ -1,3 +1,31 @@
+現在のセッション契約 (2026-10-16)
+=======================
+
+レポートと終了処理は、同じ明示的なセッションとパートナーを指定します。
+--session=ID（別名 --session-id）には --partner=NAME（別名 --partner-id）が必要です。
+値を別引数で渡す形式にも対応します。IDを省略した場合、対象は一意である必要があります。
+複数のセッションが開いていれば拒否します。従来の指定なし呼び出しは一意の場合のみ対応します。
+存在しないID、終了済みID、別パートナーのIDは書き込み前に拒否します。
+
+bach mem session --session=ID --partner=codex -- "レポート"
+bach --shutdown --session=ID --partner=codex -- "概要"
+
+API: memory.session("レポート", session_id="ID", partner="codex")
+API: session.shutdown("概要", session_id="ID", partner="codex")
+MCP: session_shutdown(summary="概要", session_id="ID", partner="codex")
+-- 以降は文字列として扱います。API/MCPはこの区切りを自動で追加します。
+mem sessionはセッションを開いたままにします。quick/emergencyはメモだけを保存し、
+quickは一時停止です。completeはended_at、レポート、時間範囲内のタスク件数、
+継続コンテキストを対象セッションに一括保存します。後続セッションへ切り替えません。
+退出記録に失敗した場合も、確定済みの終了は成功とし、警告を追加します。
+ディレクトリ走査と自動スナップショットは維持します。
+全体の整理、圧縮、エクスポート、共有ログからの要約は終了時に自動実行しません。
+既存レポートは保持します。データ管理はBACHに属し、helperはローカル互換処理です。
+
+
+v1.1.71までの履歴資料（上記の契約が優先）
+------------------------
+
 # Portability: UNIVERSAL
 # Last validated: 2026-05-17
 # Next review: 2027-05-17

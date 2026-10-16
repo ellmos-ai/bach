@@ -16,8 +16,8 @@ from functools import lru_cache
 from pathlib import Path
 
 PROFILE = "bach-schema-sql-v1"
-SCHEMA_SHA256 = "c4b44d625fa3c8b6a37ff203875c3218498ba53842d97291a758765f2bb65ae6"
-CORE_DB_SHA256 = "579e07d8dabdbb373aa36c0e9f605f832f742328781f800f8de0601b1f7e993c"
+SCHEMA_SHA256 = "b6a14ebd11456462b5bd48981f18ba3729cafe0aa6cd8616dd2bd9cf84653715"
+CORE_DB_SHA256 = "358cabd0b58ce5b8146d06db0db446fcb98d664d0592fb695c14bf4ff90df483"
 # core/db.py baseline_migrations: provenance only, never freshness authority.
 MIGRATIONS_DDL = """CREATE TABLE IF NOT EXISTS _migrations (
     id INTEGER PRIMARY KEY,

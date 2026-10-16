@@ -74,10 +74,17 @@ bach update rollback
   从上次 pre_update_*.zip 恢复 bach.db。
 
 bach update migrations
-  列出可用和待处理的迁移及其计数。
+  列出可用和待处理的迁移及其数量。
 
 bach update migrations run
-  执行所有挂起的迁移，更新跟踪。
+  执行所有待处理迁移并更新跟踪记录。
+
+bach update migrations run --only <filename.sql> --only <filename.py> [--dry-run]
+  仅选择列表中的完整精确文件名。多个文件可重复使用 --only；路径、数字前缀、
+  未知文件和已应用文件会在更改前被拒绝。未选择的待处理迁移保持不变。
+  --dry-run 显示已选择和未选择的文件。不使用 --only 时仍执行所有待处理迁移。
+  复用时会比较数据库和 WAL 的完整指纹。只有数据库指纹未变时，缺失 WAL
+  才与空 WAL 等价；证明文件记录备份后实际验证的状态。
 
 
 文件

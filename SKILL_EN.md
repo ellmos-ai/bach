@@ -793,11 +793,14 @@ bach plugins unload name   # Unload plugin
 **Mode B (API -- recommended):**
 ```python
 from bach_api import session, memory
-memory.session("TOPIC: What was done. NEXT: What comes next.")
-session.shutdown("Summary", partner="claude")
+memory.session("TOPIC: What was done. NEXT: What comes next.", session_id="SESSION_ID", partner="claude")
+session.shutdown("Summary", partner="claude", session_id="SESSION_ID")
 # Or quick:
-session.shutdown_quick("Short note")
+session.shutdown_quick("Short note", partner="claude", session_id="SESSION_ID")
 ```
+
+`SESSION_ID` is your own ID from the startup report. With multiple open sessions,
+always pass both ID and partner; ambiguous selection is rejected.
 
 **Mode C (CLI):**
 ```bash

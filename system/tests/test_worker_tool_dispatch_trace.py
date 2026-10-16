@@ -110,6 +110,26 @@ def test_normal_dispatch_records_hash_only_and_ack_after_response_append(binding
     assert messages == [{"role": "tool", "content": secret_result}]
 
 
+def test_versioned_read_evidence_is_returned_as_text_and_traced_by_hash_only(binding):
+    evidence = json.dumps({
+        "schema": "ellmos.read-evidence.v1", "start_line": 4, "end_line": 4,
+        "lines": [{"line": 4, "char_offset": 2, "text": "bounded evidence", "line_complete": True}],
+        "eof": True, "truncated": False, "truncation_reason": None,
+        "next_cursor": None, "source_complete": False, "source_sha256": None,
+    }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    secret_path = "synthetic-private-source-path"
+    arguments = {"path": secret_path, "output_format": "ellmos.read-evidence.v1"}
+    outcome = execute_normal_tool(binding, "read_file", arguments, lambda *_: evidence)
+    assert outcome.status == "returned" and outcome.result == evidence
+    assert acknowledge_normal_tool_result(binding, outcome)
+    events = _events(binding)
+    assert [event["phase"] for event in events] == ["started", "returned", "acknowledged"]
+    assert events[1]["result_sha256"] == digest_text(evidence)
+    assert events[0]["arguments_sha256"] == digest_json(arguments)
+    serialized = json.dumps(events, ensure_ascii=False)
+    assert evidence not in serialized and secret_path not in serialized
+
+
 def test_start_failure_never_calls_dispatcher(binding, monkeypatch):
     calls = []
     monkeypatch.setattr(

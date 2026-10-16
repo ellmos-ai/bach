@@ -809,17 +809,145 @@ def test_openrouter_factory_keeps_hermes_compatibility_and_free_router_id(monkey
     assert captured[0]["json"]["model"] == "openrouter/free"
     assert captured[0]["headers"]["Authorization"] == "Bearer sk-or-test"
 
-    backend.list_models = lambda: ["openrouter/free", "vendor/free-model:free"]
+    from hub._services.llm import openrouter_catalog
+
+    def selected_catalog(*, model_id=None, **_kwargs):
+        allowed = model_id == "vendor/free-model:free"
+        return {
+            "models": [{"id": "openrouter/free", "free": True}],
+            "selection": {
+                "allowed": allowed,
+                "reason": None if allowed else "model_not_listed",
+            },
+        }
+
+    monkeypatch.setattr(openrouter_catalog, "get_openrouter_catalog", selected_catalog)
     asyncio.run(backend.chat(
         [{"role": "user", "content": "test"}], model="vendor/free-model:free"
     ))
     assert captured[1]["json"]["model"] == "vendor/free-model:free"
-    with pytest.raises(ValueError, match="nicht aktuell als kostenlos bestätigt"):
+    with pytest.raises(ValueError) as exc_info:
         asyncio.run(backend.chat(
             [{"role": "user", "content": "test"}], model="vendor/paid-model"
         ))
+    assert exc_info.value.code == "model_not_listed"
     assert len(captured) == 2
 
+
+
+def test_openrouter_catalog_retry_recovers_then_runs_exactly_one_inference(monkeypatch):
+    from hub._services.llm import openrouter_catalog
+
+    monkeypatch.setattr(openrouter_catalog, "_cached", None)
+    monkeypatch.setattr(openrouter_catalog, "_cached_at", 0.0)
+    monkeypatch.setattr(openrouter_catalog, "_cached_admission", {})
+    catalog_calls = []
+    responses = [
+        _FakeResponse({"error": "provider-secret"}, status_code=503),
+        _FakeResponse({"data": [{
+            "id": "vendor/model:free",
+            "name": "Confirmed Free",
+            "pricing": {"prompt": "0", "completion": "0"},
+        }]}),
+    ]
+
+    def fake_catalog_get(url, **kwargs):
+        catalog_calls.append((url, kwargs))
+        return responses.pop(0)
+
+    monkeypatch.setattr(openrouter_catalog.httpx, "get", fake_catalog_get)
+    inference_calls = []
+    inference_response = _FakeResponse({
+        "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+        "model": "vendor/model:free",
+    })
+    monkeypatch.setattr(
+        httpx, "AsyncClient",
+        lambda: _FakeClient(inference_response, inference_calls),
+    )
+
+    backend = OpenRouterBackend(api_key="fixture", default_model="vendor/model:free")
+    result = asyncio.run(backend.chat(
+        [{"role": "user", "content": "test"}], model="vendor/model:free"
+    ))
+
+    assert result["content"] == "ok"
+    assert len(catalog_calls) == 2
+    assert len(inference_calls) == 1
+    assert catalog_calls[0][1]["timeout"] == openrouter_catalog.CATALOG_REQUEST_TIMEOUT_SECONDS
+    assert catalog_calls[1][1]["timeout"] == openrouter_catalog.CATALOG_REQUEST_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize(
+    ("payload", "model_id", "expected_code"),
+    [
+        ({"data": [{"id": "vendor/model:free", "pricing": {"prompt": "0", "completion": "0.2"}}]},
+         "vendor/model:free", "model_price_nonzero"),
+        ({"data": [{"id": "vendor/model:free", "pricing": {"prompt": "0"}}]},
+         "vendor/model:free", "model_price_missing"),
+        ({"data": [{"id": "vendor/other:free", "pricing": {"prompt": "0", "completion": "0"}}]},
+         "vendor/model:free", "model_not_listed"),
+    ],
+)
+def test_openrouter_unconfirmed_or_nonfree_model_never_reaches_inference(
+    monkeypatch, payload, model_id, expected_code
+):
+    from hub._services.llm import openrouter_catalog
+
+    monkeypatch.setattr(openrouter_catalog, "_cached", None)
+    monkeypatch.setattr(openrouter_catalog, "_cached_at", 0.0)
+    monkeypatch.setattr(openrouter_catalog, "_cached_admission", {})
+    monkeypatch.setattr(
+        openrouter_catalog.httpx, "get", lambda *_args, **_kwargs: _FakeResponse(payload)
+    )
+    inference_calls = []
+    monkeypatch.setattr(
+        httpx, "AsyncClient",
+        lambda: _FakeClient(_FakeResponse({
+            "choices": [{"message": {"role": "assistant", "content": "must-not-run"}}],
+        }), inference_calls),
+    )
+
+    backend = OpenRouterBackend(api_key="fixture", default_model=model_id)
+    with pytest.raises(ValueError) as exc_info:
+        asyncio.run(backend.chat(
+            [{"role": "user", "content": "test"}], model=model_id
+        ))
+
+    assert exc_info.value.code == expected_code
+    assert inference_calls == []
+
+
+def test_openrouter_catalog_outage_after_retry_never_reaches_inference(monkeypatch):
+    from hub._services.llm import openrouter_catalog
+
+    monkeypatch.setattr(openrouter_catalog, "_cached", None)
+    monkeypatch.setattr(openrouter_catalog, "_cached_at", 0.0)
+    monkeypatch.setattr(openrouter_catalog, "_cached_admission", {})
+    catalog_calls = []
+
+    def fail_catalog(*_args, **_kwargs):
+        catalog_calls.append(1)
+        return _FakeResponse({"error": "provider-secret"}, status_code=503)
+
+    monkeypatch.setattr(openrouter_catalog.httpx, "get", fail_catalog)
+    inference_calls = []
+    monkeypatch.setattr(
+        httpx, "AsyncClient",
+        lambda: _FakeClient(_FakeResponse({
+            "choices": [{"message": {"role": "assistant", "content": "must-not-run"}}],
+        }), inference_calls),
+    )
+
+    backend = OpenRouterBackend(api_key="fixture", default_model="vendor/model:free")
+    with pytest.raises(ValueError) as exc_info:
+        asyncio.run(backend.chat(
+            [{"role": "user", "content": "test"}], model="vendor/model:free"
+        ))
+
+    assert exc_info.value.code == "catalog_http_transient"
+    assert len(catalog_calls) == openrouter_catalog.CATALOG_MAX_ATTEMPTS
+    assert inference_calls == []
 
 def test_hermes_xml_tool_call_fallback(monkeypatch):
     raw_xml_reply = (
@@ -974,3 +1102,86 @@ def test_hermes_fails_after_max_retries_on_429(monkeypatch):
     with pytest.raises(RuntimeError, match="Hermes/OpenRouter Fehler \\(429\\)"):
         asyncio.run(backend.chat([{"role": "user", "content": "hallo"}]))
 
+
+
+@pytest.mark.parametrize("exception_type,kind,error_type", [
+    (httpx.ConnectTimeout, "connect_timeout", "ConnectTimeout"),
+    (httpx.ReadTimeout, "read_timeout", "ReadTimeout"),
+    (httpx.WriteTimeout, "write_timeout", "WriteTimeout"),
+    (httpx.PoolTimeout, "pool_timeout", "PoolTimeout"),
+    (httpx.TimeoutException, "transport_timeout", "TimeoutException"),
+    (httpx.ConnectError, "connection_error", "ConnectError"),
+    (httpx.ReadError, "transport_error", "RequestError"),
+])
+@pytest.mark.parametrize("message", ["", "PRIVATE_EXCEPTION_TEXT"])
+def test_openrouter_transport_failure_is_typed_safe_and_retry_compatible(
+        monkeypatch, caplog, exception_type, kind, error_type, message):
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    request = httpx.Request("POST", "https://private.invalid/PRIVATE_URL")
+    calls, sleeps = [], []
+    class FailingClient(_FakeClient):
+        async def post(self, *args, **kwargs):
+            calls.append(kwargs)
+            raise exception_type(message, request=request)
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: FailingClient(None))
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    backend = OpenRouterBackend(api_key="PRIVATE_API_KEY", default_model="openrouter/free")
+    with pytest.raises(BackendRequestFailure) as caught:
+        asyncio.run(backend.chat([{"role": "user", "content": "synthetic"}]))
+    assert isinstance(caught.value, RuntimeError)
+    assert len(calls) == 4 and sleeps == [2.0, 4.0, 8.0]
+    assert all(call["timeout"] == 120 for call in calls)
+    assert all(call["json"]["model"] == "openrouter/free" for call in calls)
+    detail = caught.value.backend_error
+    assert detail["provider"] == "openrouter" and detail["kind"] == kind
+    assert detail["error_type"] == error_type and detail["quota_exceeded"] is False
+    assert "status_code" not in detail and "retry_after_seconds" not in detail
+    assert error_type in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__ is True
+    assert "PRIVATE" not in str(caught.value) + json.dumps(detail) + caplog.text
+
+
+@pytest.mark.parametrize("status", [301, 400, 401, 429, 500, 502, 503, 504, 529])
+def test_hermes_http_failure_never_reads_body_or_changes_retry_statuses(
+        monkeypatch, caplog, status):
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    class UnreadableBody(httpx.Response):
+        def json(self):
+            raise AssertionError("error body must not be parsed")
+        @property
+        def text(self):
+            raise AssertionError("error body must not be read")
+    response = UnreadableBody(status, request=httpx.Request(
+        "POST", "https://private.invalid/PRIVATE_URL"), content=b"PRIVATE_BODY",
+        headers={"Retry-After": "0.25", "private-header": "PRIVATE_HEADER"})
+    calls, sleeps = [], []
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _FakeClient(response, calls))
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    backend = HermesBackend(api_key="PRIVATE_API_KEY", default_model="openrouter/free")
+    with pytest.raises(BackendRequestFailure) as caught:
+        asyncio.run(backend.chat([{"role": "user", "content": "synthetic"}]))
+    retryable = status in (429, 502, 503, 529)
+    assert len(calls) == (4 if retryable else 1)
+    assert sleeps == ([0.25] * 3 if retryable else [])
+    detail = caught.value.backend_error
+    assert detail["kind"] == "http_error" and detail["error_type"] == "HTTPStatusError"
+    assert detail["status_code"] == status and detail["quota_exceeded"] is False
+    assert "quota_period" not in detail and "retry_after_seconds" not in detail
+    assert "PRIVATE" not in str(caught.value) + json.dumps(detail) + caplog.text
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__ is True
+
+
+@pytest.mark.parametrize("base_url,provider", [
+    ("https://openrouter.ai/api/v1", "openrouter"),
+    ("https://OPENROUTER.AI/api/v1", "openrouter"),
+    ("http://127.0.0.1:8000/v1", "hermes"),
+    ("https://openrouter.ai.private.invalid/v1", "hermes"),
+])
+def test_hermes_error_identity_does_not_relabel_other_endpoints(base_url, provider):
+    backend = HermesBackend(api_key="synthetic", base_url=base_url)
+    assert backend._error_provider() == provider
+    assert backend.base_url == base_url

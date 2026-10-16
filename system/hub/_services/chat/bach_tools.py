@@ -10,6 +10,9 @@ lazily import ``hub._services.*``. The module never sees any of that -- it asks
 """
 from __future__ import annotations
 
+import copy
+import importlib
+import inspect
 import io
 import json
 import logging
@@ -42,9 +45,331 @@ except ImportError:
 from hub import safe_exec
 from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError
 from hub._services.chat.worker_tool_errors import ToolErrorText
+from hub._services.chat.worker_lease_binding import (
+    WorkerLeaseBinding,
+    WorkerResultLimitLockedError,
+)
 from hub._services.limits import limit
+from hub._services.read_file_formatter import (
+    MAX_READ_FILE_LINES,
+    MAX_READ_FILE_OFFSET,
+    MAX_READ_FILE_OUTPUT_CHARS,
+    format_read_file_output,
+)
 
 log = logging.getLogger("bach.chat")
+
+_READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
+_READ_EVIDENCE_READ_ONLY_TOOLS = frozenset({"read_file", "search_text", "task_manage"})
+_READ_EVIDENCE_REASONS = frozenset({
+    "formatter_capability_unverified",
+    "reviewer_profile_required",
+    "versioned_format_required",
+    "unsupported_output_format",
+})
+
+
+def _read_evidence_readonly_worker_enabled(worker_task_binding, allowed_tools) -> bool:
+    """Require an active fenced binding and the exact current read-only tool profile."""
+    if not isinstance(worker_task_binding, WorkerLeaseBinding):
+        return False
+    if not isinstance(allowed_tools, (set, frozenset, tuple, list)):
+        return False
+    if len(allowed_tools) != len(_READ_EVIDENCE_READ_ONLY_TOOLS):
+        return False
+    try:
+        if any(type(tool) is not str for tool in allowed_tools):
+            return False
+        if frozenset(allowed_tools) != _READ_EVIDENCE_READ_ONLY_TOOLS:
+            return False
+        # The runtime supplies allowed_tools only after its live worker-profile
+        # reader has refreshed the session. The lease check binds this tool
+        # schema to the active fenced task dispatch; routing metadata is not a
+        # provider or model capability signal.
+        worker_task_binding.assert_active()
+        return True
+    except Exception:  # noqa: BLE001 - Invalid runtime authority fails closed.
+        return False
+
+def _read_evidence_formatter():
+    """Return only the installed formatter with the exact bounded v1 API."""
+    try:
+        module = importlib.import_module("ellmos_chat.read_evidence")
+        formatter = getattr(module, "format_read_evidence", None)
+        if (getattr(module, "READ_EVIDENCE_SCHEMA", None) != _READ_EVIDENCE_SCHEMA
+                or type(getattr(module, "MAX_LINES", None)) is not int
+                or module.MAX_LINES != MAX_READ_FILE_LINES
+                or type(getattr(module, "MAX_CHARS", None)) is not int
+                or module.MAX_CHARS != MAX_READ_FILE_OUTPUT_CHARS
+                or not callable(formatter)):
+            return None
+        parameters = inspect.signature(formatter).parameters
+        required = {
+            "text", "start_line", "source_eof", "start_char_offset",
+            "max_lines", "max_chars", "source_complete", "source_sha256",
+        }
+        if any(
+            name not in parameters
+            or parameters[name].kind not in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            )
+            for name in required
+        ):
+            return None
+        return formatter
+    except Exception:  # noqa: BLE001 - Missing or incompatible formatter stays unavailable.
+        return None
+
+
+def _read_evidence_unavailable(reason_code: str) -> str:
+    if reason_code not in _READ_EVIDENCE_REASONS:
+        reason_code = "formatter_capability_unverified"
+    return json.dumps({
+        "schema": "bach.read-evidence-capability.v1",
+        "requested_schema": _READ_EVIDENCE_SCHEMA,
+        "available": False,
+        "reason_code": reason_code,
+    }, ensure_ascii=False, separators=(",", ":"))
+
+
+def _versioned_read_file_tool(tool: dict, *, formatter_available: bool) -> dict:
+    """Build an isolated v1 schema for the exact fenced read-only worker profile."""
+    versioned = copy.deepcopy(tool)
+    description = (
+        "Datei im bereits freigegebenen Leseumfang als ellmos.read-evidence.v1 lesen. "
+        "output_format ist erforderlich; start_line und start_char_offset sind der "
+        "Cursor aus der letzten Antwort. Das Format erteilt keine zusätzliche Pfadfreigabe."
+    )
+    if not formatter_available:
+        description += " Der installierte v1-Formatter ist nicht bestätigt; Aufrufe melden unavailable."
+    versioned["function"]["description"] = description
+    versioned["function"]["parameters"] = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Dateipfad im bestehenden freigegebenen Leseumfang"},
+            "output_format": {
+                "type": "string",
+                "enum": [_READ_EVIDENCE_SCHEMA],
+                "description": "Erforderliches versioniertes Belegformat.",
+            },
+            "start_line": {
+                "type": "integer", "minimum": 1, "maximum": MAX_READ_FILE_OFFSET,
+                "description": "1-basierte physische Startzeile; Standard 1.",
+            },
+            "start_char_offset": {
+                "type": "integer", "minimum": 0, "maximum": MAX_READ_FILE_OFFSET,
+                "description": "Unicode-Zeichenoffset innerhalb der ersten Zeile; Standard 0.",
+            },
+            "max_lines": {
+                "type": "integer", "minimum": 1, "maximum": MAX_READ_FILE_LINES,
+                "description": "Höchstens so viele physische Zeilen; Standard 200.",
+            },
+            "max_chars": {
+                "type": "integer", "minimum": 1, "maximum": MAX_READ_FILE_OUTPUT_CHARS,
+                "description": "Höchstens so viele Zeileninhaltszeichen; Standard 4000.",
+            },
+        },
+        "required": ["path", "output_format"],
+        "additionalProperties": False,
+    }
+    return versioned
+
+
+def _read_evidence_request(args: dict):
+    allowed = {
+        "path", "output_format", "start_line", "start_char_offset", "max_lines", "max_chars",
+    }
+    if set(args) - allowed:
+        return None
+    path = args.get("path")
+    if type(path) is not str or not path:
+        return None
+    if args.get("output_format") != _READ_EVIDENCE_SCHEMA:
+        return None
+    start_line = args.get("start_line", 1)
+    char_offset = args.get("start_char_offset", 0)
+    max_lines = args.get("max_lines", MAX_READ_FILE_LINES)
+    max_chars = args.get("max_chars", MAX_READ_FILE_OUTPUT_CHARS)
+    if (type(start_line) is not int or not 1 <= start_line <= MAX_READ_FILE_OFFSET
+            or type(char_offset) is not int or not 0 <= char_offset <= MAX_READ_FILE_OFFSET
+            or type(max_lines) is not int or not 1 <= max_lines <= MAX_READ_FILE_LINES
+            or type(max_chars) is not int or not 1 <= max_chars <= MAX_READ_FILE_OUTPUT_CHARS):
+        return None
+    return path, start_line, char_offset, max_lines, max_chars
+
+
+class _ReadEvidenceCursorError(Exception):
+    """A requested character cursor is beyond the contents of its physical line."""
+
+
+def _read_evidence_skip_lines(stream, start_line: int) -> bool:
+    for _ in range(start_line - 1):
+        while True:
+            part = stream.readline(8192)
+            if not part:
+                return False
+            if part.endswith("\n"):
+                break
+    return True
+
+
+def _read_evidence_cursor_prefix(stream, char_offset: int) -> tuple[str, bool]:
+    """Skip a bounded cursor on one normalized line, returning at most one lookahead char."""
+    remaining = char_offset
+    while remaining:
+        size = min(8192, remaining + 1)
+        part = stream.readline(size)
+        if not part:
+            raise _ReadEvidenceCursorError
+        terminated = part.endswith("\n")
+        content_length = len(part) - (1 if terminated else 0)
+        if terminated:
+            if content_length < remaining:
+                raise _ReadEvidenceCursorError
+            return part[remaining:], False
+        if content_length > remaining:
+            return part[remaining:], False
+        if content_length < remaining:
+            if len(part) < size:
+                raise _ReadEvidenceCursorError
+            remaining -= content_length
+            continue
+        if len(part) < size:
+            return "", True
+        lookahead = stream.read(1)
+        if not lookahead:
+            return "", True
+        return lookahead, False
+    return "", False
+
+
+def _read_evidence_source_chunk(stream, *, start_line: int, char_offset: int,
+                                max_lines: int, max_chars: int) -> tuple[str, bool]:
+    if not _read_evidence_skip_lines(stream, start_line):
+        return "", True
+    prefix, eof_at_cursor = _read_evidence_cursor_prefix(stream, char_offset)
+    if eof_at_cursor:
+        return "", True
+    read_limit = max_chars + 2 * max_lines
+    remaining = read_limit + 1 - len(prefix)
+    tail = stream.read(remaining)
+    source = prefix + tail
+    if len(source) > read_limit:
+        return source[:read_limit], False
+    return source, True
+
+
+def _read_evidence_payload_valid(payload, rendered: str, *, start_line: int, char_offset: int,
+                                 max_lines: int, max_chars: int) -> bool:
+    """Accept only the bounded, canonical v1 payload for the requested cursor."""
+    keys = {
+        "schema", "start_line", "end_line", "lines", "eof", "truncated",
+        "truncation_reason", "next_cursor", "source_complete", "source_sha256",
+    }
+    if not isinstance(payload, dict) or set(payload) != keys:
+        return False
+    if payload.get("schema") != _READ_EVIDENCE_SCHEMA:
+        return False
+    if (type(payload.get("eof")) is not bool or type(payload.get("truncated")) is not bool
+            or payload["eof"] == payload["truncated"]):
+        return False
+    if payload.get("source_complete") is not False or payload.get("source_sha256") is not None:
+        return False
+    lines = payload.get("lines")
+    if not isinstance(lines, list) or len(lines) > max_lines:
+        return False
+    if sum(len(row.get("text", "")) for row in lines if isinstance(row, dict)
+           and type(row.get("text")) is str) > max_chars:
+        return False
+    row_keys = {"line", "char_offset", "text", "line_complete"}
+    for index, row in enumerate(lines):
+        if not isinstance(row, dict) or set(row) != row_keys:
+            return False
+        expected_line = start_line + index
+        expected_offset = char_offset if index == 0 else 0
+        if (type(row.get("line")) is not int or row["line"] != expected_line
+                or type(row.get("char_offset")) is not int or row["char_offset"] != expected_offset
+                or type(row.get("text")) is not str or type(row.get("line_complete")) is not bool):
+            return False
+    if lines:
+        if (type(payload.get("start_line")) is not int or payload["start_line"] != lines[0]["line"]
+                or type(payload.get("end_line")) is not int or payload["end_line"] != lines[-1]["line"]):
+            return False
+    elif payload.get("start_line") is not None or payload.get("end_line") is not None:
+        return False
+    cursor = payload.get("next_cursor")
+    if payload["truncated"]:
+        if payload.get("truncation_reason") not in {"max_lines", "max_chars", "source_chunk"}:
+            return False
+        if (not isinstance(cursor, dict) or set(cursor) != {"line", "char_offset"}
+                or type(cursor.get("line")) is not int or cursor["line"] < 1
+                or type(cursor.get("char_offset")) is not int or cursor["char_offset"] < 0):
+            return False
+        if lines:
+            last = lines[-1]
+            last_offset = last["char_offset"] + len(last["text"])
+            if cursor["line"] == last["line"]:
+                if cursor["char_offset"] < last_offset:
+                    return False
+            elif cursor["line"] != last["line"] + 1 or cursor["char_offset"] != 0:
+                return False
+        elif cursor["line"] < start_line or (cursor["line"] == start_line and cursor["char_offset"] < char_offset):
+            return False
+    elif payload.get("truncation_reason") is not None or cursor is not None:
+        return False
+    try:
+        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return False
+    return canonical == rendered
+
+
+def _format_read_evidence_within_budget(formatter, text: str, *, start_line: int,
+                                        char_offset: int, source_eof: bool,
+                                        max_lines: int, max_chars: int) -> str | None:
+    line_limit = max_lines
+    char_limit = max_chars
+    for _ in range(24):
+        try:
+            rendered = formatter(
+                text,
+                start_line=start_line,
+                source_eof=source_eof,
+                start_char_offset=char_offset,
+                max_lines=line_limit,
+                max_chars=char_limit,
+                source_complete=False,
+                source_sha256=None,
+            )
+        except Exception:  # noqa: BLE001 - Formatter failures are redacted and unavailable.
+            return None
+        if type(rendered) is not str:
+            return None
+        try:
+            payload = json.loads(rendered)
+        except (TypeError, ValueError):
+            return None
+        if not _read_evidence_payload_valid(
+            payload, rendered, start_line=start_line, char_offset=char_offset,
+            max_lines=line_limit, max_chars=char_limit,
+        ):
+            return None
+        if len(rendered) <= MAX_READ_FILE_OUTPUT_CHARS:
+            return rendered
+        factor = max(0.1, min(0.75, (MAX_READ_FILE_OUTPUT_CHARS / len(rendered)) * 0.75))
+        new_lines = max(1, int(line_limit * factor))
+        new_chars = max(1, int(char_limit * factor))
+        if new_lines == line_limit and new_chars == char_limit:
+            if char_limit > 1:
+                new_chars -= 1
+            elif line_limit > 1:
+                new_lines -= 1
+            else:
+                return None
+        line_limit, char_limit = new_lines, new_chars
+    return None
+
 
 
 try:
@@ -583,10 +908,11 @@ TOOLS_SAFE = [
         "path": {"type": "string", "description": "Verzeichnispfad"},
         "details": {"type": "boolean", "description": "Ausführlich mit Rechten und Größe"},
     }),
-    _tool("read_file", "Inhalt einer Datei lesen (max 200 Zeilen)", {
+    _tool("read_file", "Datei lesen (max. 200 physische Zeilen); Task-Reads zeigen standardmäßig 1-basierte Zeilennummern und Bereichs-/Abschneidungshinweise. Zeilenangaben sind Navigationshilfe, kein Wahrheitsbeleg; unnummerierte oder abgeschnittene Zitate sind nicht verifiziert. line_numbers=false erhält die rohe Legacy-Ausgabe.", {
         "path": {"type": "string", "description": "Dateipfad"},
-        "lines": {"type": "integer", "description": "Max Zeilen (Standard 50)"},
-        "offset": {"type": "integer", "description": "Startzeile (1-basiert, Standard 1)"},
+        "lines": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximale Zeilenzahl (Standard 50)"},
+        "offset": {"type": "integer", "minimum": 1, "maximum": 2147483647, "description": "Physische Startzeile (1-basiert, Standard 1)"},
+        "line_numbers": {"type": "boolean", "description": "Zeilennummern und Metadaten anzeigen; Standard an für Task-Reads, sonst aus."},
     }, ["path"]),
     _tool("search_text", "In Dateien nach einem Muster suchen (grep)", {
         "pattern": {"type": "string", "description": "Suchmuster (Regex)"},
@@ -932,6 +1258,25 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             return ("\n".join(lines) or "(leer)")[:4000]
 
         if name == "read_file":
+            if not isinstance(args, dict):
+                return "Fehler: Ungültige read_file-Parameter."
+            readonly_worker_profile = _read_evidence_readonly_worker_enabled(worker_task_binding, allowed_tools)
+            requested_format = args.get("output_format")
+            if readonly_worker_profile and requested_format is None:
+                return _read_evidence_unavailable("versioned_format_required")
+            formatter = None
+            evidence_request = None
+            if "output_format" in args:
+                if type(requested_format) is not str or requested_format != _READ_EVIDENCE_SCHEMA:
+                    return _read_evidence_unavailable("unsupported_output_format")
+                if not readonly_worker_profile:
+                    return _read_evidence_unavailable("reviewer_profile_required")
+                formatter = _read_evidence_formatter()
+                if formatter is None:
+                    return _read_evidence_unavailable("formatter_capability_unverified")
+                evidence_request = _read_evidence_request(args)
+                if evidence_request is None:
+                    return "Fehler: Ungültige read-evidence-Parameter."
             p = args.get("path", "")
             if not p:
                 return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ein Datei-Pfad ist erforderlich.")
@@ -952,14 +1297,76 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             lines = min(int(args.get("lines", 50)), 200)
             offset = max(1, int(args.get("offset") or args.get("start") or args.get("start_line") or 1))
             end_line = offset + lines - 1
+                    return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
+            if evidence_request is not None:
+                _, start_line, char_offset, max_lines, max_chars = evidence_request
+                try:
+                    if task_code_capability:
+                        with (
+                            read_guard.open_authorized_task_file(scope, resolved) as binary,
+                            io.TextIOWrapper(
+                                binary, encoding="utf-8", errors="replace", newline=None,
+                            ) as fh,
+                        ):
+                            text, source_eof = _read_evidence_source_chunk(
+                                fh, start_line=start_line, char_offset=char_offset,
+                                max_lines=max_lines, max_chars=max_chars,
+                            )
+                    else:
+                        with open(
+                            resolved, "r", encoding="utf-8", errors="replace", newline=None,
+                        ) as fh:
+                            text, source_eof = _read_evidence_source_chunk(
+                                fh, start_line=start_line, char_offset=char_offset,
+                                max_lines=max_lines, max_chars=max_chars,
+                            )
+                except _ReadEvidenceCursorError:
+                    return "Fehler: Der read-evidence-Cursor liegt außerhalb der Zeile."
+                except OSError:
+                    if task_code_capability:
+                        return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
+                    return "Fehler: Datei konnte nicht gelesen werden"
+                except Exception:  # noqa: BLE001 - Fehlerdetails bleiben aus dem Beleg-DTO heraus.
+                    return _read_evidence_unavailable("formatter_capability_unverified")
+                rendered = _format_read_evidence_within_budget(
+                    formatter, text, start_line=start_line, char_offset=char_offset,
+                    source_eof=source_eof, max_lines=max_lines, max_chars=max_chars,
+                )
+                return rendered if rendered is not None else _read_evidence_unavailable(
+                    "formatter_capability_unverified"
+                )
+            requested_lines = args.get("lines", 50)
+            if type(requested_lines) is not int or requested_lines < 1:
+                return "Fehler: lines muss eine positive Ganzzahl sein."
+            lines = min(requested_lines, MAX_READ_FILE_LINES)
+            if "offset" in args:
+                raw_offset = args["offset"]
+            elif "start" in args:
+                raw_offset = args["start"]
+            else:
+                raw_offset = args.get("start_line", 1)
+            if (type(raw_offset) is not int
+                    or not 1 <= raw_offset <= MAX_READ_FILE_OFFSET):
+                return "Fehler: offset muss eine gültige positive Ganzzahl sein."
+            if "line_numbers" in args:
+                line_numbers = args["line_numbers"]
+                if type(line_numbers) is not bool:
+                    return "Fehler: line_numbers muss boolesch sein."
+            else:
+                line_numbers = task_code_capability
+            end_line = raw_offset + lines - 1
+            picked = []
+            total_lines = 0
             try:
                 if task_code_capability:
                     with (
                         read_guard.open_authorized_task_file(scope, resolved) as binary,
                         io.TextIOWrapper(binary, encoding="utf-8", errors="replace") as fh,
                     ):
-                        picked = [line for i, line in enumerate(fh, start=1)
-                                  if offset <= i <= end_line]
+                        for line_number, line in enumerate(fh, start=1):
+                            total_lines = line_number
+                            if raw_offset <= line_number <= end_line:
+                                picked.append((line_number, line))
                 else:
                     with open(resolved, "r", encoding="utf-8", errors="replace") as fh:
                         picked = [line for i, line in enumerate(fh, start=1)
@@ -969,6 +1376,28 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             except Exception:  # noqa: BLE001 - Lesefehler bleiben ohne Inhaltsausgabe.
                 return _tool_effect_unconfirmed()
             return ("".join(picked) or "(keine Zeilen)")[:4000]
+                        for line_number, line in enumerate(fh, start=1):
+                            total_lines = line_number
+                            if raw_offset <= line_number <= end_line:
+                                picked.append((line_number, line))
+            except OSError as e:
+                if task_code_capability:
+                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
+                return f"Fehler: {e}"
+            except Exception:  # noqa: BLE001 - Task-Lesefehler bleiben fail-closed.
+                if task_code_capability:
+                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
+                return "Fehler: Datei konnte nicht gelesen werden"
+            if not line_numbers:
+                raw_text = "".join(line for _number, line in picked) or "(keine Zeilen)"
+                return raw_text[:MAX_READ_FILE_OUTPUT_CHARS]
+            return format_read_file_output(
+                picked,
+                offset=raw_offset,
+                requested_lines=requested_lines,
+                effective_lines=lines,
+                total_lines=total_lines,
+            )
 
         if name == "search_text":
             pat = args.get("pattern", "")
@@ -2084,8 +2513,19 @@ class BachToolProvider:
                 return []
         m = self._mode(mode)
         tools = tools_for_mode(m, bound_worker=self._worker_task_binding is not None)
-        return tools if self._allowed_tools is None else [
-            tool for tool in tools if tool["function"]["name"] in self._allowed_tools]
+        if self._allowed_tools is None:
+            return tools
+        filtered = [tool for tool in tools if tool["function"]["name"] in self._allowed_tools]
+        if _read_evidence_readonly_worker_enabled(self._worker_task_binding, self._allowed_tools):
+            formatter_available = _read_evidence_formatter() is not None
+            filtered = copy.deepcopy(filtered)
+            for index, tool in enumerate(filtered):
+                if tool["function"]["name"] == "read_file":
+                    filtered[index] = _versioned_read_file_tool(
+                        tool, formatter_available=formatter_available,
+                    )
+                    break
+        return filtered
 
     @staticmethod
     def _mode(mode):

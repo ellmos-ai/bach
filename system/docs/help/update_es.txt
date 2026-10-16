@@ -74,10 +74,20 @@ bach update rollback
   Restaura bach.db desde el último pre_update_*.zip.
 
 bach update migrations
-  Listas migraciones disponibles y pendientes con recuento.
+  Enumera las migraciones disponibles y pendientes con su cantidad.
 
 bach update migrations run
-  Ejecuta todas las migraciones pendientes, seguimiento de actualizaciones.
+  Ejecuta todas las migraciones pendientes y actualiza el registro.
+
+bach update migrations run --only <archivo.sql> --only <archivo.py> [--dry-run]
+  Selecciona nombres de archivo completos y exactos de la lista. Repite --only
+  para varios archivos; se rechazan las rutas, los prefijos numéricos, los
+  archivos desconocidos o ya aplicados antes de hacer cambios. Las migraciones
+  pendientes no seleccionadas permanecen intactas. --dry-run muestra ambos grupos.
+  Sin --only se conserva la ejecución de todas las migraciones pendientes.
+  La reutilización compara la huella completa de la base de datos y del WAL. Un WAL
+  ausente y uno vacío solo se consideran equivalentes si la huella de la base no cambia;
+  la prueba registra el estado verificado después de la copia de seguridad.
 
 
 FILES

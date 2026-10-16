@@ -74,10 +74,19 @@ bach update rollback
   Restores bach.db from last pre_update_*.zip.
 
 bach update migrations
-  Lists available and pending migrations with count.
+  Lists available and pending migrations with a count.
 
 bach update migrations run
-  Executes all pending migrations, updates tracking.
+  Runs all pending migrations and updates tracking.
+
+bach update migrations run --only <filename.sql> --only <filename.py> [--dry-run]
+  Selects exact full filenames from the list. Repeat --only for multiple files;
+  paths, numeric prefixes, unknown files, and already-applied files are rejected
+  before changes. Pending files not selected remain untouched. --dry-run shows
+  selected and untouched files. Without --only, the existing all-pending run remains.
+  Reuse compares the full database and WAL fingerprint. An absent and an empty WAL
+  are equivalent only when the database fingerprint is unchanged; the proof records
+  the state verified after the backup.
 
 
 FILES

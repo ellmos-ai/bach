@@ -15,6 +15,8 @@ from hub._services.task_lease_client import (
     LeaseReleaseAck, WorkerResultAck,
 )
 
+_EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
+
 
 class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
@@ -95,6 +97,25 @@ class WorkerLeaseBinding:
         return (not isinstance(pickup, dict) or not pickup.get("enabled")
                 or match_task_to_pickup_filter(snapshot, slot))
 
+    @staticmethod
+    def _matches_external_profile_route(snapshot, slot):
+        """Match the canonical owner alias and exact external profile/model route."""
+        backend = slot.get("backend")
+        slot_id = slot.get("id")
+        model = slot.get("model")
+        if (type(backend) is not str or backend not in _EXTERNAL_PROFILE_BACKENDS
+                or type(slot_id) is not str or not slot_id or slot_id.strip() != slot_id
+                or type(model) is not str or not model.strip()):
+            return False
+        return (
+            type(snapshot.get("assigned_to")) is str
+            and snapshot["assigned_to"].strip().casefold() == backend.casefold()
+            and type(snapshot.get("assigned_slot")) is str
+            and snapshot["assigned_slot"] == slot_id
+            and type(snapshot.get("required_model")) is str
+            and snapshot["required_model"] == model
+        )
+
     @classmethod
     def _automatic_matches_slot(cls, snapshot, slot):
         return cls._selection_rejection_reason(snapshot, slot) is None
@@ -118,8 +139,15 @@ class WorkerLeaseBinding:
         assigned_slot = str(snapshot.get("assigned_slot") or "").strip().casefold()
         slot_id = str(slot.get("id") or "").strip().casefold()
         own_explicit_route = bool(assigned_slot and slot_id and assigned_slot == slot_id)
+        # Provider names are not general worker roles. An external owner is
+        # accepted only when its exact configured profile route matches.
+        external_owner = assigned_to in _EXTERNAL_PROFILE_BACKENDS
+        external_profile_route = cls._matches_external_profile_route(snapshot, slot)
+        if external_owner and not external_profile_route:
+            return "ownership"
         if (assigned_to and assigned_to not in allowed
-                and not (assigned_to == "user" and own_explicit_route)):
+                and not (assigned_to == "user" and own_explicit_route)
+                and not external_profile_route):
             return "ownership"
         if not cls._matches_slot(snapshot, slot):
             from .slots_config import pickup_filter_rejection
@@ -533,12 +561,17 @@ class WorkerLeaseBinding:
                 raise LeaseProtocolError("Ungültige Task-Werkzeugargumente")
             action = args.get("action", "list")
             if action == "list":
-                page = self._client.task_candidates(limit=20)
-                return "\n".join(f"[{task['id']}] {task.get('priority', '')} "
-                                 f"{task.get('status', '')}: {task.get('title', '')}"
-                                 for task in page["tasks"]) or "Keine offenen Tasks."
+                if set(args) - {"action"}:
+                    raise LeaseProtocolError("Taskliste ist auf die gebundene Task begrenzt")
+                task = self.task_snapshot()
+                return (f"[{task['id']}] {task.get('priority', '')} "
+                        f"{task.get('status', '')}: {task.get('title', '')}")
             if action == "detail":
-                snapshot = self._client.task_snapshot(args.get("task_id"))
+                if (set(args) != {"action", "task_id"}
+                        or type(args.get("task_id")) is not int
+                        or args["task_id"] != self.task_id):
+                    raise LeaseProtocolError("Taskdetail ist auf die gebundene Task begrenzt")
+                snapshot = self.task_snapshot()
                 return "\n".join(f"{key}: {value}" for key, value in snapshot.items())
             if action != "add" and (type(args.get("task_id")) is not int
                                     or args["task_id"] != self.task_id):

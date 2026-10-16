@@ -166,3 +166,44 @@ def test_control_configuration_requires_actual_token_and_same_origin(monkeypatch
         assert payload["selection_policy"] == worker_selection_policy(_slot())
     else:
         assert "configuration" not in payload and "selection_policy" not in payload
+
+
+@pytest.mark.parametrize(("backend", "model", "owner"), [
+    ("openrouter", "openrouter/free", "OPENROUTER"),
+    ("ollama-cloud", "glm-5.3:cloud", "OLLAMA-CLOUD"),
+])
+def test_external_profile_owner_accepts_canonical_cli_alias(backend, model, owner):
+    slot = {"id": "worker-profile-1", "backend": backend, "model": model}
+    task = {"assigned_to": owner, "assigned_slot": slot["id"],
+            "required_model": model, "category": "GUI", "priority": "P3"}
+
+    assert WorkerLeaseBinding._selection_rejection_reason(task, slot) is None
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_slot": "another-profile"}, slot) == "slot_binding"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "required_model": "other-model"}, slot) == "model_binding"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_to": "other-agent"}, slot) == "ownership"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {key: value for key, value in task.items() if key != "assigned_slot"}, slot) == "ownership"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {key: value for key, value in task.items() if key != "required_model"}, slot) == "ownership"
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_to": owner.lower()}, slot) is None
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_to": f" {owner.lower()} "}, slot) is None
+
+
+def test_external_backend_alias_cannot_be_a_general_slot_role():
+    slot = {"id": "openrouter", "backend": "openrouter", "model": "openrouter/free"}
+    task = {"assigned_to": "OPENROUTER", "category": "WORKER", "priority": "P1"}
+    assert WorkerLeaseBinding._selection_rejection_reason(task, slot) == "ownership"
+
+
+def test_user_owned_task_still_requires_this_explicit_profile_route():
+    slot = {"id": "worker-profile-1", "backend": "openrouter", "model": "openrouter/free"}
+    task = {"assigned_to": "user", "assigned_slot": slot["id"],
+            "required_model": slot["model"], "category": "GUI"}
+    assert WorkerLeaseBinding._selection_rejection_reason(task, slot) is None
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        {**task, "assigned_slot": "another-profile"}, slot) == "slot_binding"

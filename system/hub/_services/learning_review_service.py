@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import datetime, timezone
 
@@ -67,6 +68,17 @@ def proposal_binding(provider, row):
     return payload, hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def confidence_projection(value, *, present=True):
+    """Project unmeasured and historical confidence without validating it."""
+    if not present:
+        return "unavailable"
+    if value is None:
+        return "not_measured"
+    if type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value):
+        return "legacy_heuristic_unvalidated"
+    return "unavailable"
+
+
 def ensure_review_schema(conn, provider):
     # Serialize the column snapshot and ALTER operations across service instances.
     if not conn.in_transaction:
@@ -104,7 +116,13 @@ def project_candidate(provider, row):
         )
     except (TypeError, ValueError):
         bound = False
+    confidence_status = confidence_projection(
+        item.get("confidence"), present="confidence" in item
+    )
+    if confidence_status == "unavailable":
+        item["confidence"] = None
     item.update(
+        confidence_status=confidence_status,
         review_state=item["status"] if bound else "legacy_unverified",
         review_available=bound and item["status"] == "pending",
         promotion_available=False,

@@ -820,8 +820,8 @@ def _handle_pipeline(sub_cmd, args):
     try:
         from hub.pipeline import _handle_pipeline as handle_pipeline_command
         full_args = [sub_cmd] + args if sub_cmd else args
-        handle_pipeline_command(full_args)
-        return 0
+        result = handle_pipeline_command(full_args)
+        return result if type(result) is int else 0
     except Exception as e:
         print(f"[ERROR] Pipeline: {e}")
         import traceback
@@ -1130,6 +1130,12 @@ def main():
     if cli_args and cli_args[0] in {"--version", "-V"}:
         print(f"BACH {_read_bach_version()}")
         return 0
+
+    # Ocean observations must not bootstrap BACH, pull transit state, tick
+    # activity or create log files, including when the optional provider is absent.
+    if (len(cli_args) >= 2 and cli_args[0] in {"pipeline", "--pipeline"}
+            and cli_args[1] in {"resources", "catalog", "host", "capacity", "shadow"}):
+        return _handle_pipeline(cli_args[1], cli_args[2:])
 
     # Never bootstrap missing worker restrictions as a side effect of a
     # normal chat/read/startup. Recovery requires this explicit operator call.

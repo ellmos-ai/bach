@@ -140,6 +140,51 @@ class TestFileToolsNoSubprocess:
         result = exec_tool("read_file", {"path": str(f), "offset": 2, "lines": 1}, "safe")
         assert result.strip() == "zeile2"
 
+    def test_legacy_read_file_line_numbers_false_stays_raw_text(self, tmp_path):
+        source = tmp_path / "legacy-read.txt"
+        source.write_text("alpha\nbeta\n", encoding="utf-8")
+        result = exec_tool(
+            "read_file", {"path": str(source), "lines": 1, "line_numbers": False}, "safe",
+        )
+        assert result == "alpha\n"
+        assert not result.startswith("{\"schema\":")
+
+    def test_explicit_read_evidence_without_bound_reviewer_fails_before_path_or_file_io(
+        self, tmp_path, monkeypatch,
+    ):
+        import builtins
+        import json
+
+        from hub._services.chat import bach_tools
+
+        opened = []
+        path_checks = []
+        def unexpected_open(*args, **kwargs):
+            opened.append(args)
+            raise AssertionError("unverified v1 request must not open a file")
+        def unexpected_path_check(*args, **kwargs):
+            path_checks.append(args)
+            raise AssertionError("unverified v1 request must not reach path resolution")
+        monkeypatch.setattr(builtins, "open", unexpected_open)
+        monkeypatch.setattr(bach_tools, "_fs_root_allowed", unexpected_path_check)
+        monkeypatch.setattr(
+            bach_tools, "_read_evidence_formatter",
+            lambda: pytest.fail("profile denial must happen before formatter discovery"),
+        )
+        result = exec_tool(
+            "read_file",
+            {"path": str(tmp_path / "does-not-open.txt"), "output_format": "ellmos.read-evidence.v1"},
+            "safe", allowed_tools={"read_file", "search_text", "task_manage"},
+        )
+        payload = json.loads(result)
+        assert payload == {
+            "schema": "bach.read-evidence-capability.v1",
+            "requested_schema": "ellmos.read-evidence.v1",
+            "available": False,
+            "reason_code": "reviewer_profile_required",
+        }
+        assert opened == [] and path_checks == []
+
     def test_search_text_uses_no_subprocess(self, tmp_path, monkeypatch):
         f = tmp_path / "c.txt"
         f.write_text("hallo welt\nzweite zeile\n", encoding="utf-8")
@@ -353,6 +398,20 @@ class _ReaderCapabilityBinding:
     task_id = 41
     def assert_active(self):
         return None
+
+
+def test_unverified_binding_with_exact_readonly_tools_keeps_legacy_schema():
+    from hub._services.chat import bach_tools
+
+    tools = bach_tools.BachToolProvider(
+        worker_task_binding=_ReaderCapabilityBinding(),
+        require_task_binding=True,
+        allowed_tools={"read_file", "search_text", "task_manage"},
+    ).get_tools("safe")
+    read_file = next(tool for tool in tools if tool["function"]["name"] == "read_file")
+    properties = read_file["function"]["parameters"]["properties"]
+    assert "line_numbers" in properties
+    assert "output_format" not in properties
 
 
 def test_model_argument_cannot_activate_task_code_reader(tmp_path):

@@ -154,6 +154,9 @@ pywin32>=311              # Windows COM interface (pdf_schwaerzer_pro)
 # ============================================================
 pytest>=9.0.2             # Test runner (system/tests/, BACH_Dev/tests/)
 
+# [PIPELINE COORDINATION] Read-only general Hybrid-C catalogue/host/shadow adapter.
+# Enable explicitly with BACH_PIPELINE_COORDINATION_ENABLED=1; no model or queue starts.
+open-ocean[resources] @ git+https://github.com/ellmos-ai/open-ocean.git@217f2ff48910202e88d869886771af136f24eef1
 # [GOVERNANCE] Canonical read-only provider; enable explicitly in host configuration.
 policy-registry @ git+https://github.com/ellmos-ai/policy-registry.git@2c4896b70cb39e2e24748b384d5d0cc7fcd15a16
 llmauto @ git+https://github.com/ellmos-ai/marblerun.git@e136ab3a632bcd663a510ef1c2ed666f6300b6bf
@@ -166,3 +169,8 @@ llmauto @ git+https://github.com/ellmos-ai/marblerun.git@e136ab3a632bcd663a510ef
 # package (Vahid Vaezian 1.0, 2018-08-10) that wins any `>=0.1.1` resolution
 # -- dependency confusion, T-20260913-920596893.
 # ============================================================
+
+# [POLARIS DECISION WRITER] Optional human-confirmed writer for the shared decisions chain.
+# Exact reviewed P2 merge; installation does not start a service or register a resource.
+# Host service configuration must select server role, exact agent@host and device bindings.
+decision-clicker @ git+https://github.com/ellmos-ai/decision-clicker.git@0ebff86aa34188b1bddb67d172c8daf45c3bc8a6

@@ -687,6 +687,19 @@ class _TaskProxy(_DBBackedProxy):
 class _MemoryProxy(_DBBackedProxy):
     """Strukturierter Zugriff auf Working-Memory mit Raw-Fallback."""
 
+    def session(self, summary: str, *, session_id: str | None = None,
+                partner: str | None = None) -> str:
+        """Save a report to the addressed open session without closing it."""
+        args = []
+        if session_id is not None:
+            args.append(f"--session={session_id}")
+        if partner is not None:
+            args.append(f"--partner={partner}")
+        success, message = self._execute("session", *args, "--", summary)
+        if not success:
+            raise BachAPIError(message)
+        return message
+
     def write(
         self,
         text: str,
@@ -826,43 +839,47 @@ class _SessionProxy:
         return message
 
     def shutdown(self, summary: str = None, partner: str = "claude",
-                 mode: str = "complete") -> str:
+                 mode: str = "complete", *, session_id: str | None = None) -> str:
         """Beendet eine BACH-Session.
 
         Fuehrt das Shutdown-Protokoll aus:
         - Directory-Scan (Aenderungen erkennen)
         - Session in DB speichern
         - Auto-Snapshot bei vielen Aenderungen
-        - Memory-Konsolidierung
-        - Partner aus-stempeln
+        - Bericht, Zeitfenster-Zaehler und Fortsetzung atomar speichern
+        - Partner aus-stempeln (Fehler als sekundaere Warnung)
+        Globale Konsolidierung und Exporte laufen getrennt von diesem Abschluss.
 
         Args:
-            summary: Session-Zusammenfassung (optional, Autolog-Fallback)
+            summary: Session-Zusammenfassung (optional; vorhandener Bericht bleibt)
             partner: Partner-ID
             mode: complete, quick, oder emergency
+            session_id: Explizite offene Session dieses Partners
 
         Returns:
             Shutdown-Report als String
         """
         a = get_app()
-        # Partner-Flag muss VOR dem Summary stehen, da der Handler
-        # args durchsucht und den Rest als Summary joined
+        # Der Separator schuetzt literal im Bericht enthaltene Scope-Flags.
         args = [f"--partner={partner}"]
+        if session_id is not None:
+            args.append(f"--session={session_id}")
         if summary:
-            # Summary als separates Argument (Handler joined mit " ")
-            args.extend(summary.split())
+            args.extend(["--", summary])
         success, message = a.execute("shutdown", mode, args)
+        if not success:
+            raise BachAPIError(message)
         return message
 
     def shutdown_quick(self, summary: str = None,
-                       partner: str = "claude") -> str:
+                       partner: str = "claude", *, session_id: str | None = None) -> str:
         """Schneller Shutdown ohne Directory-Scan."""
-        return self.shutdown(summary=summary, partner=partner, mode="quick")
+        return self.shutdown(summary=summary, partner=partner, mode="quick", session_id=session_id)
 
     def shutdown_emergency(self, note: str = None,
-                           partner: str = "claude") -> str:
+                           partner: str = "claude", *, session_id: str | None = None) -> str:
         """Notfall-Shutdown - nur Working Memory sichern."""
-        return self.shutdown(summary=note, partner=partner, mode="emergency")
+        return self.shutdown(summary=note, partner=partner, mode="emergency", session_id=session_id)
 
 
 class _ThemeProxy(_HandlerProxy):
@@ -895,6 +912,47 @@ class _ThemeProxy(_HandlerProxy):
 session = _SessionProxy()
 
 # Handler-Proxies (haeufigste)
+class _PipelineProxy(_HandlerProxy):
+    """Structured read-only Ocean projections without booting a BACH session/DB."""
+
+    def _execute(self, operation, *args):
+        from hub._services.ocean_pipeline_adapter import observe
+        return observe(operation, args)
+
+    def available_operations(self):
+        from hub._services.ocean_pipeline_adapter import OPERATIONS
+        return sorted(OPERATIONS)
+
+    def _observe(self, operation, *args):
+        success, report = self._execute(operation, *args)
+        if not success:
+            raise BachAPIError(report["reason"])
+        return report
+
+    def resources(self):
+        return self._observe("resources")
+
+    def catalog(self):
+        return self._observe("catalog")
+
+    def host(self):
+        return self._observe("host")
+
+    def capacity(self, *, reserve_ram_bytes, reserve_cpu_units, reserve_disk_bytes, directory, sample_seconds=0.25):
+        return self._observe("capacity", "--reserve-ram-bytes", str(reserve_ram_bytes),
+                             "--reserve-cpu-units", str(reserve_cpu_units),
+                             "--reserve-disk-bytes", str(reserve_disk_bytes),
+                             "--capacity-directory", str(directory), "--sample-seconds", str(sample_seconds))
+
+    def shadow(self, jobs, *, reserve_ram_bytes, reserve_disk_bytes, catalog=None):
+        args = ["--jobs", str(jobs), "--reserve-ram-bytes", str(reserve_ram_bytes),
+                "--reserve-disk-bytes", str(reserve_disk_bytes)]
+        if catalog is not None:
+            args.extend(["--catalog", str(catalog)])
+        return self._observe("shadow", *args)
+
+
+pipeline = _PipelineProxy("pipeline")
 task = _TaskProxy("task")
 memory = _MemoryProxy("memory")
 backup = _HandlerProxy("backup")
@@ -914,6 +972,7 @@ help = _HandlerProxy("help")
 update = _HandlerProxy("update")
 email = _HandlerProxy("email")
 theme = _ThemeProxy("theme")
+worker_policy = _HandlerProxy("worker-policy")
 
 # App-Instanz fuer direkten Zugriff
 app = get_app
@@ -1156,6 +1215,7 @@ __all__ = [
     "get_app",
     "session",
     "task",
+    "pipeline",
     "memory",
     "backup",
     "steuer",
@@ -1174,6 +1234,7 @@ __all__ = [
     "update",
     "email",
     "theme",
+    "worker_policy",
     "app",
     "db",
     "hooks",

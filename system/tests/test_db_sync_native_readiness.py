@@ -103,6 +103,12 @@ def test_real_source_schema0_ready_readonly(env, metadata):
         assert conn.execute("PRAGMA user_version").fetchone() == (0,)
 
 
+def test_core_source_pin_matches_checked_in_source(env):
+    core_source = SYSTEM / "core" / "db.py"
+    core_text = core_source.read_text(encoding="utf-8")
+    assert hashlib.sha256(core_text.encode("utf-8")).hexdigest() == env.r.CORE_DB_SHA256
+
+
 def test_constructor_explicit_no_home_no_mkdir(env):
     before = _tree(env.root)
     m = _manager(env)
@@ -194,6 +200,12 @@ def test_literal_sidecars_refused_no_recovery(env, suffix):
     before = _tree(env.root)
     assert not env.r.validate_native_db(target).ready
     assert _tree(env.root) == before
+
+
+def test_checked_in_schema_matches_declared_source_pin(env):
+    source = SYSTEM / "data/schema/schema.sql"
+    digest = hashlib.sha256(source.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    assert digest == env.r.SCHEMA_SHA256
 
 
 def test_hash_bound_source_refusal(env):

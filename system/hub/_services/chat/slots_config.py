@@ -757,7 +757,8 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
     if "memory_hook_opt_in" in updates:
         raise ValueError("memory_hook_opt_in darf nur über versioniertes Konfigurations-CAS geändert werden")
     if {"persistent_opt_in", "persistent_opt_in_id", "persistent_opt_in_profile_version",
-            PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD} & set(updates):
+            PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
+            PERSISTENT_CORE_RECOVERY_FIELD} & set(updates):
         raise ValueError("Dauerbetriebsfreigabe erfordert den Versions-CAS-Endpunkt")
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
@@ -777,13 +778,35 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
 
     if slot_id in slots:
         slot = slots[slot_id]
+        previous_profile_version = None
+        if slot_id == "buddha_always_on":
+            previous_profile_version = _persistent_core_profile_version(
+                _always_on_execution_slot_from_config(cfg)
+            )
         for k, v in updates.items():
             if k == "providers" and isinstance(v, dict):
                 slot.setdefault("providers", {}).update(v)
             else:
                 slot[k] = v
+        if slot_id == "buddha_always_on" and slot.get("persistent_opt_in") is True:
+            current_profile_version = _persistent_core_profile_version(
+                _always_on_execution_slot_from_config(cfg)
+            )
+            if current_profile_version != previous_profile_version:
+                # Any edit to consent-bound execution inputs revokes the prior
+                # approval, even if a later edit restores the same values.
+                slot["persistent_opt_in"] = False
+                slot.pop("persistent_opt_in_id", None)
+                slot.pop("persistent_opt_in_profile_version", None)
+                slot.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+                slot[PERSISTENT_CORE_RECOVERY_FIELD] = _persistent_core_revocation_state(
+                    previous_profile_version
+                )
+        public_slot = {key: value for key, value in slot.items()
+                       if key not in {PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
+                                      PERSISTENT_CORE_RECOVERY_FIELD}}
         save_slots_config(cfg, path)
-        return slot
+        return public_slot
 
     # Check if it's a dynamic worker
     if matches:
@@ -886,8 +909,16 @@ def _core_configuration_version(config: dict[str, Any]) -> str:
     progress = frozenset({"current_activity", "current_tool", "tool_round"})
     content = {key: value for key, value in config.items()
                if key not in {"updated_at", "activity_history"}}
+    private_controller_fields = {
+        PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
+        PERSISTENT_CORE_RECOVERY_FIELD,
+    }
     content["slots"] = {
-        key: {field: value for field, value in slot.items() if field not in progress}
+        key: {
+            field: value for field, value in slot.items()
+            if field not in progress
+            and not (key == "buddha_always_on" and field in private_controller_fields)
+        }
         for key, slot in config["slots"].items()
     }
     workers = config.get("dynamic_workers")
@@ -1166,6 +1197,11 @@ def change_core_system_agent(
         raise RuntimeError("configuration_version_conflict")
     config = json.loads(raw.decode("utf-8"))
     slot = config["slots"][slot_id]
+    previous_persistent_profile_version = None
+    if slot_id == "buddha_always_on":
+        previous_persistent_profile_version = _persistent_core_profile_version(
+            _always_on_execution_slot_from_config(config)
+        )
     if reset:
         if changes:
             raise ValueError("Reset akzeptiert keine gleichzeitigen Änderungen")
@@ -1182,6 +1218,18 @@ def change_core_system_agent(
             raise RuntimeError("model_socket_registry_unavailable")
     slot.update(updates)
     _validated_model_fallback_profile(slot)
+    if slot_id == "buddha_always_on" and slot.get("persistent_opt_in") is True:
+        current_profile_version = _persistent_core_profile_version(
+            _always_on_execution_slot_from_config(config)
+        )
+        if current_profile_version != previous_persistent_profile_version:
+            slot["persistent_opt_in"] = False
+            slot.pop("persistent_opt_in_id", None)
+            slot.pop("persistent_opt_in_profile_version", None)
+            slot.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+            slot[PERSISTENT_CORE_RECOVERY_FIELD] = _persistent_core_revocation_state(
+                previous_persistent_profile_version
+            )
     if model_fields_changed and "model_sockets" in config:
         from . import model_sockets
         model_sockets._reconcile_profile_bindings(config, slot_id)
@@ -1277,6 +1325,7 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
 
 def system_worker_at_version(slot_id: str, expected_version: str,
                              *, version_scope: str = "core",
+                             persistent_intent_id: str | None = None,
                              path: str | None = None) -> dict[str, Any]:
     """Read a worker using the requested native version scope.
 
@@ -1301,7 +1350,20 @@ def system_worker_at_version(slot_id: str, expected_version: str,
                            else _worker_configuration(worker)["configuration_version"])
         if expected_version != current_version:
             raise RuntimeError("configuration_version_conflict")
+        if persistent_intent_id is not None and (
+                worker.get("persistent_opt_in") is not True
+                or worker.get("persistent_opt_in_id") != persistent_intent_id):
+            raise RuntimeError("persistent_intent_conflict")
         return dict(worker)
+    if version_scope == "worker_profile" and slot_id == "buddha_always_on":
+        worker = _always_on_execution_slot_from_config(config)
+        if (worker.get("persistent_opt_in") is not True
+                or not isinstance(persistent_intent_id, str)
+                or worker.get("persistent_opt_in_id") != persistent_intent_id):
+            raise RuntimeError("persistent_intent_conflict")
+        if expected_version != _persistent_core_profile_version(worker):
+            raise RuntimeError("configuration_version_conflict")
+        return worker
     if version_scope != "core":
         raise ValueError("Worker-Profilversion gilt nur für dynamische Worker")
     if expected_version != snapshot["configuration_version"]:
@@ -1826,6 +1888,43 @@ def _worker_profile_version(worker: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _persistent_core_profile_version(worker: dict[str, Any]) -> str:
+    """Bind Always-On consent to its profile, excluding controller task state."""
+    if worker.get("id") != "buddha_always_on":
+        raise ValueError("Always-On-Profil ist nicht eindeutig")
+    return _worker_profile_version({**worker, "task_id": None})
+
+
+def _persistent_core_revocation_state(profile_version: str) -> dict[str, Any]:
+    if not isinstance(profile_version, str) or re.fullmatch(r"[0-9a-f]{64}", profile_version) is None:
+        raise ValueError("Ungültige Consent-Profilbindung")
+    return {
+        "schema": _PERSISTENT_CORE_RECOVERY_SCHEMA,
+        "phase": "revoked",
+        "worker_id": "buddha_always_on",
+        "profile_version": profile_version,
+        "revocation_id": uuid.uuid4().hex,
+        "revoked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _is_supported_persistent_local_core_worker(worker: dict[str, Any]) -> bool:
+    backend = worker.get("backend")
+    model = worker.get("model")
+    if (backend != "ollama" or not isinstance(model, str)
+            or not model.strip() or "\x00" in model or len(model) > 192
+            or _MODEL_FALLBACK.fullmatch(model) is None or model.lower().endswith(":cloud")):
+        return False
+    try:
+        # Persistent core recovery must keep the explicitly selected primary
+        # model; it must never walk an automatic smaller-model fallback.
+        if _validated_model_fallback_profile(worker):
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 def _is_supported_persistent_cloud_worker(worker: dict[str, Any]) -> bool:
     backend = worker.get("backend")
     model = worker.get("model")
@@ -1863,7 +1962,11 @@ def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
 
 
 def worker_configuration_snapshot(worker_id: str, *, path: str | None = None) -> dict[str, Any]:
-    worker = get_worker_slot(worker_id, path=path)
+    if worker_id == "buddha_always_on":
+        config = load_slots_config(path, strict=True)
+        worker = _always_on_execution_slot_from_config(config)
+    else:
+        worker = get_worker_slot(worker_id, path=path)
     if not worker:
         raise KeyError("Workerprofil nicht gefunden")
     return _worker_configuration(worker)
@@ -1871,6 +1974,8 @@ def worker_configuration_snapshot(worker_id: str, *, path: str | None = None) ->
 
 PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD = "_persistent_execution_checkpoint"
 _PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_SCHEMA = "bach.persistent-worker-controller.v2"
+PERSISTENT_CORE_RECOVERY_FIELD = "_persistent_core_recovery"
+_PERSISTENT_CORE_RECOVERY_SCHEMA = "bach.persistent-core-recovery.v1"
 
 
 def _valid_persistent_worker_controller_checkpoint(value: Any) -> bool:
@@ -1898,6 +2003,613 @@ def _valid_persistent_worker_controller_checkpoint(value: Any) -> bool:
         if not isinstance(value.get(field), str) or re.fullmatch(pattern, value[field]) is None:
             return False
     return value["lease_worker_id"].startswith(value["physical_worker_id"] + "@")
+
+
+def _persistent_checkpoint_sha256(checkpoint: dict[str, Any]) -> str:
+    encoded = json.dumps(checkpoint, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _persistent_core_capacity_observation(
+    receipt: Any, *, worker: dict[str, Any], expected_state: str,
+) -> dict[str, str] | None:
+    """Validate a fresh local-reserve probe receipt under the current policy."""
+    fields = {
+        "schema", "state", "admitted", "enforced", "retryable", "checked_at",
+        "policy_version", "model", "wait_seconds", "poll_seconds",
+        "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
+        "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
+        "resident_weight_credit",
+    }
+    if not isinstance(receipt, dict) or set(receipt) != fields:
+        return None
+    if (receipt.get("schema") != "bach.local-resource-reserve.v1"
+            or receipt.get("state") != expected_state
+            or type(receipt.get("admitted")) is not bool
+            or type(receipt.get("enforced")) is not bool
+            or type(receipt.get("retryable")) is not bool
+            or receipt.get("admitted") is not (expected_state == "ready")
+            or receipt.get("enforced") is not True
+            or receipt.get("retryable") is not (expected_state != "ready")
+            or receipt.get("model") != worker.get("model")
+            or worker.get("backend") != "ollama"
+            or not isinstance(receipt.get("policy_version"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", receipt["policy_version"]) is None):
+        return None
+    checked_raw = receipt.get("checked_at")
+    if not isinstance(checked_raw, str) or not re.search(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$", checked_raw):
+        return None
+    try:
+        checked_at = datetime.fromisoformat(
+            checked_raw[:-1] + "+00:00" if checked_raw.endswith("Z") else checked_raw
+        )
+    except ValueError:
+        return None
+    if checked_at.tzinfo is None or checked_at.utcoffset() is None:
+        return None
+    age = datetime.now(timezone.utc) - checked_at.astimezone(timezone.utc)
+    if age.total_seconds() < 0 or age.total_seconds() > 120:
+        return None
+    integer_limits = {
+        "wait_seconds": (1, 3600),
+        "poll_seconds": (1, 60),
+        "memory_total_bytes": (1, 4096 * 1024**3),
+        "memory_available_bytes": (0, 4096 * 1024**3),
+        "memory_required_bytes": (1, 1024 * 1024**3),
+        "disk_reserve_bytes": (1, 256 * 1024**3),
+        "weight_request_bytes": (0, 1024 * 1024**3),
+    }
+    for name, (low, high) in integer_limits.items():
+        value = receipt.get(name)
+        if type(value) is not int or not low <= value <= high:
+            return None
+    if type(receipt.get("resident_weight_credit")) is not bool:
+        return None
+    disk = receipt.get("disk_free_bytes")
+    if (not isinstance(disk, dict) or set(disk) != {"taskdb", "runtime", "slots"}
+            or any(type(value) is not int or value < 0 for value in disk.values())):
+        return None
+    try:
+        from hub._services.chat import local_resource_reserve
+        policy, policy_version = local_resource_reserve.read_policy()
+    except Exception:  # noqa: BLE001 -- unreadable capacity policy cannot authorize recovery
+        return None
+    if (not isinstance(policy, dict) or policy.get("enabled") is not True
+            or policy_version != receipt.get("policy_version")
+            or policy.get("disk_reserve_bytes") != receipt.get("disk_reserve_bytes")):
+        return None
+    budget = policy.get("models", {}).get(receipt["model"])
+    if not isinstance(budget, dict):
+        return None
+    expected_weight = 0 if receipt["resident_weight_credit"] else budget["weight_budget_bytes"]
+    required = (policy["memory_reserve_bytes"] + expected_weight
+                + budget["kv_headroom_bytes"] + budget["overhead_bytes"])
+    if (receipt["weight_request_bytes"] != expected_weight
+            or receipt["memory_required_bytes"] != required
+            or receipt["memory_available_bytes"] > receipt["memory_total_bytes"]
+            or required > receipt["memory_total_bytes"]):
+        return None
+    disk_blocked = any(value < policy["disk_reserve_bytes"] for value in disk.values())
+    memory_blocked = receipt["memory_available_bytes"] < required
+    derived_state = ("waiting_disk_reserve" if disk_blocked
+                     else "waiting_memory_reserve" if memory_blocked else "ready")
+    if derived_state != expected_state:
+        return None
+    projection = {
+        "schema": "bach.persistent-core-capacity-observation.v1",
+        "state": derived_state,
+        "model": receipt["model"],
+        "policy_version": policy_version,
+        "memory_total_bytes": receipt["memory_total_bytes"],
+        "memory_available_bytes": receipt["memory_available_bytes"],
+        "memory_required_bytes": required,
+        "disk_free_bytes": {key: disk[key] for key in sorted(disk)},
+        "disk_reserve_bytes": policy["disk_reserve_bytes"],
+        "weight_request_bytes": expected_weight,
+        "resident_weight_credit": receipt["resident_weight_credit"],
+    }
+    encoded = json.dumps(projection, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+    return {
+        "state": derived_state,
+        "policy_version": policy_version,
+        "fingerprint": hashlib.sha256(encoded).hexdigest(),
+    }
+
+
+def _valid_persistent_core_recovery_state(
+    value: Any, *, worker: dict[str, Any], checkpoint: dict[str, Any] | None,
+) -> bool:
+    if not isinstance(value, dict) or value.get("schema") != _PERSISTENT_CORE_RECOVERY_SCHEMA:
+        return False
+    phase = value.get("phase")
+    if phase == "revoked":
+        if set(value) != {"schema", "phase", "worker_id", "profile_version", "revocation_id", "revoked_at"}:
+            return False
+        revoked_at = _parse_timestamp(value.get("revoked_at"))
+        return (
+            value.get("worker_id") == "buddha_always_on" == worker.get("id")
+            and worker.get("persistent_opt_in") is not True
+            and checkpoint is None
+            and isinstance(value.get("profile_version"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", value["profile_version"]) is not None
+            and isinstance(value.get("revocation_id"), str)
+            and re.fullmatch(r"[0-9a-f]{32}", value["revocation_id"]) is not None
+            and revoked_at is not None
+        )
+    capacity_fields = {"capacity_state", "capacity_policy_version", "capacity_fingerprint"}
+    common = {
+        "schema", "phase", "worker_id", "intent_id", "profile_version",
+        "retry_count", "waited_seconds",
+    } | capacity_fields
+    phase_fields = {
+        "ready": set(),
+        "admission_pending": {"checkpoint_sha256"},
+        "active": {"checkpoint_sha256"},
+        "reserve_wait": {
+            "checkpoint_sha256", "retry_after", "retry_seconds", "reason_code",
+            "tool_dispatch_count", "lease_returned", "assignment_finished",
+        },
+        "capacity_wait": {
+            "checkpoint_sha256", "reason_code", "tool_dispatch_count", "lease_returned",
+            "assignment_finished",
+        },
+    }
+    if phase not in phase_fields or set(value) != common | phase_fields[phase]:
+        return False
+    if (value.get("worker_id") != "buddha_always_on"
+            or value.get("worker_id") != worker.get("id")
+            or value.get("intent_id") != worker.get("persistent_opt_in_id")
+            or value.get("profile_version") != _persistent_core_profile_version(worker)
+            or worker.get("persistent_opt_in") is not True
+            or worker.get("persistent_opt_in_profile_version") != value.get("profile_version")
+            or type(value.get("retry_count")) is not int
+            or not 0 <= value["retry_count"] <= 3
+            or type(value.get("waited_seconds")) is not int
+            or not 0 <= value["waited_seconds"] <= 900):
+        return False
+    if phase in {"ready", "admission_pending", "active", "reserve_wait", "capacity_wait"}:
+        cap_state = value.get("capacity_state")
+        cap_policy = value.get("capacity_policy_version")
+        cap_fingerprint = value.get("capacity_fingerprint")
+        all_missing = cap_state is None and cap_policy is None and cap_fingerprint is None
+        all_bound = (
+            cap_state in {"waiting_memory_reserve", "waiting_disk_reserve"}
+            and isinstance(cap_policy, str)
+            and re.fullmatch(r"[0-9a-f]{64}", cap_policy) is not None
+            and isinstance(cap_fingerprint, str)
+            and re.fullmatch(r"[0-9a-f]{64}", cap_fingerprint) is not None
+        )
+        if not (all_missing or all_bound):
+            return False
+        if phase in {"reserve_wait", "capacity_wait"} and not all_bound:
+            return False
+    if phase == "ready":
+        return checkpoint is None
+    if (not _valid_persistent_worker_controller_checkpoint(checkpoint)
+            or checkpoint.get("worker_id") != value["worker_id"]
+            or checkpoint.get("intent_id") != value["intent_id"]
+            or checkpoint.get("profile_version") != value["profile_version"]
+            or value.get("checkpoint_sha256") != _persistent_checkpoint_sha256(checkpoint)):
+        return False
+    expected_phase = "admission_pending" if phase == "admission_pending" else "admitted"
+    if checkpoint.get("phase") != expected_phase:
+        return False
+    if phase == "reserve_wait":
+        retry_after = _parse_timestamp(value.get("retry_after"))
+        expected_delay = min(60 * (2 ** (value["retry_count"] - 1)), 900)
+        if (retry_after is None
+                or value.get("reason_code") not in {
+                    "local_reserve_reserve_wait_expired",
+                    "local_reserve_reserve_wait_lease_return_required",
+                }
+                or type(value.get("retry_seconds")) is not int
+                or value["retry_seconds"] != expected_delay
+                or type(value.get("tool_dispatch_count")) is not int
+                or value["tool_dispatch_count"] != 0
+                or value.get("lease_returned") is not True
+                or value.get("assignment_finished") is not True
+                or value["retry_count"] < 1
+                or value["waited_seconds"] < value["retry_seconds"]):
+            return False
+    return (
+        phase != "capacity_wait"
+        or (value.get("reason_code") == "local_reserve_retry_budget_exhausted"
+            and (value["retry_count"] >= 3 or value["waited_seconds"] >= 900)
+            and type(value.get("tool_dispatch_count")) is int
+            and value["tool_dispatch_count"] == 0
+            and value.get("lease_returned") is True
+            and value.get("assignment_finished") is True)
+    )
+
+
+def persistent_core_startup_snapshot(path: str | None = None) -> dict[str, Any]:
+    """Read explicit Always-On intent and private controller state from one image."""
+    with _config_lock:
+        raw = _resolve_path(path).read_bytes()
+    snapshot = _core_snapshot_from_bytes(raw)
+    config = json.loads(raw.decode("utf-8"))
+    worker = _always_on_execution_slot_from_config(config)
+    if any(isinstance(item, dict) and item.get("id") == worker["id"]
+           for item in config.get("dynamic_workers", [])):
+        raise ValueError("Always-On-ID ist mit einem dynamischen Worker doppelt")
+    intent_id = worker.get("persistent_opt_in_id")
+    profile_version = _persistent_core_profile_version(worker)
+    checkpoint = worker.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+    recovery = worker.get(PERSISTENT_CORE_RECOVERY_FIELD)
+    managed = worker.get("persistent_opt_in") is True or recovery is not None
+    base = {
+        "worker_id": worker["id"],
+        "configuration_version": snapshot["configuration_version"],
+        "profile_version": profile_version,
+        "intent_id": intent_id if isinstance(intent_id, str) else None,
+        "slot": worker,
+        "status": worker.get("status"),
+        "managed": managed,
+    }
+    if recovery is not None and isinstance(recovery, dict) and recovery.get("phase") == "revoked":
+        if _valid_persistent_core_recovery_state(recovery, worker=worker, checkpoint=checkpoint):
+            return {**base, "state": "disabled", "reason": "explicitly_revoked",
+                    "retry_count": 0, "waited_seconds": 0, "recovery_state": recovery,
+                    "checkpoint": None}
+        return {**base, "state": "blocked", "reason": "invalid_controller_state",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": checkpoint}
+    if worker.get("persistent_opt_in") is not True:
+        if recovery is not None:
+            return {**base, "state": "blocked", "reason": "invalid_controller_state",
+                    "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                    "checkpoint": checkpoint}
+        return {**base, "state": "disabled", "reason": "not_opted_in",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": None}
+    if (not isinstance(intent_id, str) or re.fullmatch(r"[0-9a-f]{32}", intent_id) is None
+            or worker.get("persistent_opt_in_profile_version") != profile_version):
+        return {**base, "state": "blocked", "reason": "profile_changed",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": checkpoint}
+    if worker.get("enabled") is not True:
+        return {**base, "state": "blocked", "reason": "disabled",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": checkpoint}
+    if not _is_supported_persistent_local_core_worker(worker):
+        return {**base, "state": "blocked", "reason": "unsupported_provider",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": checkpoint}
+    expiry = _parse_timestamp(worker.get("expires_at"))
+    if worker.get("expires_at") and (expiry is None or expiry <= datetime.now(timezone.utc)):
+        return {**base, "state": "blocked", "reason": "expired",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": checkpoint}
+    if checkpoint is None and recovery is None:
+        if worker.get("status") == "idle":
+            return {**base, "state": "ready", "reason": "explicit_opt_in",
+                    "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                    "checkpoint": None}
+        if worker.get("status") == "paused" and worker.get("auto_paused") is True:
+            pause = get_slot_pause_info(worker)
+            if pause.get("is_paused") is True:
+                return {**base, "state": "waiting_cooldown", "reason": "automatic_pause",
+                        "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                        "checkpoint": None}
+        return {**base, "state": "blocked", "reason": "profile_not_idle",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": None}
+    if not _valid_persistent_core_recovery_state(recovery, worker=worker, checkpoint=checkpoint):
+        return {**base, "state": "blocked", "reason": "invalid_controller_state",
+                "retry_count": 0, "waited_seconds": 0, "recovery_state": None,
+                "checkpoint": checkpoint}
+    phase = recovery["phase"]
+    status = worker.get("status")
+    retry_count = recovery["retry_count"]
+    waited_seconds = recovery["waited_seconds"]
+    if phase == "admission_pending":
+        state, reason = "blocked", "admission_unconfirmed"
+    elif phase == "ready":
+        if checkpoint is not None or status != "idle":
+            state, reason = "blocked", "profile_not_idle"
+        else:
+            state, reason = "ready", "explicit_opt_in"
+    elif phase == "active":
+        if status not in {"idle", "running", "error"} and not (
+                status == "paused" and worker.get("auto_paused") is True):
+            state, reason = "blocked", "profile_not_recoverable"
+        else:
+            state, reason = "prior_generation_unsettled", "native_reconciliation_required"
+    elif phase == "capacity_wait":
+        state, reason = "waiting_capacity", "validated_local_capacity_required"
+    else:
+        if status not in {"error", "running", "idle"}:
+            state, reason = "blocked", "reserve_wait_state_mismatch"
+        elif _parse_timestamp(recovery["retry_after"]) > datetime.now(timezone.utc):
+            state, reason = "waiting_reserve", "bounded_reserve_backoff"
+        else:
+            state, reason = "prior_generation_unsettled", "native_reconciliation_required"
+    return {**base, "state": state, "reason": reason,
+            "retry_count": retry_count, "waited_seconds": waited_seconds,
+            "recovery_state": recovery, "checkpoint": checkpoint}
+
+
+@_serialized_mutation
+def update_persistent_core_controller_state(
+    expected_profile_version: str, expected_intent_id: str,
+    expected_checkpoint: dict[str, Any] | None, checkpoint: dict[str, Any] | None,
+    expected_recovery_state: dict[str, Any] | None, recovery_state: dict[str, Any] | None,
+    *, reconciliation_proof: dict[str, Any] | None = None,
+    admission_rejection: dict[str, Any] | None = None,
+    progress_proof: dict[str, Any] | None = None,
+    capacity_observation: dict[str, Any] | None = None,
+    capacity_proof: dict[str, Any] | None = None,
+    path: str | None = None,
+) -> dict[str, Any]:
+    """CAS-update only the opted-in Core controller lifecycle; never starts work."""
+    config = load_slots_config(path, strict=True)
+    worker = _always_on_execution_slot_from_config(config)
+    if any(isinstance(item, dict) and item.get("id") == worker["id"]
+           for item in config.get("dynamic_workers", [])):
+        raise RuntimeError("persistent_core_ambiguous")
+    current_profile = _persistent_core_profile_version(worker)
+    if (current_profile != expected_profile_version
+            or worker.get("persistent_opt_in") is not True
+            or worker.get("persistent_opt_in_id") != expected_intent_id
+            or worker.get("persistent_opt_in_profile_version") != expected_profile_version):
+        raise RuntimeError("persistent_intent_conflict")
+    current_checkpoint = worker.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
+    current_state = worker.get(PERSISTENT_CORE_RECOVERY_FIELD)
+    if current_checkpoint != expected_checkpoint or current_state != expected_recovery_state:
+        raise RuntimeError("controller_checkpoint_conflict")
+    if recovery_state is None or not _valid_persistent_core_recovery_state(
+            recovery_state, worker=worker, checkpoint=checkpoint):
+        raise ValueError("Ungültiger Core-Recoveryzustand")
+
+    prior_phase = expected_recovery_state.get("phase") if isinstance(expected_recovery_state, dict) else None
+    new_phase = recovery_state["phase"]
+    observation_state = (
+        capacity_observation.get("state")
+        if isinstance(capacity_observation, dict) else None
+    )
+    capacity_observation_result = (
+        _persistent_core_capacity_observation(
+            capacity_observation, worker=worker, expected_state=observation_state
+        )
+        if observation_state in {"waiting_memory_reserve", "waiting_disk_reserve"}
+        else None
+    )
+    transition_ok = False
+    if expected_checkpoint is None and checkpoint is not None:
+        prior_count = expected_recovery_state.get("retry_count", 0) if expected_recovery_state else 0
+        prior_wait = expected_recovery_state.get("waited_seconds", 0) if expected_recovery_state else 0
+        transition_ok = (
+            checkpoint.get("phase") == "admission_pending"
+            and prior_phase in {None, "ready"}
+            and new_phase == "admission_pending"
+            and recovery_state["retry_count"] == prior_count
+            and recovery_state["waited_seconds"] == prior_wait
+            and all(recovery_state.get(key) == (
+                expected_recovery_state.get(key) if isinstance(expected_recovery_state, dict) else None
+            ) for key in ("capacity_state", "capacity_policy_version", "capacity_fingerprint"))
+            and worker.get("status") == "idle"
+        )
+    elif (isinstance(expected_checkpoint, dict) and expected_checkpoint.get("phase") == "admission_pending"
+          and isinstance(checkpoint, dict) and checkpoint.get("phase") == "admitted"):
+        transition_ok = (
+            prior_phase == "admission_pending" and new_phase == "active"
+            and all(expected_checkpoint.get(key) == checkpoint.get(key) for key in (
+                "worker_id", "service_instance", "start_request_id", "intent_id",
+                "profile_version", "trace_contract_sha256", "generation",
+                "physical_worker_id", "lease_worker_id"))
+            and expected_recovery_state.get("checkpoint_sha256")
+                == _persistent_checkpoint_sha256(expected_checkpoint)
+            and recovery_state["retry_count"] == expected_recovery_state["retry_count"]
+            and recovery_state["waited_seconds"] == expected_recovery_state["waited_seconds"]
+            and all(recovery_state.get(key) == expected_recovery_state.get(key) for key in (
+                "capacity_state", "capacity_policy_version", "capacity_fingerprint"))
+        )
+    elif (isinstance(expected_checkpoint, dict) and expected_checkpoint.get("phase") == "admitted"
+          and checkpoint == expected_checkpoint):
+        if prior_phase == "active" and new_phase == "reserve_wait":
+            old_count = expected_recovery_state["retry_count"]
+            old_wait = expected_recovery_state["waited_seconds"]
+            expected_delay = min(60 * (2 ** old_count), 900 - old_wait) if old_count < 3 else 0
+            transition_ok = (
+                expected_delay > 0
+                and recovery_state["checkpoint_sha256"] == _persistent_checkpoint_sha256(checkpoint)
+                and recovery_state["retry_count"] == old_count + 1
+                and recovery_state["waited_seconds"] == old_wait + expected_delay
+                and recovery_state.get("retry_seconds") == expected_delay
+                and recovery_state.get("tool_dispatch_count") == 0
+                and recovery_state.get("lease_returned") is True
+                and recovery_state.get("assignment_finished") is True
+                and recovery_state.get("reason_code") in {
+                "local_reserve_reserve_wait_expired",
+                "local_reserve_reserve_wait_lease_return_required",
+            }
+                and capacity_observation_result is not None
+                and recovery_state.get("capacity_state") == capacity_observation_result["state"]
+                and recovery_state.get("capacity_policy_version") == capacity_observation_result["policy_version"]
+                and recovery_state.get("capacity_fingerprint") == capacity_observation_result["fingerprint"]
+            )
+        elif prior_phase == "reserve_wait" and new_phase == "active":
+            retry_after = _parse_timestamp(expected_recovery_state.get("retry_after"))
+            transition_ok = (
+                retry_after is not None and retry_after <= datetime.now(timezone.utc)
+                and recovery_state["checkpoint_sha256"] == _persistent_checkpoint_sha256(checkpoint)
+                and recovery_state["retry_count"] == expected_recovery_state["retry_count"]
+                and recovery_state["waited_seconds"] == expected_recovery_state["waited_seconds"]
+                and all(recovery_state.get(key) == expected_recovery_state.get(key) for key in (
+                    "capacity_state", "capacity_policy_version", "capacity_fingerprint"))
+            )
+        elif prior_phase == "active" and new_phase == "active":
+            proof_fields = {"schema", "checkpoint_sha256", "generation", "run_sequence", "response_received"}
+            transition_ok = (
+                isinstance(progress_proof, dict) and set(progress_proof) == proof_fields
+                and progress_proof.get("schema") == "bach.persistent-core-progress.v1"
+                and progress_proof.get("checkpoint_sha256") == _persistent_checkpoint_sha256(checkpoint)
+                and progress_proof.get("generation") == checkpoint["generation"]
+                and type(progress_proof.get("run_sequence")) is int
+                and progress_proof["run_sequence"] > 0
+                and progress_proof.get("response_received") is True
+                and recovery_state["checkpoint_sha256"] == _persistent_checkpoint_sha256(checkpoint)
+                and recovery_state["retry_count"] == 0
+                and recovery_state["waited_seconds"] == 0
+                and recovery_state.get("capacity_state") is None
+                and recovery_state.get("capacity_policy_version") is None
+                and recovery_state.get("capacity_fingerprint") is None
+            )
+        elif prior_phase == "active" and new_phase == "capacity_wait":
+            transition_ok = (
+                recovery_state["checkpoint_sha256"] == _persistent_checkpoint_sha256(checkpoint)
+                and recovery_state["retry_count"] == expected_recovery_state["retry_count"] == 3
+                and recovery_state["waited_seconds"] == expected_recovery_state["waited_seconds"]
+                and recovery_state.get("tool_dispatch_count") == 0
+                and recovery_state.get("lease_returned") is True
+                and recovery_state.get("assignment_finished") is True
+                and recovery_state.get("reason_code") == "local_reserve_retry_budget_exhausted"
+                and capacity_observation_result is not None
+                and recovery_state.get("capacity_state") == capacity_observation_result["state"]
+                and recovery_state.get("capacity_policy_version") == capacity_observation_result["policy_version"]
+                and recovery_state.get("capacity_fingerprint") == capacity_observation_result["fingerprint"]
+            )
+    if (isinstance(expected_checkpoint, dict) and expected_checkpoint.get("phase") == "admission_pending"
+            and checkpoint is None):
+        fields = {"schema", "worker_id", "service_instance", "start_request_id", "status", "admitted"}
+        transition_ok = (
+            prior_phase == "admission_pending" and new_phase == "ready"
+            and isinstance(admission_rejection, dict) and set(admission_rejection) == fields
+            and admission_rejection.get("schema") == "bach.persistent-core-admission-rejection.v1"
+            and admission_rejection.get("worker_id") == expected_checkpoint["worker_id"]
+            and admission_rejection.get("service_instance") == expected_checkpoint["service_instance"]
+            and admission_rejection.get("start_request_id") == expected_checkpoint["start_request_id"]
+            and type(admission_rejection.get("status")) is int
+            and 400 <= admission_rejection["status"] <= 599
+            and admission_rejection.get("admitted") is False
+            and recovery_state["retry_count"] == expected_recovery_state["retry_count"]
+            and recovery_state["waited_seconds"] == expected_recovery_state["waited_seconds"]
+            and all(recovery_state.get(key) == expected_recovery_state.get(key) for key in (
+                "capacity_state", "capacity_policy_version", "capacity_fingerprint"))
+        )
+    if (isinstance(expected_checkpoint, dict) and expected_checkpoint.get("phase") == "admitted"
+            and checkpoint is None and prior_phase in {"active", "reserve_wait", "capacity_wait"}
+            and new_phase == "ready"):
+        same_budget = (
+            recovery_state["retry_count"] == expected_recovery_state["retry_count"]
+            and recovery_state["waited_seconds"] == expected_recovery_state["waited_seconds"]
+            and all(recovery_state.get(key) == expected_recovery_state.get(key) for key in (
+                "capacity_state", "capacity_policy_version", "capacity_fingerprint"))
+        )
+        capacity_reset = (
+            recovery_state["retry_count"] == 0 and recovery_state["waited_seconds"] == 0
+            and _valid_persistent_core_capacity_reauthorization(
+                capacity_proof, worker=worker, recovery_state=expected_recovery_state)
+        )
+        reserve_due = (
+            prior_phase != "reserve_wait"
+            or (_parse_timestamp(expected_recovery_state.get("retry_after")) is not None
+                and _parse_timestamp(expected_recovery_state["retry_after"]) <= datetime.now(timezone.utc))
+        )
+        transition_ok = (
+            new_phase == "ready" and reserve_due and (same_budget or capacity_reset)
+            and reconciliation_proof is not None
+            and _valid_persistent_core_reconciliation_proof(
+                reconciliation_proof, worker=worker, checkpoint=expected_checkpoint,
+                recovery_state=expected_recovery_state,
+            )
+            and (prior_phase != "capacity_wait" or capacity_reset)
+            and (expected_recovery_state["retry_count"] < 3
+                 or (prior_phase == "reserve_wait" and reserve_due)
+                 or capacity_reset)
+        )
+    if not transition_ok:
+        raise RuntimeError("controller_checkpoint_transition_conflict")
+    # `_always_on_execution_slot_from_config` returns a projected copy for
+    # validation. Persist the controller lifecycle on the actual stored slot.
+    stored_worker = config["slots"]["buddha_always_on"]
+    if checkpoint is None:
+        stored_worker.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+    else:
+        stored_worker[PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD] = dict(checkpoint)
+    stored_worker[PERSISTENT_CORE_RECOVERY_FIELD] = dict(recovery_state)
+    if checkpoint is None:
+        stored_worker["status"] = "idle"
+    save_slots_config(config, path)
+    return {
+        "worker_id": stored_worker["id"], "intent_id": expected_intent_id,
+        "profile_version": expected_profile_version,
+        "checkpoint": stored_worker.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD),
+        "recovery_state": stored_worker.get(PERSISTENT_CORE_RECOVERY_FIELD),
+        "status": stored_worker.get("status"),
+    }
+
+
+def _valid_persistent_core_capacity_reauthorization(
+    proof: Any, *, worker: dict[str, Any], recovery_state: dict[str, Any],
+) -> bool:
+    fields = {
+        "schema", "receipt", "previous_state", "previous_policy_version",
+        "previous_fingerprint",
+    }
+    if not isinstance(proof, dict) or set(proof) != fields:
+        return False
+    if recovery_state.get("phase") not in {"capacity_wait", "active"}:
+        return False
+    previous_state = recovery_state.get("capacity_state")
+    previous_policy = recovery_state.get("capacity_policy_version")
+    previous_fingerprint = recovery_state.get("capacity_fingerprint")
+    if (previous_state not in {"waiting_memory_reserve", "waiting_disk_reserve"}
+            or not isinstance(previous_policy, str)
+            or not isinstance(previous_fingerprint, str)
+            or proof.get("previous_state") != previous_state
+            or proof.get("previous_policy_version") != previous_policy
+            or proof.get("previous_fingerprint") != previous_fingerprint
+            or proof.get("schema") != "bach.persistent-core-capacity-reauthorization.v1"):
+        return False
+    observed = _persistent_core_capacity_observation(
+        proof.get("receipt"), worker=worker, expected_state="ready")
+    return (
+        observed is not None
+        and observed["policy_version"] == previous_policy
+        and observed["fingerprint"] != previous_fingerprint
+    )
+
+
+def _valid_persistent_core_reconciliation_proof(
+    proof: Any, *, worker: dict[str, Any], checkpoint: dict[str, Any],
+    recovery_state: dict[str, Any],
+) -> bool:
+    fields = {
+        "schema", "worker_id", "profile_version", "intent_id", "status_before",
+        "generation", "lease_worker_id", "trace_contract_sha256",
+        "checkpoint_sha256", "recovery_state_sha256", "stable_scan_sha256",
+        "stable_scans", "candidate_count", "complete", "stable",
+        "active_old_lease", "old_generation_trace",
+    }
+    if not isinstance(proof, dict) or set(proof) != fields:
+        return False
+    recovery_raw = json.dumps(recovery_state, ensure_ascii=False, sort_keys=True,
+                              separators=(",", ":")).encode("utf-8")
+    return (
+        proof.get("schema") == "bach.persistent-core-reconciliation.v1"
+        and proof.get("worker_id") == worker.get("id") == checkpoint.get("worker_id")
+        and proof.get("profile_version") == _persistent_core_profile_version(worker)
+        and proof.get("intent_id") == worker.get("persistent_opt_in_id") == checkpoint.get("intent_id")
+        and proof.get("generation") == checkpoint.get("generation")
+        and proof.get("lease_worker_id") == checkpoint.get("lease_worker_id")
+        and proof.get("trace_contract_sha256") == checkpoint.get("trace_contract_sha256")
+        and proof.get("checkpoint_sha256") == _persistent_checkpoint_sha256(checkpoint)
+        and proof.get("recovery_state_sha256") == hashlib.sha256(recovery_raw).hexdigest()
+        and isinstance(proof.get("stable_scan_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", proof["stable_scan_sha256"]) is not None
+        and type(proof.get("stable_scans")) is int and proof["stable_scans"] == 2
+        and type(proof.get("candidate_count")) is int and proof["candidate_count"] >= 0
+        and proof.get("complete") is True and proof.get("stable") is True
+        and proof.get("active_old_lease") is False
+        and proof.get("old_generation_trace") is False
+        and proof.get("status_before") in {"idle", "running", "error"}
+        and proof.get("status_before") == worker.get("status")
+        and (recovery_state.get("phase") != "reserve_wait"
+             or proof.get("status_before") == "error")
+    )
 
 
 def _persistent_worker_reconciliation_proof_valid(
@@ -2110,6 +2822,39 @@ def persistent_worker_startup_snapshot(path: str | None = None) -> dict[str, Any
 def change_worker_configuration(worker_id: str, expected_version: str, changes: dict[str, Any],
                                 *, path: str | None = None) -> dict[str, Any]:
     config = load_slots_config(path, strict=True)
+    if worker_id == "buddha_always_on":
+        worker = _always_on_execution_slot_from_config(config)
+        current = _worker_configuration(worker)
+        if expected_version != current["configuration_version"]:
+            raise RuntimeError("configuration_version_conflict")
+        if (not isinstance(changes, dict) or set(changes) != {"persistent_opt_in"}
+                or type(changes["persistent_opt_in"]) is not bool):
+            raise ValueError("Nur die getrennte Dauerbetriebsfreigabe ist für Always-On editierbar")
+        stored = config["slots"]["buddha_always_on"]
+        if changes["persistent_opt_in"] is True:
+            if stored.get("persistent_opt_in") is True:
+                return current
+            if stored.get("status") != "idle" or stored.get("enabled") is not True:
+                raise RuntimeError("worker_not_idle")
+            if not _is_supported_persistent_local_core_worker(worker):
+                raise ValueError("Always-On benötigt ein gültiges lokales Modellziel")
+            stored["persistent_opt_in"] = True
+            stored["persistent_opt_in_id"] = uuid.uuid4().hex
+            stored["persistent_opt_in_profile_version"] = _persistent_core_profile_version(worker)
+            stored.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+            stored.pop(PERSISTENT_CORE_RECOVERY_FIELD, None)
+        else:
+            revoke_profile = _persistent_core_profile_version(worker)
+            stored["persistent_opt_in"] = False
+            stored.pop("persistent_opt_in_id", None)
+            stored.pop("persistent_opt_in_profile_version", None)
+            stored.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
+            stored[PERSISTENT_CORE_RECOVERY_FIELD] = _persistent_core_revocation_state(
+                revoke_profile
+            )
+        save_slots_config(config, path)
+        return _worker_configuration(_always_on_execution_slot_from_config(config))
+
     workers = [w for w in config.get("dynamic_workers", []) if isinstance(w, dict) and w.get("id") == worker_id]
     if len(workers) != 1:
         raise KeyError("Workerprofil nicht eindeutig gefunden")

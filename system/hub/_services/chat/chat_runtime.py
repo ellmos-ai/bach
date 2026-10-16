@@ -267,6 +267,44 @@ class _SnapshotStoreAdapter:
 
 
 
+_SAFE_FAILURE_REASON_CODES = frozenset({
+    "local_reserve_invalid_policy",
+    "local_reserve_unknown_model",
+    "local_reserve_unsupported_provider",
+    "local_reserve_missing_model_budget",
+    "local_reserve_model_budget_conflict",
+    "local_reserve_budget_exceeds_host",
+    "local_reserve_resource_policy_changed",
+    "local_reserve_reserve_wait_expired",
+    "local_reserve_reserve_wait_lease_return_required",
+})
+
+
+def _local_reserve_failure(exc: BaseException) -> tuple[str | None, str]:
+    """Project only the reserve service's finite public decision vocabulary."""
+    from hub._services.chat.local_resource_reserve import LocalReserveError
+    if not isinstance(exc, LocalReserveError):
+        return None, ""
+    prefix = "Lokale Ressourcenfreigabe: "
+    message = str(exc)
+    decision = message[len(prefix):] if message.startswith(prefix) else ""
+    code = f"local_reserve_{decision}" if decision else ""
+    if code not in _SAFE_FAILURE_REASON_CODES:
+        return None, "Lokale Ressourcenfreigabe fehlgeschlagen"
+    safe_messages = {
+        "local_reserve_reserve_wait_expired": "Lokale Ressourcenreserve wurde nicht rechtzeitig frei",
+        "local_reserve_reserve_wait_lease_return_required": "Task-Lease wird vor der lokalen Kapazitätswarte zurückgegeben",
+        "local_reserve_budget_exceeds_host": "Lokales Modell überschreitet das verfügbare Hostbudget",
+        "local_reserve_resource_policy_changed": "Ressourcenrichtlinie änderte sich während der Prüfung",
+        "local_reserve_invalid_policy": "Ressourcenrichtlinie ist nicht verifizierbar",
+        "local_reserve_unknown_model": "Lokales Modell ist nicht verifizierbar",
+        "local_reserve_unsupported_provider": "Lokaler Anbieter wird nicht unterstützt",
+        "local_reserve_missing_model_budget": "Modellbudget fehlt",
+        "local_reserve_model_budget_conflict": "Modellbudget stimmt nicht mit dem beobachteten Ziel überein",
+    }
+    return code, safe_messages[code]
+
+
 class FailedAnswer(str):
     """Antworttext, der aus einer gefangenen Backend-Ausnahme stammt.
 
@@ -295,10 +333,13 @@ class FailedAnswer(str):
     STATUS_SUCCESS = "success"
     STATUS_FAILED = "failed"
 
-    def __new__(cls, value, *, backend_error=None):
+    def __new__(cls, value, *, backend_error=None, reason_code=None):
         from hub._services.llm.backend_errors import normalize_backend_error
         answer = super().__new__(cls, value)
         answer.backend_error = normalize_backend_error(backend_error)
+        answer.reason_code = (
+            reason_code if isinstance(reason_code, str) and reason_code in _SAFE_FAILURE_REASON_CODES else None
+        )
         return answer
 
     @classmethod
@@ -346,13 +387,22 @@ class FailedAnswer(str):
 
     @classmethod
     def from_exception(cls, exc: BaseException) -> "FailedAnswer":
-        """Gefangene Ausnahme als Fehlschlag-Antwort, mit ihrem Typnamen.
-
-        Der Typ steht immer davor, nicht nur wenn ``str(exc)`` leer ist:
-        ``httpx.ReadTimeout`` und Verwandte haben keinen Text, und auch bei
-        vorhandener Meldung sagt der Typ, ob die Leitung stand, das Modell
-        schwieg oder der Aufruf falsch war.
-        """
+        """Preserve typed request metadata and redact reserve details."""
+        from hub._services.llm.backend_errors import (
+            BackendRequestFailure,
+            normalize_backend_error,
+        )
+        if isinstance(exc, BackendRequestFailure):
+            detail = normalize_backend_error(getattr(exc, "backend_error", None))
+            if detail is not None and detail["provider"] in ("openrouter", "hermes"):
+                return cls(f"{cls.PREFIX}{detail['message']}", backend_error=detail)
+            return cls(f"{cls.PREFIX}Anbieterfehler ist nicht verifiziert.")
+        reason_code, safe_message = _local_reserve_failure(exc)
+        if reason_code is not None:
+            return cls(f"{cls.PREFIX}{safe_message}", reason_code=reason_code)
+        from hub._services.chat.local_resource_reserve import LocalReserveError
+        if isinstance(exc, LocalReserveError):
+            return cls(f"{cls.PREFIX}{safe_message}")
         return cls(f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "))
 
 
@@ -473,6 +523,11 @@ class ChatSession(_ModuleChatSession):
         self.worker_task_actions: Any = None
         self.worker_task_binding: Any = None
         self.require_task_binding: bool = False
+        self._persistent_core_model_call_control: Any = None
+        self._worker_model_dispatch_binding: Any = None
+        self._local_reserve_failure_binding: Any = None
+        self._local_reserve_failure_control: Any = None
+        self._local_reserve_failure_reason_code: str | None = None
 
     @property
     def mode(self) -> str:
@@ -708,6 +763,8 @@ class ChatRuntime(_ModuleChatRuntime):
         detail = normalize_backend_error(result.get("backend_error"))
         return bool(
             detail
+            # Before request metadata existed, only Ollama could reach this branch.
+            and detail.get("provider") == "ollama"
             and not detail.get("quota_exceeded")
             and detail.get("kind") in {"rate_limited", "http_error"}
             and detail.get("status_code") in {429, 502, 503, 504, 529}
@@ -750,6 +807,12 @@ class ChatRuntime(_ModuleChatRuntime):
                     active_backend, *args, **call_kwargs
                 )
             except Exception as exc:
+                # The persistent core is explicitly pinned to its selected local
+                # model; reserve exhaustion must not silently downgrade or route elsewhere.
+                from hub._services.chat.local_resource_reserve import LocalReserveError
+                if (getattr(session, "chat_id", None) == "buddha_always_on"
+                        and isinstance(exc, LocalReserveError)):
+                    raise
                 # A self-managed CLI can finish tool effects before an exception.
                 # Without a typed no-tool receipt, the failure cannot authorize retry.
                 if (getattr(active_backend, "manages_own_tools", False)
@@ -857,7 +920,10 @@ class ChatRuntime(_ModuleChatRuntime):
                 if isinstance(content, FailedAnswer):
                     item[FailedAnswer.STATUS_KEY] = FailedAnswer.STATUS_FAILED
                 elif status == FailedAnswer.STATUS_FAILED and isinstance(content, str):
-                    item["content"] = FailedAnswer(content, backend_error=item.get("backend_error"))
+                    item["content"] = FailedAnswer(
+                        content, backend_error=item.get("backend_error"),
+                        reason_code=item.get("reason_code"),
+                    )
                 elif status == FailedAnswer.STATUS_SUCCESS:
                     if isinstance(content, str) and content.strip().startswith(FailedAnswer.PREFIX):
                         item["content"] = SuccessfulAnswer(content)
@@ -875,7 +941,7 @@ class ChatRuntime(_ModuleChatRuntime):
         """Remove runtime-only status metadata before a provider call."""
         return [
             {key: value for key, value in message.items()
-              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error")}
+              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error", "reason_code")}
             for message in messages
         ]
 
@@ -890,9 +956,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 status = item.get(FailedAnswer.STATUS_KEY)
                 if isinstance(content, FailedAnswer) or status == FailedAnswer.STATUS_FAILED:
                     status = FailedAnswer.STATUS_FAILED
-                elif status == FailedAnswer.STATUS_SUCCESS:
-                    status = FailedAnswer.STATUS_SUCCESS
-                elif getattr(content, "answer_status", None) == FailedAnswer.STATUS_SUCCESS:
+                elif status == FailedAnswer.STATUS_SUCCESS or getattr(content, "answer_status", None) == FailedAnswer.STATUS_SUCCESS:
                     status = FailedAnswer.STATUS_SUCCESS
                 else:
                     status = (
@@ -906,6 +970,11 @@ class ChatRuntime(_ModuleChatRuntime):
                 item.pop("backend_error", None)
                 if detail is not None and status == FailedAnswer.STATUS_FAILED:
                     item["backend_error"] = detail
+                reason_code = getattr(content, "reason_code", None) or item.get("reason_code")
+                item.pop("reason_code", None)
+                if (status == FailedAnswer.STATUS_FAILED and isinstance(reason_code, str)
+                        and reason_code in _SAFE_FAILURE_REASON_CODES):
+                    item["reason_code"] = reason_code
             stored.append(item)
         return stored
 
@@ -1264,6 +1333,15 @@ class ChatRuntime(_ModuleChatRuntime):
         from hub._services.chat.local_model_admission import compose_admission_receipt
 
         session = (self.sessions.get(str(chat_id)) or self.get_session(chat_id)) if chat_id is not None else None
+        if session is not None and (getattr(session, "worker_task_binding", None) is not None
+                or getattr(session, "worker_slot_reader", None) is not None
+                or getattr(session, "require_task_binding", False)):
+            # Keep only the most recent internal capacity receipt for the
+            # caller's terminal, pre-tool reserve recovery decision.
+            session._local_reserve_failure_receipt = None
+            session._local_reserve_failure_binding = None
+            session._local_reserve_failure_control = None
+            session._local_reserve_failure_reason_code = None
 
         def check_caller():
             if session is not None and (
@@ -1298,8 +1376,136 @@ class ChatRuntime(_ModuleChatRuntime):
         require_retryable(receipt)
         return receipt, binding
 
+    def _persistent_core_pre_effect_reserve_receipt(
+        self, *, session, binding, backend, model, priority, receipt,
+    ):
+        """Return a sanitized wait receipt only for this controller's first, tool-free call."""
+        waiting = {"waiting_memory_reserve", "waiting_disk_reserve"}
+        if (priority != "background" or not isinstance(receipt, dict)
+                or receipt.get("state") not in waiting or receipt.get("admitted") is not False
+                or receipt.get("enforced") is not True or receipt.get("retryable") is not True
+                or not self._uses_local_compute(backend)
+                or not isinstance(model, str) or model.lower().endswith(":cloud")):
+            return None
+        control = getattr(session, "_persistent_core_model_call_control", None)
+        if (session is None or control is None or binding is None
+                or getattr(session, "worker_task_binding", None) is not binding
+                or getattr(session, "require_task_binding", False) is not True
+                or getattr(control, "worker_id", None) != "buddha_always_on"
+                or getattr(control, "task_binding", None) is not binding
+                or getattr(session, "_worker_model_dispatch_binding", None) is binding
+                or type(getattr(binding, "tool_dispatch_count", None)) is not int
+                or binding.tool_dispatch_count != 0
+                or getattr(binding, "closed", True) is not False
+                or getattr(control, "persistent_core_startup_cancelled", True) is not False):
+            return None
+        stop_event = getattr(control, "stop_event", None)
+        startup_confirmed = getattr(control, "persistent_core_startup_confirmed", None)
+        if (stop_event is None or not callable(getattr(stop_event, "is_set", None))
+                or stop_event.is_set() or startup_confirmed is None
+                or not callable(getattr(startup_confirmed, "is_set", None))
+                or not startup_confirmed.is_set()):
+            return None
+        intent_id = getattr(control, "persistent_core_intent_id", None)
+        profile_version = getattr(control, "persistent_core_profile_version", None)
+        checkpoint = getattr(control, "persistent_core_checkpoint", None)
+        recovery_state = getattr(control, "persistent_core_recovery_state", None)
+        if (not isinstance(intent_id, str) or re.fullmatch(r"[0-9a-f]{32}", intent_id) is None
+                or not isinstance(profile_version, str)
+                or re.fullmatch(r"[0-9a-f]{64}", profile_version) is None
+                or not isinstance(checkpoint, dict) or checkpoint.get("phase") != "admitted"
+                or not isinstance(recovery_state, dict) or recovery_state.get("phase") != "active"):
+            return None
+        try:
+            binding.assert_active()
+            from hub._services.chat import slots_config
+            snapshot = slots_config.persistent_core_startup_snapshot()
+            worker = snapshot.get("slot") if isinstance(snapshot, dict) else None
+            if (not isinstance(worker, dict)
+                    or snapshot.get("state") != "prior_generation_unsettled"
+                    or snapshot.get("worker_id") != "buddha_always_on"
+                    or snapshot.get("intent_id") != intent_id
+                    or snapshot.get("profile_version") != profile_version
+                    or snapshot.get("checkpoint") != checkpoint
+                    or snapshot.get("recovery_state") != recovery_state
+                    or worker.get("id") != "buddha_always_on"
+                    or worker.get("backend") != "ollama"
+                    or worker.get("model") != model
+                    or worker.get("persistent_opt_in") is not True
+                    or worker.get("persistent_opt_in_id") != intent_id
+                    or worker.get("persistent_opt_in_profile_version") != profile_version
+                    or worker.get("status") != "running"
+                    or slots_config._persistent_core_profile_version(worker) != profile_version
+                    or not slots_config._valid_persistent_worker_controller_checkpoint(checkpoint)
+                    or not slots_config._valid_persistent_core_recovery_state(
+                        recovery_state, worker=worker, checkpoint=checkpoint)):
+                return None
+        except Exception:  # noqa: BLE001 -- malformed persisted proof fails closed
+            return None
+
+        capacity_fields = {
+            "schema", "state", "admitted", "enforced", "retryable", "checked_at",
+            "policy_version", "model", "wait_seconds", "poll_seconds",
+            "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
+            "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
+            "resident_weight_credit",
+        }
+        if set(receipt) != capacity_fields | {"local_admission"}:
+            return None
+        admission = receipt.get("local_admission")
+        if (not isinstance(admission, dict)
+                or set(admission) != {"schema", "decision", "reserve", "model_socket", "capacity"}
+                or admission.get("schema") != "bach.local-model-admission.v1"
+                or admission.get("decision") != receipt.get("state")):
+            return None
+        reserve = admission.get("reserve")
+        if (not isinstance(reserve, dict)
+                or set(reserve) != {"schema", "state", "configured", "enforced", "policy_version"}
+                or reserve.get("schema") != receipt.get("schema")
+                or reserve.get("state") != receipt.get("state")
+                or reserve.get("configured") is not True
+                or reserve.get("enforced") is not True
+                or reserve.get("policy_version") != receipt.get("policy_version")):
+            return None
+        model_socket = admission.get("model_socket")
+        if (not isinstance(model_socket, dict)
+                or model_socket.get("status") not in {"bound", "not_required"}):
+            return None
+        if model_socket.get("status") == "bound" and model_socket.get("model") != model:
+            return None
+        if admission.get("capacity") != {"status": "unknown", "certification": "not_provided"}:
+            return None
+        capacity_receipt = {key: receipt[key] for key in capacity_fields}
+        try:
+            observation = slots_config._persistent_core_capacity_observation(
+                capacity_receipt, worker=worker, expected_state=receipt["state"],
+            )
+        except Exception:  # noqa: BLE001 -- unavailable capacity policy is not a reauthorization proof
+            return None
+        if observation is None or observation.get("state") not in waiting:
+            return None
+        return capacity_receipt
+
+    def _bound_worker_tools_for_request(self, session, backend, *, enabled: bool) -> list[dict]:
+        """Build the request schema from the already-refreshed bound session."""
+        if enabled is not True or session.allow_tools is not True:
+            return []
+        default_model = getattr(backend, "get_default_model", None)
+        if not callable(default_model):
+            default_model = None
+        provider = BachToolProvider(
+            self.bach_app,
+            default_model,
+            worker_task_binding=getattr(session, "worker_task_binding", None),
+            require_task_binding=getattr(session, "require_task_binding", False),
+            allowed_tools=getattr(session, "allowed_tools", None),
+            agent_operations=self.agent_operations,
+        )
+        return provider.get_tools(session.mode)
+
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
+        tool_rounds_enabled = kwargs.pop("_tool_rounds_enabled", None)
         turn_context = self._compute_turn_context.get()
         def check_binding():
             if turn_context:
@@ -1311,11 +1517,29 @@ class ChatRuntime(_ModuleChatRuntime):
                     problem = self._worker_backend_gate(session, backend, kwargs.get("model"))
                     if problem is not None:
                         raise RuntimeError(str(problem))
+                    if (
+                        tool_rounds_enabled is not None
+                        and "tools" in kwargs
+                        and getattr(session, "worker_task_binding", None) is not None
+                        and not getattr(backend, "manages_own_tools", False)
+                    ):
+                        # Rebuild at the actual backend boundary after the live
+                        # profile/lease check; this also runs for each fallback.
+                        kwargs["tools"] = self._bound_worker_tools_for_request(
+                            session, backend, enabled=tool_rounds_enabled,
+                        )
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
         binding = getattr(session, "worker_task_binding", None)
+        def mark_model_dispatch():
+            current_binding = getattr(session, "worker_task_binding", None) if session is not None else None
+            if current_binding is not None:
+                # Keep the exact binding object alive; token/id surrogates can be reused.
+                session._worker_model_dispatch_binding = current_binding
+
         if binding is not None and getattr(backend, "manages_own_tools", False):
             agent_kwargs = {"agent_operations": self.agent_operations} if self.agent_operations is not None else {}
+            mark_model_dispatch()
             return await backend.chat_bound(
                 *args, **kwargs, binding=binding, mode=session.mode,
                 guard=check_binding, bach_app=self.bach_app,
@@ -1323,6 +1547,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 **agent_kwargs,
             )
         if not self._uses_local_compute(backend):
+            mark_model_dispatch()
             return await backend.chat(*args, **kwargs)
         selected_model = kwargs.get("model") or backend.get_default_model()
 
@@ -1370,6 +1595,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 receipt, _ = await self.prepare_inference_call(
                     backend, selected_model, chat_id=chat_id if turn_context else None)
                 if receipt is None:
+                    mark_model_dispatch()
                     return await backend.chat(*args, **kwargs)
                 if not policy_bound:
                     policy_version = receipt.get("policy_version")
@@ -1379,8 +1605,25 @@ class ChatRuntime(_ModuleChatRuntime):
                 if receipt["state"] == "external_target":
                     with self._local_resource_waiters_lock:
                         self._local_resource_waiters.pop(chat_id, None)
+                    mark_model_dispatch()
                     return await backend.chat(*args, **kwargs)
                 require_retryable(receipt)
+                binding = getattr(session, "worker_task_binding", None) if session is not None else None
+                pre_effect_receipt = self._persistent_core_pre_effect_reserve_receipt(
+                    session=session, binding=binding, backend=backend, model=selected_model,
+                    priority=priority, receipt=receipt,
+                )
+                if pre_effect_receipt is not None:
+                    control = getattr(session, "_persistent_core_model_call_control", None)
+                    session._local_reserve_failure_receipt = pre_effect_receipt
+                    session._local_reserve_failure_binding = binding
+                    session._local_reserve_failure_control = control
+                    session._local_reserve_failure_reason_code = (
+                        "local_reserve_reserve_wait_lease_return_required"
+                    )
+                    raise LocalReserveError(
+                        "Lokale Ressourcenfreigabe: reserve_wait_lease_return_required"
+                    )
                 if receipt["admitted"]:
                     model_binding = check_model_binding()
                     target = ({key: model_binding[key] for key in
@@ -1408,6 +1651,7 @@ class ChatRuntime(_ModuleChatRuntime):
                                 check_reserve_policy(receipt)
                                 with self._local_resource_waiters_lock:
                                     self._local_resource_waiters.pop(chat_id, None)
+                                mark_model_dispatch()
                                 return await backend.chat(*args, **kwargs)
                             finally:
                                 self._leave_compute_turn(self._compute_turn_gate)
@@ -1418,6 +1662,7 @@ class ChatRuntime(_ModuleChatRuntime):
                         check_reserve_policy(receipt)
                         with self._local_resource_waiters_lock:
                             self._local_resource_waiters.pop(chat_id, None)
+                        mark_model_dispatch()
                         return await backend.chat(*args, **kwargs)
                 # The host owner has been returned before reserve polling.
                 # We stay at this model-call boundary: previous tools and the
@@ -1428,6 +1673,17 @@ class ChatRuntime(_ModuleChatRuntime):
                     deadline = time.monotonic() + receipt["wait_seconds"]
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    if session is not None and (getattr(session, "worker_task_binding", None) is not None
+                            or getattr(session, "worker_slot_reader", None) is not None):
+                        fields = (
+                            "schema", "state", "admitted", "enforced", "retryable", "checked_at",
+                            "policy_version", "model", "memory_total_bytes", "memory_available_bytes",
+                            "memory_required_bytes", "disk_free_bytes", "disk_reserve_bytes",
+                            "weight_request_bytes", "resident_weight_credit",
+                        )
+                        session._local_reserve_failure_receipt = {
+                            key: receipt[key] for key in fields if key in receipt
+                        }
                     raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
                 # Check cancellation, policy downgrades and native lease loss
                 # frequently even if the resource probe interval is longer.
@@ -1797,6 +2053,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         try:
             if self._process_priority(chat_id, work_priority) == "background":
                 self._reset_task_completion_receipts(chat_id)
+                # A previous task's resolved model is not evidence for this run.
+                # Do not create a chat session before local compute admission.
+                cached_session = self.sessions.get(chat_id)
+                if cached_session is not None:
+                    cached_session.resolved_model = None
             if agent_context is not None:
                 self.bind_profile_session(chat_id, agent_context)
             return await self._process_turn(
@@ -1928,16 +2189,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     selected_backend,
                     msgs, think=session.think, model=selected_model
                 )
-                resolved = result.get("model") or getattr(selected_backend, "last_resolved_model", None)
-                if resolved:
-                    session.resolved_model = str(resolved)
+                answer = _managed_backend_answer(result)
+                resolved = result.get("model") if isinstance(result, dict) else None
+                if (not FailedAnswer.looks_like(answer) and isinstance(resolved, str) and resolved.strip()):
+                    session.resolved_model = resolved
                     if chat_id:
                         try:
                             from hub._services.chat.slots_config import update_slot
-                            update_slot(str(chat_id), {"resolved_model": str(resolved)})
+                            update_slot(str(chat_id), {"resolved_model": resolved})
                         except Exception:
                             pass
-                answer = _managed_backend_answer(result)
             except Exception as e:
                 answer = FailedAnswer.from_exception(e)
         else:
@@ -2090,23 +2351,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
+                    _tool_rounds_enabled=max_rounds > 0,
                 )
                 if selected_backend is not previous_backend or selected_model != previous_model:
                     context_limit = self._context_limit_for_backend(selected_backend, selected_model)
             except Exception as e:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
-
-            resolved_model = result.get("model") or getattr(selected_backend, "last_resolved_model", None)
-            if resolved_model:
-                session.resolved_model = str(resolved_model)
-                cid = getattr(session, "chat_id", "")
-                if cid:
-                    try:
-                        from hub._services.chat.slots_config import update_slot
-                        update_slot(cid, {"resolved_model": str(resolved_model)})
-                    except Exception:
-                        pass
 
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
@@ -2119,6 +2370,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else ""),
                     backend_error=result.get("backend_error"),
                 )
+
+            resolved_model = result.get("model") if isinstance(result, dict) else None
+            if isinstance(resolved_model, str) and resolved_model.strip():
+                session.resolved_model = resolved_model
+                cid = getattr(session, "chat_id", "")
+                if cid:
+                    try:
+                        from hub._services.chat.slots_config import update_slot
+                        update_slot(cid, {"resolved_model": resolved_model})
+                    except Exception:
+                        pass
 
             if self._context_voll(
                 result, session, context_limit=context_limit

@@ -693,6 +693,21 @@ class TestComputeGate:
         assert backend.calls == 0, "Backend darf bei aktivem Lock nicht gerufen werden"
         assert "idle-worker" not in runtime.sessions, "kein Turn, kein Transkript-Eintrag"
 
+    def test_background_reset_clears_only_an_existing_session(self):
+        runtime, backend, run = self._run(lambda _backend: True)
+        session = runtime.get_session("idle-worker")
+        session.resolved_model = "stale/model"
+        session.messages.append({"role": "user", "content": "older turn"})
+        prior_messages = list(session.messages)
+
+        with pytest.raises(ComputeLocked):
+            run(runtime.process("Aufgabe", "idle-worker"))
+
+        assert runtime.sessions["idle-worker"] is session
+        assert session.resolved_model is None
+        assert session.messages == prior_messages
+        assert backend.calls == 0
+
     def test_free_lock_behaves_exactly_as_before(self):
         runtime, backend, run = self._run(lambda _backend: False)
         assert run(runtime.process("Aufgabe", "idle-worker")) == "Echte Antwort"
@@ -2350,3 +2365,85 @@ class TestFsRootAllowlist:
         )
         assert "linked.txt" not in result
         assert "escape marker" not in result
+
+
+@pytest.mark.parametrize("provider", ["openrouter", "hermes"])
+@pytest.mark.parametrize("status", [429, 502, 503, 504, 529])
+def test_request_error_metadata_cannot_expand_preanswer_fallback(provider, status):
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    detail = {"provider": provider, "kind": "http_error", "error_type": "HTTPStatusError",
+              "status_code": status, "quota_exceeded": False}
+    carrier = BackendRequestFailure(detail)
+    assert not ChatRuntime._safe_preanswer_fallback_failure(error=carrier)
+    assert not ChatRuntime._safe_preanswer_fallback_failure(
+        result={"content": "", "error": "synthetic", "backend_error": detail})
+    previous = {"provider": "ollama", "kind": "http_error",
+                "status_code": status, "quota_exceeded": False}
+    assert ChatRuntime._safe_preanswer_fallback_failure(
+        result={"content": "", "error": "synthetic", "backend_error": previous})
+
+
+@pytest.mark.parametrize("managed", [True, False])
+def test_request_carrier_survives_actual_runtime_exception_path(managed):
+    import asyncio
+
+    import httpx
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    class Backend:
+        manages_own_tools = managed
+        def get_default_model(self):
+            return "openrouter/free"
+        async def chat(self, messages, **kwargs):
+            raise BackendRequestFailure.from_httpx(httpx.ReadTimeout(""), provider="openrouter")
+    runtime = ChatRuntime(Backend())
+    answer = asyncio.run(runtime.process("synthetic", "synthetic-transport-chat"))
+    assert isinstance(answer, FailedAnswer)
+    assert answer.backend_error["error_type"] == "ReadTimeout"
+    assert "ReadTimeout" in str(answer)
+    stored = ChatRuntime._messages_for_store(runtime.get_session("synthetic-transport-chat").messages)
+    assert stored[-1]["backend_error"]["kind"] == "read_timeout"
+
+
+@pytest.mark.parametrize("shape", ["exception", "result"])
+@pytest.mark.parametrize("status", [429, 502, 503, 504, 529])
+def test_native_fallback_chain_does_not_advance_for_request_metadata(monkeypatch, shape, status):
+    import asyncio
+
+    from hub._services.chat import model_sockets
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.backend_errors import BackendRequestFailure
+
+    class Backend:
+        manages_own_tools = False
+        def get_default_model(self):
+            return "openrouter/free"
+
+    backend = Backend()
+    runtime = ChatRuntime(backend)
+    calls = []
+    detail = {"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
+              "status_code": status, "quota_exceeded": False}
+    first = {"backend": "openrouter", "model": "openrouter/free"}
+    forbidden = {"backend": "synthetic-forbidden", "model": "synthetic-forbidden"}
+    monkeypatch.setattr(runtime, "_native_model_fallback_route",
+                        lambda *args: {"targets": [first, forbidden], "index": 0})
+    def resolve(target):
+        pytest.fail("request metadata must not open another route")
+    monkeypatch.setattr(model_sockets, "resolve_fallback_backend", resolve)
+    async def turn(selected, *args, **kwargs):
+        calls.append((selected, kwargs["model"]))
+        if shape == "exception":
+            raise BackendRequestFailure(detail)
+        return {"content": "", "error": "synthetic", "backend_error": detail}
+    monkeypatch.setattr(runtime, "_chat_with_compute_turn", turn)
+    session = runtime.get_session("synthetic-fallback-boundary")
+    if shape == "exception":
+        with pytest.raises(BackendRequestFailure):
+            asyncio.run(runtime._chat_with_configured_fallbacks(session, backend, "openrouter/free", []))
+    else:
+        result, selected, model = asyncio.run(runtime._chat_with_configured_fallbacks(
+            session, backend, "openrouter/free", []))
+        assert result["backend_error"] == detail and selected is backend and model == "openrouter/free"
+    assert calls == [(backend, "openrouter/free")]

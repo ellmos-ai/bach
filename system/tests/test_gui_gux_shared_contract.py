@@ -173,13 +173,13 @@ class TestPinnedKitManifest(unittest.TestCase):
         manifest = get_pinned_kit_manifest()
         self.assertTrue(manifest.get("verified"), f"Manifest failed: {manifest.get('error')}")
         self.assertEqual(manifest.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(manifest.get("pinned_source_commit"), "8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c")
-        self.assertEqual(manifest.get("version"), "0.2.21")
+        self.assertEqual(manifest.get("pinned_source_commit"), "99cde50dfaa0f0306b6c5b70aebc4161db0fc71c")
+        self.assertEqual(manifest.get("version"), "0.2.23")
         self.assertEqual(manifest.get("expected_page_count"), 26)
-        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.21-8ea653e0061f.zip")
+        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.23-99cde50dfaa0.zip")
         self.assertEqual(
             manifest.get("release_archive_sha256"),
-            "9a10008b9506a7b69a09e1c7b8bf9f8c5ab0075358e5da17b8295ca816697d12",
+            "18cd12c95157e05098a3105ff5ea446238d4ac6642f8aa89e38344878f85f893",
         )
 
     def test_dist_manifest_verification_against_local_repo(self):
@@ -190,7 +190,7 @@ class TestPinnedKitManifest(unittest.TestCase):
         dist_path = Path(configured)
         self.assertTrue(dist_path.is_dir(), "Explicit release distribution must exist")
         if dist_path.is_dir():
-            verification = verify_installed_dist(dist_path, expected_commit="8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c")
+            verification = verify_installed_dist(dist_path, expected_commit="99cde50dfaa0f0306b6c5b70aebc4161db0fc71c")
             self.assertTrue(verification["installed"])
             self.assertTrue(verification["verified"])
             self.assertEqual(verification["reason_code"], "verified")
@@ -266,18 +266,11 @@ class TestGuiServerEndpoints(unittest.TestCase):
         dist_path = Path(configured)
         self.assertTrue(dist_path.is_dir())
         manifest = json.loads((dist_path / "dist-manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["source_commit"], "8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c")
+        self.assertEqual(manifest["source_commit"], "99cde50dfaa0f0306b6c5b70aebc4161db0fc71c")
         self.assertIn("page-reads.v1.json", manifest["files"])
         pages = [name for name in manifest["files"] if name.endswith(".html")]
         self.assertEqual(len(pages), 26)
         for name in pages:
-            if name == "agenten/subscription-agents.html":
-                # This release ships the candidate page, while its BACH route and
-                # public-shell allowlist remain a separate backend integration.
-                with self.subTest(page=name, route="candidate-dist-only"):
-                    page_bytes = (dist_path / name).read_bytes()
-                    self.assertEqual(hashlib.sha256(page_bytes).hexdigest(), manifest["files"][name])
-                continue
             route = "/" if name == "index.html" else "/" + name.removesuffix(".html")
             if name == "system/ocean.html":
                 route = "/system?tab=ocean"
@@ -312,7 +305,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(data.get("pinned_source_commit"), "8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c")
+        self.assertEqual(data.get("pinned_source_commit"), "99cde50dfaa0f0306b6c5b70aebc4161db0fc71c")
         self.assertIn("installed_dist", data)
 
     def test_route_gui_architecture_concepts(self):
@@ -330,7 +323,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos.gui.capabilities.v1")
         self.assertIn("kit", data)
-        self.assertEqual(data["kit"].get("revision"), "8ea653e0061f85a9d6f2ead5e7cce2317bcdb19c")
+        self.assertEqual(data["kit"].get("revision"), "99cde50dfaa0f0306b6c5b70aebc4161db0fc71c")
         self.assertIn("brand", data)
         self.assertIn("modules", data)
 

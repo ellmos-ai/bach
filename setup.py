@@ -88,7 +88,13 @@ def _run_packaging_setup() -> None:
         license="MIT",
         py_modules=["bach", "bach_api", "bach_report_client"],
         install_requires=_read_requirements(root / "requirements.txt"),
-        extras_require={"console": [_CONSOLE_REQUIREMENT]},
+        extras_require={
+            "console": [_CONSOLE_REQUIREMENT],
+            "worker-policy": [
+                "taskplan @ git+https://github.com/ellmos-ai/task-master.git@"
+                "5924b71b2a93e59e625b5c9afaa6e84966bf49d3"
+            ],
+        },
         entry_points={
             "console_scripts": ["bach=bach:main"],
             "ellmos.report_clients": [

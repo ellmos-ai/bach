@@ -447,3 +447,75 @@ class TestCrossOS:
             # (frueher C:\_Local_DEV\BACKUPS), per BACH_BACKUPS_DIR uebersteuerbar
             assert "backups" in str(h.backups_dir).lower()
             assert str(h.backups_dir).endswith("updates")
+
+
+
+def test_migrations_run_only_preview_shows_selected_and_untouched_without_writes(handler):
+    selected = handler.migrations_dir / "052_blueprint_template_provider.sql"
+    untouched = handler.migrations_dir / "053_resource_leases.sql"
+    selected.write_text("CREATE TABLE selected (id INTEGER);", encoding="utf-8")
+    untouched.write_text("CREATE TABLE untouched (id INTEGER);", encoding="utf-8")
+    before = handler.db_path.read_bytes()
+    ok, message = handler.handle("migrations", ["run", "--only", selected.name, "--dry-run"])
+    assert ok
+    assert "AUSGEWÄHLT" in message and selected.name in message
+    assert "UNBERÜHRT" in message and untouched.name in message
+    assert "DRY-RUN" in message
+    assert handler.db_path.read_bytes() == before
+    assert not list(handler.db_path.parent.glob("bach.db.premig-*.bak"))
+
+
+def test_migrations_run_repeated_only_executes_exact_files(handler):
+    selected_a = handler.migrations_dir / "052_blueprint_template_provider.sql"
+    selected_b = handler.migrations_dir / "053_resource_leases.sql"
+    selected_py = handler.migrations_dir / "052_blueprint_template_provider.py"
+    untouched = handler.migrations_dir / "migrate_unify_distribution.py"
+    selected_a.write_text("CREATE TABLE selected_052 (id INTEGER);", encoding="utf-8")
+    selected_b.write_text("CREATE TABLE selected_053 (id INTEGER);", encoding="utf-8")
+    selected_py.write_text(
+        "def run_migration(conn):\n    conn.execute('CREATE TABLE selected_052_py (id INTEGER)')\n",
+        encoding="utf-8",
+    )
+    untouched.write_text(
+        "def run_migration(conn):\n    conn.execute('CREATE TABLE unselected_unify (id INTEGER)')\n",
+        encoding="utf-8",
+    )
+    ok, message = handler.handle("migrations", [
+        "run", "--only", selected_a.name, "--only", selected_b.name,
+        "--only", selected_py.name,
+    ])
+    assert ok, message
+    assert "[OK] " + selected_a.name in message
+    assert "[OK] " + selected_b.name in message
+    assert "[OK] " + selected_py.name in message
+    conn = sqlite3.connect(handler.db_path)
+    try:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        applied = {row[0] for row in conn.execute("SELECT filename FROM _migrations")}
+    finally:
+        conn.close()
+    assert "selected_052" in tables and "selected_053" in tables
+    assert "selected_052_py" in tables and "unselected_unify" not in tables
+    assert applied == {selected_a.name, selected_b.name, selected_py.name}
+
+
+def test_invalid_migrations_run_argument_has_no_database_or_backup_write(handler):
+    migration = handler.migrations_dir / "052_blueprint_template_provider.sql"
+    migration.write_text("CREATE TABLE should_not_run (id INTEGER);", encoding="utf-8")
+    before = handler.db_path.read_bytes()
+    ok, message = handler.handle("migrations", ["run", "--only", "../" + migration.name])
+    assert not ok and "Pfade" in message
+    assert handler.db_path.read_bytes() == before
+    assert not list(handler.db_path.parent.glob("bach.db.premig-*.bak"))
+
+
+def test_dry_run_flag_in_handler_args_never_executes(handler):
+    migration = handler.migrations_dir / "052_blueprint_template_provider.sql"
+    migration.write_text("CREATE TABLE dry_run_only (id INTEGER);", encoding="utf-8")
+    before = handler.db_path.read_bytes()
+    ok, message = handler.handle("migrations", ["run", "--only", migration.name, "--dry-run"])
+    assert ok and "DRY-RUN" in message
+    assert handler.db_path.read_bytes() == before
+    assert not list(handler.db_path.parent.glob("bach.db.premig-*.bak"))

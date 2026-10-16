@@ -264,6 +264,8 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"
+    assert data["skill_candidate"]["confidence"] is None
+    assert data["skill_candidate"]["confidence_status"] == "not_measured"
     cand_id = data["skill_candidate"]["id"]
 
     # 2. GET /api/learning/hermes/candidates
@@ -280,7 +282,9 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
     assert resp.status_code == 200
     cands_data = resp.json()
     assert cands_data["count"] >= 1
-    assert any(c["id"] == cand_id for c in cands_data["candidates"])
+    projected = next(c for c in cands_data["candidates"] if c["id"] == cand_id)
+    assert projected["confidence"] is None
+    assert projected["confidence_status"] == "not_measured"
 
     # 3. GET /api/learning/hermes/candidates/{id}
     resp = client.get(
@@ -289,6 +293,8 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
     )
     assert resp.status_code == 200
     assert resp.json()["name"] == "pythonpath-resolver"
+    assert resp.json()["confidence"] is None
+    assert resp.json()["confidence_status"] == "not_measured"
 
     # 4. POST /api/learning/hermes/candidates/{id}/approve
     resp = client.post(f"/api/learning/hermes/candidates/{cand_id}/approve", json={"approved_by": "qa-lead"})
@@ -307,3 +313,40 @@ def test_hermes_api_endpoints(monkeypatch, temp_db: Path):
     hermes_sub = next((s for s in ocean_map["subsystems"] if s["name"] == "Hermes"), None)
     assert hermes_sub is not None
     assert hermes_sub["status"] == "active"
+
+
+def test_memory_facts_api_projects_zero_unknown_and_invalid_confidence(monkeypatch, tmp_path):
+    db = tmp_path / "facts-confidence.db"
+    service = HermesDistillationService(db_path=db)
+    service.ensure_schema()
+    with sqlite3.connect(db) as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS memory_facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, key TEXT, value TEXT,
+            value_type TEXT DEFAULT 'text', confidence REAL, source TEXT, created_at TEXT
+        )""")
+        conn.executemany(
+            """INSERT INTO memory_facts(category,key,value,confidence,source)
+               VALUES('user',?,?,?,'test')""",
+            [
+                ("zero", "0", 0.0),
+                ("unknown", "none", None),
+                ("invalid", "infinity", float("inf")),
+            ],
+        )
+        conn.commit()
+
+    monkeypatch.setattr("system.gui.api.unified_api._get_conn", lambda timeout=30.0: service._get_connection())
+    monkeypatch.setattr("system.gui.api.unified_api.BACH_DB", db)
+    app = FastAPI()
+    app.include_router(unified_router)
+    response = TestClient(app).get("/api/memory/facts")
+
+    assert response.status_code == 200
+    facts = {item["key"]: item for item in response.json()["facts"]}
+    assert facts["zero"]["confidence"] == 0.0
+    assert facts["zero"]["confidence_status"] == "stored_unvalidated"
+    assert facts["unknown"]["confidence"] is None
+    assert facts["unknown"]["confidence_status"] == "not_measured"
+    assert facts["invalid"]["confidence"] is None
+    assert facts["invalid"]["confidence_status"] == "unavailable"
+    assert "Infinity" not in response.text and "NaN" not in response.text
