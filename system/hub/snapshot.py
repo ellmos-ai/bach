@@ -63,7 +63,7 @@ class SnapshotHandler(BaseHandler):
             return None, "DB nicht gefunden"
         return sqlite3.connect(self.db_path), None
     
-    def _create(self, name: str = None, dry_run: bool = False) -> tuple:
+    def _create(self, name: str = None, dry_run: bool = False, *, session_id: str | None = None) -> tuple:
         """Session-Snapshot erstellen.
 
         Fuegt den VOLLSTAENDIGEN Zustand in ALLE Schema-Spalten ein:
@@ -90,7 +90,8 @@ class SnapshotHandler(BaseHandler):
 
             # Aktuellen Zustand sammeln
             timestamp = datetime.now().isoformat()
-            session_id = self._get_current_session_id(cursor)
+            if session_id is None:
+                session_id = self._get_current_session_id(cursor)
 
             # Snapshot-Name generieren
             snapshot_name = name or f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -170,6 +171,7 @@ class SnapshotHandler(BaseHandler):
                 self.db_path.parent,
                 name=snapshot_name,
                 source_ref=f"bach-session_snapshots:{snapshot_row_id}",
+                session_id=session_id,
             )
 
             out = [

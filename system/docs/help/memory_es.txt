@@ -324,3 +324,29 @@ Ver también:
 ---
 Versión: 1.3.0 | Actualizado: 2026-02-08
 (Integración del conector documentada, API de biblioteca + API sin cabeza agregada)
+
+
+CONTRATO ACTUAL DE SESIÓN (2026-10-16)
+======================================
+
+El informe y el cierre seleccionan una sesión y un socio concretos.
+--session=ID (alias --session-id) requiere --partner=NAME (alias --partner-id).
+También se admiten valores separados. Sin ID, la selección debe ser única;
+varias sesiones abiertas causan un error. Las llamadas antiguas sin ámbito solo
+admiten una única sesión. Un ID ausente, cerrado o ajeno se rechaza antes de escribir.
+
+bach mem session --session=ID --partner=codex -- "Informe"
+bach --shutdown --session=ID --partner=codex -- "Resumen"
+
+API: memory.session("Informe", session_id="ID", partner="codex")
+API: session.shutdown("Resumen", session_id="ID", partner="codex")
+MCP: session_shutdown(summary="Resumen", session_id="ID", partner="codex")
+-- conserva literalmente el texto; API/MCP lo añaden automáticamente.
+mem session deja la sesión abierta. quick/emergency solo guardan una nota;
+quick es una pausa. complete guarda atómicamente ended_at, informe, contadores
+por intervalo y contexto de continuación de esa sesión. No adopta una sucesora.
+Un fallo al fichar la salida genera un aviso sin declarar fallido un cierre ya guardado.
+El escaneo de directorios y las instantáneas automáticas se conservan.
+La limpieza global, compresión, exportación y resumen del registro compartido ya
+no se ejecutan automáticamente al cerrar. Se conservan los informes existentes.
+BACH mantiene la autoridad de los datos; el helper es compatibilidad local.

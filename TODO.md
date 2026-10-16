@@ -15,6 +15,16 @@ Die Planung und ein Testlauf sind kein Produktions- oder Geräteabnahmenachweis.
 
 ## Offene Aufgaben
 
+### [BACH-SESSION-OWNERSHIP-01] Explizite Session-Adressierung integrieren
+- **Ziel:** Offline-Draft `-2` beheben: Bericht und Abschluss müssen dieselbe offene Sitzung und deren Partner verwenden. Fremde Sessions bleiben unverändert.
+- **Kandidat 2026-10-16:** [PR #412](https://github.com/ellmos-ai/bach/pull/412): gemeinsame BACH-lokale Adressierung für Handler, CLI, Library-API und MCP; atomarer Abschluss mit Race-, Rollback- und Mehrpartner-Regressionen. Globale Wartung wird getrennt ausgeführt. Unabhängiger lokaler Review ohne offene Findings; Integration steht aus.
+- **Modulgrenze:** BACH besitzt `memory_sessions` und `partner_presence`. Dieser Helper ist Kompatibilitätsverdrahtung dieses State-Owners; kein zweiter USMC-Speicher und keine Änderung des gemeinsamen Memory-Union-Vertrags. Der spätere Transfer benötigt einen expliziten Writer-/Migrationsvertrag.
+- **Akzeptanz:** Unabhängiges Review, Integration und gezielter Mehrpartner-Lauf über die installierte Version. Kein zentraler Taskabschluss bei offline gebliebenem Rheingold-Lead.
+- **Aufwand:** medium
+- **Reichweite:** local
+- **Priorität:** high
+- **Folgearbeit:** Offline-Draft `-3` führt partnergebundene Start-/Statusabfragen und eine strukturierte eigene Session-ID. Die bisherige globale Auswahl kann eine fremde Sitzung als bereits eigenen Start melden. Die bestehende Folgearbeit `BACH-PROMPTBOARD-IMPORT-01` bleibt für Desktop-/Tray-Abnahme offen; PR #252 wurde am 10. Oktober integriert.
+
 ### [BACH-PROMPTBOARD-IMPORT-01] Gemeinsamen PromptBoard-Import integrieren und live abnehmen
 - **Ziel:** PromptBoard-Vorlagen über denselben Handler in GUI, CLI und API importieren; bestehende Benutzervorlagen erhalten und Teilimporte verhindern.
 - **Diagnose 2026-10-08:** Der Import war ausschließlich im GUI-Server implementiert. JSON-Objekte wurden still zu Prompttext konvertiert; ungültiges UTF-8 führte zu HTTP 500.

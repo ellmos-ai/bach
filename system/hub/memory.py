@@ -112,9 +112,14 @@ class MemoryHandler(BaseHandler):
         elif operation == "clear":
             return self._clear_working(dry_run)
         elif operation == "session":
-            if not args:
+            from ._services.session_scope import parse_scope
+            try:
+                summary, scope = parse_scope(args)
+            except ValueError as exc:
+                return False, str(exc)
+            if not summary:
                 return False, "Usage: --memory session \"Zusammenfassung der Session\""
-            return self._save_session(" ".join(args), dry_run)
+            return self._save_session(summary, dry_run, **scope)
         elif operation == "sessions":
             n = int(args[0]) if args else 5
             return self._list_sessions(n)
@@ -941,21 +946,17 @@ class MemoryHandler(BaseHandler):
         finally:
             conn.close()
     
-    def _save_session(self, summary: str, dry_run: bool) -> tuple:
+    def _save_session(self, summary: str, dry_run: bool, *, session_id=None, partner_id=None) -> tuple:
         """Session-Bericht in memory_sessions speichern."""
-        if dry_run:
-            return True, f"[DRY-RUN] Wuerde Session speichern: {summary[:50]}..."
-        
+        from ._services.session_scope import select_session, new_session_id
         conn = self._get_conn()
         try:
             now = datetime.now()
-            session_id = f"session_{now.strftime('%Y%m%d_%H%M%S')}"
-            
-            # Pruefen ob es eine offene Session gibt
-            open_session = conn.execute("""
-                SELECT id, session_id FROM memory_sessions 
-                WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1
-            """).fetchone()
+            if not dry_run:
+                conn.execute("BEGIN IMMEDIATE")
+            open_session = select_session(conn, session_id=session_id, partner_id=partner_id)
+            if dry_run:
+                return True, f"[DRY-RUN] Wuerde Session speichern: {summary[:50]}..."
             
             if open_session:
                 # Der Session-Bericht wird vor dem eigentlichen Shutdown
@@ -969,12 +970,13 @@ class MemoryHandler(BaseHandler):
                 session_id = open_session[1]
                 action = "aktualisiert"
             else:
+                session_id = new_session_id(now)
                 # Neue Session mit gleichem Start/End (nachtraeglicher Bericht)
                 conn.execute("""
                     INSERT INTO memory_sessions 
-                    (session_id, started_at, ended_at, summary, tasks_created, tasks_completed)
-                    VALUES (?, ?, ?, ?, 0, 0)
-                """, (session_id, now.isoformat(), now.isoformat(), summary))
+                    (session_id, partner_id, started_at, ended_at, summary, tasks_created, tasks_completed)
+                    VALUES (?, ?, ?, ?, ?, 0, 0)
+                """, (session_id, partner_id, now.isoformat(), now.isoformat(), summary))
                 action = "erstellt"
             
             conn.commit()
