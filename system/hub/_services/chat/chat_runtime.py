@@ -2923,7 +2923,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         """
         budget = getattr(session, "model_request_budget", None)
         if budget is not None and budget.remaining() <= 2:
-            from hub._services.chat.slots_config import ModelRequestBudgetError
             raise ModelRequestBudgetError("Kontextübergabe in der Abschlussreserve gesperrt")
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
@@ -2991,7 +2990,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             return
         budget = getattr(session, "model_request_budget", None)
         if budget is not None and budget.remaining() <= 2:
-            from hub._services.chat.slots_config import ModelRequestBudgetError
             raise ModelRequestBudgetError("Vorab-Zusammenfassung in der Abschlussreserve gesperrt")
         old = session.messages[:-4]
         recent = session.messages[-4:]
