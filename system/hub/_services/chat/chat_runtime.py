@@ -44,6 +44,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
+from hub._services.chat.slots_config import ModelRequestBudgetError
+
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
     r"Task #(\d+) in (\d+) Teilaufgaben zerlegt: IDs (\[[\d, ]*\])"
@@ -570,6 +572,7 @@ class ChatSession(_ModuleChatSession):
         self.require_task_binding: bool = False
         self._persistent_core_model_call_control: Any = None
         self._worker_model_dispatch_binding: Any = None
+        self.model_request_budget: Any = None
         self._local_reserve_failure_binding: Any = None
         self._local_reserve_failure_control: Any = None
         self._local_reserve_failure_reason_code: str | None = None
@@ -830,6 +833,10 @@ class ChatRuntime(_ModuleChatRuntime):
         from hub._services.chat.model_sockets import resolve_fallback_backend
         for index in range(route["index"], len(targets)):
             target = targets[index]
+            budget = getattr(session, "model_request_budget", None)
+            if index > route["index"] and budget is not None and budget.remaining() <= 2:
+                from hub._services.chat.slots_config import ModelRequestBudgetError
+                raise ModelRequestBudgetError("Fallback in der Modellanfragen-Abschlussreserve gesperrt")
             if index == route["index"]:
                 active_backend = backend
             else:
@@ -850,6 +857,9 @@ class ChatRuntime(_ModuleChatRuntime):
                     active_backend, *args, **call_kwargs
                 )
             except Exception as exc:
+                from hub._services.chat.slots_config import ModelRequestBudgetError
+                if isinstance(exc, ModelRequestBudgetError):
+                    raise
                 # The persistent core is explicitly pinned to its selected local
                 # model; reserve exhaustion must not silently downgrade or route elsewhere.
                 from hub._services.chat.local_resource_reserve import LocalReserveError
@@ -1609,17 +1619,49 @@ class ChatRuntime(_ModuleChatRuntime):
 
         async def dispatch_model_call(*, bound=False, agent_kwargs=None):
             """Record only an actual backend attempt, including fallback calls."""
+            nonlocal args
             call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             handle = None
             from hub._services.llm.controller_route import route_snapshot
             dispatch_route = route_snapshot(backend)
             dispatch_route_stamp = getattr(backend, "_controller_route", None)
+            budget = getattr(session, "model_request_budget", None) if session is not None else None
+            if budget is not None:
+                from hub._services.chat.slots_config import ModelRequestBudgetError
+                from hub._services.chat.model_sockets import profile_backend_matches
+                from hub._services.llm.model_backend import OllamaBackend
+                selected_model = kwargs.get("model") or backend.get_default_model()
+                if (call_binding is None or bound or type(backend) is not OllamaBackend
+                        or getattr(backend, "manages_own_tools", False)
+                        or type(selected_model) is not str or not selected_model.strip()
+                        or not profile_backend_matches("ollama", backend, selected_model)):
+                    raise ModelRequestBudgetError("Backendroute des budgetierten Workerlaufs ist nicht geprüft")
+                check_dispatch_binding(call_binding)
+                before = budget.remaining()
+                if before <= 0:
+                    raise ModelRequestBudgetError(
+                        f"Modellanfragenbudget ausgeschöpft: Run {budget.start_request_id}, "
+                        "verbleibend 0")
+                if before <= 2 and not completion_reserve:
+                    raise ModelRequestBudgetError("Nur Abschlussanfragen sind im Restbudget erlaubt")
+                record = budget.reserve(call_binding)
+                used, limit = record["reserved_count"], record["limit"]
+                if before <= 2 and kwargs.get("tools") is not None:
+                    kwargs["tools"] = _completion_reserve_tools(kwargs["tools"], call_binding)
+                if not args or type(args[0]) is not list:
+                    raise ModelRequestBudgetError("Modellanfragenachrichten sind nicht verifizierbar")
+                hint = (f"[MODELLANFRAGEN: Anfrage {used}/{limit}; danach "
+                        f"{limit - used} übrig. Run {budget.start_request_id}.]"
+                        + (" Abschlussreserve: Nutze ausschließlich die angebotenen "
+                           "Abgabewerkzeuge; beginne keine neue Recherche oder Bearbeitung."
+                           if before <= 2 else ""))
+                args = ([*args[0], {"role": "user", "content": hint}], *args[1:])
             if call_binding is not None and call_binding is dispatch_binding:
                 try:
                     call_binding._discard_model_execution_candidate()
                     from hub._services.llm.model_backend import backend_identifier
 
-                    # Hash the exact provider-facing request; never persist its contents.
+                    # Logical call digest after the budget hint/tools were built.
                     request_sha256 = model_request_digest()
                     handle = call_binding.begin_model_execution(
                         backend_id=backend_identifier(backend),
@@ -2488,17 +2530,34 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
             binding = getattr(session, "worker_task_binding", None)
             remaining_rounds = max_rounds - round_num
-            completion_reserve = (binding is not None and max_rounds > 0
-                                  and 0 < remaining_rounds <= 2)
+            budget = getattr(session, "model_request_budget", None)
+            try:
+                budget_remaining = budget.remaining() if budget is not None else None
+            except Exception as exc:
+                return FailedAnswer.from_exception(exc)
+            completion_reserve = (binding is not None and (
+                max_rounds > 0 and 0 < remaining_rounds <= 2
+                or budget_remaining is not None and 0 < budget_remaining <= 2))
+            if budget_remaining == 0:
+                return FailedAnswer(
+                    f"Modellanfragenbudget ausgeschöpft: Run {budget.start_request_id}, "
+                    "verbleibend 0")
             if completion_reserve:
                 grants = _effective_tool_grants(session)
                 current_tools = (tool for tool in tools if grants is None
                                  or tool.get("function", {}).get("name") in grants)
                 tools = _completion_reserve_tools(current_tools, binding)
                 if round_num not in reserve_notified_rounds:
+                    reserve_hint = (
+                        f"[ABSCHLUSSRESERVE: noch {budget_remaining} Modellanfragen] "
+                        + ("Nutze nur belegte Abgabewerkzeuge; beginne keine neue Recherche oder Bearbeitung."
+                           if tools else "Kein Abgabewerkzeug ist freigegeben; melde den konkreten Blocker ohne Abschlussbehauptung.")
+                        if budget_remaining is not None and budget_remaining <= 2
+                        else _completion_reserve_hint(binding, remaining_rounds,
+                                                      task_tool_offered=bool(tools))
+                    )
                     msgs.append({"role": "user", "content":
-                                 _completion_reserve_hint(binding, remaining_rounds,
-                                                          task_tool_offered=bool(tools))})
+                                 reserve_hint})
                     reserve_notified_rounds.add(round_num)
             offered_this_round = {tool.get("function", {}).get("name") for tool in tools}
 
@@ -2769,6 +2828,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     final_res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                         session, selected_backend, selected_model,
                         msgs, tools=None, think=final_think,
+                        _completion_reserve=True,
                     )
                     if final_res.get("error"):
                         return FailedAnswer(
@@ -2861,6 +2921,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         das arbeitende Modell selbst - es kennt seinen Stand. Das Ergebnis wird
         der Anfang des neuen, leeren Verlaufs.
         """
+        budget = getattr(session, "model_request_budget", None)
+        if budget is not None and budget.remaining() <= 2:
+            raise ModelRequestBudgetError("Kontextübergabe in der Abschlussreserve gesperrt")
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
@@ -2874,6 +2937,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if res.get("error"):
                 raise RuntimeError(str(res["error"]))
             uebergabe = (res.get("content") or "").strip()
+        except ModelRequestBudgetError:
+            raise
         except Exception as e:
             log.warning("Uebergabe fehlgeschlagen: %s", e)
             handoff_error = e
@@ -2923,6 +2988,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         selected_model = model or session.model or selected_backend.get_default_model()
         if len(session.messages) < 6:
             return
+        budget = getattr(session, "model_request_budget", None)
+        if budget is not None and budget.remaining() <= 2:
+            raise ModelRequestBudgetError("Vorab-Zusammenfassung in der Abschlussreserve gesperrt")
         old = session.messages[:-4]
         recent = session.messages[-4:]
 
@@ -2955,6 +3023,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             session.messages = [
                 {"role": "system", "content": f"Bisheriger Kontext: {summary}"}
             ] + recent
+        except ModelRequestBudgetError:
+            raise
         except Exception:
             if selected_model != "glm-5.3:cloud":
                 session.messages = recent

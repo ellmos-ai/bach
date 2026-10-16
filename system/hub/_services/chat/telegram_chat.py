@@ -271,6 +271,7 @@ class _WorkerControl:
     lease_supervisor: Any = None
     supports_step_actions: bool = False
     run_receipt_fields: Optional[Dict[str, Any]] = None
+    model_request_budget: Any = None
     handoff: WorkerHandoff = field(init=False)
     task_actions: WorkerTaskActions = field(init=False)
 
@@ -292,14 +293,142 @@ _WORKER_EXECUTIONS: Dict[str, _WorkerControl] = {}
 _WORKER_SERVICE_INSTANCE = uuid.uuid4().hex
 
 
+@dataclass(frozen=True)
+class _ModelRequestBudget:
+    worker_id: str
+    service_instance: str
+    start_request_id: str
+    generation: str
+    task_id: int
+    configuration_version: str
+
+    def record(self) -> dict:
+        from hub._services.chat.slots_config import ModelRequestBudgetError, model_request_run_record
+        try:
+            record = model_request_run_record(self.worker_id, self.start_request_id)
+        except Exception as exc:
+            raise ModelRequestBudgetError("Modellanfragenbeleg ist nicht lesbar") from exc
+        if (record is None or record["service_instance"] != self.service_instance
+                or record["generation"] != self.generation
+                or record["task_id"] != self.task_id
+                or record["configuration_version"] != self.configuration_version
+                or record["phase"] not in {"admitted", "active"}):
+            raise ModelRequestBudgetError("Modellanfragenlauf ist nicht mehr aktiv")
+        return record
+
+    def remaining(self) -> int:
+        record = self.record()
+        return record["limit"] - record["reserved_count"]
+
+    def reserve(self, binding) -> dict:
+        from hub._services.chat.slots_config import ModelRequestBudgetError, reserve_model_request
+        try:
+            snapshot = binding.task_snapshot()
+        except Exception as exc:
+            raise ModelRequestBudgetError("Taskversion für Modellanfrage nicht lesbar") from exc
+        if (binding.task_id != self.task_id or snapshot.get("id") != self.task_id
+                or not isinstance(snapshot.get("task_version"), str)):
+            from hub._services.chat.slots_config import ModelRequestBudgetError
+            raise ModelRequestBudgetError("Feste Taskbindung ist nicht mehr aktuell")
+        try:
+            return reserve_model_request(
+                self.worker_id, service_instance=self.service_instance,
+                start_request_id=self.start_request_id, generation=self.generation,
+                task_id=self.task_id, task_version=snapshot["task_version"],
+                configuration_version=self.configuration_version,
+            )
+        except ModelRequestBudgetError:
+            raise
+        except Exception as exc:
+            raise ModelRequestBudgetError("Modellanfragen-Reservation wurde nicht bestätigt") from exc
+
+
+def _recover_model_request_run(worker_id: str) -> bool:
+    """Close an old budget only after proven process/thread death and a free task."""
+    from hub._services.chat.slots_config import model_request_run_record, terminalize_model_request_run
+    from hub.agent_process_provider import capture_process_create_time, inspect_process_identity
+    record = model_request_run_record(worker_id)
+    if record is None or record["phase"] == "terminal":
+        return True
+    if record["service_instance"] == _WORKER_SERVICE_INSTANCE:
+        control = _WORKER_EXECUTIONS.get(worker_id)
+        if (control is None or control.start_request_id != record["start_request_id"]
+                or control.generation != record["generation"]
+                or record["pid"] != os.getpid()
+                or record["process_create_time"] != capture_process_create_time(os.getpid())
+                or not control.done_event.is_set()
+                or _thread_is_alive(control.thread)):
+            return False
+    elif inspect_process_identity({"pid": record["pid"],
+                                   "process_create_time": record["process_create_time"]})[0] not in {"gone", "mismatch"}:
+        return False
+    try:
+        holder = _native_task_client().read(record["task_id"])
+        if holder.leased is not False:
+            return False
+        terminalize_model_request_run(
+            worker_id, service_instance=record["service_instance"],
+            start_request_id=record["start_request_id"],
+            generation=record["generation"], expected_sequence=record["sequence"],
+            reason=("interrupted_no_dispatch" if record["reserved_count"] == 0
+                    else "interrupted_unknown"),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _budget_execution_projection(worker_id: str, start_request_id: str | None = None) -> dict | None:
+    slot = _execution_worker_slot(worker_id)
+    if not slot or slot.get("max_model_requests") is None:
+        return None
+    from hub._services.chat.slots_config import model_request_run_record
+    record = model_request_run_record(worker_id, start_request_id)
+    retained = _WORKER_EXECUTIONS.get(worker_id)
+    same_service_finished = bool(
+        record is not None and retained is not None
+        and record["service_instance"] == _WORKER_SERVICE_INSTANCE
+        and retained.start_request_id == record["start_request_id"]
+        and retained.generation == record["generation"]
+        and retained.done_event.is_set() and not _thread_is_alive(retained.thread)
+    )
+    if (record is not None and record["phase"] != "terminal"
+            and (record["service_instance"] != _WORKER_SERVICE_INSTANCE
+                 or same_service_finished)
+            and _recover_model_request_run(worker_id)):
+        record = model_request_run_record(worker_id, start_request_id)
+    if record is None or (start_request_id is not None
+                          and record["start_request_id"] != start_request_id):
+        return None
+    used, limit = record["reserved_count"], record["limit"]
+    return {
+        "schema": "bach.worker-execution.v1", "service_instance": record["service_instance"],
+        "worker_id": worker_id, "start_request_id": record["start_request_id"],
+        "generation": record["generation"],
+        "state": "terminal" if record["phase"] == "terminal" else "unconfirmed",
+        "terminal": record["phase"] == "terminal", "worker_thread_started": None,
+        "worker_status": None, "completed_task_ids": [], "reviewed_task_ids": [],
+        "error_code": record["reason"] or None,
+        "model_requests": {"run_id": record["start_request_id"], "used": used,
+                           "limit": limit, "remaining": limit - used,
+                           "phase": record["phase"]},
+    }
+
+
 def worker_execution_receipt(worker_id: str, start_request_id: str | None = None, *, verify_results=True) -> dict:
     """Observe this service's exact start without inferring completion from text."""
     with _WORKER_CONTROL_LOCK:
         control = _WORKER_EXECUTIONS.get(worker_id)
         if start_request_id is not None and (
                 control is None or control.start_request_id != start_request_id):
+            durable = _budget_execution_projection(worker_id, start_request_id)
+            if durable is not None:
+                return durable
             raise ValueError("Start-Request ist nicht bestätigt")
         if control is None:
+            durable = _budget_execution_projection(worker_id)
+            if durable is not None:
+                return durable
             current, thread = _active_worker_control(worker_id)
             return {"schema": "bach.worker-execution.v1", "service_instance": _WORKER_SERVICE_INSTANCE,
                 "worker_id": worker_id, "start_request_id": None, "generation": None,
@@ -336,6 +465,15 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
             "worker_status": None, "error_code": control.start_error,
             "heartbeat_at": control.last_heartbeat_at,
             "stop_requested": control.stop_event.is_set()}
+        if control.model_request_budget is not None:
+            stored = _budget_execution_projection(worker_id, control.start_request_id)
+            if stored is None:
+                raise RuntimeError("budget_run_unavailable")
+            receipt["model_requests"] = stored["model_requests"]
+            if terminal and not stored["terminal"]:
+                receipt["terminal"] = False
+                receipt["state"] = "unconfirmed"
+                receipt["error_code"] = "budget_terminal_unconfirmed"
         if control.queue_status is not None:
             from hub._services.chat.worker_queue_status import project_queue_status
             projected = project_queue_status(control.queue_status)
@@ -831,8 +969,21 @@ def _request_worker_decomposition(worker_id, generation, task_id, task_version):
         return control.task_actions.request(generation, task_id, task_version, control.task_binding)
 
 
+def _without_private_model_request_runs(worker):
+    if not isinstance(worker, dict):
+        return worker
+    public = dict(worker)
+    public.pop("_model_request_runs", None)
+    return public
+
+
 def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker = dict(worker)
+    budget_execution = (_budget_execution_projection(worker.get("id"))
+                        if worker.get("max_model_requests") is not None else None)
+    worker.pop("_model_request_runs", None)
+    if budget_execution is not None:
+        worker["model_requests"] = budget_execution["model_requests"]
     worker.pop("generation", None)
     worker.pop("task_action_binding", None)
     worker.pop("persistent_opt_in_id", None)
@@ -844,30 +995,52 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
         control = _WORKER_CONTROLS.get(worker.get("id"))
         live_control = control or retained
         thread_alive = bool(live_control and _thread_is_alive(live_control.thread))
+        live_budget_identity = False
+        if budget_execution is not None:
+            live_budget_identity = bool(
+                control is not None and live_control is control and thread_alive
+                and live_control.model_request_budget is not None
+                and live_control.start_request_id == budget_execution["start_request_id"]
+                and live_control.generation == budget_execution["generation"]
+                and budget_execution["service_instance"] == _WORKER_SERVICE_INSTANCE
+            )
+            if budget_execution["state"] == "unconfirmed" and not live_budget_identity:
+                worker["status"] = "unconfirmed"
+            elif (budget_execution["terminal"] and not live_budget_identity
+                  and str(budget_execution.get("error_code") or "").startswith("interrupted_")):
+                worker["status"] = "error"
         binding = getattr(live_control, "task_binding", None)
         task_active = bool(thread_alive and binding is not None and not binding.closed)
+        if budget_execution is not None and not live_budget_identity:
+            thread_alive = False
+            task_active = False
         # Service liveness includes idle polling. Running needs an actual
         # generation-bound task; the configured task_id is not proof.
         worker.update(runtime_verified=True, worker_active=thread_alive,
                       running=task_active, active_task_id=binding.task_id if task_active else None,
                       has_task_prompt=bool(str(worker.get("task_prompt") or "").strip()))
         worker.pop("queue_status", None)
-        if live_control is not None:
+        if live_control is not None and (budget_execution is None or live_budget_identity):
             from hub._services.chat.worker_queue_status import project_queue_status
             projected = project_queue_status(live_control.queue_status)
             if projected is not None:
                 worker["queue_status"] = projected
-        if retained is not None:
+        if retained is not None and (budget_execution is None or
+                                     retained.start_request_id == budget_execution["start_request_id"]):
             execution = worker_execution_receipt(retained.worker_id, retained.start_request_id, verify_results=False)
             worker["execution"] = execution
-            if not execution["terminal"] and execution["state"] in {"starting", "stopping", "finishing", "unconfirmed"}:
+            if ((budget_execution is None or live_budget_identity)
+                    and not execution["terminal"]
+                    and execution["state"] in ({"starting", "stopping", "finishing", "unconfirmed"}
+                                               | ({"running"} if budget_execution is not None else set()))):
                 worker["status"] = execution["state"]
         control = _WORKER_CONTROLS.get(worker.get("id"))
-        if control is not None and control.admission_pending:
+        if control is not None and control.admission_pending and (budget_execution is None or live_budget_identity):
             worker["status"] = "stopping" if control.stop_event.is_set() else "starting"
             worker["execution"] = worker_execution_receipt(control.worker_id, control.start_request_id, verify_results=False)
             return worker
-        if control and _thread_is_alive(control.thread) and not control.stop_event.is_set():
+        if (control and _thread_is_alive(control.thread) and not control.stop_event.is_set()
+                and (budget_execution is None or live_budget_identity)):
             worker["generation"] = control.generation
             worker["action_capabilities"] = {
                 "handoff": control.supports_step_actions,
@@ -3989,6 +4162,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
         known = _WORKER_EXECUTIONS.get(worker_id)
         if known is not None and known.start_request_id == request_id:
             execution = worker_execution_receipt(worker_id, request_id, verify_results=False)
+            if (known.model_request_budget is not None
+                    and execution["state"] == "unconfirmed"):
+                return rejected({"error": "Modellanfragenlauf nicht terminal bestätigt",
+                                 "execution": execution}, 409)
             return {"ok": True, "execution": execution}, 200 if execution["terminal"] else 202
         if known is not None and not worker_execution_receipt(worker_id, verify_results=False)["terminal"]:
             execution = worker_execution_receipt(worker_id, verify_results=False)
@@ -4002,6 +4179,27 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
             if current is not None and current.receipt:
                 response["receipt"] = current.receipt
             return rejected(response, 409)
+        try:
+            candidate_slot = _execution_worker_slot(worker_id)
+        except Exception:
+            # The established admission transaction reports unreadable slots.
+            # This early read only gates a known budgeted profile; it must not
+            # relabel legacy slot errors as budget-store failures.
+            candidate_slot = None
+        if candidate_slot is not None and candidate_slot.get("max_model_requests") is not None:
+            try:
+                previous = _budget_execution_projection(worker_id, request_id)
+                if previous is not None:
+                    if previous["terminal"]:
+                        return {"ok": True, "execution": previous}, 200
+                    return rejected({"error": "Vorheriger Start ist nicht bestätigt",
+                                     "execution": previous}, 409)
+                if not _recover_model_request_run(worker_id):
+                    return rejected({"error": "Vorheriger Modellanfragenlauf ist nicht bestätigt",
+                                     "error_code": "budget_previous_run_unconfirmed"}, 409)
+            except Exception:
+                return rejected({"error": "Modellanfragenlauf nicht verifizierbar",
+                                 "error_code": "budget_state_unavailable"}, 503)
         try:
             from hub._services.chat.slots_config import worker_admission_transaction, system_worker_at_version
             with worker_admission_transaction() as advance_revision:
@@ -4036,6 +4234,41 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     slot = cloud_snapshot
                 if slot.get("enabled", True) is not True:
                     return rejected({"error": "Worker ist deaktiviert"}, 403)
+                budget_record = None
+                if slot.get("max_model_requests") is not None:
+                    from hub._services.chat.slots_config import (
+                        _validated_model_fallback_profile, _worker_profile_version,
+                    )
+                    from hub.agent_process_provider import capture_process_create_time
+                    budget_limit = slot["max_model_requests"]
+                    fallbacks = _validated_model_fallback_profile(slot)
+                    if (start_request_id is None or _startup_stop_event is not None
+                            or _creator_authority is not None
+                            or expected_configuration_version is None
+                            or slot.get("system") or slot.get("type") != "once"
+                            or type(slot.get("task_id")) is not int or slot["task_id"] <= 0
+                            or type(budget_limit) is not int or not 3 <= budget_limit <= 256
+                            or slot.get("backend") != "ollama"
+                            or not isinstance(slot.get("model"), str)
+                            or not slot["model"].strip()
+                            or slot["model"].lower().endswith(":cloud")
+                            or any(target["backend"] != "ollama" for target in fallbacks)):
+                        return rejected({"error": "Budgetierter Einmallauf ist nicht unterstützt",
+                                         "error_code": "budget_profile_unsupported"}, 422)
+                    process_started = capture_process_create_time(os.getpid())
+                    if process_started is None:
+                        return rejected({"error": "Prozessidentität nicht verifizierbar",
+                                         "error_code": "budget_process_identity_unavailable"}, 503)
+                    budget_record = {
+                        "schema": "bach.worker-model-requests.v1", "worker_id": worker_id,
+                        "service_instance": _WORKER_SERVICE_INSTANCE, "pid": os.getpid(),
+                        "process_create_time": process_started,
+                        "start_request_id": request_id,
+                        "generation": _startup_generation or "", "task_id": slot["task_id"],
+                        "task_version": None, "configuration_version": _worker_profile_version(slot),
+                        "limit": budget_limit, "reserved_count": 0,
+                        "phase": "admitted", "reason": "", "sequence": 0,
+                    }
                 control = _WorkerControl(
                     worker_id,
                     generation=_startup_generation or uuid.uuid4().hex,
@@ -4050,6 +4283,12 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     persistent_cloud_admission_binding=cloud_binding,
                     persistent_core_intent_id=_startup_persistent_intent_id,
                 )
+                if budget_record is not None:
+                    budget_record["generation"] = control.generation
+                    control.model_request_budget = _ModelRequestBudget(
+                        worker_id, _WORKER_SERVICE_INSTANCE, request_id, control.generation,
+                        budget_record["task_id"], budget_record["configuration_version"],
+                    )
                 if _startup_stop_event is not None:
                     # Every startup worker gets a private Stop signal linked to
                     # the shared server shutdown. Manual Stop must never cancel
@@ -4061,7 +4300,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 control.thread = control.admission_handle
                 # No RAM admission is published unless the durable revision
                 # write succeeds. Keep the file lock until all registries agree.
-                advance_revision()
+                if budget_record is None:
+                    advance_revision()
+                else:
+                    advance_revision(model_request_run=budget_record)
                 _WORKER_CONTROLS[worker_id] = control
                 _ACTIVE_WORKER_THREADS[worker_id] = control.thread
                 _WORKER_EXECUTIONS[worker_id] = control
@@ -4477,6 +4719,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             break
                         continue
                     newly_acquired_binding = control.task_binding
+                    if (control.model_request_budget is not None
+                            and control.task_binding.task_id != control.model_request_budget.task_id):
+                        raise RuntimeError("budget_fixed_task_conflict")
                     if _update_worker_slot(control, {
                             "task_id": control.task_binding.task_id,
                             "resolved_model": "",
@@ -4552,6 +4797,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     worker_session.worker_task_actions = control.task_actions
                     worker_session.worker_task_binding = control.task_binding
                     worker_session.require_task_binding = True
+                    worker_session.model_request_budget = control.model_request_budget
                     worker_session._persistent_core_model_call_control = (
                         control if control.persistent_core_intent_id is not None else None
                     )
@@ -4571,6 +4817,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 finally:
                     if worker_session is not None:
                         worker_session._persistent_core_model_call_control = None
+                        worker_session.model_request_budget = None
                     try:
                         loop.run_until_complete(loop.shutdown_asyncgens())
                     finally:
@@ -5144,6 +5391,31 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         else "revocation-confirmed"
                     ),
                 )
+            if (control.model_request_budget is not None and not cleanup_error
+                    and not assignment_open
+                    and (control.task_binding is None or control.task_binding.closed)):
+                try:
+                    from hub._services.chat.slots_config import (
+                        model_request_run_record, terminalize_model_request_run,
+                    )
+                    record = model_request_run_record(worker_id, control.start_request_id)
+                    if record is None:
+                        raise RuntimeError("budget_run_unavailable")
+                    if record["phase"] != "terminal":
+                        if control.task_binding is not None:
+                            holder = _native_task_client().read(record["task_id"])
+                            if holder.leased is not False:
+                                raise RuntimeError("budget_task_lease_unconfirmed")
+                        terminalize_model_request_run(
+                            worker_id, service_instance=_WORKER_SERVICE_INSTANCE,
+                            start_request_id=control.start_request_id,
+                            generation=control.generation,
+                            expected_sequence=record["sequence"],
+                            reason="controller_cleanup_confirmed",
+                        )
+                except Exception:
+                    control.start_error = "budget_terminal_unconfirmed"
+                    log.warning("Modellanfragenlauf konnte nicht terminal bestätigt werden", exc_info=True)
             with _WORKER_CONTROL_LOCK:
                 control.handoff.cancel()
                 control.task_actions.cancel()
@@ -5752,6 +6024,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 workers = list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
                 for w in workers:
                     w["pause_info"] = get_slot_pause_info(w)
+                    w.pop("_model_request_runs", None)
                     w.pop("persistent_opt_in_id", None)
                     w.pop("persistent_opt_in_profile_version", None)
                     w.pop("_persistent_execution_checkpoint", None)
@@ -6139,7 +6412,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                         return
                     updated = update_slot(slot_id, updates)
                 record_activity(slot_id, f"Slot {slot_id} aktualisiert", "ok")
-                self._json({"ok": True, "slot": updated})
+                self._json({"ok": True, "slot": _without_private_model_request_runs(updated)})
             except KeyError as e:
                 self._json({"error": str(e)}, 404)
             except Exception as e:
@@ -6160,7 +6433,14 @@ class ControlHandler(BaseHTTPRequestHandler):
             if not worker_id:
                 self._json({"error": "id erforderlich"}, 400)
                 return
-            ok = remove_worker(worker_id)
+            try:
+                ok = remove_worker(worker_id)
+            except RuntimeError as exc:
+                if str(exc) != "Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden":
+                    self._json({"error": "Worker-Löschung nicht verifizierbar"}, 503)
+                else:
+                    self._json({"error": str(exc)}, 409)
+                return
             if ok:
                 record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
                 self._json({"ok": True, "id": worker_id})
@@ -6196,7 +6476,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                         requested_status=effective_status,
                         activity=f"Worker {effective_status}",
                     )
-                    response = {"ok": confirmed, "worker": updated, "receipt": receipt,
+                    response = {"ok": confirmed, "worker": _without_private_model_request_runs(updated), "receipt": receipt,
                                 "persistent_intent_revoked": intent_revoked}
                     if not confirmed:
                         response["error"] = "Worker-Ende noch nicht nachgewiesen"
@@ -6206,7 +6486,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     return
                 updated = update_slot(worker_id, {"status": new_status})
                 record_activity(worker_id, f"Worker Status: {new_status}", "ok")
-                self._json({"ok": True, "worker": updated})
+                self._json({"ok": True, "worker": _without_private_model_request_runs(updated)})
             except Exception as e:
                 self._json({"error": str(e)}, 500)
 
@@ -6249,7 +6529,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                     activity="Manuell gestoppt",
                     expected_execution=expected_execution,
                 )
-                response = {"ok": confirmed, "worker": updated, "receipt": receipt,
+                response = {"ok": confirmed, "worker": _without_private_model_request_runs(updated), "receipt": receipt,
                             "persistent_intent_revoked": intent_revoked}
                 if receipt.get("execution") is not None:
                     response["execution"] = receipt["execution"]
@@ -6393,7 +6673,14 @@ class ControlHandler(BaseHTTPRequestHandler):
             if not worker_id:
                 self._json({"error": "id erforderlich"}, 400)
                 return
-            ok = remove_worker(worker_id)
+            try:
+                ok = remove_worker(worker_id)
+            except RuntimeError as exc:
+                if str(exc) != "Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden":
+                    self._json({"error": "Worker-Löschung nicht verifizierbar"}, 503)
+                else:
+                    self._json({"error": str(exc)}, 409)
+                return
             if ok:
                 record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
                 self._json({"ok": True, "id": worker_id})

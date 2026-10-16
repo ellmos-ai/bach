@@ -17,6 +17,7 @@ import base64
 import inspect
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -39,6 +40,18 @@ DEFAULT_SLOTS_FILE = os.environ.get(
 )
 
 _config_lock = threading.RLock()
+_MODEL_REQUEST_RUNS_FIELD = "_model_request_runs"
+_MODEL_REQUEST_RUN_SCHEMA = "bach.worker-model-requests.v1"
+_MODEL_REQUEST_RUN_FIELDS = frozenset({
+    "schema", "worker_id", "service_instance", "pid", "process_create_time",
+    "start_request_id", "generation", "task_id", "task_version",
+    "configuration_version", "limit", "reserved_count", "phase", "reason", "sequence",
+})
+_MODEL_REQUEST_TERMINAL_LIMIT = 64
+
+
+class ModelRequestBudgetError(RuntimeError):
+    """A budgeted worker cannot safely send another model request."""
 
 DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     "buddha_chat": {
@@ -410,15 +423,20 @@ def worker_admission_transaction(path: str | None = None):
     with _exclusive_lock(target), _config_lock:
         published = False
 
-        def advance_revision():
+        def advance_revision(*, model_request_run: dict[str, Any] | None = None):
             nonlocal published
             if published:
                 raise RuntimeError("Admission revision already advanced")
             raw = target.read_bytes()
             _core_snapshot_from_bytes(raw)
             config = json.loads(raw.decode("utf-8"))
+            if model_request_run is not None:
+                _admit_model_request_run(config, model_request_run)
             config["admission_revision"] = uuid.uuid4().hex
-            save_slots_config(config, path)
+            if model_request_run is None:
+                save_slots_config(config, path)
+            else:
+                save_slots_config(config, path, durable=True)
             published = True
 
         yield advance_revision
@@ -476,8 +494,10 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[
             return _fresh_slots_config()
 
 
-def save_slots_config(config: dict[str, Any], path: str | None = None) -> None:
-    """Save configuration atomically."""
+def save_slots_config(config: dict[str, Any], path: str | None = None, *, durable: bool = False) -> None:
+    """Save atomically; reject unsupported durability before changing caller state."""
+    if durable and os.name != "posix":
+        raise OSError("Dauerhafte Modellanfragen benötigen POSIX-Verzeichnissync")
     f = _resolve_path(path)
     config["updated_at"] = datetime.now(timezone.utc).isoformat()
     with _config_lock:
@@ -490,7 +510,19 @@ def save_slots_config(config: dict[str, Any], path: str | None = None) -> None:
             with tmp.open("x", encoding="utf-8") as handle:
                 created = True
                 handle.write(json.dumps(config, indent=2, ensure_ascii=False))
+                if durable:
+                    handle.flush()
+                    os.fsync(handle.fileno())
             tmp.replace(f)
+            if durable:
+                # A confirmed request reservation must survive process loss.
+                # Directory fsync is supported by the native POSIX controller;
+                # unsupported platforms were rejected before any mutation.
+                directory_fd = os.open(f.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
         except OSError as e:
             log.error("Failed to write slots configuration to %s: %s", f, e)
             raise
@@ -763,6 +795,8 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
             PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
             PERSISTENT_CORE_RECOVERY_FIELD} & set(updates):
         raise ValueError("Dauerbetriebsfreigabe erfordert den Versions-CAS-Endpunkt")
+    if {"_model_request_runs", "max_model_requests"} & set(updates):
+        raise ValueError("Modellanfragenbudget erfordert den Konfigurations-CAS-Endpunkt")
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
@@ -939,7 +973,8 @@ def _core_configuration_version(config: dict[str, Any]) -> str:
     workers = config.get("dynamic_workers")
     if isinstance(workers, list):
         content["dynamic_workers"] = [
-            {field: value for field, value in worker.items() if field not in progress | {"history"}}
+            {field: value for field, value in worker.items()
+             if field not in progress | {"history", "_model_request_runs"}}
             if isinstance(worker, dict) else worker for worker in workers
         ]
     encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -1491,9 +1526,14 @@ def reconcile_workers(
         if active_worker_ids is not None and w.get("status") == "running":
             wid = w.get("id")
             if wid not in active_worker_ids:
-                next_st = "completed" if w.get("type") == "once" else "idle"
+                run = (_model_request_runs(w)["current"]
+                       if _MODEL_REQUEST_RUNS_FIELD in w else None)
+                pending_budget = run is not None and run["phase"] != "terminal"
+                next_st = ("error" if pending_budget else
+                           "completed" if w.get("type") == "once" else "idle")
                 w["status"] = next_st
-                w["current_activity"] = "Bereit (wiederhergestellt)"
+                w["current_activity"] = ("Modellanfragenlauf unbestätigt; Wiederaufnahme gesperrt"
+                                         if pending_budget else "Bereit (wiederhergestellt)")
                 dirty = True
 
     if dirty:
@@ -1683,6 +1723,10 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     mode = worker_data.get("mode", "full")
     think = bool(worker_data.get("think", True))
     max_tool_rounds = int(worker_data.get("max_tool_rounds", 20))
+    max_model_requests = worker_data.get("max_model_requests")
+    if max_model_requests is not None and (type(max_model_requests) is not int
+                                            or not 3 <= max_model_requests <= 256):
+        raise ValueError("max_model_requests muss eine ganze Zahl zwischen 3 und 256 sein")
     allow_tools = worker_data.get("allow_tools", True)
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
@@ -1732,6 +1776,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "mode": mode,
         "think": think,
         "max_tool_rounds": max_tool_rounds,
+        "max_model_requests": max_model_requests,
         "allow_tools": allow_tools,
         "memory_hook_opt_in": False,
         "allowed_tools": capabilities.get("allowed_tools"),
@@ -1775,6 +1820,8 @@ def remove_worker(worker_id: str, path: str | None = None) -> bool:
     cfg = load_slots_config(path, strict=True)
     workers = cfg.get("dynamic_workers", [])
     matches = [w for w in workers if w.get("id") == worker_id]
+    if matches and "_model_request_runs" in matches[0]:
+        raise RuntimeError("Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden")
     if len(matches) > 1 or (matches and (
         worker_id in cfg.get("slots", {}) or worker_id in DEFAULT_CORE_SLOTS
     )):
@@ -1848,7 +1895,7 @@ def record_activity(
 
 WORKER_EDITABLE_POLICY_FIELDS = frozenset({"pickup_filter"})
 WORKER_EDITABLE_FIELDS = frozenset({
-    "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "allow_tools",
+    "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "max_model_requests", "allow_tools",
     "memory_hook_opt_in", "model_fallbacks",
     "allowed_tools", "skill_refs",
     "allowed_tools", "skill_refs", "persistent_opt_in",
@@ -1894,11 +1941,184 @@ def _worker_profile_version(worker: dict[str, Any]) -> str:
     if type(configuration["memory_hook_opt_in"]) is not bool:
         raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
     fields = WORKER_EDITABLE_FIELDS - {"persistent_opt_in"}
+    if worker.get("max_model_requests") is None:
+        # Old unbudgeted profile versions, including persistent opt-in grants,
+        # keep their established digest until a budget is explicitly set.
+        fields = fields - {"max_model_requests"}
     profile = {field: worker.get(field) for field in sorted(fields)}
     policy = worker_selection_policy(worker)
     raw = json.dumps({"id": worker["id"], **profile, "selection_policy": policy},
                      sort_keys=True, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def _model_request_worker(config: dict[str, Any], worker_id: str) -> dict[str, Any]:
+    matches = [worker for worker in config.get("dynamic_workers", [])
+               if isinstance(worker, dict) and worker.get("id") == worker_id]
+    if len(matches) != 1:
+        raise RuntimeError("budget_worker_not_unique")
+    return matches[0]
+
+
+def _validated_model_request_record(record: Any) -> dict[str, Any]:
+    if (type(record) is not dict or set(record) != _MODEL_REQUEST_RUN_FIELDS
+            or record.get("schema") != _MODEL_REQUEST_RUN_SCHEMA
+            or any(type(record.get(key)) is not str or
+                   re.fullmatch(r"[0-9a-f]{32}", record[key]) is None
+                   for key in ("service_instance", "start_request_id", "generation"))
+            or type(record.get("worker_id")) is not str or not record["worker_id"]
+            or type(record.get("pid")) is not int or record["pid"] <= 0
+            or type(record.get("process_create_time")) not in (int, float)
+            or not math.isfinite(record["process_create_time"])
+            or record["process_create_time"] <= 0
+            or type(record.get("task_id")) is not int or record["task_id"] <= 0
+            or record.get("task_version") is not None and (
+                type(record["task_version"]) is not str or
+                re.fullmatch(r"[0-9a-f]{64}", record["task_version"]) is None)
+            or type(record.get("configuration_version")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", record["configuration_version"]) is None
+            or type(record.get("limit")) is not int or not 3 <= record["limit"] <= 256
+            or type(record.get("reserved_count")) is not int
+            or not 0 <= record["reserved_count"] <= record["limit"]
+            or record.get("phase") not in {"admitted", "active", "unknown", "terminal"}
+            or type(record.get("reason")) is not str or len(record["reason"]) > 96
+            or type(record.get("sequence")) is not int or record["sequence"] < 0
+            or record["phase"] == "admitted" and (
+                record["reserved_count"] != 0 or record["task_version"] is not None
+                or record["reason"] != "")
+            or record["phase"] == "active" and (
+                record["reserved_count"] == 0 or record["task_version"] is None
+                or record["reason"] != "")
+            or record["phase"] == "terminal" and (
+                record["reason"] not in {"controller_cleanup_confirmed",
+                                          "interrupted_no_dispatch", "interrupted_unknown"}
+                or record["reason"] == "interrupted_no_dispatch"
+                and record["reserved_count"] != 0
+                or record["reason"] == "interrupted_unknown"
+                and record["reserved_count"] == 0)):
+        raise RuntimeError("budget_run_invalid")
+    return record
+
+
+def _model_request_runs(worker: dict[str, Any]) -> dict[str, Any]:
+    if _MODEL_REQUEST_RUNS_FIELD not in worker:
+        return {"schema": _MODEL_REQUEST_RUN_SCHEMA, "current": None, "terminal": []}
+    stored = worker[_MODEL_REQUEST_RUNS_FIELD]
+    if (type(stored) is not dict or set(stored) != {"schema", "current", "terminal"}
+            or stored.get("schema") != _MODEL_REQUEST_RUN_SCHEMA
+            or type(stored.get("terminal")) is not list
+            or len(stored["terminal"]) > _MODEL_REQUEST_TERMINAL_LIMIT):
+        raise RuntimeError("budget_history_invalid")
+    if stored["current"] is not None:
+        _validated_model_request_record(stored["current"])
+        if stored["current"]["worker_id"] != worker.get("id"):
+            raise RuntimeError("budget_history_invalid")
+    seen = set()
+    for record in stored["terminal"]:
+        _validated_model_request_record(record)
+        if (record["phase"] != "terminal" or record["worker_id"] != worker.get("id")
+                or record["start_request_id"] in seen):
+            raise RuntimeError("budget_history_invalid")
+        seen.add(record["start_request_id"])
+    if stored["current"] is not None and stored["current"]["start_request_id"] in seen:
+        raise RuntimeError("budget_history_invalid")
+    return stored
+
+
+def _admit_model_request_run(config: dict[str, Any], record: dict[str, Any]) -> None:
+    _validated_model_request_record(record)
+    worker = _model_request_worker(config, record["worker_id"])
+    if (record["phase"] != "admitted" or record["reserved_count"] != 0
+            or record["sequence"] != 0 or record["task_version"] is not None
+            or worker.get("type") != "once" or worker.get("task_id") != record["task_id"]
+            or worker.get("max_model_requests") != record["limit"]
+            or _worker_profile_version(worker) != record["configuration_version"]):
+        raise RuntimeError("budget_admission_conflict")
+    runs = _model_request_runs(worker)
+    previous = runs["current"]
+    if previous is not None:
+        if previous["phase"] != "terminal":
+            raise RuntimeError("budget_previous_run_unconfirmed")
+        if len(runs["terminal"]) >= _MODEL_REQUEST_TERMINAL_LIMIT:
+            raise RuntimeError("budget_history_full")
+        runs["terminal"].append(previous)
+    if any(old["start_request_id"] == record["start_request_id"]
+           for old in runs["terminal"]):
+        raise RuntimeError("budget_start_request_reused")
+    runs["current"] = dict(record)
+    worker[_MODEL_REQUEST_RUNS_FIELD] = runs
+
+
+def model_request_run_record(worker_id: str, start_request_id: str | None = None,
+                             path: str | None = None) -> dict[str, Any] | None:
+    """Read one durable run; never turn an absent RAM control into a new run."""
+    config = load_slots_config(path, strict=True)
+    worker = _model_request_worker(config, worker_id)
+    runs = _model_request_runs(worker)
+    current = runs["current"]
+    if start_request_id is None or current is not None and current["start_request_id"] == start_request_id:
+        return dict(current) if current is not None else None
+    for record in runs["terminal"]:
+        if record["start_request_id"] == start_request_id:
+            return dict(record)
+    return None
+
+
+@_serialized_mutation
+def reserve_model_request(worker_id: str, *, service_instance: str,
+                          start_request_id: str, generation: str, task_id: int,
+                          task_version: str, configuration_version: str,
+                          path: str | None = None) -> dict[str, Any]:
+    """Persist one non-refundable backend attempt before provider dispatch."""
+    config = load_slots_config(path, strict=True)
+    worker = _model_request_worker(config, worker_id)
+    record = _model_request_runs(worker)["current"]
+    if (record is None or record["phase"] not in {"admitted", "active"}
+            or record["service_instance"] != service_instance
+            or record["start_request_id"] != start_request_id
+            or record["generation"] != generation
+            or record["task_id"] != task_id or worker.get("task_id") != task_id
+            or record["configuration_version"] != configuration_version
+            or _worker_profile_version(worker) != configuration_version
+            or worker.get("max_model_requests") != record["limit"]
+            or type(task_version) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", task_version) is None
+            or record["task_version"] not in (None, task_version)):
+        raise ModelRequestBudgetError("Modellanfragenlauf oder Taskbindung ist nicht mehr aktuell")
+    if record["reserved_count"] >= record["limit"]:
+        raise ModelRequestBudgetError(
+            f"Modellanfragenbudget ausgeschöpft: Run {start_request_id}, "
+            f"{record['reserved_count']}/{record['limit']}, verbleibend 0")
+    record["task_version"] = task_version
+    record["reserved_count"] += 1
+    record["sequence"] += 1
+    record["phase"] = "active"
+    save_slots_config(config, path, durable=True)
+    return dict(record)
+
+
+@_serialized_mutation
+def terminalize_model_request_run(worker_id: str, *, service_instance: str,
+                                  start_request_id: str, generation: str,
+                                  expected_sequence: int, reason: str,
+                                  path: str | None = None) -> dict[str, Any]:
+    config = load_slots_config(path, strict=True)
+    record = _model_request_runs(_model_request_worker(config, worker_id))["current"]
+    if (record is None or record["service_instance"] != service_instance
+            or record["start_request_id"] != start_request_id
+            or record["generation"] != generation
+            or record["sequence"] != expected_sequence
+            or record["phase"] == "terminal"
+            or reason not in {"controller_cleanup_confirmed",
+                              "interrupted_no_dispatch", "interrupted_unknown"}
+            or reason == "interrupted_no_dispatch" and record["reserved_count"] != 0
+            or reason == "interrupted_unknown" and record["reserved_count"] == 0):
+        raise RuntimeError("budget_terminal_conflict")
+    record["phase"] = "terminal"
+    record["reason"] = reason
+    record["sequence"] += 1
+    save_slots_config(config, path, durable=True)
+    return dict(record)
 
 
 def _persistent_core_profile_version(worker: dict[str, Any]) -> str:
@@ -2901,7 +3121,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         expiry = _parse_timestamp(worker.get("expires_at"))
         if worker.get("expires_at") and (expiry is None or expiry <= datetime.now(timezone.utc)):
             raise RuntimeError("worker_not_editable")
-    ranges = {"max_tool_rounds": (0, 1000), "pause_after": (0, 100),
+    ranges = {"max_tool_rounds": (0, 1000), "max_model_requests": (3, 256), "pause_after": (0, 100),
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     for field, value in edits.items():
         if field == "pickup_filter":
