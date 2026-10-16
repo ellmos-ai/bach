@@ -130,7 +130,15 @@ def _metadata(value, *, required=True):
     return value
 
 
-def start_execution(conn, binding, *, backend_id, requested_model, slot_id, request_sha256):
+def _identity(conn):
+    try:
+        from .worker_review_identity import identity_snapshot
+        return identity_snapshot(conn)
+    except (sqlite3.DatabaseError, ValueError, RuntimeError):
+        return None
+
+
+def start_execution(conn, binding, *, backend_id, requested_model, slot_id, request_sha256, route_sha256=None):
     """Write one actual attempt under the current task holder, no raw payloads."""
     if conn.in_transaction:
         return None
@@ -138,6 +146,8 @@ def start_execution(conn, binding, *, backend_id, requested_model, slot_id, requ
     requested_model = _metadata(requested_model)
     slot_id = _metadata(slot_id, required=False)
     if not isinstance(request_sha256, str) or not _HEX.fullmatch(request_sha256):
+        return None
+    if route_sha256 is not None and (type(route_sha256) is not str or not _HEX.fullmatch(route_sha256)):
         return None
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -154,6 +164,13 @@ def start_execution(conn, binding, *, backend_id, requested_model, slot_id, requ
             "observed_model": None, "model_provenance": "unknown",
             "slot_id": slot_id, "request_sha256": request_sha256,
             "response_sha256": None, "phase": "attempted", "started_at": _fmt(now), "returned_at": None}
+        if route_sha256 is not None:
+            receipt["route_sha256"] = route_sha256
+            receipt["route_confirmed"] = False
+        identity = _identity(conn)
+        if identity is not None:
+            receipt.update(identity_configuration_version=identity["configuration_version"],
+                           model_principal_id=None, identity_binding_sha256=None)
         event = _history(conn, binding.task_id, "worker_model_execution_start", _ACTOR, now, receipt)
         conn.execute("INSERT INTO worker_model_executions "
             "(id,task_id,fence,generation,phase,receipt,receipt_sha256,started_event_id) VALUES (?,?,?,?,?,?,?,?)",
@@ -196,7 +213,7 @@ def _answer(result):
     return _digest(result), observed
 
 
-def finish_execution(conn, binding, handle, *, result=None, failed=False):
+def finish_execution(conn, binding, handle, *, result=None, failed=False, route_sha256=None):
     """Positive terminal evidence requires a returned answer and live correlation."""
     if conn.in_transaction:
         return False
@@ -225,6 +242,20 @@ def finish_execution(conn, binding, handle, *, result=None, failed=False):
                        observed_model=answer[1] if valid else None)
         if receipt.get("schema") == _SCHEMA:
             receipt["model_provenance"] = "provider_reported" if valid and answer[1] is not None else "unknown"
+        if "route_sha256" in receipt:
+            receipt["route_confirmed"] = bool(valid and receipt["route_sha256"] == route_sha256)
+        if "identity_configuration_version" in receipt:
+            identity = _identity(conn)
+            bound = None
+            if (valid and receipt.get("route_confirmed") is True and identity is not None
+                    and identity["configuration_version"] == receipt["identity_configuration_version"]):
+                from .worker_review_identity import resolve_binding
+                bound = resolve_binding(identity, backend_id=receipt["backend_id"],
+                                        route_sha256=receipt["route_sha256"],
+                                        requested_model=receipt["requested_model"],
+                                        observed_model=receipt["observed_model"])
+            receipt["model_principal_id"] = bound["principal_id"] if bound else None
+            receipt["identity_binding_sha256"] = _digest(bound) if bound else None
         digest = _digest(receipt)
         event = _history(conn, binding.task_id, "worker_model_execution_terminal", _ACTOR, now,
                          {"execution_id": row["id"], "phase": phase, "receipt_sha256": digest})
@@ -323,7 +354,29 @@ def read_execution_evidence(conn, record):
             _metadata(receipt.get(key))
         for key in ("observed_model", "slot_id"):
             _metadata(receipt.get(key), required=False)
+        route_sha256 = receipt.get("route_sha256")
+        if route_sha256 is not None and (type(route_sha256) is not str or not _HEX.fullmatch(route_sha256)):
+            return _unavailable("execution_evidence_invalid")
+        if route_sha256 is not None and type(receipt.get("route_confirmed")) is not bool:
+            return _unavailable("execution_evidence_invalid")
+        identity_version = receipt.get("identity_configuration_version")
+        principal = receipt.get("model_principal_id")
+        binding_hash = receipt.get("identity_binding_sha256")
+        if identity_version is not None and (type(identity_version) is not str or not _HEX.fullmatch(identity_version)):
+            return _unavailable("execution_evidence_invalid")
+        if principal is not None:
+            if (identity_version is None or _metadata(principal) != principal
+                    or type(binding_hash) is not str or not _HEX.fullmatch(binding_hash)
+                    or receipt.get("route_confirmed") is not True
+                    or receipt.get("model_provenance") != "provider_reported"):
+                return _unavailable("execution_evidence_invalid")
+        elif binding_hash is not None:
+            return _unavailable("execution_evidence_invalid")
         started = dict(receipt, phase="attempted", returned_at=None, response_sha256=None, observed_model=None)
+        if "route_sha256" in receipt:
+            started["route_confirmed"] = False
+        if "identity_configuration_version" in receipt:
+            started.update(model_principal_id=None, identity_binding_sha256=None)
         legacy = receipt["schema"] == _LEGACY_SCHEMA
         if not legacy:
             observed = receipt.get("observed_model")
@@ -349,6 +402,10 @@ def read_execution_evidence(conn, record):
             # but never promote that legacy model value to a provider report.
             "observed_model": None if legacy else receipt["observed_model"],
             "model_provenance": "legacy_unknown" if legacy else receipt["model_provenance"],
+            "route_sha256": route_sha256 if not legacy and receipt.get("route_confirmed") is True else None,
+            "identity_configuration_version": None if legacy else identity_version,
+            "model_principal_id": None if legacy else principal,
+            "identity_binding_sha256": None if legacy else binding_hash,
             "execution_revision": revision, "submission_task_version": record["task_version"], "linked_at": row["linked_at"]}
     except sqlite3.DatabaseError:
         return _unavailable("execution_schema_unavailable")

@@ -343,4 +343,13 @@ def project_scope_evidence(data, *, repo_root=None, worktrees_dir=None) -> dict:
         scope = _unavailable("scope_evidence_invalid")
     projected_result = {**result, "scope": scope,
                         "result_revision": scope.get("result_revision")}
+    review = result.get("model_review")
+    if isinstance(review, dict) and review.get("availability") == "recorded":
+        matches = (scope.get("availability") == "available"
+                   and isinstance(scope.get("result_revision"), str)
+                   and review.get("result_revision") == scope["result_revision"])
+        projected_result["model_review"] = {
+            **review, "availability": "available" if matches else "unavailable",
+            **({} if matches else {"reason": "review_scope_not_current"}),
+        }
     return {**data, "result": projected_result}

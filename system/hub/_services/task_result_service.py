@@ -490,6 +490,10 @@ def read_result(conn, task_id, *, operator_token=None):
         # is historical evidence until the local SDK/API revalidates its tree.
         record["scope"] = read_scope_evidence(conn, record)
         record["result_revision"] = None
+        from .worker_result_review import read_review_evidence
+        # This read is history/DB only. The SDK/API scope projection below
+        # must still compare the exact currently observed Git revision.
+        record["model_review"] = read_review_evidence(conn, record)
         return {"schema": "bach.task-result-readback.v1", "task_id": task_id,
                 "task_version": task_content_version(task), "status": task["status"],
                 "status_revision": revision, "result": record, "verified": True,

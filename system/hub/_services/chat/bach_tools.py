@@ -1127,10 +1127,19 @@ def _task_route_fields(conn, payload):
     return result
 
 
+def _review_tool_grants(binding, grants):
+    """Private review authority always narrows configurable tool permissions."""
+    if getattr(binding, "_review_grant", None) is not None:
+        readonly = {"read_file", "search_text", "task_manage"}
+        return frozenset(readonly if grants is None else readonly.intersection(grants))
+    return grants
+
+
 def exec_tool(name: str, args: Any, mode: str, bach_app=None,
               default_model: str = "", *, worker_task_binding=None,
               require_task_binding: bool = False, agent_operations=None,
               allowed_tools=None) -> str:
+    allowed_tools = _review_tool_grants(worker_task_binding, allowed_tools)
     if allowed_tools is not None and name not in allowed_tools:
         return "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben."
     if require_task_binding and worker_task_binding is None:
@@ -2446,7 +2455,8 @@ class BachToolProvider:
         self._worker_task_binding = worker_task_binding
         self._require_task_binding = require_task_binding
         self._guard = guard
-        self._allowed_tools = None if allowed_tools is None else frozenset(allowed_tools)
+        effective = _review_tool_grants(worker_task_binding, allowed_tools)
+        self._allowed_tools = None if effective is None else frozenset(effective)
         self._agent_operations = agent_operations
 
     def get_tools(self, mode) -> list[dict]:
