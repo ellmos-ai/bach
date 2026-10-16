@@ -33,7 +33,8 @@ _PRIVATE = re.compile(
     r"\b(?:\d{1,3}\.){3}\d{1,3}\b)"
 )
 _EMAIL_LOCAL = re.compile(r"[\w.+-]+")
-_EMAIL_DOMAIN = re.compile(r"[\w.-]+\.\w+")
+_EMAIL_DOMAIN = re.compile(r"[\w.-]+")
+_EMAIL_DOT_WORD = re.compile(r"\.\w")
 _SECRET = re.compile(
     r"(?:\b(?:sk|ghp|github_pat|AKIA)[_-][A-Za-z0-9_-]{12,}|"
     r"(?i:authorization\s*:\s*bearer|api[_-]?key\s*[:=]|password\s*[:=]|"
@@ -232,8 +233,10 @@ def _contains_private_email(value):
     # Consume each local-part run once; a failed domain must not retry its suffixes.
     for local in _EMAIL_LOCAL.finditer(value):
         end = local.end()
-        if end < len(value) and value[end] == "@" and _EMAIL_DOMAIN.match(value, end + 1):
-            return True
+        if end < len(value) and value[end] == "@":
+            domain = _EMAIL_DOMAIN.match(value, end + 1)
+            if domain and _EMAIL_DOT_WORD.search(value, domain.start() + 1, domain.end()):
+                return True
     return False
 
 

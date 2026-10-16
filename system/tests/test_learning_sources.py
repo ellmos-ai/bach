@@ -304,13 +304,14 @@ def test_neutralization_stores_only_parameter_definitions(ctx):
     assert row["review_available"] and row["confidence"] is None
 
 
-@pytest.mark.parametrize("case", ["local-run", "many-at-signs", "domain-run"])
+@pytest.mark.parametrize("case", ["local-run", "many-at-signs", "domain-run", "hyphen-domain"])
 def test_neutralization_long_non_email_finishes_in_bounded_child(case):
     # Bound a potentially quadratic search without leaving a stuck test thread.
     code = (
         "import sys; from hub._services.learning_source_service import _neutralize; "
         "cases = {'local-run': '+' * 180000, 'many-at-signs': 'a@' * 90000, "
-        "'domain-run': 'a@' + '.' * 179998}; text = cases[sys.argv[1]]; "
+        "'domain-run': 'a@' + '.' * 179998, 'hyphen-domain': 'a@' + '-' * 179998}; "
+        "text = cases[sys.argv[1]]; "
         "clean, definitions = _neutralize({'body': text}, []); "
         "assert clean == {'body': text} and definitions == []; "
         "print('neutralized:180000')"
