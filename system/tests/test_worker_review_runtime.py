@@ -193,10 +193,14 @@ class _ReviewExecutionClient:
         self.link_calls.append((binding, handle))
         return True
 
-    def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result):
+    def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result,
+                      _review_binding=None):
         from hub._services.task_result_service import validate_submission
 
         assert task_id == REVIEW_TASK_ID
+        assert _review_binding is not None
+        assert _review_binding._client is self
+        assert _review_binding.task_id == task_id
         assert lease_id
         assert fence == 77
         assert task_version == REVIEW_TASK_VERSION
@@ -331,12 +335,17 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
         backend, binding, allowed_tools=["task_manage", "read_file", "search_text"],
     )
 
+    review_result = json.dumps({
+        "status": "findings",
+        "summary": "The checked evidence supports the requested behavior.",
+        "task_contract_met": False,
+    }, ensure_ascii=False)
     responses = [
         _tool_reply(MODEL, "task_manage", {"action": "detail", "task_id": TARGET_TASK_ID}),
         _tool_reply(MODEL, "task_manage", {
             "action": "submit_result",
             "task_id": REVIEW_TASK_ID,
-            "result": "Findings: the checked evidence supports the requested behavior.",
+            "result": review_result,
         }),
     ]
     requests = _mock_openai_http(monkeypatch, responses)
@@ -395,6 +404,12 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
     assert [item[1]["route_sha256"] for item in client.start_calls] == [
         route["route_sha256"], route["route_sha256"],
     ]
+    assert len(client.finish_calls) == 2
+    assert all(item[3] is False for item in client.finish_calls)
+    assert all(item[2]["provider_reported_model"] == MODEL for item in client.finish_calls)
+    assert [item[4].get("route_sha256") for item in client.finish_calls] == [
+        route["route_sha256"], route["route_sha256"],
+    ]
     assert len(client.link_calls) == 1
     assert len(client.recorded_review_answers) == 1
 
@@ -405,7 +420,7 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
     assert raw_arguments == {
         "action": "submit_result",
         "task_id": REVIEW_TASK_ID,
-        "result": "Findings: the checked evidence supports the requested behavior.",
+        "result": review_result,
     }
     assert submitted_answer["tool_calls"] == [{
         "function": {
@@ -413,9 +428,7 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
             "arguments": raw_arguments,
         },
     }]
-    assert client.result_record["result"] == (
-        "Findings: the checked evidence supports the requested behavior."
-    )
+    assert client.result_record["result"] == review_result
     assert client.link_calls[0][1] is client.start_calls[1][2]
 
 

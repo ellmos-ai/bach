@@ -748,7 +748,8 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
                   task_version: str | None = None,
                   outcome: str, result_ref: str = "", note: str = "",
                   worker_result: dict | None = None,
-                  config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+                  config: LeaseConfig | None = None, now: datetime | None = None,
+                  _review_binding=None) -> LeaseResult:
     """Vertrag §5.4 + §8.4. Einziger Weg für den Abschluss einer geleasten Task.
 
     Bei veraltetem Fence oder abgelaufenem Lease wird nichts am Status geändert;
@@ -819,6 +820,13 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
             conn.rollback()
             return _deny(task_id, "completion_guard", now,
                          detail="Native Worker geben ihr generationgebundenes Ergebnis zur getrennten Review-Abnahme ab")
+        if worker_result is not None:
+            from .worker_result_review import review_task_marker, validate_review_release
+            if review_task_marker(conn, task_id) and not validate_review_release(
+                    conn, row, worker_result, _review_binding):
+                conn.rollback()
+                return _deny(task_id, "completion_guard", now,
+                             detail="Review-Abgabe hat keinen aktuellen privaten Ziel- und Ausführungsbeleg")
         if worker_result is not None:
             from .task_result_service import insert_submission, result_reference
             try:

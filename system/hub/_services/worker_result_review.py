@@ -19,13 +19,16 @@ from . import worker_policy_settings as settings
 from . import worker_review_identity as identity
 from .task_lease import _history, _local_naive, _utcnow, task_content_version
 from .task_result_service import read_result
-from .worker_execution_evidence import _digest as execution_digest, _submitted
+from .worker_execution_evidence import (_digest as execution_digest, _event as execution_event,
+                                        _owned as owned_execution, _submitted)
 from .worker_scope_evidence import project_scope_evidence
 
 _SEAL = object()
 _ACTOR = "native-result-review-controller"
 _INTENT_SCHEMA = "bach.worker-result-review-intent.v1"
 _REVIEW_SCHEMA = "bach.worker-result-model-review.v1"
+_INVALID_SCHEMA = "bach.worker-review-invalid-result.v1"
+_OBSOLETE_SCHEMA = "bach.worker-review-obsolete-child.v1"
 _READ_SCHEMA = "bach.worker-result-review-evidence.v1"
 _HEX = re.compile(r"[a-f0-9]{64}\Z")
 _SUBMISSION_REVISION = re.compile(r"sha256:[a-f0-9]{64}\Z")
@@ -38,7 +41,7 @@ class ReviewGrant:
     __slots__ = ("_seal", "task_id", "task_version", "target_task_id", "target_result_id",
                  "target_revision", "worker_id", "host", "generation", "slot_id", "route",
                  "requested_model", "principal_id", "policy_version", "identity_version",
-                 "_is_current", "_stop_event", "_last_answer")
+                 "_is_current", "_stop_event", "_last_answer", "_last_answer_sha256")
 
     def __init__(self, *, _seal=None, **values):
         if _seal is not _SEAL:
@@ -47,6 +50,7 @@ class ReviewGrant:
         for name, value in values.items():
             setattr(self, name, value)
         self._last_answer = None
+        self._last_answer_sha256 = None
 
     def __repr__(self):
         return "<ReviewGrant private>"
@@ -567,6 +571,118 @@ def guard_review_dispatch(conn, binding, *, route, requested_model,
         return False
 
 
+def validate_review_release(conn, task, worker_result, binding):
+    """Private review-child CAS in the canonical lease-release transaction.
+
+    Git is checked before the binding lock; this writer checks the exact DB
+    target, intent, current identity and actual returned provider receipt.
+    Nothing supplied by a tool request can stand in for the execution handle.
+    """
+    if not conn.in_transaction or binding is None or not isinstance(task, dict):
+        return False
+    grant = getattr(binding, "_review_grant", None)
+    try:
+        if (not _grant_valid(grant) or binding.task_id != grant.task_id
+                or binding.generation != grant.generation
+                or binding._ack.result_generation != grant.generation
+                or binding._ack.worker_id != grant.worker_id
+                or binding._ack.host != grant.host
+                or binding._ack.fence != task.get("claim_fence")
+                or binding._ack.lease_id != task.get("claim_id")
+                or task.get("claimed_by") != grant.worker_id
+                or task.get("claim_host") != grant.host
+                or task.get("claim_result_generation") != grant.generation
+                or task_content_version(task) != grant.task_version
+                or worker_result.get("generation") != grant.generation
+                or type(worker_result.get("result")) is not str
+                or not binding._active or binding._closed
+                or binding._model_execution_pending is not None):
+            return False
+        found = _intent(conn, grant.task_id)
+        if found is None or found["task"] != task:
+            return False
+        intent = found["receipt"]
+        if (intent["target_task_id"] != grant.target_task_id
+                or intent["target_result_id"] != grant.target_result_id
+                or intent["target_revision"] != grant.target_revision
+                or intent["policy_version"] != grant.policy_version
+                or intent["identity_version"] != grant.identity_version):
+            return False
+        parent = read_result(conn, grant.target_task_id)
+        target = parent.get("result")
+        if (parent.get("status") != "review" or not isinstance(target, dict)
+                or target.get("result_id") != grant.target_result_id
+                or target.get("submission_revision") != intent["submission_revision"]
+                or target.get("execution", {}).get("execution_revision") != intent["execution_revision"]
+                or target.get("execution", {}).get("execution_id") != intent["author_execution_id"]
+                or target.get("execution", {}).get("slot_id") != intent["author_slot_id"]
+                or target.get("generation") != intent["author_generation"]
+                or target.get("scope", {}).get("scope_receipt_sha256") != intent["scope_receipt_sha256"]):
+            return False
+        authority = _target_authority(conn, target)
+        if (authority is None or not _same_target_db(conn, target, authority)
+                or authority["author_id"] != intent["author_id"]
+                or authority["policy_version"] != grant.policy_version
+                or authority["identity_version"] != grant.identity_version
+                or grant.principal_id not in authority["eligible"]
+                or grant.principal_id == authority["author_id"]
+                or grant.slot_id == target["execution"].get("slot_id")
+                or grant.generation == target["generation"]):
+            return False
+        answer = grant._last_answer
+        handle = binding._model_execution_candidate
+        if (not isinstance(answer, dict) or handle is None
+                or grant._last_answer_sha256 != execution_digest(answer)
+                or _verdict_from_answer(answer, grant.task_id, worker_result["result"]) is None):
+            return False
+        execution = owned_execution(conn, binding, handle)
+        if (execution is None or execution["phase"] != "returned"
+                or execution["result_id"] is not None
+                or execution["submission_revision"] is not None
+                or execution["link_event_id"] is not None
+                or type(execution["started_event_id"]) is not int
+                or type(execution["terminal_event_id"]) is not int
+                or execution["started_event_id"] >= execution["terminal_event_id"]):
+            return False
+        receipt = json.loads(execution["receipt"])
+        if (execution_digest(receipt) != execution["receipt_sha256"]
+                or receipt.get("schema") != "bach.worker-model-execution.v2"
+                or receipt.get("execution_id") != execution["id"]
+                or receipt.get("task_id") != grant.task_id
+                or receipt.get("fence") != task["claim_fence"]
+                or receipt.get("generation") != grant.generation
+                or receipt.get("input_task_version") != grant.task_version
+                or receipt.get("phase") != "returned"
+                or receipt.get("slot_id") != grant.slot_id
+                or receipt.get("backend_id") != grant.route["backend_id"]
+                or receipt.get("route_sha256") != grant.route["route_sha256"]
+                or receipt.get("route_confirmed") is not True
+                or receipt.get("requested_model") != grant.requested_model
+                or receipt.get("model_provenance") != "provider_reported"
+                or receipt.get("response_sha256") != grant._last_answer_sha256
+                or receipt.get("identity_configuration_version") != grant.identity_version
+                or receipt.get("model_principal_id") != grant.principal_id
+                or identity.principal_for_execution(authority["identity"],
+                    {**receipt, "availability": "available"}) != grant.principal_id):
+            return False
+        terminal = {"execution_id": execution["id"], "phase": "returned",
+                    "receipt_sha256": execution["receipt_sha256"]}
+        if not execution_event(conn, execution["terminal_event_id"], grant.task_id,
+                               "worker_model_execution_terminal", terminal,
+                               receipt.get("returned_at")):
+            return False
+        initial = dict(receipt, phase="attempted", returned_at=None,
+                       response_sha256=None, observed_model=None,
+                       model_provenance="unknown", route_confirmed=False,
+                       model_principal_id=None, identity_binding_sha256=None)
+        return execution_event(conn, execution["started_event_id"], grant.task_id,
+                               "worker_model_execution_start", initial,
+                               receipt.get("started_at"))
+    except (AttributeError, KeyError, TypeError, ValueError, sqlite3.Error,
+            settings.PolicyUnavailable):
+        return False
+
+
 def _parse_verdict(result_text):
     try:
         verdict = json.loads(result_text)
@@ -608,6 +724,397 @@ def _verdict_from_answer(answer, child_task_id, result_text):
             or arguments["result"] != result_text):
         return None
     return _parse_verdict(result_text)
+
+
+def _invalid_child(conn, found, target, authority, child_id, status_revision):
+    """Recognize only an actual, independently executed malformed review result."""
+    observed = read_result(conn, child_id)
+    child = observed.get("result")
+    task = found["task"]
+    if (observed.get("status") != "review" or observed.get("status_revision") != status_revision
+            or not isinstance(child, dict) or child.get("reason") != "awaiting_review"
+            or child.get("completion_policy_version") != 1
+            or child.get("submission", {}).get("availability") != "available"
+            or child.get("execution", {}).get("availability") != "available"
+            or child.get("task_id") != child_id
+            or child.get("task_version") != task_content_version(task)
+            or child.get("submitted_status_event_id") != status_revision
+            or task.get("claim_id") or task.get("status") != "review"
+            or _parse_verdict(child.get("result")) is not None
+            or child.get("accepted") is True
+            or child.get("completion_decision_event_id") is not None
+            or child.get("completion_decision_sha256") is not None
+            or (_table(conn, "worker_result_model_reviews") and conn.execute(
+                "SELECT 1 FROM worker_result_model_reviews WHERE review_task_id=? "
+                "OR (target_result_id=? AND target_revision=?) LIMIT 1",
+                (child_id, target["result_id"], target["result_revision"])).fetchone() is not None)):
+        return None
+    execution = child["execution"]
+    reviewer = identity.principal_for_execution(authority["identity"], execution)
+    if (reviewer is None or reviewer == authority["author_id"]
+            or reviewer not in authority["eligible"]
+            or execution.get("slot_id") == target["execution"].get("slot_id")
+            or child.get("generation") == target.get("generation")
+            or execution.get("generation") != child.get("generation")
+            or task.get("assigned_slot") not in (None, "", execution.get("slot_id"))
+            or task.get("required_model") not in (None, "", execution.get("requested_model"))):
+        return None
+    return observed, child, reviewer
+
+
+def recover_invalid_review_child(conn, task_id, *, result_id, status_revision,
+                                 repo_root=None, worktrees_dir=None):
+    """Requeue an immutable malformed review submission through the correction ledger.
+
+    This controller-only operation cannot approve a verdict. It requires the
+    original intent, live target revision, exact child CAS and independent
+    provider execution; no device capability is inferred or changed.
+    """
+    if (conn.in_transaction or type(task_id) is not int or task_id <= 0
+            or type(result_id) is not int or result_id <= 0
+            or type(status_revision) is not int or status_revision <= 0):
+        return None
+    try:
+        found = _intent(conn, task_id)
+        if found is None:
+            return None
+        target_pair = _intent_target(conn, found, repo_root=repo_root,
+                                     worktrees_dir=worktrees_dir)
+        if target_pair is None:
+            return None
+        target, authority = target_pair
+        initial = _invalid_child(conn, found, target, authority, task_id, status_revision)
+        if initial is None or initial[1].get("result_id") != result_id:
+            return None
+        from .task_result_service import ensure_result_correction_schema
+        from .task_lease import _history, _local_naive, _utcnow
+        from hub.task_audit import apply_task_field_changes
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            current_found = _intent(conn, task_id)
+            if (not _same_target_db(conn, target, authority)
+                    or current_found is None
+                    or current_found["row"]["intent_sha256"] != found["row"]["intent_sha256"]):
+                conn.rollback()
+                return None
+            # The final local Git check occurs in the small writer window.
+            projected = project_scope_evidence(read_result(conn, target["task_id"]),
+                repo_root=repo_root, worktrees_dir=worktrees_dir).get("result")
+            if (not isinstance(projected, dict)
+                    or projected.get("result_revision") != target["result_revision"]
+                    or projected.get("scope", {}).get("availability") != "available"):
+                conn.rollback()
+                return None
+            current_identity = _identity_snapshot(conn)
+            if current_identity["configuration_version"] != authority["identity_version"]:
+                conn.rollback()
+                return None
+            current = _invalid_child(conn, current_found, target, authority,
+                                     task_id, status_revision)
+            if (current is None or current[1].get("result_id") != result_id
+                    or any(current[1].get(key) != initial[1].get(key) for key in (
+                        "result_sha256", "submission_revision", "submission_event_id",
+                        "task_version", "generation", "fence"))
+                    or current[1]["execution"].get("execution_revision") !=
+                       initial[1]["execution"].get("execution_revision")):
+                conn.rollback()
+                return None
+            observed, child, reviewer = current
+            now = _utcnow()
+            receipt = {"schema": _INVALID_SCHEMA, "reason": "invalid_verdict_shape",
+                "intent_sha256": found["row"]["intent_sha256"],
+                "target_task_id": target["task_id"], "target_result_id": target["result_id"],
+                "target_revision": target["result_revision"],
+                "review_task_id": task_id, "child_result_id": result_id,
+                "child_result_sha256": child["result_sha256"],
+                "child_submission_revision": child["submission_revision"],
+                "child_execution_revision": child["execution"]["execution_revision"],
+                "child_execution_id": child["execution"]["execution_id"],
+                "reviewer_id": reviewer, "generation": child["generation"],
+                "fence": child["fence"], "task_version": child["task_version"],
+                "status_revision": status_revision, "recorded_at": _local_naive(now)}
+            digest = _digest(receipt)
+            decision_event = _history(conn, task_id, "worker_result_review_invalid",
+                _ACTOR, now, {**receipt, "receipt_sha256": digest})
+            ensure_result_correction_schema(conn)
+            note = (f"Ungültige strukturierte Review-Abgabe (Result #{result_id}); "
+                    "erneute unabhängige Prüfung erforderlich.")
+            correction_round = int(conn.execute(
+                "SELECT COALESCE(MAX(correction_round),0)+1 FROM task_result_corrections "
+                "WHERE task_id=?", (task_id,)).fetchone()[0])
+            request_id = str(uuid.uuid4())
+            cursor = conn.execute("""INSERT INTO task_result_corrections
+                (task_id,request_id,correction_round,source_result_id,source_result_sha256,
+                 source_generation,source_fence,source_task_version,source_status_revision,
+                 correction_note,requested_by_device_id,requested_at,policy_decision_sha256)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (task_id, request_id, correction_round, result_id, child["result_sha256"],
+                 child["generation"], child["fence"], child["task_version"],
+                 status_revision, note, 0, _local_naive(now), digest))
+            correction_id = cursor.lastrowid
+            apply_task_field_changes(conn, task_id, current_found["task"], {"status": "pending"},
+                changed_by=_ACTOR, now=_local_naive(now), allow_reopen=True)
+            pointer = conn.execute("UPDATE tasks SET result_correction_request_id=? "
+                "WHERE id=? AND status='pending' AND (claim_id IS NULL OR claim_id='') "
+                "AND result_correction_request_id IS ?",
+                (correction_id, task_id, current_found["task"].get("result_correction_request_id")))
+            if pointer.rowcount != 1:
+                raise ValueError("Reviewkorrektur wurde parallel geändert")
+            updated = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+            from .task_lease import task_content_version as content_version
+            next_version = content_version(updated)
+            correction_event = _history(conn, task_id, "result_correction_request", _ACTOR, now,
+                {"correction_id": correction_id, "request_id": request_id,
+                 "correction_round": correction_round, "result_id": result_id,
+                 "result_sha256": child["result_sha256"], "generation": child["generation"],
+                 "fence": child["fence"], "task_version": child["task_version"],
+                 "status_revision": status_revision, "correction_note": note,
+                 "next_task_version": next_version, "policy_decision_sha256": digest})
+            conn.execute("UPDATE task_result_corrections SET event_id=?,next_task_version=? WHERE id=?",
+                (correction_event, next_version, correction_id))
+            conn.execute("UPDATE worker_task_results SET completion_decision_event_id=?,"
+                         "completion_decision_sha256=? WHERE id=? AND task_id=?",
+                         (decision_event, digest, result_id, task_id))
+            from .task_result_service import active_correction_request
+            verified = active_correction_request(conn, task_id)
+            if (not isinstance(verified, dict)
+                    or verified.get("correction_id") != correction_id
+                    or verified.get("source_result_id") != result_id):
+                raise ValueError("Reviewkorrektur wurde nicht kanonisch bestätigt")
+            conn.commit()
+            return {"schema": _INVALID_SCHEMA, "availability": "recorded",
+                    "review_task_id": task_id, "source_result_id": result_id,
+                    "correction_id": correction_id, "status": "pending"}
+        except BaseException:
+            conn.rollback()
+            raise
+    except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,
+            settings.PolicyUnavailable):
+        return None
+
+
+def review_invalid_correction_matches(conn, row):
+    """Pure historical validation of the private negative review correction."""
+    try:
+        child_id = row["task_id"]
+        source = _row(conn.execute(
+            "SELECT * FROM worker_task_results WHERE id=? AND task_id=?",
+            (row["source_result_id"], child_id)))
+        if (source is None or type(source.get("completion_decision_event_id")) is not int
+                or not 0 < source["completion_decision_event_id"] < row["event_id"]
+                or source.get("completion_decision_sha256") != row["policy_decision_sha256"]
+                or source.get("submitted_status_event_id") != row["source_status_revision"]):
+            return False
+        event = _row(conn.execute("SELECT * FROM task_history WHERE id=? AND task_id=?",
+            (source["completion_decision_event_id"], child_id)))
+        if (event is None or event["action"] != "worker_result_review_invalid"
+                or event["field_changed"] != "lease" or event["old_value"] is not None
+                or event["changed_by"] != _ACTOR):
+            return False
+        stored = json.loads(event["new_value"])
+        receipt = {key: value for key, value in stored.items() if key != "receipt_sha256"}
+        found = _intent(conn, child_id)
+        if (found is None or stored.get("receipt_sha256") != row["policy_decision_sha256"]
+                or _digest(receipt) != row["policy_decision_sha256"]
+                or receipt.get("schema") != _INVALID_SCHEMA
+                or receipt.get("reason") != "invalid_verdict_shape"
+                or receipt.get("recorded_at") != event["changed_at"]
+                or receipt.get("intent_sha256") != found["row"]["intent_sha256"]
+                or receipt.get("target_task_id") != found["receipt"]["target_task_id"]
+                or receipt.get("target_result_id") != found["receipt"]["target_result_id"]
+                or receipt.get("target_revision") != found["receipt"]["target_revision"]
+                or receipt.get("review_task_id") != child_id
+                or receipt.get("child_result_id") != source["id"]
+                or receipt.get("child_result_sha256") != source["result_sha256"]
+                or receipt.get("generation") != source["generation"]
+                or receipt.get("fence") != source["fence"]
+                or receipt.get("task_version") != source["task_version"]
+                or receipt.get("status_revision") != row["source_status_revision"]
+                or _parse_verdict(source["result"]) is not None):
+            return False
+        from .task_result_service import _submission_readback, _submission_revision
+        submission = _submission_readback(conn, source)
+        if submission.get("availability") != "available":
+            return False
+        revision = _submission_revision(source, submission["receipt_sha256"])
+        if receipt.get("child_submission_revision") != revision:
+            return False
+        from .worker_execution_evidence import read_execution_evidence
+        execution = read_execution_evidence(conn, dict(source, result_id=source["id"],
+            reason="awaiting_review", submission=submission,
+            submission_revision=revision))
+        return (execution.get("availability") == "available"
+            and execution.get("execution_revision") == receipt.get("child_execution_revision")
+            and execution.get("execution_id") == receipt.get("child_execution_id")
+            and execution.get("model_principal_id") == receipt.get("reviewer_id")
+            and receipt.get("reviewer_id") != found["receipt"]["author_id"])
+    except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError):
+        return False
+
+
+def _obsolete_target_reason(conn, found, grant, *, repo_root=None, worktrees_dir=None):
+    """Only proven target drift qualifies; missing observations do not."""
+    intent = found["receipt"]
+    observed = read_result(conn, grant.target_task_id)
+    target = observed.get("result")
+    if observed.get("status") not in {"review", None}:
+        return "target_db_changed"
+    if not isinstance(target, dict):
+        return None
+    if (type(target.get("result_id")) is int
+            and target["result_id"] != intent["target_result_id"]):
+        return "target_db_changed"
+    if (type(observed.get("task_version")) is str
+            and type(target.get("task_version")) is str
+            and observed["task_version"] != target["task_version"]):
+        return "target_db_changed"
+    if (observed.get("status") != "review" or target.get("reason") != "awaiting_review"
+            or target.get("result_id") != intent["target_result_id"]
+            or target.get("submission_revision") != intent["submission_revision"]
+            or target.get("execution", {}).get("execution_revision") != intent["execution_revision"]
+            or target.get("execution", {}).get("execution_id") != intent["author_execution_id"]):
+        return None
+    authority = _target_authority(conn, target)
+    if (authority is None or authority["author_id"] != intent["author_id"]
+            or authority["policy_version"] != grant.policy_version
+            or authority["identity_version"] != grant.identity_version
+            or not _same_target_db(conn, target, authority)):
+        return None
+    scope = target.get("scope", {})
+    if (scope.get("availability") == "recorded"
+            and type(scope.get("scope_receipt_sha256")) is str
+            and _HEX.fullmatch(scope["scope_receipt_sha256"])
+            and scope["scope_receipt_sha256"] != intent["scope_receipt_sha256"]):
+        return "target_revision_changed"
+    projected = project_scope_evidence(observed, repo_root=repo_root,
+                                       worktrees_dir=worktrees_dir).get("result")
+    if (isinstance(projected, dict) and projected.get("scope", {}).get("availability") == "available"
+            and type(projected.get("result_revision")) is str
+            and _HEX.fullmatch(projected["result_revision"])
+            and projected["result_revision"] != grant.target_revision):
+        return "target_revision_changed"
+    if (isinstance(projected, dict)
+            and target.get("scope", {}).get("scope_receipt_sha256") == intent["scope_receipt_sha256"]
+            and projected.get("scope", {}).get("reason") == "current_git_changed"):
+        return "current_git_changed"
+    return None
+
+
+def cancel_obsolete_review_child(conn, binding, *, repo_root=None, worktrees_dir=None):
+    """Terminally park a released review child after proven target drift only."""
+    if conn.in_transaction or getattr(getattr(binding, "_client", None), "mode", None) != "local":
+        return None
+    grant = getattr(binding, "_review_grant", None)
+    try:
+        if (not _grant_valid(grant) or binding.task_id != grant.task_id
+                or binding.generation != grant.generation):
+            return None
+        found = _intent(conn, grant.task_id)
+        child = _submitted(conn, binding)
+        answer = grant._last_answer
+        if (found is None or not isinstance(child, dict)
+                or child.get("reason") != "awaiting_review"
+                or child.get("completion_policy_version") != 1
+                or child.get("submission", {}).get("availability") != "available"
+                or child.get("execution", {}).get("availability") != "available"
+                or child.get("accepted") is True
+                or child.get("completion_decision_event_id") is not None
+                or child.get("completion_decision_sha256") is not None
+                or child.get("task_id") != grant.task_id
+                or child.get("generation") != grant.generation
+                or not isinstance(answer, dict)
+                or execution_digest(answer) != grant._last_answer_sha256
+                or _verdict_from_answer(answer, grant.task_id, child.get("result")) is None):
+            return None
+        intent = found["receipt"]
+        execution = child["execution"]
+        ids = _identity_snapshot(conn)
+        if (intent["target_task_id"] != grant.target_task_id
+                or intent["target_result_id"] != grant.target_result_id
+                or intent["target_revision"] != grant.target_revision
+                or intent["policy_version"] != grant.policy_version
+                or intent["identity_version"] != grant.identity_version
+                or ids["configuration_version"] != grant.identity_version
+                or identity.principal_for_execution(ids, execution) != grant.principal_id
+                or execution.get("response_sha256") != grant._last_answer_sha256
+                or execution.get("slot_id") != grant.slot_id
+                or execution.get("generation") != grant.generation
+                or execution.get("backend_id") != grant.route["backend_id"]
+                or execution.get("route_sha256") != grant.route["route_sha256"]
+                or execution.get("requested_model") != grant.requested_model
+                or (_table(conn, "worker_result_model_reviews") and conn.execute(
+                    "SELECT 1 FROM worker_result_model_reviews WHERE review_task_id=? LIMIT 1",
+                    (grant.task_id,)).fetchone() is not None)):
+            return None
+        reason = _obsolete_target_reason(conn, found, grant, repo_root=repo_root,
+                                         worktrees_dir=worktrees_dir)
+        if reason is None:
+            return None
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            current = _intent(conn, grant.task_id)
+            fresh = _submitted(conn, binding)
+            if (current is None or current["row"]["intent_sha256"] != found["row"]["intent_sha256"]
+                    or current["task"]["status"] != "review"
+                    or current["task"].get("claim_id")
+                    or not isinstance(fresh, dict) or fresh.get("reason") != "awaiting_review"
+                    or fresh.get("status_revision") != child.get("status_revision")
+                    or any(fresh.get(key) != child.get(key) for key in (
+                        "result_id", "task_id", "fence", "generation", "task_version",
+                        "result_sha256", "submission_revision", "submission_event_id"))
+                    or fresh.get("execution", {}).get("execution_revision") !=
+                       execution.get("execution_revision")
+                    or fresh.get("execution", {}).get("response_sha256") !=
+                       execution.get("response_sha256")
+                    or _obsolete_target_reason(conn, current, grant,
+                        repo_root=repo_root, worktrees_dir=worktrees_dir) != reason):
+                conn.rollback()
+                return None
+            from hub.task_audit import apply_task_field_changes
+            from .task_result_service import _status_revision
+            now = _utcnow()
+            apply_task_field_changes(conn, grant.task_id, current["task"],
+                {"status": "cancelled"}, changed_by=_ACTOR, now=_local_naive(now))
+            status_event = _status_revision(conn, grant.task_id)
+            receipt = {"schema": _OBSOLETE_SCHEMA, "reason": reason,
+                "intent_sha256": current["row"]["intent_sha256"],
+                "target_task_id": grant.target_task_id,
+                "target_result_id": grant.target_result_id,
+                "target_revision": grant.target_revision,
+                "review_task_id": grant.task_id,
+                "child_result_id": fresh["result_id"],
+                "child_submission_revision": fresh["submission_revision"],
+                "child_execution_revision": fresh["execution"]["execution_revision"],
+                "child_response_sha256": fresh["execution"]["response_sha256"],
+                "reviewer_id": grant.principal_id,
+                "generation": fresh["generation"], "fence": fresh["fence"],
+                "status_revision": child["status_revision"],
+                "cancelled_status_event_id": status_event,
+                "recorded_at": _local_naive(now)}
+            digest = _digest(receipt)
+            event_id = _history(conn, grant.task_id, "worker_result_review_obsolete",
+                _ACTOR, now, {**receipt, "receipt_sha256": digest})
+            status_row = _row(conn.execute("SELECT * FROM task_history WHERE id=?",
+                                           (status_event,)))
+            if (status_row is None or status_row["task_id"] != grant.task_id
+                    or status_row["action"] != "status_change"
+                    or status_row["field_changed"] != "status"
+                    or status_row["old_value"] != "review"
+                    or status_row["new_value"] != "cancelled"
+                    or status_row["changed_by"] != _ACTOR
+                    or not status_event < event_id
+                    or read_result(conn, grant.task_id)["status"] != "cancelled"):
+                raise ValueError("Stale Reviewkind ist nicht terminal bestätigt")
+            conn.commit()
+            return {"schema": _OBSOLETE_SCHEMA, "availability": "cancelled",
+                    "reason": reason, "review_task_id": grant.task_id,
+                    "child_result_id": fresh["result_id"], "event_id": event_id}
+        except BaseException:
+            conn.rollback()
+            raise
+    except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,
+            settings.PolicyUnavailable):
+        return None
 
 
 def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):

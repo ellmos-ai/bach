@@ -578,6 +578,7 @@ class WorkerLeaseBinding:
             self._model_execution_candidate = None
             if self._review_grant is not None:
                 self._review_grant._last_answer = None
+                self._review_grant._last_answer_sha256 = None
 
     def begin_model_execution(self, *, backend_id, requested_model, slot_id, request_sha256,
                               route_sha256=None):
@@ -588,6 +589,7 @@ class WorkerLeaseBinding:
             self._model_execution_candidate = None
             if self._review_grant is not None:
                 self._review_grant._last_answer = None
+                self._review_grant._last_answer_sha256 = None
             if (not self._active or self._closed or not self._is_current()
                     or self._stop_event.is_set() or self._ack.result_generation != self._generation):
                 return None
@@ -620,6 +622,7 @@ class WorkerLeaseBinding:
             self._model_execution_candidate = None
             if self._review_grant is not None:
                 self._review_grant._last_answer = None
+                self._review_grant._last_answer_sha256 = None
 
     def finish_model_execution(self, handle, *, result=None, failed=False, route_sha256=None):
         """Confirm a returned backend answer; a CLI may already have submitted."""
@@ -636,6 +639,7 @@ class WorkerLeaseBinding:
                     or self._ack.result_generation != self._generation):
                 if self._review_grant is not None:
                     self._review_grant._last_answer = None
+                    self._review_grant._last_answer_sha256 = None
                 try:
                     finish_kwargs = {"failed": True}
                     if route_sha256 is not None:
@@ -652,17 +656,22 @@ class WorkerLeaseBinding:
             except Exception:
                 if self._review_grant is not None:
                     self._review_grant._last_answer = None
+                    self._review_grant._last_answer_sha256 = None
                 return False
             if not confirmed:
                 if self._review_grant is not None:
                     self._review_grant._last_answer = None
+                    self._review_grant._last_answer_sha256 = None
                 return False
             self._model_execution_candidate = handle
             if self._review_grant is not None:
                 try:
                     self._review_grant._last_answer = copy.deepcopy(result)
+                    from hub._services.worker_execution_evidence import _digest as answer_digest
+                    self._review_grant._last_answer_sha256 = answer_digest(result)
                 except Exception:
                     self._review_grant._last_answer = None
+                    self._review_grant._last_answer_sha256 = None
             if self._completion_result is not None:
                 self._link_confirmed_model_execution()
                 should_record_review = self._review_grant is not None
@@ -881,6 +890,12 @@ class WorkerLeaseBinding:
 
     def execute_task_manage(self, args, *, _dispatch_marked=False):
         """Dispatch a bound task operation, recording review only after releasing the binding lock."""
+        grant = self._review_grant
+        if grant is not None and isinstance(args, dict) and args.get("action") == "submit_result":
+            guard = getattr(self._client, "_guard_review_dispatch", None)
+            if (not callable(guard) or not guard(self, route=grant.route,
+                                                requested_model=grant.requested_model)):
+                raise LeaseProtocolError("Review-Ziel ist vor der Abgabe nicht mehr aktuell")
         result = self._execute_task_manage_locked(args, _dispatch_marked=_dispatch_marked)
         with self._lock:
             submitted_review = (self._review_grant is not None
@@ -889,7 +904,10 @@ class WorkerLeaseBinding:
             record = getattr(self._client, "_record_result_review", None)
             if callable(record):
                 try:
-                    record(self)
+                    recorded = record(self)
+                    if isinstance(recorded, dict) and recorded.get("availability") == "cancelled":
+                        return (f"Task #{self.task_id}: Review-Ziel nach Abgabe geändert; "
+                                "dieses administrative Reviewkind wurde storniert.")
                 except Exception:
                     # A failed optional review receipt cannot undo the child submission.
                     pass
@@ -920,6 +938,21 @@ class WorkerLeaseBinding:
                         or type(args.get("task_id")) is not int
                         or args["task_id"] != self.task_id):
                     raise LeaseProtocolError("Reviewtask erlaubt nur eigenes Detail oder eigenes submit_result")
+                # A review child must not be released for arbitrary prose. The
+                # actual backend return was confirmed before normal tool dispatch;
+                # its one submit call must match the proposed result byte for byte.
+                if action == "submit_result":
+                    from hub._services.worker_result_review import _grant_valid, _verdict_from_answer
+                    from hub._services.worker_execution_evidence import _digest as answer_digest
+                    if (not _grant_valid(self._review_grant)
+                            or self._model_execution_pending is not None
+                            or self._model_execution_candidate is None
+                            or self._review_grant._last_answer_sha256 is None
+                            or answer_digest(self._review_grant._last_answer) !=
+                               self._review_grant._last_answer_sha256
+                            or _verdict_from_answer(self._review_grant._last_answer,
+                                                    self.task_id, args.get("result")) is None):
+                        raise LeaseProtocolError("Reviewurteil ist nicht durch die bestätigte Modellantwort belegt")
             if action == "list":
                 if set(args) - {"action"}:
                     raise LeaseProtocolError("Taskliste ist auf die gebundene Task begrenzt")
@@ -952,7 +985,8 @@ class WorkerLeaseBinding:
                     "result_sha256": digest, "result": text}
                 try:
                     release = self._operation(self._client.submit_result,
-                                              generation=self._generation, result=text)
+                                              generation=self._generation, result=text,
+                                              **({"_review_binding": self} if self._review_grant is not None else {}))
                 except LeaseDeniedError:
                     # A correlated explicit denial is not an ambiguous commit.
                     self._submission_expected = None

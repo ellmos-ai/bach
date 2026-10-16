@@ -856,10 +856,15 @@ def _correction_audit_matches(conn, row, detail):
     device_id = row.get("requested_by_device_id")
     policy_sha = row.get("policy_decision_sha256")
     if policy_sha is not None:
+        from .worker_result_review import review_invalid_correction_matches
+        review_correction = (device_id == 0
+            and row.get("event_changed_by") == "native-result-review-controller"
+            and review_invalid_correction_matches(conn, row))
         if (type(policy_sha) is not str or re.fullmatch(r"[a-f0-9]{64}", policy_sha) is None
                 or detail.get("policy_decision_sha256") != policy_sha or device_id != 0
-                or row.get("event_changed_by") != "native-worker-completion-policy"
-                or not _policy_correction_decision_matches(conn, row)):
+                or not (review_correction or (
+                    row.get("event_changed_by") == "native-worker-completion-policy"
+                    and _policy_correction_decision_matches(conn, row)))):
             return False
     if (type(correction_id) is not int or correction_id <= 0
             or type(correction_round) is not int or correction_round <= 0
