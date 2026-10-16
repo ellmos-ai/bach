@@ -1,9 +1,12 @@
 """Isolated result correction, generation binding and legacy digest regressions."""
 import hashlib
+import importlib.metadata
+import importlib.util
 import json
 import sqlite3
 import threading
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -23,10 +26,13 @@ from hub._services.task_result_service import (
 )
 
 
-def _reviewed_result(conn, *, text="Ergebnis mit überprüfbaren Belegen", generation="generation-1"):
+def _reviewed_result(conn, *, text="Ergebnis mit überprüfbaren Belegen", generation="generation-1", category=None):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
     task_id = _insert_task(conn, title="Korrekturprüfung")
+    if category is not None:
+        conn.execute("UPDATE tasks SET category=? WHERE id=?", (category, task_id))
+        conn.commit()
     client = TaskLeaseClient(conn=conn)
     snapshot = client.task_snapshot(task_id)
     binding = WorkerLeaseBinding.acquire(
@@ -556,3 +562,350 @@ def test_active_claim_marker_blocks_correction_without_changing_original(mem_db)
     assert correction_table is None or mem_db.execute(
         "SELECT COUNT(*) FROM task_result_corrections"
     ).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("reason_code", [[], {}])
+def test_policy_decision_rejects_unhashable_reason_code(monkeypatch, reason_code):
+    from hub._services import task_result_service
+
+    class MalformedPolicy:
+        def evaluate_service_review(self, *_args):
+            return {
+                "schema": "task-result-service-review-decision.v1",
+                "allowed": False,
+                "reason_code": reason_code,
+            }
+
+    monkeypatch.setattr(
+        task_result_service,
+        "_load_result_service_review_policy",
+        lambda: (MalformedPolicy(), {"distribution": "fixture"}),
+    )
+    with pytest.raises(task_result_service.ResultServiceUnavailable):
+        task_result_service._evaluate_result_service_policy(
+            {"schema": "task-result-review-scope.v1", "actions": ["read"]},
+            {"task_id": 1},
+            None,
+            {"service_id": "reviewer"},
+            "read",
+        )
+
+_SCOPE_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "schema" / "migrations"
+    / "054_task_result_service_scopes.py"
+)
+_SCOPE_MIGRATION_SPEC = importlib.util.spec_from_file_location(
+    "migration_054_task_result_service_scopes_for_service_tests", _SCOPE_MIGRATION_PATH
+)
+assert _SCOPE_MIGRATION_SPEC is not None and _SCOPE_MIGRATION_SPEC.loader is not None
+_SCOPE_MIGRATION = importlib.util.module_from_spec(_SCOPE_MIGRATION_SPEC)
+_SCOPE_MIGRATION_SPEC.loader.exec_module(_SCOPE_MIGRATION)
+
+
+def _insert_result_service(conn, scopes, *, principal_id="reviewer-fixture", generation="reviewer-generation"):
+    from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+    from hub._services.task_result_service import (
+        _RESULT_SERVICE_ARGON2_ITERATIONS,
+        _RESULT_SERVICE_ARGON2_LANES,
+        _RESULT_SERVICE_ARGON2_MEMORY_COST_KIB,
+        _RESULT_SERVICE_ISSUER,
+    )
+
+    token = "S" * 43 + uuid.uuid4().hex
+    service_id = "service-" + uuid.uuid4().hex
+    salt = uuid.uuid4().bytes
+    verifier = Argon2id(
+        salt=salt,
+        length=32,
+        iterations=_RESULT_SERVICE_ARGON2_ITERATIONS,
+        lanes=_RESULT_SERVICE_ARGON2_LANES,
+        memory_cost=_RESULT_SERVICE_ARGON2_MEMORY_COST_KIB,
+    ).derive(token.encode("ascii"))
+    conn.execute(
+        "INSERT INTO task_result_services "
+        "(service_id,credential_scheme,credential_salt,credential_verifier,"
+        "issuer_id,principal_id,generation,revision,status,created_at,revoked_at) "
+        "VALUES (?,?,?,?,?,?,?,1,'active','fixture-time',NULL)",
+        (service_id, "argon2id-v1", salt, verifier, _RESULT_SERVICE_ISSUER,
+         principal_id, generation),
+    )
+    for action, task_id, category in scopes:
+        conn.execute(
+            "INSERT INTO task_result_service_scopes "
+            "(service_id,revision,action,task_id,category,created_at) VALUES (?,1,?,?,?,'fixture-time')",
+            (service_id, action, task_id, category),
+        )
+    conn.commit()
+    return token, service_id
+
+
+def test_persisted_scopes_compose_with_installed_open_ocean_policy(mem_db):
+    try:
+        importlib.metadata.distribution("open-ocean")
+    except importlib.metadata.PackageNotFoundError:
+        pytest.skip("requires the candidate Open Ocean distribution in the isolated integration environment")
+
+    from hub._services import task_result_service
+    from hub._services.task_result_service import (
+        ResultServicePermissionDenied,
+        accept_result,
+        read_result,
+    )
+
+    _SCOPE_MIGRATION.run_migration(mem_db)
+    read_task_id, read_client, readback = _reviewed_result(mem_db)
+    accept_task_id, accept_client, accept_readback = _reviewed_result(mem_db)
+    correction_task_id, correction_client, correction_readback = _reviewed_result(
+        mem_db, category="Documentation"
+    )
+    category = mem_db.execute("SELECT category FROM tasks WHERE id=?", (correction_task_id,)).fetchone()[0]
+    assert isinstance(category, str) and category
+
+    service_token, service_id = _insert_result_service(
+        mem_db,
+        [
+            ("read", read_task_id, None),
+            ("accept", accept_task_id, None),
+            ("correction", None, category),
+        ],
+    )
+    context = task_result_service._result_service_context(
+        mem_db, service_id, service_token, expected_revision=1
+    )
+    assert context["scope"]["entries"] == [
+        {"action": "read", "task_id": read_task_id},
+        {"action": "accept", "task_id": accept_task_id},
+        {"action": "correction", "category": category},
+    ]
+
+    # This uses the production RECORD-verified loader and the installed original
+    # policy source, not a mocked decision function.
+    policy, provenance = task_result_service._load_result_service_review_policy()
+    assert provenance["distribution"] == "open-ocean"
+    assert callable(policy.evaluate_service_review)
+
+    service_read = read_result(mem_db, read_task_id, service_id=service_id, service_token=service_token)
+    assert service_read["service_capabilities"]["actions"]["read"] is True
+    assert service_read["service_capabilities"]["actions"]["accept"] is False
+
+    with pytest.raises(ResultServicePermissionDenied) as denied:
+        accept_result(
+            mem_db, read_task_id,
+            readback["result"]["result_id"],
+            digest=readback["result"]["result_sha256"],
+            task_version=readback["result"]["task_version"],
+            status_revision=readback["status_revision"],
+            service_id=service_id,
+            service_token=service_token,
+            service_revision=1,
+        )
+    assert denied.value.code == "scope_denied"
+    assert read_client.task_result_snapshot(read_task_id)["status"] == "review"
+
+    accept_record = accept_readback["result"]
+    accept_result(
+        mem_db, accept_task_id,
+        accept_record["result_id"],
+        digest=accept_record["result_sha256"],
+        task_version=accept_record["task_version"],
+        status_revision=accept_readback["status_revision"],
+        service_id=service_id,
+        service_token=service_token,
+        service_revision=1,
+    )
+    assert accept_client.task_result_snapshot(accept_task_id)["result"]["accepted"] is True
+
+    correction_ack = request_result_correction(
+        mem_db,
+        correction_task_id,
+        _correction_payload(correction_readback),
+        service_id=service_id,
+        service_token=service_token,
+        service_revision=1,
+    )
+    assert correction_ack["status"] == "pending"
+    assert correction_client.task_snapshot(correction_task_id)["status"] == "pending"
+
+    # The producer binding is stored by the canonical lease submission path.
+    self_task_id, _self_client, _self_readback = _reviewed_result(mem_db)
+    self_token, self_service_id = _insert_result_service(
+        mem_db,
+        [("read", self_task_id, None)],
+        principal_id="fixture-worker@HOST",
+    )
+    with pytest.raises(ResultServicePermissionDenied) as self_denied:
+        read_result(mem_db, self_task_id, service_id=self_service_id, service_token=self_token)
+    assert self_denied.value.code == "self_review"
+
+
+def test_result_service_argon2id_credential_is_verified_by_service_id(request):
+    from hub._services.task_result_service import (
+        ResultServicePermissionDenied,
+        _result_service_context,
+    )
+
+    conn = request.getfixturevalue("mem_db")
+    _SCOPE_MIGRATION.run_migration(conn)
+    task_id, _client, _readback = _reviewed_result(conn)
+    token, service_id = _insert_result_service(conn, [("read", task_id, None)])
+    context = _result_service_context(conn, service_id, token, expected_revision=1)
+    assert context["service_id"] == service_id
+    with pytest.raises(ResultServicePermissionDenied) as denied:
+        _result_service_context(conn, service_id, "T" * len(token), expected_revision=1)
+    assert denied.value.code == "service_credential_invalid"
+
+
+@pytest.mark.parametrize(
+    ("scheme", "salt", "verifier"),
+    [
+        ("argon2id-v2", b"s" * 16, b"v" * 32),
+        ("argon2id-v1", b"s" * 15, b"v" * 32),
+        ("argon2id-v1", "s" * 16, b"v" * 32),
+        ("argon2id-v1", b"s" * 16, b"v" * 31),
+        ("argon2id-v1", b"s" * 16, "v" * 32),
+        ([], b"s" * 16, b"v" * 32),
+    ],
+)
+def test_result_service_rejects_malformed_argon2id_rows(scheme, salt, verifier):
+    from hub._services.task_result_service import (
+        ResultServiceUnavailable,
+        _verify_result_service_credential,
+    )
+
+    with pytest.raises(ResultServiceUnavailable, match="Credentialformat"):
+        _verify_result_service_credential("S" * 43, scheme, salt, verifier)
+
+
+def test_result_service_argon2_memory_failure_is_redacted_unavailable(monkeypatch):
+    from cryptography.hazmat.primitives.kdf import argon2 as argon2_module
+
+    from hub._services.task_result_service import (
+        ResultServiceUnavailable,
+        _verify_result_service_credential,
+    )
+
+    class FailingArgon2id:
+        def __init__(self, **_kwargs):
+            pass
+
+        def verify(self, *_args):
+            raise MemoryError("private allocator detail")
+
+    monkeypatch.setattr(argon2_module, "Argon2id", FailingArgon2id)
+    with pytest.raises(ResultServiceUnavailable, match="Credentialprüfung"):
+        _verify_result_service_credential("S" * 43, "argon2id-v1", b"s" * 16, b"v" * 32)
+
+
+@pytest.mark.parametrize(
+    "service_id",
+    [None, 7, "", " leading", "trailing ", "x" * 129, "bad\x00id"],
+)
+def test_result_service_rejects_invalid_service_ids_before_lookup(request, service_id):
+    from hub._services.task_result_service import (
+        ResultServicePermissionDenied,
+        _result_service_context,
+    )
+
+    conn = request.getfixturevalue("mem_db")
+    _SCOPE_MIGRATION.run_migration(conn)
+    _reviewed_result(conn)
+    with pytest.raises(ResultServicePermissionDenied) as denied:
+        _result_service_context(conn, service_id, "S" * 43, expected_revision=1)
+    assert denied.value.code == "service_credential_invalid"
+
+
+@pytest.mark.parametrize("bad_target", ["both", "neither"])
+def test_corrupt_persisted_scope_target_fails_closed(mem_db, bad_target):
+    from hub._services.task_result_service import (
+        ResultServiceUnavailable,
+        _result_service_context,
+    )
+
+    _SCOPE_MIGRATION.run_migration(mem_db)
+    task_id, _client, _readback = _reviewed_result(mem_db)
+    token, service_id = _insert_result_service(mem_db, [])
+    mem_db.execute("PRAGMA ignore_check_constraints=ON")
+    if bad_target == "both":
+        task_value, category_value = task_id, "docs"
+    else:
+        task_value, category_value = None, None
+    mem_db.execute(
+        "INSERT INTO task_result_service_scopes "
+        "(service_id,revision,action,task_id,category,created_at) VALUES (?,1,'read',?,?,'fixture-time')",
+        (service_id, task_value, category_value),
+    )
+    mem_db.execute("PRAGMA ignore_check_constraints=OFF")
+    mem_db.commit()
+    with pytest.raises(ResultServiceUnavailable):
+        _result_service_context(mem_db, service_id, token, expected_revision=1)
+
+
+@pytest.mark.parametrize(
+    ("table", "ddl"),
+    [
+        (
+            "task_result_service_scopes",
+            """CREATE TABLE task_result_service_scopes (
+                service_id TEXT NOT NULL,
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                action TEXT NOT NULL CHECK (action IN ('read','history','accept','correction')),
+                task_id INTEGER,
+                category TEXT,
+                created_at TEXT NOT NULL,
+                CHECK ((task_id IS NOT NULL AND category IS NULL)
+                    OR (task_id IS NULL AND category IS NOT NULL)),
+                FOREIGN KEY(service_id) REFERENCES task_result_services(service_id) ON DELETE CASCADE
+            )""",
+        ),
+        (
+            "task_result_service_audit",
+            """CREATE TABLE task_result_service_audit (
+                audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                service_id TEXT NOT NULL,
+                service_revision INTEGER NOT NULL,
+                action TEXT NOT NULL CHECK (action IN ('accept','correction')),
+                task_id INTEGER NOT NULL,
+                result_id INTEGER NOT NULL,
+                result_sha256 TEXT NOT NULL,
+                task_version TEXT NOT NULL,
+                status_revision INTEGER NOT NULL,
+                decision_schema TEXT NOT NULL,
+                decision_reason TEXT NOT NULL CHECK (decision_reason='allow'),
+                policy_distribution TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                policy_sha256 TEXT NOT NULL,
+                event_id INTEGER
+            )""",
+        ),
+    ],
+)
+def test_result_service_missing_required_schema_columns_fails_closed_before_read(mem_db, table, ddl):
+    from hub._services.task_result_service import ResultServiceUnavailable, read_result
+
+    _SCOPE_MIGRATION.run_migration(mem_db)
+    task_id = _insert_task(mem_db, title="Incomplete result review schema")
+    mem_db.execute(f"DROP TABLE {table}")
+    mem_db.execute(ddl)
+    mem_db.commit()
+    before_task = tuple(mem_db.execute(
+        "SELECT id,status,title,description FROM tasks WHERE id=?", (task_id,)
+    ).fetchone())
+    before_schema = tuple(mem_db.execute(
+        "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+    ))
+    before_audit = (
+        mem_db.execute("SELECT COUNT(*) FROM task_result_service_audit").fetchone()[0]
+        if table != "task_result_service_audit" else None
+    )
+    assert mem_db.in_transaction is False
+    with pytest.raises(ResultServiceUnavailable, match="Schema"):
+        read_result(mem_db, task_id, service_id="service-missing", service_token="S" * 43)
+    assert mem_db.in_transaction is False
+    assert tuple(mem_db.execute(
+        "SELECT id,status,title,description FROM tasks WHERE id=?", (task_id,)
+    ).fetchone()) == before_task
+    assert tuple(mem_db.execute(
+        "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+    )) == before_schema
+    if before_audit is not None:
+        assert mem_db.execute("SELECT COUNT(*) FROM task_result_service_audit").fetchone()[0] == before_audit
