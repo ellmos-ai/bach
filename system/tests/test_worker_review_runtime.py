@@ -307,7 +307,18 @@ def _task_manage_tool():
         "function": {
             "name": "task_manage",
             "description": "Read or submit the bound review task",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
+                    },
+                    "task_id": {"type": "integer"},
+                    "result": {"type": "string"},
+                },
+                "required": ["action"],
+            },
         },
     }
 
@@ -331,6 +342,7 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
     requests = _mock_openai_http(monkeypatch, responses)
 
     from hub._services.chat import worker_tool_dispatch_trace, slots_config
+    from hub._services.chat.chat_runtime import _completion_reserve_tools
     from hub._services.chat.worker_tool_dispatch_trace import TracedToolOutcome
 
     def execute_review_tool(active_binding, name, arguments, _execute):
@@ -346,8 +358,15 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
         worker_tool_dispatch_trace, "acknowledge_normal_tool_result", lambda *_args: True,
     )
     monkeypatch.setattr(slots_config, "update_slot", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(runtime, "_bound_worker_tools_for_request",
-                        lambda _session, _backend, *, enabled: [_task_manage_tool()] if enabled else [])
+    def bound_worker_tools(_session, _backend, *, enabled, completion_reserve=False):
+        if not enabled:
+            return []
+        tools = [_task_manage_tool()]
+        if completion_reserve:
+            return _completion_reserve_tools(tools, _session.worker_task_binding)
+        return tools
+
+    monkeypatch.setattr(runtime, "_bound_worker_tools_for_request", bound_worker_tools)
 
     token = runtime._compute_turn_context.set((CHAT_ID, "background"))
     try:
@@ -364,6 +383,12 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
 
     assert "wartet in Review" in str(answer)
     assert len(requests) == 2
+    offered_actions = [
+        request["json"]["tools"][0]["function"]["parameters"]["properties"]["action"]["enum"]
+        for request in requests
+    ]
+    assert "detail" in offered_actions[0]
+    assert offered_actions[1] == ["submit_result"]
     assert [item[1] for item in client.guard_calls if item[0] == route]  # repeated live route checks
     assert all(item[0] == route and item[1] == MODEL for item in client.guard_calls)
     assert len(client.start_calls) == 2
