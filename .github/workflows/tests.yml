@@ -213,6 +213,7 @@ jobs:
             system/tests/test_catalog_projection.py \
             system/tests/test_capability_boards.py \
             system/tests/test_gui_capabilities_page_reads.py \
+            system/tests/test_policy_registry_adapter.py \
             system/tests/test_skills_board_hardening.py \
             system/tests/test_gui_templates_regression.py \
             system/tests/test_gui_workflow_tuev.py \
