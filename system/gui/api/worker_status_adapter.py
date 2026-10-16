@@ -154,6 +154,7 @@ def _project_worker(raw: Any) -> dict[str, Any]:
             and all(type(budget[key]) is int for key in ("used", "limit", "remaining"))
             and 0 <= budget["used"] <= budget["limit"] <= 256
             and budget["remaining"] == budget["limit"] - budget["used"]
+            and type(budget["phase"]) is str
             and budget["phase"] in {"admitted", "active", "unknown", "terminal"}):
         item["model_requests"] = dict(budget)
 
