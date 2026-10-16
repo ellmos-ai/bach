@@ -849,6 +849,31 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         raise
 
 
+def _prepare_once_task_scope(binding, slot):
+    """Provision a once task's Git scope before its first model request."""
+    allowed = slot.get("allowed_tools")
+    if (slot.get("type") != "once" or not isinstance(allowed, list) or not allowed
+            or getattr(binding, "_review_grant", None) is not None):
+        return
+    from hub import worker_git
+    from hub._services.chat.worker_write_guard import _WRITE_TOOLS, snapshot_task_scope
+    code_capability = any(tool in _WRITE_TOOLS for tool in allowed)
+    try:
+        binding.assert_active()
+        worker_git.start_task_worktree(binding.task_id, base_branch="main",
+            worker_task_binding=binding, require_task_binding=True,
+            task_code_capability=code_capability)
+        scope = snapshot_task_scope(binding.task_id)
+        binding.assert_active()
+        if (scope.get("availability") != "available"
+                or scope.get("task_id") != binding.task_id
+                or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
+                or (scope.get("source_pin") is not None) != code_capability):
+            raise RuntimeError("scope_unavailable")
+    except Exception:
+        raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
+
+
 def _bound_worker_prompt(binding, prompt):
     snapshot = binding.task_snapshot()
     grant = getattr(binding, "_review_grant", None)
@@ -4792,6 +4817,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     control.task_binding.assert_active()
                     if control.lease_supervisor.failure is not None:
                         raise control.lease_supervisor.failure
+                    _prepare_once_task_scope(control.task_binding, current_slot)
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
