@@ -932,3 +932,22 @@ def test_zero_dispatch_recovery_uses_only_no_dispatch_terminal_reason(
     assert client.read(task_id).task_version == initial_view.task_version
     assert inspected[0]["pid"] == record["pid"]
     assert lease_reads == [True]
+
+
+@pytest.mark.parametrize("phase", [
+    "admitted", "active", "unknown", "terminal", "invalid", [], {}, None, 1, True,
+])
+def test_model_request_phase_projection_keeps_worker_status_for_malformed_payloads(phase):
+    from gui.api import worker_status_adapter
+
+    budget = {"run_id": "a" * 32, "used": 1, "limit": 8, "remaining": 7, "phase": phase}
+    projected = worker_status_adapter._project_worker({
+        "id": "budget-status-fixture", "status": "running", "model_requests": budget,
+    })
+
+    assert projected["id"] == "budget-status-fixture"
+    assert projected["status"] == "running"
+    if type(phase) is str and phase in {"admitted", "active", "unknown", "terminal"}:
+        assert projected["model_requests"] == budget
+    else:
+        assert "model_requests" not in projected
