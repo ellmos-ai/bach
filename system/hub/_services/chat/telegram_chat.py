@@ -849,10 +849,19 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         raise
 
 
-def _prepare_once_task_scope(binding, slot):
-    """Provision a once task's Git scope before its first model request."""
+def _prepare_bound_task_scope(binding, slot):
+    """Provision a bound task's Git scope before its first model request.
+
+    Continuous workers need it as much as once workers: without a registered
+    task tree no scope evidence can be captured, so a simple_task result stays
+    in review and the completion poll blocks the next claim (BACH #2215).
+    """
     allowed = slot.get("allowed_tools")
-    if (slot.get("type") != "once" or not isinstance(allowed, list) or not allowed
+    # ponytail: a failed provisioning ends a continuous worker like a once run
+    # (lease returned in the finally block); return-and-continue if this halts
+    # the background worker in practice.
+    if (slot.get("type") not in {"once", "continuous", "persistent"}
+            or not isinstance(allowed, list) or not allowed
             or getattr(binding, "_review_grant", None) is not None):
         return
     from hub import worker_git
@@ -4818,7 +4827,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     control.task_binding.assert_active()
                     if control.lease_supervisor.failure is not None:
                         raise control.lease_supervisor.failure
-                    _prepare_once_task_scope(control.task_binding, current_slot)
+                    _prepare_bound_task_scope(control.task_binding, current_slot)
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
