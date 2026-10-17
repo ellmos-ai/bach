@@ -915,7 +915,7 @@ def _bound_worker_prompt(binding, prompt):
             "Behaupte keine Prüfung von Dateien oder Verhalten, die du nicht prüfen konntest; "
             "nenne fehlende Nachweise als Befund. Ändere weder Zielauftrag noch Dateien. "
             "Gib genau einen Aufruf task_manage(action='submit_result', "
-            f"task_id={binding.task_id}, result='<JSON>') ab. "
+            f"task_id={binding.task_id}, result='<JSON>', complete=true) ab. "
             "Das JSON hat genau status (approved, findings oder rejected), summary "
             "(1 bis 1200 Zeichen, eine Zeile) und task_contract_met (boolesch). "
             "approved erfordert task_contract_met=true und ausreichend geprüfte Nachweise. "
@@ -954,7 +954,7 @@ def _bound_worker_prompt(binding, prompt):
         )
     return (f"{prompt}\n\nAktuell übernommener Auftrag: Task #{binding.task_id}. "
             "Bearbeite ausschließlich diesen Auftrag. Gib dein fachliches Ergebnis mit "
-             "task_manage(action='submit_result', task_id=<ID>, result='<fertiges Ergebnis>') "
+             "task_manage(action='submit_result', task_id=<ID>, result='<fertiges Ergebnis>', complete=true) "
              "nur ab, wenn die Pflichtarbeit vollständig erledigt und geprüft ist. Bei Teilstand nutze "
              "task_manage(action='update', status='pending'); Teilstand gehört nicht in Review. "
              "Für einfache Tasks ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext "
@@ -4643,14 +4643,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             elif w.get("task_id"):
                 initial_prompt = (
                     f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
-                    f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>'). "
+                    f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>', complete=true). "
                     "Bei Hindernissen nicht als erledigt markieren; dokumentiere den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "hintergrund_worker":
                 initial_prompt = (
                     "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die "
                     "wichtigste passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                    "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>'). Bei Hindernissen bleibt die Task offen; "
+                    "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true). Bei Hindernissen bleibt die Task offen; "
                     "nenne den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "boss_routing":
@@ -4676,7 +4676,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             else:
                 initial_prompt = w.get("task_prompt") or (
                     "Prüfe offene Aufgaben und beginne mit der Bearbeitung. Markiere eine Task erst nach "
-                    "Bearbeitung mit task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
+                    "Bearbeitung mit task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true)."
                 )
 
             prompt_to_run = initial_prompt
@@ -5283,7 +5283,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     prompt_to_run = (
                         "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die nächste "
                         "wichtige passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                        "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
+                        "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true)."
                     )
                 else:
                     # Do not abandon or mark an unverified task complete.

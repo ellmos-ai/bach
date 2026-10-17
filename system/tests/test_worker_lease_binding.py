@@ -280,7 +280,7 @@ def test_real_native_process_releases_bound_task_without_post_completion_inferen
             assert binding._ack.lease_id not in str(messages)
             assert len(calls) == 1
             tools = [{"function": {"name": "task_manage", "arguments": {
-                "action": "submit_result", "task_id": binding.task_id,
+                "action": "submit_result", "task_id": binding.task_id, "complete": True,
                 "result": _self_check("Konkretes Ergebnis aus dem isolierten Lauf erstellt.")}}}]
             return {"content": "", "tool_calls": tools,
                     "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}

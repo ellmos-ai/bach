@@ -29,7 +29,7 @@ def test_dispatcher_captures_only_after_real_submit_outside_locks(worker_context
 
     monkeypatch.setattr(evidence, "capture_scope_evidence", capture)
     response = exec_tool("task_manage", {
-        "action": "submit_result", "task_id": ctx["task_id"],
+        "action": "submit_result", "task_id": ctx["task_id"], "complete": True,
         "result": "Fachliches Ergebnis bleibt trotz fehlendem Scope in Review.",
     }, "full", worker_task_binding=binding, require_task_binding=True)
     assert "Ergebnis gespeichert" in response

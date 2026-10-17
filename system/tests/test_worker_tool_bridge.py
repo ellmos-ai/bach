@@ -449,7 +449,7 @@ def test_versioned_read_requires_schema_before_file_io(fenced_readonly_bridge, t
 
 
 def test_actual_completion_and_explicit_relay_ack(bridge):
-    result = call(bridge, {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
+    result = call(bridge, {"action": "done", "complete": True, "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
     assert result["result"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert result["generation"] == bridge.binding.generation
     assert result["task_id"] == bridge.binding.task_id
@@ -505,9 +505,9 @@ def test_next_call_needs_previous_confirmed_receipt_and_new_request_id(bridge):
 
     for previous, request_id in [(None, None), (first["receipt_id"], first["request_id"])]:
         with pytest.raises(urllib.error.HTTPError) as error:
-            call(bridge, {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"}, previous, request_id)
+            call(bridge, {"action": "done", "complete": True, "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"}, previous, request_id)
         assert error.value.code == 409
-    second = call(bridge, {"action": "done", "task_id": task_id, "result": "Konkretes Ergebnis des gebundenen Tools"}, first["receipt_id"])
+    second = call(bridge, {"action": "done", "complete": True, "task_id": task_id, "result": "Konkretes Ergebnis des gebundenen Tools"}, first["receipt_id"])
     acknowledge(bridge, second)
     events = bridge.binding._client.tool_trace_events(task_id)["events"]
     second_events = [event for event in events if event["request_id"] == second["request_id"]]
@@ -520,7 +520,7 @@ def test_next_call_needs_previous_confirmed_receipt_and_new_request_id(bridge):
 def test_stop_blocks_rpc_before_canonical_mutation(bridge):
     bridge.binding._stop_event.set()
     with pytest.raises(urllib.error.HTTPError) as error:
-        call(bridge, {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
+        call(bridge, {"action": "done", "complete": True, "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
     assert error.value.code == 403
     assert not bridge.binding.completed_task_ids
 
@@ -540,7 +540,7 @@ def test_stdio_client_scope_and_sequential_actual_task_calls(bridge):
     first = client.call("task_manage", {"action": "update", "task_id": bridge.binding.task_id,
                                         "title": "Client update"})
     assert first[1] is False
-    result, failed = client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
+    result, failed = client.call("task_manage", {"action": "done", "complete": True, "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
     assert not failed and "Abschlussstatus wird nach Policy ermittelt" in result
     assert bridge.binding.completed_task_ids == ()
     assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
@@ -580,7 +580,7 @@ def test_actual_mcp_stdio_subprocess_uses_bound_relay(bridge):
                 await session.initialize()
                 tools = await session.list_tools()
                 assert any(tool.name == "task_manage" for tool in tools.tools)
-                answer = await session.call_tool("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
+                answer = await session.call_tool("task_manage", {"action": "done", "complete": True, "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
                 assert not answer.isError
                 assert answer.content[0].text == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
                 assert bridge.binding._ack.lease_id not in str(answer)
@@ -657,7 +657,7 @@ def test_policy_downgrade_refuses_tool_before_actual_mutation(bridge, monkeypatc
     def denied(): raise ValueError("PRIVATE policy details")
     monkeypatch.setattr(bridge._provider, "_guard", denied)
     with pytest.raises(urllib.error.HTTPError) as error:
-        call(bridge, {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
+        call(bridge, {"action": "done", "complete": True, "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des gebundenen Tools"})
     assert error.value.code == 403
     assert not bridge.binding.completed_task_ids
 

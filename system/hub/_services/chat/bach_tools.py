@@ -66,6 +66,23 @@ log = logging.getLogger("bach.chat")
 _TASK_MANAGE_LOG_ACTIONS = frozenset({
     "add", "decompose", "detail", "done", "list", "submit_result", "update",
 })
+_COMPLETE_FLAG_HINT = (
+    "complete fehlt: complete=true nur, wenn die Pflichtarbeit vollständig erledigt ist; "
+    "sonst complete=false mit dem bisherigen Teilstand als result (die Task geht offen zurück)."
+)
+
+
+def _return_partial_state(binding, args):
+    """BACH #2210: keep the original task text, append the partial state, return it open."""
+    task_id = args["task_id"]
+    description = binding.task_snapshot().get("description") or ""
+    block = (f"\n\nTeilstand (Worker, {datetime.now().strftime('%Y-%m-%d %H:%M')}, complete=false):\n"
+             f"{str(args.get('result') or '').strip()}")
+    binding.execute_task_manage({"action": "update", "task_id": task_id,
+                                 "description": description + block}, _dispatch_marked=True)
+    binding.execute_task_manage({"action": "update", "task_id": task_id, "status": "pending"},
+                                _dispatch_marked=True)
+    return f"Task #{task_id}: Teilstand gespeichert und offen zurückgegeben (pending); kein Abschluss."
 
 
 def _log_bound_task_manage_denial(stage, binding, args, exc=None):
@@ -980,11 +997,12 @@ TOOLS_SAFE = [
     }, ["query"]),
     _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
         "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
-                   "description": "Bei gebundener Task: list ohne task_id; update-Status (pending/open/blocked) ohne Inhaltsfelder; decompose mit subtasks=[{\"title\":\"Kind\",\"description\":\"Arbeit\"}], close_parent=false. Ergebnis nur mit submit_result (done als Alias) abgeben. Abschluss nach konfiguriertem Modus."},
+                   "description": "Bei gebundener Task: list ohne task_id; update-Status (pending/open/blocked) ohne Inhaltsfelder; decompose mit subtasks=[{\"title\":\"Kind\",\"description\":\"Arbeit\"}], close_parent=false. Ergebnis nur mit submit_result (done als Alias) und complete=true/false abgeben. Abschluss nach konfiguriertem Modus."},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
         "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Im einfachen Modus ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext als ausdrückliche Fertigmeldung; tatsächliche Arbeit und Prüfung nennen. Ein negativer oder unvollständiger JSON-Selbstcheck ist keine Fertigmeldung. Offene Pflichtarbeit oder Teilstand: kein submit_result; update(status='pending') nutzen. Andere Modi folgen ihrer Review-Regel."},
+        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done einer gebundenen Task: true nur, wenn die Pflichtarbeit vollständig erledigt ist; false speichert result als Teilstand in der Task und gibt sie offen zurück (pending)."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
@@ -1713,6 +1731,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     _log_bound_task_manage_denial("arguments", worker_task_binding, args)
                     return "Ungültige Task-Werkzeugargumente."
                 action = args.get("action", "list")
+                partial = False
+                completion = action in ("done", "submit_result") or (
+                    action == "update" and args.get("status") in ("done", "completed"))
                 if action in ("done", "submit_result"):
                     if type(args.get("task_id")) is not int:
                         _log_bound_task_manage_denial("task_id_type", worker_task_binding, args)
@@ -1730,8 +1751,20 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     except Exception as exc:
                         _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
                         return "Taskoperation nicht bestätigt; Taskbindung prüfen."
+                if completion:
+                    # BACH #2210: after the public argument checks, a model must state
+                    # explicitly whether the work is complete.
+                    complete = args.get("complete")
+                    if type(complete) is not bool:
+                        _log_bound_task_manage_denial("completion_flag", worker_task_binding, args)
+                        return _COMPLETE_FLAG_HINT
+                    partial = complete is False
+                    args = {key: value for key, value in args.items() if key != "complete"}
                 try:
-                    response = worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
+                    if partial:
+                        response = _return_partial_state(worker_task_binding, args)
+                    else:
+                        response = worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
                     # The operation has released its binding lock. Git must not
                     # run inside the submission transaction or controller lock.
                     try:
