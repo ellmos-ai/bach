@@ -32,9 +32,6 @@ _PRIVATE = re.compile(
     r"(?:[A-Za-z]:[\\/]|/(?:Users|home)/|"
     r"\b(?:\d{1,3}\.){3}\d{1,3}\b)"
 )
-_EMAIL_LOCAL = re.compile(r"[\w.+-]+")
-_EMAIL_DOMAIN = re.compile(r"[\w.-]+")
-_EMAIL_DOT_WORD = re.compile(r"\.\w")
 _SECRET = re.compile(
     r"(?:\b(?:sk|ghp|github_pat|AKIA)[_-][A-Za-z0-9_-]{12,}|"
     r"(?i:authorization\s*:\s*bearer|api[_-]?key\s*[:=]|password\s*[:=]|"
@@ -229,13 +226,30 @@ def _guidance(roots=None):
     return sources
 
 
+def _is_email_word_character(character):
+    return character == "_" or character.isalnum()
+
+
+def _is_email_local_character(character):
+    return _is_email_word_character(character) or character in ".+-"
+
+
+def _is_email_domain_character(character):
+    return _is_email_word_character(character) or character in ".-"
+
+
 def _contains_private_email(value):
-    # Consume each local-part run once; a failed domain must not retry its suffixes.
-    for local in _EMAIL_LOCAL.finditer(value):
-        end = local.end()
-        if end < len(value) and value[end] == "@":
-            domain = _EMAIL_DOMAIN.match(value, end + 1)
-            if domain and _EMAIL_DOT_WORD.search(value, domain.start() + 1, domain.end()):
+    # Scan each at-sign and its following domain at most once; this is linear in value length.
+    for at in range(1, len(value) - 1):
+        if value[at] != "@" or not _is_email_local_character(value[at - 1]):
+            continue
+        domain_start = at + 1
+        for index in range(domain_start, len(value)):
+            character = value[index]
+            if not _is_email_domain_character(character):
+                break
+            if (index > domain_start and character == "." and index + 1 < len(value)
+                    and _is_email_word_character(value[index + 1])):
                 return True
     return False
 
