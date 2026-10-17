@@ -495,7 +495,9 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[
 
 
 def save_slots_config(config: dict[str, Any], path: str | None = None, *, durable: bool = False) -> None:
-    """Save configuration atomically."""
+    """Save atomically; reject unsupported durability before changing caller state."""
+    if durable and os.name != "posix":
+        raise OSError("Dauerhafte Modellanfragen benötigen POSIX-Verzeichnissync")
     f = _resolve_path(path)
     config["updated_at"] = datetime.now(timezone.utc).isoformat()
     with _config_lock:
@@ -515,9 +517,7 @@ def save_slots_config(config: dict[str, Any], path: str | None = None, *, durabl
             if durable:
                 # A confirmed request reservation must survive process loss.
                 # Directory fsync is supported by the native POSIX controller;
-                # other platforms fail closed before a budgeted dispatch.
-                if os.name != "posix":
-                    raise OSError("Dauerhafte Modellanfragen benötigen POSIX-Verzeichnissync")
+                # unsupported platforms were rejected before any mutation.
                 directory_fd = os.open(f.parent, os.O_RDONLY | os.O_DIRECTORY)
                 try:
                     os.fsync(directory_fd)
