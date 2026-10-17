@@ -48,18 +48,20 @@ def test_enabled_setting_reserves_the_task_for_its_creator(config_db, db_path):
                 now=T0 + timedelta(seconds=91)).granted
 
 
-def test_open_sequence_delegation_keeps_the_ten_minute_gate(config_db):
+@pytest.mark.parametrize("consumed_at, revoked_at", [
+    (None, None), ("2026-10-05T01:59:59Z", None), (None, "2026-10-05T01:59:59Z"),
+], ids=["open", "redeemed", "revoked"])
+def test_sequence_step_keeps_the_previous_ten_minute_gate(config_db, consumed_at, revoked_at):
     config_db.execute("""CREATE TABLE native_sequence_creator_delegations (
         task_id INTEGER NOT NULL UNIQUE, consumed_at TEXT, revoked_at TEXT)""")
-    open_step = _insert(config_db, created_by="user", created_at=CREATED)
-    redeemed = _insert(config_db, created_by="user", created_at=CREATED)
-    config_db.executemany("INSERT INTO native_sequence_creator_delegations VALUES (?,?,?)",
-                          [(open_step, None, None), (redeemed, "2026-10-05T01:59:59Z", None)])
+    step = _insert(config_db, created_by="user", created_at=CREATED)
+    config_db.execute("INSERT INTO native_sequence_creator_delegations VALUES (?,?,?)",
+                      (step, consumed_at, revoked_at))
     config_db.commit()
-    denied = _acq(config_db, open_step, worker=FOREIGN, config=LeaseConfig(),
-                  now=T0 + timedelta(minutes=8))
+    denied = _acq(config_db, step, worker=FOREIGN, config=LeaseConfig(), now=T0 + timedelta(minutes=8))
     assert denied.payload["reason"] == "creator_priority"
-    assert _acq(config_db, redeemed, worker=FOREIGN, config=LeaseConfig()).granted
+    assert _acq(config_db, step, worker=FOREIGN, config=LeaseConfig(),
+                now=T0 + timedelta(minutes=10)).granted
 
 
 def test_operator_environment_value_overrides_the_setting(config_db, db_path, monkeypatch):

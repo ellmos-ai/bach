@@ -511,6 +511,8 @@ def test_explicit_assignment_keeps_canonical_acquire_guards(request, denial):
         dependency = _insert_task(task_db, "Unfinished prerequisite")
         task_db.execute("UPDATE tasks SET depends_on=? WHERE id=?", (str(dependency), tid))
     if denial == "creator-priority":
+        # Creator priority is off by default since BACH #2231; enable it explicitly.
+        request.getfixturevalue("monkeypatch").setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "600")
         task_db.execute("UPDATE tasks SET created_by='user', created_at=? WHERE id=?", (T0.isoformat(), tid))
     task_db.commit()
     if denial == "foreign-holder":

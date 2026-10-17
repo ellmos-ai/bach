@@ -10,9 +10,12 @@ same revision/CAS handling as the worker policy. The environment variable
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 
 from hub._services import worker_policy_settings as _store
+
+log = logging.getLogger(__name__)
 
 KEY = "task_lease_creator_priority.v1"
 SCHEMA = "bach.task-lease-creator-priority.v1"
@@ -47,6 +50,7 @@ def stored_window(conn) -> int:
         values = json.loads(row[0])["values"]
         _validate(values)
     except (ValueError, TypeError, KeyError):
+        log.warning("task_lease_creator_priority_unreadable key=%s; creator priority off", KEY)
         return 0
     return values["window_seconds"] if values["enabled"] else 0
 

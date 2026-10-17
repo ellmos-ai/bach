@@ -68,8 +68,8 @@ DEFAULT_PROFILES: dict[str, tuple[int, int]] = {
 }
 DEFAULT_PROFILE = "M"
 #: Vertrag §8.6: Ersteller-Vorrang ab created_at. Seit BACH #2231 gilt dieses
-#: Fenster nur noch für Tasks mit offener Sequenz-Delegation; sonst entscheidet
-#: die Systemeinstellung (task_lease_settings, Standard aus).
+#: Fenster nur noch für native Sequenzschritte (mit Delegationszeile); sonst
+#: entscheidet die Systemeinstellung (task_lease_settings, Standard aus).
 DEFAULT_CREATOR_WINDOW_SECONDS = 10 * 60
 #: Vertrag §11.2: Lebensdauer eines Alt-Claims ohne claim_id (wie claim_task_atomic).
 LEGACY_CLAIM_SECONDS = 1800
@@ -165,12 +165,11 @@ class LeaseConfig:
         return cls(profiles=profiles, creator_window_seconds=window)
 
 
-def _open_sequence_delegation(conn, task_id) -> bool:
-    """A sequence step with an unredeemed grant keeps the creator gate (BACH #2231)."""
+def _sequence_step(conn, task_id) -> bool:
+    """Sequence steps keep the previous creator gate unchanged (BACH #2231)."""
     try:
         return conn.execute(
-            """SELECT 1 FROM native_sequence_creator_delegations
-               WHERE task_id=? AND consumed_at IS NULL AND revoked_at IS NULL""",
+            "SELECT 1 FROM native_sequence_creator_delegations WHERE task_id=?",
             (task_id,)).fetchone() is not None
     except sqlite3.Error:  # no sequence schema: no sequence step
         return False
@@ -179,7 +178,7 @@ def _open_sequence_delegation(conn, task_id) -> bool:
 def _creator_window_seconds(conn, task_id, cfg) -> int:
     if cfg.creator_window_seconds is not None:
         return cfg.creator_window_seconds
-    if _open_sequence_delegation(conn, task_id):
+    if _sequence_step(conn, task_id):
         return DEFAULT_CREATOR_WINDOW_SECONDS
     from hub._services.task_lease_settings import stored_window
     return stored_window(conn)
