@@ -14,6 +14,22 @@ PIN = "2c4896b70cb39e2e24748b384d5d0cc7fcd15a16"
 VERSION = "0.2.4"
 REPOSITORY = "https://github.com/ellmos-ai/policy-registry"
 
+# Public responses expose stable codes, never a canonical import diagnostic.
+_PUBLIC_UNAVAILABLE_REASONS = {
+    "policy_provider_not_configured": "policy_provider_not_configured",
+    "policy_provider_provenance_mismatch": "policy_provider_provenance_mismatch",
+    "policy_provider_import_mismatch": "policy_provider_import_mismatch",
+    "policy_provider_unavailable": "policy_provider_unavailable",
+    "policy_registry_missing": "policy_registry_missing",
+    "policy_registry_too_large": "policy_registry_too_large",
+    "policy_registry_read_failed": "policy_registry_read_failed",
+}
+
+
+def public_unavailable_reason(error):
+    """Preserve known public codes while keeping unexpected diagnostics local."""
+    return _PUBLIC_UNAVAILABLE_REASONS.get(str(error), "policy_provider_unavailable")
+
 
 class PolicyProviderUnavailable(RuntimeError):
     pass
@@ -119,4 +135,5 @@ def provider_status():
                 "repository": REPOSITORY, "verified": True, "runtime_verified": False,
                 "reason": "provider_identity_verified_registry_not_probed"}
     except PolicyProviderUnavailable as exc:
-        return {"id": "policy-registry", "verified": False, "runtime_verified": False, "reason": str(exc)}
+        return {"id": "policy-registry", "verified": False, "runtime_verified": False,
+                "reason": public_unavailable_reason(exc)}
