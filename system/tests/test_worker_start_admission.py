@@ -145,15 +145,23 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     worker = add_worker({"name": "Admission continuous", "type": "continuous"})
     update_slot(worker["id"], {"allowed_tools": ["task_manage"], "allow_tools": True})
     observed = []
+    worker_controls = []
     monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
     monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
-    monkeypatch.setattr(control, "finish_assignment", lambda *_args, **_kwargs: None)
+    def finish(*_args, **kwargs):
+        if kwargs.get("result") != "task_returned":
+            return  # the role assignment closing on task acquisition
+        observed.append(("finish", kwargs["result"], kwargs.get("reason")))
+        worker_controls.append(control._WORKER_CONTROLS[worker["id"]])
+        worker_controls[-1].stop_event.set()
+    monkeypatch.setattr(control, "finish_assignment", finish)
     monkeypatch.setattr(control.runtime, "session_store", object())
     monkeypatch.setattr(control.runtime, "clear_session", lambda *_args, **_kwargs: None)
     def start(task_id, **kwargs):
         observed.append(("start", task_id, kwargs["task_code_capability"]))
         if failure:
-            raise RuntimeError("registration_unavailable")
+            # e.g. an orphaned bach-task/<id> branch without its tree
+            raise RuntimeError("Task-Branch existiert bereits")
     monkeypatch.setattr(worker_git, "start_task_worktree", start)
     monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", lambda task_id: {
         "availability": "available", "task_id": task_id,
@@ -172,9 +180,16 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     run = control._WORKER_EXECUTIONS[worker["id"]]
     run.thread.join(5)
     assert not run.thread.is_alive()
-    expected = [("start", leased_binding.task_id, False)] + ([] if failure else [("model",)])
-    assert observed == expected
+    assert observed[0] == ("start", leased_binding.task_id, False)
     assert leased_binding._client.task_result_snapshot(leased_binding.task_id)["result"] is None
+    if not failure:
+        assert observed[1] == ("model",)
+        return
+    # The background worker returns the task and stays available instead of erroring.
+    assert observed[1:] == [("finish", "task_returned", "task_scope_unavailable")]
+    assert leased_binding.closed
+    assert leased_binding.task_id in worker_controls[0].deferred_task_versions
+    assert worker_controls[0].start_error != "runtime_error"
 
 
 def test_unknown_worker_type_keeps_existing_start_path(leased_binding, monkeypatch):
