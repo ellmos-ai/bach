@@ -30,7 +30,7 @@ def normalize_backend_error(raw):
     if not isinstance(raw, dict) or raw.get("provider") != "ollama":
         return None
     kind = raw.get("kind")
-    if not isinstance(kind, str) or kind not in {"http_error", "rate_limited", "quota_exceeded", "provider_error"}:
+    if not isinstance(kind, str) or kind not in {"http_error", "rate_limited", "quota_exceeded", "provider_error", "tool_parse_error"}:
         return None
     quota = kind == "quota_exceeded"
     if type(raw.get("quota_exceeded")) is not bool or raw["quota_exceeded"] != quota:
@@ -54,6 +54,8 @@ def normalize_backend_error(raw):
         message = "Ollama: Anfragelimit erreicht."
     elif kind == "http_error":
         message = "Ollama: Anfrage vom Anbieter abgelehnt."
+    elif kind == "tool_parse_error":
+        message = "Ollama konnte einen Werkzeugaufruf nicht lesen."
     else:
         message = "Ollama meldet einen Fehler."
     if status is not None:
@@ -73,9 +75,13 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
         error = error.get("message")
     text = " ".join(error.lower().split()) if isinstance(error, str) else ""
     monthly = status_code in (None, 429) and "monthly usage limit reached" in text
-    raw = {"provider": "ollama", "kind": "quota_exceeded" if monthly else (
+    tool_parse = (not monthly and status_code != 429
+                  and "xml syntax error" in text and "<function>" in text
+                  and "</parameter>" in text)
+    raw = {"provider": "ollama", "kind": "tool_parse_error" if tool_parse else (
+        "quota_exceeded" if monthly else (
         "rate_limited" if status_code == 429 else
-        "http_error" if status_code is not None else "provider_error"),
+        "http_error" if status_code is not None else "provider_error")),
         "quota_exceeded": monthly}
     if monthly:
         raw["quota_period"] = "month"

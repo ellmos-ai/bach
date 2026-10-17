@@ -2068,6 +2068,7 @@ def model_request_run_record(worker_id: str, start_request_id: str | None = None
 def reserve_model_request(worker_id: str, *, service_instance: str,
                           start_request_id: str, generation: str, task_id: int,
                           task_version: str, configuration_version: str,
+                          confirmed_version_transitions: tuple = (),
                           path: str | None = None) -> dict[str, Any]:
     """Persist one non-refundable backend attempt before provider dispatch."""
     config = load_slots_config(path, strict=True)
@@ -2082,9 +2083,20 @@ def reserve_model_request(worker_id: str, *, service_instance: str,
             or _worker_profile_version(worker) != configuration_version
             or worker.get("max_model_requests") != record["limit"]
             or type(task_version) is not str
-            or re.fullmatch(r"[0-9a-f]{64}", task_version) is None
-            or record["task_version"] not in (None, task_version)):
+            or re.fullmatch(r"[0-9a-f]{64}", task_version) is None):
         raise ModelRequestBudgetError("Modellanfragenlauf oder Taskbindung ist nicht mehr aktuell")
+    if record["task_version"] not in (None, task_version):
+        transitions = confirmed_version_transitions
+        if (type(transitions) is not tuple or not transitions
+                or any(type(pair) is not tuple or len(pair) != 2
+                       or any(type(version) is not str
+                              or re.fullmatch(r"[0-9a-f]{64}", version) is None
+                              for version in pair)
+                       for pair in transitions)
+                or any(left[1] != right[0] for left, right in zip(transitions, transitions[1:]))
+                or transitions[-1][1] != task_version
+                or not any(pair[0] == record["task_version"] for pair in transitions)):
+            raise ModelRequestBudgetError("Modellanfragenlauf oder Taskbindung ist nicht mehr aktuell")
     if record["reserved_count"] >= record["limit"]:
         raise ModelRequestBudgetError(
             f"Modellanfragenbudget ausgeschöpft: Run {start_request_id}, "

@@ -55,6 +55,10 @@ class _Binding:
     def task_snapshot(self):
         return {"id": self.task_id, "task_version": TASK_VERSION}
 
+    def budget_task_version_evidence(self):
+        self.assert_active()
+        return self.task_id, TASK_VERSION, ()
+
     def assert_active(self):
         if self.closed:
             raise RuntimeError("binding closed")
@@ -284,6 +288,85 @@ def test_real_ollama_dispatch_reserves_before_call_and_timeout_consumes_request(
     assert len(calls) == 2
     assert binding.model_finishes[-1]["failed"] is False
     assert path.exists()
+
+
+def test_local_tool_parser_error_gets_one_new_counted_request(tmp_path, monkeypatch):
+    from hub._services.llm.backend_errors import classify_ollama_error
+
+    _path, _worker, budget = _new_budget(tmp_path, monkeypatch)
+    backend = OllamaBackend(base_url="http://127.0.0.1:11434", default_model=MODEL)
+    binding = _Binding()
+    runtime, session = _runtime_session(backend, budget, monkeypatch, binding=binding)
+    calls = []
+    private_error = "XML syntax error on line 3: element <function> closed by </parameter>"
+    detail = classify_ollama_error({"error": private_error})
+    assert detail["kind"] == "tool_parse_error"
+    assert private_error not in repr(detail)
+    assert classify_ollama_error({"error": private_error}, status_code=500)["kind"] == "tool_parse_error"
+    assert classify_ollama_error({"message": private_error})["kind"] == "provider_error"
+
+    async def fake_chat(messages, tools=None, think=True, model=None):
+        calls.append(copy.deepcopy(messages))
+        assert slots.model_request_run_record(
+            budget.worker_id, budget.start_request_id)["reserved_count"] == len(calls)
+        if len(calls) == 1:
+            return {"content": "", "tool_calls": None, "error": detail["message"],
+                    "backend_error": detail}
+        return {"content": "gültige Antwort", "tool_calls": None}
+
+    backend.chat = fake_chat
+    result = _run_dispatch(runtime, session, tools=[_read_file_tool()])
+    assert result["content"] == "gültige Antwort"
+    assert len(calls) == 2
+    assert "Anfrage 1/8" in calls[0][-1]["content"]
+    assert "Anfrage 2/8" in calls[1][-1]["content"]
+    assert "ungültiges Werkzeugformat" in calls[1][-2]["content"]
+    assert private_error not in repr(calls)
+    assert binding.model_finishes[0]["failed"] is True
+    assert binding.model_finishes[1]["failed"] is False
+    assert binding.model_starts[0]["request_sha256"] != binding.model_starts[1]["request_sha256"]
+
+    # A second malformed answer is returned to the controller; it cannot
+    # recursively buy a third attempt from the same tool-parser incident.
+    async def still_invalid(messages, tools=None, think=True, model=None):
+        calls.append(copy.deepcopy(messages))
+        assert slots.model_request_run_record(
+            budget.worker_id, budget.start_request_id)["reserved_count"] == len(calls)
+        return {"content": "", "tool_calls": None, "error": detail["message"],
+                "backend_error": detail}
+
+    backend.chat = still_invalid
+    failed = _run_dispatch(runtime, session, tools=[_read_file_tool()])
+    assert failed["backend_error"]["kind"] == "tool_parse_error"
+    assert len(calls) == 4
+
+
+@pytest.mark.parametrize("remaining,tools,kind", [
+    (3, [_read_file_tool()], "tool_parse_error"),
+    (8, None, "tool_parse_error"),
+    (8, [_read_file_tool()], "provider_error"),
+])
+def test_parser_retry_refuses_unreserved_or_unrelated_attempt(
+    tmp_path, monkeypatch, remaining, tools, kind,
+):
+    _path, _worker, budget = _new_budget(tmp_path, monkeypatch)
+    backend = OllamaBackend(base_url="http://127.0.0.1:11434", default_model=MODEL)
+    runtime, session = _runtime_session(backend, budget, monkeypatch, binding=_Binding())
+    if remaining < 8:
+        _reserve_plain_calls(runtime, session, backend, 8 - remaining)
+    observed = []
+
+    async def fake_chat(messages, tools=None, think=True, model=None):
+        observed.append(copy.deepcopy(messages))
+        return {"content": "", "tool_calls": None, "error": "fester Fehler",
+                "backend_error": {"provider": "ollama", "kind": kind,
+                                  "quota_exceeded": False}}
+
+    backend.chat = fake_chat
+    _run_dispatch(runtime, session, tools=tools)
+    assert len(observed) == 1
+    assert slots.model_request_run_record(
+        budget.worker_id, budget.start_request_id)["reserved_count"] == 9 - remaining
 
 
 def test_two_request_completion_reserve_narrows_real_tool_requests_and_blocks_ninth(

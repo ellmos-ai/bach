@@ -42,7 +42,7 @@ def test_bound_claude_uses_only_private_tools_and_selected_configuration(bridge,
     assert env["BACH_WORKER_TOOL_TOKEN"] not in str(cmd) + prompt + str(result)
     assert bridge.binding._ack.lease_id not in str(cmd) + prompt + str(result)
     assert "Actual role" in prompt and "Actual task" in prompt
-    assert result["content"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert result["content"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert bridge.binding.completed_task_ids == ()
     assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
     assert backend.cwd == "configured-workdir"
@@ -130,7 +130,7 @@ def test_bound_command_mcp_child_uses_actual_stdio_and_reaches_terminal(bridge, 
         return asyncio.run(use_shim())  # Both SDK contexts close the actual child.
     monkeypatch.setattr(backend, "_run_subprocess", physical)
     result = asyncio.run(backend.chat_bound([], binding=bridge.binding, mode="safe", guard=lambda: None))
-    assert result["content"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert result["content"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert bridge.binding.completed_task_ids == ()
     assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
 

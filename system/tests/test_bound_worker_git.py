@@ -459,7 +459,7 @@ def test_bound_task_manage_accepts_valid_own_result_as_review_submission(bridge)
         allowed_tools={"task_manage"},
     )
 
-    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert binding.completed_task_ids == ()
     assert binding.reviewed_task_ids == (binding.task_id,)
 
