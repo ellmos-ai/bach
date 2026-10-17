@@ -1664,6 +1664,30 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             request.state.device = device
             return await call_next(request)
 
+        # A separate service credential may reach only the four exact result
+        # routes. The handler verifies its scoped identity and revision in BACH.
+        service_id = request.headers.get("X-BACH-Result-Service-ID")
+        service_token = request.headers.get("X-BACH-Result-Service")
+        if service_id is not None or service_token is not None:
+            import re
+            match = re.fullmatch(r"/api/tasks/[1-9][0-9]*/result(?:/history|/correction|/accept)?", path)
+            allowed_methods = {
+                "/result": {"GET"}, "/result/history": {"GET"},
+                "/result/correction": {"POST"}, "/result/accept": {"POST"},
+            }
+            suffix = path[path.find("/result"):]
+            if (not match or request.method not in allowed_methods.get(suffix, set())
+                    or not service_id or not service_id.strip()
+                    or not service_token or not service_token.strip()
+                    or request.headers.get("Authorization")
+                    or request.cookies.get("bach_device_token")
+                    or request.headers.get("X-BACH-Result-Operator")):
+                return JSONResponse(status_code=403, content={"detail": "Service-Anmeldung für diese Route abgelehnt"})
+            if (request.method == "GET" and request.headers.get("X-BACH-Result-Service-Revision") is not None):
+                return JSONResponse(status_code=400, content={"detail": "Unerwartete Service-Scope-Version"})
+            request.state.result_service_candidate = True
+            return await call_next(request)
+
         # 3. Credentials belong in headers or cookies, never URLs.
         auth_header = request.headers.get("Authorization", "").strip()
         bearer_token = None
@@ -1681,6 +1705,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
+                or path == "/api/system/worker-policy"
+                or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")
                 or (path == "/api/settings/theme" and request.method == "PUT")):
@@ -1811,6 +1837,8 @@ else:
 try:
     from gui.api.core_system_agents import router as core_system_agents_router, prompt_router
     app.include_router(core_system_agents_router)
+    from gui.api.worker_policy import router as worker_policy_router
+    app.include_router(worker_policy_router)
     from gui.api.model_sockets import router as model_sockets_router
     app.include_router(model_sockets_router)
     from gui.api.agent_history import router as agent_history_router
@@ -2521,25 +2549,48 @@ class TaskResultAcceptanceRequest(BaseModel):
 @app.get("/api/tasks/{task_id}/result")
 async def read_task_result(task_id: int, request: Request):
     """Ergebnis und heutige Abnahme aus einem kanonischen Lesesnapshot."""
-    from hub._services.task_result_service import read_result
+    from hub._services.task_result_service import (
+        ResultServiceConflict,
+        ResultServicePermissionDenied,
+        ResultServiceUnavailable,
+        read_result,
+    )
     operator_token = request.headers.get("X-BACH-Result-Operator", "")
+    service_id = request.headers.get("X-BACH-Result-Service-ID")
+    service_token = request.headers.get("X-BACH-Result-Service")
     conn = get_bach_db()
     try:
         if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
-        return read_result(conn, task_id, operator_token=operator_token)
+        return read_result(conn, task_id, operator_token=operator_token or None,
+                           service_id=service_id, service_token=service_token)
+    except ResultServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": "result_service_unavailable", "message": str(exc)}) from None
+    except ResultServicePermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code, "message": str(exc)}) from None
+    except ResultServiceConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from None
     finally:
         conn.close()
 
 
 @app.get("/api/tasks/{task_id}/result/history")
-async def read_task_result_history(task_id: int, before_event_id: Optional[int] = None, limit: int = 20):
+async def read_task_result_history(task_id: int, request: Request, before_event_id: int | None = None, limit: int = 20):
     from hub._services.task_result_service import (
         read_result_history, ResultCorrectionValidation, ResultHistoryUnavailable, ResultConflict,
+        ResultServiceUnavailable, ResultServicePermissionDenied, ResultServiceConflict,
     )
     conn = get_bach_db()
     try:
-        return read_result_history(conn, task_id, before_event_id=before_event_id, limit=limit)
+        return read_result_history(conn, task_id, before_event_id=before_event_id, limit=limit,
+                                   service_id=request.headers.get("X-BACH-Result-Service-ID"),
+                                    service_token=request.headers.get("X-BACH-Result-Service"))
+    except ResultServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": "result_service_unavailable", "message": str(exc)}) from None
+    except ResultServicePermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code, "message": str(exc)}) from None
+    except ResultServiceConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from None
     except ResultHistoryUnavailable as exc:
         raise HTTPException(status_code=503, detail={"code": "result_history_unavailable", "message": str(exc)}) from None
     except ResultCorrectionValidation as exc:
@@ -2553,13 +2604,32 @@ async def read_task_result_history(task_id: int, before_event_id: Optional[int] 
 @app.post("/api/tasks/{task_id}/result/correction")
 async def request_task_result_correction(task_id: int, body: dict, request: Request):
     from hub._services.task_result_service import (
-        request_result_correction, ResultCorrectionValidation, ResultCorrectionConflict,
+        ResultCorrectionConflict,
+        ResultCorrectionValidation,
         ResultPermissionDenied,
+        ResultServiceConflict,
+        ResultServicePermissionDenied,
+        ResultServiceUnavailable,
+        request_result_correction,
     )
-    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+    operator_token = request.headers.get("X-BACH-Result-Operator")
+    service_id = request.headers.get("X-BACH-Result-Service-ID")
+    service_token = request.headers.get("X-BACH-Result-Service")
+    revision_header = request.headers.get("X-BACH-Result-Service-Revision")
+    try:
+        service_revision = int(revision_header) if revision_header is not None and revision_header.isdecimal() else None
+    except (TypeError, ValueError):
+        service_revision = None
     conn = get_bach_db()
     try:
-        return request_result_correction(conn, task_id, body, operator_token=operator_token)
+        return request_result_correction(conn, task_id, body, operator_token=operator_token,
+                                         service_id=service_id, service_token=service_token, service_revision=service_revision)
+    except ResultServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": "result_service_unavailable", "message": str(exc)}) from None
+    except ResultServicePermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code, "message": str(exc)}) from None
+    except ResultServiceConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from None
     except ResultPermissionDenied as exc:
         raise HTTPException(status_code=403, detail={"code": "result_operator_correction_scope_required", "message": str(exc)}) from None
     except ResultCorrectionValidation as exc:
@@ -2572,20 +2642,41 @@ async def request_task_result_correction(task_id: int, body: dict, request: Requ
 
 @app.post("/api/tasks/{task_id}/result/accept")
 async def accept_task_result(task_id: int, body: TaskResultAcceptanceRequest, request: Request):
-    """Getrennte Operator-Abnahme; Geräteidentität kommt ausschließlich aus Auth."""
-    from hub._services.task_result_service import accept_result, ResultConflict, ResultPermissionDenied
-    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+    """Getrennte Operator- oder Service-Abnahme mit Task-/Result-CAS."""
+    from hub._services.task_result_service import (
+        ResultConflict,
+        ResultPermissionDenied,
+        ResultServiceConflict,
+        ResultServicePermissionDenied,
+        ResultServiceUnavailable,
+        accept_result,
+    )
+    operator_token = request.headers.get("X-BACH-Result-Operator")
+    service_id = request.headers.get("X-BACH-Result-Service-ID")
+    service_token = request.headers.get("X-BACH-Result-Service")
+    revision_header = request.headers.get("X-BACH-Result-Service-Revision")
+    try:
+        service_revision = int(revision_header) if revision_header is not None and revision_header.isdecimal() else None
+    except (TypeError, ValueError):
+        service_revision = None
     conn = get_bach_db()
     try:
         if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         return accept_result(conn, task_id, body.result_id, digest=body.result_sha256,
                              task_version=body.task_version, status_revision=body.status_revision,
-                             operator_token=operator_token)
+                             operator_token=operator_token, service_id=service_id, service_token=service_token,
+                             service_revision=service_revision)
+    except ResultServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": "result_service_unavailable", "message": str(exc)}) from None
+    except ResultServicePermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.code, "message": str(exc)}) from None
+    except ResultServiceConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from None
     except ResultPermissionDenied as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise HTTPException(status_code=403, detail=str(exc)) from None
     except ResultConflict as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     finally:
         conn.close()
 

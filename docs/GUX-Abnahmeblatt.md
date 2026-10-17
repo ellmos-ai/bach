@@ -2,7 +2,7 @@
 
 **Datum:** 2026-10-09
 **Task:** #1703 (P2, GUI-GUX) – „Kontaktvorschau, Finanzlayout und globalen Überlauf visuell abnehmen" (GUX-061/062/067/DES-03 + nav.js-Lektüre)
-**Worktree:** /Users/lukas/services/bach-worktrees/task-1703
+**Worktree:** <worktree>/task-1703
 
 ---
 
@@ -123,7 +123,7 @@ Stand der Prüfung: 2026-10-08 (vor der GUI-Umstellung auf Dist-first, bach #309
 
 - **Datum:** 2026-10-09
 - **Task:** #1706 (P2, GUI-GUX) – „Inbox/Artefakte/Governance/Settings/Daemon/Installer ehrliche Betriebsflächen“ (GUX-079–086 + GUX-088)
-- **Worktree:** /Users/lukas/services/bach-worktrees/task-1706
+- **Worktree:** <worktree>/task-1706
 
 ## Vorgehen
 

@@ -7,6 +7,7 @@ API loopback hop and returns a small, secret-free worker projection.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -87,6 +88,32 @@ def _text(value: Any, *, limit: int = 240) -> str | None:
     return clean[:limit] if clean else None
 
 
+def _project_active_execution(raw: Any, worker_id: str) -> dict[str, Any] | None:
+    """Keep only controller facts needed to compare a native task lease."""
+    if not isinstance(raw, dict):
+        return None
+    generation = raw.get("generation")
+    task_id = raw.get("active_task_id")
+    holder = raw.get("lease_worker_id")
+    heartbeat = raw.get("heartbeat_at")
+    if (raw.get("schema") != "bach.worker-execution.v1"
+            or raw.get("worker_id") != worker_id or raw.get("state") != "running"
+            or raw.get("terminal") is not False
+            or not isinstance(generation, str) or not _RUN_ID.fullmatch(generation)
+            or type(task_id) is not int or task_id <= 0
+            or not isinstance(holder, str)
+            or not re.fullmatch(r"worker-[0-9a-f]{32}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}", holder)
+            or not isinstance(heartbeat, str) or len(heartbeat) > 40):
+        return None
+    try:
+        datetime.fromisoformat(heartbeat.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return {"schema": raw["schema"], "worker_id": worker_id, "state": "running",
+            "terminal": False, "generation": generation, "active_task_id": task_id,
+            "lease_worker_id": holder, "heartbeat_at": heartbeat}
+
+
 def _project_worker(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise WorkerStatusUnavailable("Workerantwort enthält einen ungültigen Eintrag")
@@ -143,6 +170,9 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     generation = raw.get("generation")
     if isinstance(generation, str) and _RUN_ID.fullmatch(generation):
         item["generation"] = generation
+    execution = _project_active_execution(raw.get("execution"), worker_id)
+    if execution is not None:
+        item["execution"] = execution
     capabilities = raw.get("action_capabilities")
     if isinstance(capabilities, dict):
         item["action_capabilities"] = {
@@ -472,6 +502,8 @@ def read_worker_status(*, device_token: str, timeout: float = 5.0) -> dict[str, 
     if payload.get("ok") is not True or not isinstance(payload.get("workers"), list):
         raise WorkerStatusUnavailable("Lokale Control-API lieferte keinen Workerstatus")
     workers = [_project_worker(entry) for entry in payload["workers"]]
+    from hub._services.worker_policy_settings import attach_active_task_leases
+    workers = attach_active_task_leases(workers)
     from datetime import datetime, timezone
 
     return {

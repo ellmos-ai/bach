@@ -356,3 +356,31 @@ fehlende Datensätze bei Ändern oder Löschen liefern HTTP404.
 Schreibwege committen oder rollen zurück und schließen ihre Verbindung
 auch nach Fehlern. Lesen erzeugt keine Tabellen. Die GUI zeigt Fehler an,
 bewahrt den Entwurf und bietet die vier gültigen Facts-Kategorien an.
+
+
+AKTUELLER SESSION-VERTRAG (2026-10-16)
+======================================
+
+Bericht und Abschluss verwenden dieselbe explizite Session und denselben Partner.
+--session=ID (Alias --session-id) erfordert --partner=NAME (Alias --partner-id).
+Beide Flags unterstützen auch die Form mit getrenntem Wert. Ohne Session-ID
+muss die Auswahl eindeutig sein; bei mehreren offenen Sessions wird abgebrochen.
+Ohne Scope bleibt nur der eindeutige Legacy-Einzelfall unterstützt.
+Unbekannte, geschlossene oder fremd zugeordnete IDs werden vor Writes abgewiesen.
+
+bach mem session --session=ID --partner=codex -- "Bericht"
+bach --shutdown --session=ID --partner=codex -- "Abschluss"
+
+API: memory.session("Bericht", session_id="ID", partner="codex")
+API: session.shutdown("Abschluss", session_id="ID", partner="codex")
+MCP: session_shutdown(summary="Abschluss", session_id="ID", partner="codex")
+Der Separator -- schützt Flags im Bericht als Text. API/MCP setzen ihn selbst.
+mem session lässt die Sitzung offen. quick/emergency sichern nur eine Notiz;
+quick bleibt eine Pause. complete speichert ended_at, Bericht, Zeitfenster-Zähler
+und Fortsetzung atomar für genau die gewählte Sitzung. Parallel gestartete
+Nachfolgesitzungen werden nicht übernommen. Bei Clock-out-Fehler bleibt ein
+bestätigter Abschluss erfolgreich und meldet zusätzlich eine Warnung.
+Directory-Scan und Auto-Snapshot bleiben beim vollständigen Abschluss erhalten.
+Globale Bereinigung, Kompression, Exporte und Auswertung des gemeinsamen Autologs
+laufen nicht mehr automatisch im Shutdown. Vorhandene Berichte bleiben erhalten.
+BACH behält die Datenhoheit; der Helper ist lokale Kompatibilitätsverdrahtung.

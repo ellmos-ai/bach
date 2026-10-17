@@ -43,6 +43,8 @@ except ImportError:
         return Mode(str(getattr(v, "value", v)).strip().lower())
 
 from hub import safe_exec
+from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError
+from hub._services.chat.worker_tool_errors import ToolErrorText
 from hub._services.chat.worker_lease_binding import (
     WorkerLeaseBinding,
     WorkerResultLimitLockedError,
@@ -773,14 +775,16 @@ def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
             timeout=timeout, stdin=subprocess.DEVNULL,
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
+        if r.returncode != 0:
+            return _tool_effect_unconfirmed()
         out = r.stdout
         if r.stderr:
             out += "\n[stderr] " + r.stderr
         return (out or "(keine Ausgabe)")[:4000]
     except subprocess.TimeoutExpired:
-        return f"Timeout nach {timeout}s"
-    except Exception as e:
-        return f"Fehler: {e}"
+        return _tool_effect_unconfirmed()
+    except Exception:  # noqa: BLE001 -- After subprocess start, expose only the bounded unknown-effect result.
+        return _tool_effect_unconfirmed()
 
 
 def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
@@ -801,7 +805,7 @@ def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
     try:
         argv = safe_exec.resolve_executable(cmd, allowed)
     except safe_exec.CommandRejected as e:
-        return f"Befehl blockiert (Sicherheit): {e}"
+        return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
     try:
         r = subprocess.run(
             argv, shell=False, capture_output=True, text=True,
@@ -809,14 +813,16 @@ def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
             timeout=timeout, stdin=subprocess.DEVNULL,
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
+        if r.returncode != 0:
+            return _tool_effect_unconfirmed()
         out = r.stdout
         if r.stderr:
             out += "\n[stderr] " + r.stderr
         return (out or "(keine Ausgabe)")[:4000]
     except subprocess.TimeoutExpired:
-        return f"Timeout nach {timeout}s"
-    except Exception as e:
-        return f"Fehler: {e}"
+        return _tool_effect_unconfirmed()
+    except Exception:  # noqa: BLE001 -- After subprocess start, expose only the bounded unknown-effect result.
+        return _tool_effect_unconfirmed()
 
 
 def run_argv(argv: list, timeout: int = CMD_TIMEOUT) -> str:
@@ -835,14 +841,16 @@ def run_argv(argv: list, timeout: int = CMD_TIMEOUT) -> str:
             timeout=timeout, stdin=subprocess.DEVNULL,
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         )
+        if r.returncode != 0:
+            return _tool_effect_unconfirmed()
         out = r.stdout
         if r.stderr:
             out += "\n[stderr] " + r.stderr
         return (out or "(keine Ausgabe)")[:4000]
     except subprocess.TimeoutExpired:
-        return f"Timeout nach {timeout}s"
-    except Exception as e:
-        return f"Fehler: {e}"
+        return _tool_effect_unconfirmed()
+    except Exception:  # noqa: BLE001 -- After subprocess start, expose only the bounded unknown-effect result.
+        return _tool_effect_unconfirmed()
 
 
 # --- Tool-Definitionen ---
@@ -1103,14 +1111,12 @@ def _delegate_claude_api(prompt: str, api_key: str,
         )
         data = r.json()
         if r.status_code != 200:
-            return f"Claude API Fehler ({r.status_code}): {data.get('error', {}).get('message', str(data)[:500])}"
+            return _tool_effect_unconfirmed()
         blocks = data.get("content", [])
         text = "\n".join(b.get("text", "") for b in blocks if b.get("type") == "text")
         return (text or "(keine Antwort)")[:3000]
-    except httpx.TimeoutException:
-        return "Claude API Timeout (120s)"
-    except Exception as e:
-        return f"Claude API Fehler: {e}"
+    except Exception:  # noqa: BLE001 -- Redact provider failures because response state may be uncertain.
+        return _tool_effect_unconfirmed()
 
 
 # --- Tool-Ausführung ---
@@ -1127,27 +1133,40 @@ def _task_route_fields(conn, payload):
     return result
 
 
+def _tool_policy_denial(reason: str, text: str) -> ToolErrorText:
+    """Return an explicit finite policy denial; never infer from text."""
+    return ToolErrorText(text, code="tool_policy_denied", reason=reason)
+
+
+def _tool_effect_unconfirmed() -> ToolErrorText:
+    """An operation may have run or partially changed state before failing."""
+    return ToolErrorText(
+        "Werkzeugausführung nicht bestätigt; Wirkung unbekannt.",
+        code="bach_tool_effect_unconfirmed",
+    )
+
+
 def exec_tool(name: str, args: Any, mode: str, bach_app=None,
               default_model: str = "", *, worker_task_binding=None,
               require_task_binding: bool = False, agent_operations=None,
               allowed_tools=None) -> str:
     if allowed_tools is not None and name not in allowed_tools:
-        return "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben."
+        return _tool_policy_denial("tool_not_authorized", "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben.")
     if require_task_binding and worker_task_binding is None:
-        return "Taskbindung fehlt; Werkzeug nicht ausgeführt."
+        return ToolErrorText("Taskbindung fehlt; Werkzeug nicht ausgeführt.", code="task_binding_required")
     if worker_task_binding is not None:
         try:
             worker_task_binding.assert_active()
         except Exception:
-            return "BLOCKIERT: Taskbindung oder Workerlauf ist nicht mehr aktiv."
+            return _tool_policy_denial("worker_context_denied", "BLOCKIERT: Taskbindung oder Workerlauf ist nicht mehr aktiv.")
         from hub._services.chat import worker_write_guard
         if worker_write_guard.is_write_tool(name):
             try:
                 worker_write_guard.require_write_grant(name, allowed_tools)
             except worker_write_guard.WorkerWriteGuardError as exc:
-                return f"BLOCKIERT: {exc}"
+                return _tool_policy_denial("write_grant_denied", "BLOCKIERT: Schreibfreigabe ist für diesen Worker nicht vorhanden.")
         if name not in {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}:
-            return "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar."
+            return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar.")
         # Shared by the chat loop and the managed CLI bridge. Preserve proof
         # before dispatch, including reads and uncertain tool outcomes.
         mark_dispatch = getattr(worker_task_binding, "mark_tool_dispatch", None)
@@ -1164,14 +1183,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
     if worker_task_binding is not None and name == "start_task_worktree":
         if (not isinstance(args, dict) or type(args.get("task_id")) is not int
                 or args["task_id"] != worker_task_binding.task_id):
-            return "BLOCKIERT: Worktree gehört nicht zur gebundenen Task."
+            return _tool_policy_denial("task_target_mismatch", "BLOCKIERT: Worktree gehört nicht zur gebundenen Task.")
 
     try:
         if name in {"agent_manage", "skill_create"} and mode not in {"safe", "full"}:
-            return "BLOCKIERT: Agenten- und Skillverwaltung ist in diesem Modus nicht verfügbar."
+            return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Agenten- und Skillverwaltung ist in diesem Modus nicht verfügbar.")
         if name == "agent_manage":
             if agent_operations is None:
-                return "BLOCKIERT: Nativer Agentencontroller ist nicht angebunden."
+                return _tool_policy_denial("provider_unavailable", "BLOCKIERT: Nativer Agentencontroller ist nicht angebunden.")
             grants = {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=worker_task_binding is not None)}
             if allowed_tools is not None:
                 grants &= set(allowed_tools)
@@ -1179,7 +1198,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
         if name == "skill_create":
             if not isinstance(args, dict) or set(args) != {"name", "content", "source_version"}:
-                return "BLOCKIERT: Skill benötigt ID, vollständigen Inhalt und Quellenversion."
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Skill benötigt ID, vollständigen Inhalt und Quellenversion.")
             from hub._services.skill_source_service import save_skill
             saved = save_skill(args["name"], args["content"], args["source_version"])
             return json.dumps({k: v for k, v in saved.items() if k != "content"}, ensure_ascii=False)
@@ -1189,9 +1208,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 try:
                     read_guard, scope = _authorize_task_reader(worker_task_binding, args.get("path") or ".")
                 except Exception:  # noqa: BLE001 - Leseberechtigung bei jeder Unsicherheit sperren.
-                    return "BLOCKIERT: Task-Lesebereich nicht bestätigt."
+                    return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Task-Lesebereich nicht bestätigt.")
                 if scope.requested_is_file:
-                    return "Fehler: Pfad ist kein Verzeichnis"
+                    return _tool_policy_denial("directory_expected", "BLOCKIERT: Ein Verzeichnis ist erforderlich.")
                 children = {}
                 for child in (*scope.files, *scope.directories):
                     if child != scope.requested and child.parent == scope.requested:
@@ -1215,13 +1234,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             target = Path(args.get("path") or os.path.expanduser("~"))
             resolved = _resolve(target)
             if not _fs_root_allowed(resolved):
-                return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+                return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Pfad außerhalb der erlaubten Wurzeln.")
             if _is_secret_path(resolved):
-                return "BLOCKIERT: Secrets-Verzeichnis darf nicht aufgelistet werden"
+                return _tool_policy_denial("secret_path_denied", "BLOCKIERT: Secrets-Verzeichnis darf nicht aufgelistet werden.")
             try:
                 entries = sorted(resolved.iterdir(), key=lambda e: e.name)
-            except OSError as e:
-                return f"Fehler: {e}"
+            except OSError:
+                return _tool_effect_unconfirmed()
             details = args.get("details")
             lines = []
             for e in entries:
@@ -1260,21 +1279,21 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return "Fehler: Ungültige read-evidence-Parameter."
             p = args.get("path", "")
             if not p:
-                return "Kein Pfad angegeben"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ein Datei-Pfad ist erforderlich.")
             if task_code_capability:
                 try:
                     read_guard, scope = _authorize_task_reader(worker_task_binding, p)
                 except Exception:  # noqa: BLE001 - Leseberechtigung bei jeder Unsicherheit sperren.
-                    return "BLOCKIERT: Task-Lesebereich nicht bestätigt."
+                    return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Task-Lesebereich nicht bestätigt.")
                 if not scope.requested_is_file:
-                    return "BLOCKIERT: Im Task-Lesebereich muss eine freigegebene Datei angegeben werden."
+                    return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Im Task-Lesebereich muss eine freigegebene Datei angegeben werden.")
                 resolved = scope.requested
             else:
                 resolved = _resolve(p)
                 if not _fs_root_allowed(resolved):
-                    return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+                    return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Pfad außerhalb der erlaubten Wurzeln.")
                 if _is_secret_path(resolved):
-                    return "BLOCKIERT: Secrets-Datei darf nicht gelesen werden"
+                    return _tool_policy_denial("secret_path_denied", "BLOCKIERT: Secrets-Datei darf nicht gelesen werden.")
             if evidence_request is not None:
                 _, start_line, char_offset, max_lines, max_chars = evidence_request
                 try:
@@ -1350,14 +1369,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             total_lines = line_number
                             if raw_offset <= line_number <= end_line:
                                 picked.append((line_number, line))
-            except OSError as e:
-                if task_code_capability:
-                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
-                return f"Fehler: {e}"
-            except Exception:  # noqa: BLE001 - Task-Lesefehler bleiben fail-closed.
-                if task_code_capability:
-                    return "BLOCKIERT: Task-Datei konnte nicht sicher gelesen werden."
-                return "Fehler: Datei konnte nicht gelesen werden"
+            except OSError:
+                return _tool_effect_unconfirmed()
+            except Exception:  # noqa: BLE001 - Lesefehler bleiben ohne Inhaltsausgabe.
+                return _tool_effect_unconfirmed()
             if not line_numbers:
                 raw_text = "".join(line for _number, line in picked) or "(keine Zeilen)"
                 return raw_text[:MAX_READ_FILE_OUTPUT_CHARS]
@@ -1372,7 +1387,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         if name == "search_text":
             pat = args.get("pattern", "")
             if not isinstance(pat, str) or len(pat) > 1024:
-                return "BLOCKIERT: Suchmuster ist ungültig oder zu lang"
+                return _tool_policy_denial("search_pattern_invalid", "BLOCKIERT: Suchmuster ist ungültig oder zu lang.")
             p = Path(args.get("path") or ".")
             task_scope = None
             task_guard = None
@@ -1380,20 +1395,20 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 try:
                     task_guard, task_scope = _authorize_task_reader(worker_task_binding, p)
                 except Exception:  # noqa: BLE001 - unklarer Task-Lesebereich bleibt gesperrt.
-                    return "BLOCKIERT: Task-Lesebereich nicht bestätigt."
+                    return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Task-Lesebereich nicht bestätigt.")
                 resolved = task_scope.requested
             else:
                 resolved = _resolve(p)
                 if not _fs_root_allowed(resolved):
-                    return "BLOCKIERT: Pfad ausserhalb der erlaubten Wurzeln"
+                    return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Pfad außerhalb der erlaubten Wurzeln.")
                 if _is_secret_path(resolved):
-                    return "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden"
+                    return _tool_policy_denial("secret_path_denied", "BLOCKIERT: Secrets-Pfad darf nicht durchsucht werden.")
             recursive = args.get("recursive", True)
             import regex
             try:
                 rx = regex.compile(pat, regex.VERSION0)
             except regex.error as e:
-                return f"Ungueltiges Muster: {e}"
+                return _tool_policy_denial("search_pattern_invalid", "BLOCKIERT: Suchmuster ist ungültig.")
             if task_scope is not None:
                 if task_scope.requested_is_file:
                     files = [resolved]
@@ -1410,7 +1425,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             bytes_read = 0
             for n, f in enumerate(files):
                 if time.monotonic() >= deadline:
-                    return "BLOCKIERT: Suche hat das Zeitlimit erreicht"
+                    return _tool_effect_unconfirmed()
                 if n >= 5000:
                     break
                 fr = f if task_scope is not None else _resolve(f)
@@ -1438,24 +1453,28 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             bytes_read += len(line.encode("utf-8"))
                             remaining = deadline - time.monotonic()
                             if bytes_read > 8_388_608 or remaining <= 0:
-                                return "BLOCKIERT: Suche hat das Lese- oder Zeitlimit erreicht"
+                                return _tool_effect_unconfirmed()
                             if rx.search(line, timeout=min(.05, remaining), concurrent=True):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")
                                 if len(hits) >= 200:
                                     break
                 except TimeoutError:
-                    return "BLOCKIERT: Suchmuster überschreitet das Zeitlimit"
+                    return _tool_effect_unconfirmed()
                 except OSError:
                     continue
             return ("\n".join(hits) or "(keine Treffer)")[:4000]
 
         if name == "system_status":
-            parts = [
+            values = [
                 run_shell("uptime"),
-                "Disk: " + run_shell("df -h / | tail -1"),
-                "Speicher: " + run_shell("memory_pressure | head -3"),
-                "CPU: " + run_shell("sysctl -n machdep.cpu.brand_string"),
+                run_shell("df -h / | tail -1"),
+                run_shell("memory_pressure | head -3"),
+                run_shell("sysctl -n machdep.cpu.brand_string"),
             ]
+            failure = next((value for value in values if isinstance(value, ToolErrorText)), None)
+            if failure is not None:
+                return failure
+            parts = [values[0], "Disk: " + values[1], "Speicher: " + values[2], "CPU: " + values[3]]
             return "\n".join(parts)[:4000]
 
         if name == "ollama_info":
@@ -1472,16 +1491,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 # oder moeglich Windows-Umgehung, siehe Befund D).
                 m = args.get("model", default_model)
                 return run_argv(["ollama", "show", m])
-            return "Unbekannte Aktion: " + act
+            return _tool_policy_denial("unsupported_action", "BLOCKIERT: Ollama-Aktion ist nicht verfügbar.")
 
         if name == "bach_command":
             if worker_task_binding is not None and args.get("handler") == "task":
                 try:
                     return worker_task_binding.execute_task_command(args.get("operation", ""), args.get("args", []))
                 except Exception:
-                    return "BLOCKIERT: Task-Befehl nicht bestätigt; gebundenes task_manage verwenden."
+                    return _tool_effect_unconfirmed()
             if not bach_app:
-                return "BACH nicht verfügbar"
+                return _tool_policy_denial("provider_unavailable", "BACH ist für diesen Werkzeugaufruf nicht verfügbar.")
             _HANDLER_ALIASES = {
                 "kalender": "calendar", "kontakte": "contact",
                 "contacts": "contact", "routinen": "routine",
@@ -1493,34 +1512,31 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             h = args.get("handler", "")
             h = _HANDLER_ALIASES.get(h, h)
             if h not in BACH_COMMAND_HANDLERS:
-                return (
-                    f"BLOCKIERT: Handler '{h}' ist nicht in der bach_command-Allowlist.\n"
-                    f"Erlaubt: {', '.join(BACH_COMMAND_HANDLERS)}"
-                )
+                return _tool_policy_denial("handler_not_allowed", "BLOCKIERT: BACH-Handler ist nicht freigegeben.")
             op = args.get("operation", "")
             ex = args.get("args", [])
             ok, out = bach_app.execute(h, op, ex)
             r = str(out)[:4000] if out else "(keine Ausgabe)"
-            return r if ok else "Fehler: " + r
+            return r if ok else _tool_effect_unconfirmed()
 
         if name == "get_datetime":
             return datetime.now().strftime("%Y-%m-%d %H:%M:%S (%A)")
 
         if name == "safe_shell":
             cmd = args.get("command", "")
-            if not cmd:
-                return "Kein Befehl angegeben"
+            if not isinstance(cmd, str) or not cmd:
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Befehl fehlt oder ist ungültig.")
             if not is_safe_command(cmd):
-                return f"Befehl nicht in der Safe-Liste. Erlaubt: {', '.join(sorted(SAFE_BASES)[:15])}..."
+                return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist nicht in der Safe-Liste.")
             if is_blocked(cmd):
-                return "Befehl blockiert (Sicherheit)"
+                return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             try:
                 tokens = [safe_exec.dequote(t) for t in safe_exec.tokenize(cmd)]
             except safe_exec.CommandRejected as e:
-                return f"Befehl blockiert (Sicherheit): {e}"
+                return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             reason = check_safe_shell_args(tokens)
             if reason:
-                return f"Befehl blockiert (Sicherheit): {reason}"
+                return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             if worker_task_binding is not None:
                 from hub._services.chat.worker_write_guard import authorize_safe_read, run_bound_check
                 try:
@@ -1533,29 +1549,29 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     authorize_safe_read(worker_task_binding)
                     return run_shell_restricted(cmd, allowed=SAFE_BASES)
                 except Exception as e:
-                    return f"BLOCKIERT: Task-Prüfung nicht bestätigt: {e}"
+                    return _tool_effect_unconfirmed()
             return run_shell_restricted(cmd, allowed=SAFE_BASES)
         if name == "execute_command":
             if mode != "full":
-                return "Nur im Full-Modus. Aktivieren: /mode full bestätigt"
+                return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Dieses Werkzeug benötigt den Full-Modus.")
             cmd = args.get("command", "")
             t = int(args.get("timeout", CMD_TIMEOUT))
             if is_blocked(cmd):
-                return f"Befehl blockiert (Sicherheit): {cmd}"
+                return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             if worker_task_binding is not None:
                 from hub._services.chat.worker_write_guard import run_bound_check
                 try:
                     return run_bound_check(worker_task_binding, cmd, args.get("cwd"), t)
                 except Exception as e:
-                    return f"BLOCKIERT: Task-Prüfung nicht bestätigt: {e}"
+                    return _tool_effect_unconfirmed()
             from hub.worker_git import is_live_path_blocked
             cmd_lower = cmd.lower()
             if any(git_mut in cmd_lower for git_mut in ["git commit", "git checkout -b", "git merge", "git push", "git rebase"]):
                 cwd = args.get("cwd") or args.get("path") or "."
                 if not any(token in cmd for token in ["bach-worktrees", "task-"]):
-                    if err := is_live_path_blocked(cwd):
-                        return err
-            log.info("FULL-CMD: execution requested (payload omitted)")
+                    if is_live_path_blocked(cwd):
+                        return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Ausführungspfad ist nicht freigegeben.")
+            log.info(f"FULL-CMD: {cmd}")
             return run_shell_restricted(cmd, t, allowed=None)
 
         if name == "start_task_worktree":
@@ -1570,7 +1586,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 wt = start_task_worktree(tid, **private)
                 return f"Worktree erstellt: {wt}"
             except Exception as e:
-                return f"Fehler bei start_task_worktree: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "finish_task":
             from hub.worker_git import finish_task
@@ -1584,7 +1600,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 res = finish_task(tid, msg, is_wip=is_wip, **private)
                 return json.dumps(res, ensure_ascii=False)
             except Exception as e:
-                return f"Fehler bei finish_task: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "cleanup_task_worktree":
             from hub.worker_git import cleanup_task_worktree
@@ -1596,18 +1612,18 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 ok = cleanup_task_worktree(tid, **private)
                 return f"Worktree aufgeräumt: {ok}"
             except Exception as e:
-                return f"Fehler bei cleanup_task_worktree: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "write_file":
             if mode != "full":
-                return "Nur im Full-Modus."
+                return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Dieses Werkzeug benötigt den Full-Modus.")
             p = args.get("path", "")
             c = args.get("content", "")
             if not p:
-                return "Kein Pfad"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ein gültiger Pfad ist erforderlich.")
             from hub.worker_git import is_live_path_blocked
             if err := is_live_path_blocked(p):
-                return err
+                return _tool_policy_denial("write_path_denied", "BLOCKIERT: Schreibpfad nicht freigegeben.")
             if worker_task_binding is not None:
                 from hub._services.chat.worker_write_guard import authorize_mutation
                 try:
@@ -1615,23 +1631,29 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     p = str(target_file)
                     authorize_mutation(worker_task_binding, paths=(target_file.parent,))
                 except Exception as e:
-                    return f"BLOCKIERT: Task-Schreibpfad nicht bestätigt: {e}"
-            Path(p).parent.mkdir(parents=True, exist_ok=True)
+                    return _tool_policy_denial("write_path_denied", "BLOCKIERT: Task-Schreibpfad nicht bestätigt.")
+            try:
+                Path(p).parent.mkdir(parents=True, exist_ok=True)
+            except Exception:  # noqa: BLE001 -- Filesystem operation may have started; report a bounded unknown effect.
+                return _tool_effect_unconfirmed()
             if worker_task_binding is not None:
                 try:
                     _, (target_file,) = authorize_mutation(worker_task_binding, paths=(p,))
                     p = str(target_file)
                 except Exception as e:
-                    return f"BLOCKIERT: Task-Schreibpfad nicht bestätigt: {e}"
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(c)
+                    return _tool_effect_unconfirmed()
+            try:
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(c)
+            except Exception:  # noqa: BLE001 -- A write may be partial; suppress exception details and report unknown.
+                return _tool_effect_unconfirmed()
             log.info(f"WRITE: {p} ({len(c)} chars)")
             return f"Geschrieben: {p} ({len(c)} Zeichen)"
 
         if name == "web_search":
             query = args.get("query", "")
             if not query:
-                return "Keine Suchanfrage angegeben"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Suchanfrage fehlt.")
             max_r = min(int(args.get("max_results", 5)), 10)
             try:
                 from duckduckgo_search import DDGS
@@ -1646,41 +1668,49 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     out.append(f"**{title}**\n{href}\n{body}")
                 return "\n\n".join(out)[:4000]
             except ImportError:
-                return "Web-Suche nicht verfügbar (ddgs nicht installiert)"
+                return _tool_policy_denial("provider_unavailable", "Web-Suche ist nicht verfügbar.")
             except Exception as e:
-                return f"Suchfehler: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "task_manage":
             if worker_task_binding is not None:
                 if not isinstance(args, dict):
-                    return "Ungültige Task-Werkzeugargumente."
+                    return ToolErrorText("Ungültige Task-Werkzeugargumente.", code="invalid_task_arguments")
                 action = args.get("action", "list")
+                if not isinstance(action, str):
+                    return ToolErrorText("Taskaktion muss Text sein.", code="invalid_task_arguments")
+                if action not in ("list", "detail", "done", "submit_result", "update", "decompose", "add"):
+                    return _tool_policy_denial("unsupported_action", "BLOCKIERT: Taskaktion wird nicht unterstützt.")
                 if action in ("done", "submit_result"):
                     if type(args.get("task_id")) is not int:
-                        return "task_id muss eine numerische Ganzzahl sein."
+                        return ToolErrorText("task_id muss eine numerische Ganzzahl sein.", code="invalid_task_arguments")
+                    try:
+                        max_chars = worker_task_binding.task_snapshot().get("result_max_chars")
+                    except Exception:  # noqa: BLE001 -- Failed task preflight must fail closed before dispatch.
+                        return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")
                     try:
                         from hub._services.task_result_service import validate_submission
                         # Reuse canonical result checks without exposing private worker state.
                         validate_submission(
                             {"generation": "argument-validation", "result": args.get("result")},
-                            max_chars=worker_task_binding.task_snapshot().get("result_max_chars"),
+                            max_chars=max_chars,
                         )
                     except ValueError as exc:
-                        return str(exc)
+                        return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
                     except Exception:
-                        return "Taskoperation nicht bestätigt; Taskbindung prüfen."
+                        return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")
                 try:
                     return worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
                 except WorkerResultLimitLockedError:
                     # This bounded policy denial is safe to explain and leaves the lease active.
-                    return WorkerResultLimitLockedError.user_message
+                    return ToolErrorText(WorkerResultLimitLockedError.user_message, code="task_result_limit_locked")
                 except Exception:
-                    # Ownership, capability and unknown ACK failures stay generic.
-                    return "Taskoperation nicht bestätigt; Taskbindung prüfen."
+                    # The task operation may have applied before the acknowledgement was lost.
+                    return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_operation_unconfirmed")
             if require_task_binding:
-                return "Taskbindung fehlt; Taskoperation nicht ausgeführt."
+                return ToolErrorText("Taskbindung fehlt; Taskoperation nicht ausgeführt.", code="task_binding_required")
             if args.get("action") == "done" and args.get("result") is not None:
-                return "Taskergebnis braucht eine gebundene Worker-Task; Abschluss nicht ausgeführt."
+                return _tool_policy_denial("task_binding_required", "Taskergebnis braucht eine gebundene Worker-Task; Abschluss nicht ausgeführt.")
             action = args.get("action", "list")
             runtime_db = _current_runtime_db()
             task_audit_fn = _current_apply_task_field_changes()
@@ -1701,8 +1731,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
                     if action == "add":
                         title = args.get("title", "")
-                        if not title:
-                            return "Kein Titel angegeben"
+                        if not isinstance(title, str) or not title.strip():
+                            return _tool_policy_denial("invalid_arguments", "Kein Titel angegeben")
                         prio = args.get("priority", "P3")
                         assignee = args.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1716,7 +1746,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                 validate_submission({"generation": "argument-validation", "result": "x"},
                                                     max_chars=args["result_max_chars"])
                             except ValueError as exc:
-                                return str(exc)
+                                return ToolErrorText(str(exc), code="invalid_task_arguments")
                             from hub._services.task_schema import ensure_task_result_contract_columns
                             ensure_task_result_contract_columns(conn)
                             values["result_max_chars"] = args["result_max_chars"]
@@ -1728,8 +1758,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
                     if action == "done":
                         tid = args.get("task_id")
-                        if not tid:
-                            return "Keine Task-ID angegeben"
+                        if type(tid) is not int or tid <= 0:
+                            return _tool_policy_denial("invalid_arguments", "Keine Task-ID angegeben")
                         # Serialisiere Lesen und Statuswechsel. Ohne die Schreibtransaktion
                         # könnten zwei Worker gleichzeitig einen offenen Status lesen und
                         # beide einen erfolgreichen Abschlussbeleg ausstellen.
@@ -1738,9 +1768,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             "SELECT * FROM tasks WHERE id=?", (tid,)
                         ).fetchone()
                         if not existing:
-                            return f"Task #{tid} nicht gefunden"
+                            return _tool_policy_denial("resource_not_found", f"Task #{tid} nicht gefunden")
                         if str(existing["status"] or "").strip().lower() in COMPLETED_STATUSES:
-                            return f"Task #{tid} war bereits erledigt."
+                            return _tool_policy_denial("state_conflict", f"Task #{tid} war bereits erledigt.")
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                             # T-20260906-833218904: schliesst dieselbe task_history-Luecke
@@ -1761,20 +1791,20 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
 
                     if action == "detail":
                         tid = args.get("task_id")
-                        if not tid:
-                            return "Keine Task-ID angegeben"
+                        if type(tid) is not int or tid <= 0:
+                            return _tool_policy_denial("invalid_arguments", "Keine Task-ID angegeben")
                         row = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
                         if not row:
-                            return f"Task #{tid} nicht gefunden"
+                            return _tool_policy_denial("resource_not_found", f"Task #{tid} nicht gefunden")
                         return "\n".join(f"{k}: {row[k]}" for k in row.keys())
 
                     if action == "update":
                         tid = args.get("task_id")
-                        if not tid:
-                            return "Keine Task-ID angegeben"
+                        if type(tid) is not int or tid <= 0:
+                            return _tool_policy_denial("invalid_arguments", "Keine Task-ID angegeben")
                         existing = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
                         if not existing:
-                            return f"Task #{tid} nicht gefunden"
+                            return _tool_policy_denial("resource_not_found", f"Task #{tid} nicht gefunden")
                         updates = {}
                         for fld in ("title", "description", "category", "priority", "status", "depends_on", "assigned_to"):
                             if fld in args and args[fld] is not None:
@@ -1785,13 +1815,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                 validate_submission({"generation": "argument-validation", "result": "x"},
                                                     max_chars=args["result_max_chars"])
                             except ValueError as exc:
-                                return str(exc)
+                                return ToolErrorText(str(exc), code="invalid_task_arguments")
                             from hub._services.task_schema import ensure_task_result_contract_columns
                             ensure_task_result_contract_columns(conn)
                             updates["result_max_chars"] = args["result_max_chars"]
                         updates.update(_task_route_fields(conn, args))
                         if not updates:
-                            return "Keine Felder zum Aktualisieren angegeben"
+                            return _tool_policy_denial("no_updates", "Keine Felder zum Aktualisieren angegeben")
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                              # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass):
@@ -1806,7 +1836,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                               changed_by="chat-runtime", now=now)
                             except GateReopenBlocked as exc:
                                 conn.rollback()
-                                return f"[WARN] Task #{tid} ist terminal geparkt (Gate-Haltefrist) -- Reopen blockiert: {exc}. Fuer einen bewussten Reopen `bach task reopen {tid}` (oder unblock) nutzen."
+                                return _tool_policy_denial("state_conflict", f"[WARN] Task #{tid} ist terminal geparkt (Gate-Haltefrist) -- Reopen blockiert: {exc}. Fuer einen bewussten Reopen `bach task reopen {tid}` (oder unblock) nutzen.")
                         else:
                             updates["updated_at"] = now
                             set_str = ", ".join(f"{k}=?" for k in updates.keys())
@@ -1817,8 +1847,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     if action == "decompose":
                         tid = args.get("task_id")
                         subtasks = args.get("subtasks", [])
-                        if not tid or not isinstance(subtasks, list) or not subtasks:
-                            return "task_id und subtasks (Liste von Objekten mit title, description) erforderlich"
+                        if type(tid) is not int or tid <= 0 or not isinstance(subtasks, list) or not subtasks:
+                            return _tool_policy_denial("invalid_arguments", "task_id und subtasks (Liste von Objekten mit title, description) erforderlich")
                         if any(
                             not isinstance(st, dict)
                             or not isinstance(st.get("title"), str)
@@ -1826,19 +1856,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             or not isinstance(st.get("description", ""), str)
                             for st in subtasks
                         ):
-                            return "Task nicht zerlegt: jede Teilaufgabe braucht einen nicht leeren Titel und eine Textbeschreibung."
+                            return _tool_policy_denial("invalid_arguments", "Task nicht zerlegt: jede Teilaufgabe braucht einen nicht leeren Titel und eine Textbeschreibung.")
                         if "close_parent" in args and type(args["close_parent"]) is not bool:
-                            return "Task nicht zerlegt: close_parent muss true oder false sein."
+                            return _tool_policy_denial("invalid_arguments", "Task nicht zerlegt: close_parent muss true oder false sein.")
                         # Lesen, Teilaufgaben und Elternabschluss bilden eine
                         # Transaktion; konkurrierende Worker sehen den neuen Status.
                         conn.execute("BEGIN IMMEDIATE")
                         parent = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
                         if not parent:
-                            return f"Task #{tid} nicht gefunden"
+                            return _tool_policy_denial("resource_not_found", f"Task #{tid} nicht gefunden")
                         if str(parent["status"] or "").strip().lower() not in {
                             "open", "pending", "in_progress", "in-progress",
                         }:
-                            return f"Task #{tid} nicht zerlegt: Eltern-Task ist nicht offen."
+                            return _tool_policy_denial("state_conflict", f"Task #{tid} nicht zerlegt: Eltern-Task ist nicht offen.")
                         parent_dict = dict(parent)
                         p_desc = str(parent_dict.get("description") or "")
                         p_title = str(parent_dict.get("title") or "").strip()
@@ -1848,11 +1878,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             or p_title.lower().startswith(("edit: ", "folge-task: ", "subtask: "))
                         ):
                             conn.rollback()
-                            return (
-                                f"Task #{tid} ('{p_title}') ist bereits eine Teilaufgabe oder wurde bereits zerlegt "
-                                "und kann nicht weiter rekursiv aufgeteilt werden. "
-                                "Bitte führe die Aufgabe direkt im Code aus oder aktualisiere sie mit action='update'."
-                            )
+                            return _tool_policy_denial("state_conflict", f"Task #{tid} ('{p_title}') ist bereits eine Teilaufgabe oder wurde bereits zerlegt und kann nicht weiter rekursiv aufgeteilt werden. Bitte führe die Aufgabe direkt im Code aus oder aktualisiere sie mit action='update'.")
                         cat = args.get("category") or parent_dict.get("category") or ""
                         assignee = args.get("assigned_to") or parent_dict.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1883,7 +1909,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                                         max_chars=cap)
                                 except ValueError as exc:
                                     conn.rollback()
-                                    return str(exc)
+                                    return ToolErrorText(str(exc), code="invalid_task_arguments")
                                 from hub._services.task_schema import ensure_task_result_contract_columns
                                 ensure_task_result_contract_columns(conn)
                                 values["result_max_chars"] = cap
@@ -1896,8 +1922,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             # Eltern-Task nicht schliessen, sonst verschwindet
                             # Arbeit ohne Nachfolger aus dem offenen Pool.
                             conn.rollback()
-                            return (f"Task #{tid} nicht zerlegt: keine Teilaufgabe mit Titel angegeben. "
-                                    "subtasks braucht Objekte mit title und description.")
+                            return _tool_policy_denial("invalid_arguments", f"Task #{tid} nicht zerlegt: keine Teilaufgabe mit Titel angegeben. subtasks braucht Objekte mit title und description.")
                         if args.get("close_parent", True):
                             note = f"\n[In {len(created_ids)} Teilaufgaben zerlegt: {created_ids}]"
                             if task_audit_fn is not None:
@@ -1914,11 +1939,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         conn.commit()
                         return f"Task #{tid} in {len(created_ids)} Teilaufgaben zerlegt: IDs {created_ids}"
 
-                    return f"Unbekannte Aktion: {action}"
+                    return _tool_policy_denial("unsupported_action", f"Unbekannte Aktion: {action}")
                 finally:
                     conn.close()
             except Exception as e:
-                return f"Task-Fehler: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "maintain":
             action = args.get("action", "check")
@@ -1954,7 +1979,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     }
                     cmd = op_map.get(operation)
                     if not cmd:
-                        return f"Unbekannte Operation: {operation}. Erlaubt: {', '.join(op_map)}"
+                        return _tool_policy_denial("unsupported_action", "BLOCKIERT: Wartungsoperation ist nicht verfügbar.")
                     parts = cmd.split()
                     handler, op_args = parts[0], " ".join(parts[1:])
                     return run_shell(f"cd {shlex.quote(str(Path(__file__).parent.parent.parent.parent))} && "
@@ -1975,28 +2000,39 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     lines = ["BACH Service-Check:"]
                     lines.append("  ✅ Control API (:8081) — läuft (diese Anfrage)")
                     for svc, cmd in http_checks.items():
-                        code = run_shell(cmd).strip()
+                        code = run_shell(cmd)
+                        if isinstance(code, ToolErrorText):
+                            return code
+                        code = code.strip()
                         ok = code == "200"
                         lines.append(f"  {'✅' if ok else '❌'} {svc} — HTTP {code}")
                     for svc, pattern in proc_checks.items():
-                        ps_out = run_shell(f"pgrep -f '{pattern}' 2>/dev/null").strip()
+                        ps_out = run_shell(f"pgrep -f '{pattern}' 2>/dev/null")
+                        if isinstance(ps_out, ToolErrorText):
+                            return ps_out
+                        ps_out = ps_out.strip()
                         if ps_out:
                             pids = ps_out.replace('\n', ', ')
                             lines.append(f"  ✅ {svc} — PID {pids}")
                         else:
                             lines.append(f"  ❌ {svc} — nicht gefunden")
-                    lines.append(f"  Uptime: {run_shell('uptime').strip()}")
+                    uptime = run_shell('uptime')
+                    if isinstance(uptime, ToolErrorText):
+                        return uptime
+                    lines.append(f"  Uptime: {uptime.strip()}")
                     return "\n".join(lines)
                 elif action == "sync":
                     sync_script = Path.home() / "services" / "bach" / "sync_mirror.sh"
                     if not sync_script.exists():
                         return "Sync-Script nicht gefunden: ~/services/bach/sync_mirror.sh"
                     out = run_shell(f"bash {sync_script} 2>&1")
+                    if isinstance(out, ToolErrorText):
+                        return out
                     return f"OneDrive → Mirror Sync abgeschlossen.\n{out.strip()}" if out.strip() else "OneDrive → Mirror Sync abgeschlossen (keine Änderungen)."
                 else:
-                    return f"Unbekannte Aktion: {action}. Erlaubt: check, run, health, services, sync"
+                    return _tool_policy_denial("unsupported_action", "BLOCKIERT: Wartungsaktion ist nicht verfügbar.")
             except Exception as e:
-                return f"Wartungsfehler: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "foerderbericht":
             action = args.get("action", "status")
@@ -2034,7 +2070,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         return (f"Phase 1 abgeschlossen. Tarnname: {result.tarnname}\n"
                                 f"Anonymisierter Prompt bereit.\n"
                                 f"Dauer: {result.duration_s:.1f}s\nSchritte: {', '.join(result.steps_completed)}")
-                    return f"Phase 1 fehlgeschlagen: {result.error}"
+                    return _tool_effect_unconfirmed()
 
                 elif action == "cleanup":
                     for folder in ["data_ano", "data_bundled"]:
@@ -2047,21 +2083,21 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         lock_file.unlink()
                     return "Zwischendateien gelöscht (data_ano/, data_bundled/), Lock entfernt."
 
-                return f"Unbekannte Aktion: {action}. Erlaubt: prepare, status, cleanup"
+                return _tool_policy_denial("unsupported_action", "BLOCKIERT: Berichtaktion ist nicht verfügbar.")
             except Exception as e:
-                return f"Pipeline-Fehler: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "delegate":
             target = args.get("target", "")
             prompt = args.get("prompt", "")
             context = args.get("context", "")
             if target not in ("claude", "codex"):
-                return f"Unbekanntes Ziel: {target}. Erlaubt: claude, codex"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Delegationsziel ist ungültig.")
             if not prompt:
-                return "Kein Prompt angegeben"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Delegationsanfrage fehlt.")
             depth = int(os.environ.get("BACH_DELEGATION_DEPTH", "0"))
             if depth >= 2:
-                return "Maximale Delegationstiefe erreicht (2). Abbruch."
+                return _tool_policy_denial("state_conflict", "BLOCKIERT: Maximale Delegationstiefe erreicht.")
             full_prompt = prompt
             if context:
                 full_prompt = f"Kontext: {context}\n\nAufgabe: {prompt}"
@@ -2085,21 +2121,21 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     encoding='utf-8', errors='replace', timeout=limit("BACH_DELEGATE_TIMEOUT"),
                     stdin=subprocess.DEVNULL, env=env,
                 )
+                if r.returncode != 0:
+                    return _tool_effect_unconfirmed()
                 out = (r.stdout or "").strip()
-                if r.returncode != 0 and r.stderr:
-                    out += f"\n[stderr] {r.stderr.strip()[:500]}"
                 return (out or "(keine Ausgabe)")[:3000]
             except subprocess.TimeoutExpired:
-                return f"Delegation an {target} abgebrochen (Timeout 120s)"
+                return _tool_effect_unconfirmed()
             except FileNotFoundError:
-                return f"{target} CLI nicht gefunden — API-Key unter ~/.credentials/anthropic_api_key hinterlegen für API-Fallback"
-            except Exception as e:
-                return f"Delegation fehlgeschlagen: {e}"
+                return _tool_policy_denial("provider_unavailable", "Delegationsanbieter ist nicht verfügbar.")
+            except Exception:  # noqa: BLE001 -- Delegation may have run; suppress backend details and report unknown.
+                return _tool_effect_unconfirmed()
 
         if name == "weather":
             location = args.get("location", "")
             if not location:
-                return "Kein Ort angegeben"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ein Ort ist erforderlich.")
             try:
                 from hub._services.weather.weather_service import get_weather_text
                 parts = location.replace(" ", "").split(",")
@@ -2127,34 +2163,36 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         f"Temperatur: {temp}°C (gefühlt: {feels}°C) | {desc_text}\n"
                         f"Wind: {wind} km/h | Luftfeuchtigkeit: {hum}%")
             except Exception as e:
-                return f"Wetter-Fehler: {e}"
+                return _tool_effect_unconfirmed()
 
         if name == "edit_file":
             p = args.get("path", "")
             old_text = args.get("old_text", "")
             new_text = args.get("new_text", "")
             if not p or not old_text:
-                return "Pfad und old_text sind erforderlich"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Pfad und Suchtext sind erforderlich.")
             from hub.worker_git import is_live_path_blocked
-            if err := is_live_path_blocked(p):
-                return err
-            if err := is_safe_write_path(p, mode):
-                return err
+            if is_live_path_blocked(p):
+                return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Schreibpfad ist nicht freigegeben.")
+            if is_safe_write_path(p, mode):
+                if mode == "plan":
+                    return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Schreibzugriff ist im Planmodus nicht freigegeben.")
+                return _tool_policy_denial("write_path_denied", "BLOCKIERT: Schreibpfad ist nicht freigegeben.")
             if worker_task_binding is not None:
                 from hub._services.chat.worker_write_guard import authorize_mutation
                 try:
                     _, (target_file,) = authorize_mutation(worker_task_binding, paths=(p,))
                     p = str(target_file)
-                except Exception as e:
-                    return f"BLOCKIERT: Task-Schreibpfad nicht bestätigt: {e}"
+                except Exception:  # noqa: BLE001 -- Path authorization uncertainty must remain denied.
+                    return _tool_policy_denial("write_path_denied", "BLOCKIERT: Task-Schreibpfad nicht bestätigt.")
             try:
                 content = Path(p).read_text(encoding="utf-8")
             except FileNotFoundError:
-                return f"Datei nicht gefunden: {p}"
-            except Exception as e:
-                return f"Lesefehler: {e}"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Quelldatei wurde nicht gefunden.")
+            except Exception:  # noqa: BLE001 -- Suppress file-system details from the public result.
+                return _tool_effect_unconfirmed()
             if old_text not in content:
-                return f"Text nicht gefunden in {p}"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Der angegebene Suchtext wurde nicht gefunden.")
             if args.get("all"):
                 new_content = content.replace(old_text, new_text)
                 count = content.count(old_text)
@@ -2169,20 +2207,18 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 Path(p).write_text(new_content, encoding="utf-8")
                 log.info(f"EDIT: {p} ({count}x ersetzt)")
                 return f"Bearbeitet: {p} ({count} Ersetzung{'en' if count > 1 else ''})"
-            except Exception as e:
-                return f"Schreibfehler: {e}"
+            except Exception:  # noqa: BLE001 -- An edit may be partial; suppress exception details and report unknown.
+                return _tool_effect_unconfirmed()
 
         if name == "move_file":
             src = args.get("source", "")
             dst = args.get("destination", "")
             if not isinstance(src, str) or not isinstance(dst, str) or not src.strip() or not dst.strip():
-                return "source und destination müssen gültige Pfadtexte sein"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Quelle und Ziel müssen gültige Pfadtexte sein.")
             if chr(0) in src or chr(0) in dst:
-                return "source und destination enthalten einen ungültigen Pfad"
-            if err := is_safe_write_path(src, mode):
-                return err
-            if err := is_safe_write_path(dst, mode):
-                return err
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Quelle oder Ziel enthält einen ungültigen Pfad.")
+            if is_safe_write_path(src, mode) or is_safe_write_path(dst, mode):
+                return _tool_policy_denial("write_path_denied", "BLOCKIERT: Quell- oder Zielpfad ist nicht freigegeben.")
             try:
                 import shutil
                 source_path, destination_path = _authorized_file_mutation_paths(
@@ -2204,18 +2240,18 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 shutil.move(str(confirmed_source), str(confirmed_destination))
                 log.info("MOVE: Datei im geprüften BACH-Bereich verschoben")
                 return f"Verschoben: {source_path} → {destination_path}"
-            except Exception as e:
-                return f"Fehler beim Verschieben: {e}"
+            except Exception:  # noqa: BLE001 -- A move may be partial; suppress exception details and report unknown.
+                return _tool_effect_unconfirmed()
 
         if name == "copy_file":
             src = args.get("source", "")
             dst = args.get("destination", "")
             if not isinstance(src, str) or not isinstance(dst, str) or not src.strip() or not dst.strip():
-                return "source und destination müssen gültige Pfadtexte sein"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Quelle und Ziel müssen gültige Pfadtexte sein.")
             if chr(0) in src or chr(0) in dst:
-                return "source und destination enthalten einen ungültigen Pfad"
-            if err := is_safe_write_path(dst, mode):
-                return err
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Quelle oder Ziel enthält einen ungültigen Pfad.")
+            if is_safe_write_path(dst, mode):
+                return _tool_policy_denial("write_path_denied", "BLOCKIERT: Zielpfad ist nicht freigegeben.")
             try:
                 import shutil
                 source_path, destination_path = _authorized_file_mutation_paths(
@@ -2237,13 +2273,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         str(confirmed_source), str(confirmed_destination), follow_symlinks=False)
                 log.info("COPY: Datei im geprüften BACH-Bereich kopiert")
                 return f"Kopiert: {confirmed_source} → {confirmed_destination}"
-            except Exception as e:
-                return f"Fehler beim Kopieren: {e}"
+            except Exception:  # noqa: BLE001 -- A copy may be partial; suppress exception details and report unknown.
+                return _tool_effect_unconfirmed()
 
         if name == "file_info":
             p = args.get("path", "")
             if not p:
-                return "Kein Pfad angegeben"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ein Pfad ist erforderlich.")
             try:
                 st = os.stat(p)
                 import stat
@@ -2276,24 +2312,24 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         lines.append("Einträge: (keine Berechtigung)")
                 return "\n".join(lines)
             except FileNotFoundError:
-                return f"Nicht gefunden: {p}"
-            except Exception as e:
-                return f"Fehler: {e}"
+                return _tool_policy_denial("resource_not_found", "Datei oder Verzeichnis wurde nicht gefunden.")
+            except Exception:  # noqa: BLE001 -- Suppress file-system details from the public result.
+                return _tool_effect_unconfirmed()
 
         if name == "recycle":
             p = args.get("path", "")
             if not p:
-                return "Kein Pfad angegeben"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ein Datei-Pfad ist erforderlich.")
             if worker_task_binding is not None:
                 from hub._services.chat.worker_write_guard import block_bound_recycle
                 try:
                     block_bound_recycle(worker_task_binding)
-                except Exception as e:
-                    return f"BLOCKIERT: {e}"
-            if err := is_safe_write_path(p, mode):
-                return err
+                except Exception:  # noqa: BLE001 -- Recycle authorization uncertainty must remain denied.
+                    return _tool_policy_denial("write_grant_denied", "BLOCKIERT: Papierkorboperationen sind für gebundene Worker gesperrt.")
+            if is_safe_write_path(p, mode):
+                return _tool_policy_denial("write_path_denied", "BLOCKIERT: Papierkorbpfad ist nicht freigegeben.")
             if not os.path.exists(p):
-                return f"Nicht gefunden: {p}"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Quelldatei wurde nicht gefunden.")
             try:
                 trash = Path.home() / ".Trash"
                 basename = Path(p).name
@@ -2305,34 +2341,40 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 shutil.move(p, str(dest))
                 log.info(f"RECYCLE: {p} -> {dest}")
                 return f"In Papierkorb verschoben: {p}"
-            except Exception as e:
-                return f"Fehler beim Recyceln: {e}"
+            except Exception:  # noqa: BLE001 -- Recycle may have run; suppress exception details and report unknown.
+                return _tool_effect_unconfirmed()
 
         if name == "create_directory":
             p = args.get("path", "")
             if not p:
-                return "Kein Pfad angegeben"
-            if err := is_safe_write_path(p, mode):
-                return err
-            try:
-                if worker_task_binding is not None:
-                    from hub._services.chat.worker_write_guard import authorize_mutation
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ein Verzeichnispfad ist erforderlich.")
+            if is_safe_write_path(p, mode):
+                return _tool_policy_denial("write_path_denied", "BLOCKIERT: Verzeichnispfad ist nicht freigegeben.")
+            if worker_task_binding is not None:
+                from hub._services.chat.worker_write_guard import authorize_mutation
+                try:
                     _, (target_dir,) = authorize_mutation(worker_task_binding, paths=(p,))
                     p = str(target_dir)
+                except Exception:  # noqa: BLE001 -- Directory authorization uncertainty must remain denied.
+                    return _tool_policy_denial("write_path_denied", "BLOCKIERT: Task-Verzeichnispfad nicht bestätigt.")
+            try:
                 Path(p).mkdir(parents=True, exist_ok=True)
-                if worker_task_binding is not None:
+            except Exception:  # noqa: BLE001 -- Directory creation may have started; report unknown.
+                return _tool_effect_unconfirmed()
+            if worker_task_binding is not None:
+                try:
                     authorize_mutation(worker_task_binding, paths=(p,))
-                log.info(f"MKDIR: {p}")
-                return f"Ordner erstellt: {p}"
-            except Exception as e:
-                return f"Fehler: {e}"
+                except Exception:  # noqa: BLE001 -- Post-create authorization failure cannot prove no effect.
+                    return _tool_effect_unconfirmed()
+            log.info("MKDIR: geprüftes Verzeichnis erstellt")
+            return f"Ordner erstellt: {p}"
 
         if name == "web_fetch":
             url = args.get("url", "")
             if not url:
-                return "Keine URL angegeben"
-            if not url.startswith(("http://", "https://")):
-                return "Nur http:// und https:// URLs erlaubt"
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Eine HTTP- oder HTTPS-URL ist erforderlich.")
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Nur HTTP- und HTTPS-URLs sind erlaubt.")
             extract = args.get("extract_text", True)
             max_chars = min(int(args.get("max_chars", 4000)), 8000)
             try:
@@ -2342,7 +2384,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 from hub.web_scrape import WebScrapeHandler
                 r, error = WebScrapeHandler(Path(BACH_SYSTEM_DIR))._request(url)
                 if r is None:
-                    return "BLOCKIERT: Webabruf nicht bestätigt: " + str(error)
+                    return _tool_effect_unconfirmed()
                 ct = r.headers.get("content-type", "")
                 if "json" in ct:
                     return json.dumps(json.loads(r.text), indent=2, ensure_ascii=False)[:max_chars]
@@ -2358,12 +2400,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         text = re.sub(r"<[^>]+>", "", text)
                     text = re.sub(r"\n{3,}", "\n\n", text).strip()
                 return text[:max_chars]
-            except Exception as e:
-                return f"Fehler beim Abrufen: {e}"
+            except Exception:  # noqa: BLE001 -- Suppress provider details from the public result.
+                return _tool_effect_unconfirmed()
 
-        return f"Unbekanntes Tool: {name}"
-    except Exception as e:
-        return f"Tool-Fehler ({name}): {e}"
+        return _tool_policy_denial("tool_not_authorized", "BLOCKIERT: Unbekanntes Werkzeug.")
+    except Exception:  # noqa: BLE001 -- Keep unexpected tool failures redacted and fail closed.
+        return _tool_effect_unconfirmed()
 
 
 # --- Chat Runtime ---
@@ -2480,16 +2522,16 @@ class BachToolProvider:
 
     def execute(self, name: str, args: Any, mode) -> str:
         if self._allowed_tools is not None and name not in self._allowed_tools:
-            return "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben."
+            return _tool_policy_denial("tool_not_authorized", "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben.")
         if self._guard is not None:
             try:
                 self._guard()
             except Exception:
-                return "BLOCKIERT: Werkzeugfreigabe oder Workerlauf ist nicht mehr aktuell."
+                return _tool_policy_denial("worker_context_denied", "BLOCKIERT: Werkzeugfreigabe oder Workerlauf ist nicht mehr aktuell.")
         try:
             selected_mode = self._mode(mode)
         except ValueError:
-            return "BLOCKIERT: Unbekannter Werkzeugmodus."
+            return _tool_policy_denial("mode_unavailable", "BLOCKIERT: Unbekannter Werkzeugmodus.")
         return exec_tool(
             name,
             args,

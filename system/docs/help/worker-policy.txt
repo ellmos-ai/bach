@@ -1,0 +1,80 @@
+# Portabilität: UNIVERSAL
+# Zuletzt validiert: 2026-10-15
+# Nächste Prüfung: 2027-04-15
+# Quellen: hub/worker_policy.py, hub/_services/worker_policy_settings.py, gui/api/worker_policy.py
+
+WORKER-REGELN: KONFIGURATION UND LEASE-ANZEIGE
+============================================
+
+VORAUSSETZUNG
+Der gemeinsame Task-Master-Vertrag taskplan.worker_policy muss installiert sein:
+worker-review-policy.v1alpha1. Fehlt er oder ist seine Version unbekannt, sind
+Worker-Regeln nicht verfügbar. Es gibt keinen zweiten BACH-Policy-Fallback.
+
+Das optionale Paket aus dem BACH-Root ausdrücklich installieren:
+python -m pip install -e ".[worker-policy]"
+
+Das Extra pinnt den gemeinsamen Kern auf den geprüften Task-Master-Commit
+5924b71b2a93e59e625b5c9afaa6e84966bf49d3. Die allgemeine Versionsnummer
+taskplan==0.7.0 allein identifiziert diesen Stand nicht. Dieser Installationsweg
+ist vom alten setup.py --extras getrennt. Nach Installation status unabhängig
+lesen. Eine Installation startet keinen Worker und ersetzt keine Nutzerabnahme.
+
+EINSTIEG ÜBER CLI UND LIBRARY
+bach worker-policy status
+bach worker-policy task_show 41
+
+from bach_api import worker_policy
+ok, text = worker_policy.raw("status")
+ok, text = worker_policy.raw("task_show", 41)
+
+set nimmt ein JSON-Objekt mit configuration_version, policy und selection an.
+task_set nimmt Task-ID und JSON mit task_id, task_version,
+configuration_version und override an. Beispiel ohne Schreibaktion:
+
+import json
+ok, text = worker_policy.raw("status")
+snapshot = json.loads(text) if ok else None
+
+Die Versionswerte immer frisch lesen; bei Konflikt neu laden und Änderungen
+bewusst abgleichen. Eine abgewiesene Mutation wird nicht automatisch wiederholt.
+
+GUI-API
+GET/PUT /api/system/worker-policy
+GET/PUT /api/tasks/{id}/worker-policy
+
+Alle vier Zugriffe benötigen ein aktives registriertes Gerät. Token gehören
+in den bestehenden Authorization-Header oder das Gerätecookie, nicht in URLs.
+Eine lokale/native Library-Nutzung benutzt denselben Konfigurationsservice.
+
+REGELN UND SPEICHERUNG
+Die globale Policy und taskgebundene Overrides liegen im bestehenden
+system_config-Speicher der kanonischen BACH-Datenbank. Revision und CAS sind
+von Taskinhalt und Status getrennt. Reset erhöht die Konfigurationsrevision;
+auch der Wechsel zurück zu gleichen Werten macht alte Schreibstände ungültig.
+Reads ändern weder Schema noch Konfiguration. Fehlender Speicher ist nicht
+gleichbedeutend mit einem leeren, gültigen Standard.
+
+mode=null erbt den Modus. Boolesche Overrides unterscheiden null, false und
+true. Eine gesetzte Nutzerreview-Pflicht kann nicht durch false oder Reset
+entfernt werden. Gespeicherte Regeln verleihen keine Reviewberechtigung.
+
+Eine Speicherbestätigung startet keinen Worker und nimmt kein Ergebnis ab.
+Die Taskansicht meldet ohne geprüfte Resultintegrität ausdrücklich
+not_evaluated. Ergebnisservice, Auswahl und tatsächliche Ausführung müssen
+die Regeln gesondert anwenden. Diese Konfigurationsprojektion ist keine
+Produktiv- oder Nutzerabnahme.
+
+LEASE-ANZEIGE
+Die bestehenden Worker-/Core-Agent-Statuswege können eine aktive Task-Lease
+aus bestätigter Controller- und kanonischer Taskbindung projizieren. Generation,
+Taskversion, Halter, Fence, Heartbeat und Ablauf müssen übereinstimmen.
+Gespeicherte Task-ID oder Profilstatus allein belegen keine aktive Lease.
+
+lease_id in dieser Statusprojektion ist ein öffentlicher Beobachtungsverweis
+sha256:<digest>, gekennzeichnet durch lease_id_kind=observation_sha256 und
+source=native_task_db. Die private Claim-ID bleibt beim Leaseclient. Der
+Beobachtungsverweis erteilt kein Claim-, Renew- oder Release-Recht.
+
+Countdown und Sortierung sind optionale Darstellung. Sie verändern weder
+Tasklease noch Turnbudget, verlängern keine Laufzeit und starten keine Arbeit.
