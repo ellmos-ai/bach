@@ -417,7 +417,7 @@ def test_bound_file_write_requires_grant_and_exact_task_tree(bridge, git_run, tm
         "write_file", {"path": str(private_path), "content": "no grant"}, "full",
         worker_task_binding=bridge.binding, require_task_binding=True,
     )
-    assert "freigegeben" in no_grant and not private_path.exists()
+    assert "Schreibfreigabe" in no_grant and not private_path.exists()
 
     written = exec_tool(
         "write_file", {"path": str(private_path), "content": "bound"}, "full",
@@ -434,14 +434,15 @@ def test_bound_command_requires_checked_cwd_and_rejects_python_code(bridge, git_
         worker_task_binding=bridge.binding, require_task_binding=True,
         allowed_tools={"execute_command"},
     )
-    assert "BLOCKIERT" in result
+    # Public failures are neutral since the typed tool error contract (#379).
+    assert "BLOCKIERT" in result or "nicht bestätigt" in result
     tree = Path(os.environ["BACH_WORKTREES_DIR"]) / f"task-{bridge.binding.task_id}"
     result = exec_tool(
         "execute_command", {"command": "python -c print(1)", "cwd": str(tree)}, "full",
         worker_task_binding=bridge.binding, require_task_binding=True,
         allowed_tools={"execute_command"},
     )
-    assert "BLOCKIERT" in result
+    assert "BLOCKIERT" in result or "nicht bestätigt" in result
 
 @pytest.mark.parametrize("case", ["id-string", "id-bool", "id-missing", "result-empty", "result-too-long"])
 def test_bound_task_manage_rejects_public_arguments_before_private_operation(bridge, monkeypatch, case):
@@ -464,10 +465,10 @@ def test_bound_task_manage_rejects_public_arguments_before_private_operation(bri
         args.pop("task_id")
     elif case == "result-empty":
         args["result"] = "  "
-        expected = "Konkretes Ergebnis"
+        expected = "Taskergebnis ist ungültig"
     else:
         args["result"] = "x" * 3001
-        expected = "höchstens 3000 Zeichen"
+        expected = "Taskergebnis ist ungültig"
 
     result = exec_tool(
         "task_manage", args, "safe", worker_task_binding=binding,
