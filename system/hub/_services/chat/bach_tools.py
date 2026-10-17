@@ -2103,7 +2103,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 full_prompt = f"Kontext: {context}\n\nAufgabe: {prompt}"
             env = {**os.environ, "PYTHONIOENCODING": "utf-8",
                    "BACH_DELEGATION_DEPTH": str(depth + 1)}
-            log.info(f"DELEGATE -> {target} (depth={depth}): {prompt[:100]}")
+            log.info("DELEGATE: execution requested (payload omitted)")
             if target == "claude":
                 api_key = os.environ.get("ANTHROPIC_API_KEY", "")
                 if not api_key:
