@@ -297,9 +297,18 @@ class TestIsSafeWritePath:
 class TestRunShell:
     """Test run_shell timeout clamping, subprocess handling, error handling."""
 
+    @staticmethod
+    def _assert_unknown_effect(result):
+        assert isinstance(result, str)
+        assert type(result).__name__ == "ToolErrorText"
+        assert str(result) == "Werkzeugausführung nicht bestätigt; Wirkung unbekannt."
+        assert result._code == "bach_tool_effect_unconfirmed"
+        assert result._effect_state == "unknown"
+
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_successful_command(self, mock_run):
         mock_run.return_value = MagicMock(
+            returncode=0,
             stdout="hello world\n",
             stderr="",
         )
@@ -310,6 +319,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_stderr_included(self, mock_run):
         mock_run.return_value = MagicMock(
+            returncode=0,
             stdout="output\n",
             stderr="warning: something\n",
         )
@@ -321,6 +331,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_empty_output(self, mock_run):
         mock_run.return_value = MagicMock(
+            returncode=0,
             stdout="",
             stderr="",
         )
@@ -328,23 +339,31 @@ class TestRunShell:
         assert result == "(keine Ausgabe)"
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
+    def test_nonzero_exit_is_unknown_and_redacted(self, mock_run):
+        secret = "RAW_PROCESS_OUTPUT_SECRET"
+        mock_run.return_value = MagicMock(returncode=7, stdout=secret, stderr=secret)
+        result = run_shell("command-with-nonzero-exit")
+        self._assert_unknown_effect(result)
+        assert secret not in str(result)
+
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_expired(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=30)
         result = run_shell("sleep 999", timeout=30)
-        assert "Timeout" in result
-        assert "30s" in result
+        self._assert_unknown_effect(result)
+        assert "30s" not in str(result)
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_generic_exception(self, mock_run):
         mock_run.side_effect = OSError("No such file or directory")
         result = run_shell("nonexistent_cmd")
-        assert "Fehler" in result
-        assert "No such file or directory" in result
+        self._assert_unknown_effect(result)
+        assert "No such file or directory" not in str(result)
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_minimum(self, mock_run):
         """Timeout below 5 should be clamped to 5."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls", timeout=1)
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 5
@@ -352,7 +371,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_maximum(self, mock_run):
         """Timeout above 120 should be clamped to 120."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls", timeout=999)
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 120
@@ -360,7 +379,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_within_range(self, mock_run):
         """Timeout within 5-120 should be passed as-is."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls", timeout=60)
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 60
@@ -369,14 +388,14 @@ class TestRunShell:
     def test_output_truncated_at_4000(self, mock_run):
         """Output longer than 4000 chars should be truncated."""
         long_output = "x" * 5000
-        mock_run.return_value = MagicMock(stdout=long_output, stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout=long_output, stderr="")
         result = run_shell("generate_long_output")
         assert len(result) == 4000
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_default_timeout_is_cmd_timeout(self, mock_run):
         """Default timeout should be CMD_TIMEOUT (30)."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls")
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == CMD_TIMEOUT

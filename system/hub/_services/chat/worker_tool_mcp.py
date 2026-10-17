@@ -26,8 +26,12 @@ async def serve():
     @server.call_tool()
     async def call_tool(name, arguments):
         try:
-            result, failed = await asyncio.to_thread(client.call, name, arguments)
-            return CallToolResult(content=[TextContent(type="text", text=result)], isError=failed)
+            outcome = await asyncio.to_thread(client.call_detailed, name, arguments)
+            response = {"content": [TextContent(type="text", text=outcome.result)],
+                        "isError": outcome.is_error}
+            if outcome.error is not None:
+                response["structuredContent"] = outcome.error
+            return CallToolResult(**response)
         except Exception:
             return CallToolResult(content=[TextContent(type="text", text="Werkzeugaufruf nicht bestätigt; keine Wiederholung")],
                                   isError=True)

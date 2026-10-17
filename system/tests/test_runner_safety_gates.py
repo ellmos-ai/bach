@@ -117,6 +117,8 @@ def test_planmodus_verbietet_auch_pfade_die_safe_erlaubt():
 
 def test_erfundener_schreibaufruf_im_planmodus_aendert_nichts(tmp_path):
     """Ein Modell kann ein Werkzeug aufrufen, das ihm nie angeboten wurde."""
+    from hub._services.chat.worker_tool_errors import ToolErrorText
+
     datei = tmp_path / "quelle.txt"
     datei.write_text("original", encoding="utf-8")
 
@@ -127,7 +129,13 @@ def test_erfundener_schreibaufruf_im_planmodus_aendert_nichts(tmp_path):
     )
 
     assert datei.read_text(encoding="utf-8") == "original"
-    assert "Planmodus" in antwort
+    assert type(antwort) is ToolErrorText
+    assert str(antwort) == "BLOCKIERT: Schreibzugriff ist im Planmodus nicht freigegeben."
+    assert antwort._code == "tool_policy_denied"
+    assert antwort._source == "bach_tools"
+    assert antwort._reason == "mode_not_authorized"
+    assert antwort._effect_state == "not_applied"
+    assert str(datei) not in str(antwort)
 
 
 # --------------------------------------------------------------------------
