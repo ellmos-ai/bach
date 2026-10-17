@@ -2474,6 +2474,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.last_tools = []
         result = {}
         chars_at_last_call = 0
+        last_prompt_tokens = None  # measured prompt of the last main call; cleared by every handoff
         offered_tools = tools
         reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
@@ -2545,6 +2546,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
                     msgs = resumed
                     session.messages = history
+                    last_prompt_tokens = None
                     capability_error = self._refresh_worker_tools(session)
                     if capability_error is not None:
                         return capability_error
@@ -2576,15 +2578,15 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     ModelRequestBudgetError("Modellanfragenbudget ausgeschöpft; verbleibend 0"))
             # The last normal round's tool results only land in the first reserve
             # prompt, where a full context fails without handoff (BACH #2226).
-            # Hand off before entering the reserve if that prompt would be full.
-            last_prompt = result.get("prompt_tokens")
-            if (completion_reserve and round_num not in reserve_notified_rounds
-                    and type(last_prompt) is int and last_prompt > 0 and handoffs < 2
-                    and (budget_remaining is None or budget_remaining > 2)):
-                # ponytail: chars/3 estimate of the added messages; use measured
-                # token counts per message if this misfires on dense content.
+            # Hand off before entering the reserve if that prompt would be full;
+            # inside the reserve (any later reserve round) no handoff starts.
+            if (completion_reserve and not reserve_notified_rounds
+                    and type(last_prompt_tokens) is int and last_prompt_tokens > 0
+                    and handoffs < 2 and (budget_remaining is None or budget_remaining > 2)):
+                # ponytail: chars/3 estimate of the added message content; use
+                # measured token counts per message if this misfires on dense content.
                 added = max(0, _message_chars(msgs) - chars_at_last_call) // 3
-                if self._context_voll({"prompt_tokens": last_prompt + added}, session,
+                if self._context_voll({"prompt_tokens": last_prompt_tokens + added}, session,
                                       context_limit=context_limit):
                     handoffs += 1
                     try:
@@ -2598,7 +2600,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     except Exception as e:
                         session.current_tool = ""
                         return FailedAnswer.from_exception(e)
-                    result = {}
+                    last_prompt_tokens = None
                     continue
             if completion_reserve:
                 grants = _effective_tool_grants(session)
@@ -2634,6 +2636,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             except Exception as e:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
+            last_prompt_tokens = result.get("prompt_tokens")
 
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
@@ -2690,6 +2693,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 except Exception as e:
                     session.current_tool = ""
                     return FailedAnswer.from_exception(e)
+                last_prompt_tokens = None
                 continue
 
             # Only a measured positive token count below the threshold proves

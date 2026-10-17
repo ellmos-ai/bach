@@ -208,7 +208,21 @@ def test_full_context_in_reserve_fails_without_handoff_or_tool_effect(monkeypatc
     assert binding.phases == []
 
 
-def test_large_last_normal_round_hands_off_before_entering_reserve(monkeypatch):
+class _Budget:
+    def __init__(self, remaining):
+        self._remaining = remaining
+
+    def remaining(self):
+        return self._remaining
+
+
+@pytest.mark.parametrize("read_chars, budget, handoff_expected", [
+    (900, None, True),   # large last read: hand off once before entering the reserve
+    (30, None, False),   # estimate stays below the threshold: no extra model request
+    (900, 2, False),     # budget reserve: no handoff, unchanged fail-closed reserve
+])
+def test_large_last_normal_round_hands_off_before_entering_reserve(
+        monkeypatch, read_chars, budget, handoff_expected):
     # BACH #2226: the last normal round's read results first appear in the reserve
     # prompt; without a handoff before entry the reserve fails with a full context.
     runtime = ChatRuntime(_Backend())
@@ -224,6 +238,7 @@ def test_large_last_normal_round_hands_off_before_entering_reserve(monkeypatch):
     binding = _Binding()
     session.worker_task_binding = binding
     session.max_tool_rounds = 3
+    session.model_request_budget = _Budget(budget) if budget is not None else None
     order, effects = [], []
     update = {"action": "update", "task_id": 2217, "description": "Teilstand: Quelle gelesen"}
 
@@ -238,14 +253,15 @@ def test_large_last_normal_round_hands_off_before_entering_reserve(monkeypatch):
             return {"content": "", "prompt_tokens": 400, "tool_calls": [{"function": {
                 "name": "read_file", "arguments": {"path": "quelle.md"}}}]}, selected_backend, selected_model
         if calls == 2:
-            full = "handoff" not in order  # the reserve prompt still carries the large read
+            # The reserve prompt still carries a large read unless a handoff came first.
+            full = read_chars > 300 and "handoff" not in order
             return {"content": "", "prompt_tokens": 700 if full else 100, "tool_calls": [{"function": {
                 "name": "task_manage", "arguments": update}}]}, selected_backend, selected_model
         return {"content": "Zwischenstand gesichert", "tool_calls": None}, selected_backend, selected_model
 
     def execute(name, arguments, mode, **kwargs):
         effects.append((name, arguments))
-        return "x" * 900 if name == "read_file" else "Taskwirkung bestätigt"
+        return "x" * read_chars if name == "read_file" else "Taskwirkung bestätigt"
 
     monkeypatch.setattr(runtime, "_handoff", handoff)
     monkeypatch.setattr(runtime, "_chat_with_configured_fallbacks", model)
@@ -257,6 +273,14 @@ def test_large_last_normal_round_hands_off_before_entering_reserve(monkeypatch):
             [{"role": "user", "content": "Task #2217 prüfen"}], session, tools=[READ_TOOL, TASK_TOOL]))
     finally:
         runtime._compute_turn_context.reset(token)
+    assert order.count("handoff") == (1 if handoff_expected else 0)
+    if budget is not None:
+        # Unchanged contract: the budget reserve is active from the first request,
+        # blocks the read, and a full prompt there fails without any effect.
+        assert isinstance(answer, FailedAnswer)
+        assert "Kontextfenster in der Abschlussreserve erschöpft" in str(answer)
+        assert effects == []
+        return
     assert not isinstance(answer, FailedAnswer), answer
-    assert order[:3] == ["model", "handoff", "model"]
+    assert order[:3] == (["model", "handoff", "model"] if handoff_expected else ["model", "model", "model"])
     assert effects == [("read_file", {"path": "quelle.md"}), ("task_manage", update)]
