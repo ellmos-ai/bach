@@ -4972,8 +4972,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             control.persistent_core_capacity_exhausted = True
                     # BACH #2226: only pure read tools ran, so a fresh run cannot
                     # repeat an effect. Return the lease (pending) instead of parking.
+                    # Backends with own tools act outside these counters; keep parking.
                     safe_dispatches = getattr(control.task_binding, "replay_safe_dispatch_count", None)
-                    reads_only = (type(dispatches) is int and dispatches > 0
+                    reads_only = (control.supports_step_actions is True
+                                  and type(dispatches) is int and dispatches > 0
                                   and type(safe_dispatches) is int and safe_dispatches == dispatches)
                     if reads_only and not control.task_binding.closed:
                         _record_worker_activity(control,

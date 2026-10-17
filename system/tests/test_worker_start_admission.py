@@ -192,12 +192,14 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     assert worker_controls[0].start_error != "runtime_error"
 
 
-@pytest.mark.parametrize("tool, expected_status", [
-    ("read_file", "pending"),   # only pure reads ran: return the task, no quarantine
-    ("write_file", "blocked"),  # a possible effect ran: keep the quarantine
+@pytest.mark.parametrize("tools, own_tools, expected_status", [
+    (["read_file"], False, "pending"),                  # only pure reads: return, no quarantine
+    (["write_file"], False, "blocked"),                 # a possible effect: keep the quarantine
+    (["read_file", None], False, "blocked"),            # read plus unnoted task_manage: unsafe
+    (["read_file"], True, "blocked"),                   # backend with own tools: counters incomplete
 ])
 def test_backend_failure_after_tools_returns_reads_only_task(
-    admission, leased_binding, monkeypatch, tool, expected_status,
+    admission, leased_binding, monkeypatch, tools, own_tools, expected_status,
 ):
     # BACH #2226: a context-reserve failure after read-only tools parked #2225 as
     # blocked although a fresh run could not repeat any effect.
@@ -218,13 +220,18 @@ def test_backend_failure_after_tools_returns_reads_only_task(
         "availability": "available", "task_id": task_id,
         "branch": f"refs/heads/bach-task/{task_id}", "source_pin": None})
     async def process(*_args, **_kwargs):
-        leased_binding.mark_tool_dispatch()
-        leased_binding.note_dispatched_tool(tool)
-        # No stop signal: both branches must end the worker by themselves.
+        for tool in tools:
+            leased_binding.mark_tool_dispatch()
+            if tool is not None:  # None: a controller dispatch without a tool note
+                leased_binding.note_dispatched_tool(tool)
+        # No stop signal: every branch must end the worker by itself.
         return FailedAnswer.from_exception(RuntimeError("Kontextfenster in der Abschlussreserve erschöpft"))
     monkeypatch.setattr(control.runtime, "process", process)
+
+    class _Backend:
+        manages_own_tools = own_tools
     monkeypatch.setattr(control, "_snapshot_chat_backend",
-        lambda *_args, **_kwargs: (object(), "ollama-cloud"))
+        lambda *_args, **_kwargs: (_Backend(), "ollama-cloud"))
 
     response, code = control.start_worker_execution(worker["id"], start_request_id="a" * 32)
     assert code in {200, 202} and response["execution"]["worker_thread_started"] is True
@@ -235,6 +242,27 @@ def test_backend_failure_after_tools_returns_reads_only_task(
     snapshot = leased_binding._client.task_snapshot(leased_binding.task_id)
     assert snapshot["status"] == expected_status
     assert leased_binding._client.task_result_snapshot(leased_binding.task_id)["result"] is None
+
+
+def test_bound_read_dispatch_is_noted_as_replay_safe(tmp_path):
+    # The real dispatcher must note the tool name after marking the dispatch.
+    from hub._services.chat import bach_tools
+    calls = []
+
+    class _Binding:
+        task_id = 7
+        def assert_active(self):
+            return None
+        def mark_tool_dispatch(self):
+            calls.append("mark")
+        def note_dispatched_tool(self, name):
+            calls.append(("note", name))
+
+    source = tmp_path / "quelle.txt"
+    source.write_text("Inhalt", encoding="utf-8")
+    bach_tools.exec_tool("read_file", {"path": str(source)}, "safe",
+                         worker_task_binding=_Binding(), allowed_tools=["read_file"])
+    assert calls[:2] == ["mark", ("note", "read_file")]
 
 
 def test_unnoted_dispatch_stays_replay_unsafe(leased_binding):
