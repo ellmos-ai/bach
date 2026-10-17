@@ -320,21 +320,50 @@ def test_legacy_finish_cannot_overwrite_an_existing_canonical_holder(bridge, git
     bridge.binding.assert_active()
 
 
-def test_legacy_finish_acquires_canonical_ownership_before_publication(bridge, git_run):
+@pytest.fixture(params=[None, "runner-" + "x" * 56 + ".local"], ids=["native-host", "long-fqdn"])
+def legacy_acquire_diagnostics(bridge, monkeypatch, request):
+    """Keep the original acquire behavior and expose failures in isolated tests."""
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    original = WorkerLeaseBinding.acquire
+    diagnostics = []
+    if request.param is not None:
+        monkeypatch.setattr(worker_git.socket, "gethostname", lambda: request.param)
+
+    def acquire(cls, *args, **kwargs):
+        diagnostics.append({"stage": "acquire", "host": kwargs.get("host"),
+                            "host_length": len(kwargs.get("host", ""))})
+        try:
+            binding = original(*args, **kwargs)
+        except Exception as exc:
+            diagnostics.append({"exception": type(exc).__name__, "message": str(exc)})
+            if exc.__context__ is not None:
+                diagnostics.append({"cause": type(exc.__context__).__name__,
+                                    "message": str(exc.__context__)})
+            raise
+        diagnostics.append({"stage": "acquired"})
+        return binding
+
+    monkeypatch.setattr(WorkerLeaseBinding, "acquire", classmethod(acquire))
+    return diagnostics
+
+
+def test_legacy_finish_acquires_canonical_ownership_before_publication(
+        bridge, git_run, legacy_acquire_diagnostics):
     from system.tests.test_task_lease_service import _connect, _insert
     with _connect(bridge.binding._client._db_path) as conn:
         task_id = _insert(conn, title="Unleased work", assigned_to="BACH")
     _add_task_tree(task_id)
     result = worker_git.finish_task(task_id, "Explicit finish", run_tests=False,
                                    db_path=bridge.binding._client._db_path)
-    assert result["success"] is True and result["status"] == "review"
+    assert result["success"] is True and result["status"] == "review", (result, legacy_acquire_diagnostics)
     with _connect(bridge.binding._client._db_path) as conn:
         row = dict(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone())
     assert row["status"] == "review" and row["claim_fence"] == 1 and row["claim_id"] is None
     assert not row["completed_at"]
 
 
-def test_legacy_wip_unknown_return_ack_has_no_success_or_retry(bridge, git_run, monkeypatch):
+def test_legacy_wip_unknown_return_ack_has_no_success_or_retry(
+        bridge, git_run, monkeypatch, legacy_acquire_diagnostics):
     from system.tests.test_task_lease_service import _connect, _insert
     from hub._services.task_lease_client import TaskLeaseClient
     with _connect(bridge.binding._client._db_path) as conn:
@@ -349,7 +378,7 @@ def test_legacy_wip_unknown_return_ack_has_no_success_or_retry(bridge, git_run, 
     monkeypatch.setattr(TaskLeaseClient, "release", lost)
     result = worker_git.finish_task(task_id, "WIP", is_wip=True, db_path=bridge.binding._client._db_path)
     assert result["success"] is False
-    assert calls == ["return"]
+    assert calls == ["return"], (result, legacy_acquire_diagnostics)
     snapshot = bridge.binding._client.task_snapshot(task_id)
     assert snapshot["status"] == "pending" and "[WIP]" in snapshot["description"]
 
