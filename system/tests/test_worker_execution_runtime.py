@@ -49,7 +49,7 @@ class FakeOpenRouterBackend(OpenRouterBackend):
 
 
 def _submit_response(binding, result="Isoliertes Ergebnis für Review"):
-    arguments = {"action": "submit_result", "task_id": binding.task_id, "result": result}
+    arguments = {"action": "submit_result", "task_id": binding.task_id, "result": result, "complete": True}
     tool_calls = [{"function": {"name": "task_manage", "arguments": arguments}}]
     return {
         "content": "",
@@ -351,7 +351,7 @@ def _cli_submit(environment, binding):
     request_id = uuid.uuid4().hex
     result = _relay_post(environment, "/call", {
         "request_id": request_id, "previous_receipt": None, "name": "task_manage",
-        "arguments": {"action": "submit_result", "task_id": binding.task_id,
+        "arguments": {"action": "submit_result", "task_id": binding.task_id, "complete": True,
                       "result": "CLI-Ergebnis wartet auf echte Rückkehr"},
     })
     assert result["is_error"] is False
