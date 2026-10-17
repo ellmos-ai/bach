@@ -17,8 +17,12 @@ if str(TESTS) not in sys.path:
     sys.path.insert(0, str(TESTS))
 
 from hub._services.chat import bach_tools, chat_runtime
-from hub._services.task_lease_client import LeaseDeniedError, LeaseSelfCheckRequiredError
+from hub._services.task_lease_client import (
+    LeaseDeniedError, LeaseProtocolError, LeaseSelfCheckRequiredError,
+)
 from hub._services.llm.model_backend import OllamaBackend
+from test_task_lease_client import mem_db
+from test_worker_lease_binding import binding
 
 
 class _Bound:
@@ -49,6 +53,7 @@ class _Bound:
     (LeaseDeniedError(2217, "stale_task_version",
                       {"task_id": 2217, "reason": "stale_task_version"}),
      "lease_denied", "stale_task_version"),
+    (LeaseProtocolError("PRIVATE owner or ACK data"), "lease_protocol", "none"),
     (RuntimeError("PRIVATE ACK TEXT token=do-not-log"), "other", "none"),
 ])
 def test_dispatch_denial_logs_only_finite_provenance_and_never_retries(
@@ -118,6 +123,68 @@ def test_confirmed_self_check_denial_returns_only_fixed_guidance(caplog, monkeyp
                 if "bound_task_manage_denied" in record.getMessage())
     assert "kind=self_check_required" in line
     assert "PRIVATE" not in line and "lease" not in line
+
+
+@pytest.mark.parametrize("args,expected", [
+    ({"action": "list", "task_id": 0}, 'Für task_manage(action="list") nur action angeben; task_id weglassen.'),
+    ({"action": "update", "task_id": 0, "result": "PRIVATE RESULT"},
+     'Ergebnis getrennt mit task_manage(action="submit_result", task_id=<ID>, result=<Text>) abgeben.'),
+    ({"action": "update", "task_id": 0, "status": "pending", "description": "PRIVATE CONTENT"},
+     'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.'),
+    ({"action": "update", "task_id": 0, "status": "blocked", "description": "PRIVATE CONTENT"},
+     'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.'),
+    ({"action": "update", "task_id": 0, "status": "done", "description": "PRIVATE CONTENT", "result": "PRIVATE RESULT"},
+     'Fertiges Ergebnis mit submit_result abgeben; Inhaltsfelder vorher separat aktualisieren.'),
+    ({"action": "update", "task_id": 0, "status": "done"},
+     'Fertiges Ergebnis mit submit_result abgeben; Inhaltsfelder vorher separat aktualisieren.'),
+    ({"action": "update", "task_id": 0, "status": "completed"},
+     'Fertiges Ergebnis mit submit_result abgeben; Inhaltsfelder vorher separat aktualisieren.'),
+    ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parnt": False},
+     'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.'),
+    ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parent": True},
+     'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.'),
+])
+def test_bound_local_argument_errors_are_actionable_without_leaking_or_mutation(
+    binding, caplog, args, expected,
+):
+    args["task_id"] = binding.task_id
+    before = binding._client.task_snapshot(binding.task_id)
+    caplog.set_level("WARNING", logger="bach.chat")
+    answer = bach_tools.exec_tool("task_manage", args, "full",
+        worker_task_binding=binding, require_task_binding=True,
+        allowed_tools={"task_manage"})
+    assert answer == expected
+    assert binding._client.task_snapshot(binding.task_id) == before
+    binding.assert_active()
+    diagnostic = [r.getMessage() for r in caplog.records
+                  if "bound_task_manage_denied" in r.getMessage()]
+    assert len(diagnostic) == 1
+    assert "kind=argument_shape" in diagnostic[0]
+    assert "PRIVATE" not in answer + diagnostic[0]
+
+
+def test_bound_worker_can_correct_rejected_mixed_update_in_two_steps(binding):
+    def run(args):
+        return bach_tools.exec_tool("task_manage", args, "full",
+            worker_task_binding=binding, require_task_binding=True,
+            allowed_tools={"task_manage"})
+
+    before = binding._client.task_snapshot(binding.task_id)
+    denied = run({"action": "update", "task_id": binding.task_id,
+                  "description": "Prüfbarer Teilstand", "status": "pending"})
+    assert "Inhaltsfelder separat aktualisieren" in denied
+    assert binding._client.task_snapshot(binding.task_id) == before
+    content = run({"action": "update", "task_id": binding.task_id,
+                   "description": "Prüfbarer Teilstand"})
+    assert "aktualisiert: description" in content
+    binding.assert_active()
+    returned = run({"action": "update", "task_id": binding.task_id,
+                    "status": "pending"})
+    assert "aktualisiert: status" in returned
+    after = binding._client.task_snapshot(binding.task_id)
+    assert after["description"] == "Prüfbarer Teilstand" and after["status"] == "pending"
+    assert binding._client.read(binding.task_id).leased is False
+    assert binding._client.task_result_snapshot(binding.task_id)["result"] is None
 
 
 def test_last_tool_round_with_zero_requests_preserves_ack_and_skips_ninth(
