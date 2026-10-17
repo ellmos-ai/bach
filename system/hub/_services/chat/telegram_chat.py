@@ -4970,7 +4970,16 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if (retry_delay is None and backend_retries >= _WORKER_BACKEND_RETRY_LIMIT
                                 and retry_before_tools):
                             control.persistent_core_capacity_exhausted = True
-                    if not control.task_binding.closed and not retry_before_tools:
+                    # BACH #2226: only pure read tools ran, so a fresh run cannot
+                    # repeat an effect. Return the lease (pending) instead of parking.
+                    safe_dispatches = getattr(control.task_binding, "replay_safe_dispatch_count", None)
+                    reads_only = (type(dispatches) is int and dispatches > 0
+                                  and type(safe_dispatches) is int and safe_dispatches == dispatches)
+                    if reads_only and not control.task_binding.closed:
+                        _record_worker_activity(control,
+                            f"{error_activity} Nur Lesewerkzeuge gelaufen; Task wird regulär zurückgegeben.",
+                            "error")
+                    if not control.task_binding.closed and not retry_before_tools and not reads_only:
                         # No persisted tool transcript or idempotency contract
                         # can prove that re-running initial_prompt is safe.
                         # Block the task canonically so a different worker also

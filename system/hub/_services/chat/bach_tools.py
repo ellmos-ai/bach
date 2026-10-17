@@ -1210,6 +1210,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
         mark_dispatch = getattr(worker_task_binding, "mark_tool_dispatch", None)
         if callable(mark_dispatch):
             mark_dispatch()
+            note_tool = getattr(worker_task_binding, "note_dispatched_tool", None)
+            if callable(note_tool):
+                note_tool(name)
     if isinstance(args, str):
         try:
             args = json.loads(args)

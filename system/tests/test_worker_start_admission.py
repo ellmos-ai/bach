@@ -192,6 +192,61 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     assert worker_controls[0].start_error != "runtime_error"
 
 
+@pytest.mark.parametrize("tool, expected_status", [
+    ("read_file", "pending"),   # only pure reads ran: return the task, no quarantine
+    ("write_file", "blocked"),  # a possible effect ran: keep the quarantine
+])
+def test_backend_failure_after_tools_returns_reads_only_task(
+    admission, leased_binding, monkeypatch, tool, expected_status,
+):
+    # BACH #2226: a context-reserve failure after read-only tools parked #2225 as
+    # blocked although a fresh run could not repeat any effect.
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard
+    from hub._services.chat.chat_runtime import FailedAnswer
+
+    control, _once_worker = admission
+    worker = add_worker({"name": "Admission continuous failure", "type": "continuous"})
+    update_slot(worker["id"], {"allowed_tools": ["task_manage", "read_file"], "allow_tools": True})
+    monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
+    monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
+    monkeypatch.setattr(control, "finish_assignment", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(control.runtime, "session_store", object())
+    monkeypatch.setattr(control.runtime, "clear_session", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(worker_git, "start_task_worktree", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", lambda task_id: {
+        "availability": "available", "task_id": task_id,
+        "branch": f"refs/heads/bach-task/{task_id}", "source_pin": None})
+    async def process(*_args, **_kwargs):
+        leased_binding.mark_tool_dispatch()
+        leased_binding.note_dispatched_tool(tool)
+        # No stop signal: both branches must end the worker by themselves.
+        return FailedAnswer.from_exception(RuntimeError("Kontextfenster in der Abschlussreserve erschöpft"))
+    monkeypatch.setattr(control.runtime, "process", process)
+    monkeypatch.setattr(control, "_snapshot_chat_backend",
+        lambda *_args, **_kwargs: (object(), "ollama-cloud"))
+
+    response, code = control.start_worker_execution(worker["id"], start_request_id="a" * 32)
+    assert code in {200, 202} and response["execution"]["worker_thread_started"] is True
+    run = control._WORKER_EXECUTIONS[worker["id"]]
+    run.thread.join(5)
+    assert not run.thread.is_alive()
+    assert leased_binding.closed
+    snapshot = leased_binding._client.task_snapshot(leased_binding.task_id)
+    assert snapshot["status"] == expected_status
+    assert leased_binding._client.task_result_snapshot(leased_binding.task_id)["result"] is None
+
+
+def test_unnoted_dispatch_stays_replay_unsafe(leased_binding):
+    # A controller dispatch without a tool note (e.g. native task_manage) must
+    # never count as a pure read.
+    leased_binding.mark_tool_dispatch()
+    leased_binding.note_dispatched_tool("read_file")
+    leased_binding.mark_tool_dispatch()
+    assert leased_binding.tool_dispatch_count == 2
+    assert leased_binding.replay_safe_dispatch_count == 1
+
+
 def test_scope_return_defers_the_same_task_version(mem_db):
     # The scope-failure path stores the snapshot version before return_lease;
     # the release must not change that version, or the worker would churn.

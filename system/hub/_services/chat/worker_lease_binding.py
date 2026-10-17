@@ -17,6 +17,9 @@ from hub._services.task_lease_client import (
 )
 
 _EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
+#: Tools whose repeated execution has no effect (BACH #2226). Everything else,
+#: including task_manage and unnoted controller dispatches, stays replay-unsafe.
+REPLAY_SAFE_TOOLS = frozenset({"read_file", "search_text", "list_directory"})
 
 
 class _TaskDoesNotMatch(LeaseProtocolError):
@@ -78,6 +81,8 @@ class WorkerLeaseBinding:
         # Cumulative for this lease, not reset by model block boundaries.
         # Starting a tool can have an effect even when its response is lost.
         self._tool_dispatch_count = 0
+        # Dispatches confirmed as pure reads; any other dispatch keeps quarantine.
+        self._replay_safe_dispatch_count = 0
 
     @classmethod
     def acquire(cls, client, task_id, *, worker_id, host, generation, is_current,
@@ -412,6 +417,17 @@ class WorkerLeaseBinding:
         with self._lock:
             self.assert_active()
             self._tool_dispatch_count += 1
+
+    @property
+    def replay_safe_dispatch_count(self):
+        with self._lock:
+            return self._replay_safe_dispatch_count
+
+    def note_dispatched_tool(self, name):
+        """Count a just-marked dispatch as replay-safe only for pure read tools."""
+        with self._lock:
+            if name in REPLAY_SAFE_TOOLS:
+                self._replay_safe_dispatch_count += 1
 
     @property
     def decomposition_receipt(self):
