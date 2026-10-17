@@ -192,6 +192,30 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     assert worker_controls[0].start_error != "runtime_error"
 
 
+def test_scope_return_defers_the_same_task_version(mem_db):
+    # The scope-failure path stores the snapshot version before return_lease;
+    # the release must not change that version, or the worker would churn.
+    from system.tests.test_task_lease_client import _insert_task
+    from system.tests.test_task_lease_client_review import T0
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    first = _insert_task(mem_db, "Orphaned branch")
+    second = _insert_task(mem_db, "Next")
+    mem_db.execute("UPDATE tasks SET assigned_to='BACH'")
+    mem_db.execute("UPDATE tasks SET priority='P1' WHERE id=?", (first,))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
+                is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    assert bound.task_id == first
+    deferred = {first: bound.task_snapshot()["task_version"]}
+    assert bound.return_lease() is True
+    assert client.task_snapshot(first)["task_version"] == deferred[first]
+    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    assert next_task.task_id == second
+
+
 def test_unknown_worker_type_keeps_existing_start_path(leased_binding, monkeypatch):
     from hub import worker_git
     from hub._services.chat import telegram_chat as control
