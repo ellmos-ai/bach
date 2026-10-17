@@ -78,6 +78,10 @@ def tool_round_warning_threshold(max_rounds: int) -> int:
     return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
 
 
+def _message_chars(msgs) -> int:
+    return sum(len(str(m.get("content") or "")) for m in msgs if isinstance(m, dict))
+
+
 def _completion_reserve_tools(tools, binding):
     """Keep only an already offered task tool; never grant one from a prompt."""
     actions = ["submit_result"] if getattr(binding, "_review_grant", None) is not None else [
@@ -2469,6 +2473,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.tool_round = 0
         session.last_tools = []
         result = {}
+        chars_at_last_call = 0
+        last_prompt_tokens = None  # measured prompt of the last main call; cleared by every handoff
         offered_tools = tools
         reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
@@ -2540,6 +2546,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
                     msgs = resumed
                     session.messages = history
+                    last_prompt_tokens = None
                     capability_error = self._refresh_worker_tools(session)
                     if capability_error is not None:
                         return capability_error
@@ -2569,6 +2576,32 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if budget_remaining == 0:
                 return FailedAnswer.from_exception(
                     ModelRequestBudgetError("Modellanfragenbudget ausgeschöpft; verbleibend 0"))
+            # The last normal round's tool results only land in the first reserve
+            # prompt, where a full context fails without handoff (BACH #2226).
+            # Hand off before entering the reserve if that prompt would be full;
+            # inside the reserve (any later reserve round) no handoff starts.
+            if (completion_reserve and not reserve_notified_rounds
+                    and type(last_prompt_tokens) is int and last_prompt_tokens > 0
+                    and handoffs < 2 and (budget_remaining is None or budget_remaining > 2)):
+                # ponytail: chars/3 estimate of the added message content; use
+                # measured token counts per message if this misfires on dense content.
+                added = max(0, _message_chars(msgs) - chars_at_last_call) // 3
+                if self._context_voll({"prompt_tokens": last_prompt_tokens + added}, session,
+                                      context_limit=context_limit):
+                    handoffs += 1
+                    try:
+                        summary = await self._handoff(
+                            msgs, session, backend=selected_backend, model=selected_model,
+                            strict=selected_model == "glm-5.3:cloud")
+                        msgs, session.messages = _resume_handoff_context(
+                            msgs, summary, background_task=background_task,
+                            has_tools=session.allow_tools is True and bool(offered_tools),
+                            round_num=round_num, max_rounds=max_rounds)
+                    except Exception as e:
+                        session.current_tool = ""
+                        return FailedAnswer.from_exception(e)
+                    last_prompt_tokens = None
+                    continue
             if completion_reserve:
                 grants = _effective_tool_grants(session)
                 current_tools = (tool for tool in tools if grants is None
@@ -2591,6 +2624,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             try:
                 previous_backend = selected_backend
                 previous_model = selected_model
+                chars_at_last_call = _message_chars(msgs)
                 result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
@@ -2602,6 +2636,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             except Exception as e:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
+            last_prompt_tokens = result.get("prompt_tokens")
 
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
@@ -2658,6 +2693,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 except Exception as e:
                     session.current_tool = ""
                     return FailedAnswer.from_exception(e)
+                last_prompt_tokens = None
                 continue
 
             # Only a measured positive token count below the threshold proves
