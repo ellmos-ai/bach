@@ -109,7 +109,8 @@ class TestToolPayloadLogging:
             assert "CLI nicht gefunden" in result
         else:
             assert result == "synthetic-response"
-        assert "DELEGATE" in caplog.text and "codex" in caplog.text
+        assert "DELEGATE: execution requested (payload omitted)" in caplog.text
+        assert "codex" not in caplog.text
         assert prompt not in caplog.text
         assert context not in caplog.text
 
@@ -133,7 +134,8 @@ class TestToolPayloadLogging:
 
         assert calls == [(prompt, "synthetic-api-fixture")]
         assert result == "synthetic-api-response"
-        assert "DELEGATE" in caplog.text and "claude" in caplog.text
+        assert "DELEGATE: execution requested (payload omitted)" in caplog.text
+        assert "claude" not in caplog.text
         assert prompt not in caplog.text
         assert "synthetic-api-fixture" not in caplog.text
 

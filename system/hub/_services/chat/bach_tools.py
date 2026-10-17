@@ -2067,8 +2067,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 full_prompt = f"Kontext: {context}\n\nAufgabe: {prompt}"
             env = {**os.environ, "PYTHONIOENCODING": "utf-8",
                    "BACH_DELEGATION_DEPTH": str(depth + 1)}
+            log.info("DELEGATE: execution requested (payload omitted)")
             if target == "claude":
-                log.info("DELEGATE -> claude (depth=%d)", depth)
                 api_key = os.environ.get("ANTHROPIC_API_KEY", "")
                 if not api_key:
                     kf = Path.home() / ".credentials" / "anthropic_api_key"
@@ -2078,7 +2078,6 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return _delegate_claude_api(full_prompt, api_key)
                 cmd = ["claude", "-p", full_prompt]
             else:
-                log.info("DELEGATE -> codex (depth=%d)", depth)
                 cmd = ["codex", "exec", full_prompt]
             try:
                 r = subprocess.run(
