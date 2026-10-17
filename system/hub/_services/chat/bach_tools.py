@@ -72,11 +72,18 @@ _COMPLETE_FLAG_HINT = (
 )
 
 
+_PARTIAL_STATE_MARK = "\n\nTeilstand (Worker, "
+
+
 def _return_partial_state(binding, args):
-    """BACH #2210: keep the original task text, append the partial state, return it open."""
+    """BACH #2210: keep the original task text, replace any earlier partial state, return it open."""
     task_id = args["task_id"]
     description = binding.task_snapshot().get("description") or ""
-    block = (f"\n\nTeilstand (Worker, {datetime.now().strftime('%Y-%m-%d %H:%M')}, complete=false):\n"
+    # One block only: a later partial state supersedes the previous one, so the text cannot grow per round.
+    earlier = description.rfind(_PARTIAL_STATE_MARK)
+    if earlier >= 0:
+        description = description[:earlier]
+    block = (f"{_PARTIAL_STATE_MARK}{datetime.now().strftime('%Y-%m-%d %H:%M')}, complete=false):\n"
              f"{str(args.get('result') or '').strip()}")
     binding.execute_task_manage({"action": "update", "task_id": task_id,
                                  "description": description + block}, _dispatch_marked=True)
@@ -1001,7 +1008,7 @@ TOOLS_SAFE = [
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Im einfachen Modus ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext als ausdrückliche Fertigmeldung; tatsächliche Arbeit und Prüfung nennen. Ein negativer oder unvollständiger JSON-Selbstcheck ist keine Fertigmeldung. Offene Pflichtarbeit oder Teilstand: kein submit_result; update(status='pending') nutzen. Andere Modi folgen ihrer Review-Regel."},
+        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Im einfachen Modus ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext als ausdrückliche Fertigmeldung; tatsächliche Arbeit und Prüfung nennen. Ein negativer oder unvollständiger JSON-Selbstcheck ist keine Fertigmeldung. Offene Pflichtarbeit oder Teilstand: submit_result mit complete=false (Teilstand wird gespeichert, Task bleibt offen). Andere Modi folgen ihrer Review-Regel."},
         "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done einer gebundenen Task: true nur, wenn die Pflichtarbeit vollständig erledigt ist; false speichert result als Teilstand in der Task und gibt sie offen zurück (pending)."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
@@ -1732,8 +1739,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return "Ungültige Task-Werkzeugargumente."
                 action = args.get("action", "list")
                 partial = False
-                completion = action in ("done", "submit_result") or (
-                    action == "update" and args.get("status") in ("done", "completed"))
+                # Review children submit a structured verdict, not work; the flag is not theirs.
+                completion = getattr(worker_task_binding, "_review_grant", None) is None and (
+                    action in ("done", "submit_result")
+                    or (action == "update" and args.get("status") in ("done", "completed")))
                 if action in ("done", "submit_result"):
                     if type(args.get("task_id")) is not int:
                         _log_bound_task_manage_denial("task_id_type", worker_task_binding, args)
@@ -1759,6 +1768,18 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         _log_bound_task_manage_denial("completion_flag", worker_task_binding, args)
                         return _COMPLETE_FLAG_HINT
                     partial = complete is False
+                    if partial and action == "update":
+                        # The done alias skipped the public result check above.
+                        try:
+                            from hub._services.task_result_service import validate_submission
+                            validate_submission({"generation": "argument-validation", "result": args.get("result")},
+                                                max_chars=worker_task_binding.task_snapshot().get("result_max_chars"))
+                        except ValueError as exc:
+                            _log_bound_task_manage_denial("submission_validation", worker_task_binding, args, exc)
+                            return str(exc)
+                        except Exception as exc:
+                            _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
+                            return "Taskoperation nicht bestätigt; Taskbindung prüfen."
                     args = {key: value for key, value in args.items() if key != "complete"}
                 try:
                     if partial:

@@ -70,6 +70,49 @@ def test_update_done_alias_with_complete_true_reaches_the_binding_unchanged():
     assert reply == "ok" and calls == [{"action": "update", "task_id": 7, "status": "done", "result": "Fertig"}]
 
 
+def test_review_children_submit_their_verdict_without_the_flag():
+    # A review child submits a structured verdict, not work; the flag is not theirs (review path checks exact args).
+    binding = _Binding()
+    binding._review_grant = object()
+    reply = bach_tools.exec_tool("task_manage", {"action": "submit_result", "task_id": 7, "result": '{"status":"approved"}'},
+                                 "safe", worker_task_binding=binding, allowed_tools=["task_manage"])
+    assert reply == "ok" and binding.calls == [{"action": "submit_result", "task_id": 7, "result": '{"status":"approved"}'}]
+
+
+def test_update_done_alias_with_complete_false_still_validates_the_result():
+    reply, calls = _run({"action": "update", "task_id": 7, "status": "done", "result": "  ", "complete": False})
+    assert "Ergebnis" in reply and calls == []
+
+
+def test_partial_state_replaces_the_previous_partial_block():
+    binding = _Binding()
+    binding.task_snapshot = lambda: {"description": "Original\n\nTeilstand (Worker, 2026-10-17 20:00, complete=false):\nalt",
+                                     "result_max_chars": None}
+    bach_tools._return_partial_state(binding, {"task_id": 7, "result": "neu"})
+    description = binding.calls[0]["description"]
+    assert description.startswith("Original\n\nTeilstand (Worker, ") and description.endswith("neu")
+    assert description.count("Teilstand (Worker, ") == 1 and "alt" not in description
+
+
+@pytest.mark.parametrize("tail, expected", [
+    (["--result", "Fertig"], "--complete=true"),            # flag missing: refused with the hint
+    (["--result", "Fertig", "--complete=true"], "ok"),      # submission proceeds
+    (["--result", "Teil", "--complete=false"], "pending"),  # partial state, task returned open
+])
+def test_bach_command_done_needs_the_same_flag(tail, expected):
+    from hub._services.chat.bound_task_command import bound_task_command
+    binding = _Binding()
+    try:
+        reply = bound_task_command("done", ["7", *tail], binding)
+    except ValueError as exc:
+        reply = str(exc)
+    assert expected in reply
+    if expected == "ok":
+        assert binding.calls == [{"action": "submit_result", "task_id": 7, "result": "Fertig"}]
+    if expected == "pending":
+        assert [call["action"] for call in binding.calls] == ["update", "update"]
+
+
 def test_schema_offers_the_complete_flag():
     schema = next(tool for tool in bach_tools.TOOLS_SAFE if tool["function"]["name"] == "task_manage")
     assert schema["function"]["parameters"]["properties"]["complete"]["type"] == "boolean"

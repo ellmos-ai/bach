@@ -114,7 +114,7 @@ def _completion_reserve_hint(binding, remaining, *, task_tool_offered):
         instruction = ("Ein Task-Abgabewerkzeug ist nicht freigegeben. Melde nur den "
                        "konkreten Blocker; behaupte keinen bestätigten Taskfortschritt.")
     elif getattr(binding, "_review_grant", None) is not None:
-        instruction = ("Nutze nur das bereits erlaubte task_manage(action='submit_result', complete=true) "
+        instruction = ("Nutze nur das bereits erlaubte task_manage(action='submit_result') "
                        "für die eigene Reviewtask, wenn ein tatsächlicher Befund vorliegt.")
     else:
         instruction = ("Nutze nur das bereits erlaubte task_manage: submit_result mit complete=true für ein "
