@@ -61,7 +61,7 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true, close_parent=false). "
     "Die bestätigte Teilaufgabenanlage ist ein Fortschritt; sie erledigt den Eltern-Task nicht. "
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
-    "bestätigte Kind-IDs, offene Arbeit>') den Plan zur getrennten Abnahme ab. Ohne bestätigten Werkzeugbeleg "
+    "bestätigte Kind-IDs, offene Arbeit>', complete=true) den Plan zur getrennten Abnahme ab. Ohne bestätigten Werkzeugbeleg "
     "keinen Taskabschluss behaupten."
 )
 
@@ -117,8 +117,8 @@ def _completion_reserve_hint(binding, remaining, *, task_tool_offered):
         instruction = ("Nutze nur das bereits erlaubte task_manage(action='submit_result') "
                        "für die eigene Reviewtask, wenn ein tatsächlicher Befund vorliegt.")
     else:
-        instruction = ("Nutze nur das bereits erlaubte task_manage: submit_result für ein "
-                       "tatsächlich belegtes Ergebnis, update für einen konkreten Zwischenstand "
+        instruction = ("Nutze nur das bereits erlaubte task_manage: submit_result mit complete=true für ein "
+                       "tatsächlich belegtes Ergebnis, complete=false für einen Teilstand, update für einen konkreten Zwischenstand "
                        "oder decompose für bestätigbare Teilaufgaben ohne Elternabschluss.")
     return (f"[ABSCHLUSSRESERVE: noch {remaining} Werkzeugrunde(n)] "
             "Beginne keine neue Recherche oder Codeänderung. " + instruction +

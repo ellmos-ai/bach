@@ -66,7 +66,7 @@ def test_dispatch_denial_logs_only_finite_provenance_and_never_retries(
     caplog.set_level("WARNING", logger="bach.chat")
     answer = bach_tools.exec_tool(
         "task_manage", {"action": "submit_result", "task_id": 2217,
-                        "result": "PRIVATE RESULT do-not-log"}, "full",
+                        "result": "PRIVATE RESULT do-not-log", "complete": True}, "full",
         worker_task_binding=bound, require_task_binding=True,
         allowed_tools={"task_manage"},
     )
@@ -93,7 +93,7 @@ def test_submission_validation_exception_is_distinct_and_never_dispatches(caplog
     caplog.set_level("WARNING", logger="bach.chat")
     answer = bach_tools.exec_tool(
         "task_manage", {"action": "submit_result", "task_id": 2217,
-                        "result": "PRIVATE RESULT"}, "full",
+                        "result": "PRIVATE RESULT", "complete": True}, "full",
         worker_task_binding=bound, require_task_binding=True,
         allowed_tools={"task_manage"},
     )
@@ -113,7 +113,7 @@ def test_confirmed_self_check_denial_returns_only_fixed_guidance(caplog, monkeyp
     caplog.set_level("WARNING", logger="bach.chat")
     answer = bach_tools.exec_tool(
         "task_manage", {"action": "submit_result", "task_id": 2217,
-                        "result": "PRIVATE RESULT"}, "full",
+                        "result": "PRIVATE RESULT", "complete": True}, "full",
         worker_task_binding=bound, require_task_binding=True,
         allowed_tools={"task_manage"},
     )
@@ -128,17 +128,17 @@ def test_confirmed_self_check_denial_returns_only_fixed_guidance(caplog, monkeyp
 @pytest.mark.parametrize("args,expected", [
     ({"action": "list", "task_id": 0}, 'Für task_manage(action="list") nur action angeben; task_id weglassen.'),
     ({"action": "update", "task_id": 0, "result": "PRIVATE RESULT"},
-     'Ergebnis getrennt mit task_manage(action="submit_result", task_id=<ID>, result=<Text>) abgeben.'),
+     'Ergebnis getrennt mit task_manage(action="submit_result", task_id=<ID>, result=<Text>, complete=true) abgeben.'),
     ({"action": "update", "task_id": 0, "status": "pending", "description": "PRIVATE CONTENT"},
      'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.'),
     ({"action": "update", "task_id": 0, "status": "blocked", "description": "PRIVATE CONTENT"},
      'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.'),
-    ({"action": "update", "task_id": 0, "status": "done", "description": "PRIVATE CONTENT", "result": "PRIVATE RESULT"},
-     'Fertiges Ergebnis mit submit_result abgeben; Inhaltsfelder vorher separat aktualisieren.'),
-    ({"action": "update", "task_id": 0, "status": "done"},
-     'Fertiges Ergebnis mit submit_result abgeben; Inhaltsfelder vorher separat aktualisieren.'),
-    ({"action": "update", "task_id": 0, "status": "completed"},
-     'Fertiges Ergebnis mit submit_result abgeben; Inhaltsfelder vorher separat aktualisieren.'),
+    ({"action": "update", "task_id": 0, "status": "done", "description": "PRIVATE CONTENT", "result": "PRIVATE RESULT", "complete": True},
+     'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.'),
+    ({"action": "update", "task_id": 0, "status": "done", "complete": True},
+     'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.'),
+    ({"action": "update", "task_id": 0, "status": "completed", "complete": True},
+     'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.'),
     ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parnt": False},
      'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.'),
     ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parent": True},

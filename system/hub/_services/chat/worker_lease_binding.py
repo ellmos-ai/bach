@@ -34,10 +34,10 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
 
     _GUIDANCE = {
         "list_fields": 'Für task_manage(action="list") nur action angeben; task_id weglassen.',
-        "update_fields": 'Für update nur unterstützte Taskfelder wie description oder status angeben; Ergebnis mit submit_result abgeben.',
-        "update_result": 'Ergebnis getrennt mit task_manage(action="submit_result", task_id=<ID>, result=<Text>) abgeben.',
+        "update_fields": 'Für update nur unterstützte Taskfelder wie description oder status angeben; Ergebnis mit submit_result und complete=true abgeben.',
+        "update_result": 'Ergebnis getrennt mit task_manage(action="submit_result", task_id=<ID>, result=<Text>, complete=true) abgeben.',
         "update_status": 'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.',
-        "update_completion": 'Fertiges Ergebnis mit submit_result abgeben; Inhaltsfelder vorher separat aktualisieren.',
+        "update_completion": 'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.',
         "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.',
         "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
     }
