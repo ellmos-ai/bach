@@ -61,8 +61,9 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true, close_parent=false). "
     "Die bestätigte Teilaufgabenanlage ist ein Fortschritt; sie erledigt den Eltern-Task nicht. "
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
-    "bestätigte Kind-IDs, offene Arbeit>', complete=true) den Plan zur getrennten Abnahme ab. Ohne bestätigten Werkzeugbeleg "
-    "keinen Taskabschluss behaupten."
+    "bestätigte Kind-IDs, offene Arbeit>', complete=false) den gesicherten Teilstand zurück. "
+    "Der Eltern-Task bleibt pending; die Zerlegung ist kein Abschluss und kein Anlass zur Abnahme. "
+    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten."
 )
 
 

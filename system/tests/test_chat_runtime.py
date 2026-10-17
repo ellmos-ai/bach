@@ -1612,6 +1612,8 @@ def test_model_sees_round_budget_and_early_decomposition_warning(monkeypatch, ma
         warning_text = "\n".join(m.get("content", "") for m in backend.calls[20])
         assert "fast aufgebraucht" in warning_text
         assert "task_manage(action='decompose'" in warning_text
+        assert "complete=false" in warning_text
+        assert "complete=true" not in warning_text
         before_warning = "\n".join(m.get("content", "") for m in backend.calls[19])
         assert "fast aufgebraucht" not in before_warning
     elif max_rounds == 0:
@@ -1619,6 +1621,57 @@ def test_model_sees_round_budget_and_early_decomposition_warning(monkeypatch, ma
         assert "aufgebraucht (" not in all_text
     # A bare model word never completes a TaskDB task.
     assert runtime.consume_task_completion_receipts(session.chat_id) == ()
+
+
+@pytest.mark.parametrize("after_handoff", [False, True])
+def test_decomposition_prompt_returns_parent_with_saved_partial_state(after_handoff):
+    """Following the actual model instruction must not submit unfinished parent work."""
+    import json
+    import re
+    import sqlite3
+    import threading
+    from hub._services.chat.chat_runtime import SELF_DECOMPOSE_INSTRUCTION, _resume_handoff_context
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import TaskLeaseClient
+    from system.tests.test_task_lease_client import _init_db, _insert_task
+    from system.tests.test_task_lease_client_review import T0
+
+    instruction = SELF_DECOMPOSE_INSTRUCTION
+    if after_handoff:
+        messages, _ = _resume_handoff_context(
+            [{"role": "system", "content": "Worker"}], [], background_task=True,
+            has_tools=True, round_num=10, max_rounds=12)
+        instruction = next(m["content"] for m in messages if "action='decompose'" in m["content"])
+    # A deterministic backend follows the completion flag in the offered example.
+    flag = re.search(r"complete=(true|false)\)", instruction)
+    assert flag is not None
+    complete = json.loads(flag.group(1))
+    with sqlite3.connect(":memory:") as conn:
+        conn.row_factory = sqlite3.Row
+        _init_db(conn)
+        conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+        tid = _insert_task(conn, "Implement both required changes")
+        conn.execute("UPDATE tasks SET description=? WHERE id=?", ("Originalauftrag: beide Änderungen umsetzen.", tid))
+        conn.commit()
+        client = TaskLeaseClient(conn=conn)
+        binding = WorkerLeaseBinding.acquire(
+            client, tid, worker_id="decomposition-test@HOST", host="HOST",
+            generation="decomposition-test", is_current=lambda: True,
+            stop_event=threading.Event(), clock=lambda: T0)
+        receipt = binding.execute_task_manage({"action": "decompose", "task_id": tid,
+            "subtasks": [{"title": "First required change"}, {"title": "Second required change"}],
+            "close_parent": False})
+        partial = "Zerlegung bestätigt: " + receipt + "; beide Änderungen bleiben offen."
+        response = exec_tool("task_manage", {"action": "submit_result", "task_id": tid,
+            "result": partial, "complete": complete}, "safe",
+            worker_task_binding=binding, allowed_tools=["task_manage"])
+        parent = client.task_snapshot(tid)
+        assert parent["status"] == "pending", response
+        assert parent["description"].startswith("Originalauftrag: beide Änderungen umsetzen.")
+        assert partial in parent["description"]
+        assert client.read(tid).leased is False
+        assert not binding.completed_task_ids and not binding.reviewed_task_ids
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (tid,)).fetchone()[0] == 2
 
 
 @pytest.mark.parametrize("failure", ["exception", "partial_error"])
