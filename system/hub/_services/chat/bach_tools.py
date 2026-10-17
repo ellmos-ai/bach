@@ -46,6 +46,7 @@ from hub import safe_exec
 from hub._services.chat.worker_lease_binding import (
     WorkerLeaseBinding,
     WorkerResultLimitLockedError,
+    WorkerTaskManageArgumentError,
 )
 from hub._services.task_lease_client import (
     LeaseConnectionError, LeaseDeniedError, LeaseProtocolError,
@@ -77,6 +78,8 @@ def _log_bound_task_manage_denial(stage, binding, args, exc=None):
     generation = generation if type(generation) is str and re.fullmatch(r"[0-9a-f]{32}", generation) else "unknown"
     if isinstance(exc, WorkerResultLimitLockedError):
         kind = "result_limit"
+    elif isinstance(exc, WorkerTaskManageArgumentError):
+        kind = "argument_shape"
     elif isinstance(exc, LeaseSelfCheckRequiredError):
         kind = "self_check_required"
     elif isinstance(exc, LeaseDeniedError):
@@ -977,7 +980,7 @@ TOOLS_SAFE = [
     }, ["query"]),
     _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
         "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
-                   "description": "list, add, detail, update, decompose; submit_result (done als Alias) nur für ein fertiges Ergebnis. Teilstand mit update(status='pending') zurückgeben. Abschluss nach konfiguriertem Modus."},
+                   "description": "Bei gebundener Task: list ohne task_id; update-Status (pending/open/blocked) ohne Inhaltsfelder; decompose mit subtasks=[{\"title\":\"Kind\",\"description\":\"Arbeit\"}], close_parent=false. Ergebnis nur mit submit_result (done als Alias) abgeben. Abschluss nach konfiguriertem Modus."},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
@@ -1744,6 +1747,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 except LeaseSelfCheckRequiredError as exc:
                     _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     return LeaseSelfCheckRequiredError.user_message
+                except WorkerTaskManageArgumentError as exc:
+                    _log_bound_task_manage_denial("arguments", worker_task_binding, args, exc)
+                    return exc.user_message
                 except Exception as exc:
                     _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     # Ownership, capability and unknown ACK failures stay generic.
