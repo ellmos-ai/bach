@@ -1706,6 +1706,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
+                or path == "/api/system/task-lease-settings"
                 or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")

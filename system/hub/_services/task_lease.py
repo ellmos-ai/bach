@@ -67,7 +67,9 @@ DEFAULT_PROFILES: dict[str, tuple[int, int]] = {
     "XL": (120 * 60, 72 * 3600),
 }
 DEFAULT_PROFILE = "M"
-#: Vertrag §8.6: Ersteller-Vorrang ab created_at.
+#: Vertrag §8.6: Ersteller-Vorrang ab created_at. Seit BACH #2231 gilt dieses
+#: Fenster nur noch für Tasks mit offener Sequenz-Delegation; sonst entscheidet
+#: die Systemeinstellung (task_lease_settings, Standard aus).
 DEFAULT_CREATOR_WINDOW_SECONDS = 10 * 60
 #: Vertrag §11.2: Lebensdauer eines Alt-Claims ohne claim_id (wie claim_task_atomic).
 LEGACY_CLAIM_SECONDS = 1800
@@ -128,7 +130,8 @@ class LeaseConfig:
 
     profiles: Mapping[str, tuple[int, int]] = field(default_factory=lambda: dict(DEFAULT_PROFILES))
     default_profile: str = DEFAULT_PROFILE
-    creator_window_seconds: int = DEFAULT_CREATOR_WINDOW_SECONDS
+    #: None: Systemeinstellung bzw. Sequenzschutz; eine Zahl übersteuert beides.
+    creator_window_seconds: int | None = None
     legacy_claim_seconds: int = LEGACY_CLAIM_SECONDS
 
     @classmethod
@@ -151,14 +154,35 @@ class LeaseConfig:
                 profiles.update(candidate)
             except (ValueError, TypeError, KeyError, IndexError, AttributeError):
                 profiles = dict(DEFAULT_PROFILES)
-        window = DEFAULT_CREATOR_WINDOW_SECONDS
+        # Only an explicit operator value overrides the stored setting (BACH #2231).
+        window = None
         raw_window = env.get("BACH_TASK_LEASE_CREATOR_WINDOW")
         if raw_window:
             try:
                 window = max(0, int(raw_window))
             except ValueError:
-                window = DEFAULT_CREATOR_WINDOW_SECONDS
+                window = None
         return cls(profiles=profiles, creator_window_seconds=window)
+
+
+def _open_sequence_delegation(conn, task_id) -> bool:
+    """A sequence step with an unredeemed grant keeps the creator gate (BACH #2231)."""
+    try:
+        return conn.execute(
+            """SELECT 1 FROM native_sequence_creator_delegations
+               WHERE task_id=? AND consumed_at IS NULL AND revoked_at IS NULL""",
+            (task_id,)).fetchone() is not None
+    except sqlite3.Error:  # no sequence schema: no sequence step
+        return False
+
+
+def _creator_window_seconds(conn, task_id, cfg) -> int:
+    if cfg.creator_window_seconds is not None:
+        return cfg.creator_window_seconds
+    if _open_sequence_delegation(conn, task_id):
+        return DEFAULT_CREATOR_WINDOW_SECONDS
+    from hub._services.task_lease_settings import stored_window
+    return stored_window(conn)
 
 
 class LeaseValidationError(ValueError):
@@ -565,8 +589,9 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
             return _deny(task_id, "tool_trace_unavailable", now, status=status)
 
         created = parse_ts(row.get("created_at"))
-        if created is not None and cfg.creator_window_seconds > 0 and created <= now + timedelta(seconds=60):
-            until = created + timedelta(seconds=cfg.creator_window_seconds)
+        window = _creator_window_seconds(conn, task_id, cfg) if created is not None else 0
+        if created is not None and window > 0 and created <= now + timedelta(seconds=60):
+            until = created + timedelta(seconds=window)
             if now < until and not _is_creator(worker_id, row.get("created_by")) and grant is None:
                 conn.rollback()
                 return _deny(task_id, "creator_priority", now, until=_fmt(until))
