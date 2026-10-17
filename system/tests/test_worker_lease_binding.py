@@ -250,7 +250,7 @@ def test_task_tool_dispatch_uses_private_binding_before_local_db(completion_bind
         mode="safe", worker_task_binding=binding)
     assert f"Task #{binding.task_id} aktualisiert: description" == result
     binding.assert_active()
-    result = bach_tools.exec_tool("task_manage", {"action": "submit_result", "task_id": binding.task_id,
+    result = bach_tools.exec_tool("task_manage", {"action": "submit_result", "task_id": binding.task_id, "complete": True,
                                                    "result": _self_check("Konkretes Ergebnis ohne Projektion erstellt.")},
                                   mode="safe", worker_task_binding=binding)
     assert "Abschlussstatus wird nach Policy ermittelt" in result
