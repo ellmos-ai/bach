@@ -98,6 +98,7 @@ def test_partial_state_replaces_the_previous_partial_block():
     (["--result", "Fertig"], "--complete=true"),            # flag missing: refused with the hint
     (["--result", "Fertig", "--complete=true"], "ok"),      # submission proceeds
     (["--result", "Teil", "--complete=false"], "pending"),  # partial state, task returned open
+    (["--result", "  ", "--complete=false"], "Ergebnis"),    # empty partial state is refused before storing
 ])
 def test_bach_command_done_needs_the_same_flag(tail, expected):
     from hub._services.chat.bound_task_command import bound_task_command

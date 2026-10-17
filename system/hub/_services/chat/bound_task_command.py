@@ -65,6 +65,10 @@ def bound_task_command(operation, arguments, binding):
                              "sonst --complete=false (Teilstand wird gespeichert, die Task bleibt offen)")
         if complete is False:
             from hub._services.chat.bach_tools import _return_partial_state
+            from hub._services.task_result_service import validate_submission
+            # Same public result check as the tool path before anything is stored.
+            validate_submission({"generation": "argument-validation", "result": result},
+                                max_chars=binding.task_snapshot().get("result_max_chars"))
             return _return_partial_state(binding, {"task_id": task_id, "result": result})
         return binding.execute_task_manage({"action": "submit_result", "task_id": task_id, "result": result})
     if operation in {"block", "reopen", "unblock"} and not tail:
