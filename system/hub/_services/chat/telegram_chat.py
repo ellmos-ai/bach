@@ -849,10 +849,16 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         raise
 
 
-def _prepare_once_task_scope(binding, slot):
-    """Provision a once task's Git scope before its first model request."""
+def _prepare_bound_task_scope(binding, slot):
+    """Provision a bound task's Git scope before its first model request.
+
+    Continuous workers need it as much as once workers: without a registered
+    task tree no scope evidence can be captured, so a simple_task result stays
+    in review and the completion poll blocks the next claim (BACH #2215).
+    """
     allowed = slot.get("allowed_tools")
-    if (slot.get("type") != "once" or not isinstance(allowed, list) or not allowed
+    if (slot.get("type") not in {"once", "continuous", "persistent"}
+            or not isinstance(allowed, list) or not allowed
             or getattr(binding, "_review_grant", None) is not None):
         return
     from hub import worker_git
@@ -4818,7 +4824,33 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     control.task_binding.assert_active()
                     if control.lease_supervisor.failure is not None:
                         raise control.lease_supervisor.failure
-                    _prepare_once_task_scope(control.task_binding, current_slot)
+                    try:
+                        _prepare_bound_task_scope(control.task_binding, current_slot)
+                    except RuntimeError:
+                        if current_slot.get("type") not in {"continuous", "persistent"}:
+                            raise
+                        # A background worker returns this task (e.g. an orphaned
+                        # bach-task branch) and stays available for the next one.
+                        # Same order as the final cleanup: settle renews first.
+                        returned = control.task_binding.task_snapshot()
+                        control.lease_supervisor.close()
+                        control.lease_supervisor = None
+                        if not control.task_binding.return_lease():
+                            raise
+                        finish_assignment(current_assignment, status="released",
+                                          result="task_returned", reason="task_scope_unavailable")
+                        assignment_open = False
+                        control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
+                        _record_worker_activity(control,
+                            f"Task #{control.task_binding.task_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
+                            "pending")
+                        control.task_binding = None
+                        if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                "current_activity": "Task-Arbeitsbaum nicht bereit; suche nächste passende Aufgabe"}) is None:
+                            break
+                        if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
+                            break
+                        continue
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
