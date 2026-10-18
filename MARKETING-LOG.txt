@@ -1,0 +1,48 @@
+# MARKETING-LOG — ellmos-ai/bach
+
+Operating log for Path B (Marketing, Discoverability, and Design) audits and revisions.
+
+================================================================================
+Audit Date: 2026-10-18
+Host: WORKSTATION-LG
+Agent: Gemini (Antigravity)
+Repository: ellmos-ai/bach
+Path: Pfad B (Marketing & Design)
+Version: 3.15.0 (frozen per T-20260920-167562623)
+Canonical Source of Truth: C:\_Local_DEV\repos\bach
+GitHub Remote: https://github.com/ellmos-ai/bach.git
+================================================================================
+
+## Section 1: GitHub Discoverability & Repository Metadata
+- **Repository Description**: Synchronized via GitHub CLI to reflect release candidate v3.15.0:
+  `"BACH v3.15.0: local-first text-based OS for LLM agents with SQLite memory, 113+ handlers, 550+ tools, MCP servers, scheduler and multi-agent orchestration"`
+- **Canonical Homepage**: Verified canonical URL `https://github.com/ellmos-ai/bach#readme`.
+- **GitHub Topics**: Saturated with 20/20 top-tier discoverability tags:
+  `ai-agent`, `automation`, `knowledge-management`, `llm`, `personal-os`, `python`, `task-management`, `agent-framework`, `ai-assistant`, `cli`, `sqlite`, `workflow-automation`, `mcp-server`, `pyside6`, `llm-os`, `model-context-protocol`, `multi-agent`, `llm-memory`, `local-first`, `sqlite-memory`.
+
+## Section 2: Bilingual README Architecture & Verified Badges
+- **Badge Currency**:
+  - `Last Checked`: Synchronized to `2026-10-18` across `README.md` and `README.de.md`.
+  - `Haftung`: `§ 521 BGB` legal disclaimer badge linked to official statutes.
+  - `Security SLA`: Dual 48h Security Response SLA badge linked to `SECURITY.md`.
+  - `Tests`: 4436 collected tests badge preserved.
+  - `Version`: v3.15.0 strictly preserved (frozen per T-20260920-167562623).
+- **German Edition Parity**: `README.de.md` completely elevated from stub to full feature parity with English `README.md`, including hero banner, language switcher, component details, installation, quickstart, and legal terms.
+- **Python Quickstart**: Added self-contained programmatic snippet in `## Quick Start` demonstrating `bach_api` integration.
+
+## Section 3: Visual Architecture & Diagram Standards
+- **Mermaid Diagrams Added**:
+  1. `Component Topology` (`graph TB`): Maps User & Agent Interfaces (CLI, PySide6 GUI, Web Dashboard, Telegram Bot, MCP Servers) -> Core OS (Orchestration, Scheduler, Chains, Skills) -> Persistence (SQLite 210+ tables, 6-type memory, SharedMemory bus).
+  2. `Local-First Agent Execution Sequence` (`sequenceDiagram`): Illustrates end-to-end zero-egress request flow with session tokens, local memory context retrieval, tool execution, and memory persistence.
+- **Syntax Verification**: Validated with `_tools/lint_mermaid.py` with 0 syntax issues, properly quoted labels, and full GitHub rendering compliance.
+
+## Section 4: AI & RAG Context Index (`llms.txt`)
+- Version aligned to `v3.15.0`.
+- Scale updated to `113+ handlers, 550+ tools, 1870+ skills, 71 workflow templates, and 4400+ collected tests`.
+- `Last-checked` timestamp updated to `2026-10-18`.
+- Added reciprocal documentation links to `MARKETING-LOG.txt` and architecture diagrams.
+
+## Section 5: Non-Automatable Recommendations for Maintainers
+- **[REC-20261018-01] Video Walkthrough Update**: Record an updated 60-to-90 second demo of the PySide6 desktop GUI operator controls and agent pause/steer checkpoints to accompany the existing 2:22 YouTube demo.
+- **[REC-20261018-02] Curated List Submissions**: Propose BACH to curated directories like `awesome-ai-agents`, `awesome-local-ai`, and `awesome-mcp-servers`.
+- **[REC-20261018-03] Visual Assets Dark Mode**: Generate high-resolution dark-mode captures of the Web Dashboard and Agenten-Werkstatt for inclusion in `assets/`.
