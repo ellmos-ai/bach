@@ -1593,6 +1593,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
     EXEMPT_API_PATHS = {
         "/api/health",
         "/api/devices/verify",
+        "/api/devices/session/logout",
         "/api/gui/backend-origin",
         "/api/gui/brand",
         "/api/gui/kit-manifest",
@@ -6435,7 +6436,12 @@ async def api_revoke_device(name: str):
 
 @app.post("/api/devices/verify")
 async def api_verify_device(request: Request, payload: dict = Body(None)):
-    """Verify whether a token is valid and active."""
+    """Verify a browser token and bind it to an HttpOnly session cookie.
+
+    The plaintext token is accepted only for this explicit re-authentication
+    request.  It is never written to browser storage or returned by this
+    endpoint.  Native clients may continue using their Authorization header.
+    """
     token = None
     auth_header = request.headers.get("Authorization", "").strip()
     if auth_header.startswith("Bearer "):
@@ -6443,13 +6449,51 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
     elif payload and isinstance(payload, dict):
         token = payload.get("token")
 
+    def session_response(content: dict) -> JSONResponse:
+        response = JSONResponse(content)
+        response.delete_cookie(
+            key="bach_device_token",
+            path="/",
+            secure=request.url.scheme == "https",
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+
     if not token:
-        return {"valid": False, "reason": "No token provided"}
+        return session_response({"valid": False, "reason": "No token provided"})
 
     device = validate_token(token)
     if device:
-        return {"valid": True, "device": device}
-    return {"valid": False, "reason": "Invalid or revoked token"}
+        response = JSONResponse({
+            "valid": True,
+            "device": device,
+            "session": "http-only-cookie",
+        })
+        response.set_cookie(
+            key="bach_device_token",
+            value=token,
+            path="/",
+            secure=request.url.scheme == "https",
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+    return session_response({"valid": False, "reason": "Invalid or revoked token"})
+
+
+@app.post("/api/devices/session/logout")
+async def api_logout_device(request: Request):
+    """Clear the browser's device session without exposing the token to JS."""
+    response = JSONResponse({"ok": True, "authenticated": False})
+    response.delete_cookie(
+        key="bach_device_token",
+        path="/",
+        secure=request.url.scheme == "https",
+        httponly=True,
+        samesite="strict",
+    )
+    return response
 
 
 

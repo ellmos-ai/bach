@@ -155,7 +155,8 @@
         <h1>🔐 BACH Geräte- & Token-Strategie</h1>
         <p style="color: var(--text-muted, #8a8a9e); margin-bottom: 2rem;">
             Ein permanenter, individueller Token pro Gerät (Laptop, Workstation, Handy, Browser).
-            Token laufen nicht ab und können im Verlustfall einzeln gesperrt werden.
+            Nach der Prüfung hält ein HttpOnly-Session-Cookie die Browseranmeldung.
+            Der Token wird nicht im Browser-Speicher abgelegt.
         </p>
 
         <!-- Sektion 1: Dieses Gerät / Browser -->
@@ -166,7 +167,7 @@
             </div>
 
             <div id="login-section" style="display: none; margin-top: 1rem;">
-                <p>Gib den Token für dieses Gerät ein, um den Browser dauerhaft anzumelden:</p>
+                <p>Gib den Token für dieses Gerät ein, um den Browser für diese Sitzung anzumelden:</p>
                 <div class="input-group">
                     <input type="password" id="device-token-input" placeholder="Geräte-Token eingeben..." />
                     <button class="btn btn-primary" onclick="saveDeviceToken()">Token speichern</button>
@@ -230,15 +231,12 @@ print(token)</pre>
     </div>
 
         <script>
-        const STORAGE_KEY = "bach_device_token";
-
-        function updateAuthUI() {
-            const token = localStorage.getItem(STORAGE_KEY);
+        function setAuthUI(authenticated) {
             const badge = document.getElementById("current-auth-badge");
             const loginSec = document.getElementById("login-section");
             const authSec = document.getElementById("authenticated-section");
 
-            if (token) {
+            if (authenticated) {
                 badge.className = "status-badge active";
                 badge.textContent = "Angemeldet";
                 loginSec.style.display = "none";
@@ -249,6 +247,11 @@ print(token)</pre>
                 loginSec.style.display = "block";
                 authSec.style.display = "none";
             }
+        }
+
+        function updateAuthUI() {
+            setAuthUI(false);
+            loadDevices();
         }
 
         async function saveDeviceToken() {
@@ -268,11 +271,10 @@ print(token)</pre>
                 });
                 const data = await resp.json();
                 if (data.valid) {
-                    localStorage.setItem(STORAGE_KEY, token);
                     input.value = "";
-                    updateAuthUI();
                     loadDevices();
                 } else {
+                    setAuthUI(false);
                     alert("Token ist ungültig oder widerrufen: " + (data.reason || "Unbekannter Grund"));
                 }
             } catch (err) {
@@ -280,11 +282,14 @@ print(token)</pre>
             }
         }
 
-        function logoutDevice() {
+        async function logoutDevice() {
             if (confirm("Gerät wirklich abmelden? Der gespeicherte Token wird aus diesem Browser entfernt.")) {
-                localStorage.removeItem(STORAGE_KEY);
-                updateAuthUI();
-                loadDevices();
+                try {
+                    await fetch("/api/devices/session/logout", { method: "POST" });
+                } finally {
+                    setAuthUI(false);
+                    loadDevices();
+                }
             }
         }
 
@@ -292,11 +297,18 @@ print(token)</pre>
             const tbody = document.getElementById("devices-tbody");
             try {
                 const resp = await fetch("/api/devices");
-                if (resp.status === 401) {
+                if (resp.status === 401 || resp.status === 403) {
+                    setAuthUI(false);
                     tbody.innerHTML = '<tr><td colspan="5" style="color: #e74c3c;">Nicht autorisiert. Bitte Token für dieses Gerät hinterlegen.</td></tr>';
                     return;
                 }
+                if (!resp.ok) {
+                    setAuthUI(false);
+                    tbody.innerHTML = `<tr><td colspan="5" style="color: #e74c3c;">Fehler beim Laden: HTTP ${resp.status}</td></tr>`;
+                    return;
+                }
                 const data = await resp.json();
+                setAuthUI(true);
                 const devices = data.devices || [];
 
                 if (devices.length === 0) {
@@ -393,7 +405,6 @@ print(token)</pre>
 
         // Init
         document.addEventListener("DOMContentLoaded", () => {
-            updateAuthUI();
             loadDevices();
         });
     </script>
