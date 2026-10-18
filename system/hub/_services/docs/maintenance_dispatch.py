@@ -212,11 +212,22 @@ class DocumentationDispatcher:
             and result.get("accepted") is True
             and observed.get("status") in {"done", "completed"}
         )
+        reviewed_at = None
+        if accepted and result.get("accepted_at") is not None:
+            from hub._services.task_lease import parse_ts
+
+            # Canonical result acceptance uses the lead's naive local time.
+            # Reuse its parser before publishing the aware maintenance receipt.
+            raw = result["accepted_at"]
+            reviewed_at = parse_ts(raw) if isinstance(raw, str) and len(raw) <= 40 else None
+            if reviewed_at is None:
+                raise RuntimeError("task_review_timestamp_unverified")
+            reviewed_at = stamp(reviewed_at)
         return {
             "task_status": observed["status"],
             "result_accepted": accepted,
             "result_id": result.get("result_id") if isinstance(result, dict) else None,
-            "last_review_success": result.get("accepted_at") if accepted else None,
+            "last_review_success": reviewed_at,
             "last_repair_success": None,
         }
 
