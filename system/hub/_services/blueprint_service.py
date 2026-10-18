@@ -547,6 +547,31 @@ def synthesize_start_prompt(blueprint: dict[str, Any], task_override: str | None
     gov_profile = governance.get("profile", "fail_closed_standard")
     tool_whitelist = ", ".join(governance.get("tool_whitelist", ["read_files", "search_content", "directory_list"]))
 
+    governance_lines = ["## [Boot:Governance]"]
+    scope = governance.get("scope") if isinstance(governance, dict) else None
+    if not isinstance(scope, str) or not scope or any(ord(char) < 32 for char in scope):
+        scope = "nicht angegeben"
+    governance_lines.append(f"- Geltungsbereich: {scope[:256]}")
+    try:
+        from .governance_binding import GovernanceRejected, declared
+        refs, _ = declared(governance if isinstance(governance, dict) else {})
+    except GovernanceRejected:
+        refs = []
+        governance_lines.append("- Policy-/Regel-Pins: ungültig; Aktivierung bleibt serverseitig gesperrt.")
+    if refs:
+        governance_lines.append("- Gepinnte Policy-/Rule-/Decision-Referenzen:")
+        for ref in sorted(refs, key=lambda item: (item["role"], item["id"])):
+            governance_lines.append(
+                f"  - {ref['id']} · Version {ref['version']} · Rolle {ref['role']} · SHA-256 {ref['sha256']}"
+            )
+    elif not any("ungültig" in line for line in governance_lines):
+        governance_lines.append("- Gepinnte Policy-/Rule-/Decision-Referenzen: keine expliziten Pins.")
+    governance_lines.extend([
+        "- Der kanonische Normtext bleibt am policy-registry-Fundort; dieser Startprompt ist kein Laufzeitguard.",
+        "- Die technische Werkzeug- und Leaseprüfung erfolgt separat bei der Laufzeitaufnahme; normative Durchsetzung ist nicht bestätigt.",
+    ])
+    governance_prompt = "\n".join(governance_lines)
+
     task_desc = task_override or f"Arbeite im Modus '{modus}'. Bearbeite anstehende Tasks aus der Lead-TaskDB gemaess Rollenspezifikation."
 
     prompt = f"""# STARTPROMPT: {title} ({name})
@@ -564,6 +589,8 @@ def synthesize_start_prompt(blueprint: dict[str, Any], task_override: str | None
 - Tool-Whitelist: {tool_whitelist}
 - Kommunikationsregel: Vor Änderungen die aktuellen Repository-Regeln und Locks prüfen.
 - Ausführungsnachweis: Ein Workerstart zählt erst mit dem korrelierten Beleg des Controllers. Hooker-Audits werden hier nicht bestätigt.
+
+{governance_prompt}
 
 ## [Boot:Aufgabe]
 {task_desc}
