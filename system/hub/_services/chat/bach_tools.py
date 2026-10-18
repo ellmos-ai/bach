@@ -11,6 +11,7 @@ lazily import ``hub._services.*``. The module never sees any of that -- it asks
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import inspect
 import io
@@ -26,7 +27,7 @@ import time
 import urllib.parse
 import urllib.request
 from contextlib import ExitStack
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -58,6 +59,85 @@ from hub._services.read_file_formatter import (
 )
 
 log = logging.getLogger("bach.chat")
+
+_COMPLETE_FLAG_HINT = (
+    "complete fehlt oder ist ungültig: complete=true nur, wenn die Pflichtarbeit erledigt ist; "
+    "sonst complete=false mit dem Teilstand als result (die Task bleibt offen)."
+)
+_INCOMPLETE_RESULT_HINT = (
+    "Ergebnis nennt offene Pflichtarbeit; complete=true wurde abgewiesen. "
+    "Melde complete=false und den Teilstand, solange Pflichtarbeit offen ist."
+)
+_INCOMPLETE_RESULT_PATTERNS = (
+    re.compile(
+        r"\b(?:(?:die\s+)?pflichtarbeit|(?:die\s+)?aufgabe)\s+(?:ist|bleibt)\s+(?:noch\s+)?"
+        r"(?:unvollständig|unfertig|unerledigt|offen|nicht\s+(?:vollständig\s+)?"
+        r"(?:erledigt|abgeschlossen|fertig))(?:\s+erfüllt)?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?:required|mandatory|requested)\s+work\s+"
+        r"(?:is|was|remains?|remain)\s+(?:(?:still|not\s+yet)\s+)?"
+        r"(?:incomplete|unfinished|open|outstanding|not\s+(?:yet\s+)?"
+        r"(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:task|tasks|deliverable|deliverables)\s+"
+        r"(?:is|are|remains?|remain)\s+(?:still\s+)?"
+        r"(?:incomplete|unfinished|not\s+(?:yet\s+)?(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[\n{,])\s*[\"']?(?:completion[_ -]?status|status)[\"']?\s*[:=]\s*"
+        r"[\"']?(?:incomplete|unfinished|partial|blocked|in_progress)[\"']?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[{,])\s*[\"']?(?:complete|completed|finished|done)[\"']?\s*:\s*false\b",
+        re.IGNORECASE,
+    ),
+)
+_PARTIAL_STATE_MARK = "\n\nTeilstand (Worker, "
+_PARTIAL_STATE_SEAL_RE = re.compile(
+    r"\n<!-- bach-worker-partial:v1 start=(\d{1,10}) chars=(\d{1,10}) sha256=([0-9a-f]{64}) -->"
+)
+
+
+def _result_explicitly_incomplete(result: str) -> bool:
+    """Detect direct, structured self-reports that required work remains open."""
+    text = result.casefold()
+    for pattern in _INCOMPLETE_RESULT_PATTERNS:
+        for match in pattern.finditer(text):
+            prefix = text[max(0, match.start() - 24):match.start()]
+            if re.search(r"\b(?:no|not|never|kein(?:e|en|er)?|nicht)\s*$", prefix):
+                continue
+            return True
+    return False
+
+
+def _return_partial_state(binding, args):
+    """Store a bounded partial result while returning the bound task open."""
+    task_id = args["task_id"]
+    description = binding.task_snapshot().get("description") or ""
+    seals = list(_PARTIAL_STATE_SEAL_RE.finditer(description))
+    if seals:
+        seal = seals[-1]
+        start = seal.start() - int(seal.group(2))
+        previous = description[max(0, start):seal.start()]
+        if (start == int(seal.group(1)) and previous.startswith(_PARTIAL_STATE_MARK)
+                and hashlib.sha256(previous.encode("utf-8")).hexdigest() == seal.group(3)):
+            description = description[:start] + description[seal.end():]
+    block = (f"{_PARTIAL_STATE_MARK}{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}, "
+             "complete=false):\n"
+             f"{str(args.get('result') or '').strip()}")
+    seal = (f"\n<!-- bach-worker-partial:v1 start={len(description)} chars={len(block)} "
+            f"sha256={hashlib.sha256(block.encode('utf-8')).hexdigest()} -->")
+    binding.execute_task_manage({"action": "update", "task_id": task_id,
+                                 "description": description + block + seal}, _dispatch_marked=True)
+    binding.execute_task_manage({"action": "update", "task_id": task_id, "status": "pending"},
+                                _dispatch_marked=True)
+    return f"Task #{task_id}: Teilstand gespeichert und offen zurückgegeben (pending); kein Abschluss."
 
 _READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
 _READ_EVIDENCE_READ_ONLY_TOOLS = frozenset({"read_file", "search_text", "task_manage"})
@@ -945,6 +1025,7 @@ TOOLS_SAFE = [
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
         "result": {"type": "string", "description": "Worker-Ergebnis bei submit_result/done, erforderlich, höchstens 3000 Zeichen: Befunde, Quellen, Prüfungen und verbleibende Grenzen. Atomar gespeichert mit Review; Abnahme erfolgt getrennt."},
+        "complete": {"type": "boolean", "description": "Bei gebundener Worker-Abgabe Pflicht: true nur, wenn die Pflichtarbeit vollständig erledigt ist; false speichert den Teilstand und gibt die Task offen zurück."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
@@ -1690,9 +1771,23 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     return ToolErrorText("Taskaktion muss Text sein.", code="invalid_task_arguments")
                 if action not in ("list", "detail", "done", "submit_result", "update", "decompose", "add"):
                     return _tool_policy_denial("unsupported_action", "BLOCKIERT: Taskaktion wird nicht unterstützt.")
-                if action in ("done", "submit_result"):
+                partial = False
+                completion = action in ("done", "submit_result") or (
+                    action == "update" and args.get("status") in ("done", "completed")
+                )
+                if not completion and "complete" in args:
+                    return ToolErrorText("complete ist nur bei einer Ergebnisabgabe zulässig.", code="invalid_task_arguments")
+                if completion:
                     if type(args.get("task_id")) is not int:
                         return ToolErrorText("task_id muss eine numerische Ganzzahl sein.", code="invalid_task_arguments")
+                    if action in ("done", "submit_result") and set(args) - {
+                            "action", "task_id", "result", "complete"}:
+                        return ToolErrorText("Task-Abgabe enthält ungültige Felder.", code="invalid_task_arguments")
+                    if action == "update" and set(args) - {
+                            "action", "task_id", "status", "result", "complete"}:
+                        return ToolErrorText("Task-Abgabe enthält ungültige Felder.", code="invalid_task_arguments")
+                    if type(args.get("complete")) is not bool:
+                        return ToolErrorText(_COMPLETE_FLAG_HINT, code="invalid_task_arguments")
                     try:
                         max_chars = worker_task_binding.task_snapshot().get("result_max_chars")
                     except Exception:  # noqa: BLE001 -- Failed task preflight must fail closed before dispatch.
@@ -1704,11 +1799,17 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             {"generation": "argument-validation", "result": args.get("result")},
                             max_chars=max_chars,
                         )
-                    except ValueError as exc:
+                    except ValueError:
                         return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
                     except Exception:
                         return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")
+                    if args["complete"] and _result_explicitly_incomplete(args["result"]):
+                        return ToolErrorText(_INCOMPLETE_RESULT_HINT, code="invalid_task_result")
+                    partial = args["complete"] is False
+                    args = {key: value for key, value in args.items() if key != "complete"}
                 try:
+                    if partial:
+                        return _return_partial_state(worker_task_binding, args)
                     return worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
                 except WorkerResultLimitLockedError:
                     # This bounded policy denial is safe to explain and leaves the lease active.

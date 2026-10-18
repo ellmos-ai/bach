@@ -50,12 +50,29 @@ def bound_task_command(operation, arguments, binding):
     if operation in {"show", "detail"} and not tail:
         return binding.execute_task_manage({"action": "detail", "task_id": task_id})
     if operation in {"done", "submit_result"}:
+        completion_flags = [item for item in tail if item.startswith("--complete")]
+        if len(completion_flags) != 1 or completion_flags[0] not in {"--complete=true", "--complete=false"}:
+            raise ValueError("--complete=true nur bei vollständig erledigter Pflichtarbeit; sonst --complete=false")
+        complete = completion_flags[0] == "--complete=true"
+        tail = [item for item in tail if item not in completion_flags]
         if len(tail) == 1 and tail[0].startswith("--result="):
             result = tail[0].split("=", 1)[1]
         elif len(tail) == 2 and tail[0] == "--result":
             result = tail[1]
         else:
-            raise ValueError("Konkretes Ergebnis mit --result abgeben; danach Review statt automatischem Done")
+            raise ValueError("Konkretes Ergebnis mit --result und --complete abgeben.")
+        from hub._services.task_result_service import validate_submission
+        validate_submission({"generation": "argument-validation", "result": result},
+                            max_chars=binding.task_snapshot().get("result_max_chars"))
+        from hub._services.chat.bach_tools import (
+            _INCOMPLETE_RESULT_HINT,
+            _result_explicitly_incomplete,
+            _return_partial_state,
+        )
+        if complete and _result_explicitly_incomplete(result):
+            raise ValueError(_INCOMPLETE_RESULT_HINT)
+        if not complete:
+            return _return_partial_state(binding, {"task_id": task_id, "result": result})
         return binding.execute_task_manage({"action": "submit_result", "task_id": task_id, "result": result})
     if operation in {"block", "reopen", "unblock"} and not tail:
         status = "blocked" if operation == "block" else "pending"
