@@ -52,23 +52,31 @@ def bound_task_command(operation, arguments, binding):
     if operation in {"done", "submit_result"}:
         # BACH #2210: this CLI path is a full completion path and needs the same explicit flag.
         flags = {"--complete=true": True, "--complete=false": False}
-        complete = next((flags[item] for item in tail if item in flags), None)
-        tail = [item for item in tail if item not in flags]
+        completion_flags = [item for item in tail if item == "--complete" or item.startswith("--complete=")]
+        if len(completion_flags) != 1 or completion_flags[0] not in flags:
+            raise ValueError("Genau ein gültiges --complete=true oder --complete=false ist erforderlich.")
+        complete = flags[completion_flags[0]]
+        tail = [item for item in tail if item not in completion_flags]
         if len(tail) == 1 and tail[0].startswith("--result="):
             result = tail[0].split("=", 1)[1]
         elif len(tail) == 2 and tail[0] == "--result":
             result = tail[1]
         else:
-            raise ValueError("Konkretes Ergebnis mit --result abgeben; danach Review statt automatischem Done")
-        if complete is None:
-            raise ValueError("--complete=true nur bei vollständig erledigter Pflichtarbeit; "
-                             "sonst --complete=false (Teilstand wird gespeichert, die Task bleibt offen)")
-        if complete is False:
-            from hub._services.chat.bach_tools import _return_partial_state
-            from hub._services.task_result_service import validate_submission
-            # Same public result check as the tool path before anything is stored.
+            raise ValueError("Genau ein Ergebnis mit --result und ein Abschlussflag sind erforderlich.")
+        from hub._services.task_result_service import validate_submission
+        try:
             validate_submission({"generation": "argument-validation", "result": result},
                                 max_chars=binding.task_snapshot().get("result_max_chars"))
+        except Exception as exc:
+            raise ValueError("Ergebnis ist ungültig.") from exc
+        from hub._services.chat.bach_tools import (
+            _INCOMPLETE_RESULT_HINT,
+            _result_explicitly_incomplete,
+            _return_partial_state,
+        )
+        if complete and _result_explicitly_incomplete(result):
+            raise ValueError(_INCOMPLETE_RESULT_HINT)
+        if complete is False:
             return _return_partial_state(binding, {"task_id": task_id, "result": result})
         return binding.execute_task_manage({"action": "submit_result", "task_id": task_id, "result": result})
     if operation in {"block", "reopen", "unblock"} and not tail:

@@ -71,12 +71,58 @@ _COMPLETE_FLAG_HINT = (
     "complete fehlt: complete=true nur, wenn die Pflichtarbeit vollständig erledigt ist; "
     "sonst complete=false mit dem bisherigen Teilstand als result (die Task geht offen zurück)."
 )
+_INCOMPLETE_RESULT_HINT = (
+    "Ergebnis nennt offene Pflichtarbeit; complete=true wurde abgewiesen. "
+    "Melde complete=false und den Teilstand, solange Pflichtarbeit offen ist."
+)
+_INCOMPLETE_RESULT_PATTERNS = (
+    re.compile(
+        r"\b(?:(?:die\s+)?pflichtarbeit|(?:die\s+)?aufgabe)\s+(?:ist|bleibt)\s+(?:noch\s+)?"
+        r"(?:unvollständig|unfertig|unerledigt|offen|nicht\s+(?:vollständig\s+)?"
+        r"(?:erledigt|abgeschlossen|fertig))(?:\s+erfüllt)?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?:required|mandatory|requested)\s+work\s+"
+        r"(?:is|was|remains?|remain)\s+(?:(?:still|not\s+yet)\s+)?"
+        r"(?:incomplete|unfinished|open|outstanding|not\s+(?:yet\s+)?"
+        r"(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:task|tasks|deliverable|deliverables)\s+"
+        r"(?:is|are|remains?|remain)\s+(?:still\s+)?"
+        r"(?:incomplete|unfinished|not\s+(?:yet\s+)?(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[\n{,])\s*[\"']?(?:completion[_ -]?status|status)[\"']?\s*[:=]\s*"
+        r"[\"']?(?:incomplete|unfinished|partial|blocked|in_progress)[\"']?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[{,])\s*[\"']?(?:complete|completed|finished|done)[\"']?\s*:\s*false\b",
+        re.IGNORECASE,
+    ),
+)
 
 
 _PARTIAL_STATE_MARK = "\n\nTeilstand (Worker, "
 _PARTIAL_STATE_SEAL_RE = re.compile(
     r"\n<!-- bach-worker-partial:v1 start=(\d{1,10}) chars=(\d{1,10}) sha256=([0-9a-f]{64}) -->"
 )
+
+
+def _result_explicitly_incomplete(result):
+    """Detect direct, structured self-reports that required work remains open."""
+    text = result.casefold()
+    for pattern in _INCOMPLETE_RESULT_PATTERNS:
+        for match in pattern.finditer(text):
+            prefix = text[max(0, match.start() - 24):match.start()]
+            if re.search(r"\b(?:no|not|never|kein(?:e|en|er)?|nicht)\s*$", prefix):
+                continue
+            return True
+    return False
 
 
 def _return_partial_state(binding, args):
@@ -1756,6 +1802,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 completion = getattr(worker_task_binding, "_review_grant", None) is None and (
                     action in ("done", "submit_result")
                     or (action == "update" and args.get("status") in ("done", "completed")))
+                if not completion and "complete" in args and getattr(worker_task_binding, "_review_grant", None) is None:
+                    _log_bound_task_manage_denial("completion_flag_scope", worker_task_binding, args)
+                    return "complete ist nur bei einer gebundenen Ergebnisabgabe zulässig."
                 if action in ("done", "submit_result"):
                     if type(args.get("task_id")) is not int:
                         _log_bound_task_manage_denial("task_id_type", worker_task_binding, args)
@@ -1774,25 +1823,36 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
                         return "Taskoperation nicht bestätigt; Taskbindung prüfen."
                 if completion:
-                    # BACH #2210: after the public argument checks, a model must state
-                    # explicitly whether the work is complete.
+                    # Validate the entire completion request before any dispatch.
+                    allowed = ({"action", "task_id", "result", "complete"}
+                               if action in ("done", "submit_result") else
+                               {"action", "task_id", "status", "result", "complete"})
+                    if set(args) - allowed:
+                        _log_bound_task_manage_denial("completion_arguments", worker_task_binding, args)
+                        return "Task-Abgabe enthält ungültige Felder."
+                    if type(args.get("task_id")) is not int:
+                        _log_bound_task_manage_denial("task_id_type", worker_task_binding, args)
+                        return "task_id muss eine numerische Ganzzahl sein."
                     complete = args.get("complete")
                     if type(complete) is not bool:
                         _log_bound_task_manage_denial("completion_flag", worker_task_binding, args)
                         return _COMPLETE_FLAG_HINT
+                    try:
+                        from hub._services.task_result_service import validate_submission
+                        validate_submission(
+                            {"generation": "argument-validation", "result": args.get("result")},
+                            max_chars=worker_task_binding.task_snapshot().get("result_max_chars"),
+                        )
+                    except ValueError:
+                        _log_bound_task_manage_denial("submission_validation", worker_task_binding, args)
+                        return "Ergebnis ist ungültig."
+                    except Exception as exc:
+                        _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
+                        return "Taskoperation nicht bestätigt; Taskbindung prüfen."
+                    if complete and _result_explicitly_incomplete(args["result"]):
+                        _log_bound_task_manage_denial("contradictory_completion", worker_task_binding, args)
+                        return _INCOMPLETE_RESULT_HINT
                     partial = complete is False
-                    if partial and action == "update":
-                        # The done alias skipped the public result check above.
-                        try:
-                            from hub._services.task_result_service import validate_submission
-                            validate_submission({"generation": "argument-validation", "result": args.get("result")},
-                                                max_chars=worker_task_binding.task_snapshot().get("result_max_chars"))
-                        except ValueError as exc:
-                            _log_bound_task_manage_denial("submission_validation", worker_task_binding, args, exc)
-                            return str(exc)
-                        except Exception as exc:
-                            _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
-                            return "Taskoperation nicht bestätigt; Taskbindung prüfen."
                     args = {key: value for key, value in args.items() if key != "complete"}
                 try:
                     if partial:
