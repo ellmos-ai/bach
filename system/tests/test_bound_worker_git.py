@@ -145,7 +145,7 @@ def test_bound_finish_uses_real_bound_python_pytest_parser(bridge, git_run, monk
     argv, limits, cwd, shell, env = isolated[0]
     assert argv[0] == safe_exec.resolve_executable("python", worker_write_guard._CHECK_BASES)[0]
     assert argv[1:4] == ["-m", "pytest", "-q"]
-    state = target / ".worker-check"
+    state = target / ".cache" / ".worker-check"
     separator = argv.index("--")
     assert argv[4:separator] == [
         "--basetemp", str(state / "pytest-temp"),

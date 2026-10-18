@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -538,8 +540,8 @@ def test_bound_check_keeps_compileall_bytecode_inside_task_tree(tmp_path, monkey
     assert "Prüfung erfolgreich" in result and len(calls) == 1
     assert calls[0][1] == str(target) and calls[0][2] is False
     assert calls[0][3]["PYTHONDONTWRITEBYTECODE"] == "1"
-    assert calls[0][3]["PYTHONPYCACHEPREFIX"] == str(target / ".worker-check" / "python-pycache")
-    assert calls[0][3]["BACH_DB"] == str(target / ".worker-check" / "worker-check.sqlite3")
+    assert calls[0][3]["PYTHONPYCACHEPREFIX"] == str(target / ".cache" / ".worker-check" / "python-pycache")
+    assert calls[0][3]["BACH_DB"] == str(target / ".cache" / ".worker-check" / "worker-check.sqlite3")
 
 
 def test_bound_check_runs_pytest_with_task_local_inputs_outputs_and_environment(tmp_path, monkeypatch):
@@ -567,23 +569,54 @@ def test_bound_check_runs_pytest_with_task_local_inputs_outputs_and_environment(
     argv, cwd, shell, env = calls[0]
     assert argv[0] == "resolved-python" and argv[1:3] == ["-m", "pytest"]
     assert str(target / "test_smoke.py") in argv
-    assert "--basetemp" in argv and str(target / ".worker-check" / "pytest-temp") in argv
-    assert "cache_dir=" + str(target / ".worker-check" / "pytest-cache") in argv
+    assert "--basetemp" in argv and str(target / ".cache" / ".worker-check" / "pytest-temp") in argv
+    assert "cache_dir=" + str(target / ".cache" / ".worker-check" / "pytest-cache") in argv
     assert "addopts=" in argv
     assert "testpaths=" + str(target) in argv and "confcutdir=" + str(target) in argv
-    assert argv.index("--") > argv.index("cache_dir=" + str(target / ".worker-check" / "pytest-cache"))
+    assert argv.index("--") > argv.index("cache_dir=" + str(target / ".cache" / ".worker-check" / "pytest-cache"))
     assert cwd == str(target) and shell is False
-    assert env["BACH_DB"] == str(target / ".worker-check" / "worker-check.sqlite3")
-    assert env["PYTHONPYCACHEPREFIX"] == str(target / ".worker-check" / "python-pycache")
+    assert env["BACH_DB"] == str(target / ".cache" / ".worker-check" / "worker-check.sqlite3")
+    assert env["PYTHONPYCACHEPREFIX"] == str(target / ".cache" / ".worker-check" / "python-pycache")
     assert env["PYTEST_ADDOPTS"] == "" and env["PYTEST_PLUGINS"] == ""
-    assert env["RUFF_CACHE_DIR"] == str(target / ".worker-check" / "ruff-cache")
+    assert env["RUFF_CACHE_DIR"] == str(target / ".cache" / ".worker-check" / "ruff-cache")
     authorized = set(authorized_paths)
     for relative in ("home", "tmp", "xdg-cache", "python-pycache", "ruff-cache", "mypy-cache",
                      "pyright-cache", "npm-cache", "pip-cache", "uv-cache", "pre-commit-cache",
                      ".coverage", "pytest-debug-temp", "worker-check.sqlite3", "npmrc", "npm-globalrc",
                      "local-app-data", "app-data", "pytest-temp", "pytest-cache"):
-        assert target / ".worker-check" / relative in authorized
+        assert target / ".cache" / ".worker-check" / relative in authorized
     assert external_db not in authorized
+
+
+def test_bound_check_materializes_parent_before_real_pytest_tmp_path(tmp_path, monkeypatch):
+    _, _, target = _authorization_fixture(tmp_path, monkeypatch)
+    from core import sandbox
+    from hub import safe_exec
+
+    if os.name == "nt" and not sandbox.HAS_PSUTIL:
+        pytest.skip("Prozessbaum-Isolation unter Windows erfordert psutil")
+
+    (target / "test_tmp_path.py").write_text(
+        "def test_real_tmp_path_writes_file(tmp_path):\n"
+        "    output = tmp_path / 'probe.txt'\n"
+        "    output.write_text('ok', encoding='utf-8')\n"
+        "    assert output.read_text(encoding='utf-8') == 'ok'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PYTHONPATH", str(Path(pytest.__file__).resolve().parents[1]))
+    monkeypatch.setattr(safe_exec, "resolve_executable",
+                        lambda *_args, **_kwargs: [sys.executable])
+    result = guard.run_bound_check(
+        FakeBinding(), "python -m pytest -q -- test_tmp_path.py", target,
+        timeout=30, return_result=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+    state = target / ".cache" / ".worker-check"
+    assert (state / "home").is_dir()
+    assert (state / "tmp").is_dir()
+    assert (state / "pytest-temp").is_dir()
+    assert (state / "pytest-cache").is_dir()
 
 
 def test_bound_check_returns_structured_timeout_result(tmp_path, monkeypatch):

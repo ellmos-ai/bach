@@ -454,6 +454,113 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     return snapshot
 
 
+_TASK_START_SCOPE_SCHEMA = "bach.task-start-scope.v1"
+
+
+def _task_start_scope_unavailable(reason: str) -> dict:
+    return {"schema": _TASK_START_SCOPE_SCHEMA, "availability": "unavailable",
+            "reason": reason}
+
+
+def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=False,
+                              repo_root=None, worktrees_dir=None) -> dict:
+    """Authorize the registered task tree for a new worker run, including WIP.
+
+    This deliberately does not require a clean worktree and is never evidence
+    for a completed result. Final result capture continues to use
+    snapshot_task_scope(), which rejects dirty trees.
+    """
+    if type(source_pin_required) is not bool:
+        return _task_start_scope_unavailable("invalid_source_capability")
+    try:
+        tid = _task_id(getattr(binding, "task_id", None))
+        repo, root = _paths(repo_root, worktrees_dir)
+        target = authorize_start(binding, tid, repo_root=repo, worktrees_dir=root)
+        if task_root is not None and _NATIVE_PATH(task_root).resolve(strict=True) != target:
+            return _task_start_scope_unavailable("registration_unavailable")
+
+        from hub import worker_git
+        origin = worker_git._canonical_bach_origin(
+            _scope_text(["remote", "get-url", "origin"], repo))
+        target_origin = worker_git._canonical_bach_origin(
+            _scope_text(["remote", "get-url", "origin"], target))
+        if origin != "https://github.com/ellmos-ai/bach" or target_origin != origin:
+            return _task_start_scope_unavailable("origin_unavailable")
+
+        branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
+        head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
+        if (branch != f"refs/heads/bach-task/{tid}"
+                or not _GIT_OID.fullmatch(head)):
+            return _task_start_scope_unavailable("registration_unavailable")
+
+        filter_code, _ = _scope_git(
+            ["config", "--get-regexp", r"^filter\..*\.(process|clean|smudge)$"],
+            target, allowed=(0, 1))
+        if filter_code == 0:
+            return _task_start_scope_unavailable("git_unavailable")
+        stage = _scope_stage(target)
+        if any(entry.startswith(b"160000 ") for entry in stage.split(b"\0")[:-1]):
+            return _task_start_scope_unavailable("submodule_scope_unsupported")
+
+        key = worker_git._public_source_config_key(tid)
+        pin_state = _scope_git(
+            ["config", "--local", "--get-all", key], target, allowed=(0, 1))
+        if source_pin_required:
+            if pin_state[0] != 0:
+                return _task_start_scope_unavailable("source_pin_invalid")
+            values = pin_state[1].decode("utf-8", "strict").splitlines()
+            if len(values) != 1:
+                return _task_start_scope_unavailable("source_pin_invalid")
+            proof = json.loads(values[0])
+            validated = worker_git.read_task_public_source_registration(repo, target, tid)
+            if proof != validated:
+                return _task_start_scope_unavailable("git_changed")
+            source_pin = {name: validated[name] for name in
+                          ("schema", "source_ref", "source_sha", "verified_at")}
+        else:
+            if pin_state[0] != 1:
+                return _task_start_scope_unavailable("source_pin_unexpected")
+            source_pin = None
+
+        common_raw = _scope_text(["rev-parse", "--git-common-dir"], target)
+        common = _NATIVE_PATH(common_raw)
+        common = (target / common).resolve(strict=True) if not common.is_absolute() else common.resolve(strict=True)
+        repo_common_raw = _scope_text(["rev-parse", "--git-common-dir"], repo)
+        repo_common = _NATIVE_PATH(repo_common_raw)
+        repo_common = ((repo / repo_common).resolve(strict=True) if not repo_common.is_absolute()
+                       else repo_common.resolve(strict=True))
+        if common != repo_common:
+            return _task_start_scope_unavailable("registration_unavailable")
+
+        final_filter_code, _ = _scope_git(
+            ["config", "--get-regexp", r"^filter\..*\.(process|clean|smudge)$"],
+            target, allowed=(0, 1))
+        final_pin_state = _scope_git(
+            ["config", "--local", "--get-all", key], target, allowed=(0, 1))
+        final_stage = _scope_stage(target)
+        final_branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
+        final_head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
+        final_origin = worker_git._canonical_bach_origin(
+            _scope_text(["remote", "get-url", "origin"], target))
+        if (final_filter_code != 1 or final_pin_state != pin_state
+                or final_stage != stage or final_branch != branch
+                or final_head != head or final_origin != origin
+                or _registered_tree(repo, root, tid) != target
+                or authorize_start(binding, tid, repo_root=repo, worktrees_dir=root) != target):
+            return _task_start_scope_unavailable("git_changed")
+    except (WorkerWriteGuardError, RuntimeError, OSError, UnicodeError, KeyError, ValueError):
+        return _task_start_scope_unavailable("registration_unavailable")
+
+    return {
+        "schema": _TASK_START_SCOPE_SCHEMA,
+        "availability": "available",
+        "task_id": tid,
+        "branch": branch,
+        "head_oid": head,
+        "source_pin": source_pin,
+    }
+
+
 
 
 @dataclass(frozen=True)
@@ -1127,7 +1234,7 @@ def _prepare_typechecker(task_root, cwd, base, args, checked):
 
 
 def _worker_check_environment(task_root):
-    state = task_root / ".worker-check"
+    state = task_root / ".cache" / ".worker-check"
     paths = {
         "HOME": state / "home",
         "TMPDIR": state / "tmp",
@@ -1164,6 +1271,96 @@ def _worker_check_environment(task_root):
     if os.name == "nt":
         env["USERPROFILE"] = str(paths["HOME"])
     return env, checked, state
+
+
+_WORKER_CHECK_DIRECTORY_KEYS = (
+    "HOME", "TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
+    "XDG_STATE_HOME", "PYTHONPYCACHEPREFIX", "RUFF_CACHE_DIR", "MYPY_CACHE_DIR",
+    "PYRIGHT_PYTHON_CACHE_DIR", "npm_config_cache", "PIP_CACHE_DIR",
+    "UV_CACHE_DIR", "PRE_COMMIT_HOME", "PYTEST_DEBUG_TEMPROOT",
+    "LOCALAPPDATA", "APPDATA", "USERPROFILE",
+)
+
+
+def _create_task_directory(task_root: Path, candidate: Path) -> None:
+    """Create one authorized task directory without following symlinks."""
+    root = _NATIVE_PATH(os.path.abspath(task_root))
+    target = _safe_task_path(root, candidate)
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        raise WorkerWriteGuardError("Prüfverzeichnis liegt außerhalb des Task-Arbeitsbaums") from None
+    if not relative.parts:
+        return
+
+    if (os.name == "posix" and hasattr(os, "O_NOFOLLOW")
+            and hasattr(os, "O_DIRECTORY")
+            and os.open in getattr(os, "supports_dir_fd", set())
+            and os.mkdir in getattr(os, "supports_dir_fd", set())):
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        descriptor = None
+        try:
+            descriptor = os.open(root, flags)
+            for part in relative.parts:
+                if part in {"", ".", ".."}:
+                    raise WorkerWriteGuardError("Prüfverzeichnis ist ungültig")
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+                next_descriptor = os.open(part, flags, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = next_descriptor
+        except WorkerWriteGuardError:
+            raise
+        except Exception:
+            raise WorkerWriteGuardError("Prüfverzeichnis konnte nicht symlinkfrei angelegt werden") from None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        return
+
+    current = root
+    try:
+        for part in relative.parts:
+            if part in {"", ".", ".."}:
+                raise WorkerWriteGuardError("Prüfverzeichnis ist ungültig")
+            current = current / part
+            try:
+                current.mkdir(mode=0o700)
+            except FileExistsError:
+                pass
+            info = current.lstat()
+            if (stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode)
+                    or current.resolve(strict=True) != current):
+                raise WorkerWriteGuardError("Prüfverzeichnis ist kein sicherer Task-Ordner")
+    except WorkerWriteGuardError:
+        raise
+    except Exception:
+        raise WorkerWriteGuardError("Prüfverzeichnis konnte nicht sicher angelegt werden") from None
+
+
+def _create_worker_check_directories(task_root: Path, state_dir: Path, env: dict,
+                                     checked: Iterable[Path]) -> None:
+    """Materialize task-local environment directories after lease authorization."""
+    checked_paths = {_NATIVE_PATH(path) for path in checked}
+    directories = [state_dir]
+    for key in _WORKER_CHECK_DIRECTORY_KEYS:
+        value = env.get(key)
+        if isinstance(value, str) and value:
+            candidate = _NATIVE_PATH(value)
+            if candidate in checked_paths:
+                directories.append(candidate)
+    for name in ("pytest-temp", "pytest-cache"):
+        candidate = state_dir / name
+        if candidate in checked_paths:
+            directories.append(candidate)
+    seen = set()
+    for candidate in directories:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        _create_task_directory(task_root, candidate)
 
 
 def _prepare_bound_check_args(task_root, cwd, base, args, checked, state_dir):
@@ -1213,7 +1410,7 @@ def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, retur
         raise WorkerWriteGuardError("Befehl ist nicht für den Task-Worker zugelassen") from exc
     args = tokens[1:]
     env = None
-    state_dir = target / ".worker-check"
+    state_dir = target / ".cache" / ".worker-check"
     if base == "git":
         if not args or args[0] not in _GIT_READ_SUBCOMMANDS:
             raise WorkerWriteGuardError("Git-Schreibbefehle sind nur über den Task-Workflow erlaubt")
@@ -1232,10 +1429,16 @@ def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, retur
             prepared = _prepare_bound_check_args(target, run_cwd, base, args, checked, state_dir)
             argv = [argv[0], *prepared]
             checked.extend(env_paths)
+            checked.append(state_dir)
         else:
             raise WorkerWriteGuardError("Prüfbefehl ist nicht sicher gebunden")
     timeout = min(max(int(timeout), 1), 120)
     authorize_mutation(binding, paths=(run_cwd, *checked))
+    if env is not None:
+        _create_worker_check_directories(target, state_dir, env, checked)
+        # Recheck the lease, symlink-free paths, and all enclosing locks after
+        # materialization and immediately before launching the child process.
+        authorize_mutation(binding, paths=(run_cwd, *checked))
     from core import sandbox
     if os.name == "nt" and not sandbox.HAS_PSUTIL:
         raise WorkerWriteGuardError("Prozessbaum kann auf Windows ohne psutil nicht sicher beendet werden")
