@@ -37,7 +37,7 @@ from pathlib import Path
 
 from datetime import datetime, date
 
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from contextlib import asynccontextmanager
 
@@ -45,7 +45,7 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from hub.lang import t, get_lang
 from hub.theme import ThemeHandler
-from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked, LeaseRequired
+from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReopenBlocked, LeaseRequired, normalize_task_tags
 from hub._services.chat.control_auth import get_control_api_auth_header
 from gui.config import settings
 from gui.console import mount_console
@@ -445,6 +445,8 @@ class TaskUpdate(BaseModel):
     require_user_review: Optional[StrictBool] = None
     github_pr_review_required: Optional[StrictBool] = None
     github_review_contract: Optional[dict] = None
+    # Task #2065: Liste, JSON-Array oder komma-getrennter Text; null/leer leert das Feld
+    tags: Optional[Union[List[str], str]] = None
     assignment_configuration_version: Optional[str] = None
     changed_by: Optional[str] = None
     # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
@@ -3027,6 +3029,11 @@ async def update_task(task_id: int, update: TaskUpdate):
         if not existing:
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         existing_row = row_to_dict(existing)
+        if "tags" in update.model_fields_set:
+            try:
+                normalize_task_tags(update.tags)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail={"code": "tags_invalid", "message": str(exc)})
         from gui.api.task_assignment import assignment_write_guard
         with assignment_write_guard(update.model_dump(exclude_unset=True), existing_row):
             if "required_model" in update.model_fields_set or "assigned_slot" in update.model_fields_set:
@@ -3099,6 +3106,8 @@ async def update_task(task_id: int, update: TaskUpdate):
                 "completion_contract", "require_user_review", "github_pr_review_required",
                 "github_review_contract"})
             field_values.update(_completion_task_fields(completion_payload, existing=existing_row))
+            if "tags" in update.model_fields_set:
+                field_values["tags"] = update.tags
 
             try:
                 # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von

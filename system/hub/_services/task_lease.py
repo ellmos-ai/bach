@@ -906,7 +906,7 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
                  task_version: str, changes: dict[str, Any],
                  config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
     """Update content and its holder binding in one fenced transaction."""
-    from hub.task_audit import ALLOWED_COLUMNS, apply_task_field_changes
+    from hub.task_audit import ALLOWED_COLUMNS, apply_task_field_changes, normalize_task_tags
 
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
@@ -922,8 +922,15 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
         for name, value in changes.items()
     ):
         raise LeaseValidationError("result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein")
+    if "tags" in changes:
+        # Task #2065: Tags dürfen Liste/Text/null sein; Form prüft der gemeinsame Normalisierer.
+        try:
+            normalize_task_tags(changes["tags"])
+        except ValueError as exc:
+            raise LeaseValidationError(str(exc)) from exc
     if any(
         not (name == "result_max_chars" and (value is None or type(value) is int))
+        and name != "tags"
         and not isinstance(value, str)
         for name, value in changes.items()
     ):
