@@ -148,11 +148,11 @@ def git_snapshot(root: Path, previous: str | None) -> tuple[str, list[str]]:
             ]
         )
     names = [name for name in files.split("\x00") if name]
-    if len(names) > 256:
-        raise ValueError("Documentation delta exceeds file budget")
     names = [
         name for name in names if not name.startswith(("system/data/", "system/tests/"))
     ]
+    if len(names) > 256:
+        raise ValueError("Documentation delta exceeds file budget")
     return revision, names
 
 
