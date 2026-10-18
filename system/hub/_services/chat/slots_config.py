@@ -1895,6 +1895,7 @@ def record_activity(
 
 WORKER_EDITABLE_POLICY_FIELDS = frozenset({"pickup_filter"})
 WORKER_EDITABLE_FIELDS = frozenset({
+    "type",
     "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "max_model_requests", "allow_tools",
     "memory_hook_opt_in", "model_fallbacks",
     "allowed_tools", "skill_refs",
@@ -1940,7 +1941,9 @@ def _worker_profile_version(worker: dict[str, Any]) -> str:
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
     if type(configuration["memory_hook_opt_in"]) is not bool:
         raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
-    fields = WORKER_EDITABLE_FIELDS - {"persistent_opt_in"}
+    # Persistent admission checks the execution type separately. Preserve
+    # existing opt-in digests when exposing type as an editable CAS field.
+    fields = WORKER_EDITABLE_FIELDS - {"persistent_opt_in", "type"}
     if worker.get("max_model_requests") is None:
         # Old unbudgeted profile versions, including persistent opt-in grants,
         # keep their established digest until a budget is explicitly set.
@@ -2190,6 +2193,10 @@ def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
         for field in sorted(scalar_configuration_fields)
     }
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
+    # Legacy persistent profiles have the same execution mode as continuous.
+    configuration["type"] = (
+        "continuous" if worker.get("type") == "persistent" else worker.get("type")
+    )
     if type(configuration["memory_hook_opt_in"]) is not bool:
         raise ValueError("memory_hook_opt_in muss wahr oder falsch sein")
     persistent_opt_in = worker.get("persistent_opt_in") is True
@@ -3136,6 +3143,8 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
     ranges = {"max_tool_rounds": (0, 1000), "max_model_requests": (3, 256), "pause_after": (0, 100),
               "pause_minutes": (0, 1440), "max_experts": (1, 10)}
     for field, value in edits.items():
+        if field == "type" and (not isinstance(value, str) or value not in {"once", "continuous"}):
+            raise ValueError("Arbeitsmodus muss once oder continuous sein")
         if field == "pickup_filter":
             edits[field] = _validated_worker_pickup_filter(value)
         if field == "persistent_opt_in":

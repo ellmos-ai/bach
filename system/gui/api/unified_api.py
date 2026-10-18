@@ -3579,7 +3579,10 @@ async def update_system_worker_configuration(worker_id: str, request: Request, p
     if set(payload) != {"configuration_version", "configuration"} or not isinstance(payload["configuration"], dict):
         raise HTTPException(400, "Worker-Konfiguration und Versionsbeleg erforderlich")
     config = await _validated_worker_config(payload["configuration"], device_token)
-    config.pop("type", None)
+    # An explicit execution mode is part of the saved CAS configuration.
+    # Omitted creation defaults must not change an existing profile's mode.
+    if "type" not in payload["configuration"]:
+        config.pop("type", None)
     config.pop("ttl_seconds", None)
     try:
         return await asyncio.to_thread(update_worker_configuration, worker_id, payload["configuration_version"],
