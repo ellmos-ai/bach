@@ -954,14 +954,14 @@ def _bound_worker_prompt(binding, prompt):
         )
     return (f"{prompt}\n\nAktuell übernommener Auftrag: Task #{binding.task_id}. "
             "Bearbeite ausschließlich diesen Auftrag. Gib dein fachliches Ergebnis mit "
-             "task_manage(action='submit_result', task_id=<ID>, result='<fertiges Ergebnis>') "
-             "nur ab, wenn die Pflichtarbeit vollständig erledigt und geprüft ist. Bei Teilstand nutze "
-             "task_manage(action='update', status='pending'); Teilstand gehört nicht in Review. "
+             "task_manage(action='submit_result', task_id=<ID>, result='<fertiges Ergebnis>', complete=true) "
+             "nur ab, wenn die Pflichtarbeit vollständig erledigt und geprüft ist. Bei Teilstand gib "
+             "task_manage(action='submit_result', task_id=<ID>, result='<bisheriger Stand>', complete=false) ab: "
+             "Der Teilstand wird in der Task gespeichert, sie bleibt offen; Teilstand gehört nicht in Review. "
              "Für einfache Tasks ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext "
              "als ausdrückliche Fertigmeldung. Nenne die tatsächlich erledigte Arbeit und Prüfung; "
-             "behaupte keine ungeprüfte Vollständigkeit. Ein begonnener JSON-Selbstcheck mit "
-             "complete=false oder offener Pflichtarbeit gilt nicht als fertiges Ergebnis. "
-             "Bei offenen Pflichtpunkten kein submit_result. "
+             "behaupte keine ungeprüfte Vollständigkeit. Ein Ergebnistext mit offener Pflichtarbeit "
+             "ist kein fertiges Ergebnis und bekommt complete=false. "
              "Der Abschluss folgt dem konfigurierten Modus; Nutzer- und GitHub-Freigaben bleiben eigenständig. "
              "update(status=done) oder close_parent=true ersetzen keine Abnahme."
             + correction_notice + "\n" + json.dumps(content, ensure_ascii=False))
@@ -4643,14 +4643,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             elif w.get("task_id"):
                 initial_prompt = (
                     f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
-                    f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>'). "
+                    f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>', complete=true). "
                     "Bei Hindernissen nicht als erledigt markieren; dokumentiere den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "hintergrund_worker":
                 initial_prompt = (
                     "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die "
                     "wichtigste passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                    "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>'). Bei Hindernissen bleibt die Task offen; "
+                    "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true). Bei Hindernissen bleibt die Task offen; "
                     "nenne den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "boss_routing":
@@ -4676,7 +4676,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             else:
                 initial_prompt = w.get("task_prompt") or (
                     "Prüfe offene Aufgaben und beginne mit der Bearbeitung. Markiere eine Task erst nach "
-                    "Bearbeitung mit task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
+                    "Bearbeitung mit task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true)."
                 )
 
             prompt_to_run = initial_prompt
@@ -5283,7 +5283,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     prompt_to_run = (
                         "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die nächste "
                         "wichtige passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                        "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
+                        "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true)."
                     )
                 else:
                     # Do not abandon or mark an unverified task complete.
