@@ -81,7 +81,8 @@ def test_review_children_submit_their_verdict_without_the_flag():
 
 def test_update_done_alias_with_complete_false_still_validates_the_result():
     reply, calls = _run({"action": "update", "task_id": 7, "status": "done", "result": "  ", "complete": False})
-    assert "Ergebnis" in reply and calls == []
+    # #379 contract: result validation answers with the typed neutral text.
+    assert "Taskergebnis ist ungültig" in reply and calls == []
 
 
 def test_partial_state_replaces_the_previous_partial_block():
