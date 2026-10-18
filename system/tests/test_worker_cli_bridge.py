@@ -19,7 +19,7 @@ def test_bound_claude_uses_only_private_tools_and_selected_configuration(bridge,
         calls.append((cmd, prompt, env, flags))
         client = WorkerToolClient.from_environment(env)
         assert any(t["function"]["name"] == "task_manage" for t in client.tools())
-        result, failed = client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs"})
+        result, failed = client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs", "complete": True})
         assert not failed
         return result
     monkeypatch.setattr(backend, "_run_subprocess", physical)
@@ -124,7 +124,7 @@ def test_bound_command_mcp_child_uses_actual_stdio_and_reaches_terminal(bridge, 
                     await session.initialize()
                     tools = await session.list_tools()
                     assert any(t.name == "task_manage" for t in tools.tools)
-                    response = await session.call_tool("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs"})
+                    response = await session.call_tool("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs", "complete": True})
                     assert not response.isError
                     return response.content[0].text
         return asyncio.run(use_shim())  # Both SDK contexts close the actual child.
@@ -164,7 +164,7 @@ def test_policy_downgrade_after_tools_list_blocks_actual_cli_mutation(bridge, mo
         assert client.tools()
         permitted[0] = False
         with pytest.raises(RuntimeError):
-            client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs"})
+            client.call("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs", "complete": True})
         return "downgrade was denied"
     monkeypatch.setattr(backend, "_run_subprocess", physical)
     result = asyncio.run(backend.chat_bound([], binding=bridge.binding, mode="safe", guard=guard))
