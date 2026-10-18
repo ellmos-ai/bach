@@ -191,6 +191,32 @@ def _handoff_metadata_failure(metadata):
     return None
 
 
+def _complete_reserve_reply_within_context(result, context_limit):
+    """A soft handoff watermark must not discard a verified closing reply.
+
+    This only validates the delivered response. Tool grants, task binding,
+    request budgets and tracing still apply at their normal boundaries.
+    Missing or contradictory backend counters retain the fail-closed path.
+    """
+    metadata, valid, present = _handoff_completion_metadata(result)
+    if not present or not valid:
+        return False
+    if (type(context_limit) is not int or context_limit <= 0
+            or metadata["requested_num_ctx"] != context_limit
+            or not metadata["stream_completed"] or metadata["done_reason"] != "stop"):
+        return False
+    prompt = metadata["prompt_tokens"]
+    generated = metadata["eval_tokens"]
+    if (type(prompt) is not int or prompt <= 0 or type(generated) is not int
+            or type(result.get("prompt_tokens")) is not int
+            or result["prompt_tokens"] != prompt or prompt + generated > context_limit):
+        return False
+    tool_calls = result.get("tool_calls")
+    if tool_calls is not None and not isinstance(tool_calls, list):
+        return False
+    return metadata["tool_call_count"] == len(tool_calls or [])
+
+
 try:
     from ellmos_chat import (
         ChatRuntime as _ModuleChatRuntime,
@@ -2714,9 +2740,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     except Exception:
                         pass
 
-            if self._context_voll(
-                result, session, context_limit=context_limit
-            ):
+            if (self._context_voll(result, session, context_limit=context_limit)
+                    and not (completion_reserve
+                             and _complete_reserve_reply_within_context(result, context_limit))):
                 if completion_reserve:
                     session.current_tool = ""
                     return FailedAnswer.from_exception(RuntimeError(
