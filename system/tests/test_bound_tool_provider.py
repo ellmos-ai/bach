@@ -124,13 +124,20 @@ def test_private_provider_policy_guard_is_checked_before_every_operation(binding
 
 
 @pytest.mark.parametrize("serialized", [False, True])
-def test_real_native_process_accepts_only_actual_cli_completion_ack(binding, serialized):
+def test_real_native_process_accepts_only_actual_cli_completion_ack(binding, serialized, monkeypatch):
     import asyncio
     import json
     from hub._services.chat.chat_runtime import ChatRuntime
+    from system.tests.test_task_lease_client_review import T0
+    monkeypatch.setattr("hub._services.task_lease._utcnow", lambda: T0)
     calls = []
     class Backend:
         def get_default_model(self): return "isolated-model"
+        def tool_response_message(self, content, tool_call_id=""):
+            message = {"role": "tool", "content": str(content)}
+            if tool_call_id:
+                message["tool_call_id"] = str(tool_call_id)
+            return message
         async def chat(self, messages, **kwargs):
             calls.append(messages)
             args = {"handler": "task", "operation": "done",
