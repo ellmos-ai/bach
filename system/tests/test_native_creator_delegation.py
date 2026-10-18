@@ -26,7 +26,8 @@ from system.tests.test_task_lease_client import _init_db
 def prepared(tmp_path, monkeypatch):
     monkeypatch.delenv("BACH_TASK_LEASE_CREATOR_WINDOW", raising=False)
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
-    assert task_lease.LeaseConfig.from_env().creator_window_seconds == 600
+    # BACH #2231: no global window; the open sequence grant keeps the 10-minute gate.
+    assert task_lease.LeaseConfig.from_env().creator_window_seconds is None
     path = tmp_path / "authority.db"
     db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row

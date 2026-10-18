@@ -106,7 +106,7 @@ class TestToolPayloadLogging:
 
         assert calls == [["codex", "exec", full_prompt]]
         if missing_cli:
-            assert "CLI nicht gefunden" in result
+            assert result == "Delegationsanbieter ist nicht verfügbar."
         else:
             assert result == "synthetic-response"
         assert "DELEGATE: execution requested (payload omitted)" in caplog.text
