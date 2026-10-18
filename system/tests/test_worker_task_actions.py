@@ -274,6 +274,7 @@ def test_real_runtime_boundary_and_tool_ack(runtime_binding, monkeypatch, tool_a
                     "task_id": binding.task_id}
             if tool_action == "done":
                 args["result"] = "Konkretes Ergebnis statt angeforderter Zerlegung"
+                args["complete"] = True  # #425: bound submissions state completion explicitly
             if tool_action in {"decompose", "update-then-decompose"}:
                 args["subtasks"] = [{"title": "Teilauftrag"}]
             tools = [{"function": {"name": "task_manage", "arguments": args}}]
