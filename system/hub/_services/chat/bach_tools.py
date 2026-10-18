@@ -11,6 +11,7 @@ lazily import ``hub._services.*``. The module never sees any of that -- it asks
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib
 import inspect
 import io
@@ -73,20 +74,32 @@ _COMPLETE_FLAG_HINT = (
 
 
 _PARTIAL_STATE_MARK = "\n\nTeilstand (Worker, "
+_PARTIAL_STATE_SEAL_RE = re.compile(
+    r"\n<!-- bach-worker-partial:v1 start=(\d{1,10}) chars=(\d{1,10}) sha256=([0-9a-f]{64}) -->"
+)
 
 
 def _return_partial_state(binding, args):
-    """BACH #2210: keep the original task text, replace any earlier partial state, return it open."""
+    """Replace only an intact, bounded partial state; preserve surrounding task text."""
     task_id = args["task_id"]
     description = binding.task_snapshot().get("description") or ""
-    # One block only: a later partial state supersedes the previous one, so the text cannot grow per round.
-    earlier = description.rfind(_PARTIAL_STATE_MARK)
-    if earlier >= 0:
-        description = description[:earlier]
+    # The old free-form format has no known end. Preserve legacy/edited blocks
+    # once rather than discard later decomposition receipts or operator notes.
+    # The final seal belongs to the outer block, even if result quotes a seal.
+    seals = list(_PARTIAL_STATE_SEAL_RE.finditer(description))
+    if seals:
+        seal = seals[-1]
+        start = seal.start() - int(seal.group(2))
+        previous = description[max(0, start):seal.start()]
+        if (start == int(seal.group(1)) and previous.startswith(_PARTIAL_STATE_MARK)
+                and hashlib.sha256(previous.encode("utf-8")).hexdigest() == seal.group(3)):
+            description = description[:start] + description[seal.end():]
     block = (f"{_PARTIAL_STATE_MARK}{datetime.now().strftime('%Y-%m-%d %H:%M')}, complete=false):\n"
              f"{str(args.get('result') or '').strip()}")
+    seal = (f"\n<!-- bach-worker-partial:v1 start={len(description)} chars={len(block)} "
+            f"sha256={hashlib.sha256(block.encode('utf-8')).hexdigest()} -->")
     binding.execute_task_manage({"action": "update", "task_id": task_id,
-                                 "description": description + block}, _dispatch_marked=True)
+                                 "description": description + block + seal}, _dispatch_marked=True)
     binding.execute_task_manage({"action": "update", "task_id": task_id, "status": "pending"},
                                 _dispatch_marked=True)
     return f"Task #{task_id}: Teilstand gespeichert und offen zurückgegeben (pending); kein Abschluss."

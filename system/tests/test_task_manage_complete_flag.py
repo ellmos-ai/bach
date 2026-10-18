@@ -60,7 +60,7 @@ def test_complete_false_keeps_the_task_text_appends_the_partial_state_and_return
     assert "pending" in reply and "kein Abschluss" in reply
     assert len(calls) == 2
     assert calls[0]["action"] == "update" and calls[0]["description"].startswith("Originalauftrag\n\nTeilstand (Worker, ")
-    assert calls[0]["description"].endswith("Nur config.json gelesen; Rest offen.")
+    assert "Nur config.json gelesen; Rest offen." in calls[0]["description"]
     assert calls[1] == {"action": "update", "task_id": 7, "status": "pending"}
     assert not any(call["action"] == "submit_result" for call in calls)
 
@@ -85,13 +85,65 @@ def test_update_done_alias_with_complete_false_still_validates_the_result():
 
 
 def test_partial_state_replaces_the_previous_partial_block():
-    binding = _Binding()
-    binding.task_snapshot = lambda: {"description": "Original\n\nTeilstand (Worker, 2026-10-17 20:00, complete=false):\nalt",
-                                     "result_max_chars": None}
-    bach_tools._return_partial_state(binding, {"task_id": 7, "result": "neu"})
-    description = binding.calls[0]["description"]
-    assert description.startswith("Original\n\nTeilstand (Worker, ") and description.endswith("neu")
+    previous = _saved_partial("Original", "alt")
+    description = _saved_partial(previous, "neu")
+    assert description.startswith("Original\n\nTeilstand (Worker, ")
+    assert "neu" in description
     assert description.count("Teilstand (Worker, ") == 1 and "alt" not in description
+
+
+def _saved_partial(description, result):
+    binding = _Binding()
+    binding.task_snapshot = lambda: {"description": description, "result_max_chars": None}
+    bach_tools._return_partial_state(binding, {"task_id": 7, "result": result})
+    assert binding.calls[1] == {"action": "update", "task_id": 7, "status": "pending"}
+    return binding.calls[0]["description"]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_partial_replacement_preserves_later_child_ids_and_notes(legacy):
+    previous = ("Original\n\nTeilstand (Worker, 2026-10-17 20:00, complete=false):\nalt"
+                if legacy else _saved_partial("Original", "alt"))
+    suffix = "\n[In 2 Teilaufgaben zerlegt: [8, 9]]\nNachtrag: Ergänzung für die nächste Bearbeitung."
+    description = _saved_partial(previous + suffix, "neu")
+    assert suffix in description
+    if legacy:
+        # The end of the old free-form block is unknown: preserve it once.
+        assert previous in description
+    else:
+        assert "alt" not in description
+    latest = _saved_partial(description, "aktuell")
+    assert suffix in latest and "neu" not in latest
+    assert latest.count("Teilstand (Worker, ") == (2 if legacy else 1)
+
+
+def test_partial_replacement_treats_marker_text_in_result_as_payload():
+    nested = _saved_partial("", "Markerbeispiel")
+    previous = _saved_partial("Original", "Zitat:\n" + nested + "\nDanach folgt noch echter Teilstand.")
+    suffix = "\n[In 2 Teilaufgaben zerlegt: [8, 9]]"
+    description = _saved_partial(previous + suffix, "aktuell: Änderungen noch offen")
+    assert description.startswith("Original" + suffix)
+    assert "Markerbeispiel" not in description and "Danach folgt" not in description
+    assert description.count("Teilstand (Worker, ") == 1
+
+
+def test_copied_sealed_block_in_later_notes_is_not_removed():
+    previous = _saved_partial("Original", "alter Stand")
+    note = "\nOperatornotiz: Beispiel einer früheren Antwort" + previous[len("Original"):]
+    description = _saved_partial(previous + note, "Zwischenstand")
+    assert description.startswith(previous + note)
+    latest = _saved_partial(description, "Aktueller Stand")
+    assert latest.startswith(previous + note)
+    assert "Zwischenstand" not in latest
+
+
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("replacement", ["neuer Stand", "vom Nutzer ergänzter Stand"])
+def test_changed_partial_block_is_preserved_when_its_boundary_cannot_be_verified(nested, replacement):
+    result = "alter Stand" + (_saved_partial("", "Markerbeispiel") if nested else "")
+    previous = _saved_partial("Original", result)
+    changed = previous.replace("alter Stand", replacement)
+    assert changed in _saved_partial(changed, "neuer Stand")
 
 
 @pytest.mark.parametrize("tail, expected", [

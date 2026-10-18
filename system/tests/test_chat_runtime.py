@@ -1624,7 +1624,8 @@ def test_model_sees_round_budget_and_early_decomposition_warning(monkeypatch, ma
 
 
 @pytest.mark.parametrize("after_handoff", [False, True])
-def test_decomposition_prompt_returns_parent_with_saved_partial_state(after_handoff):
+@pytest.mark.parametrize("previous_partial", [None, "legacy", "sealed"])
+def test_decomposition_prompt_returns_parent_with_saved_partial_state(after_handoff, previous_partial):
     """Following the actual model instruction must not submit unfinished parent work."""
     import json
     import re
@@ -1651,17 +1652,32 @@ def test_decomposition_prompt_returns_parent_with_saved_partial_state(after_hand
         _init_db(conn)
         conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
         tid = _insert_task(conn, "Implement both required changes")
-        conn.execute("UPDATE tasks SET description=? WHERE id=?", ("Originalauftrag: beide Änderungen umsetzen.", tid))
+        original = "Originalauftrag: beide Änderungen umsetzen."
+        if previous_partial == "legacy":
+            original += "\n\nTeilstand (Worker, 2026-10-17 20:00, complete=false):\nErster Schritt offen."
+        conn.execute("UPDATE tasks SET description=? WHERE id=?", (original, tid))
         conn.commit()
         client = TaskLeaseClient(conn=conn)
-        binding = WorkerLeaseBinding.acquire(
-            client, tid, worker_id="decomposition-test@HOST", host="HOST",
-            generation="decomposition-test", is_current=lambda: True,
-            stop_event=threading.Event(), clock=lambda: T0)
+        def acquire():
+            return WorkerLeaseBinding.acquire(
+                client, tid, worker_id="decomposition-test@HOST", host="HOST",
+                generation="decomposition-test", is_current=lambda: True,
+                stop_event=threading.Event(), clock=lambda: T0)
+        binding = acquire()
+        if previous_partial == "sealed":
+            exec_tool("task_manage", {"action": "submit_result", "task_id": tid,
+                "result": "Erster Schritt offen.", "complete": False}, "safe",
+                worker_task_binding=binding, allowed_tools=["task_manage"])
+            assert not client.read(tid).leased
+            binding = acquire()
         receipt = binding.execute_task_manage({"action": "decompose", "task_id": tid,
             "subtasks": [{"title": "First required change"}, {"title": "Second required change"}],
             "close_parent": False})
-        partial = "Zerlegung bestätigt: " + receipt + "; beide Änderungen bleiben offen."
+        assert "Teilaufgaben zerlegt" in receipt
+        decomposed_description = client.task_snapshot(tid)["description"]
+        child_marker = re.search(r"\[In 2 Teilaufgaben zerlegt: [^\n]+", decomposed_description).group(0)
+        # The persisted tool receipt must survive even when the model omits IDs.
+        partial = "Teilaufgaben angelegt; beide Änderungen bleiben offen."
         response = exec_tool("task_manage", {"action": "submit_result", "task_id": tid,
             "result": partial, "complete": complete}, "safe",
             worker_task_binding=binding, allowed_tools=["task_manage"])
@@ -1669,6 +1685,7 @@ def test_decomposition_prompt_returns_parent_with_saved_partial_state(after_hand
         assert parent["status"] == "pending", response
         assert parent["description"].startswith("Originalauftrag: beide Änderungen umsetzen.")
         assert partial in parent["description"]
+        assert child_marker in parent["description"]
         assert client.read(tid).leased is False
         assert not binding.completed_task_ids and not binding.reviewed_task_ids
         assert conn.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (tid,)).fetchone()[0] == 2
