@@ -751,17 +751,23 @@ def test_persisted_scopes_compose_with_installed_open_ocean_policy(mem_db):
     assert read_client.task_result_snapshot(read_task_id)["status"] == "review"
 
     accept_record = accept_readback["result"]
-    accept_result(
-        mem_db, accept_task_id,
-        accept_record["result_id"],
-        digest=accept_record["result_sha256"],
-        task_version=accept_record["task_version"],
-        status_revision=accept_readback["status_revision"],
-        service_id=service_id,
-        service_token=service_token,
-        service_revision=1,
-    )
-    assert accept_client.task_result_snapshot(accept_task_id)["result"]["accepted"] is True
+    # Under the worker completion policy every canonical submission is policy-bound (version 1),
+    # so only an authenticated operator review may complete it and the scoped service is refused.
+    with pytest.raises(ResultServicePermissionDenied) as policy_denied:
+        accept_result(
+            mem_db, accept_task_id,
+            accept_record["result_id"],
+            digest=accept_record["result_sha256"],
+            task_version=accept_record["task_version"],
+            status_revision=accept_readback["status_revision"],
+            service_id=service_id,
+            service_token=service_token,
+            service_revision=1,
+        )
+    assert policy_denied.value.code == "completion_policy_operator_review_required"
+    accept_snapshot = accept_client.task_result_snapshot(accept_task_id)
+    assert accept_snapshot["status"] == "review"
+    assert accept_snapshot["result"]["accepted"] is False
 
     correction_ack = request_result_correction(
         mem_db,
