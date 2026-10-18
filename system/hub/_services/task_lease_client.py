@@ -1415,6 +1415,7 @@ _RESULT_SERVICE_SAFE_ERRORS = {
     "service_revision_conflict": "Service-Scope hat sich geändert; bitte neu laden",
     "result_changed_reload": "Ergebnis oder Task hat sich geändert; bitte neu laden",
     "task_not_revisable": "Task ist für diese Aktion nicht freigegeben",
+    "completion_policy_operator_review_required": "Policyverwalteter Abschluss benötigt die Operator-Prüfung",
     "correction_request_invalid": "Korrekturanfrage ist ungültig",
     "result_service_unavailable": "Ergebnisreview-Dienst ist nicht verfügbar",
     "result_history_unavailable": "Ergebnisverlauf ist nicht verfügbar",
