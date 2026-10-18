@@ -12,6 +12,7 @@ import threading
 import uuid
 
 from .bach_tools import BachToolProvider
+from .worker_tool_errors import envelope_for, transport_error
 from .worker_tool_trace import digest_json, digest_text
 
 
@@ -20,8 +21,9 @@ _MAX_BODY = 262_144
 
 
 class _Rejected(Exception):
-    def __init__(self, status):
+    def __init__(self, status, payload=None):
         self.status = status
+        self.payload = payload
 
 
 class _OwnedServer(ThreadingHTTPServer):
@@ -107,7 +109,7 @@ class WorkerToolBridge:
                         raise _Rejected(404)
                     self._reply(200, result)
                 except _Rejected as exc:
-                    self._reply(exc.status, {"error": "Werkzeugaufruf nicht bestätigt"})
+                    self._reply(exc.status, exc.payload or {"error": "Werkzeugaufruf nicht bestätigt"})
 
             def do_GET(self): self._handle("GET")
             def do_POST(self): self._handle("POST")
@@ -129,6 +131,35 @@ class WorkerToolBridge:
         self._check()
         return {"tools": self._provider.get_tools(self._mode)}
 
+    def _quarantine(self, request_id, message, error, *, trace_identity=None):
+        if trace_identity is not None:
+            try:
+                self.binding.trace_tool_phase(trace_identity, "failed")
+            except Exception:  # noqa: BLE001, S110 -- Trace failure details are deliberately suppressed before quarantine.
+                pass
+        if isinstance(error, dict) and error.get("effect_state") == "unknown":
+            try:
+                # Ask the bound authority to block an uncertain dispatched task
+                # before revoking the local transport binding. The response below
+                # never claims that the canonical release ACK was received.
+                self.binding.quarantine_lease()
+            except Exception:  # noqa: BLE001, S110 -- Canonical quarantine failures stay unknown and are not exposed.
+                pass
+        try:
+            self.binding.invalidate()
+        except Exception:  # noqa: BLE001, S110 -- Binding invalidation details are deliberately suppressed during quarantine.
+            pass
+        raise _Rejected(503, {
+            "request_id": request_id,
+            "receipt_id": None,
+            "generation": self.binding.generation,
+            "task_id": self.binding.task_id,
+            "result": message,
+            "is_error": True,
+            "error": error,
+            "quarantined": True,
+        })
+
     def _call(self, body):
         if (not isinstance(body, dict) or set(body) != {"request_id", "previous_receipt", "name", "arguments"}
                 or not isinstance(body["request_id"], str) or not _ID.fullmatch(body["request_id"])
@@ -145,23 +176,51 @@ class WorkerToolBridge:
             if body["name"] not in {tool["function"]["name"] for tool in offered}:
                 raise _Rejected(403)
             self._seen.add(body["request_id"])
+            correlation = {"request_id": body["request_id"], "generation": self.binding.generation,
+                           "task_id": self.binding.task_id, "receipt_id": None}
             try:
                 trace_identity = self.binding.trace_tool_started(
                     source="cli-relay", request_id=body["request_id"], tool_name=body["name"],
                     arguments_sha256=digest_json(body["arguments"]))
             except Exception:
-                raise _Rejected(503) from None
+                self._quarantine(
+                    body["request_id"], "Werkzeugstart nicht bestätigt; keine Wiederholung",
+                    transport_error("trace_unavailable", correlation))
+
             try:
                 result = self._provider.execute(body["name"], body["arguments"], self._mode)
             except BaseException:
-                try:
-                    self.binding.trace_tool_phase(trace_identity, "failed")
-                except Exception:
-                    pass
-                self.binding.invalidate()
-                raise _Rejected(503) from None
+                self._quarantine(
+                    body["request_id"], "Werkzeugausführung nicht bestätigt; keine Wiederholung",
+                    transport_error("tool_execution_unconfirmed", correlation),
+                    trace_identity=trace_identity)
+            if not isinstance(result, str):
+                self._quarantine(
+                    body["request_id"], "Werkzeugausführung nicht bestätigt; keine Wiederholung",
+                    transport_error("tool_execution_unconfirmed", correlation),
+                    trace_identity=trace_identity)
+            try:
+                safe_result = str(result).replace(self._token, "[redacted]")
+                unbound_error = envelope_for(result, correlation)
+            except Exception:  # noqa: BLE001 -- Malformed result stringification must quarantine without exception details.
+                self._quarantine(
+                    body["request_id"], "Werkzeugausführung nicht bestätigt; keine Wiederholung",
+                    transport_error("tool_execution_unconfirmed", correlation),
+                    trace_identity=trace_identity)
+            if unbound_error is not None and unbound_error["effect_state"] == "unknown":
+                self._quarantine(
+                    body["request_id"], safe_result, unbound_error,
+                    trace_identity=trace_identity)
+
             receipt = uuid.uuid4().hex
-            safe_result = str(result).replace(self._token, "[redacted]")
+            returned_correlation = {**correlation, "receipt_id": receipt}
+            try:
+                error = envelope_for(result, returned_correlation)
+            except Exception:  # noqa: BLE001 -- Envelope construction failure must quarantine without exception details.
+                self._quarantine(
+                    body["request_id"], "Werkzeugausführung nicht bestätigt; keine Wiederholung",
+                    transport_error("tool_execution_unconfirmed", correlation),
+                    trace_identity=trace_identity)
             self._pending = (body["request_id"], receipt)
             self._pending_trace = trace_identity
             try:
@@ -169,12 +228,16 @@ class WorkerToolBridge:
                     trace_identity, "returned", receipt_id=receipt,
                     result_sha256=digest_text(safe_result))
             except Exception:
-                self.binding.invalidate()
-                raise _Rejected(503) from None
-            return {"request_id": body["request_id"], "receipt_id": receipt,
-                    "generation": self.binding.generation, "task_id": self.binding.task_id,
-                    "result": safe_result,
-                    "is_error": safe_result.startswith(("BLOCKIERT:", "Taskoperation nicht bestätigt", "Taskbindung fehlt"))}
+                self._quarantine(
+                    body["request_id"], "Werkzeugantwort nicht bestätigt; keine Wiederholung",
+                    transport_error("returned_trace_unconfirmed", correlation),
+                    trace_identity=None)
+            result_payload = {"request_id": body["request_id"], "receipt_id": receipt,
+                              "generation": self.binding.generation, "task_id": self.binding.task_id,
+                              "result": safe_result, "is_error": error is not None}
+            if error is not None:
+                result_payload["error"] = error
+            return result_payload
 
     def _ack(self, body):
         if not isinstance(body, dict) or set(body) != {"request_id", "receipt_id"}:

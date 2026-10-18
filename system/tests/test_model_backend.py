@@ -1160,3 +1160,86 @@ def test_hermes_fails_after_max_retries_on_429(monkeypatch):
     with pytest.raises(RuntimeError, match="Hermes/OpenRouter Fehler \\(429\\)"):
         asyncio.run(backend.chat([{"role": "user", "content": "hallo"}]))
 
+
+
+@pytest.mark.parametrize("exception_type,kind,error_type", [
+    (httpx.ConnectTimeout, "connect_timeout", "ConnectTimeout"),
+    (httpx.ReadTimeout, "read_timeout", "ReadTimeout"),
+    (httpx.WriteTimeout, "write_timeout", "WriteTimeout"),
+    (httpx.PoolTimeout, "pool_timeout", "PoolTimeout"),
+    (httpx.TimeoutException, "transport_timeout", "TimeoutException"),
+    (httpx.ConnectError, "connection_error", "ConnectError"),
+    (httpx.ReadError, "transport_error", "RequestError"),
+])
+@pytest.mark.parametrize("message", ["", "PRIVATE_EXCEPTION_TEXT"])
+def test_openrouter_transport_failure_is_typed_safe_and_retry_compatible(
+        monkeypatch, caplog, exception_type, kind, error_type, message):
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    request = httpx.Request("POST", "https://private.invalid/PRIVATE_URL")
+    calls, sleeps = [], []
+    class FailingClient(_FakeClient):
+        async def post(self, *args, **kwargs):
+            calls.append(kwargs)
+            raise exception_type(message, request=request)
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: FailingClient(None))
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    backend = OpenRouterBackend(api_key="PRIVATE_API_KEY", default_model="openrouter/free")
+    with pytest.raises(BackendRequestFailure) as caught:
+        asyncio.run(backend.chat([{"role": "user", "content": "synthetic"}]))
+    assert isinstance(caught.value, RuntimeError)
+    assert len(calls) == 4 and sleeps == [2.0, 4.0, 8.0]
+    assert all(call["timeout"] == 120 for call in calls)
+    assert all(call["json"]["model"] == "openrouter/free" for call in calls)
+    detail = caught.value.backend_error
+    assert detail["provider"] == "openrouter" and detail["kind"] == kind
+    assert detail["error_type"] == error_type and detail["quota_exceeded"] is False
+    assert "status_code" not in detail and "retry_after_seconds" not in detail
+    assert error_type in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__ is True
+    assert "PRIVATE" not in str(caught.value) + json.dumps(detail) + caplog.text
+
+
+@pytest.mark.parametrize("status", [301, 400, 401, 429, 500, 502, 503, 504, 529])
+def test_hermes_http_failure_never_reads_body_or_changes_retry_statuses(
+        monkeypatch, caplog, status):
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    class UnreadableBody(httpx.Response):
+        def json(self):
+            raise AssertionError("error body must not be parsed")
+        @property
+        def text(self):
+            raise AssertionError("error body must not be read")
+    response = UnreadableBody(status, request=httpx.Request(
+        "POST", "https://private.invalid/PRIVATE_URL"), content=b"PRIVATE_BODY",
+        headers={"Retry-After": "0.25", "private-header": "PRIVATE_HEADER"})
+    calls, sleeps = [], []
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _FakeClient(response, calls))
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    backend = HermesBackend(api_key="PRIVATE_API_KEY", default_model="openrouter/free")
+    with pytest.raises(BackendRequestFailure) as caught:
+        asyncio.run(backend.chat([{"role": "user", "content": "synthetic"}]))
+    retryable = status in (429, 502, 503, 529)
+    assert len(calls) == (4 if retryable else 1)
+    assert sleeps == ([0.25] * 3 if retryable else [])
+    detail = caught.value.backend_error
+    assert detail["kind"] == "http_error" and detail["error_type"] == "HTTPStatusError"
+    assert detail["status_code"] == status and detail["quota_exceeded"] is False
+    assert "quota_period" not in detail and "retry_after_seconds" not in detail
+    assert "PRIVATE" not in str(caught.value) + json.dumps(detail) + caplog.text
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__ is True
+
+
+@pytest.mark.parametrize("base_url,provider", [
+    ("https://openrouter.ai/api/v1", "openrouter"),
+    ("https://OPENROUTER.AI/api/v1", "openrouter"),
+    ("http://127.0.0.1:8000/v1", "hermes"),
+    ("https://openrouter.ai.private.invalid/v1", "hermes"),
+])
+def test_hermes_error_identity_does_not_relabel_other_endpoints(base_url, provider):
+    backend = HermesBackend(api_key="synthetic", base_url=base_url)
+    assert backend._error_provider() == provider
+    assert backend.base_url == base_url

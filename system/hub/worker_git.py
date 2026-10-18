@@ -581,7 +581,9 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
             if isinstance(task_id, bool) or not str(task_id).isdecimal() or int(task_id) <= 0:
                 raise ValueError("Task-ID ist ungültig")
             generation = uuid.uuid4().hex
-            host = socket.gethostname()
+            # The lease host is a bounded machine identifier, not a full DNS
+            # name. Match the short-host convention used by manual task claims.
+            host = socket.gethostname().split(".", 1)[0]
             binding = WorkerLeaseBinding.acquire(TaskLeaseClient(db_path=db_path or BACH_DB), int(task_id),
                 worker_id=f"worktree-finish-{generation}@{host}", host=host, generation=generation,
                 is_current=lambda: True, stop_event=threading.Event())

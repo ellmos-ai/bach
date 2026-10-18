@@ -57,6 +57,89 @@ class TestExecuteCommandRejectsChaining:
         assert "Full-Modus" in result
 
 
+class TestToolPayloadLogging:
+    def test_command_payload_reaches_executor_but_not_log(self, monkeypatch, caplog):
+        from hub._services.chat import bach_tools
+
+        command = "echo synthetic-private-command"
+        calls = []
+
+        def execute(cmd, timeout, allowed):
+            calls.append((cmd, timeout, allowed))
+            return "synthetic-command-result"
+
+        monkeypatch.setattr(bach_tools, "run_shell_restricted", execute)
+        with caplog.at_level("INFO", logger="bach.chat"):
+            result = bach_tools.exec_tool(
+                "execute_command", {"command": command, "timeout": 17}, "full",
+            )
+
+        assert calls == [(command, 17, None)]
+        assert result == "synthetic-command-result"
+        assert "FULL-CMD" in caplog.text
+        assert command not in caplog.text
+        assert "synthetic-private-command" not in caplog.text
+
+    @pytest.mark.parametrize("missing_cli", [False, True])
+    def test_delegate_cli_payload_reaches_executor_but_not_log(
+        self, monkeypatch, caplog, missing_cli,
+    ):
+        from hub._services.chat import bach_tools
+
+        prompt = "synthetic-private-instruction"
+        context = "synthetic-private-context"
+        full_prompt = f"Kontext: {context}\n\nAufgabe: {prompt}"
+        calls = []
+        monkeypatch.setenv("BACH_DELEGATION_DEPTH", "0")
+
+        def execute(argv, **kwargs):
+            calls.append(argv)
+            if missing_cli:
+                raise FileNotFoundError("synthetic missing CLI")
+            return subprocess.CompletedProcess(argv, 0, stdout="synthetic-response", stderr="")
+
+        monkeypatch.setattr(bach_tools.subprocess, "run", execute)
+        with caplog.at_level("INFO", logger="bach.chat"):
+            result = bach_tools.exec_tool(
+                "delegate", {"target": "codex", "prompt": prompt, "context": context}, "full",
+            )
+
+        assert calls == [["codex", "exec", full_prompt]]
+        if missing_cli:
+            assert result == "Delegationsanbieter ist nicht verfügbar."
+        else:
+            assert result == "synthetic-response"
+        assert "DELEGATE: execution requested (payload omitted)" in caplog.text
+        assert "codex" not in caplog.text
+        assert prompt not in caplog.text
+        assert context not in caplog.text
+
+    def test_delegate_api_payload_reaches_executor_but_not_log(self, monkeypatch, caplog):
+        from hub._services.chat import bach_tools
+
+        prompt = "synthetic-private-api-instruction"
+        calls = []
+        monkeypatch.setenv("BACH_DELEGATION_DEPTH", "0")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-api-fixture")
+
+        def execute(supplied_prompt, supplied_key):
+            calls.append((supplied_prompt, supplied_key))
+            return "synthetic-api-response"
+
+        monkeypatch.setattr(bach_tools, "_delegate_claude_api", execute)
+        with caplog.at_level("INFO", logger="bach.chat"):
+            result = bach_tools.exec_tool(
+                "delegate", {"target": "claude", "prompt": prompt}, "full",
+            )
+
+        assert calls == [(prompt, "synthetic-api-fixture")]
+        assert result == "synthetic-api-response"
+        assert "DELEGATE: execution requested (payload omitted)" in caplog.text
+        assert "claude" not in caplog.text
+        assert prompt not in caplog.text
+        assert "synthetic-api-fixture" not in caplog.text
+
+
 class TestRunShellRestrictedNeverShellTrue(object):
     def test_never_calls_subprocess_with_shell_true(self, monkeypatch):
         seen = {}
@@ -470,6 +553,7 @@ def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path,
     import regex
     from hub import worker_git
     from hub._services.chat import worker_write_guard as guard
+    from hub._services.chat.worker_tool_errors import ToolErrorText
 
     repo = tmp_path / "repo"
     worktrees = tmp_path / "worktrees"
@@ -548,8 +632,14 @@ def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path,
         allowed_tools={"search_text", "start_task_worktree"},
     )
 
-    assert result == "BLOCKIERT: Suchmuster überschreitet das Zeitlimit"
-    assert "Tool-Fehler" not in result
+    assert type(result) is ToolErrorText
+    assert str(result) == "Werkzeugausführung nicht bestätigt; Wirkung unbekannt."
+    assert result._code == "bach_tool_effect_unconfirmed"
+    assert result._source == "bach_tools"
+    assert result._reason == "reason_unavailable"
+    assert result._effect_state == "unknown"
+    assert "synthetic regex timeout" not in str(result)
+    assert str(repo) not in str(result)
     assert len(opened) == 1
     stream, file_descriptor = opened[0]
     assert stream.closed

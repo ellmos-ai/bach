@@ -125,3 +125,108 @@ def test_unreadable_pointer_keeps_other_entries_available(tmp_path, monkeypatch,
     serialized = json.dumps(result)
     assert "NEVER_COPY" not in serialized and "/private/location" not in serialized
     assert path.read_bytes() == before
+
+_PUBLIC_PROVIDER_ERRORS = (
+    "policy_provider_not_configured",
+    "policy_provider_provenance_mismatch",
+    "policy_provider_import_mismatch",
+    "policy_provider_unavailable",
+    "policy_registry_missing",
+    "policy_registry_too_large",
+    "policy_registry_read_failed",
+)
+
+
+@pytest.mark.parametrize("reason", _PUBLIC_PROVIDER_ERRORS)
+def test_public_provider_errors_keep_existing_stable_codes(monkeypatch, reason):
+    def unavailable():
+        raise adapter.PolicyProviderUnavailable(reason)
+
+    monkeypatch.setattr(adapter, "_provider", unavailable)
+    assert adapter.provider_status()["reason"] == reason
+    with pytest.raises(HTTPException) as response:
+        asyncio.run(api.read_registry())
+    assert response.value.status_code == 503
+    assert response.value.detail == reason
+
+
+@pytest.mark.parametrize("boundary", ["capabilities", "governance"])
+def test_canonical_import_diagnostic_stays_out_of_public_responses(monkeypatch, tmp_path, boundary):
+    from hub import canonical_seam
+    from gui.api.gui_capabilities import declaration
+
+    package = tmp_path / "policy_registry" / "__init__.py"
+    package.parent.mkdir()
+    package.write_text("# synthetic package identity only\n", encoding="utf-8")
+    direct = {"url": adapter.REPOSITORY, "vcs_info": {"vcs": "git", "commit_id": adapter.PIN}}
+    distribution = SimpleNamespace(
+        version=adapter.VERSION,
+        read_text=lambda _name: json.dumps(direct),
+        locate_file=lambda _name: package,
+    )
+    monkeypatch.setenv("BACH_POLICY_REGISTRY_ENABLED", "1")
+    monkeypatch.setattr(adapter, "metadata", SimpleNamespace(distribution=lambda _name: distribution))
+    monkeypatch.setattr(adapter, "importlib", SimpleNamespace(
+        util=SimpleNamespace(find_spec=lambda _name: SimpleNamespace(origin=str(package))),
+    ))
+    marker = "synthetic-private-import-detail"
+    private_path = "C:/synthetic-private/provider.py"
+
+    def fail_import(_name):
+        raise ImportError(f"{marker}: {private_path}")
+
+    # Replace only the seam's dependency object, not process-wide import machinery.
+    monkeypatch.setattr(canonical_seam, "importlib", SimpleNamespace(import_module=fail_import))
+    monkeypatch.setattr(canonical_seam, "_points_elsewhere", lambda _seam: False)
+    with pytest.raises(adapter.PolicyProviderUnavailable) as diagnostic:
+        adapter._provider()
+    assert marker in str(diagnostic.value) and private_path in str(diagnostic.value)
+
+    if boundary == "capabilities":
+        status = adapter.provider_status()
+        payload = declaration(
+            [], {}, {},
+            {"policy-registry": {"adapter_registered": True, "available": False,
+                                 "reason_code": status["reason"]}},
+            module_sources=[status],
+        )
+        assert status["verified"] is False and status["runtime_verified"] is False
+        serialized = json.dumps(payload)
+        assert marker not in serialized and private_path not in serialized
+        assert status["reason"] == "policy_provider_unavailable"
+    else:
+        with pytest.raises(HTTPException) as response:
+            asyncio.run(api.read_registry())
+        assert response.value.status_code == 503
+        assert response.value.detail == "policy_provider_unavailable"
+        assert marker not in str(response.value) and private_path not in str(response.value)
+
+
+@pytest.mark.parametrize("reason", [
+    "policy_registry_missing: C:/synthetic-private/registry.json",
+    "Traceback: synthetic-private-import-detail",
+    "",
+    "unbekannter interner Fehler",
+])
+def test_unknown_provider_diagnostic_has_only_generic_public_reason(monkeypatch, reason):
+    def unavailable():
+        raise adapter.PolicyProviderUnavailable(reason)
+
+    monkeypatch.setattr(adapter, "_provider", unavailable)
+    assert adapter.provider_status()["reason"] == "policy_provider_unavailable"
+    with pytest.raises(HTTPException) as response:
+        asyncio.run(api.read_registry())
+    assert response.value.status_code == 503
+    assert response.value.detail == "policy_provider_unavailable"
+
+
+def test_successful_provider_status_remains_read_only_and_identity_bound(monkeypatch, tmp_path):
+    path = tmp_path / "registry.json"
+    path.write_text("{}", encoding="utf-8")
+    before = path.read_bytes()
+    monkeypatch.setattr(adapter, "_provider", lambda: Registry(path))
+    status = adapter.provider_status()
+    assert status["verified"] is True and status["runtime_verified"] is False
+    assert status["source_commit"] == adapter.PIN and status["version"] == adapter.VERSION
+    assert status["reason"] == "provider_identity_verified_registry_not_probed"
+    assert path.read_bytes() == before

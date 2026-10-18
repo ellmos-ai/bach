@@ -448,7 +448,16 @@ class FailedAnswer(str):
 
     @classmethod
     def from_exception(cls, exc: BaseException) -> "FailedAnswer":
-        """Convert a caught failure, redacting reserve details to a finite code."""
+        """Preserve typed request metadata and redact reserve details."""
+        from hub._services.llm.backend_errors import (
+            BackendRequestFailure,
+            normalize_backend_error,
+        )
+        if isinstance(exc, BackendRequestFailure):
+            detail = normalize_backend_error(getattr(exc, "backend_error", None))
+            if detail is not None and detail["provider"] in ("openrouter", "hermes"):
+                return cls(f"{cls.PREFIX}{detail['message']}", backend_error=detail)
+            return cls(f"{cls.PREFIX}Anbieterfehler ist nicht verifiziert.")
         reason_code, safe_message = _local_reserve_failure(exc)
         if reason_code is not None:
             return cls(f"{cls.PREFIX}{safe_message}", reason_code=reason_code)
@@ -816,6 +825,8 @@ class ChatRuntime(_ModuleChatRuntime):
         detail = normalize_backend_error(result.get("backend_error"))
         return bool(
             detail
+            # Before request metadata existed, only Ollama could reach this branch.
+            and detail.get("provider") == "ollama"
             and not detail.get("quota_exceeded")
             and detail.get("kind") in {"rate_limited", "http_error"}
             and detail.get("status_code") in {429, 502, 503, 504, 529}

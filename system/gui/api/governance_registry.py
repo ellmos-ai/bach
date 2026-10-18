@@ -1,7 +1,9 @@
 """Device-authenticated metadata reads from the canonical policy-registry."""
 import asyncio
 from fastapi import APIRouter, HTTPException, Query
-from hub._services.policy_registry_adapter import observe, PolicyProviderUnavailable, PolicySnapshotChanged
+from hub._services.policy_registry_adapter import (
+    observe, PolicyProviderUnavailable, PolicySnapshotChanged, public_unavailable_reason,
+)
 
 router = APIRouter(prefix="/api/governance", tags=["policy-registry"])
 
@@ -10,7 +12,7 @@ async def read_registry(**options):
     try:
         return await asyncio.to_thread(observe, **options)
     except PolicyProviderUnavailable as exc:
-        raise HTTPException(503, str(exc)) from None
+        raise HTTPException(503, public_unavailable_reason(exc)) from None
     except PolicySnapshotChanged as exc:
         raise HTTPException(409, str(exc)) from None
 

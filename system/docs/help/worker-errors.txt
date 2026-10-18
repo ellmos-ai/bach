@@ -76,3 +76,35 @@ Die Antwort enthält admission.admitted=false; eine Generation oder ein Thread
 wird dabei nicht angelegt. Lies den aktuellen system-slots-Konfigurationsstand
 erneut und sende eine bewusst neue Startanforderung. Andere nicht verifizierbare
 Slot- oder Admissionfehler bleiben HTTP 503 mit error_code=worker_slot_unavailable.
+
+
+OpenRouter-/Hermes-Transportfehler
+---------------------------------
+Der vorhandene Vertrag nimmt auch provider=openrouter und provider=hermes auf.
+OpenRouter wird nur für den tatsächlich konfigurierten Host openrouter.ai genannt;
+andere OpenAI-kompatible Hermes-Ziele erhalten die Adapterkennung hermes.
+error_type stammt aus festen HTTPX-Klassenfamilien: ConnectTimeout, ReadTimeout,
+WriteTimeout, PoolTimeout, TimeoutException, ConnectError, RequestError oder
+HTTPStatusError. Andere RequestError-Unterklassen werden nur als allgemeine
+RequestError-Familie klassifiziert; ihre beliebigen Klassennamen werden nicht
+übernommen. Leere Exceptiontexte verlieren deshalb die sichere Fehlerklasse nicht.
+HTTP-Status wird nur aus der tatsächlich vorhandenen HTTP-Fehlerantwort übernommen.
+Ausnahmetexte, URLs, Rohbodies, Schlüssel und Header werden weder angezeigt noch
+protokolliert. HTTP-Bodies werden hierfür nicht gelesen. quota_exceeded=false
+bedeutet hier keine Quotenklassifikation, nicht den Nachweis eines freien Kontingents.
+
+Der RuntimeError-kompatible Carrier bleibt eine Ausnahme. FailedAnswer normalisiert
+seine Metadaten erneut; gespeicherte Chats, Slotstatus und GUI verwenden denselben
+Vertrag. Auch nach dem Ende des Assignments bleibt die sichere Ursache erhalten.
+Manipulierte Metadaten liefern keine verifizierte Ursache und übernehmen keinen
+beliebigen Exceptiontext.
+
+Die Hermes-Transportversuche bleiben auf vier mit unverändertem Timeout und
+bestehenden Wartezeiten begrenzt. Diese Metadaten erlauben weder einen zusätzlichen
+Modellfallback noch die Ollama-Cloud-Wiederaufnahme. Modelle, Free-Preisbindung,
+Tool-Quarantäne, Lease- und Result-Gates bleiben unverändert. Bereits begonnene oder
+unbekannte Toolwirkung wird nicht automatisch wiederholt.
+
+Für den historischen Versuch #2169 ist die tatsächliche Transportfehlerklasse
+nicht belegt. Der neue Vertrag klassifiziert nur künftig tatsächlich gefangene
+Ausnahmen; er schreibt alten Fehlern weder ConnectTimeout noch Providerquota zu.

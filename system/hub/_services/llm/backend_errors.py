@@ -6,6 +6,43 @@ import math
 import re
 
 
+# Error types are allowlisted HTTPX class families, never exception text.
+_REQUEST_ERROR_KINDS = {
+    "connect_timeout": ("ConnectTimeout", "Zeitüberschreitung beim Verbindungsaufbau"),
+    "read_timeout": ("ReadTimeout", "Zeitüberschreitung beim Lesen der Antwort"),
+    "write_timeout": ("WriteTimeout", "Zeitüberschreitung beim Senden der Anfrage"),
+    "pool_timeout": ("PoolTimeout", "Zeitüberschreitung beim Warten auf eine Verbindung"),
+    "transport_timeout": ("TimeoutException", "Zeitüberschreitung beim Transport"),
+    "connection_error": ("ConnectError", "Verbindungsaufbau fehlgeschlagen"),
+    "transport_error": ("RequestError", "Anfragetransport fehlgeschlagen"),
+    "http_error": ("HTTPStatusError", "Anfrage vom Anbieter abgelehnt"),
+}
+
+
+def _normalize_request_error(raw):
+    kind = raw.get("kind")
+    if not isinstance(kind, str) or kind not in _REQUEST_ERROR_KINDS:
+        return None
+    error_type, description = _REQUEST_ERROR_KINDS[kind]
+    if raw.get("error_type") != error_type or raw.get("quota_exceeded") is not False:
+        return None
+    status = raw.get("status_code")
+    if status is not None and (
+        kind != "http_error" or type(status) is not int or not 100 <= status <= 599
+    ):
+        return None
+    provider = raw["provider"]
+    result = {"provider": provider, "kind": kind, "error_type": error_type,
+              "quota_exceeded": False}
+    label = "OpenRouter" if provider == "openrouter" else "Hermes"
+    message = f"{label}: {description} ({error_type})."
+    if status is not None:
+        result["status_code"] = status
+        message += f" HTTP {status}."
+    result["message"] = message
+    return result
+
+
 def parse_retry_after(value, *, now=None):
     """Accept actual delta-seconds or a timezone-aware HTTP-date header."""
     if not isinstance(value, str) or len(value) > 128:
@@ -27,7 +64,11 @@ def parse_retry_after(value, *, now=None):
 
 def normalize_backend_error(raw):
     """Validate enums/types and regenerate the public message from constants."""
-    if not isinstance(raw, dict) or raw.get("provider") != "ollama":
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("provider") in ("openrouter", "hermes"):
+        return _normalize_request_error(raw)
+    if raw.get("provider") != "ollama":
         return None
     kind = raw.get("kind")
     if not isinstance(kind, str) or kind not in {"http_error", "rate_limited", "quota_exceeded", "provider_error", "tool_parse_error"}:
@@ -91,6 +132,54 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     if retry is not None:
         raw["retry_after_seconds"] = retry
     return normalize_backend_error(raw)
+
+
+class BackendRequestFailure(RuntimeError):
+    """Safe request failure; RuntimeError preserves the existing fallback policy."""
+
+    def __init__(self, detail):
+        safe = normalize_backend_error(detail)
+        if safe is None or safe["provider"] not in ("openrouter", "hermes"):
+            raise ValueError("Ungültiger Transportfehlervertrag")
+        self.backend_error = safe
+        if safe["kind"] == "http_error":
+            status = safe.get("status_code")
+            prefix = f"Hermes/OpenRouter Fehler ({status})" if status is not None else "Hermes/OpenRouter API-Fehler"
+        else:
+            prefix = f"Hermes/OpenRouter Verbindungsfehler ({safe['error_type']})"
+        super().__init__(f"{prefix}: {safe['message']}")
+
+    @classmethod
+    def from_httpx(cls, exc, *, provider):
+        """Classify only observed typed exceptions; never inspect body/text/URL."""
+        import httpx
+        if provider not in ("openrouter", "hermes"):
+            raise ValueError("Ungültiger Transportfehleranbieter")
+        status = None
+        if isinstance(exc, httpx.HTTPStatusError):
+            kind = "http_error"
+            status = exc.response.status_code
+        elif isinstance(exc, httpx.ConnectTimeout):
+            kind = "connect_timeout"
+        elif isinstance(exc, httpx.ReadTimeout):
+            kind = "read_timeout"
+        elif isinstance(exc, httpx.WriteTimeout):
+            kind = "write_timeout"
+        elif isinstance(exc, httpx.PoolTimeout):
+            kind = "pool_timeout"
+        elif isinstance(exc, httpx.TimeoutException):
+            kind = "transport_timeout"
+        elif isinstance(exc, httpx.ConnectError):
+            kind = "connection_error"
+        elif isinstance(exc, httpx.RequestError):
+            kind = "transport_error"
+        else:
+            raise TypeError("Nicht unterstützte Transportfehlerklasse")
+        detail = {"provider": provider, "kind": kind,
+                  "error_type": _REQUEST_ERROR_KINDS[kind][0], "quota_exceeded": False}
+        if status is not None:
+            detail["status_code"] = status
+        return cls(detail)
 
 
 async def read_error_payload(response, *, timeout_seconds):

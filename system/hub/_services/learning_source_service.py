@@ -29,7 +29,7 @@ CONTRACT_SCHEMA = "bach.learning-candidate.v1"
 _ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}")
 _HASH = re.compile(r"[0-9a-f]{64}")
 _PRIVATE = re.compile(
-    r"(?:[A-Za-z]:[\\/]|/(?:Users|home)/|[\w.+-]+@[\w.-]+\.\w+|"
+    r"(?:[A-Za-z]:[\\/]|/(?:Users|home)/|"
     r"\b(?:\d{1,3}\.){3}\d{1,3}\b)"
 )
 _SECRET = re.compile(
@@ -226,6 +226,34 @@ def _guidance(roots=None):
     return sources
 
 
+def _is_email_word_character(character):
+    return character == "_" or character.isalnum()
+
+
+def _is_email_local_character(character):
+    return _is_email_word_character(character) or character in ".+-"
+
+
+def _is_email_domain_character(character):
+    return _is_email_word_character(character) or character in ".-"
+
+
+def _contains_private_email(value):
+    # Scan each at-sign and its following domain at most once; this is linear in value length.
+    for at in range(1, len(value) - 1):
+        if value[at] != "@" or not _is_email_local_character(value[at - 1]):
+            continue
+        domain_start = at + 1
+        for index in range(domain_start, len(value)):
+            character = value[index]
+            if not _is_email_domain_character(character):
+                break
+            if (index > domain_start and character == "." and index + 1 < len(value)
+                    and _is_email_word_character(value[index + 1])):
+                return True
+    return False
+
+
 def _neutralize(value, parameters):
     if not isinstance(parameters, list) or len(parameters) > 30:
         raise ValueError("Begrenzte Parameterliste erforderlich")
@@ -247,7 +275,7 @@ def _neutralize(value, parameters):
         if isinstance(item, str):
             for original, placeholder in sorted(replacements, key=lambda pair: -len(pair[0])):
                 item = item.replace(original, placeholder)
-            if _PRIVATE.search(item) or _SECRET.search(item) or "\x00" in item:
+            if _PRIVATE.search(item) or _contains_private_email(item) or _SECRET.search(item) or "\x00" in item:
                 raise ValueError("Vorschlag enthält nicht neutralisierte Pfade, Accounts oder Credentials")
             return item
         if isinstance(item, list):

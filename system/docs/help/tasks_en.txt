@@ -54,6 +54,37 @@ CLI COMMANDS (bach task)
     --remove <X>    Remove dependency
     --clear         Clear all dependencies
 
+RESULT REVIEW SERVICE COMMANDS
+------------------------------
+The service credential is entered through a hidden prompt; the CLI does not
+display or store it. It is not a general device/API token, and these commands
+do not issue credentials. Each action needs its own explicit task-ID or category
+scope; one action never grants another.
+
+  All three commands require --service-id. The credential is read through a
+  hidden prompt and is never passed as a command argument.
+  result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]
+    Read the authorized history only; this command does not mutate task state.
+    It requires the history action.
+  result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]
+    Request a correction for the current review result. Requires both read and
+    correction actions. The CLI shows the result ID and SHA-256 and asks for
+    confirmation before sending the exact task/result/CAS values. A note is
+    limited to 1-1200 characters.
+  result-service-accept <ID> --service-id SERVICE-ID
+    Accept the current review result. Requires both read and accept actions. The
+    CLI shows the result ID and SHA-256 and asks for confirmation before sending
+    the exact task/result/CAS values.
+    Policy-bound results (completion_policy_version 1, i.e. every submission
+    under the worker completion policy) are refused with
+    completion_policy_operator_review_required, and the service capabilities
+    report accept=false for them. Only the authenticated operator review can
+    complete them. Legacy results remain acceptable.
+
+Correction and acceptance are separate actions. Missing scope, producer binding,
+schema, or policy is denied or reported unavailable; there is no broad-token or
+legacy fallback.
+
 LIBRARY API EXAMPLES
 --------------------
   from bach_api import task

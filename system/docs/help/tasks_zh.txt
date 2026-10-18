@@ -52,6 +52,30 @@ CLI 命令（巴赫任务）
     --remove <X> 删除依赖项
     --clear 清除所有依赖项
 
+结果审核服务命令
+------------------
+服务凭据通过隐藏输入提示读取；CLI 不会显示或保存它。这不是通用设备/API
+令牌，这些命令也不会签发凭据。每项操作都需要针对任务 ID 或类别的独立
+明确范围；一种操作不会授予其他操作。
+
+  三个命令都需要 --service-id。凭据通过隐藏提示输入，不作为命令参数传递。
+  result-service-history <ID> --service-id SERVICE-ID [--limit 1-50] [--before EVENT-ID]
+    只读取授权的历史记录，不更改任务状态。需要 history 操作范围。
+  result-service-correct <ID> --service-id SERVICE-ID [--note TEXT]
+    请求修正当前待审核结果。需要 read 和 correction 两种范围。CLI 显示
+    结果 ID 和 SHA-256，并在发送精确的任务/结果/CAS 值前请求确认。
+    备注长度为 1 到 1200 个字符。
+  result-service-accept <ID> --service-id SERVICE-ID
+    接受当前待审核结果。需要 read 和 accept 两种范围。CLI 显示结果 ID 和
+    SHA-256，并在发送精确的任务/结果/CAS 值前请求确认。
+    受策略约束的结果（completion_policy_version 1，即工作者完成策略下的
+    每次提交）会以 completion_policy_operator_review_required 拒绝，服务
+    能力信息对其显示 accept=false。只有经过认证的操作员审核才能完成它们。
+    旧格式结果仍可接受。
+
+修正与接受是不同操作。缺少范围、可信生产者绑定、架构或策略时会拒绝或
+报告不可用；不会回退到宽泛令牌或旧格式。
+
 LIBRARY-API 示例
 ---------------------
   从 bach_api 导入任务

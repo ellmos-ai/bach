@@ -9,6 +9,9 @@
 [![Version](https://img.shields.io/badge/Version-v3.15.0-orange)](CHANGELOG.md)
 [![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
 [![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)](system/tests/)
+[![Last Checked](https://img.shields.io/badge/Last_Checked-2026--10--18-brightgreen)](CHANGELOG.md)
+[![Haftung](https://img.shields.io/badge/Haftung-%C2%A7_521_BGB-blue)](https://www.gesetze-im-internet.de/bgb/__521.html)
+[![Security SLA](https://img.shields.io/badge/Security_Response-48h_dual_SLA-blue)](SECURITY.md)
 
 **Version:** v3.15.0
 
@@ -48,6 +51,71 @@ Canonical GitHub repository: `ellmos-ai/bach`. Machine-readable project context 
 > **For AI Assistants & LLM Crawlers:** Machine-readable project context, architectural details, and disambiguation indices are available in [`llms.txt`](llms.txt).
 
 Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
+
+## System Architecture & Workflow Topology
+
+### 1. Component Topology
+
+```mermaid
+graph TB
+    subgraph Interfaces["User & Agent Interfaces"]
+        CLI["BACH CLI (bach.py / 113+ Handlers)"]
+        GUI["PySide6 Desktop GUI & Web Dashboard"]
+        TG["Chat Service & Telegram Bot"]
+        MCP["MCP Servers (FileCommander & CodeCommander)"]
+    end
+
+    subgraph CoreOS["BACH Core Operating System"]
+        Orch["Agent Orchestration (11 Boss & 22 Experts)"]
+        Sched["Scheduler & Automation Engine"]
+        Chains["llmauto Prompt Chains & Workflows"]
+        Skills["Skill Registry (1870+ Skills & 550+ Tools)"]
+    end
+
+    subgraph Persistence["Local-First SQLite & Memory Bus"]
+        SQL["SQLite Database (210+ Tables)"]
+        Mem["6-Type Structured Memory (Facts, Lessons, Working)"]
+        Bus["SharedMemory Bus & USMC Bridge"]
+    end
+
+    CLI -->|"Command Dispatch"| Orch
+    GUI -->|"HTTP & WebSockets"| Orch
+    TG -->|"Bridge Connector"| Orch
+    MCP -->|"stdio / JSON-RPC"| Orch
+
+    Orch -->|"Executes"| Chains
+    Orch -->|"Triggers"| Sched
+    Orch -->|"Loads"| Skills
+
+    Orch -->|"Reads / Writes"| Bus
+    Bus -->|"Consolidates"| Mem
+    Mem -->|"Atomic Storage"| SQL
+```
+
+### 2. Local-First Agent Execution Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Operator / Agent
+    participant CLI as BACH CLI / API Interface
+    participant Hub as Core Orchestrator & Session Scope
+    participant Mem as SQLite Memory & SharedMemory Bus
+    participant LLM as Pluggable Backend (Local Ollama / CLI)
+    participant Tool as Tool & Skill Execution Engine
+
+    User->>CLI: Issue task or workflow command
+    CLI->>Hub: Dispatch request with session token
+    Hub->>Mem: Query context, lessons, and working memory
+    Mem-->>Hub: Return relevant facts and active constraints
+    Hub->>LLM: Formulate prompt with local context (zero egress)
+    LLM-->>Hub: Stream plan and requested tool invocations
+    Hub->>Tool: Execute vetted tool / handler locally
+    Tool-->>Hub: Return tool execution output
+    Hub->>Mem: Record new facts, lesson feedback, and audit log
+    Hub-->>CLI: Format structured response (JSON / text)
+    CLI-->>User: Present completed result to operator
+```
 
 ## OpenAI Build Week — Codex and GPT-5.6
 
@@ -181,6 +249,23 @@ python bach.py haushalt financial-summary refresh
 
 # Shut down BACH
 python bach.py --shutdown
+```
+
+### Programmatic Python Quickstart
+
+```python
+from bach_api import get_api
+
+# Initialize the lightweight, side-effect-free BACH API client
+api = get_api()
+
+# Create a tracked task
+task = api.task.add("Explore local agent environment")
+print(f"Task created: {task.id} - {task.title}")
+
+# Query system status
+status = api.system.status()
+print(f"BACH status: {status.state} (Active handlers: {status.handlers_count})")
 ```
 
 `--version`, `--help`, command-specific help, and global `--dry-run` startup

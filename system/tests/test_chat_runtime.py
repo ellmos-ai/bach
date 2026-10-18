@@ -297,9 +297,18 @@ class TestIsSafeWritePath:
 class TestRunShell:
     """Test run_shell timeout clamping, subprocess handling, error handling."""
 
+    @staticmethod
+    def _assert_unknown_effect(result):
+        assert isinstance(result, str)
+        assert type(result).__name__ == "ToolErrorText"
+        assert str(result) == "Werkzeugausführung nicht bestätigt; Wirkung unbekannt."
+        assert result._code == "bach_tool_effect_unconfirmed"
+        assert result._effect_state == "unknown"
+
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_successful_command(self, mock_run):
         mock_run.return_value = MagicMock(
+            returncode=0,
             stdout="hello world\n",
             stderr="",
         )
@@ -310,6 +319,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_stderr_included(self, mock_run):
         mock_run.return_value = MagicMock(
+            returncode=0,
             stdout="output\n",
             stderr="warning: something\n",
         )
@@ -321,6 +331,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_empty_output(self, mock_run):
         mock_run.return_value = MagicMock(
+            returncode=0,
             stdout="",
             stderr="",
         )
@@ -328,23 +339,31 @@ class TestRunShell:
         assert result == "(keine Ausgabe)"
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
+    def test_nonzero_exit_is_unknown_and_redacted(self, mock_run):
+        secret = "RAW_PROCESS_OUTPUT_SECRET"
+        mock_run.return_value = MagicMock(returncode=7, stdout=secret, stderr=secret)
+        result = run_shell("command-with-nonzero-exit")
+        self._assert_unknown_effect(result)
+        assert secret not in str(result)
+
+    @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_expired(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=30)
         result = run_shell("sleep 999", timeout=30)
-        assert "Timeout" in result
-        assert "30s" in result
+        self._assert_unknown_effect(result)
+        assert "30s" not in str(result)
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_generic_exception(self, mock_run):
         mock_run.side_effect = OSError("No such file or directory")
         result = run_shell("nonexistent_cmd")
-        assert "Fehler" in result
-        assert "No such file or directory" in result
+        self._assert_unknown_effect(result)
+        assert "No such file or directory" not in str(result)
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_minimum(self, mock_run):
         """Timeout below 5 should be clamped to 5."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls", timeout=1)
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 5
@@ -352,7 +371,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_clamped_maximum(self, mock_run):
         """Timeout above 120 should be clamped to 120."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls", timeout=999)
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 120
@@ -360,7 +379,7 @@ class TestRunShell:
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_timeout_within_range(self, mock_run):
         """Timeout within 5-120 should be passed as-is."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls", timeout=60)
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == 60
@@ -369,14 +388,14 @@ class TestRunShell:
     def test_output_truncated_at_4000(self, mock_run):
         """Output longer than 4000 chars should be truncated."""
         long_output = "x" * 5000
-        mock_run.return_value = MagicMock(stdout=long_output, stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout=long_output, stderr="")
         result = run_shell("generate_long_output")
         assert len(result) == 4000
 
     @patch("hub._services.chat.bach_tools.subprocess.run")
     def test_default_timeout_is_cmd_timeout(self, mock_run):
         """Default timeout should be CMD_TIMEOUT (30)."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="")
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
         run_shell("ls")
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["timeout"] == CMD_TIMEOUT
@@ -2416,3 +2435,85 @@ class TestFsRootAllowlist:
         )
         assert "linked.txt" not in result
         assert "escape marker" not in result
+
+
+@pytest.mark.parametrize("provider", ["openrouter", "hermes"])
+@pytest.mark.parametrize("status", [429, 502, 503, 504, 529])
+def test_request_error_metadata_cannot_expand_preanswer_fallback(provider, status):
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    detail = {"provider": provider, "kind": "http_error", "error_type": "HTTPStatusError",
+              "status_code": status, "quota_exceeded": False}
+    carrier = BackendRequestFailure(detail)
+    assert not ChatRuntime._safe_preanswer_fallback_failure(error=carrier)
+    assert not ChatRuntime._safe_preanswer_fallback_failure(
+        result={"content": "", "error": "synthetic", "backend_error": detail})
+    previous = {"provider": "ollama", "kind": "http_error",
+                "status_code": status, "quota_exceeded": False}
+    assert ChatRuntime._safe_preanswer_fallback_failure(
+        result={"content": "", "error": "synthetic", "backend_error": previous})
+
+
+@pytest.mark.parametrize("managed", [True, False])
+def test_request_carrier_survives_actual_runtime_exception_path(managed):
+    import asyncio
+
+    import httpx
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    class Backend:
+        manages_own_tools = managed
+        def get_default_model(self):
+            return "openrouter/free"
+        async def chat(self, messages, **kwargs):
+            raise BackendRequestFailure.from_httpx(httpx.ReadTimeout(""), provider="openrouter")
+    runtime = ChatRuntime(Backend())
+    answer = asyncio.run(runtime.process("synthetic", "synthetic-transport-chat"))
+    assert isinstance(answer, FailedAnswer)
+    assert answer.backend_error["error_type"] == "ReadTimeout"
+    assert "ReadTimeout" in str(answer)
+    stored = ChatRuntime._messages_for_store(runtime.get_session("synthetic-transport-chat").messages)
+    assert stored[-1]["backend_error"]["kind"] == "read_timeout"
+
+
+@pytest.mark.parametrize("shape", ["exception", "result"])
+@pytest.mark.parametrize("status", [429, 502, 503, 504, 529])
+def test_native_fallback_chain_does_not_advance_for_request_metadata(monkeypatch, shape, status):
+    import asyncio
+
+    from hub._services.chat import model_sockets
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.backend_errors import BackendRequestFailure
+
+    class Backend:
+        manages_own_tools = False
+        def get_default_model(self):
+            return "openrouter/free"
+
+    backend = Backend()
+    runtime = ChatRuntime(backend)
+    calls = []
+    detail = {"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
+              "status_code": status, "quota_exceeded": False}
+    first = {"backend": "openrouter", "model": "openrouter/free"}
+    forbidden = {"backend": "synthetic-forbidden", "model": "synthetic-forbidden"}
+    monkeypatch.setattr(runtime, "_native_model_fallback_route",
+                        lambda *args: {"targets": [first, forbidden], "index": 0})
+    def resolve(target):
+        pytest.fail("request metadata must not open another route")
+    monkeypatch.setattr(model_sockets, "resolve_fallback_backend", resolve)
+    async def turn(selected, *args, **kwargs):
+        calls.append((selected, kwargs["model"]))
+        if shape == "exception":
+            raise BackendRequestFailure(detail)
+        return {"content": "", "error": "synthetic", "backend_error": detail}
+    monkeypatch.setattr(runtime, "_chat_with_compute_turn", turn)
+    session = runtime.get_session("synthetic-fallback-boundary")
+    if shape == "exception":
+        with pytest.raises(BackendRequestFailure):
+            asyncio.run(runtime._chat_with_configured_fallbacks(session, backend, "openrouter/free", []))
+    else:
+        result, selected, model = asyncio.run(runtime._chat_with_configured_fallbacks(
+            session, backend, "openrouter/free", []))
+        assert result["backend_error"] == detail and selected is backend and model == "openrouter/free"
+    assert calls == [(backend, "openrouter/free")]
