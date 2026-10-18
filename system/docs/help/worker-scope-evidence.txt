@@ -1,0 +1,66 @@
+WORKER-SCOPE-EVIDENCE — Projekt- und Worktree-Belege für Ergebnisse
+================================================================
+
+Ein eingereichtes Ergebnis kann einen unveränderlichen Scope-Beleg erhalten.
+Der erste Adapter verwendet die vorhandene Registrierung eines sauberen
+BACH-Taskworktrees auf bach-task/<Task-ID>. Andere Projekte benötigen einen
+eigenen Anschluss an ihre tatsächliche Repository-/Scopeautorität. Fehlende
+Belege verhindern die bisherige persönliche Abnahme oder Korrektur nicht.
+
+Der private Controller erfasst das kanonische Result, dessen Taskversion,
+Generation, Fence und Submissionrevision sowie Repository, Branch, Head und
+Git-Tree. Aufgelöste lokale Pfade werden nur als SHA-256 gespeichert. Ein
+vorhandener öffentlicher Quellpin wird geprüft; sein Fehlen wird nicht als
+öffentlich bestätigte Herkunft ausgegeben. Prompts, Antworten, private
+Lease-IDs und Zugangsdaten gehören nicht in diesen Beleg.
+
+Der definierte Git-Scope umfasst den Index, erfasste Dateien und nicht
+ignorierte neue Dateien. Staged-/unstaged-/untracked Änderungen sowie
+assume-unchanged und skip-worktree verhindern einen positiven Beleg.
+Submodule und konfigurierte Git-Dateifilter bleiben beim ersten Adapter
+unverfügbar; diese Scope-Prüfung führt keine Filterprogramme aus.
+Ignorierte Dateien liegen ausdrücklich außerhalb dieses Git-Scope. Ein
+sauberer Commit beweist keine fachliche Erfüllung des Auftrags.
+
+Git und SQLite besitzen keine gemeinsame Transaktion. Git und aktuelle
+Sperren werden außerhalb des SQLite-Schreiblocks erfasst; im Schreiblock
+wird die kanonische Ergebnisbindung erneut geprüft. Der Beleg beschreibt
+einen beobachteten Zustand. Er beweist keine dauerhafte Exklusivität oder
+Unveränderlichkeit zwischen zwei Abfragen.
+
+read_result() prüft innerhalb eines SQLite-Lesesnapshots ausschließlich
+gespeicherte Belege und Historie. result.scope.availability=recorded bedeutet:
+historischer Beleg gültig, aktueller Worktree noch nicht erneut bestätigt.
+result.result_revision bleibt dabei null. Der lokale SDK-Abruf und der
+API-GET prüfen danach Git/Registrierung/Sperren erneut. Die API führt diese
+Prüfung nach Schließen der Verbindung außerhalb ihres Eventloops aus.
+Ein vom Caller bereits geöffneter SQLite-Snapshot wird vom SDK nicht beendet;
+innerhalb dieses Snapshots unterbleibt die zusätzliche Git-Projektion.
+
+Erst bei unverändert bestätigtem Scope erscheint availability=available.
+Ein geänderter Head, ein schmutziger Baum oder ein nicht verfügbarer
+Git-/Sperrdienst liefert unavailable und keine vollständige Ergebnisrevision.
+Ein vorhandener Resultbeleg wird nie durch einen neueren Worktreezustand
+überschrieben. Eine neue Einreichung benötigt eine neue Ergebnisgeneration.
+
+Die vollständige result_revision bindet Submissionrevision, tatsächlich
+bestätigte Ausführungsrevision und Scope-Belegdigest/Historienereignis.
+Bei fehlendem Ausführungsbeleg bleibt sie null. Bei CLI-Läufen kann der
+Scope bereits nach Submit vorliegen; die Revision entsteht trotzdem erst
+nach tatsächlicher Modellrückkehr und bestätigter Ausführungsverknüpfung.
+Verlorene Submit-ACKs dürfen nur durch den exakten kanonischen Readback der
+eigenen privaten erwarteten Abgabe rekonstruiert werden.
+
+Die private lokale Aufnahme nutzt TaskLeaseClient._capture_task_scope und
+WorkerLeaseBinding.capture_confirmed_scope. Der Dispatcher ruft sie nach
+der bestätigten Taskoperation außerhalb des Binding-Locks auf. Direkte
+lokale Caller können sie ausdrücklich aufrufen; result_state rekonstruiert
+bei Bedarf zuerst den tatsächlichen Submit. Wiederholte erfolgreiche
+Aufnahme derselben Ergebnis-ID wird im Binding vermieden. Aktuelle
+öffentliche Abrufe prüfen ihren Scope weiterhin erneut. Remoteclients
+erhalten keinen Selbstauskunfts-Endpunkt und keinen lokalen DB-Fallback.
+
+Eine gültige Revision erteilt keine Reviewrechte und kein Done. Autor- und
+Revieweridentität, Modellstufe, Unabhängigkeit, fachlicher Taskvertrag,
+Userpflicht und GitHub-Gates müssen ihre eigenen autorisierten Belege
+liefern. Eine spätere Freigabe muss den dann aktuellen Zustand erneut prüfen.

@@ -467,11 +467,21 @@ def startup(admission, monkeypatch):
             assert not execution.thread.is_alive()
 
 
-def test_startup_resumes_one_physical_always_on_and_preserves_empty_queue(startup):
+def test_startup_resumes_one_physical_always_on_and_preserves_empty_queue(startup, monkeypatch):
     control, slots = startup
+    first_queue_poll = threading.Event()
+
+    def observe_empty_queue(*_args):
+        # This real worker boundary follows publication of its running state.
+        # Thread.start() alone does not promise that publication has completed.
+        first_queue_poll.set()
+        return None
+
+    monkeypatch.setattr(control, "_acquire_worker_task", observe_empty_queue)
     stop = threading.Event()
     first = control._resume_always_on_at_startup(stop)
     assert first["state"] == "admitted" and first["retry"] is False
+    assert first_queue_poll.wait(5), "Worker did not reach its first actual queue poll"
     execution = control._WORKER_EXECUTIONS["buddha_always_on"]
     assert execution.worker_thread_started is True and execution.thread.is_alive()
     generation = execution.generation

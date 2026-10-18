@@ -24,6 +24,10 @@ from hub._services.task_result_service import (
     read_result_history,
     request_result_correction,
 )
+from system.tests.test_worker_completion_policy import completion_world, _paths
+from system.tests.test_worker_execution_evidence import worker_context
+from hub._services.worker_completion_policy import reconcile_current_result
+from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
 
 def _reviewed_result(conn, *, text="Ergebnis mit überprüfbaren Belegen", generation="generation-1", category=None):
@@ -82,6 +86,50 @@ def _operator(conn, *, correction=False):
         connection=conn,
         can_request_correction=correction,
     )
+
+
+@pytest.mark.parametrize("tamper", ["digest", "event", "actor", "foreign_result"])
+def test_missing_scope_policy_correction_reader_rejects_broken_decision_link(
+    completion_world, tamper,
+):
+    world = completion_world(missing_scope=True)
+    conn, task_id = world["conn"], world["task_id"]
+    reconcile_current_result(conn, task_id, **_paths(world))
+    correction = conn.execute("SELECT id,source_result_id FROM task_result_corrections "
+                              "WHERE task_id=?", (task_id,)).fetchone()
+    assert correction is not None
+    if tamper == "digest":
+        conn.execute("UPDATE task_result_corrections SET policy_decision_sha256=? WHERE id=?",
+                     ("0" * 64, correction["id"]))
+        event = conn.execute("SELECT id,new_value FROM task_history WHERE task_id=? "
+                             "AND action='result_correction_request'", (task_id,)).fetchone()
+        detail = json.loads(event["new_value"])
+        detail["policy_decision_sha256"] = "0" * 64
+        conn.execute("UPDATE task_history SET new_value=? WHERE id=?",
+                     (json.dumps(detail, sort_keys=True), event["id"]))
+    elif tamper == "event":
+        conn.execute("UPDATE task_history SET new_value='{}' WHERE id=(SELECT "
+                     "completion_decision_event_id FROM worker_task_results WHERE id=?)",
+                     (correction["source_result_id"],))
+    elif tamper == "actor":
+        conn.execute("UPDATE task_history SET changed_by='foreign' WHERE id=(SELECT "
+                     "completion_decision_event_id FROM worker_task_results WHERE id=?)",
+                     (correction["source_result_id"],))
+    else:
+        conn.execute("UPDATE task_result_corrections SET source_result_id=source_result_id+100 "
+                     "WHERE id=?", (correction["id"],))
+    conn.commit()
+    retry = WorkerLeaseBinding.acquire(world["client"], task_id,
+        worker_id="completion-author@HOST", host="HOST",
+        generation="missing-scope-reader-retry", is_current=lambda: True,
+        stop_event=threading.Event())
+    exact = {"lease_id": retry._ack.lease_id, "fence": retry._ack.fence,
+             "task_version": retry.task_snapshot()["task_version"],
+             "generation": "missing-scope-reader-retry"}
+    with pytest.raises(CorrectionContextDenied):
+        read_correction_context(conn, task_id, **exact)
+    with pytest.raises(ResultHistoryUnavailable):
+        read_result_history(conn, task_id, limit=50)
 
 
 def test_correction_is_atomic_keeps_v1_result_and_starts_distinct_generation(mem_db):
@@ -703,17 +751,23 @@ def test_persisted_scopes_compose_with_installed_open_ocean_policy(mem_db):
     assert read_client.task_result_snapshot(read_task_id)["status"] == "review"
 
     accept_record = accept_readback["result"]
-    accept_result(
-        mem_db, accept_task_id,
-        accept_record["result_id"],
-        digest=accept_record["result_sha256"],
-        task_version=accept_record["task_version"],
-        status_revision=accept_readback["status_revision"],
-        service_id=service_id,
-        service_token=service_token,
-        service_revision=1,
-    )
-    assert accept_client.task_result_snapshot(accept_task_id)["result"]["accepted"] is True
+    # Under the worker completion policy every canonical submission is policy-bound (version 1),
+    # so only an authenticated operator review may complete it and the scoped service is refused.
+    with pytest.raises(ResultServicePermissionDenied) as policy_denied:
+        accept_result(
+            mem_db, accept_task_id,
+            accept_record["result_id"],
+            digest=accept_record["result_sha256"],
+            task_version=accept_record["task_version"],
+            status_revision=accept_readback["status_revision"],
+            service_id=service_id,
+            service_token=service_token,
+            service_revision=1,
+        )
+    assert policy_denied.value.code == "completion_policy_operator_review_required"
+    accept_snapshot = accept_client.task_result_snapshot(accept_task_id)
+    assert accept_snapshot["status"] == "review"
+    assert accept_snapshot["result"]["accepted"] is False
 
     correction_ack = request_result_correction(
         mem_db,
@@ -909,3 +963,117 @@ def test_result_service_missing_required_schema_columns_fails_closed_before_read
     )) == before_schema
     if before_audit is not None:
         assert mem_db.execute("SELECT COUNT(*) FROM task_result_service_audit").fetchone()[0] == before_audit
+
+
+class _ScopeOnlyPolicy:
+    """Stand-in for the Open-Ocean policy: an exact task scope entry allows the action.
+
+    Producer binding and self-review stay covered by the installed-policy test above.
+    """
+
+    def evaluate_service_review(self, scope, target, _binding, _reviewer, action):
+        allowed = any(entry.get("action") == action and entry.get("task_id") == target["task_id"]
+                      for entry in scope["entries"])
+        return {"schema": "task-result-service-review-decision.v1", "allowed": allowed,
+                "reason_code": "allow" if allowed else "scope_denied"}
+
+
+@pytest.fixture
+def scope_only_policy(monkeypatch):
+    from hub._services import task_result_service
+
+    monkeypatch.setattr(task_result_service, "_load_result_service_review_policy", lambda: (
+        _ScopeOnlyPolicy(), {"distribution": "fixture-policy", "version": "0", "source_sha256": "0" * 64}))
+
+
+def _service_accept(conn, task_id, readback, token, service_id):
+    from hub._services.task_result_service import accept_result
+
+    record = readback["result"]
+    return accept_result(conn, task_id, record["result_id"], digest=record["result_sha256"],
+                         task_version=record["task_version"], status_revision=readback["status_revision"],
+                         service_id=service_id, service_token=token, service_revision=1)
+
+
+def test_service_capabilities_and_acceptance_refuse_a_policy_bound_result(mem_db, scope_only_policy):
+    from hub._services.task_result_service import ResultServicePermissionDenied, read_result
+
+    _SCOPE_MIGRATION.run_migration(mem_db)
+    task_id, client, readback = _reviewed_result(mem_db)
+    assert readback["result"]["completion_policy_version"] == 1
+    token, service_id = _insert_result_service(mem_db, [("read", task_id, None), ("accept", task_id, None)])
+    capabilities = read_result(mem_db, task_id, service_id=service_id, service_token=token)["service_capabilities"]
+    assert capabilities["actions"]["read"] is True
+    assert capabilities["actions"]["accept"] is False
+    assert capabilities["reasons"]["accept"] == "completion_policy_operator_review_required"
+    with pytest.raises(ResultServicePermissionDenied) as denied:
+        _service_accept(mem_db, task_id, readback, token, service_id)
+    assert denied.value.code == "completion_policy_operator_review_required"
+    assert client.task_result_snapshot(task_id)["status"] == "review"
+
+
+def test_service_without_accept_scope_stays_scope_denied_for_a_policy_bound_result(mem_db, scope_only_policy):
+    from hub._services.task_result_service import ResultServicePermissionDenied
+
+    _SCOPE_MIGRATION.run_migration(mem_db)
+    task_id, client, readback = _reviewed_result(mem_db)
+    token, service_id = _insert_result_service(mem_db, [("read", task_id, None)])
+    with pytest.raises(ResultServicePermissionDenied) as denied:
+        _service_accept(mem_db, task_id, readback, token, service_id)
+    assert denied.value.code == "scope_denied"
+    assert client.task_result_snapshot(task_id)["status"] == "review"
+
+
+def test_service_still_accepts_a_legacy_version_zero_result(tmp_path, scope_only_policy):
+    from system.tests.test_worker_result_submission_receipt import (
+        _insert_task as _insert_receipt_task,
+        _open_db,
+        _seed_preexisting_v0_result,
+    )
+    from hub._services.task_result_service import ensure_result_schema, read_result
+
+    conn = _open_db(tmp_path / "legacy-results.sqlite")
+    try:
+        task_id = _insert_receipt_task(conn)
+        _seed_preexisting_v0_result(conn, task_id)
+        ensure_result_schema(conn)  # assigns version 0 to the persisted pre-receipt row
+        _SCOPE_MIGRATION.run_migration(conn)
+        conn.commit()
+        client = TaskLeaseClient(conn=conn)
+        legacy = client.task_result_snapshot(task_id)
+        assert legacy["result"]["completion_policy_version"] == 0
+        token, service_id = _insert_result_service(conn, [("read", task_id, None), ("accept", task_id, None)])
+        capabilities = read_result(conn, task_id, service_id=service_id, service_token=token)["service_capabilities"]
+        assert capabilities["actions"]["accept"] is True
+        ack = _service_accept(conn, task_id, legacy, token, service_id)
+        assert ack["schema"] == "bach.task-result-service-acceptance.v1"
+        assert ack["accepted"] is True
+        assert client.task_result_snapshot(task_id)["status"] == "done"
+    finally:
+        conn.close()
+
+
+def test_accept_without_any_credential_is_a_personal_permission_denial(mem_db):
+    from hub._services.task_result_service import accept_result
+
+    task_id, client, readback = _reviewed_result(mem_db)
+    record = readback["result"]
+    with pytest.raises(ResultPermissionDenied):
+        accept_result(mem_db, task_id, record["result_id"], digest=record["result_sha256"],
+                      task_version=record["task_version"], status_revision=readback["status_revision"],
+                      result_revision="c" * 64)
+    assert client.task_result_snapshot(task_id)["status"] == "review"
+
+
+def test_accept_with_operator_and_service_credentials_is_ambiguous(mem_db):
+    from hub._services.task_result_service import ResultServicePermissionDenied, accept_result
+
+    task_id, client, readback = _reviewed_result(mem_db)
+    record = readback["result"]
+    with pytest.raises(ResultServicePermissionDenied) as denied:
+        accept_result(mem_db, task_id, record["result_id"], digest=record["result_sha256"],
+                      task_version=record["task_version"], status_revision=readback["status_revision"],
+                      operator_token="operator-fixture", service_id="service-fixture",
+                      service_token="S" * 43, service_revision=1)
+    assert denied.value.code == "ambiguous_credentials"
+    assert client.task_result_snapshot(task_id)["status"] == "review"

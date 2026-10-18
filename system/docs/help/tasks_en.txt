@@ -75,6 +75,11 @@ scope; one action never grants another.
     Accept the current review result. Requires both read and accept actions. The
     CLI shows the result ID and SHA-256 and asks for confirmation before sending
     the exact task/result/CAS values.
+    Policy-bound results (completion_policy_version 1, i.e. every submission
+    under the worker completion policy) are refused with
+    completion_policy_operator_review_required, and the service capabilities
+    report accept=false for them. Only the authenticated operator review can
+    complete them. Legacy results remain acceptable.
 
 Correction and acceptance are separate actions. Missing scope, producer binding,
 schema, or policy is denied or reported unavailable; there is no broad-token or

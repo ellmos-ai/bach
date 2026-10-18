@@ -7,6 +7,7 @@ API loopback hop and returns a small, secret-free worker projection.
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -34,7 +35,7 @@ _SAFE_TEXT_FIELDS = (
     "name", "backend", "model", "resolved_model", "mode", "sub_mode", "role_id", "status", "pause_basis",
     "current_activity", "created_at", "expires_at",
 )
-_NUMERIC_FIELDS = ("max_tool_rounds", "pause_after", "pause_minutes", "max_experts")
+_NUMERIC_FIELDS = ("max_tool_rounds", "max_model_requests", "pause_after", "pause_minutes", "max_experts")
 _BOOL_FIELDS = ("auto_paused", "system", "deletable", "runtime_verified",
                 "worker_active", "running", "has_task_prompt")
 _ALLOWED_CONTROL = {
@@ -147,6 +148,15 @@ def _project_worker(raw: Any) -> dict[str, Any]:
         value = raw.get(field)
         if isinstance(value, int) and not isinstance(value, bool):
             item[field] = value
+    budget = raw.get("model_requests")
+    if (type(budget) is dict and set(budget) == {"run_id", "used", "limit", "remaining", "phase"}
+            and type(budget["run_id"]) is str and _RUN_ID.fullmatch(budget["run_id"])
+            and all(type(budget[key]) is int for key in ("used", "limit", "remaining"))
+            and 0 <= budget["used"] <= budget["limit"] <= 256
+            and budget["remaining"] == budget["limit"] - budget["used"]
+            and type(budget["phase"]) is str
+            and budget["phase"] in {"admitted", "active", "unknown", "terminal"}):
+        item["model_requests"] = dict(budget)
 
     for field in _BOOL_FIELDS:
         value = raw.get(field)
@@ -350,9 +360,11 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
             if type(value) is not bool:
                 raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültige Flags")
             projected[key] = value
-        elif key in {"task_id", "max_tool_rounds", "max_experts", "pause_after", "pause_minutes"}:
+        elif key in {"task_id", "max_tool_rounds", "max_model_requests", "max_experts", "pause_after", "pause_minutes"}:
             if type(value) is not int:
                 raise WorkerStatusUnavailable("Worker-Konfiguration enthält ungültige Zahlen")
+            if key == "max_model_requests" and not 3 <= value <= 256:
+                raise WorkerStatusUnavailable("Modellanfragenbudget ist ungültig")
             projected[key] = value
         else:
             if not isinstance(value, str) or len(value) > (20000 if key == "task_prompt" else 180) or "\x00" in value:
@@ -721,6 +733,48 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
     )
     if readiness.get("available") is not True:
         raise WorkerActionRejected("Gewähltes Modell ist derzeit nicht bereit", 503)
+
+    if worker.get("max_model_requests") is not None:
+        if (type(worker["max_model_requests"]) is not int
+                or not 3 <= worker["max_model_requests"] <= 256
+                or type(worker.get("task_id")) is not int or worker["task_id"] <= 0):
+            raise WorkerActionRejected("Budgetierter Taskworker ist nicht verifizierbar", 409)
+        source = _request_control_api("GET", "system-slots", device_token=device_token,
+                                      timeout=timeout)
+        instance, version = source.get("service_instance"), source.get("configuration_version")
+        if (type(instance) is not str or not _RUN_ID.fullmatch(instance)
+                or type(version) is not str or re.fullmatch(r"[0-9a-f]{64}", version) is None):
+            raise WorkerStatusUnavailable("Control-Instanz oder Konfiguration nicht verifizierbar")
+        request_id = uuid.uuid4().hex
+        body = {"id": worker_id, "start_request_id": request_id,
+                "expected_service_instance": instance, "configuration_version": version}
+        prompt = _configured_task_prompt(worker_id)
+        if prompt:
+            body["prompt"] = prompt
+        accepted = _request_control_api("POST", "workers/run", device_token=device_token,
+                                        body=body, timeout=timeout)
+        if accepted.get("ok") is not True:
+            raise WorkerActionRejected("Budgetierter Start nicht bestätigt", 503)
+        observed = _request_control_api("GET", "workers/execution", device_token=device_token,
+                                        params={"id": worker_id, "start_request_id": request_id},
+                                        timeout=timeout)
+        execution = observed.get("execution")
+        if (observed.get("ok") is not True or type(execution) is not dict
+                or execution.get("service_instance") != instance
+                or execution.get("start_request_id") != request_id
+                or execution.get("worker_id") != worker_id
+                or execution.get("state") not in {"starting", "running", "stopping", "terminal"}
+                or type(execution.get("generation")) is not str
+                or not _RUN_ID.fullmatch(execution["generation"])):
+            raise WorkerStatusUnavailable("Budgetierter Start-Readback ist nicht korreliert")
+        latest = read_worker_status(device_token=device_token, timeout=timeout)
+        projected = next((item for item in latest["workers"] if item["id"] == worker_id), None)
+        if projected is None:
+            raise WorkerStatusUnavailable("Worker-Readback nach Start fehlt")
+        return {"ok": True, "action": "start", "start_acknowledged": True,
+                "start_request_id": request_id, "generation": execution["generation"],
+                "runtime_state": projected.get("status", "unknown"),
+                "runtime_readback": "available", "worker": projected}
 
     start_payload: dict[str, Any] = {"id": worker_id}
     task_prompt = _configured_task_prompt(worker_id)
