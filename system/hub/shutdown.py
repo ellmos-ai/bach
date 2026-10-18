@@ -6,9 +6,10 @@ Shutdown Handler - Session beenden (DB-basiert)
 Speichert Session-Bericht in memory_sessions.
 Kein Markdown-Dateisystem mehr!
 
-NEU v1.1.15: Auto-Memory Fallback - generiert Summary aus Autolog wenn Claude vergisst
+Session-Auswahl und Ownership werden vor Seiteneffekten geprüft.
 """
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from .base import BaseHandler
@@ -37,31 +38,22 @@ class ShutdownHandler(BaseHandler):
         }
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
-        # Partner aus Args extrahieren BEVOR Summary gebildet wird
-        partner_id = "user"
-        clean_args = []
-        for arg in args:
-            if arg.startswith("--partner="):
-                partner_id = arg.split("=", 1)[1].lower()
-            else:
-                clean_args.append(arg)
-
-        summary = " ".join(clean_args) if clean_args else None
-        args = clean_args
-        
-        # Clock-Out bei Shutdown (v1.1.71)
-        if not dry_run:
-            try:
-                self._clock_out_partner(partner_id)
-            except Exception:
-                pass  # Silent fail
+        from ._services.session_scope import parse_scope, select_session
+        try:
+            summary, scope = parse_scope(args)
+            with closing(self._get_conn()) as conn:
+                active = select_session(conn, **scope)
+            partner_id = scope.get("partner_id") or (active[4] if active else None) or "user"
+        except (ValueError, sqlite3.Error) as exc:
+            return False, str(exc)
 
         # Hook: before_shutdown
         try:
             from core.hooks import hooks
-            hooks.emit('before_shutdown', {
-                'partner': partner_id, 'mode': operation or 'complete'
-            })
+            if not dry_run:
+                hooks.emit('before_shutdown', {
+                    'partner': partner_id, 'mode': operation or 'complete'
+                })
         except Exception:
             pass
 
@@ -70,15 +62,29 @@ class ShutdownHandler(BaseHandler):
         elif operation == "quick":
             success, message = self._quick(summary, dry_run)
         else:
-            success, message = self._complete(summary, dry_run)
+            success, message = self._complete(
+                summary, dry_run, _selected=active, _selection_checked=True, **scope
+            )
+
+        if success and not dry_run:
+            try:
+                if active and operation in ("quick", "emergency"):
+                    self._clock_out_partner(partner_id, session_id=active[1])
+                else:
+                    self._clock_out_partner(partner_id)
+            except sqlite3.Error as exc:
+                # Session/note already committed. Report secondary failure without
+                # telling callers to retry an already completed session write.
+                message += f"\n[WARN] Session saved; clock-out failed: {exc}"
 
         # Hook: after_shutdown (re-import to avoid scope issue)
         try:
             from core.hooks import hooks as _hooks
-            _hooks.emit('after_shutdown', {
-                'partner': partner_id, 'mode': operation or 'complete',
-                'success': success
-            })
+            if not dry_run:
+                _hooks.emit('after_shutdown', {
+                    'partner': partner_id, 'mode': operation or 'complete',
+                    'success': success
+                })
         except Exception:
             pass
 
@@ -87,7 +93,7 @@ class ShutdownHandler(BaseHandler):
     def _get_conn(self):
         return sqlite3.connect(self.db_path)
     
-    def _clock_out_partner(self, partner_id: str) -> bool:
+    def _clock_out_partner(self, partner_id: str, session_id=None) -> bool:
         """Stempelt Partner aus (partner_presence Tabelle)."""
         conn = self._get_conn()
         try:
@@ -95,28 +101,29 @@ class ShutdownHandler(BaseHandler):
             conn.execute("""
                 UPDATE partner_presence
                 SET status = 'offline', clocked_out = ?, updated_at = ?
-                WHERE partner_name = ? AND status = 'online'
-            """, (now, now, partner_id))
+                WHERE LOWER(partner_name) = ? AND status = 'online'
+                AND NOT EXISTS (
+                    SELECT 1 FROM memory_sessions
+                    WHERE LOWER(partner_id) = ? AND ended_at IS NULL
+                    AND (? IS NULL OR session_id != ?)
+                )
+            """, (now, now, partner_id.lower(), partner_id.lower(), session_id, session_id))
             conn.commit()
         finally:
             conn.close()
         return True
     
     def _get_active_session(self, conn) -> tuple:
-        """Findet aktive Session (ohne ended_at)."""
-        row = conn.execute("""
-            SELECT id, session_id, started_at, tasks_created 
-            FROM memory_sessions 
-            WHERE ended_at IS NULL 
-            ORDER BY id DESC LIMIT 1
-        """).fetchone()
-        return row
+        """Legacy reader; ambiguity is an error, never a newest-session guess."""
+        from ._services.session_scope import select_session
+        return select_session(conn)
     
     def _generate_fallback_summary(self, session_start: str) -> str:
         """
         Generiert automatische Zusammenfassung aus Autolog.
         
-        Wird aufgerufen wenn Claude keinen Session-Bericht mitgibt.
+        Legacy-Hilfsfunktion; der aktuelle Abschluss wertet keine gemeinsamen
+        Autologs mehr automatisch aus.
         Liest Autolog-Eintraege seit Session-Start und extrahiert Befehle.
         
         Returns:
@@ -194,7 +201,7 @@ class ShutdownHandler(BaseHandler):
                 conn.commit()
                 results.append(" [OK] Emergency-Notiz gespeichert")
             except Exception as e:
-                results.append(f" [ERROR] {e}")
+                return False, f"[ERROR] {e}"
             finally:
                 conn.close()
         else:
@@ -224,7 +231,7 @@ class ShutdownHandler(BaseHandler):
                 conn.commit()
                 results.append(f" [OK] Notiz: {summary[:40]}...")
             except Exception as e:
-                results.append(f" [WARN] {e}")
+                return False, f"[ERROR] {e}"
             finally:
                 conn.close()
         
@@ -233,8 +240,25 @@ class ShutdownHandler(BaseHandler):
         
         return True, "\n".join(results)
     
-    def _complete(self, summary: str, dry_run: bool) -> tuple:
-        """Komplett-Shutdown mit Dir-Scan und Session-Speicherung."""
+    def _complete(self, summary: str, dry_run: bool, *, _selected=None,
+                  _selection_checked=False, **scope) -> tuple:
+        """Close one session; global maintenance is an explicit separate operation."""
+        from ._services.session_scope import select_session, new_session_id
+        # Validate before scans/snapshots or any other side effect.
+        try:
+            with closing(self._get_conn()) as conn:
+                selected = _selected if _selection_checked else select_session(conn, **scope)
+                if selected and conn.execute(
+                    "SELECT 1 FROM memory_sessions WHERE id=? AND session_id=? "
+                    "AND partner_id IS ? AND ended_at IS NULL",
+                    (selected[0], selected[1], selected[4]),
+                ).fetchone() is None:
+                    raise ValueError("Selected session changed concurrently")
+            if selected:
+                scope = {"session_id": selected[1], "partner_id": selected[4]}
+                # Legacy sessions can have no partner. Pin their internal row ID below.
+        except (ValueError, sqlite3.Error) as exc:
+            return False, str(exc)
         results = []
         now = datetime.now()
         
@@ -277,351 +301,104 @@ class ShutdownHandler(BaseHandler):
         # 1b. Auto-Snapshot bei grossen Aenderungen (NEU v1.1.17)
         results.append("")
         results.append("[AUTO-SNAPSHOT]")
-        if not dry_run and change_count >= 3:
+        if not dry_run and change_count >= 3 and selected:
             try:
                 from .snapshot import SnapshotHandler
                 snap_handler = SnapshotHandler(self.base_path)
+                snap_handler.db_path = self.db_path
                 snap_name = f"auto_{now.strftime('%Y%m%d_%H%M%S')}"
-                success, snap_msg = snap_handler._create(snap_name, dry_run=False)
+                success, snap_msg = snap_handler._create(
+                    snap_name, dry_run=False, session_id=selected[1]
+                )
                 if success:
                     results.append(f" [OK] Auto-Snapshot erstellt ({change_count} Aenderungen)")
                 else:
                     results.append(f" [SKIP] {snap_msg}")
             except Exception as e:
                 results.append(f" [SKIP] Auto-Snapshot: {e}")
+        elif not dry_run and not selected:
+            results.append(" [SKIP] Keine adressierte Session fuer Auto-Snapshot")
         elif not dry_run:
             results.append(f" [SKIP] Nur {change_count} Aenderungen (Schwelle: 3)")
         else:
             results.append(" [DRY-RUN] Wuerde Auto-Snapshot pruefen")
         
-        # 2. Session in DB speichern
-        results.append("")
-        results.append("[SESSION SPEICHERN]")
-        if not dry_run:
-            conn = self._get_conn()
-            try:
-                # Aktive Session finden oder neue erstellen
-                active = self._get_active_session(conn)
-                
-                # NEU v1.1.15: Auto-Memory Fallback
-                if not summary and active:
-                    session_start = active[2] if active else now.isoformat()
-                    summary = self._generate_fallback_summary(session_start)
-                    if summary:
-                        results.append(f" [FALLBACK] Auto-Summary aus Autolog generiert")
-                
-                if active:
-                    # Bestehende Session abschliessen
-                    session_id = active[1]
-                    conn.execute("""
-                        UPDATE memory_sessions 
-                        SET ended_at = ?, summary = COALESCE(summary, '') || ?
-                        WHERE session_id = ?
-                    """, (now.isoformat(), f"\n{summary}" if summary else "", session_id))
-                    results.append(f" [OK] Session {session_id} abgeschlossen")
-                else:
-                    # Falls keine aktive Session, trotzdem Notiz speichern
-                    if summary:
-                        session_id = f"session_{now.strftime('%Y%m%d_%H%M%S')}"
-                        conn.execute("""
-                            INSERT INTO memory_sessions 
-                            (session_id, started_at, ended_at, summary, tasks_created, tasks_completed)
-                            VALUES (?, ?, ?, ?, 0, 0)
-                        """, (session_id, now.isoformat(), now.isoformat(), summary))
-                        results.append(f" [OK] Session {session_id} erstellt")
-                    else:
-                        results.append(" [SKIP] Keine aktive Session")
-                
-                conn.commit()
-            except Exception as e:
-                results.append(f" [ERROR] {e}")
-            finally:
-                conn.close()
-        else:
-            results.append(" [DRY-RUN] Wuerde Session speichern")
-        
-        # 3. Working Memory Stats
-        results.append("")
-        results.append("[MEMORY STATUS]")
-        if not dry_run:
-            conn = self._get_conn()
-            try:
-                working = conn.execute("SELECT COUNT(*) FROM memory_working WHERE is_active=1").fetchone()[0]
-                facts = conn.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
-                sessions = conn.execute("SELECT COUNT(*) FROM memory_sessions").fetchone()[0]
-                results.append(f" Working: {working} | Facts: {facts} | Sessions: {sessions}")
-            except Exception as e:
-                results.append(f" [ERROR] {e}")
-            finally:
-                conn.close()
-        
-        # 4. Task-Statistik (NEU v1.1.8)
-        results.append("")
-        results.append("[TASK-STATISTIK]")
-        tasks_created = 0
-        tasks_completed = 0
-        if not dry_run:
-            conn = self._get_conn()
-            try:
-                # Aktive Session finden fuer Zeitraum
-                active = self._get_active_session(conn)
-                session_start = active[2] if active else now.replace(hour=0, minute=0).isoformat()
-                
-                # Tasks aus bach.db zaehlen (tasks-Tabelle)
-                # Erstellt in dieser Session
-                tasks_created = conn.execute("""
-                    SELECT COUNT(*) FROM tasks 
-                    WHERE created_at >= ?
-                """, (session_start,)).fetchone()[0]
-                
-                # Erledigt in dieser Session
-                tasks_completed = conn.execute("""
-                    SELECT COUNT(*) FROM tasks 
-                    WHERE status = 'done' AND completed_at >= ?
-                """, (session_start,)).fetchone()[0]
-                
-                results.append(f" +{tasks_created} erstellt, {tasks_completed} erledigt (diese Session)")
-                
-                # Zaehler in memory_sessions aktualisieren
-                if active:
-                    conn.execute("""
-                        UPDATE memory_sessions 
-                        SET tasks_created = ?, tasks_completed = ?
-                        WHERE session_id = ?
-                    """, (tasks_created, tasks_completed, active[1]))
-                    conn.commit()
-            except Exception as e:
-                results.append(f" [SKIP] {e}")
-            finally:
-                conn.close()
-        else:
-            results.append(" [DRY-RUN] Wuerde Task-Statistik zaehlen")
-        
-        # 5. Auto-Komprimierung (v2.0: cleanup + compress bei Shutdown)
-        results.append("")
-        results.append("[KONSOLIDIERUNG]")
-        if not dry_run:
-            conn = self._get_conn()
-            try:
-                # Leere Sessions zaehlen und aufraemen
-                cursor = conn.execute("""
-                    SELECT COUNT(*) FROM memory_sessions
-                    WHERE (summary IS NULL OR summary = '' OR summary LIKE '%AUTO-CLOSED%'
-                           OR length(summary) <= 50)
-                    AND (is_compressed = 0 OR is_compressed IS NULL)
-                """)
-                empty_count = cursor.fetchone()[0]
+        if dry_run:
+            results.append("[DRY-RUN] Wuerde Session speichern")
+            return True, "\n".join(results)
 
-                if empty_count > 0:
-                    conn.execute("""
-                        UPDATE memory_sessions
-                        SET is_compressed = 1,
-                            summary = CASE
-                                WHEN summary IS NULL OR summary = '' THEN '[CLEANUP: Leere Session]'
-                                ELSE summary
-                            END
-                        WHERE (summary IS NULL OR summary = '' OR summary LIKE '%AUTO-CLOSED%'
-                               OR length(summary) <= 50)
-                        AND (is_compressed = 0 OR is_compressed IS NULL)
-                    """)
-                    conn.commit()
-                    results.append(f" [CLEANUP] {empty_count} leere Sessions bereinigt")
+        import json
+        conn = self._get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            if selected:
+                active = conn.execute(
+                    "SELECT id, session_id, started_at, tasks_created, partner_id "
+                    "FROM memory_sessions WHERE id=? AND session_id=? "
+                    "AND partner_id IS ? AND ended_at IS NULL",
+                    (selected[0], selected[1], selected[4]),
+                ).fetchone()
+                if active is None:
+                    raise ValueError("Selected session was closed concurrently")
+            else:
+                active = None
+            if active:
+                session_id = active[1]
+                started_at = active[2]
+            elif summary:
+                session_id = new_session_id(now)
+                started_at = now.isoformat()
+                conn.execute(
+                    "INSERT INTO memory_sessions "
+                    "(session_id, partner_id, started_at, summary) VALUES (?, ?, ?, '')",
+                    (session_id, scope.get("partner_id"), started_at),
+                )
+            else:
+                results.append("[SKIP] Keine aktive Session")
+                session_id = None
+                started_at = now.isoformat()
 
-                # Komprimierbare Sessions zaehlen
-                cursor = conn.execute("""
-                    SELECT COUNT(*) FROM memory_sessions
-                    WHERE (is_compressed = 0 OR is_compressed IS NULL)
-                    AND summary IS NOT NULL AND summary != ''
-                    AND length(summary) > 50
-                    AND summary NOT LIKE '%AUTO-CLOSED%'
-                    AND summary NOT LIKE '%CLEANUP%'
-                """)
-                compressible = cursor.fetchone()[0]
-
-                if compressible > 0:
-                    # Context Compressor ausfuehren
-                    import sys
-                    tools_dir = self.base_path / "tools"
-                    if str(tools_dir) not in sys.path:
-                        sys.path.insert(0, str(tools_dir))
-                    try:
-                        from context_compressor import SessionCompressor, CompressionRules
-                        sc = SessionCompressor(self.db_path, CompressionRules())
-                        success, msg = sc.compress_and_store(fmt="structured", dry_run=False)
-                        results.append(f" [COMPRESS] {compressible} Sessions komprimiert")
-                    except Exception as e:
-                        results.append(f" [WARN] Komprimierung fehlgeschlagen: {e}")
-                else:
-                    results.append(" [OK] Keine offenen Sessions")
-            except Exception as e:
-                results.append(f" [SKIP] {e}")
-            finally:
-                conn.close()
-        else:
-            results.append(" [DRY-RUN] Wuerde Sessions komprimieren")
-
-        # ══════════════════════════════════════════════════════════════
-        # 5.5 MEMORY SYNC - MEMORY.md generieren (SQ065)
-        # ══════════════════════════════════════════════════════════════
-        if not dry_run:
-            try:
-                import sys
-                tools_dir = str(self.base_path / "tools")
-                if tools_dir not in sys.path:
-                    sys.path.insert(0, tools_dir)
-                from memory_sync import MemorySync
-
-                bach_root = self.base_path.parent
-                sync = MemorySync(bach_root)
-                success, msg = sync.generate(partner="user", project="BACH")
-
-                if success:
-                    results.append("")
-                    results.append("[MEMORY SYNC]")
-                    results.append(f" {msg}")
-            except Exception as e:
-                pass  # Silent fail - nicht kritisch
-
-        # ══════════════════════════════════════════════════════════════
-        # 5.6 CLAUDE.md SYNC - BACH-Block pushen (SQ038 Stufe 2 Managed)
-        # ══════════════════════════════════════════════════════════════
-        if not dry_run:
-            try:
-                # Prüfe ob Integration-Level aktiviert
-                conn = self._get_conn()
-                level_row = conn.execute("""
-                    SELECT value FROM system_config
-                    WHERE key='integration.claude-code.level'
-                """).fetchone()
-                conn.close()
-
-                level = level_row[0] if level_row else "off"
-
-                if level in ("managed", "full"):
-                    # Stufe 2+ aktiv: CLAUDE.md BACH-Block updaten
-                    import sys
-                    tools_dir = str(self.base_path / "tools")
-                    if tools_dir not in sys.path:
-                        sys.path.insert(0, tools_dir)
-                    from claude_md_sync import ClaudeMdSync
-
-                    bach_root = self.base_path.parent
-                    syncer = ClaudeMdSync(bach_root)
-                    success, msg = syncer.push()
-
-                    if success:
-                        results.append("")
-                        results.append("[CLAUDE.md SYNC]")
-                        results.append(f" {msg}")
-            except Exception as e:
-                pass  # Silent fail - nicht kritisch
-
-        # ══════════════════════════════════════════════════════════════
-        # 5.7 DAILY LOG - Tages-Log schreiben (SQ065)
-        # ══════════════════════════════════════════════════════════════
-        if not dry_run:
-            try:
-                import sys
-                tools_dir = str(self.base_path / "tools")
-                if tools_dir not in sys.path:
-                    sys.path.insert(0, tools_dir)
-                from memory_sync import DailyLogGenerator
-
-                bach_root = self.base_path.parent
-                log_gen = DailyLogGenerator(bach_root)
-                log_file = log_gen.write_log()
-
-                results.append("")
-                results.append("[DAILY LOG]")
-                results.append(f" ✓ Tages-Log geschrieben: {log_file.name}")
-            except Exception as e:
-                pass  # Silent fail - nicht kritisch
-
-        # ══════════════════════════════════════════════════════════════
-        # 5.8 CONTINUATION CONTEXT - Naechster-Start-Anker (SQ065)
-        # ══════════════════════════════════════════════════════════
-        if not dry_run:
-            conn = None
-            try:
-                import json
-                conn = self._get_conn()
-
-                active = self._get_active_session(conn)
-                if active:
-                    session_id = active[1]
-
-                    cursor = conn.execute("""
-                        SELECT id, title, priority, status
-                        FROM tasks
-                        WHERE status IN ('pending', 'in_progress')
-                        ORDER BY
-                            CASE status
-                                WHEN 'in_progress' THEN 1
-                                WHEN 'pending' THEN 2
-                                ELSE 3
-                            END,
-                            priority DESC,
-                            created_at DESC
-                        LIMIT 5
-                    """)
-
-                    top_tasks = []
-                    for row in cursor.fetchall():
-                        top_tasks.append({
-                            "id": row[0],
-                            "title": row[1],
-                            "priority": row[2],
-                            "status": row[3]
-                        })
-
-                    continuation = {
-                        "timestamp": now.isoformat(),
-                        "top_tasks": top_tasks,
-                        "session_summary": summary if summary else "Session beendet",
-                        "tasks_created": tasks_created,
-                        "tasks_completed": tasks_completed
-                    }
-
-                    conn.execute("""
-                        UPDATE memory_sessions
-                        SET continuation_context = ?
-                        WHERE session_id = ?
-                    """, (json.dumps(continuation, ensure_ascii=False), session_id))
-                    conn.commit()
-
-                    results.append("")
-                    results.append("[CONTINUATION CONTEXT]")
-                    results.append(f" ✓ Naechster-Start-Anker gesetzt ({len(top_tasks)} Tasks)")
-            except Exception:
-                pass
-            finally:
-                if conn:
-                    conn.close()
-
-        # 6. NUL-Cleaner - Windows NUL-Dateien aufräumen
-        if not dry_run:
-            try:
-                from tools.nulcleaner import clean_nul_files_headless
-                # BACH_ROOT (eine Ebene ueber system/) reinigen
-                bach_root = self.base_path.parent
-                nul_result = clean_nul_files_headless(str(bach_root), verbose=False)
-                if nul_result['found'] > 0:
-                    results.append("")
-                    results.append("[NUL CLEANER]")
-                    results.append(f" Gefunden: {nul_result['found']} | Geloescht: {nul_result['deleted']}")
-                    if nul_result['errors']:
-                        results.append(f" [!] {len(nul_result['errors'])} Fehler beim Loeschen")
-            except Exception:
-                pass  # Silent fail - nicht kritisch
-
-        results.append("")
-        results.append("=" * 55)
-        results.append(" Session BEENDET")
-        results.append("=" * 55)
-        results.append("")
-        results.append("HINWEIS FUER CLAUDE:")
-        results.append("Session-Bericht gehoert in memory_sessions (DB)!")
-        results.append("Format: bach --memory session \"Zusammenfassung\"")
-        results.append("Oder direkt in DB: INSERT INTO memory_sessions (...)")
-
+            tasks_created = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE created_at >= ? AND created_at <= ?",
+                (started_at, now.isoformat()),
+            ).fetchone()[0]
+            tasks_completed = conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE status IN ('done','completed') "
+                "AND completed_at >= ? AND completed_at <= ?",
+                (started_at, now.isoformat()),
+            ).fetchone()[0]
+            if session_id:
+                top_tasks = conn.execute(
+                    "SELECT id,title,priority,status FROM tasks "
+                    "WHERE status IN ('pending','in_progress') "
+                    "ORDER BY CASE status WHEN 'in_progress' THEN 1 ELSE 2 END, "
+                    "priority DESC, created_at DESC, id LIMIT 5"
+                ).fetchall()
+                continuation = {
+                    "timestamp": now.isoformat(),
+                    "top_tasks": [dict(zip(("id", "title", "priority", "status"), row)) for row in top_tasks],
+                    "session_summary": summary or "Session beendet",
+                    "tasks_created": tasks_created,
+                    "tasks_completed": tasks_completed,
+                }
+                conn.execute(
+                    "UPDATE memory_sessions SET ended_at=?, "
+                    "summary=COALESCE(summary,'') || ?, tasks_created=?, "
+                    "tasks_completed=?, continuation_context=? WHERE session_id=?",
+                    (now.isoformat(), "\n" + summary if summary else "", tasks_created,
+                     tasks_completed, json.dumps(continuation, ensure_ascii=False), session_id),
+                )
+                results.append(f"[OK] Session {session_id} abgeschlossen")
+            working = conn.execute("SELECT COUNT(*) FROM memory_working WHERE is_active=1").fetchone()[0]
+            facts = conn.execute("SELECT COUNT(*) FROM memory_facts").fetchone()[0]
+            sessions = conn.execute("SELECT COUNT(*) FROM memory_sessions").fetchone()[0]
+            results.append(f"Working: {working} | Facts: {facts} | Sessions: {sessions}")
+            results.append(f"+{tasks_created} erstellt, {tasks_completed} erledigt (diese Session)")
+            conn.commit()
+        except (ValueError, sqlite3.Error) as exc:
+            conn.rollback()
+            return False, f"[ERROR] {exc}"
+        finally:
+            conn.close()
+        results.append("Session BEENDET")
         return True, "\n".join(results)

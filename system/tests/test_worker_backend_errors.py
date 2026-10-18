@@ -1267,3 +1267,68 @@ def test_persistent_core_pre_effect_reserve_returns_typed_failure_without_model_
         session=session, binding=binding, backend=backend, model=model,
         priority="background", receipt=composed,
     ) is None
+
+
+@pytest.mark.parametrize("exception_type", [httpx.ConnectTimeout, httpx.ReadTimeout])
+@pytest.mark.parametrize("core", [True, False])
+def test_request_failure_survives_assignment_end_store_and_gui(tmp_path, exception_type, core):
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    heart = importlib.import_module("hub._services.agents_heart")
+    path = str(tmp_path / "transport-slots.json")
+    slots.initialize_slots_config(path)
+    ident = "buddha_always_on" if core else slots.add_worker({"name": "Synthetic transport"}, path)["id"]
+    carrier = BackendRequestFailure.from_httpx(exception_type(""), provider="openrouter")
+    carrier.backend_error.update({"message": "PRIVATE_BODY", "authorization": "PRIVATE_TOKEN"})
+    answer = FailedAnswer.from_exception(carrier)
+    assignment = heart.begin_assignment(
+        role_id="task_worker", mode="safe", agent_instance_id="synthetic-worker",
+        backend_id="openrouter", model_id="openrouter/free", slot_id=ident,
+        task_id=42, session_id=ident, initiated_by="synthetic", path=path)
+    slots.update_slot(ident, {"status": "error", "current_activity": str(answer),
+                              "backend_error": answer.backend_error}, path)
+    heart.finish_assignment(assignment, status="error", result="backend_error", path=path)
+    current = slots.get_slot(ident, path)
+    events = slots.get_activity_history(path=path)
+    assert any(event.get("event") == "assignment_ended" for event in events)
+    assert current["backend_error"]["error_type"] == exception_type.__name__
+    public = _project_worker({"id": ident, "status": current["status"],
+                              "backend_error": current["backend_error"]})
+    messages = [{"role": "assistant", "content": answer, "answer_status": "failed"}]
+    stored = json.loads(json.dumps(ChatRuntime._messages_for_store(messages)))
+    restored = ChatRuntime._restore_message_status(stored)
+    assert restored[0]["content"].backend_error == public["backend_error"]
+    assert "backend_error" not in ChatRuntime._messages_for_backend(restored)[0]
+    assert "PRIVATE" not in json.dumps(events + [public] + stored)
+
+
+@pytest.mark.parametrize("changes", [
+    {"kind": "quota_exceeded"}, {"kind": "rate_limited"},
+    {"kind": []}, {"error_type": "PRIVATE_TYPE"}, {"quota_exceeded": True},
+    {"quota_exceeded": 0}, {"status_code": 503}, {"provider": "PRIVATE_PROVIDER"},
+])
+def test_request_error_metadata_is_closed_and_never_implies_quota(changes):
+    detail = {"provider": "openrouter", "kind": "connect_timeout",
+              "error_type": "ConnectTimeout", "quota_exceeded": False, **changes}
+    assert "backend_error" not in _project_worker({"id": "worker-1", "backend_error": detail})
+
+
+@pytest.mark.parametrize("bad_status", [True, 0, 600, "429"])
+def test_request_http_status_has_strict_observed_type_and_range(bad_status):
+    from hub._services.llm.backend_errors import normalize_backend_error
+    assert normalize_backend_error({"provider": "openrouter", "kind": "http_error",
+        "error_type": "HTTPStatusError", "quota_exceeded": False,
+        "status_code": bad_status}) is None
+
+
+@pytest.mark.parametrize("metadata_case", ["malformed", "missing"])
+def test_malformed_carrier_does_not_fall_back_to_raw_exception_text(metadata_case):
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    carrier = BackendRequestFailure.from_httpx(httpx.ReadTimeout(""), provider="openrouter")
+    if metadata_case == "malformed":
+        carrier.backend_error = {"provider": "openrouter", "kind": "PRIVATE"}
+    else:
+        del carrier.backend_error
+    carrier.args = ("PRIVATE_EXCEPTION_URL_TOKEN",)
+    answer = FailedAnswer.from_exception(carrier)
+    assert answer.backend_error is None and "PRIVATE" not in str(answer)
+    assert "nicht verifiziert" in str(answer)

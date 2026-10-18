@@ -9,7 +9,6 @@ Verifies the correct functionality of all imported components and their Bach ada
 import sqlite3
 import tempfile
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -154,6 +153,9 @@ def test_failure_trails():
 
 
 def test_contract_cockpit():
+    from datetime import datetime, timedelta, timezone
+
+    deadline = (datetime.now(timezone.utc) + timedelta(days=16)).date().isoformat()
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "test.db"
         service = ContractCockpitService(db_path)
@@ -167,7 +169,7 @@ def test_contract_cockpit():
                 contract_number="TK-987654",
                 cost_monthly_cents=4990,
                 renewal_period_months=12,
-                cancellation_deadline=(datetime.now(timezone.utc).date() + timedelta(days=16)).isoformat(),
+                cancellation_deadline=deadline,
                 document_path="/docs/contracts/telekom.pdf",
                 is_active=True,
                 notes="Fiber connection",
@@ -175,7 +177,7 @@ def test_contract_cockpit():
         )
         assert rec_id > 0
 
-        # A deadline 16 days after UTC today stays within the 30-day window.
+        # Keep the fixture inside the UTC window used by SQLite date('now').
         upcoming = service.list_upcoming_cancellations(within_days=30)
         assert len(upcoming) == 1
         assert upcoming[0].provider == "Telekom"

@@ -95,6 +95,14 @@ Automatisierter Daily Care & Dev Check. Befund und Status:
 - Dies schafft einen klaren Adapter für die spätere Modulgrenze; es ist noch kein eigenständiges PromptBoard-Paket und kein modularer Installer.
 - Folgearbeit: `BACH-PROMPTBOARD-IMPORT-01` in TODO und lokaler Offline-Draft. Nach Review und Integration Import, Tray-Start und Chat-Ausführung am Desktop abnehmen. Lead-Writer-Reconciliation (#1694) bleibt Voraussetzung für einen zentralen Taskabschluss.
 
+## Session-Ownership 2026-10-16 (Kandidat zur Integration)
+
+Bericht und Abschluss erhalten eine explizite Session-/Partneradresse in CLI, API und MCP.
+Die BACH-lokale Verdrahtung schützt parallele Sitzungen und bindet Bericht, Zähler und
+Fortsetzung atomar an den ursprünglichen Datensatz. Globale Wartung bleibt ein eigener
+Vorgang. Dies stabilisiert den bestehenden State-Owner vor einem späteren Modultransfer;
+es behauptet weder einen Memory-Cutover noch GUI-/Tray-Geräteabnahme.
+
 ## Review 2026-10-01 (Daily Care & Dev Check)
 
 Automatisierter Daily Care & Dev Check. Befund und Status:

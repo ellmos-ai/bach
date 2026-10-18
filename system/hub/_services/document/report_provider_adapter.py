@@ -11,6 +11,7 @@ import importlib.metadata
 import hashlib
 import inspect
 import json
+import math
 import os
 import re
 import secrets
@@ -1069,6 +1070,7 @@ class BachModelRoutePort:
             if self._mode == "local":
                 if not isinstance(pin[3], dict):
                     raise ReportHostPortError("provider_route_unverified")
+                _require_local_context_fit(self._runtime, self._backend, self._model, messages)
                 result = await self._generate_local(
                     messages,
                     expected_route_id=safe_route_id,
@@ -1220,6 +1222,33 @@ class BachModelRoutePort:
                 runtime._local_resource_waiters.pop(chat_id, None)
             with runtime._task_completion_receipts_lock:
                 runtime._task_completion_receipts.pop(chat_id, None)
+
+
+# Conservative estimate for German report text, so a borderline prompt is
+# refused rather than truncated.
+_LOCAL_CHARS_PER_TOKEN = 3
+_LOCAL_RESPONSE_RESERVE_TOKENS = 4096
+
+
+def _require_local_context_fit(runtime: Any, backend: Any, model: str,
+                               messages: list[dict[str, str]]) -> None:
+    """Refuse a local call whose prompt cannot fit the backend context window.
+
+    Ollama keeps only the newest tokens of an oversized prompt and does not
+    report an error, so the model would silently lose the report instructions
+    and parts of the source. The limit is the same value the runtime sends as
+    ``num_ctx``; part of it stays reserved for the answer.
+    """
+    try:
+        limit = int(runtime._context_limit_for_backend(backend, model))
+    except Exception:
+        raise ReportHostPortError("local_route_unverified") from None
+    if limit <= 0:
+        raise ReportHostPortError("local_route_unverified")
+    chars = sum(len(message.get("content", "")) for message in messages)
+    reserve = min(_LOCAL_RESPONSE_RESERVE_TOKENS, limit // 4)
+    if math.ceil(chars / _LOCAL_CHARS_PER_TOKEN) + reserve > limit:
+        raise ReportHostPortError("source_extraction_incomplete")
 
 
 class _GuardedBackend:
