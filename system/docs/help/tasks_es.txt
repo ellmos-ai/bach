@@ -73,6 +73,11 @@ por ID de tarea o categoría; una acción no concede las demás.
     Acepta el resultado actual en revisión. Requiere los alcances read y accept.
     La CLI muestra el ID y el SHA-256 y pide confirmación antes de enviar los
     valores exactos de tarea/resultado/CAS.
+    Los resultados sujetos a la política (completion_policy_version 1, es decir,
+    toda entrega bajo la política de finalización de workers) se rechazan con
+    completion_policy_operator_review_required, y las capacidades del servicio
+    indican accept=false para ellos. Solo la revisión autenticada del operador
+    puede completarlos. Los resultados heredados siguen siendo aceptables.
 
 Corrección y aceptación son acciones distintas. Si falta alcance, vínculo de
 productor, esquema o política, la operación se deniega o queda no disponible;

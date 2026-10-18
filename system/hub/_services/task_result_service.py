@@ -474,6 +474,11 @@ def _authorize_result_service(conn, context, task, record, action):
         message = ("Ergebnisherkunft ist nicht bestätigt" if reason == "producer_binding_missing"
                    else "Service-Scope oder Prüferbindung lehnt diese Aktion ab")
         raise ResultServicePermissionDenied(message, code=reason)
+    if action == "accept" and record is not None and record.get("completion_policy_version") == 1:
+        # Policy-bound completion needs the authenticated operator review, so a scoped
+        # service never holds the accept capability for it (capabilities report False).
+        raise ResultServicePermissionDenied("Policyverwalteter Abschluss benötigt die Operator-Prüfung",
+                                            code="completion_policy_operator_review_required")
     return target, binding, provenance
 
 
