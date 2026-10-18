@@ -35,6 +35,24 @@ from hub._services.model_provenance import reported_model
 
 log = logging.getLogger(__name__)
 
+_MAX_REPORTED_TOKENS = 2_000_000
+
+
+def _bounded_reported_count(value: Any) -> int | None:
+    """Accept only bounded integer counters from an Ollama stream."""
+    if type(value) is not int or not 0 <= value <= _MAX_REPORTED_TOKENS:
+        return None
+    return value
+
+
+class _OllamaEmptyResponseError(RuntimeError):
+    """Empty completed response with text-free stream diagnostics attached."""
+
+    def __init__(self, completion_metadata: dict):
+        super().__init__("Ollama lieferte eine leere Antwort")
+        self.completion_metadata = completion_metadata
+        self.completion_failure_reason = "empty_visible_answer"
+
 
 def _probe_model_api(
     models_url: str,
@@ -221,6 +239,26 @@ class OllamaBackend(ModelBackend):
         reported_models: set[str] = set()
         reported_model_invalid = False
 
+        def completion_metadata() -> dict:
+            raw_reason = done_reason
+            if isinstance(raw_reason, str) and raw_reason in {"stop", "length"}:
+                normalized_reason = raw_reason
+            elif isinstance(raw_reason, str) and raw_reason:
+                normalized_reason = "other"
+            else:
+                normalized_reason = None
+            return {
+                "stream_completed": completed,
+                "done_reason": normalized_reason,
+                "prompt_tokens": _bounded_reported_count(prompt_tokens),
+                "eval_tokens": _bounded_reported_count(eval_tokens),
+                "requested_num_ctx": self.num_ctx,
+                "thinking_chars": min(
+                    sum(len(part) for part in thinking_parts), _MAX_REPORTED_TOKENS
+                ),
+                "tool_call_count": min(len(tool_calls), _MAX_REPORTED_TOKENS),
+            }
+
         def aborted(error: str, *, backend_error=None) -> dict:
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
@@ -234,6 +272,7 @@ class OllamaBackend(ModelBackend):
                 "tool_calls": list(tool_calls) or None,
                 "raw_message": raw_message,
                 "prompt_tokens": prompt_tokens,
+                "completion_metadata": completion_metadata(),
                 "error": error,
                 "provider_reported_model": None,
                 **({"backend_error": backend_error} if backend_error else {}),
@@ -319,9 +358,13 @@ class OllamaBackend(ModelBackend):
                                 if message.get("tool_calls"):
                                     tool_calls.extend(message["tool_calls"])
                             if chunk.get("prompt_eval_count") is not None:
-                                prompt_tokens = chunk["prompt_eval_count"]
+                                prompt_tokens = _bounded_reported_count(
+                                    chunk["prompt_eval_count"]
+                                )
                             if chunk.get("eval_count") is not None:
-                                eval_tokens = chunk["eval_count"]
+                                eval_tokens = _bounded_reported_count(
+                                    chunk["eval_count"]
+                                )
                             if chunk.get("done"):
                                 done_reason = chunk.get("done_reason")
                                 completed = True
@@ -366,7 +409,7 @@ class OllamaBackend(ModelBackend):
                 "think_flag": think if type(think) is bool else None,
             }
             log.warning("ollama_empty_response %s", json.dumps(diagnostic, sort_keys=True))
-            raise RuntimeError("Ollama lieferte eine leere Antwort")
+            raise _OllamaEmptyResponseError(completion_metadata())
         raw_message = dict(last_message or {"role": "assistant"})
         raw_message["content"] = content
         if thinking_parts:
@@ -379,6 +422,7 @@ class OllamaBackend(ModelBackend):
             "tool_calls": tool_calls or None,
             "raw_message": raw_message,
             "prompt_tokens": prompt_tokens,
+            "completion_metadata": completion_metadata(),
             "model": selected_model,
             "provider_reported_model": (
                 next(iter(reported_models))

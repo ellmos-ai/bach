@@ -1363,6 +1363,69 @@ def test_glm_cloud_handoff_uses_thinking_to_preserve_resume():
     assert backend.calls[0]["think"] is True
 
 
+def test_handoff_appends_visible_answer_instruction_and_keeps_tools_disabled():
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession, HANDOFF_PROMPT
+
+    class _Backend:
+        def __init__(self):
+            self.calls = []
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append((messages, kwargs))
+            return {"content": "AUFTRAG: test\\nRESUME: naechster Schritt"}
+
+    backend = _Backend()
+    runtime = ChatRuntime(backend)
+    asyncio.run(runtime._handoff(
+        [{"role": "user", "content": "weiterarbeiten"}], ChatSession(),
+        strict=True, trigger="worker-request",
+    ))
+    messages, kwargs = backend.calls[0]
+    prompt = messages[-1]["content"]
+    assert prompt.startswith(HANDOFF_PROMPT)
+    assert "sichtbaren Antworttext" in prompt
+    assert kwargs["tools"] is None
+    assert kwargs["think"] is True
+
+
+def test_glm_handoff_refuses_reserve_budget_without_call():
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+    from hub._services.chat.slots_config import ModelRequestBudgetError
+
+    class _Budget:
+        def remaining(self):
+            return 2
+
+    class _Backend:
+        def __init__(self):
+            self.calls = 0
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, *_args, **_kwargs):
+            self.calls += 1
+            return {"content": "unexpected"}
+
+    backend = _Backend()
+    runtime = ChatRuntime(backend)
+    session = ChatSession()
+    session.model_request_budget = _Budget()
+    with pytest.raises(ModelRequestBudgetError):
+        asyncio.run(runtime._handoff(
+            [{"role": "user", "content": "Auftrag"}], session, strict=True,
+            trigger="completion-reserve",
+        ))
+    assert backend.calls == 0
+
+
 def test_glm_cloud_summarize_preserves_older_context():
     import asyncio
     from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
@@ -1756,12 +1819,225 @@ def test_failed_full_context_handoff_stops_before_repeated_cloud_call(failure):
     ))
     assert isinstance(answer, FailedAnswer)
     expected = {
-        "exception": "handoff backend unavailable",
-        "empty": "ist leer",
-        "partial_error": "stream aborted",
+        "exception": "backend_exception",
+        "empty": "empty_visible_answer",
+        "partial_error": "backend_reported_error",
     }[failure]
     assert expected in answer
     assert backend.calls == 2
+
+
+
+@pytest.mark.parametrize(
+    ("metadata", "failure_reason"),
+    [
+        ({"stream_completed": False, "done_reason": None}, "stream_incomplete"),
+        ({"stream_completed": True, "done_reason": "length"}, "response_truncated"),
+        ({"stream_completed": True, "done_reason": "stop", "tool_call_count": 1},
+         "unexpected_tool_calls"),
+    ],
+)
+def test_glm_handoff_rejects_incomplete_or_truncated_completion_without_logging_text(
+    metadata, failure_reason, caplog
+):
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    complete_metadata = {
+        "stream_completed": True,
+        "done_reason": "stop",
+        "prompt_tokens": 12,
+        "eval_tokens": 4,
+        "requested_num_ctx": 16384,
+        "thinking_chars": len("PRIVATE_REASONING"),
+        "tool_call_count": 0,
+    }
+    complete_metadata.update(metadata)
+
+    class _Backend:
+        def __init__(self):
+            self.calls = 0
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            assert kwargs["think"] is True
+            assert kwargs["tools"] is None
+            return {
+                "content": "PRIVATE_VISIBLE_HANDOFF",
+                "completion_metadata": complete_metadata,
+            }
+
+    backend = _Backend()
+    runtime = ChatRuntime(backend)
+    with pytest.raises(RuntimeError, match=failure_reason):
+        asyncio.run(runtime._handoff(
+            [{"role": "user", "content": "Auftrag"}], ChatSession(),
+            strict=True, trigger="context-pressure", trigger_prompt_tokens=12000,
+            context_limit=16384,
+        ))
+
+    assert backend.calls == 1
+    assert "cause=" + failure_reason in caplog.text
+    assert "requested_num_ctx=16384" in caplog.text
+    assert "trigger_prompt_tokens=12000" in caplog.text
+    assert "PRIVATE_VISIBLE_HANDOFF" not in caplog.text
+    assert "PRIVATE_REASONING" not in caplog.text
+
+
+def test_glm_handoff_rejects_tool_call_only_response_without_retry():
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    class _Backend:
+        def __init__(self):
+            self.calls = 0
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return {
+                "content": "",
+                "tool_calls": [{"function": {"name": "private_tool"}}],
+            }
+
+    backend = _Backend()
+    runtime = ChatRuntime(backend)
+    with pytest.raises(RuntimeError, match="unexpected_tool_calls"):
+        asyncio.run(runtime._handoff(
+            [{"role": "user", "content": "Auftrag"}], ChatSession(), strict=True,
+        ))
+    assert backend.calls == 1
+
+
+def test_glm_empty_handoff_exception_logs_only_bounded_completion_metadata(caplog):
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+
+    class _Backend:
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            error = RuntimeError("PRIVATE_PROVIDER_DETAIL")
+            error.completion_metadata = {
+                "stream_completed": True,
+                "done_reason": "stop",
+                "prompt_tokens": 12001,
+                "eval_tokens": 3,
+                "requested_num_ctx": 16384,
+                "thinking_chars": 79,
+                "tool_call_count": 0,
+            }
+            error.completion_failure_reason = "empty_visible_answer"
+            raise error
+
+    runtime = ChatRuntime(_Backend())
+    with pytest.raises(RuntimeError, match="empty_visible_answer"):
+        asyncio.run(runtime._handoff(
+            [{"role": "user", "content": "Auftrag"}], ChatSession(),
+            strict=True, trigger="context-pressure", context_limit=16384,
+            trigger_prompt_tokens=12001,
+        ))
+
+    assert "prompt_tokens=12001" in caplog.text
+    assert "eval_tokens=3" in caplog.text
+    assert "PRIVATE_PROVIDER_DETAIL" not in caplog.text
+
+
+def test_completion_reserve_handoff_labels_actual_pre_reserve_callsite(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+    from hub._services.chat import worker_tool_dispatch_trace
+
+    monkeypatch.setattr(
+        "hub._services.chat.chat_runtime._effective_tool_grants",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        worker_tool_dispatch_trace,
+        "execute_normal_tool",
+        lambda _binding, _name, _args, dispatcher: SimpleNamespace(
+            status="returned", result=dispatcher(_name, _args)
+        ),
+    )
+    monkeypatch.setattr(
+        worker_tool_dispatch_trace,
+        "acknowledge_normal_tool_result",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "hub._services.chat.chat_runtime.exec_tool",
+        lambda *_args, **_kwargs: "x" * 90,
+    )
+
+    class _Binding:
+        task_id = 7
+        _review_grant = None
+        completed_task_ids = ()
+        reviewed_task_ids = ()
+        closed = False
+
+    class _Backend:
+        def __init__(self):
+            self.calls = 0
+
+        def get_default_model(self):
+            return "glm-5.3:cloud"
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "content": "",
+                    "prompt_tokens": 60,
+                    "tool_calls": [{"function": {
+                        "name": "get_datetime", "arguments": {},
+                    }}],
+                    "raw_message": {"role": "assistant", "content": ""},
+                }
+            return {"content": "FERTIG", "prompt_tokens": 10}
+
+        def tool_response_message(self, content, tool_call_id=""):
+            return {"role": "tool", "content": content}
+
+    backend = _Backend()
+    runtime = ChatRuntime(backend)
+    runtime.auto_continue = 0
+    runtime._worker_backend_gate = lambda *_args, **_kwargs: None
+    captured = []
+
+    async def capture_handoff(_msgs, _session, **kwargs):
+        captured.append(kwargs)
+        return [{"role": "user", "content": "RESUME: weiter"}]
+
+    runtime._handoff = capture_handoff
+    session = ChatSession()
+    session.model = "glm-5.3:cloud"
+    # One normal round, then the first completion-reserve round.
+    session.max_tool_rounds = 3
+    session.worker_task_binding = _Binding()
+    answer = asyncio.run(runtime._tool_loop(
+        [{"role": "system", "content": "Auftrag"}], session,
+        tools=[{"type": "function", "function": {"name": "get_datetime"}}],
+        context_limit=100,
+    ))
+
+    assert answer == "FERTIG"
+    assert backend.calls == 2
+    assert len(captured) == 1
+    assert captured[0]["trigger"] == "completion-reserve"
+    assert captured[0]["trigger_prompt_tokens"] == 60
+    assert captured[0]["context_limit"] == 100
 
 
 def test_successful_but_still_full_context_handoffs_are_bounded():
@@ -1784,7 +2060,7 @@ def test_successful_but_still_full_context_handoffs_are_bounded():
             self.calls += 1
             if self.calls > 6:
                 raise AssertionError("unbounded handoff calls")
-            if messages[-1].get("content") == HANDOFF_PROMPT:
+            if messages[-1].get("content").startswith(HANDOFF_PROMPT):
                 return {"content": "RESUME: valid but still oversized"}
             return {"content": "", "prompt_tokens": 90}
 
@@ -1826,7 +2102,7 @@ def test_automatic_handoff_keeps_worker_role_policy_budget_and_history(summary_f
 
         async def chat(self, messages, **kwargs):
             self.calls.append([dict(m) for m in messages])
-            if messages[-1]["content"] == HANDOFF_PROMPT:
+            if messages[-1]["content"].startswith(HANDOFF_PROMPT):
                 if summary_fails:
                     raise TimeoutError("synthetic summary failure")
                 return {"content": "RESUME: continue exact work"}
@@ -1917,7 +2193,7 @@ def test_separated_successful_context_handoffs_do_not_exhaust_retry_cap():
 
         async def chat(self, messages, **kwargs):
             self.calls += 1
-            if messages[-1].get("content") == HANDOFF_PROMPT:
+            if messages[-1].get("content").startswith(HANDOFF_PROMPT):
                 return {"content": "RESUME: context reduced"}
             self.regular_calls += 1
             if self.regular_calls in (1, 3, 5):
@@ -1962,7 +2238,7 @@ def test_missing_prompt_tokens_does_not_reset_full_context_retry_cap():
             self.calls += 1
             if self.calls > 7:
                 raise AssertionError("unbounded unknown-context calls")
-            if messages[-1].get("content") == HANDOFF_PROMPT:
+            if messages[-1].get("content").startswith(HANDOFF_PROMPT):
                 self.handoff_calls += 1
                 return {"content": "RESUME: valid summary"}
             self.regular_calls += 1
