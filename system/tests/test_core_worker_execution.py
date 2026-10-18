@@ -243,6 +243,7 @@ def test_core_running_receipts_use_actual_binding_and_disable_actions(core_file,
         handler = control.ControlHandler.__new__(control.ControlHandler)
         handler.path = "/api/workers"
         responses = []
+        monkeypatch.setattr(handler, "_allow_control_request", lambda: True)
         monkeypatch.setattr(handler, "_json", lambda body, code=200: responses.append((body, code)))
         handler.do_GET()
         assert responses[-1][1] == 200

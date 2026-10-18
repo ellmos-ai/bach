@@ -5586,6 +5586,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": "Worker-Konfiguration nicht verfügbar"}, 503)
 
         elif path == "/api/workers":
+            if not self._allow_control_request():
+                return
             try:
                 self._json({
                     "ok": True,
