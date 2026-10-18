@@ -20,6 +20,9 @@ import threading
 import uuid
 from pathlib import Path
 
+SUBMISSION_RECEIPT_SCHEMA = "bach.worker-submission-receipt.v1"
+SUBMISSION_READBACK_SCHEMA = "bach.worker-submission-readback.v1"
+
 
 class ResultConflict(ValueError):
     """The result, task content or status changed since the operator read it."""
@@ -206,12 +209,35 @@ def ensure_result_schema(conn):
         submitted_by TEXT NOT NULL,
         submitted_at TEXT NOT NULL,
         submission_event_id INTEGER,
+        submission_receipt_version INTEGER NOT NULL DEFAULT 0,
+        completion_policy_version INTEGER NOT NULL DEFAULT 0,
+        submitted_status_event_id INTEGER,
+        submission_receipt_sha256 TEXT,
         accepted_by TEXT,
         accepted_at TEXT,
         accepted_status_event_id INTEGER,
         acceptance_event_id INTEGER,
+        user_review_revision TEXT,
+        user_review_event_id INTEGER,
+        contract_attestation_revision TEXT,
+        contract_attestation_event_id INTEGER,
+        completion_decision_event_id INTEGER,
+        completion_decision_sha256 TEXT,
         UNIQUE(task_id, fence)
     )""")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(worker_task_results)")}
+    for name, declaration in (("submission_receipt_version", "INTEGER NOT NULL DEFAULT 0"),
+                              ("completion_policy_version", "INTEGER NOT NULL DEFAULT 0"),
+                              ("submitted_status_event_id", "INTEGER"),
+                              ("submission_receipt_sha256", "TEXT"),
+                              ("user_review_revision", "TEXT"),
+                              ("user_review_event_id", "INTEGER"),
+                              ("contract_attestation_revision", "TEXT"),
+                              ("contract_attestation_event_id", "INTEGER"),
+                              ("completion_decision_event_id", "INTEGER"),
+                              ("completion_decision_sha256", "TEXT")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE worker_task_results ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_submission_event "
                  "ON worker_task_results(task_id, submission_event_id DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_acceptance_event "
@@ -246,11 +272,15 @@ def ensure_result_correction_schema(conn):
         correction_note TEXT NOT NULL,
         requested_by_device_id INTEGER NOT NULL,
         requested_at TEXT NOT NULL,
+        policy_decision_sha256 TEXT,
         event_id INTEGER,
         next_task_version TEXT,
         UNIQUE(task_id, request_id),
         UNIQUE(task_id, correction_round)
     )""")
+    correction_columns = {row[1] for row in conn.execute("PRAGMA table_info(task_result_corrections)")}
+    if "policy_decision_sha256" not in correction_columns:
+        conn.execute("ALTER TABLE task_result_corrections ADD COLUMN policy_decision_sha256 TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_task_result_corrections_event "
                  "ON task_result_corrections(task_id, event_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_task_result_corrections_task_event_desc "
@@ -444,6 +474,11 @@ def _authorize_result_service(conn, context, task, record, action):
         message = ("Ergebnisherkunft ist nicht bestätigt" if reason == "producer_binding_missing"
                    else "Service-Scope oder Prüferbindung lehnt diese Aktion ab")
         raise ResultServicePermissionDenied(message, code=reason)
+    if action == "accept" and record is not None and record.get("completion_policy_version") == 1:
+        # Policy-bound completion needs the authenticated operator review, so a scoped
+        # service never holds the accept capability for it (capabilities report False).
+        raise ResultServicePermissionDenied("Policyverwalteter Abschluss benötigt die Operator-Prüfung",
+                                            code="completion_policy_operator_review_required")
     return target, binding, provenance
 
 
@@ -498,8 +533,9 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     ensure_result_schema(conn)
     version = task_content_version(row)
     cursor = conn.execute("""INSERT INTO worker_task_results
-        (task_id,fence,generation,task_version,result,result_sha256,submitted_by,submitted_at)
-        VALUES (?,?,?,?,?,?,?,?)""", (row["id"], row["claim_fence"], generation,
+        (task_id,fence,generation,task_version,result,result_sha256,submitted_by,submitted_at,
+         submission_receipt_version,completion_policy_version)
+        VALUES (?,?,?,?,?,?,?,?,1,1)""", (row["id"], row["claim_fence"], generation,
         version, text, digest, worker, now))
     result_id = cursor.lastrowid
     binding_columns = {item[1] for item in conn.execute(
@@ -522,6 +558,8 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     return {"schema": "bach.worker-result.v1", "result_id": result_id,
             "task_id": row["id"], "fence": row["claim_fence"], "generation": generation,
             "task_version": task_content_version(row), "result_sha256": digest,
+            "submitted_by": worker, "submitted_at": now,
+            "submission_receipt_version": 1, "completion_policy_version": 1,
             "result": text, "accepted": False}
 
 
@@ -529,15 +567,235 @@ def result_reference(record):
     return f"bach-task-result:{record['result_id']}:{record['result_sha256']}"
 
 
-def finish_submission(conn, record, event_id):
-    conn.execute("UPDATE worker_task_results SET submission_event_id=? WHERE id=?",
-                 (event_id, record["result_id"]))
+def _receipt_digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
+        separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+
+
+def _completion_decision_readback(conn, record):
+    """Validate the policy event recorded before an accepted status change."""
+    event_id = record.get("completion_decision_event_id")
+    digest = record.get("completion_decision_sha256")
+    if (type(event_id) is not int or event_id <= 0
+            or type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None):
+        return {"availability": "unavailable", "reason": "completion_decision_missing"}
+    event = _dict_row(conn.execute("SELECT * FROM task_history WHERE id=? AND task_id=?",
+                                  (event_id, record["task_id"])))
+    if (event is None or event.get("action") != "worker_completion_decision"
+            or event.get("field_changed") != "lease"
+            or event.get("changed_by") != "native-worker-completion-policy"
+            or event.get("old_value") is not None
+            or type(record.get("accepted_status_event_id")) is not int
+            or event_id >= record["accepted_status_event_id"]):
+        return {"availability": "unavailable", "reason": "completion_decision_invalid"}
+    try:
+        detail = json.loads(event["new_value"])
+        receipt = {key: value for key, value in detail.items() if key != "receipt_sha256"}
+        if (detail.get("receipt_sha256") != digest or _receipt_digest(receipt) != digest
+                or detail.get("schema") != "bach.worker-completion-evaluation.v1"
+                or type(detail.get("task_id")) is not int or detail["task_id"] != record["task_id"]
+                or type(detail.get("result_id")) is not int or detail["result_id"] != record["result_id"]
+                or detail.get("result_sha256") != record["result_sha256"]
+                or detail.get("task_version") != record["task_version"]
+                or type(detail.get("status_revision")) is not int
+                or not 0 <= detail["status_revision"] < event_id
+                or type(detail.get("result_revision")) is not str
+                or re.fullmatch(r"[a-f0-9]{64}", detail["result_revision"]) is None
+                or detail.get("decision", {}).get("completion_allowed") is not True):
+            raise ValueError("receipt mismatch")
+        scope, execution = record.get("scope", {}), record.get("execution", {})
+        if (scope.get("availability") != "recorded"
+                or execution.get("availability") != "available"):
+            raise ValueError("evidence missing")
+        revision = _receipt_digest({"schema": "bach.worker-result-revision.v1",
+            "submission_revision": record["submission_revision"],
+            "execution_revision": execution["execution_revision"],
+            "scope_receipt_sha256": scope["scope_receipt_sha256"],
+            "scope_event_id": scope["scope_event_id"]})
+        if revision != detail["result_revision"]:
+            raise ValueError("revision changed")
+        return {"availability": "available", "event_id": event_id,
+                "result_revision": revision, "decision_sha256": digest}
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return {"availability": "unavailable", "reason": "completion_decision_invalid"}
+
+
+def _submission_policy(conn, task_id):
+    """Freeze configuration from the submit transaction, not a later settings read."""
+    try:
+        from . import worker_policy_settings as settings
+    except ImportError:
+        return {"availability": "unavailable", "reason": "policy_contract_unavailable"}
+    original_row_factory = conn.row_factory
+    try:
+        # The lease service also accepts plain sqlite connections. Settings
+        # expect named rows; restore the caller's factory before returning.
+        conn.row_factory = sqlite3.Row
+        global_view = settings._global(conn)
+        task_view = settings._task_snapshot(conn, task_id)
+        return {"availability": "available", "contract_version": settings.CONTRACT,
+            "policy": global_view["policy"],
+            "global_configuration_version": global_view["configuration_version"],
+            "global_policy_source": global_view["policy_source"],
+            "override": task_view["override"],
+            "configuration_version": task_view["configuration_version"],
+            "policy_source": task_view["effective"]["policy_source"],
+            "override_present": task_view["effective"]["policy_source"] == "task_override",
+            "user_review_required": task_view["effective"]["user_review_required"]}
+    except sqlite3.Error:
+        return {"availability": "unavailable", "reason": "policy_store_unavailable"}
+    except (ValueError, TypeError, KeyError, AttributeError, settings.PolicyUnavailable):
+        return {"availability": "unavailable", "reason": "policy_contract_unavailable"}
+    finally:
+        conn.row_factory = original_row_factory
+
+
+def prepare_submission_receipt(conn, record):
+    """Bind the exact in-progress -> review event before release history is added."""
+    status_id = _status_revision(conn, record["task_id"])
+    status = conn.execute("SELECT old_value,new_value,changed_by,changed_at FROM task_history "
+        "WHERE id=? AND task_id=? AND action='status_change' AND field_changed='status'",
+        (status_id, record["task_id"])).fetchone()
+    if (type(status_id) is not int or status_id <= 0 or status is None
+            or tuple(status[:3]) != ("in_progress", "review", record["submitted_by"])
+            or not isinstance(status[3], str) or not status[3]):
+        raise ResultConflict("Submission-Statuswechsel ist nicht bestätigt")
+    return {"schema": SUBMISSION_RECEIPT_SCHEMA, "result_id": record["result_id"],
+        "task_id": record["task_id"], "fence": record["fence"],
+        "generation": record["generation"], "task_version": record["task_version"],
+        "result_sha256": record["result_sha256"], "submitted_by": record["submitted_by"],
+        "submitted_at": record["submitted_at"], "submitted_status_event_id": status_id,
+        "submitted_status_changed_at": status[3],
+        "completion_policy_version": record["completion_policy_version"],
+        "policy": _submission_policy(conn, record["task_id"])}
+
+
+def _submission_revision(record, digest):
+    result_id = record.get("result_id", record.get("id"))
+    return "sha256:" + _receipt_digest({"schema": "bach.worker-submission-revision.v1",
+        "task_id": record["task_id"], "result_id": result_id,
+        "submission_event_id": record["submission_event_id"], "submission_receipt_sha256": digest})
+
+
+def finish_submission(conn, record, event_id, receipt):
+    digest = _receipt_digest(receipt)
+    cursor = conn.execute("UPDATE worker_task_results SET submission_event_id=?,"
+        "submitted_status_event_id=?,submission_receipt_sha256=? WHERE id=? AND task_id=? "
+        "AND submission_event_id IS NULL", (event_id, receipt["submitted_status_event_id"],
+        digest, record["result_id"], record["task_id"]))
+    if cursor.rowcount != 1:
+        raise ResultConflict("Submission-Beleg konnte nicht gespeichert werden")
     if _table_exists(conn, "task_result_service_producer_bindings"):
         conn.execute("UPDATE task_result_service_producer_bindings SET submission_event_id=? "
                      "WHERE result_id=?", (event_id, record["result_id"]))
     record["submission_event_id"] = event_id
-    record["status_revision"] = _status_revision(conn, record["task_id"])
+    record["submitted_status_event_id"] = receipt["submitted_status_event_id"]
+    record["submission_receipt_sha256"] = digest
+    record["status_revision"] = receipt["submitted_status_event_id"]
+    record["submission_revision"] = _submission_revision(record, digest)
+    record["submission"] = {"schema": SUBMISSION_READBACK_SCHEMA,
+        "availability": "available", "receipt_sha256": digest,
+        "submitted_status_event_id": receipt["submitted_status_event_id"],
+        "policy": receipt["policy"]}
     return record
+
+
+def _submission_readback(conn, record):
+    """Verify one historical submit without requiring its released claim to be live."""
+    invalid = {"schema": SUBMISSION_READBACK_SCHEMA, "availability": "unavailable",
+               "reason": "submission_receipt_invalid"}
+    event_id = record.get("submission_event_id")
+    if type(event_id) is not int or event_id <= 0:
+        return invalid
+    event = _dict_row(conn.execute("SELECT task_id,action,field_changed,old_value,"
+        "new_value,changed_by,changed_at FROM task_history WHERE id=?", (event_id,)))
+    if (event is None or type(record.get("id")) is not int or record["id"] <= 0
+            or type(record.get("task_id")) is not int or record["task_id"] <= 0
+            or type(record.get("fence")) is not int or record["fence"] <= 0
+            or event["task_id"] != record["task_id"] or event["action"] != "lease_release"
+            or event["field_changed"] != "lease" or event["old_value"] != "in_progress"
+            or event["changed_by"] != record["submitted_by"]
+            or event["changed_at"] != record["submitted_at"]):
+        return invalid
+    try:
+        detail = json.loads(event["new_value"])
+    except (TypeError, ValueError):
+        return invalid
+    if (not isinstance(detail, dict) or type(detail.get("fence")) is not int
+            or detail["fence"] != record["fence"] or detail.get("outcome") != "review"
+            or detail.get("result_ref") != result_reference({"result_id": record["id"],
+                "result_sha256": record["result_sha256"]}) or detail.get("note") != ""):
+        return invalid
+    receipt = detail.get("submission_receipt")
+    digest = record.get("submission_receipt_sha256")
+    status_id = record.get("submitted_status_event_id")
+    version = record.get("submission_receipt_version", 0)
+    completion_version = record.get("completion_policy_version", 0)
+    if type(version) is not int or version not in (0, 1):
+        return invalid
+    if type(completion_version) is not int or completion_version not in (0, 1):
+        return invalid
+    if completion_version == 1 and version != 1:
+        return invalid
+    if version == 0 and receipt is None and digest is None and status_id is None:
+        status = _dict_row(conn.execute("SELECT id,old_value,new_value,changed_by FROM task_history "
+            "WHERE task_id=? AND action='status_change' AND field_changed='status' AND id<? "
+            "ORDER BY id DESC LIMIT 1", (record["task_id"], event_id)))
+        if (status is None or status["old_value"] != "in_progress"
+                or status["new_value"] != "review"
+                or status["changed_by"] != record["submitted_by"]):
+            return invalid
+        return {"schema": SUBMISSION_READBACK_SCHEMA, "availability": "legacy_release_only",
+                "reason": "legacy_release_only"}
+    if version != 1:
+        return invalid
+    if (not isinstance(receipt, dict) or type(status_id) is not int or status_id <= 0
+            or status_id >= event_id or not isinstance(digest, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", digest)):
+        return invalid
+    if (type(receipt.get("result_id")) is not int or receipt["result_id"] <= 0
+            or type(receipt.get("task_id")) is not int or receipt["task_id"] <= 0
+            or type(receipt.get("fence")) is not int or receipt["fence"] <= 0
+            or type(receipt.get("submitted_status_event_id")) is not int
+            or receipt["submitted_status_event_id"] <= 0
+            or not isinstance(receipt.get("submitted_status_changed_at"), str)
+            or not receipt["submitted_status_changed_at"]):
+        return invalid
+    expected = {"schema": SUBMISSION_RECEIPT_SCHEMA, "result_id": record["id"],
+        "task_id": record["task_id"], "fence": record["fence"],
+        "generation": record["generation"], "task_version": record["task_version"],
+        "result_sha256": record["result_sha256"], "submitted_by": record["submitted_by"],
+        "submitted_at": record["submitted_at"], "submitted_status_event_id": status_id,
+        "submitted_status_changed_at": receipt["submitted_status_changed_at"],
+        "policy": receipt.get("policy")}
+    if completion_version == 1:
+        expected["completion_policy_version"] = 1
+    policy = receipt.get("policy")
+    try:
+        digest_matches = _receipt_digest(receipt) == digest
+    except (TypeError, ValueError, OverflowError):
+        digest_matches = False
+    if (receipt != expected or not isinstance(policy, dict)
+            or policy.get("availability") not in ("available", "unavailable")
+            or (policy["availability"] == "unavailable" and policy.get("reason") not in (
+                "policy_store_unavailable", "policy_contract_unavailable"))
+            or not digest_matches):
+        return invalid
+    status = _dict_row(conn.execute("SELECT id,task_id,action,field_changed,old_value,"
+        "new_value,changed_by,changed_at FROM task_history WHERE id=?", (status_id,)))
+    latest_before = conn.execute("SELECT MAX(id) FROM task_history WHERE task_id=? "
+        "AND action='status_change' AND field_changed='status' AND id<?",
+        (record["task_id"], event_id)).fetchone()
+    if (status is None or status["task_id"] != record["task_id"]
+            or status["action"] != "status_change" or status["field_changed"] != "status"
+            or status["old_value"] != "in_progress" or status["new_value"] != "review"
+            or status["changed_by"] != record["submitted_by"]
+            or status["changed_at"] != receipt["submitted_status_changed_at"]
+            or latest_before is None or latest_before[0] != status_id):
+        return invalid
+    return {"schema": SUBMISSION_READBACK_SCHEMA, "availability": "available",
+        "receipt_sha256": digest, "submitted_status_event_id": status_id,
+        "policy": policy}
 
 
 def _legacy_result(conn, task_id):
@@ -682,6 +940,8 @@ def read_result(conn, task_id, *, operator_token=None, service_id=None, service_
         same_content = task_content_version(task) == record["task_version"]
         same_fence = int(task.get("claim_fence") or 0) == record["fence"]
         same_digest = hashlib.sha256(record["result"].encode("utf-8")).hexdigest() == record["result_sha256"]
+        submission = _submission_readback(conn, record)
+        release_valid = submission["availability"] in {"available", "legacy_release_only"}
         decision = None
         if record["acceptance_event_id"] is not None:
             decision = conn.execute("SELECT changed_by,new_value FROM task_history WHERE id=? "
@@ -694,14 +954,49 @@ def read_result(conn, task_id, *, operator_token=None, service_id=None, service_
                     "status_revision": record["accepted_status_event_id"]})
         except (TypeError, ValueError):
             decision_matches = False
-        accepted = (task["status"] in {"done", "completed"} and same_content and same_fence
+        accepted = (task["status"] in {"done", "completed"} and release_valid
+                    and same_content and same_fence
                     and same_digest and decision_matches and bool(record["accepted_by"])
                     and record["accepted_status_event_id"] == revision)
+        submission_revision = (_submission_revision(record, submission["receipt_sha256"])
+                               if submission["availability"] == "available" else None)
         record.update(schema="bach.worker-result.v1", result_id=record.pop("id"),
-                      accepted=accepted, status_revision=revision,
+                      accepted=accepted, status_revision=revision, submission=submission,
+                      submission_revision=submission_revision,
                       reason=("accepted" if accepted else "task_content_changed" if not same_content
                               else "fence_changed" if not same_fence else "result_content_changed" if not same_digest
+                               else "submission_receipt_invalid" if not release_valid
                               else "awaiting_review" if task["status"] == "review" else "acceptance_not_current"))
+        from .worker_execution_evidence import read_execution_evidence
+        record["execution"] = read_execution_evidence(conn, record)
+        from .worker_scope_evidence import read_scope_evidence
+        # Git is deliberately outside this SQLite snapshot. A recorded receipt
+        # is historical evidence until the local SDK/API revalidates its tree.
+        record["scope"] = read_scope_evidence(conn, record)
+        record["result_revision"] = None
+        from .worker_result_review import read_review_evidence, review_task_metadata
+        # This read is history/DB only. The SDK/API scope projection below
+        # must still compare the exact currently observed Git revision.
+        record["model_review"] = read_review_evidence(conn, record)
+        if record.get("completion_policy_version") == 1 and accepted:
+            review_child = review_task_metadata(conn, task_id)
+            child_row = (_dict_row(conn.execute("SELECT target_task_id FROM worker_result_model_reviews "
+                "WHERE review_task_id=? AND child_result_id=?",
+                (task_id, record["result_id"]))) if review_child is not None else None)
+            if (review_child is not None and child_row is not None
+                    and child_row["target_task_id"] == review_child["target_task_id"]
+                    and record.get("accepted_by") == "native-result-review-controller"):
+                record["completion_decision"] = {"availability": "administrative_review_child",
+                    "result_id": record["result_id"], "target_task_id": child_row["target_task_id"]}
+            else:
+                record["completion_decision"] = _completion_decision_readback(conn, record)
+            if record["completion_decision"]["availability"] != "available":
+                if record["completion_decision"]["availability"] != "administrative_review_child":
+                    record["accepted"] = False
+                    record["reason"] = "completion_decision_invalid"
+        elif record.get("completion_policy_version") == 1:
+            record["completion_decision"] = {"availability": "unavailable",
+                "reason": "completion_not_recorded"}
         response = {"schema": "bach.task-result-readback.v1", "task_id": task_id,
                     "task_version": task_content_version(task), "status": task["status"],
                     "status_revision": revision, "result": record, "verified": True}
@@ -938,7 +1233,81 @@ def request_result_correction(conn, task_id, payload, *, operator_token=None,
         raise
 
 
-def _correction_audit_matches(row, detail):
+def _policy_correction_decision_matches(conn, row):
+    """Verify the immutable policy event behind a controller correction."""
+    digest = row.get("policy_decision_sha256")
+    correction_event = row.get("event_id")
+    if (type(digest) is not str or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+            or type(correction_event) is not int or correction_event <= 0):
+        return False
+    source = _dict_row(conn.execute("SELECT * FROM worker_task_results WHERE id=? AND task_id=?",
+        (row.get("source_result_id"), row.get("task_id"))))
+    if source is None:
+        return False
+    policy_event_id = source.get("completion_decision_event_id")
+    if (type(policy_event_id) is not int or not 0 < policy_event_id < correction_event
+            or source.get("completion_decision_sha256") != digest):
+        return False
+    event = _dict_row(conn.execute("SELECT * FROM task_history WHERE id=? AND task_id=?",
+        (policy_event_id, source["task_id"])))
+    if (event is None or event.get("action") != "worker_completion_decision"
+            or event.get("field_changed") != "lease" or event.get("old_value") is not None
+            or event.get("changed_by") != "native-worker-completion-policy"):
+        return False
+    try:
+        stored = json.loads(event["new_value"])
+        detail = {key: value for key, value in stored.items() if key != "receipt_sha256"}
+        if (stored.get("receipt_sha256") != digest or _receipt_digest(detail) != digest
+                or detail.get("schema") != "bach.worker-completion-evaluation.v1"
+                or type(detail.get("task_id")) is not int or detail["task_id"] != source["task_id"]
+                or type(detail.get("result_id")) is not int or detail["result_id"] != source["id"]
+                or detail.get("result_sha256") != source["result_sha256"]
+                or detail.get("task_version") != source["task_version"]
+                or detail.get("status_revision") != row.get("source_status_revision")
+                or detail.get("decision", {}).get("state") != "correction_required"
+                or detail["decision"].get("completion_allowed") is not False
+                or detail.get("status_revision") != source.get("submitted_status_event_id")
+                or not 0 < detail["status_revision"] < policy_event_id):
+            return False
+        guard = detail.get("evidence_guard")
+        if guard is None:
+            return (type(detail.get("result_revision")) is str
+                and re.fullmatch(r"[a-f0-9]{64}", detail["result_revision"]) is not None)
+        if (set(guard) != {"schema", "reason", "task_tree", "execution_revision", "author_id"}
+                or guard.get("schema") != "bach.worker-missing-scope-guard.v1"
+                or guard.get("reason") != "scope_not_recorded"
+                or guard.get("task_tree") != "definitively_absent"
+                or detail.get("result_revision") is not None
+                or detail.get("generation") != source["generation"]
+                or detail.get("fence") != source["fence"]
+                or detail["decision"] != {"state": "correction_required",
+                    "reason": "scope_evidence_missing", "completion_allowed": False,
+                    "worker_may_claim_next": True}):
+            return False
+        submission = _submission_readback(conn, source)
+        if submission.get("availability") != "available":
+            return False
+        revision = _submission_revision(source, submission["receipt_sha256"])
+        if revision != detail.get("submission_revision"):
+            return False
+        from .worker_execution_evidence import read_execution_evidence
+        historical = dict(source, result_id=source["id"], reason="awaiting_review",
+                          submission=submission, submission_revision=revision)
+        execution = read_execution_evidence(conn, historical)
+        if (execution.get("availability") != "available"
+                or execution.get("execution_revision") != guard["execution_revision"]
+                or execution.get("model_principal_id") != guard["author_id"]):
+            return False
+        if _table_exists(conn, "worker_scope_evidence") and conn.execute(
+                "SELECT 1 FROM worker_scope_evidence WHERE result_id=?",
+                (source["id"],)).fetchone() is not None:
+            return False
+        return True
+    except (TypeError, ValueError, KeyError, AttributeError, sqlite3.Error):
+        return False
+
+
+def _correction_audit_matches(conn, row, detail):
     """Bind every correction-ledger field to its event before exposing it."""
     expected = {
         "correction_id": row.get("correction_id"),
@@ -969,11 +1338,30 @@ def _correction_audit_matches(row, detail):
     note = expected["correction_note"]
     next_version = expected["next_task_version"]
     device_id = row.get("requested_by_device_id")
+    policy_sha = row.get("policy_decision_sha256")
+    if policy_sha is not None:
+        from .worker_result_review import review_invalid_correction_matches
+        from .machine_false_acceptance_recovery import repair_correction_matches
+        review_correction = (device_id == 0
+            and row.get("event_changed_by") == "native-result-review-controller"
+            and review_invalid_correction_matches(conn, row))
+        machine_repair = (device_id == 0
+            and row.get("event_changed_by") == "native-machine-false-acceptance-controller"
+            and repair_correction_matches(conn, row, detail))
+        if (type(policy_sha) is not str or re.fullmatch(r"[a-f0-9]{64}", policy_sha) is None
+                or detail.get("policy_decision_sha256") != policy_sha or device_id != 0
+                or not (review_correction or machine_repair or (
+                    row.get("event_changed_by") == "native-worker-completion-policy"
+                    and _policy_correction_decision_matches(conn, row)))):
+            return False
     service_id = row.get("requested_by_service_id")
     if service_id is not None:
         actor_valid = (isinstance(service_id, str) and bool(service_id)
-                       and device_id is None
+                       and device_id is None and policy_sha is None
                        and row.get("event_changed_by") == f"operator-service:{service_id}")
+    elif policy_sha is not None:
+        # Device 0 and the native controller evidence were verified above.
+        actor_valid = type(device_id) is int and device_id == 0
     else:
         actor_valid = (type(device_id) is int and device_id > 0
                        and row.get("event_changed_by") == f"operator-device:{device_id}")
@@ -1030,7 +1418,7 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
         )
         for event_type, event_column, timestamp, result_index, action in result_sources:
             branch = f"""
-                SELECT h.id AS event_id, '{event_type}' AS event_type,
+                SELECT h.id AS event_id, h.task_id AS task_id, '{event_type}' AS event_type,
                        h.new_value AS event_new_value, h.changed_at AS event_changed_at,
                        h.changed_by AS event_changed_by, {timestamp} AS source_timestamp,
                        r.id AS result_id, r.result AS result_text,
@@ -1041,6 +1429,7 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
                        NULL AS source_generation, NULL AS source_fence,
                        NULL AS source_task_version, NULL AS source_status_revision,
                        NULL AS correction_note, NULL AS request_id,
+                       NULL AS policy_decision_sha256,
                        NULL AS requested_by_device_id, NULL AS requested_by_service_id, NULL AS correction_next_task_version
                 FROM task_history AS h INDEXED BY idx_task_history_task_action_id
                 JOIN worker_task_results AS r INDEXED BY {result_index}
@@ -1055,10 +1444,13 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
             params.append(scan_limit + 1)
 
     if _table_exists(conn, "task_result_corrections"):
-        correction_columns = {row[1] for row in conn.execute("PRAGMA table_info(task_result_corrections)")}
+        correction_columns = {item[1] for item in conn.execute(
+            "PRAGMA table_info(task_result_corrections)")}
+        policy_column = ("c.policy_decision_sha256" if "policy_decision_sha256" in correction_columns
+                         else "NULL")
         service_actor = "c.requested_by_service_id" if "requested_by_service_id" in correction_columns else "NULL"
         branch = f"""
-            SELECT h.id AS event_id, 'correction_requested' AS event_type,
+            SELECT h.id AS event_id, h.task_id AS task_id, 'correction_requested' AS event_type,
                    h.new_value AS event_new_value, h.changed_at AS event_changed_at,
                    h.changed_by AS event_changed_by, c.requested_at AS source_timestamp,
                    NULL AS result_id, NULL AS result_text, NULL AS result_sha256,
@@ -1070,6 +1462,7 @@ def _history_candidate_query(conn, task_id, before_event_id, scan_limit):
                    c.source_task_version AS source_task_version,
                    c.source_status_revision AS source_status_revision,
                    c.correction_note AS correction_note, c.request_id AS request_id,
+                   {policy_column} AS policy_decision_sha256,
                    c.requested_by_device_id AS requested_by_device_id,
                    {service_actor} AS requested_by_service_id,
                    c.next_task_version AS correction_next_task_version
@@ -1193,7 +1586,7 @@ def read_result_history(conn, task_id, *, before_event_id=None, limit=20, servic
                 else:
                     raise ResultHistoryUnavailable("Ergebnisverlauf enthält ein unbestätigtes Abnahmeereignis")
             elif row["event_type"] == "correction_requested":
-                if not _correction_audit_matches(row, detail):
+                if not _correction_audit_matches(conn, row, detail):
                     raise ResultHistoryUnavailable("Ergebnisverlauf enthält eine unbestätigte Korrektur")
                 audit_time = _canonical_history_timestamp(row.get("event_changed_at"), None)
                 events.append({"event_id": event_id, "type": "correction_requested",
@@ -1329,6 +1722,8 @@ def active_correction_request(conn, task_id):
         raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt") from None
     audit_row = {
         "correction_id": request.get("id"),
+        "event_id": event_id,
+        "task_id": task_id,
         "correction_round": request.get("correction_round"),
         "source_result_id": request.get("source_result_id"),
         "source_result_sha256": request.get("source_result_sha256"),
@@ -1339,13 +1734,14 @@ def active_correction_request(conn, task_id):
         "correction_note": request.get("correction_note"),
         "request_id": request.get("request_id"),
         "requested_by_device_id": request.get("requested_by_device_id"),
+        "policy_decision_sha256": request.get("policy_decision_sha256"),
         "requested_by_service_id": request.get("requested_by_service_id"),
         "source_timestamp": request.get("requested_at"),
         "event_changed_at": audit.get("changed_at"),
         "event_changed_by": audit.get("changed_by"),
         "correction_next_task_version": request.get("next_task_version"),
     }
-    if not _correction_audit_matches(audit_row, detail):
+    if not _correction_audit_matches(conn, audit_row, detail):
         raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
     if not _has_results(conn):
         raise CorrectionContextDenied("Task-Korrekturkontext nicht bestätigt")
@@ -1383,20 +1779,86 @@ class _Acceptance:
             conn, record["task_id"], record["result_id"], record["result_sha256"])
 
 
+class _PolicyAcceptance(_Acceptance):
+    def __init__(self, conn, record, *, result_revision, decision_sha256, decision_event_id):
+        super().__init__(conn, record)
+        self.result_revision = result_revision
+        self.decision_sha256 = decision_sha256
+        self.decision_event_id = decision_event_id
+
+
+def _has_worker_result_release(conn, task_id):
+    """Keep a lost result row from downgrading a native submission to manual Done."""
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_history'").fetchone() is None:
+        return False
+    return conn.execute("SELECT 1 FROM task_history WHERE task_id=? "
+        "AND action='lease_release' AND instr(new_value,'bach-task-result:')>0 LIMIT 1",
+        (task_id,)).fetchone() is not None
+
+
 def assert_completion_allowed(conn, task_id, acceptance=None, *, changes=None):
     """Shared write choke point; a model's status alias grants no acceptance."""
     current = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
     if current and current.get("claim_id") and current.get("claim_result_generation"):
         raise ResultConflict("Native Workergeneration benötigt Ergebnisabgabe und getrennte Abnahme")
+    # A predeclared task gate is meaningful even before the first worker result.
+    # Missing result storage must not turn such a task into an ordinary manual Done.
+    gated = bool(current and (
+        current.get("require_user_review") not in (None, 0)
+        or current.get("github_pr_review_required") not in (None, 0)
+        or current.get("completion_contract_json") is not None
+        or current.get("github_review_contract_json") is not None))
     if not _has_results(conn):
+        if gated or _has_worker_result_release(conn, task_id):
+            raise ResultConflict("Vorab festgelegter Abschlussvertrag benötigt ein gültiges Worker-Ergebnis")
         return
     observed = read_result(conn, task_id)
     record = observed["result"]
     if not record or record.get("result_id") is None:
+        if gated or _has_worker_result_release(conn, task_id):
+            raise ResultConflict("Vorab festgelegter Abschlussvertrag benötigt ein gültiges Worker-Ergebnis")
         return
+    marker = record.get("completion_policy_version", 0)
+    if type(marker) is not int or marker not in (0, 1):
+        raise ResultConflict("Unbekannte Abschlussvertragsversion")
+    if record.get("submission", {}).get("availability") not in {"available", "legacy_release_only"}:
+        raise ResultConflict("Submission-Beleg ist nicht gültig")
     from .task_lease import task_content_version
     if task_content_version({**current, **(changes or {})}) != record.get("task_version"):
         raise ResultConflict("Geänderter Auftrag benötigt eine neue Ergebnisabgabe und Abnahme")
+    if marker == 1:
+        if (type(acceptance) is _PolicyAcceptance and acceptance.conn is conn
+                and conn.in_transaction and acceptance.task_id == task_id
+                and acceptance.result_id == record["result_id"]
+                and acceptance.digest == record["result_sha256"]
+                and re.fullmatch(r"[a-f0-9]{64}", acceptance.result_revision or "")
+                and re.fullmatch(r"[a-f0-9]{64}", acceptance.decision_sha256 or "")
+                and type(acceptance.decision_event_id) is int):
+            event = _dict_row(conn.execute("SELECT * FROM task_history WHERE id=? AND task_id=?",
+                                           (acceptance.decision_event_id, task_id)))
+            if event and event["action"] == "worker_completion_decision" and event["field_changed"] == "lease":
+                try:
+                    detail = json.loads(event["new_value"])
+                    from .worker_completion_policy import _digest
+                    if (detail.get("receipt_sha256") == acceptance.decision_sha256
+                            and _digest({key: value for key, value in detail.items()
+                                         if key != "receipt_sha256"}) == acceptance.decision_sha256
+                            and detail.get("result_revision") == acceptance.result_revision
+                            and detail.get("result_id") == record["result_id"]
+                            and detail.get("decision", {}).get("completion_allowed") is True):
+                        return
+                except (TypeError, ValueError, AttributeError):
+                    pass
+        # Performed review work has its own validated reserved child intent.
+        # This permission never applies to its parent or an ordinary worker.
+        from .worker_result_review import review_task_metadata
+        if (type(acceptance) is _Acceptance and acceptance.conn is conn
+                and conn.in_transaction and acceptance.task_id == task_id
+                and acceptance.result_id == record["result_id"]
+                and acceptance.digest == record["result_sha256"]
+                and review_task_metadata(conn, task_id) is not None):
+            return
+        raise ResultConflict("Policyverwalteter Abschluss benötigt aktuelle geprüfte Entscheidung")
     if record.get("accepted") is True:
         return
     if (isinstance(acceptance, _Acceptance) and acceptance.conn is conn
@@ -1407,14 +1869,22 @@ def assert_completion_allowed(conn, task_id, acceptance=None, *, changes=None):
 
 
 def accept_result(conn, task_id, result_id, *, digest, task_version, status_revision,
-                  operator_token=None, service_id=None, service_token=None, service_revision=None):
-    """Accept the exact current result as an operator or scoped service transaction."""
+                  operator_token=None, result_revision=None, task_contract_met=None,
+                  repo_root=None, worktrees_dir=None, github_observer=None,
+                  service_id=None, service_token=None, service_revision=None):
+    """Accept the exact current result as an operator or scoped service transaction.
+
+    Policy-bound results (completion_policy_version 1) are accepted only through
+    the authenticated operator review; the scoped service contract has no such path.
+    """
     if (type(result_id) is not int or result_id <= 0 or type(status_revision) is not int
             or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
             or not isinstance(task_version, str) or not re.fullmatch(r"[a-f0-9]{64}", task_version)):
         raise ResultConflict("Ungültige Ergebnisabnahme")
     service_mode = service_id is not None or service_token is not None
-    if service_mode == (operator_token is not None):
+    # Both credential kinds are ambiguous (as in read_result); no credential at all
+    # stays a personal-operator denial (ResultPermissionDenied) on the operator path.
+    if service_mode and operator_token is not None:
         raise ResultServicePermissionDenied("Genau eine Ergebnisanmeldung erforderlich", code="ambiguous_credentials")
     if conn.in_transaction:
         raise ResultConflict("Abnahme benötigt eine eigene kanonische Transaktion")
@@ -1435,7 +1905,29 @@ def accept_result(conn, task_id, result_id, *, digest, task_version, status_revi
             raise ResultConflict("Ergebnis hat sich seit dem Lesen verändert")
         _, _, service_provenance = _authorize_result_service(
             conn, service_precheck, pre_task, pre_result, "accept")
-
+    existing = read_result(conn, task_id).get("result")
+    if isinstance(existing, dict) and existing.get("completion_policy_version") == 1:
+        if service_mode:
+            # The completion policy records an authenticated operator review
+            # before Done; the scoped service contract has no such decision path.
+            raise ResultServicePermissionDenied(
+                "Policyverwalteter Abschluss benötigt die Operator-Prüfung",
+                code="completion_policy_operator_review_required")
+        from .worker_completion_policy import record_operator_review, evaluate_current_result
+        from .worker_scope_evidence import project_scope_evidence
+        record_operator_review(conn, task_id, result_id, digest=digest,
+            task_version=task_version, status_revision=status_revision,
+            result_revision=result_revision, task_contract_met=task_contract_met,
+            operator_token=operator_token, repo_root=repo_root,
+            worktrees_dir=worktrees_dir, github_observer=github_observer)
+        data = project_scope_evidence(read_result(conn, task_id, operator_token=operator_token),
+            repo_root=repo_root, worktrees_dir=worktrees_dir)
+        data["completion_evaluation"] = evaluate_current_result(conn, task_id,
+            repo_root=repo_root, worktrees_dir=worktrees_dir,
+            github_observer=github_observer)
+        return data
+    if isinstance(existing, dict) and existing.get("completion_policy_version") not in (None, 0):
+        raise ResultConflict("Unbekannte Abschlussvertragsversion")
     conn.execute("BEGIN IMMEDIATE")
     try:
         service_context = None

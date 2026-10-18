@@ -181,6 +181,10 @@ def ensure_task_result_contract_columns(conn: sqlite3.Connection) -> None:
     for name, declaration in (
         ("result_max_chars", "INTEGER"),
         ("result_correction_request_id", "INTEGER"),
+        ("completion_contract_json", "TEXT"),
+        ("require_user_review", "INTEGER"),
+        ("github_pr_review_required", "INTEGER"),
+        ("github_review_contract_json", "TEXT"),
     ):
         if name not in columns:
             try:

@@ -415,6 +415,10 @@ class TaskCreate(BaseModel):
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
     result_max_chars: Optional[StrictInt] = None
+    completion_contract: Optional[dict] = None
+    require_user_review: Optional[StrictBool] = None
+    github_pr_review_required: Optional[StrictBool] = None
+    github_review_contract: Optional[dict] = None
 
 
 class ThemeUpdate(BaseModel):
@@ -437,6 +441,10 @@ class TaskUpdate(BaseModel):
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
     result_max_chars: Optional[StrictInt] = None
+    completion_contract: Optional[dict] = None
+    require_user_review: Optional[StrictBool] = None
+    github_pr_review_required: Optional[StrictBool] = None
+    github_review_contract: Optional[dict] = None
     assignment_configuration_version: Optional[str] = None
     changed_by: Optional[str] = None
     # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
@@ -2362,6 +2370,40 @@ async def api_get_tasks(
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
+def _completion_task_fields(payload, *, existing=None):
+    """Validate only explicitly supplied task policy metadata for write routes."""
+    from hub._services.worker_completion_contract import canonical_contract as task_contract
+    from hub._services.worker_github_review import canonical_contract as github_contract
+    fields = {}
+    if "completion_contract" in payload:
+        value = payload["completion_contract"]
+        try:
+            fields["completion_contract_json"] = None if value is None else task_contract(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+    if "github_review_contract" in payload:
+        value = payload["github_review_contract"]
+        try:
+            fields["github_review_contract_json"] = None if value is None else github_contract(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+    for source in ("require_user_review", "github_pr_review_required"):
+        if source in payload:
+            value = payload[source]
+            if type(value) is not bool:
+                raise HTTPException(status_code=422, detail=f"{source} muss true oder false sein")
+            if existing and existing.get(source) == 1 and value is False:
+                raise HTTPException(status_code=409, detail=f"{source} darf nicht zurückgenommen werden")
+            fields[source] = int(value)
+    github_required = fields.get("github_pr_review_required",
+                                 existing.get("github_pr_review_required") if existing else None)
+    github_spec = fields.get("github_review_contract_json",
+                             existing.get("github_review_contract_json") if existing else None)
+    if github_required == 1 and not github_spec:
+        raise HTTPException(status_code=422, detail="GitHub-Pflicht benötigt einen Reviewvertrag")
+    return fields
+
+
 @app.post("/api/tasks")
 async def api_post_task(payload: dict = Body(...)):
     """Erstellt neuen Task in bach.db via JSON Payload (idempotent via source/draft_hash)."""
@@ -2380,6 +2422,7 @@ async def api_post_task(payload: dict = Body(...)):
             result_max_chars = payload.get("result_max_chars")
             if result_max_chars is not None and (type(result_max_chars) is not int or not 1 <= result_max_chars <= 3000):
                 raise HTTPException(status_code=422, detail={"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
+            completion_fields = _completion_task_fields(payload)
             draft_source = payload.get("source") or payload.get("draft_hash")
             if draft_source:
                 existing = conn.execute("SELECT id FROM tasks WHERE source = ?", (draft_source,)).fetchone()
@@ -2406,8 +2449,8 @@ async def api_post_task(payload: dict = Body(...)):
 
             now = datetime.now().isoformat()
             cursor = conn.execute("""
-                INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin, result_max_chars)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin, result_max_chars, completion_contract_json, require_user_review, github_pr_review_required, github_review_contract_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 payload.get("title"),
                 payload.get("description", ""),
@@ -2425,6 +2468,10 @@ async def api_post_task(payload: dict = Body(...)):
                 payload.get("assigned_slot") or None,
                 payload.get("creation_origin") or None,
                 result_max_chars,
+                completion_fields.get("completion_contract_json"),
+                completion_fields.get("require_user_review"),
+                completion_fields.get("github_pr_review_required"),
+                completion_fields.get("github_review_contract_json"),
             ))
 
             task_id = cursor.lastrowid
@@ -2545,6 +2592,32 @@ class TaskResultAcceptanceRequest(BaseModel):
     result_sha256: StrictStr
     task_version: StrictStr
     status_revision: StrictInt
+    result_revision: Optional[StrictStr] = None
+    task_contract_met: Optional[StrictBool] = None
+
+
+class TaskResultReconcileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    result_id: StrictInt
+    result_sha256: StrictStr
+    result_revision: StrictStr
+    task_version: StrictStr
+    status_revision: StrictInt
+
+
+class LegacyReviewReopenRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task_version: StrictStr
+    status_revision: StrictInt
+
+
+def _completion_evaluation_read(task_id: int):
+    from hub._services.worker_completion_policy import evaluate_current_result
+    conn = get_bach_db()
+    try:
+        return evaluate_current_result(conn, task_id)
+    finally:
+        conn.close()
 
 
 @app.get("/api/tasks/{task_id}/result")
@@ -2563,7 +2636,7 @@ async def read_task_result(task_id: int, request: Request):
     try:
         if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
-        return read_result(conn, task_id, operator_token=operator_token or None,
+        data = read_result(conn, task_id, operator_token=operator_token or None,
                            service_id=service_id, service_token=service_token)
     except ResultServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail={"code": "result_service_unavailable", "message": str(exc)}) from None
@@ -2573,6 +2646,13 @@ async def read_task_result(task_id: int, request: Request):
         raise HTTPException(status_code=409, detail={"code": exc.code, "message": str(exc)}) from None
     finally:
         conn.close()
+    # Scope inspection can invoke Git/lock scanners and must not hold SQLite.
+    import asyncio
+    from hub._services.worker_scope_evidence import project_scope_evidence
+    data = await asyncio.to_thread(project_scope_evidence, data)
+    if isinstance(data.get("result"), dict) and data["result"].get("completion_policy_version") == 1:
+        data["completion_evaluation"] = await asyncio.to_thread(_completion_evaluation_read, task_id)
+    return data
 
 
 @app.get("/api/tasks/{task_id}/result/history")
@@ -2660,14 +2740,22 @@ async def accept_task_result(task_id: int, body: TaskResultAcceptanceRequest, re
         service_revision = int(revision_header) if revision_header is not None and revision_header.isdecimal() else None
     except (TypeError, ValueError):
         service_revision = None
-    conn = get_bach_db()
+    def run():
+        conn = get_bach_db()
+        try:
+            if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
+                raise HTTPException(status_code=404, detail="Task nicht gefunden")
+            return accept_result(conn, task_id, body.result_id, digest=body.result_sha256,
+                                 task_version=body.task_version, status_revision=body.status_revision,
+                                 result_revision=body.result_revision,
+                                 task_contract_met=body.task_contract_met,
+                                 operator_token=operator_token, service_id=service_id,
+                                 service_token=service_token, service_revision=service_revision)
+        finally:
+            conn.close()
     try:
-        if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="Task nicht gefunden")
-        return accept_result(conn, task_id, body.result_id, digest=body.result_sha256,
-                             task_version=body.task_version, status_revision=body.status_revision,
-                             operator_token=operator_token, service_id=service_id, service_token=service_token,
-                             service_revision=service_revision)
+        import asyncio
+        return await asyncio.to_thread(run)
     except ResultServiceUnavailable as exc:
         raise HTTPException(status_code=503, detail={"code": "result_service_unavailable", "message": str(exc)}) from None
     except ResultServicePermissionDenied as exc:
@@ -2678,8 +2766,67 @@ async def accept_task_result(task_id: int, body: TaskResultAcceptanceRequest, re
         raise HTTPException(status_code=403, detail=str(exc)) from None
     except ResultConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
-    finally:
-        conn.close()
+
+
+@app.post("/api/tasks/{task_id}/result/reconcile")
+async def reconcile_task_result(task_id: int, body: TaskResultReconcileRequest, request: Request):
+    """Explicit authorized recheck; it never records personal approval."""
+    from hub._services.worker_completion_policy import reconcile_operator_result
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+    def run():
+        conn = get_bach_db()
+        try:
+            if not conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone():
+                raise HTTPException(status_code=404, detail="Task nicht gefunden")
+            return reconcile_operator_result(conn, task_id, result_id=body.result_id,
+                result_sha256=body.result_sha256, result_revision=body.result_revision,
+                task_version=body.task_version, status_revision=body.status_revision,
+                operator_token=operator_token)
+        finally:
+            conn.close()
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@app.post("/api/tasks/{task_id}/legacy-review/reopen")
+async def reopen_legacy_review_task(
+        task_id: int, body: LegacyReviewReopenRequest, request: Request):
+    """Single-task, correction-authorized CAS; no worker/result capability."""
+    from hub._services.legacy_review_reopen import reopen_legacy_review
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return reopen_legacy_review(
+                conn, task_id, task_version=body.task_version,
+                status_revision=body.status_revision, operator_token=operator_token)
+        finally:
+            conn.close()
+
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={
+            "code": "result_operator_correction_scope_required", "message": str(exc),
+        }) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "legacy_review_changed_reload", "message": str(exc),
+        }) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "legacy_review_request_invalid", "message": str(exc),
+        }) from None
 
 
 def _run_lease_op(op, *args, **kwargs):
@@ -2871,7 +3018,8 @@ async def update_task(task_id: int, update: TaskUpdate):
     conn = get_bach_db()
     try:
         from hub._services.task_schema import ensure_task_result_contract_columns, ensure_task_slot_columns
-        if "result_max_chars" in update.model_fields_set:
+        if {"result_max_chars", "completion_contract", "require_user_review",
+            "github_pr_review_required", "github_review_contract"} & update.model_fields_set:
             ensure_task_result_contract_columns(conn)
             if update.result_max_chars is not None and not 1 <= update.result_max_chars <= 3000:
                 raise HTTPException(status_code=422, detail={"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
@@ -2947,6 +3095,10 @@ async def update_task(task_id: int, update: TaskUpdate):
                 field_values["assigned_slot"] = update.assigned_slot or None
             if "result_max_chars" in update.model_fields_set:
                 field_values["result_max_chars"] = update.result_max_chars
+            completion_payload = update.model_dump(exclude_unset=True, include={
+                "completion_contract", "require_user_review", "github_pr_review_required",
+                "github_review_contract"})
+            field_values.update(_completion_task_fields(completion_payload, existing=existing_row))
 
             try:
                 # T-20260916-1330: Fail-Closed-Guard gegen Resurrektion von

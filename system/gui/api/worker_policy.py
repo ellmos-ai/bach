@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, HTTPException, Request
 
 from hub._services import task_lease_settings as lease_settings
 from hub._services import worker_policy_settings as service
+from hub._services import worker_review_identity as identities
 
 router = APIRouter(prefix="/api", tags=["worker-policy"])
 
@@ -28,6 +29,8 @@ async def _call(function, *args, **kwargs):
         raise HTTPException(409, str(exc)) from exc
     except service.PolicyUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(403, "Gesonderte Operatorberechtigung erforderlich") from exc
     except KeyError as exc:
         raise HTTPException(404, "Task nicht gefunden") from exc
     except (ValueError, TypeError) as exc:
@@ -43,7 +46,21 @@ async def get_worker_policy(request: Request):
 @router.put("/system/worker-policy")
 async def put_worker_policy(request: Request, payload: dict = Body(...)):
     actor = _actor(request)
-    return await _call(service.write_global_policy, payload, actor=actor)
+    return await _call(service.write_global_policy, payload, actor=actor,
+                       operator_token=request.headers.get("X-BACH-Result-Operator", ""))
+
+
+@router.get("/system/worker-model-principals")
+async def get_worker_model_principals(request: Request):
+    _actor(request)
+    return await _call(identities.read_model_bindings)
+
+
+@router.put("/system/worker-model-principals")
+async def put_worker_model_principals(request: Request, payload: dict = Body(...)):
+    _actor(request)
+    return await _call(identities.write_model_bindings, payload,
+                       operator_token=request.headers.get("X-BACH-Result-Operator", ""))
 
 
 @router.get("/system/task-lease-settings")

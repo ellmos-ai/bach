@@ -646,6 +646,11 @@ def _is_secret_path(p: Path) -> bool:
 def _task_code_reader_enabled(worker_task_binding, allowed_tools, mode: str) -> bool:
     if worker_task_binding is None or not isinstance(allowed_tools, (set, frozenset, tuple, list)):
         return False
+    # A review is deliberately unable to start a worktree. Its private grant
+    # must still select the strict task reader, never the generic home reader.
+    # The grant and current parent revision are validated on every actual read.
+    if getattr(worker_task_binding, "_review_grant", None) is not None:
+        return True
     if "start_task_worktree" not in allowed_tools:
         return False
     available = {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}
@@ -1133,6 +1138,14 @@ def _task_route_fields(conn, payload):
     return result
 
 
+def _review_tool_grants(binding, grants):
+    """Private review authority always narrows configurable tool permissions."""
+    if getattr(binding, "_review_grant", None) is not None:
+        readonly = {"read_file", "search_text", "task_manage"}
+        return frozenset(readonly if grants is None else readonly.intersection(grants))
+    return grants
+
+
 def _tool_policy_denial(reason: str, text: str) -> ToolErrorText:
     """Return an explicit finite policy denial; never infer from text."""
     return ToolErrorText(text, code="tool_policy_denied", reason=reason)
@@ -1150,6 +1163,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
               default_model: str = "", *, worker_task_binding=None,
               require_task_binding: bool = False, agent_operations=None,
               allowed_tools=None) -> str:
+    allowed_tools = _review_tool_grants(worker_task_binding, allowed_tools)
     if allowed_tools is not None and name not in allowed_tools:
         return _tool_policy_denial("tool_not_authorized", "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben.")
     if require_task_binding and worker_task_binding is None:
@@ -1700,7 +1714,15 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     except Exception:
                         return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")
                 try:
-                    return worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
+                    response = worker_task_binding.execute_task_manage(args, _dispatch_marked=True)
+                    # The operation has released its binding lock. Git must not
+                    # run inside the submission transaction or controller lock.
+                    try:
+                        worker_task_binding.capture_confirmed_scope()
+                    except Exception:
+                        # Optional evidence must never hide a confirmed ACK.
+                        pass
+                    return response
                 except WorkerResultLimitLockedError:
                     # This bounded policy denial is safe to explain and leaves the lease active.
                     return ToolErrorText(WorkerResultLimitLockedError.user_message, code="task_result_limit_locked")
@@ -1771,6 +1793,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             return _tool_policy_denial("resource_not_found", f"Task #{tid} nicht gefunden")
                         if str(existing["status"] or "").strip().lower() in COMPLETED_STATUSES:
                             return _tool_policy_denial("state_conflict", f"Task #{tid} war bereits erledigt.")
+                        from hub._services.task_result_service import ResultConflict, assert_completion_allowed
+                        try:
+                            assert_completion_allowed(conn, tid)
+                        except ResultConflict as exc:
+                            conn.rollback()
+                            return _tool_policy_denial("state_conflict", f"Task #{tid} nicht erledigt: {exc}")
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                             # T-20260906-833218904: schliesst dieselbe task_history-Luecke
@@ -1822,6 +1850,14 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         updates.update(_task_route_fields(conn, args))
                         if not updates:
                             return _tool_policy_denial("no_updates", "Keine Felder zum Aktualisieren angegeben")
+                        if str(updates.get("status") or "").strip().lower() in COMPLETED_STATUSES:
+                            from hub._services.task_result_service import ResultConflict, assert_completion_allowed
+                            conn.execute("BEGIN IMMEDIATE")
+                            try:
+                                assert_completion_allowed(conn, tid, changes=updates)
+                            except ResultConflict as exc:
+                                conn.rollback()
+                                return _tool_policy_denial("state_conflict", f"Task #{tid} nicht aktualisiert: {exc}")
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         if task_audit_fn is not None:
                              # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass):
@@ -1869,6 +1905,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             "open", "pending", "in_progress", "in-progress",
                         }:
                             return _tool_policy_denial("state_conflict", f"Task #{tid} nicht zerlegt: Eltern-Task ist nicht offen.")
+                        if args.get("close_parent", True):
+                            from hub._services.task_result_service import ResultConflict, assert_completion_allowed
+                            try:
+                                assert_completion_allowed(conn, tid, changes={"status": "completed"})
+                            except ResultConflict as exc:
+                                conn.rollback()
+                                return _tool_policy_denial("state_conflict", f"Task #{tid} nicht zerlegt: {exc}")
                         parent_dict = dict(parent)
                         p_desc = str(parent_dict.get("description") or "")
                         p_title = str(parent_dict.get("title") or "").strip()
@@ -2480,7 +2523,8 @@ class BachToolProvider:
         self._worker_task_binding = worker_task_binding
         self._require_task_binding = require_task_binding
         self._guard = guard
-        self._allowed_tools = None if allowed_tools is None else frozenset(allowed_tools)
+        effective = _review_tool_grants(worker_task_binding, allowed_tools)
+        self._allowed_tools = None if effective is None else frozenset(effective)
         self._agent_operations = agent_operations
 
     def get_tools(self, mode) -> list[dict]:

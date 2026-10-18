@@ -157,3 +157,64 @@ def test_upgrade_refuses_preexisting_correction_stage_table_without_mutation():
         ).fetchone()[0] == 0
     finally:
         conn.close()
+
+
+_TASK_HISTORY = """CREATE TABLE task_history (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL,
+    action TEXT NOT NULL, field_changed TEXT, old_value TEXT, new_value TEXT,
+    changed_by TEXT, changed_at TEXT NOT NULL)"""
+
+_POLICY_CORRECTION = """INSERT INTO task_result_corrections
+    (task_id,request_id,correction_round,source_result_id,source_result_sha256,
+     source_generation,source_fence,source_task_version,source_status_revision,
+     correction_note,requested_by_device_id,requested_at,policy_decision_sha256)
+    VALUES (?,?,1,12,?,'worker-gen',6,?,0,'policy note',0,'2026-10-18T09:00:00',?)"""
+
+
+def _correction_columns(conn):
+    return {row[1] for row in conn.execute("PRAGMA table_info(task_result_corrections)")}
+
+
+def test_upgrade_keeps_policy_decision_column_from_the_runtime_ledger():
+    # Databases on which the worker completion policy already ran carry its runtime column.
+    from hub._services.task_result_service import ensure_result_correction_schema
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL)")
+        conn.execute(_TASK_HISTORY)
+        ensure_result_correction_schema(conn)
+        conn.execute(_POLICY_CORRECTION, (19, "policy-request", "a" * 64, "b" * 64, "f" * 64))
+        conn.commit()
+        MIGRATION.run_migration(conn)
+        assert {"requested_by_service_id", "policy_decision_sha256"} <= _correction_columns(conn)
+        assert conn.execute(
+            "SELECT requested_by_device_id,requested_by_service_id,policy_decision_sha256,correction_note "
+            "FROM task_result_corrections WHERE request_id='policy-request'"
+        ).fetchone() == (0, None, "f" * 64, "policy note")
+        indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+        assert {"idx_task_result_corrections_event", "idx_task_result_corrections_task_event_desc"} <= indexes
+        once = tuple(conn.execute("SELECT * FROM task_result_corrections"))
+        MIGRATION.run_migration(conn)
+        assert tuple(conn.execute("SELECT * FROM task_result_corrections")) == once
+    finally:
+        conn.close()
+
+
+def test_runtime_ledger_column_added_after_upgrade_keeps_migration_idempotent():
+    from hub._services.task_result_service import ensure_result_correction_schema
+
+    conn = _legacy_connection()
+    try:
+        MIGRATION.run_migration(conn)
+        conn.execute("DROP TABLE task_history")  # the legacy stand-in lacks the audit columns
+        conn.execute(_TASK_HISTORY)
+        ensure_result_correction_schema(conn)
+        assert {"requested_by_service_id", "policy_decision_sha256"} <= _correction_columns(conn)
+        # A policy-controller correction (device 0, no service) satisfies the actor constraint.
+        conn.execute(_POLICY_CORRECTION, (20, "policy-after", "a" * 64, "b" * 64, "f" * 64))
+        conn.commit()
+        once = tuple(conn.execute("SELECT * FROM task_result_corrections ORDER BY id"))
+        MIGRATION.run_migration(conn)
+        assert tuple(conn.execute("SELECT * FROM task_result_corrections ORDER BY id")) == once
+    finally:
+        conn.close()

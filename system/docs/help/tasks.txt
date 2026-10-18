@@ -161,6 +161,11 @@ Credential verdeckt ab und übergibt es nie als Befehlsargument.
     Nimmt das aktuelle Review-Ergebnis an. Erfordert read und accept. Die CLI
     zeigt Ergebnis-ID und SHA-256 und fragt vor dem Senden der exakten
     Task-/Ergebnis-/CAS-Werte nach Bestätigung.
+    Policygebundene Ergebnisse (completion_policy_version 1, also jede Abgabe
+    unter der Worker-Completion-Policy) lehnt der Dienst mit
+    completion_policy_operator_review_required ab; die Service-Fähigkeiten
+    melden dafür accept=false. Abschließen kann sie nur die authentifizierte
+    Operator-Prüfung. Annehmbar bleiben Altergebnisse.
 
 Fehlender Scope, fehlende Produzentenbindung, Schema oder Richtlinie führen zu
 Ablehnung bzw. „nicht verfügbar“; es gibt keinen breiten Token- oder Legacy-

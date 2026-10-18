@@ -25,7 +25,9 @@ Only telegram_chat.py imports this module directly; the tray and the GUI
 from __future__ import annotations
 
 import asyncio
+import copy
 from contextvars import ContextVar
+import hashlib
 import json
 import logging
 import os
@@ -41,6 +43,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
+
+from hub._services.chat.slots_config import ModelRequestBudgetError
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
@@ -72,6 +76,50 @@ def tool_round_counter(round_num: int, max_rounds: int) -> str:
 def tool_round_warning_threshold(max_rounds: int) -> int:
     """Ab wie vielen Restrunden gewarnt wird: mindestens 2, sonst ein Fünftel."""
     return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
+
+
+def _completion_reserve_tools(tools, binding):
+    """Keep only an already offered task tool; never grant one from a prompt."""
+    actions = ["submit_result"] if getattr(binding, "_review_grant", None) is not None else [
+        "submit_result", "update", "decompose"]
+    result = []
+    for tool in tools:
+        function = tool.get("function", {}) if isinstance(tool, dict) else {}
+        if function.get("name") != "task_manage":
+            continue
+        narrowed = copy.deepcopy(tool)
+        action = narrowed.get("function", {}).get("parameters", {}).get("properties", {}).get("action")
+        if isinstance(action, dict):
+            action["enum"] = actions
+        result.append(narrowed)
+    return result
+
+
+def _completion_reserve_allows(name, arguments, binding):
+    if name != "task_manage" or not isinstance(arguments, dict):
+        return False
+    allowed = {"submit_result"} if getattr(binding, "_review_grant", None) is not None else {
+        "submit_result", "update", "decompose"}
+    return (arguments.get("action") in allowed
+            and type(arguments.get("task_id")) is int
+            and arguments["task_id"] == getattr(binding, "task_id", None))
+
+
+def _completion_reserve_hint(binding, remaining, *, task_tool_offered):
+    if not task_tool_offered:
+        instruction = ("Ein Task-Abgabewerkzeug ist nicht freigegeben. Melde nur den "
+                       "konkreten Blocker; behaupte keinen bestätigten Taskfortschritt.")
+    elif getattr(binding, "_review_grant", None) is not None:
+        instruction = ("Nutze nur das bereits erlaubte task_manage(action='submit_result') "
+                       "für die eigene Reviewtask, wenn ein tatsächlicher Befund vorliegt.")
+    else:
+        instruction = ("Nutze nur das bereits erlaubte task_manage: submit_result für ein "
+                       "tatsächlich belegtes Ergebnis, update für einen konkreten Zwischenstand "
+                       "oder decompose für bestätigbare Teilaufgaben ohne Elternabschluss.")
+    return (f"[ABSCHLUSSRESERVE: noch {remaining} Werkzeugrunde(n)] "
+            "Beginne keine neue Recherche oder Codeänderung. " + instruction +
+            " Falls der Befund nicht belegt ist, behaupte keinen Abschluss. "
+            "Freier Text ersetzt keinen bestätigten Task-Werkzeugaufruf.")
 
 
 def _resume_handoff_context(original, summary, *, background_task, has_tools,
@@ -208,11 +256,19 @@ from hub._services.chat.bach_tools import (
 log = logging.getLogger("bach.chat")
 
 
+def _effective_tool_grants(session):
+    """Narrow review runs independently of their configurable slot grants."""
+    grants = getattr(session, "allowed_tools", None)
+    binding = getattr(session, "worker_task_binding", None)
+    from .bach_tools import _review_tool_grants
+    return _review_tool_grants(binding, grants)
+
+
 def _tool_dispatch_kwargs(session, agent_operations):
     """Build dispatcher context only from trusted runtime session state."""
     binding = getattr(session, "worker_task_binding", None)
     require_binding = getattr(session, "require_task_binding", False)
-    grants = getattr(session, "allowed_tools", None)
+    grants = _effective_tool_grants(session)
     kwargs = {}
     if agent_operations is not None:
         # Preserve the existing managed-agent contract.
@@ -525,6 +581,7 @@ class ChatSession(_ModuleChatSession):
         self.require_task_binding: bool = False
         self._persistent_core_model_call_control: Any = None
         self._worker_model_dispatch_binding: Any = None
+        self.model_request_budget: Any = None
         self._local_reserve_failure_binding: Any = None
         self._local_reserve_failure_control: Any = None
         self._local_reserve_failure_reason_code: str | None = None
@@ -787,6 +844,10 @@ class ChatRuntime(_ModuleChatRuntime):
         from hub._services.chat.model_sockets import resolve_fallback_backend
         for index in range(route["index"], len(targets)):
             target = targets[index]
+            budget = getattr(session, "model_request_budget", None)
+            if index > route["index"] and budget is not None and budget.remaining() <= 2:
+                from hub._services.chat.slots_config import ModelRequestBudgetError
+                raise ModelRequestBudgetError("Fallback in der Modellanfragen-Abschlussreserve gesperrt")
             if index == route["index"]:
                 active_backend = backend
             else:
@@ -807,6 +868,9 @@ class ChatRuntime(_ModuleChatRuntime):
                     active_backend, *args, **call_kwargs
                 )
             except Exception as exc:
+                from hub._services.chat.slots_config import ModelRequestBudgetError
+                if isinstance(exc, ModelRequestBudgetError):
+                    raise
                 # The persistent core is explicitly pinned to its selected local
                 # model; reserve exhaustion must not silently downgrade or route elsewhere.
                 from hub._services.chat.local_resource_reserve import LocalReserveError
@@ -1486,7 +1550,8 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         return capacity_receipt
 
-    def _bound_worker_tools_for_request(self, session, backend, *, enabled: bool) -> list[dict]:
+    def _bound_worker_tools_for_request(self, session, backend, *, enabled: bool,
+                                        completion_reserve: bool = False) -> list[dict]:
         """Build the request schema from the already-refreshed bound session."""
         if enabled is not True or session.allow_tools is not True:
             return []
@@ -1498,14 +1563,17 @@ class ChatRuntime(_ModuleChatRuntime):
             default_model,
             worker_task_binding=getattr(session, "worker_task_binding", None),
             require_task_binding=getattr(session, "require_task_binding", False),
-            allowed_tools=getattr(session, "allowed_tools", None),
+            allowed_tools=_effective_tool_grants(session),
             agent_operations=self.agent_operations,
         )
-        return provider.get_tools(session.mode)
+        tools = provider.get_tools(session.mode)
+        return (_completion_reserve_tools(tools, session.worker_task_binding)
+                if completion_reserve else tools)
 
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         tool_rounds_enabled = kwargs.pop("_tool_rounds_enabled", None)
+        completion_reserve = kwargs.pop("_completion_reserve", False)
         turn_context = self._compute_turn_context.get()
         def check_binding():
             if turn_context:
@@ -1517,6 +1585,14 @@ class ChatRuntime(_ModuleChatRuntime):
                     problem = self._worker_backend_gate(session, backend, kwargs.get("model"))
                     if problem is not None:
                         raise RuntimeError(str(problem))
+                    review_binding = getattr(session, "worker_task_binding", None)
+                    if getattr(review_binding, "_review_grant", None) is not None:
+                        from hub._services.llm.controller_route import route_snapshot
+                        guard = getattr(review_binding._client, "_guard_review_dispatch", None)
+                        if not callable(guard) or not guard(
+                                review_binding, route=route_snapshot(backend),
+                                requested_model=kwargs.get("model") or backend.get_default_model()):
+                            raise RuntimeError("worker_review_authority_changed")
                     if (
                         tool_rounds_enabled is not None
                         and "tools" in kwargs
@@ -1527,28 +1603,149 @@ class ChatRuntime(_ModuleChatRuntime):
                         # profile/lease check; this also runs for each fallback.
                         kwargs["tools"] = self._bound_worker_tools_for_request(
                             session, backend, enabled=tool_rounds_enabled,
+                            completion_reserve=completion_reserve,
                         )
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
         binding = getattr(session, "worker_task_binding", None)
+        dispatch_binding = binding
         def mark_model_dispatch():
             current_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             if current_binding is not None:
                 # Keep the exact binding object alive; token/id surrogates can be reused.
                 session._worker_model_dispatch_binding = current_binding
 
+        def model_request_digest():
+            canonical = json.dumps({"args": args, "kwargs": kwargs},
+                                   sort_keys=True, separators=(",", ":"),
+                                   ensure_ascii=False, allow_nan=False)
+            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+        def check_dispatch_binding(call_binding):
+            check_binding()
+            if ((turn_context and self.get_session(turn_context[0]) is not session)
+                    or getattr(session, "worker_task_binding", None) is not dispatch_binding
+                    or call_binding is not dispatch_binding):
+                raise RuntimeError("worker_model_binding_changed")
+
+        async def dispatch_model_call(*, bound=False, agent_kwargs=None):
+            """Record only an actual backend attempt, including fallback calls."""
+            nonlocal args
+            call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
+            handle = None
+            from hub._services.llm.controller_route import route_snapshot
+            dispatch_route = route_snapshot(backend)
+            dispatch_route_stamp = getattr(backend, "_controller_route", None)
+            budget = getattr(session, "model_request_budget", None) if session is not None else None
+            if budget is not None:
+                from hub._services.chat.slots_config import ModelRequestBudgetError
+                from hub._services.chat.model_sockets import profile_backend_matches
+                from hub._services.llm.model_backend import OllamaBackend
+                selected_model = kwargs.get("model") or backend.get_default_model()
+                if (call_binding is None or bound or type(backend) is not OllamaBackend
+                        or getattr(backend, "manages_own_tools", False)
+                        or type(selected_model) is not str or not selected_model.strip()
+                        or not profile_backend_matches("ollama", backend, selected_model)):
+                    raise ModelRequestBudgetError("Backendroute des budgetierten Workerlaufs ist nicht geprüft")
+                check_dispatch_binding(call_binding)
+                before = budget.remaining()
+                if before <= 0:
+                    raise ModelRequestBudgetError(
+                        f"Modellanfragenbudget ausgeschöpft: Run {budget.start_request_id}, "
+                        "verbleibend 0")
+                if before <= 2 and not completion_reserve:
+                    raise ModelRequestBudgetError("Nur Abschlussanfragen sind im Restbudget erlaubt")
+                record = budget.reserve(call_binding)
+                used, limit = record["reserved_count"], record["limit"]
+                if before <= 2 and kwargs.get("tools") is not None:
+                    kwargs["tools"] = _completion_reserve_tools(kwargs["tools"], call_binding)
+                if not args or type(args[0]) is not list:
+                    raise ModelRequestBudgetError("Modellanfragenachrichten sind nicht verifizierbar")
+                hint = (f"[MODELLANFRAGEN: Anfrage {used}/{limit}; danach "
+                        f"{limit - used} übrig. Run {budget.start_request_id}.]"
+                        + (" Abschlussreserve: Nutze ausschließlich die angebotenen "
+                           "Abgabewerkzeuge; beginne keine neue Recherche oder Bearbeitung."
+                           if before <= 2 else ""))
+                args = ([*args[0], {"role": "user", "content": hint}], *args[1:])
+            if call_binding is not None and call_binding is dispatch_binding:
+                try:
+                    call_binding._discard_model_execution_candidate()
+                    from hub._services.llm.model_backend import backend_identifier
+
+                    # Logical call digest after the budget hint/tools were built.
+                    request_sha256 = model_request_digest()
+                    handle = call_binding.begin_model_execution(
+                        backend_id=backend_identifier(backend),
+                        requested_model=kwargs.get("model") or backend.get_default_model(),
+                        slot_id=session.chat_id, request_sha256=request_sha256,
+                        route_sha256=dispatch_route["route_sha256"] if dispatch_route else None,
+                    )
+                except Exception:
+                    # The optional evidence path must not turn a model call into an error.
+                    handle = None
+            try:
+                # Optional persistence can wait for a writer. Recheck the
+                # task/policy/stop/deadline boundary after that wait, before
+                # starting the actual model operation.
+                check_dispatch_binding(call_binding)
+                if handle is not None:
+                    try:
+                        same_request = model_request_digest() == request_sha256
+                    except Exception:
+                        same_request = False
+                    if not same_request:
+                        # A refreshed profile can legitimately narrow tools.
+                        # Keep the call usable, but never attest the older hash.
+                        try:
+                            call_binding.finish_model_execution(handle, failed=True)
+                        except Exception:
+                            pass
+                        handle = None
+                        # Even retiring an obsolete receipt can wait on SQLite.
+                        check_dispatch_binding(call_binding)
+                mark_model_dispatch()
+                if bound:
+                    result = await backend.chat_bound(
+                        *args, **kwargs, binding=call_binding, mode=session.mode,
+                        guard=check_binding, bach_app=self.bach_app,
+                        allowed_tools=_effective_tool_grants(session),
+                        **(agent_kwargs or {}),
+                    )
+                else:
+                    result = await backend.chat(*args, **kwargs)
+            except BaseException:
+                if handle is not None:
+                    try:
+                        call_binding.finish_model_execution(handle, failed=True)
+                    except Exception:
+                        pass
+                raise
+            if handle is not None:
+                failed = not isinstance(result, dict) or bool(result.get("error"))
+                if getattr(session, "worker_task_binding", None) is call_binding:
+                    try:
+                        call_binding.finish_model_execution(
+                            handle, result=None if failed else result, failed=failed,
+                            route_sha256=(dispatch_route["route_sha256"]
+                                if dispatch_route and getattr(backend, "_controller_route", None) is dispatch_route_stamp
+                                and route_snapshot(backend) == dispatch_route else None),
+                        )
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        call_binding.finish_model_execution(handle, failed=True)
+                    except Exception:
+                        pass
+            return result
+
         if binding is not None and getattr(backend, "manages_own_tools", False):
+            if completion_reserve:
+                raise RuntimeError("Abschlussreserve kann Backend-eigene Werkzeuge nicht begrenzen")
             agent_kwargs = {"agent_operations": self.agent_operations} if self.agent_operations is not None else {}
-            mark_model_dispatch()
-            return await backend.chat_bound(
-                *args, **kwargs, binding=binding, mode=session.mode,
-                guard=check_binding, bach_app=self.bach_app,
-                allowed_tools=getattr(session, "allowed_tools", None),
-                **agent_kwargs,
-            )
+            return await dispatch_model_call(bound=True, agent_kwargs=agent_kwargs)
         if not self._uses_local_compute(backend):
-            mark_model_dispatch()
-            return await backend.chat(*args, **kwargs)
+            return await dispatch_model_call()
         selected_model = kwargs.get("model") or backend.get_default_model()
 
         chat_id, priority = turn_context or ("runtime", "foreground")
@@ -1595,8 +1792,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 receipt, _ = await self.prepare_inference_call(
                     backend, selected_model, chat_id=chat_id if turn_context else None)
                 if receipt is None:
-                    mark_model_dispatch()
-                    return await backend.chat(*args, **kwargs)
+                    return await dispatch_model_call()
                 if not policy_bound:
                     policy_version = receipt.get("policy_version")
                     policy_bound = True
@@ -1605,8 +1801,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 if receipt["state"] == "external_target":
                     with self._local_resource_waiters_lock:
                         self._local_resource_waiters.pop(chat_id, None)
-                    mark_model_dispatch()
-                    return await backend.chat(*args, **kwargs)
+                    return await dispatch_model_call()
                 require_retryable(receipt)
                 binding = getattr(session, "worker_task_binding", None) if session is not None else None
                 pre_effect_receipt = self._persistent_core_pre_effect_reserve_receipt(
@@ -1651,8 +1846,7 @@ class ChatRuntime(_ModuleChatRuntime):
                                 check_reserve_policy(receipt)
                                 with self._local_resource_waiters_lock:
                                     self._local_resource_waiters.pop(chat_id, None)
-                                mark_model_dispatch()
-                                return await backend.chat(*args, **kwargs)
+                                return await dispatch_model_call()
                             finally:
                                 self._leave_compute_turn(self._compute_turn_gate)
                     if receipt["state"] == "external_target":
@@ -1662,8 +1856,7 @@ class ChatRuntime(_ModuleChatRuntime):
                         check_reserve_policy(receipt)
                         with self._local_resource_waiters_lock:
                             self._local_resource_waiters.pop(chat_id, None)
-                        mark_model_dispatch()
-                        return await backend.chat(*args, **kwargs)
+                        return await dispatch_model_call()
                 # The host owner has been returned before reserve polling.
                 # We stay at this model-call boundary: previous tools and the
                 # task/session context are not replayed or reset.
@@ -2203,7 +2396,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 answer = FailedAnswer.from_exception(e)
         else:
             tools = tools_for_mode(session.mode, bound_worker=session.worker_task_binding is not None) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
-            grants = getattr(session, "allowed_tools", None)
+            grants = _effective_tool_grants(session)
             if grants is not None:
                 tools = [tool for tool in tools if tool["function"]["name"] in grants]
             answer = await self._tool_loop(
@@ -2260,6 +2453,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.last_tools = []
         result = {}
         offered_tools = tools
+        reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
         background_task = turn_context is not None and turn_context[1] == "background"
         msgs.append({"role": "user", "content": tool_round_counter(0, max_rounds)})
@@ -2345,6 +2539,39 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         message.get("role") == "user" and message.get("content") == instruction for message in msgs):
                     msgs.append({"role": "user", "content": instruction})
 
+            binding = getattr(session, "worker_task_binding", None)
+            remaining_rounds = max_rounds - round_num
+            budget = getattr(session, "model_request_budget", None)
+            try:
+                budget_remaining = budget.remaining() if budget is not None else None
+            except Exception as exc:
+                return FailedAnswer.from_exception(exc)
+            completion_reserve = (binding is not None and (
+                max_rounds > 0 and 0 < remaining_rounds <= 2
+                or budget_remaining is not None and 0 < budget_remaining <= 2))
+            if budget_remaining == 0:
+                return FailedAnswer(
+                    f"Modellanfragenbudget ausgeschöpft: Run {budget.start_request_id}, "
+                    "verbleibend 0")
+            if completion_reserve:
+                grants = _effective_tool_grants(session)
+                current_tools = (tool for tool in tools if grants is None
+                                 or tool.get("function", {}).get("name") in grants)
+                tools = _completion_reserve_tools(current_tools, binding)
+                if round_num not in reserve_notified_rounds:
+                    reserve_hint = (
+                        f"[ABSCHLUSSRESERVE: noch {budget_remaining} Modellanfragen] "
+                        + ("Nutze nur belegte Abgabewerkzeuge; beginne keine neue Recherche oder Bearbeitung."
+                           if tools else "Kein Abgabewerkzeug ist freigegeben; melde den konkreten Blocker ohne Abschlussbehauptung.")
+                        if budget_remaining is not None and budget_remaining <= 2
+                        else _completion_reserve_hint(binding, remaining_rounds,
+                                                      task_tool_offered=bool(tools))
+                    )
+                    msgs.append({"role": "user", "content":
+                                 reserve_hint})
+                    reserve_notified_rounds.add(round_num)
+            offered_this_round = {tool.get("function", {}).get("name") for tool in tools}
+
             try:
                 previous_backend = selected_backend
                 previous_model = selected_model
@@ -2352,6 +2579,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
                     _tool_rounds_enabled=max_rounds > 0,
+                    _completion_reserve=completion_reserve,
                 )
                 if selected_backend is not previous_backend or selected_model != previous_model:
                     context_limit = self._context_limit_for_backend(selected_backend, selected_model)
@@ -2385,6 +2613,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if self._context_voll(
                 result, session, context_limit=context_limit
             ):
+                if completion_reserve:
+                    session.current_tool = ""
+                    return FailedAnswer.from_exception(RuntimeError(
+                        "Kontextfenster in der Abschlussreserve erschöpft"
+                    ))
                 if handoffs >= 2:
                     session.current_tool = ""
                     return FailedAnswer.from_exception(RuntimeError(
@@ -2418,7 +2651,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             tool_calls = result.get("tool_calls")
             if not tool_calls:
                 content = result.get("content", "") or "(keine Antwort)"
-                nxt, goal_checked = self._auto_next(content, auto_used, goal_checked)
+                nxt, goal_checked = ((None, goal_checked) if completion_reserve
+                                     else self._auto_next(content, auto_used, goal_checked))
                 if nxt is not None:
                     auto_used += 1
                     log.info(f"Auto-Continue [{auto_used}/{self.auto_continue}]")
@@ -2482,10 +2716,22 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
                     )
                 binding = getattr(session, "worker_task_binding", None)
-                grants = getattr(session, "allowed_tools", None)
-                if grants is not None and t_name not in grants:
+                grants = _effective_tool_grants(session)
+                reserve_denied = (completion_reserve and (t_name not in offered_this_round
+                                  or not _completion_reserve_allows(t_name, t_args, binding)
+                                  or (grants is not None and t_name not in grants)))
+                if not completion_reserve and grants is not None and t_name not in grants:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
+                def dispatch_tool(name, arguments):
+                    if reserve_denied:
+                        return "BLOCKIERT: In der Abschlussreserve sind nur bestätigbare Task-Abschlussaktionen erlaubt."
+                    return exec_tool(
+                        name, arguments, session.mode,
+                        bach_app=self.bach_app,
+                        default_model=selected_model,
+                        **tool_kwargs,
+                    )
                 traced_outcome = None
                 if binding is not None:
                     from hub._services.chat.worker_tool_dispatch_trace import (
@@ -2495,12 +2741,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     )
                     traced_outcome = execute_normal_tool(
                         binding, t_name, t_args,
-                        lambda name, arguments: exec_tool(
-                            name, arguments, session.mode,
-                            bach_app=self.bach_app,
-                            default_model=selected_model,
-                            **tool_kwargs,
-                        ),
+                        dispatch_tool,
                     )
                     if traced_outcome.status != "returned":
                         binding.invalidate()
@@ -2510,12 +2751,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         )
                     t_result = traced_outcome.result
                 else:
-                    t_result = exec_tool(
-                        t_name, t_args, session.mode,
-                        bach_app=self.bach_app,
-                        default_model=selected_model,
-                        **tool_kwargs,
-                    )
+                    t_result = dispatch_tool(t_name, t_args)
                 tool_call_id = ""
                 if hasattr(selected_backend, "_last_tool_call_ids"):
                     ids = selected_backend._last_tool_call_ids
@@ -2587,6 +2823,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     "2. Was wurde im Code bereits geändert oder behoben?\n"
                     "3. Falls die Aufgabe noch nicht komplett gelöst ist: Welcher konkrete Folge-Task (z. B. 'Edit: ...') "
                     "wurde angelegt oder welche Schritte muss der nächste Lauf ausführen?"
+                    + ("\nDiese freie Zusammenfassung ist keine Taskabgabe; behaupte keine "
+                       "bestätigte Einreichung ohne task_manage-Beleg."
+                       if getattr(session, "worker_task_binding", None) is not None else "")
                 )
                 msgs.append({"role": "user", "content": final_prompt})
                 try:
@@ -2600,6 +2839,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     final_res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                         session, selected_backend, selected_model,
                         msgs, tools=None, think=final_think,
+                        _completion_reserve=True,
                     )
                     if final_res.get("error"):
                         return FailedAnswer(
@@ -2617,14 +2857,23 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
             if max_rounds > 0 and max_rounds - round_num <= tool_round_warning_threshold(max_rounds):
                 rest = max_rounds - round_num
-                nudge = (
-                    f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
-                    "Deine Werkzeugrunden sind fast aufgebraucht! "
-                    "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
-                    "Wenn du die Aufgabe in dieser Session nicht mehr fertigstellen kannst: "
-                    + SELF_DECOMPOSE_INSTRUCTION
-                )
-                msgs.append({"role": "user", "content": nudge})
+                if binding is None or rest > 2:
+                    if binding is None:
+                        nudge = (
+                            f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
+                            "Deine Werkzeugrunden sind fast aufgebraucht! "
+                            "Wenn du die Ursache kennst: Gehe JETZT direkt zur Code-Änderung (edit_file / write_file) über. "
+                            "Wenn du die Aufgabe in dieser Session nicht mehr fertigstellen kannst: "
+                            + SELF_DECOMPOSE_INSTRUCTION
+                        )
+                    else:
+                        nudge = (
+                            f"[SYSTEM-HINWEIS: Werkzeugrunde {round_num}/{max_rounds} - Noch {rest} Runde(n) verbleibend!]\n"
+                            "Deine Werkzeugrunden sind fast aufgebraucht. "
+                            "Arbeite am konkreten Auftrag und sichere einen belegten Zwischenstand; "
+                            "wenn die Aufgabe zu groß ist: " + SELF_DECOMPOSE_INSTRUCTION
+                        )
+                    msgs.append({"role": "user", "content": nudge})
 
     def get_model_context_limit(self, model: str | None = None, backend: Any = None) -> int:
         """Dynamische Bestimmung des Kontextlimits je nach Modell und Backend."""
@@ -2683,6 +2932,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         das arbeitende Modell selbst - es kennt seinen Stand. Das Ergebnis wird
         der Anfang des neuen, leeren Verlaufs.
         """
+        budget = getattr(session, "model_request_budget", None)
+        if budget is not None and budget.remaining() <= 2:
+            raise ModelRequestBudgetError("Kontextübergabe in der Abschlussreserve gesperrt")
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
@@ -2696,6 +2948,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if res.get("error"):
                 raise RuntimeError(str(res["error"]))
             uebergabe = (res.get("content") or "").strip()
+        except ModelRequestBudgetError:
+            raise
         except Exception as e:
             log.warning("Uebergabe fehlgeschlagen: %s", e)
             handoff_error = e
@@ -2745,6 +2999,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         selected_model = model or session.model or selected_backend.get_default_model()
         if len(session.messages) < 6:
             return
+        budget = getattr(session, "model_request_budget", None)
+        if budget is not None and budget.remaining() <= 2:
+            raise ModelRequestBudgetError("Vorab-Zusammenfassung in der Abschlussreserve gesperrt")
         old = session.messages[:-4]
         recent = session.messages[-4:]
 
@@ -2777,6 +3034,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             session.messages = [
                 {"role": "system", "content": f"Bisheriger Kontext: {summary}"}
             ] + recent
+        except ModelRequestBudgetError:
+            raise
         except Exception:
             if selected_model != "glm-5.3:cloud":
                 session.messages = recent
