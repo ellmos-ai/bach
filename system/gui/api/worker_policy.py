@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from fastapi import APIRouter, Body, HTTPException, Request
 
+from hub._services import task_lease_settings as lease_settings
 from hub._services import worker_policy_settings as service
 from hub._services import worker_review_identity as identities
 
@@ -60,6 +61,18 @@ async def put_worker_model_principals(request: Request, payload: dict = Body(...
     _actor(request)
     return await _call(identities.write_model_bindings, payload,
                        operator_token=request.headers.get("X-BACH-Result-Operator", ""))
+
+
+@router.get("/system/task-lease-settings")
+async def get_task_lease_settings(request: Request):
+    _actor(request)
+    return await _call(lease_settings.read_setting)
+
+
+@router.put("/system/task-lease-settings")
+async def put_task_lease_settings(request: Request, payload: dict = Body(...)):
+    actor = _actor(request)
+    return await _call(lease_settings.write_setting, payload, actor=actor)
 
 
 @router.get("/tasks/{task_id}/worker-policy")

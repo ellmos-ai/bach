@@ -428,7 +428,9 @@ def test_unknown_or_malformed_denials_are_neutral(monkeypatch, denial):
     assert "secret" not in str(caught.value)
 
 
-def test_local_client_preserves_native_creator_priority_deadline(denial_mem_db):
+def test_local_client_preserves_native_creator_priority_deadline(denial_mem_db, monkeypatch):
+    # Creator priority is off by default since BACH #2231; this test needs an active window.
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "600")
     conn = denial_mem_db
     conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     now = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
@@ -444,7 +446,7 @@ def test_local_client_preserves_native_creator_priority_deadline(denial_mem_db):
     with pytest.raises(module.LeaseDeniedError) as caught:
         client.acquire(tid, worker_id="other@HOST", host="HOST", now=now)
 
-    expected_until = created + timedelta(seconds=module.LeaseConfig().creator_window_seconds)
+    expected_until = created + timedelta(seconds=600)
     assert caught.value.reason == "creator_priority"
     assert caught.value.server_now == now.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     assert caught.value.until == expected_until.strftime("%Y-%m-%dT%H:%M:%S.%fZ")

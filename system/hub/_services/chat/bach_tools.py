@@ -1585,7 +1585,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 if not any(token in cmd for token in ["bach-worktrees", "task-"]):
                     if is_live_path_blocked(cwd):
                         return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Ausführungspfad ist nicht freigegeben.")
-            log.info(f"FULL-CMD: {cmd}")
+            log.info("FULL-CMD: execution requested (payload omitted)")
             return run_shell_restricted(cmd, t, allowed=None)
 
         if name == "start_task_worktree":
