@@ -18,6 +18,7 @@ der eine der APIs brechen wuerde.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from datetime import datetime, timedelta
@@ -45,8 +46,46 @@ IN_PROGRESS_STATUSES = frozenset({"in_progress"})
 ALLOWED_COLUMNS = frozenset({
     "title", "description", "priority", "status", "category",
     "assigned_to", "created_by", "depends_on", "required_model", "assigned_slot",
-    "due_date", "result_max_chars",
+    "due_date", "result_max_chars", "tags",
 })
+
+# Task #2065: tasks.tags ist laut Schema ein JSON-Array. Der Setter akzeptiert
+# eine Liste, ein JSON-Array oder komma-getrennten Text und speichert immer die
+# kanonische Form (kompaktes JSON-Array, Reihenfolge erhalten, ohne Duplikate).
+TAG_PATTERN = re.compile(r"^[\w][\w.:/+-]{0,63}$")
+MAX_TAGS = 20
+
+
+def normalize_task_tags(value: Any) -> Optional[str]:
+    """Kanonisiert Task-Tags; None/leer -> None (Spalte wird geleert).
+
+    ValueError bei ungueltigem Typ, ungueltigem Tag oder mehr als MAX_TAGS Tags.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.startswith("["):
+            try:
+                value = json.loads(text)
+            except ValueError as exc:
+                raise ValueError("tags: kein gueltiges JSON-Array") from exc
+        else:
+            value = text.split(",")
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("tags muss Liste, JSON-Array oder komma-getrennter Text sein")
+    tags: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not TAG_PATTERN.match(item.strip()):
+            raise ValueError(f"tags: ungueltiger Tag {item!r} (erlaubt: Buchstaben, Ziffern, . : / + - _, max. 64 Zeichen)")
+        tag = item.strip()
+        if tag not in tags:
+            tags.append(tag)
+    if len(tags) > MAX_TAGS:
+        raise ValueError(f"tags: hoechstens {MAX_TAGS} Tags")
+    return json.dumps(tags, ensure_ascii=False, separators=(",", ":")) if tags else None
 
 # Spalten, die NICHT ueber field_values gesetzt werden (sie sind Ergebnis der
 # Status-Uebergangslogik oben), aber ueber clear_fields explizit auf NULL
@@ -291,6 +330,8 @@ def apply_task_field_changes(
                 f"apply_task_field_changes: Spalte '{column}' ist nicht in "
                 f"ALLOWED_COLUMNS zugelassen"
             )
+        if column == "tags":
+            new_value = normalize_task_tags(new_value)
         old_value = existing_row.get(column)
         updates.append(f"{column} = ?")
         values.append(new_value)
