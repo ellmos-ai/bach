@@ -18,10 +18,15 @@ import sqlite3
 import sys
 import threading
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 SUBMISSION_RECEIPT_SCHEMA = "bach.worker-submission-receipt.v1"
 SUBMISSION_READBACK_SCHEMA = "bach.worker-submission-readback.v1"
+
+
+class WorkerSelfCheckRequired(ValueError):
+    """A confirmed simple-task submission lacks its required full self-check."""
 
 
 class ResultConflict(ValueError):
@@ -530,6 +535,20 @@ def validate_submission(payload, *, max_chars=None):
 def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     from .task_lease import task_content_version
     generation, text, digest = validate_submission(payload, max_chars=max_chars)
+    completion_asserted = False
+    if row.get("completion_contract_json") is None:
+        from .worker_result_review import review_task_marker
+        if not review_task_marker(conn, row["id"]):
+            frozen = _submission_policy(conn, row["id"])
+            if (frozen["availability"] == "available" and
+                    (frozen["override"].get("mode") or frozen["policy"]["default_mode"]) == "simple_task"):
+                from .worker_completion_contract import (evaluate_worker_self_check,
+                    evaluate_worker_completion_assertion)
+                self_check_met = evaluate_worker_self_check(text)["met"] is True
+                if not self_check_met:
+                    completion_asserted = evaluate_worker_completion_assertion(text)["met"] is True
+                if not self_check_met and not completion_asserted:
+                    raise WorkerSelfCheckRequired("Vollständiger Selbstcheck erforderlich")
     ensure_result_schema(conn)
     version = task_content_version(row)
     cursor = conn.execute("""INSERT INTO worker_task_results
@@ -555,6 +574,16 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
              issuer_id,submission_event_id,bound_at) VALUES (?,?,?,?,?,?,?,?,NULL,?)""",
             (result_id, row["id"], digest, generation, row["claim_fence"], version,
              claimed_by, _RESULT_PRODUCER_ISSUER, now))
+    if completion_asserted:
+        from .task_lease import _history, parse_ts
+        marker_now = now if isinstance(now, datetime) else parse_ts(now)
+        if marker_now is None:
+            raise ValueError("Zeitstempel der Fertigmeldung nicht lesbar")
+        _history(conn, row["id"], "worker_completion_asserted", worker, marker_now,
+            {"schema": "bach.worker-completion-assertion.v1", "task_id": row["id"],
+             "result_id": result_id, "result_sha256": digest,
+             "generation": generation, "fence": row["claim_fence"],
+             "task_version": version})
     return {"schema": "bach.worker-result.v1", "result_id": result_id,
             "task_id": row["id"], "fence": row["claim_fence"], "generation": generation,
             "task_version": task_content_version(row), "result_sha256": digest,

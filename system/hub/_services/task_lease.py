@@ -188,6 +188,10 @@ class LeaseValidationError(ValueError):
     """Ungültige Eingabe (HTTP 422)."""
 
 
+class LeaseSelfCheckRequired(LeaseValidationError):
+    """Confirmed validation denial; the current lease remains usable."""
+
+
 class TaskNotFound(LookupError):
     """Task-ID existiert nicht (HTTP 404)."""
 
@@ -852,12 +856,15 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
                 return _deny(task_id, "completion_guard", now,
                              detail="Review-Abgabe hat keinen aktuellen privaten Ziel- und Ausführungsbeleg")
         if worker_result is not None:
-            from .task_result_service import insert_submission, result_reference
+            from .task_result_service import (WorkerSelfCheckRequired, insert_submission,
+                                              result_reference)
             try:
                 submitted = insert_submission(
                     conn, row, worker_result, worker=worker, now=_local_naive(now),
                     max_chars=row.get("result_max_chars"),
                 )
+            except WorkerSelfCheckRequired:
+                raise LeaseSelfCheckRequired("Vollständiger Selbstcheck erforderlich") from None
             except ValueError as exc:
                 raise LeaseValidationError(str(exc)) from None
             result_ref = result_reference(submitted)

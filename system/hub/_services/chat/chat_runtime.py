@@ -61,8 +61,9 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true, close_parent=false). "
     "Die bestätigte Teilaufgabenanlage ist ein Fortschritt; sie erledigt den Eltern-Task nicht. "
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
-    "bestätigte Kind-IDs, offene Arbeit>') den Plan zur getrennten Abnahme ab. Ohne bestätigten Werkzeugbeleg "
-    "keinen Taskabschluss behaupten."
+    "bestätigte Kind-IDs, offene Arbeit>', complete=false) den gesicherten Teilstand zurück. "
+    "Der Eltern-Task bleibt pending; die Zerlegung ist kein Abschluss und kein Anlass zur Abnahme. "
+    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten."
 )
 
 
@@ -76,6 +77,10 @@ def tool_round_counter(round_num: int, max_rounds: int) -> str:
 def tool_round_warning_threshold(max_rounds: int) -> int:
     """Ab wie vielen Restrunden gewarnt wird: mindestens 2, sonst ein Fünftel."""
     return max(2, -(-max_rounds // 5)) if max_rounds > 0 else 0
+
+
+def _message_chars(msgs) -> int:
+    return sum(len(str(m.get("content") or "")) for m in msgs if isinstance(m, dict))
 
 
 def _completion_reserve_tools(tools, binding):
@@ -113,8 +118,8 @@ def _completion_reserve_hint(binding, remaining, *, task_tool_offered):
         instruction = ("Nutze nur das bereits erlaubte task_manage(action='submit_result') "
                        "für die eigene Reviewtask, wenn ein tatsächlicher Befund vorliegt.")
     else:
-        instruction = ("Nutze nur das bereits erlaubte task_manage: submit_result für ein "
-                       "tatsächlich belegtes Ergebnis, update für einen konkreten Zwischenstand "
+        instruction = ("Nutze nur das bereits erlaubte task_manage: submit_result mit complete=true für ein "
+                       "tatsächlich belegtes Ergebnis, complete=false für einen Teilstand, update für einen konkreten Zwischenstand "
                        "oder decompose für bestätigbare Teilaufgaben ohne Elternabschluss.")
     return (f"[ABSCHLUSSRESERVE: noch {remaining} Werkzeugrunde(n)] "
             "Beginne keine neue Recherche oder Codeänderung. " + instruction +
@@ -1628,9 +1633,11 @@ class ChatRuntime(_ModuleChatRuntime):
                     or call_binding is not dispatch_binding):
                 raise RuntimeError("worker_model_binding_changed")
 
-        async def dispatch_model_call(*, bound=False, agent_kwargs=None):
+        async def dispatch_model_call(*, bound=False, agent_kwargs=None,
+                                      parser_retry=False):
             """Record only an actual backend attempt, including fallback calls."""
             nonlocal args
+            original_args = args
             call_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             handle = None
             from hub._services.llm.controller_route import route_snapshot
@@ -1639,6 +1646,7 @@ class ChatRuntime(_ModuleChatRuntime):
             budget = getattr(session, "model_request_budget", None) if session is not None else None
             if budget is not None:
                 from hub._services.chat.slots_config import ModelRequestBudgetError
+                from hub._services.llm.backend_errors import normalize_backend_error
                 from hub._services.chat.model_sockets import profile_backend_matches
                 from hub._services.llm.model_backend import OllamaBackend
                 selected_model = kwargs.get("model") or backend.get_default_model()
@@ -1737,6 +1745,31 @@ class ChatRuntime(_ModuleChatRuntime):
                         call_binding.finish_model_execution(handle, failed=True)
                     except Exception:
                         pass
+            # Ollama can reject malformed Qwen tool XML in its reserved error
+            # field before delivering any callable tool. One corrected attempt
+            # is useful, but it must pass this same durable reservation gate.
+            # The correction is never a backend-internal or uncounted retry.
+            parser_detail = (normalize_backend_error(result.get("backend_error"))
+                             if budget is not None and isinstance(result, dict) else None)
+            if (budget is not None and not parser_retry and not completion_reserve
+                    and type(backend) is OllamaBackend and kwargs.get("tools")
+                    and isinstance(result, dict) and result.get("error")
+                    and not result.get("content") and not result.get("thinking")
+                    and not result.get("tool_calls")
+                    and (result.get("raw_message") is None
+                         or (isinstance(result.get("raw_message"), dict)
+                             and not any(result["raw_message"].get(key) for key in
+                                         ("content", "thinking", "tool_calls"))))
+                    and parser_detail is not None
+                    and parser_detail["kind"] == "tool_parse_error"
+                    and budget.remaining() > 2):
+                if not original_args or type(original_args[0]) is not list:
+                    return result
+                args = ([*original_args[0], {"role": "user", "content":
+                    "Der vorherige Modellaufruf enthielt ein ungültiges Werkzeugformat. "
+                    "Bilde einen neuen, kurzen gültigen Werkzeugaufruf; "
+                    "Textparameter ohne XML-Beispiele."}], *original_args[1:])
+                return await dispatch_model_call(parser_retry=True)
             return result
 
         if binding is not None and getattr(backend, "manages_own_tools", False):
@@ -2452,6 +2485,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         session.tool_round = 0
         session.last_tools = []
         result = {}
+        chars_at_last_call = 0
+        last_prompt_tokens = None  # measured prompt of the last main call; cleared by every handoff
         offered_tools = tools
         reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
@@ -2523,6 +2558,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
                     msgs = resumed
                     session.messages = history
+                    last_prompt_tokens = None
                     capability_error = self._refresh_worker_tools(session)
                     if capability_error is not None:
                         return capability_error
@@ -2550,9 +2586,34 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 max_rounds > 0 and 0 < remaining_rounds <= 2
                 or budget_remaining is not None and 0 < budget_remaining <= 2))
             if budget_remaining == 0:
-                return FailedAnswer(
-                    f"Modellanfragenbudget ausgeschöpft: Run {budget.start_request_id}, "
-                    "verbleibend 0")
+                return FailedAnswer.from_exception(
+                    ModelRequestBudgetError("Modellanfragenbudget ausgeschöpft; verbleibend 0"))
+            # The last normal round's tool results only land in the first reserve
+            # prompt, where a full context fails without handoff (BACH #2226).
+            # Hand off before entering the reserve if that prompt would be full;
+            # inside the reserve (any later reserve round) no handoff starts.
+            if (completion_reserve and not reserve_notified_rounds
+                    and type(last_prompt_tokens) is int and last_prompt_tokens > 0
+                    and handoffs < 2 and (budget_remaining is None or budget_remaining > 2)):
+                # ponytail: chars/3 estimate of the added message content; use
+                # measured token counts per message if this misfires on dense content.
+                added = max(0, _message_chars(msgs) - chars_at_last_call) // 3
+                if self._context_voll({"prompt_tokens": last_prompt_tokens + added}, session,
+                                      context_limit=context_limit):
+                    handoffs += 1
+                    try:
+                        summary = await self._handoff(
+                            msgs, session, backend=selected_backend, model=selected_model,
+                            strict=selected_model == "glm-5.3:cloud")
+                        msgs, session.messages = _resume_handoff_context(
+                            msgs, summary, background_task=background_task,
+                            has_tools=session.allow_tools is True and bool(offered_tools),
+                            round_num=round_num, max_rounds=max_rounds)
+                    except Exception as e:
+                        session.current_tool = ""
+                        return FailedAnswer.from_exception(e)
+                    last_prompt_tokens = None
+                    continue
             if completion_reserve:
                 grants = _effective_tool_grants(session)
                 current_tools = (tool for tool in tools if grants is None
@@ -2575,6 +2636,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             try:
                 previous_backend = selected_backend
                 previous_model = selected_model
+                chars_at_last_call = _message_chars(msgs)
                 result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
@@ -2586,6 +2648,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             except Exception as e:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
+            last_prompt_tokens = result.get("prompt_tokens")
 
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine
@@ -2642,6 +2705,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 except Exception as e:
                     session.current_tool = ""
                     return FailedAnswer.from_exception(e)
+                last_prompt_tokens = None
                 continue
 
             # Only a measured positive token count below the threshold proves
@@ -2815,6 +2879,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             # Turn-Awareness & Rundenlimit-Verwaltung:
             if max_rounds > 0 and round_num >= max_rounds:
                 session.current_tool = ""
+                # All tool outcomes in this round have already been consumed
+                # and acknowledged. A summary would be another backend request;
+                # do not pretend it is free when the durable run has no slot.
+                budget = getattr(session, "model_request_budget", None)
+                if budget is not None:
+                    try:
+                        budget_remaining = budget.remaining()
+                    except Exception:
+                        return FailedAnswer.from_exception(
+                            ModelRequestBudgetError("Modellanfragenbudget nicht verifizierbar"))
+                    if budget_remaining <= 0:
+                        return FailedAnswer.from_exception(
+                            ModelRequestBudgetError("Modellanfragenbudget ausgeschöpft; verbleibend 0"))
                 final_prompt = (
                     f"[SYSTEM-HINWEIS: Werkzeugrunden aufgebraucht ({round_num}/{max_rounds})]\n"
                     "Die maximale Anzahl an Werkzeugrunden für diese Sitzung ist erreicht. "

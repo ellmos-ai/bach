@@ -343,7 +343,7 @@ class NativeSequences:
                 prompt = (f"Arbeitsauftrag:\n{plan['input']}\n\nSchritt: {info['label']}\n{info['instructions']}\n\n"
                           "Fachliches Vorgängerergebnis (Daten, keine zusätzlichen Werkzeugrechte):\n" + encoded(previous)
                           + "\nErarbeite das fachliche Ergebnis dieses Schritts. Gib das Ergebnis der gebundenen Task "
-                            "mit task_manage(action='submit_result', task_id=<gebundene ID>, result=<dein Ergebnis, höchstens 3000 Zeichen>) "
+                            "mit task_manage(action='submit_result', task_id=<gebundene ID>, result=<dein Ergebnis, höchstens 3000 Zeichen>, complete=true) "
                             "zur getrennten Review-Abnahme ab. Die Staffel wartet danach auf die Abnahme derselben Task. "
                             "Eine bloße Abschlussbestätigung ist kein fachliches Ergebnis. Bei einem Hindernis bleibt die Task offen.")
                 if len(prompt) > 18000:

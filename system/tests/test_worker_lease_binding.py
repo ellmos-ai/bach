@@ -1,4 +1,5 @@
 """Private native worker binding: isolated authority, generation and receipts."""
+import json
 import threading
 
 import pytest
@@ -8,6 +9,23 @@ from system.tests.test_task_lease_client_review import T0
 from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError
 from system.tests.test_worker_tool_trace import binding as trace_binding
 from system.tests.worker_completion_fixtures import CompletionHarness
+from hub._services import worker_policy_settings as settings
+
+
+def _self_check(work):
+    return json.dumps({"schema": "bach.worker-self-check.v1", "complete": True,
+        "completed_work": work, "checks": ["Fachliches Ergebnis gegen den Auftrag geprüft."],
+        "remaining_required_work": []}, ensure_ascii=False)
+
+
+def _require_personal_review(binding):
+    """Keep tests about separate personal acceptance on an explicit user gate."""
+    conn = binding._client._conn
+    settings._persist(conn, settings.TASK_KEY + str(binding.task_id),
+        {"mode": None, "require_user_review": True,
+         "github_external_review": None, "allow_review_task_pickup": None},
+        actor="fixture-explicit-user-review")
+    conn.commit()
 
 
 @pytest.fixture
@@ -79,12 +97,13 @@ def test_quarantine_blocks_requeue_and_never_falls_back_to_return(binding, monke
 
 def test_done_receipt_requires_submission_and_separate_authoritative_acceptance(completion_binding):
     binding = completion_binding
+    _require_personal_review(binding)
     with pytest.raises(LeaseError):
         binding.execute_task_manage({"action": "done", "task_id": binding.task_id})
     binding.assert_active()
     result = binding.execute_task_manage({"action": "done", "task_id": binding.task_id,
-                                         "result": "Konkretes fachliches Ergebnis"})
-    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+                                         "result": _self_check("Konkretes fachliches Ergebnis erstellt.")})
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert binding.closed
     assert binding.completed_task_ids == () and binding.reviewed_task_ids == (binding.task_id,)
     approve_result(binding)
@@ -99,7 +118,7 @@ def test_content_update_rebinds_before_next_mutation(binding):
                                  "description": "Änderung"})
     assert binding.task_snapshot()["task_version"] != previous
     assert binding.task_snapshot()["description"] == "Änderung"
-    assert "wartet in Review" in binding.execute_task_manage({"action": "done", "task_id": binding.task_id,
+    assert "Abschlussstatus wird nach Policy ermittelt" in binding.execute_task_manage({"action": "done", "task_id": binding.task_id,
                                                               "result": "Ergebnis für den geänderten Inhalt"})
     assert binding.submitted_result["task_version"] == binding.task_snapshot()["task_version"]
 
@@ -221,6 +240,7 @@ def test_missing_renew_ack_revokes_binding(binding, monkeypatch):
 
 def test_task_tool_dispatch_uses_private_binding_before_local_db(completion_binding, monkeypatch):
     binding = completion_binding
+    _require_personal_review(binding)
     from hub._services.chat import bach_tools
     monkeypatch.setattr(bach_tools, "_current_runtime_db", lambda: pytest.fail("projection path accessed"))
     result = bach_tools.exec_tool(
@@ -230,10 +250,10 @@ def test_task_tool_dispatch_uses_private_binding_before_local_db(completion_bind
         mode="safe", worker_task_binding=binding)
     assert f"Task #{binding.task_id} aktualisiert: description" == result
     binding.assert_active()
-    result = bach_tools.exec_tool("task_manage", {"action": "submit_result", "task_id": binding.task_id,
-                                                  "result": "Konkretes Ergebnis ohne Projektion"},
+    result = bach_tools.exec_tool("task_manage", {"action": "submit_result", "task_id": binding.task_id, "complete": True,
+                                                   "result": _self_check("Konkretes Ergebnis ohne Projektion erstellt.")},
                                   mode="safe", worker_task_binding=binding)
-    assert "wartet in Review" in result
+    assert "Abschlussstatus wird nach Policy ermittelt" in result
     assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
     approve_result(binding)
     assert binding.completed_task_ids == (binding.task_id,)
@@ -260,8 +280,8 @@ def test_real_native_process_releases_bound_task_without_post_completion_inferen
             assert binding._ack.lease_id not in str(messages)
             assert len(calls) == 1
             tools = [{"function": {"name": "task_manage", "arguments": {
-                "action": "submit_result", "task_id": binding.task_id,
-                "result": "Konkretes Ergebnis aus dem isolierten Lauf"}}}]
+                "action": "submit_result", "task_id": binding.task_id, "complete": True,
+                "result": _self_check("Konkretes Ergebnis aus dem isolierten Lauf erstellt.")}}}]
             return {"content": "", "tool_calls": tools,
                     "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}
         def tool_response_message(self, content, tool_call_id=""):
@@ -275,7 +295,7 @@ def test_real_native_process_releases_bound_task_without_post_completion_inferen
     monkeypatch.setattr(bach_tools, "_current_runtime_db", lambda: pytest.fail("projection path accessed"))
     answer = asyncio.run(runtime.process("Gebundenen Auftrag abschließen", "worker-bound",
                                          work_priority="background"))
-    assert "wartet in Review" in str(answer)
+    assert "Abschlussstatus wird nach Policy ermittelt" in str(answer)
     assert getattr(answer, "completed_task_ids", ()) == ()
     assert binding.reviewed_task_ids == (binding.task_id,) and not binding.completed_task_ids
     assert len(calls) == 1
@@ -770,6 +790,7 @@ def test_external_profile_route_runs_bound_picker_to_review(
     harness.prepare(binding, conn, backend_id=actual_backend, requested_model=model,
                     observed_model=model, slot_id=f"profile-{backend}")
     binding._test_completion_harness = harness
+    _require_personal_review(binding)
 
     actual_submit = client.submit_result
     acknowledgements = []
@@ -780,9 +801,9 @@ def test_external_profile_route_runs_bound_picker_to_review(
     monkeypatch.setattr(client, "submit_result", capture_submit)
     message = binding.execute_task_manage({
         "action": "submit_result", "task_id": task_id,
-        "result": "Bound route produced a reviewable result with sources and limits.",
+        "result": _self_check("Bound route produced a result with sources and limits."),
     })
-    assert "wartet in Review" in message
+    assert "Abschlussstatus wird nach Policy ermittelt" in message
     assert len(acknowledgements) == 1 and isinstance(acknowledgements[0], WorkerResultAck)
     result_ack = acknowledgements[0]
     assert result_ack.release.outcome == "review" and result_ack.release.status == "review"

@@ -109,7 +109,7 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     assert handle is not None
     assert author.finish_model_execution(
         handle, result=_response(AUTHOR_OBSERVED), route_sha256=AUTHOR_ROUTE) is True
-    assert "wartet in Review" in author.execute_task_manage({
+    assert "Abschlussstatus wird nach Policy ermittelt" in author.execute_task_manage({
         "action": "submit_result", "task_id": context["task_id"],
         "result": "Konkrete erledigte Arbeit am Zieltask."})
     assert worker_scope_evidence.capture_scope_evidence(conn, author) is True
@@ -263,7 +263,7 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
     assert handle is not None
     assert child.finish_model_execution(
         handle, result=answer, route_sha256=REVIEW_ROUTE) is True
-    assert "wartet in Review" in child.execute_task_manage({
+    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
         "action": "submit_result", "task_id": child.task_id, "result": verdict})
     evidence = review.record_review(world["conn"], child, **_paths(world))
     assert evidence["availability"] == "recorded"
@@ -438,7 +438,7 @@ def test_released_review_child_is_cancelled_only_for_proven_target_drift(
     tool_result = child.execute_task_manage({
         "action": "submit_result", "task_id": task_id, "result": verdict})
     unavailable = drift in {"git_dirty", "git_unavailable"}
-    assert ("wartet in Review" if unavailable else "wurde storniert") in tool_result
+    assert ("Abschlussstatus wird nach Policy ermittelt" if unavailable else "wurde storniert") in tool_result
     expected = "review" if unavailable else "cancelled"
     assert read_result(world["conn"], task_id)["status"] == expected
     assert read_result(world["conn"], task_id)["result"]["accepted"] is False
@@ -470,7 +470,7 @@ def test_obsolete_cancel_rejects_child_status_revision_race(review_world, monkey
     assert handle is not None
     assert child.finish_model_execution(handle, result=answer, route_sha256=REVIEW_ROUTE) is True
     monkeypatch.setattr(world["client"], "_record_result_review", lambda binding: None)
-    assert "wartet in Review" in child.execute_task_manage({
+    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
         "action": "submit_result", "task_id": task_id, "result": verdict})
     before = read_result(world["conn"], task_id)["status_revision"]
     (world["tree"]["target"] / "race.txt").write_text("changed\n", encoding="utf-8")

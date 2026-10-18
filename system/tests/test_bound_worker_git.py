@@ -483,13 +483,13 @@ def test_bound_task_manage_rejects_public_arguments_before_private_operation(bri
 def test_bound_task_manage_accepts_valid_own_result_as_review_submission(bridge):
     binding = bridge.binding
     result = exec_tool(
-        "task_manage", {"action": "submit_result", "task_id": binding.task_id,
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id, "complete": True,
                        "result": "Unabhängig belegtes Ergebnis mit konkreter Prüfgrenze."},
         "safe", worker_task_binding=binding, require_task_binding=True,
         allowed_tools={"task_manage"},
     )
 
-    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert binding.completed_task_ids == ()
     assert binding.reviewed_task_ids == (binding.task_id,)
 
@@ -497,7 +497,7 @@ def test_bound_task_manage_accepts_valid_own_result_as_review_submission(bridge)
 def test_bound_task_manage_hides_native_task_authority_failure(bridge):
     binding = bridge.binding
     result = exec_tool(
-        "task_manage", {"action": "submit_result", "task_id": binding.task_id + 1,
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id + 1, "complete": True,
                        "result": "Ein synthetisches Ergebnis für den falschen Task."},
         "safe", worker_task_binding=binding, require_task_binding=True,
         allowed_tools={"task_manage"},
@@ -516,7 +516,7 @@ def test_bound_task_manage_hides_unknown_native_submission_ack(bridge, monkeypat
 
     monkeypatch.setattr(binding._client, "submit_result", unknown_ack)
     result = exec_tool(
-        "task_manage", {"action": "submit_result", "task_id": binding.task_id,
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id, "complete": True,
                        "result": "Ein synthetisches Ergebnis ohne bestätigten ACK."},
         "safe", worker_task_binding=binding, require_task_binding=True,
         allowed_tools={"task_manage"},

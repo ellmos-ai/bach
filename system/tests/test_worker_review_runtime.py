@@ -390,7 +390,7 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
     finally:
         runtime._compute_turn_context.reset(token)
 
-    assert "wartet in Review" in str(answer)
+    assert "Abschlussstatus wird nach Policy ermittelt" in str(answer)
     assert len(requests) == 2
     offered_actions = [
         request["json"]["tools"][0]["function"]["parameters"]["properties"]["action"]["enum"]

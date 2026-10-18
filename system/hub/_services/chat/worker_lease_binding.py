@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from hub._services.task_lease_client import (
     LeaseError, LeaseDeniedError, LeaseMaxTotalReachedError, LeaseProtocolError,
+    LeaseSelfCheckRequiredError,
     LeaseReleaseAck, WorkerResultAck,
 )
 
@@ -26,6 +27,25 @@ class WorkerResultLimitLockedError(LeaseProtocolError):
     """A worker may keep or tighten, but never loosen, its result limit."""
 
     user_message = "Das Task-Ausgabelimit darf von einem Worker nicht gelockert werden."
+
+
+class WorkerTaskManageArgumentError(LeaseProtocolError):
+    """Only a locally checked tool shape, never an SDK or ownership denial."""
+
+    _GUIDANCE = {
+        "list_fields": 'Für task_manage(action="list") nur action angeben; task_id weglassen.',
+        "update_fields": 'Für update nur unterstützte Taskfelder wie description oder status angeben; Ergebnis mit submit_result und complete=true abgeben.',
+        "update_result": 'Ergebnis getrennt mit task_manage(action="submit_result", task_id=<ID>, result=<Text>, complete=true) abgeben.',
+        "update_status": 'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.',
+        "update_completion": 'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.',
+        "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.',
+        "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
+    }
+
+    def __init__(self, reason):
+        self.reason = reason
+        self.user_message = self._GUIDANCE[reason]
+        super().__init__(self.user_message)
 
 
 class WorkerLeaseBinding:
@@ -53,6 +73,8 @@ class WorkerLeaseBinding:
         self._scope_captured_result_id = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
+        # Only native, versioned update ACKs may move a running budget's task pin.
+        self._budget_version_transitions = []
         # Cumulative for this lease, not reset by model block boundaries.
         # Starting a tool can have an effect even when its response is lost.
         self._tool_dispatch_count = 0
@@ -490,6 +512,13 @@ class WorkerLeaseBinding:
         with self._lock:
             return copy.deepcopy(self._snapshot)
 
+    def budget_task_version_evidence(self):
+        """Return the live binding version and its confirmed same-lease ACK chain."""
+        with self._lock:
+            self.assert_active()
+            return (self.task_id, self._snapshot["task_version"],
+                    tuple(self._budget_version_transitions))
+
     def correction_context(self):
         with self._lock:
             self._assert_authority_active()
@@ -528,6 +557,9 @@ class WorkerLeaseBinding:
             self.assert_active()
         try:
             return function(self.task_id, **self._ref(), **kwargs)
+        except LeaseSelfCheckRequiredError:
+            # This exact local validation ran before any result/status write.
+            raise
         except LeaseError as exc:
             if keep_max_total and isinstance(exc, LeaseMaxTotalReachedError):
                 # Known denial: the last confirmed lease still owns its
@@ -554,6 +586,7 @@ class WorkerLeaseBinding:
             raise LeaseProtocolError("Neue Taskversion ist nicht bestaetigt") from None
         self._ack = current_ack
         self._snapshot["task_version"] = current_ack.task_version
+        self._budget_version_transitions.append((previous_version, current_ack.task_version))
 
     def renew(self):
         with self._lock:
@@ -955,7 +988,7 @@ class WorkerLeaseBinding:
                         raise LeaseProtocolError("Reviewurteil ist nicht durch die bestätigte Modellantwort belegt")
             if action == "list":
                 if set(args) - {"action"}:
-                    raise LeaseProtocolError("Taskliste ist auf die gebundene Task begrenzt")
+                    raise WorkerTaskManageArgumentError("list_fields")
                 task = self.task_snapshot()
                 return (f"[{task['id']}] {task.get('priority', '')} "
                         f"{task.get('status', '')}: {task.get('title', '')}")
@@ -991,6 +1024,9 @@ class WorkerLeaseBinding:
                     # A correlated explicit denial is not an ambiguous commit.
                     self._submission_expected = None
                     raise
+                except LeaseSelfCheckRequiredError:
+                    self._submission_expected = None
+                    raise
                 if (not isinstance(release, WorkerResultAck)
                         or release.release.released is not True
                         or release.release.task_id != self.task_id or release.release.fence != self._ack.fence
@@ -1002,12 +1038,12 @@ class WorkerLeaseBinding:
                 self._closed = True
                 self._active = False
                 self._link_confirmed_model_execution()
-                return f"Task #{self.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+                return f"Task #{self.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
             if action == "update":
                 allowed = {"title", "description", "category", "priority", "depends_on",
                            "assigned_to", "required_model", "assigned_slot", "status", "result_max_chars"}
                 if set(args) - allowed - {"action", "task_id", "result"}:
-                    raise LeaseProtocolError("Unbekannte Task-Inhaltsfelder")
+                    raise WorkerTaskManageArgumentError("update_fields")
                 changes = {key: value for key, value in args.items() if key in allowed}
                 if "result_max_chars" in changes:
                     value = changes["result_max_chars"]
@@ -1020,17 +1056,17 @@ class WorkerLeaseBinding:
                     if current_limit is not None and (value is None or value > current_limit):
                         raise WorkerResultLimitLockedError(WorkerResultLimitLockedError.user_message)
                 if changes.get("status") in {"done", "completed"}:
-                    if len(changes) != 1:
-                        raise LeaseProtocolError("Ergebnisabgabe und Inhaltsänderung getrennt ausführen")
+                    if len(changes) != 1 or "result" not in args:
+                        raise WorkerTaskManageArgumentError("update_completion")
                     return self.execute_task_manage({"action": "submit_result", "task_id": self.task_id,
                                                      "result": args.get("result")}, _dispatch_marked=True)
                 if "result" in args:
-                    raise LeaseProtocolError("Ergebnis mit submit_result abgeben")
+                    raise WorkerTaskManageArgumentError("update_result")
                 if "status" in changes:
                     outcomes = {"pending": "return",
                                 "open": "return", "blocked": "blocked"}
                     if len(changes) != 1 or changes["status"] not in outcomes:
-                        raise LeaseProtocolError("Statuswechsel braucht einen eigenständigen Lease-Abschluss")
+                        raise WorkerTaskManageArgumentError("update_status")
                     outcome = outcomes[changes["status"]]
                     self._operation(self._client.release, outcome=outcome)
                     self._closed = True
@@ -1052,11 +1088,11 @@ class WorkerLeaseBinding:
                     allowed = {"action", "task_id", "subtasks", "close_parent", "sequential",
                                "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars"}
                     if set(args) - allowed:
-                        raise LeaseProtocolError("Unbekannte Zerlegungsfelder")
+                        raise WorkerTaskManageArgumentError("decompose_fields")
                     subtasks = args.get("subtasks")
                     close_parent = args.get("close_parent", False)
                     if close_parent is not False:
-                        raise LeaseProtocolError("Worker-Zerlegung schließt den Parent nicht ab; Ergebnisabgabe und Abnahme erforderlich")
+                        raise WorkerTaskManageArgumentError("decompose_parent")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in (
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")

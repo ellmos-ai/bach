@@ -323,18 +323,18 @@ class _ModelRequestBudget:
     def reserve(self, binding) -> dict:
         from hub._services.chat.slots_config import ModelRequestBudgetError, reserve_model_request
         try:
-            snapshot = binding.task_snapshot()
+            task_id, task_version, confirmed_versions = binding.budget_task_version_evidence()
         except Exception as exc:
             raise ModelRequestBudgetError("Taskversion für Modellanfrage nicht lesbar") from exc
-        if (binding.task_id != self.task_id or snapshot.get("id") != self.task_id
-                or not isinstance(snapshot.get("task_version"), str)):
+        if task_id != self.task_id or not isinstance(task_version, str):
             from hub._services.chat.slots_config import ModelRequestBudgetError
             raise ModelRequestBudgetError("Feste Taskbindung ist nicht mehr aktuell")
         try:
             return reserve_model_request(
                 self.worker_id, service_instance=self.service_instance,
                 start_request_id=self.start_request_id, generation=self.generation,
-                task_id=self.task_id, task_version=snapshot["task_version"],
+                task_id=self.task_id, task_version=task_version,
+                confirmed_version_transitions=confirmed_versions,
                 configuration_version=self.configuration_version,
             )
         except ModelRequestBudgetError:
@@ -849,6 +849,37 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         raise
 
 
+def _prepare_bound_task_scope(binding, slot):
+    """Provision a bound task's Git scope before its first model request.
+
+    Continuous workers need it as much as once workers: without a registered
+    task tree no scope evidence can be captured, so a simple_task result stays
+    in review and the completion poll blocks the next claim (BACH #2215).
+    """
+    allowed = slot.get("allowed_tools")
+    if (slot.get("type") not in {"once", "continuous", "persistent"}
+            or not isinstance(allowed, list) or not allowed
+            or getattr(binding, "_review_grant", None) is not None):
+        return
+    from hub import worker_git
+    from hub._services.chat.worker_write_guard import _WRITE_TOOLS, snapshot_task_scope
+    code_capability = any(tool in _WRITE_TOOLS for tool in allowed)
+    try:
+        binding.assert_active()
+        worker_git.start_task_worktree(binding.task_id, base_branch="main",
+            worker_task_binding=binding, require_task_binding=True,
+            task_code_capability=code_capability)
+        scope = snapshot_task_scope(binding.task_id)
+        binding.assert_active()
+        if (scope.get("availability") != "available"
+                or scope.get("task_id") != binding.task_id
+                or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
+                or (scope.get("source_pin") is not None) != code_capability):
+            raise RuntimeError("scope_unavailable")
+    except Exception:
+        raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
+
+
 def _bound_worker_prompt(binding, prompt):
     snapshot = binding.task_snapshot()
     grant = getattr(binding, "_review_grant", None)
@@ -923,9 +954,16 @@ def _bound_worker_prompt(binding, prompt):
         )
     return (f"{prompt}\n\nAktuell übernommener Auftrag: Task #{binding.task_id}. "
             "Bearbeite ausschließlich diesen Auftrag. Gib dein fachliches Ergebnis mit "
-            "task_manage(action='submit_result', task_id=<ID>, result='<Befunde, Quellen, Prüfungen, offene Grenzen>') "
-            "ab. Das speichert Review und gibt die Task zurück; eine getrennte Operator-Abnahme entscheidet über Done. "
-            "Eine bloße Erledigungsbestätigung, update(status=done) oder close_parent=true ersetzen keine Abnahme."
+             "task_manage(action='submit_result', task_id=<ID>, result='<fertiges Ergebnis>', complete=true) "
+             "nur ab, wenn die Pflichtarbeit vollständig erledigt und geprüft ist. Bei Teilstand gib "
+             "task_manage(action='submit_result', task_id=<ID>, result='<bisheriger Stand>', complete=false) ab: "
+             "Der Teilstand wird in der Task gespeichert, sie bleibt offen; Teilstand gehört nicht in Review. "
+             "Für einfache Tasks ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext "
+             "als ausdrückliche Fertigmeldung. Nenne die tatsächlich erledigte Arbeit und Prüfung; "
+             "behaupte keine ungeprüfte Vollständigkeit. Ein Ergebnistext mit offener Pflichtarbeit "
+             "ist kein fertiges Ergebnis und bekommt complete=false. "
+             "Der Abschluss folgt dem konfigurierten Modus; Nutzer- und GitHub-Freigaben bleiben eigenständig. "
+             "update(status=done) oder close_parent=true ersetzen keine Abnahme."
             + correction_notice + "\n" + json.dumps(content, ensure_ascii=False))
 
 
@@ -4605,14 +4643,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             elif w.get("task_id"):
                 initial_prompt = (
                     f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
-                    f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>'). "
+                    f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>', complete=true). "
                     "Bei Hindernissen nicht als erledigt markieren; dokumentiere den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "hintergrund_worker":
                 initial_prompt = (
                     "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die "
                     "wichtigste passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                    "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>'). Bei Hindernissen bleibt die Task offen; "
+                    "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true). Bei Hindernissen bleibt die Task offen; "
                     "nenne den konkreten Fortsetzungsschritt."
                 )
             elif w.get("sub_mode") == "boss_routing":
@@ -4638,7 +4676,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             else:
                 initial_prompt = w.get("task_prompt") or (
                     "Prüfe offene Aufgaben und beginne mit der Bearbeitung. Markiere eine Task erst nach "
-                    "Bearbeitung mit task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
+                    "Bearbeitung mit task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true)."
                 )
 
             prompt_to_run = initial_prompt
@@ -4786,6 +4824,33 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     control.task_binding.assert_active()
                     if control.lease_supervisor.failure is not None:
                         raise control.lease_supervisor.failure
+                    try:
+                        _prepare_bound_task_scope(control.task_binding, current_slot)
+                    except RuntimeError:
+                        if current_slot.get("type") not in {"continuous", "persistent"}:
+                            raise
+                        # A background worker returns this task (e.g. an orphaned
+                        # bach-task branch) and stays available for the next one.
+                        # Same order as the final cleanup: settle renews first.
+                        returned = control.task_binding.task_snapshot()
+                        control.lease_supervisor.close()
+                        control.lease_supervisor = None
+                        if not control.task_binding.return_lease():
+                            raise
+                        finish_assignment(current_assignment, status="released",
+                                          result="task_returned", reason="task_scope_unavailable")
+                        assignment_open = False
+                        control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
+                        _record_worker_activity(control,
+                            f"Task #{control.task_binding.task_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
+                            "pending")
+                        control.task_binding = None
+                        if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                "current_activity": "Task-Arbeitsbaum nicht bereit; suche nächste passende Aufgabe"}) is None:
+                            break
+                        if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
+                            break
+                        continue
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
@@ -5218,7 +5283,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     prompt_to_run = (
                         "Prüfe die offenen Tasks in der von BACH verwendeten TaskDB und bearbeite die nächste "
                         "wichtige passende Aufgabe. Markiere sie erst nach tatsächlicher Erledigung mit "
-                        "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>')."
+                        "task_manage(action='submit_result', task_id=<ID>, result='<konkretes Ergebnis>', complete=true)."
                     )
                 else:
                     # Do not abandon or mark an unverified task complete.

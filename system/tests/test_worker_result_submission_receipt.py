@@ -578,7 +578,11 @@ def test_policy_snapshot_is_frozen_and_readback_does_not_create_schema(local_db)
         db_path=path,
     )
 
-    client, _, _, ack, _ = _submit(conn, task_id)
+    complete = json.dumps({"schema": "bach.worker-self-check.v1", "complete": True,
+        "completed_work": "Versionierten Ergebnisbeleg für die Policyprüfung erstellt.",
+        "checks": ["Policy-Snapshot und Ergebnisrevision geprüft."],
+        "remaining_required_work": []}, ensure_ascii=False)
+    client, _, _, ack, _ = _submit(conn, task_id, result=complete)
     record = ack.record
     frozen = record["submission"]["policy"]
     assert frozen["availability"] == "available"

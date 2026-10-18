@@ -42,6 +42,7 @@ try:
         LeaseConfig,
         LeaseResult,
         LeaseValidationError,
+        LeaseSelfCheckRequired,
         TaskNotFound,
         acquire_lease,
         _acquire_native_creator_lease,
@@ -59,6 +60,7 @@ except ImportError:  # pragma: no cover
         LeaseConfig,
         LeaseResult,
         LeaseValidationError,
+        LeaseSelfCheckRequired,
         TaskNotFound,
         acquire_lease,
         _acquire_native_creator_lease,
@@ -91,6 +93,13 @@ class LeaseError(Exception):
 
 class LeaseProtocolError(LeaseError):
     """Invalid authority configuration or uncorrelated/malformed ACK."""
+
+
+class LeaseSelfCheckRequiredError(LeaseProtocolError):
+    """Confirmed local validation denial without a submission or lease mutation."""
+
+    user_message = ("Ergebnis noch nicht vollständig: Für einfache Tasks ohne Vertrag "
+                    "einen echten Selbstcheck abgeben; Teilstand mit update(status='pending') zurückgeben.")
 
 
 class LeaseDeniedError(LeaseError):
@@ -727,6 +736,8 @@ class TaskLeaseClient:
                          "release": release_lease, "decompose": decompose_lease, "update": update_lease}
                 result = funcs[name](conn, task_id, **(payload or {}), config=config, now=now)
                 status, data = result.http_status, result.payload
+            except LeaseSelfCheckRequired:
+                raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message) from None
             except (LeaseValidationError, TaskNotFound):
                 raise LeaseProtocolError("Ungültige Lease-Anfrage oder Task fehlt") from None
             finally:

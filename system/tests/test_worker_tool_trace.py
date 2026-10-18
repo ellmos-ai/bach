@@ -252,6 +252,7 @@ def test_submit_result_return_still_allows_only_terminal_trace_and_ack(binding):
         "action": "done",
         "task_id": binding.task_id,
         "result": "Synthetic trace lifecycle result for review",
+        "complete": True,
     }
     with _relay(binding) as relay:
         result = _call(relay, arguments)
