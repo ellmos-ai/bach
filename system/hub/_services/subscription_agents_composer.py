@@ -36,7 +36,9 @@ _SECRET = re.compile(
     r"(?:\"[^\"]{4,}\"|'[^']{4,}'|[^\s,;]{8,}))"
 )
 _CONTRACTUS_FIELDS = blueprint_service.CONTRACTUS_FIELDS
-_GOVERNANCE_FIELDS = {"profile", "tool_whitelist", "scope"}
+_GOVERNANCE_FIELDS = {
+    "profile", "tool_whitelist", "scope", "policy_refs", "inherits_from", "pin_log",
+}
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -267,6 +269,20 @@ class SubscriptionAgentsComposer:
                     or len(set(tools)) != len(tools)):
                 raise ValueError("Governance-Toolliste ist ungültig oder zu groß")
             normalized_governance["tool_whitelist"] = list(tools)
+        if "policy_refs" in governance or "inherits_from" in governance:
+            # Reuse the native Blueprint contract. The preview may project these
+            # pins, but it must never loosen or reinterpret their validation.
+            from .governance_binding import GovernanceRejected, declared
+            try:
+                refs, inherits = declared(governance)
+            except GovernanceRejected as exc:
+                raise ValueError(f"Blueprint-Governance ist ungültig: {exc}") from None
+            if len(refs) > MAX_POLICY_REFS:
+                raise ValueError(f"Blueprint darf höchstens {MAX_POLICY_REFS} Policy-Referenzen enthalten")
+            if "policy_refs" in governance:
+                normalized_governance["policy_refs"] = refs
+            if inherits is not None:
+                normalized_governance["inherits_from"] = inherits
         _no_credentials(_canonical_bytes(normalized_governance).decode("utf-8"), "Blueprint-Governance")
 
         for label, item in (("Blueprint-Name", name), ("Blueprint-Titel", title),
