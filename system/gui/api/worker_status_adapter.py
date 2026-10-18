@@ -173,6 +173,10 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     execution = _project_active_execution(raw.get("execution"), worker_id)
     if execution is not None:
         item["execution"] = execution
+    from hub._services.chat.execution_target import project_execution_target
+    target = project_execution_target(raw.get("resolved_execution_target"))
+    if target is not None:
+        item["resolved_execution_target"] = target
     capabilities = raw.get("action_capabilities")
     if isinstance(capabilities, dict):
         item["action_capabilities"] = {
@@ -780,7 +784,12 @@ def dispatch_blueprint_worker(worker_id: str, configuration_version: str, *,
             or type(execution.get("terminal")) is not bool
             or type(execution.get("worker_thread_started")) is not bool):
         raise WorkerStatusUnavailable("Korrelierter Ausführungsbeleg nicht verfügbar")
-    return {key: execution[key] for key in ("schema", "worker_id", "service_instance",
+    from hub._services.chat.execution_target import project_execution_target
+    target = project_execution_target(execution.get("resolved_execution_target"))
+    result = {key: execution[key] for key in ("schema", "worker_id", "service_instance",
             "start_request_id", "generation", "state", "terminal", "worker_thread_started",
             "worker_status", "error_code", "completed_task_ids", "reviewed_task_ids",
             "governance_binding", "model_binding") if key in execution}
+    if target is not None:
+        result["resolved_execution_target"] = target
+    return result

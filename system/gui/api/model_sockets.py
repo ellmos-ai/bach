@@ -12,9 +12,9 @@ from .core_system_agents import _version
 router = APIRouter(prefix="/api/system/model-sockets", tags=["model-sockets"])
 
 
-async def _read():
+async def _read(*, include_runtime: bool = False):
     try:
-        return await asyncio.to_thread(service.model_sockets_snapshot)
+        return await asyncio.to_thread(service.model_sockets_snapshot, include_runtime=include_runtime)
     except (OSError, ValueError, TypeError):
         raise HTTPException(503, "Modellsteckplatzkonfiguration nicht verifizierbar") from None
 
@@ -41,7 +41,7 @@ async def _write(request, payload, operation, *args, **kwargs):
 
 @router.get("")
 async def list_model_sockets():
-    return await _read()
+    return await _read(include_runtime=True)
 
 
 @router.get("/catalog")

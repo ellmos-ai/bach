@@ -520,6 +520,9 @@ class ChatSession(_ModuleChatSession):
         self.operator_control: Any = None
         self.worker_handoff: Any = None
         self.resolved_model: str = ""
+        # Ephemeral proof of the backend target currently being dispatched.
+        # Configuration and the selected model alone are not runtime evidence.
+        self.resolved_execution_target: dict[str, Any] | None = None
         self.worker_task_actions: Any = None
         self.worker_task_binding: Any = None
         self.require_task_binding: bool = False
@@ -1318,6 +1321,48 @@ class ChatRuntime(_ModuleChatRuntime):
             require_config=getattr(self, "require_model_socket_config", False),
         )
 
+    @staticmethod
+    def _execution_target_for_dispatch(backend, model, session, *, binding=None,
+                                        source="backend_dispatch"):
+        """Build a short-lived, secret-free proof for one backend dispatch."""
+        try:
+            from hub._services.chat.execution_target import (
+                external_execution_target,
+                local_execution_target,
+            )
+            from hub._services.llm.model_backend import backend_identifier
+
+            provider = backend_identifier(backend) or getattr(backend, "backend_id", "")
+            model = str(model)
+            slot_id = getattr(session, "system_slot_id", None) if session is not None else None
+            if slot_id is None and session is not None:
+                reader = getattr(session, "worker_slot_reader", None)
+                if callable(reader):
+                    slot = reader()
+                    slot_id = slot.get("id") if isinstance(slot, dict) else None
+            is_local = ChatRuntime._uses_local_compute(backend) and not model.lower().endswith(":cloud")
+            if is_local:
+                return local_execution_target(
+                    provider, model, binding=binding, slot_id=slot_id, source=source,
+                )
+            external_source = source if source in {"backend_dispatch", "local_target_probe"} else "backend_dispatch"
+            return external_execution_target(provider, model, slot_id=slot_id, source=external_source)
+        except Exception:  # noqa: BLE001 -- telemetry must not change dispatch semantics
+            return None
+
+    @staticmethod
+    def _set_execution_target(session, target):
+        if session is None:
+            return None
+        previous = getattr(session, "resolved_execution_target", None)
+        session.resolved_execution_target = target
+        return previous
+
+    @staticmethod
+    def _restore_execution_target(session, previous):
+        if session is not None:
+            session.resolved_execution_target = previous
+
     async def prepare_inference_call(self, backend, model, *, chat_id=None):
         """Probe the actual target and binding without taking a compute owner.
 
@@ -1531,6 +1576,34 @@ class ChatRuntime(_ModuleChatRuntime):
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
         binding = getattr(session, "worker_task_binding", None)
+        chat_id, priority = turn_context or ("runtime", "foreground")
+        selected_model = kwargs.get("model")
+        if not selected_model:
+            default_model = getattr(backend, "get_default_model", None)
+            try:
+                selected_model = default_model() if callable(default_model) else getattr(backend, "default_model", "")
+            except Exception:  # noqa: BLE001 -- target telemetry must not reject an otherwise valid backend
+                selected_model = getattr(backend, "default_model", "")
+
+        def model_target_binding():
+            if not self._uses_local_compute(backend) or str(selected_model).lower().endswith(":cloud"):
+                return None
+            try:
+                return self._model_binding_for_session(chat_id, backend, selected_model, session)
+            except Exception:  # noqa: BLE001 -- missing optional socket metadata is not a dispatch failure
+                return None
+
+        async def dispatch(call, *call_args, target_binding=None, target_source="backend_dispatch", **call_kwargs):
+            target = self._execution_target_for_dispatch(
+                backend, selected_model, session,
+                binding=target_binding, source=target_source,
+            )
+            previous = self._set_execution_target(session, target)
+            try:
+                return await call(*call_args, **call_kwargs)
+            finally:
+                self._restore_execution_target(session, previous)
+
         def mark_model_dispatch():
             current_binding = getattr(session, "worker_task_binding", None) if session is not None else None
             if current_binding is not None:
@@ -1540,18 +1613,18 @@ class ChatRuntime(_ModuleChatRuntime):
         if binding is not None and getattr(backend, "manages_own_tools", False):
             agent_kwargs = {"agent_operations": self.agent_operations} if self.agent_operations is not None else {}
             mark_model_dispatch()
-            return await backend.chat_bound(
+            return await dispatch(
+                backend.chat_bound,
                 *args, **kwargs, binding=binding, mode=session.mode,
                 guard=check_binding, bach_app=self.bach_app,
                 allowed_tools=getattr(session, "allowed_tools", None),
+                target_binding=model_target_binding(), target_source="local_backend_dispatch",
                 **agent_kwargs,
             )
         if not self._uses_local_compute(backend):
             mark_model_dispatch()
-            return await backend.chat(*args, **kwargs)
-        selected_model = kwargs.get("model") or backend.get_default_model()
+            return await dispatch(backend.chat, *args, **kwargs)
 
-        chat_id, priority = turn_context or ("runtime", "foreground")
         from hub._services.chat.host_inference_gate import HostInferenceGate
 
         session = self.get_session(chat_id) if turn_context else None
@@ -1596,7 +1669,11 @@ class ChatRuntime(_ModuleChatRuntime):
                     backend, selected_model, chat_id=chat_id if turn_context else None)
                 if receipt is None:
                     mark_model_dispatch()
-                    return await backend.chat(*args, **kwargs)
+                    return await dispatch(
+                        backend.chat, *args, **kwargs,
+                        target_binding=model_target_binding(),
+                        target_source="local_backend_dispatch",
+                    )
                 if not policy_bound:
                     policy_version = receipt.get("policy_version")
                     policy_bound = True
@@ -1606,7 +1683,10 @@ class ChatRuntime(_ModuleChatRuntime):
                     with self._local_resource_waiters_lock:
                         self._local_resource_waiters.pop(chat_id, None)
                     mark_model_dispatch()
-                    return await backend.chat(*args, **kwargs)
+                    return await dispatch(
+                        backend.chat, *args, **kwargs,
+                        target_source="local_target_probe",
+                    )
                 require_retryable(receipt)
                 binding = getattr(session, "worker_task_binding", None) if session is not None else None
                 pre_effect_receipt = self._persistent_core_pre_effect_reserve_receipt(
@@ -1652,7 +1732,11 @@ class ChatRuntime(_ModuleChatRuntime):
                                 with self._local_resource_waiters_lock:
                                     self._local_resource_waiters.pop(chat_id, None)
                                 mark_model_dispatch()
-                                return await backend.chat(*args, **kwargs)
+                                return await dispatch(
+                                    backend.chat, *args, **kwargs,
+                                    target_binding=model_binding,
+                                    target_source="host_inference_gate",
+                                )
                             finally:
                                 self._leave_compute_turn(self._compute_turn_gate)
                     if receipt["state"] == "external_target":
@@ -1663,7 +1747,10 @@ class ChatRuntime(_ModuleChatRuntime):
                         with self._local_resource_waiters_lock:
                             self._local_resource_waiters.pop(chat_id, None)
                         mark_model_dispatch()
-                        return await backend.chat(*args, **kwargs)
+                        return await dispatch(
+                            backend.chat, *args, **kwargs,
+                            target_source="local_target_probe",
+                        )
                 # The host owner has been returned before reserve polling.
                 # We stay at this model-call boundary: previous tools and the
                 # task/session context are not replayed or reset.

@@ -669,6 +669,9 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker.pop("persistent_opt_in_profile_version", None)
     worker.pop("_persistent_execution_checkpoint", None)
     worker["persistent_opt_in"] = worker.get("persistent_opt_in") is True
+    session_target = _worker_session_execution_target(worker.get("id"))
+    if session_target is not None:
+        worker["resolved_execution_target"] = session_target
     with _WORKER_CONTROL_LOCK:
         retained = _WORKER_EXECUTIONS.get(worker.get("id"))
         control = _WORKER_CONTROLS.get(worker.get("id"))
@@ -718,6 +721,22 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception:
                     pass
     return worker
+
+
+def _project_session_execution_target(session: Any) -> dict | None:
+    try:
+        from hub._services.chat.execution_target import project_execution_target
+        return project_execution_target(getattr(session, "resolved_execution_target", None))
+    except Exception:  # noqa: BLE001 -- malformed ephemeral telemetry is ignored
+        return None
+
+
+def _worker_session_execution_target(worker_id: str | None) -> dict | None:
+    if not isinstance(worker_id, str) or not worker_id:
+        return None
+    with _runtime_state_lock:
+        session = runtime.sessions.get(worker_id)
+    return _project_session_execution_target(session) if session is not None else None
 
 
 def _worker_execution_snapshots() -> list[dict]:
@@ -783,6 +802,7 @@ def _system_slots_snapshot() -> dict:
         execution, thread_alive, task_id = worker_states[slot_id]
         active_session = running_sessions[0] if running_sessions else None
         execution_state = execution["state"] if execution else None
+        session_target = _project_session_execution_target(active_session)
         manual_paused = agent["status"] == "paused" and not agent["pause_info"].get("auto_paused", False)
         paused = not agent["enabled"] or agent["status"] == "paused" or agent["pause_info"]["is_paused"]
         # Process liveness protects admission and cleanup; Running describes
@@ -812,6 +832,8 @@ def _system_slots_snapshot() -> dict:
                           "running" if running else
                           "paused" if paused else
                           "error" if failed else "ready")})
+        if session_target is not None:
+            agent["resolved_execution_target"] = session_target
     result["service_instance"] = _WORKER_SERVICE_INSTANCE
     return result
 
