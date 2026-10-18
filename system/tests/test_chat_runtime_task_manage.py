@@ -376,3 +376,70 @@ class TestTaskManageAdd:
         conn.close()
         assert row is not None
         assert row["assigned_to"] == "bach"
+
+
+@pytest.fixture
+def gated_db_path(tmp_path, monkeypatch):
+    """A task with a predeclared review gate and no worker result storage yet."""
+    p = tmp_path / "gated.db"
+    conn = sqlite3.connect(str(p))
+    conn.executescript(
+        """
+        CREATE TABLE tasks (
+            id INTEGER PRIMARY KEY, title TEXT, description TEXT, category TEXT,
+            depends_on TEXT, priority TEXT DEFAULT 'P3', status TEXT DEFAULT 'pending',
+            assigned_to TEXT DEFAULT 'bach', created_at TEXT, started_at TEXT,
+            completed_at TEXT, updated_at TEXT, require_user_review INTEGER,
+            github_pr_review_required INTEGER, completion_contract_json TEXT,
+            github_review_contract_json TEXT
+        );
+        CREATE TABLE task_history (
+            id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL, action TEXT NOT NULL,
+            field_changed TEXT, old_value TEXT, new_value TEXT,
+            changed_by TEXT DEFAULT 'user', changed_at TEXT NOT NULL
+        );
+        INSERT INTO tasks (title, status, priority, require_user_review)
+        VALUES ('Gated task', 'pending', 'P2', 1);
+        """
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(chat_runtime, "RUNTIME_BACH_DB", str(p))
+    return p
+
+
+class TestTaskManageCompletionGuard:
+    @pytest.mark.parametrize("args, prefix", [
+        ({"action": "done", "task_id": 1}, "Task #1 nicht erledigt: "),
+        ({"action": "update", "task_id": 1, "status": "done"}, "Task #1 nicht aktualisiert: "),
+        ({"action": "decompose", "task_id": 1, "subtasks": [{"title": "Teil", "description": "x"}]},
+         "Task #1 nicht zerlegt: "),
+    ])
+    def test_guard_refusal_is_typed_and_rolled_back(self, gated_db_path, monkeypatch, args, prefix):
+        real_connect = sqlite3.connect
+        rollbacks = []
+
+        class RecordingConnection(sqlite3.Connection):
+            def rollback(self):
+                rollbacks.append(self.in_transaction)
+                super().rollback()
+
+        monkeypatch.setattr(sqlite3, "connect",
+                            lambda *a, **k: real_connect(*a, factory=RecordingConnection, **k))
+        result = exec_tool("task_manage", args, mode="safe")
+        monkeypatch.setattr(sqlite3, "connect", real_connect)
+
+        assert type(result).__name__ == "ToolErrorText"
+        assert (result._code, result._reason, result._effect_state) == (
+            "tool_policy_denied", "state_conflict", "not_applied")
+        assert str(result).startswith(prefix)
+        assert rollbacks == [True]  # the guard rolled back its open write transaction
+        conn = real_connect(str(gated_db_path), timeout=0)
+        try:
+            conn.execute("BEGIN IMMEDIATE")  # no write lock was left behind
+            conn.rollback()
+            assert conn.execute("SELECT status FROM tasks WHERE id=1").fetchone()[0] == "pending"
+            assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+            assert conn.execute("SELECT COUNT(*) FROM task_history").fetchone()[0] == 0
+        finally:
+            conn.close()
