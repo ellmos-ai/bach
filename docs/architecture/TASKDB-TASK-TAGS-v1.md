@@ -5,7 +5,7 @@
 ## Zweck
 
 `tasks.tags` existierte als Spalte (Schema: „JSON-Array“), hatte aber keinen nativen, auditierten Schreibweg;
-alle Zeilen standen auf `NULL`. Dieser Vertrag legt den einzigen zulässigen Weg fest. Direkte SQLite-Schreibzugriffe
+in den am 2026-10-18 beim Lead abgefragten offenen, wartenden und laufenden Tasks war `tags` nie gesetzt. Dieser Vertrag legt den einzigen zulässigen Weg fest. Direkte SQLite-Schreibzugriffe
 bleiben ausgeschlossen.
 
 ## Speicherform
