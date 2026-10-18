@@ -391,7 +391,7 @@ def test_two_request_completion_reserve_narrows_real_tool_requests_and_blocks_ni
             # completion-reserve action set and must have no effect.
             return _tool_response("list")
         if len(calls) == 8:
-            return _tool_response("submit_result", result="reported, not accepted")
+            return _tool_response("submit_result", result="reported, not accepted", complete=True)
         raise AssertionError("a ninth Ollama dispatch must not occur")
 
     backend.chat = fake_chat
