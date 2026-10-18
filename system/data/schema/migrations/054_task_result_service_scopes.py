@@ -53,7 +53,9 @@ def _migrate_corrections(conn: sqlite3.Connection) -> None:
     required = set(_CORRECTION_COLUMNS)
     if not required <= set(columns):
         raise RuntimeError("task_result_corrections has an unknown legacy layout")
-    allowed = required | {"requested_by_service_id"}
+    # The worker completion policy adds policy_decision_sha256 at runtime
+    # (ensure_result_correction_schema); it is known and kept, never dropped.
+    allowed = required | {"requested_by_service_id", "policy_decision_sha256"}
     if set(columns) - allowed:
         raise RuntimeError("task_result_corrections has unknown columns")
     check_sql = str(current[1] or "").replace(" ", "").casefold()
@@ -68,6 +70,9 @@ def _migrate_corrections(conn: sqlite3.Connection) -> None:
 
     _create_corrections(conn, "task_result_corrections_054")
     old_names = ",".join(_CORRECTION_COLUMNS)
+    if "policy_decision_sha256" in columns:
+        conn.execute("ALTER TABLE task_result_corrections_054 ADD COLUMN policy_decision_sha256 TEXT")
+        old_names += ",policy_decision_sha256"
     if "requested_by_service_id" in columns:
         service_expr = "requested_by_service_id"
     else:
