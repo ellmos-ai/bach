@@ -717,6 +717,8 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
     """Preflight one existing worker, explicitly start it, then read back state."""
     if not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id):
         raise WorkerActionRejected("Worker-ID ist ungültig", 400)
+    if re.fullmatch(r"system-blueprint-[1-9][0-9]*", worker_id):
+        raise WorkerActionRejected("Blueprint-Agenten über den versionierten Blueprint-Start starten", 409)
     current = read_worker_status(device_token=device_token, timeout=timeout)
     worker = next((item for item in current["workers"] if item["id"] == worker_id), None)
     if worker is None:
@@ -795,12 +797,19 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
 
 
 def dispatch_blueprint_worker(worker_id: str, configuration_version: str, *,
-                              device_token: str, start_request_id: str) -> dict[str, Any]:
+                              blueprint_id: int, blueprint_version: int,
+                              definition_sha256: str, device_token: str,
+                              start_request_id: str) -> dict[str, Any]:
     """An explicit, versioned start followed by the same controller receipt."""
     if (not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id)
             or not isinstance(start_request_id, str) or not _RUN_ID.fullmatch(start_request_id)
             or not isinstance(configuration_version, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", configuration_version)):
+            or not re.fullmatch(r"[0-9a-f]{64}", configuration_version)
+            or type(blueprint_id) is not int or blueprint_id < 1
+            or type(blueprint_version) is not int or blueprint_version < 1
+            or not isinstance(definition_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", definition_sha256)
+            or worker_id != f"system-blueprint-{blueprint_id}"):
         raise WorkerActionRejected("Steckplatzversion und Start-Request-ID erforderlich", 400)
     snapshot = _request_control_api("GET", "system-slots", device_token=device_token)
     instance = snapshot.get("service_instance")
@@ -814,8 +823,10 @@ def dispatch_blueprint_worker(worker_id: str, configuration_version: str, *,
                                  params={"chat_id": worker_id})
     if ready.get("available") is not True:
         raise WorkerActionRejected("Gewähltes Modell ist derzeit nicht bereit", 503)
-    admitted = _request_control_api("POST", "workers/run", device_token=device_token,
-        body={"id": worker_id, "start_request_id": start_request_id,
+    admitted = _request_control_api("POST", "blueprints/start", device_token=device_token,
+        body={"id": worker_id, "blueprint_id": blueprint_id,
+              "blueprint_version": blueprint_version, "definition_sha256": definition_sha256,
+              "start_request_id": start_request_id,
               "expected_service_instance": instance, "configuration_version": configuration_version})
     if admitted.get("ok") is not True:
         raise WorkerActionRejected("Start nicht bestätigt", 503)
@@ -831,9 +842,10 @@ def dispatch_blueprint_worker(worker_id: str, configuration_version: str, *,
             or not _RUN_ID.fullmatch(execution["generation"])
             or execution.get("state") not in {"starting", "running", "stopping", "terminal"}
             or type(execution.get("terminal")) is not bool
-            or type(execution.get("worker_thread_started")) is not bool):
+            or type(execution.get("worker_thread_started")) is not bool
+            or execution.get("configuration_ref") != {"sha256": configuration_version}):
         raise WorkerStatusUnavailable("Korrelierter Ausführungsbeleg nicht verfügbar")
     return {key: execution[key] for key in ("schema", "worker_id", "service_instance",
             "start_request_id", "generation", "state", "terminal", "worker_thread_started",
             "worker_status", "error_code", "completed_task_ids", "reviewed_task_ids",
-            "governance_binding", "model_binding") if key in execution}
+            "governance_binding", "model_binding", "configuration_ref") if key in execution}

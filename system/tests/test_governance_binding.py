@@ -375,8 +375,22 @@ def controller(state, monkeypatch):
     return control
 
 
-def run(control, slot_id, request_id):
-    response, status = control.start_worker_execution(slot_id, start_request_id=request_id)
+def run(control, state, configured, request_id):
+    from hub import bach_paths
+    slot_id = configured["slot_id"]
+    blueprint_id = int(slot_id.rsplit("-", 1)[1])
+    db_path = state.execute("PRAGMA database_list").fetchone()[2]
+    previous_db = bach_paths.BACH_DB
+    bach_paths.BACH_DB = db_path
+    try:
+        response, status = control.start_versioned_blueprint_execution(
+            slot_id, blueprint_id=blueprint_id,
+            blueprint_version=configured["definition_ref"]["version"],
+            definition_sha256=configured["definition_ref"]["sha256"],
+            start_request_id=request_id, expected_service_instance=control._WORKER_SERVICE_INSTANCE,
+            expected_configuration_version=configured["configuration_version"])
+    finally:
+        bach_paths.BACH_DB = previous_db
     execution = control._WORKER_EXECUTIONS.get(slot_id)
     if execution is not None and hasattr(execution.thread, "join"):
         execution.thread.join(5)
@@ -387,7 +401,7 @@ def test_controller_receipt_carries_governance_and_model_binding(state, registry
     saved = save(state, governance={"policy_refs": [ref()]})
     configured = materialize(state, saved)
     binding = slots.get_system_slot(configured["slot_id"])["governance_binding"]
-    response, status = run(controller, configured["slot_id"], "1" * 32)
+    response, status = run(controller, state, configured, "1" * 32)
     assert status == 200, response
     receipt = controller.worker_execution_receipt(configured["slot_id"], "1" * 32)
     assert receipt["schema"] == "bach.worker-execution.v1"
@@ -399,7 +413,7 @@ def test_controller_receipt_carries_governance_and_model_binding(state, registry
 
 def test_controller_marks_legacy_run_in_receipt(state, controller):
     configured = materialize(state, save(state))
-    response, status = run(controller, configured["slot_id"], "2" * 32)
+    response, status = run(controller, state, configured, "2" * 32)
     assert status == 200, response
     receipt = controller.worker_execution_receipt(configured["slot_id"], "2" * 32)
     assert receipt["governance_binding"]["legacy"] is True
@@ -409,7 +423,7 @@ def test_controller_marks_legacy_run_in_receipt(state, controller):
 def test_controller_refuses_stale_pin_on_direct_worker_start(state, registry, controller):
     configured = materialize(state, save(state, governance={"policy_refs": [ref()]}))
     registry.entries[0] = entry(version="2", sha="d" * 64)
-    response, status = run(controller, configured["slot_id"], "3" * 32)
+    response, status = run(controller, state, configured, "3" * 32)
     # Same rejection path as changed skill_refs: the admission is not confirmed, nothing runs.
     assert status == 503 and response["execution"]["error_code"] == "admission_unconfirmed"
     assert controller.assignments == []  # no assignment, no worker thread
@@ -421,8 +435,8 @@ def test_controller_refuses_manipulated_binding_on_direct_worker_start(state, re
     raw = json.loads(open(slots.DEFAULT_SLOTS_FILE, encoding="utf-8").read())
     raw["slots"][configured["slot_id"]]["governance_binding"]["refs"][0]["version"] = "0"  # hash not updated
     slots.save_slots_config(raw, slots.DEFAULT_SLOTS_FILE)
-    response, status = run(controller, configured["slot_id"], "4" * 32)
-    assert status == 503 and controller.assignments == []
+    response, status = run(controller, state, configured, "4" * 32)
+    assert status == 409 and controller.assignments == []
     with pytest.raises(gb.GovernanceRejected, match="^governance_binding_invalid$"):
         gb.verify_run(raw["slots"][configured["slot_id"]]["governance_binding"], [])
 
@@ -443,6 +457,7 @@ def test_adapter_projection_keeps_the_binding_fields(monkeypatch):
     worker_id, version, request, instance = "system-blueprint-17", "a" * 64, "b" * 32, "c" * 32
     receipt = {"schema": "bach.worker-execution.v1", "worker_id": worker_id, "start_request_id": request,
                "service_instance": instance, "generation": "d" * 32, "state": "running", "terminal": False,
+               "configuration_ref": {"sha256": version},
                "worker_thread_started": True, "governance_binding": {"effective_sha256": "e" * 64, "refs": [],
                "legacy": True}, "model_binding": {"chain_index": 0, "backend": "ollama", "model": "m",
                "switch_reason": None}}
@@ -450,7 +465,7 @@ def test_adapter_projection_keeps_the_binding_fields(monkeypatch):
         "agents": [{"id": worker_id, "enabled": True, "execution_kind": "worker"}]}, {"available": True},
         {"ok": True}, {"ok": True, "execution": receipt}])
     monkeypatch.setattr(status_adapter, "_request_control_api", lambda *a, **kw: next(responses))
-    projected = status_adapter.dispatch_blueprint_worker(worker_id, version, device_token="t",
-                                                         start_request_id=request)
+    projected = status_adapter.dispatch_blueprint_worker(worker_id, version, blueprint_id=17,
+        blueprint_version=3, definition_sha256="f" * 64, device_token="t", start_request_id=request)
     assert projected["governance_binding"] == receipt["governance_binding"]
     assert projected["model_binding"] == receipt["model_binding"]

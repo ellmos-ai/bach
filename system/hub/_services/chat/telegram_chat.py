@@ -238,6 +238,7 @@ class _WorkerControl:
     worker_thread_started: bool = False
     start_error: Optional[str] = None
     admitted_worker: Optional[Dict[str, Any]] = None
+    admitted_configuration_version: Optional[str] = None
     slot_policy_reader: Any = None
     stop_status: Optional[str] = None
     stop_activity: str = "Manuell gestoppt"
@@ -4099,6 +4100,29 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
         expected_configuration_version=expected_configuration_version)
 
 
+def start_versioned_blueprint_execution(worker_id: str, *, blueprint_id: int,
+                                        blueprint_version: int, definition_sha256: str,
+                                        start_request_id: str,
+                                        expected_service_instance: str,
+                                        expected_configuration_version: str) -> tuple[dict, int]:
+    """Start a blueprint only after binding its immutable revision and config CAS."""
+    return _start_worker_execution(
+        worker_id, start_request_id=start_request_id,
+        expected_service_instance=expected_service_instance,
+        expected_configuration_version=expected_configuration_version,
+        _blueprint_start_binding={"blueprint_id": blueprint_id,
+                                  "version": blueprint_version,
+                                  "sha256": definition_sha256})
+
+
+def _generic_blueprint_slot_update_denial(slot: dict, updates: dict) -> dict | None:
+    if (type(slot.get("blueprint_id")) is int
+            and {"enabled", "status"}.intersection(updates)):
+        return {"error": "Blueprint-Status nur über versionierte Start- und Verwaltungspfade ändern",
+                "error_code": "blueprint_generic_toggle_forbidden"}
+    return None
+
+
 def _start_sequence_worker_execution(worker_id, *, _creator_authority, **kwargs):
     from hub._services.chat.native_sequences import _SequenceCreatorAuthority
     if (not isinstance(_creator_authority, _SequenceCreatorAuthority)
@@ -4111,6 +4135,7 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            start_request_id: str | None = None,
                            expected_service_instance: str | None = None,
                            expected_configuration_version: str | None = None,
+                           _blueprint_start_binding: dict | None = None,
                            _creator_authority=None, _startup_stop_event=None,
                            _startup_generation: str | None = None,
                            _startup_physical_worker_id: str | None = None,
@@ -4122,6 +4147,26 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
     """Reserve one observable admission before role checks or physical launch."""
     if not isinstance(worker_id, str) or not worker_id:
         return {"error": "id erforderlich"}, 400
+    blueprint_id_match = re.fullmatch(r"system-blueprint-([1-9][0-9]*)", worker_id)
+    if blueprint_id_match and _blueprint_start_binding is None:
+        return {"error": "Blueprint-Starts erfordern die versionierte Blueprint-Route",
+                "error_code": "blueprint_versioned_start_required"}, 409
+    if _blueprint_start_binding is not None:
+        expected_blueprint_id = int(blueprint_id_match.group(1)) if blueprint_id_match else None
+        if (not isinstance(_blueprint_start_binding, dict)
+                or set(_blueprint_start_binding) != {"blueprint_id", "version", "sha256"}
+                or type(_blueprint_start_binding.get("blueprint_id")) is not int
+                or _blueprint_start_binding.get("blueprint_id") != expected_blueprint_id
+                or type(_blueprint_start_binding.get("version")) is not int
+                or _blueprint_start_binding["version"] < 1
+                or not isinstance(_blueprint_start_binding.get("sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", _blueprint_start_binding["sha256"]) is None
+                or expected_configuration_version is None
+                or not isinstance(expected_service_instance, str)
+                or re.fullmatch(r"[0-9a-f]{32}", expected_service_instance) is None
+                or start_request_id is None):
+            return {"error": "Blueprint-Revision und Konfigurations-CAS erforderlich",
+                    "error_code": "blueprint_versioned_start_required"}, 409
     if expected_service_instance is not None and expected_service_instance != _WORKER_SERVICE_INSTANCE:
         return {"error": "Control-Instanz wurde geändert", "error_code": "service_instance_conflict"}, 409
     startup_identity = (_startup_generation, _startup_physical_worker_id, _startup_lease_worker_id)
@@ -4260,6 +4305,29 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     slot = _execution_worker_slot(worker_id)
                 if not slot or slot.get("id") != worker_id:
                     return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+                if _blueprint_start_binding is not None:
+                    if (slot.get("blueprint_id") != _blueprint_start_binding["blueprint_id"]
+                            or slot.get("blueprint_version") != _blueprint_start_binding["version"]):
+                        return rejected({"error": "Blueprint-Instanz ist nicht mehr aktuell",
+                                         "error_code": "blueprint_revision_conflict"}, 409)
+                    try:
+                        from hub.bach_paths import BACH_DB
+                        from hub._services.blueprint_service import blueprint_revision_reference
+                        revision_conn = sqlite3.connect(str(BACH_DB))
+                        revision_conn.row_factory = sqlite3.Row
+                        try:
+                            revision_ref = blueprint_revision_reference(
+                                revision_conn, _blueprint_start_binding["blueprint_id"],
+                                _blueprint_start_binding["version"])
+                        finally:
+                            revision_conn.close()
+                    except Exception:
+                        return rejected({"error": "Blueprint-Revision nicht verifizierbar",
+                                         "error_code": "blueprint_revision_unavailable"}, 503)
+                    if (not isinstance(revision_ref, dict)
+                            or revision_ref.get("sha256") != _blueprint_start_binding["sha256"]):
+                        return rejected({"error": "Blueprint-Revision wurde geändert",
+                                         "error_code": "blueprint_revision_conflict"}, 409)
                 if (_startup_profile_version and worker_id != "buddha_always_on"
                         and not slot.get("system") and cloud_binding is None):
                     return rejected({
@@ -4321,6 +4389,7 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     lease_worker_id=_startup_lease_worker_id,
                     start_request_id=request_id,
                     admitted_worker={"id": worker_id, "type": slot.get("type")},
+                    admitted_configuration_version=expected_configuration_version,
                     slot_policy_reader=_execution_slot_reader(
                         slot, persistent_cloud_binding=cloud_binding),
                     sequence_creator_authority=_creator_authority,
@@ -4542,6 +4611,13 @@ def _persistent_core_admission_readback(snapshot, admitted, active_state):
         return False
 
 
+def _admitted_configuration_ref(version):
+    """Project only a full configuration hash already accepted by the admission CAS."""
+    if isinstance(version, str) and re.fullmatch(r"[0-9a-f]{64}", version):
+        return {"configuration_ref": {"sha256": version}}
+    return {}
+
+
 def _start_reserved_worker_execution(control, w, custom_prompt):
     worker_id = control.worker_id
     # Admission fixes the provider and execution policy for this generation.
@@ -4550,6 +4626,11 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
     # P05 3c: the reader above has just verified the governance binding of this admission.
     from hub._services.governance_binding import run_receipt_fields
     control.run_receipt_fields = run_receipt_fields(w)
+    # The value was accepted by system_worker_at_version inside the admission
+    # transaction. Keep that CAS result on this run; never infer it later from the
+    # mutable global Core configuration.
+    control.run_receipt_fields.update(_admitted_configuration_ref(
+        control.admitted_configuration_version))
     if control.stop_event.is_set():
         return {"error": "Control wird beendet", "error_code": "startup_shutdown"}, 409
 
@@ -6473,6 +6554,10 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 with _WORKER_CONTROL_LOCK:
                     current = _execution_worker_slot(slot_id)
+                    denial = _generic_blueprint_slot_update_denial(current, updates)
+                    if denial is not None:
+                        self._json(denial, 409)
+                        return
                     profile_fields = set(WORKER_EDITABLE_FIELDS) - {"persistent_opt_in"}
                     manual_deactivation = (updates.get("enabled") is False
                                            or updates.get("status") in {"paused", "idle"})
@@ -6532,6 +6617,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                     return
                 if not new_status:
                     new_status = "paused" if w.get("status") != "paused" else "idle"
+                denial = _generic_blueprint_slot_update_denial(w, {"status": new_status})
+                if denial is not None:
+                    self._json(denial, 409)
+                    return
                 if new_status in ("paused", "idle"):
                     had_persistent_intent = w.get("persistent_opt_in") is True
                     intent_revoked = (not had_persistent_intent
@@ -6671,6 +6760,22 @@ class ControlHandler(BaseHTTPRequestHandler):
                 expected_service_instance=body.get("expected_service_instance"),
                 expected_configuration_version=body.get("configuration_version"),
             )
+            self._json(response, status)
+
+        elif path == "/api/blueprints/start":
+            if not self._allow_control_request():
+                return
+            try:
+                response, status = start_versioned_blueprint_execution(
+                    body.get("id"), blueprint_id=body.get("blueprint_id"),
+                    blueprint_version=body.get("blueprint_version"),
+                    definition_sha256=body.get("definition_sha256"),
+                    start_request_id=body.get("start_request_id"),
+                    expected_service_instance=body.get("expected_service_instance"),
+                    expected_configuration_version=body.get("configuration_version"))
+            except (TypeError, ValueError):
+                response, status = {"error": "Blueprint-Revision und Konfigurations-CAS erforderlich",
+                                    "error_code": "blueprint_versioned_start_required"}, 400
             self._json(response, status)
 
         elif path == "/api/activity":

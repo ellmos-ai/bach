@@ -47,6 +47,7 @@ from hub._services.blueprint_service import (
     CONTRACTUS_PRESETS,
     VALID_BLUEPRINT_KINDS,
     ensure_blueprint_schema,
+    blueprint_revision_reference,
     get_available_skills,
     list_blueprints as svc_list_blueprints,
     materialize_blueprint as svc_materialize_blueprint,
@@ -352,6 +353,7 @@ async def list_agent_blueprints(
                 item["content_sha256"] = blueprint_sha256(dict(r))
             except ValueError:
                 item["content_sha256"] = None
+            item["definition_ref"] = blueprint_revision_reference(conn, item["id"], item["version"])
 
             # Filter by kind
             if isinstance(kind, str) and kind.strip() and item["kind"].lower() != kind.strip().lower():
@@ -613,7 +615,11 @@ async def start_blueprint_worker_endpoint(blueprint_id: int, request: Request,
             return svc_start_blueprint_worker(conn, blueprint_id, task=payload.get("task"),
                 expected_version=payload.get("expected_version"),
                 configuration_version=configuration_version,
-                dispatcher=lambda slot_id, version: dispatch_blueprint_worker(slot_id, version,
+                dispatcher=lambda slot_id, version: dispatch_blueprint_worker(
+                    slot_id, version, blueprint_id=blueprint_id,
+                    blueprint_version=payload.get("expected_version"),
+                    definition_sha256=blueprint_revision_reference(
+                        conn, blueprint_id, payload.get("expected_version"))["sha256"],
                     device_token=token, start_request_id=payload.get("start_request_id")))
         finally:
             conn.close()
@@ -633,6 +639,9 @@ async def get_living_agents():
         _read_schema_ready(conn, ("agent_blueprints", "partner_presence"))
         rows = conn.execute("SELECT * FROM agent_blueprints").fetchall()
         blueprints = [dict(row) for row in rows]
+        for blueprint in blueprints:
+            blueprint["definition_ref"] = blueprint_revision_reference(
+                conn, blueprint["id"], blueprint["version"])
     finally:
         conn.close()
     from .core_system_agents import _snapshot
@@ -647,14 +656,46 @@ async def get_living_agents():
         slot = slots.get(bp["id"])
         if not slot and not bp["is_materialized"]:
             continue
+        slot_version = slot.get("blueprint_version") if slot else None
+        definition_ref = slot.get("definition_ref") if slot else bp.get("definition_ref")
+        definition_matches_slot = (
+            type(slot_version) is int
+            and isinstance(definition_ref, dict)
+            and definition_ref.get("blueprint_id") == bp["id"]
+            and definition_ref.get("version") == slot_version
+            and isinstance(definition_ref.get("sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", definition_ref["sha256"])
+        ) if slot else (
+            isinstance(definition_ref, dict)
+            and definition_ref.get("blueprint_id") == bp["id"]
+            and definition_ref.get("version") == bp["version"]
+            and isinstance(definition_ref.get("sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", definition_ref["sha256"])
+        )
+        configuration_ref = slot.get("configuration_ref") if slot else None
+        configuration_matches_run = (
+            isinstance(configuration_ref, dict)
+            and set(configuration_ref) == {"sha256"}
+            and isinstance(configuration_ref.get("sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", configuration_ref["sha256"])
+        )
+        execution = slot.get("execution") if slot else None
+        run_is_bound = bool(slot and definition_matches_slot and configuration_matches_run
+                            and isinstance(slot.get("run_id"), str))
         living.append({"id": bp["id"], "name": bp["name"], "title": bp["title"],
             "role": bp["persona_role"], "animus": bp["animus_type"], "modus": bp["modus"],
             "slot_id": slot["id"] if slot else None,
+            "blueprint_version": slot_version if slot else bp["version"],
+            "current_blueprint_version": bp["version"],
             "status": slot["status"] if slot and slot.get("runtime_verified") else "configured",
             "is_living": slot.get("living") if slot else None,
             "is_running": slot.get("running") if slot else False,
             "runtime_verified": bool(slot and slot.get("runtime_verified")),
-            "execution": slot.get("execution") if slot else None,
+            "execution": execution,
+            "definition_ref": definition_ref if definition_matches_slot else None,
+            "configuration_ref": configuration_ref if run_is_bound else None,
+            "run_id": slot.get("run_id") if run_is_bound else None,
+            "actual_start_cause": slot.get("actual_start_cause") if run_is_bound else None,
             "current_task": slot.get("task_id") if slot else None,
             "last_heartbeat": None, "is_avatar": False})
     return {"living_agents": living, "count": len(living)}

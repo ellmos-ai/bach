@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 import hashlib
 import json
+import re
 
 import asyncio
 from fastapi import APIRouter, Body, HTTPException, Request
@@ -43,6 +44,47 @@ def _snapshot() -> dict[str, Any]:
         pass
     from hub._services.worker_policy_settings import attach_active_task_leases
     result["agents"] = attach_active_task_leases(result["agents"])
+    try:
+        from .unified_api import _get_agent_studio_ro_conn
+        from hub._services.blueprint_service import blueprint_revision_reference
+        conn = _get_agent_studio_ro_conn()
+        try:
+            for agent in result["agents"]:
+                blueprint_id = agent.get("blueprint_id")
+                blueprint_version = agent.get("blueprint_version")
+                if type(blueprint_id) is not int or type(blueprint_version) is not int:
+                    continue
+                agent["definition_ref"] = blueprint_revision_reference(
+                    conn, blueprint_id, blueprint_version)
+                execution = agent.get("execution")
+                config_ref = execution.get("configuration_ref") if isinstance(execution, dict) else None
+                agent["configuration_ref"] = (
+                    {"sha256": config_ref["sha256"]}
+                    if isinstance(config_ref, dict)
+                    and set(config_ref) == {"sha256"}
+                    and isinstance(config_ref.get("sha256"), str)
+                    and re.fullmatch(r"[0-9a-f]{64}", config_ref["sha256"])
+                    else None
+                )
+                if (isinstance(execution, dict)
+                        and execution.get("schema") == "bach.worker-execution.v1"
+                        and execution.get("worker_id") == agent.get("id")
+                        and isinstance(execution.get("start_request_id"), str)
+                        and re.fullmatch(r"[0-9a-f]{32}", execution["start_request_id"])
+                        and isinstance(execution.get("generation"), str)
+                        and re.fullmatch(r"[0-9a-f]{32}", execution["generation"])
+                        and execution.get("worker_thread_started") is True
+                        and agent["definition_ref"] is not None
+                        and agent["configuration_ref"] is not None):
+                    agent["run_id"] = execution["generation"]
+                    agent["actual_start_cause"] = "manual"
+        finally:
+            conn.close()
+    except Exception:
+        # A missing revision readback is unknown; it never becomes a fabricated pin.
+        for agent in result["agents"]:
+            if type(agent.get("blueprint_id")) is int:
+                agent["definition_ref"] = None
     result["blueprints"] = [
         {
             "blueprint_id": "system:" + agent["id"],
@@ -153,6 +195,8 @@ async def toggle_core_system_agent(slot_id: str, request: Request, payload: dict
     enabled = payload.get("enabled")
     if type(enabled) is not bool:
         raise HTTPException(400, "Gewünschter Schalterzustand erforderlich")
+    if type(current.get("blueprint_id")) is int:
+        raise HTTPException(409, "Blueprint-Status über die versionierte Blueprint-Verwaltung ändern")
     try:
         from .unified_api import _require_memory_device_token
         from .worker_status_adapter import worker_action, start_worker, read_worker_status

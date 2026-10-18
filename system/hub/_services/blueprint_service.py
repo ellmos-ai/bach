@@ -17,6 +17,7 @@ Erfuellt GUX-020..029:
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import re
@@ -31,6 +32,79 @@ logger = logging.getLogger(__name__)
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 ALLOWED_KINDS = {"agent", "role", "skill", "workflow", "service", "contractus"}
 VALID_BLUEPRINT_KINDS = ALLOWED_KINDS
+
+_BLUEPRINT_REVISION_FIELDS = (
+    "name", "title", "description", "persona_role", "persona_prompt", "skills_json",
+    "animus_type", "contractus_json", "modus", "is_template", "governance_json",
+    "kind", "start_prompt", "version", "provider", "provider_template_id",
+    "provider_version", "template_sha256",
+)
+
+
+def _blueprint_revision_definition(row: dict[str, Any]) -> dict[str, Any]:
+    """Canonical immutable content for one displayed blueprint revision."""
+    value = {}
+    for field in _BLUEPRINT_REVISION_FIELDS:
+        item = row.get(field)
+        if field in {"skills_json", "contractus_json", "governance_json"}:
+            try:
+                item = json.loads(item or ("[]" if field == "skills_json" else "{}"))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Blueprint revision is not valid JSON") from exc
+        value[field] = item
+    if type(value.get("version")) is not int or value["version"] < 1:
+        raise ValueError("Blueprint revision version is invalid")
+    return value
+
+
+def _blueprint_row_dict(conn: sqlite3.Connection, row: Any) -> dict[str, Any]:
+    if isinstance(row, sqlite3.Row):
+        return dict(row)
+    if isinstance(row, dict):
+        return row
+    columns = [column[0] for column in conn.execute("SELECT * FROM agent_blueprints LIMIT 0").description]
+    return dict(zip(columns, row))
+
+
+def _capture_blueprint_revision(conn: sqlite3.Connection, row: dict[str, Any]) -> dict[str, Any]:
+    row = _blueprint_row_dict(conn, row)
+    definition = _blueprint_revision_definition(row)
+    encoded = json.dumps(definition, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    conn.execute("""
+        INSERT OR IGNORE INTO agent_blueprint_revisions
+            (blueprint_id, blueprint_name, version, definition_sha256, definition_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (row["id"], row["name"], row["version"], digest, encoded,
+          datetime.now(timezone.utc).isoformat()))
+    stored = conn.execute("""
+        SELECT definition_sha256, definition_json FROM agent_blueprint_revisions
+        WHERE blueprint_id=? AND version=?
+    """, (row["id"], row["version"])).fetchone()
+    if stored is None or stored[0] != digest or stored[1] != encoded:
+        raise RuntimeError("blueprint_revision_conflict")
+    return {"blueprint_id": row["id"], "version": row["version"], "sha256": digest}
+
+
+def blueprint_revision_reference(conn: sqlite3.Connection, blueprint_id: int,
+                                  version: int) -> dict[str, Any] | None:
+    """Read a previously captured immutable definition pin without repairing history."""
+    try:
+        row = conn.execute("""
+            SELECT blueprint_id, version, definition_sha256, definition_json FROM agent_blueprint_revisions
+            WHERE blueprint_id=? AND version=?
+        """, (blueprint_id, version)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    digest = row["definition_sha256"] if isinstance(row, sqlite3.Row) else (row[2] if row else None)
+    encoded = row["definition_json"] if isinstance(row, sqlite3.Row) else (row[3] if row else None)
+    if (row is None or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            or not isinstance(encoded, str)
+            or hashlib.sha256(encoded.encode("utf-8")).hexdigest() != digest):
+        return None
+    if isinstance(row, sqlite3.Row):
+        return {"blueprint_id": row["blueprint_id"], "version": row["version"], "sha256": row["definition_sha256"]}
+    return {"blueprint_id": row[0], "version": row[1], "sha256": row[2]}
 
 CONTRACTUS_PROJECTION_VERSION = "bach.contractus-projection.v1"
 CONTRACTUS_MODES = frozenset({"casualis", "usus", "impetus_causa", "impetus_temporal"})
@@ -270,7 +344,7 @@ CONTRACTUS_PRESETS = [
 ]
 
 
-def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
+def ensure_blueprint_schema(conn: sqlite3.Connection, *, commit: bool = True) -> None:
     """Stellt sicher, dass das Schema fuer Blueprints alle Spalten besitzt."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS agent_blueprints (
@@ -319,6 +393,28 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
     """)
 
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS agent_blueprint_revisions (
+            blueprint_id INTEGER NOT NULL,
+            blueprint_name TEXT NOT NULL,
+            version INTEGER NOT NULL CHECK(version > 0),
+            definition_sha256 TEXT NOT NULL CHECK(length(definition_sha256) = 64),
+            definition_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (blueprint_id, version)
+        )
+    """)
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS agent_blueprint_revisions_immutable_update
+        BEFORE UPDATE ON agent_blueprint_revisions
+        BEGIN SELECT RAISE(ABORT, 'blueprint revisions are immutable'); END
+    """)
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS agent_blueprint_revisions_immutable_delete
+        BEFORE DELETE ON agent_blueprint_revisions
+        BEGIN SELECT RAISE(ABORT, 'blueprint revisions are immutable'); END
+    """)
+
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS partner_presence (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             partner_name TEXT NOT NULL UNIQUE,
@@ -331,7 +427,10 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    conn.commit()
+    for row in conn.execute("SELECT * FROM agent_blueprints").fetchall():
+        _capture_blueprint_revision(conn, row)
+    if commit:
+        conn.commit()
 
 
 def seed_default_blueprints(conn: sqlite3.Connection) -> None:
@@ -497,6 +596,8 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
             kind, start_prompt, version, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, seeds)
+    for row in conn.execute("SELECT * FROM agent_blueprints").fetchall():
+        _capture_blueprint_revision(conn, row)
     conn.commit()
 
 
@@ -789,6 +890,12 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         json.dumps(skills), animus, json.dumps(contractus), modus, is_template,
         json.dumps(governance), kind, start_prompt, version, now
     ))
+    saved_row = conn.execute("SELECT * FROM agent_blueprints WHERE name = ?", (name,)).fetchone()
+    try:
+        definition_ref = _capture_blueprint_revision(conn, saved_row)
+    except Exception:
+        conn.rollback()
+        raise
     conn.commit()
 
     return {
@@ -798,6 +905,7 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         "title": title,
         "kind": kind,
         "version": version,
+        "definition_ref": definition_ref,
         "start_prompt": start_prompt,
         "start_prompt_length": len(start_prompt),
         "status": "saved"
@@ -899,6 +1007,9 @@ def materialize_blueprint(conn: sqlite3.Connection, blueprint_id: int, *,
     conn.execute("BEGIN IMMEDIATE")
     try:
         bp = _execution_blueprint(conn, blueprint_id, expected_version)
+        definition_ref = blueprint_revision_reference(conn, blueprint_id, expected_version)
+        if definition_ref is None:
+            definition_ref = _capture_blueprint_revision(conn, bp)
         # Nur neue Konfiguration sperren; bestehende Steckplaetze bleiben startbar.
         if bp.get("provider") and bp.get("template_status") != "available":
             raise RuntimeError("template_unavailable")
@@ -916,7 +1027,8 @@ def materialize_blueprint(conn: sqlite3.Connection, blueprint_id: int, *,
                 "status": "configured", "is_materialized": True, "is_living": None,
                 "is_running": False, "worker_started": False, "slot_id": slot_id,
                 "configuration_version": result["configuration_version"],
-                "governance_binding": receipt_binding(binding)}
+                "governance_binding": receipt_binding(binding),
+                "definition_ref": definition_ref}
     except Exception:
         conn.rollback()
         raise
@@ -932,6 +1044,9 @@ def start_blueprint_worker(conn: sqlite3.Connection, blueprint_id: int, task: st
     if task:
         raise ValueError("Aufträge zuerst über die TaskDB zuweisen")
     bp = _execution_blueprint(conn, blueprint_id, expected_version)
+    definition_ref = blueprint_revision_reference(conn, blueprint_id, expected_version)
+    if definition_ref is None:
+        raise RuntimeError("blueprint_revision_unavailable")
     from .chat.slots_config import get_system_slot
     slot_id = f"system-blueprint-{blueprint_id}"
     slot = get_system_slot(slot_id, slots_path)
@@ -958,4 +1073,7 @@ def start_blueprint_worker(conn: sqlite3.Connection, blueprint_id: int, task: st
     return {"success": True, "id": blueprint_id, "name": bp["name"], "title": bp["title"],
             "slot_id": slot_id, "status": execution["state"], "is_running": running,
             "runtime_verified": True, "execution": execution, "job_receipt": execution,
-            "heartbeat_receipt": None, "receipt": execution}
+            "heartbeat_receipt": None, "receipt": execution,
+            "start_cause": "manual", "definition_ref": definition_ref,
+            "configuration_version": configuration_version,
+            "run_id": execution.get("generation")}

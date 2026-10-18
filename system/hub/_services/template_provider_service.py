@@ -353,6 +353,9 @@ def _insert_template(conn, provider_id, descriptor) -> int | None:
           json.dumps(fields["skills"]), fields["animus_type"], json.dumps(fields["contractus"]),
           fields["modus"], json.dumps(fields["governance"]), fields["kind"], start_prompt, now, now,
           provider_id, descriptor["id"], descriptor["version"], descriptor["sha256"]))
+    from .blueprint_service import _capture_blueprint_revision
+    revision = conn.execute("SELECT * FROM agent_blueprints WHERE id=?", (cursor.lastrowid,)).fetchone()
+    _capture_blueprint_revision(conn, revision)
     return cursor.lastrowid
 
 
