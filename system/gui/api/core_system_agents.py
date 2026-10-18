@@ -28,6 +28,7 @@ def _snapshot() -> dict[str, Any]:
     except (OSError, ValueError, TypeError):
         raise HTTPException(status_code=503, detail="System-Agentenkonfiguration nicht lesbar")
     try:
+        from hub._services.chat.execution_target import project_execution_target
         from .worker_status_adapter import _request_control_api
         live = _request_control_api("GET", "system-slots", device_token="", timeout=3)
         if (live.get("configuration_version") == result["configuration_version"]
@@ -38,6 +39,9 @@ def _snapshot() -> dict[str, Any]:
             for agent in result["agents"]:
                 current = by_id.get(agent["id"], {})
                 agent.update({key: current[key] for key in fields if key in current})
+                target = project_execution_target(current.get("resolved_execution_target"))
+                if target is not None:
+                    agent["resolved_execution_target"] = target
     except Exception:
         # Missing runtime evidence must remain unknown, never a Ready badge.
         pass

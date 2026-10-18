@@ -9,10 +9,12 @@ Residency and measured capacity are deliberately not inferred from settings.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import platform
 import re
 import sys
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -233,10 +235,216 @@ def _snapshot(config, version):
             "host_inference_limit": 1}
 
 
-def model_sockets_snapshot(path: str | None = None) -> dict[str, Any]:
-    """Configuration only: no network, initialization, occupancy or resource claims."""
+def _live_runtime_evidence() -> dict[str, Any]:
+    """Read live controller and host-owner evidence without starting a provider."""
+    from .execution_target import local_execution_target, project_execution_target
+    from .host_inference_gate import HostInferenceGate
+
+    evidence = {
+        "gate_available": False,
+        "gate_active": False,
+        "gate_target": None,
+        "control_available": False,
+        "targets": [],
+        "agent_states": {},
+    }
+    try:
+        gate = HostInferenceGate().status()
+        evidence["gate_available"] = True
+        evidence["gate_active"] = gate.get("active") is True
+        model_target = gate.get("model_target")
+        if evidence["gate_active"] and isinstance(model_target, dict):
+            fields = {"socket_id", "binding_id", "agent_id", "backend", "model"}
+            if set(model_target) == fields:
+                evidence["gate_target"] = local_execution_target(
+                    model_target["backend"], model_target["model"],
+                    binding=model_target, source="host_inference_gate",
+                )
+    except Exception:  # noqa: BLE001 -- an unavailable owner source is explicit below
+        pass
+
+    module = sys.modules.get("hub._services.chat.telegram_chat")
+    if module is None:
+        try:
+            module = importlib.import_module("hub._services.chat.telegram_chat")
+        except Exception:  # noqa: BLE001 -- controller evidence remains unavailable
+            module = None
+    if module is None:
+        return evidence
+
+    try:
+        system_reader = getattr(module, "_system_slots_snapshot", None)
+        if callable(system_reader):
+            snapshot = system_reader()
+            agents = snapshot.get("agents", []) if isinstance(snapshot, dict) else []
+            evidence["control_available"] = isinstance(agents, list)
+            for agent in agents:
+                if not isinstance(agent, dict) or not isinstance(agent.get("id"), str):
+                    continue
+                evidence["agent_states"][agent["id"]] = {
+                    "running": agent.get("running"),
+                    "target_seen": False,
+                }
+                target = project_execution_target(agent.get("resolved_execution_target"))
+                if target is not None:
+                    evidence["targets"].append(target)
+                    evidence["agent_states"][agent["id"]]["target_seen"] = True
+
+        worker_reader = getattr(module, "_worker_execution_snapshots", None)
+        if callable(worker_reader):
+            workers = worker_reader()
+            if isinstance(workers, list):
+                evidence["control_available"] = True
+                for worker in workers:
+                    if not isinstance(worker, dict) or not isinstance(worker.get("id"), str):
+                        continue
+                    evidence["agent_states"].setdefault(worker["id"], {
+                        "running": worker.get("running"), "target_seen": False,
+                    })
+                    target = project_execution_target(worker.get("resolved_execution_target"))
+                    if target is not None:
+                        evidence["targets"].append(target)
+                        evidence["agent_states"][worker["id"]]["target_seen"] = True
+    except Exception:  # noqa: BLE001 -- malformed live data is not configuration proof
+        evidence["control_available"] = False
+    return evidence
+
+
+def _target_matches(target: dict[str, Any], socket: dict[str, Any], binding: dict[str, Any] | None = None) -> bool:
+    if target.get("locality") != "local":
+        return False
+    if target.get("socket_id") != socket.get("id"):
+        return False
+    if binding is not None and target.get("binding_id") != binding.get("id"):
+        return False
+    return target.get("provider") == socket.get("backend") and target.get("model") == socket.get("model")
+
+
+def _with_runtime(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Overlay measured ownership and current target state on a config snapshot."""
+    evidence = _live_runtime_evidence()
+    gate_available = evidence["gate_available"]
+    control_available = evidence["control_available"]
+    gate_active = evidence["gate_active"]
+    gate_target = evidence["gate_target"]
+    targets = list(evidence["targets"])
+    local_targets = [target for target in targets if target.get("locality") == "local"]
+    source_available = gate_available or control_available
+    target_map = {}
+    for target in targets:
+        for key in ("agent_id", "binding_id"):
+            value = target.get(key)
+            if value:
+                target_map[(key, value)] = target
+
+    result = {**snapshot, "sockets": [dict(socket) for socket in snapshot["sockets"]]}
+    result["runtime_observed_at"] = datetime.now(timezone.utc).isoformat()
+    result["resource_formula"] = "socket_share × relative_slot_share"
+    if gate_available and control_available:
+        result["runtime_source"] = "host_inference_gate+control_runtime"
+    elif gate_available:
+        result["runtime_source"] = "host_inference_gate"
+    elif control_available:
+        result["runtime_source"] = "control_runtime"
+    else:
+        result["runtime_source"] = "unavailable"
+
+    if not source_available:
+        result.update(runtime_verified=False, runtime_reason_code="source_unavailable")
+        for socket in result["sockets"]:
+            socket["resource_share_state"] = "source_unavailable"
+            socket["slots"] = [dict(binding, resource_share_state="source_unavailable")
+                                for binding in socket.get("slots", [])]
+        return result
+
+    if gate_active and gate_target is None:
+        result.update(runtime_verified=True, runtime_reason_code="active_target_unavailable")
+    elif gate_active and gate_target is not None:
+        result.update(runtime_verified=True, runtime_reason_code="host_owner")
+    elif local_targets:
+        result.update(runtime_verified=True, runtime_reason_code="local_target_resource_unmeasured")
+    else:
+        result.update(runtime_verified=True, runtime_reason_code="live_idle")
+
+    configured_gate_socket = bool(
+        gate_target and any(_target_matches(gate_target, socket) for socket in result["sockets"])
+    )
+    for socket in result["sockets"]:
+        projected_bindings = []
+        socket_has_unknown = False
+        socket_has_local_target = False
+        socket_has_gate_owner = bool(gate_target and _target_matches(gate_target, socket))
+        for binding in socket.get("slots", []):
+            binding = dict(binding)
+            binding_target = target_map.get(("binding_id", binding.get("id")))
+            agent_target = target_map.get(("agent_id", binding.get("agent_id")))
+            target = binding_target or agent_target
+            if gate_active:
+                if gate_target is None or not configured_gate_socket:
+                    binding.update(running=None, resource_share=None,
+                                   relative_slot_share=None,
+                                   resource_share_state="active_target_unavailable")
+                    socket_has_unknown = True
+                elif socket_has_gate_owner and _target_matches(gate_target, socket, binding):
+                    binding.update(running=True, resource_share=1.0,
+                                   relative_slot_share=1.0,
+                                   resource_share_state="measured_owner")
+                elif socket_has_gate_owner:
+                    binding.update(running=None, resource_share=None,
+                                   relative_slot_share=None,
+                                   resource_share_state="target_unavailable")
+                    socket_has_unknown = True
+                else:
+                    binding.update(running=False, resource_share=0.0,
+                                   relative_slot_share=0.0,
+                                   resource_share_state="idle")
+            elif target is not None and target.get("locality") == "local" and _target_matches(target, socket, binding):
+                binding.update(running=True, resource_share=None,
+                               relative_slot_share=None,
+                               resource_share_state="source_unavailable")
+                socket_has_local_target = True
+            elif target is not None and target.get("locality") == "external" and target.get("agent_id") == binding.get("agent_id"):
+                binding.update(running=False, resource_share=0.0,
+                               relative_slot_share=0.0,
+                               resource_share_state="external_target")
+            else:
+                agent_state = evidence["agent_states"].get(binding.get("agent_id"), {})
+                if agent_state.get("running") is True:
+                    binding.update(running=None, resource_share=None,
+                                   relative_slot_share=None,
+                                   resource_share_state="target_unavailable")
+                    socket_has_unknown = True
+                else:
+                    binding.update(running=False, resource_share=0.0,
+                                   relative_slot_share=0.0,
+                                   resource_share_state="idle")
+            projected_bindings.append(binding)
+
+        if gate_active:
+            if gate_target is None or not configured_gate_socket:
+                socket_share, state = None, "active_target_unavailable"
+            elif socket_has_gate_owner:
+                socket_share = 1.0
+                state = ("measured_owner" if any(
+                    binding.get("resource_share_state") == "measured_owner"
+                    for binding in projected_bindings) else "target_unavailable")
+            else:
+                socket_share, state = 0.0, "idle"
+        elif socket_has_local_target or socket_has_unknown:
+            socket_share, state = None, "source_unavailable" if socket_has_local_target else "target_unavailable"
+        else:
+            socket_share, state = 0.0, "idle"
+        socket["resource_share"] = socket_share
+        socket["resource_share_state"] = state
+        socket["slots"] = projected_bindings
+    return result
+
+
+def model_sockets_snapshot(path: str | None = None, *, include_runtime: bool = False) -> dict[str, Any]:
+    """Read model sockets; optionally overlay read-only live runtime evidence."""
     config, version = _read(path)
-    return _snapshot(config, version)
+    snapshot = _snapshot(config, version)
+    return _with_runtime(snapshot) if include_runtime else snapshot
 
 
 def _mutate(expected_version, operation, path):
