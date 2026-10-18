@@ -563,7 +563,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                 control.queue_status = record
 
     try:
-        return WorkerLeaseBinding.acquire_next(
+        binding = WorkerLeaseBinding.acquire_next(
             client, slot, worker_id=lease_worker_id, host=host,
             generation=control.generation, is_current=is_current, stop_event=control.stop_event,
             policy_guard=(
@@ -576,6 +576,13 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             deferred_versions=control.deferred_task_versions,
             observe_queue=observe_queue,
         )
+        if binding is not None:
+            # The outer-loop heartbeat predates Acquire and cannot attest the
+            # new lease. Observe its successful return before first inference.
+            with _WORKER_CONTROL_LOCK:
+                if is_current() and not control.stop_event.is_set():
+                    control.last_heartbeat_at = datetime.now(timezone.utc).isoformat()
+        return binding
     except LeaseDeniedError as exc:
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
             return None
