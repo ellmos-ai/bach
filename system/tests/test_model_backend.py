@@ -205,6 +205,53 @@ def test_ollama_chat_returns_nonempty_content(monkeypatch):
     assert result["content"] == "Antwort"
 
 
+def test_ollama_chat_returns_bounded_text_free_completion_metadata(monkeypatch):
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    result = _run_chat(monkeypatch, {
+        "message": {"content": "Antwort", "thinking": "interner Text"},
+        "prompt_eval_count": 123,
+        "eval_count": 17,
+        "done_reason": "stop",
+    })
+    assert result["completion_metadata"] == {
+        "stream_completed": True,
+        "done_reason": "stop",
+        "prompt_tokens": 123,
+        "eval_tokens": 17,
+        "requested_num_ctx": 4096,
+        "thinking_chars": len("interner Text"),
+        "tool_call_count": 0,
+    }
+    assert "interner Text" not in json.dumps(result["completion_metadata"])
+
+
+@pytest.mark.parametrize("count", [True, -1, 2_000_001, "12"])
+def test_ollama_completion_metadata_rejects_invalid_counts(monkeypatch, count):
+    result = _run_chat(monkeypatch, {
+        "message": {"content": "Antwort"},
+        "prompt_eval_count": count,
+        "eval_count": count,
+    })
+    metadata = result["completion_metadata"]
+    assert metadata["prompt_tokens"] is None
+    assert metadata["eval_tokens"] is None
+
+
+def test_ollama_empty_response_error_carries_only_completion_metadata(monkeypatch):
+    with pytest.raises(RuntimeError, match="leere Antwort") as raised:
+        _run_chat(monkeypatch, {
+            "message": {"content": "", "thinking": "PRIVATE_REASONING"},
+            "prompt_eval_count": 27,
+            "eval_count": 9,
+            "done_reason": "stop",
+        })
+    assert raised.value.completion_metadata["prompt_tokens"] == 27
+    assert raised.value.completion_metadata["eval_tokens"] == 9
+    assert raised.value.completion_metadata["thinking_chars"] == len("PRIVATE_REASONING")
+    assert raised.value.completion_failure_reason == "empty_visible_answer"
+    assert "PRIVATE_REASONING" not in json.dumps(raised.value.completion_metadata)
+
+
 def test_ollama_chat_hides_disabled_thinking(monkeypatch):
     response = _FakeResponse({"message": {"content": "interner Text\n</think>\n\nOK"}})
     monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response))

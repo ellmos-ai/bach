@@ -92,6 +92,51 @@ def _resume_handoff_context(original, summary, *, background_task, has_tools,
     messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
     return messages, history
 
+
+_HANDOFF_COMPLETION_KEYS = {
+    "stream_completed", "done_reason", "prompt_tokens", "eval_tokens",
+    "requested_num_ctx", "thinking_chars", "tool_call_count",
+}
+_HANDOFF_MAX_COUNT = 2_000_000
+
+
+def _handoff_completion_metadata(result):
+    """Return only the bounded, text-free completion counters from Ollama."""
+    if not isinstance(result, dict) or "completion_metadata" not in result:
+        return None, True, False
+    raw = result.get("completion_metadata")
+    if not isinstance(raw, dict) or set(raw) != _HANDOFF_COMPLETION_KEYS:
+        return None, False, True
+    reason = raw.get("done_reason")
+    if reason not in (None, "stop", "length", "other"):
+        return None, False, True
+    if type(raw.get("stream_completed")) is not bool:
+        return None, False, True
+    for key in ("prompt_tokens", "eval_tokens"):
+        value = raw.get(key)
+        if value is not None and (type(value) is not int or not 0 <= value <= _HANDOFF_MAX_COUNT):
+            return None, False, True
+    for key in ("thinking_chars", "tool_call_count", "requested_num_ctx"):
+        value = raw.get(key)
+        minimum = 1 if key == "requested_num_ctx" else 0
+        if type(value) is not int or not minimum <= value <= _HANDOFF_MAX_COUNT:
+            return None, False, True
+    return {key: raw[key] for key in _HANDOFF_COMPLETION_KEYS}, True, True
+
+
+def _handoff_metadata_failure(metadata):
+    if metadata is None:
+        return None
+    if not metadata["stream_completed"]:
+        return "stream_incomplete"
+    if metadata["done_reason"] == "length":
+        return "response_truncated"
+    if metadata["done_reason"] == "other":
+        return "unexpected_done_reason"
+    if metadata["tool_call_count"]:
+        return "unexpected_tool_calls"
+    return None
+
 try:
     from ellmos_chat import (
         ChatRuntime as _ModuleChatRuntime,
@@ -2318,7 +2363,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if request_id is not None:
                 try:
                     summary = await self._handoff(
-                        msgs, session, backend=selected_backend, model=selected_model, strict=True,
+                        msgs, session, backend=selected_backend, model=selected_model,
+                        strict=True, trigger="worker-request", context_limit=context_limit,
                     )
                     resumed, history = _resume_handoff_context(
                         msgs, summary, background_task=background_task,
@@ -2400,6 +2446,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         backend=selected_backend,
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
+                        trigger="context-pressure",
+                        trigger_prompt_tokens=result.get("prompt_tokens"),
+                        context_limit=context_limit,
                     )
                     msgs, session.messages = _resume_handoff_context(
                         msgs, summary, background_task=background_task,
@@ -2676,36 +2725,117 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         return used >= active_limit * self.handoff_percent / 100
 
     async def _handoff(self, msgs: list, session: ChatSession, *, backend=None,
-                       model: str = "", strict: bool = False) -> list:
+                       model: str = "", strict: bool = False,
+                       trigger: str = "unspecified",
+                       trigger_prompt_tokens: int | None = None,
+                       context_limit: int | None = None) -> list:
         """Laesst das Modell sich selbst uebergeben und leert den Kontext.
 
         Anders als _summarize (Gespraechsprosa aus fremder Sicht) schreibt hier
         das arbeitende Modell selbst - es kennt seinen Stand. Das Ergebnis wird
         der Anfang des neuen, leeren Verlaufs.
         """
-        frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
+        final_answer_instruction = (
+            "\n\nWICHTIG: Gib jetzt im sichtbaren Antworttext eine vollständige und "
+            "konkrete Übergabe aus. Verwende alle oben vorgegebenen Zeilen und "
+            "überspringe keine. Rufe keine Werkzeuge auf, gib keine leere Antwort "
+            "aus und ersetze den sichtbaren Antworttext nicht durch reine interne "
+            "Überlegung."
+        )
+        frage = msgs + [{
+            "role": "user",
+            "content": HANDOFF_PROMPT + final_answer_instruction,
+        }]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
-        handoff_error = None
+        safe_trigger = trigger if trigger in {"worker-request", "context-pressure"} else "unspecified"
+        safe_trigger_tokens = (
+            trigger_prompt_tokens
+            if type(trigger_prompt_tokens) is int
+            and 0 <= trigger_prompt_tokens <= _HANDOFF_MAX_COUNT
+            else None
+        )
+        safe_context_limit = (
+            context_limit
+            if type(context_limit) is int and 1 <= context_limit <= _HANDOFF_MAX_COUNT
+            else None
+        )
+        metadata = None
+        metadata_valid = True
+        metadata_present = False
+        failure_reason = None
+        exception_type = None
+        uebergabe = ""
         try:
             res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                 session, selected_backend, selected_model,
                 frage, tools=None,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
             )
-            if res.get("error"):
-                raise RuntimeError(str(res["error"]))
-            uebergabe = (res.get("content") or "").strip()
-        except Exception as e:
-            log.warning("Uebergabe fehlgeschlagen: %s", e)
-            handoff_error = e
-            uebergabe = ""
+            metadata, metadata_valid, metadata_present = _handoff_completion_metadata(res)
+            if not metadata_valid:
+                failure_reason = "invalid_completion_metadata"
+            else:
+                visible_content = res.get("content")
+                if visible_content is not None and not isinstance(visible_content, str):
+                    failure_reason = "invalid_visible_content"
+                else:
+                    uebergabe = (visible_content or "").strip()
+                    failure_reason = _handoff_metadata_failure(metadata)
+                    if failure_reason is None and res.get("error"):
+                        failure_reason = "backend_reported_error"
+                    if failure_reason is None and res.get("tool_calls"):
+                        failure_reason = "unexpected_tool_calls"
+                    if failure_reason is None and not uebergabe:
+                        failure_reason = "empty_visible_answer"
+        except Exception as e:  # noqa: BLE001 - preserve context and redact provider details.
+            exception_type = type(e).__name__[:80]
+            exception_metadata = getattr(e, "completion_metadata", None)
+            exception_reason = getattr(e, "completion_failure_reason", None)
+            if exception_reason not in {"empty_visible_answer"}:
+                exception_reason = None
+            if not metadata_present and exception_metadata is not None:
+                metadata, metadata_valid, metadata_present = _handoff_completion_metadata(
+                    {"completion_metadata": exception_metadata}
+                )
+            if not metadata_valid:
+                failure_reason = "invalid_completion_metadata"
+            else:
+                failure_reason = (
+                    _handoff_metadata_failure(metadata)
+                    or exception_reason
+                    or "backend_exception"
+                )
 
-        if not uebergabe:
+        if failure_reason is not None:
+            metric = metadata or {}
+            log.warning(
+                "Uebergabe fehlgeschlagen trigger=%s cause=%s stream_completed=%s "
+                "done_reason=%s prompt_tokens=%s eval_tokens=%s requested_num_ctx=%s "
+                "context_limit_tokens=%s trigger_prompt_tokens=%s thinking_chars=%s "
+                "tool_call_count=%s visible_chars=%d metadata_present=%s "
+                "metadata_valid=%s exception_type=%s",
+                safe_trigger,
+                failure_reason,
+                metric.get("stream_completed"),
+                metric.get("done_reason"),
+                metric.get("prompt_tokens"),
+                metric.get("eval_tokens"),
+                metric.get("requested_num_ctx"),
+                safe_context_limit,
+                safe_trigger_tokens,
+                metric.get("thinking_chars"),
+                metric.get("tool_call_count"),
+                len(uebergabe),
+                metadata_present,
+                metadata_valid,
+                exception_type,
+            )
+
             if strict:
-                if handoff_error is not None:
-                    raise RuntimeError(f"Kontext-Übergabe fehlgeschlagen: {handoff_error}") from handoff_error
-                raise RuntimeError("Kontext-Übergabe ist leer")
+                raise RuntimeError(
+                    f"Kontext-Übergabe fehlgeschlagen ({failure_reason})"
+                ) from None
             # Lieber die letzten Schritte behalten als blind alles wegwerfen.
             return msgs[:1] + msgs[-4:]
 

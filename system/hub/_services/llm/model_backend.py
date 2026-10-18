@@ -33,6 +33,24 @@ from hub._services.limits import limit
 
 log = logging.getLogger(__name__)
 
+_MAX_REPORTED_TOKENS = 2_000_000
+
+
+def _bounded_reported_count(value: Any) -> int | None:
+    """Accept only bounded integer counters from an Ollama stream."""
+    if type(value) is not int or not 0 <= value <= _MAX_REPORTED_TOKENS:
+        return None
+    return value
+
+
+class _OllamaEmptyResponseError(RuntimeError):
+    """Empty completed response with text-free stream diagnostics attached."""
+
+    def __init__(self, completion_metadata: dict):
+        super().__init__("Ollama lieferte eine leere Antwort")
+        self.completion_metadata = completion_metadata
+        self.completion_failure_reason = "empty_visible_answer"
+
 
 def _probe_model_api(
     models_url: str,
@@ -209,10 +227,23 @@ class OllamaBackend(ModelBackend):
         tool_calls: list = []
         last_message: dict = {}
         prompt_tokens = None
+        eval_tokens = None
+        done_reason = None
         started = time.time()
         last_activity = started
         probes = 0
         completed = False
+
+        def completion_metadata() -> dict:
+            return {
+                "stream_completed": completed,
+                "done_reason": done_reason,
+                "prompt_tokens": prompt_tokens,
+                "eval_tokens": eval_tokens,
+                "requested_num_ctx": self.num_ctx,
+                "thinking_chars": sum(len(part) for part in thinking_parts),
+                "tool_call_count": len(tool_calls),
+            }
 
         def aborted(error: str, *, backend_error=None) -> dict:
             content = "".join(content_parts)
@@ -227,6 +258,7 @@ class OllamaBackend(ModelBackend):
                 "tool_calls": list(tool_calls) or None,
                 "raw_message": raw_message,
                 "prompt_tokens": prompt_tokens,
+                "completion_metadata": completion_metadata(),
                 "error": error,
                 **({"backend_error": backend_error} if backend_error else {}),
             }
@@ -303,8 +335,21 @@ class OllamaBackend(ModelBackend):
                                 if message.get("tool_calls"):
                                     tool_calls.extend(message["tool_calls"])
                             if chunk.get("prompt_eval_count") is not None:
-                                prompt_tokens = chunk["prompt_eval_count"]
-                            if chunk.get("done"):
+                                prompt_tokens = _bounded_reported_count(
+                                    chunk["prompt_eval_count"]
+                                )
+                            if chunk.get("eval_count") is not None:
+                                eval_tokens = _bounded_reported_count(
+                                    chunk["eval_count"]
+                                )
+                            raw_done_reason = chunk.get("done_reason")
+                            if isinstance(raw_done_reason, str) and raw_done_reason:
+                                done_reason = (
+                                    raw_done_reason
+                                    if raw_done_reason in {"stop", "length"}
+                                    else "other"
+                                )
+                            if chunk.get("done") is True:
                                 completed = True
                                 break
 
@@ -329,7 +374,7 @@ class OllamaBackend(ModelBackend):
         if not think and "</think>" in content:
             content = content.rsplit("</think>", 1)[1].strip()
         if not content and not tool_calls:
-            raise RuntimeError("Ollama lieferte eine leere Antwort")
+            raise _OllamaEmptyResponseError(completion_metadata())
         raw_message = dict(last_message or {"role": "assistant"})
         raw_message["content"] = content
         if thinking_parts:
@@ -342,6 +387,7 @@ class OllamaBackend(ModelBackend):
             "tool_calls": tool_calls or None,
             "raw_message": raw_message,
             "prompt_tokens": prompt_tokens,
+            "completion_metadata": completion_metadata(),
             "model": selected_model,
         }
 
