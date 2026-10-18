@@ -204,7 +204,7 @@ def _iso_now(dt: Optional[datetime | str] = None) -> str:
 def apply_task_field_changes(
     conn: sqlite3.Connection,
     task_id: int,
-    existing_row: Mapping[str, Any],
+    existing_row: Mapping[str, Any] | sqlite3.Row,
     field_values: Mapping[str, Any],
     *,
     changed_by: str = "api",
@@ -230,13 +230,17 @@ def apply_task_field_changes(
     alte Wert nicht schon NULL war.
 
     existing_row: der VOR dem Update gelesene `tasks`-Datensatz (fuer
-    old_value-Vergleich und die started_at-Einmaligkeit).
+    old_value-Vergleich und die started_at-Einmaligkeit); dict oder sqlite3.Row.
 
     Gibt True zurueck, wenn tatsaechlich etwas geschrieben wurde (leere
     field_values UND leere clear_fields sind ein No-Op und geben False
     zurueck, ohne die DB anzufassen).
     """
     now = _iso_now(now)
+    # sqlite3.Row ist kein Mapping (kein .get), die Zugriffe unten brauchen eines.
+    # Einmal hier normalisieren, statt jeden Aufrufer dazu zu verpflichten.
+    if isinstance(existing_row, sqlite3.Row):
+        existing_row = dict(existing_row)
 
     # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass): Terminal-Park-
     # Guard im generischen Choke-Point. Ohne ihn konnte jeder API-Aufruf einen

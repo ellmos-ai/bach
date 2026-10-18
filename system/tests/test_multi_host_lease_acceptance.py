@@ -47,6 +47,7 @@ from hub._services.task_lease_client import (
     TaskLeaseClient,
 )
 from hub.task_audit import (
+    GateReopenBlocked,
     LeaseRequired,
     apply_task_field_changes,
 )
@@ -648,6 +649,32 @@ class TestStaleFenceAndWriteProtection:
                     {"status": "done"},
                     changed_by="unauthorized-agent",
                     lease_authorized=False,
+                )
+
+    @pytest.mark.parametrize("as_row", [True, False], ids=["sqlite3.Row", "dict"])
+    def test_existing_row_accepts_sqlite_row_and_dict(self, test_db, as_row):
+        """apply_task_field_changes liest existing_row per .get(). Eine sqlite3.Row
+        (row_factory) hat kein .get und scheiterte mit AttributeError, noch bevor der
+        Lease-Guard lief. Row und dict müssen gleich wirken (Regression aus f597d577)."""
+        with _connect(test_db) as conn:
+            tid = _insert_task(conn, "Row-Fall", status="blocked")
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (tid,)).fetchone()
+            existing = row if as_row else dict(row)
+
+            # Schreibpfad: alter und neuer Wert der History stammen aus existing_row
+            assert apply_task_field_changes(
+                conn, tid, existing, {"title": "Row-Fall geändert"}, changed_by="row-test"
+            )
+            history = conn.execute(
+                "SELECT field_changed, old_value, new_value FROM task_history WHERE task_id = ?",
+                (tid,),
+            ).fetchall()
+            assert [tuple(h) for h in history] == [("title", "Row-Fall", "Row-Fall geändert")]
+
+            # Terminal-Park-Guard: status='blocked' muss auch aus einer Row erkannt werden
+            with pytest.raises(GateReopenBlocked):
+                apply_task_field_changes(
+                    conn, tid, existing, {"status": "open"}, changed_by="row-test"
                 )
 
     def test_fence_tamper_fails_closed(self, test_db):
