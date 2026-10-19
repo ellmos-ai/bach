@@ -1382,6 +1382,7 @@ def _capacity_receipt(model, *, state="ready", checked_at=None, policy_version="
         "disk_reserve_bytes": GIB,
         "weight_request_bytes": GIB,
         "resident_weight_credit": False,
+        "capacity_basis": "host_budget",
     }
 
 

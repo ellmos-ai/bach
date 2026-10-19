@@ -534,8 +534,70 @@ def _retain_worker_task_receipts(control: _WorkerControl) -> None:
             control.task_result_bindings[binding.task_id] = binding
 
 
+def _current_submission_readback(binding):
+    """Confirm the submitted result is still current without waiting for review."""
+    submitted = binding.submitted_result
+    if not isinstance(submitted, dict):
+        return False
+    try:
+        observed = binding._client.task_result_snapshot(binding.task_id)
+    except Exception:
+        return False
+    record = observed.get("result") if isinstance(observed, dict) else None
+    submission = record.get("submission") if isinstance(record, dict) else None
+    result_revision = record.get("result_revision") if isinstance(record, dict) else None
+    if (not isinstance(observed, dict)
+            or observed.get("schema") != "bach.task-result-readback.v1"
+            or observed.get("verified") is not True
+            or type(observed.get("task_id")) is not int
+            or observed.get("task_id") != binding.task_id
+            or type(observed.get("status_revision")) is not int
+            or observed["status_revision"] <= 0
+            or observed.get("status") not in {"review", "pending", "done", "completed"}
+            or not isinstance(record, dict)
+            or record.get("schema") != "bach.worker-result.v1"
+            or type(record.get("task_id")) is not int
+            or type(record.get("fence")) is not int
+            or not isinstance(record.get("generation"), str)
+            or not isinstance(record.get("task_version"), str)
+            or type(record.get("result_id")) is not int
+            or record.get("task_id") != binding.task_id
+            or not isinstance(submission, dict)
+            or record.get("result_id") != submitted.get("result_id")
+            or record.get("result_sha256") != submitted.get("result_sha256")
+            or record.get("generation") != submitted.get("generation")
+            or record.get("fence") != submitted.get("fence")
+            or record.get("task_version") != submitted.get("task_version")
+            or record.get("reason") not in {
+                "awaiting_review", "accepted", "acceptance_not_current"}
+            or submission.get("availability") != "available"
+            or not isinstance(result_revision, str)
+            or re.fullmatch(r"[a-f0-9]{64}", result_revision) is None
+            or (record.get("reason") == "accepted"
+                and (record.get("accepted") is not True
+                     or observed.get("status") not in {"done", "completed"}))
+            or (record.get("reason") == "awaiting_review"
+                and (record.get("accepted") is not False
+                     or observed.get("status") not in {"review", "pending"}))
+            or (record.get("reason") == "acceptance_not_current"
+                and (record.get("accepted") is not False
+                     or observed.get("status") != "pending"))
+            or (isinstance(submitted.get("result_revision"), str)
+                and submitted["result_revision"] != result_revision)):
+        return False
+    evaluation = observed.get("completion_evaluation")
+    if isinstance(evaluation, dict) and evaluation.get("availability") == "available":
+        if (evaluation.get("task_id") != binding.task_id
+                or evaluation.get("result_id") != record.get("result_id")
+                or evaluation.get("result_revision") != result_revision
+                or evaluation.get("task_version") != observed.get("task_version")
+                or evaluation.get("status_revision") != observed.get("status_revision")):
+            return False
+    return True
+
+
 def _poll_worker_completion(control: _WorkerControl) -> bool:
-    """Reconcile retained submissions and honor the current policy's claim gate.
+    """Reconcile retained submissions without making internal review a queue barrier.
 
     All Git, HTTP, and SQLite work runs outside the controller lock. Older
     balanced results are revisited in bounded round-robin batches so expiry
@@ -561,6 +623,14 @@ def _poll_worker_completion(control: _WorkerControl) -> bool:
             return False
         if binding.submitted_result is None:
             continue  # An old release-only review is not a managed submission.
+        if binding is current:
+            exact = _current_submission_readback(binding)
+            with _WORKER_CONTROL_LOCK:
+                control.completion_poll_blocked[binding.task_id] = not exact
+            # The current canonical result receipt releases this worker even if
+            # the separate acceptance/review service is pending or unavailable.
+            # An absent/stale readback stays fail-closed and will be rechecked.
+            return exact
         if now < next_at.get(binding.task_id, 0) and (
                 binding is not current or blocked.get(binding.task_id) is True):
             if binding is current:
@@ -595,7 +665,6 @@ def _poll_worker_completion(control: _WorkerControl) -> bool:
             record = observed.get("result") or {}
             if getattr(client, "mode", None) == "remote" and record.get("completion_policy_version") == 1:
                 lead = observed.get("completion_evaluation") or {}
-                lead_decision = lead.get("decision") or {}
                 submitted = binding.submitted_result or {}
                 exact = (observed.get("task_id") == binding.task_id
                     and type(record.get("result_id")) is int
@@ -615,8 +684,7 @@ def _poll_worker_completion(control: _WorkerControl) -> bool:
                     and lead.get("task_id") == binding.task_id
                     and lead.get("result_id") == record["result_id"]
                     and lead.get("availability") == "available")
-                if (exact and type(lead_decision.get("worker_may_claim_next")) is bool
-                        and lead_decision["worker_may_claim_next"] is True):
+                if exact:
                     with _WORKER_CONTROL_LOCK:
                         control.completion_poll_blocked[binding.task_id] = False
                     continue
@@ -827,6 +895,37 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             if is_current() and not control.stop_event.is_set():
                 control.queue_status = record
 
+    def release_rejected_fixed_task(task_id, reason, task_version):
+        labels = {
+            "held": "fremde Lease", "not_claimable": "nicht claimbar",
+            "creator_priority": "Creator-Schonfrist", "stale_task_version": "veraltete Taskversion",
+            "already_held_by_caller": "bereits gehalten", "completion_guard": "Abschlussprüfung",
+        }
+        activity = (f"Feste Task #{task_id} abgelehnt ({labels.get(reason, 'Übernahme abgelehnt')}); "
+                    "Zuordnung gelöst, nächste claimbare Aufgabe folgt")
+        with _WORKER_CONTROL_LOCK:
+            if not is_current() or control.stop_event.is_set():
+                raise RuntimeError("Workerlauf vor Freigabe der festen Task beendet")
+            current_slot = control.slot_policy_reader()
+            pinned = current_slot.get("task_id") if isinstance(current_slot, dict) else None
+            try:
+                pinned_id = int(pinned) if pinned not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                pinned_id = None
+            if (not isinstance(current_slot, dict) or current_slot.get("id") != control.worker_id
+                    or pinned_id != task_id):
+                raise RuntimeError("Feste Taskzuordnung hat sich während der Ablehnung geändert")
+            if isinstance(task_version, str):
+                control.deferred_task_versions[task_id] = task_version
+            updated = _update_worker_slot(control, {
+                "task_id": None, "status": "running", "current_activity": activity,
+            })
+            if updated is None:
+                raise RuntimeError("Feste Taskzuordnung konnte nicht gelöst werden")
+        if not _record_worker_activity(control, activity, "pending", {
+                "task_id": task_id, "reason": reason}):
+            raise RuntimeError("Ablehnung der festen Task konnte nicht protokolliert werden")
+
     try:
         return WorkerLeaseBinding.acquire_next(
             client, slot, worker_id=lease_worker_id, host=host,
@@ -842,6 +941,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             _creator_delegation=control.creator_delegation,
             deferred_versions=control.deferred_task_versions,
             observe_queue=observe_queue,
+            on_fixed_task_rejected=release_rejected_fixed_task,
         )
     except LeaseDeniedError as exc:
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
@@ -7278,7 +7378,11 @@ def _persistent_core_capacity_probe(slot):
         )
         if (model != slot.get("model") or not verified_local_agent_model(selected, model)):
             return {"state": "local_model_unverified"}, None
-        receipt = asyncio.run(local_resource_reserve.probe(selected, model))
+        receipt = asyncio.run(local_resource_reserve.probe(
+            selected, model,
+            reuse_running_server=(slot.get("id") == "buddha_always_on"
+                                  and slot.get("backend") == "ollama"),
+        ))
         state = receipt.get("state") if isinstance(receipt, dict) else None
         if state not in {"ready", "waiting_memory_reserve", "waiting_disk_reserve"}:
             return {"state": "capacity_unavailable"}, None

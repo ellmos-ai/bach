@@ -42,7 +42,7 @@ def resources(tmp_path, monkeypatch):
     monkeypatch.setattr(reserve.shutil, "disk_usage", lambda p: SimpleNamespace(free=4 * GIB))
     async def observed(*_):
         return {"external": False, "digest": DIGEST, "weight_floor_bytes": 2 * GIB,
-                "resident_context": None}
+                "resident_context": None, "server_responded": True}
     monkeypatch.setattr(reserve, "observe_ollama", observed)
     return path, OllamaBackend(default_model=MODEL, num_ctx=1024)
 
@@ -108,6 +108,7 @@ def test_ready_receipt_distinguishes_configured_budget_from_observation(resource
     assert result["memory_required_bytes"] == int(3.75 * GIB)
     assert result["weight_request_bytes"] == 2 * GIB
     assert result["resident_weight_credit"] is False
+    assert result["capacity_basis"] == "host_budget"
     assert len(result["policy_version"]) == 64 and result["checked_at"]
     assert str(path) not in json.dumps(result)
 
@@ -136,8 +137,63 @@ def test_resident_weight_credit_requires_actual_context(resources, monkeypatch, 
     monkeypatch.setattr(reserve, "observe_ollama", observed)
     result = asyncio.run(reserve.probe(backend, MODEL))
     assert result["resident_weight_credit"] is credit
-    assert result["weight_request_bytes"] == (0 if credit else 2 * GIB)
-    assert result["memory_required_bytes"] == int((1.75 if credit else 3.75) * GIB)
+    if credit:
+        assert result["capacity_basis"] == "resident_model"
+        assert result["weight_request_bytes"] == result["memory_required_bytes"] == 0
+        assert result["memory_total_bytes"] is None
+        assert result["disk_free_bytes"] is None
+    else:
+        assert result["capacity_basis"] == "host_budget"
+        assert result["weight_request_bytes"] == 2 * GIB
+        assert result["memory_required_bytes"] == int(3.75 * GIB)
+
+
+def test_resident_model_skips_host_memory_and_disk_reserves(resources, monkeypatch):
+    _, backend = resources
+    async def observed(*_):
+        return {"external": False, "digest": DIGEST, "weight_floor_bytes": 2 * GIB,
+                "resident_context": 1024, "server_responded": True}
+    monkeypatch.setattr(reserve, "observe_ollama", observed)
+    monkeypatch.setattr(reserve.psutil, "virtual_memory",
+                        lambda: pytest.fail("resident model must not take a second host reserve"))
+    monkeypatch.setattr(reserve.shutil, "disk_usage",
+                        lambda _path: pytest.fail("resident model must not take a disk reserve"))
+    result = asyncio.run(reserve.probe(backend, MODEL))
+    assert result["state"] == "ready" and result["admitted"]
+    assert result["capacity_basis"] == "resident_model"
+
+
+def test_buddha_reuses_responding_ollama_server_without_host_reserve(resources, monkeypatch):
+    _, backend = resources
+    monkeypatch.setattr(reserve.psutil, "virtual_memory",
+                        lambda: pytest.fail("running Buddha server must bypass host reserve"))
+    monkeypatch.setattr(reserve.shutil, "disk_usage",
+                        lambda _path: pytest.fail("running Buddha server must bypass disk reserve"))
+    result = asyncio.run(reserve.probe(backend, MODEL, reuse_running_server=True))
+    assert result["state"] == "ready" and result["admitted"]
+    assert result["capacity_basis"] == "running_server"
+    assert result["memory_required_bytes"] == result["weight_request_bytes"] == 0
+    assert result["memory_total_bytes"] is None and result["disk_free_bytes"] is None
+
+
+@pytest.mark.parametrize("slot_id,basis", [
+    ("buddha_always_on", "running_server"),
+    ("another_worker", "host_budget"),
+])
+def test_chat_runtime_reuses_server_only_for_the_bound_buddha_slot(
+        resources, monkeypatch, slot_id, basis):
+    _, backend = resources
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("buddha-probe")
+    session.worker_slot_reader = lambda: {
+        "id": slot_id, "backend": "ollama", "model": MODEL,
+        "type": "continuous", "status": "running", "enabled": True,
+        "persistent_opt_in": True,
+    }
+    monkeypatch.setattr(runtime, "_worker_backend_gate", lambda *_: None)
+    receipt, _binding = asyncio.run(runtime.prepare_inference_call(
+        backend, MODEL, chat_id="buddha-probe"))
+    assert receipt["capacity_basis"] == basis
 
 
 @pytest.mark.parametrize("field,value", [("digest", "b" * 64), ("weight_budget_bytes", GIB), ("num_ctx", 2048)])
@@ -196,6 +252,7 @@ def test_native_probe_reads_only_show_tags_ps_and_exact_identity(native_http):
     loaded.append({"name": "example:large", "digest": DIGEST, "context_length": 1024})
     observed = asyncio.run(reserve.observe_ollama(OllamaBackend(num_ctx=1024), MODEL))
     assert observed["resident_context"] is None
+    assert observed["server_responded"] is True
     assert calls == [("POST", "/api/show"), ("GET", "/api/tags"), ("GET", "/api/ps")]
 
 

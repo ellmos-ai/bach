@@ -1426,7 +1426,27 @@ class ChatRuntime(_ModuleChatRuntime):
         check_caller()
         if not self._uses_local_compute(backend) or str(model).lower().endswith(":cloud"):
             return None, None
-        receipt = await probe(backend, model)
+        reuse_running_server = False
+        from hub._services.llm.model_backend import backend_identifier
+        if session is not None and backend_identifier(backend) == "ollama":
+            reader = (getattr(session, "worker_slot_reader", None)
+                      or getattr(session, "system_slot_reader", None))
+            if callable(reader):
+                try:
+                    slot = reader()
+                except Exception:
+                    slot = None
+                reuse_running_server = bool(
+                    isinstance(slot, dict)
+                    and slot.get("id") == "buddha_always_on"
+                    and slot.get("backend") == "ollama"
+                    and slot.get("model") == model
+                    and slot.get("type") == "continuous"
+                    and slot.get("status") == "running"
+                    and slot.get("enabled") is True
+                    and slot.get("persistent_opt_in") is True)
+        receipt = (await probe(backend, model, reuse_running_server=True)
+                   if reuse_running_server else await probe(backend, model))
         try:
             _, version = read_policy()
         except (OSError, ValueError, TypeError, UnicodeError):
@@ -1517,7 +1537,7 @@ class ChatRuntime(_ModuleChatRuntime):
             "policy_version", "model", "wait_seconds", "poll_seconds",
             "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
             "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-            "resident_weight_credit",
+            "resident_weight_credit", "capacity_basis",
         }
         if set(receipt) != capacity_fields | {"local_admission"}:
             return None
@@ -1903,9 +1923,10 @@ class ChatRuntime(_ModuleChatRuntime):
                             or getattr(session, "worker_slot_reader", None) is not None):
                         fields = (
                             "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-                            "policy_version", "model", "memory_total_bytes", "memory_available_bytes",
+                            "policy_version", "model", "wait_seconds", "poll_seconds",
+                            "memory_total_bytes", "memory_available_bytes",
                             "memory_required_bytes", "disk_free_bytes", "disk_reserve_bytes",
-                            "weight_request_bytes", "resident_weight_credit",
+                            "weight_request_bytes", "resident_weight_credit", "capacity_basis",
                         )
                         session._local_reserve_failure_receipt = {
                             key: receipt[key] for key in fields if key in receipt

@@ -232,13 +232,17 @@ class WorkerLeaseBinding:
     def _acquire_next_observed(cls, client, slot, observation, *, review_route=None,
                                review_requested_model=None, **kwargs):
         from .worker_queue_status import ACQUIRE_DENIALS
+        on_fixed_task_rejected = kwargs.pop("on_fixed_task_rejected", None)
         explicit = slot.get("task_id")
+        released_fixed_task_id = None
         if explicit not in (None, "", 0, "0"):
             if isinstance(explicit, str) and explicit.isdecimal():
                 explicit = int(explicit)
             observation.candidate(explicit)
             observation.record["matched_count"] += 1
             observation.record["attempted_count"] += 1
+            fixed_snapshot = client.task_snapshot(explicit)
+            fixed_version = fixed_snapshot.get("task_version") if isinstance(fixed_snapshot, dict) else None
             review_grant = None
             if getattr(client, "mode", None) == "local":
                 metadata_reader = getattr(client, "_review_task_metadata", None)
@@ -267,11 +271,29 @@ class WorkerLeaseBinding:
                     acquire_kwargs["_review_grant"] = review_grant
                 binding = cls.acquire(client, explicit, slot=slot, **acquire_kwargs)
             except LeaseDeniedError as exc:
-                if exc.reason in ACQUIRE_DENIALS:
-                    observation.denied(exc.reason)
-                raise  # Preserve explicit-acquisition control/recovery semantics.
-            observation.acquired(binding)
-            return binding
+                if exc.reason not in ACQUIRE_DENIALS:
+                    raise
+                observation.denied(exc.reason)
+                if exc.reason == "conflict":
+                    raise  # A native no-grant conflict still stops this run.
+                if not callable(on_fixed_task_rejected):
+                    raise  # Without an owning-slot release callback, keep the pin intact.
+                deferred_versions = kwargs.get("deferred_versions")
+                if not isinstance(deferred_versions, dict):
+                    deferred_versions = {}
+                    kwargs["deferred_versions"] = deferred_versions
+                if isinstance(fixed_version, str):
+                    deferred_versions[explicit] = fixed_version
+                on_fixed_task_rejected(explicit, exc.reason, fixed_version)
+                released_fixed_task_id = explicit
+                # The persisted pin is cleared by the callback. Continue against
+                # the same canonical selector with the rejected ID skipped for
+                # this generation, even if its content changes during the scan.
+                slot = dict(slot)
+                slot["task_id"] = None
+            else:
+                observation.acquired(binding)
+                return binding
         if kwargs.get("_creator_delegation") is not None:
             raise LeaseProtocolError("Creator-Delegation braucht die explizit gebundene Sequenz-Task")
         offset = 0
@@ -282,6 +304,9 @@ class WorkerLeaseBinding:
             observation.record["scanned_pages"] += 1
             for task in page["tasks"]:
                 observation.candidate(task["id"])
+                if task["id"] == released_fixed_task_id:
+                    observation.reject("deferred_version")
+                    continue
                 reason = cls._selection_rejection_reason(task, slot)
                 if reason:
                     observation.reject(reason)
@@ -303,7 +328,8 @@ class WorkerLeaseBinding:
                         observation.denied(exc.reason)
                         raise  # A native no-grant conflict still stops this run.
                     if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller"}:
+                                           "stale_task_version", "already_held_by_caller",
+                                           "completion_guard"}:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:
@@ -389,7 +415,8 @@ class WorkerLeaseBinding:
                         observation.denied(exc.reason)
                         raise
                     if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller"}:
+                                           "stale_task_version", "already_held_by_caller",
+                                           "completion_guard"}:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:

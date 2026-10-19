@@ -613,7 +613,7 @@ def test_high_security_findings_create_one_correction_and_allow_a_fresh_submissi
     pending = evaluate_current_result(conn, task_id, **_paths(world))
     assert pending["decision"]["state"] == "awaiting_review"
     assert pending["decision"]["eligible_reviewer_ids"] == [TOP_REVIEWER]
-    assert pending["decision"]["worker_may_claim_next"] is False
+    assert pending["decision"]["worker_may_claim_next"] is True
     assert world["binding"].closed is True
     assert client.read(task_id).leased is False
 
@@ -1162,17 +1162,17 @@ def test_operator_authority_is_checked_before_git_or_github_evaluation(
     ("case", "may_claim", "stale_field", "expected"),
     [
         ("balanced-current", True, None, True),
-        ("high-security-waits", False, None, False),
+        ("high-security-no-longer-holds-worker", False, None, True),
         ("stale-result-revision", True, "result_revision", False),
         ("stale-task-version", True, "task_version", False),
         ("stale-status-revision", True, "status_revision", False),
-        ("unavailable-lead-evaluation", True, "availability", False),
+        ("unavailable-lead-evaluation", True, "availability", True),
     ],
 )
-def test_remote_controller_claim_gate_requires_exact_lead_completion_readback(
+def test_remote_controller_claim_gate_requires_exact_result_readback_not_review_decision(
     monkeypatch, case, may_claim, stale_field, expected
 ):
-    """Remote workers may claim again only from an exact current Lead decision."""
+    """A current canonical unreviewed result frees the worker in every policy mode."""
     import copy
     from types import SimpleNamespace
     from hub._services.chat import telegram_chat
@@ -1242,6 +1242,49 @@ def test_remote_controller_claim_gate_requires_exact_lead_completion_readback(
     assert control.completion_poll_blocked[task_id] is (not expected)
     assert conn.total_changes == before_changes
     assert _schema_objects(conn) == before_schema
+
+
+@pytest.mark.parametrize(("status", "reason", "current_version"), [
+    ("review", "awaiting_review", "d" * 64),
+    ("pending", "acceptance_not_current", "f" * 64),
+])
+def test_current_local_result_frees_worker_before_internal_reconciliation(
+        monkeypatch, status, reason, current_version):
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    task_id, result_id = 91022, 4202
+    result_text = "Current local result receipt, awaiting its separate review."
+    result_sha = hashlib.sha256(result_text.encode("utf-8")).hexdigest()
+    generation, fence, version = "local-generation", 32, "d" * 64
+    revision = "e" * 64
+    record = {
+        "schema": "bach.worker-result.v1", "task_id": task_id,
+        "result_id": result_id, "result": result_text, "result_sha256": result_sha,
+        "accepted": False, "completion_policy_version": 1,
+        "submission": {"availability": "available"},
+        "reason": reason, "result_revision": revision,
+        "generation": generation, "fence": fence, "task_version": version,
+    }
+    readback = {
+        "schema": "bach.task-result-readback.v1", "task_id": task_id,
+        "verified": True, "status": status, "status_revision": 18,
+        "task_version": current_version, "result": record,
+        "completion_evaluation": {"availability": "unavailable"},
+    }
+    client = SimpleNamespace(mode="local",
+        task_result_snapshot=lambda _task_id: readback,
+        _reconcile_task_completion=lambda _task_id: pytest.fail(
+            "current result must free the worker before internal reconciliation"))
+    binding = SimpleNamespace(task_id=task_id, _client=client, submitted_result={
+        "result_id": result_id, "result_sha256": result_sha,
+        "generation": generation, "fence": fence, "task_version": version,
+    })
+    control = telegram_chat._WorkerControl(worker_id="local-result-worker", generation=generation)
+    control.task_binding = binding
+    control.task_result_bindings = {task_id: binding}
+    assert telegram_chat._poll_worker_completion(control) is True
+    assert control.completion_poll_blocked[task_id] is False
 
 
 def test_negative_self_check_does_not_submit_or_complete(completion_world):
@@ -1514,7 +1557,7 @@ def test_current_negative_review_vetoes_green_predeclared_contract_and_requeues(
     assert decision["state"] == "correction_required"
     assert decision["completion_allowed"] is False
     assert decision["dependents_may_start"] is False
-    assert decision["worker_may_claim_next"] is (mode != "high_security")
+    assert decision["worker_may_claim_next"] is True
     if review_status == "findings":
         assert decision["reason"] == "review_findings_contract_not_met"
 

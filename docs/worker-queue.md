@@ -102,3 +102,13 @@ Der getestete Basisstand `main` (`615d817…`) enthält die #2079-Normal-Loop-Tr
 ### Öffentliche Git-Quellprüfung: begrenzte Leseoperationen
 
 Der Provenance-Reader akzeptiert ausschließlich die fest definierten Leseoperationen für Origin, Main-Commit, Head-Commit und die Task-Quellregistrierung. Ausführbare Datei und Git-Unterbefehle werden intern festgelegt; eine freie Argumentliste gehört nicht zu dieser Schnittstelle. Die Registrierungskennung wird aus einer kanonischen positiven numerischen Task-ID erzeugt. Unbekannte Operationen und ungültige IDs werden vor dem Prozessstart abgewiesen. Dieser Vertrag verleiht keine Schreib-, Deploy- oder Taskfreigabe.
+
+### Freigabe der Worker-Queue und lokale Ollama-Wiederverwendung
+
+Nach der Übermittlung prüft der Worker den verifizierten kanonischen Ergebnis-Readback anhand von Task, Ergebnis-ID und Hash, Generation, Fence, Taskversion, Übermittlungsbeleg und Ergebnisrevision. Ein exakt aktuelles Ergebnis gibt denselben Worker sofort für den nächsten Queue-Claim frei, auch wenn die verknüpfte Prüfung oder Abschlussbewertung noch aussteht. Das Ergebnis bleibt prüfungs- und abschlussrichtlinienpflichtig; externe Schutzgates für geschützte Repository-Änderungen, Veröffentlichung, Löschung und Ausgaben bleiben bestehen. Fehlende oder veraltete Readbacks halten den Worker an.
+
+Die Prüfung ist eine separate verknüpfte Task. Eine frische Generation darf sie übernehmen, auch wenn sie vom ursprünglichen Autor stammt. Ein Review desselben Autors oder Slots wird als nicht unabhängig erfasst und kann die Annahme nicht erfüllen. Cloud-Worker dürfen Review-Tasks übernehmen, wenn eine gültige Route vorliegt; die Richtlinienberechtigung entscheidet weiterhin, ob das Review für den Abschluss zählt.
+
+Wird eine fest zugeordnete Task aus einem sicheren Claim-Grund abgelehnt, entfernt der zugehörige Worker nur seine eigene gespeicherte Zuordnung, protokolliert die Ablehnung und versucht den normalen Selector erneut. Die abgelehnte ID wird in dieser Generation übersprungen. Ein Lease-Konflikt bleibt fail-closed.
+
+Buddha Always-On darf ein verifiziert geladenes Ollama-Modell mit ausreichendem konfiguriertem Kontext oder seinen validiert antwortenden Ollama-Server wiederverwenden. Der Readback nennt die Kapazitätsgrundlage und behauptet dabei keine zusätzliche RAM- oder Festplattenreserve. Andere Worker und Buddha ohne Wiederverwendungsnachweis durchlaufen weiterhin die konfigurierte Host-Budget-Prüfung.

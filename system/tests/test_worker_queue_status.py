@@ -138,6 +138,47 @@ def test_explicit_foreign_lease_is_diagnosed_without_changing_exception_or_holde
     assert holder.lease_id not in str(report)
 
 
+@pytest.mark.parametrize("status", ["done", "blocked"])
+def test_rejected_fixed_assignment_is_released_and_next_task_is_claimed(mem_db, status):
+    pinned = _insert_task(mem_db)
+    available = _insert_task(mem_db)
+    mem_db.execute("UPDATE tasks SET status=? WHERE id=?", (status, pinned))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    slot = {"id": "our-slot", "task_id": pinned}
+    releases = []
+    reports = []
+    binding = select(client, reports, slot,
+        on_fixed_task_rejected=lambda task_id, reason, version:
+            (releases.append((task_id, reason, version)), slot.update(task_id=None)))
+    assert binding is not None and binding.task_id == available
+    assert [(task_id, reason) for task_id, reason, _ in releases] == [(pinned, "not_claimable")]
+    assert isinstance(releases[0][2], str)
+    report, = reports
+    assert report["state"] == "acquired" and report["selected_task_id"] == available
+    assert report["rejected_counts"].get("not_claimable") == 1
+
+
+def test_rejected_fixed_assignment_continues_after_completion_guard(mem_db, monkeypatch):
+    pinned, available = _insert_task(mem_db), _insert_task(mem_db)
+    client = TaskLeaseClient(conn=mem_db)
+    original = client.acquire
+    def deny_pinned(task_id, **kwargs):
+        if task_id == pinned:
+            raise LeaseDeniedError(task_id, "completion_guard", {
+                "task_id": task_id, "reason": "completion_guard"})
+        return original(task_id, **kwargs)
+    monkeypatch.setattr(client, "acquire", deny_pinned)
+    slot = {"id": "our-slot", "task_id": pinned}
+    reports, releases = [], []
+    binding = select(client, reports, slot,
+        on_fixed_task_rejected=lambda task_id, reason, version:
+            (releases.append((task_id, reason)), slot.update(task_id=None)))
+    assert binding.task_id == available
+    assert releases == [(pinned, "completion_guard")]
+    assert reports[0]["rejected_counts"].get("completion_guard") == 1
+
+
 @pytest.mark.parametrize("explicit", [True, False])
 def test_native_no_grant_conflict_is_diagnosed_but_still_stops_selection(mem_db, monkeypatch, explicit):
     tid = _insert_task(mem_db)

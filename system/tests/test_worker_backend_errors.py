@@ -899,6 +899,7 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
             "disk_reserve_bytes": gib,
             "weight_request_bytes": gib,
             "resident_weight_credit": False,
+            "capacity_basis": "host_budget",
         }
 
     blocked_receipt = capacity_receipt("waiting_memory_reserve", 3 * gib)
@@ -907,7 +908,8 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
     probe_observations = []
     probe_calls = []
 
-    async def synthetic_capacity_probe(_backend, _model):
+    async def synthetic_capacity_probe(_backend, _model, *, reuse_running_server=False):
+        assert reuse_running_server is True
         probe_calls.append("ready" if capacity_wait_completed else "blocked")
         return ready_receipt if capacity_wait_completed else blocked_receipt
 
@@ -1177,6 +1179,7 @@ def test_persistent_core_pre_effect_reserve_returns_typed_failure_without_model_
         "disk_free_bytes": {"taskdb": 8 * gib, "runtime": 8 * gib, "slots": 8 * gib},
         "disk_reserve_bytes": gib, "weight_request_bytes": gib,
         "resident_weight_credit": False,
+        "capacity_basis": "host_budget",
     }
     composed = local_model_admission.compose_admission_receipt(
         blocked, binding=None, require_model_socket=False,
