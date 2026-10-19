@@ -848,6 +848,9 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
     session.chat_id = worker_id
     runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
     monkeypatch.setattr(control, "runtime", runtime)
+    async def resident_buddha_warmup(*_args, **_kwargs):
+        return {"state": "resident"}
+    monkeypatch.setattr(runtime, "warm_buddha_ollama_model", resident_buddha_warmup)
     monkeypatch.setattr(runtime, "get_session", lambda _id: session)
     monkeypatch.setattr(runtime, "_get_bach_context", lambda _text: "")
     monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *_args: "")
