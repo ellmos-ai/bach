@@ -347,10 +347,10 @@ def test_balanced_policy_waits_for_an_independent_current_review(
 
 
 @pytest.mark.parametrize("hard_gate", ["none", "user", "github"])
-def test_balanced_expiry_controller_poll_completes_only_without_hard_review_gates(
+def test_current_queue_poll_frees_unreviewed_result_without_reconciling(
     completion_world, monkeypatch, hard_gate
 ):
-    """A real local controller poll may expire review, but cannot bypass hard gates."""
+    """Queue polling releases a current result while review/completion stays separate."""
     from hub._services.chat import telegram_chat
     from hub._services import worker_completion_policy
     from hub import worker_git
@@ -421,31 +421,23 @@ def test_balanced_expiry_controller_poll_completes_only_without_hard_review_gate
             if reconcile_outcomes and isinstance(reconcile_outcomes[-1], dict) else None),
         "status": read_result(conn, task_id)["status"],
     }
-    assert len(reconcile_outcomes) == 1
+    assert reconcile_outcomes == []
     assert reconcile_errors == []
 
     current = read_result(conn, task_id)
     counts = tuple(conn.execute(
         "SELECT SUM(action='worker_completion_decision'),SUM(action='result_acceptance') "
         "FROM task_history WHERE task_id=?", (task_id,)).fetchone())
-    if hard_gate == "none":
-        assert current["status"] == "done"
-        assert current["result"]["accepted"] is True
-        assert counts == (1, 1)
-        event = conn.execute(
-            "SELECT new_value FROM task_history WHERE task_id=? "
-            "AND action='worker_completion_decision'", (task_id,)).fetchone()
-        assert json.loads(event[0])["decision"]["state"] == "completed_unreviewed"
-        # Repeated controller observations remain idempotent.
-        assert telegram_chat._poll_worker_completion(control) is True
-        assert tuple(conn.execute(
-            "SELECT SUM(action='worker_completion_decision'),SUM(action='result_acceptance') "
-            "FROM task_history WHERE task_id=?", (task_id,)).fetchone()) == counts
-    else:
-        assert current["status"] == "review"
-        assert current["result"]["accepted"] is False
-        assert current["result"]["reason"] == "awaiting_review"
-        assert counts == (0, 0)
+    assert current["status"] == "review"
+    assert current["result"]["accepted"] is False
+    assert current["result"]["reason"] == "awaiting_review"
+    assert counts == (0, 0)
+    assert control.completion_poll_blocked[task_id] is False
+    # Repeated queue observations remain read-only and do not wait for policy.
+    assert telegram_chat._poll_worker_completion(control) is True
+    assert tuple(conn.execute(
+        "SELECT SUM(action='worker_completion_decision'),SUM(action='result_acceptance') "
+        "FROM task_history WHERE task_id=?", (task_id,)).fetchone()) == counts
 
 
 def test_rejected_independent_review_requests_one_correction(completion_world):
@@ -1649,6 +1641,7 @@ def test_external_github_approval_does_not_override_negative_contract_finding(
                 "availability": "available", "status": review_status,
                 "independent": True, "task_id": task_id,
                 "reviewer_id": TOP_REVIEWER,
+                "policy_eligible": True,
                 "result_id": record["result_id"],
                 "result_revision": projected["result_revision"],
                 "review_task_id": task_id + 100,

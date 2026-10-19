@@ -331,8 +331,10 @@ def test_author_can_review_in_fresh_run_without_accepting_own_result(review_worl
     assert evidence["reviewer_id"] == AUTHOR
     assert evidence["independent"] is False
     assert evidence["policy_eligible"] is False
-    assert read_result(world["conn"], task_id)["status"] == "review"
-    assert read_result(world["conn"], task_id)["result"]["accepted"] is False
+    assert read_result(world["conn"], task_id)["status"] == "done"
+    parent = read_result(world["conn"], world["task_id"])
+    assert parent["status"] == "review"
+    assert parent["result"]["accepted"] is False
 
     from hub._services.worker_completion_policy import evaluate_current_result
     evaluation = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
