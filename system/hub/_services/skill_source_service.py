@@ -271,21 +271,41 @@ def skill_library(roots: list[Path] | None = None, requested_locale: str | None 
             "source": "current_SKILL.md", "declared_only_included": False}
 
 
+def _contained_user_path(root: Path, candidate: Path) -> Path:
+    """Resolve a local skill path and reject escapes or symlink components."""
+    root = Path(root).expanduser().resolve()
+    candidate = Path(candidate)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        raise PermissionError("Skill-Pfad liegt außerhalb seiner Wurzel") from None
+    current = candidate
+    while current != root and root in current.parents:
+        if current.is_symlink():
+            raise PermissionError("Skill-Pfad darf keine Symlink-Komponente enthalten")
+        current = current.parent
+    return resolved
+
+
 def _history_directory(skill_id: str, write_root: Path | None = None) -> tuple[Path, Path]:
     if not isinstance(skill_id, str) or not SKILL_ID.fullmatch(skill_id):
         raise ValueError("Ungültige Skill-ID")
-    root = Path(write_root).expanduser().resolve() if write_root is not None else user_skills_root()
-    directory = root / ".history" / skill_id
-    if directory.is_symlink() or not directory.resolve().is_relative_to(root.resolve()):
-        raise ValueError("Skill-Historie liegt außerhalb ihrer Wurzel")
+    root = Path(write_root or user_skills_root()).expanduser().resolve()
+    directory = _contained_user_path(root, root / ".history" / skill_id)
     return root, directory
 
 
 def _local_override_target(write_root: Path, skill_id: str, locale: str, category: Any) -> Path:
+    if not isinstance(skill_id, str) or not SKILL_ID.fullmatch(skill_id):
+        raise ValueError("Ungültige Skill-ID")
+    if not isinstance(locale, str) or not LOCALE.fullmatch(locale):
+        raise ValueError("Ungültige Skill-Sprache")
+    write_root = Path(write_root).expanduser().resolve()
     if locale == ENGLISH_LOCALE:
-        legacy_english = write_root / skill_id / "SKILL.md"
-        if not legacy_english.exists():
-            return legacy_english
+        return write_root / skill_id / "SKILL.md"
     category_dir = category if isinstance(category, str) and SKILL_ID.fullmatch(category) else "general"
     return write_root / locale / category_dir / skill_id / "SKILL.md"
 
@@ -447,7 +467,7 @@ def save_skill(skill_id: str, content: str, expected_version: str, *,
         raise ValueError("Skill benötigt gültigen UTF-8-Inhalt bis 200 KB")
     if expected_version != "0" and (not isinstance(expected_version, str) or not REVISION.fullmatch(expected_version)):
         raise ValueError("Aktuelle Quellenversion erforderlich")
-    write_root = write_root or user_skills_root()
+    write_root = Path(write_root or user_skills_root()).expanduser().resolve()
     all_roots = [write_root, *(roots if roots is not None else skill_roots())]
     checker = guard or check_write_locks
     initial_source = source_catalog(all_roots, requested_locale=requested_locale).get(skill_id)
@@ -462,6 +482,13 @@ def save_skill(skill_id: str, content: str, expected_version: str, *,
             Path(write_root), skill_id, locale,
             initial_source.get("category") if initial_source else "general",
         )
+    candidate_target = Path(target)
+    target = candidate_target.resolve()
+    if not target.is_relative_to(write_root):
+        raise PermissionError("Skill-Schreibpfad liegt außerhalb seiner Wurzel")
+    if any(parent.is_symlink() for parent in (candidate_target, *candidate_target.parents)
+           if parent != write_root):
+        raise PermissionError("Skill-Schreibpfad darf keine Symlink-Komponente enthalten")
     if (target.exists() or target.is_symlink()) and (
             initial_source is None or Path(initial_source["path"]).resolve() != target.resolve()):
         raise RuntimeError("skill_source_version_conflict")
@@ -483,7 +510,9 @@ def save_skill(skill_id: str, content: str, expected_version: str, *,
         actual = hashlib.sha256(previous).hexdigest() if previous is not None else "0"
         if actual != expected_version:
             raise RuntimeError("skill_source_version_conflict")
-        history = write_root / ".history" / skill_id
+        _, history = _history_directory(skill_id, write_root)
+        if not history.is_relative_to(write_root):
+            raise PermissionError("Skill-Historie liegt außerhalb ihrer Wurzel")
         checker(history)
         if history.is_symlink() or history.parent.is_symlink():
             raise PermissionError("Skill-Historie darf kein Symlink sein")
