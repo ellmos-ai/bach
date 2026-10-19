@@ -28,6 +28,7 @@ import asyncio
 import copy
 from contextvars import ContextVar
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -1346,7 +1347,6 @@ class ChatRuntime(_ModuleChatRuntime):
         selected_model = str(model or "").strip()
         target = f"{backend_id}:{selected_model}" if backend_id and selected_model else ""
         cloud_model = selected_model.lower().endswith(":cloud")
-        local_endpoint = cls._uses_local_compute(backend) and not cloud_model
         hostname = ""
         base_url = getattr(backend, "base_url", None)
         if isinstance(base_url, str):
@@ -1354,6 +1354,16 @@ class ChatRuntime(_ModuleChatRuntime):
                 hostname = urllib.parse.urlsplit(base_url).hostname or ""
             except ValueError:
                 hostname = ""
+        loopback_endpoint = hostname in {"localhost", "0.0.0.0"}
+        if hostname and not loopback_endpoint:
+            try:
+                loopback_endpoint = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                pass
+        # OpenAI-compatible providers can point at a local vLLM or other
+        # loopback service. Keep compute admission's narrower Ollama/LM
+        # Studio rule, but report the resolved endpoint's actual locality.
+        local_endpoint = (cls._uses_local_compute(backend) or loopback_endpoint) and not cloud_model
         known_external = backend_id in {"claude", "codex", "openrouter", "anthropic", "openai", "google", "gemini"}
         locality = ("local" if local_endpoint else "external" if cloud_model or known_external or hostname or
                     backend_id in {"ollama", "lmstudio"} else "unknown")
