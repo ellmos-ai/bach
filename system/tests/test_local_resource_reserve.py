@@ -176,19 +176,20 @@ def test_buddha_reuses_responding_ollama_server_without_host_reserve(resources, 
     assert result["memory_total_bytes"] is None and result["disk_free_bytes"] is None
 
 
-@pytest.mark.parametrize("slot_id,basis", [
-    ("buddha_always_on", "running_server"),
-    ("another_worker", "host_budget"),
+@pytest.mark.parametrize("slot_id,status,enabled,persistent_opt_in,basis", [
+    ("buddha_always_on", "error", True, False, "running_server"),
+    ("another_worker", "running", True, True, "host_budget"),
+    ("buddha_always_on", "error", False, False, "host_budget"),
 ])
-def test_chat_runtime_reuses_server_only_for_the_bound_buddha_slot(
-        resources, monkeypatch, slot_id, basis):
+def test_chat_runtime_reuses_server_for_enabled_buddha_after_error(
+        resources, monkeypatch, slot_id, status, enabled, persistent_opt_in, basis):
     _, backend = resources
     runtime = ChatRuntime(backend)
     session = runtime.get_session("buddha-probe")
     session.worker_slot_reader = lambda: {
         "id": slot_id, "backend": "ollama", "model": MODEL,
-        "type": "continuous", "status": "running", "enabled": True,
-        "persistent_opt_in": True,
+        "type": "continuous", "status": status, "enabled": enabled,
+        "persistent_opt_in": persistent_opt_in,
     }
     monkeypatch.setattr(runtime, "_worker_backend_gate", lambda *_: None)
     receipt, _binding = asyncio.run(runtime.prepare_inference_call(

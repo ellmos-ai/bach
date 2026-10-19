@@ -1436,15 +1436,17 @@ class ChatRuntime(_ModuleChatRuntime):
                     slot = reader()
                 except Exception:
                     slot = None
+                # A previous runtime error is exactly when this start retry is
+                # needed. persistent_opt_in gates auto-start after Control
+                # restart, not reuse by this enabled worker of an Ollama
+                # server that is already responding.
                 reuse_running_server = bool(
                     isinstance(slot, dict)
                     and slot.get("id") == "buddha_always_on"
                     and slot.get("backend") == "ollama"
                     and slot.get("model") == model
                     and slot.get("type") == "continuous"
-                    and slot.get("status") == "running"
-                    and slot.get("enabled") is True
-                    and slot.get("persistent_opt_in") is True)
+                    and slot.get("enabled") is True)
         receipt = (await probe(backend, model, reuse_running_server=True)
                    if reuse_running_server else await probe(backend, model))
         try:
