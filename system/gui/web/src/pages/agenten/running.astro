@@ -523,13 +523,22 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
       runningGroupStates[group] = {count, state};
       const notice = document.getElementById('running-empty-state');
       const sources = Object.values(runningGroupStates);
-      notice.hidden = sources.some(source => source.count > 0);
+      const active = sources.some(source => source.count > 0);
+      const loading = sources.some(source => source.state === 'loading');
+      const unconfirmed = sources.some(source => source.state === 'unconfirmed');
+      notice.hidden = active && !loading && !unconfirmed;
       if (notice.hidden) return;
-      notice.textContent = sources.some(source => source.state === 'loading')
-        ? 'Aktive Läufe werden geprüft…'
-        : sources.every(source => source.state === 'available')
-          ? 'Derzeit wird keine Aufgabe aktiv bearbeitet.'
+      if (loading) {
+        notice.textContent = active
+          ? 'Aktive Läufe angezeigt; weitere Quellen werden noch geprüft…'
+          : 'Aktive Läufe werden geprüft…';
+      } else if (unconfirmed) {
+        notice.textContent = active
+          ? 'Aktive Läufe angezeigt; weitere Laufstatus sind nicht vollständig bestätigt.'
           : 'Laufstatus derzeit nicht vollständig bestätigt.';
+      } else {
+        notice.textContent = 'Derzeit wird keine Aufgabe aktiv bearbeitet.';
+      }
     }
 
     function renderRunningSystemSlots(agents) {
@@ -670,6 +679,7 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
       try { renderCoreAgents(await coreRequest('')); }
       catch (error) {
         coreConfigVersion = null;
+        updateRunningGroupState('slots', 0, 'unconfirmed');
         document.getElementById('core-agent-cards').replaceChildren(
           coreElement('p', 'System-Agenten nicht verfügbar: ' + error.message));
       }
