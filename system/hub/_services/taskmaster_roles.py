@@ -173,7 +173,8 @@ def select_candidates(tasks: Iterable[dict[str, Any]], role_id: str, *, limit: i
         if task.get("required_model") or task.get("assigned_slot"):
             continue
         task_type = str(task.get("category") or "allround").strip().lower()
-        if task_type not in allowed and "allround" not in allowed:
+        if (task_type not in allowed and "allround" not in allowed
+                and role_for_task(task) != role_id):
             continue
         result.append({
             "task_id": task.get("id"),
