@@ -1657,9 +1657,21 @@ class ChatRuntime(_ModuleChatRuntime):
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
         if session is not None and turn_context:
-            self._record_resolved_execution(
-                session, backend, kwargs.get("model") or backend.get_default_model(), str(turn_context[0])
-            )
+            resolved_model = kwargs.get("model")
+            if not resolved_model:
+                get_default_model = getattr(backend, "get_default_model", None)
+                if callable(get_default_model):
+                    try:
+                        resolved_model = get_default_model()
+                    except Exception:
+                        resolved_model = ""
+            try:
+                self._record_resolved_execution(
+                    session, backend, resolved_model, str(turn_context[0])
+                )
+            except Exception as exc:
+                # Runtime evidence is advisory; it must never block the model call.
+                log.debug("Skipping resolved execution projection (%s)", type(exc).__name__)
         binding = getattr(session, "worker_task_binding", None)
         dispatch_binding = binding
         def mark_model_dispatch():

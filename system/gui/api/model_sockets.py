@@ -21,8 +21,8 @@ def _with_share_availability(snapshot: dict) -> dict:
             continue
         socket = dict(source)
         socket["resource_share"] = {
-            "schema": "bach.resource-share.v1", "scope": "socket", "state": "unavailable",
-            "reason_code": "per_slot_measurement_unavailable",
+            "schema": "bach.resource-share.v1", "scope": "model_memory", "state": "unavailable",
+            "reason_code": "per_model_measurement_unavailable",
         }
         slots = []
         for binding in socket.get("slots", []):
@@ -30,8 +30,8 @@ def _with_share_availability(snapshot: dict) -> dict:
                 continue
             slot = dict(binding)
             slot["resource_share"] = {
-                "schema": "bach.resource-share.v1", "scope": "slot_total", "state": "unavailable",
-                "reason_code": "per_slot_measurement_unavailable",
+                "schema": "bach.resource-share.v1", "scope": "context", "state": "unavailable",
+                "reason_code": "slot_context_measurement_unavailable",
             }
             slots.append(slot)
         socket["slots"] = slots
