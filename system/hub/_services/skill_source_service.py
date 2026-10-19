@@ -281,6 +281,15 @@ def _history_directory(skill_id: str, write_root: Path | None = None) -> tuple[P
     return root, directory
 
 
+def _local_override_target(write_root: Path, skill_id: str, locale: str, category: Any) -> Path:
+    if locale == ENGLISH_LOCALE:
+        legacy_english = write_root / skill_id / "SKILL.md"
+        if not legacy_english.exists():
+            return legacy_english
+    category_dir = category if isinstance(category, str) and SKILL_ID.fullmatch(category) else "general"
+    return write_root / locale / category_dir / skill_id / "SKILL.md"
+
+
 def read_skill_history(
     skill_id: str,
     revision: str,
@@ -441,7 +450,21 @@ def save_skill(skill_id: str, content: str, expected_version: str, *,
     write_root = write_root or user_skills_root()
     all_roots = [write_root, *(roots if roots is not None else skill_roots())]
     checker = guard or check_write_locks
-    target = write_root / skill_id / "SKILL.md"
+    initial_source = source_catalog(all_roots, requested_locale=requested_locale).get(skill_id)
+    if initial_source and Path(initial_source["root"]).resolve() == Path(write_root).resolve():
+        target = Path(initial_source["path"])
+    else:
+        locale = initial_source.get("locale") if initial_source else None
+        if not isinstance(locale, str) or not LOCALE.fullmatch(locale):
+            locale = (normalize_locale(requested_locale) or ENGLISH_LOCALE
+                      if requested_locale is not None else ENGLISH_LOCALE)
+        target = _local_override_target(
+            Path(write_root), skill_id, locale,
+            initial_source.get("category") if initial_source else "general",
+        )
+    if (target.exists() or target.is_symlink()) and (
+            initial_source is None or Path(initial_source["path"]).resolve() != target.resolve()):
+        raise RuntimeError("skill_source_version_conflict")
     checker(target)
     if (any(parent.is_symlink() for parent in (target, *target.parents))
             or target.with_name(target.name + ".lock").is_symlink()
@@ -451,6 +474,11 @@ def save_skill(skill_id: str, content: str, expected_version: str, *,
     target.parent.mkdir(parents=True, exist_ok=True)
     with _exclusive_lock(target):
         current = source_catalog(all_roots, requested_locale=requested_locale).get(skill_id)
+        if ((initial_source is None) != (current is None)
+                or (initial_source is not None and current is not None
+                    and (Path(current["root"]).resolve() != Path(initial_source["root"]).resolve()
+                         or Path(current["path"]).resolve() != Path(initial_source["path"]).resolve()))):
+            raise RuntimeError("skill_source_version_conflict")
         previous = _source_bytes(current["path"], current["root"]) if current else None
         actual = hashlib.sha256(previous).hexdigest() if previous is not None else "0"
         if actual != expected_version:
@@ -506,13 +534,17 @@ def delete_skill(skill_id: str, expected_version: str, *,
     write_root = (write_root or user_skills_root()).expanduser().resolve()
     all_roots = list(dict.fromkeys([write_root, *(roots if roots is not None else skill_roots())]))
     checker = guard or check_write_locks
-    target = write_root / skill_id / "SKILL.md"
+    current = source_catalog(all_roots).get(skill_id)
+    if current is None or Path(current["root"]).resolve() != write_root:
+        raise RuntimeError("skill_source_version_conflict")
+    target = Path(current["path"])
     checker(target)
     if any(parent.is_symlink() for parent in (target, *target.parents)):
         raise PermissionError("Skill-Schreibbereich darf kein Symlink sein")
     with _exclusive_lock(target):
         current = source_catalog(all_roots).get(skill_id)
-        if current is None or Path(current["root"]).resolve() != write_root:
+        if (current is None or Path(current["root"]).resolve() != write_root
+                or Path(current["path"]).resolve() != target.resolve()):
             raise RuntimeError("skill_source_version_conflict")
         previous = _source_bytes(current["path"], current["root"])
         actual = hashlib.sha256(previous).hexdigest()
@@ -521,6 +553,7 @@ def delete_skill(skill_id: str, expected_version: str, *,
         checker(target)
         latest = source_catalog(all_roots).get(skill_id)
         if (latest is None or Path(latest["root"]).resolve() != write_root
+                or Path(latest["path"]).resolve() != target.resolve()
                 or hashlib.sha256(_source_bytes(latest["path"], latest["root"])).hexdigest() != expected_version):
             raise RuntimeError("skill_source_version_conflict")
         target.unlink()
