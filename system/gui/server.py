@@ -28,6 +28,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import json
 import re
+from urllib.parse import quote
 import threading
 import httpx
 
@@ -6638,7 +6639,7 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
         })
         response.set_cookie(
             key="bach_device_token",
-            value=token,
+            value=quote(token, safe=""),
             path="/",
             secure=request.url.scheme == "https",
             httponly=True,
