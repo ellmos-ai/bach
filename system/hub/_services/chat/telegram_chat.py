@@ -600,8 +600,10 @@ def _poll_worker_completion(control: _WorkerControl) -> bool:
     """Reconcile retained submissions without making internal review a queue barrier.
 
     All Git, HTTP, and SQLite work runs outside the controller lock. Older
-    balanced results are revisited in bounded round-robin batches so expiry
-    and later external approvals can advance without another queue.
+    balanced results are revisited in bounded round-robin batches when there is
+    no current submitted result to read back. A current submission is checked
+    first and returns immediately so its queue claim never waits on older
+    completion reconciliation.
     """
     now = time.monotonic()
     with _WORKER_CONTROL_LOCK:
@@ -615,8 +617,8 @@ def _poll_worker_completion(control: _WorkerControl) -> bool:
         control.completion_poll_index = (index + len(selected)) % len(bindings)
         next_at = dict(control.completion_poll_at)
         blocked = dict(control.completion_poll_blocked)
-    if current is not None and current not in selected:
-        selected.insert(0, current)
+    if current is not None:
+        selected = [current, *(binding for binding in selected if binding is not current)][:4]
     may_claim = True
     for binding in selected:
         if control.stop_event.is_set():
@@ -4781,6 +4783,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
 
             prompt_to_run = initial_prompt
             run_count = 0
+            buddha_warmup_complete = False
             initial_recovery = control.persistent_core_recovery_state
             backend_retries = (
                 initial_recovery.get("retry_count", 0)
@@ -4830,6 +4833,57 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 control._review_requested_model = model
                 with _WORKER_CONTROL_LOCK:
                     control.supports_step_actions = not getattr(target_backend, "manages_own_tools", False)
+
+                if worker_id == "buddha_always_on" and not buddha_warmup_complete:
+                    if ((control.task_binding is not None and not control.task_binding.closed)
+                            or run_count > 0):
+                        # A resumed task owns its model call; only a fresh idle
+                        # Always-On generation gets a pre-queue warmup.
+                        buddha_warmup_complete = True
+                    else:
+                        warmup_loop = asyncio.new_event_loop()
+                        try:
+                            warmup = warmup_loop.run_until_complete(
+                                runtime.warm_buddha_ollama_model(
+                                    target_backend,
+                                    model,
+                                    slot_reader=control.slot_policy_reader,
+                                    stop_event=control.stop_event,
+                                )
+                            )
+                        except Exception:
+                            log.warning("Buddha-Modellstart konnte nicht bestätigt werden")
+                            warmup = {"state": "model_wait"}
+                        finally:
+                            try:
+                                warmup_loop.run_until_complete(warmup_loop.shutdown_asyncgens())
+                            except Exception:
+                                pass
+                            warmup_loop.close()
+
+                        warmup_state = warmup.get("state") if isinstance(warmup, dict) else None
+                        if warmup_state in {
+                                "loaded", "resident", "not_applicable", "not_local", "task_bound"}:
+                            buddha_warmup_complete = True
+                        elif warmup_state == "stopped":
+                            break
+                        else:
+                            warmup_activity = {
+                                "fackel_compute": "Buddha wartet: Fackel priorisiert Compute",
+                                "fackel_unverified": "Buddha wartet auf verifizierbare Fackel-Präferenz",
+                                "capacity_wait": "Buddha wartet auf lokale Ressourcenreserve zum Modellstart",
+                                "model_wait": "Buddha wartet auf antwortenden Ollama-Server oder Modellstart",
+                                "slot_changed": "Buddha-Modellbindung hat sich geändert; Modellstart pausiert",
+                                "slot_unverified": "Buddha wartet auf verifizierbare Modellbindung",
+                                "stop_unverified": "Buddha-Modellstart wartet auf bestätigten Laufzustand",
+                            }.get(warmup_state, "Buddha-Modellstart wartet auf sichere Zulassung")
+                            if _update_worker_slot(control, {
+                                    "status": "running", "current_activity": warmup_activity,
+                            }) is None:
+                                break
+                            if control.stop_event.wait(10):
+                                break
+                            continue
 
                 if control.task_binding is None or control.task_binding.closed:
                     _retain_worker_task_receipts(control)

@@ -703,6 +703,33 @@ def test_startup_resumes_one_physical_always_on_and_preserves_empty_queue(startu
     assert slots.get_always_on_execution_slot()["status"] == "running"
 
 
+def test_buddha_start_warms_model_before_first_queue_claim(startup, monkeypatch):
+    control, _slots = startup
+    observed = []
+    claim_seen = threading.Event()
+
+    async def warmup(backend, model, *, slot_reader, stop_event):
+        observed.append(("warmup", backend, model, slot_reader()["id"], stop_event.is_set()))
+        return {"state": "loaded"}
+
+    def claim(*_args):
+        observed.append(("claim",))
+        control._WORKER_CONTROLS["buddha_always_on"].stop_event.set()
+        claim_seen.set()
+        return None
+
+    monkeypatch.setattr(control.runtime, "warm_buddha_ollama_model", warmup)
+    monkeypatch.setattr(control, "_acquire_worker_task", claim)
+    result = control._resume_always_on_at_startup(threading.Event())
+    assert result["state"] == "admitted" and result["retry"] is False
+    assert claim_seen.wait(5), "Buddha did not reach its first queue claim"
+    execution = control._WORKER_EXECUTIONS["buddha_always_on"]
+    execution.thread.join(3)
+    assert not execution.thread.is_alive()
+    assert observed[0][0] == "warmup" and observed[1] == ("claim",)
+    assert observed[0][3] == "buddha_always_on" and observed[0][4] is False
+
+
 @pytest.mark.parametrize("changes", [
     {"enabled": False}, {"status": "paused", "auto_paused": False},
     {"status": "stopping"}, {"status": "completed"}, {"status": "expired"},

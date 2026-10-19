@@ -948,6 +948,14 @@ class ChatRuntime(_ModuleChatRuntime):
                 f"{FailedAnswer.PREFIX}Backend mit eigenen Tools ist für "
                 "einen tool-freien Lauf nicht verifizierbar"
             )
+        warmup_guard = getattr(session, "_buddha_warmup_guard", None)
+        if callable(warmup_guard):
+            try:
+                problem = warmup_guard()
+            except Exception:
+                return FailedAnswer("Buddha-Modellstart ist nicht mehr verifizierbar")
+            if problem:
+                return FailedAnswer(f"Buddha-Modellstart gestoppt: {problem}")
         return None
 
     def _load_messages(self, chat_id: str) -> list[dict]:
@@ -1467,6 +1475,140 @@ class ChatRuntime(_ModuleChatRuntime):
         require_retryable(receipt)
         return receipt, binding
 
+    async def warm_buddha_ollama_model(self, backend, model, *, slot_reader, stop_event=None):
+        """Load Buddha's exact local model before its first queue claim.
+
+        The empty Ollama chat request has no task prompt or transcript effect.
+        It uses the same task-slot, reserve, model-socket, Fackel, and host
+        inference gates as a normal worker call.
+        """
+        from hub._services.llm.model_backend import OllamaBackend, backend_identifier
+
+        worker_id = "buddha_always_on"
+        if (not isinstance(backend, OllamaBackend)
+                or backend_identifier(backend) != "ollama"
+                or not isinstance(model, str) or not model.strip()
+                or model.lower().endswith(":cloud")):
+            return {"state": "not_applicable"}
+        if not callable(slot_reader):
+            return {"state": "slot_unverified"}
+
+        chat_gate = self._chat_turn_gate(worker_id)
+        await self._enter_chat_turn(chat_gate)
+        session = None
+        context_token = None
+        missing = object()
+        previous_reader = previous_guard = previous_no_wait = missing
+        try:
+            session = self.get_session(worker_id)
+            previous_reader = getattr(session, "worker_slot_reader", missing)
+            previous_guard = getattr(session, "_buddha_warmup_guard", missing)
+            previous_no_wait = getattr(session, "_buddha_warmup_no_wait", missing)
+            if (getattr(session, "worker_task_binding", None) is not None
+                    or getattr(session, "require_task_binding", False) is not False):
+                return {"state": "task_bound"}
+
+            session.worker_slot_reader = slot_reader
+
+            def check_warmup_binding():
+                if stop_event is not None:
+                    try:
+                        if stop_event.is_set():
+                            return "stopped"
+                    except Exception:
+                        return "stop_unverified"
+                try:
+                    slot = slot_reader()
+                except Exception:
+                    return "slot_unverified"
+                if (not isinstance(slot, dict)
+                        or slot.get("id") != worker_id
+                        or slot.get("backend") != "ollama"
+                        or slot.get("model") != model
+                        or slot.get("type") != "continuous"
+                        or slot.get("enabled") is not True
+                        or slot.get("status") != "running"):
+                    return "slot_changed"
+                if (getattr(session, "worker_task_binding", None) is not None
+                        or getattr(session, "require_task_binding", False) is not False):
+                    return "task_bound"
+                try:
+                    from hub.compute_lock import get_fackel_preference
+                    preference = get_fackel_preference(migrate=False)
+                except Exception:
+                    return "fackel_unverified"
+                return None if preference == "ollama" else "fackel_compute"
+
+            problem = check_warmup_binding()
+            if problem:
+                return {"state": problem}
+
+            session._buddha_warmup_guard = check_warmup_binding
+            session._buddha_warmup_no_wait = True
+            context_token = self._compute_turn_context.set((worker_id, "background"))
+
+            try:
+                receipt, _binding = await self.prepare_inference_call(
+                    backend, model, chat_id=worker_id)
+            except Exception as exc:
+                problem = check_warmup_binding()
+                fallback = "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait"
+                return {"state": problem or fallback}
+
+            problem = check_warmup_binding()
+            if problem:
+                return {"state": problem}
+            if not isinstance(receipt, dict) or receipt.get("state") == "external_target":
+                return {"state": "not_local"}
+            if receipt.get("admitted") is not True:
+                return {"state": "capacity_wait"}
+            if receipt.get("capacity_basis") == "resident_model":
+                return {"state": "resident"}
+
+            warmup = asyncio.create_task(self._chat_with_compute_turn(
+                backend, [], model=model, think=False))
+            while not warmup.done():
+                await asyncio.wait({warmup}, timeout=0.1)
+                problem = check_warmup_binding()
+                if problem:
+                    warmup.cancel()
+                    try:
+                        await warmup
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception:
+                        pass
+                    return {"state": problem}
+            try:
+                result = warmup.result()
+            except Exception as exc:
+                problem = check_warmup_binding()
+                fallback = "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait"
+                return {"state": problem or fallback}
+            problem = check_warmup_binding()
+            if problem:
+                return {"state": problem}
+            if (isinstance(result, dict) and result.get("error")) or FailedAnswer.looks_like(result):
+                return {"state": "model_wait"}
+            return {"state": "loaded"}
+        finally:
+            if context_token is not None:
+                self._compute_turn_context.reset(context_token)
+            if session is not None:
+                if previous_reader is missing:
+                    session.__dict__.pop("worker_slot_reader", None)
+                else:
+                    session.worker_slot_reader = previous_reader
+                if previous_guard is missing:
+                    session.__dict__.pop("_buddha_warmup_guard", None)
+                else:
+                    session._buddha_warmup_guard = previous_guard
+                if previous_no_wait is missing:
+                    session.__dict__.pop("_buddha_warmup_no_wait", None)
+                else:
+                    session._buddha_warmup_no_wait = previous_no_wait
+            self._leave_chat_turn(chat_gate)
+
     def _persistent_core_pre_effect_reserve_receipt(
         self, *, session, binding, backend, model, priority, receipt,
     ):
@@ -1915,6 +2057,8 @@ class ChatRuntime(_ModuleChatRuntime):
                 # The host owner has been returned before reserve polling.
                 # We stay at this model-call boundary: previous tools and the
                 # task/session context are not replayed or reset.
+                if session is not None and getattr(session, "_buddha_warmup_no_wait", False):
+                    raise RuntimeError("buddha_warmup_capacity_wait")
                 with self._local_resource_waiters_lock:
                     self._local_resource_waiters[chat_id] = dict(receipt)
                 if deadline is None:

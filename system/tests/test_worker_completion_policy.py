@@ -1274,7 +1274,11 @@ def test_current_local_result_frees_worker_before_internal_reconciliation(
     })
     control = telegram_chat._WorkerControl(worker_id="local-result-worker", generation=generation)
     control.task_binding = binding
-    control.task_result_bindings = {task_id: binding}
+    older_client = SimpleNamespace(_reconcile_task_completion=lambda _task_id: pytest.fail(
+        "older result reconciliation must not delay the current queue claim"))
+    older_binding = SimpleNamespace(task_id=task_id - 1,
+        submitted_result={"result_id": result_id - 1}, _client=older_client)
+    control.task_result_bindings = {task_id - 1: older_binding, task_id: binding}
     assert telegram_chat._poll_worker_completion(control) is True
     assert control.completion_poll_blocked[task_id] is False
 

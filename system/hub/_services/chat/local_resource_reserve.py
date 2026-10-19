@@ -237,8 +237,8 @@ async def probe(backend, model, *, reuse_running_server=False):
                 and observed["resident_context"] >= budget["num_ctx"])
     running_server = (reuse_running_server is True
                       and observed.get("server_responded") is True)
-    capacity_basis = ("running_server" if running_server else
-                      "resident_model" if resident else "host_budget")
+    capacity_basis = ("resident_model" if resident else
+                      "running_server" if running_server else "host_budget")
     if capacity_basis != "host_budget":
         # The exact Ollama model and configured context were verified above.
         # Reusing that resident model/server does not ask this worker to obtain
