@@ -12,9 +12,37 @@ from .core_system_agents import _version
 router = APIRouter(prefix="/api/system/model-sockets", tags=["model-sockets"])
 
 
+def _with_share_availability(snapshot: dict) -> dict:
+    """Keep configuration separate from measured allocation until a source exists."""
+    projected = dict(snapshot)
+    sockets = []
+    for source in snapshot.get("sockets", []):
+        if not isinstance(source, dict):
+            continue
+        socket = dict(source)
+        socket["resource_share"] = {
+            "schema": "bach.resource-share.v1", "scope": "socket", "state": "unavailable",
+            "reason_code": "per_slot_measurement_unavailable",
+        }
+        slots = []
+        for binding in socket.get("slots", []):
+            if not isinstance(binding, dict):
+                continue
+            slot = dict(binding)
+            slot["resource_share"] = {
+                "schema": "bach.resource-share.v1", "scope": "slot_total", "state": "unavailable",
+                "reason_code": "per_slot_measurement_unavailable",
+            }
+            slots.append(slot)
+        socket["slots"] = slots
+        sockets.append(socket)
+    projected["sockets"] = sockets
+    return projected
+
+
 async def _read():
     try:
-        return await asyncio.to_thread(service.model_sockets_snapshot)
+        return _with_share_availability(await asyncio.to_thread(service.model_sockets_snapshot))
     except (OSError, ValueError, TypeError):
         raise HTTPException(503, "Modellsteckplatzkonfiguration nicht verifizierbar") from None
 
@@ -35,7 +63,7 @@ async def _write(request, payload, operation, *args, **kwargs):
         raise HTTPException(400, "Ungültige Modellsteckplatzänderung") from None
     except (OSError, TypeError):
         raise HTTPException(503, "Modellsteckplatzänderung nicht bestätigt") from None
-    return {**result, "ack": {"configuration_saved": True, "worker_started": False,
+    return {**_with_share_availability(result), "ack": {"configuration_saved": True, "worker_started": False,
                               "runtime_verified": False}}
 
 
