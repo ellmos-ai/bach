@@ -1,0 +1,80 @@
+Native Ausführungsbelege für Worker
+==================================
+
+Ein Ausführungsbeleg verbindet einen tatsächlich aufgerufenen Modell-Backend
+mit der anschließend bestätigten Ergebnisabgabe derselben Taskbindung.
+Er ersetzt weder eine fachliche Prüfung noch die gesonderte Abnahme.
+
+Erfassung
+---------
+Der native Controller erfasst jeden Versuch direkt an der vorhandenen
+Aufrufgrenze von backend.chat beziehungsweise backend.chat_bound. Ressourcen-
+und Taskprüfungen bleiben vorgeschaltet. Ein Fallback erhält einen eigenen
+Versuch. Eine fehlgeschlagene erste Route wird dadurch nicht erfolgreich.
+
+Gespeichert werden Backendkennung, angefordertes Modell, optional die vom
+Provider tatsächlich zurückgemeldete Modellkennung, Slot, Generation, Fence, Zeitpunkte
+sowie SHA-256 der Anfrage und Antwort. Prompt, Antwort, Werkzeugargumente,
+Endpunkt-URL und private Lease-Kennung werden nicht gespeichert. Ein Modell
+ohne zurückgemeldete Modellkennung bleibt in diesem Feld unbekannt.
+
+provider_reported_model ist von model und last_resolved_model getrennt. Die
+beiden bestehenden Anzeigefelder können auf das angeforderte Modell zurückfallen
+und sind deshalb keine Quelle für observed_model. Nur eine gültige Kennung der
+aktuellen Providerantwort führt zu model_provenance=provider_reported. Fehlende
+oder ungültige Angaben ergeben observed_model=null und model_provenance=unknown.
+Ein vollständig abgeschlossener Ollama-Stream benötigt mindestens eine gültige,
+konsistente Modellangabe; widersprüchliche oder ungültige vorhandene Angaben
+bleiben unbekannt. CLI-Ausgabetext liefert keine solche Modellmetadatenquelle.
+Eine gültige Antwort bleibt auch ohne bekannte Modellkennung ein Ausführungsbeleg.
+
+Der private Prozesshandle bleibt ausschließlich im Controller und ist an
+das konkrete Binding-Objekt gebunden. Es gibt keinen öffentlichen Endpunkt,
+mit dem Worker selbst eine Modellidentität oder erfolgreiche Ausführung
+behaupten können. Remote-Taskclients liefern derzeit keinen solchen Beleg;
+sie wechseln dafür auch nicht auf eine andere lokale Datenbank.
+
+Abgabe und Prozessende
+---------------------
+Die Verknüpfung benötigt sowohl eine tatsächlich zurückgekehrte gültige
+Antwort als auch den bestätigten Submit-ACK mit aktuellem kanonischem Beleg.
+Bei verlorenem ACK kann der frische kanonische Ergebnisabruf die eigene,
+genau korrelierte Abgabe bestätigen; eine Vermutung reicht dafür nicht.
+Bei CLI-Agenten kann die Abgabe vor dem Prozessende liegen. In diesem Fall
+wird erst nach bestätigter Rückkehr aus chat_bound verknüpft. Abbruch, Fehler,
+Stop, überholte Generation oder wechselnde Bindung liefern keinen positiven
+Ausführungsbeleg. Eine neue Modellrunde entwertet den vorigen Kandidaten.
+
+Eigene bestätigte Taskänderungen dürfen die Inhaltsversion zwischen Anfrage
+und Abgabe ändern. Deshalb werden input_task_version und
+submission_task_version getrennt ausgewiesen. Diese Korrelation bestätigt
+nicht, dass eine Antwort fachlich alle Änderungen berücksichtigt hat.
+
+Abruf
+-----
+Der vorhandene Ergebnisabruf ergänzt result.execution mit dem Schema
+bach.worker-execution-evidence.v2. availability ist available oder unavailable.
+Bei available enthält der Beleg eine execution_revision und die korrelierten
+Ausführungsmetadaten. Bei unavailable nennt reason die fehlende oder ungültige
+Grundlage. Der Abruf legt keine Tabellen an und migriert keine Datenbank.
+
+Neue gespeicherte Receipts verwenden bach.worker-model-execution.v2 mit
+ausdrücklicher Modellprovenienz. Alte v1-Receipts und ihre Historie bleiben
+unverändert. Ihr Ausführungsbeleg kann weiterhin gültig sein; ihre bisherige
+Modellangabe wird im Abruf jedoch als observed_model=null mit
+model_provenance=legacy_unknown dargestellt. Sie wird nicht nachträglich als
+Providerangabe bestätigt. execution_revision bleibt an den unveränderten
+gespeicherten Beleg gebunden.
+
+Die additive Tabelle worker_model_executions verwendet dieselbe Taskdatenbank.
+Start, terminale Rückkehr und Ergebnisverknüpfung besitzen korrelierte
+task_history-Einträge. Geänderte Inhalte, Fence oder Abgabebelege machen die
+positive aktuelle Verknüpfung ungültig; es entsteht keine zweite Taskwarteschlange.
+
+Grenzen
+-------
+Die Belege verleihen weder Reviewer-Rollen noch Modellstufen, Unabhängigkeit,
+Nutzerfreigabe oder einen automatisch abgeschlossenen Taskstatus. Eine fehlende
+optionale Erfassung verhindert die bisherige persönliche Operator-Abnahme
+nicht. Scope, Taskvertrag, Worktree und die vollständige Abschlussrichtlinie
+müssen separat geprüft werden. Dieser Baustein aktiviert kein Auto-Done.

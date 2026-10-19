@@ -18,7 +18,9 @@ der eine der APIs brechen wuerde.
 
 from __future__ import annotations
 
+import json
 import re
+import json
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping, Optional
@@ -45,8 +47,48 @@ IN_PROGRESS_STATUSES = frozenset({"in_progress"})
 ALLOWED_COLUMNS = frozenset({
     "title", "description", "priority", "status", "category",
     "assigned_to", "created_by", "depends_on", "required_model", "assigned_slot",
-    "due_date", "result_max_chars",
+    "due_date", "result_max_chars", "tags",
+    "completion_contract_json", "require_user_review",
+    "github_pr_review_required", "github_review_contract_json",
 })
+
+# Task #2065: tasks.tags ist laut Schema ein JSON-Array. Der Setter akzeptiert
+# eine Liste, ein JSON-Array oder komma-getrennten Text und speichert immer die
+# kanonische Form (kompaktes JSON-Array, Reihenfolge erhalten, ohne Duplikate).
+TAG_PATTERN = re.compile(r"^[\w][\w.:/+-]{0,63}$")
+MAX_TAGS = 20
+
+
+def normalize_task_tags(value: Any) -> Optional[str]:
+    """Kanonisiert Task-Tags; None/leer -> None (Spalte wird geleert).
+
+    ValueError bei ungueltigem Typ, ungueltigem Tag oder mehr als MAX_TAGS Tags.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.startswith("["):
+            try:
+                value = json.loads(text)
+            except ValueError as exc:
+                raise ValueError("tags: kein gueltiges JSON-Array") from exc
+        else:
+            value = text.split(",")
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("tags muss Liste, JSON-Array oder komma-getrennter Text sein")
+    tags: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not TAG_PATTERN.match(item.strip()):
+            raise ValueError(f"tags: ungueltiger Tag {item!r} (erlaubt: Buchstaben, Ziffern, . : / + - _, max. 64 Zeichen)")
+        tag = item.strip()
+        if tag not in tags:
+            tags.append(tag)
+    if len(tags) > MAX_TAGS:
+        raise ValueError(f"tags: hoechstens {MAX_TAGS} Tags")
+    return json.dumps(tags, ensure_ascii=False, separators=(",", ":")) if tags else None
 
 # Spalten, die NICHT ueber field_values gesetzt werden (sie sind Ergebnis der
 # Status-Uebergangslogik oben), aber ueber clear_fields explizit auf NULL
@@ -201,7 +243,7 @@ def _iso_now(dt: Optional[datetime | str] = None) -> str:
 def apply_task_field_changes(
     conn: sqlite3.Connection,
     task_id: int,
-    existing_row: Mapping[str, Any],
+    existing_row: Mapping[str, Any] | sqlite3.Row,
     field_values: Mapping[str, Any],
     *,
     changed_by: str = "api",
@@ -227,19 +269,44 @@ def apply_task_field_changes(
     alte Wert nicht schon NULL war.
 
     existing_row: der VOR dem Update gelesene `tasks`-Datensatz (fuer
-    old_value-Vergleich und die started_at-Einmaligkeit).
+    old_value-Vergleich und die started_at-Einmaligkeit); dict oder sqlite3.Row.
 
     Gibt True zurueck, wenn tatsaechlich etwas geschrieben wurde (leere
     field_values UND leere clear_fields sind ein No-Op und geben False
     zurueck, ohne die DB anzufassen).
     """
     now = _iso_now(now)
+    # sqlite3.Row ist kein Mapping (kein .get), die Zugriffe unten brauchen eines.
+    # Einmal hier normalisieren, statt jeden Aufrufer dazu zu verpflichten.
+    if isinstance(existing_row, sqlite3.Row):
+        existing_row = dict(existing_row)
 
     # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass): Terminal-Park-
     # Guard im generischen Choke-Point. Ohne ihn konnte jeder API-Aufruf einen
     # gate-geparkten Task per Status-Change wieder claimbar setzen, worauf der
     # Terminal-Waechter in chat_tray nicht mehr greift (claimed_by gecleart).
     new_status = field_values.get("status")
+    for flag in ("require_user_review", "github_pr_review_required"):
+        if flag in field_values:
+            value = field_values[flag]
+            if type(value) not in (bool, int) or value not in (0, 1):
+                raise ValueError(f"{flag} muss ein boolescher Taskwert sein")
+            if existing_row.get(flag) in (1, True) and value not in (1, True):
+                raise ValueError(f"{flag} darf nicht zurückgenommen werden")
+    if "completion_contract_json" in field_values and field_values["completion_contract_json"] is not None:
+        from hub._services.worker_completion_contract import parse_contract
+        if parse_contract(field_values["completion_contract_json"]) is None:
+            raise ValueError("Taskvertrag ist ungültig")
+    if "github_review_contract_json" in field_values and field_values["github_review_contract_json"] is not None:
+        from hub._services.worker_github_review import canonical_contract
+        try:
+            canonical_contract(json.loads(field_values["github_review_contract_json"]))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("GitHub-Reviewvertrag ist ungültig") from exc
+    if (field_values.get("github_pr_review_required", existing_row.get("github_pr_review_required")) in (1, True)
+            and "github_review_contract_json" in field_values
+            and field_values["github_review_contract_json"] is None):
+        raise ValueError("GitHub-Pflicht benötigt einen bestehenden Reviewvertrag")
     if new_status in COMPLETED_STATUSES:
         if not conn.in_transaction:
             conn.execute("BEGIN IMMEDIATE")
@@ -291,6 +358,8 @@ def apply_task_field_changes(
                 f"apply_task_field_changes: Spalte '{column}' ist nicht in "
                 f"ALLOWED_COLUMNS zugelassen"
             )
+        if column == "tags":
+            new_value = normalize_task_tags(new_value)
         old_value = existing_row.get(column)
         updates.append(f"{column} = ?")
         values.append(new_value)

@@ -1,6 +1,4 @@
 """Typed output limit, compatibility digest and pre-mutation validation tests."""
-import json
-
 import pytest
 from pydantic import ValidationError
 
@@ -26,25 +24,20 @@ def test_legacy_none_limit_keeps_digest_and_unbounded_prompt_unchanged():
     class LegacyBinding:
         task_id = 9
 
+        def __init__(self, snapshot):
+            self.snapshot = snapshot
+
         def task_snapshot(self):
-            return legacy
+            return self.snapshot
 
         def correction_context(self):
             raise AssertionError("Ohne Korrekturmarker darf kein Context-Read passieren")
 
-    content = {key: legacy[key] for key in (
-        "id", "title", "description", "category", "priority", "depends_on",
-        "assigned_to", "required_model", "assigned_slot", "task_version",
-    ) if key in legacy}
-    expected = (
-        "Basis\n\nAktuell übernommener Auftrag: Task #9. "
-        "Bearbeite ausschließlich diesen Auftrag. Gib dein fachliches Ergebnis mit "
-        "task_manage(action='submit_result', task_id=<ID>, result='<Befunde, Quellen, Prüfungen, offene Grenzen>') "
-        "ab. Das speichert Review und gibt die Task zurück; eine getrennte Operator-Abnahme entscheidet über Done. "
-        "Eine bloße Erledigungsbestätigung, update(status=done) oder close_parent=true ersetzen keine Abnahme.\n"
-        + json.dumps(content, ensure_ascii=False)
-    )
-    assert _bound_worker_prompt(LegacyBinding(), "Basis") == expected
+    old_prompt = _bound_worker_prompt(LegacyBinding(legacy), "Basis")
+    migrated_prompt = _bound_worker_prompt(LegacyBinding(migrated), "Basis")
+    assert old_prompt == migrated_prompt
+    assert "Task #9" in old_prompt and "Bestehender Auftrag" in old_prompt
+    assert "result_max_chars" not in old_prompt
 
 
 def test_output_limit_is_strict_and_rejected_before_lease_release(mem_db):

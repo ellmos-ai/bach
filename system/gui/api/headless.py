@@ -67,7 +67,7 @@ import hmac
 import shutil
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional, Union
 
 # BACH Root
 BACH_ROOT = Path(__file__).parent.parent.parent
@@ -77,7 +77,7 @@ sys.path.insert(0, str(BACH_ROOT))
 # gebauten Pfad zeigte still auf die veraltete Repo-/Cloud-Kopie
 # (test_db_path_central, T-20260901-202368596). sys.path steht oben bereits.
 from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
-from hub.task_audit import apply_task_field_changes, GateReopenBlocked
+from hub.task_audit import apply_task_field_changes, GateReopenBlocked, normalize_task_tags
 BACH_DB = str(_PATHS_DB)
 
 try:
@@ -230,6 +230,8 @@ class TaskUpdate(BaseModel):
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
     result_max_chars: Optional[StrictInt] = None
+    # Task #2065: Liste, JSON-Array oder komma-getrennter Text; null/leer leert das Feld
+    tags: Optional[Union[List[str], str]] = None
     # T-20260906-240256515: optionaler Aufrufer-Bezeichner fuer task_history.changed_by,
     # analog zu TaskUpdate.changed_by im GUI-Server. Externe API-Clients identifizieren
     # sich damit; ohne Angabe greift der Default "headless-api" (siehe update_task).
@@ -356,6 +358,12 @@ async def update_task(task_id: int, update: TaskUpdate, _=Depends(verify_auth)):
                 field_values[name] = getattr(update, name) or None
         if "result_max_chars" in update.model_fields_set:
             field_values["result_max_chars"] = update.result_max_chars
+        if "tags" in update.model_fields_set:
+            try:
+                normalize_task_tags(update.tags)
+            except ValueError as exc:
+                raise HTTPException(422, {"code": "tags_invalid", "message": str(exc)})
+            field_values["tags"] = update.tags
         if not field_values:
             raise HTTPException(400, "Keine Felder zum Aktualisieren")
 

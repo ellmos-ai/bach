@@ -299,6 +299,64 @@ def test_ollama_chat_rejects_empty_success(monkeypatch, payload):
         _run_chat(monkeypatch, payload)
 
 
+def _empty_ollama_diagnostic(caplog):
+    records = [record.getMessage() for record in caplog.records
+               if record.getMessage().startswith("ollama_empty_response ")]
+    assert len(records) == 1
+    return json.loads(records[0].removeprefix("ollama_empty_response "))
+
+
+def test_ollama_thinking_only_done_logs_counts_without_thoughts(monkeypatch, caplog):
+    monkeypatch.delenv("OLLAMA_NUM_CTX", raising=False)
+    secret = "PRIVATE_THINKING_TEXT_DO_NOT_LOG"
+    payload = {"model": "gemma4:e2b", "message": {"thinking": secret},
+               "done_reason": "stop", "eval_count": 317, "prompt_eval_count": 82}
+
+    with caplog.at_level("WARNING", logger="hub._services.llm.model_backend"):
+        with pytest.raises(RuntimeError, match="Ollama lieferte eine leere Antwort"):
+            _run_chat(monkeypatch, payload)
+
+    diagnostic = _empty_ollama_diagnostic(caplog)
+    assert diagnostic == {"done_reason": "stop", "eval_count": 317,
+                          "prompt_eval_count": 82, "thinking_present": True,
+                          "thinking_chars": len(secret), "chunk_count": 1,
+                          "num_ctx": 4096, "think_flag": True}
+    assert secret not in caplog.text
+
+
+def test_ollama_length_done_stays_empty_and_reports_bounded_reason(monkeypatch, caplog):
+    payload = {"message": {"content": ""}, "done_reason": "length",
+               "eval_count": 4096, "prompt_eval_count": 500}
+
+    with caplog.at_level("WARNING", logger="hub._services.llm.model_backend"):
+        with pytest.raises(RuntimeError, match="leere Antwort"):
+            _run_chat(monkeypatch, payload)
+
+    diagnostic = _empty_ollama_diagnostic(caplog)
+    assert diagnostic["done_reason"] == "length"
+    assert diagnostic["eval_count"] == 4096
+    assert diagnostic["thinking_present"] is False
+    assert diagnostic["chunk_count"] == 1
+
+
+def test_ollama_empty_diagnostic_never_echoes_untrusted_metadata(monkeypatch, caplog):
+    payload = {"message": {"thinking": "PRIVATE_THOUGHT_DO_NOT_LOG"},
+               "done_reason": "PRIVATE_REASON_DO_NOT_LOG",
+               "eval_count": "PRIVATE_COUNT_DO_NOT_LOG", "prompt_eval_count": True}
+
+    with caplog.at_level("WARNING", logger="hub._services.llm.model_backend"):
+        with pytest.raises(RuntimeError, match="leere Antwort"):
+            _run_chat(monkeypatch, payload)
+
+    diagnostic = _empty_ollama_diagnostic(caplog)
+    assert diagnostic["done_reason"] == "unknown"
+    assert diagnostic["eval_count"] is None
+    assert diagnostic["prompt_eval_count"] is None
+    assert all(secret not in caplog.text for secret in (
+        "PRIVATE_THOUGHT_DO_NOT_LOG", "PRIVATE_REASON_DO_NOT_LOG",
+        "PRIVATE_COUNT_DO_NOT_LOG"))
+
+
 def test_ollama_chat_propagates_api_error(monkeypatch):
     result = _run_chat(monkeypatch, {"error": "Modell fehlt PRIVATE_PROVIDER_BODY"})
     assert result["backend_error"]["kind"] == "provider_error"

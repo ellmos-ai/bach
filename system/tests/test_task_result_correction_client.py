@@ -253,6 +253,48 @@ def test_result_service_uses_real_http_error_parser_and_exact_503_allowlist(monk
         thread.join(timeout=2)
 
 
+class _ServiceBodyReadingHandler(_ServiceErrorHandler):
+    def do_POST(self):
+        # Consume the request body first; an unread body can reset the socket on Windows.
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.do_GET()
+
+
+def test_result_service_accept_passes_policy_operator_review_code_through(monkeypatch):
+    monkeypatch.setenv("BACH_DEVICE_TOKEN", "ambient-device-fixture")
+    server = HTTPServer(("127.0.0.1", 0), _ServiceBodyReadingHandler)
+    server.seen = []
+    server.responses = {
+        "/api/tasks/78/result/accept": (403, {"detail": {
+            "code": "completion_policy_operator_review_required",
+            "message": "Policyverwalteter Abschluss benötigt die Operator-Prüfung"}}),
+        "/api/tasks/79/result/accept": (403, {"detail": {"code": "unlisted_code", "message": "raw"}}),
+    }
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = TaskResultServiceClient(
+            service_id="service-fixture",
+            service_token="S" * 43,
+            lead_url=f"http://127.0.0.1:{server.server_port}",
+        )
+        cas = {"result_id": 5, "digest": "a" * 64, "task_version": "b" * 64,
+               "status_revision": 3, "service_revision": 1}
+        with pytest.raises(TaskResultOperationError) as policy_denied:
+            client.accept_result(78, **cas)
+        assert (policy_denied.value.status, policy_denied.value.code) == (
+            403, "completion_policy_operator_review_required")
+        assert str(policy_denied.value) == "Policyverwalteter Abschluss benötigt die Operator-Prüfung"
+        # Codes outside the allowlist still collapse to the generic denial.
+        with pytest.raises(TaskResultOperationError) as unlisted:
+            client.accept_result(79, **cas)
+        assert unlisted.value.code == "service_request_denied"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 @pytest.mark.parametrize(
     "service_id",
     [None, 7, "", " leading", "trailing ", "x" * 129, "bad\x00id"],

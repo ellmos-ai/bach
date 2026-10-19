@@ -3362,7 +3362,7 @@ async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -
     )
 
     allowed_fields = {
-        "name", "avatar", "symbol", "allowed_tools", "skill_refs", "backend", "model", "max_tool_rounds", "mode", "think",
+        "name", "avatar", "symbol", "allowed_tools", "skill_refs", "backend", "model", "max_tool_rounds", "max_model_requests", "mode", "think",
         "pause_after", "pause_minutes", "pause_basis", "type", "ttl_minutes", "task_prompt",
         "include_system_prompt", "allow_tools", "sub_mode", "role_id",
         "multi_role", "max_experts", "expert_models", "task_id",
@@ -3428,6 +3428,10 @@ async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -
     worker_type = payload.get("type", "once")
     if not isinstance(worker_type, str) or worker_type not in {"once", "continuous"}:
         raise HTTPException(status_code=400, detail="Arbeitsmodus muss once oder continuous sein")
+    if "max_model_requests" in payload and (
+            worker_type != "once" or task_id is None or backend != "ollama"
+            or model.lower().endswith(":cloud")):
+        raise HTTPException(status_code=400, detail="Modellanfragenbudget benötigt einen lokalen Einmallauf mit fester Task-ID")
     ttl_minutes = integer("ttl_minutes", 0, 0, 1440)
     # Continuous workers may run until a user stops them. A positive TTL is optional.
     task_prompt = payload.get("task_prompt", "")
@@ -3487,6 +3491,8 @@ async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -
         "pause_basis": pause_basis,
         "task_prompt": task_prompt,
     }
+    if "max_model_requests" in payload:
+        config["max_model_requests"] = integer("max_model_requests", 8, 3, 256)
     if ttl_minutes:
         config["ttl_seconds"] = ttl_minutes * 60
 

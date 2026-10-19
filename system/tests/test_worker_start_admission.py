@@ -9,9 +9,220 @@ import threading
 
 import pytest
 from system.tests.test_task_lease_client import mem_db
+from system.tests.test_worker_lease_supervision import binding as leased_binding
 
 from hub._services.chat.chat_runtime import ChatSession
 from hub._services.chat.slots_config import initialize_slots_config, add_worker, get_worker_slot, update_slot
+
+
+@pytest.mark.parametrize("backend, tools, code_capability", [
+    ("ollama", ["task_manage"], False),
+    ("ollama-cloud", ["task_manage"], False),
+    ("ollama", ["task_manage", "start_task_worktree"], True),
+])
+def test_explicit_once_scope_precedes_model_dispatch(
+    admission, leased_binding, monkeypatch, backend, tools, code_capability,
+):
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard
+
+    control, worker = admission
+    update_slot(worker["id"], {"task_id": leased_binding.task_id,
+        "allowed_tools": tools, "allow_tools": True})
+    observed = []
+    monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
+    monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
+    monkeypatch.setattr(control, "finish_assignment", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(control.runtime, "session_store", object())
+    monkeypatch.setattr(control.runtime, "clear_session", lambda *_args, **_kwargs: None)
+    def start(task_id, **kwargs):
+        observed.append(("start", task_id, kwargs))
+        return object()
+    def scope(task_id):
+        observed.append(("scope", task_id))
+        return {"availability": "available", "task_id": task_id,
+            "branch": f"refs/heads/bach-task/{task_id}",
+            "source_pin": {"verified_public_main": "pinned"} if code_capability else None}
+    async def process(*_args, **_kwargs):
+        observed.append(("model",))
+        return "Teilstand ohne Ergebnisabgabe"
+    monkeypatch.setattr(worker_git, "start_task_worktree", start)
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", scope)
+    monkeypatch.setattr(control.runtime, "process", process)
+    monkeypatch.setattr(control, "_snapshot_chat_backend",
+        lambda *_args, **_kwargs: (object(), backend))
+
+    response, code = control.start_worker_execution(worker["id"],
+        start_request_id="7" * 32)
+    assert code in {200, 202} and response["execution"]["worker_thread_started"] is True
+    run = control._WORKER_EXECUTIONS[worker["id"]]
+    run.thread.join(5)
+    assert not run.thread.is_alive()
+    assert [item[0] for item in observed] == ["start", "scope", "model"]
+    assert observed[0][1] == leased_binding.task_id
+    assert observed[0][2]["base_branch"] == "main"
+    assert observed[0][2]["worker_task_binding"] is leased_binding
+    assert observed[0][2]["require_task_binding"] is True
+    assert observed[0][2]["task_code_capability"] is code_capability
+    assert leased_binding._client.task_result_snapshot(leased_binding.task_id)["result"] is None
+
+
+@pytest.mark.parametrize("failure", ["start", "scope"])
+def test_explicit_once_scope_failure_stops_before_model(
+    admission, leased_binding, monkeypatch, failure,
+):
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard
+
+    control, worker = admission
+    update_slot(worker["id"], {"task_id": leased_binding.task_id,
+        "allowed_tools": ["task_manage"], "allow_tools": True})
+    monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
+    monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
+    monkeypatch.setattr(control, "finish_assignment", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(control.runtime, "session_store", object())
+    monkeypatch.setattr(control.runtime, "clear_session", lambda *_args, **_kwargs: None)
+    def start(*_args, **_kwargs):
+        if failure == "start":
+            raise RuntimeError("private path and token must stay hidden")
+        return object()
+    monkeypatch.setattr(worker_git, "start_task_worktree", start)
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope",
+        lambda task_id: {"availability": "unavailable", "reason": "registration_unavailable"})
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("No model dispatch after missing task scope")
+    monkeypatch.setattr(control.runtime, "process", forbidden)
+
+    response, code = control.start_worker_execution(worker["id"],
+        start_request_id="8" * 32)
+    assert code in {200, 202} and response["execution"]["worker_thread_started"] is True
+    run = control._WORKER_EXECUTIONS[worker["id"]]
+    run.thread.join(5)
+    assert not run.thread.is_alive()
+    assert leased_binding._client.task_result_snapshot(leased_binding.task_id)["result"] is None
+    assert not leased_binding.reviewed_task_ids and not leased_binding.completed_task_ids
+
+
+def test_implicit_once_tools_keep_existing_start_path(
+    leased_binding, monkeypatch,
+):
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+    monkeypatch.setattr(worker_git, "start_task_worktree",
+        lambda *_args, **_kwargs: pytest.fail("Codefähiger Lauf braucht seinen eigenen Source-Guard"))
+    control._prepare_bound_task_scope(leased_binding,
+        {"type": "once", "allowed_tools": None})
+
+
+@pytest.mark.parametrize("worker_type", ["once", "continuous", "persistent"])
+def test_bound_task_scope_precedes_model_for_every_worker_type(
+    leased_binding, monkeypatch, worker_type,
+):
+    # BACH #2215: a continuous text worker without a task tree left its
+    # simple_task result in review forever (scope_not_recorded).
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+    from hub._services.chat import worker_write_guard
+    started = []
+    monkeypatch.setattr(worker_git, "start_task_worktree",
+        lambda task_id, **kwargs: started.append((task_id, kwargs["task_code_capability"])))
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", lambda task_id: {
+        "availability": "available", "task_id": task_id,
+        "branch": f"refs/heads/bach-task/{task_id}", "source_pin": None})
+    control._prepare_bound_task_scope(leased_binding,
+        {"type": worker_type, "allowed_tools": ["task_manage"]})
+    assert started == [(leased_binding.task_id, False)]
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_continuous_scope_precedes_model_in_worker_loop(
+    admission, leased_binding, monkeypatch, failure,
+):
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard
+
+    control, _once_worker = admission
+    worker = add_worker({"name": "Admission continuous", "type": "continuous"})
+    update_slot(worker["id"], {"allowed_tools": ["task_manage"], "allow_tools": True})
+    observed = []
+    worker_controls = []
+    monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
+    monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
+    def finish(*_args, **kwargs):
+        if kwargs.get("result") != "task_returned":
+            return  # the role assignment closing on task acquisition
+        observed.append(("finish", kwargs["result"], kwargs.get("reason")))
+        worker_controls.append(control._WORKER_CONTROLS[worker["id"]])
+        worker_controls[-1].stop_event.set()
+    monkeypatch.setattr(control, "finish_assignment", finish)
+    monkeypatch.setattr(control.runtime, "session_store", object())
+    monkeypatch.setattr(control.runtime, "clear_session", lambda *_args, **_kwargs: None)
+    def start(task_id, **kwargs):
+        observed.append(("start", task_id, kwargs["task_code_capability"]))
+        if failure:
+            # e.g. an orphaned bach-task/<id> branch without its tree
+            raise RuntimeError("Task-Branch existiert bereits")
+    monkeypatch.setattr(worker_git, "start_task_worktree", start)
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", lambda task_id: {
+        "availability": "available", "task_id": task_id,
+        "branch": f"refs/heads/bach-task/{task_id}", "source_pin": None})
+    async def process(*_args, **_kwargs):
+        observed.append(("model",))
+        control._WORKER_CONTROLS[worker["id"]].stop_event.set()
+        return "Teilstand ohne Ergebnisabgabe"
+    monkeypatch.setattr(control.runtime, "process", process)
+    monkeypatch.setattr(control, "_snapshot_chat_backend",
+        lambda *_args, **_kwargs: (object(), "ollama-cloud"))
+
+    response, code = control.start_worker_execution(worker["id"],
+        start_request_id="9" * 32)
+    assert code in {200, 202} and response["execution"]["worker_thread_started"] is True
+    run = control._WORKER_EXECUTIONS[worker["id"]]
+    run.thread.join(5)
+    assert not run.thread.is_alive()
+    assert observed[0] == ("start", leased_binding.task_id, False)
+    assert leased_binding._client.task_result_snapshot(leased_binding.task_id)["result"] is None
+    if not failure:
+        assert observed[1] == ("model",)
+        return
+    # The background worker returns the task and stays available instead of erroring.
+    assert observed[1:] == [("finish", "task_returned", "task_scope_unavailable")]
+    assert leased_binding.closed
+    assert leased_binding.task_id in worker_controls[0].deferred_task_versions
+    assert worker_controls[0].start_error != "runtime_error"
+
+
+def test_scope_return_defers_the_same_task_version(mem_db):
+    # The scope-failure path stores the snapshot version before return_lease;
+    # the release must not change that version, or the worker would churn.
+    from system.tests.test_task_lease_client import _insert_task
+    from system.tests.test_task_lease_client_review import T0
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    first = _insert_task(mem_db, "Orphaned branch")
+    second = _insert_task(mem_db, "Next")
+    mem_db.execute("UPDATE tasks SET assigned_to='BACH'")
+    mem_db.execute("UPDATE tasks SET priority='P1' WHERE id=?", (first,))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
+                is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    assert bound.task_id == first
+    deferred = {first: bound.task_snapshot()["task_version"]}
+    assert bound.return_lease() is True
+    assert client.task_snapshot(first)["task_version"] == deferred[first]
+    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    assert next_task.task_id == second
+
+
+def test_unknown_worker_type_keeps_existing_start_path(leased_binding, monkeypatch):
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+    monkeypatch.setattr(worker_git, "start_task_worktree",
+        lambda *_args, **_kwargs: pytest.fail("Unbekannter Workertyp darf keinen Arbeitsbaum anlegen"))
+    control._prepare_bound_task_scope(leased_binding,
+        {"type": "chat", "allowed_tools": ["task_manage"]})
 
 
 @pytest.mark.parametrize("reason", ["disabled", "missing", "unreadable"])
@@ -467,11 +678,21 @@ def startup(admission, monkeypatch):
             assert not execution.thread.is_alive()
 
 
-def test_startup_resumes_one_physical_always_on_and_preserves_empty_queue(startup):
+def test_startup_resumes_one_physical_always_on_and_preserves_empty_queue(startup, monkeypatch):
     control, slots = startup
+    first_queue_poll = threading.Event()
+
+    def observe_empty_queue(*_args):
+        # This real worker boundary follows publication of its running state.
+        # Thread.start() alone does not promise that publication has completed.
+        first_queue_poll.set()
+        return None
+
+    monkeypatch.setattr(control, "_acquire_worker_task", observe_empty_queue)
     stop = threading.Event()
     first = control._resume_always_on_at_startup(stop)
     assert first["state"] == "admitted" and first["retry"] is False
+    assert first_queue_poll.wait(5), "Worker did not reach its first actual queue poll"
     execution = control._WORKER_EXECUTIONS["buddha_always_on"]
     assert execution.worker_thread_started is True and execution.thread.is_alive()
     generation = execution.generation

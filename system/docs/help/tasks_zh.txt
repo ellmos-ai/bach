@@ -68,6 +68,10 @@ CLI 命令（巴赫任务）
   result-service-accept <ID> --service-id SERVICE-ID
     接受当前待审核结果。需要 read 和 accept 两种范围。CLI 显示结果 ID 和
     SHA-256，并在发送精确的任务/结果/CAS 值前请求确认。
+    受策略约束的结果（completion_policy_version 1，即工作者完成策略下的
+    每次提交）会以 completion_policy_operator_review_required 拒绝，服务
+    能力信息对其显示 accept=false。只有经过认证的操作员审核才能完成它们。
+    旧格式结果仍可接受。
 
 修正与接受是不同操作。缺少范围、可信生产者绑定、架构或策略时会拒绝或
 报告不可用；不会回退到宽泛令牌或旧格式。

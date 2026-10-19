@@ -67,7 +67,9 @@ DEFAULT_PROFILES: dict[str, tuple[int, int]] = {
     "XL": (120 * 60, 72 * 3600),
 }
 DEFAULT_PROFILE = "M"
-#: Vertrag §8.6: Ersteller-Vorrang ab created_at.
+#: Vertrag §8.6: Ersteller-Vorrang ab created_at. Seit BACH #2231 gilt dieses
+#: Fenster nur noch für native Sequenzschritte (mit Delegationszeile); sonst
+#: entscheidet die Systemeinstellung (task_lease_settings, Standard aus).
 DEFAULT_CREATOR_WINDOW_SECONDS = 10 * 60
 #: Vertrag §11.2: Lebensdauer eines Alt-Claims ohne claim_id (wie claim_task_atomic).
 LEGACY_CLAIM_SECONDS = 1800
@@ -128,7 +130,8 @@ class LeaseConfig:
 
     profiles: Mapping[str, tuple[int, int]] = field(default_factory=lambda: dict(DEFAULT_PROFILES))
     default_profile: str = DEFAULT_PROFILE
-    creator_window_seconds: int = DEFAULT_CREATOR_WINDOW_SECONDS
+    #: None: Systemeinstellung bzw. Sequenzschutz; eine Zahl übersteuert beides.
+    creator_window_seconds: int | None = None
     legacy_claim_seconds: int = LEGACY_CLAIM_SECONDS
 
     @classmethod
@@ -151,18 +154,42 @@ class LeaseConfig:
                 profiles.update(candidate)
             except (ValueError, TypeError, KeyError, IndexError, AttributeError):
                 profiles = dict(DEFAULT_PROFILES)
-        window = DEFAULT_CREATOR_WINDOW_SECONDS
+        # Only an explicit operator value overrides the stored setting (BACH #2231).
+        window = None
         raw_window = env.get("BACH_TASK_LEASE_CREATOR_WINDOW")
         if raw_window:
             try:
                 window = max(0, int(raw_window))
             except ValueError:
-                window = DEFAULT_CREATOR_WINDOW_SECONDS
+                window = None
         return cls(profiles=profiles, creator_window_seconds=window)
+
+
+def _sequence_step(conn, task_id) -> bool:
+    """Sequence steps keep the previous creator gate unchanged (BACH #2231)."""
+    try:
+        return conn.execute(
+            "SELECT 1 FROM native_sequence_creator_delegations WHERE task_id=?",
+            (task_id,)).fetchone() is not None
+    except sqlite3.Error:  # no sequence schema: no sequence step
+        return False
+
+
+def _creator_window_seconds(conn, task_id, cfg) -> int:
+    if cfg.creator_window_seconds is not None:
+        return cfg.creator_window_seconds
+    if _sequence_step(conn, task_id):
+        return DEFAULT_CREATOR_WINDOW_SECONDS
+    from hub._services.task_lease_settings import stored_window
+    return stored_window(conn)
 
 
 class LeaseValidationError(ValueError):
     """Ungültige Eingabe (HTTP 422)."""
+
+
+class LeaseSelfCheckRequired(LeaseValidationError):
+    """Confirmed validation denial; the current lease remains usable."""
 
 
 class TaskNotFound(LookupError):
@@ -422,11 +449,12 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
                   request_id: str, ttl_profile: str | None = None, intent: str = "",
                   task_version: str | None = None, result_generation: str | None = None,
                   device: str | None = None, config: LeaseConfig | None = None,
-                  now: datetime | None = None) -> LeaseResult:
+                  now: datetime | None = None, _review_grant: object | None = None) -> LeaseResult:
     """Vertrag §5.1. Gewährt höchstens einen lebenden Lease pro Task."""
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=request_id, ttl_profile=ttl_profile, intent=intent,
-        task_version=task_version, result_generation=result_generation, device=device, config=config, now=now)
+        task_version=task_version, result_generation=result_generation, device=device, config=config, now=now,
+        _review_grant=_review_grant)
 
 
 def _native_creator_grant(conn, binding, row, version):
@@ -486,7 +514,8 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
                    task_version: str | None = None, device: str | None = None,
                    config: LeaseConfig | None = None, now: datetime | None = None,
                    creator_delegation: _NativeCreatorBinding | None = None,
-                   result_generation: str | None = None) -> LeaseResult:
+                   result_generation: str | None = None,
+                   _review_grant: object | None = None) -> LeaseResult:
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     worker_id, host = _validate_worker(worker_id, host)
@@ -510,6 +539,32 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
         if task_version is not None and task_version != version:
             conn.rollback()
             return _deny(task_id, "stale_task_version", now)
+        # Review jobs share this tasks table, but a task marker alone never
+        # grants authority. Only the private local grant can pass the review
+        # validator; an ordinary task can never consume a review grant.
+        try:
+            from hub._services import worker_result_review
+        except ImportError:  # pragma: no cover - Paketimport aus system/hub
+            try:
+                from . import worker_result_review
+            except ImportError:
+                conn.rollback()
+                return _deny(task_id, "not_claimable", now)
+        try:
+            review_marker = worker_result_review.review_task_marker(conn, task_id)
+            if review_marker:
+                if (_review_grant is None or result_generation != getattr(_review_grant, "generation", None)
+                        or not worker_result_review.validate_review_acquire(
+                        conn, row, worker_id=worker_id, host=host, grant=_review_grant, now=now)):
+                    conn.rollback()
+                    return _deny(task_id, "not_claimable", now)
+            elif _review_grant is not None:
+                conn.rollback()
+                return _deny(task_id, "not_claimable", now)
+        except Exception:  # noqa: BLE001 -- Review authority fails closed.
+            conn.rollback()
+            return _deny(task_id, "not_claimable", now)
+        review_authorized = bool(review_marker)
         state = _lease_state(row, now, cfg)
         grant = None
         if creator_delegation is not None:
@@ -565,9 +620,11 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
             return _deny(task_id, "tool_trace_unavailable", now, status=status)
 
         created = parse_ts(row.get("created_at"))
-        if created is not None and cfg.creator_window_seconds > 0 and created <= now + timedelta(seconds=60):
-            until = created + timedelta(seconds=cfg.creator_window_seconds)
-            if now < until and not _is_creator(worker_id, row.get("created_by")) and grant is None:
+        window = _creator_window_seconds(conn, task_id, cfg) if created is not None else 0
+        if created is not None and window > 0 and created <= now + timedelta(seconds=60):
+            until = created + timedelta(seconds=window)
+            if (now < until and not _is_creator(worker_id, row.get("created_by"))
+                    and grant is None and not review_authorized):
                 conn.rollback()
                 return _deny(task_id, "creator_priority", now, until=_fmt(until))
 
@@ -719,7 +776,8 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
                   task_version: str | None = None,
                   outcome: str, result_ref: str = "", note: str = "",
                   worker_result: dict | None = None,
-                  config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+                  config: LeaseConfig | None = None, now: datetime | None = None,
+                  _review_binding=None) -> LeaseResult:
     """Vertrag §5.4 + §8.4. Einziger Weg für den Abschluss einer geleasten Task.
 
     Bei veraltetem Fence oder abgelaufenem Lease wird nichts am Status geändert;
@@ -791,12 +849,22 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
             return _deny(task_id, "completion_guard", now,
                          detail="Native Worker geben ihr generationgebundenes Ergebnis zur getrennten Review-Abnahme ab")
         if worker_result is not None:
-            from .task_result_service import insert_submission, result_reference
+            from .worker_result_review import review_task_marker, validate_review_release
+            if review_task_marker(conn, task_id) and not validate_review_release(
+                    conn, row, worker_result, _review_binding):
+                conn.rollback()
+                return _deny(task_id, "completion_guard", now,
+                             detail="Review-Abgabe hat keinen aktuellen privaten Ziel- und Ausführungsbeleg")
+        if worker_result is not None:
+            from .task_result_service import (WorkerSelfCheckRequired, insert_submission,
+                                              result_reference)
             try:
                 submitted = insert_submission(
                     conn, row, worker_result, worker=worker, now=_local_naive(now),
                     max_chars=row.get("result_max_chars"),
                 )
+            except WorkerSelfCheckRequired:
+                raise LeaseSelfCheckRequired("Vollständiger Selbstcheck erforderlich") from None
             except ValueError as exc:
                 raise LeaseValidationError(str(exc)) from None
             result_ref = result_reference(submitted)
@@ -816,9 +884,15 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         if cursor.rowcount != 1:
             conn.rollback()
             return _deny(task_id, "stale_fence", now)
+        release_detail = {"fence": fence, "outcome": outcome,
+                          "result_ref": result_ref, "note": note}
+        receipt = None
+        if submitted is not None:
+            from .task_result_service import prepare_submission_receipt
+            receipt = prepare_submission_receipt(conn, submitted)
+            release_detail["submission_receipt"] = receipt
         event_id = _history(conn, task_id, "lease_release", worker, now,
-                 {"fence": fence, "outcome": outcome, "result_ref": result_ref, "note": note},
-                 old_value="in_progress")
+                            release_detail, old_value="in_progress")
         after = _row(conn, task_id) or {}
         ack = {
             "released": True, "task_id": task_id, "outcome": outcome, "status": after.get("status"),
@@ -826,7 +900,7 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         }
         if submitted is not None:
             from .task_result_service import finish_submission
-            ack["worker_result"] = finish_submission(conn, submitted, event_id)
+            ack["worker_result"] = finish_submission(conn, submitted, event_id, receipt)
         conn.commit()
     except BaseException:
         if conn.in_transaction:
@@ -839,7 +913,7 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
                  task_version: str, changes: dict[str, Any],
                  config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
     """Update content and its holder binding in one fenced transaction."""
-    from hub.task_audit import ALLOWED_COLUMNS, apply_task_field_changes
+    from hub.task_audit import ALLOWED_COLUMNS, apply_task_field_changes, normalize_task_tags
 
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
@@ -855,8 +929,15 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
         for name, value in changes.items()
     ):
         raise LeaseValidationError("result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein")
+    if "tags" in changes:
+        # Task #2065: Tags dürfen Liste/Text/null sein; Form prüft der gemeinsame Normalisierer.
+        try:
+            normalize_task_tags(changes["tags"])
+        except ValueError as exc:
+            raise LeaseValidationError(str(exc)) from exc
     if any(
         not (name == "result_max_chars" and (value is None or type(value) is int))
+        and name != "tags"
         and not isinstance(value, str)
         for name, value in changes.items()
     ):

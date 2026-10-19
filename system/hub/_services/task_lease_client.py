@@ -42,6 +42,7 @@ try:
         LeaseConfig,
         LeaseResult,
         LeaseValidationError,
+        LeaseSelfCheckRequired,
         TaskNotFound,
         acquire_lease,
         _acquire_native_creator_lease,
@@ -59,6 +60,7 @@ except ImportError:  # pragma: no cover
         LeaseConfig,
         LeaseResult,
         LeaseValidationError,
+        LeaseSelfCheckRequired,
         TaskNotFound,
         acquire_lease,
         _acquire_native_creator_lease,
@@ -91,6 +93,13 @@ class LeaseError(Exception):
 
 class LeaseProtocolError(LeaseError):
     """Invalid authority configuration or uncorrelated/malformed ACK."""
+
+
+class LeaseSelfCheckRequiredError(LeaseProtocolError):
+    """Confirmed local validation denial without a submission or lease mutation."""
+
+    user_message = ("Ergebnis noch nicht vollständig: Für einfache Tasks ohne Vertrag "
+                    "einen echten Selbstcheck abgeben; Teilstand mit update(status='pending') zurückgeben.")
 
 
 class LeaseDeniedError(LeaseError):
@@ -453,6 +462,205 @@ class TaskLeaseClient:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _model_execution_call(self, operation, binding, *args, **kwargs):
+        """Private controller path; HTTP workers cannot self-attest model calls."""
+        if self.mode != "local" or getattr(binding, "_client", None) is not self:
+            return None if operation == "start_execution" else False
+        from . import worker_execution_evidence
+        conn = self._get_local_connection()
+        try:
+            return getattr(worker_execution_evidence, operation)(conn, binding, *args, **kwargs)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _start_model_execution(self, binding, *, backend_id, requested_model, slot_id,
+                               request_sha256, route_sha256=None):
+        kwargs = {"backend_id": backend_id, "requested_model": requested_model,
+                  "slot_id": slot_id, "request_sha256": request_sha256}
+        if route_sha256 is not None:
+            kwargs["route_sha256"] = route_sha256
+        return self._model_execution_call("start_execution", binding, **kwargs)
+
+    def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None):
+        kwargs = {"result": result, "failed": failed}
+        if route_sha256 is not None:
+            kwargs["route_sha256"] = route_sha256
+        return self._model_execution_call("finish_execution", binding, handle, **kwargs)
+
+    def _link_model_execution(self, binding, handle):
+        return self._model_execution_call("link_execution", binding, handle)
+
+    def _capture_task_scope(self, binding):
+        """Private local capture, never a remote worker self-attestation route."""
+        if self.mode != "local" or getattr(binding, "_client", None) is not self:
+            return False
+        from .worker_scope_evidence import capture_scope_evidence
+        conn = self._get_local_connection()
+        try:
+            return capture_scope_evidence(conn, binding)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _reconcile_task_completion(self, task_id):
+        """Local controller hook; remote workers never assert completion facts."""
+        if self.mode != "local" or type(task_id) is not int or task_id <= 0:
+            return None
+        from .worker_completion_policy import reconcile_current_result
+        conn = self._get_local_connection()
+        try:
+            if conn.in_transaction:
+                return None
+            return reconcile_current_result(conn, task_id)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _prepare_review_task(self, binding):
+        """Create an eligible result-review task only in the canonical local TaskDB."""
+        if self.mode != "local" or getattr(binding, "_client", None) is not self:
+            return None
+        from .worker_result_review import prepare_review_task
+        conn = self._get_local_connection()
+        try:
+            return prepare_review_task(conn, binding)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _review_task_metadata(self, task_id):
+        """Read validated private review intent from the local TaskDB only."""
+        if self.mode != "local":
+            return None
+        _identity(task_id)
+        from .worker_result_review import review_task_metadata
+        conn = self._get_local_connection()
+        try:
+            return review_task_metadata(conn, task_id)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _review_candidates(self, limit=100, offset=0):
+        """Read pending review jobs locally; remote leads carry no private grant authority."""
+        if (type(limit) is not int or not 1 <= limit <= 100
+                or type(offset) is not int or offset < 0):
+            raise LeaseProtocolError("Ungültige Review-Taskseite")
+        if self.mode != "local":
+            return {"tasks": [], "has_more": False, "offset": offset}
+        from .worker_result_review import list_review_candidates
+        conn = self._get_local_connection()
+        try:
+            raw = list_review_candidates(conn, limit=limit, offset=offset)
+            has_more = False
+            table_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='worker_result_review_intents'"
+            ).fetchone() is not None
+            if table_exists:
+                raw_total = conn.execute(
+                    "SELECT COUNT(*) FROM tasks t JOIN worker_result_review_intents i "
+                    "ON i.review_task_id=t.id WHERE t.status IN ('pending','open')"
+                ).fetchone()[0]
+                has_more = offset + limit < raw_total
+        finally:
+            if self._conn is None:
+                conn.close()
+        snapshots = []
+        for item in raw:
+            if not isinstance(item, dict) or not isinstance(item.get("review_intent"), dict):
+                continue
+            snapshot = self._public_snapshot(item)
+            intent = item["review_intent"]
+            if (intent.get("schema") != "bach.worker-result-review-intent.v1"
+                    or intent.get("review_task_id") != snapshot["id"]
+                    or intent.get("task_version") != snapshot["task_version"]
+                    or intent.get("status") not in {"pending", "open"}):
+                continue
+            snapshots.append({**snapshot, "review_intent": intent})
+        return {"tasks": snapshots, "has_more": has_more, "offset": offset}
+
+    def _issue_review_grant(self, task_id, *, worker_id, host, generation, slot_id,
+                            route, requested_model, is_current, stop_event, clock):
+        """Mint a process-private, single-task review grant on the local authority."""
+        if self.mode != "local":
+            return None
+        _identity(task_id)
+        from .worker_result_review import issue_review_grant
+        conn = self._get_local_connection()
+        try:
+            return issue_review_grant(conn, task_id, worker_id=worker_id, host=host,
+                generation=generation, slot_id=slot_id, route=route,
+                requested_model=requested_model, is_current=is_current,
+                stop_event=stop_event, clock=clock)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _guard_review_dispatch(self, binding, *, route, requested_model):
+        """Recheck current target Git/policy outside the binding lock; never remote-fallback."""
+        if self.mode != "local" or getattr(binding, "_client", None) is not self:
+            return False
+        from .worker_result_review import guard_review_dispatch
+        conn = self._get_local_connection()
+        try:
+            return guard_review_dispatch(conn, binding, route=route,
+                                         requested_model=requested_model) is True
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _record_result_review(self, binding):
+        """Persist only a canonical review linked to its local child submission."""
+        if self.mode != "local" or getattr(binding, "_client", None) is not self:
+            return None
+        from .worker_result_review import record_review, cancel_obsolete_review_child
+        conn = self._get_local_connection()
+        try:
+            evidence = record_review(conn, binding)
+            if evidence is None:
+                evidence = cancel_obsolete_review_child(conn, binding)
+        finally:
+            if self._conn is None:
+                conn.close()
+        if isinstance(evidence, dict) and evidence.get("availability") == "recorded":
+            try:
+                self._reconcile_task_completion(evidence["task_id"])
+            except Exception:
+                pass
+        return evidence
+
+    def _recover_invalid_review_child(self, task_id, *, result_id, status_revision):
+        """Local controller recovery through the canonical correction writer."""
+        if self.mode != "local":
+            return None
+        _identity(task_id)
+        from .worker_result_review import recover_invalid_review_child
+        conn = self._get_local_connection()
+        try:
+            return recover_invalid_review_child(conn, task_id, result_id=result_id,
+                                                status_revision=status_revision)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _repair_machine_false_acceptance(self, task_id, *, expected, request_id,
+                                         repo_root=None, worktrees_dir=None):
+        """Local, private controller path for a proven machine false acceptance."""
+        if self.mode != "local":
+            return None
+        _identity(task_id)
+        from .machine_false_acceptance_recovery import repair_machine_false_acceptance
+        conn = self._get_local_connection()
+        try:
+            return repair_machine_false_acceptance(conn, task_id, expected=expected,
+                request_id=request_id, repo_root=repo_root,
+                worktrees_dir=worktrees_dir)
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _allows_server_error_response(self, status: int, payload: dict[str, Any]) -> bool:
         """Let existing subclasses opt in to their one validated error shape."""
         return False
@@ -516,6 +724,8 @@ class TaskLeaseClient:
     def _call(self, name, task_id, payload=None, *, config=None, now=None, headers=None):
         _identity(task_id)
         if self.mode == "remote":
+            if isinstance(payload, dict) and ({"_review_grant", "_review_binding"} & payload.keys()):
+                raise LeaseProtocolError("Private Reviewgrants dürfen nicht über HTTP gesendet werden")
             suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose", "update": "/update"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
                                              f"/api/tasks/{task_id}/lease{suffix}", payload, headers)
@@ -526,6 +736,8 @@ class TaskLeaseClient:
                          "release": release_lease, "decompose": decompose_lease, "update": update_lease}
                 result = funcs[name](conn, task_id, **(payload or {}), config=config, now=now)
                 status, data = result.http_status, result.payload
+            except LeaseSelfCheckRequired:
+                raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message) from None
             except (LeaseValidationError, TaskNotFound):
                 raise LeaseProtocolError("Ungültige Lease-Anfrage oder Task fehlt") from None
             finally:
@@ -659,9 +871,13 @@ class TaskLeaseClient:
             conn = self._get_local_connection()
             try:
                 data = read_result(conn, task_id, operator_token=operator_token)
+                outside_snapshot = not conn.in_transaction
             finally:
                 if self._conn is None:
                     conn.close()
+            if outside_snapshot:
+                from .worker_scope_evidence import project_scope_evidence
+                data = project_scope_evidence(data)
         if (not isinstance(data, dict) or data.get("schema") != "bach.task-result-readback.v1"
                 or type(data.get("task_id")) is not int or data["task_id"] != task_id
                 or data.get("verified") is not True or type(data.get("status_revision")) is not int):
@@ -799,9 +1015,21 @@ class TaskLeaseClient:
             try:
                 ensure_task_lease_schema(conn)
                 where = "LOWER(TRIM(status)) IN ('pending', 'open', 'in_progress', 'progress')"
-                total = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}").fetchone()[0]
                 # Legacy isolated schemas need not have created_at.
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+                # Review metadata is never a positive authority here. The
+                # reserved marker and raw intent relation are exclusion-only,
+                # so damaged review jobs cannot leak into ordinary pickup.
+                if "source" in columns:
+                    where += " AND COALESCE(source, '') NOT LIKE 'worker-result-review:v1:%'"
+                intent_table = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' "
+                    "AND name='worker_result_review_intents'"
+                ).fetchone() is not None
+                if intent_table:
+                    where += " AND NOT EXISTS (SELECT 1 FROM worker_result_review_intents r " \
+                             "WHERE r.review_task_id=tasks.id)"
+                total = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}").fetchone()[0]
                 order = ("CASE UPPER(TRIM(priority)) "
                          "WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
                          "WHEN 'P2' THEN 2 WHEN '2' THEN 2 WHEN 'MEDIUM' THEN 2 WHEN 'MITTEL' THEN 2 WHEN 'WICHTIG' THEN 2 "
@@ -831,6 +1059,15 @@ class TaskLeaseClient:
                 or type(data.get("offset")) is not int or data["offset"] != offset):
             raise LeaseProtocolError("Ungültige kanonische Task-Seite")
         tasks = [self._public_snapshot(item) for item in data["tasks"]]
+        if self.mode == "remote":
+            # A remote worker has no local DB or private review authority.
+            # Filter only as a defense-in-depth exclusion; never infer a grant
+            # from a title, category, source, or remote metadata.
+            tasks = [item for item in tasks if not (
+                (type(item.get("source")) is str
+                 and item["source"].startswith("worker-result-review:v1:"))
+                or isinstance(item.get("review_intent"), dict)
+                or item.get("category") == "worker-review")]
         if len({item["id"] for item in tasks}) != len(tasks):
             raise LeaseProtocolError("Doppelte Task in kanonischer Seite")
         return {"tasks": tasks, "total": data["total"], "has_more": data["has_more"], "offset": offset}
@@ -858,7 +1095,10 @@ class TaskLeaseClient:
         return ack
 
     def acquire(self, task_id, *, worker_id, host, request_id=None, ttl_profile="M", intent="",
-                task_version=None, result_generation=None, config=None, now=None):
+                task_version=None, result_generation=None, config=None, now=None,
+                _review_grant=None):
+        if _review_grant is not None and self.mode != "local":
+            raise LeaseProtocolError("Private Reviewgrants werden nur lokal eingelöst")
         _version(task_version)
         result_generation = _generation(result_generation)
         sent_at = now or datetime.now(timezone.utc)
@@ -866,6 +1106,8 @@ class TaskLeaseClient:
                     ttl_profile=ttl_profile, intent=intent, task_version=task_version)
         if result_generation is not None:
             body["result_generation"] = result_generation
+        if _review_grant is not None:
+            body["_review_grant"] = _review_grant
         data = self._call("acquire", task_id, body, config=config, now=now)
         # Sending time is conservative: response latency cannot extend the local deadline.
         return self._grant(data, worker_id=worker_id, host=host, task_version=task_version,
@@ -1059,7 +1301,8 @@ class TaskLeaseClient:
         return {"schema": SCHEMA, "task_id": task_id, "events": events,
                 "count": len(events), "limit": limit, "offset": offset}
 
-    def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result, config=None, now=None):
+    def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result,
+                      config=None, now=None, _review_binding=None):
         from .task_result_service import validate_submission
         _identity(task_id, lease_id, fence)
         _version(task_version, required=True)
@@ -1070,6 +1313,7 @@ class TaskLeaseClient:
         data = self._call("release", task_id, {
             "lease_id": lease_id, "fence": fence, "task_version": task_version,
             "outcome": "review", "worker_result": {"generation": generation, "result": result},
+            **({"_review_binding": _review_binding} if _review_binding is not None else {}),
         }, config=config, now=now)
         record = data.get("worker_result")
         if (data.get("released") is not True or data.get("outcome") != "review"
@@ -1182,6 +1426,7 @@ _RESULT_SERVICE_SAFE_ERRORS = {
     "service_revision_conflict": "Service-Scope hat sich geändert; bitte neu laden",
     "result_changed_reload": "Ergebnis oder Task hat sich geändert; bitte neu laden",
     "task_not_revisable": "Task ist für diese Aktion nicht freigegeben",
+    "completion_policy_operator_review_required": "Policyverwalteter Abschluss benötigt die Operator-Prüfung",
     "correction_request_invalid": "Korrekturanfrage ist ungültig",
     "result_service_unavailable": "Ergebnisreview-Dienst ist nicht verfügbar",
     "result_history_unavailable": "Ergebnisverlauf ist nicht verfügbar",

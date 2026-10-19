@@ -1,0 +1,59 @@
+Unabhängige Ergebnisprüfung durch Modelle
+========================================
+
+Ein abgegebenes Worker-Ergebnis bleibt zunächst im Status review. Eine
+Modellprüfung ist eine zusätzliche Aufgabe in derselben Taskdatenbank und
+Warteschlange. Passende normale Aufgaben werden zuerst übernommen. Es gibt
+keinen zusätzlichen Scheduler und keine automatische Modellbereitstellung.
+
+Voraussetzungen
+--------------
+Der lokale Controller benötigt eine bestätigte HTTP-Backendroute, einen
+tatsächlichen Modellrücklauf, eine gültige Ergebnisabgabe und einen aktuellen
+Git-Arbeitskopiebeleg. Eine gesondert berechtigte Person ordnet Modellaliase
+einer Modellidentität zu und bestimmt die zugelassenen Prüfer samt Stufe in
+den vorhandenen Worker-Einstellungen. Allgemeine Geräteanmeldung reicht für
+diese Rechte nicht aus. Änderungen verwenden die vorhandene Konfigurations-
+version und werden bei parallelen Änderungen abgewiesen.
+
+Eine geplante Modellbezeichnung oder Slotbeschriftung beweist keine Identität.
+Die tatsächliche Route und die während des Aufrufs gültige Aliaszuordnung
+werden am Ausführungsbeleg festgehalten. Alte Belege erhalten nachträglich
+keine Modellidentität. Ein fehlender oder geänderter Beleg erlaubt keine
+unabhängige Prüfung. API-Schlüssel bleiben im Prozess und erscheinen weder
+als Text noch als Schlüsselhash in diesen Belegen.
+
+Ablauf
+------
+Nach einer gültigen Abgabe wird bei aktivierter Reviewübernahme genau eine
+Prüfaufgabe für die konkrete vollständige Ergebnisrevision erzeugt. Die
+Zielaufgabe bleibt review. Die Prüfaufgabe hängt nicht vom Done der Zielaufgabe
+ab. Der Controller erteilt einen privaten, nicht übertragbaren Grant für eine
+andere Modellidentität, einen anderen Slot und eine andere Laufgeneration.
+Öffentliche oder externe Claims erhalten dadurch keine zusätzlichen Rechte.
+
+Die Prüfung läuft durch die vorhandenen Modell-, Ressourcen-, Lease- und
+Stopprüfungen. Sie darf Zielauftrag und Ergebnis lesen und nur das eigene
+Prüfergebnis abgeben. Der Controller bindet den tatsächlichen letzten
+Modellrücklauf an genau diesen Submit-Aufruf. Modellangaben zu Identität oder
+Unabhängigkeit werden nicht als Berechtigung übernommen.
+
+Das strukturierte Urteil enthält status (approved, findings oder rejected),
+summary und task_contract_met. Ein approved erfordert task_contract_met=true.
+Ein fehlender Prüfnachweis muss als Befund sichtbar bleiben. Das aufgezeichnete
+Review schließt nur die ausgeführte Prüfaufgabe ab. Die ursprüngliche Aufgabe
+bleibt review und kann persönlich angenommen oder zur Korrektur zurückgegeben
+werden. Eine persönliche Freigabe wird durch dieses Review nicht ersetzt.
+
+Aktualität und Grenzen
+---------------------
+Die Leseansicht bestätigt ein aufgezeichnetes Review erst nach erneutem
+Vergleich der aktuellen vollständigen Git-/Ergebnisrevision. Änderungen an
+Auftrag, Ergebnis, Route, Modellzuordnung, Policy oder Arbeitskopie verhindern
+eine ungeprüfte Wiederverwendung. Reviewaufgaben erzeugen keine weiteren
+Reviewaufgaben. Lesende Aufrufe erzeugen keine Tabellen und starten kein Modell.
+
+Dieser Baustein verbindet den zweiten Modellaufruf mit einem nachvollziehbaren
+Reviewbeleg. Die vollständige automatische Abschlussentscheidung einschließlich
+aller User-, GitHub-, Vertrags- und Korrekturregeln bleibt ein eigener offener
+Integrationsschritt. Eine Quelländerung allein aktiviert keine native Installation.

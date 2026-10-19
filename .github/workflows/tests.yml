@@ -71,14 +71,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ellmos-ai/task-master
-          ref: 5924b71b2a93e59e625b5c9afaa6e84966bf49d3
+          ref: 4a4557524a6c786b72869f3cf5ff5f3119774b9d
           path: .ci-sources/worker-policy
           persist-credentials: false
 
       - name: Install pinned shared worker-policy contract
         run: python -m pip install --no-deps ./.ci-sources/worker-policy
 
-      - name: Worker settings, device authorization and lease observations
+      - name: Worker completion, settings, independent reviews, provenance and project scope
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
@@ -86,7 +86,18 @@ jobs:
         run: |
           python -m venv --system-site-packages "$RUNNER_TEMP/worker-policy-tests"
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -m pip install pystray Pillow
-          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py
+          python -c "import subprocess; p = subprocess.run(['git', 'config', '--get-regexp', r'^filter\..*\.(process|clean|smudge)$'], capture_output=True, text=True); print('Host Git filter definitions:', len(p.stdout.splitlines())); assert p.returncode in (0, 1)"
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_policy_settings.py system/tests/test_worker_result_submission_receipt.py system/tests/test_worker_execution_evidence.py system/tests/test_worker_execution_runtime.py system/tests/test_worker_scope_snapshot.py system/tests/test_worker_scope_evidence.py system/tests/test_worker_scope_integration.py system/tests/test_provider_model_provenance.py system/tests/test_worker_model_provenance.py system/tests/test_model_backend.py system/tests/test_ollama_stream.py system/tests/test_worker_review_identity.py system/tests/test_worker_result_review.py system/tests/test_worker_review_runtime.py system/tests/test_worker_completion_policy.py system/tests/test_machine_false_acceptance_recovery.py system/tests/test_worker_completion_cli.py system/tests/test_task_completion_safe_db.py system/tests/test_task_result_correction.py system/tests/test_task_result_correction_client.py system/tests/test_task_result_correction_api.py system/tests/test_task_result_service_scopes_migration.py system/tests/test_legacy_review_reopen.py
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_request_budget_store.py system/tests/test_model_request_budget_runtime.py system/tests/test_task_manage_budget_diagnostics.py
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_task_manage_complete_flag.py system/tests/test_worker_task_actions.py system/tests/test_worker_cli_bridge.py system/tests/test_worker_tool_trace.py
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_slots_durable_platform.py
+
+      - name: Pinned shared GUI release contracts
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+          BACH_NO_AUTO_MIGRATE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_gui_release_integrity.py system/tests/test_gui_gux_shared_contract.py
 
       - name: Native MarbleRun and task result authority
         env:
@@ -168,6 +179,7 @@ jobs:
             system/tests/test_chain_control.py \
             system/tests/test_chain_handler.py \
             system/tests/test_chat_runtime.py \
+            system/tests/test_chat_runtime_completion_reserve.py \
             system/tests/test_chat_runtime_task_manage.py \
             system/tests/test_chat_session_store.py \
             system/tests/test_claude_bridge_handler.py \
@@ -278,6 +290,7 @@ jobs:
             system/tests/test_migrate_unify_distribution.py \
             system/tests/test_model_backend.py \
             system/tests/test_mount_handler.py \
+            system/tests/test_multi_host_lease_acceptance.py \
             system/tests/test_n8n_handler.py \
             system/tests/test_newspaper_handler.py \
             system/tests/test_notify_local_service.py \

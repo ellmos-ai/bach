@@ -4,8 +4,8 @@
 
 BACH differs from agent frameworks (LangChain, LlamaIndex, Haystack) by treating the LLM as a resident of a persistent text-based OS rather than a caller of a pipeline. Core primitives: handlers (CLI/API surface), skills (reusable workflows), chains (llmauto prompt sequences), boss-expert agents, a SharedMemory Bus for cross-agent coordination, and a scheduler for time-based and event-driven automation. Memory is first-class: six memory types with decay, conflict detection, and consolidation across 210+ DB tables.
 
-Current version: v3.13.0-bluesky. Scale: 113+ handlers, 550+ tools, 1870+ skills, 42 workflow templates, and 4400+ collected tests. Stack: Python 3.10+, SQLite. License: MIT.
-Last-checked: 2026-07-27.
+Current version: v3.15.0. Scale: 113+ handlers, 550+ tools, 1870+ skills, 71 workflow templates, and 4400+ collected tests. Stack: Python 3.10+, SQLite. License: MIT.
+Last-checked: 2026-10-18.
 
 ## Discovery and disambiguation
 
@@ -17,8 +17,9 @@ Do not confuse this repository with Bach music, Johann Sebastian Bach resources,
 
 ## Docs
 
-- [README](https://github.com/ellmos-ai/bach/blob/main/README.md): Project overview, installation, key features, ellmos family positioning
-- [README (Deutsch)](https://github.com/ellmos-ai/bach/blob/main/README.de.md): Full German documentation
+- [README](https://github.com/ellmos-ai/bach/blob/main/README.md): Project overview, architecture diagrams, installation, key features, ellmos family positioning
+- [README (Deutsch)](https://github.com/ellmos-ai/bach/blob/main/README.de.md): Full German documentation with architectural topology and execution sequence diagrams
+- [Marketing & Discoverability Log](https://github.com/ellmos-ai/bach/blob/main/MARKETING-LOG.txt): Path B audit, badges, and recommendations
 - [Quickstart Guide](https://github.com/ellmos-ai/bach/blob/main/QUICKSTART.md): First workflow in 5 minutes
 - [User Manual](https://github.com/ellmos-ai/bach/blob/main/BACH_USER_MANUAL.md): Complete handbook, all subsystems
 - [SKILL.md](https://github.com/ellmos-ai/bach/blob/main/SKILL.md): LLM operating instructions (Claude, Gemini, Ollama)

@@ -417,7 +417,7 @@ def test_bound_file_write_requires_grant_and_exact_task_tree(bridge, git_run, tm
         "write_file", {"path": str(private_path), "content": "no grant"}, "full",
         worker_task_binding=bridge.binding, require_task_binding=True,
     )
-    assert "freigegeben" in no_grant and not private_path.exists()
+    assert "Schreibfreigabe" in no_grant and not private_path.exists()
 
     written = exec_tool(
         "write_file", {"path": str(private_path), "content": "bound"}, "full",
@@ -434,14 +434,15 @@ def test_bound_command_requires_checked_cwd_and_rejects_python_code(bridge, git_
         worker_task_binding=bridge.binding, require_task_binding=True,
         allowed_tools={"execute_command"},
     )
-    assert "BLOCKIERT" in result
+    # Public failures are neutral since the typed tool error contract (#379).
+    assert "BLOCKIERT" in result or "nicht bestätigt" in result
     tree = Path(os.environ["BACH_WORKTREES_DIR"]) / f"task-{bridge.binding.task_id}"
     result = exec_tool(
         "execute_command", {"command": "python -c print(1)", "cwd": str(tree)}, "full",
         worker_task_binding=bridge.binding, require_task_binding=True,
         allowed_tools={"execute_command"},
     )
-    assert "BLOCKIERT" in result
+    assert "BLOCKIERT" in result or "nicht bestätigt" in result
 
 @pytest.mark.parametrize("case", ["id-string", "id-bool", "id-missing", "result-empty", "result-too-long"])
 def test_bound_task_manage_rejects_public_arguments_before_private_operation(bridge, monkeypatch, case):
@@ -464,10 +465,10 @@ def test_bound_task_manage_rejects_public_arguments_before_private_operation(bri
         args.pop("task_id")
     elif case == "result-empty":
         args["result"] = "  "
-        expected = "Konkretes Ergebnis"
+        expected = "Taskergebnis ist ungültig"
     else:
         args["result"] = "x" * 3001
-        expected = "höchstens 3000 Zeichen"
+        expected = "Taskergebnis ist ungültig"
 
     result = exec_tool(
         "task_manage", args, "safe", worker_task_binding=binding,
@@ -482,13 +483,13 @@ def test_bound_task_manage_rejects_public_arguments_before_private_operation(bri
 def test_bound_task_manage_accepts_valid_own_result_as_review_submission(bridge):
     binding = bridge.binding
     result = exec_tool(
-        "task_manage", {"action": "submit_result", "task_id": binding.task_id,
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id, "complete": True,
                        "result": "Unabhängig belegtes Ergebnis mit konkreter Prüfgrenze."},
         "safe", worker_task_binding=binding, require_task_binding=True,
         allowed_tools={"task_manage"},
     )
 
-    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert, wartet in Review auf getrennte Abnahme."
+    assert result == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
     assert binding.completed_task_ids == ()
     assert binding.reviewed_task_ids == (binding.task_id,)
 
@@ -496,7 +497,7 @@ def test_bound_task_manage_accepts_valid_own_result_as_review_submission(bridge)
 def test_bound_task_manage_hides_native_task_authority_failure(bridge):
     binding = bridge.binding
     result = exec_tool(
-        "task_manage", {"action": "submit_result", "task_id": binding.task_id + 1,
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id + 1, "complete": True,
                        "result": "Ein synthetisches Ergebnis für den falschen Task."},
         "safe", worker_task_binding=binding, require_task_binding=True,
         allowed_tools={"task_manage"},
@@ -515,7 +516,7 @@ def test_bound_task_manage_hides_unknown_native_submission_ack(bridge, monkeypat
 
     monkeypatch.setattr(binding._client, "submit_result", unknown_ack)
     result = exec_tool(
-        "task_manage", {"action": "submit_result", "task_id": binding.task_id,
+        "task_manage", {"action": "submit_result", "task_id": binding.task_id, "complete": True,
                        "result": "Ein synthetisches Ergebnis ohne bestätigten ACK."},
         "safe", worker_task_binding=binding, require_task_binding=True,
         allowed_tools={"task_manage"},
