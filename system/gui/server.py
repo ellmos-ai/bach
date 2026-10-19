@@ -6625,6 +6625,10 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
     if not token:
         return session_response({"valid": False, "reason": "No token provided"})
 
+    # Device tokens come from secrets.token_urlsafe(32); accept only their cookie-safe form.
+    if not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None:
+        return session_response({"valid": False, "reason": "Invalid or revoked token"})
+
     device = validate_token(token)
     if device:
         response = JSONResponse({
