@@ -28,7 +28,6 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 import json
 import re
-from urllib.parse import quote
 import threading
 import httpx
 
@@ -1314,20 +1313,26 @@ app.add_middleware(NoCacheMiddleware)
 # ── Device-Token Authentication Middleware (Task #1499) ─────────
 try:
     from gui.device_auth import (
+        create_browser_session,
         create_device,
         has_active_devices,
         list_devices,
+        revoke_browser_session,
         revoke_device,
         validate_token,
+        BROWSER_SESSION_TTL_SECONDS,
     )
 except ImportError:
     try:
         from device_auth import (  # type: ignore
+            create_browser_session,
             create_device,
             has_active_devices,
             list_devices,
+            revoke_browser_session,
             revoke_device,
             validate_token,
+            BROWSER_SESSION_TTL_SECONDS,
         )
     except ImportError:
         import importlib.util
@@ -1335,11 +1340,14 @@ except ImportError:
         _spec = importlib.util.spec_from_file_location("device_auth", _devauth_path)
         _mod = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(_mod)
+        create_browser_session = _mod.create_browser_session
         create_device = _mod.create_device
         has_active_devices = _mod.has_active_devices
         list_devices = _mod.list_devices
+        revoke_browser_session = _mod.revoke_browser_session
         revoke_device = _mod.revoke_device
         validate_token = _mod.validate_token
+        BROWSER_SESSION_TTL_SECONDS = _mod.BROWSER_SESSION_TTL_SECONDS
 
 
 # ── Perimeter helpers shared by HTTP middleware and the WebSocket handshake ──
@@ -6613,6 +6621,7 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
         token = payload.get("token")
 
     def session_response(content: dict) -> JSONResponse:
+        revoke_browser_session(request.cookies.get("bach_device_token"))
         response = JSONResponse(content)
         response.delete_cookie(
             key="bach_device_token",
@@ -6630,8 +6639,10 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
     if not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None:
         return session_response({"valid": False, "reason": "Invalid or revoked token"})
 
-    device = validate_token(token)
-    if device:
+    browser_session = create_browser_session(token)
+    if browser_session:
+        session_token, device = browser_session
+        revoke_browser_session(request.cookies.get("bach_device_token"))
         response = JSONResponse({
             "valid": True,
             "device": device,
@@ -6639,7 +6650,8 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
         })
         response.set_cookie(
             key="bach_device_token",
-            value=quote(token, safe=""),
+            value=session_token,
+            max_age=BROWSER_SESSION_TTL_SECONDS,
             path="/",
             secure=request.url.scheme == "https",
             httponly=True,
@@ -6651,7 +6663,8 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
 
 @app.post("/api/devices/session/logout")
 async def api_logout_device(request: Request):
-    """Clear the browser's device session without exposing the token to JS."""
+    """Clear and revoke the browser's server-issued session."""
+    revoke_browser_session(request.cookies.get("bach_device_token"))
     response = JSONResponse({"ok": True, "authenticated": False})
     response.delete_cookie(
         key="bach_device_token",
