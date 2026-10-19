@@ -22,6 +22,7 @@ Start:
 """
 import asyncio
 import functools
+import hashlib
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -1015,6 +1016,46 @@ def _without_private_model_request_runs(worker):
     return public
 
 
+def _live_resolved_execution(chat_id: str, *, generation=None, task_id=None) -> dict:
+    """Project the target last selected at an actually active inference boundary."""
+    key = str(chat_id)
+    with _runtime_state_lock:
+        session = runtime.sessions.get(key)
+    with runtime._chat_turn_gates_lock:
+        gate = runtime._chat_turn_gates.get(key)
+    if session is None or gate is None:
+        return {}
+    with gate.condition:
+        if gate.active_turns <= 0:
+            return {}
+    if task_id is not None:
+        binding = getattr(session, "worker_task_binding", None)
+        if (binding is None or getattr(binding, "closed", True)
+                or getattr(binding, "task_id", None) != task_id):
+            return {}
+    session_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    if getattr(session, "resolved_execution_session_hash", None) != session_hash:
+        return {}
+    target = getattr(session, "resolved_execution_target", "")
+    host = getattr(session, "resolved_execution_host", "")
+    locality = getattr(session, "resolved_execution_locality", "unknown")
+    observed_at = getattr(session, "resolved_execution_observed_at", "")
+    if not isinstance(target, str) or not target or not isinstance(observed_at, str) or not observed_at:
+        return {}
+    if locality not in {"local", "external", "unknown"}:
+        locality = "unknown"
+    evidence = {"schema": "bach.resolved-execution.v1", "state": "active",
+                "session_hash": session_hash, "observed_at": observed_at}
+    if isinstance(generation, str) and re.fullmatch(r"[0-9a-f]{32}", generation):
+        evidence["generation"] = generation
+    if isinstance(task_id, int) and not isinstance(task_id, bool) and task_id > 0:
+        evidence["task_id"] = task_id
+    return {"resolved_execution_target": target,
+            "resolved_execution_host": host if isinstance(host, str) else "unknown",
+            "resolved_execution_locality": locality,
+            "resolved_execution_evidence": evidence}
+
+
 def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker = dict(worker)
     budget_execution = (_budget_execution_projection(worker.get("id"))
@@ -1028,6 +1069,7 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker.pop("persistent_opt_in_profile_version", None)
     worker.pop("_persistent_execution_checkpoint", None)
     worker["persistent_opt_in"] = worker.get("persistent_opt_in") is True
+    resolved_execution_args = None
     with _WORKER_CONTROL_LOCK:
         retained = _WORKER_EXECUTIONS.get(worker.get("id"))
         control = _WORKER_CONTROLS.get(worker.get("id"))
@@ -1098,6 +1140,16 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 except Exception:
                     pass
+        if task_active and live_control is not None:
+            resolved_execution_args = (
+                str(worker.get("id") or ""), live_control.generation,
+                binding.task_id if binding is not None else None,
+            )
+    if resolved_execution_args is not None:
+        worker.update(_live_resolved_execution(
+            resolved_execution_args[0], generation=resolved_execution_args[1],
+            task_id=resolved_execution_args[2],
+        ))
     return worker
 
 
@@ -1160,9 +1212,9 @@ def _system_slots_snapshot() -> dict:
             if mapped == slot_id and gate is not None:
                 with gate.condition:
                     if gate.active_turns > 0:
-                        running_sessions.append(session)
+                        running_sessions.append((chat_id, session))
         execution, thread_alive, task_id = worker_states[slot_id]
-        active_session = running_sessions[0] if running_sessions else None
+        active_chat_id, active_session = running_sessions[0] if running_sessions else (None, None)
         execution_state = execution["state"] if execution else None
         manual_paused = agent["status"] == "paused" and not agent["pause_info"].get("auto_paused", False)
         paused = not agent["enabled"] or agent["status"] == "paused" or agent["pause_info"]["is_paused"]
@@ -1180,6 +1232,8 @@ def _system_slots_snapshot() -> dict:
                 worker_active = None
             if not running:
                 running = None
+        resolved_execution = (_live_resolved_execution(str(active_chat_id))
+                              if active_chat_id is not None and active_session is not None else {})
         agent.update({"runtime_verified": True,
                       "living": (agent["enabled"] and not paused and not failed) or worker_active is True or running is True,
                       "pause_info": {**agent["pause_info"], "is_paused": paused, "manual": manual_paused},
@@ -1187,6 +1241,7 @@ def _system_slots_snapshot() -> dict:
                       "task_id": task_id, "execution": execution,
                       "current_tool": getattr(active_session, "current_tool", ""),
                       "tool_round": getattr(active_session, "tool_round", 0),
+                      **resolved_execution,
                       "runtime_reason_code": "live_controller",
                       "status": (execution_state if execution_state in {
                           "starting", "stopping", "finishing", "unconfirmed"} else
