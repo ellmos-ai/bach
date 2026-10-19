@@ -92,7 +92,7 @@ def test_artifact_catalog_rejects_databases_keys_and_runtime(tmp_path, monkeypat
             artifact_catalog.resolve_artifact(bad)
 
 
-def test_device_fetch_keeps_credentials_on_own_api_and_preserves_control_auth():
+def test_device_fetch_uses_cookie_transport_and_preserves_explicit_control_auth():
     script = Path(server.GUI_DIR) / "static" / "js" / "device-fetch.js"
     driver = r"""
 const fs = require('fs'), vm = require('vm');
@@ -105,7 +105,7 @@ const window = {fetch: async (input, options = {}) => {
 const location = {href: 'http://gui.invalid/unified', origin: 'http://gui.invalid'};
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
   window, URL, Request, Headers, location, document: {},
-  localStorage: {getItem: () => 'fixture-device'},
+  localStorage: {getItem: () => { throw new Error('device token must not be read from localStorage'); }},
 });
 (async () => {
   await window.fetch('/api/tasks');
@@ -120,7 +120,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
                             capture_output=True, text=True, timeout=15)
     seen = json.loads(result.stdout)
     assert [item["auth"] for item in seen] == [
-        "Bearer fixture-device", "Bearer fixture-device", "Bearer control-fixture", None, None,
+        None, None, "Bearer control-fixture", None, None,
     ]
 
 TOKEN = "perimeter-fixture-token"
