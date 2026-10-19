@@ -494,7 +494,7 @@ def _native_creator_grant(conn, binding, row, version):
 
 
 def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
-                                 task_version, config=None, now=None):
+                                 task_version, ttl_profile=None, config=None, now=None):
     """Internal local entry; a persisted grant is required even outside the creator window."""
     if (not isinstance(delegation, _NativeCreatorBinding)
             or (task_id, worker_id, host, task_version) !=
@@ -506,7 +506,8 @@ def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
         raise LeaseValidationError("Private Creator-Delegation stimmt nicht mit dem Workerlauf überein")
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=delegation.acquire_request_id, task_version=task_version,
-        config=config, now=now, creator_delegation=delegation, result_generation=delegation.generation)
+        ttl_profile=ttl_profile, config=config, now=now,
+        creator_delegation=delegation, result_generation=delegation.generation)
 
 
 def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, host: str,

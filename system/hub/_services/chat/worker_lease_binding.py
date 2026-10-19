@@ -19,6 +19,19 @@ from hub._services.task_lease_client import (
 _EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
 
 
+def _external_profile_backend(slot):
+    """Return the canonical cloud profile backend, including Ollama's :cloud alias."""
+    if not isinstance(slot, dict):
+        return None
+    backend = str(slot.get("backend") or "").strip().casefold()
+    model = str(slot.get("model") or "").strip().casefold()
+    if backend in _EXTERNAL_PROFILE_BACKENDS:
+        return backend
+    if backend == "ollama" and model.endswith(":cloud"):
+        return "ollama-cloud"
+    return None
+
+
 class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
 
@@ -104,6 +117,10 @@ class WorkerLeaseBinding:
             if slot is not None and not matches(snapshot, slot):
                 raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
         kwargs = {"now": clock()} if clock is not None else {}
+        if _external_profile_backend(slot):
+            # Shorten stale-claim recovery for cloud workers while retaining
+            # the shared lease contract's two-hour S-profile run ceiling.
+            kwargs["ttl_profile"] = "S"
         if _creator_delegation is None:
             acquire_kwargs = dict(worker_id=worker_id, host=host,
                 task_version=snapshot["task_version"], result_generation=generation, **kwargs)
@@ -134,32 +151,46 @@ class WorkerLeaseBinding:
         from .slots_config import task_matches_slot_binding, match_task_to_pickup_filter
         if not task_matches_slot_binding(snapshot, slot):
             return False
-        pickup = slot.get("pickup_filter")
-        # Explicit routing takes precedence over generic category/priority
-        # selection. Tag restrictions and model/slot constraints still apply;
-        # Acquire separately enforces dependencies and canonical ownership.
-        if str(snapshot.get("assigned_slot") or "").strip():
-            if isinstance(pickup, dict) and pickup.get("enabled"):
-                assigned_filter = {**pickup, "categories": [], "priorities": []}
-                return match_task_to_pickup_filter(
-                    snapshot, {**slot, "pickup_filter": assigned_filter})
-            return True
+        # Cloud workers cover every task category. Keep explicit priority,
+        # required/excluded tag, model and slot constraints in force.
+        pickup_slot = WorkerLeaseBinding._effective_pickup_slot(snapshot, slot)
+        pickup = pickup_slot.get("pickup_filter")
         return (not isinstance(pickup, dict) or not pickup.get("enabled")
-                or match_task_to_pickup_filter(snapshot, slot))
+                or match_task_to_pickup_filter(snapshot, pickup_slot))
+
+    @staticmethod
+    def _effective_pickup_slot(snapshot, slot):
+        """Apply only the task-type flexibility granted to cloud workers."""
+        if not isinstance(slot, dict):
+            return {}
+        pickup = slot.get("pickup_filter")
+        if not isinstance(pickup, dict) or not pickup.get("enabled"):
+            return slot
+        if str(snapshot.get("assigned_slot") or "").strip():
+            # Explicit routing takes precedence over generic category/priority
+            # selection. Tag restrictions still apply.
+            pickup = {**pickup, "categories": [], "priorities": []}
+        elif _external_profile_backend(slot):
+            # Cloud workers may pick any task type; preserve priority and tag
+            # policy while removing category as a queue-wide exclusion.
+            pickup = {**pickup, "categories": []}
+        else:
+            return slot
+        return {**slot, "pickup_filter": pickup}
 
     @staticmethod
     def _matches_external_profile_route(snapshot, slot):
         """Match the canonical owner alias and exact external profile/model route."""
-        backend = slot.get("backend")
+        profile_backend = _external_profile_backend(slot)
         slot_id = slot.get("id")
         model = slot.get("model")
-        if (type(backend) is not str or backend not in _EXTERNAL_PROFILE_BACKENDS
+        if (profile_backend is None
                 or type(slot_id) is not str or not slot_id or slot_id.strip() != slot_id
                 or type(model) is not str or not model.strip()):
             return False
         return (
             type(snapshot.get("assigned_to")) is str
-            and snapshot["assigned_to"].strip().casefold() == backend.casefold()
+            and snapshot["assigned_to"].strip().casefold() == profile_backend
             and type(snapshot.get("assigned_slot")) is str
             and snapshot["assigned_slot"] == slot_id
             and type(snapshot.get("required_model")) is str
@@ -201,12 +232,8 @@ class WorkerLeaseBinding:
             return "ownership"
         if not cls._matches_slot(snapshot, slot):
             from .slots_config import pickup_filter_rejection
-            pickup = slot.get("pickup_filter")
-            if isinstance(pickup, dict) and pickup.get("enabled"):
-                if str(snapshot.get("assigned_slot") or "").strip():
-                    pickup = {**pickup, "categories": [], "priorities": []}
-                return pickup_filter_rejection(snapshot, {**slot, "pickup_filter": pickup}) or "pickup_filter"
-            return "pickup_filter"
+            return pickup_filter_rejection(
+                snapshot, cls._effective_pickup_slot(snapshot, slot)) or "pickup_filter"
         pickup = slot.get("pickup_filter")
         # Explicit routing may select a personal task. A pickup filter scopes
         # general candidates but never overrides a foreign assignee.

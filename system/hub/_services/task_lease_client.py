@@ -1114,7 +1114,7 @@ class TaskLeaseClient:
                            result_generation=result_generation, receive_time=sent_at)
 
     def _acquire_native_creator(self, task_id, *, delegation, worker_id, host,
-                                task_version, config=None, now=None):
+                                task_version, ttl_profile="M", config=None, now=None):
         """Private lead-local entry; it has no HTTP equivalent or fallback."""
         if self.mode != "local":
             raise LeaseProtocolError("Creator-Delegation wird ausschließlich am lokalen TaskDB-Lead eingelöst")
@@ -1124,7 +1124,8 @@ class TaskLeaseClient:
         conn = self._get_local_connection()
         try:
             result = _acquire_native_creator_lease(conn, task_id, delegation=delegation,
-                worker_id=worker_id, host=host, task_version=task_version, config=config, now=now)
+                worker_id=worker_id, host=host, task_version=task_version,
+                ttl_profile=ttl_profile, config=config, now=now)
             status, data = result.http_status, result.payload
         except (LeaseValidationError, TaskNotFound):
             raise LeaseProtocolError("Private Creator-Delegation oder Task ungültig") from None
