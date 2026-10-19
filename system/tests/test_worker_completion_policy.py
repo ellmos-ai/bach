@@ -1283,6 +1283,29 @@ def test_current_local_result_frees_worker_before_internal_reconciliation(
     assert control.completion_poll_blocked[task_id] is False
 
 
+@pytest.mark.parametrize("has_current_binding", [False, True])
+def test_retained_result_reviews_never_run_before_next_queue_claim(has_current_binding):
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    reconciled = []
+    older_binding = SimpleNamespace(
+        task_id=91021,
+        submitted_result={"result_id": 4201},
+        _client=SimpleNamespace(
+            _reconcile_task_completion=lambda task_id: reconciled.append(task_id)),
+    )
+    control = telegram_chat._WorkerControl(
+        worker_id="retained-result-poll", generation="new-generation")
+    control.task_binding = (
+        SimpleNamespace(task_id=91022, submitted_result=None)
+        if has_current_binding else None)
+    control.task_result_bindings = {older_binding.task_id: older_binding}
+
+    assert telegram_chat._poll_worker_completion(control) is True
+    assert reconciled == []
+
+
 def test_negative_self_check_does_not_submit_or_complete(completion_world):
     missing = completion_world(mode="simple_task", contract_min_chars=None, submit=False)
     conn, task_id = missing["conn"], missing["task_id"]
