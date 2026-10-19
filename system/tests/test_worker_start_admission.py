@@ -1000,22 +1000,28 @@ def recovery(real_acquire_before_fixture, startup, monkeypatch, mem_db):
     return control, slots, client, execution, real_acquire_before_fixture, mem_db
 
 
-def test_crash_recovery_waits_for_real_held_lease_then_acquires_fresh_fence(recovery):
+def test_crash_recovery_releases_held_pin_and_claims_next_task(recovery):
     control, slots, client, execution, acquire, db = recovery
     db.execute("INSERT INTO tasks(id,title,status,category,priority) VALUES(42,'Crash recovery','pending','INBOX','P1')")
+    db.execute("INSERT INTO tasks(id,title,status,category,priority) VALUES(43,'Next claim','pending','INBOX','P1')")
     db.commit()
     old = client.acquire(42, worker_id="old-process@fixture", host="fixture")
-    assert acquire(execution, slots.get_always_on_execution_slot(), "new-process") is None
-    assert db.execute("SELECT claim_fence FROM tasks WHERE id=42").fetchone()[0] == old.fence
-    client.release(42, lease_id=old.lease_id, fence=old.fence, outcome="return", task_version=old.task_version)
     fresh = acquire(execution, slots.get_always_on_execution_slot(), "new-process")
     try:
-        assert fresh.task_id == 42
-        assert fresh._ack.fence > old.fence
+        assert fresh.task_id == 43
+        assert fresh._ack.fence > 0
         fresh.assert_active()
+        cleared = slots.get_always_on_execution_slot()
+        assert cleared["task_id"] is None
+        assert "Task #42 abgelehnt (fremde Lease)" in cleared["current_activity"]
         assert control._control_execution_receipt(execution)["completed_task_ids"] == []
+        held = db.execute("SELECT status,claim_fence FROM tasks WHERE id=42").fetchone()
+        assert held["status"] == "in_progress" and held["claim_fence"] == old.fence
     finally:
-        fresh.return_lease()
+        if fresh is not None:
+            fresh.return_lease()
+    assert db.execute("SELECT claim_fence FROM tasks WHERE id=42").fetchone()[0] == old.fence
+    client.release(42, lease_id=old.lease_id, fence=old.fence, outcome="return", task_version=old.task_version)
 
 
 def test_crash_recovery_preserves_real_creator_priority_window(recovery):
