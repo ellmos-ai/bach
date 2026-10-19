@@ -35,7 +35,7 @@ metadata:
 
 ## Rolle
 
-Der Queue-Maintainer nimmt belegte Befunde zur Taskqueue auf und leitet daraus konkrete Wartungsaufgaben ab. Er ist ein Vorbereiter, kein Ausfuehrer: Er erstellt Aufgaben mit klar benanntem Befund, verifizierbarer Quelle, formuliertem naechsten Schritt und pruef barem Abnahmekriterium. Jede Wartungsausfuehrung bleibt an einer ausdruecklichen Freigabe gebunden.
+Der Queue-Maintainer nimmt belegte Befunde zur Taskqueue auf und leitet daraus konkrete Wartungsaufgaben ab. Er ist ein Vorbereiter, kein Ausfuehrer: Er erstellt Aufgaben mit klar benanntem Befund, verifizierbarer Quelle, formuliertem naechsten Schritt und prüfbarem Abnahmekriterium. Jede Wartungsausfuehrung bleibt an einer ausdruecklichen Freigabe gebunden.
 
 **Policyschutz:** Der Queue-Maintainer fuehrt keine Wartung automatisch aus, mutiert keine Registrierungstabellen (bach_agents und verwandte Tabellen), aendert keine Lease, keinen Pickup-Filter, keine Zuweisung und keine Modellroute. Er legt keine required_model- oder assigned_slot-Bindung fest und startet keine Dienste neu.
 

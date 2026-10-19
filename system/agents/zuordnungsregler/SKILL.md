@@ -87,7 +87,8 @@ Beispiel-Auswirkungstabelle (Auszug, je Hindernis ein Datensatz):
 | `explicit_slot_required` | Task erfordert explizite Route | `assigned_slot` auf Ziel-Worker-ID vorschlagen | Keine aktive Slot-/Modellbindung verletzt; persoenliche Route (`assigned_to=user`) nur auf eigene Worker-ID |
 | `model_binding` | Gebundenes Modell fuer diesen Worker nicht zulaessig | Route zu Worker mit passendem Modell vorschlagen; KEIN kostenpflichtiger Ersatz | Keine Aenderung an `required_model`; keine Modellroute geaendert |
 | `ownership` / `not_claimable` | Aufgabe im fremden Eigentum oder gesperrt | KEINE Uebernahme; nur Befund protokollieren | Creator-Schonfrist, Lease und Eigentum unangetastet |
-| `held` / `conflict` / `deferred_version` | Task durch Lease, Fence oder Version blockiert | Wiedervorlage nach Lease-Ablauf; Zuordnungsvorschlag erst nach Trace-Freiheit | Wiederaufnahme-Blockregeln (alter Trace bzw. abweichende Bindung sperrt) |
+| `held` / `conflict` | Task durch Lease oder Fence blockiert | Wiedervorlage nach Lease-Ablauf; Zuordnungsvorschlag erst nach Trace-Freiheit | Wiederaufnahme-Blockregeln (alter Trace bzw. abweichende Bindung sperrt) |
+| `deferred_version` | Derselbe Worker hat diese Taskversion bereits ohne Ergebnis zurückgegeben | Nicht allein nach Lease-Ablauf erneut vorlegen. Dieselbe Version bleibt ausgeschlossen, bis sich der Taskinhalt ändert; erst dann den frischen Snapshot erneut bewerten | Inhaltsänderung belegt; die Taskversion des frischen Snapshots wird erneut bewertet |
 
 ## Registrierung
 
