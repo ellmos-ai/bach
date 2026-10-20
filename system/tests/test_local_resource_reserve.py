@@ -139,41 +139,59 @@ def test_resident_weight_credit_requires_actual_context(resources, monkeypatch, 
     assert result["resident_weight_credit"] is credit
     if credit:
         assert result["capacity_basis"] == "resident_model"
-        assert result["weight_request_bytes"] == result["memory_required_bytes"] == 0
-        assert result["memory_total_bytes"] is None
-        assert result["disk_free_bytes"] is None
+        assert result["weight_request_bytes"] == 0
+        assert result["memory_required_bytes"] == int(1.75 * GIB)
+        assert result["memory_total_bytes"] == 32 * GIB
+        assert result["disk_free_bytes"]["slots"] == 4 * GIB
     else:
         assert result["capacity_basis"] == "host_budget"
         assert result["weight_request_bytes"] == 2 * GIB
         assert result["memory_required_bytes"] == int(3.75 * GIB)
 
 
-def test_resident_model_skips_host_memory_and_disk_reserves(resources, monkeypatch):
+@pytest.mark.parametrize("available,disk_free,state", [
+    (2 * GIB, 4 * GIB, "ready"),
+    (GIB, 4 * GIB, "waiting_memory_reserve"),
+    (2 * GIB, GIB // 2, "waiting_disk_reserve"),
+])
+def test_resident_model_keeps_remaining_memory_and_disk_gates(
+        resources, monkeypatch, available, disk_free, state):
     _, backend = resources
     async def observed(*_):
         return {"external": False, "digest": DIGEST, "weight_floor_bytes": 2 * GIB,
                 "resident_context": 1024, "server_responded": True}
     monkeypatch.setattr(reserve, "observe_ollama", observed)
     monkeypatch.setattr(reserve.psutil, "virtual_memory",
-                        lambda: pytest.fail("resident model must not take a second host reserve"))
+                        lambda: SimpleNamespace(total=32 * GIB, available=available))
     monkeypatch.setattr(reserve.shutil, "disk_usage",
-                        lambda _path: pytest.fail("resident model must not take a disk reserve"))
+                        lambda _path: SimpleNamespace(free=disk_free))
     result = asyncio.run(reserve.probe(backend, MODEL))
-    assert result["state"] == "ready" and result["admitted"]
+    assert result["state"] == state
+    assert result["admitted"] is (state == "ready")
+    assert result["weight_request_bytes"] == 0
+    assert result["memory_required_bytes"] == int(1.75 * GIB)
     assert result["capacity_basis"] == "resident_model"
 
 
-def test_buddha_reuses_responding_ollama_server_without_host_reserve(resources, monkeypatch):
+@pytest.mark.parametrize("available,disk_free,state", [
+    (4 * GIB, 4 * GIB, "ready"),
+    (3 * GIB, 4 * GIB, "waiting_memory_reserve"),
+    (4 * GIB, GIB // 2, "waiting_disk_reserve"),
+])
+def test_responding_server_without_resident_model_keeps_full_host_budget(
+        resources, monkeypatch, available, disk_free, state):
     _, backend = resources
     monkeypatch.setattr(reserve.psutil, "virtual_memory",
-                        lambda: pytest.fail("running Buddha server must bypass host reserve"))
+                        lambda: SimpleNamespace(total=32 * GIB, available=available))
     monkeypatch.setattr(reserve.shutil, "disk_usage",
-                        lambda _path: pytest.fail("running Buddha server must bypass disk reserve"))
+                        lambda _path: SimpleNamespace(free=disk_free))
     result = asyncio.run(reserve.probe(backend, MODEL, reuse_running_server=True))
-    assert result["state"] == "ready" and result["admitted"]
-    assert result["capacity_basis"] == "running_server"
-    assert result["memory_required_bytes"] == result["weight_request_bytes"] == 0
-    assert result["memory_total_bytes"] is None and result["disk_free_bytes"] is None
+    assert result["state"] == state
+    assert result["admitted"] is (state == "ready")
+    assert result["capacity_basis"] == "host_budget"
+    assert result["weight_request_bytes"] == 2 * GIB
+    assert result["memory_required_bytes"] == int(3.75 * GIB)
+    assert result["resident_weight_credit"] is False
 
 
 def test_resident_model_receipt_precedes_running_server_receipt(resources, monkeypatch):
@@ -190,7 +208,7 @@ def test_resident_model_receipt_precedes_running_server_receipt(resources, monke
 
 
 @pytest.mark.parametrize("slot_id,status,enabled,persistent_opt_in,basis", [
-    ("buddha_always_on", "error", True, False, "running_server"),
+    ("buddha_always_on", "error", True, False, "host_budget"),
     ("another_worker", "running", True, True, "host_budget"),
     ("buddha_always_on", "error", False, False, "host_budget"),
 ])

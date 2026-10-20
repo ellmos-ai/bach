@@ -2297,13 +2297,16 @@ def _persistent_core_capacity_observation(
     if age.total_seconds() < 0 or age.total_seconds() > 120:
         return None
     capacity_basis = receipt.get("capacity_basis")
-    if capacity_basis not in {"host_budget", "resident_model", "running_server"}:
+    if capacity_basis not in {"host_budget", "resident_model"}:
         return None
     integer_limits = {
         "wait_seconds": (1, 3600),
         "poll_seconds": (1, 60),
         "disk_reserve_bytes": (1, 256 * 1024**3),
         "weight_request_bytes": (0, 1024 * 1024**3),
+        "memory_total_bytes": (1, 4096 * 1024**3),
+        "memory_available_bytes": (0, 4096 * 1024**3),
+        "memory_required_bytes": (1, 1024 * 1024**3),
     }
     for name, (low, high) in integer_limits.items():
         value = receipt.get(name)
@@ -2311,32 +2314,11 @@ def _persistent_core_capacity_observation(
             return None
     if type(receipt.get("resident_weight_credit")) is not bool:
         return None
-    if capacity_basis == "host_budget":
-        integer_limits.update({
-            "memory_total_bytes": (1, 4096 * 1024**3),
-            "memory_available_bytes": (0, 4096 * 1024**3),
-            "memory_required_bytes": (1, 1024 * 1024**3),
-        })
-        for name, (low, high) in integer_limits.items():
-            value = receipt.get(name)
-            if type(value) is not int or not low <= value <= high:
-                return None
-        disk = receipt.get("disk_free_bytes")
-        if (not isinstance(disk, dict) or set(disk) != {"taskdb", "runtime", "slots"}
-                or any(type(value) is not int or value < 0 for value in disk.values())):
-            return None
-    else:
-        disk = receipt.get("disk_free_bytes")
-        if (expected_state != "ready" or receipt.get("memory_total_bytes") is not None
-                or receipt.get("memory_available_bytes") is not None
-                or receipt.get("memory_required_bytes") != 0 or disk is not None
-                or receipt.get("weight_request_bytes") != 0
-                or (capacity_basis == "resident_model"
-                    and receipt.get("resident_weight_credit") is not True)
-                or (capacity_basis == "running_server"
-                    and (worker.get("id") != "buddha_always_on"
-                         or worker.get("backend") != "ollama"))):
-            return None
+    disk = receipt.get("disk_free_bytes")
+    if (not isinstance(disk, dict) or set(disk) != {"taskdb", "runtime", "slots"}
+            or any(type(value) is not int or value < 0 for value in disk.values())
+            or receipt["resident_weight_credit"] is not (capacity_basis == "resident_model")):
+        return None
     try:
         from hub._services.chat import local_resource_reserve
         policy, policy_version = local_resource_reserve.read_policy()
@@ -2349,20 +2331,16 @@ def _persistent_core_capacity_observation(
     budget = policy.get("models", {}).get(receipt["model"])
     if not isinstance(budget, dict):
         return None
-    if capacity_basis == "host_budget":
-        expected_weight = budget["weight_budget_bytes"]
-        required = (policy["memory_reserve_bytes"] + expected_weight
-                    + budget["kv_headroom_bytes"] + budget["overhead_bytes"])
-        if (receipt["weight_request_bytes"] != expected_weight
-                or receipt["memory_required_bytes"] != required
-                or receipt["memory_available_bytes"] > receipt["memory_total_bytes"]
-                or required > receipt["memory_total_bytes"]):
-            return None
-        disk_blocked = any(value < policy["disk_reserve_bytes"] for value in disk.values())
-        memory_blocked = receipt["memory_available_bytes"] < required
-    else:
-        expected_weight = required = 0
-        disk_blocked = memory_blocked = False
+    expected_weight = 0 if capacity_basis == "resident_model" else budget["weight_budget_bytes"]
+    required = (policy["memory_reserve_bytes"] + expected_weight
+                + budget["kv_headroom_bytes"] + budget["overhead_bytes"])
+    if (receipt["weight_request_bytes"] != expected_weight
+            or receipt["memory_required_bytes"] != required
+            or receipt["memory_available_bytes"] > receipt["memory_total_bytes"]
+            or required > receipt["memory_total_bytes"]):
+        return None
+    disk_blocked = any(value < policy["disk_reserve_bytes"] for value in disk.values())
+    memory_blocked = receipt["memory_available_bytes"] < required
     derived_state = ("waiting_disk_reserve" if disk_blocked
                      else "waiting_memory_reserve" if memory_blocked else "ready")
     if derived_state != expected_state:

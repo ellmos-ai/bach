@@ -235,23 +235,11 @@ async def probe(backend, model, *, reuse_running_server=False):
         return _decision("model_budget_conflict", **common)
     resident = (observed["resident_context"] is not None
                 and observed["resident_context"] >= budget["num_ctx"])
-    running_server = (reuse_running_server is True
-                      and observed.get("server_responded") is True)
-    capacity_basis = ("resident_model" if resident else
-                      "running_server" if running_server else "host_budget")
-    if capacity_basis != "host_budget":
-        # The exact Ollama model and configured context were verified above.
-        # Reusing that resident model/server does not ask this worker to obtain
-        # a second host-wide memory or disk reservation.
-        common.update({"capacity_basis": capacity_basis,
-                       "memory_total_bytes": None,
-                       "memory_available_bytes": None,
-                       "memory_required_bytes": 0,
-                       "disk_free_bytes": None,
-                       "disk_reserve_bytes": policy["disk_reserve_bytes"],
-                       "weight_request_bytes": 0,
-                       "resident_weight_credit": resident})
-        return _decision("ready", admitted=True, **common)
+    # A responding server is not evidence that this model is already loaded.
+    # Only exact model/context residency credits weights; KV headroom, process
+    # overhead, system reserve and persistence filesystems are checked for
+    # every call, including reuse by Buddha after a previous runtime error.
+    capacity_basis = "resident_model" if resident else "host_budget"
     try:
         memory = psutil.virtual_memory()
         total = _integer(memory.total, 1, 4096 * GIB)
@@ -260,14 +248,14 @@ async def probe(backend, model, *, reuse_running_server=False):
                 for label, path in _data_roots().items()}
     except (OSError, ValueError, TypeError, AttributeError):
         return _decision("unknown_resources", retryable=True, **common)
-    weight_request = budget["weight_budget_bytes"]
+    weight_request = 0 if resident else budget["weight_budget_bytes"]
     required = (policy["memory_reserve_bytes"] + weight_request
                 + budget["kv_headroom_bytes"] + budget["overhead_bytes"])
-    common.update({"capacity_basis": "host_budget",
+    common.update({"capacity_basis": capacity_basis,
                    "memory_total_bytes": total, "memory_available_bytes": available,
                    "memory_required_bytes": required, "disk_free_bytes": free,
                    "disk_reserve_bytes": policy["disk_reserve_bytes"],
-                   "weight_request_bytes": weight_request, "resident_weight_credit": False})
+                   "weight_request_bytes": weight_request, "resident_weight_credit": resident})
     if required > total:
         return _decision("budget_exceeds_host", **common)
     if any(value < policy["disk_reserve_bytes"] for value in free.values()):

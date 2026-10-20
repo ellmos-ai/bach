@@ -1963,6 +1963,14 @@ class ChatRuntime(_ModuleChatRuntime):
         def check_model_binding():
             return self._model_binding_for_session(chat_id, backend, selected_model, session)
 
+        def binding_identity(value):
+            # The catalog CAS version also changes when an unrelated worker is
+            # edited. Revalidate the current binding on every read, but bind
+            # this inference turn to its own identity and admission settings.
+            return ({key: item for key, item in value.items()
+                     if key != "configuration_version"}
+                    if value is not None else None)
+
         def check_local_ready():
             check_binding()
             check_model_binding()
@@ -2033,12 +2041,12 @@ class ChatRuntime(_ModuleChatRuntime):
                         require_retryable(receipt)
                         if receipt["admitted"] and receipt["state"] != "external_target":
                             current_binding = check_model_binding()
-                            if current_binding != model_binding:
+                            if binding_identity(current_binding) != binding_identity(model_binding):
                                 raise RuntimeError("model_socket_binding_changed")
                             await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
                             try:
                                 check_binding()
-                                if check_model_binding() != model_binding:
+                                if binding_identity(check_model_binding()) != binding_identity(model_binding):
                                     raise RuntimeError("model_socket_binding_changed")
                                 check_reserve_policy(receipt)
                                 with self._local_resource_waiters_lock:
