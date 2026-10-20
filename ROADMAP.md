@@ -95,6 +95,17 @@ Automatisierter Daily Care & Dev Check. Befund und Status:
 - Dies schafft einen klaren Adapter für die spätere Modulgrenze; es ist noch kein eigenständiges PromptBoard-Paket und kein modularer Installer.
 - Folgearbeit: `BACH-PROMPTBOARD-IMPORT-01` in TODO und lokaler Offline-Draft. Nach Review und Integration Import, Tray-Start und Chat-Ausführung am Desktop abnehmen. Lead-Writer-Reconciliation (#1694) bleibt Voraussetzung für einen zentralen Taskabschluss.
 
+## Partnergebundener Session-Start 2026-10-20 (Integrationskandidat)
+
+Offline-Draft -3 schließt den Start-/Lesepfad an die bestehende BACH-lokale
+Session-Adressierung an. Strukturierte Startantworten liefern die tatsächlich
+registrierte ID. Session, Präsenz und Aktivitätsverweis bilden eine atomare
+Transaktion; parallele `session start`-Aufrufe verwenden dieselbe offene Sitzung.
+Die Aufgabe stabilisiert den State-Owner vor einem späteren Modultransfer.
+Ein neutraler Writer-/Migrationsvertrag samt Installer-/Rollbacknachweis bleibt
+Voraussetzung für diesen Transfer; es wird kein zweiter Memory-Store angelegt.
+GUI-/Tray-Geräteabnahme und zentrale Lead-Reconciliation bleiben eigene Gates.
+
 ## Session-Ownership 2026-10-16 (Kandidat zur Integration)
 
 Bericht und Abschluss erhalten eine explizite Session-/Partneradresse in CLI, API und MCP.

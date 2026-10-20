@@ -88,3 +88,17 @@ hub/startup.py 启动处理程序（会话初始化）
 hub/shutdown.py 关闭处理程序（会话终止）
 hub/task.py 任务处理程序（任务管理）
 data/bach.db 数据库架构
+
+伙伴范围与结构化会话标识
+========================
+  bach session start --partner=codex --mode=silent --json
+  bach session status --partner=codex --session=ID --json
+  bach session check --partner=codex --session=ID
+start 默认使用 user，只复用该伙伴尚未结束的会话，不会复用其他伙伴的会话。
+--startup 会替换同一伙伴的会话。候选会话不唯一时拒绝选择。
+--session 必须同时提供 --partner；不存在、已结束或属于其他伙伴的ID会被拒绝。
+--startup --json 返回实际注册的 session_id 和 partner_id。
+会话、在线状态和活动引用在同一事务中注册。
+API: info = session.startup(partner="codex", structured=True)
+     session.current("codex", session_id=info["session_id"])
+默认仍为文本输出；警告写入 stderr。
