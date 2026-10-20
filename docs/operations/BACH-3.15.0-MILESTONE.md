@@ -10,7 +10,13 @@ Dieses Dokument definiert den Meilenstein und seine Abnahmekriterien. Versionsme
 - `system/gui/web` ist eine gekennzeichnete Übergangs-/Archivkopie. Der bestehende Rückweg für Hosts ohne Release-Konfiguration bleibt bis zu einer gesonderten Caller- und Hostabnahme erhalten.
 - Ocean verwendet dieselbe Frontendquelle mit eigenen Backend-Adaptern. Der BACH-Meilenstein bestätigt noch keine vollständige Ocean-Laufzeit, keinen Installer-Grant und keinen Ocean-Cutover.
 
-## Festes GUI-Paket
+## Aktueller Prüfstand 2026-10-20
+
+`system/gui/gui-consumer.v1.json` und `system/gui/kit_manifest.json` deklarieren inzwischen GUI **0.2.24**, Quellcommit `ff13cccde77a997ab4d0a0173db43ff88ee3c2be`, Archiv `ellmos-system-gui-0.2.24-ff13cccde77a.zip`, Archiv-SHA-256 `ac767dcb4b129f7e97a9f8ec7de312126638f9abbbcca5fe2868370dcd40abbf` und **26 erwartete HTML-Seiten**. Das sind Quellangaben, kein Nachweis vorhandener oder installierter Releasebytes.
+
+Beim GitHub-Readback am 20. Oktober fehlen sowohl Release als auch Tag `v0.2.24` im GUI-Repository (HTTP 404); die Release-Liste endet bei `v0.2.23`. Vor dem BACH-Tag muss der deklarierte GUI-Kandidat upstream geprüft und regulär veröffentlicht oder der Pin durch einen separat geprüften Integrationsschritt korrigiert werden. Danach sind Archiv-, Manifest-, Seiten- und Assetidentität sowie der reale Mac-Deploy nachzuweisen. Die folgenden 0.2.19-Werte dokumentieren den ursprünglichen Meilensteinstand und sind kein aktueller Abnahmebeleg.
+
+## Historischer GUI-Pin 0.2.19
 
 | Nachweis | Wert |
 |---|---|
@@ -29,7 +35,7 @@ Das Seiteninventar `page-reads.v1.json` ist Bestandteil des Pakets. Der veröffe
 
 1. JSON-/Hook-Ausgabekorrektur aus BACH PR #343 und GUI-Verbraucherpin aus PR #345 gegen den aktuellen Main-Stand prüfen und regulär integrieren. Unabhängige Modellprüfung und die geltenden GitHub-Regeln bleiben verbindlich.
 2. Beide BACH-Paketmetadaten (`pyproject.toml`, `setup.py`) und aktuelle Root-README-Versionsangaben müssen `3.15.0` führen. Historische Versionsvergleiche, Skillvertragsversionen und ältere generierte Handbücher werden nicht pauschal umgeschrieben.
-3. Verwendete GUI-Bytes gegen den veröffentlichten Pin prüfen; sämtliche 25 HTML-Routen und ihre etablierten Tab-Aliase über den realen BACH-Server lesen. Eine Pfadliste allein genügt nicht als Funktionsnachweis.
+3. Verwendete GUI-Bytes gegen den tatsächlich veröffentlichten, aktuellen Verbraucherpin prüfen; sämtliche im zugehörigen Kitmanifest erwarteten HTML-Routen (derzeit 26) und ihre etablierten Tab-Aliase über den realen BACH-Server lesen. Eine Pfadliste allein genügt nicht als Funktionsnachweis.
 4. Vor dem Mac-Deploy Host, Konfiguration, Locks, Dirty State, Datenhoheit, Taskleases und Toolgrenzen prüfen. Bestehende private Daten sowie fremde Dateien erhalten; Code und GUI-Pin sichern. Task #2102 bleibt bei ungeklärten Toolwirkungen zur Prüfung blockiert.
 5. Nach kontrolliertem Reload den tatsächlichen BACH-Commit, GUI-Pin, Manifest, Seiten und Assets am Mac erneut prüfen. Ein TestClient-Lauf ersetzt diesen Produktivnachweis nicht. Deployment startet keine Cloudworker.
 6. Erst danach den geprüften BACH-Commit als annotierten `v3.15.0` taggen und veröffentlichen. Titel: **BACH fließt ins Meer – gemeinsame GUI**. Releasebelege müssen Quellcommit, GUI-Pin, Prüfumfang, Produktivreadback und verbleibende Gates nennen.
