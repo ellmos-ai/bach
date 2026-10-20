@@ -44,27 +44,46 @@ Artefaktinhalt, Pfade und private Referenzen gehören nicht in öffentliche
 Task-/Result-DTOs. Ein Inhaltsabruf verlangt erneut die Operatorberechtigung.
 Speicherung eines Artefakts attestiert noch keine Herkunft und erteilt keine Abnahme.
 
+## Implementierter Belegkern
+
+`worker_external_attestation` bietet den gesonderten Writer, DB-/History-Reader
+und die aktuelle Scope-Projektion. Der Writer bindet Task-/Result-ID, Hash,
+Fence, Generation, Taskversion, Status-, Submissionrevision und beide
+Submission-Ereignisse. Ein eigenes privates Ergebnisartefakt muss bytegenau
+mit dem vollständigen Result übereinstimmen. Für die Operatorprüfung der
+Herkunft werden getrennte private Quellartefakte verlangt.
+
+Git und Sperren werden über `snapshot_task_scope` außerhalb der
+SQLite-Transaktion geprüft. Unter `BEGIN IMMEDIATE` werden anschließend
+Operator, freie Lease, aktuelle Task-/Resultrevision, Identitätsbindung und
+die tatsächlichen Artefaktbytes erneut geprüft. Zwei eigene History-Ereignisse
+binden den externen Herkunfts- und Scope-Beleg. BACH setzt die heutige
+Attestierungszeit; eine externe Quellzeit bleibt separat ausgewiesen.
+
+Die eindeutige Kombination Plattform/Tenant/Account/Run/Turn gilt über alle
+Tasks hinweg. Identische Wiederholung erzeugt bei unverändertem Scope keine
+weiteren Events; ein anderer Beleg für dasselbe Result oder dieselbe Run-/Turn-
+Kombination ist ein Konflikt. Bereits verknüpfte native Modellbelege können
+auch bei beschädigter nativer Receipt nicht extern überschrieben werden.
+
+Der Reader prüft Identitätsbindung, Artefaktbytes, Hashes, Events und aktuelle
+Operatorgültigkeit neu. Ein Widerruf erhält die Historie, sperrt aber ihre
+Verwendung zur Abnahme. Die öffentliche Projektion zeigt keine privaten
+Artefakt-, Account-, Tenant-, Run-/Turn-IDs oder Dateipfade. Erst ein erneuter
+Git-Vergleich erzeugt die eigene externe Ergebnisrevision. Diese Projektion
+ist ausschließlich mit Daten des vertrauenswürdigen DB-Readers aufzurufen.
+
+Dieser Kern ist noch kein über API/SDK nutzbarer Abschlussweg und erteilt
+keine Abnahme. Dafür fehlen die nachfolgenden Integrationsschritte.
+
 ## Noch zu integrierender Abschlussweg
 
-1. Aktuelle Task-/Result-ID, Hash, Fence, Generation, Taskversion,
-   Statusrevision, Submissionrevision und Ereignis-ID vollständig binden.
-2. Scope über den vorhandenen vertrauenswürdigen Git-/Lock-Scanner außerhalb
-   der DB-Schreibtransaktion neu prüfen. Keine Clientpfade oder fingierten
-   historischen Snapshots übernehmen.
-3. Operatorberechtigung, Identitätsbindung, Task-/Result-CAS und freie Lease
-   unter `BEGIN IMMEDIATE` erneut prüfen; eigene externe Herkunfts- und
-   Scope-Ereignisse unveränderlich aufzeichnen. BACH setzt die heutige Zeit;
-   eine Quellzeit bleibt separat ausgewiesen.
-4. Plattform/Tenant/Account/Run/Turn global gegen Wiederverwendung sperren.
-   Identische unveränderte Wiederholung ist idempotent, ein abweichender
-   Zweitbeleg ein Konflikt.
-5. Eine eigene externe Ergebnisrevision aus Submission, externem Beleg und
-   Scope berechnen; aktuelles Git erneut projizieren. Die native
-   `execution_revision` bleibt davon getrennt.
-6. Result-Readback, Completion-Policy und unabhängigen Review explizit um
+1. Result-Readback, Completion-Policy und unabhängigen Review explizit um
    diese Herkunft erweitern. Reviewer-Child führt weiter eine tatsächliche
    belegte Modellausführung aus; Modellunabhängigkeit nutzt globale Principals.
-7. API/SDK/CLI und Ergebnisanzeige integrieren, einschließlich Operatorauth,
+   Vor jeder Abschlussentscheidung alle aktuellen DB-Abhängigkeiten per CAS
+   erneut prüfen. Die native `execution_revision` bleibt getrennt.
+2. API/SDK/CLI und Ergebnisanzeige integrieren, einschließlich Operatorauth,
    strikter Payloads, Replay-/CAS-/Revokationsfällen und echter Live-Abnahme.
 
 Frühere Ergebnisse lassen sich nur mit real vorhandenen, nachvollziehbar zum
