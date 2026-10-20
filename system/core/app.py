@@ -102,14 +102,15 @@ class App:
                             f"wird NICHTS automatisch migriert. Rueckstand "
                             f"pruefen und buchen: bach update migrations "
                             f"baseline [--through NNN]. Betroffen u. a.: "
-                            + ", ".join(backlog[:5])
+                            + ", ".join(backlog[:5]),
+                            file=sys.stderr,
                         )
                     elif os.environ.get(NO_AUTO_MIGRATE_ENV, "").strip() in ("1", "true", "yes", "on"):
                         pass  # read-only-Befehl: nur listen, nie migrieren
                     else:
                         applied, error = self._db.run_migrations()
                         if error:
-                            print(f"[WARNUNG] Migrationslauf unvollstaendig: {error}")
+                            print(f"[WARNUNG] Migrationslauf unvollstaendig: {error}", file=sys.stderr)
         return self._db
 
     @property

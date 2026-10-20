@@ -1,10 +1,10 @@
 ---
 name: bach
-version: 3.9.1
+version: 3.9.2
 type: skill
 author: BACH Team
 created: 2025-12-01
-updated: 2026-03-12
+updated: 2026-10-20
 anthropic_compatible: true
 
 description: >
@@ -325,6 +325,20 @@ from bach_api import (
 ---
 
 ### (1) STARTe jetzt Bach [B/C]
+
+Für parallele Partner die eigene Start-ID strukturiert übernehmen und später
+an Bericht/Abschluss weitergeben:
+
+```python
+info = session.startup(partner="codex", mode="silent", structured=True)
+SESSION_ID = info["session_id"]
+session.current("codex", session_id=SESSION_ID)
+```
+
+CLI: `bach session start --partner=codex --mode=silent --json` verwendet die
+eigene offene Sitzung erneut. `--startup` ersetzt sie. Status und Zeitabfrage
+akzeptieren `--partner` und `--session`; mehrdeutige Auswahl wird abgelehnt.
+
 
 **Modus C (Session/CLI):**
 

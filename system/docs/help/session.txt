@@ -90,3 +90,18 @@ hub/startup.py                   Startup-Handler (Session-Initialisierung)
 hub/shutdown.py                  Shutdown-Handler (Session-Beendigung)
 hub/task.py                      Task-Handler (Task-Management)
 data/bach.db                     Datenbankschema
+
+PARTNER UND STRUKTURIERTE IDENTITÄT
+=================================
+  bach session start --partner=codex --mode=silent --json
+  bach session status --partner=codex --session=ID --json
+  bach session check --partner=codex --session=ID
+Start verwendet ohne Partner user und übernimmt keine fremde Sitzung.
+start verwendet die eigene offene Sitzung erneut; --startup startet sie neu.
+Status/check lehnen mehrere passende offene Sitzungen ab. --session erfordert
+--partner; fehlende, geschlossene oder fremde IDs werden abgelehnt.
+--startup --json liefert die tatsächlich registrierte session_id und partner_id.
+Session, Präsenz und Aktivitätsverweis werden gemeinsam atomar registriert.
+API: info = session.startup(partner="codex", structured=True)
+     session.current("codex", session_id=info["session_id"])
+Die bisherige Textausgabe bleibt der Standard. Migrationswarnungen stehen auf stderr.
