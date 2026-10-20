@@ -194,7 +194,8 @@ async def observe_ollama(backend, name):
         raise ValueError("ambiguous residency")
     context = resident[0].get("context_length") if resident else None
     return {"external": False, "digest": digest, "weight_floor_bytes": weight_floor,
-            "resident_context": context if type(context) is int and context > 0 else None}
+            "resident_context": context if type(context) is int and context > 0 else None,
+            "server_responded": True}
 
 
 def _decision(state, *, admitted=False, enforced=True, retryable=False, **fields):
@@ -202,7 +203,7 @@ def _decision(state, *, admitted=False, enforced=True, retryable=False, **fields
             "retryable": retryable, "checked_at": datetime.now(timezone.utc).isoformat(), **fields}
 
 
-async def probe(backend, model):
+async def probe(backend, model, *, reuse_running_server=False):
     """A budget/observation receipt, never a model capacity certification."""
     try:
         policy, version = read_policy()
@@ -232,6 +233,13 @@ async def probe(backend, model):
             or budget["weight_budget_bytes"] < observed["weight_floor_bytes"]
             or budget["num_ctx"] != getattr(backend, "num_ctx", None)):
         return _decision("model_budget_conflict", **common)
+    resident = (observed["resident_context"] is not None
+                and observed["resident_context"] >= budget["num_ctx"])
+    # A responding server is not evidence that this model is already loaded.
+    # Only exact model/context residency credits weights; KV headroom, process
+    # overhead, system reserve and persistence filesystems are checked for
+    # every call, including reuse by Buddha after a previous runtime error.
+    capacity_basis = "resident_model" if resident else "host_budget"
     try:
         memory = psutil.virtual_memory()
         total = _integer(memory.total, 1, 4096 * GIB)
@@ -240,15 +248,11 @@ async def probe(backend, model):
                 for label, path in _data_roots().items()}
     except (OSError, ValueError, TypeError, AttributeError):
         return _decision("unknown_resources", retryable=True, **common)
-    # A matching resident model with a sufficient observed context avoids a
-    # second weight reservation. KV/overhead headroom remains conservative;
-    # it is configured budget, not invented measured memory consumption.
-    resident = (observed["resident_context"] is not None
-                and observed["resident_context"] >= budget["num_ctx"])
     weight_request = 0 if resident else budget["weight_budget_bytes"]
     required = (policy["memory_reserve_bytes"] + weight_request
                 + budget["kv_headroom_bytes"] + budget["overhead_bytes"])
-    common.update({"memory_total_bytes": total, "memory_available_bytes": available,
+    common.update({"capacity_basis": capacity_basis,
+                   "memory_total_bytes": total, "memory_available_bytes": available,
                    "memory_required_bytes": required, "disk_free_bytes": free,
                    "disk_reserve_bytes": policy["disk_reserve_bytes"],
                    "weight_request_bytes": weight_request, "resident_weight_credit": resident})

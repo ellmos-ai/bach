@@ -1717,6 +1717,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
                 or path == "/api/system/task-lease-settings"
+                or path == "/api/tasks/leases/by-worker"
                 or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")
@@ -2861,6 +2862,13 @@ async def read_task_lease(task_id: int, request: Request):
     """Wer hält die Task? (Vertrag §5.2). Ohne lease_id; ``own`` nur mit passendem X-Lease-Id."""
     from hub._services.task_lease import read_lease
     return _run_lease_op(read_lease, task_id, lease_id=request.headers.get("X-Lease-Id") or None)
+
+
+@app.get("/api/tasks/leases/by-worker")
+async def read_physical_worker_leases(worker_id: str):
+    """Complete, capability-free holder readback for deletion/recovery guards."""
+    from hub._services.task_lease import read_worker_leases
+    return _run_lease_op(read_worker_leases, worker_id)
 
 
 @app.get("/api/tasks/{task_id}/lease/correction-context")

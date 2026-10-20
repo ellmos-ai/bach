@@ -216,6 +216,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             and type(review.get("status")) is str
             and review.get("status") in {"approved", "findings", "rejected"}
             and review.get("independent") is True
+            and review.get("policy_eligible") is True
             and type(review.get("task_id")) is int
             and review.get("task_id") == task_id
             and type(review.get("result_id")) is int
@@ -300,6 +301,10 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             github_pr_review_required=github_required, result_age_seconds=_age_seconds(record.get("submitted_at")),
             review=review_record, user_review=user_record, external_review=external_record)
         decision = kernel.evaluate_worker_policy(policy, context, override).as_dict()
+        # Internal review can affect whether this result is accepted, but it
+        # never holds the worker's next queue claim. External-effect gates
+        # remain represented by completion_allowed and the result status.
+        decision["worker_may_claim_next"] = True
         return {"schema": SCHEMA, "availability": "available", "task_id": task_id,
             "result_id": record["result_id"], "result_revision": revision,
             "status": observed["status"],

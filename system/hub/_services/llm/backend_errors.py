@@ -39,6 +39,10 @@ def _normalize_request_error(raw):
     if status is not None:
         result["status_code"] = status
         message += f" HTTP {status}."
+    retry = raw.get("retry_after_seconds")
+    if status == 429 and type(retry) is int and 0 <= retry <= 2_147_483_647:
+        result["retry_after_seconds"] = retry
+        message += f" Retry-After: {retry} Sekunden bis zu einem neuen Versuch."
     result["message"] = message
     return result
 
@@ -134,6 +138,22 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     return normalize_backend_error(raw)
 
 
+def cloud_call_retry_delay(detail, *, retries, waited_seconds):
+    """Bound retries of one rejected request, using the worker's 3/60/900 policy."""
+    if (type(retries) is not int or not 0 <= retries < 3
+            or type(waited_seconds) not in (int, float)
+            or not math.isfinite(waited_seconds) or waited_seconds < 0):
+        return None
+    error = normalize_backend_error(detail)
+    if (not error or error.get("quota_exceeded") is not False
+            or error.get("status_code") != 429
+            or (error["provider"], error["kind"]) not in {
+                ("ollama", "rate_limited"), ("openrouter", "http_error")}):
+        return None
+    delay = max(60 * (2 ** retries), error.get("retry_after_seconds", 0))
+    return delay if waited_seconds + delay <= 900 else None
+
+
 class BackendRequestFailure(RuntimeError):
     """Safe request failure; RuntimeError preserves the existing fallback policy."""
 
@@ -179,6 +199,10 @@ class BackendRequestFailure(RuntimeError):
                   "error_type": _REQUEST_ERROR_KINDS[kind][0], "quota_exceeded": False}
         if status is not None:
             detail["status_code"] = status
+        if status == 429:
+            retry = parse_retry_after(exc.response.headers.get("retry-after"))
+            if retry is not None:
+                detail["retry_after_seconds"] = retry
         return cls(detail)
 
 
