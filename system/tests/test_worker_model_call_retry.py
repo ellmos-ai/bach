@@ -55,7 +55,7 @@ class Binding:
 
 
 def _runtime(monkeypatch, *, provider="ollama"):
-    backend = OllamaBackend(default_model="glm-5.3:cloud") if provider == "ollama" else OpenRouterBackend(default_model="fixture:free")
+    backend = OllamaBackend(default_model="glm-5.3:cloud") if provider == "ollama" else OpenRouterBackend(api_key="fixture-key", default_model="openrouter/free")
     model = backend.get_default_model()
     runtime = ChatRuntime(backend)
     session = runtime.get_session("worker-fixture")
@@ -154,7 +154,8 @@ def test_exhaustion_does_not_allow_controller_task_restart(monkeypatch):
         retries=0, waited_seconds=0, reason_code=answer.reason_code) is None
 
 
-def test_actual_tool_write_occurs_once_when_model_resumes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("provider", ["ollama", "openrouter"])
+def test_actual_tool_write_occurs_once_when_model_resumes(tmp_path, monkeypatch, provider):
     from hub._services import task_lease_client as clients
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from system.tests.test_task_lease_client import _init_db
@@ -170,14 +171,15 @@ def test_actual_tool_write_occurs_once_when_model_resumes(tmp_path, monkeypatch)
     client = clients.TaskLeaseClient(conn=conn)
     binding = WorkerLeaseBinding.acquire(client, 42, worker_id="fixture@fixture", host="fixture", generation="a" * 32,
                                         is_current=lambda: True, stop_event=threading.Event())
-    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    model = "glm-5.3:cloud" if provider == "ollama" else "openrouter/free"
+    backend = OllamaBackend(default_model=model) if provider == "ollama" else OpenRouterBackend(api_key="fixture-key", default_model=model)
     runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
     monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
     monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *a: "")
     session = runtime.get_session("worker-fixture")
     session.worker_task_binding, session.require_task_binding = binding, True
     session.worker_slot_reader = lambda: {"id": session.chat_id, "enabled": True, "type": "continuous",
-        "status": "running", "backend": "ollama-cloud", "model": "glm-5.3:cloud"}
+        "status": "running", "backend": "ollama-cloud" if provider == "ollama" else provider, "model": model}
     calls, waits = [], []
     real_client = httpx.AsyncClient
     def reply(request):
@@ -185,10 +187,15 @@ def test_actual_tool_write_occurs_once_when_model_resumes(tmp_path, monkeypatch)
         if len(calls) == 1:
             message = {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "task_manage",
                 "arguments": {"action": "add", "title": "Only once"}}}]}
+            if provider == "openrouter":
+                message["tool_calls"][0].update(id="call_fixture", type="function")
+                message["tool_calls"][0]["function"]["arguments"] = json.dumps({"action": "add", "title": "Only once"})
         elif len(calls) == 2:
             return httpx.Response(429, json={"error": "rate limit"})
         else:
             message = {"role": "assistant", "content": "Continued after existing tool result"}
+        if provider == "openrouter":
+            return httpx.Response(200, json={"choices": [{"message": message}], "usage": {}})
         return httpx.Response(200, text=json.dumps({"message": message, "done": True}) + "\n")
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(reply), **kw))
     async def wait(seconds, *, check_active):
@@ -198,7 +205,7 @@ def test_actual_tool_write_occurs_once_when_model_resumes(tmp_path, monkeypatch)
     monkeypatch.setattr(runtime, "_wait_model_call_retry", wait)
     try:
         answer = asyncio.run(runtime.process("Create one child then report", session.chat_id,
-                                            backend=backend, model="glm-5.3:cloud", work_priority="background"))
+                                            backend=backend, model=model, work_priority="background"))
         assert answer == "Continued after existing tool result"
         assert waits == [60] and len(calls) == 3 and calls[1].content == calls[2].content
         assert binding.tool_dispatch_count == 1
@@ -208,3 +215,37 @@ def test_actual_tool_write_occurs_once_when_model_resumes(tmp_path, monkeypatch)
     finally:
         binding.return_lease()
         conn.close()
+
+
+def test_openrouter_has_one_http_request_per_dispatch_receipt(monkeypatch):
+    runtime, session, backend, model, _ = _runtime(monkeypatch, provider="openrouter")
+    binding = session.worker_task_binding
+    dispatches, finishes, requests, waits = [], [], [], []
+    binding._discard_model_execution_candidate = lambda: None
+    def begin(**kwargs):
+        handle = object()
+        dispatches.append((handle, kwargs))
+        return handle
+    def finish(handle, **kwargs):
+        finishes.append((handle, kwargs))
+    binding.begin_model_execution, binding.finish_model_execution = begin, finish
+    real_client = httpx.AsyncClient
+    def reply(request):
+        requests.append(request)
+        return httpx.Response(429, headers={"Retry-After": "70"}, json={"error": {"message": "rate limit"}})
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(reply), **kw))
+    async def wait(seconds, *, check_active):
+        check_active()
+        waits.append(seconds)
+    monkeypatch.setattr(runtime, "_wait_model_call_retry", wait)
+    token = runtime._compute_turn_context.set((session.chat_id, "background"))
+    try:
+        result = asyncio.run(runtime._chat_with_cloud_call_retry(session, backend, model, []))
+    finally:
+        runtime._compute_turn_context.reset(token)
+    assert result["reason_code"] == "cloud_call_retry_exhausted"
+    assert len(requests) == len(dispatches) == len(finishes) == 4
+    assert waits == [70, 120, 240]
+    assert [handle for handle, _ in dispatches] == [handle for handle, _ in finishes]
+    assert all(info["failed"] is True for _, info in finishes)
+    assert len({request.content for request in requests}) == 1

@@ -892,6 +892,10 @@ class ChatRuntime(_ModuleChatRuntime):
         original_profile = profile_identity()
         if original_profile is None:
             return await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
+        if provider == "openrouter":
+            # OpenRouter inherits Hermes' internal retry loop. The bound worker
+            # must account for each actual HTTP request at this outer boundary.
+            kwargs = {**kwargs, "retry_transient": False}
 
         def check_active():
             if (self.get_session(session.chat_id) is not session
