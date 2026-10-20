@@ -876,13 +876,18 @@ class ChatRuntime(_ModuleChatRuntime):
             return await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
 
         def profile_identity():
+            from hub._services.chat.slots_config import _worker_configuration
             profile = reader()
             if (not isinstance(profile, dict) or profile.get("id") != session.chat_id
                     or profile.get("enabled", True) is not True
                     or profile.get("type") not in {"continuous", "persistent"}
-                    or profile.get("status") in {"paused", "idle", "stopping", "expired"}):
+                    or profile.get("status") != "running"):
                 return None
-            return {key: profile.get(key) for key in ("id", "type", "backend", "model", "model_fallbacks")}
+            # This is the pure version of this worker's own configuration,
+            # including tool grants/mode/budgets. It contains no global catalog
+            # version and no mutable nested references to the reader's objects.
+            return (profile["id"], profile["type"],
+                    _worker_configuration(profile)["configuration_version"])
 
         original_profile = profile_identity()
         if original_profile is None:

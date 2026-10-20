@@ -59,7 +59,7 @@ def _runtime(monkeypatch, *, provider="ollama"):
     model = backend.get_default_model()
     runtime = ChatRuntime(backend)
     session = runtime.get_session("worker-fixture")
-    profile = {"id": session.chat_id, "enabled": True, "type": "continuous", "status": "running",
+    profile = {"id": session.chat_id, "enabled": True, "type": "continuous", "status": "running", "model_fallbacks": [],
                "backend": "ollama-cloud" if provider == "ollama" else provider, "model": model}
     session.worker_task_binding = Binding()
     session.require_task_binding = True
@@ -89,7 +89,7 @@ def test_same_request_succeeds_after_rate_limit(monkeypatch, provider):
     assert calls[0] == calls[1] and messages == [{"role": "tool", "content": "already committed tool result"}]
 
 
-@pytest.mark.parametrize("change", ["stop", "binding", "profile", "session"])
+@pytest.mark.parametrize("change", ["stop", "binding", "profile", "session", "mode", "fallback", "status"])
 def test_guard_loss_during_backoff_prevents_dispatch(monkeypatch, change):
     runtime, session, backend, model, profile = _runtime(monkeypatch)
     calls = []
@@ -103,6 +103,12 @@ def test_guard_loss_during_backoff_prevents_dispatch(monkeypatch, change):
             session.worker_task_binding = Binding()
         elif change == "profile":
             profile["model"] = "other:cloud"
+        elif change == "mode":
+            profile["mode"] = "open"
+        elif change == "fallback":
+            profile["model_fallbacks"].append({"backend": "openrouter", "model": "fixture:free"})
+        elif change == "status":
+            profile["status"] = "completed"
         else:
             monkeypatch.setattr(runtime, "get_session", lambda _: object())
         check_active()
