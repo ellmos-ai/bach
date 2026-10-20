@@ -1085,6 +1085,17 @@ Komponenten in `hub/_services/chat/`:
   und System-Prompt
 - `bach_tools.py` — BACHs Tool-Fläche als `ToolProvider` (21 Safe-, 23 Full-Tools,
   darunter `bach_command` in die 110+ CHIAH-Handler)
+  - `read_file`-Ausgabeformat: 1-basierte physische Zeilennummern im Schema
+    `n | text` mit ehrlichem Metadaten-Header (Bereich, Offset, angezeigte
+    Anzahl, Truncation-Hinweis). `lines` max 200 pro Aufruf; die Gesamtausgabe
+    ist auf 4000 Zeichen inkl. Header und Truncation-Marker gedeckelt.
+    `offset` ist 1-basiert und dient als Resume-Anker. Additives Flag
+    `line_numbers=false` liefert das Legacy-Verhalten (Rohtext, exakt
+    `''.join(lines)[:4000]`); Task-Reads (mit Capability) erhalten
+    standardmäßig die nummerierte Ansicht. Formatierung liegt hostneutral in
+    `system/hub/_services/read_file_formatter.py`. Zeilennummern sind
+    Navigations-/Referenzhilfe für `offset`-Resume, kein Inhalt-Nachweis;
+    Secret-/Symlink-/Lease-Schutz bleibt vor jeder Ausgabe fail-closed.
 - `session_store.py` — Verlauf als `session_snapshots`/`chat-transcript.v1` in `bach.db`
 - `chat_tray.py` — Cross-Platform System-Tray (pystray)
 - `telegram_chat.py` — Telegram-Bot mit Voice/OCR
