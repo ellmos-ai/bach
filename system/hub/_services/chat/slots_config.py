@@ -20,6 +20,7 @@ import logging
 import math
 import os
 import re
+import socket
 import threading
 import time
 import uuid
@@ -48,6 +49,8 @@ _MODEL_REQUEST_RUN_FIELDS = frozenset({
     "configuration_version", "limit", "reserved_count", "phase", "reason", "sequence",
 })
 _MODEL_REQUEST_TERMINAL_LIMIT = 64
+_CONTROLLER_RUN_FIELD = "_controller_run"
+_CONTROLLER_RUN_SCHEMA = "bach.worker-controller-run.v1"
 
 
 class ModelRequestBudgetError(RuntimeError):
@@ -423,7 +426,8 @@ def worker_admission_transaction(path: str | None = None):
     with _exclusive_lock(target), _config_lock:
         published = False
 
-        def advance_revision(*, model_request_run: dict[str, Any] | None = None):
+        def advance_revision(*, model_request_run: dict[str, Any] | None = None,
+                             controller_run: dict[str, Any] | None = None):
             nonlocal published
             if published:
                 raise RuntimeError("Admission revision already advanced")
@@ -432,8 +436,12 @@ def worker_admission_transaction(path: str | None = None):
             config = json.loads(raw.decode("utf-8"))
             if model_request_run is not None:
                 _admit_model_request_run(config, model_request_run)
+            if controller_run is not None:
+                _validated_controller_run(controller_run)
+                worker = _model_request_worker(config, controller_run["worker_id"])
+                worker[_CONTROLLER_RUN_FIELD] = dict(controller_run)
             config["admission_revision"] = uuid.uuid4().hex
-            if model_request_run is None:
+            if model_request_run is None and (controller_run is None or not controller_run["durable"]):
                 save_slots_config(config, path)
             else:
                 save_slots_config(config, path, durable=True)
@@ -795,8 +803,10 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
             PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
             PERSISTENT_CORE_RECOVERY_FIELD} & set(updates):
         raise ValueError("Dauerbetriebsfreigabe erfordert den Versions-CAS-Endpunkt")
-    if {"_model_request_runs", "max_model_requests"} & set(updates):
+    if {"_model_request_runs", "max_model_requests", _CONTROLLER_RUN_FIELD} & set(updates):
         raise ValueError("Modellanfragenbudget erfordert den Konfigurations-CAS-Endpunkt")
+    if {"system", "execution_kind"} & set(updates):
+        raise ValueError("Systemidentität ist kein editierbares Workerfeld")
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
@@ -974,7 +984,7 @@ def _core_configuration_version(config: dict[str, Any]) -> str:
     if isinstance(workers, list):
         content["dynamic_workers"] = [
             {field: value for field, value in worker.items()
-             if field not in progress | {"history", "_model_request_runs"}}
+             if field not in progress | {"history", "_model_request_runs", _CONTROLLER_RUN_FIELD}}
             if isinstance(worker, dict) else worker for worker in workers
         ]
     encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -1807,21 +1817,28 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "pause_started_at": "",
     }
 
+    from hub.agent_process_provider import capture_process_create_time
+    worker[_CONTROLLER_RUN_FIELD] = {
+        "schema": _CONTROLLER_RUN_SCHEMA, "phase": "never_admitted",
+        "worker_id": worker_id, "pid": os.getpid(),
+        "process_create_time": capture_process_create_time(os.getpid()),
+        "host": socket.gethostname(),
+        "durable": os.name == "posix",
+        "prior_runs_unconfirmed": False,
+    }
     workers.append(worker)
     _reconcile_available_model_bindings(cfg, worker_id)
-    save_slots_config(cfg, path)
+    save_slots_config(cfg, path, durable=os.name == "posix")
     log.info("Created dynamic worker %s (%s, sub_mode=%s, model=%s)", worker_id, name, sub_mode, model)
     return worker
 
 
 @_serialized_mutation
-def remove_worker(worker_id: str, path: str | None = None) -> bool:
-    """Delete a dynamic worker by ID."""
+def remove_worker(worker_id: str, path: str | None = None, *, _runtime_guard=None) -> bool:
+    """Delete only under a fresh controller proof, retaining terminal budget receipts."""
     cfg = load_slots_config(path, strict=True)
     workers = cfg.get("dynamic_workers", [])
     matches = [w for w in workers if w.get("id") == worker_id]
-    if matches and "_model_request_runs" in matches[0]:
-        raise RuntimeError("Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden")
     if len(matches) > 1 or (matches and (
         worker_id in cfg.get("slots", {}) or worker_id in DEFAULT_CORE_SLOTS
     )):
@@ -1829,10 +1846,60 @@ def remove_worker(worker_id: str, path: str | None = None) -> bool:
     new_workers = [w for w in workers if w.get("id") != worker_id]
     if len(new_workers) == len(workers):
         return False
+    worker = matches[0]
+    if _runtime_guard is None:
+        if _MODEL_REQUEST_RUNS_FIELD in worker:
+            raise RuntimeError("Budgetierte Run-Belege benötigen die gefencete Controller-Löschung mit Archiv")
+        raise RuntimeError("worker_delete_execution_unconfirmed")
+    # The caller holds the controller admission lock; this OS lock excludes
+    # configuration edits and admissions in other processes until removal.
+    _runtime_guard(worker)
+    runs = _model_request_runs(worker)
+    records = list(runs["terminal"])
+    if runs["current"] is not None:
+        records.append(runs["current"])
+    if any(record["phase"] != "terminal" for record in records):
+        raise RuntimeError("worker_delete_budget_unconfirmed")
+    from .worker_run_archive import archive_terminal_records
+    archive_terminal_records(worker_id, records, _resolve_path(path).parent / "worker-run-archive")
     cfg["dynamic_workers"] = new_workers
-    save_slots_config(cfg, path)
+    # Removing the profile also atomically revokes its persistent opt-in.
+    save_slots_config(cfg, path, durable=os.name == "posix")
     log.info("Removed dynamic worker %s", worker_id)
     return True
+
+
+def _validated_controller_run(record: Any) -> dict[str, Any]:
+    base = {"schema", "phase", "worker_id", "host", "pid", "process_create_time", "durable", "prior_runs_unconfirmed"}
+    if (type(record) is not dict or record.get("schema") != _CONTROLLER_RUN_SCHEMA
+            or record.get("phase") not in {"never_admitted", "admitted"}
+            or type(record.get("worker_id")) is not str
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", record["worker_id"]) is None
+            or type(record.get("host")) is not str
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", record["host"]) is None
+            or type(record.get("pid")) is not int or record["pid"] <= 0
+            or type(record.get("process_create_time")) not in {int, float}
+            or not math.isfinite(record["process_create_time"])
+            or record["process_create_time"] <= 0 or type(record.get("durable")) is not bool
+            or type(record.get("prior_runs_unconfirmed")) is not bool
+            or record["phase"] == "never_admitted" and record["prior_runs_unconfirmed"]):
+        raise RuntimeError("worker_controller_run_invalid")
+    if record["phase"] == "admitted":
+        base |= {"service_instance", "start_request_id", "generation", "physical_worker_id", "lease_worker_id"}
+        from hub._services.task_lease import _WORKER_RE
+        if (any(type(record.get(key)) is not str or
+                re.fullmatch(r"[0-9a-f]{32}", record[key]) is None
+                for key in ("service_instance", "start_request_id", "generation"))
+                or type(record.get("physical_worker_id")) is not str
+                or re.fullmatch(r"worker-[0-9a-f]{32}", record["physical_worker_id"]) is None
+                or type(record.get("lease_worker_id")) is not str
+                or not _WORKER_RE.fullmatch(record["lease_worker_id"])
+                or record["lease_worker_id"].split("@")[0] != record["physical_worker_id"]
+                or record["lease_worker_id"].split("@")[1] != record["host"]):
+            raise RuntimeError("worker_controller_run_invalid")
+    if set(record) != base:
+        raise RuntimeError("worker_controller_run_invalid")
+    return record
 
 
 @_serialized_mutation
@@ -2905,7 +2972,7 @@ def _persistent_worker_reconciliation_proof_valid(
 def set_persistent_worker_controller_checkpoint(
     worker_id: str, expected_configuration_version: str, expected_profile_version: str,
     expected_intent_id: str, expected_checkpoint: dict[str, Any] | None,
-    checkpoint: dict[str, Any] | None, *, path: str | None = None,
+    checkpoint: dict[str, Any] | None, *, path: str | None = None, _runtime_guard=None,
 ) -> dict[str, Any]:
     """CAS-update private controller metadata without changing execution/consent digests."""
     config = load_slots_config(path, strict=True)
@@ -2933,6 +3000,13 @@ def set_persistent_worker_controller_checkpoint(
         if current is None:
             if checkpoint.get("phase") != "admission_pending":
                 raise ValueError("Ein Start muss mit admission_pending beginnen")
+            if _CONTROLLER_RUN_FIELD not in worker:
+                raise RuntimeError("worker_previous_run_unconfirmed")
+            if (_CONTROLLER_RUN_FIELD in worker and
+                    _validated_controller_run(worker[_CONTROLLER_RUN_FIELD])["phase"] == "admitted"):
+                if _runtime_guard is None:
+                    raise RuntimeError("worker_previous_run_unconfirmed")
+                _runtime_guard(worker)
         elif (not _valid_persistent_worker_controller_checkpoint(current)
                 or current.get("phase") != "admission_pending"
                 or checkpoint.get("phase") != "admitted"
@@ -2952,7 +3026,7 @@ def set_persistent_worker_controller_checkpoint(
 def settle_persistent_worker_controller_checkpoint(
     worker_id: str, expected_configuration_version: str, expected_profile_version: str,
     expected_intent_id: str, expected_checkpoint: dict[str, Any], expected_status: str,
-    reconciliation_proof: dict[str, Any], *, path: str | None = None,
+    reconciliation_proof: dict[str, Any], *, path: str | None = None, _runtime_guard=None,
 ) -> dict[str, Any]:
     """CAS-settle a stale opted-in generation after complete stable native reads."""
     if expected_status not in {"idle", "running"}:
@@ -2965,6 +3039,13 @@ def settle_persistent_worker_controller_checkpoint(
     if len(workers) != 1:
         raise KeyError("Workerprofil nicht eindeutig gefunden")
     worker = workers[0]
+    if _CONTROLLER_RUN_FIELD not in worker:
+        raise RuntimeError("worker_previous_run_unconfirmed")
+    if (_CONTROLLER_RUN_FIELD in worker and
+            _validated_controller_run(worker[_CONTROLLER_RUN_FIELD])["phase"] == "admitted"):
+        if _runtime_guard is None:
+            raise RuntimeError("worker_previous_run_unconfirmed")
+        _runtime_guard(worker)
     current_version = _worker_configuration(worker)["configuration_version"]
     if current_version != expected_configuration_version:
         raise RuntimeError("configuration_version_conflict")

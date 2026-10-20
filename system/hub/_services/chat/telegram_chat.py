@@ -685,7 +685,8 @@ def _execution_worker_slot(worker_id: str) -> dict:
         return get_always_on_execution_slot()
     worker = get_worker_slot(worker_id)
     if worker:
-        return worker
+        # Registry membership defines a dynamic profile, never a payload flag.
+        return {**worker, "system": False}
     # Dynamic IDs are already resolved by their strict canonical registry.
     # Only an actual system-slot ID needs a second system-slot lookup.
     if worker_id not in load_slots_config().get("slots", {}):
@@ -1022,6 +1023,7 @@ def _without_private_model_request_runs(worker):
         return worker
     public = dict(worker)
     public.pop("_model_request_runs", None)
+    public.pop("_controller_run", None)
     return public
 
 
@@ -1030,6 +1032,7 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     budget_execution = (_budget_execution_projection(worker.get("id"))
                         if worker.get("max_model_requests") is not None else None)
     worker.pop("_model_request_runs", None)
+    worker.pop("_controller_run", None)
     if budget_execution is not None:
         worker["model_requests"] = budget_execution["model_requests"]
     worker.pop("generation", None)
@@ -1661,6 +1664,113 @@ def _validate_worker_execution_fence(expected_execution):
                    or any(char not in "0123456789abcdef" for char in value)
                    for value in expected_execution.values())):
         raise ValueError("Ungültige Ausführungsbindung für Stop")
+
+
+def _assert_worker_profile_inactive(worker, *, allow_legacy_start=False):
+    """Require exact local end evidence or a dead prior process and free leases.
+
+    Called with controller lock, then configuration OS lock held, matching
+    admission order. Displayed status and the last displayed task are not proof.
+    """
+    from hub._services.chat.slots_config import _validated_controller_run, _model_request_runs
+    from hub.agent_process_provider import capture_process_create_time, inspect_process_identity
+    worker_id = worker["id"]
+    control = _WORKER_EXECUTIONS.get(worker_id)
+    current, active_thread = _active_worker_control(worker_id)
+    if (_thread_is_alive(active_thread) or current is not None and current.admission_pending
+            or control is not None and (control.admission_pending
+                or not control.done_event.is_set() or _thread_is_alive(control.thread))):
+        raise RuntimeError("worker_delete_active")
+    if current is not None and current is not control:
+        raise RuntimeError("worker_delete_execution_unconfirmed")
+    record = worker.get("_controller_run")
+    if record is not None:
+        _validated_controller_run(record)
+        if record["worker_id"] != worker_id:
+            raise RuntimeError("worker_controller_run_invalid")
+        if record["host"] != socket.gethostname():
+            # Local PID observations cannot establish death on another host.
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if record["prior_runs_unconfirmed"] and not allow_legacy_start:
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if record["phase"] == "never_admitted":
+            if control is not None:
+                raise RuntimeError("worker_delete_execution_unconfirmed")
+            if record["durable"] or (record["pid"] == os.getpid()
+                    and record["process_create_time"] == capture_process_create_time(os.getpid())):
+                return
+            if allow_legacy_start:
+                # Non-durable Windows markers may survive a service restart.
+                # Preserve starts, carrying that uncertainty into the new run.
+                return
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if control is not None and (
+                record["service_instance"] == _WORKER_SERVICE_INSTANCE
+                and record["start_request_id"] == control.start_request_id
+                and record["generation"] == control.generation
+                and record["physical_worker_id"] == control.physical_worker_id
+                and record["lease_worker_id"] == control.lease_worker_id
+                and record["pid"] == os.getpid()
+                and record["process_create_time"] == capture_process_create_time(os.getpid())):
+            if (not control.launch_attempted and not control.worker_thread_started
+                    and control.task_binding is None and not control.task_result_bindings
+                    and control.lease_supervisor is None):
+                # No task acquire is reachable before the worker thread launch.
+                # A synchronously rejected admission can be retried offline.
+                return
+            lease_worker_id = control.lease_worker_id
+        elif (control is None and record["durable"] and record["service_instance"] != _WORKER_SERVICE_INSTANCE
+                and inspect_process_identity(record)[0] in {"gone", "mismatch"}):
+            lease_worker_id = record["lease_worker_id"]
+        else:
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+    elif control is not None and control.lease_worker_id:
+        lease_worker_id = control.lease_worker_id
+    elif allow_legacy_start:
+        # Preserve established admission for pre-fence profiles. Once admitted,
+        # every dynamic generation has an exact physical identity on disk.
+        return
+    else:
+        runs = _model_request_runs(worker)
+        budget = runs["current"]
+        if (worker.get("max_model_requests") is None or worker.get("type") != "once"
+                or budget is None or budget["phase"] != "terminal"
+                or budget["task_id"] != worker.get("task_id")):
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if _native_task_client().read(budget["task_id"]).leased is not False:
+            raise RuntimeError("worker_delete_leased")
+        return
+    if _native_task_client().worker_leases(lease_worker_id)["leases"]:
+        raise RuntimeError("worker_delete_leased")
+
+
+def delete_worker_profile(worker_id):
+    """One fenced delete operation shared by both POST aliases and DELETE."""
+    if not isinstance(worker_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", worker_id) is None:
+        return {"error": "Worker-ID ist ungültig"}, 400
+    with _WORKER_CONTROL_LOCK:
+        try:
+            worker = _execution_worker_slot(worker_id)
+            if not worker or worker.get("system") or worker_id in DEFAULT_CORE_SLOTS:
+                return {"error": "Workerprofil nicht gefunden"}, 404
+            if worker.get("max_model_requests") is not None and not _recover_model_request_run(worker_id):
+                return {"error": "Vorheriger Lauf ist noch nicht beendet oder leasefrei bestätigt",
+                        "error_code": "worker_delete_execution_unconfirmed"}, 409
+            ok = remove_worker(worker_id, _runtime_guard=_assert_worker_profile_inactive)
+        except RuntimeError as exc:
+            code = str(exc)
+            if code in {"worker_delete_active", "worker_delete_execution_unconfirmed",
+                        "worker_delete_leased", "worker_delete_budget_unconfirmed"}:
+                return {"error": "Worker zuerst beenden; Laufende und freie Leases müssen bestätigt sein",
+                        "error_code": code}, 409
+            log.warning("Worker-Löschung nicht bestätigt (%s)", type(exc).__name__)
+            return {"error": "Worker-Löschung oder Belegarchiv nicht verifizierbar"}, 503
+        except Exception as exc:
+            log.warning("Worker-Löschung nicht bestätigt (%s)", type(exc).__name__)
+            return {"error": "Worker-Löschung oder Belegarchiv nicht verifizierbar"}, 503
+        if not ok:
+            return {"error": "Workerprofil nicht gefunden"}, 404
+        return {"ok": True, "id": worker_id}, 200
 
 
 def _revoke_persistent_worker_intent(worker_id: str) -> bool:
@@ -4263,6 +4373,9 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     slot = _execution_worker_slot(worker_id)
                 if not slot or slot.get("id") != worker_id:
                     return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+                dynamic_profile = bool(get_worker_slot(worker_id))
+                if dynamic_profile:
+                    slot = {**slot, "system": False}
                 if (_startup_profile_version and worker_id != "buddha_always_on"
                         and not slot.get("system") and cloud_binding is None):
                     return rejected({
@@ -4280,8 +4393,16 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                             "error_code": "persistent_admission_unavailable",
                         }, 409)
                     slot = cloud_snapshot
+                    if dynamic_profile:
+                        slot = {**slot, "system": False}
                 if slot.get("enabled", True) is not True:
                     return rejected({"error": "Worker ist deaktiviert"}, 403)
+                if not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS:
+                    try:
+                        _assert_worker_profile_inactive(slot, allow_legacy_start=True)
+                    except Exception:
+                        return rejected({"error": "Vorherige Worker-Generation nicht beendet oder leasefrei bestätigt",
+                                         "error_code": "worker_previous_run_unconfirmed"}, 409)
                 budget_record = None
                 if slot.get("max_model_requests") is not None:
                     from hub._services.chat.slots_config import (
@@ -4320,7 +4441,7 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 control = _WorkerControl(
                     worker_id,
                     generation=_startup_generation or uuid.uuid4().hex,
-                    physical_worker_id=_startup_physical_worker_id,
+                    physical_worker_id=_startup_physical_worker_id or f"worker-{uuid.uuid4().hex}",
                     lease_worker_id=_startup_lease_worker_id,
                     start_request_id=request_id,
                     admitted_worker={"id": worker_id, "type": slot.get("type")},
@@ -4346,9 +4467,37 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 control.admission_handle = _WorkerAdmission()
                 control.admission_pending = True
                 control.thread = control.admission_handle
+                control.lease_worker_id = control.lease_worker_id or f"{control.physical_worker_id}@{socket.gethostname()}"
+                controller_run = None
+                if not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS:
+                    from hub.agent_process_provider import capture_process_create_time
+                    from hub._services.chat.slots_config import _model_request_runs
+                    prior_record = slot.get("_controller_run")
+                    prior_budget = _model_request_runs(slot)["current"]
+                    prior_runs_unconfirmed = (prior_record["prior_runs_unconfirmed"]
+                        if prior_record is not None else not (
+                            slot.get("max_model_requests") is not None and slot.get("type") == "once"
+                            and prior_budget is not None and prior_budget["phase"] == "terminal"))
+                    if (prior_record is not None and prior_record["phase"] == "never_admitted"
+                            and not prior_record["durable"] and (
+                                prior_record["pid"] != os.getpid()
+                                or prior_record["process_create_time"] != capture_process_create_time(os.getpid()))):
+                        prior_runs_unconfirmed = True
+                    controller_run = {
+                        "schema": "bach.worker-controller-run.v1", "phase": "admitted",
+                        "worker_id": worker_id, "service_instance": _WORKER_SERVICE_INSTANCE,
+                        "pid": os.getpid(), "process_create_time": capture_process_create_time(os.getpid()),
+                        "host": socket.gethostname(),
+                        "start_request_id": request_id, "generation": control.generation,
+                        "physical_worker_id": control.physical_worker_id,
+                        "lease_worker_id": control.lease_worker_id, "durable": os.name == "posix",
+                        "prior_runs_unconfirmed": prior_runs_unconfirmed,
+                    }
                 # No RAM admission is published unless the durable revision
                 # write succeeds. Keep the file lock until all registries agree.
-                if budget_record is None:
+                if controller_run is not None:
+                    advance_revision(model_request_run=budget_record, controller_run=controller_run)
+                elif budget_record is None:
                     advance_revision()
                 else:
                     advance_revision(model_request_run=budget_record)
@@ -6152,6 +6301,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 for w in workers:
                     w["pause_info"] = get_slot_pause_info(w)
                     w.pop("_model_request_runs", None)
+                    w.pop("_controller_run", None)
                     w.pop("persistent_opt_in_id", None)
                     w.pop("persistent_opt_in_profile_version", None)
                     w.pop("_persistent_execution_checkpoint", None)
@@ -6549,7 +6699,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 worker = add_worker(body)
                 record_activity("system", f"Neuer Worker erstellt: {worker.get('name', worker.get('id'))}", "ok")
-                self._json({"ok": True, "worker": worker})
+                self._json({"ok": True, "worker": _without_private_model_request_runs(worker)})
             except ValueError as e:
                 self._json({"error": str(e)}, 400)
             except Exception as e:
@@ -6560,19 +6710,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             if not worker_id:
                 self._json({"error": "id erforderlich"}, 400)
                 return
-            try:
-                ok = remove_worker(worker_id)
-            except RuntimeError as exc:
-                if str(exc) != "Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden":
-                    self._json({"error": "Worker-Löschung nicht verifizierbar"}, 503)
-                else:
-                    self._json({"error": str(exc)}, 409)
-                return
-            if ok:
-                record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
-                self._json({"ok": True, "id": worker_id})
-            else:
-                self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+            response, status = delete_worker_profile(worker_id)
+            self._json(response, status)
 
         elif path == "/api/workers/toggle":
             worker_id = body.get("id") or body.get("worker_id")
@@ -6800,19 +6939,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             if not worker_id:
                 self._json({"error": "id erforderlich"}, 400)
                 return
-            try:
-                ok = remove_worker(worker_id)
-            except RuntimeError as exc:
-                if str(exc) != "Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden":
-                    self._json({"error": "Worker-Löschung nicht verifizierbar"}, 503)
-                else:
-                    self._json({"error": str(exc)}, 409)
-                return
-            if ok:
-                record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
-                self._json({"ok": True, "id": worker_id})
-            else:
-                self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+            response, status = delete_worker_profile(worker_id)
+            self._json(response, status)
         else:
             self._json({"error": "Method not allowed"}, 405)
 
@@ -7085,6 +7213,14 @@ def _reconcile_persistent_cloud_worker(profile, trace_contract, *, client=None, 
     slot = get_worker_slot(worker_id, path=path)
     if not isinstance(slot, dict):
         return {"state": "blocked", "reason": "profile_unavailable"}
+    if "_controller_run" not in slot:
+        return {"state": "blocked", "reason": "prior_controller_unconfirmed"}
+    if "_controller_run" in slot:
+        try:
+            with _WORKER_CONTROL_LOCK:
+                _assert_worker_profile_inactive(slot, allow_legacy_start=True)
+        except Exception:
+            return {"state": "blocked", "reason": "prior_controller_unconfirmed"}
     checkpoint = slot.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
     if (not _valid_persistent_worker_controller_checkpoint(checkpoint)
             or checkpoint.get("worker_id") != worker_id
@@ -7142,9 +7278,11 @@ def _reconcile_persistent_cloud_worker(profile, trace_contract, *, client=None, 
             "active_old_lease": False,
             "old_generation_trace": False,
         }
-        settled = settle_persistent_worker_controller_checkpoint(
-            worker_id, config_version, profile_version, profile["intent_id"],
-            checkpoint, status, proof, path=path)
+        with _WORKER_CONTROL_LOCK:
+            settled = settle_persistent_worker_controller_checkpoint(
+                worker_id, config_version, profile_version, profile["intent_id"],
+                checkpoint, status, proof, path=path,
+                _runtime_guard=lambda worker: _assert_worker_profile_inactive(worker, allow_legacy_start=True))
         return {"state": "settled", "reason": "stable_no_old_generation_effects",
                 "candidate_count": second["candidate_count"],
                 "generation": settled["settled_generation"]}
@@ -7238,9 +7376,11 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
         }
         expected_checkpoint = slot.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
         try:
-            set_persistent_worker_controller_checkpoint(
-                worker_id, profile["configuration_version"], profile["profile_version"],
-                profile["intent_id"], expected_checkpoint, pending)
+            with _WORKER_CONTROL_LOCK:
+                set_persistent_worker_controller_checkpoint(
+                    worker_id, profile["configuration_version"], profile["profile_version"],
+                    profile["intent_id"], expected_checkpoint, pending,
+                    _runtime_guard=lambda worker: _assert_worker_profile_inactive(worker, allow_legacy_start=True))
         except Exception as exc:
             outcomes.append({"worker_id": worker_id, "state": "not_started",
                              "reason": type(exc).__name__})

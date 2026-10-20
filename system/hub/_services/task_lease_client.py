@@ -1142,6 +1142,44 @@ class TaskLeaseClient:
         return self._grant(data, worker_id=worker_id, host=host, task_version=task_version,
                            result_generation=delegation.generation, receive_time=sent_at)
 
+    def worker_leases(self, worker_id):
+        """Read every live lease of one exact physical worker without capabilities."""
+        from hub._services.task_lease import read_worker_leases, _WORKER_RE
+        if not isinstance(worker_id, str) or not _WORKER_RE.fullmatch(worker_id):
+            raise LeaseProtocolError("Ungültige physische Worker-ID")
+        if self.mode == "remote":
+            from urllib.parse import urlencode
+            status, data = self._http_request(
+                "GET", "/api/tasks/leases/by-worker?" + urlencode({"worker_id": worker_id}))
+            if status != 200:
+                raise LeaseProtocolError("Worker-Leases nicht kanonisch lesbar")
+        else:
+            conn = self._get_local_connection()
+            try:
+                data = read_worker_leases(conn, worker_id).payload
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict) or set(data) != {
+                "schema", "worker_id", "server_now", "complete", "leases"}
+                or data.get("schema") != "bach.worker-leases.v1"
+                or data.get("worker_id") != worker_id or data.get("complete") is not True
+                or not isinstance(data.get("leases"), list)):
+            raise LeaseProtocolError("Unvollständiger Worker-Lease-Readback")
+        _wire_time(data.get("server_now"))
+        seen = set()
+        for lease in data["leases"]:
+            if (not isinstance(lease, dict) or set(lease) != {
+                    "task_id", "fence", "expires_at", "legacy"}
+                    or type(lease["task_id"]) is not int or lease["task_id"] <= 0
+                    or lease["task_id"] in seen or type(lease["fence"]) is not int
+                    or lease["fence"] < 0 or type(lease["legacy"]) is not bool):
+                raise LeaseProtocolError("Ungültiger Worker-Lease-Readback")
+            if lease["expires_at"] is not None:
+                _wire_time(lease["expires_at"])
+            seen.add(lease["task_id"])
+        return data
+
     def read(self, task_id, *, lease_id=None, config=None, now=None):
         headers = {"X-Lease-Id": lease_id} if lease_id else None
         body = {"lease_id": lease_id} if self.mode == "local" else None
