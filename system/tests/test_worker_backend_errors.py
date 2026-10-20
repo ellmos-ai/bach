@@ -493,7 +493,7 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
         if previous_block and len(calls) == expected_calls - 1:
             return httpx.Response(200, text=json.dumps({"message": {
                 "role": "assistant", "content": "Partial work; task remains open"}, "done": True}) + "\n")
-        assert len(calls) <= expected_calls, "Unsafe replay reached provider"
+        assert len(calls) <= expected_calls + (3 if backend_failure == "rate_limit" else 0), "Unsafe replay reached provider"
         status = 503 if backend_failure == "server_error" else 429
         message = "monthly usage limit reached" if backend_failure == "monthly_quota" else "rate limit"
         return httpx.Response(status, json={"error": message})
@@ -503,6 +503,11 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
         waits.append(seconds)
         pytest.fail("Tools have run; automatic retry must be suppressed")
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
+    call_waits = []
+    async def wait_call(seconds, *, check_active):
+        check_active()
+        call_waits.append(seconds)
+    monkeypatch.setattr(runtime, "_wait_model_call_retry", wait_call)
     thread = None
     try:
         response, code = control.start_worker_execution(ident)
@@ -512,7 +517,12 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
         thread.join(8)
         assert not thread.is_alive()
         expected_calls = (2 if dispatch_path == "runtime" else 1) + int(previous_block)
-        assert len(calls) == expected_calls and waits == []
+        assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0) and waits == []
+        assert call_waits == ([60, 120, 240] if backend_failure == "rate_limit" else [])
+        if backend_failure == "rate_limit":
+            # Only the exact rejected model request is repeated. The earlier
+            # tool dispatch, including a write, remains a single execution.
+            assert len({request.content for request in calls[expected_calls - 1:]}) == 1
         snapshot = client.task_snapshot(42)
         assert snapshot["claim_fence"] == 1 and snapshot["status"] == "blocked"
         assert not client.read(42).leased

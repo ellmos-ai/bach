@@ -329,6 +329,7 @@ class _SnapshotStoreAdapter:
 
 
 _SAFE_FAILURE_REASON_CODES = frozenset({
+    "cloud_call_retry_exhausted",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -832,6 +833,96 @@ class ChatRuntime(_ModuleChatRuntime):
             and detail.get("status_code") in {429, 502, 503, 504, 529}
         )
 
+    @staticmethod
+    def _rejected_cloud_call_error(*, result=None, error=None):
+        """A typed 429 must prove this request emitted neither answer nor tools."""
+        from hub._services.llm.backend_errors import BackendRequestFailure, normalize_backend_error
+        if error is not None:
+            if not isinstance(error, BackendRequestFailure):
+                return None
+            return normalize_backend_error(error.backend_error)
+        if not isinstance(result, dict) or not result.get("error"):
+            return None
+        if any(result.get(key) for key in ("content", "thinking", "tool_calls")):
+            return None
+        raw = result.get("raw_message")
+        if raw and (not isinstance(raw, dict)
+                    or any(value for key, value in raw.items() if key != "role")):
+            return None
+        return normalize_backend_error(result.get("backend_error"))
+
+    async def _wait_model_call_retry(self, seconds, *, check_active):
+        """Keep the same lease/history and react to stop or policy loss within a second."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + seconds
+        while True:
+            check_active()
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(1.0, remaining))
+
+    async def _chat_with_cloud_call_retry(self, session, backend, model, *args, **kwargs):
+        """Repeat only a rejected model call; never replay a tool loop or task prompt."""
+        from hub._services.llm.backend_errors import BackendRequestFailure, cloud_call_retry_delay
+        from hub._services.llm.model_backend import backend_identifier
+        provider = backend_identifier(backend)
+        binding = getattr(session, "worker_task_binding", None)
+        reader = getattr(session, "worker_slot_reader", None)
+        cloud = provider == "openrouter" or (
+            provider == "ollama" and isinstance(model, str) and model.lower().endswith(":cloud"))
+        if (not cloud or binding is None or not callable(reader)
+                or getattr(backend, "manages_own_tools", False)):
+            return await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
+
+        def profile_identity():
+            profile = reader()
+            if (not isinstance(profile, dict) or profile.get("id") != session.chat_id
+                    or profile.get("enabled", True) is not True
+                    or profile.get("type") not in {"continuous", "persistent"}
+                    or profile.get("status") in {"paused", "idle", "stopping", "expired"}):
+                return None
+            return {key: profile.get(key) for key in ("id", "type", "backend", "model", "model_fallbacks")}
+
+        original_profile = profile_identity()
+        if original_profile is None:
+            return await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
+
+        def check_active():
+            if (self.get_session(session.chat_id) is not session
+                    or session.worker_task_binding is not binding
+                    or profile_identity() != original_profile):
+                raise RuntimeError("Cloud-Wiederholung: Workerbindung hat sich geändert")
+            problem = self._worker_backend_gate(session, backend, model)
+            if problem is not None:
+                raise RuntimeError(str(problem))
+
+        retries, waited = 0, 0
+        while True:
+            check_active()
+            error = None
+            try:
+                result = await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
+                detail = self._rejected_cloud_call_error(result=result)
+            except BackendRequestFailure as exc:
+                error = exc
+                detail = self._rejected_cloud_call_error(error=exc)
+            delay = cloud_call_retry_delay(detail, retries=retries, waited_seconds=waited)
+            if delay is None:
+                if detail and detail.get("status_code") == 429 and not detail.get("quota_exceeded"):
+                    # Do not compound this bounded call retry with a controller
+                    # restart of the task, even when no tool has run yet.
+                    return {"error": detail["message"], "backend_error": detail,
+                            "reason_code": "cloud_call_retry_exhausted"}
+                if error is not None:
+                    raise error
+                return result
+            log.info("Cloud-Anfragelimit: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)",
+                     delay, retries + 1)
+            await self._wait_model_call_retry(delay, check_active=check_active)
+            retries += 1
+            waited += delay
+
     async def _chat_with_configured_fallbacks(self, session, backend, model, *args, **kwargs):
         """Advance one explicit native chain only after a typed pre-answer failure."""
         try:
@@ -839,8 +930,8 @@ class ChatRuntime(_ModuleChatRuntime):
         except Exception:  # noqa: BLE001 - redact native profile reader details at the runtime boundary.
             raise RuntimeError("Native Modellfallbackkette ist nicht verifizierbar") from None
         if route is None:
-            result = await self._chat_with_compute_turn(
-                backend, *args, **{**kwargs, "model": model}
+            result = await self._chat_with_cloud_call_retry(
+                session, backend, model, *args, **kwargs
             )
             return result, backend, model
 
@@ -869,8 +960,9 @@ class ChatRuntime(_ModuleChatRuntime):
             call_kwargs = dict(kwargs)
             call_kwargs["model"] = target["model"]
             try:
-                result = await self._chat_with_compute_turn(
-                    active_backend, *args, **call_kwargs
+                result = await self._chat_with_cloud_call_retry(
+                    session, active_backend, target["model"], *args,
+                    **{key: value for key, value in call_kwargs.items() if key != "model"}
                 )
             except Exception as exc:
                 from hub._services.chat.slots_config import ModelRequestBudgetError
@@ -2835,6 +2927,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     f"{FailedAnswer.PREFIX}{result['error']}"
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else ""),
                     backend_error=result.get("backend_error"),
+                    reason_code=result.get("reason_code"),
                 )
 
             resolved_model = result.get("model") if isinstance(result, dict) else None
