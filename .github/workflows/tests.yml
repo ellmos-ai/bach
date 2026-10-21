@@ -98,7 +98,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
           PYSTRAY_BACKEND: dummy
         run: |
-          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_external_evidence.py system/tests/test_worker_external_attestation.py system/tests/test_worker_external_result_integration.py
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_external_evidence.py system/tests/test_worker_external_attestation.py system/tests/test_worker_external_result_integration.py system/tests/test_worker_external_api.py system/tests/test_worker_external_client.py
 
       - name: Pinned shared GUI release contracts
         env:

@@ -419,10 +419,26 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
         return None
 
 
-def prepare_external_review_task(conn, task_id, *, operator_token, repo_root=None, worktrees_dir=None):
+def validate_external_review_target(payload):
+    """Pin the exact public revision the operator selected, never latest-wins."""
+    fields = {"task_id", "result_id", "result_sha256", "result_revision", "task_version", "status_revision"}
+    settings._object(payload, fields)
+    for key in ("task_id", "result_id", "status_revision"):
+        if type(payload[key]) is not int or payload[key] <= 0:
+            raise ValueError("Positive Reviewziel-Kennung erforderlich")
+    for key in ("result_sha256", "result_revision", "task_version"):
+        if type(payload[key]) is not str or not _HEX.fullmatch(payload[key]):
+            raise ValueError("Vollständige Reviewziel-Revision erforderlich")
+    return dict(payload)
+
+
+def prepare_external_review_task(conn, task_id, *, operator_token, expected=None,
+                                 repo_root=None, worktrees_dir=None):
     """Explicit enrolled-operator entry after a verified external attestation."""
     if conn.in_transaction:
         raise ValueError("Externe Reviewanlage benötigt eine freie DB-Verbindung")
+    if expected is not None:
+        expected = validate_external_review_target(expected)
     conn.execute("BEGIN")
     try:
         identity.require_operator(conn, operator_token)
@@ -433,6 +449,8 @@ def prepare_external_review_task(conn, task_id, *, operator_token, repo_root=Non
     target = _target_record(conn, task_id, repo_root=repo_root, worktrees_dir=worktrees_dir)
     if target is None or source_kind(target) != "external_attested":
         return None
+    if expected is not None and any(target.get(key) != value for key, value in expected.items()):
+        raise settings.PolicyConflict("Das ausgewählte externe Reviewziel wurde geändert")
     authority = _target_authority(conn, target)
     if authority is None:
         return None

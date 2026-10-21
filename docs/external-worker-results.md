@@ -95,14 +95,71 @@ Operatorberechtigung. Vor einem Abschluss gelten die erneuten kanonischen
 DB-Prüfungen und der bestehende abschließende Git-/Sperrvergleich. Ein
 ausstehender Review hält die nächste Aufgabenübernahme des Workers nicht auf.
 
-Diese Serviceintegration ist noch kein über API/SDK nutzbarer Abschlussweg.
-Sie enthält keinen Nachweis eines tatsächlichen externen Modelllaufs oder
-eines Deployments in die laufenden Mac-Dienste.
+## Operator-API, SDK und CLI
+
+Die Operator-Anbindung verlangt bei jedem Aufruf ein aktives Gerät und die
+bestehende gesonderte Task-Result-Operatorberechtigung. Zugangsdaten werden
+nicht über diese Schnittstelle ausgestellt. Private Antworten verwenden
+`Cache-Control: no-store`; private Artefaktbytes und interne Receipts werden
+nicht in den öffentlichen Ergebnis-Readback übernommen.
+
+| Methode / Pfad unter `/api` | Funktion |
+|---|---|
+| GET/PUT `/system/worker-model-principal-catalog` | Globalen Modellkatalog lesen beziehungsweise mit Konfigurations-CAS ändern. |
+| GET/PUT `/system/worker-external-principals` | Private Quellenzuordnungen lesen beziehungsweise mit Konfigurations-CAS ändern. |
+| POST `/system/worker-external-artifacts` | Tatsächliche private Bytes als `media_type` und kanonisches `content_base64` speichern. |
+| GET `/system/worker-external-artifacts/{artifact_id}` | Private Bytes nach erneuter Operatorprüfung abrufen. |
+| POST `/tasks/{task_id}/result/external-attestation` | Strikten vollständigen Herkunftsauftrag attestieren; öffentlich projizierten Ergebnis-Readback zurückgeben. |
+| POST `/tasks/{task_id}/result/external-review` | Normale Reviewaufgabe für die ausdrücklich ausgewählte externe Ergebnisrevision anlegen. |
+
+Reviewaufträge enthalten exakt `task_id`, `result_id`, `result_sha256`,
+`result_revision`, `task_version` und `status_revision` aus dem aktuellen
+projizierten Ergebnis. Ein veraltetes Ziel wird zurückgewiesen. Der Writer
+prüft anschließend dieselben kanonischen Daten, freie Lease, Quellenbindung,
+Operatorberechtigung und Policy erneut. Die Reviewanlage startet kein Modell
+und akzeptiert kein Ergebnis.
+
+JSON-Aufträge sind auf 3 MiB begrenzt, auch bei gestreamter Übertragung ohne
+Content-Length. Doppelte Schlüssel, zusätzliche Vertragsfelder und nicht
+endliche Zahlen werden abgewiesen. Artefakte bleiben auf 2 MiB begrenzt.
+
+`hub._services.worker_external_client.WorkerExternalResultClient` verwendet
+einen expliziten entfernten Lead über HTTPS. HTTP ist standardmäßig nur für
+Loopback zugelassen. Für eine separat geprüfte verschlüsselte Tailnet-Route
+gibt es die ausdrückliche SDK-Einstellung `trusted_tailnet_http=True` und die
+CLI-Option `--trusted-tailnet-http`. Die Ziel-IP muss im Tailnet-Adressbereich
+liegen; die Adresse allein belegt keine verschlüsselte Route.
+Umgebungs-Proxys werden nicht verwendet.
+Er folgt keinen Redirects, wiederholt keine
+Schreibanfragen automatisch und wechselt bei Fehlern nicht auf eine lokale DB.
+Upload- und Download-Readbacks werden gegen die tatsächlichen Bytehashes geprüft.
+Ein Attestierungs-ACK zählt nur bei passendem aktuellen Ergebnis, verfügbarer
+Herkunft und verfügbarem Scope mit derselben Ergebnisrevision als Erfolg.
+Ändert sich das Ziel nach dem Schreiben, kann der Beleg bereits gespeichert
+sein, obwohl das SDK den Readback zurückweist. Dann den aktuellen Zustand
+lesen und die Ursache klären; keine automatische Schreibwiederholung.
+
+Die CLI lautet `python system/tools/worker_external_results.py`. Sie verwendet
+`--lead-url` beziehungsweise `BACH_LEAD_URL`; vorhandene Berechtigungen kommen
+aus `BACH_DEVICE_TOKEN` und `BACH_RESULT_OPERATOR_TOKEN` oder einer ausdrücklich
+angegebenen privaten `--credentials-file` mit exakt `device_token` und
+`operator_token`. Tokens gehören nicht in Befehlsargumente oder Ergebnisbelege.
+
+Unterbefehle: `catalog`, `sources` (ohne `--payload` nur lesen),
+`artifact-store DATEI --media-type text/plain`,
+`artifact-read ID --output NEUE_DATEI`, `attest TASK_ID --payload AUFTRAG.json`
+und `review TASK_ID --payload ZIEL.json`. Downloads erzeugen eine neue private
+Datei exklusiv und überschreiben keine vorhandene Datei. Unter Windows wird
+die Datei bereits mit einer geschützten NTFS-DACL für Besitzer und SYSTEM
+angelegt; unter POSIX mit Modus 0600. Payloaddateien für
+Herkunftsaufträge und private Quellen bleiben ebenfalls privat.
+
+Diese Implementierung enthält noch keinen Nachweis eines tatsächlichen
+externen Modelllaufs oder eines Deployments in die laufenden Mac-Dienste.
 
 ## Noch zu integrierender Abschlussweg
 
-1. API/SDK/CLI und Ergebnisanzeige integrieren, einschließlich Operatorauth
-   sowie strikter Payloads und Readbacks.
+1. API/SDK/CLI unabhängig prüfen und Ergebnisanzeige integrieren.
 2. Den tatsächlichen unabhängigen Reviewer-Modelllauf und den vollständigen
    Ablauf mit echten Herkunftsartefakten live abnehmen und auf dem Mac deployen.
 
