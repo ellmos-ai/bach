@@ -945,19 +945,20 @@ def _prepare_bound_task_scope(binding, slot):
             or getattr(binding, "_review_grant", None) is not None):
         return
     from hub import worker_git
-    from hub._services.chat.worker_write_guard import _WRITE_TOOLS, snapshot_task_scope
+    from hub._services.chat.worker_write_guard import _WRITE_TOOLS, snapshot_task_start_scope
     code_capability = any(tool in _WRITE_TOOLS for tool in allowed)
     try:
         binding.assert_active()
-        worker_git.start_task_worktree(binding.task_id, base_branch="main",
+        task_root = worker_git.start_task_worktree(binding.task_id, base_branch="main",
             worker_task_binding=binding, require_task_binding=True,
             task_code_capability=code_capability)
-        scope = snapshot_task_scope(binding.task_id)
+        scope = snapshot_task_start_scope(
+            binding, task_root=task_root, source_pin_required=code_capability)
         binding.assert_active()
         if (scope.get("availability") != "available"
                 or scope.get("task_id") != binding.task_id
                 or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
-                or (scope.get("source_pin") is not None) != code_capability):
+                or (code_capability and scope.get("source_pin") is None)):
             raise RuntimeError("scope_unavailable")
     except Exception:
         raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
