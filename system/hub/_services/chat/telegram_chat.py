@@ -77,6 +77,7 @@ except ImportError as exc:
 
 # BACH imports
 from hub._services.chat.worker_lease_supervisor import WorkerLeaseSupervisor
+from hub._services.chat.worker_scope_deferrals import ScopePreparationDeferrals
 try:
     import bach_api
     _memory = bach_api.memory
@@ -263,6 +264,7 @@ class _WorkerControl:
     persistent_core_capacity_exhausted: bool = False
     persistent_core_capacity_receipt: dict[str, Any] | None = None
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
+    scope_preparation_deferrals: ScopePreparationDeferrals = field(default_factory=ScopePreparationDeferrals)
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
@@ -801,10 +803,16 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                     if clear_recovered_always_on_task(task_id):
                         _record_worker_activity(control, "Vorherige Taskbindung ist kanonisch terminal; suche neue Aufgabe", "ok")
             return None
+    fresh_queue_records = []
+    scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
+    if not isinstance(scope_deferrals, ScopePreparationDeferrals):
+        scope_deferrals = None
+
     def observe_queue(record):
         with _WORKER_CONTROL_LOCK:
             if is_current() and not control.stop_event.is_set():
                 control.queue_status = record
+                fresh_queue_records.append(record)
 
     def release_rejected_fixed_task(task_id, reason, task_version):
         labels = {
@@ -838,7 +846,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             raise RuntimeError("Ablehnung der festen Task konnte nicht protokolliert werden")
 
     try:
-        return WorkerLeaseBinding.acquire_next(
+        selected = WorkerLeaseBinding.acquire_next(
             client, slot, worker_id=lease_worker_id, host=host,
             review_route=review_route,
             review_requested_model=getattr(control, "_review_requested_model", None),
@@ -850,10 +858,18 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                       if slot.get("id") == "buddha_always_on" or slot.get("system") else None)
             ),
             _creator_delegation=control.creator_delegation,
-            deferred_versions=control.deferred_task_versions,
+            deferred_versions=(scope_deferrals.combined(control.deferred_task_versions)
+                               if scope_deferrals is not None else control.deferred_task_versions),
             observe_queue=observe_queue,
             on_fixed_task_rejected=release_rejected_fixed_task,
         )
+        if (selected is None and scope_deferrals is not None and fresh_queue_records
+                and is_current() and not control.stop_event.is_set()):
+            # Only this call's completed native scan may release preparation
+            # skips. The next loop still rechecks policy/stop and acquires a new
+            # native lease before any work; no model or tool call is replayed.
+            scope_deferrals.after_exhausted_scan(fresh_queue_records[-1])
+        return selected
     except LeaseDeniedError as exc:
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
             return None
@@ -5051,7 +5067,12 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         finish_assignment(current_assignment, status="released",
                                           result="task_returned", reason="task_scope_unavailable")
                         assignment_open = False
-                        control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
+                        scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
+                        if (not isinstance(scope_deferrals, ScopePreparationDeferrals)
+                                or not scope_deferrals.defer(control.task_binding.task_id,
+                                    returned["task_version"], tool_dispatch_count=getattr(
+                                        control.task_binding, "tool_dispatch_count", None))):
+                            control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
                         _record_worker_activity(control,
                             f"Task #{control.task_binding.task_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
                             "pending")
@@ -5062,6 +5083,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
                             break
                         continue
+                    control.scope_preparation_deferrals.resolved(control.task_binding.task_id)
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
