@@ -571,8 +571,6 @@ def _current_submission_readback(binding):
             or record.get("reason") not in {
                 "awaiting_review", "accepted", "acceptance_not_current"}
             or submission.get("availability") != "available"
-            or not isinstance(result_revision, str)
-            or re.fullmatch(r"[a-f0-9]{64}", result_revision) is None
             or (record.get("reason") == "accepted"
                 and (record.get("accepted") is not True
                      or observed.get("status") not in {"done", "completed"}))
@@ -582,8 +580,22 @@ def _current_submission_readback(binding):
             or (record.get("reason") == "acceptance_not_current"
                 and (record.get("accepted") is not False
                      or observed.get("status") != "pending"))
-            or (isinstance(submitted.get("result_revision"), str)
-                and submitted["result_revision"] != result_revision)):
+            or (submitted.get("result_revision") is not None
+                and (not isinstance(submitted["result_revision"], str)
+                     or re.fullmatch(r"[a-f0-9]{64}", submitted["result_revision"]) is None
+                     or submitted["result_revision"] != result_revision))):
+        return False
+    if result_revision is None:
+        # Scope/model review evidence may not exist yet. The immutable native
+        # submission receipt confirms release independently of that evidence;
+        # it authorizes another queue claim, never acceptance of this result.
+        if (observed.get("status") != "review"
+                or record.get("reason") != "awaiting_review"
+                or observed["status_revision"] != record.get("submitted_status_event_id")
+                or not _same_native_submission_receipt(record, submitted)):
+            return False
+    elif (not isinstance(result_revision, str)
+            or re.fullmatch(r"[a-f0-9]{64}", result_revision) is None):
         return False
     evaluation = observed.get("completion_evaluation")
     if isinstance(evaluation, dict) and evaluation.get("availability") == "available":
@@ -594,6 +606,50 @@ def _current_submission_readback(binding):
                 or evaluation.get("status_revision") != observed.get("status_revision")):
             return False
     return True
+
+
+def _same_native_submission_receipt(record, submitted):
+    """Require the same complete native submission proof in ACK and readback."""
+    from hub._services.task_result_service import _submission_revision
+
+    if (record.get("accepted") is not False
+            or type(record.get("completion_policy_version")) is not int
+            or record["completion_policy_version"] != 1
+            or type(submitted.get("completion_policy_version")) is not int
+            or submitted["completion_policy_version"] != 1
+            or type(record.get("submission_receipt_version")) is not int
+            or record["submission_receipt_version"] != 1
+            or type(submitted.get("submission_receipt_version")) is not int
+            or submitted["submission_receipt_version"] != 1
+            or submitted.get("result_revision") is not None):
+        return False
+    revisions = []
+    for candidate in (record, submitted):
+        submission = candidate.get("submission")
+        digest = candidate.get("submission_receipt_sha256")
+        event = candidate.get("submission_event_id")
+        status_event = candidate.get("submitted_status_event_id")
+        revision = candidate.get("submission_revision")
+        if (not isinstance(submission, dict)
+                or type(candidate.get("task_id")) is not int
+                or candidate["task_id"] != record["task_id"]
+                or type(candidate.get("result_id")) is not int
+                or candidate["result_id"] <= 0
+                or submission.get("schema") != "bach.worker-submission-readback.v1"
+                or submission.get("availability") != "available"
+                or not isinstance(digest, str)
+                or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or submission.get("receipt_sha256") != digest
+                or type(event) is not int or type(status_event) is not int
+                or not 0 < status_event < event
+                or type(submission.get("submitted_status_event_id")) is not int
+                or submission["submitted_status_event_id"] != status_event
+                or not isinstance(revision, str)
+                or re.fullmatch(r"sha256:[a-f0-9]{64}", revision) is None
+                or revision != _submission_revision(candidate, digest)):
+            return False
+        revisions.append((revision, digest, event, status_event))
+    return revisions[0] == revisions[1]
 
 
 def _poll_worker_completion(control: _WorkerControl) -> bool:
