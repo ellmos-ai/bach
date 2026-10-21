@@ -65,12 +65,18 @@ def _ensure_schema(conn):
 
 
 def _snapshot_valid(snapshot, task_id):
-    if (not isinstance(snapshot, dict) or set(snapshot) != _SNAPSHOT_KEYS
-            or snapshot.get("schema") != "bach.task-scope-snapshot.v1"
+    v2 = isinstance(snapshot, dict) and snapshot.get("schema") == "bach.task-scope-snapshot.v2"
+    project_source = snapshot.get("project_source") if v2 else None
+    if v2:
+        from .chat.worker_project_sources import project_evidence_valid
+        if not project_evidence_valid(project_source):
+            return False
+    if (not isinstance(snapshot, dict) or set(snapshot) != _SNAPSHOT_KEYS | ({"project_source"} if v2 else set())
+            or snapshot.get("schema") != ("bach.task-scope-snapshot.v2" if v2 else "bach.task-scope-snapshot.v1")
             or snapshot.get("availability") != "available"
             or type(snapshot.get("task_id")) is not int or snapshot["task_id"] != task_id
-            or snapshot.get("repository") != "ellmos-ai/bach"
-            or snapshot.get("origin") != "https://github.com/ellmos-ai/bach"
+            or snapshot.get("repository") != (project_source["repository"] if v2 else "ellmos-ai/bach")
+            or snapshot.get("origin") != (project_source["origin"] if v2 else "https://github.com/ellmos-ai/bach")
             or snapshot.get("branch") != f"refs/heads/bach-task/{task_id}"
             or snapshot.get("clean_scope") != "porcelain-v1-z-all-untracked-no-ignored"
             or not _OID.fullmatch(snapshot.get("head_oid", ""))
@@ -87,13 +93,17 @@ def _snapshot_valid(snapshot, task_id):
     if pin is not None and (not isinstance(pin, dict)
             or set(pin) != {"schema", "source_ref", "source_sha", "verified_at"}
             or pin["schema"] != "bach.task-public-source.v1"
-            or pin["source_ref"] != "refs/heads/main"
+            or pin["source_ref"] != (project_source["source_ref"] if v2 else "refs/heads/main")
+            or (v2 and pin["source_sha"] != project_source["source_sha"])
             or not isinstance(pin["source_sha"], str)
             or not re.fullmatch(r"[0-9a-f]{40}", pin["source_sha"])
             or not isinstance(pin["verified_at"], str) or not pin["verified_at"]):
         return False
+    if v2 and pin is None:
+        return False
     project = _digest({"repository": snapshot["repository"], "origin": snapshot["origin"],
-                       "source_pin": pin, "head_oid": snapshot["head_oid"]})
+                       "source_pin": pin, "head_oid": snapshot["head_oid"],
+                       **({"project_source": project_source} if v2 else {})})
     workspace = _digest({
         "worktree_path_sha256": snapshot["worktree_path_sha256"],
         "common_dir_sha256": snapshot["common_dir_sha256"],
@@ -139,7 +149,9 @@ def capture_scope_evidence(conn, binding) -> bool:
         record = _submitted(conn, binding)
         if record is None:
             return False
-        snapshot = snapshot_task_scope(binding.task_id)
+        source = getattr(binding, "_task_project_source", None)
+        snapshot = snapshot_task_scope(binding.task_id,
+                                      **({"binding": binding} if source is not None and source.selector is not None else {}))
         if not _snapshot_valid(snapshot, binding.task_id):
             return False
         # The read above has no SQLite write transaction; the following one
@@ -296,8 +308,10 @@ def _project_scope_record(data, *, repo_root=None, worktrees_dir=None) -> dict:
             or not _snapshot_valid(data.get("snapshot"), data["task_id"])):
         return _unavailable("scope_evidence_invalid")
     try:
+        project_source = data["snapshot"].get("project_source")
         current = snapshot_task_scope(data["task_id"], repo_root=repo_root,
-                                      worktrees_dir=worktrees_dir)
+                                      worktrees_dir=worktrees_dir,
+                                      **({"project_source": project_source} if project_source is not None else {}))
     except Exception:
         return _unavailable("current_git_unavailable")
     if not isinstance(current, dict):

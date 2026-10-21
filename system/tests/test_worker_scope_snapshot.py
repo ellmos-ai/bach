@@ -72,7 +72,8 @@ def _install_lock_scanner(tmp_path, monkeypatch, *, locks=None, twin_status="ok"
     if malformed:
         scanner.write_text("print('not-json')\n", encoding="utf-8")
     else:
-        payload = json.dumps({"twin_status": twin_status, "locks": locks or []})
+        payload = json.dumps({"twin_status": twin_status, "locks": locks or [],
+                              "descendants_complete": True, "hook_guards": []})
         status = exit_code if exit_code is not None else (1 if locks else 0)
         scanner.write_text(
             "import json, sys\n"

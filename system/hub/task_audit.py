@@ -252,6 +252,7 @@ def apply_task_field_changes(
     allow_reopen: bool = False,
     lease_authorized: bool = False,
     result_acceptance: Any = None,
+    project_source_authorized: bool = False,
 ) -> bool:
     """Schreibt das UPDATE auf `tasks` plus die zugehoerigen `task_history`-
     Zeilen. Committet NICHT selbst -- der Aufrufer bleibt fuer Transaktions-
@@ -280,6 +281,16 @@ def apply_task_field_changes(
     # Einmal hier normalisieren, statt jeden Aufrufer dazu zu verpflichten.
     if isinstance(existing_row, sqlite3.Row):
         existing_row = dict(existing_row)
+
+    if "tags" in field_values:
+        from hub._services.chat.worker_project_sources import ProjectSourceError, source_tags
+        try:
+            before_source = source_tags(existing_row.get("tags"))
+            after_source = source_tags(normalize_task_tags(field_values["tags"]))
+        except ProjectSourceError as exc:
+            raise ValueError(str(exc)) from exc
+        if before_source != after_source and project_source_authorized is not True:
+            raise ValueError("Projektquellen nur über den Operator-Projektvertrag ändern")
 
     # T-20260916-1330 (TRANSFER-09 / #1235 Resurrektion-Bypass): Terminal-Park-
     # Guard im generischen Choke-Point. Ohne ihn konnte jeder API-Aufruf einen
@@ -387,8 +398,15 @@ def apply_task_field_changes(
         # completed/done setzen, solange kein PR eingetragen ist.
         try:
             from hub.worker_git import task_has_file_changes
-            has_changes = task_has_file_changes(task_id, conn)
-        except Exception:
+            has_changes = task_has_file_changes(task_id, conn, task_snapshot=existing_row)
+        except Exception as exc:
+            from hub._services.chat.worker_project_sources import ProjectSourceError, source_tags
+            try:
+                explicit_project = bool(source_tags(existing_row.get("tags")))
+            except ProjectSourceError:
+                explicit_project = True
+            if explicit_project:
+                raise ValueError("Projektänderungen sind nicht zuverlässig geprüft; Abschluss bleibt gesperrt") from exc
             has_changes = False
 
         if has_changes:

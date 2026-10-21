@@ -38,8 +38,11 @@ _PUBLIC_SOURCE_SCHEMA = "bach.task-public-source.v1"
 _PUBLIC_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
-def _canonical_bach_origin(value: str) -> str:
+def _canonical_bach_origin(value: str, repository: str = _PUBLIC_REPO) -> str:
     """Return the one approved BACH GitHub identity, or fail closed."""
+    if repository != _PUBLIC_REPO:
+        from hub._services.chat.worker_project_sources import canonical_origin
+        return canonical_origin(value, repository)
     raw = str(value or "").strip()
     if raw.startswith("git@github.com:"):
         host, path = raw[len("git@"):].split(":", 1)
@@ -164,14 +167,20 @@ def _public_source_config_key(task_id: int | str) -> str:
     return f"branch.bach-task/{numeric_id}.bach-public-source"
 
 
-def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict) -> dict:
+def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict,
+                                      *, project_source=None) -> dict:
     record = dict(proof)
     source_sha = record.get("source_sha")
+    repository = project_source.repository if project_source is not None else _PUBLIC_REPO
+    source_ref = project_source.source_ref if project_source is not None else "refs/heads/main"
+    project_binding = project_source.public_binding() if project_source is not None else None
     if not (
         record.get("schema") == _PUBLIC_SOURCE_SCHEMA
-        and record.get("repository") == _PUBLIC_REPO
-        and record.get("origin") == "https://github.com/ellmos-ai/bach"
-        and record.get("source_ref") == "refs/heads/main"
+        and record.get("repository") == repository
+        and record.get("origin") == "https://github.com/" + repository
+        and record.get("source_ref") == source_ref
+        and record.get("project_source") == project_binding
+        and (project_source is None or source_sha == project_source.source_sha)
         and isinstance(source_sha, str) and _PUBLIC_SHA.fullmatch(source_sha)
         and record.get("visibility") == "public" and record.get("private") is False
         and record.get("metadata_verified") is True and record.get("ref_verified") is True
@@ -195,7 +204,8 @@ def _store_public_source_registration(repo: Path, target: Path, task_id: int | s
     return record
 
 
-def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str) -> dict:
+def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str,
+                                        *, project_source=None) -> dict:
     """Validate the stored task-worktree source pin without fetching or moving it."""
     try:
         raw = _git_text(target, "registration", task_id=task_id)
@@ -205,15 +215,20 @@ def read_task_public_source_registration(repo: Path, target: Path, task_id: int 
     if not isinstance(record, dict):
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig")  # noqa: TRY004 - RuntimeError ist der öffentliche Fail-closed-Vertrag.
     try:
-        origin = _canonical_bach_origin(_git_text(repo, "origin"))
+        repository = project_source.repository if project_source is not None else _PUBLIC_REPO
+        source_ref = project_source.source_ref if project_source is not None else "refs/heads/main"
+        project_binding = project_source.public_binding() if project_source is not None else None
+        origin = _canonical_bach_origin(_git_text(repo, "origin"), repository)
     except Exception:  # noqa: BLE001 - fehlerhafte Taskbindung bleibt unverfügbar.
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
     if not (
         record.get("schema") == _PUBLIC_SOURCE_SCHEMA
         and record.get("task_id") == str(task_id)
-        and record.get("repository") == _PUBLIC_REPO
-        and record.get("origin") == origin == "https://github.com/ellmos-ai/bach"
-        and record.get("source_ref") == "refs/heads/main"
+        and record.get("repository") == repository
+        and record.get("origin") == origin == "https://github.com/" + repository
+        and record.get("source_ref") == source_ref
+        and record.get("project_source") == project_binding
+        and (project_source is None or record.get("source_sha") == project_source.source_sha)
         and isinstance(record.get("source_sha"), str)
         and _PUBLIC_SHA.fullmatch(record["source_sha"])
         and record.get("visibility") == "public"
@@ -314,9 +329,18 @@ def start_task_worktree(
     if task_code_capability:
         # Reject aliases before authorization, mkdir, or any Git side effect.
         _public_source_config_key(task_id)
-    repo = (repo_root or get_live_repo_root()).resolve()
+    project_source = None
+    if worker_task_binding is not None:
+        from hub._services.chat.worker_project_sources import project_for_binding
+        resolved_project = project_for_binding(worker_task_binding, repo_root=repo_root)
+        repo = resolved_project.repo_root
+        worktrees_dir = resolved_project.worktrees_root
+        if resolved_project.selector is not None:
+            project_source = resolved_project
+    else:
+        repo = (repo_root or get_live_repo_root()).resolve()
+        worktrees_dir = get_worktrees_dir()
     task_id_str = str(task_id).strip()
-    worktrees_dir = get_worktrees_dir()
     target_dir = worktrees_dir / f"task-{task_id_str}"
     branch_name = f"bach-task/{task_id_str}"
 
@@ -325,8 +349,9 @@ def start_task_worktree(
         target_dir = authorize_start(worker_task_binding, task_id, repo_root=repo,
                                      worktrees_dir=worktrees_dir)
         if target_dir.exists():
-            if task_code_capability:
-                read_task_public_source_registration(repo, target_dir, task_id_str)
+            if task_code_capability or project_source is not None:
+                read_task_public_source_registration(repo, target_dir, task_id_str,
+                                                     **({"project_source": project_source} if project_source else {}))
                 authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
             return target_dir
         if base_branch not in {"main", "origin/main"}:
@@ -335,8 +360,12 @@ def start_task_worktree(
             raise RuntimeError("Worktree-Zielverzeichnis ist ein Link")
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
-        public_record = _public_main_source(repo) if task_code_capability else None
-        if task_code_capability:
+        if project_source is not None:
+            from hub._services.chat.worker_project_sources import verify_public_source
+            public_record = verify_public_source(project_source)
+        else:
+            public_record = _public_main_source(repo) if task_code_capability else None
+        if public_record is not None:
             selected_base = public_record["source_sha"]
         else:
             base = subprocess.run(["git", "rev-parse", "--verify", f"{base_branch}^{{commit}}"],
@@ -358,8 +387,10 @@ def start_task_worktree(
         authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
         if public_record is not None:
             authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
-            _store_public_source_registration(repo, target_dir, task_id_str, public_record)
-            read_task_public_source_registration(repo, target_dir, task_id_str)
+            _store_public_source_registration(repo, target_dir, task_id_str, public_record,
+                                             **({"project_source": project_source} if project_source else {}))
+            read_task_public_source_registration(repo, target_dir, task_id_str,
+                                                 **({"project_source": project_source} if project_source else {}))
             authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
         return target_dir.resolve(strict=True)
 
@@ -514,6 +545,7 @@ def record_task_file_change(
 def task_has_file_changes(
     task_id: int | str,
     conn_or_db_path: sqlite3.Connection | Path | None = None,
+    *, task_snapshot=None,
 ) -> bool:
     """Prüft, ob für diese Aufgabe Code- oder Dateiänderungen registriert wurden."""
     task_id_int = int(task_id)
@@ -544,7 +576,28 @@ def task_has_file_changes(
             pass
 
     # Auch im Worktree prüfen falls vorhanden
-    worktree = get_worktrees_dir() / f"task-{task_id_int}"
+    explicit_project = False
+    if task_snapshot is not None:
+        from hub._services.chat.worker_project_sources import resolve_project, task_source_selector
+        try:
+            selector = task_source_selector(task_snapshot)
+            explicit_project = selector is not None
+            source = (resolve_project(selector[0], selector[1], expected_entry=selector[2])
+                      if selector is not None else None)
+            worktree = (source.worktrees_root if source else get_worktrees_dir()) / f"task-{task_id_int}"
+        except (RuntimeError, OSError, ValueError):
+            # Do not treat an unavailable explicit project as unchanged BACH.
+            return True
+    else:
+        worktree = get_worktrees_dir() / f"task-{task_id_int}"
+    try:
+        worktree.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return explicit_project
+    if explicit_project and (worktree.is_symlink() or not worktree.is_dir()):
+        return True
     if worktree.exists() and (worktree / ".git").exists():
         try:
             res = subprocess.run(
@@ -557,8 +610,16 @@ def task_has_file_changes(
             )
             if res.stdout and res.stdout.strip():
                 return True
+            if explicit_project and res.returncode != 0:
+                return True
         except Exception:
-            pass
+            if explicit_project:
+                return True
+    elif explicit_project:
+        # An existing but unverifiable task directory is not evidence of a
+        # clean project worktree. Do not let a missing/unreadable .git bypass
+        # the completion PR check.
+        return True
 
     return False
 
@@ -648,7 +709,9 @@ def _finish_task(
         return subprocess.run(cmd, **kwargs)
 
     task_id_str = str(task_id).strip()
-    target_dir = get_worktrees_dir() / f"task-{task_id_str}"
+    from hub._services.chat.worker_project_sources import project_for_binding
+    source = project_for_binding(worker_task_binding, repo_root=repo_root)
+    target_dir = source.worktrees_root / f"task-{task_id_str}"
     branch_name = f"bach-task/{task_id_str}"
 
     if not target_dir.exists():
@@ -793,7 +856,7 @@ def _finish_task(
     # PR erstellen
     cmd_pr = [
         "gh", "pr", "create",
-        "--base", "main",
+        "--base", source.source_ref.removeprefix("refs/heads/"),
         "--title", commit_msg,
         "--body", f"Automatisierter PR für Task #{task_id_str}: {message}",
     ]

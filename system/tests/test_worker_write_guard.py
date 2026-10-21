@@ -36,6 +36,9 @@ class FakeClient:
 class FakeBinding:
     task_id = 41
 
+    def task_snapshot(self):
+        return {"id": self.task_id, "tags": None, "project": None, "task_version": "v" * 64}
+
     def __init__(self, client=None):
         self._client = client or FakeClient()
         self._now = object()
