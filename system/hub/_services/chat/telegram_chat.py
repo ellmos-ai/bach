@@ -77,6 +77,7 @@ except ImportError as exc:
 
 # BACH imports
 from hub._services.chat.worker_lease_supervisor import WorkerLeaseSupervisor
+from hub._services.chat.worker_scope_deferrals import ScopePreparationDeferrals
 try:
     import bach_api
     _memory = bach_api.memory
@@ -263,6 +264,7 @@ class _WorkerControl:
     persistent_core_capacity_exhausted: bool = False
     persistent_core_capacity_receipt: dict[str, Any] | None = None
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
+    scope_preparation_deferrals: ScopePreparationDeferrals = field(default_factory=ScopePreparationDeferrals)
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
@@ -569,8 +571,6 @@ def _current_submission_readback(binding):
             or record.get("reason") not in {
                 "awaiting_review", "accepted", "acceptance_not_current"}
             or submission.get("availability") != "available"
-            or not isinstance(result_revision, str)
-            or re.fullmatch(r"[a-f0-9]{64}", result_revision) is None
             or (record.get("reason") == "accepted"
                 and (record.get("accepted") is not True
                      or observed.get("status") not in {"done", "completed"}))
@@ -580,8 +580,22 @@ def _current_submission_readback(binding):
             or (record.get("reason") == "acceptance_not_current"
                 and (record.get("accepted") is not False
                      or observed.get("status") != "pending"))
-            or (isinstance(submitted.get("result_revision"), str)
-                and submitted["result_revision"] != result_revision)):
+            or (submitted.get("result_revision") is not None
+                and (not isinstance(submitted["result_revision"], str)
+                     or re.fullmatch(r"[a-f0-9]{64}", submitted["result_revision"]) is None
+                     or submitted["result_revision"] != result_revision))):
+        return False
+    if result_revision is None:
+        # Scope/model review evidence may not exist yet. The immutable native
+        # submission receipt confirms release independently of that evidence;
+        # it authorizes another queue claim, never acceptance of this result.
+        if (observed.get("status") != "review"
+                or record.get("reason") != "awaiting_review"
+                or observed["status_revision"] != record.get("submitted_status_event_id")
+                or not _same_native_submission_receipt(record, submitted)):
+            return False
+    elif (not isinstance(result_revision, str)
+            or re.fullmatch(r"[a-f0-9]{64}", result_revision) is None):
         return False
     evaluation = observed.get("completion_evaluation")
     if isinstance(evaluation, dict) and evaluation.get("availability") == "available":
@@ -592,6 +606,50 @@ def _current_submission_readback(binding):
                 or evaluation.get("status_revision") != observed.get("status_revision")):
             return False
     return True
+
+
+def _same_native_submission_receipt(record, submitted):
+    """Require the same complete native submission proof in ACK and readback."""
+    from hub._services.task_result_service import _submission_revision
+
+    if (record.get("accepted") is not False
+            or type(record.get("completion_policy_version")) is not int
+            or record["completion_policy_version"] != 1
+            or type(submitted.get("completion_policy_version")) is not int
+            or submitted["completion_policy_version"] != 1
+            or type(record.get("submission_receipt_version")) is not int
+            or record["submission_receipt_version"] != 1
+            or type(submitted.get("submission_receipt_version")) is not int
+            or submitted["submission_receipt_version"] != 1
+            or submitted.get("result_revision") is not None):
+        return False
+    revisions = []
+    for candidate in (record, submitted):
+        submission = candidate.get("submission")
+        digest = candidate.get("submission_receipt_sha256")
+        event = candidate.get("submission_event_id")
+        status_event = candidate.get("submitted_status_event_id")
+        revision = candidate.get("submission_revision")
+        if (not isinstance(submission, dict)
+                or type(candidate.get("task_id")) is not int
+                or candidate["task_id"] != record["task_id"]
+                or type(candidate.get("result_id")) is not int
+                or candidate["result_id"] <= 0
+                or submission.get("schema") != "bach.worker-submission-readback.v1"
+                or submission.get("availability") != "available"
+                or not isinstance(digest, str)
+                or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or submission.get("receipt_sha256") != digest
+                or type(event) is not int or type(status_event) is not int
+                or not 0 < status_event < event
+                or type(submission.get("submitted_status_event_id")) is not int
+                or submission["submitted_status_event_id"] != status_event
+                or not isinstance(revision, str)
+                or re.fullmatch(r"sha256:[a-f0-9]{64}", revision) is None
+                or revision != _submission_revision(candidate, digest)):
+            return False
+        revisions.append((revision, digest, event, status_event))
+    return revisions[0] == revisions[1]
 
 
 def _poll_worker_completion(control: _WorkerControl) -> bool:
@@ -801,10 +859,16 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                     if clear_recovered_always_on_task(task_id):
                         _record_worker_activity(control, "Vorherige Taskbindung ist kanonisch terminal; suche neue Aufgabe", "ok")
             return None
+    fresh_queue_records = []
+    scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
+    if not isinstance(scope_deferrals, ScopePreparationDeferrals):
+        scope_deferrals = None
+
     def observe_queue(record):
         with _WORKER_CONTROL_LOCK:
             if is_current() and not control.stop_event.is_set():
                 control.queue_status = record
+                fresh_queue_records.append(record)
 
     def release_rejected_fixed_task(task_id, reason, task_version):
         labels = {
@@ -838,7 +902,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             raise RuntimeError("Ablehnung der festen Task konnte nicht protokolliert werden")
 
     try:
-        return WorkerLeaseBinding.acquire_next(
+        selected = WorkerLeaseBinding.acquire_next(
             client, slot, worker_id=lease_worker_id, host=host,
             review_route=review_route,
             review_requested_model=getattr(control, "_review_requested_model", None),
@@ -850,10 +914,18 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                       if slot.get("id") == "buddha_always_on" or slot.get("system") else None)
             ),
             _creator_delegation=control.creator_delegation,
-            deferred_versions=control.deferred_task_versions,
+            deferred_versions=(scope_deferrals.combined(control.deferred_task_versions)
+                               if scope_deferrals is not None else control.deferred_task_versions),
             observe_queue=observe_queue,
             on_fixed_task_rejected=release_rejected_fixed_task,
         )
+        if (selected is None and scope_deferrals is not None and fresh_queue_records
+                and is_current() and not control.stop_event.is_set()):
+            # Only this call's completed native scan may release preparation
+            # skips. The next loop still rechecks policy/stop and acquires a new
+            # native lease before any work; no model or tool call is replayed.
+            scope_deferrals.after_exhausted_scan(fresh_queue_records[-1])
+        return selected
     except LeaseDeniedError as exc:
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
             return None
@@ -5051,7 +5123,12 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         finish_assignment(current_assignment, status="released",
                                           result="task_returned", reason="task_scope_unavailable")
                         assignment_open = False
-                        control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
+                        scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
+                        if (not isinstance(scope_deferrals, ScopePreparationDeferrals)
+                                or not scope_deferrals.defer(control.task_binding.task_id,
+                                    returned["task_version"], tool_dispatch_count=getattr(
+                                        control.task_binding, "tool_dispatch_count", None))):
+                            control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
                         _record_worker_activity(control,
                             f"Task #{control.task_binding.task_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
                             "pending")
@@ -5062,6 +5139,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
                             break
                         continue
+                    control.scope_preparation_deferrals.resolved(control.task_binding.task_id)
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""

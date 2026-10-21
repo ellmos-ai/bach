@@ -1306,6 +1306,132 @@ def test_retained_result_reviews_never_run_before_next_queue_claim(has_current_b
     assert reconciled == []
 
 
+@pytest.mark.parametrize("mode", ["simple_task", "balanced", "high_security"])
+def test_missing_scope_revision_does_not_hold_a_confirmed_native_submission(
+        completion_world, mode):
+    from hub._services.chat import telegram_chat
+
+    world = completion_world(mode=mode, missing_scope=True)
+    binding, client, task_id, conn = (world[key] for key in
+                                    ("binding", "client", "task_id", "conn"))
+    before = client.task_result_snapshot(task_id)
+    assert before["result"]["result_revision"] is None
+    assert before["result"]["submission"]["availability"] == "available"
+    control = telegram_chat._WorkerControl(worker_id=AUTHOR_SLOT, generation=GENERATION)
+    control.task_binding = binding
+    assert telegram_chat._poll_worker_completion(control) is True
+    after = client.task_result_snapshot(task_id)
+    assert after["status"] == before["status"] == "review"
+    assert after["status_revision"] == before["status_revision"]
+    assert after["result"]["accepted"] is False
+    assert after["result"]["result_revision"] is None
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+                        "AND action='result_acceptance'", (task_id,)).fetchone()[0] == 0
+    next_id = _insert_task(conn, "Next ordinary task after native submission")
+    conn.execute("UPDATE tasks SET assigned_to='BACH' WHERE id=?", (next_id,))
+    conn.commit()
+    next_binding = WorkerLeaseBinding.acquire_next(client,
+        slot={"id": AUTHOR_SLOT, "backend": "ollama", "model": AUTHOR_MODEL},
+        worker_id="completion-author@HOST", host="HOST", generation=GENERATION,
+        is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    assert next_binding is not None and next_binding.task_id == next_id
+    assert next_binding.return_lease() is True
+    assert client.task_result_snapshot(task_id)["result"]["accepted"] is False
+
+
+@pytest.mark.parametrize("damage", [
+    "missing-ack-revision", "missing-readback-revision", "stale-ack-revision",
+    "malformed-result-revision", "stale-ack-result-revision", "missing-receipt",
+    "receipt-digest", "submission-event", "status-event", "boolean-event",
+    "legacy-receipt", "legacy-policy", "scope-required-in-ack",
+    "boolean-receipt-version", "missing-ack-receipt-version", "malformed-ack-revision",
+    "later-status-event", "later-status-pending", "malformed-ack-full-revision",
+])
+def test_scope_missing_submission_fallback_rejects_incomplete_or_changed_proof(
+        completion_world, monkeypatch, damage):
+    import copy
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    world = completion_world(mode="high_security", missing_scope=True)
+    task_id = world["task_id"]
+    readback = copy.deepcopy(world["client"].task_result_snapshot(task_id))
+    submitted = copy.deepcopy(world["binding"].submitted_result)
+    assert readback["result"]["result_revision"] is None
+    assert telegram_chat._same_native_submission_receipt(readback["result"], submitted)
+    record = readback["result"]
+    if damage == "missing-ack-revision":
+        submitted.pop("submission_revision")
+    elif damage == "missing-readback-revision":
+        record.pop("submission_revision")
+    elif damage == "stale-ack-revision":
+        submitted["submission_revision"] = "sha256:" + "0" * 64
+    elif damage == "malformed-result-revision":
+        record["result_revision"] = "malformed"
+    elif damage == "stale-ack-result-revision":
+        submitted["result_revision"] = "0" * 64
+    elif damage == "missing-receipt":
+        record.pop("submission_receipt_sha256")
+    elif damage == "receipt-digest":
+        record["submission"]["receipt_sha256"] = "0" * 64
+    elif damage == "submission-event":
+        record["submission_event_id"] += 1
+    elif damage == "status-event":
+        record["submission"]["submitted_status_event_id"] += 1
+    elif damage == "boolean-event":
+        record["submitted_status_event_id"] = True
+    elif damage == "legacy-receipt":
+        record["submission"]["availability"] = "legacy_release_only"
+    elif damage == "legacy-policy":
+        record["completion_policy_version"] = None
+    elif damage == "scope-required-in-ack":
+        submitted["result_revision"] = "1" * 64
+    elif damage == "boolean-receipt-version":
+        record["submission_receipt_version"] = True
+    elif damage == "missing-ack-receipt-version":
+        submitted.pop("submission_receipt_version")
+    elif damage == "malformed-ack-revision":
+        submitted["result_revision"] = 1
+    elif damage == "later-status-event":
+        readback["status_revision"] += 1
+    elif damage == "later-status-pending":
+        readback["status"] = "pending"
+        record["reason"] = "acceptance_not_current"
+    elif damage == "malformed-ack-full-revision":
+        record["result_revision"] = "1" * 64
+        submitted["result_revision"] = 1
+    client = SimpleNamespace(task_result_snapshot=lambda _: copy.deepcopy(readback))
+    binding = SimpleNamespace(task_id=task_id, _client=client, submitted_result=submitted)
+    control = telegram_chat._WorkerControl(worker_id=AUTHOR_SLOT, generation=GENERATION)
+    control.task_binding = binding
+    assert telegram_chat._poll_worker_completion(control) is False
+    assert world["client"].task_result_snapshot(task_id)["status"] == "review"
+
+
+@pytest.mark.parametrize("scope_reason", [
+    "scope_not_recorded", "current_git_changed", "current_git_unavailable", "scope_invalid",
+])
+def test_scope_repair_remains_separate_from_an_exact_submission_queue_gate(
+        completion_world, scope_reason):
+    import copy
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    world = completion_world(mode="high_security", missing_scope=True)
+    task_id = world["task_id"]
+    readback = world["client"].task_result_snapshot(task_id)
+    readback["result"]["scope"] = {"schema": "bach.worker-scope-evidence.v1",
+        "availability": "unavailable", "reason": scope_reason, "result_revision": None}
+    binding = SimpleNamespace(task_id=task_id,
+        _client=SimpleNamespace(task_result_snapshot=lambda _: copy.deepcopy(readback)),
+        submitted_result=world["binding"].submitted_result)
+    control = telegram_chat._WorkerControl(worker_id=AUTHOR_SLOT, generation=GENERATION)
+    control.task_binding = binding
+    assert telegram_chat._poll_worker_completion(control) is True
+    current = world["client"].task_result_snapshot(task_id)
+    assert current["status"] == "review" and current["result"]["accepted"] is False
+
+
 def test_negative_self_check_does_not_submit_or_complete(completion_world):
     missing = completion_world(mode="simple_task", contract_min_chars=None, submit=False)
     conn, task_id = missing["conn"], missing["task_id"]

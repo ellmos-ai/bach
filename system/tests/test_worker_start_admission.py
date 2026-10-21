@@ -188,7 +188,9 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     # The background worker returns the task and stays available instead of erroring.
     assert observed[1:] == [("finish", "task_returned", "task_scope_unavailable")]
     assert leased_binding.closed
-    assert leased_binding.task_id in worker_controls[0].deferred_task_versions
+    actual = worker_controls[0]
+    assert leased_binding.task_id not in actual.deferred_task_versions
+    assert leased_binding.task_id in actual.scope_preparation_deferrals.combined(actual.deferred_task_versions)
     assert worker_controls[0].start_error != "runtime_error"
 
 
