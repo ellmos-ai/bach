@@ -2,6 +2,7 @@
 """Operator API against temporary canonical DB fixtures, never the live host."""
 import base64
 import io
+import sqlite3
 import urllib.error
 import urllib.parse
 
@@ -195,3 +196,29 @@ def test_remote_sdk_ack_validation_matches_real_api_readback(api):
     payload = {key: record[key] for key in (
         "task_id", "result_id", "result_sha256", "result_revision", "task_version", "status_revision")}
     assert sdk.prepare_review(world["task_id"], payload)["accepted"] is False
+
+
+def test_private_operator_routes_through_actual_gui_auth_middleware(integrated, monkeypatch):
+    from hub import bach_paths
+    from gui import device_auth
+    world = integrated
+    monkeypatch.setattr(bach_paths, "BACH_DB", world["path"])
+    from gui import server
+    from gui.api import unified_api
+    monkeypatch.setattr(server, "BACH_DB", world["path"])
+    monkeypatch.setattr(unified_api, "BACH_DB", world["path"])
+
+    def connect():
+        conn = sqlite3.connect(world["path"])
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    monkeypatch.setattr(device_auth, "GET_CONNECTION", connect)
+    with TestClient(server.app) as client:
+        for path in ["/api/system/worker-model-principal-catalog", "/api/system/worker-external-principals"]:
+            assert client.get(path).status_code == 401
+            assert client.get(path, headers={"Authorization": "Bearer invalid-device"}).status_code in {401, 403}
+            assert client.get(path, headers={"Authorization": "Bearer " + world["ordinary"]}).status_code == 403
+            response = client.get(path, headers=headers(world))
+            assert response.status_code == 200, response.text
+            assert "no-store" in {part.strip() for part in response.headers["cache-control"].split(",")}
