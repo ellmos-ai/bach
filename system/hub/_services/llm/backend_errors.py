@@ -138,19 +138,32 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     return normalize_backend_error(raw)
 
 
+def cloud_call_retry_eligible(detail):
+    """Allow typed cloud failures only; the caller must reject partial output."""
+    error = normalize_backend_error(detail)
+    if not error or error.get("quota_exceeded") is not False:
+        return False
+    if (error.get("status_code") == 429
+            and (error["provider"], error["kind"]) in {
+                ("ollama", "rate_limited"), ("openrouter", "http_error")}):
+        return True
+    return (error["provider"] == "openrouter"
+            and error["kind"] in {
+                "connect_timeout", "read_timeout", "write_timeout", "pool_timeout",
+                "transport_timeout", "connection_error", "transport_error"})
+
+
 def cloud_call_retry_delay(detail, *, retries, waited_seconds):
-    """Bound retries of one rejected request, using the worker's 3/60/900 policy."""
+    """Bound one call to three retries/900s; transport backs off at 5/10/20s."""
     if (type(retries) is not int or not 0 <= retries < 3
             or type(waited_seconds) not in (int, float)
             or not math.isfinite(waited_seconds) or waited_seconds < 0):
         return None
     error = normalize_backend_error(detail)
-    if (not error or error.get("quota_exceeded") is not False
-            or error.get("status_code") != 429
-            or (error["provider"], error["kind"]) not in {
-                ("ollama", "rate_limited"), ("openrouter", "http_error")}):
+    if not cloud_call_retry_eligible(error):
         return None
-    delay = max(60 * (2 ** retries), error.get("retry_after_seconds", 0))
+    base = 60 if error.get("status_code") == 429 else 5
+    delay = max(base * (2 ** retries), error.get("retry_after_seconds", 0))
     return delay if waited_seconds + delay <= 900 else None
 
 

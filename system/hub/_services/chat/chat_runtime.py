@@ -835,7 +835,7 @@ class ChatRuntime(_ModuleChatRuntime):
 
     @staticmethod
     def _rejected_cloud_call_error(*, result=None, error=None):
-        """A typed 429 must prove this request emitted neither answer nor tools."""
+        """A typed failure must prove this request emitted no answer or tools."""
         from hub._services.llm.backend_errors import BackendRequestFailure, normalize_backend_error
         if error is not None:
             if not isinstance(error, BackendRequestFailure):
@@ -863,8 +863,10 @@ class ChatRuntime(_ModuleChatRuntime):
             await asyncio.sleep(min(1.0, remaining))
 
     async def _chat_with_cloud_call_retry(self, session, backend, model, *args, **kwargs):
-        """Repeat only a rejected model call; never replay a tool loop or task prompt."""
-        from hub._services.llm.backend_errors import BackendRequestFailure, cloud_call_retry_delay
+        """Repeat only a failed model call; never replay a tool loop or task prompt."""
+        from hub._services.llm.backend_errors import (
+            BackendRequestFailure, cloud_call_retry_delay, cloud_call_retry_eligible,
+        )
         from hub._services.llm.model_backend import backend_identifier
         provider = backend_identifier(backend)
         binding = getattr(session, "worker_task_binding", None)
@@ -918,7 +920,7 @@ class ChatRuntime(_ModuleChatRuntime):
                 detail = self._rejected_cloud_call_error(error=exc)
             delay = cloud_call_retry_delay(detail, retries=retries, waited_seconds=waited)
             if delay is None:
-                if detail and detail.get("status_code") == 429 and not detail.get("quota_exceeded"):
+                if cloud_call_retry_eligible(detail):
                     # Do not compound this bounded call retry with a controller
                     # restart of the task, even when no tool has run yet.
                     return {"error": detail["message"], "backend_error": detail,
@@ -926,8 +928,12 @@ class ChatRuntime(_ModuleChatRuntime):
                 if error is not None:
                     raise error
                 return result
-            log.info("Cloud-Anfragelimit: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)",
-                     delay, retries + 1)
+            if detail.get("status_code") == 429:
+                log.info("Cloud-Anfragelimit: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)",
+                         delay, retries + 1)
+            else:
+                log.info("Cloud-Transportfehler: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)",
+                         delay, retries + 1)
             await self._wait_model_call_retry(delay, check_active=check_active)
             retries += 1
             waited += delay
