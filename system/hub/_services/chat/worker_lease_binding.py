@@ -590,6 +590,8 @@ class WorkerLeaseBinding:
     def assert_active(self):
         with self._lock:
             self._assert_authority_active()
+            from .worker_project_sources import assert_source_current
+            assert_source_current(self)
             if self._policy_guard is not None:
                 try:
                     self._policy_guard()

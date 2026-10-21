@@ -946,9 +946,11 @@ def _prepare_bound_task_scope(binding, slot):
         return
     from hub import worker_git
     from hub._services.chat.worker_write_guard import _WRITE_TOOLS, snapshot_task_start_scope
+    from hub._services.chat.worker_project_sources import ProjectSourceError, project_for_binding
     code_capability = any(tool in _WRITE_TOOLS for tool in allowed)
     try:
         binding.assert_active()
+        project_for_binding(binding)
         task_root = worker_git.start_task_worktree(binding.task_id, base_branch="main",
             worker_task_binding=binding, require_task_binding=True,
             task_code_capability=code_capability)
@@ -960,6 +962,8 @@ def _prepare_bound_task_scope(binding, slot):
                 or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
                 or (code_capability and scope.get("source_pin") is None)):
             raise RuntimeError("scope_unavailable")
+    except ProjectSourceError as exc:
+        raise RuntimeError(f"Projektquelle vor Modellstart nicht bestätigt: {exc}") from None
     except Exception:
         raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
 
@@ -1010,6 +1014,10 @@ def _bound_worker_prompt(binding, prompt):
     fields = ("id", "title", "description", "category", "priority", "depends_on",
               "assigned_to", "required_model", "assigned_slot", "task_version")
     content = {key: snapshot[key] for key in fields if key in snapshot}
+    source = getattr(binding, "_task_project_source", None)
+    if source is not None:
+        content["project_source"] = (source.public_binding() if source.selector is not None
+                                     else {"source_class": "legacy-bach", "repository": source.repository})
     result_limit = snapshot.get("result_max_chars")
     if result_limit is not None:
         if type(result_limit) is not int or not 1 <= result_limit <= 3000:

@@ -1061,6 +1061,12 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
         if close_parent and parent.get("claim_result_generation"):
             conn.rollback()
             return _deny(task_id, "completion_guard", now, detail="Native Zerlegung darf den Parent nicht als Done abschließen")
+        from hub._services.chat.worker_project_sources import source_tags, task_source_selector
+        inherited_source = source_tags(parent.get("tags"))
+        if inherited_source:
+            # Only the native parent's protected source assertion is inherited.
+            # Child payloads cannot choose tags, repository paths or revisions.
+            task_source_selector(parent)
         created = []
         for item in normalized:
             dependency = item.get("depends_on") or (str(created[-1]) if sequential and created else "")
@@ -1082,6 +1088,10 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
                  _local_naive(now), _local_naive(now)),
             )
             created.append(cursor.lastrowid)
+            if inherited_source:
+                apply_task_field_changes(conn, cursor.lastrowid, _row(conn, cursor.lastrowid),
+                    {"tags": list(inherited_source)}, changed_by="project-source-inheritance",
+                    now=_local_naive(now), project_source_authorized=True)
         changes = {"description": (parent.get("description") or "") +
                    f"\n[In {len(created)} Teilaufgaben zerlegt: {created}]"}
         if close_parent:

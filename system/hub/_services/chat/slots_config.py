@@ -619,21 +619,33 @@ def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any]) -> str |
 
     raw_tags = task.get("tags") or []
     if isinstance(raw_tags, str):
-        task_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
+        try:
+            decoded_tags = json.loads(raw_tags)
+        except ValueError:
+            decoded_tags = raw_tags.split(",")
+        task_tags = ([str(t).strip().lower() for t in decoded_tags if str(t).strip()]
+                     if isinstance(decoded_tags, list) else [])
     elif isinstance(raw_tags, (list, tuple, set)):
         task_tags = [str(t).strip().lower() for t in raw_tags if str(t).strip()]
     else:
         task_tags = []
 
+    # Repository authority is not a generic queue tag. Metadata cannot make a
+    # task match (or fail) an otherwise unchanged operational pickup policy.
+    source_prefixes = ("worker-source:", "worker-project:", "worker-commit:", "worker-entry:")
+    task_tags = [t for t in task_tags if not t.startswith(source_prefixes)]
+
     filter_tags = pickup_filter.get("tags", []) or []
-    if filter_tags:
-        filter_tags_norm = {str(t).strip().lower() for t in filter_tags if str(t).strip()}
+    filter_tags_norm = {str(t).strip().lower() for t in filter_tags
+                        if str(t).strip() and not str(t).strip().lower().startswith(source_prefixes)}
+    if filter_tags_norm:
         if not any(t in filter_tags_norm for t in task_tags):
             return "pickup_tags"
 
     exclude_tags = pickup_filter.get("exclude_tags", []) or []
-    if exclude_tags:
-        exclude_tags_norm = {str(t).strip().lower() for t in exclude_tags if str(t).strip()}
+    exclude_tags_norm = {str(t).strip().lower() for t in exclude_tags
+                         if str(t).strip() and not str(t).strip().lower().startswith(source_prefixes)}
+    if exclude_tags_norm:
         if any(t in exclude_tags_norm for t in task_tags):
             return "excluded_tag"
 

@@ -1635,7 +1635,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if worker_task_binding is not None:
                 from hub._services.chat.worker_write_guard import authorize_safe_read, run_bound_check
                 try:
-                    if args.get("cwd"):
+                    from hub._services.chat.worker_project_sources import project_for_binding
+                    source = project_for_binding(worker_task_binding)
+                    if args.get("cwd") or source.selector is not None:
                         return run_bound_check(worker_task_binding, cmd, args.get("cwd"), safe=True)
                     # Read-only analysis does not create or mutate a task tree.
                     # It still requires the current private lease; the existing

@@ -88,8 +88,18 @@ def authorize_safe_read(binding) -> int:
     return task_id
 
 
-def _paths(repo_root=None, worktrees_dir=None):
+def _paths(repo_root=None, worktrees_dir=None, *, binding=None, project_source=None):
     from hub import worker_git
+    if binding is not None or project_source is not None:
+        from .worker_project_sources import project_for_binding, source_from_evidence
+        source = (project_for_binding(binding, repo_root=repo_root, worktrees_dir=worktrees_dir)
+                  if binding is not None else source_from_evidence(project_source))
+        if (repo_root is not None and _NATIVE_PATH(repo_root).resolve(strict=True) != source.repo_root
+                or worktrees_dir is not None and _NATIVE_PATH(worktrees_dir).resolve(strict=False) != source.worktrees_root):
+            raise WorkerWriteGuardError("Projektquelle und übergebener Arbeitsbereich weichen ab")
+        repo_root, worktrees_dir = source.repo_root, source.worktrees_root
+        if source.lock_scope != source.repo_root:
+            _scan_locks(source.lock_scope)
     repo = _NATIVE_PATH(repo_root or worker_git.get_live_repo_root()).expanduser().resolve(strict=True)
     root = _NATIVE_PATH(worktrees_dir or worker_git.get_worktrees_dir()).expanduser()
     root = _NATIVE_PATH(os.path.abspath(root))
@@ -191,7 +201,7 @@ def _scan_locks(path: Path, *, main_repo=False) -> dict:
         payload = json.loads(result.stdout)
     except Exception as exc:
         raise WorkerWriteGuardError("Sperrscan fehlt oder ist nicht lesbar") from exc
-    if result.returncode not in (0, 1) or not isinstance(payload, dict):
+    if result.returncode != 0 or not isinstance(payload, dict):
         raise WorkerWriteGuardError("Sperrscan ist fehlgeschlagen")
     if _NATIVE_PATH(str(payload.get("checked", ""))).resolve(strict=False) != path.resolve(strict=False):
         raise WorkerWriteGuardError("Sperrscan bestätigt nicht den angeforderten Pfad")
@@ -199,6 +209,11 @@ def _scan_locks(path: Path, *, main_repo=False) -> dict:
         raise WorkerWriteGuardError("Twin-Sperrstatus ist unbekannt")
     if main_repo and payload.get("twin_status") != "ok":
         raise WorkerWriteGuardError("Kanonischer BACH-Twin wurde nicht bestätigt")
+    if payload.get("descendants_complete") is not True:
+        raise WorkerWriteGuardError("Sperrscan ist nicht vollständig bestätigt")
+    guards = payload.get("hook_guards")
+    if not isinstance(guards, list) or guards:
+        raise WorkerWriteGuardError("Fremde oder unbekannte Hook-Sperre blockiert")
     locks = payload.get("locks")
     if not isinstance(locks, list) or locks:
         raise WorkerWriteGuardError("Fremde oder unbekannte Projektsperre blockiert")
@@ -227,8 +242,8 @@ def _nearest_existing_directory(path: Path) -> Path:
 
 
 def _fresh_locks(repo: Path, worktrees_root: Path, target: Path | None,
-                 paths: Iterable[Path] = ()) -> None:
-    _scan_locks(repo, main_repo=True)
+                 paths: Iterable[Path] = (), *, require_canonical_twin=True) -> None:
+    _scan_locks(repo, main_repo=require_canonical_twin)
     scan_dirs = [_nearest_existing_directory(worktrees_root)]
     if target is not None:
         scan_dirs.append(_nearest_existing_directory(target))
@@ -239,6 +254,17 @@ def _fresh_locks(repo: Path, worktrees_root: Path, target: Path | None,
             continue
         seen.add(directory)
         _scan_locks(directory)
+
+
+def _project_lock_kwargs(source):
+    from .worker_project_sources import TaskProjectSource
+    # The BACH twin rule is specific to BACH's canonical clone. Other
+    # operator-registered repositories still receive all complete lock,
+    # ancestor and hook checks, including any twins actually configured.
+    if (isinstance(source, TaskProjectSource) and source.selector is not None
+            and source.repository != "ellmos-ai/bach"):
+        return {"require_canonical_twin": False}
+    return {}
 
 
 _SCOPE_SCHEMA = "bach.task-scope-snapshot.v1"
@@ -258,10 +284,37 @@ def _scope_hash(value) -> str:
 def _scope_git(argv, cwd: Path, *, allowed=(0,), timeout=8):
     """Run one bounded local Git read without optional locks or fsmonitor hooks."""
     try:
+        normalisation = []
+        if argv and argv[0] == "status":
+            # Preserve checkout line endings without importing host executable
+            # filters, fsmonitor, aliases or arbitrary command-line config.
+            config_env = _scope_git_env()
+            config_env.pop("GIT_CONFIG_GLOBAL", None)
+            config_env.pop("GIT_CONFIG_NOSYSTEM", None)
+            config = _RUN(["git", "config", "--get-regexp", r"^core\.(autocrlf|eol)$"],
+                          cwd=str(cwd), shell=False, capture_output=True,
+                          stdin=subprocess.DEVNULL, env=config_env, timeout=timeout)
+            if config.returncode not in (0, 1) or len(config.stdout) > 8192:
+                raise WorkerWriteGuardError("Git-Zeilenenden sind nicht eindeutig lesbar")
+            values = {}
+            for line in config.stdout.decode("utf-8", "strict").splitlines():
+                key, value = line.split(None, 1)
+                permitted = {"core.autocrlf": {"true", "false", "input"},
+                             "core.eol": {"lf", "crlf", "native"}}
+                if key not in permitted or value.lower() not in permitted[key]:
+                    raise WorkerWriteGuardError("Git-Zeilenenden sind ungültig")
+                values[key] = value.lower()
+            for key, value in values.items():
+                normalisation.extend(("-c", key + "=" + value))
+        scope_env = _scope_git_env()
+        # Scope reads ignore unrelated executable host filters. Keep the
+        # shared environment sanitizer's original contract for other readers.
+        scope_env["GIT_CONFIG_GLOBAL"] = os.devnull
+        scope_env["GIT_CONFIG_NOSYSTEM"] = "1"
         result = _RUN(["git", "-c", "core.fsmonitor=false",
-                       "-c", "diff.external=", *argv],
+                       "-c", "diff.external=", *normalisation, *argv],
                       cwd=str(cwd), shell=False, capture_output=True,
-                      stdin=subprocess.DEVNULL, env=_scope_git_env(), timeout=timeout)
+                      stdin=subprocess.DEVNULL, env=scope_env, timeout=timeout)
     except Exception as exc:
         raise WorkerWriteGuardError("Lokale Git-Sicht ist nicht lesbar") from exc
     if result.returncode not in allowed:
@@ -291,7 +344,8 @@ def _scope_stage(target: Path) -> bytes:
     return raw
 
 
-def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
+def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None,
+                        binding=None, project_source=None) -> dict:
     """Read one registered, clean BACH task tree; never trust a worker path.
 
     This is a local Git/lock observation, not an accepted result or permission
@@ -302,23 +356,29 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     except (WorkerWriteGuardError, TypeError, ValueError):
         return _scope_unavailable("invalid_task_id")
     try:
-        repo, root = _paths(repo_root, worktrees_dir)
-    except (WorkerWriteGuardError, OSError, ValueError):
+        from .worker_project_sources import project_for_binding, source_from_evidence
+        source = (project_for_binding(binding, repo_root=repo_root, worktrees_dir=worktrees_dir)
+                  if binding is not None else source_from_evidence(project_source) if project_source else None)
+        if source is not None and source.selector is None:
+            source = None
+        repo, root = _paths(repo_root, worktrees_dir, binding=binding, project_source=project_source)
+        repository = source.repository if source is not None else "ellmos-ai/bach"
+    except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("paths_unavailable")
     try:
         target = _registered_tree(repo, root, tid)
     except (WorkerWriteGuardError, OSError, ValueError):
         return _scope_unavailable("registration_unavailable")
     try:
-        _fresh_locks(repo, root, target)
+        _fresh_locks(repo, root, target, **_project_lock_kwargs(source))
     except (WorkerWriteGuardError, OSError, ValueError):
         return _scope_unavailable("lock_unavailable")
     from hub import worker_git
     try:
         origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], repo))
+            _scope_text(["remote", "get-url", "origin"], repo), repository)
         if worker_git._canonical_bach_origin(
-                _scope_text(["remote", "get-url", "origin"], target)) != origin:
+                _scope_text(["remote", "get-url", "origin"], target), repository) != origin:
             raise WorkerWriteGuardError("Git-Origin weicht ab")
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("origin_unavailable")
@@ -326,6 +386,8 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         key = worker_git._public_source_config_key(tid)
         code, raw_pin = _scope_git(["config", "--local", "--get-all", key], target,
                                    allowed=(0, 1))
+        if code == 1 and source is not None:
+            return _scope_unavailable("source_pin_invalid")
         if code == 1:
             source_pin = None
         else:
@@ -336,9 +398,11 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
             if (not isinstance(proof, dict)
                     or proof.get("schema") != "bach.task-public-source.v1"
                     or proof.get("task_id") != str(tid)
-                    or proof.get("repository") != "ellmos-ai/bach"
+                    or proof.get("repository") != repository
                     or proof.get("origin") != origin
-                    or proof.get("source_ref") != "refs/heads/main"
+                    or proof.get("source_ref") != (source.source_ref if source else "refs/heads/main")
+                    or proof.get("project_source") != (source.public_binding() if source else None)
+                    or (source is not None and proof.get("source_sha") != source.source_sha)
                     or not isinstance(proof.get("source_sha"), str)
                     or not re.fullmatch(r"[0-9a-f]{40}", proof["source_sha"])
                     or proof.get("visibility") != "public"
@@ -400,7 +464,7 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     except (WorkerWriteGuardError, OSError, ValueError):
         return _scope_unavailable("registration_unavailable")
     try:
-        _fresh_locks(repo, root, target)
+        _fresh_locks(repo, root, target, **_project_lock_kwargs(source))
     except (WorkerWriteGuardError, OSError, ValueError):
         return _scope_unavailable("lock_unavailable")
     try:
@@ -426,14 +490,15 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         )
         if (final_stage != stage or final[:5] != (status, index, branch, head, tree)
                 or final[5] != (code, raw_pin)
-                or worker_git._canonical_bach_origin(final[6]) != origin
-                or worker_git._canonical_bach_origin(final[7]) != origin):
+                or worker_git._canonical_bach_origin(final[6], repository) != origin
+                or worker_git._canonical_bach_origin(final[7], repository) != origin):
             return _scope_unavailable("git_changed")
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("git_unavailable")
     snapshot = {
-        "schema": _SCOPE_SCHEMA, "availability": "available", "task_id": tid,
-        "repository": "ellmos-ai/bach", "origin": origin, "branch": branch,
+        "schema": "bach.task-scope-snapshot.v2" if source else _SCOPE_SCHEMA,
+        "availability": "available", "task_id": tid,
+        "repository": repository, "origin": origin, "branch": branch,
         "head_oid": head, "tree_oid": tree,
         "repo_path_sha256": hashlib.sha256(str(repo).encode("utf-8")).hexdigest(),
         "worktree_path_sha256": hashlib.sha256(str(target).encode("utf-8")).hexdigest(),
@@ -442,9 +507,12 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         "status_sha256": hashlib.sha256(status).hexdigest(),
         "index_sha256": hashlib.sha256(index).hexdigest(),
     }
+    if source is not None:
+        snapshot["project_source"] = source.public_binding()
     snapshot["project_state_ref"] = _scope_hash({
         "repository": snapshot["repository"], "origin": origin,
-        "source_pin": source_pin, "head_oid": head})
+        "source_pin": source_pin, "head_oid": head,
+        **({"project_source": snapshot["project_source"]} if source else {})})
     snapshot["workspace_fingerprint"] = _scope_hash({
         "worktree_path_sha256": snapshot["worktree_path_sha256"],
         "common_dir_sha256": snapshot["common_dir_sha256"], "branch": branch,
@@ -476,17 +544,22 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
         return _task_start_scope_unavailable("invalid_source_capability")
     try:
         tid = _task_id(getattr(binding, "task_id", None))
-        repo, root = _paths(repo_root, worktrees_dir)
+        from .worker_project_sources import project_for_binding
+        source = project_for_binding(binding, repo_root=repo_root, worktrees_dir=worktrees_dir)
+        if source.selector is None:
+            source = None
+        repository = source.repository if source else "ellmos-ai/bach"
+        repo, root = _paths(repo_root, worktrees_dir, binding=binding)
         target = authorize_start(binding, tid, repo_root=repo, worktrees_dir=root)
         if task_root is not None and _NATIVE_PATH(task_root).resolve(strict=True) != target:
             return _task_start_scope_unavailable("registration_unavailable")
 
         from hub import worker_git
         origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], repo))
+            _scope_text(["remote", "get-url", "origin"], repo), repository)
         target_origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], target))
-        if origin != "https://github.com/ellmos-ai/bach" or target_origin != origin:
+            _scope_text(["remote", "get-url", "origin"], target), repository)
+        if origin != "https://github.com/" + repository or target_origin != origin:
             return _task_start_scope_unavailable("origin_unavailable")
 
         branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
@@ -514,13 +587,14 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
             if len(values) != 1:
                 return _task_start_scope_unavailable("source_pin_invalid")
             proof = json.loads(values[0])
-            validated = worker_git.read_task_public_source_registration(repo, target, tid)
+            validated = worker_git.read_task_public_source_registration(
+                repo, target, tid, **({"project_source": source} if source else {}))
             if proof != validated:
                 return _task_start_scope_unavailable("git_changed")
             source_pin = {name: validated[name] for name in
                           ("schema", "source_ref", "source_sha", "verified_at")}
         else:
-            if source_pin_required:
+            if source_pin_required or source is not None:
                 return _task_start_scope_unavailable("source_pin_invalid")
             source_pin = None
 
@@ -543,7 +617,7 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
         final_branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
         final_head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
         final_origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], target))
+            _scope_text(["remote", "get-url", "origin"], target), repository)
         if (final_filter_code != 1 or final_pin_state != pin_state
                 or final_stage != stage or final_branch != branch
                 or final_head != head or final_origin != origin
@@ -562,6 +636,7 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
         "branch": branch,
         "head_oid": head,
         "source_pin": source_pin,
+        **({"project_source": source.public_binding()} if source else {}),
     }
 
 
@@ -651,7 +726,11 @@ def review_source_root(binding, *, repo_root=None, worktrees_dir=None) -> Path:
             or result.get("result_revision") != grant.target_revision
             or result.get("scope", {}).get("availability") != "available"):
         raise WorkerWriteGuardError("Review-Leseziel passt nicht zur gebundenen Ergebnisrevision")
-    repo, root = _paths(repo_root, worktrees_dir)
+    project_evidence = result.get("scope", {}).get("snapshot", {}).get("project_source")
+    from .worker_project_sources import source_from_evidence
+    source = source_from_evidence(project_evidence) if project_evidence is not None else None
+    repo, root = _paths(repo_root, worktrees_dir, project_source=project_evidence)
+    binding._review_project_source = source
     return _registered_tree(repo, root, _task_id(grant.target_task_id))
 
 
@@ -661,16 +740,24 @@ def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, wor
         raise WorkerWriteGuardError("Vorhandene Secrets-Prüfung fehlt")
     tid = _task_id(getattr(binding, "task_id", None))
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
     grant = getattr(binding, "_review_grant", None)
     if grant is not None:
-        target = review_source_root(binding, repo_root=repo, worktrees_dir=root)
+        target = review_source_root(binding, repo_root=repo_root, worktrees_dir=worktrees_dir)
+        source = getattr(binding, "_review_project_source", None)
+        repo, root = _paths(repo_root, worktrees_dir,
+                            project_source=source.public_binding() if source else None)
         source_tid = _task_id(grant.target_task_id)
     else:
+        from .worker_project_sources import project_for_binding
+        source = project_for_binding(binding, repo_root=repo_root, worktrees_dir=worktrees_dir)
+        if source.selector is None:
+            source = None
+        repo, root = _paths(repo_root, worktrees_dir, binding=binding)
         target = _registered_tree(repo, root, tid)
         source_tid = tid
     from hub import worker_git
-    registration = worker_git.read_task_public_source_registration(repo, target, source_tid)
+    registration = worker_git.read_task_public_source_registration(
+        repo, target, source_tid, **({"project_source": source} if source else {}))
     requested = _task_relative_path(target, candidate)
     if secret_check(requested):
         raise WorkerWriteGuardError("Task-Lesepfad ist als geheim eingestuft")
@@ -810,9 +897,10 @@ def open_authorized_task_file(scope: TaskReadScope, path: Path):
 def authorize_start(binding, task_id, *, repo_root=None, worktrees_dir=None) -> Path:
     tid = _task_id(task_id)
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
+    repo, root = _paths(repo_root, worktrees_dir, binding=binding)
     target = root / f"task-{tid}"
-    _fresh_locks(repo, root, target)
+    _fresh_locks(repo, root, target,
+                 **_project_lock_kwargs(getattr(binding, "_task_project_source", None)))
     if target.exists():
         _registered_tree(repo, root, tid)
     _fresh_lease(binding, tid)
@@ -851,11 +939,12 @@ def authorize_mutation(binding, task_id=None, *, paths: Iterable = (),
                        repo_root=None, worktrees_dir=None) -> tuple[Path, tuple[Path, ...]]:
     tid = _task_id(task_id if task_id is not None else binding.task_id)
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
+    repo, root = _paths(repo_root, worktrees_dir, binding=binding)
     target = _registered_tree(repo, root, tid)
     checked = tuple(_safe_task_path(target, value) for value in paths)
     # Scan each source/target's nearest existing directory before parent mkdir.
-    _fresh_locks(repo, root, target, checked)
+    _fresh_locks(repo, root, target, checked,
+                 **_project_lock_kwargs(getattr(binding, "_task_project_source", None)))
     _fresh_lease(binding, tid)
     return target, checked
 
@@ -1489,6 +1578,11 @@ def _prepare_bound_check_args(task_root, cwd, base, args, checked, state_dir):
 def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, return_result=False) -> str | SandboxResult:
     if not isinstance(command, str) or not command.strip():
         raise WorkerWriteGuardError("Befehl fehlt")
+    if cwd is None:
+        from .worker_project_sources import project_for_binding
+        if project_for_binding(binding).selector is None:
+            raise WorkerWriteGuardError("Ein geprüftes Task-Arbeitsverzeichnis ist erforderlich")
+        cwd, _ = authorize_mutation(binding)
     target, checked = authorize_mutation(binding, paths=(cwd,))
     checked = list(checked)
     run_cwd = checked[0]
