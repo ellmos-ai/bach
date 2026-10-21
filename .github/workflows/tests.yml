@@ -92,6 +92,14 @@ jobs:
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_task_manage_complete_flag.py system/tests/test_worker_task_actions.py system/tests/test_worker_cli_bridge.py system/tests/test_worker_tool_trace.py
           "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_slots_durable_platform.py
 
+      - name: External result provenance and independent review
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+          PYSTRAY_BACKEND: dummy
+        run: |
+          "$RUNNER_TEMP/worker-policy-tests/bin/python" -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_worker_external_evidence.py system/tests/test_worker_external_attestation.py system/tests/test_worker_external_result_integration.py
+
       - name: Pinned shared GUI release contracts
         env:
           PYTHONIOENCODING: utf-8

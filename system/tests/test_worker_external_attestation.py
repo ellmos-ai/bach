@@ -24,8 +24,29 @@ from system.tests.test_worker_scope_evidence import _review_submission, _scope_s
 
 
 @pytest.fixture
-def external_world(worker_context, tmp_path, monkeypatch):
+def external_world(worker_context, tmp_path, monkeypatch, request):
     context = worker_context
+    if getattr(request, "param", {}).get("review_models"):
+        from hub._services import worker_policy_settings as settings
+        from system.tests.test_worker_result_review import (
+            _binding, AUTHOR_ROUTE, AUTHOR_MODEL, AUTHOR_OBSERVED,
+            REVIEW_ROUTE, REVIEW_MODEL, REVIEW_OBSERVED,
+        )
+        original = context["conn"]
+        original.execute("CREATE TABLE IF NOT EXISTS system_config(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+        values = settings._defaults()
+        values["policy"].update(default_mode="balanced", allow_review_task_pickup=True,
+            github_external_review=False, reviewers=[
+                {"reviewer_id": "model:shared", "tier": "standard"},
+                {"reviewer_id": "model:reviewer", "tier": "top"}])
+        settings.validate_policy(values["policy"])
+        settings._persist(original, settings.GLOBAL_KEY, values, actor="external-integration-fixture")
+        settings._persist(original, identity.KEY, [
+            _binding("model:shared", AUTHOR_ROUTE, AUTHOR_MODEL, AUTHOR_OBSERVED),
+            _binding("model:shared" if request.param.get("same_model_reviewer") else "model:reviewer",
+                     REVIEW_ROUTE, REVIEW_MODEL, REVIEW_OBSERVED),
+        ], actor="external-integration-fixture")
+        original.commit()
     _review_submission(context, with_execution=False)
     original = context["conn"]
     original.execute("CREATE TABLE IF NOT EXISTS system_config(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
@@ -103,7 +124,9 @@ def test_capture_is_a_separate_event_backed_receipt_without_acceptance(external_
     dto = read_result(conn, world["task_id"])
     assert dto["status"] == "review" and dto["result"]["accepted"] is False
     assert dto["result"]["execution"]["availability"] == "unavailable"
-    assert dto["result"]["scope"]["availability"] == "unavailable"
+    assert dto["result"]["source_kind"] == "external_attested"
+    assert dto["result"]["scope"]["availability"] == "recorded"
+    assert dto["result"]["scope"]["schema"] == "bach.worker-external-scope-evidence.v1"
     assert conn.execute("SELECT claim_id FROM tasks WHERE id=?", (world["task_id"],)).fetchone()[0] is None
     assert not attestation._exists(conn, "worker_model_executions")
     events = list(conn.execute("SELECT action,changed_by FROM task_history WHERE id IN (?,?) ORDER BY id",

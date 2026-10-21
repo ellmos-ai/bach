@@ -73,18 +73,38 @@ Artefakt-, Account-, Tenant-, Run-/Turn-IDs oder Dateipfade. Erst ein erneuter
 Git-Vergleich erzeugt die eigene externe Ergebnisrevision. Diese Projektion
 ist ausschließlich mit Daten des vertrauenswürdigen DB-Readers aufzurufen.
 
-Dieser Kern ist noch kein über API/SDK nutzbarer Abschlussweg und erteilt
-keine Abnahme. Dafür fehlen die nachfolgenden Integrationsschritte.
+## Integrierte Quellenbehandlung
+
+Der vertrauenswürdige Result-Reader unterscheidet nun `native`,
+`external_attested` und `unattested`. Ein vorhandener externer Beleg bleibt
+auch nach Widerruf als externe Herkunft erkennbar und darf dadurch keine
+native Ersatzberechtigung erhalten. Seine native `execution` bleibt
+unverfügbar; die externe Ergebnisrevision wird gesondert berechnet.
+
+Completion-Policy und Review verarbeiten die gebundene externe Herkunft.
+Ein explizit berechtigter Operator kann über die interne Servicefunktion
+einen eigenen externen Review-Intent anlegen. Dieser bindet Herkunfts- und
+Scope-Ereignisse, globale Modellidentität und Ergebnisrevision. Er benötigt
+keinen erfundenen Autor-Slot. Der Reviewer verwendet weiterhin einen echten
+nativen Ausführungsbeleg. Ein natives Alias desselben globalen Modells ist
+kein unabhängiger Reviewer, auch wenn Account oder Route unterschiedlich sind.
+
+Vor der Review-Anlage prüft der Writer erneut den freien Claim, den aktuellen
+Task-/Result-/Statusstand, die Quellenbindung, die Policy und die
+Operatorberechtigung. Vor einem Abschluss gelten die erneuten kanonischen
+DB-Prüfungen und der bestehende abschließende Git-/Sperrvergleich. Ein
+ausstehender Review hält die nächste Aufgabenübernahme des Workers nicht auf.
+
+Diese Serviceintegration ist noch kein über API/SDK nutzbarer Abschlussweg.
+Sie enthält keinen Nachweis eines tatsächlichen externen Modelllaufs oder
+eines Deployments in die laufenden Mac-Dienste.
 
 ## Noch zu integrierender Abschlussweg
 
-1. Result-Readback, Completion-Policy und unabhängigen Review explizit um
-   diese Herkunft erweitern. Reviewer-Child führt weiter eine tatsächliche
-   belegte Modellausführung aus; Modellunabhängigkeit nutzt globale Principals.
-   Vor jeder Abschlussentscheidung alle aktuellen DB-Abhängigkeiten per CAS
-   erneut prüfen. Die native `execution_revision` bleibt getrennt.
-2. API/SDK/CLI und Ergebnisanzeige integrieren, einschließlich Operatorauth,
-   strikter Payloads, Replay-/CAS-/Revokationsfällen und echter Live-Abnahme.
+1. API/SDK/CLI und Ergebnisanzeige integrieren, einschließlich Operatorauth
+   sowie strikter Payloads und Readbacks.
+2. Den tatsächlichen unabhängigen Reviewer-Modelllauf und den vollständigen
+   Ablauf mit echten Herkunftsartefakten live abnehmen und auf dem Mac deployen.
 
 Frühere Ergebnisse lassen sich nur mit real vorhandenen, nachvollziehbar zum
 Result passenden Artefakten neu revalidieren. Die neue Revision ist heute
