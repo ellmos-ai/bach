@@ -328,6 +328,7 @@ def test_task_override_reset_is_cas_bound_and_changes_version_without_aba(api):
     assert reread["override"] == {
         "mode": None, "require_user_review": False,
         "github_external_review": None, "allow_review_task_pickup": None,
+        "require_assigned_slot": None, "enforce_model_binding": None,
     }
     assert reread["configuration_version"] != initial["configuration_version"]
     stale = _task_write_payload(
