@@ -1478,7 +1478,7 @@ def _worker_backend_retry_delay(
              or (slot.get("backend") == "ollama"
                  and isinstance(model, str) and model.lower().endswith(":cloud")))
     )
-    if (reason_code is None and cloud
+    if (reason_code in {None, "cloud_call_retry_exhausted"} and cloud
             and slot.get("type") in {"continuous", "persistent"}
             and error and (error["kind"] == "rate_limited"
                            or error.get("status_code") == 429)):
