@@ -69,7 +69,7 @@ provenienz:
 |---|---|---|
 | `lizenz` | optional, Default `"MIT"` | V10: Wert `"MIT"` oder Verweis-String auf THIRD_PARTY_LICENSES-Eintrag |
 | `plattformen` | optional, Default `["macos"]` | V11: Enum-Teilmenge {macos, windows, linux}, nicht leer |
-| `aktivierungsmodus` | optional, Default `aktiv` | V8: Enum {read_only, shadow, staged, aktiv}; ≠ aktiv ⇒ `env_schalter` aus Whitelist |
+| `aktivierungsmodus` | optional, Default `aktiv` | V8: Enum {read_only, shadow, staged, aktiv}; `shadow`/`staged` ⇒ `env_schalter` aus Whitelist; `read_only` ⇒ whitelisted `env_schalter` oder Begründungsnotiz gemäß §3 |
 | `provenienz` | optional | V9: `herkunft`-Enum; `commit` gegen Pin-Regex ^[0-9a-f]{7,8}$\|^$ |
 
 Alle vier Felder sind optional → bestehende v1-Manifeste bleiben valide (V1–V7 unverändert);
