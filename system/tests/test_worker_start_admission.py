@@ -8,7 +8,7 @@ import sys
 import threading
 
 import pytest
-from system.tests.test_task_lease_client import mem_db
+from system.tests.test_worker_lease_binding import mem_db, lease_mem_db
 from system.tests.test_worker_lease_supervision import binding as leased_binding
 
 from hub._services.chat.chat_runtime import ChatSession
@@ -210,12 +210,12 @@ def test_scope_return_defers_the_same_task_version(mem_db):
     client = TaskLeaseClient(conn=mem_db)
     args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
                 is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
-    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "isolated-model"}, **args)
     assert bound.task_id == first
     deferred = {first: bound.task_snapshot()["task_version"]}
     assert bound.return_lease() is True
     assert client.task_snapshot(first)["task_version"] == deferred[first]
-    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "isolated-model"}, deferred_versions=deferred, **args)
     assert next_task.task_id == second
 
 

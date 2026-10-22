@@ -1,7 +1,7 @@
 """Module/managed tool providers must preserve the private native task context."""
 import pytest
 
-from system.tests.test_worker_lease_binding import binding, mem_db
+from system.tests.test_worker_lease_binding import binding, mem_db, lease_mem_db
 from hub._services.chat import bach_tools
 
 

@@ -589,7 +589,11 @@ def test_policy_snapshot_is_frozen_and_readback_does_not_create_schema(local_db)
     assert frozen["policy"]["default_mode"] == "simple_task"
     assert frozen["policy_source"] == "task_override"
     assert frozen["override_present"] is True
-    assert frozen["override"] == explicit_default
+    assert frozen["override"] == {
+        **explicit_default,
+        "require_assigned_slot": None,
+        "enforce_model_binding": None,
+    }
     assert frozen["user_review_required"] is False
     assert record["accepted"] is False
     assert conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()[0] == "review"

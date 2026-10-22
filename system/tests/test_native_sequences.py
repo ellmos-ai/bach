@@ -18,7 +18,8 @@ from hub._services import skill_source_service
 
 # The focused Mac run starts in system/, whereas CI starts at repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from system.tests.test_task_lease_client import _init_db, mem_db
+from system.tests.test_task_lease_client import _init_db
+from system.tests.test_worker_lease_binding import mem_db, lease_mem_db
 from system.tests.test_worker_lease_binding import (
     binding, completion_binding, approve_result, _self_check, _require_personal_review,
 )
@@ -31,6 +32,7 @@ def store(tmp_path, monkeypatch):
     path = tmp_path / "authority.db"
     db = sqlite3.connect(path)
     _init_db(db)
+    db.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     db.commit(); db.close()
     result = SequenceStore(path)

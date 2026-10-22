@@ -5,12 +5,43 @@ import pytest
 from hub._services.chat.worker_task_actions import WorkerTaskActions
 from hub._services.task_lease_client import LeaseProtocolError
 
-from system.tests.test_worker_lease_binding import (
-    binding as binding,  # noqa: PLC0414 - explicit pytest fixture export
+from system.tests.test_task_lease_client import (
+    mem_db as lease_mem_db,  # noqa: PLC0414 - explicit pytest fixture export
 )
-from system.tests.test_worker_lease_binding import (
-    mem_db as mem_db,  # noqa: PLC0414 - explicit pytest fixture export
-)
+
+
+@pytest.fixture
+def mem_db(lease_mem_db):
+    """Provide the native policy store on this isolated authority."""
+    lease_mem_db.execute(
+        "CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT, type TEXT)"
+    )
+    lease_mem_db.commit()
+    return lease_mem_db
+
+
+@pytest.fixture
+def binding(mem_db):
+    """Pin the selection contract for the actual Runtime boundary."""
+    import threading
+
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import TaskLeaseClient
+    from system.tests.test_task_lease_client import _insert_task
+    from system.tests.test_task_lease_client_review import T0
+
+    mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.commit()
+    instance = WorkerLeaseBinding.acquire(
+        TaskLeaseClient(conn=mem_db), _insert_task(mem_db),
+        worker_id="physical-worker@HOST", host="HOST",
+        generation="generation-1", is_current=lambda: True,
+        stop_event=threading.Event(), clock=lambda: T0,
+        slot={"id": "worker-bound", "model": "isolated-model"},
+    )
+    yield instance
+    if instance._active:
+        instance.return_lease()
 
 
 @pytest.fixture
@@ -31,6 +62,7 @@ def runtime_binding(mem_db):
         worker_id="physical-worker@HOST", host="HOST",
         generation="generation-1", is_current=lambda: True,
         stop_event=threading.Event(),
+        slot={"id": "worker-bound", "model": "isolated-model"},
     )
     yield instance
     if instance._active:
