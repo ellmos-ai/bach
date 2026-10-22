@@ -246,9 +246,9 @@ def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
         _boolean(payload["reset_to_default"])
     else:
         # worker_selection is optional so older clients keep working.
-        _object(payload, set(payload) - {"worker_selection"}
-                if "worker_selection" in payload else payload.keys())
         required = {"configuration_version", "policy", "selection"}
+        allowed = required | {"worker_selection"}
+        _object(payload, allowed if "worker_selection" in payload else required)
         if not required <= set(payload) or set(payload) - required - {"worker_selection"}:
             raise ValueError("Unvollständige oder unbekannte Policyfelder")
         validate_policy(payload["policy"])
