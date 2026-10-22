@@ -274,14 +274,29 @@ class _WorkerControl:
     model_request_budget: Any = None
     handoff: WorkerHandoff = field(init=False)
     task_actions: WorkerTaskActions = field(init=False)
+    task_generation: str = ""
+    task_result_generations: dict[int, str] = field(default_factory=dict)
 
     def __post_init__(self):
+        if not self.task_generation:
+            self.task_generation = self.generation
         self.handoff = WorkerHandoff(self.worker_id, self.generation)
-        self.task_actions = WorkerTaskActions(self.worker_id, self.generation)
+        self.task_actions = WorkerTaskActions(self.worker_id, self.task_generation)
         if self.persistent_core_intent_id is None:
             self.persistent_core_startup_confirmed.set()
         if not self.startup_admission_required:
             self.startup_admission_confirmed.set()
+
+    def rotate_task_generation(self):
+        with _WORKER_CONTROL_LOCK:
+            previous = self.task_generation
+            self.task_actions.cancel()
+            next_generation = uuid.uuid4().hex
+            while next_generation == previous:
+                next_generation = uuid.uuid4().hex
+            self.task_generation = next_generation
+            self.task_actions = WorkerTaskActions(self.worker_id, next_generation)
+            return next_generation
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -484,7 +499,7 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
         # The native holder name is an observation identity, never a lease
         # capability. Emit it only for this controller's current bound task.
         if (state == "running" and binding is not None and not binding.closed
-                and getattr(binding, "generation", None) == control.generation
+                and getattr(binding, "generation", None) == control.task_generation
                 and _WORKER_CONTROLS.get(worker_id) is control
                 and control.physical_worker_id
                 and control.lease_worker_id == f"{control.physical_worker_id}@{socket.gethostname()}"):
@@ -532,6 +547,7 @@ def _retain_worker_task_receipts(control: _WorkerControl) -> None:
     with _WORKER_CONTROL_LOCK:
         if control.task_binding is binding and has_receipt:
             control.task_result_bindings[binding.task_id] = binding
+            control.task_result_generations[binding.task_id] = binding.generation
 
 
 def _poll_worker_completion(control: _WorkerControl) -> bool:
@@ -659,7 +675,17 @@ def _worker_result_binding(control, task_id, generation):
     binding = control.task_result_bindings.get(task_id)
     if binding is None:
         binding = control.task_binding
-    if binding is None or binding.task_id != task_id or binding.generation != generation:
+    if control.generation != generation:
+        return None
+    expected_generation = control.task_result_generations.get(task_id)
+    if expected_generation is None:
+        expected_generation = (
+            control.task_generation
+            if control.task_binding is not None and control.task_binding.task_id == task_id
+            else control.generation
+        )
+    if (binding is None or binding.task_id != task_id
+            or binding.generation != expected_generation):
         return None
     return binding
 
@@ -806,7 +832,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             if control.creator_delegation is None:
                 control.creator_delegation = control.sequence_creator_authority.bind(
                     task_id=slot.get("task_id"), slot_id=control.worker_id,
-                    start_request_id=control.start_request_id, generation=control.generation,
+                    start_request_id=control.start_request_id, generation=control.task_generation,
                     worker_id=lease_worker_id, host=host)
     startup_recovery = control.startup_recovery and control.worker_id == "buddha_always_on"
     explicit = slot.get("task_id")
@@ -832,7 +858,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             client, slot, worker_id=lease_worker_id, host=host,
             review_route=review_route,
             review_requested_model=getattr(control, "_review_requested_model", None),
-            generation=control.generation, is_current=is_current, stop_event=control.stop_event,
+            generation=control.task_generation, is_current=is_current, stop_event=control.stop_event,
             policy_guard=(
                 control.slot_policy_reader
                 if control.persistent_cloud_admission_binding is not None
@@ -847,6 +873,19 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
             return None
         raise
+
+
+def _worker_can_continue_after_quarantine(control, slot):
+    admitted_worker = control.admitted_worker
+    pinned_task_id = admitted_worker.get("task_id") if isinstance(admitted_worker, dict) else None
+    return (
+        isinstance(slot, dict)
+        and slot.get("type") in {"continuous", "persistent"}
+        and pinned_task_id in (None, "", 0, "0")
+        and control.model_request_budget is None
+        and control.sequence_creator_authority is None
+        and control.creator_delegation is None
+    )
 
 
 def _prepare_bound_task_scope(binding, slot):
@@ -1004,7 +1043,11 @@ def _request_worker_decomposition(worker_id, generation, task_id, task_version):
                 raise ValueError("Worker-Lease ist abgelaufen")
         if not control.supports_step_actions:
             raise ValueError("Dieses Backend unterstützt keine verifizierte Zerlegungsanfrage im laufenden Block")
-        return control.task_actions.request(generation, task_id, task_version, control.task_binding)
+        if generation != control.generation:
+            raise ValueError("Workerlauf ist nicht mehr aktuell")
+        return control.task_actions.request(
+            control.task_generation, task_id, task_version, control.task_binding
+        )
 
 
 def _without_private_model_request_runs(worker):
@@ -4313,7 +4356,9 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     physical_worker_id=_startup_physical_worker_id,
                     lease_worker_id=_startup_lease_worker_id,
                     start_request_id=request_id,
-                    admitted_worker={"id": worker_id, "type": slot.get("type")},
+                    admitted_worker={
+                        "id": worker_id, "type": slot.get("type"), "task_id": slot.get("task_id")
+                    },
                     slot_policy_reader=_execution_slot_reader(
                         slot, persistent_cloud_binding=cloud_binding),
                     sequence_creator_authority=_creator_authority,
@@ -4977,9 +5022,59 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         # cannot replay it through a fresh binding/counter.
                         control.lease_supervisor.close()
                         control.lease_supervisor = None
-                        if not control.task_binding.quarantine_lease():
-                            control.task_binding.invalidate()
+                        quarantined_binding = control.task_binding
+                        if not quarantined_binding.quarantine_lease():
+                            quarantined_binding.invalidate()
                             raise RuntimeError("Task-Quarantäne nicht bestätigt; kanonischen Zustand prüfen")
+                        quarantine_snapshot = quarantined_binding._client.task_snapshot(
+                            quarantined_binding.task_id
+                        )
+                        quarantine_lease = quarantined_binding._client.read(
+                            quarantined_binding.task_id,
+                            lease_id=quarantined_binding._ack.lease_id,
+                        )
+                        expected_task_version = quarantined_binding._snapshot["task_version"]
+                        if (
+                            quarantine_snapshot.get("status") != "blocked"
+                            or quarantine_snapshot.get("task_version") != expected_task_version
+                            or quarantine_lease.leased is not False
+                            or quarantine_lease.fence != quarantined_binding._ack.fence
+                        ):
+                            raise RuntimeError("Task-Quarantäne nicht kanonisch zurückgelesen")
+                        control.deferred_task_versions[quarantined_binding.task_id] = expected_task_version
+                        if _worker_can_continue_after_quarantine(control, current_slot):
+                            if worker_session is None or getattr(runtime, "session_store", None) is None:
+                                raise RuntimeError("Worker-Taskkontext kann nach Quarantäne nicht isoliert werden")
+                            if (getattr(worker_session, "_persistent_core_model_call_control", None) is not None
+                                    or getattr(worker_session, "model_request_budget", None) is not None):
+                                raise RuntimeError("Worker-Checkpoint nach Quarantäne noch gebunden")
+                            if assignment_open:
+                                finish_assignment(
+                                    current_assignment, status="error",
+                                    result="task_quarantined", reason="verified_quarantine_ack",
+                                )
+                                assignment_open = False
+                            worker_session.worker_task_binding = None
+                            worker_session.worker_task_actions = None
+                            control.task_binding = None
+                            control.rotate_task_generation()
+                            runtime.clear_session(
+                                worker_id, archive_reason="Worker Taskwechsel nach Quarantäne"
+                            )
+                            activity = (
+                                f"Task #{quarantined_binding.task_id} ist bestätigt blockiert; "
+                                "suche mit neuer Task-Generation die nächste passende Aufgabe"
+                            )
+                            if _update_worker_slot(control, {
+                                    "status": "running", "task_id": None,
+                                    "current_activity": activity}) is None:
+                                break
+                            _record_worker_activity(control, activity, "pending")
+                            if (not _wait_worker_cooldown(control, event_type="runs")
+                                    or control.stop_event.is_set()):
+                                break
+                            prompt_to_run = initial_prompt
+                            continue
                         activity = (f"{error_activity} Automatische Wiederaufnahme unterdrückt: "
                                     "Toolwirkung bereits begonnen oder nicht verifizierbar; Task zur Prüfung blockiert.")
                         _update_worker_slot(control, {"current_activity": activity})
@@ -6808,7 +6903,7 @@ def _persistent_worker_trace_contract():
                 or "tool_trace_events" not in event_reader):
             return None
         if ("WorkerLeaseBinding.acquire_next(" not in worker_acquire
-                or "generation=control.generation" not in worker_acquire
+                or "generation=control.task_generation" not in worker_acquire
                 or "lease_worker_id" not in worker_acquire
                 or "require_task_binding = True" not in worker_runner
                 or "_acquire_worker_task(" not in worker_runner):

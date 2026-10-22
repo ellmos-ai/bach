@@ -548,6 +548,172 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
         conn.close()
 
 
+def test_quarantine_continuation_gate_requires_continuous_unpinned_unbudgeted_profile():
+    import importlib
+    from types import SimpleNamespace
+
+    controller = importlib.import_module("hub._services.chat.telegram_chat")
+    cases = [
+        ("continuous", None, None, None, True),
+        ("persistent", None, None, None, True),
+        ("once", None, None, None, False),
+        ("continuous", object(), None, None, False),
+        ("continuous", None, 42, None, False),
+        ("continuous", None, None, object(), False),
+    ]
+    for slot_type, budget, pinned_task_id, creator, expected in cases:
+        control = SimpleNamespace(
+            admitted_worker={"task_id": pinned_task_id},
+            model_request_budget=budget,
+            sequence_creator_authority=creator,
+            creator_delegation=None,
+        )
+        assert controller._worker_can_continue_after_quarantine(
+            control, {"type": slot_type}
+        ) is expected
+
+
+def test_continuous_quarantine_detaches_then_acquires_a_fresh_task_generation(
+        tmp_path, monkeypatch):
+    import importlib
+    import sqlite3
+    import threading
+    import httpx
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import TaskLeaseClient
+    from system.tests.test_task_lease_client import _init_db
+
+    controller = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    worker_id = slots.add_worker(
+        {"name": "Continuous quarantine fixture", "type": "continuous"}, path
+    )["id"]
+    slots.update_slot(worker_id, {
+        "backend": "ollama", "model": "glm-5.3:cloud", "enabled": True,
+        "mode": "safe", "task_id": None, "pause_after": 0, "max_tool_rounds": 5,
+    }, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(controller, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    for task_id, title, priority in (
+        (42, "Task quarantined after tool dispatch", "P1"),
+        (43, "Next continuous task", "P2"),
+    ):
+        conn.execute(
+            "INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+            "VALUES (?,?, 'pending', ?, 'INBOX', 'BACH', ?)",
+            (task_id, title, priority, worker_id),
+        )
+    conn.commit()
+
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(controller, "_native_task_client", lambda: client)
+    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
+    monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *a: "")
+    monkeypatch.setattr(controller, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
+    monkeypatch.setattr(controller, "_wait_worker_cooldown", lambda *a, **kw: True)
+    monkeypatch.setattr(controller, "_wait_worker_backend_retry", lambda *a, **kw: False)
+    monkeypatch.setattr(controller, "runtime", runtime)
+
+    bindings, events, next_binding = [], [], []
+    acquire = controller._acquire_worker_task
+    def acquire_record(*args, **kwargs):
+        binding = acquire(*args, **kwargs)
+        if binding is not None:
+            bindings.append(binding)
+            events.append(("acquire", binding.task_id, binding.generation))
+        return binding
+    monkeypatch.setattr(controller, "_acquire_worker_task", acquire_record)
+
+    finish = controller.finish_assignment
+    def finish_record(*args, **kwargs):
+        if kwargs.get("result") == "task_quarantined":
+            events.append(("assignment_closed", kwargs.get("status")))
+        return finish(*args, **kwargs)
+    monkeypatch.setattr(controller, "finish_assignment", finish_record)
+
+    clear_session = runtime.clear_session
+    def clear_record(session_id, *args, **kwargs):
+        active = controller._WORKER_CONTROLS.get(worker_id)
+        if (active is not None and active.task_binding is None
+                and active.task_generation != active.generation):
+            session = runtime.get_session(session_id)
+            events.append((
+                "session_detached",
+                session.worker_task_binding is None,
+                session.worker_task_actions is None,
+            ))
+        return clear_session(session_id, *args, **kwargs)
+    monkeypatch.setattr(runtime, "clear_session", clear_record)
+
+    calls = []
+    real_client = httpx.AsyncClient
+    def reply(request):
+        calls.append(request)
+        if len(calls) == 1:
+            payload = {"message": {"role": "assistant", "content": "", "tool_calls": [
+                {"function": {"name": "task_manage", "arguments": {
+                    "action": "detail", "task_id": 42,
+                }}},
+            ]}, "done": True}
+            return httpx.Response(200, text=json.dumps(payload) + "\n")
+        if len(calls) == 2:
+            return httpx.Response(503, json={"error": "temporary provider error"})
+        if len(calls) == 3:
+            active = controller._WORKER_CONTROLS[worker_id]
+            binding = active.task_binding
+            next_binding.append((binding.task_id, binding.generation, binding._ack.lease_id))
+            return httpx.Response(429, json={"error": "rate limit"})
+        pytest.fail("Unexpected provider call; a task transcript may have replayed")
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+        real_client(transport=httpx.MockTransport(reply), **kw))
+    thread = None
+    try:
+        response, code = controller.start_worker_execution(worker_id)
+        assert code == 200 and response["ok"] is True
+        execution = controller._WORKER_EXECUTIONS[worker_id]
+        thread = execution.thread
+        thread.join(8)
+        assert not thread.is_alive()
+        assert len(calls) == 3
+        assert [binding.task_id for binding in bindings] == [42, 43]
+        assert bindings[0].generation == execution.generation
+        assert bindings[1].generation != bindings[0].generation
+        assert bindings[1]._ack.lease_id != bindings[0]._ack.lease_id
+        assert next_binding == [(
+            43, bindings[1].generation, bindings[1]._ack.lease_id,
+        )]
+
+        blocked = client.task_snapshot(42)
+        following = client.task_snapshot(43)
+        assert blocked["status"] == "blocked"
+        assert following["status"] == "pending"
+        assert client.read(43).leased is False
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE id NOT IN (42,43)").fetchone()[0] == 0
+
+        close_index = next(i for i, item in enumerate(events) if item[0] == "assignment_closed")
+        detach_index = next(i for i, item in enumerate(events) if item[0] == "session_detached")
+        next_index = next(i for i, item in enumerate(events) if item[:2] == ("acquire", 43))
+        assert close_index < detach_index < next_index
+        assert events[detach_index][1:] == (True, True)
+    finally:
+        if thread is not None and thread.is_alive():
+            controller._WORKER_EXECUTIONS[worker_id].stop_event.set()
+            thread.join(5)
+        conn.close()
+
+
 @pytest.mark.parametrize("status", [401, 403, 404, 500, 503])
 def test_other_statuses_do_not_invent_monthly_quota(monkeypatch, status):
     result = run_http(monkeypatch, {"error": "monthly usage limit reached PRIVATE"}, status=status)
