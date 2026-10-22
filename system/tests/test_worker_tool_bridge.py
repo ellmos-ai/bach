@@ -20,13 +20,15 @@ def bridge(tmp_path, monkeypatch):
     database = tmp_path / "canonical.db"
     _create_db(database)
     conn = _connect(database)
+    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     task_id = _insert(conn, title="Bridge task", assigned_to="BACH")
     conn.close()
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
     binding = WorkerLeaseBinding.acquire(task_lease_client.TaskLeaseClient(db_path=database), task_id,
         worker_id="worker@HOST", host="HOST", generation="a" * 32, is_current=lambda: True,
-        stop_event=threading.Event(), clock=lambda: datetime.now(timezone.utc))
+        stop_event=threading.Event(), clock=lambda: datetime.now(timezone.utc),
+        slot={"id": "leased-chat", "model": "fixture-cli-model"})
     with WorkerToolBridge(binding, mode="safe") as relay:
         yield relay
 
@@ -48,6 +50,7 @@ def _make_fenced_readonly_worker(
     database = tmp_path / "fenced-readonly-worker.db"
     _create_db(database)
     conn = _connect(database)
+    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.execute("ALTER TABLE tasks ADD COLUMN assigned_slot TEXT")
     conn.execute("ALTER TABLE tasks ADD COLUMN required_model TEXT")
     task_id = _insert(conn, title="BACH-owned read-only worker fixture", assigned_to="BACH")

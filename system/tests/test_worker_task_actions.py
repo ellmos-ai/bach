@@ -5,7 +5,7 @@ import pytest
 from hub._services.chat.worker_task_actions import WorkerTaskActions
 from hub._services.task_lease_client import LeaseProtocolError
 
-from system.tests.test_worker_lease_binding import (
+from system.tests.test_task_lease_client import (
     mem_db as lease_mem_db,  # noqa: PLC0414 - explicit pytest fixture export
 )
 

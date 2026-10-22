@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from system.tests.test_task_lease_client import mem_db
-from system.tests.test_worker_lease_binding import binding
+from system.tests.test_worker_lease_binding import binding, mem_db, lease_mem_db
 from system.tests.test_worker_tool_bridge import bridge
 from hub._services.chat import bach_tools
 from hub._services.chat.chat_runtime import ChatRuntime
