@@ -92,7 +92,7 @@ try:
 
     from fastapi.middleware.cors import CORSMiddleware
 
-    from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr
+    from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 
 except ImportError:
 
@@ -2415,12 +2415,25 @@ async def api_post_task(payload: dict = Body(...)):
             conn = get_bach_db()
             from hub._services.task_schema import (
                 ensure_task_creation_origin,
+                ensure_task_repo_key_column,
                 ensure_task_result_contract_columns,
                 ensure_task_slot_columns,
             )
             ensure_task_slot_columns(conn)
             ensure_task_creation_origin(conn)
             ensure_task_result_contract_columns(conn)
+            ensure_task_repo_key_column(conn)
+            repo_key = payload.get("repo_key")
+            if repo_key is not None:
+                if isinstance(repo_key, str):
+                    repo_key = repo_key.strip()
+                if not isinstance(repo_key, str) or not repo_key:
+                    raise HTTPException(status_code=422, detail={"code": "repo_key_invalid", "message": "repo_key muss ein nicht-leerer Projektquellen-Schlüssel sein"})
+                from hub._services import project_source_register
+                try:
+                    project_source_register.validate_repo_key(repo_key)
+                except (ValueError, RuntimeError) as exc:
+                    raise HTTPException(status_code=422, detail={"code": "repo_key_invalid", "message": str(exc)})
             result_max_chars = payload.get("result_max_chars")
             if result_max_chars is not None and (type(result_max_chars) is not int or not 1 <= result_max_chars <= 3000):
                 raise HTTPException(status_code=422, detail={"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
@@ -2451,8 +2464,8 @@ async def api_post_task(payload: dict = Body(...)):
 
             now = datetime.now().isoformat()
             cursor = conn.execute("""
-                INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin, result_max_chars, completion_contract_json, require_user_review, github_pr_review_required, github_review_contract_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (title, description, priority, category, status, created_at, created_by, assigned_to, depends_on, image_data, due_date, source, required_model, assigned_slot, creation_origin, result_max_chars, completion_contract_json, require_user_review, github_pr_review_required, github_review_contract_json, repo_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 payload.get("title"),
                 payload.get("description", ""),
@@ -2474,6 +2487,7 @@ async def api_post_task(payload: dict = Body(...)):
                 completion_fields.get("require_user_review"),
                 completion_fields.get("github_pr_review_required"),
                 completion_fields.get("github_review_contract_json"),
+                repo_key,
             ))
 
             task_id = cursor.lastrowid
@@ -2542,7 +2556,7 @@ def _public_task_snapshot(row):
 
 
 class LeaseAcquireRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     worker_id: str
     host: str
     request_id: str
@@ -2550,6 +2564,7 @@ class LeaseAcquireRequest(BaseModel):
     intent: Optional[str] = None
     task_version: Optional[StrictStr] = None
     result_generation: Optional[StrictStr] = None
+    project_binding: Optional[dict] = Field(default=None, alias="_project_binding")
 
 
 class LeaseRefRequest(BaseModel):
@@ -2831,6 +2846,49 @@ async def reopen_legacy_review_task(
         }) from None
 
 
+def _validated_project_binding(binding):
+    """Projektbindung aus dem Lease-Acquire-Body prüfen (fail-closed, Projektquellen-Register).
+
+    Liefert die normalisierte Bindung für ``acquire_lease(_project_binding=...)``.
+    Fehlt die Bindung, ist sie kein Objekt, oder weicht sie vom Registerstand ab → 422.
+    """
+    from hub._services import project_source_register
+    if binding is None:
+        raise HTTPException(status_code=422, detail="Projektbindung fehlt")
+    if not isinstance(binding, dict):
+        raise HTTPException(status_code=422, detail="Projektbindung muss ein Objekt sein")
+    repo_key = binding.get("repo_key")
+    if not isinstance(repo_key, str):
+        raise HTTPException(status_code=422, detail="repo_key fehlt oder ist kein String")
+    repo_key = repo_key.strip()
+    try:
+        project_source_register.validate_repo_key(repo_key)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=f"repo_key ungültig: {exc}") from None
+    register_revision = binding.get("register_revision")
+    if isinstance(register_revision, bool) or not isinstance(register_revision, int) or register_revision < 1:
+        raise HTTPException(status_code=422, detail="register_revision muss eine ganze Zahl >= 1 sein")
+    pinned_sha = binding.get("pinned_sha")
+    if not isinstance(pinned_sha, str):
+        raise HTTPException(status_code=422, detail="pinned_sha fehlt oder ist kein String")
+    pinned_sha = pinned_sha.strip().lower()
+    if len(pinned_sha) not in (40, 64) or any(c not in "0123456789abcdef" for c in pinned_sha):
+        raise HTTPException(status_code=422, detail="pinned_sha muss ein Hex-Hash mit 40 oder 64 Zeichen sein")
+    try:
+        current_revision = project_source_register.register_revision(repo_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"repo_key ungültig: {exc}") from None
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=f"Projektquelle nicht im Register: {exc}") from None
+    if register_revision != current_revision:
+        raise HTTPException(status_code=422, detail={
+            "code": "project_register_revision_mismatch",
+            "message": (f"register_revision {register_revision} weicht vom Registerstand "
+                        f"{current_revision} ab (repo_key={repo_key!r})"),
+        })
+    return {"repo_key": repo_key, "register_revision": register_revision, "pinned_sha": pinned_sha}
+
+
 def _run_lease_op(op, *args, **kwargs):
     from hub._services.task_lease import LeaseValidationError, TaskNotFound
     conn = get_bach_db()
@@ -2849,11 +2907,13 @@ def _run_lease_op(op, *args, **kwargs):
 async def acquire_task_lease(task_id: int, body: LeaseAcquireRequest, request: Request):
     """Lease anfordern (Vertrag §5.1). 200 = ACK mit lease_id/fence, 409 = Ablehnung mit reason."""
     from hub._services.task_lease import acquire_lease
+    project_binding = _validated_project_binding(body.project_binding)
     return _run_lease_op(acquire_lease, task_id, worker_id=body.worker_id, host=body.host,
                          request_id=body.request_id, ttl_profile=body.ttl_profile,
                          task_version=body.task_version,
                          result_generation=body.result_generation,
-                         intent=body.intent or "", device=_lease_device_label(request))
+                         intent=body.intent or "", device=_lease_device_label(request),
+                         _project_binding=project_binding)
 
 
 @app.get("/api/tasks/{task_id}/lease")

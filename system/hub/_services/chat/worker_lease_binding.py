@@ -24,7 +24,7 @@ def _project_binding_for(task_id, snapshot):
     repo_key = snapshot.get("repo_key")
     if not repo_key:
         raise RuntimeError(f"Task {task_id} ohne Projektquellen-Bindung (repo_key fehlt)")
-    revision = project_source_register.register_revision()
+    revision = project_source_register.register_revision(repo_key)
     checkout = project_source_register.resolve_repo(repo_key, expected_revision=revision)
     result = subprocess.run(
         ["git", "-C", str(checkout), "rev-parse", "HEAD"],
