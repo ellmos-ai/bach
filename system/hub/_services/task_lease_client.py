@@ -724,8 +724,8 @@ class TaskLeaseClient:
     def _call(self, name, task_id, payload=None, *, config=None, now=None, headers=None):
         _identity(task_id)
         if self.mode == "remote":
-            if isinstance(payload, dict) and ({"_review_grant", "_review_binding"} & payload.keys()):
-                raise LeaseProtocolError("Private Reviewgrants dürfen nicht über HTTP gesendet werden")
+            if isinstance(payload, dict) and ({"_review_grant", "_review_binding", "_project_binding"} & payload.keys()):
+                raise LeaseProtocolError("Private Reviewgrants und Projektbindungen dürfen nicht über HTTP gesendet werden")
             suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose", "update": "/update"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
                                              f"/api/tasks/{task_id}/lease{suffix}", payload, headers)
@@ -1153,11 +1153,11 @@ class TaskLeaseClient:
             holder=data.get("holder"), issued_at=data.get("issued_at"), expires_at=data.get("expires_at"),
             ttl_profile=data.get("ttl_profile"), own=data.get("own") is True, task_version=data.get("task_version"))
 
-    def renew(self, task_id, *, lease_id, fence, task_version=None, config=None, now=None):
+    def renew(self, task_id, *, lease_id, fence, task_version=None, _project_binding=None, config=None, now=None):
         _identity(task_id, lease_id, fence)
         _version(task_version)
         sent_at = now or datetime.now(timezone.utc)
-        data = self._call("renew", task_id, dict(lease_id=lease_id, fence=fence, task_version=task_version), config=config, now=now)
+        data = self._call("renew", task_id, dict(lease_id=lease_id, fence=fence, task_version=task_version, **({"_project_binding": _project_binding} if _project_binding is not None else {})), config=config, now=now)
         previous = self._held.get(task_id)
         return self._grant(data, lease_id=lease_id, fence=fence, task_version=task_version,
                            worker_id=previous.worker_id if previous else None,
@@ -1302,7 +1302,7 @@ class TaskLeaseClient:
                 "count": len(events), "limit": limit, "offset": offset}
 
     def submit_result(self, task_id, *, lease_id, fence, task_version, generation, result,
-                      config=None, now=None, _review_binding=None):
+                      config=None, now=None, _review_binding=None, _project_binding=None):
         from .task_result_service import validate_submission
         _identity(task_id, lease_id, fence)
         _version(task_version, required=True)
@@ -1314,6 +1314,7 @@ class TaskLeaseClient:
             "lease_id": lease_id, "fence": fence, "task_version": task_version,
             "outcome": "review", "worker_result": {"generation": generation, "result": result},
             **({"_review_binding": _review_binding} if _review_binding is not None else {}),
+            **({"_project_binding": _project_binding} if _project_binding is not None else {}),
         }, config=config, now=now)
         record = data.get("worker_result")
         if (data.get("released") is not True or data.get("outcome") != "review"
@@ -1332,11 +1333,11 @@ class TaskLeaseClient:
         self._held.pop(task_id, None)
         return WorkerResultAck(LeaseReleaseAck(True, task_id, "review", "review", fence, data["server_now"]), record)
 
-    def release(self, task_id, *, lease_id, fence, task_version=None, outcome="done", result_ref="", note="", config=None, now=None):
+    def release(self, task_id, *, lease_id, fence, task_version=None, outcome="done", result_ref="", note="", _project_binding=None, config=None, now=None):
         _identity(task_id, lease_id, fence)
         _version(task_version)
         data = self._call("release", task_id, dict(lease_id=lease_id, fence=fence, task_version=task_version,
-                         outcome=outcome, result_ref=result_ref, note=note), config=config, now=now)
+                         outcome=outcome, result_ref=result_ref, note=note, **({"_project_binding": _project_binding} if _project_binding is not None else {})), config=config, now=now)
         statuses = {"done": "done", "return": "pending", "blocked": "blocked", "review": "review"}
         if (data.get("released") is not True or type(data.get("fence")) is not int or data["fence"] != fence
                 or data.get("outcome") != outcome or data.get("status") != statuses.get(outcome)):
@@ -1344,13 +1345,13 @@ class TaskLeaseClient:
         self._held.pop(task_id, None)
         return LeaseReleaseAck(True, task_id, outcome, data["status"], fence, data["server_now"])
 
-    def update(self, task_id, *, lease_id, fence, task_version, changes, config=None, now=None):
+    def update(self, task_id, *, lease_id, fence, task_version, changes, _project_binding=None, config=None, now=None):
         _identity(task_id, lease_id, fence)
         _version(task_version, required=True)
         if not isinstance(changes, dict) or not changes:
             raise LeaseProtocolError("Inhaltsupdate braucht Felder")
         data = self._call("update", task_id, dict(lease_id=lease_id, fence=fence,
-                         task_version=task_version, changes=changes), config=config, now=now)
+                         task_version=task_version, changes=changes, **({"_project_binding": _project_binding} if _project_binding is not None else {})), config=config, now=now)
         version = _version(data.get("task_version"), required=True)
         if (data.get("updated") is not True or type(data.get("fence")) is not int
                 or data["fence"] != fence or data.get("previous_task_version") != task_version
@@ -1362,11 +1363,11 @@ class TaskLeaseClient:
         return LeaseUpdateAck(task_id, fence, task_version, version,
                               tuple(data["fields"]), data["server_now"])
 
-    def decompose(self, task_id, *, lease_id, fence, task_version, subtasks, close_parent=True, sequential=False, config=None, now=None):
+    def decompose(self, task_id, *, lease_id, fence, task_version, subtasks, close_parent=True, sequential=False, _project_binding=None, config=None, now=None):
         _identity(task_id, lease_id, fence)
         _version(task_version, required=True)
         body = dict(lease_id=lease_id, fence=fence, task_version=task_version, subtasks=subtasks,
-                    close_parent=close_parent, sequential=sequential)
+                    close_parent=close_parent, sequential=sequential, **({"_project_binding": _project_binding} if _project_binding is not None else {}))
         data = self._call("decompose", task_id, body, config=config, now=now)
         ids = data.get("created_ids")
         if (data.get("decomposed") is not True or type(data.get("parent_closed")) is not bool
