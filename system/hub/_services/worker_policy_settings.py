@@ -265,8 +265,11 @@ def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
             # principals or Top-review rights. Reuse the explicit operator.
             from .worker_review_identity import require_operator
             actor = require_operator(conn, operator_token)
-        keys = ("policy", "selection") + (("worker_selection",) if "worker_selection" in payload else ())
-        values = None if reset else {key: payload[key] for key in keys}
+        values = None if reset else {
+            "policy": payload["policy"],
+            "selection": payload["selection"],
+            "worker_selection": payload.get("worker_selection", before["worker_selection"]),
+        }
         _persist(conn, GLOBAL_KEY, values, actor=actor)
         return {"schema": GLOBAL_SCHEMA, "updated": True, "worker_started": False,
                 "configuration_version": _global(conn)["configuration_version"]}
@@ -275,10 +278,13 @@ def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
 def _task(conn, task_id):
     if type(task_id) is not int or task_id <= 0:
         raise ValueError("Gültige Task-ID erforderlich")
-    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    cursor = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,))
+    row = cursor.fetchone()
     if row is None:
         raise KeyError(task_id)
-    return dict(row)
+    if hasattr(row, "keys"):
+        return dict(row)
+    return dict(zip((column[0] for column in cursor.description), row))
 
 
 def _task_snapshot(conn, task_id):
@@ -322,7 +328,11 @@ def _task_snapshot(conn, task_id):
         "override": override, "effective": effective}
 
 
-def read_task_policy(task_id, db_path=None):
+def read_task_policy(task_id, db_path=None, *, connection=None):
+    if connection is not None:
+        if db_path is not None or not isinstance(connection, sqlite3.Connection):
+            raise PolicyUnavailable("Native Policy-Connection ist ungültig oder mehrdeutig")
+        return _task_snapshot(connection, task_id)
     with _connection(db_path) as conn:
         return _task_snapshot(conn, task_id)
 

@@ -565,6 +565,8 @@ def test_policy_snapshot_is_frozen_and_readback_does_not_create_schema(local_db)
         "require_user_review": False,
         "github_external_review": None,
         "allow_review_task_pickup": None,
+        "require_assigned_slot": None,
+        "enforce_model_binding": None,
     }
     write_task_policy(
         task_id,

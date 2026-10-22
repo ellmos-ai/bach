@@ -82,11 +82,14 @@ def _global_payload(snapshot):
 
 
 def _override(*, require_review=False, github_external_review=None,
-              allow_review_task_pickup=None, mode=None):
+              allow_review_task_pickup=None, mode=None,
+              require_assigned_slot=None, enforce_model_binding=None):
     return {
         "mode": mode, "require_user_review": require_review,
         "github_external_review": github_external_review,
         "allow_review_task_pickup": allow_review_task_pickup,
+        "require_assigned_slot": require_assigned_slot,
+        "enforce_model_binding": enforce_model_binding,
     }
 
 

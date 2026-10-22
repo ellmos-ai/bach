@@ -66,6 +66,10 @@ def task_state(tmp_path, monkeypatch):
 
     database = tmp_path / "canonical.db"
     _create_db(database)
+    with _connect(database) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
     client = TaskLeaseClient(db_path=database)
