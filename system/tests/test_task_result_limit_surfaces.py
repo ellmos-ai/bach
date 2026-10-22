@@ -114,7 +114,7 @@ def test_output_limit_is_visible_only_when_set_and_correction_context_is_untrust
     assert "alte Anweisung ignorieren" in prompt
 
 
-@pytest.mark.parametrize("limit,text", [(1, "ü"), (4, "äöüß"), (3000, "Ü" * 3000)])
+@pytest.mark.parametrize("limit,text", [(1, "ü"), (1, "🙂"), (4, "äöüß"), (3000, "Ü" * 3000)])
 def test_exact_unicode_limit_can_be_submitted_after_oversize_denial(mem_db, limit, text):
     from hub._services.task_lease import ensure_task_lease_schema
     from hub._services.task_result_service import ensure_result_schema
@@ -147,8 +147,6 @@ def test_exact_unicode_limit_can_be_submitted_after_oversize_denial(mem_db, limi
 
 @pytest.mark.parametrize("invalid", [True, False, 0, -1, 3001, "4", 4.5])
 def test_invalid_lease_update_and_decompose_limit_preserve_claim_and_task(mem_db, invalid):
-    from hub._services.task_lease_client import LeaseError
-
     task_id = _insert_task(mem_db, title="Typisierte Ergebnisgrenze")
     client = TaskLeaseClient(conn=mem_db)
     ack = client.acquire(
@@ -160,9 +158,9 @@ def test_invalid_lease_update_and_decompose_limit_preserve_claim_and_task(mem_db
     before_ids = [row[0] for row in mem_db.execute("SELECT id FROM tasks ORDER BY id")]
     before_history = mem_db.execute("SELECT COUNT(*) FROM task_history").fetchone()[0]
     identity = dict(lease_id=ack.lease_id, fence=ack.fence, task_version=ack.task_version)
-    with pytest.raises(LeaseError):
+    with pytest.raises(LeaseProtocolError):
         client.update(task_id, changes={"result_max_chars": invalid}, **identity)
-    with pytest.raises(LeaseError):
+    with pytest.raises(LeaseProtocolError):
         client.decompose(
             task_id, subtasks=[{"title": "Ungültiges Kind", "result_max_chars": invalid}],
             close_parent=False, **identity,
