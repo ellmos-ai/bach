@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+import re
 import threading
 from datetime import datetime, timezone
 
@@ -63,7 +64,8 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
 
 class WorkerLeaseBinding:
     def __init__(self, client, snapshot, ack, *, generation, is_current, stop_event,
-                 clock=None, policy_guard=None, _review_grant=None):
+                 clock=None, policy_guard=None, selection_policy_pin=None,
+                 selection_profile=None, _review_grant=None):
         self._client = client
         self._snapshot = copy.deepcopy(snapshot)
         self._ack = ack
@@ -71,6 +73,8 @@ class WorkerLeaseBinding:
         self._is_current = is_current
         self._stop_event = stop_event
         self._policy_guard = policy_guard
+        self._selection_policy_pin = copy.deepcopy(selection_policy_pin)
+        self._selection_profile = copy.deepcopy(selection_profile)
         self._review_grant = _review_grant
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._injected_clock = clock is not None
@@ -102,6 +106,13 @@ class WorkerLeaseBinding:
         if policy_guard is not None:
             policy_guard()
         snapshot = client.task_snapshot(task_id)
+        selection_profile = cls._selection_profile_snapshot(slot) if slot is not None else None
+        selection_policy_pin = None
+        if slot is not None:
+            selection_policy_pin = cls._effective_selection_policy_snapshot(
+                client, snapshot, selection_profile)
+            if selection_policy_pin is None:
+                raise _TaskDoesNotMatch("Gespeicherte Auswahlpolicy ist nicht verifizierbar")
         if automatic and (deferred_versions or {}).get(task_id) == snapshot["task_version"]:
             raise _TaskDoesNotMatch("Zurückgegebene Task-Version wartet auf eine Inhaltsänderung")
         if _review_grant is not None:
@@ -110,12 +121,13 @@ class WorkerLeaseBinding:
                     or getattr(_review_grant, "worker_id", None) != worker_id
                     or getattr(_review_grant, "host", None) != host
                     or slot is None
+                    or selection_policy_pin is None
                     or getattr(_review_grant, "slot_id", None) != slot.get("id")
-                    or not cls._matches_review_slot(snapshot, slot)):
+                    or not cls._matches_review_slot(snapshot, slot, selection_policy_pin["policy"])):
                 raise _TaskDoesNotMatch("Reviewtask passt nicht zur gebundenen Reviewerroute")
         else:
             matches = cls._automatic_matches_slot if automatic else cls._matches_slot
-            if slot is not None and not matches(snapshot, slot):
+            if slot is not None and not matches(snapshot, slot, selection_policy_pin["policy"]):
                 raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
         kwargs = {"now": clock()} if clock is not None else {}
         if _external_profile_backend(slot):
@@ -136,24 +148,88 @@ class WorkerLeaseBinding:
                 worker_id=worker_id, host=host, task_version=snapshot["task_version"], **kwargs)
         return cls(client, snapshot, ack, generation=generation, is_current=is_current,
                    stop_event=stop_event, clock=clock, policy_guard=policy_guard,
+                   selection_policy_pin=selection_policy_pin, selection_profile=selection_profile,
                    _review_grant=_review_grant)
 
+    @staticmethod
+    def _selection_profile_snapshot(slot):
+        if (not isinstance(slot, dict) or type(slot.get("id")) is not str
+                or not slot["id"] or type(slot.get("model")) is not str
+                or not slot["model"].strip()):
+            return None
+        fields = ("id", "model", "backend", "role_id", "sub_mode",
+                  "require_assigned_slot", "enforce_model_binding", "pickup_filter")
+        return {key: copy.deepcopy(slot[key]) for key in fields if key in slot}
+
+    @staticmethod
+    def _effective_selection_policy_snapshot(client, snapshot, slot):
+        """Read the stored global/task policy and bind its exact digest to this task version."""
+        if (getattr(client, "mode", None) != "local"
+                or getattr(client, "_conn", None) is not None
+                or not isinstance(snapshot, dict) or not isinstance(slot, dict)
+                or type(snapshot.get("id")) is not int or snapshot["id"] <= 0
+                or not isinstance(snapshot.get("task_version"), str) or not snapshot["task_version"]):
+            return None
+        try:
+            from hub._services.worker_policy_settings import CONTRACT, TASK_SCHEMA, read_task_policy
+            stored = read_task_policy(snapshot["id"], db_path=getattr(client, "_db_path", None))
+            if (not isinstance(stored, dict) or stored.get("schema") != TASK_SCHEMA
+                    or stored.get("availability") != "available"
+                    or type(stored.get("task_id")) is not int
+                    or stored["task_id"] != snapshot["id"]
+                    or stored.get("task_version") != snapshot["task_version"]):
+                return None
+            configuration_version = stored.get("configuration_version")
+            if (not isinstance(configuration_version, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", configuration_version) is None):
+                return None
+            effective = stored.get("effective")
+            if (not isinstance(effective, dict)
+                    or effective.get("contract_version") != CONTRACT
+                    or type(effective.get("require_assigned_slot")) is not bool
+                    or type(effective.get("enforce_model_binding")) is not bool):
+                return None
+            from .worker_queue_status import project_selection_policy, worker_selection_policy
+            profile = worker_selection_policy(slot)
+            policy = project_selection_policy({
+                "schema": "bach.worker-selection.v1",
+                "require_assigned_slot": (
+                    profile["require_assigned_slot"] or effective["require_assigned_slot"]),
+                "enforce_model_binding": (
+                    profile["enforce_model_binding"] or effective["enforce_model_binding"]),
+                "pickup_filter": profile["pickup_filter"],
+            })
+            if policy is None:
+                return None
+            return {
+                "policy": policy,
+                "task_version": snapshot["task_version"],
+                "configuration_version": configuration_version,
+            }
+        except Exception:
+            return None
+
     @classmethod
-    def _matches_review_slot(cls, snapshot, slot):
-        """Keep physical slot/model constraints while review policy owns category routing."""
+    def _matches_review_slot(cls, snapshot, slot, selection_policy):
+        """Keep the provider route and slot binding while review owns category routing."""
         if not isinstance(slot, dict):
             return False
         review_slot = dict(slot)
         review_slot["pickup_filter"] = {"enabled": False}
-        return cls._selection_rejection_reason(snapshot, review_slot) is None
+        return cls._selection_rejection_reason(
+            snapshot, review_slot, selection_policy=selection_policy) is None
 
-    @staticmethod
-    def _matches_slot(snapshot, slot):
+    @classmethod
+    def _matches_slot(cls, snapshot, slot, selection_policy):
         from .slots_config import task_matches_slot_binding, match_task_to_pickup_filter
-        if not task_matches_slot_binding(snapshot, slot):
+        if not task_matches_slot_binding(snapshot, slot, selection_policy=selection_policy):
             return False
-        # Cloud workers cover every task category. Keep explicit priority,
-        # required/excluded tag, model and slot constraints in force.
+        assigned_to = str(snapshot.get("assigned_to") or "").strip().casefold()
+        if (assigned_to in _EXTERNAL_PROFILE_BACKENDS
+                and cls._external_profile_route_rejection_reason(snapshot, slot) is not None):
+            return False
+        # Cloud workers cover every task category. Keep the pickup and slot
+        # constraints in force; their exact provider/model route remains checked above.
         pickup_slot = WorkerLeaseBinding._effective_pickup_slot(snapshot, slot)
         pickup = pickup_slot.get("pickup_filter")
         return (not isinstance(pickup, dict) or not pickup.get("enabled")
@@ -179,40 +255,53 @@ class WorkerLeaseBinding:
             return slot
         return {**slot, "pickup_filter": pickup}
 
-    @staticmethod
-    def _matches_external_profile_route(snapshot, slot):
-        """Match the canonical owner alias and exact external profile/model route."""
+    @classmethod
+    def _external_profile_route_rejection_reason(cls, snapshot, slot):
+        """Keep external ownership, slot and exact model route as separate checks."""
         profile_backend = _external_profile_backend(slot)
-        slot_id = slot.get("id")
-        model = slot.get("model")
-        if (profile_backend is None
-                or type(slot_id) is not str or not slot_id or slot_id.strip() != slot_id
-                or type(model) is not str or not model.strip()):
-            return False
-        return (
-            type(snapshot.get("assigned_to")) is str
-            and snapshot["assigned_to"].strip().casefold() == profile_backend
-            and type(snapshot.get("assigned_slot")) is str
-            and snapshot["assigned_slot"] == slot_id
-            and type(snapshot.get("required_model")) is str
-            and snapshot["required_model"] == model
-        )
+        slot_id = slot.get("id") if isinstance(slot, dict) else None
+        model = slot.get("model") if isinstance(slot, dict) else None
+        if (profile_backend is None or type(slot_id) is not str or not slot_id
+                or slot_id.strip() != slot_id or type(model) is not str or not model.strip()):
+            return "ownership"
+        assigned_to = snapshot.get("assigned_to")
+        if (type(assigned_to) is not str
+                or assigned_to.strip().casefold() != profile_backend):
+            return "ownership"
+        if type(snapshot.get("assigned_slot")) is not str or snapshot["assigned_slot"] != slot_id:
+            return "slot_binding"
+        if type(snapshot.get("required_model")) is not str or snapshot["required_model"] != model:
+            return "model_binding"
+        return None
 
     @classmethod
-    def _automatic_matches_slot(cls, snapshot, slot):
-        return cls._selection_rejection_reason(snapshot, slot) is None
+    def _matches_external_profile_route(cls, snapshot, slot):
+        return cls._external_profile_route_rejection_reason(snapshot, slot) is None
 
     @classmethod
-    def _selection_rejection_reason(cls, snapshot, slot):
+    def _automatic_matches_slot(cls, snapshot, slot, selection_policy):
+        return cls._selection_rejection_reason(
+            snapshot, slot, selection_policy=selection_policy) is None
+
+    @classmethod
+    def _selection_rejection_reason(cls, snapshot, slot, *, selection_policy=None):
         # Report the same constraints used by acquisition, without exposing
         # titles, prompts, task versions, holders or private lease credentials.
-        if slot.get("require_assigned_slot") is True and snapshot.get("assigned_slot") != slot.get("id"):
+        if (not isinstance(slot, dict) or not isinstance(selection_policy, dict)
+                or selection_policy.get("schema") != "bach.worker-selection.v1"
+                or type(selection_policy.get("require_assigned_slot")) is not bool
+                or type(selection_policy.get("enforce_model_binding")) is not bool):
+            return "selection_policy_unavailable"
+        if (selection_policy["require_assigned_slot"]
+                and snapshot.get("assigned_slot") != slot.get("id")):
             return "explicit_slot_required"
-        for key, slot_key, reason in (("required_model", "model", "model_binding"),
-                                      ("assigned_slot", "id", "slot_binding")):
-            required = str(snapshot.get(key) or "").strip().casefold()
-            if required and required != str(slot.get(slot_key) or "").strip().casefold():
-                return reason
+        if selection_policy["enforce_model_binding"]:
+            required_model = str(snapshot.get("required_model") or "").strip().casefold()
+            if required_model and required_model != str(slot.get("model") or "").strip().casefold():
+                return "model_binding"
+        required_slot = str(snapshot.get("assigned_slot") or "").strip().casefold()
+        if required_slot and required_slot != str(slot.get("id") or "").strip().casefold():
+            return "slot_binding"
         allowed = {"bach", "buddha", "ollama"}
         allowed.update(str(slot.get(key) or "").strip().casefold()
                        for key in ("id", "role_id", "sub_mode"))
@@ -226,12 +315,12 @@ class WorkerLeaseBinding:
         external_owner = assigned_to in _EXTERNAL_PROFILE_BACKENDS
         external_profile_route = cls._matches_external_profile_route(snapshot, slot)
         if external_owner and not external_profile_route:
-            return "ownership"
+            return cls._external_profile_route_rejection_reason(snapshot, slot)
         if (assigned_to and assigned_to not in allowed
                 and not (assigned_to == "user" and own_explicit_route)
                 and not external_profile_route):
             return "ownership"
-        if not cls._matches_slot(snapshot, slot):
+        if not cls._matches_slot(snapshot, slot, selection_policy):
             from .slots_config import pickup_filter_rejection
             return pickup_filter_rejection(
                 snapshot, cls._effective_pickup_slot(snapshot, slot)) or "pickup_filter"
@@ -335,7 +424,12 @@ class WorkerLeaseBinding:
                 if task["id"] == released_fixed_task_id:
                     observation.reject("deferred_version")
                     continue
-                reason = cls._selection_rejection_reason(task, slot)
+                selection_policy_pin = cls._effective_selection_policy_snapshot(client, task, slot)
+                if selection_policy_pin is None:
+                    observation.reject("selection_policy_unavailable")
+                    continue
+                reason = cls._selection_rejection_reason(
+                    task, slot, selection_policy=selection_policy_pin["policy"])
                 if reason:
                     observation.reject(reason)
                     continue
@@ -410,11 +504,17 @@ class WorkerLeaseBinding:
                 if not isinstance(task, dict) or type(task.get("id")) is not int:
                     continue
                 observation.candidate(task["id"])
+                selection_policy_pin = cls._effective_selection_policy_snapshot(client, task, slot)
+                if selection_policy_pin is None:
+                    observation.reject("selection_policy_unavailable")
+                    continue
                 reason = cls._selection_rejection_reason(
-                    task, {**slot, "pickup_filter": {"enabled": False}})
+                    task, {**slot, "pickup_filter": {"enabled": False}},
+                    selection_policy=selection_policy_pin["policy"])
                 if reason:
                     observation.reject(reason if reason in {"slot_binding", "model_binding",
-                        "explicit_slot_required", "ownership"} else "ownership")
+                        "explicit_slot_required", "selection_policy_unavailable", "ownership"}
+                        else "ownership")
                     continue
                 if deferred_versions.get(task["id"]) == task.get("task_version"):
                     observation.reject("deferred_version")
@@ -566,6 +666,29 @@ class WorkerLeaseBinding:
     def task_snapshot(self):
         with self._lock:
             return copy.deepcopy(self._snapshot)
+
+    def selection_policy_for_inference(self, slot_profile=None):
+        """Return only the policy still pinned to the live task and config digest."""
+        try:
+            self.assert_active()
+            with self._lock:
+                pinned = copy.deepcopy(self._selection_policy_pin)
+                pinned_profile = copy.deepcopy(self._selection_profile)
+                snapshot = copy.deepcopy(self._snapshot)
+            if pinned is None or pinned_profile is None:
+                return None
+            profile = (self._selection_profile_snapshot(slot_profile)
+                       if slot_profile is not None else pinned_profile)
+            if (profile is None or profile.get("id") != pinned_profile.get("id")):
+                return None
+            current = self._effective_selection_policy_snapshot(self._client, snapshot, profile)
+            if (current is None or current["task_version"] != snapshot.get("task_version")
+                    or current["configuration_version"] != pinned.get("configuration_version")
+                    or current["policy"] != pinned.get("policy")):
+                return None
+            return copy.deepcopy(current["policy"])
+        except Exception:
+            return None
 
     def budget_task_version_evidence(self):
         """Return the live binding version and its confirmed same-lease ACK chain."""

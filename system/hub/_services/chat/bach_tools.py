@@ -1037,7 +1037,17 @@ TOOLS_SAFE = [
         "depends_on": {"type": "string", "description": "IDs vorausgesetzter Tasks, kommagetrennt"},
         "assigned_to": {"type": "string", "description": "Zuständige Fachrolle oder Agentenkennung"},
         "assigned_slot": {"type": "string", "description": "Verfügbarer Steckplatz aus agent_manage action=list"},
-        "required_model": {"type": "string", "description": "Optionale feste Modellbindung"},
+        "required_model": {
+            "type": "string",
+            "description": (
+                "Optionale Modellvorgabe. Bei generischen Workerprofilen einschließlich "
+                "persönlicher, assigned_slot- und task_id-gepinnter Aufgaben ist sie mit "
+                "enforce_model_binding=false nur Hinweis (kein Ausschluss, Ranking oder "
+                "Umrouten); true erzwingt den Profilmodellabgleich. Nur eine explizite "
+                "externe Providerprofilroute hält required_model unabhängig davon als "
+                "harte Routenanforderung."
+            ),
+        },
         "result_max_chars": {"type": "integer", "description": "Optionales Task-Ausgabelimit von 1 bis 3000 Zeichen; bei task_manage(update) weglassen zum Beibehalten"},
         "subtasks": {
             "type": "array",

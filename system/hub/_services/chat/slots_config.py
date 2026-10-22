@@ -557,15 +557,39 @@ def is_slot_paused(slot: dict[str, Any]) -> bool:
         return False
 
 
-def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None) -> bool:
-    """Enforce task model and slot binding even when pickup filtering is off."""
-    slot = slot or {}
-    if slot.get("require_assigned_slot") is True and task.get("assigned_slot") != slot.get("id"):
-        return False
-    for task_key, slot_key in (("required_model", "model"), ("assigned_slot", "id")):
-        required = str(task.get(task_key) or "").strip().casefold()
-        if required and required != str(slot.get(slot_key) or "").strip().casefold():
+def task_matches_slot_binding(
+    task: dict[str, Any], slot: dict[str, Any] | None, *, selection_policy: dict[str, Any] | None = None,
+) -> bool:
+    """Enforce the effective model and slot policy even when pickup filtering is off."""
+    slot = slot if isinstance(slot, dict) else {}
+    if selection_policy is None:
+        require_assigned_slot = slot.get("require_assigned_slot", False)
+        enforce_model_binding = slot.get("enforce_model_binding", False)
+        if require_assigned_slot is None:
+            require_assigned_slot = False
+        if enforce_model_binding is None:
+            enforce_model_binding = False
+    else:
+        if (not isinstance(selection_policy, dict)
+                or selection_policy.get("schema") != "bach.worker-selection.v1"
+                or type(selection_policy.get("require_assigned_slot")) is not bool
+                or type(selection_policy.get("enforce_model_binding")) is not bool):
             return False
+        require_assigned_slot = selection_policy["require_assigned_slot"]
+        enforce_model_binding = selection_policy["enforce_model_binding"]
+    if type(require_assigned_slot) is not bool or type(enforce_model_binding) is not bool:
+        return False
+    require_assigned_slot = require_assigned_slot or slot.get("require_assigned_slot") is True
+    enforce_model_binding = enforce_model_binding or slot.get("enforce_model_binding") is True
+    if require_assigned_slot and task.get("assigned_slot") != slot.get("id"):
+        return False
+    if enforce_model_binding:
+        required = str(task.get("required_model") or "").strip().casefold()
+        if required and required != str(slot.get("model") or "").strip().casefold():
+            return False
+    required_slot = str(task.get("assigned_slot") or "").strip().casefold()
+    if required_slot and required_slot != str(slot.get("id") or "").strip().casefold():
+        return False
     return True
 
 
@@ -1960,7 +1984,9 @@ def record_activity(
     save_slots_config(cfg, path)
 
 
-WORKER_EDITABLE_POLICY_FIELDS = frozenset({"pickup_filter"})
+WORKER_EDITABLE_POLICY_FIELDS = frozenset({
+    "pickup_filter", "require_assigned_slot", "enforce_model_binding",
+})
 WORKER_EDITABLE_FIELDS = frozenset({
     "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "max_model_requests", "allow_tools",
     "memory_hook_opt_in", "model_fallbacks",
@@ -3195,7 +3221,10 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         raise RuntimeError("configuration_version_conflict")
     if not isinstance(changes, dict) or not changes or set(changes) - WORKER_EDITABLE_FIELDS:
         raise ValueError("Unbekannte Worker-Konfigurationsfelder")
-    boolean_fields = {"think", "allow_tools", "include_system_prompt", "multi_role", "memory_hook_opt_in"}
+    boolean_fields = {
+        "think", "allow_tools", "include_system_prompt", "multi_role", "memory_hook_opt_in",
+        "require_assigned_slot", "enforce_model_binding",
+    }
     if "persistent_opt_in" in changes and set(changes) != {"persistent_opt_in"}:
         raise ValueError("Dauerbetriebsfreigabe muss getrennt bestätigt werden")
     edits = dict(changes)

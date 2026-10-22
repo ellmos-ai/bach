@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 
 SCHEMA = "bach.worker-queue.v1"
 REJECTIONS = frozenset({
-    "slot_binding", "model_binding", "explicit_slot_required", "pickup_filter",
-    "pickup_category", "pickup_priority", "pickup_tags", "excluded_tag",
+    "slot_binding", "model_binding", "explicit_slot_required", "selection_policy_unavailable",
+    "pickup_filter", "pickup_category", "pickup_priority", "pickup_tags", "excluded_tag",
     "ownership", "deferred_version", "changed_selection", "held", "not_claimable",
     "creator_priority", "stale_task_version", "already_held_by_caller",
     "completion_guard", "conflict",
@@ -32,6 +32,9 @@ def project_selection_policy(raw):
     if (not isinstance(raw, dict) or raw.get("schema") != "bach.worker-selection.v1"
             or type(raw.get("require_assigned_slot")) is not bool):
         return None
+    enforce_model_binding = raw.get("enforce_model_binding", False)
+    if type(enforce_model_binding) is not bool:
+        return None
     pickup = raw.get("pickup_filter")
     if not isinstance(pickup, dict) or type(pickup.get("enabled")) is not bool:
         return None
@@ -43,7 +46,7 @@ def project_selection_policy(raw):
             return None
         projected[key] = list(values)
     return {"schema": raw["schema"], "require_assigned_slot": raw["require_assigned_slot"],
-            "pickup_filter": projected,
+            "enforce_model_binding": enforce_model_binding, "pickup_filter": projected,
             "unrouted_ownership": ("explicit_pickup_filter" if pickup["enabled"]
                                   else "bach_or_own_worker_role")}
 
@@ -52,8 +55,18 @@ def worker_selection_policy(worker):
     pickup = worker.get("pickup_filter")
     if not isinstance(pickup, dict):
         pickup = {}
+
+    def profile_flag(name):
+        value = worker.get(name, False)
+        if value is None:
+            value = False
+        if type(value) is not bool:
+            raise ValueError("Worker-Auswahlpolicy ist ungültig")
+        return value
+
     raw = {"schema": "bach.worker-selection.v1",
-           "require_assigned_slot": worker.get("require_assigned_slot") is True,
+           "require_assigned_slot": profile_flag("require_assigned_slot"),
+           "enforce_model_binding": profile_flag("enforce_model_binding"),
            "pickup_filter": {"enabled": pickup.get("enabled", False),
                             **{key: pickup.get(key) or [] for key in
                                ("categories", "priorities", "tags", "exclude_tags")}}}
@@ -72,7 +85,9 @@ def queue_waiting_activity(raw):
         "pickup_category": "Kategorie", "pickup_priority": "Priorität",
         "pickup_tags": "erforderliche Tags", "excluded_tag": "ausgeschlossene Tags",
         "pickup_filter": "Auswahlfilter", "slot_binding": "Slot", "model_binding": "Modell",
-        "explicit_slot_required": "Slotzuweisung fehlt", "ownership": "Zuständigkeit",
+        "explicit_slot_required": "Slotzuweisung fehlt",
+        "selection_policy_unavailable": "Auswahlpolicy nicht verfügbar",
+        "ownership": "Zuständigkeit",
         "deferred_version": "unveränderte Rückgabe", "changed_selection": "Task geändert",
         "held": "fremde Lease", "not_claimable": "Status/Abhängigkeiten",
         "creator_priority": "Creator-Schonfrist", "stale_task_version": "Taskversion",

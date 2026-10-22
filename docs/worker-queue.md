@@ -37,30 +37,34 @@ Unveränderte Dateien aus dem gepinnten Baum werden als `public_base` eingeordne
 Diese Begrenzung gilt für die drei BACH-Leserwerkzeuge. Sie ist keine Betriebssystem-Sandbox für beliebigen Python-, Test- oder sonstigen Prozesscode. Die vorhandene isolierte Prüfausführung hat einen eigenen Vertrag; ein Profil darf aus diesem Reader-Patch allein keine weitergehende Dateisystem- oder Prozessisolation ableiten.
 ## Taskrouting und lokale Modellressourcen
 
-`assigned_slot` ist eine logische Taskroute zu einer Worker-ID. Sie ist nicht derselbe Steckplatz wie eine lokale Modellressource. Ein lokaler Modellressourcen-Steckplatz reserviert beziehungsweise prüft eine lokal erreichbare Inferenzressource; im BACH-Vertrag sind das Ollama- und LM-Studio-Ziele. Externe Anbieter wie OpenRouter oder `ollama-cloud` benötigen keinen lokalen Modellressourcen-Steckplatz. Für sie gelten weiterhin Taskroute, `required_model`, Zuweisungs- und Pickupregeln, sofern diese an der Task gesetzt sind.
+`assigned_slot` ist eine logische Taskroute zu einer Worker-ID. Sie ist nicht derselbe Steckplatz wie eine lokale Modellressource. Ein lokaler Modellressourcen-Steckplatz reserviert beziehungsweise prüft eine lokal erreichbare Inferenzressource; im BACH-Vertrag sind das Ollama- und LM-Studio-Ziele. Externe Anbieter wie OpenRouter oder `ollama-cloud` benötigen keinen lokalen Modellressourcen-Steckplatz. Bei einer ausdrücklich konfigurierten externen Providerprofilroute bleibt `required_model` eine harte Routenanforderung; außerdem gelten dort Taskroute, Zuweisungs- und Pickupregeln, sofern sie an der Task gesetzt sind.
 
-Bei einer persönlichen Aufgabe (`assigned_to=user`) erlaubt nur `assigned_slot` mit genau der eigenen Worker-ID die automatische Auswahl durch diesen Worker. Die explizite Route übergeht Kategorie- und Prioritätsfilter, nicht aber Slot-/Modellbindungen oder aktive Tagbeschränkungen. Eine konfigurierte direkte `task_id` ist ebenfalls eine ausdrückliche Taskroute und kein allgemeiner Pickupfilter. Creator-Delegation ist ein eigener, ausdrücklich an eine Task gebundener Sequenzpfad. Diese Routen ändern weder Besitzrechte anderer Worker noch den Schutz der nativen Task-Lease.
+Bei generischen Workerprofilen ist `required_model` mit `enforce_model_binding=false` nur ein Hinweis: Ein vom Workerprofilmodell abweichender Hint schließt den Worker nicht aus, erzeugt weder Ranking noch eine Umleitung auf das Hint-Modell. Der Worker bleibt an sein Profilmodell gebunden. Mit `enforce_model_binding=true` wird der Profilmodellabgleich hart geprüft. Dieselbe Schalterregel gilt für persönliche, über `assigned_slot` zugewiesene und über `task_id` im Profil gepinnte Aufgaben. Nur bei einer ausdrücklich konfigurierten externen Providerprofilroute wird `required_model` unabhängig von `enforce_model_binding` hart geprüft. Konkrete Modellanforderungen für die fachliche Abnahme gehören in den Tasktext.
+
+Bei einer persönlichen Aufgabe (`assigned_to=user`) erlaubt nur `assigned_slot` mit genau der eigenen Worker-ID die automatische Auswahl durch diesen Worker. Die explizite Route übergeht Kategorie- und Prioritätsfilter, nicht aber die Slotbindung oder aktive Tagbeschränkungen; `required_model` folgt dabei der oben beschriebenen `enforce_model_binding`-Regel. Eine konfigurierte direkte `task_id` ist ebenfalls eine ausdrückliche Taskroute und kein allgemeiner Pickupfilter; auch dort folgt `required_model` dieser Schalterregel. Creator-Delegation ist ein eigener, ausdrücklich an eine Task gebundener Sequenzpfad. Diese Routen ändern weder Besitzrechte anderer Worker noch den Schutz der nativen Task-Lease.
 
 ## Konfiguration und ältere GUI-Karten
 
 `GET /api/workers/configuration?id=…` am Control-Dienst beziehungsweise
 `GET /api/system/workers/{id}/configuration` am GUI-Adapter liefert die
 gemeinsam projizierte, schreibgeschützte `selection_policy` mit Schema
-`bach.worker-selection.v1`. Sie enthält `require_assigned_slot`, den
+`bach.worker-selection.v1`. Sie enthält `require_assigned_slot`, `enforce_model_binding`, den
 `pickup_filter` (`enabled`, `categories`, `priorities`, `tags`, `exclude_tags`)
 und den abgeleiteten Eigentumsmodus für ungeroutete Aufgaben. Fremde
 Konfigurationsfelder und private Leasewerte werden nicht übernommen.
 
 Der bestehende `POST /api/workers/configuration`-Endpunkt nimmt Änderungen als
 CAS-Anfrage mit `id`, `configuration_version` und `changes` entgegen. Die
-gesamte `selection_policy` bleibt ein Leseobjekt; als neues Policy-Änderungsfeld
-ist ausschließlich `changes.pickup_filter` editierbar. Die Eingabe muss ein
-Objekt mit genau den fünf bekannten Schlüsseln enthalten: `enabled` muss ein
-Boolean sein; jedes der vier Listenfelder muss eine Liste aus Strings sein.
-Listen dürfen jeweils höchstens 64 Einträge enthalten, jeder Eintrag höchstens
-100 Zeichen; NUL-Zeichen und unbekannte Schlüssel werden abgelehnt. Der
-Bearbeiter darf weder `require_assigned_slot` noch Task-Zuweisungen oder
-Modellbindungen über diesen Filter ändern.
+gesamte `selection_policy` bleibt ein Leseobjekt. Als Policy-Änderungen
+akzeptiert die CAS-Anfrage `changes.pickup_filter` sowie die booleschen Felder
+`changes.require_assigned_slot` und `changes.enforce_model_binding`. Das
+`pickup_filter`-Objekt muss genau die fünf bekannten Schlüssel enthalten:
+`enabled` muss ein Boolean sein; jedes der vier Listenfelder muss eine Liste aus
+Strings sein. Listen dürfen jeweils höchstens 64 Einträge enthalten, jeder
+Eintrag höchstens 100 Zeichen; NUL-Zeichen und unbekannte Schlüssel werden
+abgelehnt. Der Filter selbst ändert weder Slot- noch Modellbindung; die beiden
+Schalter sind eigenständige CAS-Felder. Diese Policy-Felder ändern keine
+Taskfelder wie `assigned_to`, `assigned_slot` oder `required_model`.
 
 Die CAS-Version bindet die projizierte Policy mit ein. Veraltete Versionen
 werden abgewiesen. Der Worker muss außerdem einen bearbeitbaren Nichtlaufstatus

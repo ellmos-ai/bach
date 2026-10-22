@@ -1048,9 +1048,24 @@ class ChatRuntime(_ModuleChatRuntime):
                     actions.validate(binding)
                 except Exception:
                     return FailedAnswer("Angeforderte Taskaktion oder Inhaltsversion ist nicht mehr aktuell")
+            runtime_slot_id = getattr(session, "chat_id", "")
+            slot_profile = None
+            slot_reader = getattr(session, "worker_slot_reader", None)
+            if callable(slot_reader):
+                try:
+                    slot_profile = slot_reader()
+                except Exception:
+                    return FailedAnswer("Gespeicherter Worker-Steckplatz ist nicht verifizierbar")
+                if (not isinstance(slot_profile, dict)
+                        or slot_profile.get("id") != runtime_slot_id):
+                    return FailedAnswer("Gespeicherter Worker-Steckplatz hat sich geändert")
+            selection_policy = binding.selection_policy_for_inference(slot_profile)
+            if selection_policy is None:
+                return FailedAnswer("Gespeicherte Worker-Auswahlpolicy ist nicht aktuell")
             from .slots_config import task_matches_slot_binding
             if not task_matches_slot_binding(binding.task_snapshot(), {
-                    "id": getattr(session, "chat_id", ""), "model": model}):
+                    "id": runtime_slot_id, "model": model},
+                    selection_policy=selection_policy):
                 return FailedAnswer("Task passt nicht zur aktuellen Slot- oder Modellauswahl")
             if getattr(backend, "manages_own_tools", False):
                 from hub._services.llm.model_backend import CLIBackend
