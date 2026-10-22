@@ -392,6 +392,48 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
             1, 1, json.dumps({"profile": "full_dev_guarded", "tool_whitelist": ["read_files", "write_files", "execute_command"]}),
             "agent", "", 1, now, now
         ),
+        # Native Taskmaster roles use the existing additive seed/materialization contract.
+        (
+            "taskmaster-maintainer",
+            "Taskmaster · Maintainer",
+            "Pflegt freigegebene Projekt- und Dokumentationsbestände; prüft Duplikate und erhält offene Anforderungen.",
+            "taskmaster-maintainer",
+            "Du bist der Taskmaster-Maintainer. Pflege ausschließlich den im aktuellen Auftrag freigegebenen "
+            "Projekt- und Dokumentationsbestand. Prüfe vorhandene Aufgaben und Quellen vor neuen Einträgen "
+            "auf Duplikate. Erhalte offene Anforderungen, nachvollziehbare Herkunft und einen Rückweg. "
+            "Lies Projektregeln und beachte fremde Sperren vor jeder Änderung. Verwende die vorhandene "
+            "kanonische Aufgabenautorität mit eigener gültiger Lease und Inhaltsversion; führe keine "
+            "eigene Aufgaben- oder Claimqueue. Fehlende Autorisierung, unbekannte Quellen oder Konflikte "
+            "bleiben offene Befunde. Konfiguration und Dispatch sind keine Ausführung oder Abnahme.",
+            json.dumps(["folder-organization", "docs-analysis", "surface-after-care"]),
+            "api",
+            json.dumps({"turns": 20, "cooldown_seconds": 30, "task_types": ["maintenance", "hygiene"]}),
+            "casualis",
+            1, 0, json.dumps({"profile": "fail_closed_standard",
+                             "tool_whitelist": ["read_files", "write_files", "task_manage"]}),
+            "agent", "", 1, now, now
+        ),
+        (
+            "taskmaster-operator",
+            "Taskmaster · Operator",
+            "Koordiniert Terminierung, Budgets, Reihenfolge und unabhängige Abnahme vorhandener Aufgaben.",
+            "taskmaster-operator",
+            "Du bist der Taskmaster-Operator. Koordiniere vorhandene Aufgaben, verfügbare Budgets, "
+            "Reihenfolge und unabhängige Prüfung über die bestehenden nativen Verträge. "
+            "Verwende die kanonische Aufgabenautorität und ihre aktuellen IDs, Versionen und Leases; "
+            "führe keine eigene Aufgaben- oder Claimqueue und übernimm keine fremde Lease. "
+            "Beachte Abhängigkeiten, persönliche Freigaben, Sperren und Ressourcen vor einer Planung. "
+            "Behandle Ergebnisabgabe, unabhängige Prüfung und fachliche Annahme als getrennte Schritte. "
+            "Du erteilst dir keine zusätzlichen Rechte; Provider-, Modell-, Dienst- oder externe Starts "
+            "benötigen ihre ausdrückliche Autorisierung. Eine geplante oder konfigurierte Aktion ist kein Laufbeleg.",
+            json.dumps(["orchestrator", "budgetierung", "decide", "rotation-check"]),
+            "api",
+            json.dumps({"turns": 20, "cooldown_seconds": 30, "task_types": ["routing", "audit"]}),
+            "casualis",
+            1, 0, json.dumps({"profile": "fail_closed_standard",
+                             "tool_whitelist": ["read_files", "task_manage"]}),
+            "agent", "", 1, now, now
+        ),
         # ROLES (GUX-015, GUX-021, GUX-025)
         (
             "role_lawchecker",
