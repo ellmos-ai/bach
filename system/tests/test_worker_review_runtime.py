@@ -2,8 +2,9 @@
 """Runtime behavior for bound, independent result-review workers.
 
 The HTTP adapter is exercised through a deterministic in-process transport;
-lease persistence is an isolated fake transport. No provider, local task DB,
-or native worker is started by these tests.
+lease persistence is an isolated fake transport. Policy reads use only a small
+in-memory SQLite fixture; no provider, persistent task DB, or native worker is
+started by these tests.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import asyncio
 import copy
 import hashlib
 import json
+import sqlite3
 import sys
 import threading
 import uuid
@@ -43,7 +45,6 @@ REVIEW_TASK_ID = 240
 TARGET_TASK_ID = 120
 TARGET_RESULT_ID = 901
 TARGET_REVISION = "f" * 64
-REVIEW_TASK_VERSION = "d" * 64
 
 
 class _HTTPResponse:
@@ -106,13 +107,23 @@ def _tool_reply(model, name, arguments):
 
 
 class _ReviewExecutionClient:
-    """In-memory stand-in for the private lease transport used by one binding."""
+    """In-memory lease transport and policy store for one bound review task."""
 
     mode = "local"
 
     def __init__(self, *, route, slot_id):
         self.route = copy.deepcopy(route)
         self.slot_id = slot_id
+        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.executescript("""
+            CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY, title TEXT, description TEXT, category TEXT,
+                priority TEXT, project TEXT, status TEXT, assigned_to TEXT,
+                assigned_slot TEXT, required_model TEXT, require_user_review INTEGER
+            );
+        """)
         self.review_task = {
             "id": REVIEW_TASK_ID,
             "title": "Independent review",
@@ -124,8 +135,21 @@ class _ReviewExecutionClient:
             "assigned_to": "BACH",
             "assigned_slot": slot_id,
             "required_model": MODEL,
-            "task_version": REVIEW_TASK_VERSION,
         }
+        task_fields = (
+            "id", "title", "description", "category", "priority", "project",
+            "status", "assigned_to", "assigned_slot", "required_model",
+        )
+        self._conn.execute(
+            "INSERT INTO tasks (" + ", ".join(task_fields) + ") VALUES (" +
+            ", ".join("?" for _ in task_fields) + ")",
+            tuple(self.review_task[key] for key in task_fields),
+        )
+        from hub._services.task_lease import task_content_version
+        task_row = self._conn.execute(
+            "SELECT * FROM tasks WHERE id=?", (REVIEW_TASK_ID,),
+        ).fetchone()
+        self.review_task["task_version"] = task_content_version(dict(task_row))
         self.target_task = {
             "id": TARGET_TASK_ID,
             "title": "Target work",
@@ -203,7 +227,7 @@ class _ReviewExecutionClient:
         assert _review_binding.task_id == task_id
         assert lease_id
         assert fence == 77
-        assert task_version == REVIEW_TASK_VERSION
+        assert task_version == self.review_task["task_version"]
         _, text, digest = validate_submission({"generation": generation, "result": result})
         self.result_record = {
             "result_id": 501,
@@ -231,7 +255,7 @@ class _ReviewExecutionClient:
         assert task_id == REVIEW_TASK_ID
         return {
             "status": "review" if self.result_record else "open",
-            "task_version": REVIEW_TASK_VERSION,
+            "task_version": self.review_task["task_version"],
             "result": copy.deepcopy(self.result_record),
         }
 
@@ -260,7 +284,7 @@ def _review_binding(backend, *, slot_id=CHAT_ID, route_override=None, stop_event
     grant = ReviewGrant(
         _seal=REVIEW_GRANT_SEAL,
         task_id=REVIEW_TASK_ID,
-        task_version=REVIEW_TASK_VERSION,
+        task_version=client.review_task["task_version"],
         target_task_id=TARGET_TASK_ID,
         target_result_id=TARGET_RESULT_ID,
         target_revision=TARGET_REVISION,
@@ -559,10 +583,53 @@ class _QueueProbeClient:
     mode = "local"
 
     def __init__(self, *, ordinary, review, grant_available=True):
-        self.ordinary = ordinary
-        self.review = review
+        self.ordinary = copy.deepcopy(ordinary)
+        self.review = copy.deepcopy(review)
         self.grant_available = grant_available
         self.events = []
+        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.executescript("""
+            CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY, title TEXT, description TEXT, category TEXT,
+                priority TEXT, project TEXT, status TEXT, assigned_to TEXT,
+                assigned_slot TEXT, required_model TEXT, require_user_review INTEGER
+            );
+        """)
+        from hub._services.task_lease import task_content_version
+        records = {task["id"]: task for task in [*self.ordinary, *self.review]}
+        task_fields = (
+            "id", "title", "description", "category", "priority", "project",
+            "status", "assigned_to", "assigned_slot", "required_model",
+            "require_user_review",
+        )
+        versions = {}
+        for task_id, task in records.items():
+            row = {
+                "id": task_id,
+                "title": task.get("title") or f"Queue probe task {task_id}",
+                "description": task.get("description"),
+                "category": task.get("category") or "WORKER",
+                "priority": task.get("priority") or "P2",
+                "project": task.get("project") or "fixture",
+                "status": task.get("status") or "pending",
+                "assigned_to": task.get("assigned_to"),
+                "assigned_slot": task.get("assigned_slot"),
+                "required_model": task.get("required_model"),
+                "require_user_review": task.get("require_user_review"),
+            }
+            self._conn.execute(
+                "INSERT INTO tasks (" + ", ".join(task_fields) + ") VALUES (" +
+                ", ".join("?" for _ in task_fields) + ")",
+                tuple(row[key] for key in task_fields),
+            )
+            stored_row = self._conn.execute(
+                "SELECT * FROM tasks WHERE id=?", (task_id,),
+            ).fetchone()
+            versions[task_id] = task_content_version(dict(stored_row))
+        for task in [*self.ordinary, *self.review]:
+            task["task_version"] = versions[task["id"]]
 
     def task_candidates(self, *, limit, offset):
         assert limit == 100 and offset == 0

@@ -89,6 +89,8 @@ def task_state(tmp_path, monkeypatch):
             client, task_id, worker_id="isolated-runtime-worker@HOST", host="HOST",
             generation=generation or f"generation-{len(state['bindings']) + 1}",
             is_current=lambda: current["value"], stop_event=threading.Event(),
+            slot={"id": CHAT_ID, "model": "runtime-fixture-model",
+                  "pickup_filter": {"enabled": False}},
         )
         state["bindings"].append(binding)
         return binding, current
