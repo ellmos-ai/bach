@@ -395,12 +395,16 @@ class FailedAnswer(str):
     STATUS_SUCCESS = "success"
     STATUS_FAILED = "failed"
 
-    def __new__(cls, value, *, backend_error=None, reason_code=None):
+    def __new__(cls, value, *, backend_error=None, reason_code=None, transient_failure=None):
         from hub._services.llm.backend_errors import normalize_backend_error
         answer = super().__new__(cls, value)
         answer.backend_error = normalize_backend_error(backend_error)
         answer.reason_code = (
             reason_code if isinstance(reason_code, str) and reason_code in _SAFE_FAILURE_REASON_CODES else None
+        )
+        # Live typed metadata only: never infer retry authority from answer text.
+        answer.transient_failure = (
+            "httpx_read_timeout" if transient_failure == "httpx_read_timeout" else None
         )
         return answer
 
@@ -465,7 +469,18 @@ class FailedAnswer(str):
         from hub._services.chat.local_resource_reserve import LocalReserveError
         if isinstance(exc, LocalReserveError):
             return cls(f"{cls.PREFIX}{safe_message}")
-        return cls(f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "))
+        try:
+            import httpx
+        except ImportError:
+            transient_failure = None
+        else:
+            transient_failure = (
+                "httpx_read_timeout" if isinstance(exc, httpx.ReadTimeout) else None
+            )
+        return cls(
+            f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "),
+            transient_failure=transient_failure,
+        )
 
 
 class SuccessfulAnswer(str):
@@ -2943,6 +2958,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else ""),
                     backend_error=result.get("backend_error"),
                     reason_code=result.get("reason_code"),
+                    transient_failure=result.get("transient_failure"),
                 )
 
             resolved_model = result.get("model") if isinstance(result, dict) else None

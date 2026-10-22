@@ -76,6 +76,7 @@ class WorkerLeaseBinding:
         self._injected_clock = clock is not None
         self._lock = threading.RLock()
         self._trace_completion_tokens = {}
+        self._quarantine_ack = None
         self._active = True
         self._closed = False
         self._completion_result = None
@@ -941,9 +942,85 @@ class WorkerLeaseBinding:
                 # Return-to-pending nor a guessed retry may undo that decision.
                 self._active = False
                 return False
+            self._quarantine_ack = ack
             self._closed = True
             self._active = False
             return True
+
+    def quarantined_effects_clear(self):
+        """Read native settlement for this exact locally quarantined generation.
+
+        Remote or connection-only clients have no proven local read-only authority
+        here and remain terminal. Never invent a second DB path or HTTP endpoint.
+        """
+        from pathlib import Path
+        import sqlite3
+        from hub._services.task_lease import task_content_version
+        from .worker_tool_trace import task_trace_recovery_state
+
+        with self._lock:
+            receipt = self._quarantine_ack
+            ack = self._ack
+            if (not isinstance(receipt, LeaseReleaseAck)
+                    or receipt.released is not True or receipt.outcome != "blocked"
+                    or receipt.status != "blocked" or receipt.task_id != self.task_id
+                    or receipt.fence != ack.fence or not self._closed or self._active
+                    or not self._is_current() or self._stop_event.is_set()
+                    or ack.result_generation != self._generation
+                    or self._trace_completion_tokens or self._model_execution_pending is not None
+                    or self._client.mode != "local"
+                    or getattr(self._client, "_conn", None) is not None):
+                return False
+            # This is the path supplied to the original native TaskLeaseClient.
+            # No home-directory fallback and no caller/prompt path is accepted.
+            authority_path = getattr(self._client, "_db_path", None)
+            if not isinstance(authority_path, Path):
+                return False
+            expected = (self.task_id, ack.fence, self._generation,
+                        ack.worker_id, ack.task_version)
+
+        conn = None
+        try:
+            db = authority_path.resolve(strict=True)
+            if not db.is_file():
+                return False
+            conn = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=2)
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN")
+            row = conn.execute("SELECT * FROM tasks WHERE id=?", (expected[0],)).fetchone()
+            if (row is None or row["status"] != "blocked" or row["claim_id"]
+                    or row["claim_fence"] != expected[1]
+                    or task_content_version(dict(row)) != expected[4]
+                    or task_trace_recovery_state(conn, expected[0]) != "clear"):
+                return False
+            identities = conn.execute(
+                "SELECT DISTINCT generation,worker_id FROM worker_tool_trace_events "
+                "WHERE task_id=? AND fence=?", expected[:2],
+            ).fetchall()
+            if not identities or any(
+                    row["generation"] != expected[2] or row["worker_id"] != expected[3]
+                    for row in identities):
+                return False
+            executions = conn.execute(
+                "SELECT generation,phase FROM worker_model_executions WHERE task_id=? AND fence=?",
+                expected[:2],
+            ).fetchall()
+            if not executions or any(
+                    row["generation"] != expected[2] or row["phase"] not in {"returned", "failed"}
+                    for row in executions):
+                return False
+        except Exception:  # noqa: BLE001 -- unknown/pending effects stay terminal
+            return False
+        finally:
+            if conn is not None:
+                conn.rollback()
+                conn.close()
+        with self._lock:
+            return (self._quarantine_ack is receipt and self._ack is ack
+                    and self._closed and not self._active
+                    and self._is_current() and not self._stop_event.is_set()
+                    and not self._trace_completion_tokens
+                    and self._model_execution_pending is None)
 
     def record_worktree_result(self, task_id, annotation, *, review=False, result_ref=""):
         """Fence a Git result's content; review releases ownership without Done."""
