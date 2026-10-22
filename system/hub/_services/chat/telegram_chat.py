@@ -1465,7 +1465,7 @@ def _worker_backend_retry_delay(
     slot, detail, *, model, retries, waited_seconds, reason_code=None,
     pre_effect_verified=False,
 ):
-    """Cloud429 waits are lease-free; local reserve retries keep their hard budget."""
+    """Cloud retry waits are lease-free; local retries keep their hard budget."""
     if type(retries) is not int or retries < 0:
         return None
     if type(waited_seconds) not in {int, float} or waited_seconds < 0:
@@ -1481,7 +1481,10 @@ def _worker_backend_retry_delay(
     if (reason_code in {None, "cloud_call_retry_exhausted"} and cloud
             and slot.get("type") in {"continuous", "persistent"}
             and error and (error["kind"] == "rate_limited"
-                           or error.get("status_code") == 429)):
+                           or error.get("status_code") == 429
+                           or (error["provider"] == "openrouter"
+                               and error["kind"] == "http_error"
+                               and error.get("status_code") == 504))):
         # Respect provider Retry-After, with bounded exponential request frequency.
         # A configured worker's stop/TTL, not three retries, ends this wait loop.
         return max(
@@ -5335,7 +5338,11 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             raise RuntimeError("Task-Lease vor Wiederaufnahme nicht bestätigt zurückgegeben")
                         if assignment_open:
                             finish_assignment(current_assignment, status="error",
-                                              result="backend_error", reason="temporary_rate_limit")
+                                              result="backend_error",
+                                              reason=("temporary_gateway_timeout"
+                                                      if detail and detail.get("provider") == "openrouter"
+                                                      and detail.get("status_code") == 504
+                                                      else "temporary_rate_limit"))
                             assignment_open = False
                         worker_session.worker_task_binding = None
                         if persistent_retry_binding is not None:
