@@ -82,11 +82,14 @@ def _global_payload(snapshot):
 
 
 def _override(*, require_review=False, github_external_review=None,
-              allow_review_task_pickup=None, mode=None):
+              allow_review_task_pickup=None, mode=None,
+              require_assigned_slot=None, enforce_model_binding=None):
     return {
         "mode": mode, "require_user_review": require_review,
         "github_external_review": github_external_review,
         "allow_review_task_pickup": allow_review_task_pickup,
+        "require_assigned_slot": require_assigned_slot,
+        "enforce_model_binding": enforce_model_binding,
     }
 
 
@@ -202,6 +205,10 @@ def test_global_put_is_observed_by_an_independent_get(api):
     payload = _global_payload(before)
     payload["policy"]["github_external_review"] = False
     payload["selection"]["normal_task_order"] = "oldest_first"
+    payload["worker_selection"] = {
+        "require_assigned_slot": True,
+        "enforce_model_binding": True,
+    }
     written = api.client.put(GLOBAL_PATH, headers=_auth(api), json=payload)
     assert written.status_code == 200
     assert written.json()["updated"] is True
@@ -210,7 +217,19 @@ def test_global_put_is_observed_by_an_independent_get(api):
     assert after.status_code == 200
     assert after.json()["policy"]["github_external_review"] is False
     assert after.json()["selection"]["normal_task_order"] == "oldest_first"
+    assert after.json()["worker_selection"] == payload["worker_selection"]
     assert after.json()["configuration_version"] == written.json()["configuration_version"]
+
+    # Legacy payloads omit worker_selection and must retain its stored value.
+    legacy_payload = _global_payload(after.json())
+    legacy_payload["policy"]["github_external_review"] = True
+    legacy_write = api.client.put(
+        GLOBAL_PATH, headers=_auth(api), json=legacy_payload
+    )
+    assert legacy_write.status_code == 200
+    legacy_readback = api.client.get(GLOBAL_PATH, headers=_auth(api)).json()
+    assert legacy_readback["policy"]["github_external_review"] is True
+    assert legacy_readback["worker_selection"] == payload["worker_selection"]
     assert _config_rows(api.path)
 
 
@@ -328,6 +347,7 @@ def test_task_override_reset_is_cas_bound_and_changes_version_without_aba(api):
     assert reread["override"] == {
         "mode": None, "require_user_review": False,
         "github_external_review": None, "allow_review_task_pickup": None,
+        "require_assigned_slot": None, "enforce_model_binding": None,
     }
     assert reread["configuration_version"] != initial["configuration_version"]
     stale = _task_write_payload(

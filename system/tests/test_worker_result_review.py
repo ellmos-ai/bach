@@ -67,7 +67,7 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     """Real SQLite submissions and registered clean Git worktree; no model calls."""
     context = worker_context
     conn, author = context["conn"], context["binding"]
-    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     values = settings._defaults()
     values["policy"]["reviewers"] = [
         {"reviewer_id": AUTHOR, "tier": "standard"},

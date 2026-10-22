@@ -65,6 +65,9 @@ def _new_binding(client, task_id, *, generation=GENERATION, current=None, stop=N
 @pytest.fixture
 def worker_context(mem_db):
     conn = mem_db
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
     if "created_at" not in columns:
         conn.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")

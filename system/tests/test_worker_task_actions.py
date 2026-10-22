@@ -18,19 +18,36 @@ def runtime_binding(mem_db):
     """Real Runtime/Trace uses the authority clock, unlike frozen lease unit tests."""
     import threading
 
+    from hub._services import worker_policy_settings as settings
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from hub._services.task_lease_client import TaskLeaseClient
 
     from system.tests.test_task_lease_client import _insert_task
 
     mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.execute(
+        "CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
     mem_db.commit()
     task_id = _insert_task(mem_db)
+    mem_db.execute("UPDATE tasks SET assigned_to='bach' WHERE id=?", (task_id,))
+    settings._persist(
+        mem_db, settings.GLOBAL_KEY, settings._defaults(), actor="fixture-worker-selection"
+    )
+    mem_db.commit()
+    slot = {
+        "id": "worker-bound",
+        "model": "isolated-model",
+        "backend": "isolated",
+        "require_assigned_slot": False,
+        "enforce_model_binding": False,
+        "pickup_filter": {"enabled": False},
+    }
     instance = WorkerLeaseBinding.acquire(
         TaskLeaseClient(conn=mem_db), task_id,
         worker_id="physical-worker@HOST", host="HOST",
         generation="generation-1", is_current=lambda: True,
-        stop_event=threading.Event(),
+        stop_event=threading.Event(), slot=slot,
     )
     yield instance
     if instance._active:
@@ -225,12 +242,13 @@ def test_committed_decomposition_with_lost_ack_never_confirms(binding, monkeypat
 
 
 @pytest.mark.parametrize("already_running", [False, True])
-def test_requested_action_without_tools_refuses_inference(binding, already_running):
+def test_requested_action_without_tools_refuses_inference(runtime_binding, already_running):
     from unittest.mock import AsyncMock
 
     from hub._services.chat.chat_runtime import ChatRuntime, FailedAnswer
     backend = type("Backend", (), {"get_default_model": lambda self: "isolated-model",
                                    "chat": AsyncMock(return_value={"content": "FERTIG"})})()
+    binding = runtime_binding
     actions, _ = requested(binding)
     if already_running: actions.consume(binding, backend="isolated", model="isolated-model")
     runtime = ChatRuntime(backend)
