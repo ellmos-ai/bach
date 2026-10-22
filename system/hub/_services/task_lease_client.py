@@ -789,6 +789,26 @@ class TaskLeaseClient:
                     conn.close()
         return self._public_snapshot(data, task_id)
 
+    def task_worker_policy_snapshot(self, task_id):
+        """Read policy through the same local authority as task content and leases."""
+        _identity(task_id)
+        if self.mode != "local":
+            raise LeaseProtocolError("Lokale Task-Policyautorität erforderlich")
+        from .worker_policy_settings import TASK_SCHEMA, read_task_policy_from_connection
+        conn = self._get_local_connection()
+        try:
+            data = read_task_policy_from_connection(conn, task_id)
+        finally:
+            if self._conn is None:
+                conn.close()
+        if (not isinstance(data, dict) or data.get("schema") != TASK_SCHEMA
+                or data.get("availability") != "available"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id):
+            raise LeaseProtocolError("Task-Policy-Readback ist nicht kanonisch bestätigt")
+        _version(data.get("task_version"), required=True)
+        _version(data.get("configuration_version"), required=True)
+        return data
+
     def task_capabilities(self):
         """Read versioned task-field capabilities; old APIs fail closed."""
         expected = {
@@ -1501,6 +1521,7 @@ class TaskResultServiceClient(TaskLeaseClient):
     _call = _deny_general_task_api
     _acquire_native_creator = _deny_general_task_api
     task_snapshot = _deny_general_task_api
+    task_worker_policy_snapshot = _deny_general_task_api
     task_capabilities = _deny_general_task_api
     task_correction_context = _deny_general_task_api
     task_candidates = _deny_general_task_api

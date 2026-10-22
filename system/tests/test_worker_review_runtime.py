@@ -105,6 +105,19 @@ def _tool_reply(model, name, arguments):
     }
 
 
+def _worker_policy_snapshot(task):
+    """Required canonical policy DTO for these isolated transport fixtures."""
+    return {
+        "schema": "bach.task-worker-policy-override.v1", "availability": "available",
+        "task_id": task["id"], "task_version": task["task_version"],
+        "configuration_version": "c" * 64,
+        "effective": {
+            "contract_version": "worker-review-policy.v1alpha1",
+            "require_assigned_slot": False, "enforce_model_binding": False,
+        },
+    }
+
+
 class _ReviewExecutionClient:
     """In-memory stand-in for the private lease transport used by one binding."""
 
@@ -148,6 +161,9 @@ class _ReviewExecutionClient:
         if task_id == REVIEW_TASK_ID:
             return copy.deepcopy(self.review_task)
         raise AssertionError(f"Unexpected task snapshot: {task_id}")
+
+    def task_worker_policy_snapshot(self, task_id):
+        return _worker_policy_snapshot(self.task_snapshot(task_id))
 
     def acquire(self, task_id, *, worker_id, host, task_version,
                 result_generation, **_kwargs):
@@ -563,6 +579,10 @@ class _QueueProbeClient:
         self.review = review
         self.grant_available = grant_available
         self.events = []
+
+    def task_worker_policy_snapshot(self, task_id):
+        task = next(item for item in self.ordinary + self.review if item["id"] == task_id)
+        return _worker_policy_snapshot(task)
 
     def task_candidates(self, *, limit, offset):
         assert limit == 100 and offset == 0
