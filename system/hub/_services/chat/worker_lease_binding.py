@@ -15,6 +15,25 @@ from hub._services.task_lease_client import (
     LeaseSelfCheckRequiredError,
     LeaseReleaseAck, WorkerResultAck,
 )
+import subprocess
+from hub._services import project_source_register
+
+
+def _project_binding_for(task_id, snapshot):
+    """Fail-closed: Lease-Acquire pinnen die Projektquelle des Tasks."""
+    repo_key = snapshot.get("repo_key")
+    if not repo_key:
+        raise RuntimeError(f"Task {task_id} ohne Projektquellen-Bindung (repo_key fehlt)")
+    revision = project_source_register.register_revision()
+    checkout = project_source_register.resolve_repo(repo_key, expected_revision=revision)
+    result = subprocess.run(
+        ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError(f"Task {task_id}: pinned SHA für {repo_key!r} nicht ermittelbar")
+    return {"repo_key": repo_key, "register_revision": revision, "pinned_sha": result.stdout.strip()}
+
 
 _EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
 
@@ -105,10 +124,12 @@ class WorkerLeaseBinding:
                 raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
         kwargs = {"now": clock()} if clock is not None else {}
         if _creator_delegation is None:
+            binding = _project_binding_for(task_id, snapshot)
             acquire_kwargs = dict(worker_id=worker_id, host=host,
                 task_version=snapshot["task_version"], result_generation=generation, **kwargs)
             if _review_grant is not None:
                 acquire_kwargs["_review_grant"] = _review_grant
+            acquire_kwargs["_project_binding"] = binding
             ack = client.acquire(task_id, **acquire_kwargs)
         else:
             if (_creator_delegation.task_id != task_id or _creator_delegation.generation != generation

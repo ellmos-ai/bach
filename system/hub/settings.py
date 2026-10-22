@@ -44,6 +44,7 @@ class SettingsHandler(BaseHandler):
             "export": "Settings als JSON exportieren",
             "import": "Settings aus JSON importieren: import <datei>",
             "categories": "Alle Kategorien auflisten",
+            "project-source": "Projektquellen-Register: project-source <list|show <key>|add <key>=<pfad>|update <key>=<pfad>|remove <key>>",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -61,6 +62,8 @@ class SettingsHandler(BaseHandler):
             return self._import_settings(args[0], dry_run)
         elif operation == "categories":
             return self._categories()
+        elif operation == "project-source":
+            return self._project_source(args, dry_run)
         else:
             ops = self.get_operations()
             lines = ["SETTINGS - Systemeinstellungen", "=" * 50, ""]
@@ -426,6 +429,79 @@ class SettingsHandler(BaseHandler):
             })
 
         return result
+
+    def _project_source(self, args: list, dry_run: bool = False) -> tuple:
+        from pathlib import Path
+
+        from hub._services import project_source_register as register
+
+        if not args:
+            return (False, "project-source: Operation fehlt (list|show|add|update|remove)")
+        operation = args[0]
+        rest = args[1:]
+        try:
+            if operation == "list":
+                entries = register.list_entries()
+                if not entries:
+                    return (True, "Keine Projektquellen registriert.")
+                lines = ["repo_key  rev  checkout  origin  approved_ref  worktrees  updated"]
+                for entry in entries:
+                    lines.append(
+                        f"{entry['repo_key']}  {entry['revision']}  {entry['checkout_path']}  "
+                        f"{entry['origin']}  {entry['approved_ref']}  {entry['worktrees_root']}  "
+                        f"{entry['updated_at']}"
+                    )
+                return (True, "\n".join(lines))
+            if operation == "show":
+                if len(rest) != 1:
+                    return (False, "project-source show <repo_key>")
+                entry = register.read_entry(rest[0])
+                lines = [f"{key}: {value}" for key, value in entry.items()]
+                lines.append("Nutzung: Registerpflege nur über project-source add/update/remove (Actor 'user').")
+                return (True, "\n".join(lines))
+            if operation in {"add", "update"}:
+                usage = (
+                    f"project-source {operation} <repo_key>=<checkout-pfad> "
+                    "[--origin=URL] [--ref=REF] [--worktrees=DIR]"
+                )
+                if not rest or "=" not in rest[0]:
+                    return (False, usage)
+                key, checkout = rest[0].split("=", 1)
+                key = key.strip()
+                checkout = checkout.strip()
+                if not key or not checkout:
+                    return (False, usage)
+                origin = None
+                approved_ref = None
+                worktrees_root = None
+                for flag in rest[1:]:
+                    if flag.startswith("--origin="):
+                        origin = flag.split("=", 1)[1].strip()
+                    elif flag.startswith("--ref="):
+                        approved_ref = flag.split("=", 1)[1].strip()
+                    elif flag.startswith("--worktrees="):
+                        worktrees_root = flag.split("=", 1)[1].strip()
+                    else:
+                        return (False, f"project-source: Unbekannte Option {flag!r} (erlaubt: --origin=, --ref=, --worktrees=)")
+                if dry_run:
+                    action = "registriert" if operation == "add" else "aktualisiert"
+                    return (True, f"[dry-run] Projektquelle {key} würde {action} werden: {checkout}")
+                if operation == "add":
+                    entry = register.add_entry(actor="user", repo_key=key, checkout_path=Path(checkout), origin=origin, approved_ref=approved_ref, worktrees_root=worktrees_root)
+                else:
+                    entry = register.update_entry(actor="user", repo_key=key, checkout_path=Path(checkout), origin=origin, approved_ref=approved_ref, worktrees_root=worktrees_root)
+                action = "registriert" if operation == "add" else "aktualisiert"
+                return (True, f"Projektquelle {key} {action} (Revision {entry['revision']})")
+            if operation == "remove":
+                if len(rest) != 1:
+                    return (False, "project-source remove <repo_key>")
+                if dry_run:
+                    return (True, f"[dry-run] Projektquelle {rest[0]} würde entfernt werden")
+                register.remove_entry(actor="user", repo_key=rest[0])
+                return (True, f"Projektquelle {rest[0]} entfernt")
+            return (False, f"project-source: Unbekannte Operation {operation!r} (list|show|add|update|remove)")
+        except (RuntimeError, OSError, ValueError) as exc:
+            return (False, f"project-source: {exc}")
 
 
 def handle_settings_command(args: list):

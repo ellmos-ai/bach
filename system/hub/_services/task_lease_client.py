@@ -1096,7 +1096,7 @@ class TaskLeaseClient:
 
     def acquire(self, task_id, *, worker_id, host, request_id=None, ttl_profile="M", intent="",
                 task_version=None, result_generation=None, config=None, now=None,
-                _review_grant=None):
+                _review_grant=None, _project_binding=None):
         if _review_grant is not None and self.mode != "local":
             raise LeaseProtocolError("Private Reviewgrants werden nur lokal eingelöst")
         _version(task_version)
@@ -1108,6 +1108,8 @@ class TaskLeaseClient:
             body["result_generation"] = result_generation
         if _review_grant is not None:
             body["_review_grant"] = _review_grant
+        if _project_binding is not None:
+            body["_project_binding"] = _project_binding
         data = self._call("acquire", task_id, body, config=config, now=now)
         # Sending time is conservative: response latency cannot extend the local deadline.
         return self._grant(data, worker_id=worker_id, host=host, task_version=task_version,

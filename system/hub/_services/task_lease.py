@@ -94,6 +94,7 @@ LEASE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("claim_request_id", "TEXT"),
     ("claim_task_version", "TEXT"),
     ("claim_result_generation", "TEXT"),
+    ("repo_key", "TEXT"),
 )
 #: Spalten, die Release/Invalidierung leert; claim_fence bleibt als Hochwassermarke.
 _CLEARED_ON_RELEASE = (
@@ -449,12 +450,13 @@ def acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, hos
                   request_id: str, ttl_profile: str | None = None, intent: str = "",
                   task_version: str | None = None, result_generation: str | None = None,
                   device: str | None = None, config: LeaseConfig | None = None,
-                  now: datetime | None = None, _review_grant: object | None = None) -> LeaseResult:
+                  now: datetime | None = None, _review_grant: object | None = None,
+                  _project_binding: object | None = None) -> LeaseResult:
     """Vertrag §5.1. Gewährt höchstens einen lebenden Lease pro Task."""
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=request_id, ttl_profile=ttl_profile, intent=intent,
         task_version=task_version, result_generation=result_generation, device=device, config=config, now=now,
-        _review_grant=_review_grant)
+        _review_grant=_review_grant, _project_binding=_project_binding)
 
 
 def _native_creator_grant(conn, binding, row, version):
@@ -515,7 +517,8 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
                    config: LeaseConfig | None = None, now: datetime | None = None,
                    creator_delegation: _NativeCreatorBinding | None = None,
                    result_generation: str | None = None,
-                   _review_grant: object | None = None) -> LeaseResult:
+                   _review_grant: object | None = None,
+                   _project_binding: object | None = None) -> LeaseResult:
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     worker_id, host = _validate_worker(worker_id, host)
@@ -536,6 +539,16 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
         if row is None:
             raise TaskNotFound(task_id)
         version = task_content_version(row)
+        repo_key = row.get("repo_key")
+        if not repo_key:
+            raise RuntimeError(f"Task {task_id} ohne Projektquellen-Bindung (repo_key fehlt)")
+        if _project_binding is not None:
+            if isinstance(_project_binding, dict):
+                binding_repo_key = _project_binding.get("repo_key")
+            else:
+                binding_repo_key = getattr(_project_binding, "repo_key", None)
+            if binding_repo_key != repo_key:
+                raise RuntimeError(f"Task {task_id}: Projektbinding repo_key {binding_repo_key!r} weicht von {repo_key!r} ab")
         if task_version is not None and task_version != version:
             conn.rollback()
             return _deny(task_id, "stale_task_version", now)

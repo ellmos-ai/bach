@@ -307,14 +307,28 @@ def start_task_worktree(
     task_code_capability: bool = False,
 ) -> Path:
     """Create the task worktree; the optional code-reader path pins public main."""
-    if require_task_binding and worker_task_binding is None:
+    if worker_task_binding is None:
         raise RuntimeError("Private Taskbindung fehlt")
     if type(task_code_capability) is not bool or (task_code_capability and worker_task_binding is None):
         raise RuntimeError("Task-Codefähigkeit ist nicht privat gebunden")
     if task_code_capability:
         # Reject aliases before authorization, mkdir, or any Git side effect.
         _public_source_config_key(task_id)
-    repo = (repo_root or get_live_repo_root()).resolve()
+    from hub._services.project_source_register import resolve_repo
+
+    if isinstance(worker_task_binding, Mapping):
+        binding_repo_key = worker_task_binding.get("repo_key")
+        binding_register_revision = worker_task_binding.get("register_revision")
+    else:
+        binding_repo_key = getattr(worker_task_binding, "repo_key", None)
+        binding_register_revision = getattr(worker_task_binding, "register_revision", None)
+    if not binding_repo_key or binding_register_revision is None:
+        raise RuntimeError("Taskbindung ohne Projektquellen-Registereintrag")
+    repo = resolve_repo(binding_repo_key, binding_register_revision)
+    if repo_root is not None and Path(repo_root).resolve() != repo:
+        raise RuntimeError("repo_root weicht vom registrierten Projekt-Checkout ab")
+    if task_code_capability and binding_repo_key != "bach":
+        raise RuntimeError("Task-Codefähigkeit nur für das BACH-Repository erlaubt")
     task_id_str = str(task_id).strip()
     worktrees_dir = get_worktrees_dir()
     target_dir = worktrees_dir / f"task-{task_id_str}"
@@ -362,27 +376,6 @@ def start_task_worktree(
             read_task_public_source_registration(repo, target_dir, task_id_str)
             authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
         return target_dir.resolve(strict=True)
-
-    worktrees_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        subprocess.run(["git", "fetch", "origin"], cwd=str(repo), capture_output=True,
-                       text=True, check=False, timeout=30)
-    except Exception:
-        pass
-    if target_dir.exists() and (target_dir / ".git").exists():
-        return target_dir.resolve()
-    result = subprocess.run(
-        ["git", "worktree", "add", str(target_dir), "-b", branch_name, base_branch],
-        cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
-    )
-    if result.returncode != 0:
-        result = subprocess.run(
-            ["git", "worktree", "add", str(target_dir), branch_name],
-            cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"Fehler beim Erstellen des Worktrees {target_dir}: {result.stderr}")
-    return target_dir.resolve()
 
 
 def _git_read_bytes(worktree_path: Path, argv: list[str], *, timeout=15) -> bytes:
