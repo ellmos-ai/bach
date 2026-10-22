@@ -1496,6 +1496,41 @@ def _worker_backend_retry_delay(
     return delay
 
 
+def _quarantined_timeout_delay(slot, answer, *, model, retries, waited_seconds):
+    """Bound a new-task attempt after a real local HTTPX read timeout."""
+    if (not isinstance(answer, FailedAnswer)
+            or getattr(answer, "transient_failure", None) != "httpx_read_timeout"
+            or not isinstance(slot, dict)
+            or slot.get("type") not in {"continuous", "persistent"}
+            or slot.get("enabled") is not True or slot.get("backend") != "ollama"
+            or not isinstance(model, str) or not model.strip()
+            or model != slot.get("model") or model.lower().endswith(":cloud")
+            or type(retries) is not int or not 0 <= retries < _WORKER_BACKEND_RETRY_LIMIT
+            or type(waited_seconds) not in {int, float} or waited_seconds < 0):
+        return None
+    delay = _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries)
+    return delay if waited_seconds + delay <= _WORKER_BACKEND_RETRY_BUDGET_SECONDS else None
+
+
+def _quarantine_assignment_recorded(control, assignment, task_id):
+    """Require the existing assignment-end recorder's durable matching receipt."""
+    try:
+        history = load_slots_config(strict=True).get("activity_history", [])
+    except Exception:  # noqa: BLE001 -- unreadable closure is not permission to continue
+        return False
+    return any(
+        isinstance(entry, dict)
+        and entry.get("source") == control.worker_id
+        and entry.get("assignment_id") == assignment.assignment_id
+        and entry.get("event") == "assignment_ended"
+        and str(entry.get("task_id")) == str(task_id)
+        and entry.get("status") == "error"
+        and entry.get("result") == "task_quarantined"
+        and entry.get("reason") == "backend_error_after_tool_dispatch"
+        for entry in history
+    )
+
+
 def _wait_worker_backend_retry(
     control: _WorkerControl, seconds: float, *, expected_persistent_binding=None,
 ) -> bool:
@@ -4870,9 +4905,18 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             _snapshot_chat_backend(worker_id, worker_slot=w)
             if control.stop_event.is_set():
                 return
+            # A task ID present at startup can be an explicit user pin.
+            # Only an initially unbound queue run may later clear its own
+            # controller-written task pointer and move to another task.
+            core_queue_task_pointer = (
+                worker_id == "buddha_always_on" and w.get("type") == "continuous"
+                and w.get("task_id") in (None, "", 0, "0")
+                and control.model_request_budget is None
+                and custom_prompt in (None, "") and w.get("task_prompt") in (None, "")
+            )
             if custom_prompt:
                 initial_prompt = custom_prompt
-            elif w.get("task_id"):
+            elif w.get("task_id") and not core_queue_task_pointer:
                 initial_prompt = (
                     f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
                     f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>', complete=true). "
@@ -4914,6 +4958,13 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             prompt_to_run = initial_prompt
             run_count = 0
             buddha_warmup_complete = False
+            # Generation-wide, cumulative new-task recovery budget; not progress.
+            quarantine_queue_prompt = (
+                custom_prompt in (None, "") and w.get("task_prompt") in (None, "")
+                and (w.get("task_id") in (None, "", 0, "0") or core_queue_task_pointer)
+            )
+            quarantine_retries = 0
+            quarantine_waited_seconds = 0
             initial_recovery = control.persistent_core_recovery_state
             backend_retries = (
                 initial_recovery.get("retry_count", 0)
@@ -5209,6 +5260,24 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if failure_reason == "local_reserve_reserve_wait_lease_return_required"
                         else None
                     )
+                    quarantine_delay = None
+                    quarantine_consent = None
+                    if control.model_request_budget is None and quarantine_queue_prompt:
+                        quarantine_delay = _quarantined_timeout_delay(
+                            current_slot, ans, model=model, retries=quarantine_retries,
+                            waited_seconds=quarantine_waited_seconds,
+                        )
+                    if control.persistent_core_intent_id is not None:
+                        quarantine_consent = _persistent_local_retry_binding(current_slot)
+                        recovery = control.persistent_core_recovery_state
+                        checkpoint = control.persistent_core_checkpoint
+                        if (quarantine_consent != {
+                                "intent_id": control.persistent_core_intent_id,
+                                "profile_version": control.persistent_core_profile_version,
+                            } or not isinstance(recovery, dict) or recovery.get("phase") != "active"
+                                or not isinstance(checkpoint, dict)
+                                or checkpoint.get("phase") != "admitted"):
+                            quarantine_delay = None
                     worker_error = RuntimeError("Backendantwort fehlgeschlagen")
                     control.start_error = "backend_error"
                     _update_worker_slot(control, {
@@ -5265,15 +5334,78 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         # can prove that re-running initial_prompt is safe.
                         # Block the task canonically so a different worker also
                         # cannot replay it through a fresh binding/counter.
-                        control.lease_supervisor.close()
+                        supervisor = control.lease_supervisor
+                        if supervisor is None:
+                            raise RuntimeError("Task-Quarantäne ohne bestätigten Lease-Supervisor")
+                        supervisor.close()
+                        if supervisor.is_alive or supervisor.failure is not None:
+                            raise RuntimeError("Task-Quarantäne: Lease-Supervisor nicht sicher beendet")
                         control.lease_supervisor = None
-                        if not control.task_binding.quarantine_lease():
+                        if control.task_binding.quarantine_lease() is not True:
                             control.task_binding.invalidate()
                             raise RuntimeError("Task-Quarantäne nicht bestätigt; kanonischen Zustand prüfen")
                         activity = (f"{error_activity} Automatische Wiederaufnahme unterdrückt: "
                                     "Toolwirkung bereits begonnen oder nicht verifizierbar; Task zur Prüfung blockiert.")
                         _update_worker_slot(control, {"current_activity": activity})
                         _record_worker_activity(control, activity, "error")
+                        if quarantine_delay is not None:
+                            binding = control.task_binding
+                            if (not binding.closed or worker_session is None
+                                    or worker_session.worker_task_binding is not binding
+                                    or worker_session.current_tool != ""
+                                    or not assignment_open
+                                    or str(assignment_task_id) != str(binding.task_id)):
+                                return
+                            # An empty UI tool label is not effect-settlement evidence.
+                            if binding.quarantined_effects_clear() is not True:
+                                return
+                            _retain_worker_task_receipts(control)
+                            finish_assignment(
+                                current_assignment, status="error", result="task_quarantined",
+                                reason="backend_error_after_tool_dispatch",
+                            )
+                            assignment_open = False
+                            if not _quarantine_assignment_recorded(
+                                    control, current_assignment, binding.task_id):
+                                raise RuntimeError("Quarantäne-Besetzungsabschluss nicht bestätigt")
+                            worker_session.worker_task_binding = None
+                            if worker_session.worker_task_binding is not None:
+                                raise RuntimeError("Quarantäne-Sessionbindung nicht gelöst")
+                            control.deferred_task_versions[binding.task_id] = (
+                                binding.task_snapshot()["task_version"]
+                            )
+                            control.task_binding = None
+                            waiting = (
+                                f"Task #{binding.task_id} bleibt zur Prüfung blockiert. "
+                                f"Warte {quarantine_delay:g} Sekunden; danach nächste Aufgabe."
+                            )
+                            if _update_worker_slot(control, {
+                                    "status": "running", "task_id": None,
+                                    "current_activity": waiting,
+                                }) is None:
+                                return
+                            if not _record_worker_activity(control, waiting, "pending", {
+                                    "quarantined_task_id": binding.task_id,
+                                    "reason_code": "httpx_read_timeout",
+                                }):
+                                return
+                            worker_error = None
+                            control.start_error = None
+                            quarantine_retries += 1
+                            quarantine_waited_seconds += quarantine_delay
+                            # Keep admitted/active persistent checkpoints and their
+                            # retry counters: a timeout is not response_received progress.
+                            if not _wait_worker_cooldown(control, event_type="runs"):
+                                return
+                            if not _wait_worker_backend_retry(
+                                    control, quarantine_delay,
+                                    expected_persistent_binding=quarantine_consent):
+                                return
+                            # Preserve the original native queue/role prompt. Core runtime
+                            # pointers never generated a stale fixed-task prompt above.
+                            # _bound_worker_prompt adds the newly acquired native task.
+                            prompt_to_run = initial_prompt
+                            continue
                         return
                     if retry_delay is not None and not control.task_binding.closed:
                         # Settle Renew physically and obtain the canonical Return
