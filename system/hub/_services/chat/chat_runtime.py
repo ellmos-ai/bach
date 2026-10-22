@@ -2774,6 +2774,24 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
         max_rounds = session.max_tool_rounds if getattr(session, "max_tool_rounds", None) is not None else self.max_tool_rounds
+        configured_max_rounds = max_rounds
+        from hub._services.llm.model_backend import backend_identifier
+        cloud_worker = (
+            getattr(session, "worker_task_binding", None) is not None
+            and (backend_identifier(selected_backend) == "openrouter"
+                 or (backend_identifier(selected_backend) == "ollama"
+                     and isinstance(selected_model, str)
+                     and selected_model.lower().endswith(":cloud")))
+        )
+        if cloud_worker and max_rounds > 0:
+            max_rounds = max(max_rounds, min(1000, max_rounds * 4))
+        session.effective_max_tool_rounds = max_rounds
+        if cloud_worker and max_rounds != configured_max_rounds:
+            msgs.append({"role": "user", "content": (
+                f"Cloud-Rundenreserve: {configured_max_rounds} reguläre Runden, "
+                f"bis {max_rounds} Runden einschließlich Abschlussreserve. "
+                "Modellanfragenbudget, Nutzerstopp und Anbieterlimits gelten weiterhin."
+            )})
         round_num = 0
         auto_used = 0
         goal_checked = False
