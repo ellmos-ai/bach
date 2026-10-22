@@ -547,7 +547,8 @@ def test_model_argument_cannot_grant_start_task_worktree(monkeypatch):
     assert calls == {}
 
 
-def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path, monkeypatch):
+@pytest.mark.parametrize("force_unsupported_open", [False, True])
+def test_task_scoped_search_text_timeout_or_unsupported_open_fails_closed(tmp_path, monkeypatch, force_unsupported_open):
     import os
 
     import regex
@@ -614,8 +615,16 @@ def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path,
 
     class TimedOutPattern:
         def search(self, _line, **_kwargs):
+            searches.append(True)
             raise TimeoutError("synthetic regex timeout")
 
+    searches = []
+    if force_unsupported_open:
+        monkeypatch.setattr(guard.os, "supports_dir_fd", set())
+    secure_open_available = (
+        all(hasattr(os, flag) for flag in ("O_NOFOLLOW", "O_DIRECTORY"))
+        and os.open in os.supports_dir_fd
+    )
     monkeypatch.setattr(regex, "compile", lambda *_args, **_kwargs: TimedOutPattern())
     opened = []
     real_fdopen = guard.os.fdopen
@@ -640,7 +649,11 @@ def test_task_scoped_search_text_preserves_regex_timeout_and_closes_fd(tmp_path,
     assert result._effect_state == "unknown"
     assert "synthetic regex timeout" not in str(result)
     assert str(repo) not in str(result)
+    if not secure_open_available:
+        assert opened == [] and searches == []
+        return
     assert len(opened) == 1
+    assert searches == [True]
     stream, file_descriptor = opened[0]
     assert stream.closed
     with pytest.raises(OSError):

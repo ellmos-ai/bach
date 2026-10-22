@@ -84,6 +84,18 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
     mem_db.commit()
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(lease_module, "get_lead_config", lambda: {"mode": "isolated"})
+    completion_requests = []
+
+    def completion_authority(client, task_id):
+        # This test owns queue/lease sequencing, not the completion-policy kernel.
+        # Model a current authority decision only after a real local submission.
+        observed = client.task_result_snapshot(task_id)
+        assert observed["status"] == "review"
+        assert observed["result"]["task_id"] == task_id
+        completion_requests.append(task_id)
+        return {"decision": {"worker_may_claim_next": True}}
+
+    monkeypatch.setattr(TaskLeaseClient, "_reconcile_task_completion", completion_authority)
     monkeypatch.setattr(control, "_native_task_client", lambda: TaskLeaseClient(conn=mem_db))
     monkeypatch.setattr(control, "record_activity", lambda *args, **kw: activities.append(args))
     monkeypatch.setattr(control.runtime, "get_session", lambda ident: session)
@@ -130,7 +142,15 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
         def start(self):
             self.active = True
             try:
-                control._WORKER_CONTROLS[CORE].stop_event.wait = lambda timeout=None: False
+                waits = []
+
+                def wait(timeout=None):
+                    waits.append(timeout)
+                    if len(waits) > idle_polls + 4:
+                        pytest.fail("Synchronous queue fixture exceeded its bounded idle/completion waits")
+                    return False
+
+                control._WORKER_CONTROLS[CORE].stop_event.wait = wait
                 self.target()
             finally:
                 self.active = False
@@ -152,6 +172,8 @@ def test_core_worker_acquires_exact_bound_tasks_and_advances(core_file, monkeypa
     assert assignments[0]["agent_instance_id"] == assignments[1]["agent_instance_id"]
     assert pauses == (["runs", "tasks"] if outcome == "review" else ["tasks", "tasks"])
     assert endings[0]["result"] == "task_review"
+    if outcome == "done":
+        assert 42 in completion_requests
     assert slots_config.get_slot(CORE, core_file)["task_id"] is None
 
 
