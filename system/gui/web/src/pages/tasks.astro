@@ -72,6 +72,18 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         <div><dt>Erstellt am</dt><dd id="task-view-created_at"></dd></div>
         <div><dt>Abgeschlossen am</dt><dd id="task-view-completed_at"></dd></div>
       </dl>
+      <h3>Abschlussregel</h3>
+      <p id="completion-rule-error" role="note" hidden></p>
+      <p id="user-review-badge" role="alert" style="color:var(--error);font-weight:600;" hidden>⚠️ Nutzerreview erforderlich (blockierend) – der Abschluss wird erst nach Nutzerreview wirksam.</p>
+      <p id="completion-pending-note" role="status" hidden></p>
+      <dl class="task-detail-grid" id="completion-rule-grid">
+        <div><dt>Regel</dt><dd id="completion-rule-title">–</dd></div>
+        <div><dt>Version</dt><dd id="completion-rule-version">–</dd></div>
+        <div><dt>Anbieter</dt><dd id="completion-rule-provider">–</dd></div>
+        <div><dt>Status</dt><dd id="completion-rule-state">–</dd></div>
+      </dl>
+      <h3>Task-Override</h3>
+      <dl class="task-detail-grid" id="task-override-grid"></dl>
       <h3>Beschreibung</h3><p id="task-view-description" class="task-description"></p>
     </div>
     <form id="task-edit-form" hidden>
@@ -122,6 +134,10 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
     let hasMoreTasks = false;
     let selectedTask = null;
     const pageSize = 100;
+    const COMPLETION_SCOPE = 'tasks.completion';
+    const GUI_CONSUMER = 'ellmos-system-gui';
+    const COMPLETION_RULE_FIELDS = ['require_user_review','github_pr_review_required','completion_contract','github_review_contract','result_max_chars'];
+    const OVERRIDABLE_FIELDS = ['completion_contract','github_review_contract','result_max_chars'];
 
     async function loadTasks() {
       const container = document.getElementById('tasks-table-container');
@@ -281,6 +297,10 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         for (const key of ['status','priority','category','assigned_to','created_by','modified_by','due_date','depends_on','required_model','assigned_slot','created_at','completed_at','description']) {
           document.getElementById('task-view-' + key).textContent = task[key] == null || task[key] === '' ? '–' : String(task[key]);
         }
+        completionPendingNote('');
+        updateReviewBadge(task);
+        renderTaskOverride(task);
+        loadCompletionRule();
         document.getElementById('task-detail-view').hidden = false;
         document.getElementById('task-edit-form').hidden = true;
         panel.scrollIntoView({ behavior:'smooth', block:'start' });
@@ -388,6 +408,93 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       finally { submit.disabled = false; }
     });
 
+    function updateReviewBadge(task) {
+      const badge = document.getElementById('user-review-badge');
+      badge.hidden = !(task && task.require_user_review === true);
+    }
+
+    function completionPendingNote(message) {
+      const note = document.getElementById('completion-pending-note');
+      note.textContent = message || '';
+      note.hidden = !message;
+    }
+
+    async function loadCompletionRule() {
+      const errEl = document.getElementById('completion-rule-error');
+      errEl.textContent = '';
+      errEl.hidden = true;
+      try {
+        const res = await fetch('/api/governance/effective-policy?' + new URLSearchParams({ scope: COMPLETION_SCOPE, consumer: GUI_CONSUMER }).toString());
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 503) {
+          errEl.textContent = 'Abschlussregel aktuell nicht verfügbar (' + (data.public_unavailable_reason || data.detail || 'unbekannter Grund') + ')';
+          errEl.hidden = false;
+          return;
+        }
+        if (res.status === 409) {
+          errEl.textContent = 'Policy-Snapshot hat sich geändert, bitte neu abrufen.' + (data.detail ? ' (' + data.detail + ')' : '');
+          errEl.hidden = false;
+          return;
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        document.getElementById('completion-rule-title').textContent = String(data.title ?? data.name ?? '–');
+        document.getElementById('completion-rule-version').textContent = data.version == null ? '–' : String(data.version);
+        document.getElementById('completion-rule-provider').textContent = data.provider
+          ? ([data.provider.id, data.provider.version, data.provider.source_commit].filter((part) => part != null).map(String).join(' · ') || '–')
+          : (data.policy_source || '–');
+        document.getElementById('completion-rule-state').textContent = data.state || data.status || '–';
+      } catch (cause) {
+        errEl.textContent = 'Abschlussregel konnte nicht geladen werden: ' + (cause instanceof Error ? cause.message : 'unbekannter Fehler');
+        errEl.hidden = false;
+      }
+    }
+
+    function renderTaskOverride(task) {
+      const labels = {
+        require_user_review: 'Nutzerreview erforderlich',
+        github_pr_review_required: 'GitHub-PR-Review erforderlich',
+        completion_contract: 'Completion-Contract',
+        github_review_contract: 'GitHub-Review-Contract',
+        result_max_chars: 'Ergebnislimit'
+      };
+      const rows = [];
+      for (const field of COMPLETION_RULE_FIELDS) {
+        const value = task ? task[field] : undefined;
+        const isOverride = field === 'require_user_review' || field === 'github_pr_review_required' ? value === true : value != null;
+        const flag = isOverride
+          ? '<span class="badge badge-warning">Override aktiv</span>'
+          : '<span class="muted">globaler Standard</span>';
+        let action = '';
+        if (isOverride) {
+          action = OVERRIDABLE_FIELDS.includes(field)
+            ? ' <button type="button" class="btn btn-small" onclick="resetOverride(\'' + field + '\')">Zurücksetzen</button>'
+            : ' <span class="muted">(nicht zurücknehmbar)</span>';
+        }
+        const text = value == null || value === '' ? '–' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+        rows.push('<div><dt>' + labels[field] + '</dt><dd id="task-override-' + field + '">' + escapeHtml(text) + ' ' + flag + action + '</dd></div>');
+      }
+      document.getElementById('task-override-grid').innerHTML = rows.join('');
+    }
+
+    async function resetOverride(field) {
+      if (!selectedTask) return;
+      const id = selectedTask.id;
+      try {
+        const res = await fetch('/api/tasks/' + encodeURIComponent(id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: null, changed_by: 'gui' })
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok || result.status !== 'updated') {
+          throw new Error(result.detail || 'Override konnte nicht zurückgesetzt werden (HTTP ' + res.status + ')');
+        }
+        await openTask(id);
+      } catch (cause) {
+        detailError(cause instanceof Error ? cause.message : 'Override konnte nicht zurückgesetzt werden.');
+      }
+    }
+
     async function completeTask(id) {
       try {
         const res = await fetch('/api/tasks/' + encodeURIComponent(id), {
@@ -395,12 +502,18 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'completed', changed_by: 'gui' })
         });
+        const result = await res.json().catch(() => ({}));
         if (res.ok) {
+          const stored = await openTask(id).catch(() => null);
+          completionPendingNote(stored && stored.require_user_review === true ? 'Abschluss gemeldet – Nutzerreview ausstehend' : '');
           loadTasks();
           return;
         }
-
-        const result = await res.json().catch(() => ({}));
+        if ((res.status === 409 || res.status === 422) && result.detail) {
+          detailError(result.detail);
+          await openTask(id);
+          return;
+        }
         alert(result.detail || 'Task konnte nicht abgeschlossen werden.');
       } catch (err) {
         alert('Netzwerkfehler: ' + err.message);
