@@ -724,8 +724,8 @@ class TaskLeaseClient:
     def _call(self, name, task_id, payload=None, *, config=None, now=None, headers=None):
         _identity(task_id)
         if self.mode == "remote":
-            if isinstance(payload, dict) and ({"_review_grant", "_review_binding"} & payload.keys()):
-                raise LeaseProtocolError("Private Reviewgrants dürfen nicht über HTTP gesendet werden")
+            if isinstance(payload, dict) and ({"_review_grant", "_review_binding", "_project_binding"} & payload.keys()):
+                raise LeaseProtocolError("Private Reviewgrants und Projektbindungen dürfen nicht über HTTP gesendet werden")
             suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose", "update": "/update"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
                                              f"/api/tasks/{task_id}/lease{suffix}", payload, headers)
