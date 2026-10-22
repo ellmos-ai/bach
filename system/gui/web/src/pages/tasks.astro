@@ -73,6 +73,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         <div><dt>Abgeschlossen am</dt><dd id="task-view-completed_at"></dd></div>
       </dl>
       <h3>Beschreibung</h3><p id="task-view-description" class="task-description"></p>
+      <h3>Nächste Handlung &amp; Begründung</h3><p id="task-view-rationale" class="task-rationale"></p>
     </div>
     <form id="task-edit-form" hidden>
       <div class="task-edit-grid">
@@ -113,6 +114,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
     .task-edit-wide { grid-column:1/-1; }
     #task-detail-error { color:var(--error); overflow-wrap:anywhere; }
     @media (max-width:620px) { .task-detail-grid,.task-edit-grid { grid-template-columns:minmax(0,1fr); } .task-edit-wide { grid-column:auto; } }
+  .task-rationale { color:var(--text-muted); overflow-wrap:anywhere; margin-bottom:0.75rem; }
   </style>
 
   <script is:inline>
@@ -152,6 +154,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
 
     function renderTasks() {
       const container = document.getElementById('tasks-table-container');
+      const tasksById = new Map(allTasks.map(x => [Number(x.id), x]));
       let filtered = allTasks;
 
       const getAssignee = t => (t.assigned_to || t.assignee || 'user').toLowerCase();
@@ -197,6 +200,8 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
               const rawAssignee = t.assigned_to || t.assignee || 'Unzugewiesen';
               const isUser = rawAssignee.toLowerCase() === 'user';
               const badgeClass = isUser ? 'badge-accent' : 'badge-success';
+              const rationale = window.taskRationale ? window.taskRationale(t, tasksById) : null;
+              const rationaleText = rationale ? escapeHtml(rationale.action + ' – ' + rationale.reason) : 'Erklärung nicht verfügbar.';
 
               return `
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.03);opacity:${isDone ? '0.55' : '1'};">
@@ -204,6 +209,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
                   <td style="padding:0.75rem 0.5rem;">
                     <div style="font-weight:600;color:var(--text);${isDone ? 'text-decoration:line-through;' : ''}">${escapeHtml(t.title || t.name || 'Unbenannt')}</div>
                     ${t.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">${escapeHtml(t.description.slice(0, 100))}</div>` : ''}
+                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.15rem;">Nächste Handlung: ${rationaleText}</div>
                   </td>
                   <td style="padding:0.75rem 0.5rem;">
                     <span class="badge ${badgeClass}">${escapeHtml(rawAssignee)}</span>
@@ -280,6 +286,11 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
         document.getElementById('task-detail-title').textContent = String(task.title || 'Unbenannt');
         for (const key of ['status','priority','category','assigned_to','created_by','modified_by','due_date','depends_on','required_model','assigned_slot','created_at','completed_at','description']) {
           document.getElementById('task-view-' + key).textContent = task[key] == null || task[key] === '' ? '–' : String(task[key]);
+        }
+        const rationaleEl = document.getElementById('task-view-rationale');
+        if (rationaleEl) {
+          const rationale = window.taskRationale ? window.taskRationale(task, null) : null;
+          rationaleEl.textContent = rationale ? (rationale.action + ' – ' + rationale.reason) : 'Erklärung nicht verfügbar.';
         }
         document.getElementById('task-detail-view').hidden = false;
         document.getElementById('task-edit-form').hidden = true;
@@ -428,5 +439,9 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
       const openId = parseInt(new URLSearchParams(location.search).get('task') || new URLSearchParams(location.search).get('id') || '', 10);
       if (Number.isSafeInteger(openId) && openId > 0) openTask(openId);
     });
+  </script>
+  <script type="module">
+    import { taskRationale } from '../lib/task-rationale.mjs';
+    window.taskRationale = taskRationale;
   </script>
 </BachLayout>
