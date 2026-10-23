@@ -336,6 +336,11 @@ class HostInferenceGate:
                     await asyncio.sleep(.025)
                     continue
                 try:
+                    # Watchdog writes intent before an unload POST and removes
+                    # it only after a confirmed response. A timeout or crash
+                    # must not admit a model call while that effect is unknown.
+                    if os.path.lexists(self.root / "unload-pending.json"):
+                        raise RuntimeError("Lokaler Modell-Unload noch ungeklärt")
                     admitted = self._admit_if_next(ticket_id)
                 except TimeoutError:
                     candidate.__exit__(None, None, None)
