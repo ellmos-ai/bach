@@ -23,6 +23,8 @@ from hub._services.user_config_store import _exclusive_lock
 
 _TICKET_SCHEMA = "bach.local-inference-ticket.v1"
 _QUEUE_STATE_SCHEMA = "bach.local-inference-queue-state.v1"
+_REQUEST_SCHEMA = "bach.local-inference-admission.v1"
+_UNSET = object()
 _MAX_CONSECUTIVE_FOREGROUND = 3
 _TICKET_ID = re.compile(r"[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -151,6 +153,7 @@ class HostInferenceGate:
                 tickets.append((path, ticket))
             else:
                 path.unlink(missing_ok=True)
+                self._request_path(ticket["ticket_id"]).unlink(missing_ok=True)
         return sorted(tickets, key=lambda item: item[1]["sequence"])
 
     def _legacy_foreground_count_locked(self, live_ticket_ids):
@@ -182,6 +185,8 @@ class HostInferenceGate:
     def _queue_snapshot_locked(self):
         foreground_streak = self._queue_streak_locked()
         tickets = self._live_tickets_locked()
+        for _, ticket in tickets:
+            self._request_state_locked(ticket)
         live_ids = {ticket["ticket_id"] for _, ticket in tickets}
         legacy_foreground = self._legacy_foreground_count_locked(live_ids)
         return tickets, legacy_foreground, foreground_streak
@@ -194,7 +199,54 @@ class HostInferenceGate:
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
-    async def _register_ticket(self, identity, priority, model_target):
+    def _request_path(self, ticket_id):
+        return self.root / f"admission-{ticket_id}.json"
+
+    def _request_state_locked(self, ticket):
+        path = self._request_path(ticket["ticket_id"])
+        if path.is_symlink():
+            raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
+        record = self._read(path)
+        if record is not None and (
+            set(record) != {"schema", "ticket_id", "pid", "created", "ready"}
+            or record["schema"] != _REQUEST_SCHEMA
+            or record["ticket_id"] != ticket["ticket_id"]
+            or type(record["pid"]) is not int
+            or type(record["created"]) not in (int, float)
+            or not math.isfinite(record["created"])
+            or record["pid"] != ticket["pid"]
+            or record["created"] != ticket["created"]
+            or type(record["ready"]) is not bool
+        ):
+            raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
+        # Older callers have no admission record and are already ready.
+        return record
+
+    async def _ready_request(self, ticket_path, ticket_id, identity,
+                             previous_target, target, check_ready):
+        while True:
+            if check_ready is not None:
+                check_ready()
+            try:
+                with _exclusive_lock(self._queue_lock_path(), timeout_seconds=0):
+                    tickets, _, _ = self._queue_snapshot_locked()
+                    ticket = next((item for path, item in tickets
+                                   if path == ticket_path), None)
+                    if (ticket is None or ticket["ticket_id"] != ticket_id
+                            or any(ticket[key] != value for key, value in identity.items())
+                            or ticket["target_sha256"] != self._target_digest(previous_target)):
+                        raise RuntimeError("Inferenz-Anfrage wurde verändert")
+                    record = self._request_state_locked(ticket)
+                    if record is None:
+                        raise RuntimeError("Inferenz-Zulassungsbeleg fehlt")
+                    ticket["target_sha256"] = self._target_digest(target)
+                    self._write(ticket_path, ticket)
+                    self._write(self._request_path(ticket_id), {**record, "ready": True})
+                return
+            except TimeoutError:
+                await asyncio.sleep(.025)
+
+    async def _register_ticket(self, identity, priority, model_target, *, ready=True):
         while True:
             try:
                 with _exclusive_lock(self._queue_lock_path(), timeout_seconds=0):
@@ -212,6 +264,10 @@ class HostInferenceGate:
                         # Older workers understand this marker and will yield to it.
                         self._write(marker, {**identity, "ticket_id": ticket_id})
                     try:
+                        self._write(self._request_path(ticket_id), {
+                            "schema": _REQUEST_SCHEMA, "ticket_id": ticket_id,
+                            **identity, "ready": ready,
+                        })
                         self._write(ticket_path, {
                             "schema": _TICKET_SCHEMA,
                             "ticket_id": ticket_id,
@@ -221,6 +277,7 @@ class HostInferenceGate:
                             "target_sha256": self._target_digest(model_target),
                         })
                     except BaseException:
+                        self._request_path(ticket_id).unlink(missing_ok=True)
                         ticket_path.unlink(missing_ok=True)
                         if marker is not None:
                             marker.unlink(missing_ok=True)
@@ -234,6 +291,8 @@ class HostInferenceGate:
             try:
                 with _exclusive_lock(self._queue_lock_path(), timeout_seconds=0):
                     if ticket_path is not None:
+                        ticket_id = ticket_path.name.removeprefix("ticket-").removesuffix(".json")
+                        self._request_path(ticket_id).unlink(missing_ok=True)
                         ticket_path.unlink(missing_ok=True)
                     if marker is not None:
                         marker.unlink(missing_ok=True)
@@ -250,12 +309,13 @@ class HostInferenceGate:
             )
             if own is None:
                 raise RuntimeError("Inferenz-Ticket fehlt")
-            foreground = [
+            foreground_all = [
                 ticket for _, ticket in tickets if ticket["priority"] == "foreground"
             ]
-            background = [
-                ticket for _, ticket in tickets if ticket["priority"] == "background"
-            ]
+            ready = [ticket for _, ticket in tickets
+                     if (self._request_state_locked(ticket) or {"ready": True})["ready"]]
+            foreground = [ticket for ticket in ready if ticket["priority"] == "foreground"]
+            background = [ticket for ticket in ready if ticket["priority"] == "background"]
             if legacy_foreground:
                 # Let the older caller remove its own marker by acquiring the
                 # existing owner lock; new tickets must not starve it.
@@ -264,6 +324,10 @@ class HostInferenceGate:
                 selected = background[0]
             elif foreground:
                 selected = foreground[0]
+            elif foreground_all:
+                # RAM-waiting user demand yields to ready users, not to another
+                # background call. The existing bounded fairness branch above stays.
+                selected = None
             else:
                 selected = background[0] if background else None
             if selected is None or selected["ticket_id"] != ticket_id:
@@ -278,6 +342,7 @@ class HostInferenceGate:
             else:
                 next_streak = 0
             self._write_queue_streak_locked(next_streak)
+            self._request_path(ticket_id).unlink(missing_ok=True)
             (self.root / f"ticket-{ticket_id}.json").unlink(missing_ok=True)
             if selected["priority"] == "foreground":
                 (self.root / f"foreground-{ticket_id}.json").unlink(missing_ok=True)
@@ -306,61 +371,100 @@ class HostInferenceGate:
             "model_target": record.get("model_target") if active else None,
         }
 
-    @asynccontextmanager
-    async def turn(self, chat_id: str, priority: str, *, check_ready=None, model_target=None):
-        if priority not in {"foreground", "background"}:
-            raise ValueError("Ungültige Inferenzpriorität")
+    @staticmethod
+    def _validated_target(model_target):
         if model_target is not None:
             fields = {"socket_id", "binding_id", "agent_id", "backend", "model"}
             if (not isinstance(model_target, dict) or set(model_target) != fields
                     or any(not isinstance(value, str) or not value or len(value) > 192
                            for value in model_target.values())):
                 raise ValueError("Ungültiger Modellzielnachweis")
+            return dict(model_target)
+        return None
+
+    @asynccontextmanager
+    async def request(self, chat_id: str, priority: str, *, check_ready=None,
+                      model_target=None, ready=False):
+        """Announce demand without owning inference; yield a single-use owner context.
+
+        RAM-waiting callers remain visible but cannot block another ready user.
+        The caller still validates resources before taking and under the owner.
+        """
+        if priority not in {"foreground", "background"} or type(ready) is not bool:
+            raise ValueError("Ungültige Inferenzpriorität")
+        request_target = self._validated_target(model_target)
         self.root.mkdir(parents=True, exist_ok=True)
         identity = self._identity()
         ticket_path = marker = None
-        acquired = None
-        try:
-            if check_ready is not None:
-                check_ready()
-            ticket_path, marker, ticket_id = await self._register_ticket(
-                identity, priority, model_target
-            )
-            while acquired is None:
-                if check_ready is not None:
-                    check_ready()
-                candidate = _exclusive_lock(self.root / "inference", timeout_seconds=0)
-                try:
-                    candidate.__enter__()
-                except TimeoutError:
-                    await asyncio.sleep(.025)
-                    continue
-                try:
-                    admitted = self._admit_if_next(ticket_id)
-                except TimeoutError:
-                    candidate.__exit__(None, None, None)
-                    await asyncio.sleep(.025)
-                    continue
-                except BaseException:
-                    candidate.__exit__(None, None, None)
-                    raise
-                if not admitted:
-                    candidate.__exit__(None, None, None)
-                    await asyncio.sleep(.025)
-                    continue
-                acquired = candidate
-            self._write(self.root / "owner.json", {
-                **identity, "chat_id": str(chat_id), "priority": priority, "started_at": time.time(),
-                **({"model_target": dict(model_target)} if model_target is not None else {}),
-            })
-            yield
-        finally:
+        request_open = True
+        turn_started = False
+
+        @asynccontextmanager
+        async def take_turn(*, model_target=_UNSET, check_ready=None):
+            nonlocal turn_started
+            if not request_open or turn_started or self._identity() != identity:
+                raise RuntimeError("Inferenz-Anfrage ist geschlossen oder bereits verwendet")
+            turn_started = True
+            target = request_target if model_target is _UNSET else self._validated_target(model_target)
+            owner_check = check_ready or request_check
+            acquired = None
             try:
-                if ticket_path is not None:
-                    await self._remove_ticket(ticket_path, marker)
+                await self._ready_request(ticket_path, ticket_id, identity,
+                                          request_target, target, owner_check)
+                while acquired is None:
+                    if not request_open:
+                        raise RuntimeError("Inferenz-Anfrage ist geschlossen")
+                    if owner_check is not None:
+                        owner_check()
+                    candidate = _exclusive_lock(self.root / "inference", timeout_seconds=0)
+                    try:
+                        candidate.__enter__()
+                    except TimeoutError:
+                        await asyncio.sleep(.025)
+                        continue
+                    try:
+                        admitted = self._admit_if_next(ticket_id)
+                    except TimeoutError:
+                        candidate.__exit__(None, None, None)
+                        await asyncio.sleep(.025)
+                        continue
+                    except BaseException:
+                        candidate.__exit__(None, None, None)
+                        raise
+                    if not admitted:
+                        candidate.__exit__(None, None, None)
+                        await asyncio.sleep(.025)
+                        continue
+                    acquired = candidate
+                self._write(self.root / "owner.json", {
+                    **identity, "chat_id": str(chat_id), "priority": priority, "started_at": time.time(),
+                    **({"model_target": dict(target)} if target is not None else {}),
+                })
+                yield
             finally:
                 if acquired is not None:
                     try:
                         (self.root / "owner.json").unlink(missing_ok=True)
                     finally:
                         acquired.__exit__(None, None, None)
+
+        request_check = check_ready
+        try:
+            if request_check is not None:
+                request_check()
+            ticket_path, marker, ticket_id = await self._register_ticket(
+                identity, priority, request_target, ready=ready
+            )
+            yield take_turn
+        finally:
+            request_open = False
+            if ticket_path is not None:
+                await self._remove_ticket(ticket_path, marker)
+
+    @asynccontextmanager
+    async def turn(self, chat_id: str, priority: str, *, check_ready=None, model_target=None):
+        """Backward-compatible ready request and actual owner in one context."""
+        async with self.request(chat_id, priority, check_ready=check_ready,
+                                model_target=model_target, ready=True) as take_turn:
+            async with take_turn():
+                yield
