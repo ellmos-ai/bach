@@ -182,7 +182,8 @@ def _target_authority(conn, record):
         if (policy.get("availability") != "available" or author is None
                 or policy.get("configuration_version") != current["configuration_version"]
                 or policy.get("policy") != settings._global(conn)["policy"]
-                or policy.get("override") != current["override"]):
+                or policy.get("override") != current["override"]
+                or not _policy_eligible(policy, author)):
             return None
         return {"author_id": author, "policy_version": current["configuration_version"],
                 "identity_version": model_ids["configuration_version"],
@@ -576,7 +577,10 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
         principal = identity.principal_for_route(authority["identity"],
             backend_id=route["backend_id"], route_sha256=route["route_sha256"],
             requested_model=requested_model)
-        if principal is None or generation == target["generation"]:
+        if (principal is None or principal not in authority["eligible"]
+                or principal == authority["author_id"]
+                or slot_id == author_slot(target)
+                or generation == target["generation"]):
             return None
         # An explicit slot/model task route is an additional constraint, not
         # the source of reviewer identity.
@@ -628,6 +632,9 @@ def validate_review_acquire(conn, task, *, worker_id, host, grant, now):
                 or authority["author_id"] != receipt["author_id"]
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
+                or grant.principal_id not in authority["eligible"]
+                or grant.principal_id == authority["author_id"]
+                or grant.slot_id == author_slot(target)
                 or identity.principal_for_route(authority["identity"],
                     backend_id=grant.route["backend_id"],
                     route_sha256=grant.route["route_sha256"],
@@ -673,6 +680,9 @@ def guard_review_dispatch(conn, binding, *, route, requested_model,
                 or target["result_revision"] != grant.target_revision
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
+                or grant.principal_id not in authority["eligible"]
+                or grant.principal_id == authority["author_id"]
+                or grant.slot_id == author_slot(target)
                 or grant.generation == target["generation"]
                 or identity.principal_for_route(authority["identity"],
                     backend_id=route["backend_id"], route_sha256=route["route_sha256"],
@@ -735,6 +745,9 @@ def validate_review_release(conn, task, worker_result, binding):
                 or authority["author_id"] != intent["author_id"]
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
+                or grant.principal_id not in authority["eligible"]
+                or grant.principal_id == authority["author_id"]
+                or grant.slot_id == author_slot(target)
                 or grant.generation == target["generation"]):
             return False
         answer = grant._last_answer
@@ -1225,11 +1238,11 @@ def cancel_obsolete_review_child(conn, binding, *, repo_root=None, worktrees_dir
 
 
 def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
-    """Commit one real model verdict for the target result.
+    """Commit one real, eligible independent model verdict for the target.
 
     The child has already submitted its own canonical result and linked its
-    final actual backend return. A fresh run by the author is allowed; its
-    verdict remains non-independent and cannot satisfy completion policy.
+    final actual backend return. An ineligible or same-principal report must
+    not consume the unique independent review slot for this result revision.
     No active parent lease or model-supplied identity is accepted.
     """
     if conn.in_transaction or getattr(getattr(binding, "_client", None), "mode", None) != "local":
@@ -1284,6 +1297,9 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
         actual_principal = identity.principal_for_execution(authority["identity"], execution)
         if (verdict is None or actual_principal is None
                 or actual_principal != grant.principal_id
+                or actual_principal == authority["author_id"]
+                or actual_principal not in authority["eligible"]
+                or grant.slot_id == author_slot(target)
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
                 or target["result_revision"] != grant.target_revision):
