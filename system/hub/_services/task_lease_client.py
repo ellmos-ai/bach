@@ -39,8 +39,8 @@ from typing import Any
 
 try:
     from hub._services.task_lease import (
-        LeaseConfig,
-        LeaseResult,
+        LeaseConfig as LeaseConfig,
+        LeaseResult as LeaseResult,
         LeaseValidationError,
         LeaseSelfCheckRequired,
         TaskNotFound,
@@ -57,8 +57,8 @@ try:
     )
 except ImportError:  # pragma: no cover
     from .task_lease import (  # type: ignore
-        LeaseConfig,
-        LeaseResult,
+        LeaseConfig as LeaseConfig,
+        LeaseResult as LeaseResult,
         LeaseValidationError,
         LeaseSelfCheckRequired,
         TaskNotFound,
@@ -573,7 +573,9 @@ class TaskLeaseClient:
                 continue
             snapshot = self._public_snapshot(item)
             intent = item["review_intent"]
-            if (intent.get("schema") != "bach.worker-result-review-intent.v1"
+            if (intent.get("schema") not in {
+                        "bach.worker-result-review-intent.v1",
+                        "bach.worker-result-review-intent.external-attested.v1"}
                     or intent.get("review_task_id") != snapshot["id"]
                     or intent.get("task_version") != snapshot["task_version"]
                     or intent.get("status") not in {"pending", "open"}):

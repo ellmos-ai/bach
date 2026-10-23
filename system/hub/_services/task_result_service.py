@@ -632,16 +632,9 @@ def _completion_decision_readback(conn, record):
                 or re.fullmatch(r"[a-f0-9]{64}", detail["result_revision"]) is None
                 or detail.get("decision", {}).get("completion_allowed") is not True):
             raise ValueError("receipt mismatch")
-        scope, execution = record.get("scope", {}), record.get("execution", {})
-        if (scope.get("availability") != "recorded"
-                or execution.get("availability") != "available"):
-            raise ValueError("evidence missing")
-        revision = _receipt_digest({"schema": "bach.worker-result-revision.v1",
-            "submission_revision": record["submission_revision"],
-            "execution_revision": execution["execution_revision"],
-            "scope_receipt_sha256": scope["scope_receipt_sha256"],
-            "scope_event_id": scope["scope_event_id"]})
-        if revision != detail["result_revision"]:
+        from .worker_result_provenance import current_result_revision
+        revision = current_result_revision(record)
+        if revision is None or revision != detail["result_revision"]:
             raise ValueError("revision changed")
         return {"availability": "available", "event_id": event_id,
                 "result_revision": revision, "decision_sha256": digest}
@@ -1003,6 +996,8 @@ def read_result(conn, task_id, *, operator_token=None, service_id=None, service_
         # is historical evidence until the local SDK/API revalidates its tree.
         record["scope"] = read_scope_evidence(conn, record)
         record["result_revision"] = None
+        from .worker_result_provenance import read_result_source
+        record = read_result_source(conn, record)
         from .worker_result_review import read_review_evidence, review_task_metadata
         # This read is history/DB only. The SDK/API scope projection below
         # must still compare the exact currently observed Git revision.
