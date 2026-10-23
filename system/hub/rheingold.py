@@ -385,3 +385,45 @@ def pull_tasks_from_rheingold(
         conn.commit()
 
     return inserted, updated
+
+
+def patch_task_to_rheingold(
+    base_url: str, task_id: int, changes: dict, provenance: str = "",
+    *, lease_id: str | None = None, fence: int | None = None,
+    task_version: str | None = None,
+) -> tuple[bool, str]:
+    """Update only through the native fenced content writer; never a local mirror.
+
+    provenance is retained for old callers but grants no authority. The native
+    holder determines audit attribution. No retry after an ambiguous response.
+    """
+    from hub._services.task_lease_client import LeaseError, TaskLeaseClient
+
+    if not lease_id or type(fence) is not int or fence < 1 or not task_version:
+        return False, (
+            "[ERROR] Lead-Änderung benötigt --lease-id, --fence und "
+            "--task-version der eigenen aktuellen Lease"
+        )
+    try:
+        with TaskLeaseClient(lead_url=base_url) as client:
+            if client.mode != "remote":
+                return False, "[ERROR] Kein bestätigtes Lead-Ziel"
+            ack = client.update(task_id, lease_id=lease_id, fence=fence,
+                                task_version=task_version, changes=changes)
+            current = client.task_snapshot(task_id)
+            if (current.get("id") != task_id
+                    or current.get("task_version") != ack.task_version
+                    or any(current.get(k) != value for k, value in changes.items())):
+                return False, (
+                    "[UNKNOWN] Lead-ACK vorhanden, frischer Inhaltsreadback weicht ab; "
+                    "Zustand neu lesen, Änderung nicht automatisch wiederholen"
+                )
+            return True, (
+                f"[OK] Task {task_id} am Lead geändert und zurückgelesen"
+                f" (Fence {ack.fence})\nAuftragsversion: {ack.task_version}"
+            )
+    except LeaseError:
+        return False, (
+            "[ERROR] Lead-Änderung nicht bestätigt; lokale Projektion unverändert. "
+            "Lead-Zustand neu lesen, keine automatische Wiederholung"
+        )

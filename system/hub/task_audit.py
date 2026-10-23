@@ -46,7 +46,7 @@ IN_PROGRESS_STATUSES = frozenset({"in_progress"})
 # Schluessel aus freierem Input gebildet wird. Deshalb Allowlist statt Vertrauen.
 ALLOWED_COLUMNS = frozenset({
     "title", "description", "priority", "status", "category",
-    "assigned_to", "created_by", "depends_on", "required_model", "assigned_slot",
+    "assigned_to", "delegated_to", "created_by", "depends_on", "required_model", "assigned_slot",
     "due_date", "result_max_chars", "tags",
     "completion_contract_json", "require_user_review",
     "github_pr_review_required", "github_review_contract_json",

@@ -416,3 +416,228 @@ def test_task_lead_command(tmp_path, monkeypatch):
     ok_clr, clr_msg = handler.handle("lead", ["clear"])
     assert ok_clr is True
     assert "isolierten Standalone-Modus" in clr_msg
+
+
+# Task1731: native authority before any projection write.
+@pytest.fixture
+def worker_writer(tmp_path, monkeypatch):
+    db = tmp_path / "data" / "bach.db"
+    db.parent.mkdir()
+    with sqlite3.connect(db) as conn:
+        _create_test_tasks_table(conn)
+    handler = TaskHandler(tmp_path)
+    monkeypatch.setenv("BACH_TEST_RHEINGOLD", "1")
+    monkeypatch.delenv("BACH_RHEINGOLD_DISABLED", raising=False)
+    monkeypatch.setattr("hub.task.get_lead_config", lambda: {
+        "mode": "worker", "lead_url": "https://lead.invalid",
+    })
+    monkeypatch.setattr(handler, "_get_db", lambda: pytest.fail("Worker opened local projection"))
+    return handler
+
+
+AUTH = ["--lease-id", "own-capability", "--fence", "7", "--task-version", "a" * 64]
+
+
+@pytest.mark.parametrize("operation,args,fields", [
+    ("edit", ["23", "--title", "Neuer Titel"], {"title": "Neuer Titel"}),
+    ("edit", ["23", "--description", "Änderung"], {"description": "Änderung"}),
+    ("edit", ["23", "--required-model", "", "--assigned-slot", ""],
+     {"required_model": None, "assigned_slot": None}),
+    ("edit", ["23", "--result-max-chars", "none"], {"result_max_chars": None}),
+    ("priority", ["23", "P2"], {"priority": "P2"}),
+    ("assign", ["23", "--to", "BACH"], {"assigned_to": "BACH", "delegated_to": "BACH"}),
+])
+def test_worker_routes_content_before_opening_projection(worker_writer, monkeypatch, operation, args, fields):
+    calls = []
+    def update(url, task_id, changes, **binding):
+        calls.append((url, task_id, changes, binding))
+        return True, "native ACK/readback"
+    monkeypatch.setattr("hub.task.patch_task_to_rheingold", update)
+    assert worker_writer.handle(operation, args + AUTH) == (True, "native ACK/readback")
+    assert calls == [("https://lead.invalid", 23, fields, {
+        "lease_id": "own-capability", "fence": 7, "task_version": "a" * 64,
+    })]
+
+
+@pytest.mark.parametrize("operation,args", [
+    ("edit", ["23", "--title", "Änderung"]), ("priority", ["23", "P1"]),
+    ("assign", ["23", "--to", "BACH"]),
+])
+@pytest.mark.parametrize("authority", [[], AUTH + ["--fence=8"], AUTH[:2] + ["--fence=bad", "--task-version=" + "a"*64]])
+def test_worker_missing_or_ambiguous_binding_never_writes(worker_writer, monkeypatch, operation, args, authority):
+    monkeypatch.setattr("hub.task.patch_task_to_rheingold", lambda *a, **k: pytest.fail("invalid binding dispatched"))
+    assert worker_writer.handle(operation, args + authority)[0] is False
+
+
+@pytest.mark.parametrize("config", [
+    {"mode": "worker", "lead_url": None},
+    {"mode": "invalid", "lead_url": "https://lead.invalid"},
+])
+def test_missing_lead_or_invalid_role_never_opens_projection(worker_writer, monkeypatch, config):
+    monkeypatch.setattr("hub.task.get_lead_config", lambda: config)
+    assert worker_writer.handle("priority", ["23", "P1"] + AUTH)[0] is False
+
+
+def test_worker_assignment_rejects_batch_before_first_effect(worker_writer, monkeypatch):
+    monkeypatch.setattr("hub.task.patch_task_to_rheingold", lambda *a, **k: pytest.fail("batch dispatched"))
+    assert worker_writer.handle("assign", ["23", "24", "--to", "BACH"] + AUTH)[0] is False
+
+
+@pytest.mark.parametrize("option", ["--lease", "--lease=90", "--lease-seconds", "--lease-seconds=90"])
+def test_remote_claim_never_silently_translates_legacy_duration(worker_writer, monkeypatch, option):
+    monkeypatch.setattr(worker_writer, "_lease", lambda *a: pytest.fail("legacy duration dispatched"))
+    assert worker_writer.handle("claim", ["23", "--by", "codex@host", option, "90"])[0] is False
+
+
+def test_remote_claim_uses_existing_native_lease_path(worker_writer, monkeypatch):
+    calls = []
+    monkeypatch.setattr(worker_writer, "_lease", lambda args: (calls.append(args) or (True, "native lease")))
+    args = ["23", "--by", "codex@host", "--ttl", "L", "--task-version=" + "a"*64]
+    assert worker_writer.handle("claim", args) == (True, "native lease")
+    assert calls == [args]
+
+
+@pytest.mark.parametrize("role", ["lead", "isolated"])
+def test_explicit_local_authority_stays_local(worker_writer, monkeypatch, role):
+    monkeypatch.setattr("hub.task.get_lead_config", lambda: {"mode": role, "lead_url": None})
+    assert worker_writer._remote_writer_target() is None
+
+
+def test_explicit_noncanonical_database_is_not_remote(worker_writer):
+    worker_writer.db_path = worker_writer.db_path.parent / "isolated.db"
+    assert worker_writer._remote_writer_target() is None
+
+
+@pytest.mark.parametrize("failure", ["update", "readback", "conflict"])
+def test_native_patch_failure_never_retries_or_claims_success(monkeypatch, failure):
+    from types import SimpleNamespace
+
+    from hub._services.task_lease_client import LeaseConnectionError
+    from hub.rheingold import patch_task_to_rheingold
+    calls = []
+    class Client:
+        mode = "remote"
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def update(self, *args, **kwargs):
+            calls.append("update")
+            if failure == "update":
+                raise LeaseConnectionError("private secret must not escape")
+            return SimpleNamespace(task_version="b"*64, fence=7)
+        def task_snapshot(self, task_id):
+            calls.append("readback")
+            if failure == "readback":
+                raise LeaseConnectionError("private secret must not escape")
+            return {"id": task_id, "task_version": "b"*64, "priority": "P4"}
+    monkeypatch.setattr("hub._services.task_lease_client.TaskLeaseClient", Client)
+    ok, text = patch_task_to_rheingold("https://lead.invalid", 23, {"priority": "P1"},
+        lease_id="cap", fence=7, task_version="a"*64)
+    assert ok is False
+    assert "secret" not in text
+    assert calls.count("update") == 1
+    assert calls == (["update"] if failure == "update" else ["update", "readback"])
+
+
+def test_native_patch_preserves_guard_and_fenced_assignment_and_null_clear(tmp_path, monkeypatch):
+    from hub._services.task_lease import ensure_task_lease_schema
+    from hub._services.task_lease_client import TaskLeaseClient as NativeClient
+    from hub.rheingold import patch_task_to_rheingold
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    _create_test_tasks_table(conn)
+    conn.execute("INSERT INTO tasks(id,title,status,created_at) VALUES(23,'Native Task','pending','2020-01-01T00:00:00')")
+    conn.commit()
+    ensure_task_lease_schema(conn)
+    conn.execute("UPDATE tasks SET required_model='fixture-model', assigned_slot='fixture-slot' WHERE id=23")
+    conn.commit()
+    native = NativeClient(conn=conn)
+    ack = native.acquire(23, worker_id="codex@host", host="host")
+    changes = {"assigned_to": "BACH", "delegated_to": "BACH", "required_model": None, "assigned_slot": None}
+    class Transport:
+        mode = "remote"
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def update(self, *a, **k): return native.update(*a, **k)
+        def task_snapshot(self, tid): return native.task_snapshot(tid)
+    monkeypatch.setattr("hub._services.task_lease_client.TaskLeaseClient", Transport)
+    ok, message = patch_task_to_rheingold("https://lead.invalid", 23, changes,
+        lease_id=ack.lease_id, fence=ack.fence, task_version=ack.task_version)
+    assert ok is True
+    current = native.task_snapshot(23)
+    assert all(current[k] == v for k, v in changes.items())
+    assert current["task_version"] != ack.task_version
+    assert str(ack.lease_id) not in message
+    # Prior version cannot be replayed; stale-fence paths still close.
+    ok, _ = patch_task_to_rheingold("https://lead.invalid", 23, {"priority": "P1"},
+        lease_id=ack.lease_id, fence=ack.fence, task_version=ack.task_version)
+    assert ok is False
+    assert native.task_snapshot(23)["priority"] == "P3"
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE field_changed='delegated_to'").fetchone()[0] == 1
+    for field in ("required_model", "assigned_slot"):
+        history = conn.execute("SELECT old_value,new_value FROM task_history WHERE field_changed=?", (field,)).fetchone()
+        assert history[0] == {"required_model": "fixture-model", "assigned_slot": "fixture-slot"}[field]
+        assert history[1] is None
+    ok, _ = patch_task_to_rheingold("https://lead.invalid", 23, {"priority": "P1"},
+        lease_id=ack.lease_id, fence=ack.fence + 1, task_version=current["task_version"])
+    assert ok is False
+    assert native.task_snapshot(23)["priority"] == "P3"
+    conn.close()
+
+
+def test_remote_done_delegates_to_native_release_and_completion_guard(worker_writer, monkeypatch):
+    calls = []
+    def release(args):
+        calls.append(args)
+        return False, "completion_guard"
+    monkeypatch.setattr(worker_writer, "_lease_release", release)
+    args = ["23"] + AUTH + ["--ref", "result-ref"]
+    assert worker_writer.handle("done", args) == (False, "completion_guard")
+    assert calls == [[
+        "23", "--lease-id=own-capability", "--fence=7",
+        "--task-version=" + "a"*64, "--ref=result-ref", "--outcome=done",
+    ]]
+
+
+@pytest.mark.parametrize("args", [
+    ["23"], ["23", "24"] + AUTH, ["23"] + AUTH + ["--outcome=return"],
+    ["23"] + AUTH + ["--fence=8"], ["23"] + AUTH + ["--note"],
+    ["23"] + AUTH + ["--ref", "A", "--result-ref", "B"],
+])
+def test_remote_done_rejects_unbound_batch_or_ambiguous_request(worker_writer, monkeypatch, args):
+    monkeypatch.setattr(worker_writer, "_lease_release", lambda *a: pytest.fail("invalid done dispatched"))
+    assert worker_writer.handle("done", args)[0] is False
+
+
+@pytest.mark.parametrize("operation,args", [
+    ("done", ["23"]), ("claim", ["23", "--by", "codex@host"]),
+    ("priority", ["23", "P1"]), ("edit", ["23", "--title", "Änderung"]),
+    ("assign", ["23", "--to", "BACH"]),
+])
+def test_worker_dry_run_never_dispatches(worker_writer, monkeypatch, operation, args):
+    monkeypatch.setattr(worker_writer, "_remote_writer_target", lambda: pytest.fail("dry run dispatched"))
+    assert worker_writer.handle(operation, args + AUTH, dry_run=True)[0] is True
+
+
+@pytest.mark.parametrize("field", ["--note", "--ref", "--result-ref"])
+def test_done_option_shaped_payload_cannot_replace_explicit_task_version(worker_writer, monkeypatch, field):
+    from types import SimpleNamespace
+
+    from hub._services.task_lease_client import TaskLeaseClient
+
+    calls = []
+    class Client:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def release(self, task_id, **kwargs):
+            calls.append((task_id, kwargs))
+            return SimpleNamespace(outcome="done", status="done", fence=7)
+    monkeypatch.setattr(TaskLeaseClient, "for_task_db", lambda *a, **k: Client())
+    args = ["23", field, "--task-version=" + "b"*64] + AUTH
+    assert worker_writer.handle("done", args)[0] is True
+    assert calls[0][1]["task_version"] == "a"*64
+    assert calls[0][1]["lease_id"] == "own-capability"
+    assert calls[0][1]["fence"] == 7
+    assert calls[0][1]["outcome"] == "done"
+    assert calls[0][1]["note" if field == "--note" else "result_ref"] == "--task-version=" + "b"*64
