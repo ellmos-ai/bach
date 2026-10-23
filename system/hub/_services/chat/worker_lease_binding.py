@@ -165,14 +165,18 @@ class WorkerLeaseBinding:
     def _effective_selection_policy_snapshot(client, snapshot, slot):
         """Read the stored global/task policy and bind its exact digest to this task version."""
         if (getattr(client, "mode", None) != "local"
-                or getattr(client, "_conn", None) is not None
                 or not isinstance(snapshot, dict) or not isinstance(slot, dict)
                 or type(snapshot.get("id")) is not int or snapshot["id"] <= 0
                 or not isinstance(snapshot.get("task_version"), str) or not snapshot["task_version"]):
             return None
         try:
-            from hub._services.worker_policy_settings import CONTRACT, TASK_SCHEMA, read_task_policy
-            stored = read_task_policy(snapshot["id"], db_path=getattr(client, "_db_path", None))
+            from hub._services.worker_policy_settings import CONTRACT, TASK_SCHEMA
+            # Policy and task reads share the SDK's exact native connection.
+            # Never fall back to an unrelated host DB or a caller's policy.
+            reader = getattr(client, "_task_policy_snapshot", None)
+            if not callable(reader):
+                return None
+            stored = reader(snapshot["id"])
             if (not isinstance(stored, dict) or stored.get("schema") != TASK_SCHEMA
                     or stored.get("availability") != "available"
                     or type(stored.get("task_id")) is not int
