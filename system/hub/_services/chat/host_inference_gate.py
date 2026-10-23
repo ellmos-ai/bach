@@ -246,8 +246,11 @@ class HostInferenceGate:
             except TimeoutError:
                 await asyncio.sleep(.025)
 
-    async def _register_ticket(self, identity, priority, model_target, *, ready=True):
+    async def _register_ticket(self, identity, priority, model_target, *, ready=True,
+                               check_ready=None):
         while True:
+            if check_ready is not None:
+                check_ready()
             try:
                 with _exclusive_lock(self._queue_lock_path(), timeout_seconds=0):
                     tickets, _, _ = self._queue_snapshot_locked()
@@ -453,7 +456,7 @@ class HostInferenceGate:
             if request_check is not None:
                 request_check()
             ticket_path, marker, ticket_id = await self._register_ticket(
-                identity, priority, request_target, ready=ready
+                identity, priority, request_target, ready=ready, check_ready=request_check
             )
             yield take_turn
         finally:

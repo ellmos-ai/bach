@@ -13,6 +13,8 @@ import json
 import os
 import re
 import shutil
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -26,6 +28,28 @@ _MAX_POLICY = 32_768
 _MAX_RESPONSE = 262_144
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}\Z")
+_LOCAL_ADMISSION_OBSERVER = ContextVar("local_admission_observer", default=None)
+
+
+@contextmanager
+def local_admission_observer(callback):
+    """Observe a confirmed local target before resource sampling, for this scope only."""
+    if not callable(callback):
+        raise TypeError("invalid local admission observer")
+    state = {"callback": callback, "active": True}
+    token = _LOCAL_ADMISSION_OBSERVER.set(state)
+    try:
+        yield
+    finally:
+        # Contexts inherited by a child task cannot call an already closed scope.
+        state["active"] = False
+        _LOCAL_ADMISSION_OBSERVER.reset(token)
+
+
+async def _announce_local_admission():
+    state = _LOCAL_ADMISSION_OBSERVER.get()
+    if state is not None and state["active"]:
+        await state["callback"]()
 
 
 class LocalReserveError(RuntimeError):
@@ -232,6 +256,9 @@ async def probe(backend, model):
             or budget["weight_budget_bytes"] < observed["weight_floor_bytes"]
             or budget["num_ctx"] != getattr(backend, "num_ctx", None)):
         return _decision("model_budget_conflict", **common)
+    # Remote aliases have already returned. Observer/lease failures propagate;
+    # they must not become a retryable resource observation.
+    await _announce_local_admission()
     try:
         memory = psutil.virtual_memory()
         total = _integer(memory.total, 1, 4096 * GIB)

@@ -1793,6 +1793,7 @@ class ChatRuntime(_ModuleChatRuntime):
             or getattr(session, "worker_slot_reader", None) is not None) else {})
         from hub._services.chat.local_resource_reserve import (
             LocalReserveError,
+            local_admission_observer,
             read_policy,
             require_retryable,
         )
@@ -1820,20 +1821,28 @@ class ChatRuntime(_ModuleChatRuntime):
                     or current_version != policy_version):
                 raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
 
-        gate = HostInferenceGate()
+        gate = None
         carry_receipt = None
         try:
             while True:
                 check_binding()
                 async with AsyncExitStack() as request_scope:
                     take_turn = None
-                    if priority == "foreground":
-                        # Announce before metadata/RAM admission, without claiming
-                        # local model ownership or requiring a local-only binding.
-                        take_turn = await request_scope.enter_async_context(
-                            gate.request(chat_id, priority, check_ready=check_binding))
+
+                    async def announce_local_demand():
+                        nonlocal gate, take_turn
+                        if priority == "foreground" and take_turn is None:
+                            if gate is None:
+                                gate = HostInferenceGate()
+                            take_turn = await request_scope.enter_async_context(
+                                gate.request(chat_id, priority, check_ready=check_binding))
+
                     receipt = carry_receipt
                     carry_receipt = None
+                    if receipt is not None:
+                        # The owner recheck already confirmed a local target.
+                        # Restore visible demand before waiting on that receipt.
+                        await announce_local_demand()
                     while True:
                         if receipt is not None:
                             # Keep demand visible while waiting, without an inference owner.
@@ -1863,8 +1872,9 @@ class ChatRuntime(_ModuleChatRuntime):
                                 check_binding()
                                 await asyncio.sleep(min(.1, max(0, poll_deadline - time.monotonic())))
                         check_binding()
-                        receipt, _ = await self.prepare_inference_call(
-                            backend, selected_model, chat_id=chat_id if turn_context else None)
+                        with local_admission_observer(announce_local_demand):
+                            receipt, _ = await self.prepare_inference_call(
+                                backend, selected_model, chat_id=chat_id if turn_context else None)
                         if receipt is None:
                             break
                         if not policy_bound:
@@ -1896,6 +1906,8 @@ class ChatRuntime(_ModuleChatRuntime):
                         if receipt["admitted"]:
                             break
                     if receipt is not None and receipt["state"] != "external_target":
+                        if gate is None:
+                            gate = HostInferenceGate()
                         model_binding = check_model_binding()
                         target = ({key: model_binding[key] for key in
                                   ("socket_id", "binding_id", "agent_id", "backend", "model")}
