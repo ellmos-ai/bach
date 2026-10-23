@@ -111,12 +111,13 @@ def test_transport_with_partial_output_is_never_retried(monkeypatch, partial):
     assert calls == [1]
 
 
-def test_transport_exhaustion_cannot_restart_the_task(monkeypatch):
+@pytest.mark.parametrize("kind", KINDS)
+def test_transport_exhaustion_keeps_policy_bound_queue_continuation(monkeypatch, kind):
     from hub._services.chat.telegram_chat import _worker_backend_retry_delay
     runtime, session, backend, model, _ = _runtime(monkeypatch, provider="openrouter")
     calls, waits = [], []
     async def call(*args, **kwargs):
-        calls.append(1); raise BackendRequestFailure(_transport())
+        calls.append(1); raise BackendRequestFailure(_transport(kind))
     async def wait(seconds, *, check_active):
         check_active(); waits.append(seconds)
     monkeypatch.setattr(runtime, "_chat_with_compute_turn", call)
@@ -126,9 +127,20 @@ def test_transport_exhaustion_cannot_restart_the_task(monkeypatch):
                           reason_code=result["reason_code"])
     assert len(calls) == 4 and waits == [5, 10, 20]
     assert answer.reason_code == "cloud_call_retry_exhausted"
+    profile = {"backend": "openrouter", "type": "continuous"}
+    for retries, expected in [(0, 60), (1, 120), (4, 900), (40, 900)]:
+        assert _worker_backend_retry_delay(
+            profile, answer.backend_error, model=model, retries=retries,
+            waited_seconds=1200, reason_code=answer.reason_code) == (
+                expected if kind == "connection_error" else None)
+    for changes in ({"type": "once"}, {"max_model_requests": 3},
+                    {"backend": "ollama-cloud"}):
+        assert _worker_backend_retry_delay(
+            {**profile, **changes}, answer.backend_error, model=model, retries=0,
+            waited_seconds=0, reason_code=answer.reason_code) is None
     assert _worker_backend_retry_delay(
-        {"type": "continuous"}, answer.backend_error, model=model, retries=0,
-        waited_seconds=0, reason_code=answer.reason_code) is None
+        profile, answer.backend_error, model=model, retries=0,
+        waited_seconds=0, reason_code="model_request_budget_exhausted") is None
 
 
 @pytest.mark.parametrize("failure", [httpx.ConnectError, httpx.ReadTimeout, httpx.RequestError])

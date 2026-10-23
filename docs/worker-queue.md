@@ -170,3 +170,20 @@ Der Prozesshost wird ausdrücklich gespeichert; ein anderer Host darf dessen
 Prozessende nicht anhand seiner eigenen PID-Tabelle bestätigen. Nichtdauerhafte
 Windows-Marker erlauben nach einem Service-Neustart weiterhin einen Start,
 tragen die ungeklärte Vorgeschichte aber in die neue Bindung weiter.
+
+
+### OpenRouter-Verbindungsfehler im Dauerbetrieb (#1943)
+
+Der vorhandene innere Retry behandelt einen typisierten ConnectError innerhalb
+desselben Modellaufrufs weiterhin höchstens dreimal (5/10/20 Sekunden). Ist er
+ausgeschöpft, darf ein OpenRouter-Dauerworker ohne festes Modellaufrufbudget
+über den vorhandenen äußeren Rückgabeweg fortsetzen: Lease-Supervisor beenden,
+native Rückgabe bestätigen, Zuweisung beenden, ohne Lease 60/120/240/480 und
+höchstens 900 Sekunden warten und anschließend eine neue reguläre Übernahme
+versuchen. Die alte Toolschleife wird nicht wiederholt; erledigte Werkzeugausgaben
+und der aktuelle Taskstand bleiben erhalten. Stop, Profilwechsel, TTL,
+Budgetgrenzen, konkurrierende Leases und fehlgeschlagene Rückgaben bleiben
+maßgeblich. Andere Transportfehler erhalten dadurch keine neue äußere Wiederholung.
+
+Dieser Quellstand erweitert vorhandene Tests; eine tatsächliche produktive
+Aufgabenbearbeitung und deren native Ergebnisannahme sind getrennt nachzuweisen.

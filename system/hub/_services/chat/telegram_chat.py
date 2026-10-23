@@ -1484,7 +1484,11 @@ def _worker_backend_retry_delay(
                            or error.get("status_code") == 429
                            or (error["provider"] == "openrouter"
                                and error["kind"] == "http_error"
-                               and error.get("status_code") == 504))):
+                               and error.get("status_code") == 504)
+                           or (error["provider"] == "openrouter"
+                               and error["kind"] == "connection_error"
+                               and slot.get("backend") == "openrouter"
+                               and slot.get("max_model_requests") is None))):
         # Respect provider Retry-After, with bounded exponential request frequency.
         # A configured worker's stop/TTL, not three retries, ends this wait loop.
         return max(
@@ -5342,6 +5346,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                               reason=("temporary_gateway_timeout"
                                                       if detail and detail.get("provider") == "openrouter"
                                                       and detail.get("status_code") == 504
+                                                      else "temporary_connection_error"
+                                                      if detail and detail.get("provider") == "openrouter"
+                                                      and detail.get("kind") == "connection_error"
                                                       else "temporary_rate_limit"))
                             assignment_open = False
                         worker_session.worker_task_binding = None
