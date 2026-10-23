@@ -7,8 +7,12 @@ from fastapi import APIRouter, Body, HTTPException, Request
 from hub._services import task_lease_settings as lease_settings
 from hub._services import worker_policy_settings as service
 from hub._services import worker_review_identity as identities
+from .worker_external_results import router as external_results_router
 
 router = APIRouter(prefix="/api", tags=["worker-policy"])
+
+# Mount relative routes under the existing /api prefix and server startup.
+router.include_router(external_results_router, prefix="")
 
 
 def _db_path():

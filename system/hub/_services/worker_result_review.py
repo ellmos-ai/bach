@@ -22,11 +22,14 @@ from .task_result_service import read_result
 from .worker_execution_evidence import (_digest as execution_digest, _event as execution_event,
                                         _owned as owned_execution, _submitted)
 from .worker_scope_evidence import project_scope_evidence
+from .worker_result_provenance import author_principal, author_slot, source_kind, source_pin
 
 _SEAL = object()
 _ACTOR = "native-result-review-controller"
 _INTENT_SCHEMA = "bach.worker-result-review-intent.v1"
 _REVIEW_SCHEMA = "bach.worker-result-model-review.v1"
+_EXTERNAL_INTENT_SCHEMA = "bach.worker-result-review-intent.external-attested.v1"
+_EXTERNAL_REVIEW_SCHEMA = "bach.worker-result-model-review.external-attested.v1"
 _INVALID_SCHEMA = "bach.worker-review-invalid-result.v1"
 _OBSOLETE_SCHEMA = "bach.worker-review-obsolete-child.v1"
 _READ_SCHEMA = "bach.worker-result-review-evidence.v1"
@@ -146,15 +149,18 @@ def _target_record(conn, task_id, *, repo_root=None, worktrees_dir=None):
     if conn.in_transaction:
         return None
     try:
+        task = _row(conn.execute("SELECT claim_id FROM tasks WHERE id=?", (task_id,)))
+        if task is None or task.get("claim_id"):
+            return None
         projected = project_scope_evidence(
             read_result(conn, task_id), repo_root=repo_root, worktrees_dir=worktrees_dir)
         record = projected.get("result")
         if (projected.get("status") != "review" or not isinstance(record, dict)
                 or record.get("reason") != "awaiting_review"
                 or record.get("submission", {}).get("availability") != "available"
-                or record.get("execution", {}).get("availability") != "available"
-                or type(record["execution"].get("slot_id")) is not str
-                or not record["execution"]["slot_id"]
+                or source_pin(record) is None
+                or (source_kind(record) == "native" and
+                    (type(author_slot(record)) is not str or not author_slot(record)))
                 or record.get("scope", {}).get("availability") != "available"
                 or type(record.get("submission_revision")) is not str
                 or not _SUBMISSION_REVISION.fullmatch(record["submission_revision"])
@@ -172,12 +178,11 @@ def _target_authority(conn, record):
         policy = record["submission"]["policy"]
         current = _policy_snapshot(conn, record["task_id"])
         model_ids = _identity_snapshot(conn)
-        author = identity.principal_for_execution(model_ids, record["execution"])
+        author = author_principal(model_ids, record)
         if (policy.get("availability") != "available" or author is None
                 or policy.get("configuration_version") != current["configuration_version"]
                 or policy.get("policy") != settings._global(conn)["policy"]
-                or policy.get("override") != current["override"]
-                or not _policy_eligible(policy, author)):
+                or policy.get("override") != current["override"]):
             return None
         return {"author_id": author, "policy_version": current["configuration_version"],
                 "identity_version": model_ids["configuration_version"],
@@ -191,28 +196,101 @@ def _same_target_db(conn, record, authority):
     try:
         current = read_result(conn, record["task_id"])
         observed = current["result"]
-        if (current["status"] != "review" or not isinstance(observed, dict)
+        task = _row(conn.execute("SELECT claim_id FROM tasks WHERE id=?", (record["task_id"],)))
+        if (task is None or task.get("claim_id")
+                or current["status"] != "review" or not isinstance(observed, dict)
                 or observed.get("reason") != "awaiting_review"
                 or observed.get("submission", {}).get("availability") != "available"):
             return False
         fields = ("result_id", "task_id", "fence", "generation", "task_version",
-                  "result_sha256", "submission_revision", "submission_event_id")
+                  "result_sha256", "submission_revision", "submission_event_id",
+                  "status_revision", "submitted_status_event_id")
         if any(observed.get(key) != record.get(key) for key in fields):
             return False
-        for name, fields in (("execution", ("execution_revision", "execution_id",
-                                            "response_sha256", "route_sha256")),
-                             ("scope", ("scope_receipt_sha256", "scope_event_id"))):
-            left, right = observed.get(name), record.get(name)
-            if (not isinstance(left, dict) or not isinstance(right, dict)
-                    or left.get("availability") not in {"available", "recorded"}
-                    or any(left.get(key) != right.get(key) for key in fields)):
-                return False
+        if source_pin(observed) is None or source_pin(observed) != source_pin(record):
+            return False
         resolved = _target_authority(conn, observed)
         return bool(resolved and all(resolved[key] == authority[key]
                                      for key in ("author_id", "policy_version",
                                                  "identity_version", "eligible")))
     except (sqlite3.Error, ValueError, TypeError, KeyError):
         return False
+
+
+def _intent_author_fields(target):
+    if source_kind(target) == "external_attested":
+        return {"author_source": source_pin(target)}
+    return {"execution_revision": target["execution"]["execution_revision"],
+            "scope_receipt_sha256": target["scope"]["scope_receipt_sha256"],
+            "author_execution_id": target["execution"]["execution_id"],
+            "author_slot_id": author_slot(target)}
+
+
+def _external_pin_valid(pin):
+    return (isinstance(pin, dict) and set(pin) == {"source_kind", "attestation_sha256",
+        "attestation_event_id", "scope_receipt_sha256", "scope_event_id", "model_principal_id"}
+        and pin["source_kind"] == "external_attested"
+        and all(type(pin[key]) is str and _HEX.fullmatch(pin[key]) for key in (
+            "attestation_sha256", "scope_receipt_sha256"))
+        and type(pin["attestation_event_id"]) is int and type(pin["scope_event_id"]) is int
+        and 0 < pin["attestation_event_id"] < pin["scope_event_id"]
+        and type(pin["model_principal_id"]) is str and bool(pin["model_principal_id"]))
+
+
+def _intent_source_valid(receipt):
+    if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA:
+        return (_external_pin_valid(receipt.get("author_source"))
+                and receipt["author_source"]["model_principal_id"] == receipt.get("author_id"))
+    return (receipt.get("schema") == _INTENT_SCHEMA
+        and all(type(receipt.get(key)) is str and _HEX.fullmatch(receipt[key]) for key in (
+            "execution_revision", "scope_receipt_sha256"))
+        and all(type(receipt.get(key)) is str and receipt[key] for key in (
+            "author_execution_id", "author_slot_id")))
+
+
+def _intent_source_matches(receipt, target):
+    expected_schema = _EXTERNAL_INTENT_SCHEMA if source_kind(target) == "external_attested" else _INTENT_SCHEMA
+    fields = _intent_author_fields(target) if source_pin(target) is not None else None
+    return (fields is not None and receipt.get("schema") == expected_schema
+            and _intent_source_valid(receipt)
+            and all(receipt.get(key) == value for key, value in fields.items()))
+
+
+def _intent_same_author(receipt, target):
+    """Stable author match for proven scope drift, never review acceptance.
+
+    A valid new native scope receipt can obsolete the old review intent.
+    Requiring that old scope hash here would hide the very revision drift
+    this recovery path must detect. Normal dispatch/submit still requires
+    the complete source match.
+    """
+    if source_kind(target) != "native":
+        return _intent_source_matches(receipt, target)
+    return (source_pin(target) is not None and receipt.get("schema") == _INTENT_SCHEMA
+            and _intent_source_valid(receipt)
+            and all(receipt.get(key) == value for key, value in _intent_author_fields(target).items()
+                    if key != "scope_receipt_sha256"))
+
+
+def _review_author_fields(target):
+    if source_kind(target) == "external_attested":
+        return {"author_source": source_pin(target)}
+    return {"author_execution_id": target["execution"]["execution_id"],
+            "author_slot_id": author_slot(target)}
+
+
+def _review_source_matches(receipt, target):
+    expected_schema = _EXTERNAL_REVIEW_SCHEMA if source_kind(target) == "external_attested" else _REVIEW_SCHEMA
+    if receipt.get("schema") != expected_schema or source_pin(target) is None:
+        return False
+    if source_kind(target) == "external_attested" and not _external_pin_valid(receipt.get("author_source")):
+        return False
+    return all(receipt.get(key) == value for key, value in _review_author_fields(target).items())
+
+
+def _intent_scope_sha(receipt):
+    return (receipt.get("author_source", {}).get("scope_receipt_sha256")
+            if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA else receipt.get("scope_receipt_sha256"))
 
 
 def _intent(conn, review_task_id):
@@ -231,13 +309,13 @@ def _intent(conn, review_task_id):
         if (type(row["event_id"]) is not int or row["event_id"] <= 0
                 or type(row["target_task_id"]) is not int or row["target_task_id"] <= 0
                 or type(row["target_result_id"]) is not int or row["target_result_id"] <= 0
-                or not isinstance(receipt, dict) or receipt.get("schema") != _INTENT_SCHEMA
+                or not isinstance(receipt, dict) or not _intent_source_valid(receipt)
                 or set(receipt) != {"schema", "review_task_id", "target_task_id",
                                     "target_result_id", "target_revision",
-                                    "submission_revision", "execution_revision",
-                                    "scope_receipt_sha256", "author_execution_id",
-                                    "author_slot_id", "author_generation", "author_id",
-                                    "policy_version", "identity_version"}
+                                    "submission_revision", "author_generation", "author_id",
+                                    "policy_version", "identity_version"} | (
+                                        {"author_source"} if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA else
+                                        {"execution_revision", "scope_receipt_sha256", "author_execution_id", "author_slot_id"})
                 or _digest(receipt) != row["intent_sha256"]
                 or receipt.get("review_task_id") != review_task_id
                 or receipt.get("target_task_id") != row["target_task_id"]
@@ -247,11 +325,9 @@ def _intent(conn, review_task_id):
                 or type(receipt["submission_revision"]) is not str
                 or not _SUBMISSION_REVISION.fullmatch(receipt["submission_revision"])
                 or any(type(receipt[key]) is not str or not _HEX.fullmatch(receipt[key])
-                       for key in ("execution_revision", "scope_receipt_sha256",
-                                   "policy_version", "identity_version"))
+                       for key in ("policy_version", "identity_version"))
                 or any(type(receipt[key]) is not str or not receipt[key]
-                       for key in ("author_execution_id", "author_slot_id",
-                                   "author_generation", "author_id"))
+                       for key in ("author_generation", "author_id"))
                 or task is None or task.get("source") != _SOURCE + str(review_task_id)
                 or task.get("depends_on") not in (None, "")
                 or event is None or event["task_id"] != row["target_task_id"]
@@ -274,7 +350,7 @@ def review_task_metadata(conn, task_id):
     if found is None:
         return None
     receipt = found["receipt"]
-    return {"schema": _INTENT_SCHEMA, "review_task_id": task_id,
+    return {"schema": receipt["schema"], "review_task_id": task_id,
             "task_version": task_content_version(found["task"]),
             "status": found["task"]["status"],
             "target_task_id": receipt["target_task_id"],
@@ -331,12 +407,64 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
             return None
         target = _target_record(conn, binding.task_id, repo_root=repo_root,
                                 worktrees_dir=worktrees_dir)
-        if target is None or author_record["result_id"] != target["result_id"]:
+        if (target is None or author_record["result_id"] != target["result_id"]
+                or source_kind(target) != "native"):
             return None
         authority = _target_authority(conn, target)
         if authority is None:
             return None
-        conn.execute("BEGIN IMMEDIATE")
+        return _prepare_target_review(conn, target, authority)
+    except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError,
+            settings.PolicyUnavailable):
+        return None
+
+
+def validate_external_review_target(payload):
+    """Pin the exact public revision the operator selected, never latest-wins."""
+    fields = {"task_id", "result_id", "result_sha256", "result_revision", "task_version", "status_revision"}
+    settings._object(payload, fields)
+    for key in ("task_id", "result_id", "status_revision"):
+        if type(payload[key]) is not int or payload[key] <= 0:
+            raise ValueError("Positive Reviewziel-Kennung erforderlich")
+    for key in ("result_sha256", "result_revision", "task_version"):
+        if type(payload[key]) is not str or not _HEX.fullmatch(payload[key]):
+            raise ValueError("Vollständige Reviewziel-Revision erforderlich")
+    return dict(payload)
+
+
+def prepare_external_review_task(conn, task_id, *, operator_token, expected=None,
+                                 repo_root=None, worktrees_dir=None):
+    """Explicit enrolled-operator entry after a verified external attestation."""
+    if conn.in_transaction:
+        raise ValueError("Externe Reviewanlage benötigt eine freie DB-Verbindung")
+    if expected is not None:
+        expected = validate_external_review_target(expected)
+    conn.execute("BEGIN")
+    try:
+        identity.require_operator(conn, operator_token)
+        if review_task_marker(conn, task_id):
+            return None
+    finally:
+        conn.rollback()
+    target = _target_record(conn, task_id, repo_root=repo_root, worktrees_dir=worktrees_dir)
+    if target is None or source_kind(target) != "external_attested":
+        return None
+    if expected is not None and any(target.get(key) != value for key, value in expected.items()):
+        raise settings.PolicyConflict("Das ausgewählte externe Reviewziel wurde geändert")
+    authority = _target_authority(conn, target)
+    if authority is None:
+        return None
+    return _prepare_target_review(conn, target, authority, operator_token=operator_token)
+
+
+def _prepare_target_review(conn, target, authority, *, operator_token=None):
+    """One ordinary review task for either proven source; DB CAS only here."""
+    if conn.in_transaction:
+        raise ValueError("Reviewanlage benötigt eine freie DB-Verbindung")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if source_kind(target) == "external_attested":
+            identity.require_operator(conn, operator_token)
         try:
             if not _same_target_db(conn, target, authority):
                 conn.rollback()
@@ -351,7 +479,7 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
                 return result
             now = _utcnow()
             stamp = now.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            title = f"Ergebnisreview Task #{binding.task_id} / Result #{target['result_id']}"
+            title = f"Ergebnisreview Task #{target['task_id']} / Result #{target['result_id']}"
             source = _SOURCE + "pending:" + uuid.uuid4().hex
             cursor = conn.execute("""INSERT INTO tasks
                 (title,description,priority,category,status,created_by,assigned_to,
@@ -362,27 +490,25 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
             review_task_id = cursor.lastrowid
             conn.execute("UPDATE tasks SET source=? WHERE id=?", (_SOURCE + str(review_task_id),
                                                                     review_task_id))
-            receipt = {"schema": _INTENT_SCHEMA, "review_task_id": review_task_id,
-                       "target_task_id": binding.task_id, "target_result_id": target["result_id"],
+            receipt = {"schema": (_EXTERNAL_INTENT_SCHEMA if source_kind(target) == "external_attested" else _INTENT_SCHEMA),
+                       "review_task_id": review_task_id,
+                       "target_task_id": target["task_id"], "target_result_id": target["result_id"],
                        "target_revision": target["result_revision"],
                        "submission_revision": target["submission_revision"],
-                       "execution_revision": target["execution"]["execution_revision"],
-                       "scope_receipt_sha256": target["scope"]["scope_receipt_sha256"],
-                       "author_execution_id": target["execution"]["execution_id"],
-                       "author_slot_id": target["execution"].get("slot_id"),
+                       **_intent_author_fields(target),
                        "author_generation": target["generation"],
                        "author_id": authority["author_id"],
                        "policy_version": authority["policy_version"],
                        "identity_version": authority["identity_version"]}
             digest = _digest(receipt)
-            event_id = _history(conn, binding.task_id, "worker_result_review_task", _ACTOR,
+            event_id = _history(conn, target["task_id"], "worker_result_review_task", _ACTOR,
                                 now, {"intent_sha256": digest, "review_task_id": review_task_id,
                                       "target_result_id": target["result_id"],
                                       "target_revision": target["result_revision"]})
             conn.execute("INSERT INTO worker_result_review_intents "
                          "(review_task_id,target_task_id,target_result_id,target_revision,"
                          "intent,intent_sha256,event_id) VALUES (?,?,?,?,?,?,?)",
-                         (review_task_id, binding.task_id, target["result_id"],
+                         (review_task_id, target["task_id"], target["result_id"],
                           target["result_revision"], _json(receipt), digest, event_id))
             result = review_task_metadata(conn, review_task_id)
             if result is None:
@@ -392,9 +518,9 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
         except BaseException:
             conn.rollback()
             raise
-    except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError,
-            settings.PolicyUnavailable):
-        return None
+    finally:
+        if conn.in_transaction:
+            conn.rollback()
 
 
 def _intent_target(conn, found, *, repo_root=None, worktrees_dir=None):
@@ -407,10 +533,7 @@ def _intent_target(conn, found, *, repo_root=None, worktrees_dir=None):
     if (authority is None or target["result_id"] != receipt["target_result_id"]
             or target["result_revision"] != receipt["target_revision"]
             or target["submission_revision"] != receipt["submission_revision"]
-            or target["execution"]["execution_revision"] != receipt["execution_revision"]
-            or target["execution"]["execution_id"] != receipt["author_execution_id"]
-            or target["scope"]["scope_receipt_sha256"] != receipt["scope_receipt_sha256"]
-            or target["execution"].get("slot_id") != receipt["author_slot_id"]
+            or not _intent_source_matches(receipt, target)
             or target["generation"] != receipt["author_generation"]
             or authority["author_id"] != receipt["author_id"]
             or authority["policy_version"] != receipt["policy_version"]
@@ -453,10 +576,7 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
         principal = identity.principal_for_route(authority["identity"],
             backend_id=route["backend_id"], route_sha256=route["route_sha256"],
             requested_model=requested_model)
-        if (principal is None or principal not in authority["eligible"]
-                or principal == authority["author_id"]
-                or slot_id == target["execution"].get("slot_id")
-                or generation == target["generation"]):
+        if principal is None or generation == target["generation"]:
             return None
         # An explicit slot/model task route is an additional constraint, not
         # the source of reviewer identity.
@@ -502,16 +622,12 @@ def validate_review_acquire(conn, task, *, worker_id, host, grant, now):
         if (not isinstance(target, dict) or target.get("reason") != "awaiting_review"
                 or target.get("result_id") != grant.target_result_id
                 or target.get("submission_revision") != receipt["submission_revision"]
-                or target.get("execution", {}).get("execution_revision") != receipt["execution_revision"]
-                or target.get("execution", {}).get("execution_id") != receipt["author_execution_id"]
-                or target.get("execution", {}).get("slot_id") != receipt["author_slot_id"]
+                or not _intent_source_matches(receipt, target)
                 or target.get("generation") != receipt["author_generation"]
-                or target.get("scope", {}).get("scope_receipt_sha256") != receipt["scope_receipt_sha256"]
                 or authority is None
                 or authority["author_id"] != receipt["author_id"]
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
-                or grant.principal_id not in authority["eligible"]
                 or identity.principal_for_route(authority["identity"],
                     backend_id=grant.route["backend_id"],
                     route_sha256=grant.route["route_sha256"],
@@ -557,9 +673,6 @@ def guard_review_dispatch(conn, binding, *, route, requested_model,
                 or target["result_revision"] != grant.target_revision
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
-                or grant.principal_id not in authority["eligible"]
-                or grant.principal_id == authority["author_id"]
-                or grant.slot_id == target["execution"].get("slot_id")
                 or grant.generation == target["generation"]
                 or identity.principal_for_route(authority["identity"],
                     backend_id=route["backend_id"], route_sha256=route["route_sha256"],
@@ -613,20 +726,15 @@ def validate_review_release(conn, task, worker_result, binding):
         if (parent.get("status") != "review" or not isinstance(target, dict)
                 or target.get("result_id") != grant.target_result_id
                 or target.get("submission_revision") != intent["submission_revision"]
-                or target.get("execution", {}).get("execution_revision") != intent["execution_revision"]
-                or target.get("execution", {}).get("execution_id") != intent["author_execution_id"]
-                or target.get("execution", {}).get("slot_id") != intent["author_slot_id"]
+                or not _intent_source_matches(intent, target)
                 or target.get("generation") != intent["author_generation"]
-                or target.get("scope", {}).get("scope_receipt_sha256") != intent["scope_receipt_sha256"]):
+                ):
             return False
         authority = _target_authority(conn, target)
         if (authority is None or not _same_target_db(conn, target, authority)
                 or authority["author_id"] != intent["author_id"]
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
-                or grant.principal_id not in authority["eligible"]
-                or grant.principal_id == authority["author_id"]
-                or grant.slot_id == target["execution"].get("slot_id")
                 or grant.generation == target["generation"]):
             return False
         answer = grant._last_answer
@@ -753,7 +861,7 @@ def _invalid_child(conn, found, target, authority, child_id, status_revision):
     reviewer = identity.principal_for_execution(authority["identity"], execution)
     if (reviewer is None or reviewer == authority["author_id"]
             or reviewer not in authority["eligible"]
-            or execution.get("slot_id") == target["execution"].get("slot_id")
+            or execution.get("slot_id") == author_slot(target)
             or child.get("generation") == target.get("generation")
             or execution.get("generation") != child.get("generation")
             or task.get("assigned_slot") not in (None, "", execution.get("slot_id"))
@@ -971,8 +1079,7 @@ def _obsolete_target_reason(conn, found, grant, *, repo_root=None, worktrees_dir
     if (observed.get("status") != "review" or target.get("reason") != "awaiting_review"
             or target.get("result_id") != intent["target_result_id"]
             or target.get("submission_revision") != intent["submission_revision"]
-            or target.get("execution", {}).get("execution_revision") != intent["execution_revision"]
-            or target.get("execution", {}).get("execution_id") != intent["author_execution_id"]):
+            or not _intent_same_author(intent, target)):
         return None
     authority = _target_authority(conn, target)
     if (authority is None or authority["author_id"] != intent["author_id"]
@@ -984,7 +1091,7 @@ def _obsolete_target_reason(conn, found, grant, *, repo_root=None, worktrees_dir
     if (scope.get("availability") == "recorded"
             and type(scope.get("scope_receipt_sha256")) is str
             and _HEX.fullmatch(scope["scope_receipt_sha256"])
-            and scope["scope_receipt_sha256"] != intent["scope_receipt_sha256"]):
+            and scope["scope_receipt_sha256"] != _intent_scope_sha(intent)):
         return "target_revision_changed"
     projected = project_scope_evidence(observed, repo_root=repo_root,
                                        worktrees_dir=worktrees_dir).get("result")
@@ -994,7 +1101,7 @@ def _obsolete_target_reason(conn, found, grant, *, repo_root=None, worktrees_dir
             and projected["result_revision"] != grant.target_revision):
         return "target_revision_changed"
     if (isinstance(projected, dict)
-            and target.get("scope", {}).get("scope_receipt_sha256") == intent["scope_receipt_sha256"]
+            and target.get("scope", {}).get("scope_receipt_sha256") == _intent_scope_sha(intent)
             and projected.get("scope", {}).get("reason") == "current_git_changed"):
         return "current_git_changed"
     return None
@@ -1118,11 +1225,12 @@ def cancel_obsolete_review_child(conn, binding, *, repo_root=None, worktrees_dir
 
 
 def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
-    """Commit one real, independent model verdict for the target result.
+    """Commit one real model verdict for the target result.
 
     The child has already submitted its own canonical result and linked its
-    final actual backend return. No active parent lease or model-supplied
-    identity field is accepted.
+    final actual backend return. A fresh run by the author is allowed; its
+    verdict remains non-independent and cannot satisfy completion policy.
+    No active parent lease or model-supplied identity is accepted.
     """
     if conn.in_transaction or getattr(getattr(binding, "_client", None), "mode", None) != "local":
         return None
@@ -1168,16 +1276,14 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                 or execution.get("backend_id") != grant.route["backend_id"]
                 or execution.get("route_sha256") != grant.route["route_sha256"]
                 or execution.get("requested_model") != grant.requested_model
-                or execution.get("execution_id") == target["execution"].get("execution_id")
-                or grant.slot_id == target["execution"].get("slot_id")
+                or (source_kind(target) == "native" and
+                    execution.get("execution_id") == target["execution"].get("execution_id"))
                 or grant.generation == target["generation"]):
             return None
         verdict = _verdict_from_answer(answer, grant.task_id, child["result"])
         actual_principal = identity.principal_for_execution(authority["identity"], execution)
         if (verdict is None or actual_principal is None
                 or actual_principal != grant.principal_id
-                or actual_principal == authority["author_id"]
-                or actual_principal not in authority["eligible"]
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
                 or target["result_revision"] != grant.target_revision):
@@ -1217,14 +1323,13 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                 return (read_review_evidence(conn, target)
                         if prior["review_task_id"] == grant.task_id else None)
             now = _utcnow()
-            receipt = {"schema": _REVIEW_SCHEMA,
+            receipt = {"schema": (_EXTERNAL_REVIEW_SCHEMA if source_kind(target) == "external_attested" else _REVIEW_SCHEMA),
                        "target_task_id": target["task_id"],
                        "target_result_id": target["result_id"],
                        "target_revision": target["result_revision"],
                        "target_submission_revision": target["submission_revision"],
-                       "author_execution_id": target["execution"]["execution_id"],
+                       **_review_author_fields(target),
                        "author_id": authority["author_id"],
-                       "author_slot_id": target["execution"].get("slot_id"),
                        "author_generation": target["generation"],
                        "review_task_id": grant.task_id, "child_result_id": child["result_id"],
                        "child_submission_revision": child["submission_revision"],
@@ -1290,7 +1395,7 @@ def read_review_evidence(conn, record):
     if (not isinstance(record, dict) or type(record.get("task_id")) is not int
             or type(record.get("result_id")) is not int or record["result_id"] <= 0
             or record.get("submission", {}).get("availability") != "available"
-            or record.get("execution", {}).get("availability") != "available"
+            or source_pin(record) is None
             or review_task_marker(conn, record["task_id"])
             or not _table(conn, "worker_result_model_reviews")):
         return _unavailable("review_not_recorded")
@@ -1302,7 +1407,7 @@ def read_review_evidence(conn, record):
         receipt = json.loads(row["receipt"])
         found = _intent(conn, row["review_task_id"])
         if (found is None or not isinstance(receipt, dict)
-                or receipt.get("schema") != _REVIEW_SCHEMA
+                or not _review_source_matches(receipt, record)
                 or _digest(receipt) != row["receipt_sha256"]
                 or type(row["event_id"]) is not int or row["event_id"] <= 0
                 or type(row["review_task_id"]) is not int or row["review_task_id"] <= 0
@@ -1313,13 +1418,9 @@ def read_review_evidence(conn, record):
                 or receipt.get("target_task_id") != record["task_id"]
                 or receipt.get("target_result_id") != record["result_id"]
                 or receipt.get("target_submission_revision") != record["submission_revision"]
-                or receipt.get("author_execution_id") != record["execution"]["execution_id"]
                 or found["receipt"]["submission_revision"] != record["submission_revision"]
-                or found["receipt"]["execution_revision"] != record["execution"]["execution_revision"]
-                or found["receipt"]["author_execution_id"] != record["execution"]["execution_id"]
-                or found["receipt"]["scope_receipt_sha256"] != record["scope"]["scope_receipt_sha256"]
+                or not _intent_source_matches(found["receipt"], record)
                 or receipt.get("author_generation") != record["generation"]
-                or receipt.get("author_slot_id") != record["execution"].get("slot_id")
                 or receipt.get("review_task_id") != row["review_task_id"]
                 or receipt.get("child_result_id") != row["child_result_id"]
                 or receipt.get("policy_version") != found["receipt"]["policy_version"]
@@ -1345,8 +1446,6 @@ def read_review_evidence(conn, record):
                 or child["execution"].get("execution_revision") != receipt["child_execution_revision"]
                 or child["execution"].get("response_sha256") != receipt["child_response_sha256"]
                 or child["execution"].get("slot_id") != receipt["review_slot_id"]
-                or receipt["author_id"] == receipt.get("reviewer_id")
-                or receipt["author_slot_id"] == receipt["review_slot_id"]
                 or receipt["author_generation"] == receipt["review_generation"]):
             return _unavailable("review_evidence_invalid")
         # The writer compared the private actual response/toolcall to the
@@ -1361,7 +1460,6 @@ def read_review_evidence(conn, record):
         if (authority is None or authority["author_id"] != receipt["author_id"]
                 or authority["policy_version"] != receipt["policy_version"]
                 or authority["identity_version"] != receipt["identity_version"]
-                or receipt["reviewer_id"] not in authority["eligible"]
                 or identity.principal_for_execution(authority["identity"],
                     child["execution"]) != receipt["reviewer_id"]):
             return _unavailable("review_identity_not_current")
@@ -1387,7 +1485,10 @@ def read_review_evidence(conn, record):
                 "reviewer_id": receipt["reviewer_id"],
                 "status": receipt["status"], "summary": receipt["summary"],
                 "reviewer_asserted_task_contract_met": receipt["reviewer_asserted_task_contract_met"],
-                "independent": True, "event_id": row["event_id"]}
+                "independent": (receipt["reviewer_id"] != receipt["author_id"]
+                    and receipt["review_slot_id"] != author_slot(record)),
+                "policy_eligible": receipt["reviewer_id"] in authority["eligible"],
+                "event_id": row["event_id"]}
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,
             settings.PolicyUnavailable):
         return _unavailable("review_evidence_invalid")
