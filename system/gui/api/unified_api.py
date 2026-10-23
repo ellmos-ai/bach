@@ -332,6 +332,7 @@ async def list_agent_blueprints(
         templates = []
         for r in rows:
             item = dict(r)
+            item.setdefault("color", None)
             item["kind"] = item.get("kind") or "agent"
             item["version"] = item.get("version") or "1.0.0"
             item["start_prompt"] = item.get("start_prompt") or ""
@@ -386,6 +387,7 @@ async def list_agent_blueprints(
         return {
             "templates": templates,
             "blueprints": blueprints,
+            "color_contract": "bach.agent-colors.v1",
             "total_templates": len(templates),
             "total_blueprints": len(blueprints),
             "total": len(templates) + len(blueprints),
