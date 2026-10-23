@@ -270,8 +270,10 @@ def _native_pickup(conn):
     from hub._services.task_lease_client import TaskLeaseClient
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from system.tests.test_task_lease_client_review import T0
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.commit()
     return WorkerLeaseBinding.acquire_next(
-        TaskLeaseClient(conn=conn), {"id": "buddha_always_on"},
+        TaskLeaseClient(conn=conn), {"id": "buddha_always_on", "model": "isolated-model"},
         worker_id="test-worker@HOST", host="HOST", generation="isolated-run",
         is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0,
     )

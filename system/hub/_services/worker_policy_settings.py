@@ -99,7 +99,11 @@ def validate_policy(value):
 
 
 def validate_override(value):
-    _object(value, OVERRIDE_KEYS | WORKER_OVERRIDE_KEYS)
+    # The original four fields remain required; the two selection overrides
+    # are additive and may be omitted by existing v1 clients.
+    if (not isinstance(value, dict) or not OVERRIDE_KEYS <= set(value)
+            or set(value) - OVERRIDE_KEYS - WORKER_OVERRIDE_KEYS):
+        raise ValueError("Unvollständige oder unbekannte Policyfelder")
     kernel = _kernel()
     mode = value["mode"]
     _boolean(value["require_user_review"])
@@ -246,8 +250,6 @@ def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
         _boolean(payload["reset_to_default"])
     else:
         # worker_selection is optional so older clients keep working.
-        _object(payload, set(payload) - {"worker_selection"}
-                if "worker_selection" in payload else payload.keys())
         required = {"configuration_version", "policy", "selection"}
         if not required <= set(payload) or set(payload) - required - {"worker_selection"}:
             raise ValueError("Unvollständige oder unbekannte Policyfelder")
@@ -265,8 +267,11 @@ def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
             # principals or Top-review rights. Reuse the explicit operator.
             from .worker_review_identity import require_operator
             actor = require_operator(conn, operator_token)
-        keys = ("policy", "selection") + (("worker_selection",) if "worker_selection" in payload else ())
-        values = None if reset else {key: payload[key] for key in keys}
+        # A legacy client cannot erase a newer selection guard by omitting it.
+        values = None if reset else {
+            "policy": payload["policy"], "selection": payload["selection"],
+            "worker_selection": payload.get("worker_selection", before["worker_selection"]),
+        }
         _persist(conn, GLOBAL_KEY, values, actor=actor)
         return {"schema": GLOBAL_SCHEMA, "updated": True, "worker_started": False,
                 "configuration_version": _global(conn)["configuration_version"]}
@@ -322,9 +327,27 @@ def _task_snapshot(conn, task_id):
         "override": override, "effective": effective}
 
 
-def read_task_policy(task_id, db_path=None):
-    with _connection(db_path) as conn:
-        return _task_snapshot(conn, task_id)
+def read_task_policy(task_id, db_path=None, *, conn=None):
+    """Read the same authority as the native task client, including injected DBs.
+
+    A borrowed connection is never closed, committed, configured, or migrated.
+    Join its existing snapshot; otherwise bound our SELECTs to a read transaction.
+    """
+    if conn is not None:
+        if db_path is not None:
+            raise ValueError("Nur eine Konfigurationsquelle ist zulässig")
+        own_snapshot = not conn.in_transaction
+        try:
+            if own_snapshot:
+                conn.execute("BEGIN")
+            return _task_snapshot(conn, task_id)
+        except sqlite3.Error as exc:
+            raise PolicyUnavailable("Kanonischer Konfigurationsspeicher nicht verfügbar") from exc
+        finally:
+            if own_snapshot and conn.in_transaction:
+                conn.rollback()
+    with _connection(db_path) as connection:
+        return _task_snapshot(connection, task_id)
 
 
 def write_task_policy(task_id, payload, *, actor, db_path=None):
@@ -347,7 +370,10 @@ def write_task_policy(task_id, payload, *, actor, db_path=None):
         if (before["override"]["require_user_review"]
                 and (reset or not payload["override"]["require_user_review"])):
             raise ValueError("Eine gesetzte Nutzerabnahme darf nicht entfernt werden")
-        _persist(conn, TASK_KEY + str(task_id), None if reset else payload["override"], actor=actor)
+        # Preserve additive fields omitted by a legacy v1 client. Explicit
+        # null still resets a field to inheritance after the same CAS checks.
+        values = None if reset else {**before["override"], **payload["override"]}
+        _persist(conn, TASK_KEY + str(task_id), values, actor=actor)
         return {"schema": TASK_SCHEMA, "updated": True, "worker_started": False,
                 "task_id": task_id, "configuration_version": _task_snapshot(conn, task_id)["configuration_version"]}
 

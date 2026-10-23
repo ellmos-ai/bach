@@ -462,6 +462,19 @@ class TaskLeaseClient:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _task_policy_snapshot(self, task_id):
+        """Private local policy reader using this task client's exact authority."""
+        if self.mode != "local":
+            return None
+        _identity(task_id)
+        from .worker_policy_settings import read_task_policy
+        conn = self._get_local_connection()
+        try:
+            return read_task_policy(task_id, conn=conn)
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _model_execution_call(self, operation, binding, *args, **kwargs):
         """Private controller path; HTTP workers cannot self-attest model calls."""
         if self.mode != "local" or getattr(binding, "_client", None) is not self:

@@ -30,6 +30,7 @@ def binding(tmp_path, monkeypatch):
     database = tmp_path / "canonical.db"
     _create_db(database)
     conn = _connect(database)
+    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     task_id = _insert(conn, title="Trace task", assigned_to="BACH")
     conn.close()
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
@@ -39,6 +40,7 @@ def binding(tmp_path, monkeypatch):
         client, task_id, worker_id="trace-worker@HOST", host="HOST",
         generation="trace-generation-1", is_current=lambda: True,
         stop_event=threading.Event(),
+        slot={"id": "worker-bound", "model": "isolated-model"},
     )
     yield result
     if result._active:

@@ -31,6 +31,7 @@ def store(tmp_path, monkeypatch):
     path = tmp_path / "authority.db"
     db = sqlite3.connect(path)
     _init_db(db)
+    db.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     db.commit(); db.close()
     result = SequenceStore(path)

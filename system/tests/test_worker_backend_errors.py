@@ -172,6 +172,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
     conn = sqlite3.connect(database, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     _init_db(conn)
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
         "VALUES (42,'Native quota fixture','pending','P1','INBOX','BACH',?)", (ident,))
     conn.commit()
@@ -302,6 +303,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     _init_db(conn)
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
         "VALUES (42,'Cloud retry fixture','pending','P1','INBOX','BACH',?)", (ident,))
     conn.commit()
@@ -440,6 +442,7 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
     conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     _init_db(conn)
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
         "VALUES (42,'Real retry fixture','pending','P1','INBOX','BACH',?)", (ident,))
     conn.commit()
@@ -825,6 +828,7 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
     conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     _init_db(conn)
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.execute(
         "INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
         "VALUES (42,'Always-On reserve fixture','pending','P1','INBOX','BACH',?)",

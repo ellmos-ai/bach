@@ -6,16 +6,12 @@ from hub._services.chat.worker_task_actions import WorkerTaskActions
 from hub._services.task_lease_client import LeaseProtocolError
 
 from system.tests.test_worker_lease_binding import (
-    binding as binding,  # noqa: PLC0414 - explicit pytest fixture export
-)
-from system.tests.test_worker_lease_binding import (
     mem_db as mem_db,  # noqa: PLC0414 - explicit pytest fixture export
 )
 
 
-@pytest.fixture
-def runtime_binding(mem_db):
-    """Real Runtime/Trace uses the authority clock, unlike frozen lease unit tests."""
+def _action_binding(mem_db, *, clock=None):
+    """Prepare the native policy/slot contract for this isolated action task."""
     import threading
 
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
@@ -24,14 +20,30 @@ def runtime_binding(mem_db):
     from system.tests.test_task_lease_client import _insert_task
 
     mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     mem_db.commit()
     task_id = _insert_task(mem_db)
     instance = WorkerLeaseBinding.acquire(
         TaskLeaseClient(conn=mem_db), task_id,
         worker_id="physical-worker@HOST", host="HOST",
         generation="generation-1", is_current=lambda: True,
-        stop_event=threading.Event(),
+        stop_event=threading.Event(), clock=clock,
+        slot={"id": "worker-bound", "model": "isolated-model", "backend": "isolated"},
     )
+    return instance
+
+
+@pytest.fixture
+def binding(mem_db):
+    from system.tests.test_task_lease_client_review import T0
+
+    return _action_binding(mem_db, clock=lambda: T0)
+
+
+@pytest.fixture
+def runtime_binding(mem_db):
+    """Real Runtime/Trace uses the authority clock, unlike frozen lease unit tests."""
+    instance = _action_binding(mem_db)
     yield instance
     if instance._active:
         instance.return_lease()

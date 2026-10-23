@@ -202,6 +202,8 @@ def test_scope_return_defers_the_same_task_version(mem_db):
     from system.tests.test_task_lease_client_review import T0
     from hub._services.task_lease_client import TaskLeaseClient
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    mem_db.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    mem_db.commit()
     first = _insert_task(mem_db, "Orphaned branch")
     second = _insert_task(mem_db, "Next")
     mem_db.execute("UPDATE tasks SET assigned_to='BACH'")
@@ -210,12 +212,12 @@ def test_scope_return_defers_the_same_task_version(mem_db):
     client = TaskLeaseClient(conn=mem_db)
     args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
                 is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
-    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "isolated-model"}, **args)
     assert bound.task_id == first
     deferred = {first: bound.task_snapshot()["task_version"]}
     assert bound.return_lease() is True
     assert client.task_snapshot(first)["task_version"] == deferred[first]
-    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "isolated-model"}, deferred_versions=deferred, **args)
     assert next_task.task_id == second
 
 
@@ -1014,6 +1016,8 @@ def recovery(real_acquire_before_fixture, startup, monkeypatch, mem_db):
     monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "600")
     client = TaskLeaseClient(conn=mem_db)
+    mem_db.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    mem_db.commit()
     mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     from hub._services import skill_source_service
     def fixture_lock_guard(target):

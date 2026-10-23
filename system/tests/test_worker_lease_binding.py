@@ -12,6 +12,14 @@ from system.tests.worker_completion_fixtures import CompletionHarness
 from hub._services import worker_policy_settings as settings
 
 
+@pytest.fixture(autouse=True)
+def _native_selection_policy_store(request):
+    # Local to this test module; the exported raw mem_db fixture stays unchanged.
+    task_db = request.getfixturevalue("mem_db")
+    task_db.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    task_db.commit()
+
+
 def _self_check(work):
     return json.dumps({"schema": "bach.worker-self-check.v1", "complete": True,
         "completed_work": work, "checks": ["Fachliches Ergebnis gegen den Auftrag geprüft."],
@@ -32,12 +40,15 @@ def _require_personal_review(binding):
 def binding(mem_db):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     mem_db.commit()
     tid = _insert_task(mem_db)
     client = TaskLeaseClient(conn=mem_db)
     return WorkerLeaseBinding.acquire(client, tid, worker_id="physical-worker@HOST", host="HOST",
                                      generation="generation-1", is_current=lambda: True,
-                                     stop_event=threading.Event(), clock=lambda: T0)
+                                     stop_event=threading.Event(), clock=lambda: T0,
+                                     slot={"id": "worker-bound", "model": "isolated-model",
+                                           "enforce_model_binding": True})
 
 
 @pytest.fixture
@@ -350,7 +361,7 @@ def test_explicit_model_mismatch_is_rejected_before_acquire(mem_db, monkeypatch)
     client = TaskLeaseClient(conn=mem_db)
     monkeypatch.setattr(client, "acquire", lambda *a, **kw: pytest.fail("ineligible task acquired"))
     with pytest.raises(LeaseError):
-        WorkerLeaseBinding.acquire_next(client, {"task_id": tid, "id": "slot", "model": "test-model"},
+        WorkerLeaseBinding.acquire_next(client, {"task_id": tid, "id": "slot", "model": "test-model", "enforce_model_binding": True},
             worker_id="physical-worker@HOST", host="HOST", generation="current",
             is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
 
@@ -365,11 +376,11 @@ def test_completed_binding_selects_and_acquires_real_successor(mem_db):
     client = TaskLeaseClient(conn=mem_db)
     args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
                 is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
-    binding = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    binding = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "test-model"}, **args)
     assert binding.task_id == first
     binding.execute_task_manage({"action": "done", "task_id": first, "result": "Ergebnis der ersten Aufgabe"})
     assert binding.reviewed_task_ids == (first,) and not binding.completed_task_ids
-    successor = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    successor = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "test-model"}, **args)
     assert successor.task_id == second
     assert successor._ack.worker_id == binding._ack.worker_id
     assert successor._ack.lease_id != binding._ack.lease_id
@@ -390,7 +401,7 @@ def test_candidate_reassigned_after_page_is_skipped_using_fresh_detail(mem_db, m
         mem_db.commit()
         return page
     monkeypatch.setattr(client, "task_candidates", page_then_reassign)
-    binding = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot"},
+    binding = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot", "model": "test-model"},
         worker_id="physical-worker@HOST", host="HOST", generation="current",
         is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
     assert binding.task_id == suitable
@@ -430,7 +441,7 @@ def test_automatic_worker_does_not_pick_human_or_other_agent_tasks(mem_db, assig
     mem_db.execute("UPDATE tasks SET assigned_to='BACH', priority='P2' WHERE id=?", (work,))
     mem_db.commit()
     client = TaskLeaseClient(conn=mem_db)
-    chosen = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot", "sub_mode": "task_worker"},
+    chosen = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot", "model": "test-model", "sub_mode": "task_worker"},
         worker_id="physical-worker@HOST", host="HOST", generation="current",
         is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
     assert chosen.task_id == work
@@ -444,7 +455,7 @@ def test_automatic_selection_reaches_eligible_work_beyond_first_thousand_candida
     mem_db.execute("INSERT INTO tasks (title, status, priority, assigned_to) VALUES ('Actual work', 'pending', 'P2', 'BACH')")
     mem_db.commit()
     client = TaskLeaseClient(conn=mem_db)
-    chosen = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot", "sub_mode": "task_worker"},
+    chosen = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot", "model": "test-model", "sub_mode": "task_worker"},
         worker_id="physical-worker@HOST", host="HOST", generation="current",
         is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
     assert chosen.task_snapshot()["title"] == "Actual work"
@@ -460,16 +471,16 @@ def test_returned_version_is_deferred_but_changed_content_can_be_picked(mem_db):
     client = TaskLeaseClient(conn=mem_db)
     args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
                 is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
-    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "test-model"}, **args)
     bound.execute_task_manage({"action": "update", "task_id": first, "status": "pending"})
     deferred = {first: bound.task_snapshot()["task_version"]}
-    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    next_task = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "test-model"}, deferred_versions=deferred, **args)
     assert next_task.task_id == second
     next_task.execute_task_manage({"action": "done", "task_id": second, "result": "Ergebnis der zweiten Aufgabe"})
-    assert WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args) is None
+    assert WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "test-model"}, deferred_versions=deferred, **args) is None
     mem_db.execute("UPDATE tasks SET description='Neue Voraussetzung' WHERE id=?", (first,))
     mem_db.commit()
-    changed = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, deferred_versions=deferred, **args)
+    changed = WorkerLeaseBinding.acquire_next(client, {"id": "slot", "model": "test-model"}, deferred_versions=deferred, **args)
     assert changed.task_id == first
     assert changed.task_snapshot()["task_version"] != deferred[first]
 
@@ -523,7 +534,8 @@ def test_explicit_assignment_never_overrides_slot_or_model(request, monkeypatch,
     client = TaskLeaseClient(conn=task_db)
     monkeypatch.setattr(client, "acquire", lambda *a, **kw: pytest.fail("ineligible task acquired"))
     chosen = WorkerLeaseBinding.acquire_next(client,
-        {"id": "our-slot", "model": "openrouter/free", "pickup_filter": {"enabled": True, "categories": ["WORKER"]}},
+        {"id": "our-slot", "model": "openrouter/free", "enforce_model_binding": True,
+         "pickup_filter": {"enabled": True, "categories": ["WORKER"]}},
         worker_id="physical-worker@HOST", host="HOST", generation="current",
         is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
     assert chosen is None
@@ -566,7 +578,9 @@ def test_explicit_assignment_preserves_required_and_excluded_tags(tags, expected
     slot = {"id": "our-slot", "model": "openrouter/free", "pickup_filter": {
         "enabled": True, "categories": ["WORKER"], "priorities": ["P1", "P2"],
         "tags": ["ready"], "exclude_tags": ["waiting", "delegated"]}}
-    assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is expected
+    from hub._services.chat.worker_queue_status import worker_selection_policy
+
+    assert WorkerLeaseBinding._automatic_matches_slot(task, slot, worker_selection_policy(slot)) is expected
 
 
 def _binding_with_output_limit(mem_db, result_max_chars):
