@@ -22,8 +22,10 @@ const API = {
     },
 
     deviceHeaders() {
-        const token = typeof localStorage === 'undefined' ? null : localStorage.getItem('bach_device_token');
-        return token ? { Authorization: 'Bearer ' + token } : {};
+        // Browser device authentication is carried by the server-managed
+        // HttpOnly cookie.  BOARD_CONFIG tokens are separate, explicit
+        // integrations and remain handled by _headers above.
+        return {};
     },
 
     async get(endpoint) {

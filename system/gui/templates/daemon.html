@@ -770,7 +770,9 @@
                     stop.title = data.control_available ? 'Lokalen Daemon stoppen' : 'Externer Daemon: hier nicht steuerbar';
                 } else if (data.identity === 'stopped') {
                     label.textContent = 'Kein Daemon-Prozessdatensatz';
-                    start.disabled = !localStorage.getItem('bach_device_token');
+                    // The device credential is an HttpOnly cookie; the
+                    // authenticated status request already proved access.
+                    start.disabled = false;
                 } else {
                     label.textContent = 'Daemon-Identität unbekannt · Steuerung gesperrt';
                 }
