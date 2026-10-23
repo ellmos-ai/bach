@@ -279,7 +279,7 @@ def test_retry_wait_observes_stop_policy_ttl_and_generation(monkeypatch, interru
         assert writes[-1]["status"] == ("idle" if interruption == "disabled" else "expired")
 
 
-@pytest.mark.parametrize("scenario", ["recover", "exhausted", "stop", "return_denied", "foreign_claim", "quota_after_retry",
+@pytest.mark.parametrize("scenario", ["recover", "connection_recover", "exhausted", "stop", "return_denied", "foreign_claim", "quota_after_retry",
     "unknown_none", "unknown_false", "unknown_true", "unknown_negative", "unknown_string", "unknown_float"])
 def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_path, monkeypatch, scenario):
     import sqlite3
@@ -288,12 +288,15 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     from hub._services.chat.chat_runtime import ChatSession, _managed_backend_answer
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from system.tests.test_task_lease_client import _init_db
+    from hub._services.llm.model_backend import OpenRouterBackend
+    connection = scenario == "connection_recover"
+    model = "openrouter/free" if connection else "glm-5.3:cloud"
     control = importlib.import_module("hub._services.chat.telegram_chat")
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     ident = slots.add_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)["id"]
-    slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "enabled": True,
+    slots.update_slot(ident, {"backend": "openrouter" if connection else "ollama", "model": model, "enabled": True,
         "mode": "safe", "task_id": 42, "pause_after": 0}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
         monkeypatch.setattr(control, registry, {})
@@ -307,17 +310,29 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     conn.commit()
     client = TaskLeaseClient(conn=conn)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
-    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    backend = (OpenRouterBackend(api_key="fixture", default_model=model)
+               if connection else OllamaBackend(default_model=model))
     runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
     monkeypatch.setattr(control, "runtime", runtime)
     session = ChatSession()
     session.chat_id = ident
     monkeypatch.setattr(runtime, "get_session", lambda _: session)
-    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
     real_client = httpx.AsyncClient
-    calls, fences, waits = [], [], []
+    calls, fences, waits, inner_waits = [], [], [], []
+    async def inner_wait(seconds, *, check_active):
+        check_active()
+        assert client.read(42).leased
+        inner_waits.append(seconds)
+    if connection:
+        monkeypatch.setattr(runtime, "_wait_model_call_retry", inner_wait)
     def reply(request):
         calls.append(request)
+        if connection:
+            if len(calls) <= 4:
+                raise httpx.ConnectError("PRIVATE_PROVIDER_BODY", request=request)
+            return httpx.Response(200, json={"choices": [{
+                "message": {"role": "assistant", "content": "Healthy fixture"}}]})
         if len(calls) > 1 and scenario == "recover":
             return httpx.Response(200, text=json.dumps({"message": {"content": "Healthy fixture"}, "done": True}) + "\n")
         payload = "monthly usage limit reached" if scenario == "quota_after_retry" and len(calls) > 1 else "rate limit"
@@ -328,7 +343,14 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         binding = session.worker_task_binding
         assert binding.task_id == 42 and not binding.closed
         fences.append(binding._ack.fence)
-        answer = _managed_backend_answer(await backend.chat([{"role": "user", "content": "fixture"}]))
+        messages = [{"role": "user", "content": "fixture"}]
+        if connection:
+            result = await runtime._chat_with_cloud_call_retry(session, backend, model, messages)
+            answer = (FailedAnswer(result["error"], backend_error=result["backend_error"],
+                                   reason_code=result["reason_code"])
+                      if result.get("error") else _managed_backend_answer(result))
+        else:
+            answer = _managed_backend_answer(await backend.chat(messages))
         if not FailedAnswer.looks_like(answer):
             binding.execute_task_manage({"action": "submit_result", "task_id": 42, "result": str(answer)})
         return answer
@@ -354,7 +376,13 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         assert snapshot["active_task_id"] is None
         public = _project_worker(snapshot)
         assert public["worker_active"] is True and public["running"] is False
-        assert public.get("active_task_id") is None and public["backend_error"]["status_code"] == 429
+        assert public.get("active_task_id") is None
+        if connection:
+            assert public["backend_error"]["kind"] == "connection_error"
+            assert fences == [1] and inner_waits == [5, 10, 20]
+            assert len(calls) == 4
+        else:
+            assert public["backend_error"]["status_code"] == 429
         if scenario == "stop":
             worker.stop_event.set()
             return False
@@ -377,11 +405,17 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         thread = execution.thread
         thread.join(5)
         assert not thread.is_alive()
-        assert all(json.loads(request.content)["model"] == "glm-5.3:cloud" for request in calls)
+        assert all(json.loads(request.content)["model"] == model for request in calls)
         task = dict(conn.execute("SELECT * FROM tasks WHERE id=42").fetchone())
         current = slots.get_slot(ident, path)
-        if scenario == "recover":
-            assert len(calls) == 2 and waits == [60] and fences == [1, 2]
+        if scenario in {"recover", "connection_recover"}:
+            assert len(calls) == (5 if connection else 2)
+            assert waits == [60] and fences == [1, 2]
+            if connection:
+                assert inner_waits == [5, 10, 20]
+                events = slots.get_activity_history(path=path)
+                assert any(e.get("event") == "assignment_ended"
+                           and e.get("reason") == "temporary_connection_error" for e in events)
             assert task["status"] == "review" and task["claim_salt_ref"] is None
             assert current.get("backend_error") is None
             assert execution.task_result_bindings[42].submitted_result["accepted"] is False
