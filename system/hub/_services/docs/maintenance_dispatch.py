@@ -243,7 +243,33 @@ class DocumentationDispatcher:
             "tatsächlicher Dokurepair und persönliche Ergebnisfreigabe sind getrennte Schritte."
         )
 
-    def _ensure_task(self, title, description, *, priority="P2"):
+    def _analysis_description(self, package: str, revision: str, files: list[str]) -> str:
+        """Current adapter instruction; keep _description stable for old ACK recovery."""
+        variant = {
+            "help_forensic": "help",
+            "roadmap_review": "requirements",
+            "doc_freshness": "freshness",
+            "docs_changelog_review": "freshness",
+        }.get(package, "anhand des Dokumenttyps bestimmen")
+        return (
+            "[BACH-DOCS-LOOP-v1] Zuerst den BACH-Adapter vollständig lesen: "
+            "system/skills/workflows/doc-reality-loop-bach.md; "
+            "Shared-Quellpin: system/skills/workflows/doc-reality-loop-source.v1.json. "
+            f"Variante: {variant}. "
+            "Der gepinnte gemeinsame doc-reality-loop-Vertrag ist die Methode; "
+            "die folgenden alten Workflowverweise dienen nur als Herkunft. "
+            "Quellen, betroffene Leser und prüfbare Aussagen vollständig erfassen; "
+            "Host/Instanz/Version/Oberfläche und Belege getrennt festhalten. "
+            "Unerreichbare Wirkung bleibt unknown. Fehlende Register-/Lesernachweise "
+            "erlauben keine Archivierung. Dies ist ausschließlich ein Analyseauftrag: "
+            "Native Ergebnisabgabe ist kein executed/corrected/reviewed/repaired-Receipt; "
+            "diese Zustände benötigen jeweils die vollständigen eigenen Belege. "
+            "Offene Sollanforderungen mit Quelle erhalten; fehlende Folgetask-IDs "
+            "als offen melden, keine IDs erfinden oder Aufgaben selbst anlegen.\n\n"
+            + self._description(package, revision, files)
+        )
+
+    def _ensure_task(self, title, description, *, priority="P2", previous_description=None):
         matches = self.tasks.list(status=None, filter_text=title, limit=20)
         exact = [row for row in matches if row.get("title") == title]
         if len(exact) > 1:
@@ -286,7 +312,11 @@ class DocumentationDispatcher:
         if (
             type(row.get("id")) is not int
             or row["id"] <= 0
-            or row.get("description") != description
+            or row.get("description") not in (
+                (description, previous_description)
+                if isinstance(previous_description, str) and previous_description
+                else (description,)
+            )
             or row.get("category") != "WORKER"
             or (str(assignee or "").strip().lower() != "bach" and not review_handoff)
             or any(
@@ -327,7 +357,9 @@ class DocumentationDispatcher:
             root_id = hashlib.sha256(str(self.root.resolve()).encode()).hexdigest()[:8]
             title = f"Doku-Delta {package} {root_id} {revision[:12]}"
             task_id, action = self._ensure_task(
-                title, self._description(package, revision, names)
+                title,
+                self._analysis_description(package, revision, names),
+                previous_description=self._description(package, revision, names),
             )
             item = {
                 "revision": revision,
