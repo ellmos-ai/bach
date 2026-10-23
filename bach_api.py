@@ -29,3 +29,4 @@ for _name in __all__:
 
 # Module-level internal attributes needed for testing and lifecycle inspection
 _app = getattr(_MODULE, "_app", None)
+_TaskProxy = _MODULE._TaskProxy
