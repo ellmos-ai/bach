@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -20,13 +21,5 @@ if _SPEC is None or _SPEC.loader is None:
     raise ImportError(f"BACH API konnte nicht geladen werden: {_SYSTEM_API}")
 
 _MODULE = importlib.util.module_from_spec(_SPEC)
+sys.modules[__name__] = _MODULE
 _SPEC.loader.exec_module(_MODULE)
-
-__all__ = list(getattr(_MODULE, "__all__", []))
-
-for _name in __all__:
-    globals()[_name] = getattr(_MODULE, _name)
-
-# Module-level internal attributes needed for testing and lifecycle inspection
-_app = getattr(_MODULE, "_app", None)
-_TaskProxy = _MODULE._TaskProxy
