@@ -1050,6 +1050,8 @@ class TestControlHandlerEndpoints:
         database = tmp_path / "canonical-native-tasks.db"
         _create_db(database)
         connection = _connect(database)
+        connection.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.commit()
         _insert(connection, title="Isolated canonical task", assigned_to="BACH")
         connection.close()
         monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
@@ -1283,6 +1285,7 @@ class TestControlHandlerEndpoints:
         worker_id = "worker-test-failed-answer"
         worker = {"id": worker_id, "name": "Probe", "status": "running",
                   "type": "once", "expires_at": None,
+                  "backend": "ollama-cloud", "model": "glm-5.3:cloud",
                   "sub_mode": "task_worker", "task_prompt": "Probe"}
         _stage_controller_worker_fixture(monkeypatch, tmp_path / "slots.json", worker)
         updates = []
@@ -2094,11 +2097,14 @@ class TestMatchTaskToPickupFilter:
         from hub._services.chat.slots_config import get_always_on_execution_slot
         from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
+        from hub._services.chat.worker_queue_status import worker_selection_policy
+
         config_path = str(tmp_path / "native-always-on.json")
         initialize_slots_config(config_path)
         update_slot("buddha_always_on", {
             "enabled": True,
             "model": "qwen3.8:27b-mlx",
+            "enforce_model_binding": True,
             "pickup_filter": {
                 "enabled": True,
                 "categories": ["INBOX", "WORKER"],
@@ -2115,7 +2121,7 @@ class TestMatchTaskToPickupFilter:
 
         assert slot["enabled"] is True
         assert match_task_to_pickup_filter(task, slot) is expected
-        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is assigned_expected
+        assert WorkerLeaseBinding._automatic_matches_slot(task, slot, worker_selection_policy(slot)) is assigned_expected
 
     def test_empty_slot_filter_dict_rejects(self):
         # A slot with an empty dict as pickup_filter is treated as missing/malformed
@@ -2151,6 +2157,7 @@ class TestMatchTaskToPickupFilter:
         slot = {
             "id": "buddha_always_on",
             "model": "qwen3.8:27b-mlx",
+            "enforce_model_binding": True,
             "pickup_filter": {"enabled": True},
         }
         # Matching model and slot
@@ -2238,11 +2245,11 @@ class TestOffeneTasksPickupFilter:
             )
 
         local = {"id": "buddha_always_on", "enabled": True, "model": "qwen3.8:27b-mlx",
-                 "pickup_filter": {"enabled": False}}
+                 "enforce_model_binding": True, "pickup_filter": {"enabled": False}}
         assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2, 4]
-        assert [t["id"] for t in offene_tasks(str(db_path), "all")] == [4]
+        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot={"enforce_model_binding": True})] == [4]
         assert not task_matches_slot_binding(
-            {"required_model": "kimi-k3:cloud"}, {"id": "cloud-worker"}
+            {"required_model": "kimi-k3:cloud"}, {"id": "cloud-worker", "enforce_model_binding": True}
         )
         assert task_matches_slot_binding(
             {"required_model": "kimi-k3:cloud", "assigned_slot": "cloud-worker"},
