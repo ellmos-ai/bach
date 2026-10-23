@@ -56,3 +56,24 @@ Do not confuse this repository with Bach music, Johann Sebastian Bach resources,
 
 ## Independent project derived from BACH
 - [llm-note](https://github.com/doc-bricks/llm-note): standalone local SQLite and plain-text notebook extracted from BACH's Notizblock and Denkarium patterns ([provenance](https://github.com/doc-bricks/llm-note/blob/main/PROVENANCE.md)); it has no BACH runtime dependency.
+
+## NACHTRAG 2026-10-23: CLI task writers and Lead authority
+
+The canonical worker CLI routes task edit/priority/assign to the existing native
+TaskLeaseClient.update operation before opening its local projection. Supply the
+current own --lease-id, --fence and --task-version; preserve the new task version
+returned by each update. Assignment accepts one task per capability. A missing
+Lead, credentials, binding or ACK never authorizes a local fallback. An ACK is
+followed by an independent content snapshot; a readback conflict remains unknown
+and must not trigger an automatic retry. Explicit noncanonical database targets
+and isolated/Lead roles retain their existing local behavior.
+
+On a worker, task claim uses the existing native task lease command (including
+--by, --host, --ttl, --task-version). Legacy --lease SECONDS is rejected because
+native TTL profiles must be explicit. Claim does not rewrite assignment metadata.
+This source change does not deploy the CLI or grant worker/model start rights.
+The historical assertion that task done was already routed was false on this
+baseline. Worker task done now delegates one explicit own binding to the existing
+native lease release with outcome done; result/completion guards remain active.
+Legacy release and other operators remain separate native migration work;
+do not infer their Lead routing from these five writer paths.
