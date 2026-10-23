@@ -737,6 +737,37 @@ def _execution_worker_configuration(slot: dict):
     return configuration
 
 
+def _preview_worker_selection(worker_id: str, *, limit=50, offset=0):
+    """Observe this controller's selector; never start or acquire anything."""
+    import re
+    from hub._services.chat.worker_selection_preview import (
+        PreviewUnavailable, preview_worker_selection,
+    )
+    if not isinstance(worker_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", worker_id):
+        raise ValueError("Ungültige Worker-ID")
+    slot = _execution_worker_slot(worker_id)
+    if not slot:
+        raise KeyError(worker_id)
+    version = _worker_configuration(slot)["configuration_version"]
+    execution_version = _execution_worker_configuration(slot)["configuration_version"]
+    with _WORKER_CONTROL_LOCK:
+        control = _WORKER_CONTROLS.get(worker_id)
+        deferred = dict(control.deferred_task_versions) if control is not None else {}
+    preview = preview_worker_selection(_native_task_client(), slot,
+        configuration_version=version, execution_profile_version=execution_version,
+        deferred_versions=deferred, limit=limit, offset=offset)
+    current = _execution_worker_slot(worker_id)
+    if (not current or _worker_configuration(current)["configuration_version"] != version
+            or _execution_worker_configuration(current)["configuration_version"] != execution_version):
+        raise PreviewUnavailable("Worker-Konfiguration hat sich während der Vorschau geändert")
+    with _WORKER_CONTROL_LOCK:
+        now_control = _WORKER_CONTROLS.get(worker_id)
+        now_deferred = dict(now_control.deferred_task_versions) if now_control is not None else {}
+        if now_control is not control or now_deferred != deferred:
+            raise PreviewUnavailable("Workerlauf hat sich während der Vorschau geändert")
+    return preview
+
+
 def _execution_slot_reader(slot: dict, *, persistent_cloud_binding=None):
     worker_id = slot["id"]
     if persistent_cloud_binding is not None:
@@ -6102,6 +6133,24 @@ class ControlHandler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._json({"error": str(e)}, 500)
+
+        elif path == "/api/workers/selection-preview":
+            if not self._allow_control_request():
+                return
+            query = parse_qs(parsed_url.query, keep_blank_values=True)
+            try:
+                if set(query) - {"id", "limit", "offset"} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError("Ungültige Vorschauanfrage")
+                worker_id = query.get("id", [""])[0]
+                limit = int(query.get("limit", ["50"])[0])
+                offset = int(query.get("offset", ["0"])[0])
+                self._json({"ok": True, **_preview_worker_selection(worker_id, limit=limit, offset=offset)})
+            except KeyError:
+                self._json({"error": "Workerprofil nicht gefunden"}, 404)
+            except ValueError:
+                self._json({"error": "Ungültige Vorschauanfrage"}, 400)
+            except Exception:
+                self._json({"error": "Auswahlvorschau nicht bestätigt"}, 503)
 
         elif path == "/api/workers/configuration":
             if not self._allow_control_request():
