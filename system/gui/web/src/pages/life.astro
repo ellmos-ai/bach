@@ -742,10 +742,7 @@ import TaskCreateForm from "../components/TaskCreateForm.astro";
     }
 
     function lifeApiFetch(path, options = {}) {
-      let token = '';
-      try { token = localStorage.getItem('bach_device_token') || ''; } catch (_) {}
       const headers = new Headers(options.headers || {});
-      if (token) headers.set('Authorization', `Bearer ${token}`);
       return fetch(path, { ...options, headers });
     }
 

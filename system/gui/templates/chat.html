@@ -1198,8 +1198,6 @@
         }
         function controlHeaders(method, jsonBody = false, privateRead = false) {
             const headers = jsonBody ? { 'Content-Type': 'application/json' } : {};
-            const token = (localStorage.getItem('bach_device_token') || '').trim();
-            if (token) headers['Authorization'] = 'Bearer ' + token;
             return headers;
         }
         localStorage.removeItem('bach-control-api-token');
