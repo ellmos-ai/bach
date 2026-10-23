@@ -7,7 +7,7 @@ import pytest
 from system.tests.test_task_lease_client import mem_db, _insert_task
 from system.tests.test_task_lease_client_review import T0
 from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError
-from system.tests.test_worker_tool_trace import binding  # noqa: F401
+from system.tests.test_worker_tool_trace import binding as trace_binding
 from system.tests.worker_completion_fixtures import CompletionHarness
 from hub._services import worker_policy_settings as settings
 
@@ -26,6 +26,18 @@ def _require_personal_review(binding):
          "github_external_review": None, "allow_review_task_pickup": None},
         actor="fixture-explicit-user-review")
     conn.commit()
+
+
+@pytest.fixture
+def binding(mem_db):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.commit()
+    tid = _insert_task(mem_db)
+    client = TaskLeaseClient(conn=mem_db)
+    return WorkerLeaseBinding.acquire(client, tid, worker_id="physical-worker@HOST", host="HOST",
+                                     generation="generation-1", is_current=lambda: True,
+                                     stop_event=threading.Event(), clock=lambda: T0)
 
 
 @pytest.fixture
@@ -183,12 +195,12 @@ def test_add_uses_parent_fenced_decomposition_without_completion_receipt(binding
     assert binding.task_snapshot()["task_version"] != previous
 
 
-def test_bound_decomposition_inherits_top_level_routing_and_preserves_child_overrides(binding):
+def test_bound_decomposition_inherits_top_level_routing_and_preserves_child_overrides(binding, mem_db):
     result = binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
         "assigned_slot": "buddha_research", "required_model": "chosen-model", "close_parent": False,
         "subtasks": [{"title": "Recherche"}, {"title": "Umsetzung", "assigned_slot": "buddha_developer"}]})
     assert "in 2 Teilaufgaben" in result
-    rows = binding._client._conn.execute("SELECT assigned_slot, required_model FROM tasks WHERE id<>? ORDER BY id", (binding.task_id,)).fetchall()
+    rows = mem_db.execute("SELECT assigned_slot, required_model FROM tasks WHERE id<>? ORDER BY id", (binding.task_id,)).fetchall()
     assert [tuple(row) for row in rows] == [("buddha_research", "chosen-model"), ("buddha_developer", "chosen-model")]
     assert not binding.closed
 
@@ -209,7 +221,9 @@ def test_typo_in_decomposition_does_not_close_parent(binding):
 
 
 def test_renew_replaces_private_deadline_without_exposing_capability(binding):
+    from datetime import timedelta
     previous = binding._ack.local_deadline
+    binding._clock = lambda: T0 + timedelta(minutes=20)
     binding.renew()
     assert binding._ack.local_deadline > previous
     binding.assert_active()
@@ -253,7 +267,8 @@ def test_required_binding_cannot_fall_back_to_projection(monkeypatch):
     assert "Taskbindung fehlt" in result
 
 
-def test_real_native_process_releases_bound_task_without_post_completion_inference(binding, monkeypatch):
+def test_real_native_process_releases_bound_task_without_post_completion_inference(trace_binding, monkeypatch):
+    binding = trace_binding
     import asyncio
     from hub._services.chat import bach_tools
     from hub._services.chat.chat_runtime import ChatRuntime
