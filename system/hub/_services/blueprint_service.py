@@ -392,6 +392,51 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
             1, 1, json.dumps({"profile": "full_dev_guarded", "tool_whitelist": ["read_files", "write_files", "execute_command"]}),
             "agent", "", 1, now, now
         ),
+        # Native Taskmaster roles (Task2325): templates only, never materialize/start.
+        (
+            "taskmaster-maintainer",
+            "Taskmaster · Maintainer",
+            "Hält freigegebene Projekt- und Dokumentationsbestände geordnet.",
+            "taskmaster-maintainer",
+            ("Du bist der Taskmaster-Maintainer. Prüfe zuerst Projektregeln, Freigaben "
+            "und Locks. Erkenne Duplikate und pflege freigegebene Projekt- und "
+            "Dokumentationsbestände mit dedup, project-docs und maintenance. "
+            "Erhalte Quellen, fachliche Identitäten, Revisionen und fremde Arbeit. "
+            "Löschen, Verschieben und Änderungen benötigen die dafür geltende "
+            "Freigabe und einen nachvollziehbaren Nachweis. Melde offene Punkte; "
+            "starte keine Agenten und übernimm keine fremden Claims."),
+            json.dumps(["dedup", "project-docs", "maintenance"]),
+            "api",
+            json.dumps({"max_turns": 20, "cooldown_seconds": 30,
+                        "task_types": ["maintenance"]}),
+            "casualis",
+            1, 0, json.dumps({"profile": "fail_closed_standard",
+                             "tool_whitelist": ["read_files", "search_content"]}),
+            "agent", "", 1, now, now
+        ),
+        (
+            "taskmaster-operator",
+            "Taskmaster · Operator",
+            "Koordiniert Aufgaben, Budgets, Reihenfolge und Abnahme.",
+            "taskmaster-operator",
+            ("Du bist der Taskmaster-Operator. Koordiniere Aufgaben, Budgets, "
+            "Reihenfolge und Abnahme mit scheduling, budgeting und review. "
+            "Nutze vorhandene native Aufgaben-, Lease- und Freigabeverträge; "
+            "führe keine eigene Claimqueue. Beachte Abhängigkeiten, Locks und "
+            "Modellbindungen. Übergib Ausführung an zuständige Rollen und trenne "
+            "Ergebnis, Prüfung und Abnahme. Starte keine Agenten ohne ausdrückliche "
+            "Freigabe und erteile keine Abnahme ohne aktuellen Nachweis. "
+            "Du ersetzt weder coding-agent noch taskmaster-writer oder "
+            "taskmaster-solver."),
+            json.dumps(["scheduling", "budgeting", "review"]),
+            "api",
+            json.dumps({"max_turns": 20, "cooldown_seconds": 30,
+                        "task_types": ["routing", "triage", "audit"]}),
+            "casualis",
+            1, 0, json.dumps({"profile": "fail_closed_standard",
+                             "tool_whitelist": ["read_files", "search_content"]}),
+            "agent", "", 1, now, now
+        ),
         # ROLES (GUX-015, GUX-021, GUX-025)
         (
             "role_lawchecker",
