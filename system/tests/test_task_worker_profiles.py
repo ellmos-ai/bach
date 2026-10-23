@@ -369,15 +369,18 @@ def test_verified_profile_assignment_roundtrips_to_worker_picker(
 
     task = {"id": 42002, **target["binding"], "category": "GUI", "priority": "P3"}
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
-    assert WorkerLeaseBinding._selection_rejection_reason(task, profile_slot) is None
-    assert WorkerLeaseBinding._selection_rejection_reason(cli_task, profile_slot) is None
+    from hub._services.chat.worker_queue_status import worker_selection_policy
+    selection_policy = worker_selection_policy({**profile_slot, "enforce_model_binding": True})
+    assert WorkerLeaseBinding._selection_rejection_reason(
+        task, profile_slot, selection_policy=selection_policy) is None
+    assert WorkerLeaseBinding._selection_rejection_reason(cli_task, profile_slot, selection_policy=selection_policy) is None
 
     assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_slot": "different-worker"}, profile_slot) == "slot_binding"
+        {**task, "assigned_slot": "different-worker"}, profile_slot, selection_policy=selection_policy) == "slot_binding"
     assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "required_model": "different-model"}, profile_slot) == "model_binding"
+        {**task, "required_model": "different-model"}, profile_slot, selection_policy=selection_policy) == "model_binding"
     assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_to": "codex"}, profile_slot) == "ownership"
+        {**task, "assigned_to": "codex"}, profile_slot, selection_policy=selection_policy) == "ownership"
 
 
 def test_external_profile_without_verified_runtime_is_not_assignable(configured_profiles):
