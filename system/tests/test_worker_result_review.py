@@ -289,57 +289,27 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
     assert review.record_review(world["conn"], child, **_paths(world)) is None
 
 
-def test_author_can_review_in_fresh_run_without_accepting_own_result(review_world):
+def test_author_cannot_review_own_result_even_in_fresh_run(review_world):
+    # Independence gate: neither the author's principal nor its slot gets a
+    # review grant, also not in a fresh run; the parent stays unaccepted and an
+    # independent reviewer can still be granted.
     world = review_world
     prepared = _prepare(world)
     task_id = prepared["review_task_id"]
     author = world["binding"]
     worker_id = author._ack.worker_id
-    generation = "author-review-fresh-generation"
     stop = threading.Event()
     route = {"backend_id": "ollama", "route_sha256": AUTHOR_ROUTE}
     grant = review.issue_review_grant(
         world["conn"], task_id, worker_id=worker_id, host="HOST",
-        generation=generation, slot_id=AUTHOR_SLOT, route=route,
+        generation="author-review-fresh-generation", slot_id=AUTHOR_SLOT, route=route,
         requested_model=AUTHOR_MODEL, is_current=lambda: True,
         stop_event=stop, clock=lambda: T0, **_paths(world))
-    assert grant is not None
-    child = WorkerLeaseBinding.acquire(
-        world["client"], task_id, worker_id=worker_id, host="HOST",
-        generation=generation, is_current=lambda: True, stop_event=stop,
-        clock=lambda: T0,
-        slot={"id": AUTHOR_SLOT, "model": AUTHOR_MODEL, "backend": "ollama"},
-        automatic=True, _review_grant=grant)
-    assert review.guard_review_dispatch(
-        world["conn"], child, route=route, requested_model=AUTHOR_MODEL,
-        **_paths(world)) is True
-
-    verdict = json.dumps({"status": "approved", "summary": "Eigene Arbeit im neuen Lauf kritisch geprüft.",
-                          "task_contract_met": True}, ensure_ascii=False)
-    answer = _response(AUTHOR_OBSERVED, verdict=(child.task_id, verdict))
-    handle = child.begin_model_execution(
-        backend_id="ollama", requested_model=AUTHOR_MODEL, slot_id=AUTHOR_SLOT,
-        request_sha256=_request_hash("fresh-context self-review"), route_sha256=AUTHOR_ROUTE)
-    assert handle is not None
-    assert child.finish_model_execution(
-        handle, result=answer, route_sha256=AUTHOR_ROUTE) is True
-    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
-        "action": "submit_result", "task_id": child.task_id, "result": verdict})
-
-    evidence = review.record_review(world["conn"], child, **_paths(world))
-    assert evidence["availability"] == "recorded"
-    assert evidence["reviewer_id"] == AUTHOR
-    assert evidence["independent"] is False
-    assert evidence["policy_eligible"] is False
-    assert read_result(world["conn"], task_id)["status"] == "done"
+    assert grant is None
     parent = read_result(world["conn"], world["task_id"])
     assert parent["status"] == "review"
     assert parent["result"]["accepted"] is False
-
-    from hub._services.worker_completion_policy import evaluate_current_result
-    evaluation = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
-    assert evaluation["decision"]["completion_allowed"] is False
-    assert evaluation["decision"]["worker_may_claim_next"] is True
+    assert _grant(world, task_id)[0] is not None
 
 
 @pytest.mark.parametrize("failure", ["no_return", "backend_error", "extra_call", "invalid_json",
@@ -665,10 +635,10 @@ def test_review_task_requires_a_private_fresh_run_grant(review_world):
         world["client"].acquire(task_id, worker_id="review-worker@HOST", host="HOST",
             task_version=snapshot["task_version"], result_generation=REVIEW_GENERATION,
             now=T0)
-    assert _grant(world, task_id, slot=AUTHOR_SLOT)[0] is not None
+    assert _grant(world, task_id, slot=AUTHOR_SLOT)[0] is None
     assert _grant(world, task_id, generation=world["binding"].generation)[0] is None
     assert _grant(world, task_id, route=AUTHOR_ALIAS_ROUTE,
-                  requested=AUTHOR_ALIAS_MODEL)[0] is not None
+                  requested=AUTHOR_ALIAS_MODEL)[0] is None
     assert _grant(world, task_id)[0] is not None
 
 
