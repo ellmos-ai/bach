@@ -347,7 +347,10 @@ class OllamaBackend(ModelBackend):
         content = "".join(content_parts)
         if not think and "</think>" in content:
             content = content.rsplit("</think>", 1)[1].strip()
-        if not content and not tool_calls:
+        # An empty message list is Ollama's load request: done_reason "load"
+        # with no content is its success signal, not an empty answer.
+        load_only = not messages and done_reason == "load"
+        if not content and not tool_calls and not load_only:
             # The completed stream contained no usable answer. Log only bounded
             # counters and a closed reason enum; never log model text or tools.
             def bounded_count(value):

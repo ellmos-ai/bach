@@ -299,6 +299,23 @@ def test_ollama_chat_rejects_empty_success(monkeypatch, payload):
         _run_chat(monkeypatch, payload)
 
 
+def test_ollama_load_request_returns_empty_success(monkeypatch):
+    response = _FakeResponse({"message": {"role": "assistant", "content": ""},
+                              "done_reason": "load"})
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: _FakeClient(response))
+    backend = OllamaBackend(default_model="qwen3:4b")
+
+    result = asyncio.run(backend.chat([], think=False))
+
+    assert result["content"] == ""
+    assert result["model"] == "qwen3:4b"
+
+
+def test_ollama_load_reason_with_messages_stays_empty_answer(monkeypatch):
+    with pytest.raises(RuntimeError, match="leere Antwort"):
+        _run_chat(monkeypatch, {"message": {"content": ""}, "done_reason": "load"})
+
+
 def _empty_ollama_diagnostic(caplog):
     records = [record.getMessage() for record in caplog.records
                if record.getMessage().startswith("ollama_empty_response ")]
