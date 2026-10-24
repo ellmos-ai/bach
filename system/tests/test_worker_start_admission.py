@@ -134,6 +134,73 @@ def test_bound_task_scope_precedes_model_for_every_worker_type(
     assert started == [(leased_binding.task_id, False)]
 
 
+def test_scope_failure_logs_the_failed_check_without_leaking_details(
+    leased_binding, monkeypatch, caplog,
+):
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("Task-Branch existiert bereits, ist aber nicht an diesen Worktree gebunden")
+    monkeypatch.setattr(worker_git, "start_task_worktree", refuse)
+    with caplog.at_level("WARNING", logger="bach.telegram_chat"):
+        with pytest.raises(RuntimeError, match="nicht bestätigt"):
+            control._prepare_bound_task_scope(leased_binding,
+                {"type": "continuous", "allowed_tools": ["task_manage"]})
+    assert "Task-Branch existiert bereits" in caplog.text
+
+    def leak(*_args, **_kwargs):
+        raise OSError("/Users/geheim/pfad")
+    monkeypatch.setattr(worker_git, "start_task_worktree", leak)
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="bach.telegram_chat"):
+        with pytest.raises(RuntimeError):
+            control._prepare_bound_task_scope(leased_binding,
+                {"type": "continuous", "allowed_tools": ["task_manage"]})
+    assert "OSError" in caplog.text and "geheim" not in caplog.text
+
+
+@pytest.mark.parametrize("payload", [
+    "pathlib_path", "reason_prefix", "multiple_args", "object_arg", "subclass", "empty",
+])
+def test_scope_failure_redacts_unknown_runtime_errors(
+    request, monkeypatch, caplog, payload,
+):
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+
+    class PrivateRuntimeError(RuntimeError):
+        pass
+
+    class PrivatePayload:
+        def __str__(self):
+            pytest.fail("A diagnostic must not stringify an unknown exception payload")
+
+    binding = request.getfixturevalue("leased_binding")
+    marker = "REVIEW_PRIVATE_CANARY"
+    errors = {
+        "pathlib_path": RuntimeError(f"Symlink loop from 'C:/private/{marker}'"),
+        "reason_prefix": RuntimeError(f"scope_unavailable {marker}"),
+        "multiple_args": RuntimeError("scope_unavailable", marker),
+        "object_arg": RuntimeError(PrivatePayload()),
+        "subclass": PrivateRuntimeError(marker),
+        "empty": RuntimeError(),
+    }
+    error = errors[payload]
+
+    def refuse(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(worker_git, "start_task_worktree", refuse)
+    with caplog.at_level("WARNING", logger="bach.telegram_chat"):
+        with pytest.raises(RuntimeError, match="Task-Arbeitsbaum vor Modellstart nicht bestätigt"):
+            control._prepare_bound_task_scope(binding,
+                {"type": "continuous", "allowed_tools": ["task_manage"]})
+    assert marker not in caplog.text
+    assert "scope_unavailable" not in caplog.text
+    assert type(error).__name__ in caplog.text
+
+
 @pytest.mark.parametrize("failure", [False, True])
 def test_continuous_scope_precedes_model_in_worker_loop(
     admission, leased_binding, monkeypatch, failure,
