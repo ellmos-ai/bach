@@ -105,21 +105,56 @@ review_branch="mac/${host:-host}-${head_sha}"
 
 echo "[HARVEST] HEAD=${head_sha} ahead=${ahead} behind=${behind} branch=${review_branch}"
 
-if [[ "${ahead}" == "0" ]]; then
+# Uncommitted live changes (e.g. interim deploys copied into the tree) are
+# captured as a snapshot commit built from a temporary index. HEAD, the real
+# index and the working tree stay untouched; nothing is merged.
+dirty="$(${GIT_BIN} status --porcelain --untracked-files=all)"
+dirty_count=0
+[[ -z "${dirty}" ]] || dirty_count="$(printf '%s\n' "${dirty}" | grep -c .)"
+[[ "${dirty_count}" == "0" ]] || echo "[DIRTY] ${dirty_count} uncommittete Pfade im Live-Baum"
+
+if [[ "${ahead}" == "0" && "${dirty_count}" == "0" ]]; then
   receipt "noop" "head=${short_sha};ahead=0;behind=${behind}"
   exit 0
 fi
 
 if [[ "${MODE}" == "--status" || "${MODE}" == "--dry-run" ]]; then
-  receipt "status" "head=${short_sha};ahead=${ahead};behind=${behind};target=${review_branch}"
+  receipt "status" "head=${short_sha};ahead=${ahead};behind=${behind};dirty=${dirty_count};target=${review_branch}"
   exit 0
 fi
 
-dirty="$(${GIT_BIN} status --porcelain --untracked-files=normal)"
-[[ -z "${dirty}" ]] || fail "Arbeitsbaum ist nicht sauber; uncommittete Daten zuerst sichern"
-
 ${GH_BIN} auth status --hostname github.com >/dev/null 2>&1 \
   || fail "gh ist für github.com nicht authentifiziert"
+
+push_sha="${head_sha}"
+pr_title="harvest(${host}): lokale BACH-Worker-Commits ${day}"
+pr_summary="Automatisch abgeholte lokale BACH-Worker-Commits vom Host ${host}."
+if [[ "${dirty_count}" != "0" ]]; then
+  index_file="$(mktemp)"
+  trap 'rm -f "${index_file:-}" "${body_file:-}"' EXIT
+  GIT_INDEX_FILE="${index_file}" ${GIT_BIN} read-tree "${head_sha}"
+  GIT_INDEX_FILE="${index_file}" ${GIT_BIN} add -A
+  tree_sha="$(GIT_INDEX_FILE="${index_file}" ${GIT_BIN} write-tree)"
+  [[ "${tree_sha}" =~ ^[0-9a-f]{40}$ ]] || fail "Snapshot-Tree ist keine vollständige ID"
+  while IFS= read -r path; do
+    [[ -f "${path}" ]] || continue
+    (( $(wc -c < "${path}") <= 5242880 )) || fail "Snapshot enthält Datei über 5 MB: ${path}"
+  done < <(GIT_INDEX_FILE="${index_file}" ${GIT_BIN} diff --cached --name-only --diff-filter=AM "${head_sha}")
+  if GIT_INDEX_FILE="${index_file}" ${GIT_BIN} diff --cached -U0 "${head_sha}" \
+      | grep -qE '^\+.*(ghp_[A-Za-z0-9]{20}|github_pat_|sk-or-v1-|-----BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16})'; then
+    fail "Snapshot enthält mögliche Zugangsdaten; Live-Baum manuell prüfen"
+  fi
+  # Same tree on the same base gives the same commit ID, so later runs reuse it.
+  base_date="$(${GIT_BIN} show -s --format=%cI "${head_sha}")"
+  push_sha="$(GIT_AUTHOR_DATE="${base_date}" GIT_COMMITTER_DATE="${base_date}" \
+    ${GIT_BIN} commit-tree "${tree_sha}" -p "${head_sha}" \
+    -m "snapshot(${host}): uncommittete Live-Änderungen auf ${short_sha}")"
+  [[ "${push_sha}" =~ ^[0-9a-f]{40}$ ]] || fail "Snapshot-Commit ist keine vollständige ID"
+  review_branch="mac/${host:-host}-live-${tree_sha:0:12}"
+  pr_title="snapshot(${host}): uncommittete Live-Änderungen ${day}"
+  pr_summary="Automatisch gesicherte uncommittete Änderungen (${dirty_count} Pfade) aus dem Live-Baum von ${host}, gebaut über einen temporären Index; der Live-Baum blieb unverändert."
+  echo "[SNAPSHOT] tree=${tree_sha} commit=${push_sha} branch=${review_branch}"
+fi
 
 pr_number="$(${GH_BIN} pr list --repo "${REPO_SLUG}" --head "${review_branch}" \
   --base main --state all --limit 1 --json number --jq '.[0].number // empty')"
@@ -133,7 +168,7 @@ read_pr() {
 
 validate_pr_identity() {
   [[ "${rb_number}" == "${pr_number}" && "${rb_head}" == "${review_branch}" \
-      && "${rb_oid}" == "${head_sha}" && "${rb_base}" == "main" ]] \
+      && "${rb_oid}" == "${push_sha}" && "${rb_base}" == "main" ]] \
     || fail "PR-Readback stimmt nicht mit Commit, Branch und Basis überein"
 }
 
@@ -143,7 +178,7 @@ if [[ -n "${pr_number}" ]]; then
   validate_pr_identity
   case "${rb_state}" in
     MERGED)
-      receipt "noop" "head=${head_sha};branch=${review_branch};pr=${rb_number};state=MERGED;url=${rb_url}"
+      receipt "noop" "head=${push_sha};branch=${review_branch};pr=${rb_number};state=MERGED;url=${rb_url}"
       echo "[OK] Commit bereits über PR #${rb_number} gemergt: ${rb_url}"
       exit 0
       ;;
@@ -152,7 +187,7 @@ if [[ -n "${pr_number}" ]]; then
       ;;
     OPEN)
       [[ "${rb_draft}" == "true" ]] || fail "PR #${rb_number} ist nicht mehr Draft"
-      receipt "pr" "head=${head_sha};branch=${review_branch};pr=${rb_number};state=OPEN;draft=true;url=${rb_url}"
+      receipt "pr" "head=${push_sha};branch=${review_branch};pr=${rb_number};state=OPEN;draft=true;url=${rb_url}"
       echo "[OK] Bestehender Draft-PR #${rb_number}: ${rb_url}"
       exit 0
       ;;
@@ -162,24 +197,26 @@ fi
 
 # Exakter, zuvor gepruefter Commit als Quellref; ein spaeter bewegtes lokales
 # HEAD kann weder Branch noch Receipt veraendern. Kein Force, niemals main.
-${GIT_BIN} push --porcelain "${REMOTE}" "${head_sha}:refs/heads/${review_branch}"
+${GIT_BIN} push --porcelain "${REMOTE}" "${push_sha}:refs/heads/${review_branch}"
 
 if [[ -z "${pr_number}" ]]; then
   body_file="$(mktemp)"
-  trap 'rm -f "${body_file:-}"' EXIT
+  trap 'rm -f "${index_file:-}" "${body_file:-}"' EXIT
   cat > "${body_file}" <<EOF
-Automatisch abgeholte lokale BACH-Worker-Commits vom Host ${host}.
+${pr_summary}
 
 - Ausgangs-HEAD: ${head_sha}
+- Gepushter Commit: ${push_sha}
 - Commits vor origin/main: ${ahead}
 - Commits hinter origin/main: ${behind}
+- Uncommittete Pfade: ${dirty_count}
 - Ziel: Review nach D-20260902-002
 
 Dieser PR darf erst nach unabhängiger Prüfung gemergt werden. Der Harvester pusht niemals auf main.
 EOF
   created_url="$(${GH_BIN} pr create --repo "${REPO_SLUG}" --base main \
     --head "${review_branch}" --draft \
-    --title "harvest(${host}): lokale BACH-Worker-Commits ${day}" \
+    --title "${pr_title}" \
     --body-file "${body_file}")"
   pr_number="${created_url##*/}"
   [[ "${pr_number}" =~ ^[0-9]+$ ]] || fail "PR-Erstellung lieferte keine lesbare PR-Nummer"
@@ -191,5 +228,5 @@ validate_pr_identity
 [[ "${rb_state}" == "OPEN" ]] || fail "Neu erstellter PR #${rb_number} ist nicht OPEN"
 [[ "${rb_draft}" == "true" ]] || fail "Neu erstellter PR #${rb_number} ist nicht Draft"
 
-receipt "pr" "head=${head_sha};branch=${review_branch};pr=${rb_number};state=${rb_state};draft=${rb_draft};url=${rb_url}"
+receipt "pr" "head=${push_sha};branch=${review_branch};pr=${rb_number};state=${rb_state};draft=${rb_draft};url=${rb_url}"
 echo "[OK] PR #${rb_number}: ${rb_url} (${rb_state}, draft=${rb_draft})"
