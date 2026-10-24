@@ -690,7 +690,7 @@ class TestBachCliDispatch:
         return DummyApp()
 
     def test_subcommand_handler_gets_dry_run_flag(self, monkeypatch, capsys):
-        import bach as bach_cli
+        from system import bach as bach_cli
 
         called = {}
         monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called))
@@ -710,7 +710,7 @@ class TestBachCliDispatch:
         assert "[DRY-RUN] ok" in capsys.readouterr().out
 
     def test_profile_handler_gets_dry_run_flag(self, monkeypatch, capsys):
-        import bach as bach_cli
+        from system import bach as bach_cli
 
         called = {}
         monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called))
@@ -729,7 +729,7 @@ class TestBachCliDispatch:
         assert "[DRY-RUN] ok" in capsys.readouterr().out
 
     def test_startup_profile_preserves_quick_operation(self, monkeypatch, capsys):
-        import bach as bach_cli
+        from system import bach as bach_cli
 
         called = {}
         monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called, "startup"))
@@ -748,7 +748,7 @@ class TestBachCliDispatch:
         assert "ok" in capsys.readouterr().out
 
     def test_startup_profile_keeps_free_positional_arg_as_handler_arg(self, monkeypatch, capsys):
-        import bach as bach_cli
+        from system import bach as bach_cli
 
         called = {}
         monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called, "startup"))
@@ -767,7 +767,7 @@ class TestBachCliDispatch:
         assert "ok" in capsys.readouterr().out
 
     def test_shutdown_profile_preserves_quick_operation(self, monkeypatch, capsys):
-        import bach as bach_cli
+        from system import bach as bach_cli
 
         called = {}
         monkeypatch.setattr(bach_cli, "_get_app", lambda: self._dummy_app(called, "shutdown"))
@@ -786,7 +786,7 @@ class TestBachCliDispatch:
         assert "ok" in capsys.readouterr().out
 
     def test_partner_runtime_commands_route_to_partner_handler(self, monkeypatch, capsys):
-        import bach as bach_cli
+        from system import bach as bach_cli
 
         called = {}
 

@@ -260,7 +260,7 @@ def test_context_api_renders_manual_document_before_selection(context_pair):
     """Der direkte CLI-Altpfad wird gefiltert; Chat zeigt jetzt das Hilfedokument."""
     _, _, hook = context_pair
     prompt = "fehler bei der ocr"
-    import bach_api
+    from system import bach_api
     proxy = bach_api._InjectorProxy()
     proxy.set_mode("api")
     alt = proxy._filter_cli([injectors.ContextInjector.check(prompt)])
@@ -269,7 +269,7 @@ def test_context_api_renders_manual_document_before_selection(context_pair):
     from hub.context_hints import neutral_manual_hint
     assert new == ["[KONTEXT] " + neutral_manual_hint(
         injectors.ContextInjector.CONTEXT_TRIGGERS["fehler"], SYSTEM_DIR)]
-    import bach_api
+    from system import bach_api
     assert mhp._CLI_PATTERN.pattern == bach_api._CLI_PATTERN.pattern
 
 
@@ -367,7 +367,7 @@ def test_tool_warn_parity_cooldown_and_api_mode(tool_db, seam_env, tmp_path, mon
 
     monkeypatch.setattr(injectors, "datetime", _Clock)
     system = injectors.InjectorSystem(base)
-    import bach_api
+    from system import bach_api
     proxy = bach_api._InjectorProxy()
     proxy.set_mode("api")
     config = _tool_hook(tool_db, cooldown=300)._config
@@ -468,7 +468,7 @@ def test_between_seed_matches_legacy(tmp_path):
 
 
 def _cli_run(monkeypatch, capsys, system, hook, clock, steps):
-    import bach as bach_cli
+    from system import bach as bach_cli
     import memoryhooker.triggers as mht
     monkeypatch.setattr(bach_cli, "_get_injector", lambda: system)
     monkeypatch.setattr(mhp, "get_shared_memory_hook", lambda *a, **k: hook)
@@ -523,7 +523,7 @@ def test_cli_path_parity_sequence(tmp_path, monkeypatch, capsys):
 def test_task_done_runs_injectors(monkeypatch):
     """T-20260926-620619287: 'bach task done' lief am INLINE_COMMANDS-Sonderpfad
     _handle_task, der _run_injectors nie aufrief -- Between feuerte fuer Tasks nie."""
-    import bach as bach_cli
+    from system import bach as bach_cli
 
     class _FakeHandler:
         def __init__(self, root):
