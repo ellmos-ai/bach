@@ -39,8 +39,8 @@ from typing import Any
 
 try:
     from hub._services.task_lease import (
-        LeaseConfig,
-        LeaseResult,
+        LeaseConfig as LeaseConfig,
+        LeaseResult as LeaseResult,
         LeaseValidationError,
         LeaseSelfCheckRequired,
         TaskNotFound,
@@ -57,8 +57,8 @@ try:
     )
 except ImportError:  # pragma: no cover
     from .task_lease import (  # type: ignore
-        LeaseConfig,
-        LeaseResult,
+        LeaseConfig as LeaseConfig,
+        LeaseResult as LeaseResult,
         LeaseValidationError,
         LeaseSelfCheckRequired,
         TaskNotFound,
@@ -573,7 +573,9 @@ class TaskLeaseClient:
                 continue
             snapshot = self._public_snapshot(item)
             intent = item["review_intent"]
-            if (intent.get("schema") != "bach.worker-result-review-intent.v1"
+            if (intent.get("schema") not in {
+                        "bach.worker-result-review-intent.v1",
+                        "bach.worker-result-review-intent.external-attested.v1"}
                     or intent.get("review_task_id") != snapshot["id"]
                     or intent.get("task_version") != snapshot["task_version"]
                     or intent.get("status") not in {"pending", "open"}):
@@ -1114,7 +1116,7 @@ class TaskLeaseClient:
                            result_generation=result_generation, receive_time=sent_at)
 
     def _acquire_native_creator(self, task_id, *, delegation, worker_id, host,
-                                task_version, config=None, now=None):
+                                task_version, ttl_profile="M", config=None, now=None):
         """Private lead-local entry; it has no HTTP equivalent or fallback."""
         if self.mode != "local":
             raise LeaseProtocolError("Creator-Delegation wird ausschließlich am lokalen TaskDB-Lead eingelöst")
@@ -1124,7 +1126,8 @@ class TaskLeaseClient:
         conn = self._get_local_connection()
         try:
             result = _acquire_native_creator_lease(conn, task_id, delegation=delegation,
-                worker_id=worker_id, host=host, task_version=task_version, config=config, now=now)
+                worker_id=worker_id, host=host, task_version=task_version,
+                ttl_profile=ttl_profile, config=config, now=now)
             status, data = result.http_status, result.payload
         except (LeaseValidationError, TaskNotFound):
             raise LeaseProtocolError("Private Creator-Delegation oder Task ungültig") from None
@@ -1140,6 +1143,44 @@ class TaskLeaseClient:
             raise LeaseProtocolError("Creator-Reviewpflicht dieser Generation nicht bestätigt")
         return self._grant(data, worker_id=worker_id, host=host, task_version=task_version,
                            result_generation=delegation.generation, receive_time=sent_at)
+
+    def worker_leases(self, worker_id):
+        """Read every live lease of one exact physical worker without capabilities."""
+        from hub._services.task_lease import read_worker_leases, _WORKER_RE
+        if not isinstance(worker_id, str) or not _WORKER_RE.fullmatch(worker_id):
+            raise LeaseProtocolError("Ungültige physische Worker-ID")
+        if self.mode == "remote":
+            from urllib.parse import urlencode
+            status, data = self._http_request(
+                "GET", "/api/tasks/leases/by-worker?" + urlencode({"worker_id": worker_id}))
+            if status != 200:
+                raise LeaseProtocolError("Worker-Leases nicht kanonisch lesbar")
+        else:
+            conn = self._get_local_connection()
+            try:
+                data = read_worker_leases(conn, worker_id).payload
+            finally:
+                if self._conn is None:
+                    conn.close()
+        if (not isinstance(data, dict) or set(data) != {
+                "schema", "worker_id", "server_now", "complete", "leases"}
+                or data.get("schema") != "bach.worker-leases.v1"
+                or data.get("worker_id") != worker_id or data.get("complete") is not True
+                or not isinstance(data.get("leases"), list)):
+            raise LeaseProtocolError("Unvollständiger Worker-Lease-Readback")
+        _wire_time(data.get("server_now"))
+        seen = set()
+        for lease in data["leases"]:
+            if (not isinstance(lease, dict) or set(lease) != {
+                    "task_id", "fence", "expires_at", "legacy"}
+                    or type(lease["task_id"]) is not int or lease["task_id"] <= 0
+                    or lease["task_id"] in seen or type(lease["fence"]) is not int
+                    or lease["fence"] < 0 or type(lease["legacy"]) is not bool):
+                raise LeaseProtocolError("Ungültiger Worker-Lease-Readback")
+            if lease["expires_at"] is not None:
+                _wire_time(lease["expires_at"])
+            seen.add(lease["task_id"])
+        return data
 
     def read(self, task_id, *, lease_id=None, config=None, now=None):
         headers = {"X-Lease-Id": lease_id} if lease_id else None

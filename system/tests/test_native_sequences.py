@@ -169,8 +169,18 @@ def test_real_engine_uses_result_and_exactly_one_native_start_per_step(store,pro
     assert final_output["completed_work"].startswith("Ergebnis 2")
     assert slots.sequence_profile_snapshot(list(before))["profiles"]==before
     with store.connection() as db:
-        tasks=db.execute("SELECT status,assigned_slot,created_by FROM tasks ORDER BY id").fetchall()
-        assert len(tasks)==2 and all(row["status"]=="done" and row["created_by"]=="user" for row in tasks)
+        tasks=db.execute("SELECT id,status,assigned_slot,created_by,category FROM tasks ORDER BY id").fetchall()
+        user_tasks=[row for row in tasks if row["created_by"]=="user"]
+        review_tasks=[row for row in tasks if row["created_by"]=="native-result-review-controller"]
+        assert len(user_tasks)==2 and all(row["status"]=="done" for row in user_tasks)
+        assert len(review_tasks)==2 and all(
+            row["status"]=="pending" and row["category"]=="worker-review"
+            and row["assigned_slot"] is None for row in review_tasks)
+        from hub._services.worker_result_review import review_task_metadata
+        review_links=[review_task_metadata(db,row["id"]) for row in review_tasks]
+        assert all(link is not None for link in review_links)
+        assert {link["target_task_id"] for link in review_links} == {
+            row["id"] for row in user_tasks}
         grants=db.execute("SELECT consumed_at,consumed_fence,worker_id FROM native_sequence_creator_delegations").fetchall()
         assert len(grants)==2 and all(row["consumed_at"] and row["consumed_fence"]==1
                                      and row["worker_id"].startswith("worker-") for row in grants)

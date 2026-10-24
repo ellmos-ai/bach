@@ -56,11 +56,13 @@ def compose_admission_receipt(receipt, *, binding=None, require_model_socket=Fal
     else:
         model_socket = _binding_projection(binding)
 
+    capacity_basis = receipt.get("capacity_basis")
     capacity_status = (
-        "budget_gate_passed"
+        {"host_budget": "budget_gate_passed",
+         "resident_model": "resident_model_reused",
+         "running_server": "running_server_reused"}.get(capacity_basis, "unknown")
         if source_state == "ready" and configured is True and enforced is True
-        else "unknown"
-    )
+        else "unknown")
     result = dict(receipt)
     blocked_state = None
     if require_model_socket:
