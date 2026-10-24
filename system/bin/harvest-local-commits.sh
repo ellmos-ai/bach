@@ -131,7 +131,7 @@ pr_title="harvest(${host}): lokale BACH-Worker-Commits ${day}"
 pr_summary="Automatisch abgeholte lokale BACH-Worker-Commits vom Host ${host}."
 if [[ "${dirty_count}" != "0" ]]; then
   index_file="$(mktemp)"
-  trap 'rm -f "${index_file:-}" "${body_file:-}"' EXIT
+  trap 'rm -f "${index_file:-}" "${body_file:-}" "${snapshot_diff_file:-}"' EXIT
   GIT_INDEX_FILE="${index_file}" ${GIT_BIN} read-tree "${head_sha}"
   GIT_INDEX_FILE="${index_file}" ${GIT_BIN} add -A
   tree_sha="$(GIT_INDEX_FILE="${index_file}" ${GIT_BIN} write-tree)"
@@ -140,9 +140,14 @@ if [[ "${dirty_count}" != "0" ]]; then
     [[ -f "${path}" ]] || continue
     (( $(wc -c < "${path}") <= 5242880 )) || fail "Snapshot enthält Datei über 5 MB: ${path}"
   done < <(GIT_INDEX_FILE="${index_file}" ${GIT_BIN} diff --cached --name-only --diff-filter=AM "${head_sha}")
-  if GIT_INDEX_FILE="${index_file}" ${GIT_BIN} diff --cached -U0 "${head_sha}" \
-      | grep -qE '^\+.*(ghp_[A-Za-z0-9]{20}|github_pat_|sk-or-v1-|-----BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16})'; then
+  snapshot_diff_file="$(mktemp)"
+  GIT_INDEX_FILE="${index_file}" ${GIT_BIN} diff --cached --no-ext-diff --no-textconv --text -U0 "${head_sha}" > "${snapshot_diff_file}" \
+    || fail "Snapshot-Diff konnte nicht vollständig geprüft werden"
+  if grep -aqE '^\+.*(ghp_[A-Za-z0-9]{20}|github_pat_|sk-or-v1-|-----BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16})' "${snapshot_diff_file}"; then
     fail "Snapshot enthält mögliche Zugangsdaten; Live-Baum manuell prüfen"
+  else
+    scan_status=$?
+    [[ "${scan_status}" == "1" ]] || fail "Snapshot-Zugangsdatenprüfung ist fehlgeschlagen"
   fi
   # Same tree on the same base gives the same commit ID, so later runs reuse it.
   base_date="$(${GIT_BIN} show -s --format=%cI "${head_sha}")"
@@ -201,7 +206,7 @@ ${GIT_BIN} push --porcelain "${REMOTE}" "${push_sha}:refs/heads/${review_branch}
 
 if [[ -z "${pr_number}" ]]; then
   body_file="$(mktemp)"
-  trap 'rm -f "${index_file:-}" "${body_file:-}"' EXIT
+  trap 'rm -f "${index_file:-}" "${body_file:-}" "${snapshot_diff_file:-}"' EXIT
   cat > "${body_file}" <<EOF
 ${pr_summary}
 
