@@ -38,6 +38,7 @@ def store(tmp_path, monkeypatch):
     db.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     values = settings._defaults()
     values["policy"]["default_mode"] = "simple_task"
+    values["policy"]["allow_review_task_pickup"] = True
     values["policy"]["reviewers"] = [{"reviewer_id": PRINCIPAL, "tier": "standard"},
                                      {"reviewer_id": "principal:independent-reviewer", "tier": "standard"}]
     settings._persist(db, settings.GLOBAL_KEY, values, actor="native-sequence-test-fixture")
