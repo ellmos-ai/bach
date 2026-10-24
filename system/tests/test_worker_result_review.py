@@ -341,6 +341,16 @@ def test_author_run_never_reviews_and_model_ban_is_a_rule(review_world):
     assert _grant(world, task_id)[0] is not None
 
 
+def test_unreadable_independence_setting_fails_closed_to_the_model_ban(review_world):
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    world["conn"].execute("INSERT INTO system_config(key,value) VALUES (?,?)",
+                          (settings.INDEPENDENCE_KEY, "{not json"))
+    world["conn"].commit()
+    assert _grant(world, task_id, route=AUTHOR_ROUTE, requested=AUTHOR_MODEL)[0] is None
+    assert _grant(world, task_id)[0] is not None
+
+
 @pytest.mark.parametrize("failure", ["no_return", "backend_error", "extra_call", "invalid_json",
                                      "unconfirmed_route", "unknown_provider_model",
                                      "terminal_history_tamper"])

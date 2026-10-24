@@ -187,13 +187,11 @@ def exclude_author_model(conn):
 
     User decision 2026-10-24: any model may review in its own fresh run; the run,
     not the model or agent slot, is the independence unit. A missing setting
-    keeps that default, an unreadable one fails closed to the ban.
+    keeps that default; an unreadable setting or store fails closed to the ban.
     """
     try:
         values = _stored(conn, INDEPENDENCE_KEY)["values"]
-    except sqlite3.OperationalError:
-        return False
-    except PolicyUnavailable:
+    except (sqlite3.Error, PolicyUnavailable):
         return True
     if values is None:
         return False
