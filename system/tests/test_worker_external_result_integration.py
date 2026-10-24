@@ -314,11 +314,19 @@ def test_native_alias_of_external_author_is_not_an_independent_model(integrated)
     capture(world)
     prepared = prepare(world)
     assert prepared is not None
-    child, evidence = finish_review(world, prepared)
-    assert child.closed
-    assert evidence["reviewer_id"] == "model:shared"
-    assert evidence["independent"] is False and evidence["policy_eligible"] is False
-    evaluated = completion.evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    conn = world["conn"]
+    assert author_principal(identity_snapshot(conn), target(world)) == "model:shared"
+    before = history_count(conn)
+    grant, _, _ = _grant(world, prepared["review_task_id"])
+    assert grant is None
+    assert history_count(conn) == before
+    evidence = review.read_review_evidence(conn, read_result(conn, world["task_id"])["result"])
+    assert evidence["availability"] == "unavailable"
+    assert conn.execute(
+        "SELECT count(*) FROM worker_result_model_reviews WHERE target_task_id=?",
+        (world["task_id"],),
+    ).fetchone()[0] == 0
+    evaluated = completion.evaluate_current_result(conn, world["task_id"], **_paths(world))
     assert evaluated["availability"] == "available", evaluated
     assert evaluated["decision"]["completion_allowed"] is False
     assert evaluated["decision"]["worker_may_claim_next"] is True

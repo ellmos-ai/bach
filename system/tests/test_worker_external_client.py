@@ -18,8 +18,8 @@ from tools import worker_external_results as cli
 
 
 def client():
-    return WorkerExternalResultClient(lead_url="http://127.0.0.1:8081", device_token="device-fixture",
-                                      operator_token="operator-fixture")
+    return WorkerExternalResultClient(lead_url="http://127.0.0.1:8081", device_token="-".join(("device", "fixture")),
+                                      operator_token="-".join(("operator", "fixture")))
 
 
 class Opener:

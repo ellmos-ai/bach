@@ -605,6 +605,7 @@ def test_high_security_findings_create_one_correction_and_allow_a_fresh_submissi
     pending = evaluate_current_result(conn, task_id, **_paths(world))
     assert pending["decision"]["state"] == "awaiting_review"
     assert pending["decision"]["eligible_reviewer_ids"] == [TOP_REVIEWER]
+    # An open review gates this result, while the worker remains free for other tasks.
     assert pending["decision"]["worker_may_claim_next"] is True
     assert world["binding"].closed is True
     assert client.read(task_id).leased is False
@@ -1740,7 +1741,7 @@ def test_noncurrent_negative_review_cannot_veto_a_green_contract(
             review_evidence = {
                 "schema": "bach.worker-result-review-evidence.v1",
                 "availability": "available", "status": "findings",
-                "independent": True, "task_id": task_id,
+                "independent": True, "policy_eligible": True, "task_id": task_id,
                 "reviewer_id": TOP_REVIEWER,
                 "review_task_id": task_id + 100,
                 "result_id": record["result_id"],
@@ -1792,7 +1793,7 @@ def test_external_github_approval_does_not_override_negative_contract_finding(
             record["model_review"] = {
                 "schema": "bach.worker-result-review-evidence.v1",
                 "availability": "available", "status": review_status,
-                "independent": True, "task_id": task_id,
+                "independent": True, "policy_eligible": True, "task_id": task_id,
                 "reviewer_id": TOP_REVIEWER,
                 "policy_eligible": True,
                 "result_id": record["result_id"],

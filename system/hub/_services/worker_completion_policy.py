@@ -670,7 +670,7 @@ def reconcile_current_result(conn, task_id, *, repo_root=None, worktrees_dir=Non
                              expected=None) -> dict:
     """Re-evaluate a current result, then CAS one policy status transition."""
     from .task_result_service import ResultConflict, _PolicyAcceptance, _status_revision
-    from .task_lease import _history, _utcnow, _local_naive, task_content_version
+    from .task_lease import _history, _utcnow, _local_naive
     from hub.task_audit import apply_task_field_changes
     if conn.in_transaction:
         return _unavailable(task_id, "active_database_transaction")

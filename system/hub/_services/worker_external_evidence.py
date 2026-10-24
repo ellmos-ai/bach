@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
-import sqlite3
 import uuid
 
 from . import worker_policy_settings as settings
