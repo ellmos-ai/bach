@@ -221,7 +221,7 @@ class OllamaBackend(ModelBackend):
         reported_models: set[str] = set()
         reported_model_invalid = False
 
-        def aborted(error: str, *, backend_error=None) -> dict:
+        def aborted(error: str, *, backend_error=None, transient_failure=None) -> dict:
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
             raw_message["content"] = content
@@ -237,6 +237,8 @@ class OllamaBackend(ModelBackend):
                 "error": error,
                 "provider_reported_model": None,
                 **({"backend_error": backend_error} if backend_error else {}),
+                **({"transient_failure": transient_failure}
+                   if transient_failure == "httpx_read_timeout" else {}),
             }
 
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
@@ -287,7 +289,7 @@ class OllamaBackend(ModelBackend):
                                     probes,
                                     grace,
                                 )
-                            return aborted(timeout_error)
+                            return aborted(timeout_error, transient_failure="httpx_read_timeout")
 
                         now = time.time()
                         if line.strip():
@@ -339,7 +341,12 @@ class OllamaBackend(ModelBackend):
                                 "unser Modell nicht mehr"
                             )
             except httpx.HTTPError as exc:
-                return aborted(f"{type(exc).__name__}: {exc}".rstrip(": "))
+                return aborted(
+                    f"{type(exc).__name__}: {exc}".rstrip(": "),
+                    transient_failure=(
+                        "httpx_read_timeout" if isinstance(exc, httpx.ReadTimeout) else None
+                    ),
+                )
 
         if not completed:
             return aborted("Ollama-Stream endete ohne Abschlussmarker (done=true)")
@@ -693,7 +700,7 @@ class HermesBackend(OpenAIBackend):
         except ValueError:
             return "hermes"
 
-    async def chat(self, messages, tools=None, think=True, model=None):
+    async def chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
         import httpx
         from hub._services.llm.backend_errors import BackendRequestFailure
 
@@ -707,7 +714,9 @@ class HermesBackend(OpenAIBackend):
         if tools:
             payload["tools"] = tools
 
-        max_retries = 4
+        # A native worker owns bounded, guarded retries at its model-call
+        # boundary. One receipt then represents exactly one provider request.
+        max_retries = 4 if retry_transient else 1
         base_delay = 2.0
         data = None
 
@@ -931,7 +940,7 @@ class OpenRouterBackend(HermesBackend):
                 code if isinstance(code, str) else "catalog_invalid_schema"
             )
 
-    async def chat(self, messages, tools=None, think=True, model=None):
+    async def chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
         target_model = str(model or self.default_model).strip()
         if target_model != "openrouter/free":
             self._require_catalog_selection(target_model)
@@ -940,6 +949,7 @@ class OpenRouterBackend(HermesBackend):
             tools=tools,
             think=think,
             model=target_model,
+            retry_transient=retry_transient,
         )
 
     def availability(
