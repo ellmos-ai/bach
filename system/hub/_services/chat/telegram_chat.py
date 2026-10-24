@@ -1485,6 +1485,15 @@ def _worker_backend_retry_delay(
                            or (error["provider"] == "openrouter"
                                and error["kind"] == "http_error"
                                and error.get("status_code") == 504)
+                           # The free router picks a provider per request; a 404 there means
+                           # no endpoint matched this call right now. Bounded to the router
+                           # alias so a permanently wrong fixed model id still ends the worker.
+                           or (error["provider"] == "openrouter"
+                               and error["kind"] == "http_error"
+                               and error.get("status_code") == 404
+                               and slot.get("backend") == "openrouter"
+                               and slot.get("model") == "openrouter/free"
+                               and slot.get("max_model_requests") is None)
                            or (error["provider"] == "openrouter"
                                and error["kind"] == "connection_error"
                                and slot.get("backend") == "openrouter"
@@ -5350,6 +5359,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                                       else "temporary_connection_error"
                                                       if detail and detail.get("provider") == "openrouter"
                                                       and detail.get("kind") == "connection_error"
+                                                      else "temporary_no_endpoint"
+                                                      if detail and detail.get("provider") == "openrouter"
+                                                      and detail.get("status_code") == 404
                                                       else "temporary_rate_limit"))
                             assignment_open = False
                         worker_session.worker_task_binding = None
