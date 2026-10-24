@@ -22,7 +22,8 @@ from system.tests.test_task_lease_client import _init_db, mem_db
 from system.tests.test_worker_lease_binding import (
     binding, completion_binding, approve_result, _self_check, _require_personal_review,
 )
-from system.tests.worker_completion_fixtures import CompletionHarness
+from system.tests.worker_completion_fixtures import CompletionHarness, PRINCIPAL
+from hub._services import worker_policy_settings as settings
 
 
 @pytest.fixture
@@ -32,6 +33,14 @@ def store(tmp_path, monkeypatch):
     db = sqlite3.connect(path)
     _init_db(db)
     db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    # Independence gate: the author never reviews itself, so the policy needs a
+    # second reviewer before the controller may create review tasks.
+    db.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    values = settings._defaults()
+    values["policy"]["default_mode"] = "simple_task"
+    values["policy"]["reviewers"] = [{"reviewer_id": PRINCIPAL, "tier": "standard"},
+                                     {"reviewer_id": "principal:independent-reviewer", "tier": "standard"}]
+    settings._persist(db, settings.GLOBAL_KEY, values, actor="native-sequence-test-fixture")
     db.commit(); db.close()
     result = SequenceStore(path)
     result._completion_test_harness = CompletionHarness(tmp_path, monkeypatch)
