@@ -248,10 +248,14 @@ async def probe(backend, model, *, reuse_running_server=False):
                 for label, path in _data_roots().items()}
     except (OSError, ValueError, TypeError, AttributeError):
         return _decision("unknown_resources", retryable=True, **common)
+    from hub._services.chat.host_resource_observation import observe_host_resources
+
+    host_resources = await asyncio.to_thread(observe_host_resources, memory)
     weight_request = 0 if resident else budget["weight_budget_bytes"]
     required = (policy["memory_reserve_bytes"] + weight_request
                 + budget["kv_headroom_bytes"] + budget["overhead_bytes"])
-    common.update({"capacity_basis": capacity_basis,
+    common.update({"host_resources": host_resources,
+                   "capacity_basis": capacity_basis,
                    "memory_total_bytes": total, "memory_available_bytes": available,
                    "memory_required_bytes": required, "disk_free_bytes": free,
                    "disk_reserve_bytes": policy["disk_reserve_bytes"],
