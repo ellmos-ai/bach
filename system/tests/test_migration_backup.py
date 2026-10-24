@@ -176,7 +176,8 @@ def test_app_starts_normally_when_backup_fails(tmp_path, monkeypatch, capsys):
     db = core_app.App(SYSTEM_DIR).db
     assert db is not None and db.table_exists("tasks")
     assert newest not in {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out + captured.err  # Warnungen laufen seit der Partner-Scope-Aenderung ueber stderr
     assert "Sicherung vor Migration fehlgeschlagen" in out and "Migrationslauf unvollstaendig" in out
 
 
