@@ -135,6 +135,32 @@ def test_bound_task_scope_precedes_model_for_every_worker_type(
     assert started == [(leased_binding.task_id, False)]
 
 
+def test_scope_failure_logs_the_failed_check_without_leaking_details(
+    leased_binding, monkeypatch, caplog,
+):
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("Task-Branch existiert bereits, ist aber nicht an diesen Worktree gebunden")
+    monkeypatch.setattr(worker_git, "start_task_worktree", refuse)
+    with caplog.at_level("WARNING", logger="bach.telegram_chat"):
+        with pytest.raises(RuntimeError, match="nicht bestätigt"):
+            control._prepare_bound_task_scope(leased_binding,
+                {"type": "continuous", "allowed_tools": ["task_manage"]})
+    assert "Task-Branch existiert bereits" in caplog.text
+
+    def leak(*_args, **_kwargs):
+        raise OSError("/Users/geheim/pfad")
+    monkeypatch.setattr(worker_git, "start_task_worktree", leak)
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="bach.telegram_chat"):
+        with pytest.raises(RuntimeError):
+            control._prepare_bound_task_scope(leased_binding,
+                {"type": "continuous", "allowed_tools": ["task_manage"]})
+    assert "OSError" in caplog.text and "geheim" not in caplog.text
+
+
 @pytest.mark.parametrize("failure", [False, True])
 def test_continuous_scope_precedes_model_in_worker_loop(
     admission, leased_binding, monkeypatch, failure,
