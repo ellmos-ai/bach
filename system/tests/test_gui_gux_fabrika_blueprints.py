@@ -143,7 +143,7 @@ class TestFabrikaAndBlueprintsContract:
             required_kinds = {"agent", "role", "workflow", "service", "contractus"}
             assert required_kinds.issubset(kinds_present)
 
-    def test_gux026_template_protection_and_custom_save(self, temp_bach_db):
+    def test_gux026_template_protection_and_custom_save(self, temp_bach_db, tmp_path, monkeypatch):
         """GUX-026: Built-in templates are protected from overwrite; custom blueprints save cleanly."""
         with closing(sqlite3.connect(temp_bach_db)) as conn:
             # Attempting to overwrite a template fails with PermissionError
@@ -172,6 +172,70 @@ class TestFabrikaAndBlueprintsContract:
             assert res["name"] == "mein_test_agent"
             assert "[Boot:Agent]" in res["start_prompt"]
             assert "[Boot:System]" in res["start_prompt"]
+
+            # Only the fixed legacy Taskmaster pair may migrate, never arbitrary
+            # system templates or caller-chosen skills/permissions.
+            from hub._services import skill_source_service
+            from hub._services.governance_binding import blueprint_sha256
+            expected_skills = {
+                "taskmaster-maintainer": ["docs-analysis", "tidy-up", "folder-organization"],
+                "taskmaster-operator": ["operator", "orchestrator", "budgetierung"],
+            }
+            registry = tmp_path / "skills"
+            for skill in [item for values in expected_skills.values() for item in values]:
+                directory = registry / skill
+                directory.mkdir(parents=True)
+                (directory / "SKILL.md").write_text(
+                    f"---\nname: {skill}\nversion: 1.0.0\ndescription: Isolated registry fixture.\n---\n# Fixture\n",
+                    encoding="utf-8")
+            monkeypatch.setattr(skill_source_service, "skill_roots", lambda: [registry])
+            conn.row_factory = sqlite3.Row
+            for name, skills in {
+                "taskmaster-maintainer": ["dedup", "project-docs", "maintenance"],
+                "taskmaster-operator": ["scheduling", "budgeting", "review"],
+            }.items():
+                conn.execute("UPDATE agent_blueprints SET skills_json=? WHERE name=?",
+                             (json.dumps(skills), name))
+            conn.commit()
+            before = {row["id"]: dict(row) for row in conn.execute("SELECT * FROM agent_blueprints")}
+            own = [row for row in before.values() if row["name"] in expected_skills]
+            assert len(own) == 2
+            payload = {"expected": [
+                {"id": row["id"], "name": row["name"], "expected_version": row["version"],
+                 "content_sha256": blueprint_sha256(row)} for row in own]}
+            stale = json.loads(json.dumps(payload))
+            stale["expected"][1]["content_sha256"] = "0" * 64
+            with pytest.raises(RuntimeError, match="revision_conflict"):
+                blueprint_service.migrate_taskmaster_skill_bindings(conn, stale)
+            assert {row["id"]: dict(row) for row in conn.execute("SELECT * FROM agent_blueprints")} == before
+            with pytest.raises(ValueError):
+                blueprint_service.migrate_taskmaster_skill_bindings(conn, {**payload, "skills": ["caller-choice"]})
+
+            monkeypatch.setattr(unified_api, "_get_conn", lambda: sqlite3.connect(temp_bach_db))
+            migrated = asyncio.run(unified_api.migrate_taskmaster_template_skills(payload))
+            assert migrated["success"] is True
+            assert migrated["skills_validation"]["valid"] is True
+            assert migrated["skills_validation"]["matched_count"] == 6
+            assert migrated["materialized"] is False and migrated["workers_started"] is False
+            after = {row["id"]: dict(row) for row in conn.execute("SELECT * FROM agent_blueprints")}
+            for row_id, previous in before.items():
+                if previous["name"] not in expected_skills:
+                    assert after[row_id] == previous
+                    continue
+                updated = after[row_id]
+                assert updated["version"] == previous["version"] + 1
+                assert json.loads(updated["skills_json"]) == expected_skills[previous["name"]]
+                assert {key: value for key, value in updated.items()
+                        if key not in {"skills_json", "version", "updated_at"}} == {
+                            key: value for key, value in previous.items()
+                            if key not in {"skills_json", "version", "updated_at"}}
+                with pytest.raises(PermissionError):
+                    blueprint_service.save_blueprint(conn, {
+                        "name": previous["name"], "persona_role": "caller-choice",
+                        "expected_version": updated["version"]})
+            with pytest.raises(RuntimeError, match="revision_conflict"):
+                blueprint_service.migrate_taskmaster_skill_bindings(conn, payload)
+            assert {row["id"]: dict(row) for row in conn.execute("SELECT * FROM agent_blueprints")} == after
 
     def test_gux027_materialization_needs_a_real_slot_and_dispatcher(self, temp_bach_db, tmp_path, monkeypatch):
         from hub._services.chat import slots_config

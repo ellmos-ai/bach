@@ -19,6 +19,19 @@ from hub._services.task_lease_client import (
 _EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
 
 
+def _external_profile_backend(slot):
+    """Return the canonical cloud profile backend, including Ollama's :cloud alias."""
+    if not isinstance(slot, dict):
+        return None
+    backend = str(slot.get("backend") or "").strip().casefold()
+    model = str(slot.get("model") or "").strip().casefold()
+    if backend in _EXTERNAL_PROFILE_BACKENDS:
+        return backend
+    if backend == "ollama" and model.endswith(":cloud"):
+        return "ollama-cloud"
+    return None
+
+
 class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
 
@@ -63,6 +76,7 @@ class WorkerLeaseBinding:
         self._injected_clock = clock is not None
         self._lock = threading.RLock()
         self._trace_completion_tokens = {}
+        self._quarantine_ack = None
         self._active = True
         self._closed = False
         self._completion_result = None
@@ -104,6 +118,10 @@ class WorkerLeaseBinding:
             if slot is not None and not matches(snapshot, slot):
                 raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
         kwargs = {"now": clock()} if clock is not None else {}
+        if _external_profile_backend(slot):
+            # Shorten stale-claim recovery for cloud workers while retaining
+            # the shared lease contract's two-hour S-profile run ceiling.
+            kwargs["ttl_profile"] = "S"
         if _creator_delegation is None:
             acquire_kwargs = dict(worker_id=worker_id, host=host,
                 task_version=snapshot["task_version"], result_generation=generation, **kwargs)
@@ -134,32 +152,46 @@ class WorkerLeaseBinding:
         from .slots_config import task_matches_slot_binding, match_task_to_pickup_filter
         if not task_matches_slot_binding(snapshot, slot):
             return False
-        pickup = slot.get("pickup_filter")
-        # Explicit routing takes precedence over generic category/priority
-        # selection. Tag restrictions and model/slot constraints still apply;
-        # Acquire separately enforces dependencies and canonical ownership.
-        if str(snapshot.get("assigned_slot") or "").strip():
-            if isinstance(pickup, dict) and pickup.get("enabled"):
-                assigned_filter = {**pickup, "categories": [], "priorities": []}
-                return match_task_to_pickup_filter(
-                    snapshot, {**slot, "pickup_filter": assigned_filter})
-            return True
+        # Cloud workers cover every task category. Keep explicit priority,
+        # required/excluded tag, model and slot constraints in force.
+        pickup_slot = WorkerLeaseBinding._effective_pickup_slot(snapshot, slot)
+        pickup = pickup_slot.get("pickup_filter")
         return (not isinstance(pickup, dict) or not pickup.get("enabled")
-                or match_task_to_pickup_filter(snapshot, slot))
+                or match_task_to_pickup_filter(snapshot, pickup_slot))
+
+    @staticmethod
+    def _effective_pickup_slot(snapshot, slot):
+        """Apply only the task-type flexibility granted to cloud workers."""
+        if not isinstance(slot, dict):
+            return {}
+        pickup = slot.get("pickup_filter")
+        if not isinstance(pickup, dict) or not pickup.get("enabled"):
+            return slot
+        if str(snapshot.get("assigned_slot") or "").strip():
+            # Explicit routing takes precedence over generic category/priority
+            # selection. Tag restrictions still apply.
+            pickup = {**pickup, "categories": [], "priorities": []}
+        elif _external_profile_backend(slot):
+            # Cloud workers may pick any task type; preserve priority and tag
+            # policy while removing category as a queue-wide exclusion.
+            pickup = {**pickup, "categories": []}
+        else:
+            return slot
+        return {**slot, "pickup_filter": pickup}
 
     @staticmethod
     def _matches_external_profile_route(snapshot, slot):
         """Match the canonical owner alias and exact external profile/model route."""
-        backend = slot.get("backend")
+        profile_backend = _external_profile_backend(slot)
         slot_id = slot.get("id")
         model = slot.get("model")
-        if (type(backend) is not str or backend not in _EXTERNAL_PROFILE_BACKENDS
+        if (profile_backend is None
                 or type(slot_id) is not str or not slot_id or slot_id.strip() != slot_id
                 or type(model) is not str or not model.strip()):
             return False
         return (
             type(snapshot.get("assigned_to")) is str
-            and snapshot["assigned_to"].strip().casefold() == backend.casefold()
+            and snapshot["assigned_to"].strip().casefold() == profile_backend
             and type(snapshot.get("assigned_slot")) is str
             and snapshot["assigned_slot"] == slot_id
             and type(snapshot.get("required_model")) is str
@@ -201,12 +233,8 @@ class WorkerLeaseBinding:
             return "ownership"
         if not cls._matches_slot(snapshot, slot):
             from .slots_config import pickup_filter_rejection
-            pickup = slot.get("pickup_filter")
-            if isinstance(pickup, dict) and pickup.get("enabled"):
-                if str(snapshot.get("assigned_slot") or "").strip():
-                    pickup = {**pickup, "categories": [], "priorities": []}
-                return pickup_filter_rejection(snapshot, {**slot, "pickup_filter": pickup}) or "pickup_filter"
-            return "pickup_filter"
+            return pickup_filter_rejection(
+                snapshot, cls._effective_pickup_slot(snapshot, slot)) or "pickup_filter"
         pickup = slot.get("pickup_filter")
         # Explicit routing may select a personal task. A pickup filter scopes
         # general candidates but never overrides a foreign assignee.
@@ -232,13 +260,17 @@ class WorkerLeaseBinding:
     def _acquire_next_observed(cls, client, slot, observation, *, review_route=None,
                                review_requested_model=None, **kwargs):
         from .worker_queue_status import ACQUIRE_DENIALS
+        on_fixed_task_rejected = kwargs.pop("on_fixed_task_rejected", None)
         explicit = slot.get("task_id")
+        released_fixed_task_id = None
         if explicit not in (None, "", 0, "0"):
             if isinstance(explicit, str) and explicit.isdecimal():
                 explicit = int(explicit)
             observation.candidate(explicit)
             observation.record["matched_count"] += 1
             observation.record["attempted_count"] += 1
+            fixed_snapshot = client.task_snapshot(explicit)
+            fixed_version = fixed_snapshot.get("task_version") if isinstance(fixed_snapshot, dict) else None
             review_grant = None
             if getattr(client, "mode", None) == "local":
                 metadata_reader = getattr(client, "_review_task_metadata", None)
@@ -267,11 +299,29 @@ class WorkerLeaseBinding:
                     acquire_kwargs["_review_grant"] = review_grant
                 binding = cls.acquire(client, explicit, slot=slot, **acquire_kwargs)
             except LeaseDeniedError as exc:
-                if exc.reason in ACQUIRE_DENIALS:
-                    observation.denied(exc.reason)
-                raise  # Preserve explicit-acquisition control/recovery semantics.
-            observation.acquired(binding)
-            return binding
+                if exc.reason not in ACQUIRE_DENIALS:
+                    raise
+                observation.denied(exc.reason)
+                if exc.reason == "conflict":
+                    raise  # A native no-grant conflict still stops this run.
+                if not callable(on_fixed_task_rejected):
+                    raise  # Without an owning-slot release callback, keep the pin intact.
+                deferred_versions = kwargs.get("deferred_versions")
+                if not isinstance(deferred_versions, dict):
+                    deferred_versions = {}
+                    kwargs["deferred_versions"] = deferred_versions
+                if isinstance(fixed_version, str):
+                    deferred_versions[explicit] = fixed_version
+                on_fixed_task_rejected(explicit, exc.reason, fixed_version)
+                released_fixed_task_id = explicit
+                # The persisted pin is cleared by the callback. Continue against
+                # the same canonical selector with the rejected ID skipped for
+                # this generation, even if its content changes during the scan.
+                slot = dict(slot)
+                slot["task_id"] = None
+            else:
+                observation.acquired(binding)
+                return binding
         if kwargs.get("_creator_delegation") is not None:
             raise LeaseProtocolError("Creator-Delegation braucht die explizit gebundene Sequenz-Task")
         offset = 0
@@ -282,6 +332,9 @@ class WorkerLeaseBinding:
             observation.record["scanned_pages"] += 1
             for task in page["tasks"]:
                 observation.candidate(task["id"])
+                if task["id"] == released_fixed_task_id:
+                    observation.reject("deferred_version")
+                    continue
                 reason = cls._selection_rejection_reason(task, slot)
                 if reason:
                     observation.reject(reason)
@@ -303,7 +356,8 @@ class WorkerLeaseBinding:
                         observation.denied(exc.reason)
                         raise  # A native no-grant conflict still stops this run.
                     if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller"}:
+                                           "stale_task_version", "already_held_by_caller",
+                                           "completion_guard"}:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:
@@ -389,7 +443,8 @@ class WorkerLeaseBinding:
                         observation.denied(exc.reason)
                         raise
                     if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller"}:
+                                           "stale_task_version", "already_held_by_caller",
+                                           "completion_guard"}:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:
@@ -887,9 +942,85 @@ class WorkerLeaseBinding:
                 # Return-to-pending nor a guessed retry may undo that decision.
                 self._active = False
                 return False
+            self._quarantine_ack = ack
             self._closed = True
             self._active = False
             return True
+
+    def quarantined_effects_clear(self):
+        """Read native settlement for this exact locally quarantined generation.
+
+        Remote or connection-only clients have no proven local read-only authority
+        here and remain terminal. Never invent a second DB path or HTTP endpoint.
+        """
+        from pathlib import Path
+        import sqlite3
+        from hub._services.task_lease import task_content_version
+        from .worker_tool_trace import task_trace_recovery_state
+
+        with self._lock:
+            receipt = self._quarantine_ack
+            ack = self._ack
+            if (not isinstance(receipt, LeaseReleaseAck)
+                    or receipt.released is not True or receipt.outcome != "blocked"
+                    or receipt.status != "blocked" or receipt.task_id != self.task_id
+                    or receipt.fence != ack.fence or not self._closed or self._active
+                    or not self._is_current() or self._stop_event.is_set()
+                    or ack.result_generation != self._generation
+                    or self._trace_completion_tokens or self._model_execution_pending is not None
+                    or self._client.mode != "local"
+                    or getattr(self._client, "_conn", None) is not None):
+                return False
+            # This is the path supplied to the original native TaskLeaseClient.
+            # No home-directory fallback and no caller/prompt path is accepted.
+            authority_path = getattr(self._client, "_db_path", None)
+            if not isinstance(authority_path, Path):
+                return False
+            expected = (self.task_id, ack.fence, self._generation,
+                        ack.worker_id, ack.task_version)
+
+        conn = None
+        try:
+            db = authority_path.resolve(strict=True)
+            if not db.is_file():
+                return False
+            conn = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=2)
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN")
+            row = conn.execute("SELECT * FROM tasks WHERE id=?", (expected[0],)).fetchone()
+            if (row is None or row["status"] != "blocked" or row["claim_id"]
+                    or row["claim_fence"] != expected[1]
+                    or task_content_version(dict(row)) != expected[4]
+                    or task_trace_recovery_state(conn, expected[0]) != "clear"):
+                return False
+            identities = conn.execute(
+                "SELECT DISTINCT generation,worker_id FROM worker_tool_trace_events "
+                "WHERE task_id=? AND fence=?", expected[:2],
+            ).fetchall()
+            if not identities or any(
+                    row["generation"] != expected[2] or row["worker_id"] != expected[3]
+                    for row in identities):
+                return False
+            executions = conn.execute(
+                "SELECT generation,phase FROM worker_model_executions WHERE task_id=? AND fence=?",
+                expected[:2],
+            ).fetchall()
+            if not executions or any(
+                    row["generation"] != expected[2] or row["phase"] not in {"returned", "failed"}
+                    for row in executions):
+                return False
+        except Exception:  # noqa: BLE001 -- unknown/pending effects stay terminal
+            return False
+        finally:
+            if conn is not None:
+                conn.rollback()
+                conn.close()
+        with self._lock:
+            return (self._quarantine_ack is receipt and self._ack is ack
+                    and self._closed and not self._active
+                    and self._is_current() and not self._stop_event.is_set()
+                    and not self._trace_completion_tokens
+                    and self._model_execution_pending is None)
 
     def record_worktree_result(self, task_id, annotation, *, review=False, result_ref=""):
         """Fence a Git result's content; review releases ownership without Done."""

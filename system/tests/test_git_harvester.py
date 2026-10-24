@@ -43,8 +43,14 @@ sys.exit(int(os.environ.get("FAKE_LOCK_RC", "0")))
     fake_git.write_text(
         '''#!/usr/bin/env bash
 set -e
-printf 'git %s\\n' "$*" >> "$FAKE_CALLS"
+printf 'git %s%s\\n' "$*" "${GIT_INDEX_FILE:+ [tmp-index]}" >> "$FAKE_CALLS"
 case "$1 $2" in
+  "read-tree "*|"add -A") ;;
+  "write-tree ") echo "${FAKE_TREE:-cccccccccccccccccccccccccccccccccccccccc}" ;;
+  "diff --cached")
+    if [[ "$3" == "--name-only" ]]; then printf '%s' "${FAKE_SNAPSHOT_PATHS:-}"; else printf '%s' "${FAKE_SNAPSHOT_DIFF:-}"; fi ;;
+  "show -s") echo "2026-09-21T10:00:00+02:00" ;;
+  "commit-tree "*) echo "${FAKE_SNAPSHOT_COMMIT:-dddddddddddddddddddddddddddddddddddddddd}" ;;
   "symbolic-ref --quiet") echo "${FAKE_BRANCH:-main}" ;;
   "rev-parse --git-path") echo ".git/MERGE_HEAD" ;;
   "remote get-url") echo "${FAKE_REMOTE:-https://github.com/ellmos-ai/bach.git}" ;;
@@ -141,10 +147,44 @@ def test_run_pushes_exact_commit_only_to_stable_review_branch(fake_tools):
     assert "gh pr view 91" in calls
 
 
-def test_dirty_tree_fails_before_push(fake_tools):
-    result, calls = run_harvester(fake_tools, "--run", FAKE_DIRTY="?? rescued.py")
+SNAPSHOT_COMMIT = "d" * 40
+SNAPSHOT_BRANCH = "mac/test-host-live-" + "c" * 12
+
+
+def test_dirty_tree_is_pushed_as_snapshot_without_touching_live_tree(fake_tools):
+    result, calls = run_harvester(
+        fake_tools, "--run", FAKE_DIRTY="?? rescued.py", FAKE_AHEAD="0",
+        FAKE_PR_HEAD=SNAPSHOT_BRANCH, FAKE_PR_OID=SNAPSHOT_COMMIT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "[DIRTY] 1 uncommittete Pfade" in result.stdout
+    for step in ("git read-tree", "git add -A", "git write-tree"):
+        line = next(line for line in calls.splitlines() if line.startswith(step))
+        assert line.endswith("[tmp-index]"), line
+    assert f"git commit-tree {'c' * 40} -p {DEFAULT_HEAD}" in calls
+    assert f"git push --porcelain origin {SNAPSHOT_COMMIT}:refs/heads/{SNAPSHOT_BRANCH}" in calls
+    for forbidden in ("git commit ", "git stash", "git checkout", "git reset", "refs/heads/main"):
+        assert forbidden not in calls
+    assert f"--head {SNAPSHOT_BRANCH}" in calls
+
+
+def test_dirty_status_reports_without_push(fake_tools):
+    result, calls = run_harvester(fake_tools, "--status", FAKE_DIRTY="?? rescued.py",
+                                  FAKE_AHEAD="0")
+    assert result.returncode == 0, result.stderr
+    assert "[DIRTY] 1 uncommittete Pfade" in result.stdout
+    assert "git push" not in calls
+    assert "gh pr" not in calls
+
+
+def test_snapshot_with_credential_pattern_blocks_before_push(fake_tools):
+    result, calls = run_harvester(
+        fake_tools, "--run", FAKE_DIRTY=" M config.py", FAKE_AHEAD="0",
+        FAKE_SNAPSHOT_DIFF="+TOKEN = 'ghp_" + "a" * 36 + "'\n",
+    )
     assert result.returncode == 1
-    assert "nicht sauber" in result.stderr
+    assert "Zugangsdaten" in result.stderr
+    assert "git commit-tree" not in calls
     assert "git push" not in calls
 
 

@@ -270,7 +270,7 @@ def test_private_startup_admission_uses_profile_version_scope(tmp_path, monkeypa
 
     @contextmanager
     def isolated_admission(path=None):
-        yield lambda: None
+        yield lambda **_identity: None
 
     monkeypatch.setattr(slots, "system_worker_at_version", read_isolated_worker)
     monkeypatch.setattr(slots, "worker_admission_transaction", isolated_admission)
@@ -1105,7 +1105,7 @@ def test_manual_buddha_stop_isolated_from_cloud_profiles_and_monitor(monkeypatch
 
     @contextmanager
     def no_revision_write():
-        yield lambda: None
+        yield lambda **_identity: None
 
     monkeypatch.setattr(slots, "worker_admission_transaction", no_revision_write)
     def system_worker_at_version(worker_id, version, *, version_scope, persistent_intent_id=None):
@@ -1382,7 +1382,35 @@ def _capacity_receipt(model, *, state="ready", checked_at=None, policy_version="
         "disk_reserve_bytes": GIB,
         "weight_request_bytes": GIB,
         "resident_weight_credit": False,
+        "capacity_basis": "host_budget",
     }
+
+
+@pytest.mark.parametrize("state,available,disk_free", [
+    ("ready", 4, 8), ("waiting_memory_reserve", 2, 8), ("waiting_disk_reserve", 4, 0),
+])
+def test_resident_capacity_receipt_retains_remaining_budgets(
+        tmp_path, monkeypatch, state, available, disk_free):
+    from hub._services.chat import local_resource_reserve
+
+    path, _ = _always_on_core(tmp_path)
+    worker = slots.get_always_on_execution_slot(path)
+    model = worker["model"]
+    monkeypatch.setattr(local_resource_reserve, "read_policy",
+                        lambda: (_capacity_policy(model), "a" * 64))
+    receipt = _capacity_receipt(model, state=state,
+        memory_available=available * local_resource_reserve.GIB,
+        disk_free={key: disk_free * local_resource_reserve.GIB for key in ("taskdb", "runtime", "slots")})
+    receipt.update(capacity_basis="resident_model", resident_weight_credit=True,
+                   weight_request_bytes=0, memory_required_bytes=3 * local_resource_reserve.GIB)
+    observed = slots._persistent_core_capacity_observation(receipt, worker=worker, expected_state=state)
+    assert observed is not None and observed["state"] == state
+    # The old zero-budget reuse receipt must never authorize recovery.
+    obsolete = dict(receipt, memory_total_bytes=None, memory_available_bytes=None,
+                    memory_required_bytes=0, disk_free_bytes=None)
+    assert slots._persistent_core_capacity_observation(obsolete, worker=worker, expected_state=state) is None
+    assert slots._persistent_core_capacity_observation(
+        dict(receipt, capacity_basis="running_server"), worker=worker, expected_state=state) is None
 
 
 def test_core_capacity_reauthorization_requires_fresh_current_semantic_ready_probe(

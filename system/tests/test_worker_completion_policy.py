@@ -347,10 +347,10 @@ def test_balanced_policy_waits_for_an_independent_current_review(
 
 
 @pytest.mark.parametrize("hard_gate", ["none", "user", "github"])
-def test_balanced_expiry_controller_poll_completes_only_without_hard_review_gates(
+def test_current_queue_poll_frees_unreviewed_result_without_reconciling(
     completion_world, monkeypatch, hard_gate
 ):
-    """A real local controller poll may expire review, but cannot bypass hard gates."""
+    """Queue polling releases a current result while review/completion stays separate."""
     from hub._services.chat import telegram_chat
     from hub._services import worker_completion_policy
     from hub import worker_git
@@ -421,31 +421,23 @@ def test_balanced_expiry_controller_poll_completes_only_without_hard_review_gate
             if reconcile_outcomes and isinstance(reconcile_outcomes[-1], dict) else None),
         "status": read_result(conn, task_id)["status"],
     }
-    assert len(reconcile_outcomes) == 1
+    assert reconcile_outcomes == []
     assert reconcile_errors == []
 
     current = read_result(conn, task_id)
     counts = tuple(conn.execute(
         "SELECT SUM(action='worker_completion_decision'),SUM(action='result_acceptance') "
         "FROM task_history WHERE task_id=?", (task_id,)).fetchone())
-    if hard_gate == "none":
-        assert current["status"] == "done"
-        assert current["result"]["accepted"] is True
-        assert counts == (1, 1)
-        event = conn.execute(
-            "SELECT new_value FROM task_history WHERE task_id=? "
-            "AND action='worker_completion_decision'", (task_id,)).fetchone()
-        assert json.loads(event[0])["decision"]["state"] == "completed_unreviewed"
-        # Repeated controller observations remain idempotent.
-        assert telegram_chat._poll_worker_completion(control) is True
-        assert tuple(conn.execute(
-            "SELECT SUM(action='worker_completion_decision'),SUM(action='result_acceptance') "
-            "FROM task_history WHERE task_id=?", (task_id,)).fetchone()) == counts
-    else:
-        assert current["status"] == "review"
-        assert current["result"]["accepted"] is False
-        assert current["result"]["reason"] == "awaiting_review"
-        assert counts == (0, 0)
+    assert current["status"] == "review"
+    assert current["result"]["accepted"] is False
+    assert current["result"]["reason"] == "awaiting_review"
+    assert counts == (0, 0)
+    assert control.completion_poll_blocked[task_id] is False
+    # Repeated queue observations remain read-only and do not wait for policy.
+    assert telegram_chat._poll_worker_completion(control) is True
+    assert tuple(conn.execute(
+        "SELECT SUM(action='worker_completion_decision'),SUM(action='result_acceptance') "
+        "FROM task_history WHERE task_id=?", (task_id,)).fetchone()) == counts
 
 
 def test_rejected_independent_review_requests_one_correction(completion_world):
@@ -613,7 +605,8 @@ def test_high_security_findings_create_one_correction_and_allow_a_fresh_submissi
     pending = evaluate_current_result(conn, task_id, **_paths(world))
     assert pending["decision"]["state"] == "awaiting_review"
     assert pending["decision"]["eligible_reviewer_ids"] == [TOP_REVIEWER]
-    assert pending["decision"]["worker_may_claim_next"] is False
+    # An open review gates this result, while the worker remains free for other tasks.
+    assert pending["decision"]["worker_may_claim_next"] is True
     assert world["binding"].closed is True
     assert client.read(task_id).leased is False
 
@@ -1162,17 +1155,17 @@ def test_operator_authority_is_checked_before_git_or_github_evaluation(
     ("case", "may_claim", "stale_field", "expected"),
     [
         ("balanced-current", True, None, True),
-        ("high-security-waits", False, None, False),
+        ("high-security-no-longer-holds-worker", False, None, True),
         ("stale-result-revision", True, "result_revision", False),
         ("stale-task-version", True, "task_version", False),
         ("stale-status-revision", True, "status_revision", False),
-        ("unavailable-lead-evaluation", True, "availability", False),
+        ("unavailable-lead-evaluation", True, "availability", True),
     ],
 )
-def test_remote_controller_claim_gate_requires_exact_lead_completion_readback(
+def test_remote_controller_claim_gate_requires_exact_result_readback_not_review_decision(
     monkeypatch, case, may_claim, stale_field, expected
 ):
-    """Remote workers may claim again only from an exact current Lead decision."""
+    """A current canonical unreviewed result frees the worker in every policy mode."""
     import copy
     from types import SimpleNamespace
     from hub._services.chat import telegram_chat
@@ -1242,6 +1235,202 @@ def test_remote_controller_claim_gate_requires_exact_lead_completion_readback(
     assert control.completion_poll_blocked[task_id] is (not expected)
     assert conn.total_changes == before_changes
     assert _schema_objects(conn) == before_schema
+
+
+@pytest.mark.parametrize(("status", "reason", "current_version"), [
+    ("review", "awaiting_review", "d" * 64),
+    ("pending", "acceptance_not_current", "f" * 64),
+])
+def test_current_local_result_frees_worker_before_internal_reconciliation(
+        monkeypatch, status, reason, current_version):
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    task_id, result_id = 91022, 4202
+    result_text = "Current local result receipt, awaiting its separate review."
+    result_sha = hashlib.sha256(result_text.encode("utf-8")).hexdigest()
+    generation, fence, version = "local-generation", 32, "d" * 64
+    revision = "e" * 64
+    record = {
+        "schema": "bach.worker-result.v1", "task_id": task_id,
+        "result_id": result_id, "result": result_text, "result_sha256": result_sha,
+        "accepted": False, "completion_policy_version": 1,
+        "submission": {"availability": "available"},
+        "reason": reason, "result_revision": revision,
+        "generation": generation, "fence": fence, "task_version": version,
+    }
+    readback = {
+        "schema": "bach.task-result-readback.v1", "task_id": task_id,
+        "verified": True, "status": status, "status_revision": 18,
+        "task_version": current_version, "result": record,
+        "completion_evaluation": {"availability": "unavailable"},
+    }
+    client = SimpleNamespace(mode="local",
+        task_result_snapshot=lambda _task_id: readback,
+        _reconcile_task_completion=lambda _task_id: pytest.fail(
+            "current result must free the worker before internal reconciliation"))
+    binding = SimpleNamespace(task_id=task_id, _client=client, submitted_result={
+        "result_id": result_id, "result_sha256": result_sha,
+        "generation": generation, "fence": fence, "task_version": version,
+    })
+    control = telegram_chat._WorkerControl(worker_id="local-result-worker", generation=generation)
+    control.task_binding = binding
+    older_client = SimpleNamespace(_reconcile_task_completion=lambda _task_id: pytest.fail(
+        "older result reconciliation must not delay the current queue claim"))
+    older_binding = SimpleNamespace(task_id=task_id - 1,
+        submitted_result={"result_id": result_id - 1}, _client=older_client)
+    control.task_result_bindings = {task_id - 1: older_binding, task_id: binding}
+    assert telegram_chat._poll_worker_completion(control) is True
+    assert control.completion_poll_blocked[task_id] is False
+
+
+@pytest.mark.parametrize("has_current_binding", [False, True])
+def test_retained_result_reviews_never_run_before_next_queue_claim(has_current_binding):
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    reconciled = []
+    older_binding = SimpleNamespace(
+        task_id=91021,
+        submitted_result={"result_id": 4201},
+        _client=SimpleNamespace(
+            _reconcile_task_completion=lambda task_id: reconciled.append(task_id)),
+    )
+    control = telegram_chat._WorkerControl(
+        worker_id="retained-result-poll", generation="new-generation")
+    control.task_binding = (
+        SimpleNamespace(task_id=91022, submitted_result=None)
+        if has_current_binding else None)
+    control.task_result_bindings = {older_binding.task_id: older_binding}
+
+    assert telegram_chat._poll_worker_completion(control) is True
+    assert reconciled == []
+
+
+@pytest.mark.parametrize("mode", ["simple_task", "balanced", "high_security"])
+def test_missing_scope_revision_does_not_hold_a_confirmed_native_submission(
+        completion_world, mode):
+    from hub._services.chat import telegram_chat
+
+    world = completion_world(mode=mode, missing_scope=True)
+    binding, client, task_id, conn = (world[key] for key in
+                                    ("binding", "client", "task_id", "conn"))
+    before = client.task_result_snapshot(task_id)
+    assert before["result"]["result_revision"] is None
+    assert before["result"]["submission"]["availability"] == "available"
+    control = telegram_chat._WorkerControl(worker_id=AUTHOR_SLOT, generation=GENERATION)
+    control.task_binding = binding
+    assert telegram_chat._poll_worker_completion(control) is True
+    after = client.task_result_snapshot(task_id)
+    assert after["status"] == before["status"] == "review"
+    assert after["status_revision"] == before["status_revision"]
+    assert after["result"]["accepted"] is False
+    assert after["result"]["result_revision"] is None
+    assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? "
+                        "AND action='result_acceptance'", (task_id,)).fetchone()[0] == 0
+    next_id = _insert_task(conn, "Next ordinary task after native submission")
+    conn.execute("UPDATE tasks SET assigned_to='BACH' WHERE id=?", (next_id,))
+    conn.commit()
+    next_binding = WorkerLeaseBinding.acquire_next(client,
+        slot={"id": AUTHOR_SLOT, "backend": "ollama", "model": AUTHOR_MODEL},
+        worker_id="completion-author@HOST", host="HOST", generation=GENERATION,
+        is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    assert next_binding is not None and next_binding.task_id == next_id
+    assert next_binding.return_lease() is True
+    assert client.task_result_snapshot(task_id)["result"]["accepted"] is False
+
+
+@pytest.mark.parametrize("damage", [
+    "missing-ack-revision", "missing-readback-revision", "stale-ack-revision",
+    "malformed-result-revision", "stale-ack-result-revision", "missing-receipt",
+    "receipt-digest", "submission-event", "status-event", "boolean-event",
+    "legacy-receipt", "legacy-policy", "scope-required-in-ack",
+    "boolean-receipt-version", "missing-ack-receipt-version", "malformed-ack-revision",
+    "later-status-event", "later-status-pending", "malformed-ack-full-revision",
+])
+def test_scope_missing_submission_fallback_rejects_incomplete_or_changed_proof(
+        completion_world, monkeypatch, damage):
+    import copy
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    world = completion_world(mode="high_security", missing_scope=True)
+    task_id = world["task_id"]
+    readback = copy.deepcopy(world["client"].task_result_snapshot(task_id))
+    submitted = copy.deepcopy(world["binding"].submitted_result)
+    assert readback["result"]["result_revision"] is None
+    assert telegram_chat._same_native_submission_receipt(readback["result"], submitted)
+    record = readback["result"]
+    if damage == "missing-ack-revision":
+        submitted.pop("submission_revision")
+    elif damage == "missing-readback-revision":
+        record.pop("submission_revision")
+    elif damage == "stale-ack-revision":
+        submitted["submission_revision"] = "sha256:" + "0" * 64
+    elif damage == "malformed-result-revision":
+        record["result_revision"] = "malformed"
+    elif damage == "stale-ack-result-revision":
+        submitted["result_revision"] = "0" * 64
+    elif damage == "missing-receipt":
+        record.pop("submission_receipt_sha256")
+    elif damage == "receipt-digest":
+        record["submission"]["receipt_sha256"] = "0" * 64
+    elif damage == "submission-event":
+        record["submission_event_id"] += 1
+    elif damage == "status-event":
+        record["submission"]["submitted_status_event_id"] += 1
+    elif damage == "boolean-event":
+        record["submitted_status_event_id"] = True
+    elif damage == "legacy-receipt":
+        record["submission"]["availability"] = "legacy_release_only"
+    elif damage == "legacy-policy":
+        record["completion_policy_version"] = None
+    elif damage == "scope-required-in-ack":
+        submitted["result_revision"] = "1" * 64
+    elif damage == "boolean-receipt-version":
+        record["submission_receipt_version"] = True
+    elif damage == "missing-ack-receipt-version":
+        submitted.pop("submission_receipt_version")
+    elif damage == "malformed-ack-revision":
+        submitted["result_revision"] = 1
+    elif damage == "later-status-event":
+        readback["status_revision"] += 1
+    elif damage == "later-status-pending":
+        readback["status"] = "pending"
+        record["reason"] = "acceptance_not_current"
+    elif damage == "malformed-ack-full-revision":
+        record["result_revision"] = "1" * 64
+        submitted["result_revision"] = 1
+    client = SimpleNamespace(task_result_snapshot=lambda _: copy.deepcopy(readback))
+    binding = SimpleNamespace(task_id=task_id, _client=client, submitted_result=submitted)
+    control = telegram_chat._WorkerControl(worker_id=AUTHOR_SLOT, generation=GENERATION)
+    control.task_binding = binding
+    assert telegram_chat._poll_worker_completion(control) is False
+    assert world["client"].task_result_snapshot(task_id)["status"] == "review"
+
+
+@pytest.mark.parametrize("scope_reason", [
+    "scope_not_recorded", "current_git_changed", "current_git_unavailable", "scope_invalid",
+])
+def test_scope_repair_remains_separate_from_an_exact_submission_queue_gate(
+        completion_world, scope_reason):
+    import copy
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat
+
+    world = completion_world(mode="high_security", missing_scope=True)
+    task_id = world["task_id"]
+    readback = world["client"].task_result_snapshot(task_id)
+    readback["result"]["scope"] = {"schema": "bach.worker-scope-evidence.v1",
+        "availability": "unavailable", "reason": scope_reason, "result_revision": None}
+    binding = SimpleNamespace(task_id=task_id,
+        _client=SimpleNamespace(task_result_snapshot=lambda _: copy.deepcopy(readback)),
+        submitted_result=world["binding"].submitted_result)
+    control = telegram_chat._WorkerControl(worker_id=AUTHOR_SLOT, generation=GENERATION)
+    control.task_binding = binding
+    assert telegram_chat._poll_worker_completion(control) is True
+    current = world["client"].task_result_snapshot(task_id)
+    assert current["status"] == "review" and current["result"]["accepted"] is False
 
 
 def test_negative_self_check_does_not_submit_or_complete(completion_world):
@@ -1514,7 +1703,7 @@ def test_current_negative_review_vetoes_green_predeclared_contract_and_requeues(
     assert decision["state"] == "correction_required"
     assert decision["completion_allowed"] is False
     assert decision["dependents_may_start"] is False
-    assert decision["worker_may_claim_next"] is (mode != "high_security")
+    assert decision["worker_may_claim_next"] is True
     if review_status == "findings":
         assert decision["reason"] == "review_findings_contract_not_met"
 
@@ -1552,7 +1741,7 @@ def test_noncurrent_negative_review_cannot_veto_a_green_contract(
             review_evidence = {
                 "schema": "bach.worker-result-review-evidence.v1",
                 "availability": "available", "status": "findings",
-                "independent": True, "task_id": task_id,
+                "independent": True, "policy_eligible": True, "task_id": task_id,
                 "reviewer_id": TOP_REVIEWER,
                 "review_task_id": task_id + 100,
                 "result_id": record["result_id"],
@@ -1604,8 +1793,9 @@ def test_external_github_approval_does_not_override_negative_contract_finding(
             record["model_review"] = {
                 "schema": "bach.worker-result-review-evidence.v1",
                 "availability": "available", "status": review_status,
-                "independent": True, "task_id": task_id,
+                "independent": True, "policy_eligible": True, "task_id": task_id,
                 "reviewer_id": TOP_REVIEWER,
+                "policy_eligible": True,
                 "result_id": record["result_id"],
                 "result_revision": projected["result_revision"],
                 "review_task_id": task_id + 100,

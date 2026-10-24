@@ -82,6 +82,7 @@ def test_bound_generation_gets_one_grant_without_spoofing_task_creator(prepared)
     assert task["claimed_by"] == p.worker and task["claim_fence"] == 1
     assert saved["task_version"] == delegation.task_version and saved["generation"] == p.generation
     assert saved["consumed_at"] and saved["consumed_fence"] == 1
+    assert ack.ttl_profile == "M"
     audit = json.loads(p.db.execute("SELECT new_value FROM task_history WHERE action='lease_acquire'").fetchone()[0])
     assert audit["creator_delegation"]["run_id"] == p.run_id
     assert audit["creator_delegation"]["generation"] == p.generation
@@ -246,6 +247,24 @@ def test_actual_controller_binds_current_generation_and_physical_id_before_first
     assert binding.task_id == p.step["task_id"] and binding.generation == control.generation
     assert grant(p)["worker_id"] == p.worker and grant(p)["consumed_fence"] == 1
     assert "_creator_authority" not in inspect.signature(controller.start_worker_execution).parameters
+
+
+def test_creator_cloud_claim_uses_short_lease(prepared):
+    p = prepared
+    task_id = p.step["task_id"]
+    delegation = bind(p)
+
+    binding = WorkerLeaseBinding.acquire(
+        p.client, task_id, worker_id=p.worker, host=p.host, generation=p.generation,
+        is_current=lambda: True, stop_event=threading.Event(),
+        slot={"id": p.slot_id, "backend": "openrouter", "model": "model",
+              "require_assigned_slot": True},
+        _creator_delegation=delegation,
+    )
+
+    assert binding.task_id == task_id
+    assert binding._ack.ttl_profile == "S"
+    assert grant(p)["consumed_at"]
 
 
 def test_stale_or_stopped_controller_cannot_bind_a_grant(prepared, monkeypatch):
