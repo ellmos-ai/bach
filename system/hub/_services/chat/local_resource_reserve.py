@@ -46,16 +46,53 @@ def _integer(raw, low, high):
     return raw
 
 
+def _validate_cold_start(raw, memory_reserve):
+    """Opt-in monitored load for Buddha only; the static budget stays the default."""
+    fields = {"enabled", "min_available_bytes", "max_load_seconds",
+              "max_swap_growth_bytes", "max_pressure_level"}
+    if not isinstance(raw, dict) or set(raw) != fields or type(raw["enabled"]) is not bool:
+        raise ValueError("invalid cold start policy")
+    # The floor never drops below the system reserve that is never granted away.
+    _integer(raw["min_available_bytes"], memory_reserve, 64 * GIB)
+    _integer(raw["max_load_seconds"], 5, 600)
+    _integer(raw["max_swap_growth_bytes"], 0, 64 * GIB)
+    if type(raw["max_pressure_level"]) is not int or raw["max_pressure_level"] not in {1, 2}:
+        raise ValueError("invalid cold start pressure limit")
+
+
+def _cold_start_gate(policy, requested, resident, host_resources, available, digest):
+    """Limits and baseline for a monitored load, or None to keep waiting.
+
+    Compression, swap and file cache never count as capacity; observations only
+    bound the load. Unverified pressure or swap refuses the cold start.
+    """
+    config = policy.get("cold_start")
+    if (requested is not True or resident or not config or config["enabled"] is not True
+            or available < config["min_available_bytes"]):
+        return None
+    pressure, swap_used = host_resources.get("pressure_level"), host_resources.get("swap_used_bytes")
+    if (type(pressure) is not int or pressure > config["max_pressure_level"]
+            or type(swap_used) is not int):
+        return None
+    return {**config, "digest": digest, "hard_floor_bytes": policy["memory_reserve_bytes"],
+            "baseline": {key: host_resources.get(key) for key in (
+                "checked_at", "memory_available_bytes", "pressure_level", "swap_used_bytes",
+                "compressor_physical_bytes", "compressor_logical_bytes")}}
+
+
 def validate_policy(raw):
     fields = {"schema", "enabled", "memory_reserve_bytes", "disk_reserve_bytes",
               "wait_seconds", "poll_seconds", "models"}
-    if (not isinstance(raw, dict) or set(raw) != fields or raw["schema"] != SCHEMA
+    if (not isinstance(raw, dict) or not fields <= set(raw) <= fields | {"cold_start"}
+            or raw["schema"] != SCHEMA
             or type(raw["enabled"]) is not bool):
         raise ValueError("invalid reserve policy")
     _integer(raw["memory_reserve_bytes"], 512 * 1024**2, 64 * GIB)
     _integer(raw["disk_reserve_bytes"], 128 * 1024**2, 256 * GIB)
     _integer(raw["wait_seconds"], 1, 3600)
     _integer(raw["poll_seconds"], 1, 60)
+    if "cold_start" in raw:
+        _validate_cold_start(raw["cold_start"], raw["memory_reserve_bytes"])
     models = raw["models"]
     if not isinstance(models, dict) or len(models) > 32:
         raise ValueError("invalid model budgets")
@@ -203,7 +240,7 @@ def _decision(state, *, admitted=False, enforced=True, retryable=False, **fields
             "retryable": retryable, "checked_at": datetime.now(timezone.utc).isoformat(), **fields}
 
 
-async def probe(backend, model, *, reuse_running_server=False):
+async def probe(backend, model, *, reuse_running_server=False, cold_start=False):
     """A budget/observation receipt, never a model capacity certification."""
     try:
         policy, version = read_policy()
@@ -265,7 +302,11 @@ async def probe(backend, model, *, reuse_running_server=False):
     if any(value < policy["disk_reserve_bytes"] for value in free.values()):
         return _decision("waiting_disk_reserve", retryable=True, **common)
     if available < required:
-        return _decision("waiting_memory_reserve", retryable=True, **common)
+        gate = _cold_start_gate(policy, cold_start, resident, host_resources, available,
+                                observed["digest"])
+        if gate is None:
+            return _decision("waiting_memory_reserve", retryable=True, **common)
+        common.update(capacity_basis="cold_start_monitored", cold_start=gate)
     return _decision("ready", admitted=True, **common)
 
 

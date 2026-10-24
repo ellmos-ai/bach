@@ -1577,8 +1577,11 @@ class ChatRuntime(_ModuleChatRuntime):
                     and slot.get("model") == model
                     and slot.get("type") == "continuous"
                     and slot.get("enabled") is True)
-        receipt = (await probe(backend, model, reuse_running_server=True)
-                   if reuse_running_server else await probe(backend, model))
+        # Only the pre-queue Buddha warmup may request the monitored cold start.
+        extra = ({"cold_start": True}
+                 if session is not None and getattr(session, "_buddha_cold_start", False) else {})
+        receipt = (await probe(backend, model, reuse_running_server=True, **extra)
+                   if reuse_running_server else await probe(backend, model, **extra))
         try:
             _, version = read_policy()
         except (OSError, ValueError, TypeError, UnicodeError):
@@ -1620,12 +1623,13 @@ class ChatRuntime(_ModuleChatRuntime):
         session = None
         context_token = None
         missing = object()
-        previous_reader = previous_guard = previous_no_wait = missing
+        previous_reader = previous_guard = previous_no_wait = previous_cold = missing
         try:
             session = self.get_session(worker_id)
             previous_reader = getattr(session, "worker_slot_reader", missing)
             previous_guard = getattr(session, "_buddha_warmup_guard", missing)
             previous_no_wait = getattr(session, "_buddha_warmup_no_wait", missing)
+            previous_cold = getattr(session, "_buddha_cold_start", missing)
             if (getattr(session, "worker_task_binding", None) is not None
                     or getattr(session, "require_task_binding", False) is not False):
                 return {"state": "task_bound"}
@@ -1667,6 +1671,7 @@ class ChatRuntime(_ModuleChatRuntime):
 
             session._buddha_warmup_guard = check_warmup_binding
             session._buddha_warmup_no_wait = True
+            session._buddha_cold_start = True
             context_token = self._compute_turn_context.set((worker_id, "background"))
 
             try:
@@ -1689,18 +1694,35 @@ class ChatRuntime(_ModuleChatRuntime):
 
             warmup = asyncio.create_task(self._chat_with_compute_turn(
                 backend, [], model=model, think=False))
-            while not warmup.done():
-                await asyncio.wait({warmup}, timeout=0.1)
-                problem = check_warmup_binding()
-                if problem:
-                    warmup.cancel()
-                    try:
-                        await warmup
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception:
-                        pass
-                    return {"state": problem}
+            gate = receipt.get("cold_start")
+            if isinstance(gate, dict):
+                from hub._services.chat.buddha_cold_start import monitor_load, unload_exact_model
+
+                _, reason = await monitor_load(
+                    warmup, gate, hard_floor_bytes=gate["hard_floor_bytes"],
+                    check=check_warmup_binding)
+                if reason is not None:
+                    # Cleanup is only claimed once /api/ps no longer lists the model.
+                    cleaned = await unload_exact_model(
+                        getattr(backend, "base_url", ""), model, gate["digest"])
+                    if reason in {"stopped", "stop_unverified", "slot_unverified", "slot_changed",
+                                  "task_bound", "fackel_unverified", "fackel_compute"}:
+                        return {"state": reason, "cleanup_verified": cleaned}
+                    return {"state": "cold_start_aborted", "reason": reason,
+                            "cleanup_verified": cleaned, "baseline": gate["baseline"]}
+            else:
+                while not warmup.done():
+                    await asyncio.wait({warmup}, timeout=0.1)
+                    problem = check_warmup_binding()
+                    if problem:
+                        warmup.cancel()
+                        try:
+                            await warmup
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception:
+                            pass
+                        return {"state": problem}
             try:
                 result = warmup.result()
             except Exception as exc:
@@ -1725,6 +1747,10 @@ class ChatRuntime(_ModuleChatRuntime):
                     session.__dict__.pop("_buddha_warmup_guard", None)
                 else:
                     session._buddha_warmup_guard = previous_guard
+                if previous_cold is missing:
+                    session.__dict__.pop("_buddha_cold_start", None)
+                else:
+                    session._buddha_cold_start = previous_cold
                 if previous_no_wait is missing:
                     session.__dict__.pop("_buddha_warmup_no_wait", None)
                 else:
