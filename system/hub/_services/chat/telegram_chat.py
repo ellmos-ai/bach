@@ -876,7 +876,10 @@ def _prepare_bound_task_scope(binding, slot):
                 or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
                 or (scope.get("source_pin") is not None) != code_capability):
             raise RuntimeError("scope_unavailable")
-    except Exception:
+    except Exception as exc:
+        # Fixed-text RuntimeErrors name the failed check; other types may carry paths.
+        reason = str(exc)[:120] if type(exc) is RuntimeError else type(exc).__name__
+        logger.warning("Task #%s: Arbeitsbaum nicht bestätigt (%s)", binding.task_id, reason)
         raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
 
 
