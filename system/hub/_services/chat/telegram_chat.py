@@ -1492,7 +1492,7 @@ def _worker_backend_retry_delay(
                                and error["kind"] == "http_error"
                                and error.get("status_code") == 404
                                and slot.get("backend") == "openrouter"
-                               and model == "openrouter/free"
+                               and slot.get("model") == "openrouter/free"
                                and slot.get("max_model_requests") is None)
                            or (error["provider"] == "openrouter"
                                and error["kind"] == "connection_error"
