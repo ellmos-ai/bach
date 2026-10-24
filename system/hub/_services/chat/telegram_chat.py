@@ -5075,6 +5075,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                 "slot_changed": "Buddha-Modellbindung hat sich geändert; Modellstart pausiert",
                                 "slot_unverified": "Buddha wartet auf verifizierbare Modellbindung",
                                 "stop_unverified": "Buddha-Modellstart wartet auf bestätigten Laufzustand",
+                                "cold_start_aborted": "Buddha-Kaltstart wegen Druck-, Swap- oder Zeitgrenze abgebrochen; Modell wird bereinigt",
                             }.get(warmup_state, "Buddha-Modellstart wartet auf sichere Zulassung")
                             if _update_worker_slot(control, {
                                     "status": "running", "current_activity": warmup_activity,
