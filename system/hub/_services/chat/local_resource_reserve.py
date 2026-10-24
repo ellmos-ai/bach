@@ -67,7 +67,9 @@ def _cold_start_gate(policy, requested, resident, host_resources, available, dig
     bound the load. Unverified pressure or swap refuses the cold start.
     """
     config = policy.get("cold_start")
-    if (requested is not True or resident or not config or config["enabled"] is not True
+    from hub._services.chat.buddha_cold_start import cooldown_active
+
+    if (cooldown_active() or requested is not True or resident or not config or config["enabled"] is not True
             or available < config["min_available_bytes"]):
         return None
     pressure, swap_used = host_resources.get("pressure_level"), host_resources.get("swap_used_bytes")
@@ -287,7 +289,11 @@ async def probe(backend, model, *, reuse_running_server=False, cold_start=False)
         return _decision("unknown_resources", retryable=True, **common)
     from hub._services.chat.host_resource_observation import observe_host_resources
 
-    host_resources = await asyncio.to_thread(observe_host_resources, memory)
+    try:
+        host_resources = await asyncio.to_thread(observe_host_resources, memory)
+    except Exception:  # an observation failure must never fail the call itself
+        host_resources = {"schema": "bach.host-resource-observation.v1",
+                          "errors": ["host_observation_failed"]}
     weight_request = 0 if resident else budget["weight_budget_bytes"]
     required = (policy["memory_reserve_bytes"] + weight_request
                 + budget["kv_headroom_bytes"] + budget["overhead_bytes"])

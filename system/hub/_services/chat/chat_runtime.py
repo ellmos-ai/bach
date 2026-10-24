@@ -1692,6 +1692,8 @@ class ChatRuntime(_ModuleChatRuntime):
             if receipt.get("capacity_basis") == "resident_model":
                 return {"state": "resident"}
 
+            load_started = asyncio.Event()
+            session._buddha_load_started = load_started
             warmup = asyncio.create_task(self._chat_with_compute_turn(
                 backend, [], model=model, think=False))
             gate = receipt.get("cold_start")
@@ -1701,21 +1703,28 @@ class ChatRuntime(_ModuleChatRuntime):
                 session._buddha_cold_start = False
             if isinstance(gate, dict):
                 from hub._services.chat.buddha_cold_start import (
-                    monitor_load, record_observation, resident_footprint, unload_exact_model)
+                    monitor_load, record_observation, resident_footprint, start_cooldown,
+                    unload_exact_model)
 
                 load_stats = {}
                 try:
                     _, reason = await monitor_load(
                         warmup, gate, hard_floor_bytes=gate["hard_floor_bytes"],
-                        check=check_warmup_binding, stats=load_stats)
+                        check=check_warmup_binding, stats=load_stats, load_started=load_started)
                 except asyncio.CancelledError:
                     await asyncio.shield(unload_exact_model(
                         getattr(backend, "base_url", ""), model, gate["digest"]))
                     raise
                 if reason is not None:
-                    # Cleanup is only claimed once /api/ps no longer lists the model.
-                    cleaned = await unload_exact_model(
-                        getattr(backend, "base_url", ""), model, gate["digest"])
+                    # Cleanup is only claimed once /api/ps no longer lists the model;
+                    # nothing is unloaded when the model call was never dispatched.
+                    cleaned = (await asyncio.shield(unload_exact_model(
+                        getattr(backend, "base_url", ""), model, gate["digest"]))
+                        if load_started.is_set() else None)
+                    if reason.startswith("load_error:") or reason not in {
+                            "stopped", "stop_unverified", "slot_unverified", "slot_changed",
+                            "task_bound", "fackel_unverified", "fackel_compute"}:
+                        start_cooldown()
                     if reason.startswith("load_error:"):
                         return {"state": reason.split(":", 1)[1], "cleanup_verified": cleaned}
                     if reason in {"stopped", "stop_unverified", "slot_unverified", "slot_changed",
@@ -1744,12 +1753,16 @@ class ChatRuntime(_ModuleChatRuntime):
                 return {"state": problem or fallback}
             problem = check_warmup_binding()
             if problem:
+                if isinstance(gate, dict):
+                    # A stop or binding change right after a monitored load: unload it too.
+                    return {"state": problem, "cleanup_verified": await asyncio.shield(
+                        unload_exact_model(getattr(backend, "base_url", ""), model, gate["digest"]))}
                 return {"state": problem}
             if (isinstance(result, dict) and result.get("error")) or FailedAnswer.looks_like(result):
                 if isinstance(gate, dict):
-                    from hub._services.chat.buddha_cold_start import unload_exact_model as _unload
-                    return {"state": "model_wait", "cleanup_verified": await _unload(
-                        getattr(backend, "base_url", ""), model, gate["digest"])}
+                    start_cooldown()
+                    return {"state": "model_wait", "cleanup_verified": await asyncio.shield(
+                        unload_exact_model(getattr(backend, "base_url", ""), model, gate["digest"]))}
                 return {"state": "model_wait"}
             if isinstance(gate, dict):
                 # Measured, not credited: a later start still needs its own admission.
@@ -1774,6 +1787,7 @@ class ChatRuntime(_ModuleChatRuntime):
                     session.__dict__.pop("_buddha_warmup_guard", None)
                 else:
                     session._buddha_warmup_guard = previous_guard
+                session.__dict__.pop("_buddha_load_started", None)
                 if previous_cold is missing:
                     session.__dict__.pop("_buddha_cold_start", None)
                 else:
@@ -2226,6 +2240,9 @@ class ChatRuntime(_ModuleChatRuntime):
                                 check_reserve_policy(receipt)
                                 with self._local_resource_waiters_lock:
                                     self._local_resource_waiters.pop(chat_id, None)
+                                load_signal = getattr(session, "_buddha_load_started", None) if session is not None else None
+                                if load_signal is not None:
+                                    load_signal.set()
                                 return await dispatch_model_call()
                             finally:
                                 self._leave_compute_turn(self._compute_turn_gate)

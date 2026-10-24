@@ -11,12 +11,23 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 import httpx
 
 STALE_SECONDS = 5.0
+_COOLDOWN = {"until": 0.0}
+
+
+def cooldown_active():
+    """True while a recent aborted cold start blocks another attempt."""
+    return time.monotonic() < _COOLDOWN["until"]
+
+
+def start_cooldown(seconds=300.0):
+    _COOLDOWN["until"] = time.monotonic() + seconds
 
 
 def limits_violation(gate, sample, *, elapsed, sample_age, hard_floor_bytes):
@@ -103,23 +114,45 @@ def record_observation(model, digest, num_ctx, stats, baseline, footprint):
               "baseline": baseline, "extremes": stats, "resident": footprint}
     data[model] = record
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_bytes(json.dumps(data, indent=1, sort_keys=True).encode("utf-8"))
+    tmp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(json.dumps(data, indent=1, sort_keys=True).encode("utf-8"))
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(tmp, path)
     return record
 
 
-async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0, stats=None):
+async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0, stats=None,
+                       load_started=None, queue_cap=900.0):
     """Await ``load`` while enforcing the cold-start limits.
 
     Returns (result, reason): reason is None on completion, a violated limit or
     binding problem after cancelling the load, or ``load_error:<state>`` when the
-    load itself raised. An outer cancellation also cancels the load and sampler.
+    load itself raised. The load-time limit only runs once ``load_started`` is
+    set (the model call was dispatched); waiting for the host gate is bounded
+    separately by ``queue_cap``. An outer cancellation cancels load and sampler.
     """
-    started = time.monotonic()
-    sample, sampled_at = gate["baseline"], started
+    began = time.monotonic()
+    sample, sampled_at = gate["baseline"], began
     _track(stats, sample)
-    pending, pending_started = None, started
+    pending, pending_started = None, began
+    clock = {"start": None}
+
+    def load_elapsed():
+        if load_started is None or load_started.is_set():
+            if clock["start"] is None:
+                clock["start"] = time.monotonic()
+            return time.monotonic() - clock["start"]
+        return 0.0
+
+    def violation():
+        if load_started is not None and not load_started.is_set() and time.monotonic() - began > queue_cap:
+            return "queue_wait_exceeded"
+        return limits_violation(
+            gate, sample, elapsed=load_elapsed(), sample_age=time.monotonic() - sampled_at,
+            hard_floor_bytes=hard_floor_bytes)
 
     async def stop_tasks():
         for task in (load, pending):
@@ -147,9 +180,7 @@ async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0, sta
             if reason is None and pending is None and time.monotonic() - sampled_at >= interval:
                 pending, pending_started = asyncio.create_task(sample_host()), time.monotonic()
             if reason is None:
-                reason = limits_violation(
-                    gate, sample, elapsed=time.monotonic() - started,
-                    sample_age=time.monotonic() - sampled_at, hard_floor_bytes=hard_floor_bytes)
+                reason = violation()
             if reason:
                 await stop_tasks()
                 return None, reason
@@ -163,14 +194,24 @@ async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0, sta
         except (asyncio.CancelledError, Exception):
             pass
     if stats is not None:
-        stats["elapsed_seconds"] = round(time.monotonic() - started, 2)
+        stats["elapsed_seconds"] = round(load_elapsed(), 2)
     try:
-        return load.result(), None
+        load.result()
     except asyncio.CancelledError:
         return None, "load_error:model_wait"
     except Exception as exc:
         capacity = str(exc) == "buddha_warmup_capacity_wait"
         return None, "load_error:" + ("capacity_wait" if capacity else "model_wait")
+    # The last interval before completion is unobserved: check once more afterwards.
+    try:
+        sample, sampled_at = await sample_host(), time.monotonic()
+        _track(stats, sample)
+    except Exception:
+        sampled_at = 0.0
+    reason = limits_violation(
+        gate, sample, elapsed=0.0, sample_age=time.monotonic() - sampled_at,
+        hard_floor_bytes=hard_floor_bytes)
+    return (load.result(), None) if reason is None else (None, reason)
 
 
 async def unload_exact_model(base_url, model, digest, *, wait_seconds=15.0, absent_polls=3):
