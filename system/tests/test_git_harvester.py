@@ -48,7 +48,8 @@ case "$1 $2" in
   "read-tree "*|"add -A") ;;
   "write-tree ") echo "${FAKE_TREE:-cccccccccccccccccccccccccccccccccccccccc}" ;;
   "diff --cached")
-    if [[ "$3" == "--name-only" ]]; then printf '%s' "${FAKE_SNAPSHOT_PATHS:-}"; else printf '%s' "${FAKE_SNAPSHOT_DIFF:-}"; fi ;;
+    if [[ "$3" == "--name-only" ]]; then printf '%s' "${FAKE_SNAPSHOT_PATHS:-}";
+    else printf '%s' "${FAKE_SNAPSHOT_DIFF:-}"; exit "${FAKE_DIFF_RC:-0}"; fi ;;
   "show -s") echo "2026-09-21T10:00:00+02:00" ;;
   "commit-tree "*) echo "${FAKE_SNAPSHOT_COMMIT:-dddddddddddddddddddddddddddddddddddddddd}" ;;
   "symbolic-ref --quiet") echo "${FAKE_BRANCH:-main}" ;;
@@ -175,6 +176,16 @@ def test_dirty_status_reports_without_push(fake_tools):
     assert "[DIRTY] 1 uncommittete Pfade" in result.stdout
     assert "git push" not in calls
     assert "gh pr" not in calls
+
+
+def test_snapshot_diff_failure_blocks_before_push(fake_tools):
+    result, calls = run_harvester(
+        fake_tools, "--run", FAKE_DIRTY=" M config.py", FAKE_AHEAD="0", FAKE_DIFF_RC="7",
+    )
+    assert result.returncode == 1
+    assert "Snapshot-Diff konnte nicht" in result.stderr
+    assert "git commit-tree" not in calls
+    assert "git push" not in calls
 
 
 def test_snapshot_with_credential_pattern_blocks_before_push(fake_tools):
