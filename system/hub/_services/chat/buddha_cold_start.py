@@ -8,7 +8,10 @@ memory) only ever abort a load; they never create capacity.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 import httpx
@@ -42,7 +45,71 @@ async def sample_host():
     return await asyncio.to_thread(lambda: observe_host_resources(psutil.virtual_memory()))
 
 
-async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0):
+def _track(stats, sample):
+    """Keep only measured extremes; nothing here is ever credited as capacity."""
+    if stats is None or not isinstance(sample, dict):
+        return
+    stats["samples"] = stats.get("samples", 0) + 1
+    for key, pick in (("memory_available_bytes", min), ("swap_used_bytes", max),
+                      ("pressure_level", max), ("compressor_physical_bytes", max)):
+        value = sample.get(key)
+        if type(value) is int:
+            stats[key] = pick(stats[key], value) if key in stats else value
+
+
+def _observation_path():
+    from hub._services.chat.local_resource_reserve import runtime_root
+
+    return runtime_root() / "local-inference/load-observations.json"
+
+
+def read_observation(model, digest):
+    """Last measured load of exactly this model digest; observed values only."""
+    try:
+        record = json.loads(_observation_path().read_bytes()).get(model)
+    except (OSError, ValueError, AttributeError):
+        return None
+    return record if isinstance(record, dict) and record.get("digest") == digest else None
+
+
+async def resident_footprint(base_url, model, digest):
+    """Measured residency (size, VRAM, context) of the exact loaded model, or None."""
+    parsed = urlsplit(str(base_url))
+    if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return None
+    names = {model} if ":" in model.rsplit("/", 1)[-1] else {model, model + ":latest"}
+    try:
+        async with httpx.AsyncClient(timeout=5, follow_redirects=False, trust_env=False) as client:
+            listed = (await client.get(str(base_url).rstrip("/") + "/api/ps")).json().get("models")
+    except (OSError, ValueError, httpx.HTTPError):
+        return None
+    for item in listed if isinstance(listed, list) else []:
+        if (isinstance(item, dict) and item.get("digest") == digest
+                and (item.get("name") in names or item.get("model") in names)):
+            return {key: item.get(key) for key in ("size", "size_vram", "context_length")}
+    return None
+
+
+def record_observation(model, digest, num_ctx, stats, baseline, footprint):
+    """Persist one measured cold load next to, never inside, the policy budgets."""
+    path = _observation_path()
+    try:
+        data = json.loads(path.read_bytes())
+        data = data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        data = {}
+    record = {"schema": "bach.local-load-observation.v1", "digest": digest, "num_ctx": num_ctx,
+              "measured_at": datetime.now(timezone.utc).isoformat(), "credited_as_capacity": False,
+              "baseline": baseline, "extremes": stats, "resident": footprint}
+    data[model] = record
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_bytes(json.dumps(data, indent=1, sort_keys=True).encode("utf-8"))
+    os.replace(tmp, path)
+    return record
+
+
+async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0, stats=None):
     """Await ``load`` while enforcing the cold-start limits.
 
     Returns (result, None) on completion or (None, reason) after cancelling the
@@ -50,6 +117,7 @@ async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0):
     """
     started = time.monotonic()
     sample, sampled_at = gate["baseline"], started
+    _track(stats, sample)
     pending = None
     while not load.done():
         await asyncio.wait({load}, timeout=0.1)
@@ -57,6 +125,7 @@ async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0):
         if reason is None and pending is not None and pending.done():
             try:
                 sample, sampled_at = pending.result(), time.monotonic()
+                _track(stats, sample)
             except Exception:
                 pass
             pending = None
@@ -79,6 +148,8 @@ async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0):
             return None, reason
     if pending is not None:
         pending.cancel()
+    if stats is not None:
+        stats["elapsed_seconds"] = round(time.monotonic() - started, 2)
     return load.result(), None
 
 

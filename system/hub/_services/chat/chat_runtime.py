@@ -1696,11 +1696,13 @@ class ChatRuntime(_ModuleChatRuntime):
                 backend, [], model=model, think=False))
             gate = receipt.get("cold_start")
             if isinstance(gate, dict):
-                from hub._services.chat.buddha_cold_start import monitor_load, unload_exact_model
+                from hub._services.chat.buddha_cold_start import (
+                    monitor_load, record_observation, resident_footprint, unload_exact_model)
 
+                load_stats = {}
                 _, reason = await monitor_load(
                     warmup, gate, hard_floor_bytes=gate["hard_floor_bytes"],
-                    check=check_warmup_binding)
+                    check=check_warmup_binding, stats=load_stats)
                 if reason is not None:
                     # Cleanup is only claimed once /api/ps no longer lists the model.
                     cleaned = await unload_exact_model(
@@ -1734,6 +1736,16 @@ class ChatRuntime(_ModuleChatRuntime):
                 return {"state": problem}
             if (isinstance(result, dict) and result.get("error")) or FailedAnswer.looks_like(result):
                 return {"state": "model_wait"}
+            if isinstance(gate, dict):
+                # Measured, not credited: a later start still needs its own admission.
+                try:
+                    footprint = await resident_footprint(
+                        getattr(backend, "base_url", ""), model, gate["digest"])
+                    return {"state": "loaded", "observation": record_observation(
+                        model, gate["digest"], getattr(backend, "num_ctx", None),
+                        load_stats, gate["baseline"], footprint)}
+                except Exception:
+                    log.warning("Buddha-Ladebeobachtung konnte nicht gespeichert werden")
             return {"state": "loaded"}
         finally:
             if context_token is not None:
