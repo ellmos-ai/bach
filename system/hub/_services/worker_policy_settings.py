@@ -24,6 +24,7 @@ POLICY_KEYS = {"policy_version", "default_mode", "reviewers", "allow_review_task
                "review_expiry_seconds", "github_external_review"}
 OVERRIDE_KEYS = {"mode", "require_user_review", "github_external_review", "allow_review_task_pickup"}
 SELECTION_KEYS = {"resume_bound_task_first", "decompose_when_idle", "normal_task_order"}
+INDEPENDENCE_KEY = "worker_review_independence.v1"
 
 
 class PolicyUnavailable(RuntimeError):
@@ -179,6 +180,25 @@ def _stored(conn, key):
         return value
     except (ValueError, TypeError) as exc:
         raise PolicyUnavailable("Gespeicherte Worker-Regeln sind ungültig") from exc
+
+
+def exclude_author_model(conn):
+    """True only when the operator explicitly bans the author's model as reviewer.
+
+    User decision 2026-10-24: any model may review in its own fresh run; the run,
+    not the model or agent slot, is the independence unit. A missing setting
+    keeps that default, an unreadable one fails closed to the ban.
+    """
+    try:
+        values = _stored(conn, INDEPENDENCE_KEY)["values"]
+    except sqlite3.OperationalError:
+        return False
+    except PolicyUnavailable:
+        return True
+    if values is None:
+        return False
+    flag = values.get("exclude_author_model") if isinstance(values, dict) else None
+    return flag if type(flag) is bool else True
 
 
 def _global(conn):
