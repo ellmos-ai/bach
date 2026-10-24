@@ -89,7 +89,7 @@ def test_configured_release_expands_host_home(monkeypatch, tmp_path):
     assert resolve_gui_distribution(tmp_path / "gui", "$GUI_RELEASE_ROOT/dist") == tmp_path / "dist"
 
 
-def test_gui_consumer_and_kit_pin_bind_same_025_release():
+def test_gui_consumer_and_kit_pin_bind_same_release():
     repo = Path(__file__).resolve().parents[2]
     consumer = json.loads((repo / "system/gui/gui-consumer.v1.json").read_text(encoding="utf-8"))
     kit = get_pinned_kit_manifest(repo / "system/gui/kit_manifest.json")
@@ -97,18 +97,18 @@ def test_gui_consumer_and_kit_pin_bind_same_025_release():
     assert consumer["schema"] == "ellmos.bach.gui-consumer.v1"
     assert consumer["id"] == "ellmos-system-gui"
     assert consumer["status"] == "pinned_release"
-    assert consumer["version"] == "0.2.25"
+    assert consumer["version"] == "0.2.28"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "44490a04135833b4a142776c07649a61f331137d",
-        "archive_sha256": "3a498461f23024a84d353f02ca1e08bf26a8cc626cd51fb084607ea3c14b5931",
+        "commit": "1d6c0f985834f10ae9e5e051205a33b83efaaa54",
+        "archive_sha256": "5b79f083ed58cdbc59b09a250efa715780e7c8074f45bca93b16682af18072f4",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }
     assert kit["verified"] is True  # Identity metadata only; installed bytes are verified separately.
     assert kit["version"] == consumer["version"]
     assert kit["pinned_source_commit"] == consumer["source"]["commit"]
     assert kit["release_archive_sha256"] == consumer["source"]["archive_sha256"]
-    assert kit["release_archive"] == "ellmos-system-gui-0.2.25-44490a041358.zip"
+    assert kit["release_archive"] == "ellmos-system-gui-0.2.28-1d6c0f985834.zip"
     assert kit["dist_manifest_schema"] == "ellmos-system-gui.dist.v1"
     assert kit["expected_page_count"] == 26
     assert "installed" not in kit
