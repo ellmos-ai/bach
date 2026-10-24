@@ -112,49 +112,73 @@ def record_observation(model, digest, num_ctx, stats, baseline, footprint):
 async def monitor_load(load, gate, *, hard_floor_bytes, check, interval=1.0, stats=None):
     """Await ``load`` while enforcing the cold-start limits.
 
-    Returns (result, None) on completion or (None, reason) after cancelling the
-    load. ``check`` is the caller's binding/stop check and may return a reason.
+    Returns (result, reason): reason is None on completion, a violated limit or
+    binding problem after cancelling the load, or ``load_error:<state>`` when the
+    load itself raised. An outer cancellation also cancels the load and sampler.
     """
     started = time.monotonic()
     sample, sampled_at = gate["baseline"], started
     _track(stats, sample)
-    pending = None
-    while not load.done():
-        await asyncio.wait({load}, timeout=0.1)
-        reason = check()
-        if reason is None and pending is not None and pending.done():
+    pending, pending_started = None, started
+
+    async def stop_tasks():
+        for task in (load, pending):
+            if task is None:
+                continue
+            task.cancel()
             try:
-                sample, sampled_at = pending.result(), time.monotonic()
-                _track(stats, sample)
-            except Exception:
+                await task
+            except (asyncio.CancelledError, Exception):
                 pass
-            pending = None
-        if reason is None and pending is None and time.monotonic() - sampled_at >= interval:
-            pending = asyncio.create_task(sample_host())
-        if reason is None:
-            reason = limits_violation(
-                gate, sample, elapsed=time.monotonic() - started,
-                sample_age=time.monotonic() - sampled_at, hard_floor_bytes=hard_floor_bytes)
-        if reason:
-            load.cancel()
-            for task in (load, pending):
-                if task is None:
-                    continue
-                task.cancel()
+
+    try:
+        while not load.done():
+            await asyncio.wait({load}, timeout=0.1)
+            if load.done():
+                break
+            reason = check()
+            if reason is None and pending is not None and pending.done():
                 try:
-                    await task
-                except BaseException:
+                    sample, sampled_at = pending.result(), pending_started
+                    _track(stats, sample)
+                except Exception:
                     pass
-            return None, reason
+                pending = None
+            if reason is None and pending is None and time.monotonic() - sampled_at >= interval:
+                pending, pending_started = asyncio.create_task(sample_host()), time.monotonic()
+            if reason is None:
+                reason = limits_violation(
+                    gate, sample, elapsed=time.monotonic() - started,
+                    sample_age=time.monotonic() - sampled_at, hard_floor_bytes=hard_floor_bytes)
+            if reason:
+                await stop_tasks()
+                return None, reason
+    except asyncio.CancelledError:
+        await stop_tasks()
+        raise
     if pending is not None:
         pending.cancel()
+        try:
+            await pending
+        except (asyncio.CancelledError, Exception):
+            pass
     if stats is not None:
         stats["elapsed_seconds"] = round(time.monotonic() - started, 2)
-    return load.result(), None
+    try:
+        return load.result(), None
+    except asyncio.CancelledError:
+        return None, "load_error:model_wait"
+    except Exception as exc:
+        capacity = str(exc) == "buddha_warmup_capacity_wait"
+        return None, "load_error:" + ("capacity_wait" if capacity else "model_wait")
 
 
-async def unload_exact_model(base_url, model, digest, *, wait_seconds=10.0):
-    """Unload ``model`` (keep_alive=0); True only once /api/ps no longer lists it."""
+async def unload_exact_model(base_url, model, digest, *, wait_seconds=15.0, absent_polls=3):
+    """Unload ``model`` (keep_alive=0); True only after /api/ps stays free of it.
+
+    A single absent reading proves little (a runner may still be finishing the
+    load), so absence must be seen in ``absent_polls`` consecutive polls.
+    """
     parsed = urlsplit(str(base_url))
     if (parsed.scheme not in {"http", "https"}
             or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
@@ -166,16 +190,23 @@ async def unload_exact_model(base_url, model, digest, *, wait_seconds=10.0):
         async with httpx.AsyncClient(timeout=5, follow_redirects=False, trust_env=False) as client:
             await client.post(base + "/api/generate", json={"model": model, "keep_alive": 0})
             deadline = time.monotonic() + wait_seconds
+            absent = 0
             while True:
-                listed = (await client.get(base + "/api/ps")).json().get("models")
+                body = (await client.get(base + "/api/ps")).json()
+                listed = body.get("models") if isinstance(body, dict) else None
                 if not isinstance(listed, list):
                     return False
-                if not any(isinstance(m, dict) and m.get("digest") == digest
-                           and (m.get("name") in names or m.get("model") in names)
-                           for m in listed):
-                    return True
+                if any(isinstance(m, dict) and m.get("digest") == digest
+                       and (m.get("name") in names or m.get("model") in names)
+                       for m in listed):
+                    absent = 0
+                    await client.post(base + "/api/generate", json={"model": model, "keep_alive": 0})
+                else:
+                    absent += 1
+                    if absent >= absent_polls:
+                        return True
                 if time.monotonic() >= deadline:
                     return False
-                await asyncio.sleep(0.5)
-    except (OSError, ValueError, httpx.HTTPError):
+                await asyncio.sleep(1.0)
+    except (OSError, ValueError, TypeError, AttributeError, httpx.HTTPError):
         return False

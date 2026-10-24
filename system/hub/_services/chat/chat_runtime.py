@@ -1695,18 +1695,29 @@ class ChatRuntime(_ModuleChatRuntime):
             warmup = asyncio.create_task(self._chat_with_compute_turn(
                 backend, [], model=model, think=False))
             gate = receipt.get("cold_start")
+            if not isinstance(gate, dict):
+                # No gate on the outer receipt: inner re-probes must not open one,
+                # otherwise a later gate would load without monitoring.
+                session._buddha_cold_start = False
             if isinstance(gate, dict):
                 from hub._services.chat.buddha_cold_start import (
                     monitor_load, record_observation, resident_footprint, unload_exact_model)
 
                 load_stats = {}
-                _, reason = await monitor_load(
-                    warmup, gate, hard_floor_bytes=gate["hard_floor_bytes"],
-                    check=check_warmup_binding, stats=load_stats)
+                try:
+                    _, reason = await monitor_load(
+                        warmup, gate, hard_floor_bytes=gate["hard_floor_bytes"],
+                        check=check_warmup_binding, stats=load_stats)
+                except asyncio.CancelledError:
+                    await asyncio.shield(unload_exact_model(
+                        getattr(backend, "base_url", ""), model, gate["digest"]))
+                    raise
                 if reason is not None:
                     # Cleanup is only claimed once /api/ps no longer lists the model.
                     cleaned = await unload_exact_model(
                         getattr(backend, "base_url", ""), model, gate["digest"])
+                    if reason.startswith("load_error:"):
+                        return {"state": reason.split(":", 1)[1], "cleanup_verified": cleaned}
                     if reason in {"stopped", "stop_unverified", "slot_unverified", "slot_changed",
                                   "task_bound", "fackel_unverified", "fackel_compute"}:
                         return {"state": reason, "cleanup_verified": cleaned}
@@ -1735,6 +1746,10 @@ class ChatRuntime(_ModuleChatRuntime):
             if problem:
                 return {"state": problem}
             if (isinstance(result, dict) and result.get("error")) or FailedAnswer.looks_like(result):
+                if isinstance(gate, dict):
+                    from hub._services.chat.buddha_cold_start import unload_exact_model as _unload
+                    return {"state": "model_wait", "cleanup_verified": await _unload(
+                        getattr(backend, "base_url", ""), model, gate["digest"])}
                 return {"state": "model_wait"}
             if isinstance(gate, dict):
                 # Measured, not credited: a later start still needs its own admission.
