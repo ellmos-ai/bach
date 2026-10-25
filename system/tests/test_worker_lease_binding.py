@@ -868,14 +868,22 @@ def test_foreign_detail_names_the_bound_scope_and_keeps_the_binding(binding):
     assert f"id: {binding.task_id}" in binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
 
 
-@pytest.mark.parametrize("owner, accepted", [("help-inventory", False), ("OLLAMA", True)])
-def test_subtask_owner_must_be_a_known_assignee(binding, mem_db, owner, accepted):
-    """#2518: Buddha wrote a topic into assigned_to; no worker could pick the children."""
+@pytest.mark.parametrize("action", ["decompose", "add"])
+@pytest.mark.parametrize("owner, accepted", [("help-inventory", False), ("OLLAMA", True), ("ollama-cloud", True),
+                                             ("openrouter", True), ("", True)])
+def test_subtask_owner_must_be_a_known_assignee(binding, mem_db, owner, accepted, action):
+    """#2518: Buddha wrote a topic into assigned_to; no worker could pick the children.
+
+    Cloud profile owners and an empty owner (inherits the parent) stay valid (#518 review)."""
     from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
-    args = {"action": "decompose", "task_id": binding.task_id, "close_parent": False,
-            "subtasks": [{"title": "Kind", "assigned_to": owner}]}
+    if action == "add":
+        args = {"action": "add", "title": "Kind", "assigned_to": owner}
+    else:
+        args = {"action": "decompose", "task_id": binding.task_id, "close_parent": False,
+                "subtasks": [{"title": "Kind", "assigned_to": owner}]}
     if accepted:
-        assert "in 1 Teilaufgaben" in binding.execute_task_manage(args)
+        binding.execute_task_manage(args)
+        assert mem_db.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()[0] == 1
     else:
         with pytest.raises(WorkerTaskManageArgumentError) as exc:
             binding.execute_task_manage(args)

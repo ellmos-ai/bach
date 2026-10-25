@@ -64,8 +64,9 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
 
 
 # Owners a worker may name for a subtask; anything else (e.g. a topic) leaves the child unpickable.
+# Cloud profile owners stay valid: the selector accepts them on their exact profile route.
 _SUBTASK_ASSIGNEES = frozenset({"bach", "buddha", "ollama", "claude", "gemini", "copilot", "chatgpt",
-                                "perplexity", "human", "user"})
+                                "perplexity", "human", "user"}) | _EXTERNAL_PROFILE_BACKENDS
 
 
 class WorkerLeaseBinding:
@@ -1242,7 +1243,8 @@ class WorkerLeaseBinding:
                                     for item in subtasks]
                 for item in subtasks if isinstance(subtasks, list) else ():
                     owner = item.get("assigned_to") if isinstance(item, dict) else None
-                    if owner is not None and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
+                    # An empty owner inherits the parent's owner in the native lease service.
+                    if owner is not None and str(owner).strip() and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
                         raise WorkerTaskManageArgumentError("decompose_assignee")
                 previous_version = self._snapshot["task_version"]
                 ack = self._operation(self._client.decompose, subtasks=subtasks,
