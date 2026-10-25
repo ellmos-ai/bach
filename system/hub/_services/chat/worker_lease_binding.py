@@ -1203,7 +1203,9 @@ class WorkerLeaseBinding:
                     if len(changes) != 1 or changes["status"] not in outcomes:
                         raise WorkerTaskManageArgumentError("update_status")
                     outcome = outcomes[changes["status"]]
-                    self._operation(self._client.release, outcome=outcome)
+                    # Fixed reason codes; a saved partial state stays in the description.
+                    note = "worker_returned_open" if outcome == "return" else "worker_blocked"
+                    self._operation(self._client.release, outcome=outcome, note=note)
                     self._closed = True
                     self._active = False
                 else:

@@ -856,3 +856,19 @@ def test_external_profile_acquire_rejects_mismatched_route(
             slot=slot, automatic=True,
         )
     assert client.read(task_id, now=T0).leased is False
+
+
+def test_model_status_return_carries_a_fixed_reason(mem_db):
+    """A partial-state return (update status=pending) is no longer an empty return (25.10.2026)."""
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    first = _insert_task(mem_db, "Returned open")
+    mem_db.execute("UPDATE tasks SET assigned_to='BACH'")
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    args = dict(worker_id="physical-worker@HOST", host="HOST", generation="current",
+                is_current=lambda: True, stop_event=threading.Event(), clock=lambda: T0)
+    bound = WorkerLeaseBinding.acquire_next(client, {"id": "slot"}, **args)
+    bound.execute_task_manage({"action": "update", "task_id": first, "status": "pending"})
+    row = mem_db.execute("SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release' "
+                         "ORDER BY id DESC LIMIT 1", (first,)).fetchone()
+    assert json.loads(row[0])["note"] == "worker_returned_open"
