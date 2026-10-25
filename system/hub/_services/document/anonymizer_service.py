@@ -599,17 +599,40 @@ _TITLED_NAME_RE = re.compile(
 )
 
 
-def _is_common_german_word(name: str) -> bool:
-    """True, wenn ein Einzelwort-Treffer ein Gattungsbegriff und kein Name ist."""
+# Artikel/Praepositionen, die ein Substantiv einleiten. Eine Endung wie "-ung" allein belegt kein
+# Substantiv (Nachname "Hartung"); erst ein Vorkommen MIT solchem Vorwort ("bei der Begruessung").
+_NOUN_CONTEXT_RE = (
+    r"(?:der|die|das|dem|den|des|ein|eine|einer|einen|einem|im|am|zum|zur|beim|vom|ins|"
+    r"bei|mit|nach|von|durch|fuer|für|ohne|unsere|unser|seine|sein|ihre|ihr|diese|dieser|dieses)"
+)
+
+
+def _has_noun_context(word: str, text: str) -> bool:
+    """True, wenn `word` irgendwo im Text direkt nach einem Artikel/Vorwort steht."""
+    if not text:
+        return False
+    pat = r"(?<!\w)" + _NOUN_CONTEXT_RE + r"\s+" + re.escape(word) + r"(?!\w)"
+    return re.search(pat, text, flags=re.IGNORECASE) is not None
+
+
+def _is_common_german_word(name: str, text: str = "") -> bool:
+    """True, wenn ein Einzelwort-Treffer ein Gattungsbegriff und kein Name ist.
+
+    - feste Wortliste und Kopfwoerter (-bericht, -protokoll, ...): immer
+    - Endungen (-ung, -heit, ...): NUR mit Substantiv-Kontext im Text (`text`), sonst koennte es
+      ein Nachname sein (Hartung, Rosenheit)
+    """
     words = name.split()
     if len(words) != 1:
         return False
     w = words[0].strip(".,;:!?()[]{}\"'-").lower()
     if w in _NER_COMMON_WORDS:
         return True
-    if len(w) > 6 and w.endswith(_NER_COMMON_SUFFIXES):
+    if any(w.endswith(h) and len(w) > len(h) for h in _NER_COMMON_HEADS):
         return True
-    return any(w.endswith(h) and len(w) > len(h) for h in _NER_COMMON_HEADS)
+    if len(w) > 6 and w.endswith(_NER_COMMON_SUFFIXES):
+        return _has_noun_context(words[0].strip(".,;:!?()[]{}\"'-"), text)
+    return False
 
 
 def _strip_leading_role_noun(name: str) -> str:
@@ -630,6 +653,10 @@ def _detect_titled_names(text: str, wl_lower: set) -> set:
     Liefert Anrede+Nachname sowie, falls ein zweites grossgeschriebenes Wort folgt,
     Anrede+beide Woerter (beide Formen, damit spaetere Kurzformen nicht lecken).
     Folgt auf den ersten Namen ein bekannter Vorname, kommt der Nachname einzeln dazu.
+    Die Kandidaten behalten die EXAKTE Quell-Schreibweise (Mehrfach-Leerzeichen, Tab, Zeilenumbruch),
+    weil die Ersetzung exakt matcht; zusaetzlich die normalisierte Einzelleerzeichen-Form. Bei
+    Tab/Zeilenumbruch zwischen Anrede und Name steht der Nachname auch einzeln in der Liste (Absatz-
+    und Zellgrenzen in DOCX/XLSX trennen die Teile).
     """
     found = set()
     for m in _TITLED_NAME_RE.finditer(text):
@@ -637,14 +664,20 @@ def _detect_titled_names(text: str, wl_lower: set) -> set:
         n1, n2 = m.group("n1"), m.group("n2")
         if n1.lower() in _NER_GENERIC_ROLE_NOUNS:
             continue
-        cands = [f"{title} {n1}"]
+        start = m.start("title")
+        spans = [text[start:m.end("n1")]]
+        norm = [f"{title} {n1}"]
         if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2):
-            cands.append(f"{title} {n1} {n2}")
+            spans.append(text[start:m.end("n2")])
+            norm.append(f"{title} {n1} {n2}")
             if n1.lower() in DEUTSCHE_VORNAMEN_M or n1.lower() in DEUTSCHE_VORNAMEN_W:
-                cands.append(n2)
-        for c in cands:
-            if c.lower() not in wl_lower and n1.lower() not in wl_lower:
-                found.add(c)
+                norm.append(n2)
+        if any(ch in text[start:m.end("n1")] for ch in "\n\t") or "  " in text[start:m.end("n1")]:
+            norm.append(n1)
+        for c in spans + norm:
+            if re.sub(r"\s+", " ", c).lower() in wl_lower or n1.lower() in wl_lower:
+                continue
+            found.add(c)
     return found
 
 
@@ -721,7 +754,7 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
                 if name.lower() in wl_lower:
                     continue
                 name = _strip_leading_role_noun(name)
-                if not _looks_like_person_name(name) or _is_common_german_word(name):
+                if not _looks_like_person_name(name) or _is_common_german_word(name, chunk):
                     continue
                 # Wortgrenzen-Check: folgt direkt (ohne Trennzeichen) ein
                 # Kleinbuchstabe, ist die Entitaet nur der ANFANG eines
