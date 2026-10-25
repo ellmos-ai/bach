@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from hub._services.task_lease_client import (
     LeaseError, LeaseDeniedError, LeaseMaxTotalReachedError, LeaseProtocolError,
-    LeaseSelfCheckRequiredError,
+    LeaseRequestRejectedError, LeaseSelfCheckRequiredError,
     LeaseReleaseAck, WorkerResultAck,
 )
 
@@ -55,6 +55,7 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
         "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
+        "mutation_scope": 'Änderungen nur an der gebundenen Task: task_id ist die eigene ID als Zahl, nicht als Text.',
     }
 
     def __init__(self, reason):
@@ -623,6 +624,9 @@ class WorkerLeaseBinding:
         except LeaseSelfCheckRequiredError:
             # This exact local validation ran before any result/status write.
             raise
+        except LeaseRequestRejectedError:
+            # The service rejected the request before applying it; the lease stays valid.
+            raise
         except LeaseError as exc:
             if keep_max_total and isinstance(exc, LeaseMaxTotalReachedError):
                 # Known denial: the last confirmed lease still owns its
@@ -1144,7 +1148,7 @@ class WorkerLeaseBinding:
                 return "\n".join(f"{key}: {value}" for key, value in snapshot.items())
             if action != "add" and (type(args.get("task_id")) is not int
                                     or args["task_id"] != self.task_id):
-                raise LeaseProtocolError("Mutation gehört nicht zur gebundenen Task")
+                raise WorkerTaskManageArgumentError("mutation_scope")
             if action in {"done", "submit_result"}:
                 if set(args) - {"action", "task_id", "result"}:
                     raise LeaseProtocolError("Unbekannte Abschlussfelder")
