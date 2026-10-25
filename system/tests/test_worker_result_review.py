@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import threading
+import uuid
 
 import pytest
 
@@ -62,11 +63,7 @@ def _request_hash(value):
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-@pytest.fixture
-def review_world(worker_context, tmp_path, monkeypatch, request):
-    """Real SQLite submissions and registered clean Git worktree; no model calls."""
-    context = worker_context
-    conn, author = context["conn"], context["binding"]
+def _review_settings(conn, monkeypatch):
     conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     values = settings._defaults()
     values["policy"]["reviewers"] = [
@@ -93,6 +90,14 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     # Exercise the real Git adapter against only this test repository. CI
     # machines may have unrelated global/system Git clean filters installed.
     monkeypatch.setattr(worker_write_guard, "_scope_git_env", isolated_test_git_environment)
+
+
+@pytest.fixture
+def review_world(worker_context, tmp_path, monkeypatch, request):
+    """Real SQLite submissions and registered clean Git worktree; no model calls."""
+    context = worker_context
+    conn, author = context["conn"], context["binding"]
+    _review_settings(conn, monkeypatch)
     tree = _new_scope_repo(tmp_path, task_id=context["task_id"],
                            pinned=getattr(request, "param", False))
     _install_lock_scanner(tmp_path, monkeypatch)
@@ -752,3 +757,178 @@ def test_corrupt_intent_cannot_be_picked_up_as_ordinary_task(review_world):
         world["client"].acquire(task_id, worker_id="review-worker@HOST", host="HOST",
             task_version=snapshot["task_version"], result_generation=REVIEW_GENERATION,
             now=T0)
+
+
+TEXT_RESULT = "Bericht: Hilfedateien a bis c geprüft; drei Stämme ohne Übersetzung, zwölf veraltet."
+TEXT_INTENT = "bach.worker-result-review-intent.text-result.v1"
+
+
+def _text_revision(record):
+    # Independent oracle: the review revision is bound to the submission only.
+    return hashlib.sha256(json.dumps(
+        {"schema": "bach.worker-text-result-revision.v1",
+         "submission_revision": record["submission_revision"]},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _text_world(context, tmp_path, monkeypatch, *, result=TEXT_RESULT, tree_task_id=None,
+                write_tool=None):
+    """Real native submission whose task never had a tree or a scope capture."""
+    conn, author = context["conn"], context["binding"]
+    _review_settings(conn, monkeypatch)
+    # The repository registers only another task's tree unless a case says otherwise.
+    tree = _new_scope_repo(tmp_path, task_id=tree_task_id or context["task_id"] + 1000)
+    _install_lock_scanner(tmp_path, monkeypatch)
+    handle = author.begin_model_execution(
+        backend_id="ollama", requested_model=AUTHOR_MODEL, slot_id=AUTHOR_SLOT,
+        request_sha256=_request_hash("author text prompt"), route_sha256=AUTHOR_ROUTE)
+    assert handle is not None
+    assert author.finish_model_execution(
+        handle, result=_response(AUTHOR_OBSERVED), route_sha256=AUTHOR_ROUTE) is True
+    if write_tool is not None:
+        from hub._services import task_lease
+
+        # One complete real trace chain at the binding's lease time.
+        with monkeypatch.context() as at_lease_time:
+            at_lease_time.setattr(task_lease, "_utcnow", lambda: T0)
+            trace = author.trace_tool_started(source="normal-loop", request_id=uuid.uuid4().hex,
+                tool_name=write_tool, arguments_sha256=_request_hash("{}"))
+            receipt = uuid.uuid4().hex
+            author.trace_tool_phase(trace, "returned", receipt_id=receipt,
+                                    result_sha256=_request_hash("written"))
+            author.trace_tool_phase(trace, "acknowledged", receipt_id=receipt)
+    assert "Abschlussstatus wird nach Policy ermittelt" in author.execute_task_manage({
+        "action": "submit_result", "task_id": context["task_id"], "result": result})
+    target = read_result(conn, context["task_id"])["result"]
+    assert target["scope"]["reason"] == "scope_not_recorded"
+    assert target["execution"]["model_principal_id"] == AUTHOR
+    return {**context, "tree": tree, "target": {**target, "result_revision": _text_revision(target)}}
+
+
+@pytest.fixture
+def text_world(worker_context, tmp_path, monkeypatch):
+    return _text_world(worker_context, tmp_path, monkeypatch)
+
+
+def _approved_text_review(world, child):
+    verdict = json.dumps({"status": "approved", "summary": "Bericht erfüllt die Ausgabeanforderung.",
+                          "task_contract_met": True}, ensure_ascii=False)
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("text review prompt"), route_sha256=REVIEW_ROUTE)
+    assert handle is not None
+    assert child.finish_model_execution(
+        handle, result=_response(REVIEW_OBSERVED, verdict=(child.task_id, verdict)),
+        route_sha256=REVIEW_ROUTE) is True
+    return verdict
+
+
+def test_text_result_creates_exactly_one_review_task_bound_to_its_submission(text_world):
+    world = text_world
+    first = _prepare(world)
+    assert first["schema"] == TEXT_INTENT
+    assert review.prepare_review_task(world["conn"], world["binding"], **_paths(world)) == first
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM tasks WHERE category='worker-review'").fetchone()[0] == 1
+    intent = json.loads(world["conn"].execute(
+        "SELECT intent FROM worker_result_review_intents").fetchone()[0])
+    assert intent["submission_revision"] == world["target"]["submission_revision"]
+    assert "scope_receipt_sha256" not in intent
+    assert read_result(world["conn"], world["task_id"])["status"] == "review"
+
+
+def test_text_review_runs_without_git_and_records_one_verdict(text_world, monkeypatch):
+    from hub._services.chat import telegram_chat
+
+    world = text_world
+    task_id = _prepare(world)["review_task_id"]
+    calls = []
+
+    def no_subprocess(*args, **kwargs):
+        calls.append(args)
+        raise RuntimeError("no Git or lock scan after the text intent exists")
+
+    # Grant, dispatch, prompt, release and record are DB-only for this route.
+    monkeypatch.setattr(worker_write_guard, "_RUN", no_subprocess)
+    grant, stop, current = _grant(world, task_id)
+    assert grant is not None and grant.target_kind == "text_result"
+    child = _acquire_review(world, task_id, grant, stop, current)
+    assert review.guard_review_dispatch(
+        world["conn"], child, route={"backend_id": "ollama", "route_sha256": REVIEW_ROUTE},
+        requested_model=REVIEW_MODEL) is True
+    prompt = telegram_chat._bound_worker_prompt(child, "ignored")
+    context = json.loads(prompt.splitlines()[-1])
+    task = world["client"].task_snapshot(world["task_id"])
+    assert context["target_task"]["title"] == task["title"]
+    assert context["target_task"]["description"] == task["description"]
+    assert context["target_result"] == {"result_id": world["target"]["result_id"],
+                                        "result": TEXT_RESULT}
+    assert "review_source" not in context and "Ergebnistext" in prompt
+    verdict = _approved_text_review(world, child)
+    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
+        "action": "submit_result", "task_id": task_id, "result": verdict})
+    evidence = review.record_review(world["conn"], child)
+    assert evidence["availability"] == "recorded"
+    assert evidence["reviewer_id"] == REVIEWER and evidence["independent"] is True
+    assert evidence["result_revision"] == world["target"]["result_revision"]
+    assert world["conn"].execute("SELECT COUNT(*) FROM worker_result_model_reviews").fetchone()[0] == 1
+    parent = read_result(world["conn"], world["task_id"])
+    assert parent["status"] == "review" and parent["result"]["accepted"] is False
+    assert read_result(world["conn"], task_id)["status"] == "done"
+    projected = worker_scope_evidence.project_scope_evidence(parent)
+    assert projected["result"]["model_review"]["availability"] == "available"
+    assert calls == []
+
+
+@pytest.mark.parametrize("change", ["result_text", "task_content"])
+def test_changed_text_result_invalidates_the_review_grant(text_world, change):
+    from hub._services.chat import telegram_chat
+
+    world = text_world
+    task_id = _prepare(world)["review_task_id"]
+    grant, stop, current = _grant(world, task_id)
+    child = _acquire_review(world, task_id, grant, stop, current)
+    route = {"backend_id": "ollama", "route_sha256": REVIEW_ROUTE}
+    assert review.guard_review_dispatch(world["conn"], child, route=route,
+                                        requested_model=REVIEW_MODEL) is True
+    if change == "result_text":
+        world["conn"].execute("UPDATE worker_task_results SET result=? WHERE id=?",
+                              ("Anderer Bericht.", world["target"]["result_id"]))
+    else:
+        world["conn"].execute("UPDATE tasks SET description='Andere Ausgabeanforderung' WHERE id=?",
+                              (world["task_id"],))
+    world["conn"].commit()
+    assert review.guard_review_dispatch(world["conn"], child, route=route,
+                                        requested_model=REVIEW_MODEL) is False
+    with pytest.raises((RuntimeError, LeaseProtocolError)):
+        telegram_chat._bound_worker_prompt(child, "ignored")
+    verdict = _approved_text_review(world, child)
+    with pytest.raises(LeaseProtocolError):
+        child.execute_task_manage({"action": "submit_result", "task_id": task_id, "result": verdict})
+    assert world["conn"].execute("SELECT COUNT(*) FROM worker_result_model_reviews").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("case", ["write_tool", "task_tree", "pr_reference"])
+def test_text_route_requires_proof_that_no_code_change_exists(
+        worker_context, tmp_path, monkeypatch, case):
+    world = _text_world(
+        worker_context, tmp_path, monkeypatch,
+        write_tool="write_file" if case == "write_tool" else None,
+        tree_task_id=worker_context["task_id"] if case == "task_tree" else None,
+        result=(TEXT_RESULT + " Siehe https://github.com/ellmos-ai/bach/pull/519"
+                if case == "pr_reference" else TEXT_RESULT))
+    assert review.prepare_review_task(world["conn"], world["binding"], **_paths(world)) is None
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM tasks WHERE category='worker-review'").fetchone()[0] == 0
+
+
+def test_code_scope_result_keeps_its_git_bound_route(review_world):
+    world = review_world
+    (world["tree"]["target"] / "unreviewed.txt").write_text("changed\n", encoding="utf-8")
+    # Changed code never falls back to the text route.
+    assert review.prepare_review_task(world["conn"], world["binding"], **_paths(world)) is None
+    (world["tree"]["target"] / "unreviewed.txt").unlink()
+    prepared = _prepare(world)
+    assert prepared["schema"] == "bach.worker-result-review-intent.v1"
+    grant = _grant(world, prepared["review_task_id"])[0]
+    assert grant is not None and grant.target_kind == "scope"
