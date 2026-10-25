@@ -30,11 +30,18 @@ MODI (--modus cloud|lokal)
 --------------------------
   cloud (Default)  Anonymisierung vorher, Rueckuebersetzung nachher; Backend claude_code/llmauto
                    (Abo-Modell in der Cloud). Fuer echte Daten erst nach ausdruecklicher Freigabe.
-  lokal            KEINE Anonymisierung, die Daten bleiben auf dem Rechner. Nur Backend ollama auf
-                   localhost und nur lokale Modelle (kein :cloud, kein Remote-Host); Modell via
-                   --model oder FOERDERBERICHT_LOCAL_MODEL (Default qwen3:4b). Kontext via
-                   FOERDERBERICHT_NUM_CTX (Default 12288); wird er ueberschritten, bricht die Pipeline
-                   ab statt still abzuschneiden. Lokal + Cloud-Backend ist gesperrt.
+  lokal            KEINE Anonymisierung, die Daten bleiben auf eigenen Geraeten. Nur Backend ollama und nur
+                   lokale Modelle (kein :cloud). Ziel (OLLAMA_HOST, Default http://127.0.0.1:11434) darf nur
+                   localhost oder eine Tailscale-Adresse eigener Geraete sein (100.64.0.0/10, *.ts.net); jeder
+                   andere Host wird abgelehnt. Beispiel Mac Studio (Ollama dort nur auf 127.0.0.1):
+                     ssh -N -L 127.0.0.1:21434:127.0.0.1:11434 lukas@<mac-tailscale-ip>
+                     set OLLAMA_HOST=http://127.0.0.1:21434
+                     bach bericht pipeline --modus lokal --model qwen3.8:27b-mlx
+                   Ist das Modell dort schon geladen (Dauer-Worker), uebernimmt die Pipeline dessen Kontext,
+                   damit nichts neu geladen oder verdraengt wird; die Anfrage wartet in der Ollama-Schlange.
+                   Modell via --model oder FOERDERBERICHT_LOCAL_MODEL (Default qwen3.8:27b-mlx), Kontext via
+                   FOERDERBERICHT_NUM_CTX. Wird der Kontext ueberschritten, bricht die Pipeline ab statt still
+                   abzuschneiden. Lokal + Cloud-Backend ist gesperrt.
 
 OPTIONEN
 --------

@@ -97,9 +97,11 @@ class _FakeResp(io.BytesIO):
         return False
 
 
-def _fake_opener(monkeypatch, answer, calls):
+def _fake_opener(monkeypatch, answer, calls, ps_models=None):
     class Opener:
         def open(self, req, timeout=None):
+            if req.full_url.endswith("/api/ps"):
+                return _FakeResp(json.dumps({"models": ps_models or []}).encode("utf-8"))
             calls.append((req.full_url, json.loads(req.data.decode("utf-8"))))
             return _FakeResp(json.dumps(answer).encode("utf-8"))
 
@@ -117,11 +119,35 @@ def test_ollama_posts_to_loopback_without_think_and_with_context(pipe, monkeypat
     assert payload["think"] is False and payload["stream"] is False and payload["options"]["num_ctx"] >= 8192
 
 
-@pytest.mark.parametrize("host", ["http://192.168.1.5:11434", "https://ollama.com", "example.org:11434"])
-def test_ollama_refuses_non_loopback_host(pipe, monkeypatch, host):
+@pytest.mark.parametrize("host", ["http://192.168.1.5:11434", "https://ollama.com", "example.org:11434",
+                                  "http://8.8.8.8:11434", "http://100.128.0.1:11434"])
+def test_ollama_refuses_hosts_that_are_not_own_devices(pipe, monkeypatch, host):
     monkeypatch.setenv("OLLAMA_HOST", host)
-    with pytest.raises(PipelineError, match="localhost"):
+    with pytest.raises(PipelineError, match="Tailscale"):
         pipe._call_llm("p", "ollama", "qwen3:4b")
+
+
+@pytest.mark.parametrize("host", ["http://127.0.0.1:11434", "localhost:11434", "http://100.119.69.90:11434",
+                                  "http://mac-studio.tail1234.ts.net:11434"])
+def test_ollama_accepts_loopback_and_tailscale_hosts(pipe, monkeypatch, host):
+    monkeypatch.setenv("OLLAMA_HOST", host)
+    calls = []
+    _fake_opener(monkeypatch, {"message": {"content": "{}"}, "done_reason": "stop",
+                               "prompt_eval_count": 10, "eval_count": 5}, calls)
+    assert pipe._call_llm("p", "ollama", "qwen3:4b") == "{}"
+
+
+def test_ollama_reuses_context_of_already_loaded_model(pipe, monkeypatch):
+    """Ein Dauer-Worker (Buddha) haelt das Modell mit 16384 Kontext. Ein anderer num_ctx wuerde es
+    neu laden und verdraengen; deshalb wird der geladene Kontext uebernommen."""
+    monkeypatch.delenv("FOERDERBERICHT_NUM_CTX", raising=False)
+    calls = []
+    _fake_opener(monkeypatch, {"message": {"content": "{}"}, "done_reason": "stop",
+                               "prompt_eval_count": 10, "eval_count": 5}, calls,
+                 ps_models=[{"name": "qwen3.8:27b-mlx", "model": "qwen3.8:27b-mlx", "context_length": 16384}])
+    pipe._call_llm("p", "ollama", "qwen3.8:27b-mlx")
+    payload = calls[0][1]
+    assert payload["options"]["num_ctx"] == 16384 and payload["keep_alive"] == "30m"
 
 
 @pytest.mark.parametrize("model", ["glm-5.2:cloud", "gpt-oss:120b-cloud", "claude-sonnet-4-6"])

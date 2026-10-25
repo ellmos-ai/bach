@@ -22,6 +22,7 @@ Abhaengigkeiten (alle BACH-intern):
   - ClaudeRunner (tools/llmauto/core/runner.py)
 """
 
+import ipaddress
 import json
 import os
 import shutil
@@ -63,7 +64,19 @@ class PipelineError(Exception):
 MODI = ("cloud", "lokal")
 LOCAL_BACKENDS = ("ollama",)
 DEFAULT_CLOUD_MODEL = "claude-sonnet-4-6"
-DEFAULT_LOCAL_MODEL = "qwen3:4b"
+DEFAULT_LOCAL_MODEL = "qwen3.8:27b-mlx"  # Mac Studio, Dauer-Worker-Modell
+
+
+def _is_own_device_host(hostname: str) -> bool:
+    """Loopback oder Tailscale-Adresse eigener Geraete (100.64.0.0/10, *.ts.net) - nie ein Cloud-Ziel."""
+    hostname = (hostname or "").lower()
+    if hostname == "localhost" or hostname.endswith(".ts.net"):
+        return True
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -533,20 +546,37 @@ class FoerderberichtPipeline:
         result.steps_completed.append(f"prompt (lokal, ohne Anonymisierung): {len(prompt)} Zeichen")
         result.output_path = prompt_file
 
+    @staticmethod
+    def _ollama_loaded_context(opener, host: str, model: str):
+        """Kontextlaenge des bereits geladenen Modells (GET /api/ps) oder None."""
+        try:
+            with opener.open(urllib.request.Request(host.rstrip("/") + "/api/ps"), timeout=15) as resp:
+                for m in json.loads(resp.read().decode("utf-8")).get("models", []):
+                    if model in (m.get("name"), m.get("model")):
+                        return int(m.get("context_length") or 0) or None
+        except (OSError, ValueError):
+            pass
+        return None
+
     def _call_ollama(self, prompt: str, model: str) -> str:
         """Lokales Modell ueber Ollama. Nur localhost, nie ein Cloud-Modell, nie ein Proxy."""
         host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
         if "://" not in host:
             host = "http://" + host
-        if urllib.parse.urlparse(host).hostname not in ("127.0.0.1", "localhost", "::1"):
+        if not _is_own_device_host(urllib.parse.urlparse(host).hostname):
             raise PipelineError(
-                "Backend 'ollama' (Modus lokal) erlaubt nur localhost, nicht: "
-                + urllib.parse.urlparse(host).hostname
+                "Backend 'ollama' (Modus lokal) erlaubt nur localhost oder Tailscale-Adressen eigener "
+                "Geraete, nicht: " + str(urllib.parse.urlparse(host).hostname)
             )
         low = model.lower()
         if low.endswith(":cloud") or low.endswith("-cloud") or low.startswith("claude"):
             raise PipelineError(f"Modell {model!r} ist kein lokales Modell (Modus lokal).")
-        num_ctx = int(os.environ.get("FOERDERBERICHT_NUM_CTX", "12288"))
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # kein Proxy
+        # Ist das Modell schon geladen (z. B. von einem Dauer-Worker), MUSS dessen Kontext
+        # uebernommen werden: ein anderer num_ctx laedt das Modell neu und verdraengt den Worker.
+        loaded_ctx = self._ollama_loaded_context(opener, host, model)
+        env_ctx = os.environ.get("FOERDERBERICHT_NUM_CTX")
+        num_ctx = int(env_ctx) if env_ctx else (loaded_ctx or 12288)
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -554,12 +584,14 @@ class FoerderberichtPipeline:
             "think": False,
             "options": {"num_ctx": num_ctx, "num_predict": 6000, "temperature": 0.2},
         }
+        if loaded_ctx:
+            # Residenz des geladenen Modells nicht verkuerzen (Ollama-Default waere 5 min)
+            payload["keep_alive"] = os.environ.get("FOERDERBERICHT_KEEP_ALIVE", "30m")
         req = urllib.request.Request(
             host.rstrip("/") + "/api/chat",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # kein Proxy
         try:
             with opener.open(req, timeout=3600) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
