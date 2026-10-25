@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from contextlib import AsyncExitStack
 from contextvars import ContextVar
 import hashlib
 import json
@@ -1792,6 +1793,7 @@ class ChatRuntime(_ModuleChatRuntime):
             or getattr(session, "worker_slot_reader", None) is not None) else {})
         from hub._services.chat.local_resource_reserve import (
             LocalReserveError,
+            local_admission_observer,
             read_policy,
             require_retryable,
         )
@@ -1819,104 +1821,137 @@ class ChatRuntime(_ModuleChatRuntime):
                     or current_version != policy_version):
                 raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
 
+        gate = None
+        carry_receipt = None
         try:
             while True:
                 check_binding()
-                receipt, _ = await self.prepare_inference_call(
-                    backend, selected_model, chat_id=chat_id if turn_context else None)
+                async with AsyncExitStack() as request_scope:
+                    take_turn = None
+
+                    async def announce_local_demand():
+                        nonlocal gate, take_turn
+                        if priority == "foreground" and take_turn is None:
+                            if gate is None:
+                                gate = HostInferenceGate()
+                            take_turn = await request_scope.enter_async_context(
+                                gate.request(chat_id, priority, check_ready=check_binding))
+
+                    receipt = carry_receipt
+                    carry_receipt = None
+                    if receipt is not None:
+                        # The owner recheck already confirmed a local target.
+                        # Restore visible demand before waiting on that receipt.
+                        await announce_local_demand()
+                    while True:
+                        if receipt is not None:
+                            # Keep demand visible while waiting, without an inference owner.
+                            # Previous tools and task/session context are not replayed.
+                            with self._local_resource_waiters_lock:
+                                self._local_resource_waiters[chat_id] = dict(receipt)
+                            if deadline is None:
+                                deadline = time.monotonic() + receipt["wait_seconds"]
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                if session is not None and (getattr(session, "worker_task_binding", None) is not None
+                                        or getattr(session, "worker_slot_reader", None) is not None):
+                                    fields = (
+                                        "schema", "state", "admitted", "enforced", "retryable", "checked_at",
+                                        "policy_version", "model", "memory_total_bytes", "memory_available_bytes",
+                                        "memory_required_bytes", "disk_free_bytes", "disk_reserve_bytes",
+                                        "weight_request_bytes", "resident_weight_credit",
+                                    )
+                                    session._local_reserve_failure_receipt = {
+                                        key: receipt[key] for key in fields if key in receipt
+                                    }
+                                raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
+                            # Check cancellation, policy downgrades and native lease loss
+                            # frequently even if the resource probe interval is longer.
+                            poll_deadline = time.monotonic() + min(remaining, receipt["poll_seconds"])
+                            while time.monotonic() < poll_deadline:
+                                check_binding()
+                                await asyncio.sleep(min(.1, max(0, poll_deadline - time.monotonic())))
+                        check_binding()
+                        with local_admission_observer(announce_local_demand):
+                            receipt, _ = await self.prepare_inference_call(
+                                backend, selected_model, chat_id=chat_id if turn_context else None)
+                        if receipt is None:
+                            break
+                        if not policy_bound:
+                            policy_version = receipt.get("policy_version")
+                            policy_bound = True
+                        check_reserve_policy(receipt)
+                        check_binding()
+                        if receipt["state"] == "external_target":
+                            with self._local_resource_waiters_lock:
+                                self._local_resource_waiters.pop(chat_id, None)
+                            break
+                        require_retryable(receipt)
+                        binding = getattr(session, "worker_task_binding", None) if session is not None else None
+                        pre_effect_receipt = self._persistent_core_pre_effect_reserve_receipt(
+                            session=session, binding=binding, backend=backend, model=selected_model,
+                            priority=priority, receipt=receipt,
+                        )
+                        if pre_effect_receipt is not None:
+                            control = getattr(session, "_persistent_core_model_call_control", None)
+                            session._local_reserve_failure_receipt = pre_effect_receipt
+                            session._local_reserve_failure_binding = binding
+                            session._local_reserve_failure_control = control
+                            session._local_reserve_failure_reason_code = (
+                                "local_reserve_reserve_wait_lease_return_required"
+                            )
+                            raise LocalReserveError(
+                                "Lokale Ressourcenfreigabe: reserve_wait_lease_return_required"
+                            )
+                        if receipt["admitted"]:
+                            break
+                    if receipt is not None and receipt["state"] != "external_target":
+                        if gate is None:
+                            gate = HostInferenceGate()
+                        model_binding = check_model_binding()
+                        target = ({key: model_binding[key] for key in
+                                  ("socket_id", "binding_id", "agent_id", "backend", "model")}
+                                  if model_binding is not None else None)
+                        owner_context = (take_turn(model_target=target, **guard) if take_turn is not None
+                                 else gate.turn(chat_id, priority, model_target=target, **guard))
+                        async with owner_context:
+                            # Resource availability can change while we waited for
+                            # the existing host owner. Recheck under that owner.
+                            receipt, _ = await self.prepare_inference_call(
+                                backend, selected_model, chat_id=chat_id if turn_context else None)
+                            if receipt is None:
+                                raise RuntimeError("model_socket_target_changed")
+                            check_reserve_policy(receipt)
+                            check_binding()
+                            require_retryable(receipt)
+                            if receipt["admitted"] and receipt["state"] != "external_target":
+                                current_binding = check_model_binding()
+                                if current_binding != model_binding:
+                                    raise RuntimeError("model_socket_binding_changed")
+                                await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
+                                try:
+                                    check_binding()
+                                    if check_model_binding() != model_binding:
+                                        raise RuntimeError("model_socket_binding_changed")
+                                    check_reserve_policy(receipt)
+                                    with self._local_resource_waiters_lock:
+                                        self._local_resource_waiters.pop(chat_id, None)
+                                    return await dispatch_model_call()
+                                finally:
+                                    self._leave_compute_turn(self._compute_turn_gate)
                 if receipt is None:
                     return await dispatch_model_call()
-                if not policy_bound:
-                    policy_version = receipt.get("policy_version")
-                    policy_bound = True
-                check_reserve_policy(receipt)
-                check_binding()
                 if receipt["state"] == "external_target":
+                    # An alias may have changed while waiting. External
+                    # inference runs only after returning the host owner.
+                    check_binding()
+                    check_reserve_policy(receipt)
                     with self._local_resource_waiters_lock:
                         self._local_resource_waiters.pop(chat_id, None)
                     return await dispatch_model_call()
-                require_retryable(receipt)
-                binding = getattr(session, "worker_task_binding", None) if session is not None else None
-                pre_effect_receipt = self._persistent_core_pre_effect_reserve_receipt(
-                    session=session, binding=binding, backend=backend, model=selected_model,
-                    priority=priority, receipt=receipt,
-                )
-                if pre_effect_receipt is not None:
-                    control = getattr(session, "_persistent_core_model_call_control", None)
-                    session._local_reserve_failure_receipt = pre_effect_receipt
-                    session._local_reserve_failure_binding = binding
-                    session._local_reserve_failure_control = control
-                    session._local_reserve_failure_reason_code = (
-                        "local_reserve_reserve_wait_lease_return_required"
-                    )
-                    raise LocalReserveError(
-                        "Lokale Ressourcenfreigabe: reserve_wait_lease_return_required"
-                    )
-                if receipt["admitted"]:
-                    model_binding = check_model_binding()
-                    target = ({key: model_binding[key] for key in
-                              ("socket_id", "binding_id", "agent_id", "backend", "model")}
-                              if model_binding is not None else None)
-                    async with HostInferenceGate().turn(chat_id, priority, model_target=target, **guard):
-                        # Resource availability can change while we waited for
-                        # the existing host owner. Recheck under that owner.
-                        receipt, _ = await self.prepare_inference_call(
-                            backend, selected_model, chat_id=chat_id if turn_context else None)
-                        if receipt is None:
-                            raise RuntimeError("model_socket_target_changed")
-                        check_reserve_policy(receipt)
-                        check_binding()
-                        require_retryable(receipt)
-                        if receipt["admitted"] and receipt["state"] != "external_target":
-                            current_binding = check_model_binding()
-                            if current_binding != model_binding:
-                                raise RuntimeError("model_socket_binding_changed")
-                            await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
-                            try:
-                                check_binding()
-                                if check_model_binding() != model_binding:
-                                    raise RuntimeError("model_socket_binding_changed")
-                                check_reserve_policy(receipt)
-                                with self._local_resource_waiters_lock:
-                                    self._local_resource_waiters.pop(chat_id, None)
-                                return await dispatch_model_call()
-                            finally:
-                                self._leave_compute_turn(self._compute_turn_gate)
-                    if receipt["state"] == "external_target":
-                        # An alias may have changed while waiting. External
-                        # inference runs only after returning the host owner.
-                        check_binding()
-                        check_reserve_policy(receipt)
-                        with self._local_resource_waiters_lock:
-                            self._local_resource_waiters.pop(chat_id, None)
-                        return await dispatch_model_call()
-                # The host owner has been returned before reserve polling.
-                # We stay at this model-call boundary: previous tools and the
-                # task/session context are not replayed or reset.
-                with self._local_resource_waiters_lock:
-                    self._local_resource_waiters[chat_id] = dict(receipt)
-                if deadline is None:
-                    deadline = time.monotonic() + receipt["wait_seconds"]
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    if session is not None and (getattr(session, "worker_task_binding", None) is not None
-                            or getattr(session, "worker_slot_reader", None) is not None):
-                        fields = (
-                            "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-                            "policy_version", "model", "memory_total_bytes", "memory_available_bytes",
-                            "memory_required_bytes", "disk_free_bytes", "disk_reserve_bytes",
-                            "weight_request_bytes", "resident_weight_credit",
-                        )
-                        session._local_reserve_failure_receipt = {
-                            key: receipt[key] for key in fields if key in receipt
-                        }
-                    raise LocalReserveError("Lokale Ressourcenfreigabe: reserve_wait_expired")
-                # Check cancellation, policy downgrades and native lease loss
-                # frequently even if the resource probe interval is longer.
-                poll_deadline = time.monotonic() + min(remaining, receipt["poll_seconds"])
-                while time.monotonic() < poll_deadline:
-                    check_binding()
-                    await asyncio.sleep(min(.1, max(0, poll_deadline - time.monotonic())))
+                # The resource recheck under the owner lost admission. Register
+                # fresh demand before applying the existing wait/deadline again.
+                carry_receipt = receipt
         finally:
             with self._local_resource_waiters_lock:
                 self._local_resource_waiters.pop(chat_id, None)
