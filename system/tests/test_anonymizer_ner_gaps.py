@@ -152,3 +152,49 @@ def test_multiline_ner_hit_is_still_rejected(monkeypatch):
     found = an.detect_person_names_ner(text)
     assert not any("\n" in f or "Einrichtung" in f for f in found), found
     assert "Frau Hoffmann" in found
+
+
+def test_manual_term_list_expands_names_with_titles_and_unique_placeholders():
+    from hub._services.document.report_workflow_service import _expand_manual_terms
+
+    pairs = _expand_manual_terms(["Nachtigall", "Anna Hoffmann", "Musterstr. 5"], set())
+    forms = dict(pairs)
+    for f in ("Nachtigall", "Frau Nachtigall", "Herr Nachtigall", "Dr. Nachtigall", "NACHTIGALL",
+              "Anna Hoffmann", "Frau Anna Hoffmann", "Hoffmann", "Frau Hoffmann", "Anna", "Musterstr. 5"):
+        assert f in forms, f
+    assert "Frau Musterstr. 5" not in forms  # Adresse ist kein Name
+    # eigener Platzhalter je Schreibweise; GROSS-Variante teilt den der Normalform
+    normal = {f: p for f, p in pairs if not f.isupper() or f == f.lower()}
+    assert forms["NACHTIGALL"] == forms["Nachtigall"]
+    assert len({forms[f] for f in ("Nachtigall", "Frau Nachtigall", "Herr Nachtigall")}) == 3
+    # Whitelist wird respektiert
+    assert "Frau Nachtigall" not in dict(_expand_manual_terms(["Nachtigall"], {"Frau Nachtigall"}))
+
+
+def test_manual_term_list_masks_names_that_detection_cannot_find_and_roundtrips(tmp_path, no_spacy):
+    """Vorrangige Quelle: 'Nachtigall' steht teils ohne Anrede im Text (weder NER noch
+    Anrede-Regel greifen). Die manuelle Liste je Klient maskiert alle Schreibweisen und die
+    Rueckuebersetzung stellt jede Schreibweise einzeln und unverwechselt wieder her."""
+    akte = tmp_path / "data_roh" / "Mustermann, Max"
+    akte.mkdir(parents=True)
+    (akte / "Protokoll_1.txt").write_text(
+        "Max Mustermann kam ruhig. Frau Nachtigall begruesste ihn. Spaeter sagte Nachtigall: weiter so. "
+        "Anruf bei NACHTIGALL und Beispielweg 7.\n", encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(
+        session, client_name="Max Mustermann", geburtsdatum="15.03.2016",
+        scan_folder=tmp_path / "data_roh", additional_terms=["Nachtigall", "Beispielweg 7"],
+    )
+    service.anonymize_to_bundles(session)
+    bundle = service.extract_bundle_text(session)
+    sent = bundle.core_text + (bundle.stufe2_text or "")
+    for clear in ("Nachtigall", "NACHTIGALL", "Beispielweg", "Mustermann"):
+        assert clear not in sent, f"{clear!r} im Modell-Input"
+
+    m = profile.get_all_mappings()
+    assert m["Frau Nachtigall"].startswith("BEGRIFF_"), "manuelle Liste muss vor der Erkennung gewinnen"
+    llm = {"a": f"{m['Frau Nachtigall']} und {m['Nachtigall']} wohnen in {m['Beispielweg 7']}."}
+    back = service._deanonymize_json(llm, profile)
+    assert back["a"] == "Frau Nachtigall und Nachtigall wohnen in Beispielweg 7."
+    assert "BEGRIFF_" not in repr(back)

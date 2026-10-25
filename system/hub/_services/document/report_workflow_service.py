@@ -259,6 +259,59 @@ class WorkflowSession:
 # Report Workflow Service
 # ═══════════════════════════════════════════════════════════════
 
+_MANUAL_TITLES = ("Frau", "Herr", "Dr.", "Prof.", "Frau Dr.", "Herr Dr.", "Frau Prof.", "Herr Prof.")
+
+
+def _expand_manual_terms(terms, whitelist):
+    """Manuelle Begriffsliste -> [(Schreibweise, Platzhalter)], laengste zuerst gleichrangig.
+
+    - jeder Begriff und jede Variante bekommt einen eigenen Platzhalter BEGRIFF_nn (ohne Klammern: die Rueckuebersetzung arbeitet mit Wortgrenzen)
+    - Namen (1-3 grossgeschriebene Woerter ohne Ziffern) zusaetzlich mit Anrede (Frau/Herr/Dr./Prof.)
+    - zweiteilige Namen mit bekanntem Vornamen zusaetzlich einzeln (Vor- und Nachname)
+    - jeweils auch GROSSgeschrieben (Ueberschriften)
+    """
+    try:
+        from .anonymizer_service import DEUTSCHE_VORNAMEN_M, DEUTSCHE_VORNAMEN_W
+    except ImportError:  # CLI-Modus ohne Paketkontext
+        from anonymizer_service import DEUTSCHE_VORNAMEN_M, DEUTSCHE_VORNAMEN_W
+    out, seen = [], set()
+
+    def add(form):
+        form = form.strip()
+        if not form or form in seen or form in whitelist:
+            return
+        seen.add(form)
+        out.append((form, f"BEGRIFF_{len(out) + 1:02d}"))
+        up = form.upper()
+        if up != form and up not in seen and up not in whitelist:
+            seen.add(up)
+            out.append((up, out[-1][1]))  # gleicher Platzhalter wie die Normalform
+
+    for term in terms or []:
+        term = (term or "").strip()
+        if not term:
+            continue
+        add(term)
+        words = term.split()
+        is_name = (
+            1 <= len(words) <= 3
+            and not any(ch.isdigit() for ch in term)
+            and all(w[:1].isupper() for w in words)
+        )
+        if not is_name:
+            continue
+        for title in _MANUAL_TITLES:
+            add(f"{title} {term}")
+        if len(words) == 2 and (
+            words[0].lower() in DEUTSCHE_VORNAMEN_M or words[0].lower() in DEUTSCHE_VORNAMEN_W
+        ):
+            for w in words:
+                add(w)
+                for title in ("Frau", "Herr", "Dr."):
+                    add(f"{title} {w}")
+    return out
+
+
 class ReportWorkflowService:
     """
     Vereinheitlichter Workflow fuer Foerderberichte.
@@ -631,11 +684,13 @@ Interpersonelle Interaktionen:
             # Kein Klartext-Adresse im Log
             print(f"[INFO] Klienten-Adresse anonymisiert -> {fake_addr}")
 
-        # Zusaetzliche Begriffe
+        # Zusaetzliche Begriffe = manuelle Begriffsliste je Klient (vorrangig vor der
+        # automatischen Erkennung: "misc" steht in get_all_mappings() zuletzt und gewinnt).
+        # Jede Schreibweise bekommt einen EIGENEN Platzhalter, damit die Rueckuebersetzung
+        # eindeutig ist; fuer Namen kommen Anrede-Varianten ("Frau X") dazu.
         if additional_terms:
-            for term in additional_terms:
-                if term not in wl:
-                    mappings["misc"][term] = "[REDACTED]"
+            for form, placeholder in _expand_manual_terms(additional_terms, wl):
+                mappings["misc"][form] = placeholder
 
         # Automatische Erkennung von Telefon, E-Mail, Adressen, Personennamen
         if scan_folder and scan_folder.exists():
