@@ -1,10 +1,10 @@
 ---
 name: bach
-version: 3.9.1
+version: 3.9.2
 type: skill
 author: BACH Team
 created: 2025-12-01
-updated: 2026-03-12
+updated: 2026-10-20
 anthropic_compatible: true
 
 description: >
@@ -325,6 +325,20 @@ from bach_api import (
 ---
 
 ### (1) START Bach now [B/C]
+
+For parallel partners, retain the exact startup ID and pass it to reports and
+shutdown:
+
+```python
+info = session.startup(partner="codex", mode="silent", structured=True)
+SESSION_ID = info["session_id"]
+session.current("codex", session_id=SESSION_ID)
+```
+
+CLI: `bach session start --partner=codex --mode=silent --json` reuses the
+partner's open session. `--startup` replaces it. Status and time checks accept
+`--partner` and `--session`; ambiguous selections are rejected.
+
 
 **Mode C (Session/CLI):**
 

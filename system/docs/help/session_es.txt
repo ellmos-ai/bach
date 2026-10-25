@@ -88,3 +88,17 @@ hub/startup.py Controlador de inicio (inicialización de sesión)
 controlador de apagado hub/shutdown.py (terminación de sesión)
 controlador de tareas hub/task.py (administración de tareas)
 esquema de base de datos data/bach.db
+
+ÁMBITO DEL SOCIO E IDENTIDAD ESTRUCTURADA
+========================================
+  bach session start --partner=codex --mode=silent --json
+  bach session status --partner=codex --session=ID --json
+  bach session check --partner=codex --session=ID
+start usa user por defecto y reutiliza solo la sesión abierta del socio.
+--startup reemplaza la sesión del mismo socio. Las selecciones ambiguas se
+rechazan. --session requiere --partner; los IDs ajenos, cerrados o ausentes
+se rechazan. --startup --json devuelve session_id y partner_id registrados.
+Sesión, presencia y referencia de actividad se registran en una transacción.
+API: info = session.startup(partner="codex", structured=True)
+     session.current("codex", session_id=info["session_id"])
+El texto sigue siendo el formato predeterminado; los avisos van a stderr.

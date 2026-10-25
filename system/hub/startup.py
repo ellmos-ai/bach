@@ -24,8 +24,10 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from contextlib import closing
 from .base import BaseHandler
 from ._services.user_config_store import load_user_config, update_user_config
+from ._services.session_scope import parse_scope, select_session, new_session_id
 
 
 class _StartupTimingList(list):
@@ -109,6 +111,7 @@ class StartupHandler(BaseHandler):
         return {
             "run": "Komplettes Startprotokoll (Standard)",
             "quick": "Schnellstart ohne Dir-Scan",
+            "ensure": "Eigene offene Session wiederverwenden oder atomar starten",
             "mode": "Modus aendern: gui|text|dual|silent"
         }
 
@@ -153,17 +156,42 @@ class StartupHandler(BaseHandler):
         - 'new' oder 'nameless': Generiert eindeutige ID (partner_HHMMSS)
         - Beliebiger Name: Wird als Partner-ID verwendet (auch neue)
         """
-        for arg in args:
-            if arg.startswith("--partner="):
-                partner = arg.split("=", 1)[1].lower()
-                
-                # Neue Partner ohne Namen -> generierte ID
-                if partner in ('new', 'nameless', 'anon', 'anonymous'):
-                    from datetime import datetime
-                    return f"partner_{datetime.now().strftime('%H%M%S')}"
-                
-                return partner
-        return "user"
+        _, scope = parse_scope(args)
+        partner = scope.get("partner_id", "user")
+        if partner in ('new', 'nameless', 'anon', 'anonymous'):
+            return f"partner_{new_session_id(datetime.now())[8:]}"
+        return partner
+
+    def _register_session(self, partner_id, now, *, reuse_existing=False):
+        """BACH owns this atomic session/presence transition, including rollback."""
+        partner_id = partner_id.lower()
+        with closing(self._get_conn()) as conn, conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            if reuse_existing:
+                existing = select_session(conn, partner_id=partner_id)
+                if existing:
+                    row = conn.execute("SELECT * FROM memory_sessions WHERE id = ?", (existing[0],)).fetchone()
+                    return dict(row), False
+            conn.execute("""
+                UPDATE memory_sessions SET ended_at = ?,
+                    summary = COALESCE(summary, '') || ' [AUTO-CLOSED: Neue Session gestartet]'
+                WHERE LOWER(partner_id) = ? AND ended_at IS NULL
+            """, (now.isoformat(), partner_id))
+            session_id = new_session_id(now)
+            cursor = conn.execute("""
+                INSERT INTO memory_sessions (session_id, started_at, tasks_created, tasks_completed, partner_id)
+                VALUES (?, ?, 0, 0, ?)
+            """, (session_id, now.isoformat(), partner_id))
+            self._clock_in_partner(partner_id, session_id=session_id, conn=conn)
+            conn.execute("""
+                INSERT INTO system_activity (id, session_id, last_activity, updated_at)
+                VALUES (1, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET session_id = excluded.session_id,
+                    last_activity = excluded.last_activity, updated_at = excluded.updated_at
+            """, (session_id, now.isoformat()))
+            row = conn.execute("SELECT * FROM memory_sessions WHERE id = ?", (cursor.lastrowid,)).fetchone()
+            return dict(row), True
 
     def _close_partner_session(self, partner_id: str) -> tuple:
         """Schliesst aktive Session eines Partners automatisch.
@@ -215,7 +243,13 @@ class StartupHandler(BaseHandler):
 
         quick = operation == "quick"
         startup_mode = self._get_startup_mode(args)
-        partner_id = self._get_partner_id(args)
+        try:
+            _, scope = parse_scope(args)
+            if "session_id" in scope:
+                raise ValueError("Use session start to address an existing session")
+            partner_id = self._get_partner_id(args)
+        except ValueError as exc:
+            return False, f"[ERROR] {exc}"
 
         # Hook: before_startup
         try:
@@ -226,7 +260,12 @@ class StartupHandler(BaseHandler):
         except Exception:
             pass
 
-        success, message = self._run_startup(quick, dry_run, startup_mode, partner_id)
+        options = {}
+        if "--json" in args:
+            options["structured"] = True
+        if operation == "ensure":
+            options["reuse_existing"] = True
+        success, message = self._run_startup(quick, dry_run, startup_mode, partner_id, **options)
 
         # Hook: after_startup
         try:
@@ -242,21 +281,22 @@ class StartupHandler(BaseHandler):
     def _get_conn(self):
         return sqlite3.connect(self.db_path)
     
-    def _clock_in_partner(self, partner_id: str) -> bool:
+    def _clock_in_partner(self, partner_id: str, *, session_id=None, conn=None) -> bool:
         """Stempelt Partner ein (partner_presence Tabelle).
 
         Markiert alte 'online' Eintraege als 'crashed' falls vorhanden.
         """
-        conn = self._get_conn()
+        own_connection = conn is None
+        conn = conn if conn is not None else self._get_conn()
         try:
             cursor = conn.cursor()
             now = datetime.now().isoformat()
-            session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            session_id = session_id or new_session_id(datetime.now())
 
             cursor.execute("""
                 UPDATE partner_presence
                 SET status = 'crashed', clocked_out = ?, updated_at = ?
-                WHERE partner_name = ? AND status = 'online'
+                WHERE LOWER(partner_name) = ? AND status = 'online'
             """, (now, now, partner_id))
 
             cursor.execute("""
@@ -265,10 +305,12 @@ class StartupHandler(BaseHandler):
                 VALUES (?, 'online', ?, ?, ?, ?, ?)
             """, (partner_id, now, now, session_id, now, now))
 
-            conn.commit()
+            if own_connection:
+                conn.commit()
             return True
         finally:
-            conn.close()
+            if own_connection:
+                conn.close()
     
     def _clock_out_partner(self, partner_id: str) -> bool:
         """Stempelt Partner aus."""
@@ -550,7 +592,7 @@ class StartupHandler(BaseHandler):
         except Exception as e:
             return None, None, f" [SKIP] Health-Monitor: {e}"
 
-    def _run_startup(self, quick: bool, dry_run: bool, startup_mode: str = "gui", partner_id: str = "user") -> tuple:
+    def _run_startup(self, quick: bool, dry_run: bool, startup_mode: str = "gui", partner_id: str = "user", *, structured=False, reuse_existing=False) -> tuple:
         results = _StartupTimingList(enabled=not quick and startup_mode != "silent")
         now = datetime.now()
 
@@ -562,20 +604,17 @@ class StartupHandler(BaseHandler):
         results.append(f" Partner: {partner_id.upper()}")
         results.append("=" * 55)
 
-        # Partner-Session-Management: Alte Session desselben Partners schliessen
+        # Register one identity before optional startup work; foreign owners stay intact.
+        current = None
         if not dry_run:
-            closed, old_session_id = self._close_partner_session(partner_id)
-            if closed:
-                results.append("")
-                results.append(f"[AUTO-CLOSE] Vorherige {partner_id.upper()}-Session beendet: {old_session_id}")
-            
-            # ══════════════════════════════════════════════════════════════
-            # STEMPELKARTE: Partner einstempeln (v1.1.71)
-            # ══════════════════════════════════════════════════════════════
             try:
-                self._clock_in_partner(partner_id)
-            except Exception as e:
-                pass  # Silent fail - nicht kritisch
+                current, created = self._register_session(partner_id, now, reuse_existing=reuse_existing)
+            except (sqlite3.Error, ValueError) as exc:
+                error = f"[ERROR] Session registration failed: {exc}"
+                return False, json.dumps({"session_id": None, "partner_id": partner_id, "created": False, "error": error}) if structured else error
+            if not created:
+                report = f"[INFO] Session bereits aktiv: {current['session_id']}"
+                return True, json.dumps({"session_id": current["session_id"], "partner_id": current["partner_id"], "created": False, "report": report}) if structured else report
         
         if dry_run:
             results.append("[DRY-RUN] Keine Aenderungen")
@@ -922,9 +961,9 @@ class StartupHandler(BaseHandler):
                 SELECT session_id, started_at, ended_at, summary,
                        tasks_created, tasks_completed, continuation_context
                 FROM memory_sessions
-                WHERE ended_at IS NOT NULL
+                WHERE ended_at IS NOT NULL AND LOWER(partner_id) = ?
                 ORDER BY id DESC LIMIT 1
-            """).fetchone()
+            """, (partner_id.lower(),)).fetchone()
 
             if last_session:
                 sid, started, ended, summary, created, completed, continuation = last_session
@@ -963,7 +1002,6 @@ class StartupHandler(BaseHandler):
         conn = None
         try:
             conn = self._get_conn()
-            import json
             snapshot = conn.execute("""
                 SELECT id, name, snapshot_data, created_at FROM session_snapshots
                 ORDER BY created_at DESC LIMIT 1
@@ -1178,34 +1216,9 @@ class StartupHandler(BaseHandler):
         # ══════════════════════════════════════════════════════════════
         # 3. NEUE SESSION REGISTRIEREN
         # ══════════════════════════════════════════════════════════════
-        if not dry_run:
-            conn = None
-            try:
-                conn = self._get_conn()
-                session_id = f"session_{now.strftime('%Y%m%d_%H%M%S')}"
-                conn.execute("""
-                    INSERT INTO memory_sessions (session_id, started_at, tasks_created, tasks_completed, partner_id)
-                    VALUES (?, ?, 0, 0, ?)
-                """, (session_id, now.isoformat(), partner_id))
-
-                # SQ022: session_id auch in system_activity speichern für ActivityTracker
-                conn.execute("""
-                    UPDATE system_activity
-                    SET session_id = ?, last_activity = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = 1
-                """, (session_id, now.isoformat()))
-
-                conn.commit()
-                results.append("")
-                results.append(f"[SESSION] {session_id} gestartet (Partner: {partner_id})")
-            except Exception as e:
-                pass  # Nicht kritisch
-            finally:
-                if conn:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
+        if current:
+            results.append("")
+            results.append(f"[SESSION] {current['session_id']} gestartet (Partner: {partner_id})")
         
         # ══════════════════════════════════════════════════════════════
         # 4. NACHRICHTEN CHECK + DIREKTE INJEKTION (v1.1.72)
@@ -1688,7 +1701,12 @@ class StartupHandler(BaseHandler):
         
         results.append("=" * 55)
         
-        return True, "\n".join(results)
+        report = "\n".join(results)
+        if structured:
+            return True, json.dumps({"session_id": current["session_id"] if current else None,
+                                     "partner_id": partner_id, "created": current is not None,
+                                     "dry_run": dry_run, "report": report}, ensure_ascii=False)
+        return True, report
     
     def _start_gui_background(self) -> bool:
         """Startet GUI-Server im Hintergrund und oeffnet Browser."""
