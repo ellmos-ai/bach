@@ -1008,7 +1008,7 @@ TOOLS_SAFE = [
     }),
     _tool("read_file", "Datei lesen (max. 200 physische Zeilen); Task-Reads zeigen standardmäßig 1-basierte Zeilennummern und Bereichs-/Abschneidungshinweise. Zeilenangaben sind Navigationshilfe, kein Wahrheitsbeleg; unnummerierte oder abgeschnittene Zitate sind nicht verifiziert. line_numbers=false erhält die rohe Legacy-Ausgabe.", {
         "path": {"type": "string", "description": "Dateipfad"},
-        "lines": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximale Zeilenzahl (Standard 50)"},
+        "lines": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximale Zeilenzahl (Standard 50, bei Task-Reads 200; Ausgabe höchstens 4000 Zeichen)"},
         "offset": {"type": "integer", "minimum": 1, "maximum": 2147483647, "description": "Physische Startzeile (1-basiert, Standard 1)"},
         "line_numbers": {"type": "boolean", "description": "Zeilennummern und Metadaten anzeigen; Standard an für Task-Reads, sonst aus."},
     }, ["path"]),
@@ -1486,7 +1486,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return rendered if rendered is not None else _read_evidence_unavailable(
                     "formatter_capability_unverified"
                 )
-            requested_lines = args.get("lines", 50)
+            # Task readers page by the 4000-character output cap, not by 50 lines:
+            # fewer calls for the same context (BACH harness, 25.10.2026).
+            requested_lines = args.get("lines", MAX_READ_FILE_LINES if task_code_capability else 50)
             if type(requested_lines) is not int or requested_lines < 1:
                 return "Fehler: lines muss eine positive Ganzzahl sein."
             lines = min(requested_lines, MAX_READ_FILE_LINES)
