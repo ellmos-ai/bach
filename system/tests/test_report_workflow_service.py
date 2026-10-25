@@ -593,3 +593,24 @@ def test_deanonymize_json_restores_full_compound_name(tmp_path):
     assert result["stammdaten"]["name"] == "Nguendon Kenhagho, Chris Darrell", (
         f"Name nicht korrekt zurueckuebersetzt: {result['stammdaten']['name']!r}"
     )
+
+
+def test_anonymize_filename_replaces_path_separators_in_fake_values(tmp_path):
+    """Regression: ISO-Datum im Dateinamen wurde als Telefonnummer erkannt, der
+    Fake-Wert enthaelt '/' -> rename() scheiterte (Protokoll_2025-03-04.txt)."""
+    service = ReportWorkflowService(base_path=tmp_path)
+    profile = TempAnonymProfile(
+        tarnname="Tarn Person",
+        fake_geburtsdatum="01.01.2010",
+        mappings={"phones": {"025-03-04": "07742/629104"}},
+        original_name="Muster Max",
+    )
+    src = tmp_path / "Protokoll_2025-03-04.txt"
+    src.write_text("x", encoding="utf-8")
+
+    new_path = service._anonymize_filename(src, profile)
+
+    assert new_path.parent == tmp_path
+    assert new_path.exists()
+    assert "/" not in new_path.name and "\\" not in new_path.name
+    assert not src.exists()
