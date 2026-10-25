@@ -119,7 +119,8 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     if isinstance(error, dict):
         error = error.get("message")
     text = " ".join(error.lower().split()) if isinstance(error, str) else ""
-    monthly = status_code in (None, 429) and "monthly usage limit reached" in text
+    # Ollama Cloud words it "you (...) have reached your monthly usage limit".
+    monthly = status_code in (None, 429) and "monthly usage limit" in text and "reached" in text
     tool_parse = (not monthly and status_code != 429
                   and "xml syntax error" in text and "<function>" in text
                   and "</parameter>" in text)

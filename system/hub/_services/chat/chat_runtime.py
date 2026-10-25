@@ -330,6 +330,8 @@ class _SnapshotStoreAdapter:
 
 _SAFE_FAILURE_REASON_CODES = frozenset({
     "cloud_call_retry_exhausted",
+    "completion_reserve_context_exhausted",
+    "handoff_context_too_large",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -3065,14 +3067,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             ):
                 if completion_reserve:
                     session.current_tool = ""
-                    return FailedAnswer.from_exception(RuntimeError(
-                        "Kontextfenster in der Abschlussreserve erschöpft"
-                    ))
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}RuntimeError: Kontextfenster in der Abschlussreserve erschöpft",
+                        reason_code="completion_reserve_context_exhausted")
                 if handoffs >= 2:
                     session.current_tool = ""
-                    return FailedAnswer.from_exception(RuntimeError(
-                        "Kontext-Übergabe bleibt nach zwei Versuchen zu groß"
-                    ))
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}RuntimeError: Kontext-Übergabe bleibt nach zwei Versuchen zu groß",
+                        reason_code="handoff_context_too_large")
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))

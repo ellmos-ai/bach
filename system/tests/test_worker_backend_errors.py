@@ -424,7 +424,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         return True
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
     if scenario == "return_denied":
-        monkeypatch.setattr(WorkerLeaseBinding, "return_lease", lambda _: False)
+        monkeypatch.setattr(WorkerLeaseBinding, "return_lease", lambda _self, note="": False)
     if scenario.startswith("unknown_"):
         invalid = {"unknown_none": None, "unknown_false": False, "unknown_true": True,
                    "unknown_negative": -1, "unknown_string": "0", "unknown_float": 0.0}[scenario]
@@ -1425,3 +1425,95 @@ def test_malformed_carrier_does_not_fall_back_to_raw_exception_text(metadata_cas
     answer = FailedAnswer.from_exception(carrier)
     assert answer.backend_error is None and "PRIVATE" not in str(answer)
     assert "nicht verifiziert" in str(answer)
+
+
+def test_ollama_cloud_monthly_limit_wording_is_quota():
+    from hub._services.llm.backend_errors import classify_ollama_error
+    # Wording returned by Ollama Cloud on 2026-10-25 (account name replaced).
+    detail = classify_ollama_error({"error": "you (PRIVATE_ACCOUNT) have reached your monthly usage limit, "
+                                             "add usage credits: https://ollama.com/settings (ref: x)"},
+                                   status_code=429)
+    assert detail["kind"] == "quota_exceeded" and detail["quota_period"] == "month"
+    assert "Monatskontingent" in detail["message"] and "PRIVATE_ACCOUNT" not in json.dumps(detail)
+    assert classify_ollama_error({"error": "rate limit"}, status_code=429)["kind"] == "rate_limited"
+
+
+def test_worker_return_note_uses_fixed_codes_only():
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    assert (control._worker_return_note(None, "completion_reserve_context_exhausted")
+            == "model_failure:completion_reserve_context_exhausted")
+    assert (control._worker_return_note({"provider": "ollama", "kind": "quota_exceeded", "status_code": 429}, None)
+            == "backend_error:ollama:quota_exceeded:429")
+    assert (control._worker_return_note({"provider": "openrouter", "kind": "connection_error"}, None)
+            == "backend_error:openrouter:connection_error")
+    assert control._worker_return_note(None, None) == "model_failure:unclassified"
+
+
+def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_path, monkeypatch):
+    """A full completion reserve is logged, the task goes back, the next task follows."""
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services.chat.chat_runtime import ChatSession
+    from system.tests.test_task_lease_client import _init_db
+    model = "glm-5.3:cloud"
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = slots.add_worker({"name": "Task failure fixture", "type": "continuous"}, path)["id"]
+    slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
+        "mode": "safe", "pause_after": 0}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    for task_id in (42, 43, 44):
+        conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+                     "VALUES (?,?,'pending','P1','INBOX','BACH',?)", (task_id, f"Failure fixture {task_id}", ident))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    backend = OllamaBackend(default_model=model)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(control, "runtime", runtime)
+    session = ChatSession()
+    session.chat_id = ident
+    monkeypatch.setattr(runtime, "get_session", lambda _: session)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
+    taken = []
+
+    async def process(*a, **kw):
+        binding = session.worker_task_binding
+        assert binding is not None and not binding.closed
+        taken.append(binding.task_id)
+        return FailedAnswer(f"{FailedAnswer.PREFIX}RuntimeError: Kontextfenster in der Abschlussreserve erschöpft",
+                            reason_code="completion_reserve_context_exhausted")
+    monkeypatch.setattr(runtime, "process", process)
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        execution = control._WORKER_EXECUTIONS[ident]
+        thread = execution.thread
+        thread.join(8)
+        assert not thread.is_alive()
+        # Two failures let the worker continue; the third in a row stops it.
+        assert sorted(taken) == [42, 43, 44] and len(taken) == 3
+        for task_id in taken:
+            task = dict(conn.execute("SELECT status, claim_salt_ref FROM tasks WHERE id=?", (task_id,)).fetchone())
+            assert task["status"] == "pending" and task["claim_salt_ref"] is None
+            notes = [json.loads(row["new_value"])["note"] for row in conn.execute(
+                "SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'", (task_id,))]
+            assert notes == ["model_failure:completion_reserve_context_exhausted"]
+        activities = [e.get("activity") or "" for e in slots.get_activity_history(path=path)]
+        assert sum("Abschlussreserve" in a for a in activities) == 3
+        assert sum("Worker arbeitet weiter" in a for a in activities) == 2
+        assert "3 Tasks in Folge fehlgeschlagen" in (slots.get_slot(ident, path).get("current_activity") or "")
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()

@@ -903,13 +903,17 @@ class WorkerLeaseBinding:
                 self._trace_completion_tokens.pop(identity, None)
             return result
 
-    def return_lease(self):
-        """Cleanup may return a stopped worker's known lease; ambiguity forbids it."""
+    def return_lease(self, note=""):
+        """Cleanup may return a stopped worker's known lease; ambiguity forbids it.
+
+        ``note`` is a fixed-vocabulary reason stored with the return event.
+        """
         with self._lock:
             if not self._active or self._closed or not self._is_current():
                 return False
             try:
-                self._operation(self._client.release, outcome="return", check_policy=False)
+                self._operation(self._client.release, outcome="return", note=note,
+                                check_policy=False)
             except LeaseError:
                 return False
             self._closed = True
