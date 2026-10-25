@@ -337,9 +337,18 @@ def test_gui_capabilities_declares_the_assignment_route(board):
     assert not any(path.startswith("/api/skills-board/item-file") for _, path in declared)   # retired routes are not advertised
 
 
-def test_gui_capabilities_pages_name_the_endpoints_the_gui_reads(board):
+def test_gui_capabilities_pages_name_the_endpoints_the_gui_reads(board, monkeypatch):
     """/skills reads the library inventory (not /api/capabilities/skills); the optional assignment tab is its own entry.
     Only the declared requirements are pinned: under `from gui import server` the unified router is not mounted (circular import), so the status is not testable here."""
+    from hub._services import gui_contract_service
+    from hub._services.gui_page_reads import parse
+    info = parse(json.dumps({"schema": "ellmos.gui.page-reads.v1", "pages": {
+        "/skills": [{"method": "GET", "path": "/api/capabilities/skills/library", "required": True}]
+    }}).encode())
+    monkeypatch.setattr(gui_contract_service, "get_pinned_kit_manifest",
+                        lambda: {"verified": True, "pinned_source_commit": "a" * 40, "expected_page_count": 1})
+    monkeypatch.setattr(gui_contract_service, "verify_installed_dist",
+                        lambda *args, **kwargs: {"verified": True, "page_count": 1, "page_reads": info})
     pages = {p["path"]: p for p in board.client.get("/api/gui/capabilities").json()["pages"]}
     assert pages["/skills"]["requires"] == ["GET /api/capabilities/skills/library"]
     assert not any("#" in path for path in pages)   # no fragment keys: pages are routes, the optional tab is declared through endpoints
