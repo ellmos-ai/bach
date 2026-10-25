@@ -932,7 +932,9 @@ Interpersonelle Interaktionen:
 
         for old, new in sorted_mappings:
             if old in new_filename:
-                new_filename = new_filename.replace(old, new)
+                # Ersatzwerte (z.B. Fake-Telefon "07742/123456") duerfen keine
+                # Pfadzeichen in den Dateinamen bringen
+                new_filename = new_filename.replace(old, re.sub(r'[\\/:*?"<>|]', "-", new))
                 changed = True
 
         if changed:
