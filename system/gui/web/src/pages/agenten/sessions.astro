@@ -21,6 +21,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
       <button class="tab-btn" data-tab="lessons">💡 Lessons Learned & Best Practices</button>
       <button class="tab-btn" data-tab="working">🧠 Aktives Arbeitsgedächtnis</button>
       <button class="tab-btn" data-tab="topology">📊 Kognitiver Schaltplan & Topologie</button>
+      <button class="tab-btn" data-tab="agent-history">📜 Agenten-Verlauf</button>
     </div>
 
     <!-- TAB 1: SESSIONS -->
@@ -53,6 +54,24 @@ import BachLayout from "../../layouts/BachLayout.astro";
         <div id="working-list">
           <p class="loading-state">Lade Arbeitsgedächtnis...</p>
         </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: AGENT HISTORY -->
+    <div class="tab-pane" id="pane-agent-history">
+      <div class="glass-card">
+        <h3>Agenten-Verlauf (Snapshots)</h3>
+        <p class="card-desc">Gespeicherte Agenten-Läufe (Snapshots) mit Nachrichten, Werkzeugergebnissen und Kontext. Resume nur im Running-Modal.</p>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem;">
+          <select id="agent-history-archive-filter" onchange="loadAgentHistoryTab()">
+            <option value="current">Aktuelle Läufe</option>
+            <option value="archived">Archivierte Läufe</option>
+            <option value="all">Alle</option>
+          </select>
+          <button class="btn btn-sm" type="button" onclick="loadAgentHistoryTab()">🔄 Neu laden</button>
+        </div>
+        <div id="agent-history-list-pane"><p class="loading-state">Läufe werden beim Öffnen des Tabs geladen…</p></div>
+        <div id="agent-history-detail-pane"></div>
       </div>
     </div>
 
@@ -238,6 +257,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     else if (tab === 'lessons') loadLessons();
     else if (tab === 'working') loadWorking();
     else if (tab === 'topology') loadTopology();
+    else if (tab === 'agent-history') loadAgentHistoryTab();
   }
 
   async function loadSessions() {
@@ -393,6 +413,124 @@ import BachLayout from "../../layouts/BachLayout.astro";
     } catch (e) {
       container.textContent = 'Topologie konnte nicht geladen werden.';
     }
+  }
+
+  let agentHistoryPaneSnapshots = [];
+
+  function loadAgentHistoryTab() {
+    const filterSelect = document.getElementById('agent-history-archive-filter');
+    const archive = filterSelect ? (filterSelect.value || 'current') : 'current';
+    const listEl = document.getElementById('agent-history-list-pane');
+    const detailEl = document.getElementById('agent-history-detail-pane');
+    agentHistoryPaneSnapshots = [];
+    if (detailEl) detailEl.innerHTML = '';
+    if (listEl) listEl.innerHTML = '<p class="loading-state">Lade gespeicherte Läufe …</p>';
+    fetch('/api/agent-history/sessions?limit=50&archive=' + encodeURIComponent(archive))
+      .then((res) => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .then((data) => {
+        const items = (data.page && data.page.items) || data.sessions || data.items || [];
+        agentHistoryPaneSnapshots = Array.isArray(items) ? items : [];
+        if (!listEl) return;
+        if (!agentHistoryPaneSnapshots.length) {
+          listEl.innerHTML = '<p class="text-muted">Keine gespeicherten Läufe gefunden.</p>';
+          return;
+        }
+        listEl.innerHTML = agentHistoryPaneSnapshots.map((item, index) => {
+          const record = item || {};
+          const title = record.name || record.agent_id || record.snapshot_id || 'Lauf';
+          const archivedBadge = (record.session_id && String(record.session_id).includes(':archived:'))
+            ? ' <span class="badge badge-accent" style="color:#f59e0b;border-color:#f59e0b;">Archiviert</span>'
+            : '';
+          const metaParts = [];
+          if (record.created_at) metaParts.push(escapeSessionText(record.created_at));
+          if (record.stored_message_count !== undefined && record.stored_message_count !== null) metaParts.push(escapeSessionText(record.stored_message_count) + ' Nachrichten');
+          return '<div style="display:flex;justify-content:space-between;gap:0.75rem;padding:0.55rem 0;border-bottom:1px solid var(--border);align-items:flex-start;flex-wrap:wrap;">' +
+            '<div style="min-width:0;overflow-wrap:anywhere;"><strong>' + escapeSessionText(title) + '</strong>' + archivedBadge +
+            (metaParts.length ? '<div style="font-size:0.75rem;color:var(--text-muted);">' + metaParts.join(' · ') + '</div>' : '') +
+            '</div><button class="btn btn-sm" type="button" onclick="openAgentHistoryDetailPane(' + index + ')">Öffnen</button></div>';
+        }).join('');
+      })
+      .catch(() => { if (listEl) listEl.innerHTML = '<p style="color:#f87171;">Verlauf konnte nicht geladen werden (Netzwerkfehler).</p>'; });
+  }
+
+  function openAgentHistoryDetailPane(index) {
+    const item = agentHistoryPaneSnapshots[index];
+    const detailEl = document.getElementById('agent-history-detail-pane');
+    if (!item || !detailEl) return;
+    const snapshotId = String(item.snapshot_id || '');
+    if (!snapshotId) return;
+    detailEl.innerHTML = '<p class="loading-state">Lade Verlauf …</p>';
+    fetch('/api/agent-history/sessions/' + encodeURIComponent(snapshotId) + '?include_tools=1')
+      .then((res) => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+      .then((session) => { renderAgentHistoryDetailPane(session || {}); })
+      .catch(() => { detailEl.innerHTML = '<p style="color:#f87171;">Verlauf konnte nicht geladen werden.</p>'; });
+  }
+
+  function agentHistoryPanePreHtml(text) {
+    return '<pre style="margin:0.35rem 0 0;padding:0.6rem;background:var(--bg-panel, rgba(255,255,255,0.04));border:1px solid var(--border);border-radius:6px;font-size:0.75rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow-y:auto;">' + escapeSessionText(text) + '</pre>';
+  }
+
+  function agentHistoryPaneToolPayloadHtml(content) {
+    let text;
+    if (typeof content === 'string') {
+      try { text = JSON.stringify(JSON.parse(content), null, 2); }
+      catch (_error) { text = content; }
+    } else {
+      try { text = JSON.stringify(content, null, 2); }
+      catch (_error) { text = String(content); }
+    }
+    return agentHistoryPanePreHtml(text);
+  }
+
+  function renderAgentHistoryDetailPane(session) {
+    const detailEl = document.getElementById('agent-history-detail-pane');
+    if (!detailEl) return;
+    const messages = Array.isArray(session.messages) ? session.messages : [];
+    const metaBits = [];
+    if (session.created_at) metaBits.push('Erstellt: ' + escapeSessionText(session.created_at));
+    if (session.updated_at) metaBits.push('Aktualisiert: ' + escapeSessionText(session.updated_at));
+    if (session.agent_id) metaBits.push('Agent: ' + escapeSessionText(session.agent_id));
+    metaBits.push(escapeSessionText(messages.length) + ' Nachrichten');
+    let html = '<div style="padding:0.6rem 0.75rem;border:1px solid var(--border);border-radius:8px;margin:0.75rem 0;background:var(--bg-panel, rgba(255,255,255,0.04));overflow-wrap:anywhere;">';
+    html += '<strong>' + escapeSessionText(session.name || session.agent_id || 'Lauf') + '</strong> <code style="font-size:0.75rem;">' + escapeSessionText(session.snapshot_id || '') + '</code>';
+    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">' + metaBits.join(' · ') + '</div>';
+    html += '</div>';
+    messages.forEach((msg) => {
+      const record = msg || {};
+      const role = String(record.role || 'unbekannt');
+      let roleBadgeStyle = 'background:rgba(59,130,246,0.15);color:#60a5fa;';
+      if (role === 'assistant') roleBadgeStyle = 'background:rgba(139,92,246,0.15);color:#a78bfa;';
+      else if (role === 'user') roleBadgeStyle = 'background:rgba(16,185,129,0.15);color:#34d399;';
+      else if (role === 'system') roleBadgeStyle = 'background:rgba(100,116,139,0.2);color:#94a3b8;';
+      html += '<div style="padding:0.55rem 0;border-bottom:1px solid var(--border);">';
+      html += '<div style="font-size:0.75rem;"><span style="padding:0.1rem 0.45rem;border-radius:999px;font-weight:600;' + roleBadgeStyle + '">' + escapeSessionText(role) + '</span>';
+      if (role === 'assistant') {
+        const status = String(record.answer_status || '');
+        if (status) html += ' <span style="padding:0.1rem 0.45rem;border-radius:999px;font-size:0.7rem;background:' + (status === 'success' ? 'rgba(5,150,105,0.15)' : 'rgba(220,38,38,0.15)') + ';color:' + (status === 'success' ? '#059669' : '#dc2626') + ';">' + escapeSessionText(status) + '</span>';
+        if (Array.isArray(record.completed_task_ids) && record.completed_task_ids.length) {
+          html += ' <span style="font-size:0.7rem;color:var(--text-muted);">Tasks: ' + record.completed_task_ids.map((id) => escapeSessionText(id)).join(', ') + '</span>';
+        }
+      }
+      html += '</div>';
+      if (record.tool_result === true) {
+        html += '<div style="margin-top:0.35rem;border-left:3px solid #f59e0b;padding-left:0.6rem;">';
+        html += '<div style="font-size:0.8rem;font-weight:600;">🛠 Werkzeug: ' + escapeSessionText(String(record.tool_name || '').substring(0, 200)) + '</div>';
+        html += agentHistoryPaneToolPayloadHtml(record.content);
+        html += '</div>';
+      } else if (typeof record.content === 'string') {
+        html += '<div style="margin-top:0.35rem;white-space:pre-wrap;overflow-wrap:anywhere;">' + escapeSessionText(record.content) + '</div>';
+      } else if (record.content !== undefined && record.content !== null) {
+        html += agentHistoryPaneToolPayloadHtml(record.content);
+      }
+      html += '</div>';
+    });
+    if (session.context !== undefined && session.context !== null) {
+      let contextText;
+      if (typeof session.context === 'string') contextText = session.context;
+      else { try { contextText = JSON.stringify(session.context, null, 2); } catch (_error) { contextText = String(session.context); } }
+      html += '<details style="margin-top:0.75rem;"><summary style="cursor:pointer;color:var(--text-muted);">Kontext</summary>' + agentHistoryPanePreHtml(contextText) + '</details>';
+    }
+    detailEl.innerHTML = html;
   }
 
   document.addEventListener('DOMContentLoaded', () => {

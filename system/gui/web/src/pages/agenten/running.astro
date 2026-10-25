@@ -201,6 +201,7 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
   <details class="card" id="activity-timeline" style="margin-bottom:1.5rem;">
     <summary class="card-header" style="cursor:pointer;">📜 Verlauf: Sessions & Task-Läufe <span id="activity-count" class="badge">Wird geladen</span></summary>
     <button class="btn btn-sm" type="button" onclick="refreshActivity()">Neu laden</button>
+    <button class="btn btn-sm" type="button" onclick="openAgentHistoryModal()">📜 Verlauf öffnen</button>
     <div style="overflow:auto;max-height:420px;margin-top:0.75rem;">
       <table class="data-table" style="width:100%;">
         <thead>
@@ -233,6 +234,50 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
     <p id="openrouter-catalog-state" role="status" aria-live="polite">Modellkatalog wird geladen…</p>
     <div id="openrouter-model-list" class="openrouter-model-list" role="list"></div>
   </section>
+
+  <!-- POP-UP MODAL 3: AGENTEN-VERLAUF (SNAPSHOTS) -->
+  <div id="agent-history-modal" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+    <div class="card" style="max-width:760px;width:94%;margin:auto;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 15px 35px rgba(0,0,0,0.6);">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 class="card-title" style="margin:0;">📜 Agenten-Verlauf</h2>
+        <button class="btn btn-sm" type="button" onclick="closeAgentHistoryModal()">✕</button>
+      </div>
+      <div style="padding:1.25rem;overflow-y:auto;flex:1;">
+        <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem;">
+          <label for="agent-history-archive" style="margin:0;">Ansicht
+            <select id="agent-history-archive" onchange="loadAgentHistoryList()">
+              <option value="current">Aktuell (ohne Archiv)</option>
+              <option value="archived">Archiviert</option>
+              <option value="all">Alle</option>
+            </select>
+          </label>
+          <button class="btn btn-sm" type="button" onclick="loadAgentHistoryList()">Aktualisieren</button>
+        </div>
+        <div id="agent-history-list"></div>
+        <div id="agent-history-detail"></div>
+        <details id="agent-history-resume" style="margin-top:1rem;">
+          <summary style="cursor:pointer;font-weight:600;">▶️ Lauf fortsetzen (Resume)</summary>
+          <div style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.6rem;">
+            <div><span id="agent-history-resume-target" style="font-size:0.75rem;color:var(--text-muted);">Ziel: –</span></div>
+            <label>Workerprofil (nur idle/paused/completed/error)<select id="resume-worker-id" onchange="syncResumeBackendFromWorker()"></select></label>
+            <label>Backend
+              <select id="resume-backend" onchange="populateResumeModels()">
+                <option value="ollama">ollama</option>
+                <option value="openai">openai</option>
+                <option value="anthropic">anthropic</option>
+                <option value="openrouter">openrouter</option>
+              </select>
+            </label>
+            <label>Modell<select id="resume-model"></select></label>
+            <label>Oder Modell manuell eintragen (überschreibt Auswahl)<input id="resume-model-custom" type="text" maxlength="200" placeholder="Oder Modell manuell eintragen (überschreibt Auswahl)" /></label>
+            <label>Start-Prompt (optional)<textarea id="resume-prompt" maxlength="2000" rows="3" placeholder="Optionaler Prompt für den neuen Lauf"></textarea></label>
+            <div id="resume-error" style="display:none;padding:0.6rem 0.9rem;border-radius:8px;background:rgba(220,38,38,0.12);color:#f87171;font-size:0.85rem;"></div>
+            <button class="btn btn-sm" type="button" onclick="submitAgentHistoryResume()">▶️ Lauf fortsetzen</button>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
 
   <!-- POP-UP MODAL 2: EIGENE EINZELANFERTIGUNG (ONE-OFF) -->
   <div id="modal-create-oneoff" class="modal-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
@@ -1243,6 +1288,240 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
         const cell = coreElement('td', 'Timeline derzeit nicht verfügbar.');
         cell.colSpan = 5; row.append(cell); tbody.replaceChildren(row);
       }
+    }
+
+    let agentHistorySnapshots = [];
+    let agentHistoryActiveSnapshotId = '';
+
+    function openAgentHistoryModal() {
+      const modal = document.getElementById('agent-history-modal');
+      if (modal) modal.style.display = 'flex';
+      loadAgentHistoryList();
+      populateResumeWorkers();
+      populateResumeModels();
+    }
+
+    function closeAgentHistoryModal() {
+      const modal = document.getElementById('agent-history-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function agentHistoryPreHtml(text) {
+      return '<pre style="margin:0.35rem 0 0;padding:0.6rem;background:var(--bg-dark, #10141c);border:1px solid var(--border, #232a3a);border-radius:6px;font-size:0.75rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow-y:auto;">' + escapeHtml(text) + '</pre>';
+    }
+
+    function agentHistoryToolPayloadHtml(content) {
+      let text;
+      if (typeof content === 'string') {
+        try { text = JSON.stringify(JSON.parse(content), null, 2); }
+        catch (_error) { text = content; }
+      } else {
+        try { text = JSON.stringify(content, null, 2); }
+        catch (_error) { text = String(content); }
+      }
+      return agentHistoryPreHtml(text);
+    }
+
+    function loadAgentHistoryList() {
+      const archiveSelect = document.getElementById('agent-history-archive');
+      const archive = archiveSelect ? (archiveSelect.value || 'current') : 'current';
+      const listEl = document.getElementById('agent-history-list');
+      const detailEl = document.getElementById('agent-history-detail');
+      const targetEl = document.getElementById('agent-history-resume-target');
+      agentHistoryActiveSnapshotId = '';
+      if (targetEl) targetEl.textContent = 'Ziel: –';
+      if (detailEl) detailEl.innerHTML = '';
+      if (listEl) listEl.innerHTML = '<p style="color:var(--text-muted, #8b93a7);">Lade gespeicherte Läufe …</p>';
+      fetch('/api/agent-history/sessions?limit=50&archive=' + encodeURIComponent(archive))
+        .then((res) => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then((data) => {
+          const items = (data.page && data.page.items) || data.sessions || data.items || [];
+          agentHistorySnapshots = Array.isArray(items) ? items : [];
+          if (!listEl) return;
+          if (!agentHistorySnapshots.length) {
+            listEl.innerHTML = '<p style="color:var(--text-muted, #8b93a7);">Keine gespeicherten Läufe gefunden.</p>';
+            return;
+          }
+          const html = [];
+          agentHistorySnapshots.forEach((item, index) => {
+            const record = item || {};
+            const title = record.name || record.agent_id || record.snapshot_id || 'Lauf';
+            const archivedBadge = (record.session_id && String(record.session_id).includes(':archived:'))
+              ? ' <span style="background:rgba(245,158,11,0.15);color:#f59e0b;font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:999px;">Archiviert</span>'
+              : '';
+            const metaParts = [];
+            if (record.created_at) metaParts.push(escapeHtml(String(record.created_at)));
+            if (record.stored_message_count !== undefined && record.stored_message_count !== null) metaParts.push(escapeHtml(String(record.stored_message_count)) + ' Nachrichten');
+            html.push(
+              '<div style="display:flex;justify-content:space-between;gap:0.75rem;padding:0.55rem 0;border-bottom:1px solid var(--border, #232a3a);align-items:flex-start;flex-wrap:wrap;">' +
+                '<div style="min-width:0;overflow-wrap:anywhere;">' +
+                  '<strong>' + escapeHtml(String(title)) + '</strong>' + archivedBadge +
+                  (metaParts.length ? '<div style="font-size:0.75rem;color:var(--text-muted, #8b93a7);">' + metaParts.join(' · ') + '</div>' : '') +
+                '</div>' +
+                '<button class="btn btn-sm" type="button" onclick="openAgentHistoryDetail(' + index + ')">Öffnen</button>' +
+              '</div>'
+            );
+          });
+          listEl.innerHTML = html.join('');
+        })
+        .catch(() => { if (listEl) listEl.innerHTML = '<p style="color:#f87171;">Verlauf konnte nicht geladen werden (Netzwerkfehler).</p>'; });
+    }
+
+    function openAgentHistoryDetail(index) {
+      const item = agentHistorySnapshots[index];
+      const detailEl = document.getElementById('agent-history-detail');
+      if (!item || !detailEl) return;
+      const snapshotId = String(item.snapshot_id || '');
+      if (!snapshotId) return;
+      agentHistoryActiveSnapshotId = snapshotId;
+      detailEl.innerHTML = '<p style="color:var(--text-muted, #8b93a7);">Lade Verlauf …</p>';
+      fetch('/api/agent-history/sessions/' + encodeURIComponent(snapshotId) + '?include_tools=1')
+        .then((res) => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+        .then((session) => { renderAgentHistoryDetail(session || {}); })
+        .catch(() => { detailEl.innerHTML = '<p style="color:#f87171;">Verlauf konnte nicht geladen werden.</p>'; });
+    }
+
+    function renderAgentHistoryDetail(session) {
+      const detailEl = document.getElementById('agent-history-detail');
+      const targetEl = document.getElementById('agent-history-resume-target');
+      const snapshotId = String(session.snapshot_id || agentHistoryActiveSnapshotId || '');
+      if (targetEl) targetEl.textContent = 'Ziel: ' + (snapshotId || '–');
+      if (!detailEl) return;
+      const messages = Array.isArray(session.messages) ? session.messages : [];
+      const metaBits = [];
+      if (session.created_at) metaBits.push('Erstellt: ' + escapeHtml(String(session.created_at)));
+      if (session.updated_at) metaBits.push('Aktualisiert: ' + escapeHtml(String(session.updated_at)));
+      if (session.agent_id) metaBits.push('Agent: ' + escapeHtml(String(session.agent_id)));
+      metaBits.push(escapeHtml(String(messages.length)) + ' Nachrichten');
+      let html = '<div style="padding:0.6rem 0.75rem;border:1px solid var(--border, #232a3a);border-radius:8px;margin:0.75rem 0;background:var(--bg-dark, #10141c);overflow-wrap:anywhere;">';
+      html += '<strong>' + escapeHtml(String(session.name || session.agent_id || 'Lauf')) + '</strong> <code style="font-size:0.75rem;">' + escapeHtml(snapshotId) + '</code>';
+      html += '<div style="font-size:0.75rem;color:var(--text-muted, #8b93a7);margin-top:0.25rem;">' + metaBits.join(' · ') + '</div>';
+      html += '</div>';
+      messages.forEach((msg) => {
+        const record = msg || {};
+        const role = String(record.role || 'unbekannt');
+        let roleBadgeStyle = 'background:rgba(59,130,246,0.15);color:#60a5fa;';
+        if (role === 'assistant') roleBadgeStyle = 'background:rgba(139,92,246,0.15);color:#a78bfa;';
+        else if (role === 'user') roleBadgeStyle = 'background:rgba(16,185,129,0.15);color:#34d399;';
+        else if (role === 'system') roleBadgeStyle = 'background:rgba(100,116,139,0.2);color:#94a3b8;';
+        html += '<div style="padding:0.55rem 0;border-bottom:1px solid var(--border, #232a3a);">';
+        html += '<div style="font-size:0.75rem;"><span style="padding:0.1rem 0.45rem;border-radius:999px;font-weight:600;' + roleBadgeStyle + '">' + escapeHtml(role) + '</span>';
+        if (role === 'assistant') {
+          const status = String(record.answer_status || '');
+          const ok = status === 'success';
+          if (status) html += ' <span style="padding:0.1rem 0.45rem;border-radius:999px;font-size:0.7rem;background:' + (ok ? 'rgba(5,150,105,0.15)' : 'rgba(220,38,38,0.15)') + ';color:' + (ok ? '#059669' : '#dc2626') + ';">' + escapeHtml(status) + '</span>';
+          if (Array.isArray(record.completed_task_ids) && record.completed_task_ids.length) {
+            html += ' <span style="font-size:0.7rem;color:var(--text-muted, #8b93a7);">Tasks: ' + record.completed_task_ids.map((id) => escapeHtml(String(id))).join(', ') + '</span>';
+          }
+        }
+        html += '</div>';
+        if (record.tool_result === true) {
+          html += '<div style="margin-top:0.35rem;border-left:3px solid #f59e0b;padding-left:0.6rem;">';
+          html += '<div style="font-size:0.8rem;font-weight:600;">🛠 Werkzeug: ' + escapeHtml(String(record.tool_name || '').substring(0, 200)) + '</div>';
+          html += agentHistoryToolPayloadHtml(record.content);
+          html += '</div>';
+        } else if (typeof record.content === 'string') {
+          html += '<div style="margin-top:0.35rem;white-space:pre-wrap;overflow-wrap:anywhere;">' + escapeHtml(record.content) + '</div>';
+        } else if (record.content !== undefined && record.content !== null) {
+          html += agentHistoryToolPayloadHtml(record.content);
+        }
+        html += '</div>';
+      });
+      if (session.context !== undefined && session.context !== null) {
+        let contextText;
+        if (typeof session.context === 'string') contextText = session.context;
+        else { try { contextText = JSON.stringify(session.context, null, 2); } catch (_error) { contextText = String(session.context); } }
+        html += '<details style="margin-top:0.75rem;"><summary style="cursor:pointer;color:var(--text-muted, #8b93a7);">Kontext</summary>' + agentHistoryPreHtml(contextText) + '</details>';
+      }
+      detailEl.innerHTML = html;
+    }
+
+    function submitAgentHistoryResume() {
+      const errorEl = document.getElementById('resume-error');
+      const showResumeError = (text) => { if (errorEl) { errorEl.textContent = text; errorEl.style.display = 'block'; } };
+      if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+      if (!agentHistoryActiveSnapshotId) { showResumeError('Bitte zuerst einen Lauf aus der Liste öffnen.'); return; }
+      const workerSelect = document.getElementById('resume-worker-id');
+      const workerId = workerSelect ? String(workerSelect.value || '').trim() : '';
+      if (!workerId) { showResumeError('Kein resume-fähiges Workerprofil gewählt.'); return; }
+      const customModelEl = document.getElementById('resume-model-custom');
+      const modelSelect = document.getElementById('resume-model');
+      const customModel = customModelEl ? String(customModelEl.value || '').trim() : '';
+      const model = customModel || (modelSelect ? String(modelSelect.value || '').trim() : '');
+      const promptEl = document.getElementById('resume-prompt');
+      const prompt = promptEl ? String(promptEl.value || '').trim() : '';
+      const body = { worker_id: workerId };
+      if (model) body.model = model;
+      if (prompt) body.prompt = prompt;
+      fetch('/api/agent-history/sessions/' + encodeURIComponent(agentHistoryActiveSnapshotId) + '/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const detail = data && data.detail ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : '';
+            showResumeError('HTTP ' + res.status + (detail ? ' – ' + detail : ''));
+            return;
+          }
+          closeAgentHistoryModal();
+          loadBackgroundWorkers();
+        })
+        .catch(() => { showResumeError('Netzwerkfehler: Resume konnte nicht gestartet werden.'); });
+    }
+
+    function populateResumeWorkers() {
+      const select = document.getElementById('resume-worker-id');
+      if (!select) return;
+      select.innerHTML = '';
+      select.append(new Option('Lade Workerprofile …', ''));
+      fetch('/api/system/workers')
+        .then((res) => res.json().catch(() => ({})))
+        .then((data) => {
+          const workers = (data && Array.isArray(data.workers)) ? data.workers : [];
+          select.innerHTML = '';
+          const resumable = workers.filter((w) => w && w.system !== true && w.id && ['idle', 'paused', 'completed', 'error'].includes(String(w.status || '').toLowerCase()));
+          if (!resumable.length) {
+            select.append(new Option('Kein resume-fähiges Workerprofil (nur idle/paused/completed/error)', ''));
+            return;
+          }
+          resumable.forEach((w) => {
+            const option = new Option(String(w.name || w.id) + ' · ' + String(w.status || ''), String(w.id));
+            option.dataset.backend = w.backend || '';
+            select.append(option);
+          });
+        })
+        .catch(() => { select.innerHTML = ''; select.append(new Option('Workerprofile nicht erreichbar', '')); });
+    }
+
+    function syncResumeBackendFromWorker() {
+      const workerSelect = document.getElementById('resume-worker-id');
+      const backendSelect = document.getElementById('resume-backend');
+      if (!workerSelect || !backendSelect) return;
+      const option = workerSelect.selectedOptions && workerSelect.selectedOptions[0];
+      const backend = option && option.dataset ? String(option.dataset.backend || '') : '';
+      if (backend && Array.from(backendSelect.options).some((opt) => opt.value === backend)) {
+        backendSelect.value = backend;
+      }
+      populateResumeModels();
+    }
+
+    function populateResumeModels() {
+      const backendSelect = document.getElementById('resume-backend');
+      const modelSelect = document.getElementById('resume-model');
+      if (!modelSelect) return;
+      const backend = (backendSelect && backendSelect.value) ? backendSelect.value : 'ollama';
+      modelSelect.innerHTML = '';
+      modelSelect.append(new Option('Standard (kein Modell vorgeben)', ''));
+      fetch('/api/system/workers/models?backend=' + encodeURIComponent(backend))
+        .then((res) => res.json().catch(() => ({})))
+        .then((data) => {
+          const models = [...new Set((data.models || []).filter((m) => typeof m === 'string' && m.trim()))];
+          if (!models.length) { modelSelect.append(new Option('(Keine Modelle gefunden – Standard verwenden)', '')); return; }
+          models.forEach((m) => { modelSelect.append(new Option(m, m)); });
+        })
+        .catch(() => { modelSelect.append(new Option('(Modellliste nicht erreichbar – Standard verwenden)', '')); });
     }
 
     function openPickupWerkstattModal() { location.assign('/agenten/blueprints?tab=templates'); }
