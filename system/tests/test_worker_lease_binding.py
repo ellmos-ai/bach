@@ -856,3 +856,29 @@ def test_external_profile_acquire_rejects_mismatched_route(
             slot=slot, automatic=True,
         )
     assert client.read(task_id, now=T0).leased is False
+
+
+def test_foreign_detail_names_the_bound_scope_and_keeps_the_binding(binding):
+    """#2518: the model learns that only its own task is readable and keeps working."""
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    with pytest.raises(WorkerTaskManageArgumentError) as exc:
+        binding.execute_task_manage({"action": "detail", "task_id": binding.task_id + 999})
+    assert exc.value.reason == "detail_scope" and "eigene ID" in exc.value.user_message
+    binding.assert_active()
+    assert f"id: {binding.task_id}" in binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+
+
+@pytest.mark.parametrize("owner, accepted", [("help-inventory", False), ("OLLAMA", True)])
+def test_subtask_owner_must_be_a_known_assignee(binding, mem_db, owner, accepted):
+    """#2518: Buddha wrote a topic into assigned_to; no worker could pick the children."""
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    args = {"action": "decompose", "task_id": binding.task_id, "close_parent": False,
+            "subtasks": [{"title": "Kind", "assigned_to": owner}]}
+    if accepted:
+        assert "in 1 Teilaufgaben" in binding.execute_task_manage(args)
+    else:
+        with pytest.raises(WorkerTaskManageArgumentError) as exc:
+            binding.execute_task_manage(args)
+        assert exc.value.reason == "decompose_assignee"
+        assert mem_db.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()[0] == 0
+    binding.assert_active()
