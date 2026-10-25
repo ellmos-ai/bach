@@ -850,8 +850,17 @@ INLINE_COMMANDS = {
 }
 
 
+def _ellmos_worker_module():
+    """Laedt das ellmos-worker-Modul optional; None, falls nicht verfuegbar."""
+    try:
+        from hub._services import ellmos_worker as ew
+        return ew
+    except Exception:
+        return None
+
+
 def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]:
-    """Versucht ein Tool aus tools/ auszufuehren."""
+    """Versucht ein Tool aus tools/ auszufuehren (mit ellmos-worker-Pruefkette)."""
     import subprocess
 
     tool_file = None
@@ -872,6 +881,37 @@ def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]
     if dry_run:
         print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
         return 0
+
+    # ── ellmos-worker: Pruefkette Quarantaene → Scope → content-guard → Erlaubnis ──
+    ew = _ellmos_worker_module()
+    if ew is not None:
+        try:
+            from pathlib import Path
+            try:
+                from hub.claude_permissions import controlcenter_evaluate_permission
+            except Exception:
+                controlcenter_evaluate_permission = None
+
+            def _execute(tool_name, norm_args):
+                cmd_line = [sys.executable, str(tool_file)] + list(norm_args)
+                result = subprocess.run(cmd_line, cwd=str(BACH_DIR))
+                return result.returncode
+
+            allowed = {f.stem.strip().lower() for f in TOOLS_DIR.glob("*.py")}
+            allowed.add(tool_file.stem.strip().lower())
+            chain = ew.VerificationChain(
+                ew.Ledger(Path(str(BACH_DIR)) / "ellmos-worker-ledger.jsonl"),
+                ew.QuarantineChecker(allowed),
+                ew.ScopeChecker({tool_file.stem.strip().lower(): "tools"}, {"tools"}),
+                ew.ContentGuardChecker(),
+                ew.PermissionAdapter(controlcenter_evaluate_permission),
+                _execute,
+            )
+            return chain.execute(tool_file.stem, args)
+        except Exception as e:
+            print(f"[ERROR] Pruefkette: {e}")
+            return 1
+
     log(f"[TOOL] {tool_file.stem} {' '.join(args)}")
     try:
         cmd_line = [sys.executable, str(tool_file)] + args
