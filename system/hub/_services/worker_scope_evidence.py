@@ -354,15 +354,17 @@ def project_scope_evidence(data, *, repo_root=None, worktrees_dir=None) -> dict:
                         "result_revision": scope.get("result_revision")}
     review = result.get("model_review")
     if isinstance(review, dict) and review.get("availability") == "recorded":
-        # A text-result review binds to the submission; there is no tree to observe.
-        text_revision = None
-        if source_kind(result) != "external_attested" and scope.get("reason") == "scope_not_recorded":
-            from .worker_result_review import text_result_revision
-            text_revision = text_result_revision(result)
+        # A submission-bound review has no captured scope to observe; the DB
+        # reader already bound it to this submission and its stored tree diff.
+        submission_bound = (source_kind(result) != "external_attested"
+                            and scope.get("reason") == "scope_not_recorded"
+                            and review.get("target_kind") == "submission"
+                            and isinstance(result.get("submission_revision"), str)
+                            and review.get("target_submission_revision") == result["submission_revision"])
         matches = ((scope.get("availability") == "available"
                     and isinstance(scope.get("result_revision"), str)
                     and review.get("result_revision") == scope["result_revision"])
-                   or (text_revision is not None and review.get("result_revision") == text_revision))
+                   or submission_bound)
         projected_result["model_review"] = {
             **review, "availability": "available" if matches else "unavailable",
             **({} if matches else {"reason": "review_scope_not_current"}),

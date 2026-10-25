@@ -19,8 +19,6 @@ from . import worker_policy_settings as settings
 from . import worker_review_identity as identity
 from .task_lease import _history, _local_naive, _utcnow, task_content_version
 from .task_result_service import read_result
-from .chat.worker_write_guard import _WRITE_TOOLS
-from .worker_completion_contract import parse_contract
 from .worker_execution_evidence import (_digest as execution_digest, _event as execution_event,
                                         _owned as owned_execution, _submitted)
 from .worker_scope_evidence import project_scope_evidence
@@ -32,15 +30,18 @@ _INTENT_SCHEMA = "bach.worker-result-review-intent.v1"
 _REVIEW_SCHEMA = "bach.worker-result-model-review.v1"
 _EXTERNAL_INTENT_SCHEMA = "bach.worker-result-review-intent.external-attested.v1"
 _EXTERNAL_REVIEW_SCHEMA = "bach.worker-result-model-review.external-attested.v1"
-_TEXT_INTENT_SCHEMA = "bach.worker-result-review-intent.text-result.v1"
-_TEXT_REVIEW_SCHEMA = "bach.worker-result-model-review.text-result.v1"
-_TEXT_REVISION_SCHEMA = "bach.worker-text-result-revision.v1"
+_UNSCOPED_INTENT_SCHEMA = "bach.worker-result-review-intent.submission-bound.v1"
+_UNSCOPED_REVIEW_SCHEMA = "bach.worker-result-model-review.submission-bound.v1"
+_UNSCOPED_REVISION_SCHEMA = "bach.worker-submission-bound-revision.v1"
 _INVALID_SCHEMA = "bach.worker-review-invalid-result.v1"
 _OBSOLETE_SCHEMA = "bach.worker-review-obsolete-child.v1"
 _READ_SCHEMA = "bach.worker-result-review-evidence.v1"
 _HEX = re.compile(r"[a-f0-9]{64}\Z")
+_OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SUBMISSION_REVISION = re.compile(r"sha256:[a-f0-9]{64}\Z")
 _PR_REFERENCE = re.compile(r"github\.com/[^/\s]+/[^/\s]+/pull/\d+", re.IGNORECASE)
+# Bounded for small local reviewer contexts; a cut diff can never be approved.
+_TREE_DIFF_LIMIT = 40000
 _SOURCE = "worker-result-review:v1:"
 
 
@@ -48,7 +49,8 @@ class ReviewGrant:
     """One process-private permission to run a particular review task."""
 
     __slots__ = ("_seal", "task_id", "task_version", "target_task_id", "target_result_id",
-                 "target_revision", "target_kind", "worker_id", "host", "generation", "slot_id", "route",
+                 "target_revision", "target_kind", "target_tree", "worker_id", "host",
+                 "generation", "slot_id", "route",
                  "requested_model", "principal_id", "policy_version", "identity_version",
                  "_is_current", "_stop_event", "_last_answer", "_last_answer_sha256")
 
@@ -184,8 +186,8 @@ def _target_record(conn, task_id, *, repo_root=None, worktrees_dir=None):
         return None
 
 
-def _text_pin(record):
-    """Pure facts of a native result that never had a code scope."""
+def _unscoped_pin(record):
+    """Pure facts of a native result without a captured code scope."""
     if not isinstance(record, dict) or source_kind(record) != "native":
         return None
     scope, execution = record.get("scope", {}), record.get("execution", {})
@@ -196,61 +198,79 @@ def _text_pin(record):
             or not _HEX.fullmatch(execution["execution_revision"])
             or type(author_slot(record)) is not str or not author_slot(record)):
         return None
-    return {"source_kind": "native_text", "execution_id": execution["execution_id"],
+    return {"source_kind": "native_unscoped", "execution_id": execution["execution_id"],
             "execution_revision": execution["execution_revision"], "slot_id": author_slot(record)}
 
 
 def _review_pin(record):
-    return source_pin(record) or _text_pin(record)
+    return source_pin(record) or _unscoped_pin(record)
 
 
-def text_result_revision(record):
-    """Review revision of a text result: its submission, never a Git tree."""
-    revision = record.get("submission_revision") if isinstance(record, dict) else None
-    if type(revision) is not str or not _SUBMISSION_REVISION.fullmatch(revision):
-        return None
-    return _digest({"schema": _TEXT_REVISION_SCHEMA, "submission_revision": revision})
-
-
-def _text_guard(conn, record):
-    """DB proof that a result without scope carries no code or GitHub deliverable.
-
-    Native workers change files only through traced write tools (write_file,
-    execute_command, start_task_worktree, ...). Any such call, a scope capture
-    event, a declared Git criterion or a GitHub PR gate/link keeps the result
-    off the text route; an unparsable contract counts as unknown, not as none.
-    """
-    if _text_pin(record) is None or type(record.get("result")) is not str:
-        return False
-    task_id = record["task_id"]
-    task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
-    raw_contract = task.get("completion_contract_json") if task else None
-    contract = parse_contract(raw_contract) if raw_contract else None
-    if (task is None or task.get("github_pr_review_required") not in (None, 0)
-            or task.get("github_review_contract_json")
-            or (raw_contract and (contract is None or any(
-                item["kind"] == "git_blob_sha256" for item in contract["criteria"])))
-            or _PR_REFERENCE.search(record["result"])
-            or conn.execute("SELECT 1 FROM task_history WHERE task_id=? AND "
-                            "action='worker_result_scope_capture' LIMIT 1",
-                            (task_id,)).fetchone() is not None):
-        return False
-    if not _table(conn, "worker_tool_trace_events"):
+def _tree_state_valid(state):
+    if state == {"availability": "absent"}:
         return True
-    tools = sorted(_WRITE_TOOLS)
-    return conn.execute("SELECT 1 FROM worker_tool_trace_events WHERE task_id=? AND tool_name IN ("
-                        + ",".join("?" * len(tools)) + ") LIMIT 1",
-                        (task_id, *tools)).fetchone() is None
+    return (type(state) is dict
+            and set(state) == {"availability", "base_oid", "head_oid", "diff", "diff_sha256",
+                               "diff_chars", "truncated"}
+            and state["availability"] == "diff"
+            and all(type(state[key]) is str and _OID.fullmatch(state[key]) is not None
+                    for key in ("base_oid", "head_oid"))
+            and type(state["diff"]) is str and type(state["diff_sha256"]) is str
+            and _HEX.fullmatch(state["diff_sha256"]) is not None
+            and type(state["diff_chars"]) is int and len(state["diff"]) <= state["diff_chars"]
+            and state["truncated"] is (len(state["diff"]) < state["diff_chars"]))
 
 
-def _text_target_record(conn, task_id, *, prove_tree_absent, repo_root=None, worktrees_dir=None):
-    """Native result without code scope, bound to its submission revision.
+def submission_bound_revision(record, tree_state):
+    """Review revision of an unscoped result: its submission plus the stored tree diff."""
+    revision = record.get("submission_revision") if isinstance(record, dict) else None
+    if (type(revision) is not str or not _SUBMISSION_REVISION.fullmatch(revision)
+            or not _tree_state_valid(tree_state)):
+        return None
+    return _digest({"schema": _UNSCOPED_REVISION_SCHEMA, "submission_revision": revision,
+                    "tree_sha256": _digest(tree_state)})
 
-    Git runs only before the intent exists, to prove that no task tree or
-    branch registration can hold unreviewed changes. Every later check is
-    DB-only: same result, submission revision and guard facts.
+
+def _tree_state(task_id, *, repo_root=None, worktrees_dir=None):
+    """Observe the task tree once, before an intent exists; None if unproven."""
+    from .chat.worker_write_guard import WorkerWriteGuardError, task_tree_diff
+    from .worker_completion_policy import _definitely_missing_task_tree
+    try:
+        return task_tree_diff(task_id, limit=_TREE_DIFF_LIMIT, repo_root=repo_root,
+                              worktrees_dir=worktrees_dir)
+    except (WorkerWriteGuardError, OSError, ValueError):
+        pass
+    if _definitely_missing_task_tree(task_id, repo_root=repo_root, worktrees_dir=worktrees_dir):
+        return {"availability": "absent"}
+    return None
+
+
+def _unscoped_guard(conn, record):
+    """DB facts that keep an unscoped result off the GitHub and corrupt-scope routes.
+
+    Work in any form is reviewed (user decision 2026-10-25). A PR gate or link
+    is reviewed on GitHub; a capture event without a scope row is damaged
+    evidence, not a result that never had a scope.
     """
-    if prove_tree_absent and conn.in_transaction:
+    if _unscoped_pin(record) is None or type(record.get("result")) is not str:
+        return False
+    task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (record["task_id"],)))
+    return (task is not None and task.get("github_pr_review_required") in (None, 0)
+            and not task.get("github_review_contract_json")
+            and _PR_REFERENCE.search(record["result"]) is None
+            and conn.execute("SELECT 1 FROM task_history WHERE task_id=? AND "
+                             "action='worker_result_scope_capture' LIMIT 1",
+                             (record["task_id"],)).fetchone() is None)
+
+
+def _unscoped_target_record(conn, task_id, *, tree_state=None, repo_root=None, worktrees_dir=None):
+    """Native result without a captured scope, bound to its submission and tree diff.
+
+    Without ``tree_state`` the task tree is observed once (Git, outside any
+    transaction) to build the review package. With the intent's stored state
+    every check is DB-only: same result, same submission, same guard facts.
+    """
+    if tree_state is None and conn.in_transaction:
         return None
     try:
         task = _row(conn.execute("SELECT claim_id FROM tasks WHERE id=?", (task_id,)))
@@ -260,15 +280,14 @@ def _text_target_record(conn, task_id, *, prove_tree_absent, repo_root=None, wor
                 or observed.get("status") != "review" or not isinstance(record, dict)
                 or record.get("reason") != "awaiting_review"
                 or record.get("submission", {}).get("availability") != "available"
-                or text_result_revision(record) is None
-                or not _text_guard(conn, record)):
+                or not _unscoped_guard(conn, record)):
             return None
-        if prove_tree_absent:
-            from .worker_completion_policy import _definitely_missing_task_tree
-            if not _definitely_missing_task_tree(task_id, repo_root=repo_root,
-                                                 worktrees_dir=worktrees_dir):
-                return None
-        return {**record, "result_revision": text_result_revision(record)}
+        if tree_state is None:
+            tree_state = _tree_state(task_id, repo_root=repo_root, worktrees_dir=worktrees_dir)
+        revision = submission_bound_revision(record, tree_state)
+        if revision is None:
+            return None
+        return {**record, "tree_state": tree_state, "result_revision": revision}
     except (sqlite3.Error, ValueError, TypeError, KeyError, settings.PolicyUnavailable):
         return None
 
@@ -280,7 +299,7 @@ def _target_authority(conn, record):
         current = _policy_snapshot(conn, record["task_id"])
         model_ids = _identity_snapshot(conn)
         author = author_principal(model_ids, record)
-        if author is None and _text_guard(conn, record):
+        if author is None and _unscoped_guard(conn, record):
             author = identity.principal_for_execution(model_ids, record["execution"])
         exclude_author = settings.exclude_author_model(conn)
         eligible = (_policy_eligible(policy, author, exclude_author=exclude_author)
@@ -327,18 +346,18 @@ def _same_target_db(conn, record, authority):
 
 def _intent_schema(target):
     return (_EXTERNAL_INTENT_SCHEMA if source_kind(target) == "external_attested"
-            else _TEXT_INTENT_SCHEMA if _text_pin(target) is not None else _INTENT_SCHEMA)
+            else _UNSCOPED_INTENT_SCHEMA if _unscoped_pin(target) is not None else _INTENT_SCHEMA)
 
 
 def _review_schema(target):
     return (_EXTERNAL_REVIEW_SCHEMA if source_kind(target) == "external_attested"
-            else _TEXT_REVIEW_SCHEMA if _text_pin(target) is not None else _REVIEW_SCHEMA)
+            else _UNSCOPED_REVIEW_SCHEMA if _unscoped_pin(target) is not None else _REVIEW_SCHEMA)
 
 
 def _intent_author_fields(target):
     if source_kind(target) == "external_attested":
         return {"author_source": source_pin(target)}
-    if _text_pin(target) is not None:
+    if _unscoped_pin(target) is not None:
         return {"execution_revision": target["execution"]["execution_revision"],
                 "author_execution_id": target["execution"]["execution_id"],
                 "author_slot_id": author_slot(target)}
@@ -363,11 +382,13 @@ def _intent_source_valid(receipt):
     if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA:
         return (_external_pin_valid(receipt.get("author_source"))
                 and receipt["author_source"]["model_principal_id"] == receipt.get("author_id"))
-    if receipt.get("schema") == _TEXT_INTENT_SCHEMA:
+    if receipt.get("schema") == _UNSCOPED_INTENT_SCHEMA:
         return (type(receipt.get("execution_revision")) is str
                 and _HEX.fullmatch(receipt["execution_revision"]) is not None
                 and all(type(receipt.get(key)) is str and receipt[key] for key in (
-                    "author_execution_id", "author_slot_id")))
+                    "author_execution_id", "author_slot_id"))
+                and (revision := submission_bound_revision(receipt, receipt.get("tree_state")))
+                is not None and receipt.get("target_revision") == revision)
     return (receipt.get("schema") == _INTENT_SCHEMA
         and all(type(receipt.get(key)) is str and _HEX.fullmatch(receipt[key]) for key in (
             "execution_revision", "scope_receipt_sha256"))
@@ -391,7 +412,7 @@ def _intent_same_author(receipt, target):
     this recovery path must detect. Normal dispatch/submit still requires
     the complete source match.
     """
-    if source_kind(target) != "native" or _text_pin(target) is not None:
+    if source_kind(target) != "native" or _unscoped_pin(target) is not None:
         return _intent_source_matches(receipt, target)
     return (source_pin(target) is not None and receipt.get("schema") == _INTENT_SCHEMA
             and _intent_source_valid(receipt)
@@ -441,8 +462,9 @@ def _intent(conn, review_task_id):
                                     "submission_revision", "author_generation", "author_id",
                                     "policy_version", "identity_version"} | (
                                         {"author_source"} if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA else
-                                        {"execution_revision", "author_execution_id", "author_slot_id"}
-                                        if receipt.get("schema") == _TEXT_INTENT_SCHEMA else
+                                        {"execution_revision", "author_execution_id", "author_slot_id",
+                                         "tree_state"}
+                                        if receipt.get("schema") == _UNSCOPED_INTENT_SCHEMA else
                                         {"execution_revision", "scope_receipt_sha256", "author_execution_id", "author_slot_id"})
                 or _digest(receipt) != row["intent_sha256"]
                 or receipt.get("review_task_id") != review_task_id
@@ -525,30 +547,58 @@ def list_review_candidates(conn, limit=100, offset=0):
     return result
 
 
+def _prepare_native_review(conn, task_id, *, result_id=None, repo_root=None, worktrees_dir=None):
+    if review_task_marker(conn, task_id):
+        return None
+    target = _target_record(conn, task_id, repo_root=repo_root, worktrees_dir=worktrees_dir)
+    if target is None:
+        # Separate route: the result has no captured scope; its tree diff is reviewed.
+        target = _unscoped_target_record(conn, task_id, repo_root=repo_root,
+                                         worktrees_dir=worktrees_dir)
+    if (target is None or (result_id is not None and result_id != target["result_id"])
+            or source_kind(target) != "native"):
+        return None
+    authority = _target_authority(conn, target)
+    if authority is None:
+        return None
+    return _prepare_target_review(conn, target, authority)
+
+
 def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
     """Create one ordinary pending review task after a real author submission."""
     if conn.in_transaction or getattr(getattr(binding, "_client", None), "mode", None) != "local":
         return None
     try:
         author_record = _submitted(conn, binding)
-        if author_record is None or review_task_marker(conn, binding.task_id):
+        if author_record is None:
             return None
-        target = _target_record(conn, binding.task_id, repo_root=repo_root,
-                                worktrees_dir=worktrees_dir)
-        if target is None:
-            # Separate route: a result that provably never had a code scope.
-            target = _text_target_record(conn, binding.task_id, prove_tree_absent=True,
-                                         repo_root=repo_root, worktrees_dir=worktrees_dir)
-        if (target is None or author_record["result_id"] != target["result_id"]
-                or source_kind(target) != "native"):
-            return None
-        authority = _target_authority(conn, target)
-        if authority is None:
-            return None
-        return _prepare_target_review(conn, target, authority)
+        return _prepare_native_review(conn, binding.task_id, result_id=author_record["result_id"],
+                                      repo_root=repo_root, worktrees_dir=worktrees_dir)
     except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError,
             settings.PolicyUnavailable):
         return None
+
+
+def prepare_pending_review_tasks(conn, *, repo_root=None, worktrees_dir=None):
+    """Local controller backfill: one review task per eligible native result in review.
+
+    Same gates as after a fresh submission; idempotent, never accepts anything.
+    """
+    if conn.in_transaction:
+        raise ValueError("Review-Backfill benötigt eine freie DB-Verbindung")
+    ids = [row[0] for row in conn.execute(
+        "SELECT id FROM tasks WHERE status='review' AND (claim_id IS NULL OR claim_id='') ORDER BY id")]
+    prepared = []
+    for task_id in ids:
+        try:
+            result = _prepare_native_review(conn, task_id, repo_root=repo_root,
+                                            worktrees_dir=worktrees_dir)
+        except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError,
+                settings.PolicyUnavailable):
+            result = None
+        if result is not None:
+            prepared.append(result)
+    return prepared
 
 
 def validate_external_review_target(payload):
@@ -602,9 +652,16 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None):
                 conn.rollback()
                 return None
             _ensure_schema(conn)
-            old = _row(conn.execute("SELECT review_task_id FROM worker_result_review_intents "
-                                    "WHERE target_result_id=? AND target_revision=?",
-                                    (target["result_id"], target["result_revision"])))
+            unscoped = _intent_schema(target) == _UNSCOPED_INTENT_SCHEMA
+            if unscoped:
+                # One package per result, even if its tree moves after the first one.
+                old = _row(conn.execute("SELECT review_task_id FROM worker_result_review_intents "
+                                        "WHERE target_result_id=? ORDER BY review_task_id LIMIT 1",
+                                        (target["result_id"],)))
+            else:
+                old = _row(conn.execute("SELECT review_task_id FROM worker_result_review_intents "
+                                        "WHERE target_result_id=? AND target_revision=?",
+                                        (target["result_id"], target["result_revision"])))
             if old is not None:
                 result = review_task_metadata(conn, old["review_task_id"])
                 conn.commit()
@@ -631,7 +688,8 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None):
                        "author_generation": target["generation"],
                        "author_id": authority["author_id"],
                        "policy_version": authority["policy_version"],
-                       "identity_version": authority["identity_version"]}
+                       "identity_version": authority["identity_version"],
+                       **({"tree_state": target["tree_state"]} if unscoped else {})}
             digest = _digest(receipt)
             event_id = _history(conn, target["task_id"], "worker_result_review_task", _ACTOR,
                                 now, {"intent_sha256": digest, "review_task_id": review_task_id,
@@ -657,9 +715,10 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None):
 
 def _intent_target(conn, found, *, repo_root=None, worktrees_dir=None):
     receipt = found["receipt"]
-    if receipt["schema"] == _TEXT_INTENT_SCHEMA:
-        # No Git revalidation: the unchanged result and submission are the target.
-        target = _text_target_record(conn, receipt["target_task_id"], prove_tree_absent=False)
+    if receipt["schema"] == _UNSCOPED_INTENT_SCHEMA:
+        # No Git revalidation: unchanged result and submission plus the stored diff.
+        target = _unscoped_target_record(conn, receipt["target_task_id"],
+                                         tree_state=receipt["tree_state"])
     else:
         target = _target_record(conn, receipt["target_task_id"], repo_root=repo_root,
                                 worktrees_dir=worktrees_dir)
@@ -726,7 +785,9 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
             task_version=task_content_version(task),
             target_task_id=target["task_id"], target_result_id=target["result_id"],
             target_revision=target["result_revision"],
-            target_kind="text_result" if found["receipt"]["schema"] == _TEXT_INTENT_SCHEMA else "scope",
+            target_kind=("submission" if found["receipt"]["schema"] == _UNSCOPED_INTENT_SCHEMA
+                         else "scope"),
+            target_tree=copy.deepcopy(found["receipt"].get("tree_state")),
             worker_id=worker_id, host=host,
             generation=generation, slot_id=slot_id, route=route,
             requested_model=requested_model, principal_id=principal,
@@ -1637,7 +1698,11 @@ def read_review_evidence(conn, record):
                 "independent": (receipt["review_generation"] != receipt["author_generation"]
                     and not _author_model_blocked(authority, receipt["reviewer_id"])),
                 "policy_eligible": receipt["reviewer_id"] in authority["eligible"],
-                "event_id": row["event_id"]}
+                "event_id": row["event_id"],
+                # Lets the scope projection keep a submission-bound review without a tree observation.
+                **({"target_kind": "submission",
+                    "target_submission_revision": receipt["target_submission_revision"]}
+                   if receipt["schema"] == _UNSCOPED_REVIEW_SCHEMA else {})}
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,
             settings.PolicyUnavailable):
         return _unavailable("review_evidence_invalid")
