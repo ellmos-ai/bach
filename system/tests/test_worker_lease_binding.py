@@ -856,3 +856,88 @@ def test_external_profile_acquire_rejects_mismatched_route(
             slot=slot, automatic=True,
         )
     assert client.read(task_id, now=T0).leased is False
+
+
+def test_foreign_detail_names_the_bound_scope_and_keeps_the_binding(binding):
+    """#2518: the model learns that only its own task is readable and keeps working."""
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    with pytest.raises(WorkerTaskManageArgumentError) as exc:
+        binding.execute_task_manage({"action": "detail", "task_id": binding.task_id + 999})
+    assert exc.value.reason == "detail_scope" and "eigene ID" in exc.value.user_message
+    binding.assert_active()
+    assert f"id: {binding.task_id}" in binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+
+
+@pytest.mark.parametrize("owner, accepted", [("help-inventory", False), ("OLLAMA", True)])
+def test_subtask_owner_must_be_a_known_assignee(binding, owner, accepted):
+    db = binding._client._conn
+    """#2518: Buddha wrote a topic into assigned_to; no worker could pick the children."""
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    args = {"action": "decompose", "task_id": binding.task_id, "close_parent": False,
+            "subtasks": [{"title": "Kind", "assigned_to": owner}]}
+    if accepted:
+        assert "in 1 Teilaufgaben" in binding.execute_task_manage(args)
+    else:
+        with pytest.raises(WorkerTaskManageArgumentError) as exc:
+            binding.execute_task_manage(args)
+        assert exc.value.reason == "decompose_assignee"
+        assert db.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()[0] == 0
+    binding.assert_active()
+
+
+@pytest.mark.parametrize('backend', ['openrouter', 'ollama-cloud'])
+@pytest.mark.parametrize('action', ['add', 'decompose'])
+def test_existing_exact_cloud_route_remains_creatable(binding, backend, action):
+    db = binding._client._conn
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    slot={'id':'cloud-profile-review', 'backend':backend, 'model':'provider/model'}
+    child={'title':'Isolated route child', 'assigned_to':backend, 'assigned_slot':slot['id'], 'required_model':slot['model']}
+    # Existing queue selection recognizes this exact owner/profile/model tuple.
+    assert WorkerLeaseBinding._selection_rejection_reason(child, slot) is None
+    args={'action':'add', **child} if action=='add' else {'action':'decompose','task_id':binding.task_id,'subtasks':[child],'close_parent':False}
+    binding.execute_task_manage(args)
+    row=db.execute('SELECT id,assigned_to,assigned_slot,required_model FROM tasks WHERE id<>?',(binding.task_id,)).fetchone()
+    assert row is not None
+    snapshot=binding._client.task_snapshot(row['id'])
+    assert snapshot['assigned_to']==backend
+    assert WorkerLeaseBinding._selection_rejection_reason(snapshot,slot) is None
+    binding.assert_active()
+
+@pytest.mark.parametrize('action', ['add','decompose'])
+def test_existing_empty_owner_inherits_the_parent(binding,action):
+    db = binding._client._conn
+    parent=binding.task_snapshot()
+    child={'title':'Isolated inherited owner child','assigned_to':''}
+    args={'action':'add',**child} if action=='add' else {'action':'decompose','task_id':binding.task_id,'subtasks':[child],'close_parent':False}
+    binding.execute_task_manage(args)
+    row=db.execute('SELECT assigned_to FROM tasks WHERE id<>?',(binding.task_id,)).fetchone()
+    assert row['assigned_to']==(parent.get('assigned_to') or 'bach')
+    binding.assert_active()
+
+
+@pytest.mark.parametrize("action", ["add", "decompose"])
+def test_unknown_child_owner_still_rejected_before_creation(binding, action):
+    db = binding._client._conn
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    child = {"title": "Topic is not an owner", "assigned_to": "help-inventory"}
+    args = {"action": "add", **child} if action == "add" else {
+        "action": "decompose", "task_id": binding.task_id, "subtasks": [child], "close_parent": False}
+    with pytest.raises(WorkerTaskManageArgumentError) as exc:
+        binding.execute_task_manage(args)
+    assert exc.value.reason == "decompose_assignee"
+    assert db.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()[0] == 0
+    binding.assert_active()
+
+
+@pytest.mark.parametrize("backend", ["openrouter", "ollama-cloud"])
+def test_cloud_owner_from_decompose_defaults_remains_creatable(binding, backend):
+    db = binding._client._conn
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    slot = {"id": "cloud-profile-review", "backend": backend, "model": "provider/model"}
+    binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
+        "assigned_to": backend, "assigned_slot": slot["id"], "required_model": slot["model"],
+        "subtasks": [{"title": "Inherited cloud route"}], "close_parent": False})
+    child = db.execute("SELECT id FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()
+    assert child is not None
+    assert WorkerLeaseBinding._selection_rejection_reason(binding._client.task_snapshot(child["id"]), slot) is None
+    binding.assert_active()

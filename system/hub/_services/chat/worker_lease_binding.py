@@ -40,12 +40,20 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "update_completion": 'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.',
         "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.',
         "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
+        "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
+        "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
     }
 
     def __init__(self, reason):
         self.reason = reason
         self.user_message = self._GUIDANCE[reason]
         super().__init__(self.user_message)
+
+
+# Named child owners include the existing exact cloud-profile routes.
+# Missing/empty owners retain the native lease service's parent inheritance.
+_SUBTASK_ASSIGNEES = frozenset({"bach", "buddha", "ollama", "claude", "gemini", "copilot", "chatgpt",
+                                "perplexity", "human", "user"}) | _EXTERNAL_PROFILE_BACKENDS
 
 
 class WorkerLeaseBinding:
@@ -996,7 +1004,7 @@ class WorkerLeaseBinding:
                 if (set(args) != {"action", "task_id"}
                         or type(args.get("task_id")) is not int
                         or args["task_id"] != self.task_id):
-                    raise LeaseProtocolError("Taskdetail ist auf die gebundene Task begrenzt")
+                    raise WorkerTaskManageArgumentError("detail_scope")
                 snapshot = self.task_snapshot()
                 return "\n".join(f"{key}: {value}" for key, value in snapshot.items())
             if action != "add" and (type(args.get("task_id")) is not int
@@ -1098,6 +1106,10 @@ class WorkerLeaseBinding:
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")
                                        if key in args}, **item} if isinstance(item, dict) else item
                                     for item in subtasks]
+                for item in subtasks if isinstance(subtasks, list) else ():
+                    owner = item.get("assigned_to") if isinstance(item, dict) else None
+                    if owner not in (None, "") and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
+                        raise WorkerTaskManageArgumentError("decompose_assignee")
                 previous_version = self._snapshot["task_version"]
                 ack = self._operation(self._client.decompose, subtasks=subtasks,
                                       close_parent=close_parent, sequential=args.get("sequential", False))
