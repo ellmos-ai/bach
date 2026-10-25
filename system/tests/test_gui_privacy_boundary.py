@@ -1,17 +1,19 @@
 """Private GUI APIs cannot be read by browser origins or local anonymous clients."""
 import asyncio
 import json
+import sqlite3
 import subprocess
 from pathlib import Path
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from gui import server
+from gui import device_auth, server
 from gui.api import unified_api
 
 
@@ -340,3 +342,167 @@ def test_nav_config_error_does_not_leak_details(client, monkeypatch, tmp_path):
     monkeypatch.setattr(unified_api, "_find_existing_path", lambda candidates: broken)
     body = client.get("/api/nav/config").json()
     assert body == {"error": "nav_config_unreadable", "areas": []}
+
+
+@pytest.fixture
+def browser_client(tmp_path, monkeypatch):
+    database = tmp_path / "browser-sessions.db"
+    connection = sqlite3.connect(database)
+    try:
+        token = device_auth.create_device("browser-session-fixture", connection)
+    finally:
+        connection.close()
+    monkeypatch.setattr(device_auth, "GET_CONNECTION", lambda: sqlite3.connect(database))
+    monkeypatch.setattr(server, "ws_manager", server.ConnectionManager())
+
+    @asynccontextmanager
+    async def isolated_lifespan(app):
+        # Exercise the actual ASGI routes on one event loop without service startup.
+        yield
+
+    monkeypatch.setattr(server.app.router, "lifespan_context", isolated_lifespan)
+    with TestClient(server.app) as client:
+        client._fixture_device_token = token
+        client._fixture_database = database
+        yield client
+
+
+def _login(client):
+    client.cookies.clear()
+    response = client.post("/api/devices/verify", json={"token": client._fixture_device_token})
+    assert response.status_code == 200 and response.json()["valid"] is True
+    return client.cookies.get("bach_device_token")
+
+
+def _socket(client, cookie, *, bearer=False):
+    headers = {"Origin": "http://testserver", "Cookie": "bach_device_token=" + cookie}
+    if bearer:
+        headers["Authorization"] = "Bearer " + client._fixture_device_token
+    return client.websocket_connect("/ws", headers=headers)
+
+
+def _closed(socket):
+    with pytest.raises(WebSocketDisconnect) as exc:
+        socket.receive_json()
+    assert exc.value.code == 1008
+
+
+def test_logout_closes_cookie_websocket(browser_client):
+    client = browser_client
+    cookie = _login(client)
+    with _socket(client, cookie) as socket:
+        socket.send_text("ping")
+        assert socket.receive_json()["type"] == "pong"
+        response = client.post("/api/devices/session/logout")
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "authenticated": False}
+        assert len(server.ws_manager.active_connections) == 0
+        _closed(socket)
+        assert client.get("/api/devices").status_code == 401
+        assert client.get("/api/devices", headers={
+            "Authorization": "Bearer " + client._fixture_device_token,
+        }).status_code == 200
+
+
+def test_logout_preserves_other_session_and_explicit_bearer(browser_client):
+    client = browser_client
+    first, second = _login(client), _login(client)
+    assert first != second
+    with (_socket(client, first) as first_socket,
+          _socket(client, first) as other_tab,
+          _socket(client, second) as second_socket,
+          _socket(client, first, bearer=True) as native_socket):
+        client.cookies.clear()
+        client.cookies.set("bach_device_token", first)
+        assert client.post("/api/devices/session/logout").status_code == 200
+        assert len(server.ws_manager.active_connections) == 2
+        _closed(first_socket)
+        _closed(other_tab)
+        for socket in (second_socket, native_socket):
+            socket.send_text("ping")
+            assert socket.receive_json()["type"] == "pong"
+        event = {"type": "task.updated", "payload": {"title": "private-fixture"}}
+        client.portal.call(server.ws_manager.broadcast, event)
+        assert second_socket.receive_json() == native_socket.receive_json() == event
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_reauthentication_closes_previous_cookie_socket(browser_client, valid):
+    client = browser_client
+    cookie = _login(client)
+    with _socket(client, cookie) as socket:
+        token = client._fixture_device_token if valid else "invalid-device-fixture"
+        response = client.post("/api/devices/verify", json={"token": token})
+        assert response.status_code == 200 and response.json()["valid"] is valid
+        assert len(server.ws_manager.active_connections) == 0
+        _closed(socket)
+        assert client.get("/api/devices").status_code == (200 if valid else 401)
+
+
+def test_logout_closes_cookie_connection_during_accept(browser_client, monkeypatch):
+    client = browser_client
+    cookie = _login(client)
+    gate = asyncio.Event()
+    original_accept = WebSocket.accept
+
+    async def delayed_accept(socket, *args, **kwargs):
+        await original_accept(socket, *args, **kwargs)
+        await gate.wait()
+
+    monkeypatch.setattr(WebSocket, "accept", delayed_accept)
+    with _socket(client, cookie) as socket:
+        try:
+            assert client.post("/api/devices/session/logout").status_code == 200
+            assert len(server.ws_manager.active_connections) == 0
+            _closed(socket)
+        finally:
+            client.portal.call(gate.set)
+
+
+@pytest.mark.parametrize("failure", ["exception", "timeout"])
+def test_failed_socket_close_stays_unconfirmed_and_retryable(browser_client, monkeypatch, failure):
+    client = browser_client
+    cookie = _login(client)
+    with _socket(client, cookie) as socket:
+        connection = server.ws_manager.active_connections[0]
+        original_close = connection.close
+
+        async def fail_close(**kwargs):
+            if failure == "timeout":
+                await asyncio.sleep(10)
+                return
+            raise RuntimeError("private-fixture-close-failure")
+
+        monkeypatch.setattr(connection, "close", fail_close)
+        response = client.post("/api/devices/session/logout")
+        assert response.status_code == 503 and response.json()["ok"] is False
+        assert "private-fixture-close-failure" not in response.text
+        assert len(server.ws_manager.active_connections) == 0
+        assert client.cookies.get("bach_device_token") == cookie
+        assert client.get("/api/devices").status_code in (401, 403)
+        monkeypatch.setattr(connection, "close", original_close)
+        assert client.post("/api/devices/session/logout").status_code == 200
+        _closed(socket)
+
+
+def test_unconfirmed_reauthentication_does_not_issue_an_orphan_session(browser_client, monkeypatch):
+    client = browser_client
+    cookie = _login(client)
+    with _socket(client, cookie) as socket:
+        connection = server.ws_manager.active_connections[0]
+        original_close = connection.close
+
+        async def fail_close(**kwargs):
+            raise RuntimeError("private-fixture-close-failure")
+
+        monkeypatch.setattr(connection, "close", fail_close)
+        response = client.post("/api/devices/verify", json={"token": client._fixture_device_token})
+        assert response.status_code == 503 and response.json()["valid"] is None
+        assert client.cookies.get("bach_device_token") == cookie
+        with sqlite3.connect(client._fixture_database) as connection_to_database:
+            assert connection_to_database.execute("SELECT count(*) FROM browser_sessions").fetchone()[0] == 0
+        monkeypatch.setattr(connection, "close", original_close)
+        response = client.post("/api/devices/verify", json={"token": client._fixture_device_token})
+        assert response.status_code == 200 and response.json()["valid"] is True
+        assert client.cookies.get("bach_device_token") != cookie
+        _closed(socket)
