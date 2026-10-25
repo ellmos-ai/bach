@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
 from hub._services.chat.slots_config import ModelRequestBudgetError
+from hub._services.chat.worker_tool_errors import ToolErrorText
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
@@ -127,18 +128,131 @@ def _completion_reserve_hint(binding, remaining, *, task_tool_offered):
             "Freier Text ersetzt keinen bestätigten Task-Werkzeugaufruf.")
 
 
+#: Lesespur im Übergabezettel (BACH-Harness, 25.10.): Nach Übergaben las der
+#: lokale Worker dieselben Dateien neu (#2505: 37 von 53 Aufrufen read_file).
+READ_TRAIL_HEADER = "[LESESPUR dieses Laufs, automatisch aus deinen Werkzeugaufrufen]"
+READ_TRAIL_LIMIT = 40
+READ_TRAIL_MAX_CHARS = 2400
+_READ_TRAIL_ROW = re.compile(r"^\s*(\d+) \| ", re.MULTILINE)
+_READ_TRAIL_CUT = re.compile(r"Zeichen gekürzt; Zeile \d+ ist (?:un|nicht )vollständig angezeigt\. "
+                             r"Weiterlesen mit offset=(\d+)\.\]")
+_READ_TRAIL_HIT = re.compile(r"^(.+?):(\d+):", re.MULTILINE)
+
+
+class _ReadTrail:
+    """Erfolgreiche read_file-/search_text-Aufrufe eines Laufs, über Übergaben hinweg.
+
+    Ein Eintrag je Datei bzw. Suche; es bleiben die jüngsten READ_TRAIL_LIMIT.
+    Abgelehnte oder unbestätigte Aufrufe zählen nicht als gelesen.
+    """
+
+    def __init__(self):
+        self._entries: dict = {}
+
+    def record(self, name, arguments, result) -> None:
+        if name not in ("read_file", "search_text") or isinstance(result, ToolErrorText):
+            return
+        text = str(result)
+        if text.startswith(("Fehler", "BLOCKIERT", "Werkzeugausführung nicht bestätigt")):
+            return
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except ValueError:
+                return
+        if not isinstance(arguments, dict):
+            return
+        path = arguments.get("path")
+        if name == "read_file":
+            span = _read_trail_span(text)
+            if type(path) is not str or not path or span is None:
+                return
+            key = ("read", path)
+            merged = []
+            for start, end in sorted(self._entries.pop(key, []) + [span]):
+                if merged and start <= merged[-1][1] + 1:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+                else:
+                    merged.append((start, end))
+            self._entries[key] = merged
+        else:
+            pattern = arguments.get("pattern")
+            if type(pattern) is not str:
+                return
+            hits = [] if text == "(keine Treffer)" else _READ_TRAIL_HIT.findall(text)
+            count = f"{len(hits)}{'+' if len(text) >= 4000 else ''}"
+            places = [f"{Path(file).name}:{line}" for file, line in hits[:3]]
+            key = ("search", pattern, str(path or "."))
+            self._entries.pop(key, None)
+            self._entries[key] = (count, places)
+        while len(self._entries) > READ_TRAIL_LIMIT:
+            del self._entries[next(iter(self._entries))]
+
+    def render(self) -> str:
+        lines = []
+        for key, value in self._entries.items():
+            if key[0] == "read":
+                ranges = ", ".join(f"{start}–{end}" for start, end in value)
+                lines.append(f"- gelesen {_read_trail_label(key[1], 160)}: Zeilen {ranges}")
+            else:
+                count, places = value
+                lines.append(f"- gesucht {_read_trail_label(key[1], 80)!r} in "
+                             f"{_read_trail_label(key[2], 160)}: {count} Treffer"
+                             + (f" ({', '.join(places)})" if places else ""))
+        while lines and len("\n".join(lines)) > READ_TRAIL_MAX_CHARS:
+            lines.pop(0)
+        if not lines:
+            return ""
+        return (READ_TRAIL_HEADER + "\n" + "\n".join(lines) + "\n"
+                "Lies diese Bereiche nicht erneut; lies nur nach, wenn du für eine "
+                "Änderung den exakten Wortlaut brauchst. Zeilenangaben sind Navigationshilfe.")
+
+
+def _read_trail_label(value: str, limit: int) -> str:
+    """Kürzt nur die Anzeige; ein Prüfsummenkürzel hält gekürzte Pfade unterscheidbar."""
+    if len(value) <= limit:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:8]
+    return f"…{value[-(limit - 11):]} #{digest}"
+
+
+def _read_trail_span(text):
+    """Nur vollständig gezeigte Zeilen; Rohausgabe ohne Zeilennummern belegt nichts."""
+    if text.startswith("{"):
+        try:
+            page = json.loads(text)
+        except ValueError:
+            return None
+        rows = page.get("lines") if page.get("schema") == "ellmos.read-evidence.v1" else None
+        full = [row["line"] for row in rows or () if isinstance(row, dict)
+                and row.get("char_offset") == 0 and row.get("line_complete") is True
+                and type(row.get("line")) is int]
+        return (full[0], full[-1]) if full else None
+    if not text.startswith(("Physische Zeilen ", "Auszug ab physischer Zeile ")):
+        return None
+    rows = [int(number) for number in _READ_TRAIL_ROW.findall(text)]
+    cut = _READ_TRAIL_CUT.search(text)
+    if cut:
+        # The formatter names the first line that was not shown completely.
+        rows = [number for number in rows if number < int(cut.group(1))]
+    return (rows[0], rows[-1]) if rows else None
+
+
 def _resume_handoff_context(original, summary, *, background_task, has_tools,
-                            round_num, max_rounds):
+                            round_num, max_rounds, read_trail: str = ""):
     """Bewahrt die Rolle und setzt genau die aktuellen Laufhinweise ein."""
     history = [
         message for message in summary
         if message.get("role") != "system"
         and message.get("content") != SELF_DECOMPOSE_INSTRUCTION
+        and not str(message.get("content", "")).startswith(READ_TRAIL_HEADER)
         and not re.fullmatch(
             r"\[Werkzeugrunde \d+(?:/\d+ · noch \d+| · ohne Limit)\]",
             str(message.get("content", "")),
         )
     ]
+    if read_trail:
+        history.append({"role": "user", "content": read_trail})
     messages = [message for message in original if message.get("role") == "system"] + history
     if background_task and has_tools:
         messages.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
@@ -2900,6 +3014,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         chars_at_last_call = 0
         last_prompt_tokens = None  # measured prompt of the last main call; cleared by every handoff
         offered_tools = tools
+        read_trail = _ReadTrail()
         reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
         background_task = turn_context is not None and turn_context[1] == "background"
@@ -2965,6 +3080,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,
+                        read_trail=read_trail.render(),
                     )
                     if not handoff_control.finish(request_id, succeeded=True):
                         return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
@@ -3020,7 +3136,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         msgs, session.messages = _resume_handoff_context(
                             msgs, summary, background_task=background_task,
                             has_tools=session.allow_tools is True and bool(offered_tools),
-                            round_num=round_num, max_rounds=max_rounds)
+                            round_num=round_num, max_rounds=max_rounds,
+                            read_trail=read_trail.render())
                     except Exception as e:
                         session.current_tool = ""
                         return FailedAnswer.from_exception(e)
@@ -3115,6 +3232,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,
+                        read_trail=read_trail.render(),
                     )
                 except Exception as e:
                     session.current_tool = ""
@@ -3254,6 +3372,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         binding.invalidate()
                         session.current_tool = ""
                         return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
+                read_trail.record(t_name, t_args, t_result)
                 if binding is not None:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":

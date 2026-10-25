@@ -2677,8 +2677,10 @@ HANDOFF_PROMPT = (
     "STAND: <was gerade halb fertig ist>\n"
     "OFFEN: <was noch zu tun ist, in der Reihenfolge>\n"
     "GEPRUEFT: <welche Pruefbefehle laufen, mit Ergebnis>\n"
+    "FAKTEN: <festgestellte Befunde mit Datei:Zeile, die du nicht erneut nachlesen musst>\n"
     "SACKGASSEN: <was du schon erfolglos versucht hast - damit du es nicht wiederholst>\n"
     "RESUME: <der naechste konkrete Befehl oder Schritt>\n\n"
+    "Gelesene Dateien und Zeilenbereiche haengt BACH automatisch an; schreibe sie nicht ab.\n"
     "Keine Erklaerungen, keine Hoeflichkeit, nur die Uebergabe."
 )
 
