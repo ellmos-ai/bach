@@ -15,9 +15,9 @@ Bauort heute: BACH-Kern (`system/hub/_services/chat/…`, `system/hub/_services/
 | Werkzeuge | `hub/_services/chat/bach_tools.py` (`TOOLS_FULL`, 28 Werkzeuge) | Schemata und Ausführung; im gebundenen Lauf nur die freigegebenen |
 | Schreibwache | `hub/_services/chat/worker_write_guard.py`, `hub/worker_git.py` | Task-Arbeitsbaum unter `~/services/bach-worktrees/task-<id>`, Schreiben nur dort, Sperrprüfung |
 | Ergebnis und Review | `hub/_services/task_result_service.py`, `worker_result_review.py` | Ergebnisprüfung (höchstens 3000 Zeichen), Review-Absichten und Review-Tasks |
-| Slot-Konfiguration | `~/.bach/chat/slots_config.json` (Umgebung `BACH_SLOTS_CONFIG_PATH`) | Modell, Modus, Werkzeuge, Pickup-Filter je Worker |
+| Slot-Konfiguration | Standard `system/data/slots_config.json`, überschreibbar mit `BACH_SLOTS_CONFIG_PATH` (auf dem Mac Studio `~/.bach/chat/slots_config.json`) | Modell, Modus, Werkzeuge, Pickup-Filter je Worker |
 
-Achtung: `system/data/slots_config.json` im Repo ist **nicht** die Live-Datei; der Dienst liest `~/.bach/chat/slots_config.json`.
+Achtung, gilt für diese Installation (Mac Studio): Die LaunchAgents `com.bach.telegram-bot`, `com.bach.gui-server` und `com.bach.chat-tray` setzen `BACH_SLOTS_CONFIG_PATH=~/.bach/chat/slots_config.json`. Die Live-Konfiguration steht dort, nicht in `system/data/slots_config.json` des Repos. Ohne die Variable liest BACH den Quell-Standard `system/data/slots_config.json` (`slots_config.DEFAULT_SLOTS_FILE`).
 
 ## 2. Ablauf eines Laufs
 
@@ -27,7 +27,7 @@ Achtung: `system/data/slots_config.json` im Repo ist **nicht** die Live-Datei; d
 4. **Abschluss**, eine von drei Formen:
    - `submit_result` (Text, höchstens 3000 Zeichen) → Task review, natives Ergebnis mit `result_id`.
    - `finish_task` (Tests, Commit, Push, PR) → Task review mit PR-Verweis, **ohne** `result_id`.
-   - Teilstand: `task_manage update complete=false` → Teilstand wird an die Beschreibung gehängt, Task zurück auf pending.
+   - Teilstand: `task_manage` mit `{"action": "submit_result", "task_id": <ID>, "result": "<konkrete Teilergebnisse und Restarbeit>", "complete": false}` (Alias: `update` mit `status="done"` und `complete=false`) → Teilstand wird an die Beschreibung gehängt, Task zurück auf pending. Ein reines `update` mit `complete=false` gibt keinen Teilstand ab: es wird abgewiesen, die Bindung bleibt aktiv.
 5. **Rückgabe:** Jede Rückgabe trägt einen festen Grundcode (Abschnitt 4).
 
 ## 3. Buddhas Einstellungen und warum
@@ -78,6 +78,12 @@ Verlauf: Bis 20.10. hatte Buddha alle Werkzeuge. Danach stand er auf genau den d
 
 Werkzeuge ändern: Für `buddha_always_on` nur über `PUT /api/system/core-agents/buddha_always_on` (Kern-Agent; der allgemeine Worker-Konfigurationsweg erlaubt dort nur `persistent_opt_in`). Achtung: Wer von Lesen auf Schreiben wechselt, muss vorhandene, nur lesend angelegte Task-Arbeitsbäume ohne öffentliche Quellregistrierung entfernen, sonst scheitert ihre Wiederaufnahme (Task #2510 Punkt 4).
 
+**Lesen mit Schreibwerkzeugen: normales `read_file`, kein v1** (Entscheidung 25.10., im Sinn des Nutzerziels „weniger Kontext“):
+
+- Das normale `read_file` liest bereits seitenweise: höchstens 200 physische Zeilen und 4000 Zeichen je Aufruf, mit Kopfzeile (`Physische Zeilen a–b von n`) und Fortsetzung über `offset`. Das versionierte `ellmos.read-evidence.v1` bleibt auf das exakte Leseprofil (`read_file`, `search_text`, `task_manage`) beschränkt; sein tatsächlicher Produktionsstand (gepinnt, installiert, echte Seiten 18.–24.10., keine dokumentierte Abnahme) steht als Korrektur in `worker-read-evidence.md`, Abschnitt „Release boundary“.
+- Warum nicht v1 für Schreibprofile (Messung 25.10. auf sechs Repo-Dateien, gleiche Grenzen 200 Zeilen/4000 Zeichen): v1 zeigt 2,4-mal weniger Zeilen je Aufruf bei etwa doppelten Zeichen für dieselbe Datei, z. B. `chat_runtime.py` 139 statt 57 Aufrufe, 445 000 statt 226 000 Zeichen; `bach_tools.py` 109 statt 45; `task_lease.py` 43 statt 17. Ursache ist der JSON-Aufwand von etwa 55 Zeichen je Zeile im selben 4000-Zeichen-Budget. Weil das exakte Profil die normale Ausgabe sperrt (`versioned_format_required`), müsste Buddha sonst nur v1 lesen: mehr Leseaufrufe bei höchstens 25 Runden und schneller voller Kontext. Dazu liefert v1 den Text JSON-escaped (`\"`, `\\`), ein Risiko für den exakten `old_string` von `edit_file`. Messskript auf dem Mac: `~/compute/harness-kontext-measure/measure_pages.py`.
+- Stattdessen: größere Standardseite für gebundene Task-Leser (200 statt 50 Zeilen ohne `lines`), eigener PR „feat/task-read-default-200“, Rollout nach Review.
+
 ## 6. Was Buddha mit 16k Kontext schafft (Messung 25.10., 05:12–11:28)
 
 16 Läufe, 299 Minuten, 237 Modellrunden, 18 Kontextübergaben.
@@ -88,7 +94,7 @@ Werkzeuge ändern: Für `buddha_always_on` nur über `PUT /api/system/core-agent
 
 **Regel daraus:** Aufgaben für Buddha so schneiden, dass sie mit höchstens zwei Kontextübergaben auskommen, innerhalb des eigenen Task-Arbeitsbaums lösbar sind und mit einem Text (höchstens 3000 Zeichen) oder einer Datei plus PR enden. Gebundene Worker sehen nur ihre eigene Task und ihren Arbeitsbaum; Inventuren über das System oder Statistiken über andere Tasks sind für sie nicht lösbar.
 
-Nächste Verbesserungen (nach Nutzen): Übergabezettel mit gelesenen Pfaden/Zeilen und festgestellten Fakten; seitenweises Lesen auch mit Schreibwerkzeugen; schlanker Kernsatz; größeres Fenster nur nach Speichermessung.
+Nächste Verbesserungen (nach Nutzen): Übergabezettel mit gelesenen Pfaden/Zeilen und festgestellten Fakten; größere Standardseite für Task-Leser statt v1 mit Schreibwerkzeugen (Abschnitt 5); schlanker Kernsatz; größeres Fenster nur nach Speichermessung.
 
 ## 7. Sperren (Locks) und warum sie Buddha stilllegen können
 
