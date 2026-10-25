@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: MIT
-"""GUI theme preferences shared by CLI, API and the web dashboard."""
+"""GUI theme and UI preferences shared by CLI, API and the web dashboard.
+
+Implements Task #2466: Oberflaechenstile "Standard bewahrt" und
+"Ocean-BACH-Klassik" mit Einstellungsseite Darstellung.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,20 @@ from ._services.user_config_store import load_user_config, update_user_config
 
 
 AVAILABLE_THEMES = ("dark", "light", "ocean", "warm", "custom")
+
+AVAILABLE_PRESETS = ("standard-bewaehrt", "ocean-bach-klassik")
+DEFAULT_PRESET = "standard-bewaehrt"
+
+AVAILABLE_NAV_SCOPES = ("kompakt", "alle", "eigene")
+DEFAULT_NAV_SCOPE = "alle"
+
+AVAILABLE_ICON_STYLES = ("farbig", "monochrom", "outline")
+DEFAULT_ICON_STYLE = "farbig"
+
+AVAILABLE_DENSITIES = ("kompakt", "normal", "groessig")
+DEFAULT_DENSITY = "normal"
+
+CUSTOM_THEME_DEFAULTS = {
 CUSTOM_THEME_DEFAULTS = {
     "bg_dark": "#140e28",
     "bg_panel": "#1c1438",
@@ -133,6 +151,94 @@ class ThemeHandler(BaseHandler):
             "configured": True,
             "dry_run": bool(dry_run),
         }
+
+    @staticmethod
+    def _ui_state(config: dict) -> dict:
+        gui_config = config.get("gui") if isinstance(config.get("gui"), dict) else {}
+        ui_config = gui_config.get("ui") if isinstance(gui_config.get("ui"), dict) else {}
+        preset = str(ui_config.get("preset", DEFAULT_PRESET))
+        if preset not in AVAILABLE_PRESETS:
+            preset = DEFAULT_PRESET
+        nav_scope = str(ui_config.get("nav_scope", DEFAULT_NAV_SCOPE))
+        if nav_scope not in AVAILABLE_NAV_SCOPES:
+            nav_scope = DEFAULT_NAV_SCOPE
+        icon_style = str(ui_config.get("icon_style", DEFAULT_ICON_STYLE))
+        if icon_style not in AVAILABLE_ICON_STYLES:
+            icon_style = DEFAULT_ICON_STYLE
+        density = str(ui_config.get("density", DEFAULT_DENSITY))
+        if density not in AVAILABLE_DENSITIES:
+            density = DEFAULT_DENSITY
+        return {
+            "preset": preset,
+            "nav_scope": nav_scope,
+            "icon_style": icon_style,
+            "density": density,
+            "available": {
+                "preset": list(AVAILABLE_PRESETS),
+                "nav_scope": list(AVAILABLE_NAV_SCOPES),
+                "icon_style": list(AVAILABLE_ICON_STYLES),
+                "density": list(AVAILABLE_DENSITIES),
+            },
+            "defaults": {
+                "preset": DEFAULT_PRESET,
+                "nav_scope": DEFAULT_NAV_SCOPE,
+                "icon_style": DEFAULT_ICON_STYLE,
+                "density": DEFAULT_DENSITY,
+            },
+            "configured": "ui" in gui_config,
+        }
+
+    def get_ui(self) -> dict:
+        return self._ui_state(self._load_config())
+
+    def set_ui(
+        self,
+        preset: str | None = None,
+        nav_scope: str | None = None,
+        icon_style: str | None = None,
+        density: str | None = None,
+        *,
+        dry_run: bool = False,
+    ) -> dict:
+        ui_fields = {
+            "preset": (preset, AVAILABLE_PRESETS),
+            "nav_scope": (nav_scope, AVAILABLE_NAV_SCOPES),
+            "icon_style": (icon_style, AVAILABLE_ICON_STYLES),
+            "density": (density, AVAILABLE_DENSITIES),
+        }
+        validated_update = {}
+        for field, (value, allowed) in ui_fields.items():
+            if value is None:
+                continue
+            normalized = str(value)
+            if normalized not in allowed:
+                raise ValueError(
+                    f"Unbekanntes {field}. Erlaubt: " + ", ".join(allowed)
+                )
+            validated_update[field] = normalized
+        if not validated_update:
+            raise ValueError(
+                "Keine UI-Einstellung angegeben: preset, nav_scope, icon_style, density"
+            )
+
+        def apply_update(config: dict) -> dict:
+            gui_config = config.get("gui") if isinstance(config.get("gui"), dict) else {}
+            gui_config = dict(gui_config)
+            ui_config = gui_config.get("ui") if isinstance(gui_config.get("ui"), dict) else {}
+            ui_config = dict(ui_config)
+            ui_config.update(validated_update)
+            gui_config["ui"] = ui_config
+            config["gui"] = gui_config
+            return config
+
+        if dry_run:
+            result = self._ui_state(apply_update(self._load_config()))
+        else:
+            update_user_config(self.config_path, apply_update)
+            result = self.get_ui()
+        result["configured"] = True
+        result["dry_run"] = bool(dry_run)
+        return result
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         try:

@@ -242,6 +242,20 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
           <button id="backend-origin-refresh" class="btn btn-secondary" type="button">Erneut prüfen</button>
           <p class="card-desc">Eine erfolgreiche Datenbankverbindung belegt keine Modulinstallation oder aktive Agenten.</p>
         </div>
+        <div class="glass-card">
+          <h3>🧭 GUI-Stil</h3>
+          <p class="card-desc">Stil der Navigation und Darstellung. „Standard bewährt“ gruppiert vier Bereiche, „Ocean-BACH-Klassik“ zehn Bereiche in drei Gruppen. Ohne Speichern bleibt der aktuell gespeicherte Stil aktiv.</p>
+          <label for="ui-preset-select">GUI-Stil</label>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+            <select id="ui-preset-select">
+              <option value="standard-bewaehrt">Standard bewährt</option>
+              <option value="ocean-bach-klassik">Ocean-BACH-Klassik</option>
+            </select>
+            <button id="ui-preset-save" class="btn btn-primary" type="button" disabled>Stil speichern</button>
+            <button id="ui-preset-reset" class="btn btn-secondary" type="button">Zurücksetzen</button>
+          </div>
+          <p id="ui-preset-status" role="status" aria-live="polite">Stil noch nicht geprüft</p>
+        </div>
       </div>
     </div>
 
@@ -600,6 +614,53 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
     }
   }
 
+  async function loadUi() {
+    const status = document.getElementById('ui-preset-status');
+    const save = document.getElementById('ui-preset-save');
+    save.disabled = true;
+    try {
+      const response = await fetch('/api/settings/ui', { cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      if (!data.success || !['standard-bewaehrt', 'ocean-bach-klassik'].includes(data.preset)) throw new Error('UI-Antwort ungültig');
+      document.getElementById('ui-preset-select').value = data.preset;
+      status.textContent = data.configured ? 'Gespeicherter Stil: ' + data.preset : 'Backend-Standard: ' + data.preset + ' · noch keine eigene Auswahl';
+    } catch (error) {
+      status.textContent = 'Stil nicht verfügbar: ' + error.message;
+    } finally {
+      save.disabled = false;
+    }
+  }
+
+  async function saveUi() {
+    const status = document.getElementById('ui-preset-status');
+    const save = document.getElementById('ui-preset-save');
+    const preset = document.getElementById('ui-preset-select').value;
+    save.disabled = true;
+    status.textContent = 'Speichere Stil…';
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = localStorage.getItem('bach_device_token');
+      if (token) headers.Authorization = 'Bearer ' + token;
+      const response = await fetch('/api/settings/ui', { method: 'PUT', cache: 'no-store', headers, body: JSON.stringify({ preset }) });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const saved = await response.json();
+      const readbackResponse = await fetch('/api/settings/ui', { cache: 'no-store' });
+      if (!readbackResponse.ok) throw new Error('Readback HTTP ' + readbackResponse.status);
+      const readback = await readbackResponse.json();
+      if (!saved.success || readback.preset !== preset) throw new Error('Speicherung nicht bestätigt');
+      (typeof previewUi === 'function') && previewUi(readback.preset);
+      try {
+        localStorage.setItem('bach-ui-preset', readback.preset);
+      } catch (e) {}
+      status.textContent = 'Gespeicherter Stil bestätigt: ' + readback.preset;
+    } catch (error) {
+      status.textContent = 'Stil nicht gespeichert: ' + error.message;
+    } finally {
+      save.disabled = false;
+    }
+  }
+
   async function loadBackendOrigin() {
     const status = document.getElementById('backend-origin-status');
     status.textContent = 'Prüfe Backend-Herkunft…';
@@ -798,10 +859,20 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
     loadOceanMap();
     loadTheme();
     loadBackendOrigin();
+    loadUi();
     loadNemoFoldStats();
     loadNemoFoldCandidates();
     loadExternalArtifacts();
     document.getElementById('theme-save').addEventListener('click', saveTheme);
     document.getElementById('backend-origin-refresh').addEventListener('click', loadBackendOrigin);
+    document.getElementById('ui-preset-select').addEventListener('change', (e) => {
+      (typeof previewUi === 'function') && previewUi(e.target.value);
+    });
+    document.getElementById('ui-preset-save').addEventListener('click', saveUi);
+    document.getElementById('ui-preset-reset').addEventListener('click', () => {
+      if (typeof resetUi === 'function') resetUi();
+      document.getElementById('ui-preset-select').value = 'standard-bewaehrt';
+      document.getElementById('ui-preset-status').textContent = 'Stil zurückgesetzt (Standard bewährt).';
+    });
   });
 </script>

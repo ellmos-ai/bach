@@ -57,6 +57,31 @@ function themeSettingsUrl() {
     return apiBase ? `${apiBase}/settings/theme` : '/api/settings/theme';
 }
 
+const UI_PRESET_KEY = 'bach-ui-preset';
+
+function uiSettingsUrl() {
+    const apiBase = String(BOARD_CONFIG.apiBase || '').replace(/\/+$/, '');
+    return apiBase ? `${apiBase}/settings/ui` : '/api/settings/ui';
+}
+
+const NAV_PRESETS = {
+    'standard-bewaehrt': {
+        groups: [
+            { label: 'ARBEIT', ids: ['dashboard', 'tasks', 'assistant'] },
+            { label: 'LEBEN', ids: ['life'] },
+            { label: 'AGENTEN+SKILLS', ids: ['agenten', 'skills'] },
+            { label: 'VERWALTUNG', ids: ['domains', 'files', 'governance', 'system'] }
+        ]
+    },
+    'ocean-bach-klassik': {
+        groups: [
+            { label: 'ARBEIT', ids: ['dashboard', 'tasks', 'assistant'] },
+            { label: 'BETRIEB', ids: ['agenten', 'skills', 'domains', 'files', 'governance', 'system'] },
+            { label: 'LIFE', ids: ['life'] }
+        ]
+    }
+};
+
 const BACH_VERSION = "3.13.0";
 
 if (typeof escapeHtml === 'undefined') {
@@ -71,6 +96,7 @@ if (typeof escapeHtml === 'undefined') {
 let NAV_ITEMS = [{ id: 'dashboard', href: '/', label: 'Dashboard', icon: '🎵' }];
 let navigationState = 'loading';
 let navClickBound = false;
+let uiPreset = null;
 
 function safeNavHref(href) {
     if (typeof href !== 'string' || !href.startsWith('/') || /[\\\u0000-\u001f\u007f]/.test(href)) return '/';
@@ -127,7 +153,7 @@ function initNavigation() {
         return item.children && item.children.some(c => isActive(c.href));
     }
 
-    const navHtml = NAV_ITEMS.map(item => {
+    const navHtml = applyUiPresetToItems(NAV_ITEMS, effectiveUiPreset()).map(item => {
         const iconHtml = item.icon ? `<span class="nav-icon">${escapeHtml(item.icon)}</span>` : '';
         const fullLabel = item.label;
         const shortLabel = item.shortLabel || item.label;
@@ -320,6 +346,105 @@ async function loadThemePreference() {
     }
 }
 
+function normalizeUiPreset(value) {
+    if (typeof value !== 'string') return null;
+    const key = value.trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(NAV_PRESETS, key) ? key : null;
+}
+
+function effectiveUiPreset() {
+    return normalizeUiPreset(uiPreset) || 'standard-bewaehrt';
+}
+
+function applyUiPresetToItems(items, presetKey) {
+    const preset = presetKey && Object.prototype.hasOwnProperty.call(NAV_PRESETS, presetKey)
+        ? NAV_PRESETS[presetKey]
+        : null;
+    if (!preset || !Array.isArray(preset.groups)) return items;
+    const byId = new Map();
+    (Array.isArray(items) ? items : []).forEach(item => {
+        if (item && item.id) byId.set(item.id, item);
+    });
+    const derived = [];
+    preset.groups.forEach(group => {
+        const children = [];
+        (group.ids || []).forEach(id => {
+            const item = byId.get(id);
+            if (!item) return;
+            if (Array.isArray(item.children) && item.children.length > 0) {
+                item.children.forEach(child => { if (child) children.push(child); });
+            } else {
+                children.push(item);
+            }
+        });
+        if (children.length === 0) return;
+        derived.push({ id: 'group-' + String(group.label).toLowerCase(), label: group.label, children: children });
+    });
+    return derived.length > 0 ? derived : items;
+}
+
+function previewUi(presetKey) {
+    const normalized = normalizeUiPreset(presetKey);
+    if (!normalized) return false;
+    uiPreset = normalized;
+    initNavigation();
+    return true;
+}
+
+function resetUi() {
+    try { localStorage.removeItem(UI_PRESET_KEY); } catch (err) {}
+    uiPreset = null;
+    initNavigation();
+}
+
+function saveUiPreference(payload) {
+    return fetch(uiSettingsUrl(), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(response => response.ok);
+}
+
+function persistUiPreference(presetKey) {
+    const normalized = normalizeUiPreset(presetKey);
+    if (!normalized) return Promise.resolve(false);
+    const previous = uiPreset;
+    previewUi(normalized);
+    return saveUiPreference({ preset: normalized })
+        .then(ok => {
+            if (ok) {
+                try { localStorage.setItem(UI_PRESET_KEY, normalized); } catch (err) {}
+                return true;
+            }
+            previewUi(previous);
+            return false;
+        })
+        .catch(() => {
+            previewUi(previous);
+            return false;
+        });
+}
+
+async function loadUiPreference() {
+    try {
+        const stored = localStorage.getItem(UI_PRESET_KEY);
+        const normalizedStored = normalizeUiPreset(stored);
+        if (normalizedStored) uiPreset = normalizedStored;
+    } catch (err) {}
+    try {
+        const response = await fetch(uiSettingsUrl());
+        if (response && response.ok) {
+            const data = await response.json();
+            const remote = data && data.success ? normalizeUiPreset(data.preset) : null;
+            if (remote) {
+                uiPreset = remote;
+                try { localStorage.setItem(UI_PRESET_KEY, remote); } catch (err) {}
+            }
+        }
+    } catch (err) {}
+    initNavigation();
+}
+
 function updateNavStatus(online, text) {
     const dot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
@@ -348,6 +473,7 @@ async function loadNavStatus() {
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     loadNavigationConfig();
+    loadUiPreference();
     loadThemePreference();
     loadNavStatus();
 });
@@ -356,6 +482,7 @@ if (typeof module !== 'undefined') {
     module.exports = {
         initNavigation, updateNavStatus, loadNavStatus, setTheme, previewTheme,
         commitTheme, persistThemePreference,
-        loadThemePreference, normalizeTheme, loadNavigationConfig, safeNavHref, BACH_VERSION
+        loadThemePreference, normalizeTheme, loadNavigationConfig, safeNavHref, BACH_VERSION,
+        previewUi, resetUi, persistUiPreference, loadUiPreference, uiSettingsUrl
     };
 }

@@ -13,7 +13,7 @@ PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-
 # a prefix or a path-only comparison would catalog those as well.
 EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme", "GET /api/setup/ocean-map",
                "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates", "GET /api/system/external-artifacts",
-               "GET /api/task-capabilities")
+               "GET /api/settings/ui", "GET /api/task-capabilities")
 # Reads of src/layouts/BachLayout.astro -> src/components/Header.astro:242,280 and src/lib/domain-pins.mjs:46 (domain menu): every
 # page makes them. Only the pages checked so far list them; completeness for all pages is a task of the GUI manifest (#2087).
 LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]
@@ -48,7 +48,7 @@ PAGE_READS = {
     "/governance": ["/api/governance/policy-registry", "/api/governance/locks"],
     "/governance/logs": ["/api/governance/audit"],
     "/governance/usecases": [], "/governance/funk": [],
-    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/setup/ocean-map", "/api/settings/theme",
+    "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/setup/ocean-map", "/api/settings/theme", "/api/settings/ui",
                  "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
 }
 # Required actions retain their HTTP method; compose is a preview POST, never a GET.
