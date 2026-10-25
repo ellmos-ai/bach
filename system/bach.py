@@ -22,6 +22,19 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+# BACH_ROOT in sys.path aufnehmen, damit das Shim-Package 'ellmos_worker' gefunden wird.
+# Fail-tolerant: nur Pfade mit vorhandenem ellmos_worker/-Ordner werden ergänzt.
+for _candidate in (Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent):
+    if (_candidate / "ellmos_worker").exists() and str(_candidate) not in sys.path:
+        sys.path.insert(0, str(_candidate))
+
+# 5-Stufen-Verifizierungskette (fail-closed)
+try:
+    from ellmos_worker.verification_chain import VerificationChain, Verdict
+except ImportError:
+    VerificationChain = None    # type: ignore[assignment]
+    Verdict = None    # type: ignore[assignment]
+
 # UTF-8 Encoding fix - MUSS vor allen anderen Imports stehen
 os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 if sys.stdout:
@@ -869,17 +882,42 @@ def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]
     if not tool_file:
         return None
 
-    if dry_run:
+      # 5-Stufen-Verifizierungskette (fail-closed)
+    if VerificationChain is None:
+          # Fallback: Modul nicht verfügbar – fail-closed
+        if dry_run:
+            print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
+            return 0
+        log(f"[TOOL] {tool_file.stem} {' '.join(args)}")
+        try:
+            result = subprocess.run([sys.executable, str(tool_file)] + args,
+                                   cwd=str(BACH_DIR))
+            return result.returncode
+        except Exception as e:
+            print(f"[ERROR] Tool-Ausfuehrung: {e}")
+            return 1
+
+    chain = VerificationChain()
+    result = chain.run(
+        tool_name=name,
+        tool_args=args,
+        dry_run=dry_run,
+        tool_file=tool_file,
+        cwd=BACH_DIR,
+      )
+
+      # Ledger protokollieren
+    for entry in chain.ledger:
+        log(f"[VERIF-{entry.stage}] {entry.verdict.value}: {entry.detail}")
+
+    if result.verdict == Verdict.ALLOW:
+        return 0
+    if result.verdict == Verdict.DRY_RUN:
         print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
         return 0
-    log(f"[TOOL] {tool_file.stem} {' '.join(args)}")
-    try:
-        cmd_line = [sys.executable, str(tool_file)] + args
-        result = subprocess.run(cmd_line, cwd=str(BACH_DIR))
-        return result.returncode
-    except Exception as e:
-        print(f"[ERROR] Tool-Ausfuehrung: {e}")
-        return 1
+      # DENY / ERROR → fail-closed
+    print(f"[DENIED] Tool '{name}' verweigert: {result.detail}")
+    return 1
 
 
 # ═══════════════════════════════════════════════════════════════
