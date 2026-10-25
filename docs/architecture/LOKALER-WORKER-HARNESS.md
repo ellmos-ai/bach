@@ -1,0 +1,111 @@
+# Lokaler Worker-Harness (Buddha / Ollama)
+
+Stand 25.10.2026. Dieses Dokument beschreibt, wie BACH Aufgaben an ein lokales Modell (Buddha, `qwen3.8:27b-mlx` über Ollama auf dem Mac Studio) gibt, was dabei schiefgehen kann und **warum** die heutigen Einstellungen so gewählt sind. Es ist der Kern des lokalen Harnesses; Änderungen daran bitte hier nachtragen (Ist und Begründung).
+
+Bauort heute: BACH-Kern (`system/hub/_services/chat/…`, `system/hub/_services/task_*`), Ausnahme nach MODUL-ZUORDNUNG. Ziel: Herauslösung als Modul `ellmos-worker` (Task #2493); das Dokument zieht dann mit.
+
+## 1. Bausteine
+
+| Baustein | Datei | Aufgabe |
+|---|---|---|
+| Task-Datenbank und Leases | `hub/_services/task_lease.py`, `task_lease_client.py` | Task übernehmen (`acquire`, Fence, TTL-Profil M), erneuern (`renew`), abgeben (`submit_result`), zurückgeben (`release outcome=return/blocked/review`) |
+| Worker-Controller | `hub/_services/chat/telegram_chat.py` (`_start_worker_execution`, Arbeitsschleife) | Startet und überwacht Worker-Läufe, wählt Tasks, behandelt Fehler, gibt Leases zurück |
+| Lease-Bindung | `hub/_services/chat/worker_lease_binding.py` | Bindet einen Lauf an genau eine Task; prüft jede `task_manage`-Aktion des Modells |
+| Werkzeugschleife | `hub/_services/chat/chat_runtime.py` (`_tool_loop`) | Modellrunden, Werkzeugaufrufe, Kontextübergabe, Abschlussreserve |
+| Werkzeuge | `hub/_services/chat/bach_tools.py` (`TOOLS_FULL`, 28 Werkzeuge) | Schemata und Ausführung; im gebundenen Lauf nur die freigegebenen |
+| Schreibwache | `hub/_services/chat/worker_write_guard.py`, `hub/worker_git.py` | Task-Arbeitsbaum unter `~/services/bach-worktrees/task-<id>`, Schreiben nur dort, Sperrprüfung |
+| Ergebnis und Review | `hub/_services/task_result_service.py`, `worker_result_review.py` | Ergebnisprüfung (höchstens 3000 Zeichen), Review-Absichten und Review-Tasks |
+| Slot-Konfiguration | `~/.bach/chat/slots_config.json` (Umgebung `BACH_SLOTS_CONFIG_PATH`) | Modell, Modus, Werkzeuge, Pickup-Filter je Worker |
+
+Achtung: `system/data/slots_config.json` im Repo ist **nicht** die Live-Datei; der Dienst liest `~/.bach/chat/slots_config.json`.
+
+## 2. Ablauf eines Laufs
+
+1. **Auswahl:** höchste Priorität zuerst, innerhalb davon die höchste Task-ID. Explizit zugewiesene Tasks (`assigned_slot`) gehen nur an diesen Slot. `assigned_to` muss ein bekannter Bearbeiter sein (`bach`, `buddha`, `ollama` oder die Slot-ID), sonst wird die Task abgelehnt (`ownership`). Eine Abhängigkeit (`depends_on`) gilt erst bei Status **done** als erfüllt, nicht bei review.
+2. **Arbeitsbaum:** `_prepare_bound_task_scope` legt den Task-Arbeitsbaum an. Mit Schreibwerkzeugen braucht er eine öffentliche Quellbindung: lokales `main` muss dem öffentlichen `main` auf GitHub entsprechen. Vorher prüft die Schreibwache alle Sperren (`_fresh_locks`).
+3. **Modellrunden:** höchstens `max_tool_rounds` (25). Bei etwa 80 % des Kontextfensters folgt eine **Kontextübergabe**: Das Modell schreibt einen Übergabezettel, der Verlauf wird ersetzt. In den letzten zwei Runden gilt die **Abschlussreserve**: nur noch abschließende Werkzeuge; ist der Kontext dort voll, scheitert der Lauf ohne Werkzeugwirkung.
+4. **Abschluss**, eine von drei Formen:
+   - `submit_result` (Text, höchstens 3000 Zeichen) → Task review, natives Ergebnis mit `result_id`.
+   - `finish_task` (Tests, Commit, Push, PR) → Task review mit PR-Verweis, **ohne** `result_id`.
+   - Teilstand: `task_manage update complete=false` → Teilstand wird an die Beschreibung gehängt, Task zurück auf pending.
+5. **Rückgabe:** Jede Rückgabe trägt einen festen Grundcode (Abschnitt 4).
+
+## 3. Buddhas Einstellungen und warum
+
+| Einstellung | Wert | Begründung |
+|---|---|---|
+| Modell | `qwen3.8:27b-mlx`, lokal | Kostenfrei, 24/7; Cloud-Kontingent (Ollama Cloud `glm-5.3:cloud`) ist für Oktober erschöpft, Cloud-Worker ruht bis 1.11. (Task #2503) |
+| Kontextfenster | 16 384 Token | Das Modell belegt damit 27 von 32 GB; ein größeres Fenster braucht zusätzlichen Speicher für den KV-Cache und ist ohne Messung nicht ratsam |
+| Kontextübergabe | bei etwa 80 % (gemessen 12 300–14 400 Token) | Rechtzeitig vor Abschneiden; Ausreißer bis 16 782 Token entstehen, wenn ein einzelnes Werkzeugergebnis sehr groß ist |
+| Modus | `full` | Nutzerentscheidung: Buddha erstellt Dateiergebnisse, darf pushen und PRs anlegen (Review „erstmal jeder“ auf GitHub) |
+| Werkzeuge (`allowed_tools`) | Stufentest, Stufe 2: 11 Werkzeuge (Task-Worker-Profil) | Siehe Abschnitt 5 |
+| Pickup-Filter | aktiv, schließt Tags `delegated` und `waiting` aus | So lassen sich Tasks gezielt zurückhalten |
+
+## 4. Rückmeldungen an Buddha und Rückgabegründe (warum es sie gibt)
+
+Ausgangsbefund 24./25.10.: 98,7 % aller Rückgaben ohne Ergebnis, 76 % in unter einer Minute; jede Rückgabe hatte `note: ""`. Niemand konnte sehen, warum.
+
+**Rückgabegründe (fester Wortschatz, nie Anbietertext)** — PR #510, #513, live seit 25.10.:
+
+| Grund | Bedeutung |
+|---|---|
+| `backend_error:<anbieter>:<art>[:<status>]` | Anbieterfehler, z. B. `backend_error:ollama:quota_exceeded:429` |
+| `model_failure:<code>` | Fehler im Lauf, z. B. `model_failure:completion_reserve_context_exhausted` |
+| `task_scope_unavailable` | Task-Arbeitsbaum nicht bestätigt (oft eine Sperre, Abschnitt 7) |
+| `worker_returned_open` / `worker_blocked` | Das Modell gibt selbst zurück (Teilstand) bzw. blockiert |
+| `worker_stopped` / `worker_ended` | Worker wurde gestoppt bzw. endete |
+
+**Weiterarbeiten nach Task-Fehler** (PR #510): Ein Fehler, der nur diesen Lauf betrifft (kein Anbieterfehler, z. B. „Kontextfenster in der Abschlussreserve erschöpft“ oder ein unlesbarer Werkzeugaufruf), wird protokolliert; die Task geht mit Grund zurück und wird für diesen Lauf zurückgestellt, Buddha nimmt die nächste. Nach **drei** solchen Fehlern in Folge hält er an. Warum: Vorher beendete ein einzelner Fehler den Worker, er blieb auf `error` und startete nach einem Neustart nicht wieder. Warum die Grenze drei: Ein systematischer Fehler soll nicht die ganze Warteschlange leer zurückgeben.
+
+**Monatskontingent erkennen** (PR #510): Ollama Cloud meldet „you (…) have reached your monthly usage limit“. Erkannt wurde nur „monthly usage limit reached“; deshalb lief das Kontingent als kurzzeitiges Rate-Limit mit Neuversuchen alle 60–900 s. Jetzt `quota_exceeded`.
+
+**Prüfgrund bei abgelehnter Abgabe** (PR #510): Das Modell bekam nur „Taskergebnis ist ungültig.“ und gab auf. Jetzt werden die zwei festen öffentlichen Gründe genannt (Längengrenze, reine Erledigungsmeldung); alles andere bleibt neutral (Vertrag #379).
+
+**Klare Hinweise statt `lease_protocol`** (PR #518): `task_manage detail` auf eine fremde Task wird weiter abgelehnt (der gebundene Lauf sieht nur seine Task), aber mit dem Hinweis `detail_scope`. `decompose` lehnt unbekannte `assigned_to`-Werte ab (`decompose_assignee`); vorher entstanden Kind-Tasks mit `help-inventory`, die niemand übernehmen konnte.
+
+## 5. Werkzeuge und Kontext
+
+Gemessen mit Buddhas Tokenizer (Prompt-Token nur für die Werkzeugbeschreibungen):
+
+| Satz | Werkzeuge | Token |
+|---|---|---|
+| nur lesen (`read_file`, `search_text`, `task_manage`) | 3 | 1 391 |
+| Stufe 1: + `list_directory`, `write_file`, `edit_file`, `create_directory` | 7 | 1 783 |
+| Stufe 2: Task-Worker-Profil (+ `start_task_worktree`, `file_info`, `execute_command`, `finish_task`) | 11 | 2 225 |
+| alle | 28 | 4 256 |
+
+Verlauf: Bis 20.10. hatte Buddha alle Werkzeuge. Danach stand er auf genau den drei Lesewerkzeugen. Diese Kombination schaltet das seitenweise Lesen (`ellmos.read-evidence.v1`, höchstens 200 Zeilen/4000 Zeichen je Seite) frei, verhinderte aber jedes Dateiergebnis. Nutzerentscheidungen 25.10.: Dateiergebnisse, Push und PR erlaubt, Stufentest 7 → 11 → 28; Toolsets werden eine Einstellung mit Standardsatz und eingeschränkten Sätzen je Nutzer (Task #2510). Vorschlag (Bestätigung offen): kleiner Kernsatz plus Werkzeuggruppen nach Bedarf.
+
+Werkzeuge ändern: Für `buddha_always_on` nur über `PUT /api/system/core-agents/buddha_always_on` (Kern-Agent; der allgemeine Worker-Konfigurationsweg erlaubt dort nur `persistent_opt_in`). Achtung: Wer von Lesen auf Schreiben wechselt, muss vorhandene, nur lesend angelegte Task-Arbeitsbäume ohne öffentliche Quellregistrierung entfernen, sonst scheitert ihre Wiederaufnahme (Task #2510 Punkt 4).
+
+## 6. Was Buddha mit 16k Kontext schafft (Messung 25.10., 05:12–11:28)
+
+16 Läufe, 299 Minuten, 237 Modellrunden, 18 Kontextübergaben.
+
+- Abgeschlossen: Übersetzung eines Hilfethemas (6–12 min, 0–1 Übergabe, PR), Hilfe-Inventar für einen Buchstabenblock (32 min, 2 Übergaben, `result_id` 330).
+- Nicht abgeschlossen: große Plan- und Codeaufgaben mit 2–5 Übergaben; Buddha zerlegt dann weiter oder gibt einen Teilstand zurück.
+- Nach jeder Übergabe liest er neu: bei #2505 37 von 53 Werkzeugaufrufen `read_file`.
+
+**Regel daraus:** Aufgaben für Buddha so schneiden, dass sie mit höchstens zwei Kontextübergaben auskommen, innerhalb des eigenen Task-Arbeitsbaums lösbar sind und mit einem Text (höchstens 3000 Zeichen) oder einer Datei plus PR enden. Gebundene Worker sehen nur ihre eigene Task und ihren Arbeitsbaum; Inventuren über das System oder Statistiken über andere Tasks sind für sie nicht lösbar.
+
+Nächste Verbesserungen (nach Nutzen): Übergabezettel mit gelesenen Pfaden/Zeilen und festgestellten Fakten; seitenweises Lesen auch mit Schreibwerkzeugen; schlanker Kernsatz; größeres Fenster nur nach Speichermessung.
+
+## 7. Sperren (Locks) und warum sie Buddha stilllegen können
+
+Der Mac-Scanner (`BACH_LOCK_SCAN`) prüft das Live-Repo samt OneDrive-Zwilling und Vorfahren, wertet aber `scope`/`protected_paths` nicht aus. **Jede** Sperre auf `.TOPICS/.AI/.OS/BACH` oder darüber sperrt damit das ganze Repo: Die Schreibwache verweigert jeden Task-Arbeitsbaum, Buddha gibt alles mit `task_scope_unavailable` zurück, Rollouts brechen ab. Belege 25.10.: eigene Sperre 05:00, fremde `LOCK.templates-health.txt` 11:03. Bis zur Behebung (Task #2537): keine Sperren auf dem BACH-Zwilling setzen, wenn Buddha laufen soll; Arbeit in eigenen Worktrees braucht dort keine.
+
+## 8. Review und Abnahme
+
+- Nutzerentscheidungen 25.10.: Reviews werden verzahnt mit neuer Arbeit geholt (PR #519); Aufgaben mit GitHub-PR werden auf GitHub reviewt, Merge = Abnahme (#2453); Reviewweg für Text-Ergebnisse = Ergebnistext gegen die Ausgabeanforderungen der Task (in Arbeit); reviewen und mergen darf jeder frische Lauf, außer eine Nutzerregel schränkt es ein.
+- Befund: Bis 25.10. gab es nur eine Review-Absicht, weil native Reviews Scope-Belege aus dem Git-Arbeitsbaum verlangen, die Text-Ergebnisse nie haben (#2454). Folge: 193 Tasks in review, und Zerlegungsketten bleiben stehen, weil Abhängigkeiten erst mit done erfüllt sind.
+- Ergebnislänge 3000 Zeichen: eingeführt am 9.10. (Commit `f284c41b`), ohne dokumentierte Begründung; vermutlich knappe Zusammenfassung für Abnahme und Review-Prompt kleiner Modelle. Längere Ergebnisse als Datei mit Verweis.
+
+## 9. Betrieb
+
+- **Start/Stopp:** `POST /api/system/workers/<id>/start|stop` (GUI-Weg mit Geräte-Token). Pausieren ist für Always-On nicht vorgesehen; nach einem Dienst-Neustart lässt die Startprüfung Always-On nur wieder zu, wenn der Slot nicht auf `error` steht.
+- **Rollout auf den Mac:** laufend nach Prüfung durch die zweite Instanz (Nutzerentscheidung 25.10.). Ablauf: Lock-Scan (bei Sperre Abbruch), Drift-Prüfung gegen den erwarteten Ausgangsstand, Sicherung nach `~/.local/state/ocean-task-work/deploy-<zeit>`, Dateien aus dem Commit einsetzen und per Hash prüfen, kompilieren, drei Dienste neu starten, Readback.
+- **Nachweis:** Rückgabegründe in `task_history` (`lease_release`, Feld `note`); Ergebnis und Review-Stand über `task_result_snapshot`.
+
+## 10. Offene Aufgaben
+
+#2453 (Abschluss beim PR-Merge), #2454 (Review-Rückstau, Textweg), #2493 (Modul `ellmos-worker`), #2510 (Toolsets), #2518 (Rest: Server-Ablehnung bei decompose beendet die Bindung), #2537 (Lock-Scanner-Scope), #2503 (Cloud-Worker ab 1.11.).
