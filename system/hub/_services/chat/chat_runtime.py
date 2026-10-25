@@ -231,6 +231,10 @@ from hub._services.chat.bach_tools import (
     TOOLS_FULL,
     TOOLS_PLAN,
     tools_for_mode,
+    REQUEST_TOOLS,
+    on_demand_tools,
+    tool_groups_available,
+    _tool_policy_denial,
     exec_tool,
     is_blocked,
     is_safe_command,
@@ -1915,6 +1919,16 @@ class ChatRuntime(_ModuleChatRuntime):
         """Build the request schema from the already-refreshed bound session."""
         if enabled is not True or session.allow_tools is not True:
             return []
+        tools = self._granted_worker_tools(session, backend)
+        if completion_reserve:
+            return _completion_reserve_tools(tools, session.worker_task_binding)
+        grants = _effective_tool_grants(session)
+        if grants is not None and REQUEST_TOOLS in grants:
+            return on_demand_tools(tools, getattr(session, "requested_tool_groups", ()))
+        return tools
+
+    def _granted_worker_tools(self, session, backend) -> list[dict]:
+        """Every tool the bound session's live mode and allowed_tools grant."""
         default_model = getattr(backend, "get_default_model", None)
         if not callable(default_model):
             default_model = None
@@ -1926,9 +1940,19 @@ class ChatRuntime(_ModuleChatRuntime):
             allowed_tools=_effective_tool_grants(session),
             agent_operations=self.agent_operations,
         )
-        tools = provider.get_tools(session.mode)
-        return (_completion_reserve_tools(tools, session.worker_task_binding)
-                if completion_reserve else tools)
+        return provider.get_tools(session.mode)
+
+    def _request_tool_group(self, session, backend, arguments) -> str:
+        """Meta tool: open one group from the next round, only within allowed_tools."""
+        group = arguments.get("group") if isinstance(arguments, dict) else None
+        available = tool_groups_available(self._granted_worker_tools(session, backend))
+        if type(group) is not str or group not in available:
+            return _tool_policy_denial(
+                "tool_not_authorized",
+                "BLOCKIERT: Werkzeuggruppe ist nicht verfügbar. Verfügbar: "
+                + (", ".join(available) or "keine"))
+        session.requested_tool_groups.add(group)
+        return f"Ab der nächsten Runde verfügbar: {', '.join(available[group])}"
 
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
@@ -2871,6 +2895,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         seit_hook = 0
         session.tool_round = 0
         session.last_tools = []
+        session.requested_tool_groups = set()
         result = {}
         chars_at_last_call = 0
         last_prompt_tokens = None  # measured prompt of the last main call; cleared by every handoff
@@ -3179,6 +3204,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 def dispatch_tool(name, arguments):
                     if reserve_denied:
                         return "BLOCKIERT: In der Abschlussreserve sind nur bestätigbare Task-Abschlussaktionen erlaubt."
+                    if name == REQUEST_TOOLS and binding is not None:
+                        return self._request_tool_group(session, selected_backend, arguments)
                     return exec_tool(
                         name, arguments, session.mode,
                         bach_app=self.bach_app,

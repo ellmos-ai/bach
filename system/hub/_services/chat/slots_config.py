@@ -1198,8 +1198,8 @@ def _validated_core_edits(
             load_skill_instructions(value)
             value = json.loads(json.dumps(value))
         elif field == "allowed_tools":
-            from .bach_tools import TOOLS_FULL
-            known = {tool["function"]["name"] for tool in TOOLS_FULL}
+            from .bach_tools import REQUEST_TOOLS, TOOLS_FULL
+            known = {tool["function"]["name"] for tool in TOOLS_FULL} | {REQUEST_TOOLS}
             if (value is not None and (not isinstance(value, list) or len(value) > 100
                     or any(not isinstance(name, str) or name not in known for name in value)
                     or len(set(value)) != len(value))):

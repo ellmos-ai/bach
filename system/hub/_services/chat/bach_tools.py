@@ -1188,6 +1188,53 @@ def tools_for_mode(mode: str, *, bound_worker: bool = False) -> list:
     return tools
 
 
+#: Werkzeuge nach Bedarf (BACH-Harness, 25.10.2026): Steht dieses Meta-Werkzeug
+#: in den allowed_tools eines gebundenen Workers, bekommt er zuerst nur den
+#: Kernsatz und holt Gruppen selbst nach. Die übrigen allowed_tools bleiben die
+#: Obergrenze; Gruppen öffnen nie ein Werkzeug außerhalb davon.
+REQUEST_TOOLS = "request_tools"
+CORE_TOOLS = frozenset({"task_manage", "read_file", "search_text", "list_directory"})
+TOOL_GROUPS = {
+    "dateien": ("Dateien schreiben", ("write_file", "edit_file", "create_directory", "file_info",
+                                      "move_file", "copy_file", "recycle")),
+    "lieferung": ("Code-Lieferung/Git", ("start_task_worktree", "finish_task")),
+    "ausfuehren": ("Ausführen", ("execute_command", "safe_shell")),
+    "web": ("Web", ("web_search", "web_fetch")),
+    "system": ("System", ("system_status", "ollama_info", "get_datetime", "bach_command",
+                          "maintain", "weather", "foerderbericht")),
+    "skills": ("Skills", ("skill_create", "agent_manage")),
+}
+
+
+def tool_groups_available(tools) -> dict:
+    """Gruppen mit ihren Werkzeugen, soweit sie in ``tools`` schon freigegeben sind."""
+    offered = {tool["function"]["name"] for tool in tools}
+    groups = {group: [name for name in names if name in offered]
+              for group, (_label, names) in TOOL_GROUPS.items()}
+    return {group: names for group, names in groups.items() if names}
+
+
+def on_demand_tools(tools, requested_groups) -> list:
+    """Kernsatz, angeforderte Gruppen und ungruppierte Werkzeuge; dazu request_tools.
+
+    ``tools`` ist der bereits nach Modus und allowed_tools gefilterte Satz.
+    """
+    groups = tool_groups_available(tools)
+    grouped = {name for _label, names in TOOL_GROUPS.values() for name in names}
+    keep = {name for group in requested_groups for name in groups.get(group, ())}
+    result = [tool for tool in tools if tool["function"]["name"] in keep
+              or tool["function"]["name"] in CORE_TOOLS
+              or tool["function"]["name"] not in grouped]
+    missing = [group for group in groups if group not in requested_groups]
+    if missing:
+        result.append(_tool(
+            REQUEST_TOOLS,
+            "Weitere Werkzeuge ab der nächsten Runde freischalten. Gruppen:\n" + "\n".join(
+                f"{group}: {TOOL_GROUPS[group][0]} ({', '.join(groups[group])})" for group in missing),
+            {"group": {"type": "string", "enum": missing}}, ["group"]))
+    return result
+
+
 # --- Delegation ---
 
 def _delegate_claude_api(prompt: str, api_key: str,
