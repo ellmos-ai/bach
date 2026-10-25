@@ -197,7 +197,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         return _managed_backend_answer(await backend.chat([{"role": "user", "content": "fixture"}]))
     monkeypatch.setattr(runtime, "process", process)
     def wait_quota(worker, seconds):
-        assert core and seconds == 60
+        assert core and seconds == 86400  # no credit: daily recheck
         quota_waits.append(seconds)
         assert worker.task_binding is None and worker.lease_supervisor is None
         assert session.worker_task_binding is None
@@ -226,7 +226,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         assert not thread.is_alive() and len(calls) == 1
         current = slots.get_slot(ident, path)
         if core:
-            assert quota_waits == [60] and current["status"] == "paused"
+            assert quota_waits == [86400] and current["status"] == "paused"
             receipt = control._WORKER_EXECUTIONS[ident].receipt
             assert receipt["confirmed"] and receipt["status_persisted"]
             assert control.worker_execution_receipt(ident)["terminal"]
@@ -264,7 +264,9 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
     ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, 901, 901),
     ("glm-5.3:cloud", "rate_limited", "continuous", 2, 661, 240, 240),
     ("glm-5.3:cloud", "rate_limited", "continuous", 3, 420, None, 480),
-    ("glm-5.3:cloud", "quota_exceeded", "continuous", 0, 0, 60, 60),
+    ("glm-5.3:cloud", "quota_exceeded", "continuous", 0, 0, 60, 86400),
+    ("glm-5.3:cloud", "quota_exceeded", "continuous", 5, 400000, None, 86400),
+    ("glm-5.3:cloud", "quota_exceeded", "once", 0, 0, 60, None),
     ("glm-5.3:cloud", "http_error", "continuous", 0, 0, 60, None),
     ("glm-5.3:cloud", "rate_limited", "once", 0, 0, 60, None),
     ("qwen3.5:4b", "rate_limited", "persistent", 0, 0, 60, None),
@@ -457,7 +459,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
             assert execution.start_error is None
             assert task["status"] == "pending" and task["claim_salt_ref"] is None
         elif scenario == "quota_after_retry":
-            assert len(calls) == 2 and waits == [60, 120]
+            assert len(calls) == 2 and waits == [60, 86400]
             assert execution.stop_event.is_set() and execution.start_error is None
             assert current["backend_error"]["quota_period"] == "month"
             assert task["status"] == "pending" and task["claim_salt_ref"] is None
@@ -571,7 +573,7 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         real_client(transport=httpx.MockTransport(reply), **kw))
     def wait(worker, seconds):
         waits.append(seconds)
-        assert seconds == 60 and backend_failure in {"rate_limit", "monthly_quota"}
+        assert seconds == (86400 if backend_failure == "monthly_quota" else 60) and backend_failure in {"rate_limit", "monthly_quota"}
         assert worker.task_binding is None and worker.lease_supervisor is None
         assert bindings[-1].closed and bindings[-1].tool_dispatch_count == 1
         assert client.worker_leases(worker.lease_worker_id)["leases"] == []
@@ -594,7 +596,7 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         assert not thread.is_alive()
         expected_calls = (2 if dispatch_path == "runtime" else 1) + int(previous_block)
         assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0)
-        assert waits == ([60] if backend_failure != "server_error" else [])
+        assert waits == {"monthly_quota": [86400], "server_error": []}.get(backend_failure, [60])
         assert call_waits == ([60, 120, 240] if backend_failure == "rate_limit" else [])
         if backend_failure == "rate_limit":
             # Only the exact rejected model request is repeated. The earlier
@@ -1517,3 +1519,16 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
             control._WORKER_EXECUTIONS[ident].stop_event.set()
             thread.join(5)
         conn.close()
+
+
+@pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60)])
+def test_openrouter_without_credit_rechecks_daily(status, expected):
+    """User rule 25.10.2026: no credit pauses the worker and checks once a day, it does not end it."""
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    detail = {"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
+              "status_code": status, "quota_exceeded": False}
+    slot = {"backend": "openrouter", "model": "openrouter/free", "type": "continuous"}
+    assert control._worker_backend_retry_delay(slot, detail, model="openrouter/free",
+        retries=0, waited_seconds=0) == expected
+    assert control._worker_backend_retry_delay({**slot, "type": "once"}, detail, model="openrouter/free",
+        retries=0, waited_seconds=0) is None

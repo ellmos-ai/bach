@@ -1483,6 +1483,19 @@ def _persistent_pre_effect_reserve_retry_binding(worker_session, control, slot, 
     return configured
 
 
+# ponytail: fixed daily recheck (user rule 25.10.2026); make it a slot setting if another rhythm is needed.
+_WORKER_NO_CREDIT_RECHECK_SECONDS = 24 * 3600
+
+
+def _worker_no_credit(error):
+    """Provider evidence that credit or quota is used up: pause until it returns, never end."""
+    return bool(error) and (
+        error.get("quota_exceeded") is True
+        # OpenRouter answers 402 when the account has no credits left.
+        or (error.get("provider") == "openrouter" and error.get("kind") == "http_error"
+            and error.get("status_code") == 402))
+
+
 def _worker_backend_retry_delay(
     slot, detail, *, model, retries, waited_seconds, reason_code=None,
     pre_effect_verified=False,
@@ -1500,6 +1513,10 @@ def _worker_backend_retry_delay(
              or (slot.get("backend") == "ollama"
                  and isinstance(model, str) and model.lower().endswith(":cloud")))
     )
+    if (reason_code in {None, "cloud_call_retry_exhausted"} and cloud
+            and slot.get("type") in {"continuous", "persistent"} and _worker_no_credit(error)):
+        # No credit: return the lease and check once a day; a restart checks at once.
+        return _WORKER_NO_CREDIT_RECHECK_SECONDS
     if (reason_code in {None, "cloud_call_retry_exhausted"} and cloud
             and slot.get("type") in {"continuous", "persistent"}
             and error and (error["kind"] == "rate_limited"
@@ -5378,7 +5395,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if assignment_open:
                             finish_assignment(current_assignment, status="error",
                                               result="backend_error",
-                                              reason=("temporary_gateway_timeout"
+                                              reason=("no_credit" if _worker_no_credit(detail)
+                                                      else "temporary_gateway_timeout"
                                                       if detail and detail.get("provider") == "openrouter"
                                                       and detail.get("status_code") == 504
                                                       else "temporary_connection_error"
@@ -5446,8 +5464,13 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             control.task_binding = None
                             backend_retries += 1
                             backend_waited_seconds += retry_delay
-                        waiting = (f"{error_activity} Aufgabe bleibt offen. "
-                                   f"Warte {retry_delay:g} Sekunden; danach neue Übernahme.")
+                        if _worker_no_credit(detail):
+                            recheck = (datetime.now() + timedelta(seconds=retry_delay)).strftime("%d.%m. %H:%M")
+                            waiting = (f"{error_activity} Kein Guthaben; Aufgabe bleibt offen. "
+                                       f"Nächste Prüfung am {recheck}; ein Neustart prüft sofort.")
+                        else:
+                            waiting = (f"{error_activity} Aufgabe bleibt offen. "
+                                       f"Warte {retry_delay:g} Sekunden; danach neue Übernahme.")
                         if _update_worker_slot(control, {
                             "status": "running", "task_id": None, "current_activity": waiting,
                         }) is None:
