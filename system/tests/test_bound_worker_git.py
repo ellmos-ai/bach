@@ -503,7 +503,10 @@ def test_bound_task_manage_hides_native_task_authority_failure(bridge):
         allowed_tools={"task_manage"},
     )
 
-    assert result == "Taskoperation nicht bestätigt; Taskbindung prüfen."
+    # A foreign task id is a local argument error: fixed guidance, no internal authority text, no state change.
+    # Unknown native ACKs stay redacted as "nicht bestätigt" (next test).
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    assert result == WorkerTaskManageArgumentError("mutation_scope").user_message
     assert "Mutation gehört" not in result
     assert bridge.binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"
 
