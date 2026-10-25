@@ -194,6 +194,9 @@ def test_review_reads_registered_parent_without_starting_child_worktree(review_w
     assert context["review_source"]["worktree"] == str(source)
     assert context["review_source"]["read_only"] is True
     assert context["review_source"]["result_revision"] == world["target"]["result_revision"]
+    # The code route carries the tree diff too (here: a clean, unchanged tree).
+    assert context["target_tree"]["availability"] == "diff"
+    assert context["target_tree"]["diff"] == "" and context["target_tree"]["truncated"] is False
     assert not (world["tree"]["worktrees"] / f"task-{child.task_id}").exists()
     if not hasattr(os, "O_NOFOLLOW") or os.open not in os.supports_dir_fd:
         pytest.skip("Secure descriptor-relative reading is exercised on POSIX")
@@ -966,15 +969,49 @@ def test_result_with_github_pr_link_stays_on_the_github_route(worker_context, tm
         "SELECT COUNT(*) FROM tasks WHERE category='worker-review'").fetchone()[0] == 0
 
 
-def test_backlog_backfill_prepares_waiting_results_once(text_world):
+def test_backlog_backfill_prepares_waiting_results_once_in_small_batches(text_world):
     world = text_world
-    first = review.prepare_pending_review_tasks(world["conn"], **_paths(world))
+    first = review.prepare_pending_review_tasks(world["conn"], limit=1, first=(world["task_id"],),
+                                                **_paths(world))
     assert [item["target_result_id"] for item in first] == [world["target"]["result_id"]]
     assert first[0]["schema"] == UNSCOPED_INTENT
-    again = review.prepare_pending_review_tasks(world["conn"], **_paths(world))
-    assert [item["review_task_id"] for item in again] == [first[0]["review_task_id"]]
+    assert review.prepare_pending_review_tasks(world["conn"], **_paths(world)) == []
     assert world["conn"].execute(
         "SELECT COUNT(*) FROM tasks WHERE category='worker-review'").fetchone()[0] == 1
+    with pytest.raises(ValueError):
+        review.prepare_pending_review_tasks(world["conn"], limit=0)
+
+
+@pytest.mark.parametrize("ban", [False, True])
+def test_unmapped_author_is_a_visible_placeholder_unless_the_model_ban_is_on(text_world, ban):
+    world = text_world
+    conn = world["conn"]
+    placeholder = f"unmapped:ollama/{AUTHOR_MODEL}"
+    # The author's model leaves the identity catalogue; the reviewer stays mapped.
+    settings._persist(conn, IDENTITY_KEY, [_binding(REVIEWER, REVIEW_ROUTE, REVIEW_MODEL,
+                                                    REVIEW_OBSERVED)], actor="test-operator")
+    conn.commit()
+    if ban:
+        _ban_author_model(world)
+    prepared = review.prepare_review_task(conn, world["binding"], **_paths(world))
+    if ban:
+        assert prepared is None
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE category='worker-review'").fetchone()[0] == 0
+        return
+    assert prepared["author_id"] == placeholder
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    verdict = _approved_review(child)
+    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
+        "action": "submit_result", "task_id": child.task_id, "result": verdict})
+    evidence = review.record_review(conn, child)
+    assert evidence["availability"] == "recorded" and evidence["independent"] is True
+    receipt = json.loads(conn.execute("SELECT receipt FROM worker_result_model_reviews").fetchone()[0])
+    assert receipt["author_id"] == placeholder
+    # A later ban withdraws the evidence instead of trusting the placeholder.
+    _ban_author_model(world)
+    assert review.read_review_evidence(conn, read_result(conn, world["task_id"])["result"])[
+        "availability"] == "unavailable"
 
 
 def test_code_scope_result_keeps_its_git_bound_route(review_world):

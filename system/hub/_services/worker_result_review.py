@@ -292,6 +292,16 @@ def _unscoped_target_record(conn, task_id, *, tree_state=None, repo_root=None, w
         return None
 
 
+def _unmapped_author(record):
+    """Visible placeholder for a linked native author missing from the identity catalogue."""
+    execution = record.get("execution", {})
+    if (source_kind(record) != "native" or execution.get("availability") != "available"
+            or type(execution.get("backend_id")) is not str or not execution["backend_id"]
+            or type(execution.get("requested_model")) is not str or not execution["requested_model"]):
+        return None
+    return f"unmapped:{execution['backend_id']}/{execution['requested_model']}"
+
+
 def _target_authority(conn, record):
     """Read current config and resolve a real linked author, no Git or DDL."""
     try:
@@ -299,9 +309,14 @@ def _target_authority(conn, record):
         current = _policy_snapshot(conn, record["task_id"])
         model_ids = _identity_snapshot(conn)
         author = author_principal(model_ids, record)
-        if author is None and _unscoped_guard(conn, record):
+        unscoped = author is None and _unscoped_guard(conn, record)
+        if unscoped:
             author = identity.principal_for_execution(model_ids, record["execution"])
         exclude_author = settings.exclude_author_model(conn)
+        if author is None and not exclude_author and (unscoped or source_pin(record) is not None):
+            # The fresh run is the independence unit (user rule 2026-10-25). An
+            # active author-model ban needs the real identity and stays closed.
+            author = _unmapped_author(record)
         eligible = (_policy_eligible(policy, author, exclude_author=exclude_author)
                     if author is not None else ())
         if (policy.get("availability") != "available" or author is None
@@ -579,25 +594,39 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
         return None
 
 
-def prepare_pending_review_tasks(conn, *, repo_root=None, worktrees_dir=None):
-    """Local controller backfill: one review task per eligible native result in review.
+def prepare_pending_review_tasks(conn, *, limit=10, first=(), repo_root=None, worktrees_dir=None):
+    """Local controller backfill: new review tasks for results already waiting in review.
 
     Same gates as after a fresh submission; idempotent, never accepts anything.
+    At most ``limit`` new tasks per run so interleaved review pickup is not
+    flooded; ``first`` task ids go ahead of the rest (ascending id).
     """
     if conn.in_transaction:
         raise ValueError("Review-Backfill benötigt eine freie DB-Verbindung")
-    ids = [row[0] for row in conn.execute(
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError("Ungültige Backfill-Paketgröße")
+    waiting = [row[0] for row in conn.execute(
         "SELECT id FROM tasks WHERE status='review' AND (claim_id IS NULL OR claim_id='') ORDER BY id")]
+    ordered = [task_id for task_id in first if task_id in waiting]
+    ordered += [task_id for task_id in waiting if task_id not in ordered]
+
+    def intents():
+        return (conn.execute("SELECT COUNT(*) FROM worker_result_review_intents").fetchone()[0]
+                if _table(conn, "worker_result_review_intents") else 0)
+
     prepared = []
-    for task_id in ids:
+    for task_id in ordered:
+        before = intents()
         try:
             result = _prepare_native_review(conn, task_id, repo_root=repo_root,
                                             worktrees_dir=worktrees_dir)
         except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError,
                 settings.PolicyUnavailable):
             result = None
-        if result is not None:
+        if result is not None and intents() > before:
             prepared.append(result)
+            if len(prepared) >= limit:
+                break
     return prepared
 
 
