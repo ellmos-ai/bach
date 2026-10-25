@@ -655,3 +655,28 @@ def test_review_queue_is_considered_only_after_no_normal_match_and_needs_grant(
     else:
         assert binding is None
         assert acquired == []
+
+
+@pytest.mark.parametrize("review_available", [True, False])
+def test_review_turn_takes_a_review_before_new_work(monkeypatch, review_available):
+    """User decision 25.10.2026: reviews are ordinary work and alternate with new tasks."""
+    normal = _queue_task(31)
+    review = _queue_task(REVIEW_TASK_ID, assigned_slot=CHAT_ID, required_model=MODEL)
+    client = _QueueProbeClient(ordinary=[normal], review=[review] if review_available else [])
+    acquired = []
+
+    def acquire(cls, active_client, task_id, **kwargs):
+        acquired.append((task_id, kwargs.get("_review_grant")))
+        return SimpleNamespace(task_id=task_id)
+
+    monkeypatch.setattr(WorkerLeaseBinding, "acquire", classmethod(acquire))
+    binding = WorkerLeaseBinding.acquire_next(
+        client, {"id": CHAT_ID, "model": MODEL, "pickup_filter": {"enabled": False}},
+        review_route={"backend_id": "openai", "route_sha256": "c" * 64},
+        review_requested_model=MODEL, worker_id=WORKER_ID, host=HOST, generation=GENERATION,
+        is_current=lambda: True, stop_event=threading.Event(), review_first=True)
+    assert client.events[0] == "review_candidates"
+    if review_available:
+        assert binding.task_id == REVIEW_TASK_ID and acquired[0][1] is not None
+    else:
+        assert binding.task_id == normal["id"] and acquired == [(normal["id"], None)]

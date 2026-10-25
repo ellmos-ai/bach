@@ -248,6 +248,7 @@ class _WorkerControl:
     task_binding: Any = None
     queue_profile_unbound: bool = False
     _review_backend: Any = None
+    review_turn: bool = True
     _review_requested_model: str | None = None
     sequence_creator_authority: Any = None
     creator_delegation: Any = None
@@ -920,6 +921,7 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                                if scope_deferrals is not None else control.deferred_task_versions),
             observe_queue=observe_queue,
             on_fixed_task_rejected=release_rejected_fixed_task,
+            review_first=control.review_turn,
         )
         if (selected is None and scope_deferrals is not None and fresh_queue_records
                 and is_current() and not control.stop_event.is_set()):
@@ -927,6 +929,9 @@ def _acquire_worker_task(control, slot, physical_worker_id):
             # skips. The next loop still rechecks policy/stop and acquires a new
             # native lease before any work; no model or tool call is replayed.
             scope_deferrals.after_exhausted_scan(fresh_queue_records[-1])
+        if selected is not None:
+            # Alternate reviews with new work (user decision 25.10.2026).
+            control.review_turn = getattr(selected, "_review_grant", None) is None
         return selected
     except LeaseDeniedError as exc:
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
