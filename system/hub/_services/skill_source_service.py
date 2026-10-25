@@ -4,10 +4,23 @@
 There is one active source per skill ID. A user edit creates or updates the
 local override; upstream modules remain the documented factory source.
 Instructions never grant tools. Their SHA256 is pinned when a slot is created.
+
+Task #2449: Die Pin-/Bindungs-Validierung (``validate_skill_pins``) und die
+Bindungs-Zustandsermittlung (``skill_binding_states``) leben als produktneutrales
+Laufzeitmodul unter ``.MODULES/.CONTROL/skill-registry/`` (MANIFEST.json, Stdlib-only).
+Dieser Service ist der BACH-seitige Adapter: Lädt das Modul per ``importlib`` aus
+seinem Pfad (kein sys.path-Eingriff); die Umgebungsvariable
+``BACH_SKILL_REGISTRY_MODULE`` überschreibt den Pfad für Tests/Integration.
+Re-exportiert ``SKILL_ID_PATTERN``/``REVISION_PATTERN`` als ``SKILL_ID``/``REVISION``;
+``validate_skill_refs``/``skill_binding_status`` behalten ihre BACH-Signatur und
+delegieren an das Modul (fail-closed bleibt erhalten).
+
+Rollback: ``git checkout <HEAD> -- system/hub/_services/skill_source_service.py``
 """
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -21,8 +34,30 @@ from typing import Callable
 from hub._services.user_config_store import _exclusive_lock
 from hub._services.display_assets import TICKET_SYMBOL_IDS
 
-SKILL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
-REVISION = re.compile(r"^[a-f0-9]{64}$")
+_MODULE_NAME = "bach_skill_registry_core"
+_DEFAULT_MODULE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / ".MODULES" / ".CONTROL" / "skill-registry" / "skill_registry.py"
+)
+
+
+def _load_skill_registry():
+    """Lädt das produktneutrale skill-registry-Modul (Stdlib-only) via importlib."""
+    override = os.environ.get("BACH_SKILL_REGISTRY_MODULE")
+    module_path = Path(override) if override else _DEFAULT_MODULE_PATH
+    spec = importlib.util.spec_from_file_location(_MODULE_NAME, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"skill-registry-Modul nicht ladbar: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_MODULE_NAME] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_skill_registry = _load_skill_registry()
+
+SKILL_ID = _skill_registry.SKILL_ID_PATTERN
+REVISION = _skill_registry.REVISION_PATTERN
 MAX_SOURCE_BYTES = 200_000
 MAX_PROMPT_CHARS = 80_000
 SKIP_DIRS = {"_archive", "archive", "node_modules", "__pycache__", "dist", "build"}
@@ -200,17 +235,7 @@ def pin_skills(ids: list[str], *, roots: list[Path] | None = None) -> list[dict]
 
 def validate_skill_refs(pins: list[dict]) -> list[dict]:
     """Validate saved pin metadata without requiring its source to remain current."""
-    if not isinstance(pins, list) or len(pins) > 30:
-        raise ValueError("Ungültige Skill-Bindung")
-    seen = set()
-    for pin in pins:
-        if (not isinstance(pin, dict) or set(pin) != {"id", "source_version", "version"}
-                or not isinstance(pin["id"], str) or not SKILL_ID.fullmatch(pin["id"])
-                or not isinstance(pin["source_version"], str) or not REVISION.fullmatch(pin["source_version"])
-                or not isinstance(pin["version"], str) or pin["id"] in seen):
-            raise ValueError("Skill benötigt eine gültige Quellenversion")
-        seen.add(pin["id"])
-    return [dict(pin) for pin in pins]
+    return _skill_registry.validate_skill_pins(pins)
 
 
 def skill_binding_status(pins: list[dict], *, roots: list[Path] | None = None) -> list[dict]:
@@ -221,10 +246,7 @@ def skill_binding_status(pins: list[dict], *, roots: list[Path] | None = None) -
         catalog = source_catalog(roots)
     except (OSError, ValueError, RuntimeError):
         catalog = None
-    return [{"id": pin["id"], "source_version": pin["source_version"], "state":
-             "unavailable" if catalog is None else "missing" if pin["id"] not in catalog else
-             "current" if catalog[pin["id"]]["source_version"] == pin["source_version"] else "source_changed"}
-            for pin in refs]
+    return _skill_registry.skill_binding_states(refs, catalog)
 
 
 def load_skill_instructions(pins: list[dict], *, roots: list[Path] | None = None) -> str:
