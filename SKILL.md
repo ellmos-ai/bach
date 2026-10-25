@@ -1,10 +1,10 @@
 ---
 name: bach
-version: 3.9.1
+version: 3.10.0
 type: skill
 author: BACH Team
 created: 2025-12-01
-updated: 2026-03-12
+updated: 2026-10-25
 anthropic_compatible: true
 
 description: >
@@ -12,6 +12,76 @@ description: >
   der bei Claude hochgeladen werden muss. Er kennt alle lokalen Skills,
   führt Versions-Checks durch und lädt bei Bedarf aktuellere lokale
   Versionen. Aktiviert sich automatisch bei jeder Skill-Nutzung.
+---
+
+# ALS AGENT OFFENE TASKS ABARBEITEN (Einstieg für Claude, Codex, Kimi, Gemini)
+
+> **Neu seit v3.10.0 (2026-10-25).** Lautet dein Auftrag „lies die SKILL.md und arbeite offene Tasks ab“, gilt **zuerst dieser Abschnitt**. Alles weitere in dieser Datei ist Referenz und wird nur bei Bedarf gelesen.
+> Ausführliche, kopierbare Fassung: `Desktop\OCEAN\EINWEISUNG-EXTERNE-WORKER.md` (OneDrive von Lukas, nicht im Repo). Lease-Vertrag: `docs/architecture/TASKDB-SALT-LEASE-VERTRAG-v1.md`, Clients: `docs/architecture/TASKDB-SALT-LEASE-CLIENTS-v1.md`. Lokaler Worker-Harness (Buddha): `docs/architecture/LOKALER-WORKER-HARNESS.md` (PR #520).
+
+**Ablauf in einem Satz:** booten → Task wählen → **leasen, dann arbeiten** → eigener Worktree → Tests → PR → Ergebnis abgeben → nächste Task. Ohne ausdrückliche Stoppanweisung von Lukas hörst du nicht auf.
+
+### 1. Booten und Modus
+- Zugang zum Mac Studio über den bereitgestellten SSH-Zugang; richte keine eigenen Zugangsdaten ein. Projekt `/Users/lukas/services/bach`, Python `/Users/lukas/.venvs/bach/bin/python`. Lies `AGENTS.md` und die Anweisungen des Teilprojekts, in dem du arbeitest.
+- **Modus B (Gemischt)** ist für Agenten, die aktiv mitarbeiten, der Normalfall. **Modus A (Bibliothek)** genügt, wenn du nur Tasks bearbeitest und BACH nicht als Sitzung nutzt: der Lease-Weg unten läuft über den Lead-Dienst und braucht keinen Session-Start. Modus C (Session) nur auf ausdrücklichen Wunsch.
+- Lies vor der ersten Task den aktuellen Plan `Desktop\OCEAN\AKTUELLER-PLAN.md` und `MODUL-ZUORDNUNG.md` (Bauorte).
+
+### 2. Freie Tasks finden
+- **Nativ:** `TaskLeaseClient.task_candidates(limit=100, offset=…)` (alle Seiten lesen, nicht nur die erste), danach `task_snapshot(task_id)` für die vollständige Beschreibung. `bach task list` zeigt dieselben Tasks nur zur Ansicht.
+- **Auswahlregel:**
+  1. Nur Tasks, deren Abhängigkeiten erfüllt sind, ohne fremde aktive Lease, und für die deine Werkzeuge ausreichen.
+  2. **Höchste Priorität zuerst** (P0 vor P1 vor P2). Bei gleicher Priorität zuerst, was zu den Agenda-Schwerpunkten passt (Stand 25.10.2026: Förderplaner, Agentenvorlagen/-steuerung, Running & Living, GUI-Umbau, Worker-Zuverlässigkeit; maßgeblich ist `AKTUELLER-PLAN.md`).
+  3. **Keine `OLLAMA`-Tasks.** Das ist die Hintergrund-Warteschlange der lokalen Worker (Buddha, Ollama Cloud, OpenRouter). Auch Tasks für `USER`/`HUMAN`/`LUKAS` und fremd reservierte Tasks bleiben liegen. `BACH` bedeutet gemeinsam bearbeitbar. Erfinde keine zusätzliche Slotpflicht.
+  4. Review- und Prüfaufgaben anderer Autoren sind ausdrücklich geeignet.
+  5. Hängt eine Task an einer offenen Nutzerentscheidung oder passt sie nicht zu deinen Möglichkeiten: Frage bzw. Grund festhalten (Task-Notiz) und die nächste nehmen. Ändere nie Regeln oder Schutzgates, nur um eine Task übernehmen zu können.
+
+### 3. Übernehmen, bevor du arbeitest
+```python
+import os, sys
+from pathlib import Path
+os.environ["BACH_NO_AUTO_MIGRATE"] = "1"
+sys.path.insert(0, "/Users/lukas/services/bach/system")
+from hub._services.task_lease_client import TaskLeaseClient
+token = Path("/Users/lukas/.credentials/bach_device_token_tray").read_text().strip()   # nie ausgeben
+client = TaskLeaseClient(lead_url="http://127.0.0.1:8000", device_token=token, timeout=35)
+snap = client.task_snapshot(task_id)                      # vollständige Beschreibung und Taskversion
+ack = client.acquire(task_id, worker_id="<agent>@<host>", host="<host>", ttl_profile="S")
+# neue request_id wird erzeugt; die Taskversion aus dem Snapshot kann als task_version=… mitgegeben werden
+# ack.lease_id, ack.fence, ack.task_version: für diesen Lauf aufbewahren, nie in Berichte schreiben
+client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, auch bei langen Arbeiten
+```
+- Worker-ID **`<agent>@<host>`**, eigene Request-ID und Generation, nie mit einem anderen Worker teilen. Beginne erst nach bestätigter Zusage.
+- Lehnt `renew` ab, ist die Lease abgelaufen oder hat sich die Fence geändert: **alle Schreibaktionen für diese Task beenden.** Nach bestätigten Inhaltsänderungen die gespeicherte Taskversion aktualisieren.
+- **Nicht verwenden:** `bach task claim` (älterer Claim ohne Fence/Lease-ID) und `~/compute/luna-gui/task_tool.py claim` (setzt nur `assigned_to`, keine Lease). Beide sind keine native Übernahme und schützen nicht gegen doppelte Bearbeitung. `task_tool.py note` (Text an die Beschreibung anhängen) und `list` sind als Behelf nutzbar, bis es ein natives Gegenstück gibt.
+- Signaturen verbindlich aus `system/hub/_services/task_lease_client.py` lesen, nicht aus diesem Beispiel.
+
+### 4. Arbeiten
+- **Eigener Worktree je Task** von `origin/main`: `git worktree add ~/services/bach-worktrees/<zweig> -b <zweig> origin/main`. Zweigname `<agent>/<task>-<kurz>-<datum>`. Der Hauptcheckout `~/services/bach` ist belegt (fremde, uncommittete Änderungen): dort wird nicht gearbeitet, gemessen oder gebaut.
+- **Bauort:** neue Fachlogik gehört in das passende Ocean-Modulrepo laut `MODUL-ZUORDNUNG.md`, nicht in den BACH-Kern.
+- Prüfe das Ergebnis an den Abnahmekriterien der Task. Führe Tests der geänderten Bereiche aus und behaupte nur, was du belegen kannst. Deutsche Endnutzertexte mit echten Umlauten.
+- Vor dem Commit: Secrets-Scan, Diff lesen, nur eigene Dateien committen (kein Sammelcommit).
+- Branch pushen, **PR gegen `main` anlegen** und in der Task vermerken. Commit, Push, PR, Merge, Deploy und fachliche Abnahme einzeln ausweisen. Ein Branch ist noch kein ausgelieferter Stand.
+
+### 5. Abgeben
+- **Fertig:** `client.submit_result(task_id, lease_id=…, fence=…, task_version=…, generation="<neue-Generation>", result="<Text>")`. `result` ist ein konkreter Text mit **höchstens 3000 Zeichen** (erreichte Kriterien, Änderungen, PR-Link, Commit-SHA, echte Prüfergebnisse, Grenzen); eine reine Erledigungsmeldung („done“) wird abgelehnt. Die Abgabe setzt die Task auf `review` und gibt die Lease frei. Danach `task_result_snapshot(task_id)` lesen und Ergebnis-ID/Hash prüfen; ein Chat-Text allein ist keine Abgabe.
+- **Teilstand oder Blockade:** WIP-Branch pushen, dann `client.release(task_id, lease_id=…, fence=…, outcome="return" | "blocked", note="<Branch, SHA, nächster Schritt>")`. Kein pauschales `done`, keine künstlich verlängerte Lease, während du auf Menschen wartest. (`complete=false` gibt es nur im Task-Werkzeug des lokalen Buddha-Laufs, siehe Harness-Dokument, nicht im SDK.)
+- Danach **sofort die nächste Task** (Schritt 2). Ist gerade keine übernehmbar: belegte Gründe melden, kurz warten, erneut prüfen. Beende deinen Auftrag nicht selbst.
+- Kurzbericht je Task: Task-ID, Arbeit, Belege, Commit-/Remote-SHA, PR, zurückgelesener Task-/Ergebnis-/Leasezustand. Ein Review eigener Arbeit ist als nicht unabhängig zu kennzeichnen.
+
+### 6. Grenzen (gelten immer)
+- **Nicht mergen**, nicht auf `main` pushen, nichts ausrollen, keine Dienste neu starten, Worker-Konfiguration nicht ändern, keine fremden Jobs/Worker stoppen, keinen `.SYNC`-Lauf starten. Gemergt wird über die Zweitprüfung, ausgerollt nach Prüfung.
+- **`bach.db` nie direkt beschreiben**, keine eigenen SQL-Änderungen, keine kopierte Datenbank als Autorität. Immer die native API/das SDK.
+- **Keine Sperren in `OneDrive\.TOPICS` oder `.TOPICS\.AI`:** sie stoppen auf dem Mac den Hintergrundworker Buddha und jeden Rollout. Sperren nur für den eigenen Worktree-Pfad.
+- Fremde aktive Leases, laufende Arbeit anderer Agenten und gesperrte Pfade bleiben geschützt. Tokens und Zugangsdaten nie ausgeben oder committen.
+
+### 7. Bekannte Lücken (Stand 25.10.2026)
+- **Es gibt noch keinen nativen Kurzbefehl** `bach task take|renew|submit|return|block`; er ist geplant (`ANFORDERUNGEN-DETAIL.md`, Abschnitt „Tasksystem, Leases und Locks“). Der dauerhafte native Weg ist heute das Python-SDK `TaskLeaseClient` (oben); `bach_api.task` bietet nur `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose` ohne Kandidatenliste und ohne `submit_result`.
+- `task_tool.py` liegt außerhalb des Repos (`~/compute/luna-gui/`); sein `list` liest `bach.db` direkt (nur lesend) und sein `claim` ist keine Lease.
+- Einweisung, Plan und `MODUL-ZUORDNUNG.md` liegen auf Lukas’ OneDrive-Desktop, nicht im Repo; ein auf dem Mac laufender Agent erreicht sie nicht ohne Kopie.
+- Herkunftsvertrag für externe Ergebnisse: #2339 ist nativ abgenommen, Main-Merge und Release stehen aus (PR #507). Ergebnisse bis dahin ehrlich als abgegeben bzw. Teilstand behandeln.
+
+> **Stand-Hinweis zum Rest der Datei:** Alles unterhalb dieses Abschnitts wurde zuletzt inhaltlich am 2026-03-12 (v3.8.0) überarbeitet. Zahlen (Handler, Tabellen, Hooks, Themen), die Architekturübersicht v2.6 und die Aufgabenplanung (5) sind seither **nicht neu gemessen**; bei Widerspruch gilt der Code bzw. die Messung. Die Task-Übernahme läuft nicht mehr über `bach task claim`, sondern wie oben beschrieben.
+
 ---
 
 # VERSIONS-HINWEIS
@@ -583,7 +653,7 @@ bach help tasks
 bach task list
 ```
 
-- Suche dir selbststaendig Aufgaben aus und weise sie dir zu
+- Suche dir selbststaendig Aufgaben aus. **Seit 2026-10-25: Übernahme und Abgabe laufen über Lease, siehe Abschnitt „ALS AGENT OFFENE TASKS ABARBEITEN“ ganz oben.** `bach task claim` ist veraltet (Claim ohne Fence/Lease-ID).
 
 ---
 
@@ -874,6 +944,12 @@ injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
 ---
 
 ## CHANGELOG
+
+### v3.10.0 (2026-10-25)
+
+- **Agenten-Einstieg**: Neuer Abschnitt ganz oben „ALS AGENT OFFENE TASKS ABARBEITEN“ (Booten, Task wählen, Lease übernehmen, Worktree, Tests, PR, Ergebnis abgeben, nächste Task; Grenzen; bekannte Lücken). Ziel: ein Agent (Claude, Codex, Kimi, Gemini) bootet allein mit dieser Datei.
+- **Veraltet markiert**: `bach task claim` und (5.2) „weise sie dir zu“; Zahlen und Architekturübersicht unterhalb des neuen Abschnitts sind auf dem Stand 2026-03-12 und nicht neu gemessen.
+- Keine Inhalte gelöscht. Modi A, B, C unverändert.
 
 ### v3.8.0 (2026-03-12)
 
