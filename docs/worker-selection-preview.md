@@ -48,6 +48,15 @@ Halterdaten, Generationen, Tokens oder Lease-Credentials in der Antwort.
 Die Adapterprojektion validiert Schema, Version, IDs, Zeit, Typen, Grenzen,
 Grundcodes und Zählerkorrelation und verwirft fremde Felder.
 
+Die gesamte Vorschau besitzt ein gemeinsames Zeitbudget von fünf Sekunden,
+geprüft vor und nach jedem synchronen Leseaufruf. Ein bereits laufender Aufruf
+behält seinen Transport-Timeout; das Budget unterbricht ihn nicht. Nach Ablauf
+beginnt kein weiterer Aufruf. Im Remote-Modus gilt zusätzlich eine gemeinsame
+Obergrenze von 128 Leseaufrufen, einschließlich Kandidatenseite, explizitem Pin,
+Lease-Reads, Dependency-Snapshots und fehlgeschlagenen Aufrufen. Cachetreffer
+verbrauchen keinen weiteren Aufruf. Bei Erschöpfung wird die gesamte Anfrage
+als nicht bestätigt abgebrochen (HTTP 503); es gibt keine erfolgreiche Teilseite.
+
 selection_reason übernimmt die tatsächlichen Selectorcodes. Keine Kopie der
 Modell-/Slot-/Zuständigkeits-/Pickup-Regeln. Noch nicht integrierte Flags aus
 der separaten2261-/2422-Lieferung werden nicht als vorhanden ausgegeben.
@@ -100,8 +109,10 @@ Worker-Overrides bei allen Materialisierungs-/Resetwegen; Integration der
 vorhandenen2261-/2422-Quelle; GUI-/CLI-Bedienung; vollständige Default-/Vorschau-/
 Queue-Parität und native Laufzeitabnahme. Keine Kindtask wird damit angenommen.
 
-Keine neuen Testfälle oder manuellen Anwendungstests/Builds in diesem
-Quellenslice. Statische Syntax-/Diffprüfung und unabhängiger Quellenreview
-werden getrennt dokumentiert. Automatische bestehende PR-CI ist ein eigener
+Der ursprüngliche Quellenslice enthielt keine neuen Testfälle. Der Budget-Fix
+ergänzt isolierte Regressionen für langsame und fehlgeschlagene Reads,
+Kandidaten, Dependencies, explizite Pins und den schnellen Normalfall.
+Statische Syntax-/Diffprüfung und unabhängiger Quellenreview werden getrennt
+dokumentiert. Automatische bestehende PR-CI ist ein eigener
 Beleg und ersetzt die offenen Fokus-/Regressions-/Geräteabnahmen nicht.
 Kein Deploy, Workerstart oder aktive Konfigurationsänderung.

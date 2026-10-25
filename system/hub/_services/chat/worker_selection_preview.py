@@ -5,6 +5,7 @@ import copy
 import re
 from collections import Counter
 from datetime import datetime, timezone
+from time import monotonic
 
 from hub._services.task_schema import parse_task_dependency_ids
 from .worker_lease_binding import WorkerLeaseBinding
@@ -12,6 +13,8 @@ from .worker_queue_status import REJECTIONS
 
 SCHEMA = "bach.worker-selection-preview.v1"
 MAX_ITEMS = 100
+MAX_REMOTE_READS = 128
+PREVIEW_SECONDS = 5.0
 _VERSION = re.compile(r"^[a-f0-9]{64}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 OBSERVATIONS = frozenset({
@@ -27,6 +30,33 @@ UNCHECKED = (
 
 class PreviewUnavailable(RuntimeError):
     """A bounded observation could not be tied to its native source."""
+
+
+class _ObservationBudget:
+    """One request budget, including failed reads and the initial page/pin.
+
+    Check time on both sides of each synchronous read. An in-flight transport
+    retains its own timeout; no further read starts after the deadline.
+    """
+
+    def __init__(self, client):
+        self.remote = client.mode == "remote"
+        self.deadline = monotonic() + PREVIEW_SECONDS
+        self.reads = 0
+
+    def check(self):
+        if monotonic() >= self.deadline:
+            raise PreviewUnavailable("Zeitbudget der Auswahlvorschau ist erschöpft")
+
+    def read(self, method, *args, **kwargs):
+        self.check()
+        if self.remote and self.reads >= MAX_REMOTE_READS:
+            raise PreviewUnavailable("Lesebudget der Auswahlvorschau ist erschöpft")
+        self.reads += 1
+        try:
+            return method(*args, **kwargs)
+        finally:
+            self.check()
 
 
 def _task(task):
@@ -57,6 +87,7 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
             or type(offset) is not int or not 0 <= offset <= 100_000):
         raise ValueError("Ungültige Vorschauanfrage")
     slot = copy.deepcopy(slot)
+    budget = _ObservationBudget(client)
     deferred = dict(deferred_versions or {})
     explicit = slot.get("task_id")
     pinned = explicit not in (None, "", 0, "0")
@@ -65,10 +96,10 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
             explicit = int(explicit)
         if type(explicit) is not int or explicit <= 0 or offset != 0:
             raise ValueError("Ungültige fest gebundene Task-ID oder Seitenposition")
-        tasks = [_task(client.task_snapshot(explicit))]
+        tasks = [_task(budget.read(client.task_snapshot, explicit))]
         total, has_more = 1, False
     else:
-        page = client.task_candidates(limit=limit, offset=offset)
+        page = budget.read(client.task_candidates, limit=limit, offset=offset)
         if (not isinstance(page, dict) or not isinstance(page.get("tasks"), list)
                 or len(page["tasks"]) > limit or type(page.get("has_more")) is not bool
                 or page.get("offset") != offset or type(page.get("total")) is not int
@@ -83,6 +114,7 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
     items = []
     counts = Counter()
     for task in tasks:
+        budget.check()
         # Explicit pins use the native explicit path, which deliberately does
         # not apply ordinary automatic ownership/deferred-version rules.
         review_pin = pinned and str(task.get("source") or "").startswith("worker-result-review:v1:")
@@ -103,11 +135,13 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
         if review_pin:
             observations.append("review_route_unchecked")
         try:
-            lease = client.read(task["id"])
+            lease = budget.read(client.read, task["id"])
             if lease.task_version != task["task_version"]:
                 observations.append("task_changed")
             if lease.leased:
                 observations.append("lease_held")
+        except PreviewUnavailable:
+            raise
         except Exception:  # Observation failure never becomes permission.
             observations.append("lease_unavailable")
         dependency_ids, invalid = parse_task_dependency_ids(task.get("depends_on"))
@@ -120,7 +154,9 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
                         observations.append("dependencies_unavailable")
                         break
                     try:
-                        dependency_cache[dep] = _task(client.task_snapshot(dep))["status"]
+                        dependency_cache[dep] = _task(budget.read(client.task_snapshot, dep))["status"]
+                    except PreviewUnavailable:
+                        raise
                     except Exception:
                         dependency_cache[dep] = None
                 status = dependency_cache[dep]
@@ -136,6 +172,7 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
         selection = "unconfirmed" if review_pin else "excluded" if reason else "match"
         items.append({"task_id": task["id"], "selection": selection,
                       "selection_reason": reason, "observations": observations})
+    budget.check()
     return {
         "schema": SCHEMA, "worker_id": slot["id"],
         "configuration_version": configuration_version,
@@ -235,4 +272,3 @@ def project_selection_preview(raw, worker_id):
             "configuration_saved")
     return {**{k: raw[k] for k in keys}, "items": items,
             "reason_counts": dict(counts), "unchecked_gates": list(UNCHECKED)}
-
