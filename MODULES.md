@@ -169,3 +169,28 @@ unabhängig davon verbleiben (es wird ohne Adapter nicht geladen).
   `ExecutionReceipt` in `trithon_dispatch.py`/`routing_contract.py` zeigen
   die Claim→Besetzung→Ausführung→Receipt-Kette mit derselben
   Korrelationsidentität.
+
+---
+
+## 11. Moduldefinition: content-guard
+
+**Pfad:** `.MODULES/.CONTROL/content-guard/` · **Version:** v0.1.0
+
+Mehrsprachige Injection-Erkennung und Content-Markierung mit fail-closed Prüfweg für Worker-Toolcalls und Kettenübergaben. Erkennt injektionsverdächtige Muster (mehrsprachige Pattern-Library), markiert unvertraute Inhalte (≥ `untrusted_threshold` Funde → `mark_untrusted`) und leitet optional an Ollama (Stufe 2, lokal, Standard AUS) oder Google Model Armor (Stufe 3, Standard AUS) weiter. Architektur nach agents-heart-Muster: Frozen Dataclasses, Fail-closed, Event-Recorder (`content_guard.verdict`).
+
+NOTICE: Enthält von SentinelFleet übernommene Teile (Regex-Musterlogik; Quelle sentinel-fleet e7f9c748). Lukas ist alleiniger Rechteinhaber dieser Teile (AGPL-3.0) und lizenziert sie hier unter MIT für BACH; Freigabe laut Bericht OCEAN/BERECHTE/2026-10-25_SentinelFleet-Uebernahme.
+
+| Komponente | Beschreibung |
+| --- | --- |
+| `ContentGuardError` | Basis-Exception (`RuntimeError`-Subclass) des Moduls. |
+| `ContentBlockedError` | Fail-closed-Abbruch bei HIGH-Befund; trägt die Findings. |
+| `GuardConfigurationError` | Fehlerhafte Guard-Konfiguration. |
+| `InjectionPattern` | Frozen Dataclass: injektionsverdächtiges Muster (id, Sprache, Schwere, Kategorie). |
+| `Finding` | Frozen Dataclass: einzelner Treffer (pattern_id, matched_text, position, confidence). |
+| `GuardVerdict` | Frozen Prüfergebnis: action (`allow`/`block`/`mark_untrusted`), findings, content_hash (SHA-256), adapter_used, blocked, untrusted_mark. |
+| `GuardConfig` | Frozen Konfiguration: `ollama_enabled=False`, `model_armor_enabled=False`, `fail_closed=True`, `max_findings=10`, `untrusted_threshold=2`. |
+| `ContentGuard` | Kernklasse: Prüfung von Toolcalls und Kettenübergaben, Event-Recorder-Integration. |
+| `pruefe_toolcall` | Modulfunktion: Prüfweg für Worker-Toolcalls. |
+| `pruefe_kettenuebergabe` | Modulfunktion: Prüfung von Kettenübergaben. |
+
+Tests: `test_content_guard.py` (10 Tests; Defaults, Fail-closed HIGH→`ContentBlockedError`, Ollama-Fehler→Finding `ollama_error` (high), medium-single→allow, medium-double→mark_untrusted, Toolcall/Kettenübergabe/Wrapper, content_hash 64 hex). Integration: Der BACH-Adapter konsumiert das Modul analog zum agents-heart-Muster.
