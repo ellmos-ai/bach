@@ -22,10 +22,14 @@ Abhaengigkeiten (alle BACH-intern):
   - ClaudeRunner (tools/llmauto/core/runner.py)
 """
 
+import atexit
+import contextlib
 import ipaddress
 import json
 import os
+import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -77,6 +81,150 @@ def _is_own_device_host(hostname: str) -> bool:
     except ValueError:
         return False
     return ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")
+
+
+# --- SSH-Tunnel zum Ollama auf einem eigenen Geraet (z. B. Mac Studio) -----------------------------
+# Konfiguration nur ueber Umgebungsvariablen, kein fest eingetragener Host/Benutzer:
+#   FOERDERBERICHT_SSH_TUNNEL   Ziel "benutzer@host" (host: Tailscale-IP, *.ts.net, localhost oder ein
+#                               einteiliger Name aus der eigenen ssh-config); ohne Wert kein Tunnel
+#   FOERDERBERICHT_SSH_KEY      optional: Pfad zum privaten Schluessel
+#   FOERDERBERICHT_SSH_REMOTE_PORT  optional, Default 11434
+# Der Tunnel wird nur geoeffnet, wenn OLLAMA_HOST nicht gesetzt ist, und nach dem Modellaufruf
+# immer wieder geschlossen (auch bei Fehler/Abbruch; unter Windows zusaetzlich per Job-Objekt, damit
+# der ssh-Prozess auch bei hartem Ende der Pipeline mitstirbt).
+_TUNNEL_TARGET_RE = re.compile(r"^(?:[A-Za-z0-9._-]+@)?(?P<host>[A-Za-z0-9][A-Za-z0-9._-]*)$")
+_JOB_HANDLES = []  # Job-Objekt-Handles muessen bis zum Prozessende offen bleiben
+
+
+def _validate_tunnel_target(target: str) -> str:
+    """Prueft das Tunnelziel (keine Optionen, keine Leerzeichen, nur eigene Geraete)."""
+    target = (target or "").strip()
+    m = _TUNNEL_TARGET_RE.match(target)
+    if not m or target.startswith("-"):
+        raise PipelineError(f"Ungueltiges Tunnelziel (erwartet benutzer@host): {target!r}")
+    host = m.group("host")
+    if "." in host or host.replace(".", "").isdigit():
+        if not _is_own_device_host(host):
+            raise PipelineError(
+                f"Tunnelziel {host!r} ist kein eigenes Geraet (erlaubt: Tailscale-Adresse, *.ts.net, "
+                "localhost oder ein Name aus der eigenen ssh-config)."
+            )
+    return target
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _bind_child_to_kill_on_close_job(proc) -> None:
+    """Windows: ssh-Prozess in ein Job-Objekt mit KILL_ON_JOB_CLOSE legen, damit er mit dem
+    Elternprozess stirbt (auch bei hartem Beenden). Best effort; andere Systeme: nichts."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class IO_COUNTERS(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_ulonglong) for n in (
+                "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+        class BASIC(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong), ("PerJobUserTimeLimit", ctypes.c_longlong),
+                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class EXTENDED(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", BASIC), ("IoInfo", IO_COUNTERS),
+                        ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+        k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        job = k32.CreateJobObjectW(None, None)
+        info = EXTENDED()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if job and k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            if k32.AssignProcessToJobObject(job, int(proc._handle)):
+                _JOB_HANDLES.append(job)
+    except Exception:  # best effort
+        pass
+
+
+def _tunnel_ready(port: int, proc, timeout_s: float = 45.0) -> None:
+    """Wartet, bis der Tunnel antwortet (GET /api/version); bricht ab, wenn ssh vorher endet."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        rc = proc.poll()
+        if rc is not None:
+            err = ""
+            try:
+                err = (proc.stderr.read() or b"").decode("utf-8", "replace").strip()[:400] if proc.stderr else ""
+            except Exception:
+                pass
+            raise PipelineError(f"SSH-Tunnel beendet (Exit {rc}): {err or 'keine Meldung'}")
+        try:
+            with opener.open(f"http://127.0.0.1:{port}/api/version", timeout=3) as resp:
+                if resp.status == 200:
+                    return
+        except OSError:
+            pass
+        time.sleep(0.5)
+    raise PipelineError(f"SSH-Tunnel nicht bereit nach {int(timeout_s)} s (Ollama am Ziel erreichbar?)")
+
+
+@contextlib.contextmanager
+def _ollama_ssh_tunnel(target: str, key: str = None, remote_port: int = 11434):
+    """Oeffnet `ssh -N -L 127.0.0.1:<frei>:127.0.0.1:<remote_port> <ziel>` und schliesst ihn sicher."""
+    target = _validate_tunnel_target(target)
+    port = _free_port()
+    cmd = ["ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "BatchMode=yes",
+           "-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=30"]
+    if key:
+        cmd += ["-i", key]
+    cmd += ["-L", f"127.0.0.1:{port}:127.0.0.1:{int(remote_port)}", "--", target]
+    kwargs = {}
+    if os.name == "nt":
+        kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+    else:
+        kwargs["start_new_session"] = True
+    try:
+        proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.PIPE, **kwargs)
+    except FileNotFoundError:
+        raise PipelineError("ssh nicht im PATH gefunden (Tunnel zum Modell-Host).")
+
+    def _close():
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                with contextlib.suppress(Exception):
+                    proc.wait(timeout=5)
+
+    atexit.register(_close)  # falls der Interpreter vor dem finally endet
+    _bind_child_to_kill_on_close_job(proc)
+    try:
+        _tunnel_ready(port, proc)
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        _close()
+        with contextlib.suppress(Exception):
+            atexit.unregister(_close)
+        with contextlib.suppress(Exception):
+            if proc.stderr:
+                proc.stderr.close()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -559,8 +707,17 @@ class FoerderberichtPipeline:
         return None
 
     def _call_ollama(self, prompt: str, model: str) -> str:
-        """Lokales Modell ueber Ollama. Nur localhost, nie ein Cloud-Modell, nie ein Proxy."""
-        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+        """Lokales Modell ueber Ollama. Ist OLLAMA_HOST nicht gesetzt und FOERDERBERICHT_SSH_TUNNEL
+        konfiguriert, wird fuer die Dauer des Aufrufs ein SSH-Tunnel geoeffnet."""
+        target = os.environ.get("FOERDERBERICHT_SSH_TUNNEL", "").strip()
+        if target and not os.environ.get("OLLAMA_HOST"):
+            remote_port = int(os.environ.get("FOERDERBERICHT_SSH_REMOTE_PORT", "11434"))
+            with _ollama_ssh_tunnel(target, os.environ.get("FOERDERBERICHT_SSH_KEY") or None, remote_port) as host:
+                return self._call_ollama_at(host, prompt, model)
+        return self._call_ollama_at(os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"), prompt, model)
+
+    def _call_ollama_at(self, host: str, prompt: str, model: str) -> str:
+        """Ollama-Aufruf gegen `host`. Nur eigene Geraete, nie ein Cloud-Modell, nie ein Proxy."""
         if "://" not in host:
             host = "http://" + host
         if not _is_own_device_host(urllib.parse.urlparse(host).hostname):

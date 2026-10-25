@@ -33,10 +33,16 @@ MODI (--modus cloud|lokal)
   lokal            KEINE Anonymisierung, die Daten bleiben auf eigenen Geraeten. Nur Backend ollama und nur
                    lokale Modelle (kein :cloud). Ziel (OLLAMA_HOST, Default http://127.0.0.1:11434) darf nur
                    localhost oder eine Tailscale-Adresse eigener Geraete sein (100.64.0.0/10, *.ts.net); jeder
-                   andere Host wird abgelehnt. Beispiel Mac Studio (Ollama dort nur auf 127.0.0.1):
-                     ssh -N -L 127.0.0.1:21434:127.0.0.1:11434 lukas@<mac-tailscale-ip>
-                     set OLLAMA_HOST=http://127.0.0.1:21434
-                     bach bericht pipeline --modus lokal --model qwen3.8:27b-mlx
+                   andere Host wird abgelehnt. Modell auf einem anderen eigenen Geraet (z. B. Mac Studio,
+                   Ollama dort nur auf 127.0.0.1): EINMALIG eintragen (Windows, danach neues Terminal)
+                     setx FOERDERBERICHT_SSH_TUNNEL benutzer@<tailscale-ip-des-geraets>
+                     setx FOERDERBERICHT_SSH_KEY "%USERPROFILE%\.ssh\<schluessel>"     (optional)
+                   Ist OLLAMA_HOST nicht gesetzt, oeffnet die Pipeline im Modus lokal den SSH-Tunnel selbst
+                   (ssh -N -L 127.0.0.1:<freier Port>:127.0.0.1:11434), wartet bis Ollama antwortet und
+                   schliesst ihn danach sicher (auch bei Fehler/Abbruch; unter Windows stirbt ssh auch bei
+                   hartem Ende mit). Voraussetzung: Schluesselanmeldung ohne Passwortabfrage. Ohne Ziel
+                   bleibt alles wie bisher (localhost). Danach genuegt:
+                     bach bericht pipeline --modus lokal
                    Ist das Modell dort schon geladen (Dauer-Worker), uebernimmt die Pipeline dessen Kontext,
                    damit nichts neu geladen oder verdraengt wird; die Anfrage wartet in der Ollama-Schlange.
                    Modell via --model oder FOERDERBERICHT_LOCAL_MODEL (Default qwen3.8:27b-mlx), Kontext via
