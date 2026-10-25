@@ -1247,8 +1247,9 @@ class WorkerLeaseBinding:
                                     for item in subtasks]
                 for item in subtasks if isinstance(subtasks, list) else ():
                     owner = item.get("assigned_to") if isinstance(item, dict) else None
-                    # An empty owner inherits the parent's owner in the native lease service.
-                    if owner is not None and str(owner).strip() and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
+                    # Only an exactly empty owner inherits the parent's owner in the native lease service;
+                    # a blank one would be stored verbatim and leave the child unpickable.
+                    if owner is not None and owner != "" and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
                         raise WorkerTaskManageArgumentError("decompose_assignee")
                 previous_version = self._snapshot["task_version"]
                 ack = self._operation(self._client.decompose, subtasks=subtasks,

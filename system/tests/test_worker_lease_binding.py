@@ -870,7 +870,7 @@ def test_foreign_detail_names_the_bound_scope_and_keeps_the_binding(binding):
 
 @pytest.mark.parametrize("action", ["decompose", "add"])
 @pytest.mark.parametrize("owner, accepted", [("help-inventory", False), ("OLLAMA", True), ("ollama-cloud", True),
-                                             ("openrouter", True), ("", True)])
+                                             ("openrouter", True), ("", True), ("  ", False), ("\t", False)])
 def test_subtask_owner_must_be_a_known_assignee(binding, mem_db, owner, accepted, action):
     """#2518: Buddha wrote a topic into assigned_to; no worker could pick the children.
 
