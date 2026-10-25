@@ -102,6 +102,14 @@ class LeaseSelfCheckRequiredError(LeaseProtocolError):
                     "einen echten Selbstcheck abgeben; Teilstand mit update(status='pending') zurückgeben.")
 
 
+class LeaseRequestRejectedError(LeaseProtocolError):
+    """The lease service validated the request and rejected it before applying anything."""
+
+    user_message = ("Taskoperation abgelehnt, nichts geändert: Argumente ungültig. Teilaufgaben brauchen title; "
+                    "description, priority, category, assigned_to und depends_on sind Text, depends_on nennt "
+                    "bestehende Task-IDs. Argumente korrigieren und erneut aufrufen.")
+
+
 class LeaseDeniedError(LeaseError):
     """Lease wurde von der Authority abgelehnt (HTTP 409)."""
 
@@ -740,7 +748,10 @@ class TaskLeaseClient:
                 status, data = result.http_status, result.payload
             except LeaseSelfCheckRequired:
                 raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message) from None
-            except (LeaseValidationError, TaskNotFound):
+            except LeaseValidationError:
+                # Validation runs before the transaction or inside one that is rolled back: nothing was applied.
+                raise LeaseRequestRejectedError(LeaseRequestRejectedError.user_message) from None
+            except TaskNotFound:
                 raise LeaseProtocolError("Ungültige Lease-Anfrage oder Task fehlt") from None
             finally:
                 if self._conn is None:

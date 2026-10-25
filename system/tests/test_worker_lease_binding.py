@@ -872,3 +872,59 @@ def test_model_status_return_carries_a_fixed_reason(mem_db):
     row = mem_db.execute("SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release' "
                          "ORDER BY id DESC LIMIT 1", (first,)).fetchone()
     assert json.loads(row[0])["note"] == "worker_returned_open"
+
+
+def test_foreign_detail_names_the_bound_scope_and_keeps_the_binding(binding):
+    """#2518: the model learns that only its own task is readable and keeps working."""
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    with pytest.raises(WorkerTaskManageArgumentError) as exc:
+        binding.execute_task_manage({"action": "detail", "task_id": binding.task_id + 999})
+    assert exc.value.reason == "detail_scope" and "eigene ID" in exc.value.user_message
+    binding.assert_active()
+    assert f"id: {binding.task_id}" in binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+
+
+@pytest.mark.parametrize("action", ["decompose", "add"])
+@pytest.mark.parametrize("owner, accepted", [("help-inventory", False), ("OLLAMA", True), ("ollama-cloud", True),
+                                             ("openrouter", True), ("", True), ("  ", False), ("\t", False)])
+def test_subtask_owner_must_be_a_known_assignee(binding, mem_db, owner, accepted, action):
+    """#2518: Buddha wrote a topic into assigned_to; no worker could pick the children.
+
+    Cloud profile owners and an empty owner (inherits the parent) stay valid (#518 review)."""
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    if action == "add":
+        args = {"action": "add", "title": "Kind", "assigned_to": owner}
+    else:
+        args = {"action": "decompose", "task_id": binding.task_id, "close_parent": False,
+                "subtasks": [{"title": "Kind", "assigned_to": owner}]}
+    if accepted:
+        binding.execute_task_manage(args)
+        assert mem_db.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()[0] == 1
+    else:
+        with pytest.raises(WorkerTaskManageArgumentError) as exc:
+            binding.execute_task_manage(args)
+        assert exc.value.reason == "decompose_assignee"
+        assert mem_db.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()[0] == 0
+    binding.assert_active()
+
+
+def test_service_rejected_subtasks_keep_the_binding_active(binding, mem_db):
+    """25.10.2026: OpenRouter sent subtasks the lease service rejects; the binding died and its lease stayed stuck."""
+    from hub._services.task_lease_client import LeaseRequestRejectedError
+    args = {"action": "decompose", "task_id": binding.task_id, "close_parent": False,
+            "subtasks": [{"title": "Kind", "priority": 1}]}
+    with pytest.raises(LeaseRequestRejectedError):
+        binding.execute_task_manage(args)
+    binding.assert_active()
+    assert mem_db.execute("SELECT COUNT(*) FROM tasks WHERE id<>?", (binding.task_id,)).fetchone()[0] == 0
+    assert "in 1 Teilaufgaben" in binding.execute_task_manage({**args, "subtasks": [{"title": "Kind"}]})
+
+
+def test_mutation_with_text_task_id_names_the_own_id(binding):
+    """Free models send the task id as text; the hint names the fix and the binding stays usable."""
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    with pytest.raises(WorkerTaskManageArgumentError) as exc:
+        binding.execute_task_manage({"action": "decompose", "task_id": str(binding.task_id),
+                                     "close_parent": False, "subtasks": [{"title": "Kind"}]})
+    assert exc.value.reason == "mutation_scope" and "als Zahl" in exc.value.user_message
+    binding.assert_active()

@@ -53,7 +53,7 @@ from hub._services.chat.worker_lease_binding import (
 )
 from hub._services.task_lease_client import (
     LeaseConnectionError, LeaseDeniedError, LeaseProtocolError,
-    LeaseSelfCheckRequiredError,
+    LeaseRequestRejectedError, LeaseSelfCheckRequiredError,
     TaskResultOperationError, _SAFE_DENIAL_REASONS,
 )
 from hub._services.limits import limit
@@ -134,6 +134,8 @@ def _log_bound_task_manage_denial(stage, binding, args, exc=None):
         kind = "argument_shape"
     elif isinstance(exc, LeaseSelfCheckRequiredError):
         kind = "self_check_required"
+    elif isinstance(exc, LeaseRequestRejectedError):
+        kind = "request_rejected"
     elif isinstance(exc, LeaseDeniedError):
         kind = "lease_denied"
     elif isinstance(exc, LeaseProtocolError):
@@ -1912,6 +1914,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 except WorkerTaskManageArgumentError as exc:
                     _log_bound_task_manage_denial("arguments", worker_task_binding, args, exc)
                     return ToolErrorText(exc.user_message, code="invalid_task_arguments")
+                except LeaseRequestRejectedError as exc:
+                    _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
+                    # Rejected before applying: the lease stays active and the model can correct its arguments.
+                    return ToolErrorText(LeaseRequestRejectedError.user_message, code="invalid_task_arguments")
                 except Exception as exc:
                     _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     # The task operation may have applied before the acknowledgement was lost.

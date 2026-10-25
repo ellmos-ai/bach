@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from hub._services.task_lease_client import (
     LeaseError, LeaseDeniedError, LeaseMaxTotalReachedError, LeaseProtocolError,
-    LeaseSelfCheckRequiredError,
+    LeaseRequestRejectedError, LeaseSelfCheckRequiredError,
     LeaseReleaseAck, WorkerResultAck,
 )
 
@@ -53,12 +53,21 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "update_completion": 'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.',
         "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.',
         "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
+        "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
+        "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
+        "mutation_scope": 'Änderungen nur an der gebundenen Task: task_id ist die eigene ID als Zahl, nicht als Text.',
     }
 
     def __init__(self, reason):
         self.reason = reason
         self.user_message = self._GUIDANCE[reason]
         super().__init__(self.user_message)
+
+
+# Owners a worker may name for a subtask; anything else (e.g. a topic) leaves the child unpickable.
+# Cloud profile owners stay valid: the selector accepts them on their exact profile route.
+_SUBTASK_ASSIGNEES = frozenset({"bach", "buddha", "ollama", "claude", "gemini", "copilot", "chatgpt",
+                                "perplexity", "human", "user"}) | _EXTERNAL_PROFILE_BACKENDS
 
 
 class WorkerLeaseBinding:
@@ -623,6 +632,9 @@ class WorkerLeaseBinding:
         except LeaseSelfCheckRequiredError:
             # This exact local validation ran before any result/status write.
             raise
+        except LeaseRequestRejectedError:
+            # The service rejected the request before applying it; the lease stays valid.
+            raise
         except LeaseError as exc:
             if keep_max_total and isinstance(exc, LeaseMaxTotalReachedError):
                 # Known denial: the last confirmed lease still owns its
@@ -1139,12 +1151,12 @@ class WorkerLeaseBinding:
                 if (set(args) != {"action", "task_id"}
                         or type(args.get("task_id")) is not int
                         or args["task_id"] != self.task_id):
-                    raise LeaseProtocolError("Taskdetail ist auf die gebundene Task begrenzt")
+                    raise WorkerTaskManageArgumentError("detail_scope")
                 snapshot = self.task_snapshot()
                 return "\n".join(f"{key}: {value}" for key, value in snapshot.items())
             if action != "add" and (type(args.get("task_id")) is not int
                                     or args["task_id"] != self.task_id):
-                raise LeaseProtocolError("Mutation gehört nicht zur gebundenen Task")
+                raise WorkerTaskManageArgumentError("mutation_scope")
             if action in {"done", "submit_result"}:
                 if set(args) - {"action", "task_id", "result"}:
                     raise LeaseProtocolError("Unbekannte Abschlussfelder")
@@ -1243,6 +1255,12 @@ class WorkerLeaseBinding:
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")
                                        if key in args}, **item} if isinstance(item, dict) else item
                                     for item in subtasks]
+                for item in subtasks if isinstance(subtasks, list) else ():
+                    owner = item.get("assigned_to") if isinstance(item, dict) else None
+                    # Only an exactly empty owner inherits the parent's owner in the native lease service;
+                    # a blank one would be stored verbatim and leave the child unpickable.
+                    if owner is not None and owner != "" and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
+                        raise WorkerTaskManageArgumentError("decompose_assignee")
                 previous_version = self._snapshot["task_version"]
                 ack = self._operation(self._client.decompose, subtasks=subtasks,
                                       close_parent=close_parent, sequential=args.get("sequential", False))
