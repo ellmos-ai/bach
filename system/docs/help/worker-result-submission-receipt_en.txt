@@ -1,0 +1,74 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+Receipt of a Worker Result Submission
+====================================
+
+This building block of #2210 extends the existing result service. It records which
+result was submitted under which task version, worker generation, and fence, and
+which worker policy was stored at that time. Task, result, and correction
+management remain in the existing BACH store.
+
+Meaning of the Receipt
+------------------------------------
+
+The lease service checks the valid work lease under its write transaction.
+Result, status change after review, release of the lease, and the history receipt
+belong to the same transaction. The later proof does not require a still-active
+claim ID: the lease was deliberately returned upon submission. A higher fence,
+a changed assignment, or a new correction round invalidates the old current
+result state.
+
+The receipt links task and result with generation, fence, task version,
+result digest, historical holder name, submission time, status event, and
+release event. The holder name comes from the lease request. It confirms no
+model identity and grants no reviewer rights.
+
+The global policy and task overrides available at submission time are recorded
+along with the configuration version. A later change of the settings does not
+rewrite this historical configuration. If the optional shared policy contract or
+the configuration store is missing, the receipt explicitly marks this as
+unavailable. Result submission remains possible.
+
+Boundary to Task Completion
+------------------------------------
+
+A submission receipt confirms the stored submission and its history. For a
+subject-matter completion, separate sources are still required for scope and
+project state, worktree fingerprint, current locks, contract fulfillment,
+authenticated independent model review, and possibly GitHub acceptance.
+A PR address alone confirms no current head, passed checks, or an approval.
+
+The stored policy is not yet an applied policy decision. This building block
+produces no automatic done and replaces no mandated user acceptance. The existing
+submit payload continues to contain only generation and result; the worker can
+set no integrity flags of its own.
+The confirmed release remains review with accepted=false.
+
+Compatibility and Operation
+------------------------------------
+
+Older result rows remain readable as legacy. New submissions carry their own
+version identifier; missing receipt fields do not make them legacy data. They
+receive no retroactively invented complete submission receipt. New receipts are
+checked against the canonical result row and its associated history events.
+Corrupted or wrongly assigned receipts must not enable a current result
+acceptance.
+
+Schema additions are made in the existing explicit schema write paths for
+submission and correction. Result GETs change neither schema nor data. A
+production installation or migration is not performed or authorized by this
+documentation.
+
+Readback and Further Integration
+------------------------------------
+GET /api/tasks/{id}/result provides the availability of the submission receipt
+under result.submission: available, unavailable, or legacy_release_only. The hash
+submission_revision binds the historical submission receipt. It is not yet a
+complete result_revision for the shared completion contract; for that, the
+mentioned scope, project, and work-state receipts are still missing.
+
+The availability of the frozen policy is shown separately under
+result.submission.policy.availability. Unavailable optional policy metadata
+neither blocks a valid submission nor the existing personal acceptance and
+correction path in this building block. A corrupted submission receipt blocks
+acceptance, however. No policy decision regarding the further automatic
+completion behavior is stored or executed here yet.
