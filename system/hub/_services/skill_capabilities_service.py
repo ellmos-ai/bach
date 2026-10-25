@@ -26,9 +26,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Task #2449: Skill-ID-Muster kommt kanonisch aus dem Modul skill-registry
+# (.MODULES/.CONTROL/skill-registry/skill_registry.py); gebunden über den
+# Adapter skill_source_service (SKILL_ID-Re-Export), keine lokale Duplikat-Definition mehr.
+from hub._services.skill_source_service import SKILL_ID as _ID_PATTERN
+
 logger = logging.getLogger("bach.skill_capabilities")
 
-_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")
+# _ID_PATTERN: via skill-registry-Modul gebunden (siehe Import oben, Task #2449).
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 
 # Suchpfade fuer echte Plugins

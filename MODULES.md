@@ -193,3 +193,67 @@ unabhängig davon verbleiben (es wird ohne Adapter nicht geladen).
 - **Tote Pfade:** `agents_heart.delete_worker_profile` wird nicht mehr aufgerufen; der FAIL-OPEN-Vorbehalt (agents_heart Z107–110) bleibt bis zum endgültigen Rückbau dokumentiert.
 - **Referenzen:** Ocean-Transfer-Plan `.MODULES/.OCEAN/ocean-transfer-plan.md` Z18, Z67–74, Z82–84.
 - **Nachweis:** `system/tests/test_agent_library_delete.py` — Erfolg inklusive Readback und Archivaufruf, 409/400/404-Ablehnungen, Guard-Direktprüfung, Adapter-Fehlercodes, fail-closed Readback.
+
+---
+
+## 12. Moduldefinition: skill-registry
+
+**Pfad:** `.MODULES/.CONTROL/skill-registry/` · **Version:** v0.1.0
+
+skill-registry ist die produktneutrale Definition der kanonischen
+Skill-Identität: gültige Skill-ID-, Revisions- und Locale-Muster, die
+Obergrenze für Pin-Bindungen sowie die Zustandsberechnung von
+Skill-Bindungen. Das Modul beschreibt nur Regeln und Zustände; BACH lädt
+es über Adapter und bleibt alleiniger Speicher-Owner.
+
+**Das neutrale Modul hat ausschließlich Python-Stdlib-Abhängigkeiten.**
+Es importiert NICHTS aus BACH.
+
+## 15. Kernkomponenten (skill-registry)
+
+| Komponente | Bedeutung |
+|---|---|
+| `SKILL_ID_PATTERN` | kanonisches Skill-ID-Muster (vorher lokal in `skill_source_service` als `SKILL_ID`) |
+| `REVISION_PATTERN` | kanonisches Revisions-Muster (vorher lokal als `REVISION`) |
+| `LOCALE_PATTERN` | kanonisches Locale-Schlüssel-Muster |
+| `MAX_PINS` | Obergrenze der Pins je Bindung: 30 |
+| `SkillRecord` | Datenklasse eines Skill-Eintrags |
+| `SkillRegistryError` | Fehlerart des Moduls |
+| `SkillRegistry` | reine Registry-Implementierung (Validierung + Bindungszustände) |
+| `validate_skill_pins` | kanonische Pin-/Referenz-Validierung (identische `ValueError`-Fehlerart wie bisher) |
+| `skill_binding_states` | kanonische Bindungszustands-Berechnung |
+
+## 15. Bindestrick und Adapter (skill-registry)
+
+- **Ladung:** Der Adapter `system/hub/_services/skill_source_service.py`
+  lädt das neutrale Modul per `importlib` vom Standardpfad
+  `.MODULES/.CONTROL/skill-registry/skill_registry.py` (überschreibbar
+  über die Umgebungsvariable `BACH_SKILL_REGISTRY_MODULE`), re-exportiert
+  `SKILL_ID`/`REVISION` und delegiert `validate_skill_refs` →
+  `validate_skill_pins` sowie `skill_binding_status` →
+  `skill_binding_states`. Die Adapter-Namen bleiben unverändert, alle
+  Aufrufer bleiben intakt.
+- **skill_capabilities_service:** importiert das Skill-ID-Muster als
+  `_ID_PATTERN` aus dem Adapter
+  (`from hub._services.skill_source_service import SKILL_ID as _ID_PATTERN`);
+  keine lokale Duplikat-Definition mehr (Task #2449).
+- **catalog_projection:** Docstring-Verweis auf die kanonische Skill-ID-
+  Validierung aus dem Modul `skill-registry` (Task #2449).
+- **Keine Änderung:** `system/bach.py` referenziert beide Services nicht;
+  `system/hub/skills.py` nutzt nur Stdlib sowie `.base`/`.lang`.
+
+## 15. Rollback (skill-registry)
+
+Die Adapter-Edits sind minimal-invasiv; ein Rollback stellt die lokalen
+Definitionen wieder her und entfernt den additiven Modulordner:
+
+```
+git checkout HEAD -- system/hub/_services/skill_source_service.py \
+  system/hub/_services/skill_capabilities_service.py \
+  system/hub/_services/catalog_projection.py
+rm -rf .MODULES/.CONTROL/skill-registry
+```
+
+Alle Aufrufer sind danach wieder gegen die ursprünglichen
+Implementierungen gebunden; der Modulordner ist rein additiv und wird
+ohne Adapter nicht geladen.

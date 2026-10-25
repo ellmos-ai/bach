@@ -1,0 +1,36 @@
+{
+  "name": "skill-registry",
+  "version": "0.1.0",
+  "description": "Laufzeit-Registry für BACH-/Ocean-Skills: ID-/Revisions-/Locale-Muster, Pin-Validierung, Bindungsstatus-Berechnung gegen ein Catalog-Mapping und SkillRecord-Registrierung. Reine Prüffunktionen ohne Dateizugriff; Pfade, Catalog-Aufbau und Persistenz bleiben bei den Adaptern (BACH/Ocean).",
+  "author": "BACH/Ocean Shared Modules",
+  "license": "MIT",
+  "entry_point": "skill_registry.py",
+  "exports": [
+    "SKILL_ID_PATTERN",
+    "REVISION_PATTERN",
+    "LOCALE_PATTERN",
+    "SkillRecord",
+    "SkillRegistryError",
+    "SkillRegistry",
+    "validate_skill_pins",
+    "skill_binding_states"
+  ],
+  "dependencies": [],
+  "consumers": [
+    {
+      "name": "BACH",
+      "version": ">=1.0",
+      "integration": "adapter"
+    },
+    {
+      "name": "Ocean",
+      "version": ">=1.0",
+      "integration": "adapter"
+    }
+  ],
+  "separation_of_concerns": {
+    "filesystem/paths": "Adapter (BACH: system/hub/_services/skill_source_service.py; Ocean: eigener Adapter)",
+    "catalog_build": "Adapter (Catalog-Erfassung bleibt BACH/Ocean-Logik; Modul erhält nur ein Mapping oder None)",
+    "module": "nur reine Daten- und Prüffunktionen; kein yaml, kein sqlite, kein OneDrive, keine Pfad-Defaults"
+  }
+}

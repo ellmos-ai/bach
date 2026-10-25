@@ -1,4 +1,5 @@
 """Read-only catalog projection ``bach.catalog.v1`` (#2016).
+Skill id validation is canonical from the ``skill-registry`` module (Task #2449).
 
 Projects existing catalog files into one item list at request time. It stores nothing,
 creates no inventory database and never returns absolute paths: sources are reported with a
