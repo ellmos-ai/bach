@@ -480,33 +480,40 @@ class FoerderberichtPipeline:
                 )
 
         elif backend in ("claude_code", "llmauto"):
+            # Direkter claude-CLI-Aufruf statt ClaudeRunner: (1) "from core.runner"
+            # kollidiert mit system/core und schlug mit ImportError fehl, (2) der
+            # Runner behandelt allowed_tools=[] als "alle Tools", (3) der Prompt
+            # kann das argv-Limit (Windows ~32k Zeichen) sprengen -> per stdin.
+            # Das Modell sieht nur den anonymisierten Prompt: keine Tools, keine
+            # Hooks/Memory/CLAUDE.md, neutrales Arbeitsverzeichnis.
+            import tempfile
+            env = os.environ.copy()
+            env.pop("CLAUDECODE", None)
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"
+            cmd = [
+                "claude", "--model", model, "-p",
+                "--tools", "",
+                "--setting-sources", "local",
+                "--strict-mcp-config",
+                "--disable-slash-commands",
+            ]
             try:
-                # ClaudeRunner aus tools/llmauto importieren
-                llmauto_path = str(
-                    Path(__file__).resolve().parent.parent.parent.parent
-                    / "tools" / "llmauto"
+                proc = subprocess.run(
+                    cmd, input=prompt, env=env, capture_output=True,
+                    text=True, encoding="utf-8", errors="replace",
+                    timeout=600, cwd=tempfile.gettempdir(),
                 )
-                if llmauto_path not in sys.path:
-                    sys.path.insert(0, llmauto_path)
-                from core.runner import ClaudeRunner
-
-                runner = ClaudeRunner(
-                    model=model,
-                    permission_mode="dontAsk",
-                    allowed_tools=[],
-                    timeout=600,
-                )
-                run_result = runner.run(prompt)
-                if not run_result.get("success"):
-                    raise PipelineError(
-                        f"ClaudeRunner Fehler: {run_result.get('stderr', 'unbekannt')}"
-                    )
-                return run_result.get("output", "")
-            except ImportError:
+            except FileNotFoundError:
+                raise PipelineError("claude CLI nicht im PATH gefunden.")
+            except subprocess.TimeoutExpired:
+                raise PipelineError("claude CLI Timeout nach 600s.")
+            if proc.returncode != 0:
                 raise PipelineError(
-                    "ClaudeRunner nicht gefunden. "
-                    "Pruefe tools/llmauto/core/runner.py"
+                    f"claude CLI Fehler (Exit {proc.returncode}): "
+                    f"{(proc.stderr or '').strip()[:500]}"
                 )
+            return proc.stdout.strip()
 
         else:
             raise PipelineError(f"Unbekanntes LLM-Backend: {backend}")
