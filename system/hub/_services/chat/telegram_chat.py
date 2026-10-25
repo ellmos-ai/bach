@@ -4989,7 +4989,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             elif w.get("sub_mode") == "expert_role":
                 role = w.get("role_id") or "Experte"
                 if role == "task-divider":
-                    initial_prompt = "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben via task_manage action='decompose'."
+                    initial_prompt = (
+                        "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben "
+                        "via task_manage action='decompose'. Schneide jede Teilaufgabe nach der Zuschnittregel deiner Rolle."
+                    )
                 elif role == "ticket-master":
                     initial_prompt = (
                         "Triagiere Aufgaben anhand der TaskDB. Nutze nur task_manage-Aktionen "
