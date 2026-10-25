@@ -566,6 +566,121 @@ def _looks_like_person_name(name: str) -> bool:
     return True
 
 
+# Rollenbegriffe, die NER gern als Namensbestandteil mitnimmt ("Freund Tim",
+# "Mutter Erika"): fuehrend abschneiden, der Rest ist der eigentliche Name.
+_NER_LEADING_ROLE_NOUNS = _NER_GENERIC_ROLE_NOUNS | {
+    "freund", "freundin", "onkel", "tante", "oma", "opa", "nachbar", "nachbarin",
+    "cousin", "cousine", "kollege", "kollegin", "sohn", "tochter",
+}
+
+# Gewoehnliche deutsche Woerter, die NER (v. a. das EN-Modell auf deutschem
+# Fliesstext) als PERSON markiert. Ersetzung zerstoert den Satz ("Im Person008
+# sagte ...") ohne Datenschutzgewinn. Gilt nur fuer EINZELWORT-Treffer ohne
+# Anrede; erweiterbar.
+_NER_COMMON_WORDS = {
+    "alltag", "anziehen", "ausziehen", "zuständig", "zustaendig", "situationen",
+    "freizeit", "verhalten", "essen", "spielen", "lernen", "schlafen", "waschen",
+    "wahrnehmung", "kommunikation", "sprache", "schule", "kindergarten",
+}
+# Endungen/Kopfwoerter typischer Gattungsbegriffe aus Foerderberichten. Bewusst
+# KEIN "-lich"/"-ig" (Nachnamen wie Ehrlich, Hennig).
+_NER_COMMON_SUFFIXES = ("ung", "ungen", "heit", "keit", "schaft", "tion", "tionen", "ismus", "tät")
+_NER_COMMON_HEADS = (
+    "bericht", "protokoll", "gespräch", "plan", "zeitraum", "therapie",
+    "diagnostik", "gutachten", "bescheid", "antrag", "verlauf",
+)
+
+# Anrede/Titel + Name: deterministisch, unabhaengig vom NER-Modell (NER verfehlt
+# Nachnamen, die auch Gattungsbegriffe sind, z. B. "Frau Beispiel").
+_TITLED_NAME_RE = re.compile(
+    r"(?<!\w)(?P<title>Frau|Herr|Fr\.|Hr\.|Dr\.(?:\s+(?:med|rer\.\s*nat|phil|jur|dent)\.)?|Prof\.(?:\s+Dr\.)?)"
+    r"\s+(?P<n1>[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?)"
+    r"(?:[ \t]+(?P<n2>[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?))?"
+)
+
+
+# Artikel/Praepositionen, die ein Substantiv einleiten. Eine Endung wie "-ung" allein belegt kein
+# Substantiv (Nachname "Hartung"); erst ein Vorkommen MIT solchem Vorwort ("bei der Begruessung").
+_NOUN_CONTEXT_RE = (
+    r"(?:der|die|das|dem|den|des|ein|eine|einer|einen|einem|im|am|zum|zur|beim|vom|ins|"
+    r"bei|mit|nach|von|durch|fuer|für|ohne|unsere|unser|seine|sein|ihre|ihr|diese|dieser|dieses)"
+)
+
+
+def _has_noun_context(word: str, text: str) -> bool:
+    """True, wenn `word` irgendwo im Text direkt nach einem Artikel/Vorwort steht."""
+    if not text:
+        return False
+    pat = r"(?<!\w)" + _NOUN_CONTEXT_RE + r"\s+" + re.escape(word) + r"(?!\w)"
+    return re.search(pat, text, flags=re.IGNORECASE) is not None
+
+
+def _is_common_german_word(name: str, text: str = "") -> bool:
+    """True, wenn ein Einzelwort-Treffer ein Gattungsbegriff und kein Name ist.
+
+    - feste Wortliste und Kopfwoerter (-bericht, -protokoll, ...): immer
+    - Endungen (-ung, -heit, ...): NUR mit Substantiv-Kontext im Text (`text`), sonst koennte es
+      ein Nachname sein (Hartung, Rosenheit)
+    """
+    words = name.split()
+    if len(words) != 1:
+        return False
+    w = words[0].strip(".,;:!?()[]{}\"'-").lower()
+    if w in _NER_COMMON_WORDS:
+        return True
+    if any(w.endswith(h) and len(w) > len(h) for h in _NER_COMMON_HEADS):
+        return True
+    if len(w) > 6 and w.endswith(_NER_COMMON_SUFFIXES):
+        return _has_noun_context(words[0].strip(".,;:!?()[]{}\"'-"), text)
+    return False
+
+
+def _strip_leading_role_noun(name: str) -> str:
+    """'Freund Tim' -> 'Tim'; 'Mutter' bleibt unveraendert (wird anderweitig verworfen)."""
+    if "\n" in name or "\t" in name:
+        return name  # mehrzeilige Treffer weiter von _looks_like_person_name verwerfen lassen
+    words = name.split()
+    stripped = False
+    while len(words) > 1 and words[0].lower() in _NER_LEADING_ROLE_NOUNS:
+        words = words[1:]
+        stripped = True
+    return " ".join(words) if stripped else name
+
+
+def _detect_titled_names(text: str, wl_lower: set) -> set:
+    """Namen mit Anrede/Titel ('Frau Beispiel', 'Dr. med. Weber', 'Herr Anna Kaiser').
+
+    Liefert Anrede+Nachname sowie, falls ein zweites grossgeschriebenes Wort folgt,
+    Anrede+beide Woerter (beide Formen, damit spaetere Kurzformen nicht lecken).
+    Folgt auf den ersten Namen ein bekannter Vorname, kommt der Nachname einzeln dazu.
+    Die Kandidaten behalten die EXAKTE Quell-Schreibweise (Mehrfach-Leerzeichen, Tab, Zeilenumbruch),
+    weil die Ersetzung exakt matcht; zusaetzlich die normalisierte Einzelleerzeichen-Form. Bei
+    Tab/Zeilenumbruch zwischen Anrede und Name steht der Nachname auch einzeln in der Liste (Absatz-
+    und Zellgrenzen in DOCX/XLSX trennen die Teile).
+    """
+    found = set()
+    for m in _TITLED_NAME_RE.finditer(text):
+        title = re.sub(r"\s+", " ", m.group("title"))
+        n1, n2 = m.group("n1"), m.group("n2")
+        if n1.lower() in _NER_GENERIC_ROLE_NOUNS:
+            continue
+        start = m.start("title")
+        spans = [text[start:m.end("n1")]]
+        norm = [f"{title} {n1}"]
+        if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2):
+            spans.append(text[start:m.end("n2")])
+            norm.append(f"{title} {n1} {n2}")
+            if n1.lower() in DEUTSCHE_VORNAMEN_M or n1.lower() in DEUTSCHE_VORNAMEN_W:
+                norm.append(n2)
+        if any(ch in text[start:m.end("n1")] for ch in "\n\t") or "  " in text[start:m.end("n1")]:
+            norm.append(n1)
+        for c in spans + norm:
+            if re.sub(r"\s+", " ", c).lower() in wl_lower or n1.lower() in wl_lower:
+                continue
+            found.add(c)
+    return found
+
+
 _spacy_model_cache: Dict[str, "object"] = {}
 
 
@@ -610,11 +725,14 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
     Returns:
         Sortierte Liste eindeutiger erkannter Personennamen
     """
-    if not SPACY_AVAILABLE or not text.strip():
+    if not text.strip():
         return []
 
     wl_lower = {w.lower() for w in (whitelist or [])}
-    found = set()
+    # Anrede+Name unabhaengig von spaCy (fail-closed auch ohne NER-Modelle)
+    found = _detect_titled_names(text, wl_lower)
+    if not SPACY_AVAILABLE:
+        return sorted(found)
 
     for model_name in NER_MODELS:
         nlp = _get_spacy_model(model_name)
@@ -635,7 +753,8 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
                     continue
                 if name.lower() in wl_lower:
                     continue
-                if not _looks_like_person_name(name):
+                name = _strip_leading_role_noun(name)
+                if not _looks_like_person_name(name) or _is_common_german_word(name, chunk):
                     continue
                 # Wortgrenzen-Check: folgt direkt (ohne Trennzeichen) ein
                 # Kleinbuchstabe, ist die Entitaet nur der ANFANG eines
@@ -1082,9 +1201,8 @@ class DocumentAnonymizer:
         # Generische Personennamen-Erkennung (spaCy NER, DE+EN) -- Hauptmechanismus
         # fuer unbekannte Drittpersonen; faengt auch Namen und Schreibvarianten,
         # die keine Regel/Liste explizit vorgesehen hat.
-        if SPACY_AVAILABLE:
-            ner_names = detect_person_names_ner(text, whitelist=self.global_whitelist.get("names", []))
-            found["ner_person_names"] = ner_names
+        ner_names = detect_person_names_ner(text, whitelist=self.global_whitelist.get("names", []))
+        found["ner_person_names"] = ner_names
 
         return found
 
