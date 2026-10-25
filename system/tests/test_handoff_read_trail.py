@@ -113,8 +113,11 @@ def test_read_trail_uses_v1_pages_and_ignores_unavailable_or_failed_reads():
     from hub._services.chat.chat_runtime import _ReadTrail
 
     trail = _ReadTrail()
-    page = json.dumps({"schema": "ellmos.read-evidence.v1", "start_line": 5, "end_line": 7,
-                       "lines": [], "next_cursor": None})
+    page = json.dumps({"schema": "ellmos.read-evidence.v1", "start_line": 5, "end_line": 7, "lines": [
+        {"char_offset": 0, "line": 5, "line_complete": True, "text": "a"},
+        {"char_offset": 0, "line": 6, "line_complete": True, "text": "b"},
+        {"char_offset": 0, "line": 7, "line_complete": False, "text": "c"},
+    ], "next_cursor": {"char_offset": 1, "line": 7}})
     unavailable = json.dumps({"schema": "bach.read-evidence-capability.v1", "available": False})
     trail.record("read_file", {"path": "a.py", "output_format": "ellmos.read-evidence.v1",
                                "start_line": 5}, page)
@@ -124,8 +127,88 @@ def test_read_trail_uses_v1_pages_and_ignores_unavailable_or_failed_reads():
     trail.record("search_text", {"pattern": "x", "path": "e"}, "(keine Treffer)")
     trail.record("write_file", {"path": "f.py"}, "ok")
     text = trail.render()
-    assert "- gelesen a.py: Zeilen 5–7" in text
+    assert "- gelesen a.py: Zeilen 5–6" in text  # line 7 continues at the cursor
     assert "- gesucht 'x' in e: 0 Treffer" in text
     for absent in ("b.py", "c.py", "d.py", "f.py"):
         assert absent not in text
     assert _ReadTrail().render() == ""
+
+
+# Review findings on #530 (25.10.2026): only completely shown lines count, and the
+# full path is the identity; only the display is shortened.
+
+def _raw_read(monkeypatch, tmp_path, content):
+    from hub._services.chat import bach_tools, chat_runtime
+
+    monkeypatch.setattr(chat_runtime, "_ALLOWED_FS_ROOTS",
+                        chat_runtime._ALLOWED_FS_ROOTS + (tmp_path.resolve(),))
+    path = tmp_path / "raw.txt"
+    path.write_text(content, encoding="utf-8")
+    arguments = {"path": str(path), "lines": 50, "line_numbers": False}
+    return arguments, bach_tools.exec_tool("read_file", arguments, "safe")
+
+
+def test_raw_read_at_eof_does_not_claim_the_requested_range(monkeypatch, tmp_path):
+    from hub._services.chat.chat_runtime import _ReadTrail
+
+    arguments, result = _raw_read(monkeypatch, tmp_path, "eins\nzwei\ndrei\n")
+    assert result == "eins\nzwei\ndrei\n"
+    trail = _ReadTrail()
+    trail.record("read_file", arguments, result)
+    assert trail.render() == ""
+
+
+def test_raw_read_cut_at_4000_chars_does_not_claim_any_line(monkeypatch, tmp_path):
+    from hub._services.chat.chat_runtime import _ReadTrail
+
+    arguments, result = _raw_read(monkeypatch, tmp_path, "x" * 6000 + "\nzwei\n")
+    assert len(result) == 4000 and "\n" not in result
+    trail = _ReadTrail()
+    trail.record("read_file", arguments, result)
+    assert trail.render() == ""
+
+
+def test_numbered_partial_line_is_not_recorded_as_read():
+    from hub._services.chat.chat_runtime import _ReadTrail
+    from hub._services.read_file_formatter import format_read_file_output
+
+    single = format_read_file_output([(1, "x" * 6000 + "\n"), (2, "rest\n")], offset=1,
+                                     requested_lines=50, effective_lines=50, total_lines=2)
+    assert "Zeile 1 ist unvollständig angezeigt" in single
+    rows = [(n, f"row-{n:03d}-" + "x" * 80 + "\n") for n in range(1, 81)]
+    page = format_read_file_output(rows, offset=1, requested_lines=80, effective_lines=80, total_lines=80)
+    resume = int(page.rsplit("Weiterlesen mit offset=", 1)[1].split(".", 1)[0])
+    trail = _ReadTrail()
+    trail.record("read_file", {"path": "long.txt"}, single)
+    trail.record("read_file", {"path": "rows.txt"}, page)
+    text = trail.render()
+    assert "long.txt" not in text
+    assert f"- gelesen rows.txt: Zeilen 1–{resume - 1}\n" in text
+
+
+def test_distinct_long_paths_with_a_shared_prefix_stay_separate():
+    from hub._services.chat.chat_runtime import _ReadTrail
+
+    prefix = "C:\\Users\\worker\\" + "verzeichnis\\" * 20
+    first, second = prefix + "a" * 40 + ".py", prefix + "b" * 40 + ".py"
+    assert len(first) > 250 and first[:200] == second[:200]
+    trail = _ReadTrail()
+    trail.record("read_file", {"path": first}, _numbered(1, 1))
+    trail.record("read_file", {"path": second}, _numbered(100, 100))
+    rows = [line for line in trail.render().splitlines() if line.startswith("- gelesen ")]
+    assert len(rows) == 2 and rows[0] != rows[1]
+    assert rows[0].endswith("Zeilen 1–1") and rows[1].endswith("Zeilen 100–100")
+    assert all(len(row) < 200 for row in rows)
+
+
+def test_repeated_resume_replaces_the_old_trail_and_keeps_the_role():
+    from hub._services.chat.chat_runtime import READ_TRAIL_HEADER, _resume_handoff_context
+
+    old_trail = READ_TRAIL_HEADER + "\n- gelesen alt.py: Zeilen 1–5"
+    summary = [{"role": "user", "content": "RESUME: weiter"}, {"role": "user", "content": old_trail}]
+    messages, history = _resume_handoff_context(
+        [{"role": "system", "content": "Rolle"}], summary, background_task=False, has_tools=True,
+        round_num=3, max_rounds=10, read_trail=READ_TRAIL_HEADER + "\n- gelesen neu.py: Zeilen 1–9")
+    assert messages[0] == {"role": "system", "content": "Rolle"}
+    assert sum(READ_TRAIL_HEADER in str(m["content"]) for m in messages) == 1
+    assert "neu.py" in str(history) and "alt.py" not in str(history)

@@ -134,6 +134,8 @@ READ_TRAIL_HEADER = "[LESESPUR dieses Laufs, automatisch aus deinen Werkzeugaufr
 READ_TRAIL_LIMIT = 40
 READ_TRAIL_MAX_CHARS = 2400
 _READ_TRAIL_ROW = re.compile(r"^\s*(\d+) \| ", re.MULTILINE)
+_READ_TRAIL_CUT = re.compile(r"Zeichen gekürzt; Zeile \d+ ist (?:un|nicht )vollständig angezeigt\. "
+                             r"Weiterlesen mit offset=(\d+)\.\]")
 _READ_TRAIL_HIT = re.compile(r"^(.+?):(\d+):", re.MULTILINE)
 
 
@@ -162,10 +164,10 @@ class _ReadTrail:
             return
         path = arguments.get("path")
         if name == "read_file":
-            span = _read_trail_span(arguments, text)
+            span = _read_trail_span(text)
             if type(path) is not str or not path or span is None:
                 return
-            key = ("read", path[:200])
+            key = ("read", path)
             merged = []
             for start, end in sorted(self._entries.pop(key, []) + [span]):
                 if merged and start <= merged[-1][1] + 1:
@@ -180,7 +182,7 @@ class _ReadTrail:
             hits = [] if text == "(keine Treffer)" else _READ_TRAIL_HIT.findall(text)
             count = f"{len(hits)}{'+' if len(text) >= 4000 else ''}"
             places = [f"{Path(file).name}:{line}" for file, line in hits[:3]]
-            key = ("search", pattern[:80], str(path or ".")[:200])
+            key = ("search", pattern, str(path or "."))
             self._entries.pop(key, None)
             self._entries[key] = (count, places)
         while len(self._entries) > READ_TRAIL_LIMIT:
@@ -191,10 +193,11 @@ class _ReadTrail:
         for key, value in self._entries.items():
             if key[0] == "read":
                 ranges = ", ".join(f"{start}–{end}" for start, end in value)
-                lines.append(f"- gelesen {key[1]}: Zeilen {ranges}")
+                lines.append(f"- gelesen {_read_trail_label(key[1], 160)}: Zeilen {ranges}")
             else:
                 count, places = value
-                lines.append(f"- gesucht {key[1]!r} in {key[2]}: {count} Treffer"
+                lines.append(f"- gesucht {_read_trail_label(key[1], 80)!r} in "
+                             f"{_read_trail_label(key[2], 160)}: {count} Treffer"
                              + (f" ({', '.join(places)})" if places else ""))
         while lines and len("\n".join(lines)) > READ_TRAIL_MAX_CHARS:
             lines.pop(0)
@@ -205,28 +208,34 @@ class _ReadTrail:
                 "Änderung den exakten Wortlaut brauchst. Zeilenangaben sind Navigationshilfe.")
 
 
-def _read_trail_span(arguments, text):
-    """Tatsächlich gezeigte Zeilen; nur ohne Zeilenbeleg die angeforderten."""
+def _read_trail_label(value: str, limit: int) -> str:
+    """Kürzt nur die Anzeige; ein Prüfsummenkürzel hält gekürzte Pfade unterscheidbar."""
+    if len(value) <= limit:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:8]
+    return f"…{value[-(limit - 11):]} #{digest}"
+
+
+def _read_trail_span(text):
+    """Nur vollständig gezeigte Zeilen; Rohausgabe ohne Zeilennummern belegt nichts."""
     if text.startswith("{"):
         try:
             page = json.loads(text)
         except ValueError:
             return None
-        start, end = page.get("start_line"), page.get("end_line")
-        if (page.get("schema") == "ellmos.read-evidence.v1"
-                and type(start) is int and type(end) is int and 1 <= start <= end):
-            return start, end
+        rows = page.get("lines") if page.get("schema") == "ellmos.read-evidence.v1" else None
+        full = [row["line"] for row in rows or () if isinstance(row, dict)
+                and row.get("char_offset") == 0 and row.get("line_complete") is True
+                and type(row.get("line")) is int]
+        return (full[0], full[-1]) if full else None
+    if not text.startswith(("Physische Zeilen ", "Auszug ab physischer Zeile ")):
         return None
-    rows = _READ_TRAIL_ROW.findall(text)
-    if rows:
-        return int(rows[0]), int(rows[-1])
-    if "angezeigt=0/" in text or text == "(keine Zeilen)":
-        return None
-    start = arguments.get("offset", arguments.get("start", arguments.get("start_line", 1)))
-    lines = arguments.get("lines", 50)
-    if type(start) is not int or type(lines) is not int or start < 1 or lines < 1:
-        return None
-    return start, start + min(lines, 200) - 1
+    rows = [int(number) for number in _READ_TRAIL_ROW.findall(text)]
+    cut = _READ_TRAIL_CUT.search(text)
+    if cut:
+        # The formatter names the first line that was not shown completely.
+        rows = [number for number in rows if number < int(cut.group(1))]
+    return (rows[0], rows[-1]) if rows else None
 
 
 def _resume_handoff_context(original, summary, *, background_task, has_tools,
