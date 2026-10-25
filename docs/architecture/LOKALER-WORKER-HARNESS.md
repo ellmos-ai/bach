@@ -92,6 +92,14 @@ Werkzeuge ändern: Für `buddha_always_on` nur über `PUT /api/system/core-agent
 - Nicht abgeschlossen: große Plan- und Codeaufgaben mit 2–5 Übergaben; Buddha zerlegt dann weiter oder gibt einen Teilstand zurück.
 - Nach jeder Übergabe liest er neu: bei #2505 37 von 53 Werkzeugaufrufen `read_file`.
 
+**Übergabezettel mit Lesespur** (Nutzerfreigabe 25.10., PR „feat/handoff-read-trail“, Rollout nach Review):
+
+- Ist: Die Werkzeugschleife führt je Lauf eine Lesespur (`_ReadTrail` in `chat_runtime.py`). Nach jeder Kontextübergabe (alle drei Wege: angefordert, vor der Abschlussreserve, Kontext voll) hängt `_resume_handoff_context` sie als eigene Nachricht hinter den Zettel: je Datei die tatsächlich gezeigten Zeilenbereiche (zusammengeführt, z. B. `Zeilen 1–260`), je Suche Muster, Pfad, Trefferzahl und bis zu drei Fundstellen `datei:zeile`. Nie Dateiinhalt.
+- Grenzen: höchstens 40 Einträge mit zusammen höchstens 2400 Zeichen, die ältesten fallen zuerst weg; mit Kopf- und Schlusszeile höchstens etwa 900 Token (geschätzt mit Zeichen/3, nicht gemessen). Die Spur überlebt mehrere Übergaben; die alte Spur wird ersetzt, nicht verdoppelt.
+- Was zählt: nur Aufrufe mit Inhalt. Abgelehnte (`ToolErrorText`, z. B. Secrets-Pfad), unbestätigte, fehlerhafte und `read-evidence`-unavailable-Antworten werden nicht als gelesen geführt. Zeilenbereiche stammen aus den Zeilennummern der Antwort bzw. aus `start_line`/`end_line` der v1-Seite; nur bei roher Ausgabe ohne Nummern aus der Anfrage.
+- Fakten: Der Zettel-Prompt (`HANDOFF_PROMPT`) hat eine neue Zeile `FAKTEN:` (Befunde mit Datei:Zeile, die nicht erneut nachzulesen sind) und den Hinweis, dass BACH die gelesenen Bereiche selbst anhängt. Warum: Welche Schlüsse gezogen wurden, weiß nur das Modell; welche Bereiche gelesen wurden, weiß die Laufzeit verlässlicher als das Modell.
+- Warum: Nach Übergaben las Buddha neu (#2505: 37 von 53 Aufrufen `read_file`); eine Seite kostet bis zu 4000 Zeichen (etwa 1300 Token), die Spur höchstens etwa 900; eine vermiedene Neulesung zahlt sie also schon. Erfolg messen: Anteil `read_file` nach Übergaben und Übergaben je Abschluss in den nächsten Buddha-Läufen.
+
 **Regel daraus:** Aufgaben für Buddha so schneiden, dass sie mit höchstens zwei Kontextübergaben auskommen, innerhalb des eigenen Task-Arbeitsbaums lösbar sind und mit einem Text (höchstens 3000 Zeichen) oder einer Datei plus PR enden. Gebundene Worker sehen nur ihre eigene Task und ihren Arbeitsbaum; Inventuren über das System oder Statistiken über andere Tasks sind für sie nicht lösbar.
 
 Nächste Verbesserungen (nach Nutzen): Übergabezettel mit gelesenen Pfaden/Zeilen und festgestellten Fakten; größere Standardseite für Task-Leser statt v1 mit Schreibwerkzeugen (Abschnitt 5); schlanker Kernsatz; größeres Fenster nur nach Speichermessung.
