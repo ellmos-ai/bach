@@ -22,11 +22,14 @@ Abhaengigkeiten (alle BACH-intern):
   - ClaudeRunner (tools/llmauto/core/runner.py)
 """
 
+import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +55,15 @@ class PipelineResult:
 class PipelineError(Exception):
     """Fehler innerhalb der Pipeline."""
     pass
+
+
+# Betriebsmodi: "cloud" = anonymisieren, Cloud-/Abo-Modell; "lokal" = KEINE Anonymisierung,
+# ausschliesslich lokales Modell (Daten verlassen den Rechner nicht). Der Modus lokal ist
+# fail-closed an lokale Backends gekoppelt, damit Klartext nie an ein Cloud-Backend geht.
+MODI = ("cloud", "lokal")
+LOCAL_BACKENDS = ("ollama",)
+DEFAULT_CLOUD_MODEL = "claude-sonnet-4-6"
+DEFAULT_LOCAL_MODEL = "qwen3:4b"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -106,20 +118,40 @@ class FoerderberichtPipeline:
         client_address: str = None,
         additional_terms: list = None,
         whitelist: list = None,
-        llm_backend: str = "claude_code",
-        model: str = "claude-sonnet-4-6",
+        llm_backend: str = None,
+        model: str = None,
         custom_instructions: str = "",
         auto_cleanup: bool = True,
+        modus: str = "cloud",
     ) -> PipelineResult:
         """
         Ein Aufruf = komplette Pipeline von data_roh/ bis output_berichte/.
         Fuer vollautomatische Ausfuehrung (z.B. via .bat oder llmauto).
+
+        modus="cloud" (Default): anonymisieren, Backend claude_code/llmauto/anthropic_sdk.
+        modus="lokal": KEINE Anonymisierung, nur lokales Backend (ollama auf localhost);
+                       Modell aus `model` bzw. Umgebungsvariable FOERDERBERICHT_LOCAL_MODEL.
 
         Fuer den Chat/Subagent-Weg nutze stattdessen:
           1. prepare_prompt() -> anonymisierter Prompt (sicher fuer AI)
           2. AI generiert JSON-Response
           3. finish_report(response) -> fertiger Bericht + Cleanup
         """
+        # Modus + Backend + Modell festlegen (fail-closed: lokal nie mit Cloud-Backend)
+        if modus not in MODI:
+            return PipelineResult(step="modus", error=f"Unbekannter Modus: {modus!r} (erlaubt: {', '.join(MODI)})")
+        if modus == "lokal":
+            llm_backend = llm_backend or "ollama"
+            model = model or os.environ.get("FOERDERBERICHT_LOCAL_MODEL", DEFAULT_LOCAL_MODEL)
+            if llm_backend not in LOCAL_BACKENDS:
+                return PipelineResult(
+                    step="modus",
+                    error=f"Modus 'lokal' erlaubt nur lokale Backends {LOCAL_BACKENDS}, nicht {llm_backend!r}",
+                )
+        else:
+            llm_backend = llm_backend or "claude_code"
+            model = model or DEFAULT_CLOUD_MODEL
+
         # Phase 1: Vorbereitung
         result = self.prepare_prompt(
             client_name=client_name,
@@ -130,6 +162,7 @@ class FoerderberichtPipeline:
             additional_terms=additional_terms,
             whitelist=whitelist,
             custom_instructions=custom_instructions,
+            anonymize=(modus == "cloud"),
         )
         if not result.success:
             return result
@@ -183,9 +216,13 @@ class FoerderberichtPipeline:
         additional_terms: list = None,
         whitelist: list = None,
         custom_instructions: str = "",
+        anonymize: bool = True,
     ) -> PipelineResult:
         """
         Phase 1: data_roh/ -> anonymisierter Prompt in data_bundled/prompt.txt
+
+        anonymize=False (Modus lokal): KEINE Anonymisierung, der Prompt enthaelt Klartext und
+        darf nur an ein lokales Modell gehen (siehe run_full_pipeline(modus="lokal")).
 
         Laeuft komplett OHNE AI-Beteiligung. Kein LLM sieht Rohdaten.
         Nach Abschluss liegt der anonymisierte Prompt bereit fuer die AI.
@@ -234,6 +271,16 @@ class FoerderberichtPipeline:
                 client_name = self._detect_client_name(data_roh)
             if not geburtsdatum:
                 geburtsdatum = self._detect_geburtsdatum(data_roh, client_name)
+
+            if not anonymize:
+                # Modus lokal: Identitaetsprofil (leeres Mapping) statt Tarnprofil; finish_report()
+                # uebersetzt dann nichts zurueck. Bundle direkt aus dem Klientenordner.
+                self._prepare_plain(
+                    result, data_roh, client_name, geburtsdatum, berichtszeitraum, custom_instructions
+                )
+                result.success = True
+                result.duration_s = time.time() - start_time
+                return result
 
             # --- Schritt 2: Session + Profil ---
             result.step = "profil"
@@ -399,7 +446,7 @@ class FoerderberichtPipeline:
                 status="generating",
                 profile=profile,
             )
-            result.tarnname = profile.tarnname
+            result.tarnname = profile.tarnname if profile.mappings else ""
 
             # Word-Bericht generieren (de-anonymisiert)
             clean_report = workflow.generate_report(
@@ -442,6 +489,92 @@ class FoerderberichtPipeline:
     # LLM-Integration
     # ─────────────────────────────────────────────────────────────
 
+    def _prepare_plain(self, result, data_roh, client_name, geburtsdatum, berichtszeitraum, custom_instructions):
+        """Phase 1 ohne Anonymisierung (nur Modus lokal)."""
+        from hub._services.document.report_workflow_service import (
+            ReportWorkflowService, TempAnonymProfile,
+        )
+        from hub._services.document.document_pipeline import DocumentPipeline
+
+        result.step = "prompt"
+        client_dir = next(d for d in data_roh.iterdir() if d.is_dir() and not d.name.startswith("."))
+        workflow = ReportWorkflowService(base_path=self.base_path)
+        session = workflow.start_session()
+        session.profile = TempAnonymProfile(
+            tarnname=client_name, fake_geburtsdatum=geburtsdatum,
+            mappings={}, original_name=client_name,
+        )
+        collector = DocumentPipeline()
+        scan = collector.scan_folder(str(client_dir))
+        session.bundle = collector.extract_bundle(
+            scan.documents, include_extended=True, anonym_profile=None
+        )
+        bundle = session.bundle
+        text = bundle.core_text if hasattr(bundle, "core_text") else ""
+        if getattr(bundle, "stufe2_text", ""):
+            text += "\n\n=== STUFE 2 ===\n\n" + bundle.stufe2_text
+        data_bundled = self.base_path / "data_bundled"
+        self._deep_cleanup(data_bundled)
+        data_bundled.mkdir(parents=True, exist_ok=True)
+        (data_bundled / "bundle.txt").write_text(text, encoding="utf-8")
+        prompt = workflow.generate_prompt(
+            session, berichtszeitraum=berichtszeitraum, custom_instructions=custom_instructions
+        )
+        prompt_file = data_bundled / "prompt.txt"
+        prompt_file.write_text(prompt, encoding="utf-8")
+        (data_bundled / "session_info.json").write_text(json.dumps({
+            "modus": "lokal",
+            "session_id": session.session_id,
+            "tarnname": client_name,
+            "original_name": client_name,
+            "mappings": {},
+            "fake_geburtsdatum": geburtsdatum,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        result.steps_completed.append(f"prompt (lokal, ohne Anonymisierung): {len(prompt)} Zeichen")
+        result.output_path = prompt_file
+
+    def _call_ollama(self, prompt: str, model: str) -> str:
+        """Lokales Modell ueber Ollama. Nur localhost, nie ein Cloud-Modell, nie ein Proxy."""
+        host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+        if "://" not in host:
+            host = "http://" + host
+        if urllib.parse.urlparse(host).hostname not in ("127.0.0.1", "localhost", "::1"):
+            raise PipelineError(
+                "Backend 'ollama' (Modus lokal) erlaubt nur localhost, nicht: "
+                + urllib.parse.urlparse(host).hostname
+            )
+        low = model.lower()
+        if low.endswith(":cloud") or low.endswith("-cloud") or low.startswith("claude"):
+            raise PipelineError(f"Modell {model!r} ist kein lokales Modell (Modus lokal).")
+        num_ctx = int(os.environ.get("FOERDERBERICHT_NUM_CTX", "12288"))
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "think": False,
+            "options": {"num_ctx": num_ctx, "num_predict": 6000, "temperature": 0.2},
+        }
+        req = urllib.request.Request(
+            host.rstrip("/") + "/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # kein Proxy
+        try:
+            with opener.open(req, timeout=3600) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except OSError as e:
+            raise PipelineError(f"Ollama nicht erreichbar ({host}): {e}")
+        if data.get("error"):
+            raise PipelineError(f"Ollama-Fehler: {data['error']}")
+        used = int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0)
+        if data.get("done_reason") == "length" or used >= num_ctx:
+            raise PipelineError(
+                f"Kontext erschoepft ({used} von {num_ctx} Tokens): Prompt oder Antwort abgeschnitten. "
+                "FOERDERBERICHT_NUM_CTX erhoehen oder groesseres Modell/Host waehlen."
+            )
+        return (data.get("message") or {}).get("content", "").strip()
+
     def _call_llm(self, prompt: str, backend: str, model: str) -> str:
         """
         LLM aufrufen ueber verschiedene Backends.
@@ -455,7 +588,7 @@ class FoerderberichtPipeline:
 
         Args:
             prompt: Der vollstaendige Prompt
-            backend: "claude_code" (Default), "llmauto" oder "anthropic_sdk"
+            backend: "claude_code" (Default), "llmauto", "anthropic_sdk" oder "ollama" (lokal)
             model: Modellname
 
         Returns:
@@ -478,6 +611,9 @@ class FoerderberichtPipeline:
                 raise PipelineError(
                     "anthropic SDK nicht installiert. pip install anthropic"
                 )
+
+        elif backend == "ollama":
+            return self._call_ollama(prompt, model)
 
         elif backend in ("claude_code", "llmauto"):
             # Direkter claude-CLI-Aufruf statt ClaudeRunner: (1) "from core.runner"

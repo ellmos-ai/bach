@@ -26,12 +26,25 @@ VERWENDUNG (4 Standardwege)
   3. Chain:   bach chain start förderbericht
   4. CLI:     bach bericht pipeline (Auto-Detect)
 
+MODI (--modus cloud|lokal)
+--------------------------
+  cloud (Default)  Anonymisierung vorher, Rueckuebersetzung nachher; Backend claude_code/llmauto
+                   (Abo-Modell in der Cloud). Fuer echte Daten erst nach ausdruecklicher Freigabe.
+  lokal            KEINE Anonymisierung, die Daten bleiben auf dem Rechner. Nur Backend ollama auf
+                   localhost und nur lokale Modelle (kein :cloud, kein Remote-Host); Modell via
+                   --model oder FOERDERBERICHT_LOCAL_MODEL (Default qwen3:4b). Kontext via
+                   FOERDERBERICHT_NUM_CTX (Default 12288); wird er ueberschritten, bricht die Pipeline
+                   ab statt still abzuschneiden. Lokal + Cloud-Backend ist gesperrt.
+
 OPTIONEN
 --------
   --zeitraum "01.01.2025 - 31.12.2025"   Berichtszeitraum
   --backend claude_code|llmauto           LLM-Backend (default: claude_code)
   --model claude-sonnet-4-6              LLM-Modell
   --eltern "Mutter Name" "Vater Name"   Elternnamen (für Anonymisierung)
+  --begriffe "A, B, C"                   Manuelle Schwaerzliste je Klient (Namen, Adressen, ...); wird
+                                         vorrangig vor der automatischen Erkennung angewendet, Namen
+                                         auch mit Anrede (Frau/Herr/Dr.). Nur Modus cloud.
   --no-cleanup                           Zwischenordner nicht leeren
 
 ABLAUF (3-Phasen-Flow)
