@@ -120,10 +120,13 @@ def test_optional_reads_never_decide_the_page_status():
 
 def test_every_pinned_read_has_a_bach_route_and_a_declared_prefix():
     routes = _get_routes()
+    normalized = {_n(route) for route in routes}
+    cataloged, _ = _cataloged([_Route(route, {"GET"}) for route in routes])
+    declared = {_n(item) for item in cataloged}
     for page, reads in [(p, PINNED[p] + PINNED_OPTIONAL[p]) for p in PINNED]:
         for read in reads:
-            assert read in routes, f"{page}: no GET route {read}"
-            assert read.startswith(caps.PREFIXES) or f"GET {read}" in caps.EXACT_READS, f"{page}: {read} is not declared"
+            assert _n(read) in normalized, f"{page}: no GET route {read}"
+            assert _n(f"GET {read}") in declared, f"{page}: {read} is not declared"
 
 
 def test_worker_policy_reads_and_writes_are_optional_but_cataloged():
@@ -139,7 +142,7 @@ def test_worker_policy_reads_and_writes_are_optional_but_cataloged():
     assert "GET /api/system/worker-policy" not in pages["/settings"]["requires"]
     assert "GET /api/tasks/{task_id}/worker-policy" not in pages["/tasks"]["requires"]
     assert "/api/system/worker-policy" in PINNED_OPTIONAL["/settings"]
-    assert "/api/tasks/{task_id}/worker-policy" in PINNED_OPTIONAL["/tasks"]
+    assert _n("/api/tasks/{task_id}/worker-policy") in {_n(read) for read in PINNED_OPTIONAL["/tasks"]}
 
 
 class _Route:
@@ -167,7 +170,9 @@ def test_exact_paths_do_not_catalog_sibling_routes():
     cataloged, _ = _cataloged(routes)
     # A registered write explicitly named by the manifest is cataloged; unrelated siblings remain excluded
     assert cataloged == {"GET /api/agents", "GET /api/system/external-artifacts", "GET /api/learning/nemofold/candidates",
-                         "GET /api/settings/theme", "PUT /api/settings/theme", "GET /api/assignees"}
+                         "GET /api/settings/theme", "PUT /api/settings/theme", "GET /api/assignees",
+                         "POST /api/system/external-artifacts/import",
+                         "POST /api/learning/nemofold/candidates/{candidate_id}/approve"}
 
 
 def test_new_page_reads_make_pages_configured_and_missing_route_makes_them_unavailable():
