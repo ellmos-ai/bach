@@ -1032,12 +1032,12 @@ class TaskLeaseClient:
                     where += " AND NOT EXISTS (SELECT 1 FROM worker_result_review_intents r " \
                              "WHERE r.review_task_id=tasks.id)"
                 total = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}").fetchone()[0]
-                order = ("CASE UPPER(TRIM(priority)) "
+                order = ("COALESCE(needs_split, 0) DESC, " + ("CASE UPPER(TRIM(priority)) "
                          "WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
                          "WHEN 'P2' THEN 2 WHEN '2' THEN 2 WHEN 'MEDIUM' THEN 2 WHEN 'MITTEL' THEN 2 WHEN 'WICHTIG' THEN 2 "
                          "WHEN 'P3' THEN 3 WHEN '3' THEN 3 WHEN 'LOW' THEN 3 WHEN 'NIEDRIG' THEN 3 WHEN 'NORMAL' THEN 3 "
                          "WHEN 'P4' THEN 4 WHEN '4' THEN 4 WHEN 'MINIMAL' THEN 4 ELSE 5 END, "
-                         if "priority" in columns else "")
+                         if "priority" in columns else ""))
                 order += "created_at DESC, id DESC" if "created_at" in columns else "id DESC"
                 cursor = conn.execute(f"SELECT * FROM tasks WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
                                       (limit + 1, offset))

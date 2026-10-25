@@ -820,6 +820,19 @@ def _execution_slot_reader(slot: dict, *, persistent_cloud_binding=None):
     return read
 
 
+def _task_divider_available():
+    try:
+        unavailable = {"deleted", "error", "expired", "paused", "stopping"}
+        return any(
+            worker.get("role_id") == "task-divider"
+            and worker.get("enabled", True) is not False
+            and worker.get("status") not in unavailable
+            for worker in list_workers()
+        )
+    except Exception:
+        return True
+
+
 def _acquire_worker_task(control, slot, physical_worker_id):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from hub._services.task_lease_client import LeaseDeniedError
@@ -903,9 +916,11 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                 "task_id": task_id, "reason": reason}):
             raise RuntimeError("Ablehnung der festen Task konnte nicht protokolliert werden")
 
+    selection_slot = dict(slot)
+    selection_slot["divider_available"] = _task_divider_available()
     try:
         selected = WorkerLeaseBinding.acquire_next(
-            client, slot, worker_id=lease_worker_id, host=host,
+            client, selection_slot, worker_id=lease_worker_id, host=host,
             review_route=review_route,
             review_requested_model=getattr(control, "_review_requested_model", None),
             generation=control.generation, is_current=is_current, stop_event=control.stop_event,
@@ -1013,13 +1028,27 @@ def _bound_worker_prompt(binding, prompt):
             + json.dumps(context, ensure_ascii=False)
         )
     fields = ("id", "title", "description", "category", "priority", "depends_on",
-              "assigned_to", "required_model", "assigned_slot", "task_version")
+              "assigned_to", "required_model", "assigned_slot", "needs_split", "task_version")
     content = {key: snapshot[key] for key in fields if key in snapshot}
     result_limit = snapshot.get("result_max_chars")
     if result_limit is not None:
         if type(result_limit) is not int or not 1 <= result_limit <= 3000:
             raise RuntimeError("Task-Ausgabelimit kann nicht bestätigt werden")
         content["result_max_chars"] = result_limit
+    split_count = snapshot.get("needs_split", 0)
+    if split_count is None:
+        split_count = 0
+    if type(split_count) is not int or split_count < 0:
+        raise RuntimeError("needs_split-Zähler kann nicht bestätigt werden")
+    split_instruction = ""
+    if split_count:
+        split_instruction = (
+            "\n\nDiese Task ist wegen Kontextgrenze zur Teilung markiert. "
+            "Zerlege sie zuerst mit task_manage(action='decompose', close_parent=false) "
+            "in eigenständig abschließbare Teilaufgaben: höchstens zwei Kontextübergaben, "
+            "im eigenen Arbeitsbaum lösbar, Ergebnis als Text oder Datei plus PR. "
+            "Nutze den gesicherten WIP-Stand und die Lesespur statt erneut bei null zu beginnen."
+        )
     correction = None
     correction_pointer = snapshot.get("result_correction_request_id")
     if correction_pointer is not None:
@@ -1053,7 +1082,7 @@ def _bound_worker_prompt(binding, prompt):
              "ist kein fertiges Ergebnis und bekommt complete=false. "
              "Der Abschluss folgt dem konfigurierten Modus; Nutzer- und GitHub-Freigaben bleiben eigenständig. "
              "update(status=done) oder close_parent=true ersetzen keine Abnahme."
-            + correction_notice + "\n" + json.dumps(content, ensure_ascii=False))
+            + split_instruction + correction_notice + "\n" + json.dumps(content, ensure_ascii=False))
 
 
 def _request_worker_handoff(worker_id: str, generation: str) -> Dict[str, Any]:
@@ -1372,6 +1401,72 @@ def _record_worker_activity(
 
 
 _WORKER_TASK_FAILURE_LIMIT = 3
+
+
+_CONTEXT_WIP_REASONS = frozenset({
+    "completion_reserve_context_exhausted", "handoff_context_too_large",
+})
+
+
+def _bounded_wip_text(value, limit):
+    text = str(value or "")
+    if "PRIVATE KEY-----" in text:
+        return "[Inhalt wegen möglichem privaten Schlüssel weggelassen]"
+    text = re.sub(r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]{8,}", r"\1[redacted]", text)
+    text = re.sub(r"(?i)\b((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+",
+                  r"\1[redacted]", text)
+    text = re.sub(r"\b(?:sk|ghp)_[A-Za-z0-9_]{12,}", "[redacted]", text)
+    text = re.sub(r"github_pat_[A-Za-z0-9_]{12,}", "[redacted]", text)
+    return text[:limit] + (" …[gekürzt]" if len(text) > limit else "")
+
+
+def _handoff_summary_text(summary):
+    if isinstance(summary, str):
+        return summary
+    if not isinstance(summary, list):
+        return ""
+    lines = []
+    for message in summary:
+        if not isinstance(message, dict):
+            continue
+        content = str(message.get("content") or "")
+        if content:
+            lines.append(f"{message.get('role', 'user')}: {content}")
+    return "\n".join(lines)
+
+
+def _secure_context_wip(control, worker_session, reason):
+    """Secure work and context before a context-limited task is returned."""
+    if reason not in _CONTEXT_WIP_REASONS:
+        raise ValueError("Kein Kontext-WIP-Grund")
+    binding = control.task_binding
+    if binding is None or binding.closed:
+        raise RuntimeError("Kontext-WIP-Sicherung ohne aktive Taskbindung")
+    binding.assert_active()
+    from hub import worker_git
+    target = worker_git.get_worktrees_dir() / f"task-{binding.task_id}"
+    changed = worker_git.changed_worktree_files(target) if target.exists() else []
+    files = ", ".join(changed[:40]) + (f" … (+{len(changed) - 40} weitere)" if len(changed) > 40 else "")
+    files = files or "kein Task-Arbeitsbaum vorhanden"
+    summary = _handoff_summary_text(getattr(worker_session, "last_handoff_summary", []))
+    trail = getattr(worker_session, "last_handoff_read_trail", "") or ""
+    annotation = (
+        f"[WIP Kontextsicherung Task #{binding.task_id}]\n"
+        f"Grund: {reason}\n"
+        f"Geänderte Dateien: {_bounded_wip_text(files, 2000)}\n"
+        f"Übergabezettel:\n{_bounded_wip_text(summary or 'Keine abgeschlossene Übergabe in diesem Lauf.', 5000)}\n"
+        f"Lesespur:\n{_bounded_wip_text(trail or 'Keine Lesespur in diesem Lauf.', 3000)}"
+    )
+    if target.exists():
+        result = worker_git.finish_task(
+            binding.task_id, f"Kontextgrenze: {reason}", is_wip=True, run_tests=False,
+            worker_task_binding=binding, result_annotation=annotation, needs_split=True)
+    else:
+        binding.record_worktree_result(binding.task_id, annotation, needs_split=True)
+        result = {"success": True, "wip": False, "needs_split": True, "status": "needs_split"}
+    if not isinstance(result, dict) or result.get("success") is not True:
+        raise RuntimeError("Kontext-WIP-Sicherung nicht bestätigt")
+    return result
 
 
 def _worker_return_note(detail, reason_code):
@@ -5509,6 +5604,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         and control.model_request_budget is None)
                     if task_local:
                         task_failures += 1
+                    if task_local and failure_reason in _CONTEXT_WIP_REASONS:
+                        _secure_context_wip(control, worker_session, failure_reason)
                     if task_local and task_failures < _WORKER_TASK_FAILURE_LIMIT:
                         returned = control.task_binding.task_snapshot()
                         supervisor = control.lease_supervisor

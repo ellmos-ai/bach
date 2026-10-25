@@ -1492,6 +1492,11 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         return FailedAnswer(f"{FailedAnswer.PREFIX}RuntimeError: Kontextfenster in der Abschlussreserve erschöpft",
                             reason_code="completion_reserve_context_exhausted")
     monkeypatch.setattr(runtime, "process", process)
+    wip_calls = []
+    def secure_wip(control_arg, session_arg, reason):
+        wip_calls.append((control_arg.task_binding.task_id, reason))
+        return {"success": True}
+    monkeypatch.setattr(control, "_secure_context_wip", secure_wip)
     thread = None
     try:
         response, code = control.start_worker_execution(ident)
@@ -1502,6 +1507,7 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         assert not thread.is_alive()
         # Two failures let the worker continue; the third in a row stops it.
         assert sorted(taken) == [42, 43, 44] and len(taken) == 3
+        assert wip_calls == [(task_id, "completion_reserve_context_exhausted") for task_id in taken]
         for task_id in taken:
             task = dict(conn.execute("SELECT status, claim_salt_ref FROM tasks WHERE id=?", (task_id,)).fetchone())
             assert task["status"] == "pending" and task["claim_salt_ref"] is None

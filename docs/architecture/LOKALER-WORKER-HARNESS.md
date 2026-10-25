@@ -57,6 +57,25 @@ Ausgangsbefund 24./25.10.: 98,7 % aller Rückgaben ohne Ergebnis, 76 % in unter 
 
 **Weiterarbeiten nach Task-Fehler** (PR #510): Ein Fehler, der nur diesen Lauf betrifft (kein Anbieterfehler, z. B. „Kontextfenster in der Abschlussreserve erschöpft“ oder ein unlesbarer Werkzeugaufruf), wird protokolliert; die Task geht mit Grund zurück und wird für diesen Lauf zurückgestellt, Buddha nimmt die nächste. Nach **drei** solchen Fehlern in Folge hält er an. Warum: Vorher beendete ein einzelner Fehler den Worker, er blieb auf `error` und startete nach einem Neustart nicht wieder. Warum die Grenze drei: Ein systematischer Fehler soll nicht die ganze Warteschlange leer zurückgeben.
 
+**Kontextsicherung und Teilungsmarkierung** (#2580): Scheitert ein Lauf an
+`completion_reserve_context_exhausted` oder `handoff_context_too_large`, sichert der
+Controller vor der Rückgabe den Task-Arbeitsbaum mit dem vorhandenen
+`finish_task(is_wip=True, run_tests=False)`: Secrets-Scan, Diff-Check, WIP-Commit und
+Push auf `bach-task/<id>`, ohne PR. Die Task-Notiz enthält die geänderten Dateien,
+den letzten bestätigten Übergabezettel und dessen Lesespur; geheimnisähnliche Werte
+werden redaktioniert. Dasselbe native Inhaltsupdate erhöht `needs_split` um eins und
+ändert damit die Taskversion gebunden an Lease und Fence. Ohne Arbeitsbaum wird nur
+die versionierte Notiz mit Zähler geschrieben. Schlägt auch die Sicherung fehl, wird
+keine Rückgabe als gesichert behauptet.
+
+`task-divider` erhält markierte Tasks zuerst, sofern eine aktivierte, nicht fehlerhafte
+Divider-Rolle in der Worker-Inventur existiert. Ohne verfügbaren Divider darf der
+nächste passende Worker die Task übernehmen; sein gebundener Prompt verlangt dann die
+Zerlegung als ersten Schritt. Die Zuschnittregel bleibt: höchstens zwei Übergaben,
+im eigenen Arbeitsbaum lösbar, Ergebnis als Text oder Datei plus PR. Nach bestätigter
+Zerlegung wird der Zähler am Parent auf null gesetzt; die ursprüngliche Zuweisung und
+damit die Vererbung an Kinder bleibt unverändert.
+
 **Monatskontingent erkennen** (PR #510): Ollama Cloud meldet „you (…) have reached your monthly usage limit“. Erkannt wurde nur „monthly usage limit reached“; deshalb lief das Kontingent als kurzzeitiges Rate-Limit mit Neuversuchen alle 60–900 s. Jetzt `quota_exceeded`.
 
 **Prüfgrund bei abgelehnter Abgabe** (PR #510): Das Modell bekam nur „Taskergebnis ist ungültig.“ und gab auf. Jetzt werden die zwei festen öffentlichen Gründe genannt (Längengrenze, reine Erledigungsmeldung); alles andere bleibt neutral (Vertrag #379).

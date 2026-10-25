@@ -213,6 +213,13 @@ class WorkerLeaseBinding:
             required = str(snapshot.get(key) or "").strip().casefold()
             if required and required != str(slot.get(slot_key) or "").strip().casefold():
                 return reason
+        needs_split = snapshot.get("needs_split", 0)
+        if needs_split is None:
+            needs_split = 0
+        if type(needs_split) is not int or needs_split < 0:
+            return "needs_split"
+        if needs_split and slot.get("role_id") != "task-divider" and slot.get("divider_available") is True:
+            return "needs_split"
         allowed = {"bach", "buddha", "ollama"}
         allowed.update(str(slot.get(key) or "").strip().casefold()
                        for key in ("id", "role_id", "sub_mode"))
@@ -1026,7 +1033,7 @@ class WorkerLeaseBinding:
                     and not self._trace_completion_tokens
                     and self._model_execution_pending is None)
 
-    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref=""):
+    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref="", needs_split=False):
         """Fence a Git result's content; review releases ownership without Done."""
         with self._lock:
             self.assert_active()
@@ -1039,9 +1046,17 @@ class WorkerLeaseBinding:
                     raise LeaseProtocolError("Bestätigte PR-Referenz fehlt")
             previous = self._snapshot.get("description") or ""
             description = str(previous) + ("\n\n" if previous else "") + annotation
-            ack = self._operation(self._client.update, changes={"description": description})
+            changes = {"description": description}
+            if needs_split:
+                current = self._snapshot.get("needs_split", 0)
+                if current is None:
+                    current = 0
+                if type(current) is not int or current < 0:
+                    raise LeaseProtocolError("needs_split-Zähler ist ungültig")
+                changes["needs_split"] = current + 1
+            ack = self._operation(self._client.update, changes=changes)
             self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
-            self._snapshot["description"] = description
+            self._snapshot.update(changes)
             if review:
                 release = self._operation(self._client.release, outcome="review", result_ref=result_ref)
                 if (not isinstance(release, LeaseReleaseAck) or release.released is not True
