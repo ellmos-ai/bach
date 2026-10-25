@@ -261,6 +261,7 @@ class WorkerLeaseBinding:
                                review_requested_model=None, **kwargs):
         from .worker_queue_status import ACQUIRE_DENIALS
         on_fixed_task_rejected = kwargs.pop("on_fixed_task_rejected", None)
+        review_first = kwargs.pop("review_first", False) is True
         explicit = slot.get("task_id")
         released_fixed_task_id = None
         if explicit not in (None, "", 0, "0"):
@@ -324,6 +325,13 @@ class WorkerLeaseBinding:
                 return binding
         if kwargs.get("_creator_delegation") is not None:
             raise LeaseProtocolError("Creator-Delegation braucht die explizit gebundene Sequenz-Task")
+        if review_first:
+            # Reviews are ordinary work (user decision 25.10.2026): the caller alternates turns.
+            reviewed = cls._acquire_review_next(client, slot, observation,
+                review_route=review_route, review_requested_model=review_requested_model,
+                **kwargs)
+            if reviewed is not None:
+                return reviewed
         offset = 0
         while True:
             if not kwargs["is_current"]() or kwargs["stop_event"].is_set():
