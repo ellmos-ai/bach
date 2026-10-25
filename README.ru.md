@@ -1,4 +1,4 @@
-<!-- worldset: {"translated_from_sha256": "c750f17394d37ef3b2ef38ec9ccca2718bb6679fdf996c947d10e8d269d2a949", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:21:48.453288+00:00"} -->
+<!-- worldset: {"translated_from_sha256": "baef5439fd109dda96de98527f6aa5a716025d9b1f22e231c25c7cc1a5ab1677", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:21:48.453288+00:00"} -->
 <img src="assets/banner_v2.png" width="100%" alt="BACH Banner">
 
 # ellmos BACH — текстовая операционная система для LLM
@@ -28,9 +28,9 @@ BACH использует Codex и как полноценный бэкенд в
 
 ## Языки
 
-Для BACH доступны документация и переводные интерфейсы на шести языках:
+Документация README доступна на одиннадцати языках. Покрытие переводами во время выполнения учитывается отдельно и в текущем снимке выпуска включает de, en, es, ru, ja и zh.
 
-**🇬🇧 English** | [🇩🇪 Deutsch](README.de.md) | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | [日本語](README.ja.md) | **Русский** | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 
 В текущем снимке конфигурации релиза включены `de`, `en`, `es`, `ru`, `ja` и `zh` в `system/exports/translations/languages_config.release.json`, а соответствующие файлы локалей экспортируются в `system/exports/translations/locales/`. Для поисковых роботов и прямого перехода на нужный язык в `docs/i18n/<lang>/` также предусмотрен отдельный `README.md` для каждого языка.
 
@@ -326,7 +326,7 @@ SchedulerService для задач по расписанию (цепочки, з
 - **[План переноса Ocean-BACH](OCEAN-TRANSFER-PLAN.md)** — границы установщика и постепенный перенос модулей
 - **[Реестр устаревших компонентов](DEPRICATED.md)** — замены, принятие и откат
 
-- **Языки:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | [日本語](README.ja.md) | **Русский** | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 - **[Краткое руководство](QUICKSTART.md)** — запустите первый рабочий процесс за 5 минут
 - **[Руководство пользователя](BACH_USER_MANUAL.md)** — полное руководство
 - **[Каталог навыков](SKILLS.template.md)** — шаблон и публичная точка входа для доступных навыков

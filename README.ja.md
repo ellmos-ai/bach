@@ -1,4 +1,4 @@
-<!-- worldset: {"translated_from_sha256": "c750f17394d37ef3b2ef38ec9ccca2718bb6679fdf996c947d10e8d269d2a949", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:20:48.813077+00:00"} -->
+<!-- worldset: {"translated_from_sha256": "baef5439fd109dda96de98527f6aa5a716025d9b1f22e231c25c7cc1a5ab1677", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:20:48.813077+00:00"} -->
 <img src="assets/banner_v2.png" width="100%" alt="BACH Banner">
 
 # ellmos BACH — LLM向けテキストベースのオペレーティングシステム
@@ -28,9 +28,9 @@ BACHは、Codexを第一級のランタイムバックエンドとして、ま�
 
 ## 言語
 
-BACHでは、6言語のドキュメントと翻訳サーフェスを提供している。
+README ドキュメントは 11 言語で利用できます。実行時翻訳の対応範囲は別途扱われ、現在のリリーススナップショットには de、en、es、ru、ja、zh が含まれます。
 
-**🇬🇧 English** | [🇩🇪 Deutsch](README.de.md) | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | **日本語** | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 
 現在のリリーススナップショットでは、`system/exports/translations/languages_config.release.json`の`de`、`en`、`es`、`ru`、`ja`、`zh`が有効になっており、`system/exports/translations/locales/`に対応するロケールファイルを出力する。クローラーや各言語への直接アクセス向けに、`docs/i18n/<lang>/`には各言語専用の`README.md`も用意されている。
 
@@ -326,7 +326,7 @@ SchedulerServiceによる時刻ベースのジョブ（チェーン、タスク�
 - **[Ocean-BACH移行計画](OCEAN-TRANSFER-PLAN.md)** — インストーラーの境界と段階的なモジュール移行
 - **[非推奨レジストリ](DEPRICATED.md)** — 置き換え、受け入れ、ロールバック
 
-- **言語：** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | **日本語** | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 - **[クイックスタートガイド](QUICKSTART.md)** — 5分で最初のワークフローを起動
 - **[ユーザーマニュアル](BACH_USER_MANUAL.md)** — 完全なハンドブック
 - **[スキルカタログ](SKILLS.template.md)** — 利用可能なスキルのテンプレートと公開エントリーポイント

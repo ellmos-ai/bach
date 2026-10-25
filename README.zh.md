@@ -1,4 +1,4 @@
-<!-- worldset: {"translated_from_sha256": "c750f17394d37ef3b2ef38ec9ccca2718bb6679fdf996c947d10e8d269d2a949", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:19:25.591675+00:00"} -->
+<!-- worldset: {"translated_from_sha256": "baef5439fd109dda96de98527f6aa5a716025d9b1f22e231c25c7cc1a5ab1677", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:19:25.591675+00:00"} -->
 <img src="assets/banner_v2.png" width="100%" alt="BACH Banner">
 
 # ellmos BACH — 面向 LLM 的文本操作系统
@@ -28,9 +28,9 @@ BACH 将 Codex 同时用作一流的运行时后端和仓库开发伙伴。有�
 
 ## 语言
 
-BACH 提供六种语言的文档和翻译界面：
+README 文档提供 11 种语言版本。运行时翻译覆盖范围单独说明；当前发布快照涵盖 de、en、es、ru、ja 和 zh。
 
-**🇬🇧 English** | [🇩🇪 Deutsch](README.de.md) | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | **简体中文** | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 
 当前版本快照在 `system/exports/translations/languages_config.release.json` 中启用 `de`、`en`、`es`、`ru`、`ja` 和 `zh`，并在 `system/exports/translations/locales/` 中导出对应的语言文件。为便于爬虫抓取和直接进入相应语言，每种语言在 `docs/i18n/<lang>/` 下也有各自的 `README.md`。
 
@@ -326,7 +326,7 @@ SchedulerService 用于基于时间的任务（链、任务、脚本），hook �
 - **[Ocean-BACH 迁移计划](OCEAN-TRANSFER-PLAN.md)**：安装器边界和增量模块迁移
 - **[弃用登记表](DEPRICATED.md)**：替代项、验收和回滚
 
-- **语言：** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | **简体中文** | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 - **[快速入门指南](QUICKSTART.md)**：5 分钟内启动你的第一个工作流
 - **[用户手册](BACH_USER_MANUAL.md)**：完整手册
 - **[技能目录](SKILLS.template.md)**：可用技能的模板和公开入口

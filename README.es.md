@@ -1,4 +1,4 @@
-<!-- worldset: {"translated_from_sha256": "c750f17394d37ef3b2ef38ec9ccca2718bb6679fdf996c947d10e8d269d2a949", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:12:03.055195+00:00"} -->
+<!-- worldset: {"translated_from_sha256": "baef5439fd109dda96de98527f6aa5a716025d9b1f22e231c25c7cc1a5ab1677", "translator": "gpt-6-luna", "translated_at": "2026-10-25T04:12:03.055195+00:00"} -->
 <img src="assets/banner_v2.png" width="100%" alt="BACH Banner">
 
 # ellmos BACH — Sistema operativo basado en texto para LLM
@@ -28,9 +28,9 @@ BACH utiliza Codex tanto como backend de ejecución de primera clase como colabo
 
 ## Idiomas
 
-BACH cuenta con documentación y superficies de traducción distribuidas para seis idiomas:
+La documentación README está disponible en once idiomas. La cobertura de las traducciones en tiempo de ejecución se trata por separado y actualmente incluye de, en, es, ru, ja y zh en la instantánea de lanzamiento.
 
-**🇬🇧 English** | [🇩🇪 Deutsch](README.de.md) | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | **Español** | [简体中文](README.zh.md) | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 
 La instantánea de configuración de la versión actual habilita `de`, `en`, `es`, `ru`, `ja` y `zh` en `system/exports/translations/languages_config.release.json`, y exporta los archivos de idioma correspondientes en `system/exports/translations/locales/`. Para los rastreadores y el acceso directo a cada idioma, cada idioma también tiene su propio `README.md` en `docs/i18n/<lang>/`.
 
@@ -326,7 +326,7 @@ Mantenimiento nativo de la documentación, activación y límites de la evidenci
 - **[Plan de transferencia Ocean-BACH](OCEAN-TRANSFER-PLAN.md)**: límites del instalador y transferencia incremental de módulos
 - **[Registro de obsolescencias](DEPRICATED.md)**: sustituciones, aceptación y reversión
 
-- **Idiomas:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+[English](README.md) | [Deutsch](README.de.md) | **Español** | [简体中文](README.zh.md) | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 - **[Guía de inicio rápido](QUICKSTART.md)**: pon en marcha tu primer flujo de trabajo en 5 minutos
 - **[Manual de usuario](BACH_USER_MANUAL.md)**: manual completo
 - **[Catálogo de habilidades](SKILLS.template.md)**: plantilla y punto de entrada público para las habilidades disponibles
