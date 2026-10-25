@@ -336,12 +336,21 @@ def project_scope_evidence(data, *, repo_root=None, worktrees_dir=None) -> dict:
     result = data.get("result")
     if not isinstance(result, dict):
         return data.copy()
-    try:
-        scope = _project_scope_record(result.get("scope"), repo_root=repo_root,
-                                      worktrees_dir=worktrees_dir)
-    except (KeyError, TypeError, ValueError, AttributeError):
-        scope = _unavailable("scope_evidence_invalid")
-    projected_result = {**result, "scope": scope,
+    from .worker_result_provenance import source_kind, external_scope
+    if source_kind(result) == "external_attested":
+        from .worker_external_attestation import project_external_attestation
+        provenance = project_external_attestation(result.get("external_provenance"),
+            repo_root=repo_root, worktrees_dir=worktrees_dir)
+        scope = external_scope(provenance)
+        projected_result = {**result, "external_provenance": provenance}
+    else:
+        try:
+            scope = _project_scope_record(result.get("scope"), repo_root=repo_root,
+                                          worktrees_dir=worktrees_dir)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            scope = _unavailable("scope_evidence_invalid")
+        projected_result = result
+    projected_result = {**projected_result, "scope": scope,
                         "result_revision": scope.get("result_revision")}
     review = result.get("model_review")
     if isinstance(review, dict) and review.get("availability") == "recorded":

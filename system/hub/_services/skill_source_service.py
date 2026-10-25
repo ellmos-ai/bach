@@ -259,17 +259,23 @@ def check_write_locks(path: Path) -> None:
     target = path if path.is_dir() else path.parent
     while not target.exists() and target != target.parent:
         target = target.parent
-    for parent in (target, *target.parents):
-        result = subprocess.run([sys.executable, str(scanner), "--check-dir", str(parent), "--json"],
-                                capture_output=True, text=True, encoding="utf-8", timeout=15,
-                                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
-        try:
-            state = json.loads(result.stdout)
-        except (ValueError, TypeError):
-            raise PermissionError("Lock-Status konnte nicht bestätigt werden") from None
-        if (result.returncode != 0 or state.get("locks") != []
-                or state.get("twin_status") not in {"ok", "not-applicable"}):
-            raise PermissionError("Skill-Schreibbereich ist gesperrt oder ungeprüft")
+    # --check-dir already includes all overlapping ancestor and twin locks.
+    # Recursively scanning every ancestor also scans unrelated sibling trees.
+    result = subprocess.run([sys.executable, "-S", str(scanner), "--check-dir", str(target),
+                             "--strict", "--json"],
+                            capture_output=True, text=True, encoding="utf-8", timeout=15,
+                            env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
+    try:
+        state = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        raise PermissionError("Lock-Status konnte nicht bestätigt werden") from None
+    if (not isinstance(state, dict) or result.returncode != 0
+            or state.get("checked") != str(target.resolve())
+            or state.get("locks") != [] or state.get("hook_guards") != []
+            or state.get("descendants_complete") is not True
+            or state.get("twin_status") not in {"ok", "not-applicable"}):
+        raise PermissionError("Skill-Schreibbereich ist gesperrt oder ungeprüft")
+
 
 
 def save_skill(skill_id: str, content: str, expected_version: str, *,

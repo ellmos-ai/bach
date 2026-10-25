@@ -453,6 +453,22 @@ async def bootstrap_agent_templates():
         conn.close()
 
 
+
+@router.post("/agent-studio/bootstrap/taskmaster-skills")
+async def migrate_taskmaster_template_skills(payload: Dict[str, Any] = Body(...)):
+    """Explicit, revision-pinned migration of the two legacy system seeds."""
+    from hub._services.blueprint_service import migrate_taskmaster_skill_bindings
+    conn = _get_conn()
+    try:
+        return migrate_taskmaster_skill_bindings(conn, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except RuntimeError:
+        raise HTTPException(status_code=409, detail="Taskmaster-Vorlagen wurden inzwischen geändert") from None
+    finally:
+        conn.close()
+
+
 def _template_provider_call(func, *args, **kwargs):
     conn = _get_conn()
     try:
