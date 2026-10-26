@@ -447,3 +447,109 @@ def test_trace_rejects_open_caller_transaction_without_ending_it(binding):
     finally:
         conn.close()
         observer.close()
+
+
+# --- #2660: a restart after a backend error builds on what earlier leases already did -----------
+def _restart(binding, generation):
+    """Backend error path: the lease is returned, the next run acquires a fresh one."""
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+    assert binding.return_lease()
+    return WorkerLeaseBinding.acquire(
+        binding._client, binding.task_id, worker_id="trace-worker@HOST", host="HOST",
+        generation=generation, is_current=lambda: True, stop_event=threading.Event(),
+    )
+
+
+def _protocol_following_run(binding, title):
+    """Stand-in for the model: adds the subtask unless the restart context reports task_manage as done."""
+    from hub._services.chat.telegram_chat import _bound_worker_prompt
+
+    content = json.loads(_bound_worker_prompt(binding, "Basis").splitlines()[-1])
+    if not any(effect["tool"] == "task_manage" for effect in content.get("prior_effects", [])):
+        with _relay(binding) as relay:
+            assert _ack(relay, _call(relay, {"action": "add", "title": title}))["acknowledged"] is True
+    return content
+
+
+def _tasks_titled(tmp_path, title):
+    with closing(sqlite3.connect(tmp_path / "canonical.db")) as conn:
+        return conn.execute("SELECT COUNT(*) FROM tasks WHERE title=?", (title,)).fetchone()[0]
+
+
+def test_restart_after_backend_error_reports_the_created_subtask_instead_of_recreating_it(binding, tmp_path):
+    first = _protocol_following_run(binding, "Kind A")
+    assert "prior_effects" not in first
+    restarted = _restart(binding, "trace-generation-2")
+    try:
+        from hub._services.chat.telegram_chat import _bound_worker_prompt
+
+        prompt = _bound_worker_prompt(restarted, "Basis")
+        content = _protocol_following_run(restarted, "Kind A")
+        assert "Wirkungsprotokoll" in prompt and "wiederhole sie nicht" in prompt
+        assert [effect["tool"] for effect in content["prior_effects"]] == ["task_manage"]
+        assert content["prior_effects"][0]["completed_at"]
+        assert "Teilaufgaben zerlegt" in content["description"]
+        assert _tasks_titled(tmp_path, "Kind A") == 1
+        # Names and times only: no arguments, results or the private lease id reach the prompt.
+        assert "arguments" not in json.dumps(content["prior_effects"])
+        assert restarted._ack.lease_id not in prompt and binding._ack.lease_id not in prompt
+    finally:
+        if restarted._active:
+            restarted.return_lease()
+
+
+def test_without_the_effect_log_the_restart_would_create_the_subtask_twice(binding, tmp_path, monkeypatch):
+    from hub._services.chat import telegram_chat
+
+    monkeypatch.setattr(telegram_chat, "_prior_effect_log", lambda binding: ([], 0))
+    _protocol_following_run(binding, "Kind B")
+    restarted = _restart(binding, "trace-generation-2")
+    try:
+        _protocol_following_run(restarted, "Kind B")
+        assert _tasks_titled(tmp_path, "Kind B") == 2
+    finally:
+        if restarted._active:
+            restarted.return_lease()
+
+
+class _TraceOnly:
+    def __init__(self, events, generation="current"):
+        self.task_id, self.generation = 7, generation
+        self._client = type("Client", (), {"tool_trace_events": lambda _self, task_id, limit, offset: {
+            "events": events[offset:offset + limit]}})()
+
+
+def _chain(generation, request_id, *, tool="task_manage", receipt="r1", ack_receipt="r1", phases=("started", "returned", "acknowledged")):
+    receipts = {"started": None, "returned": receipt, "acknowledged": ack_receipt, "failed": None}
+    return [{"event_id": hash((generation, request_id, phase)) % 10**6, "generation": generation,
+             "request_id": request_id, "source": "normal-loop", "phase": phase, "tool_name": tool,
+             "receipt_id": receipts[phase], "occurred_at": "2026-10-26T08:00:00Z", "fence": 1}
+            for phase in phases]
+
+
+def test_effect_log_counts_only_fully_acknowledged_calls_of_earlier_runs():
+    from hub._services.chat.telegram_chat import _prior_effect_log
+
+    events = (_chain("old", "a" * 32, tool="task_manage")
+              + _chain("old", "b" * 32, tool="exec_command", phases=("started", "returned"))
+              + _chain("old", "c" * 32, tool="write_file", ack_receipt="other")
+              + _chain("old", "d" * 32, tool="fetch_url", phases=("started", "failed"))
+              + _chain("current", "e" * 32, tool="read_file"))
+    effects, omitted = _prior_effect_log(_TraceOnly(events))
+    assert [effect["tool"] for effect in effects] == ["task_manage"] and omitted == 0
+
+
+def test_effect_log_is_bounded_and_fails_closed_on_unreadable_trace():
+    from hub._services.chat.telegram_chat import _PRIOR_EFFECT_LIMIT, _prior_effect_log
+
+    events = [event for index in range(_PRIOR_EFFECT_LIMIT + 5)
+              for event in _chain("old", f"{index:032x}")]
+    for position, event in enumerate(events):
+        event["event_id"] = position
+    effects, omitted = _prior_effect_log(_TraceOnly(events))
+    assert len(effects) == _PRIOR_EFFECT_LIMIT and omitted == 5
+    broken = _TraceOnly([])
+    broken._client = type("Client", (), {"tool_trace_events": lambda *_args, **_kwargs: {"events": None}})()
+    with pytest.raises(RuntimeError, match="Wirkungsprotokoll"):
+        _prior_effect_log(broken)
