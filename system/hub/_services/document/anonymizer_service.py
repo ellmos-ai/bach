@@ -828,7 +828,9 @@ def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Ite
             continue
         local_parts = re.findall(r"[a-z]+", normalize(local))
         compact = "".join(local_parts)
-        address_parts = set(re.findall(r"[a-z]+", normalize(email)))
+        # A terminal domain label is not evidence of a profile identity.
+        domain_identity = domain.rpartition(".")[0]
+        address_parts = set(re.findall(r"[a-z]+", normalize(local + " " + domain_identity)))
         if (email not in found and (domain in _PRIVATE_EMAIL_DOMAINS or name_parts.intersection(local_parts)
                 or trusted_parts.intersection(address_parts)
                 or trusted_compounds.intersection(address_parts)

@@ -513,3 +513,45 @@ def test_2620_review_reverse_uses_mapping_namespace_only(tmp_path, no_spacy, mon
     assert profile.mappings["emails"] == {private: fake}
     assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
     assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("mode", ["direct", "workflow"])
+@pytest.mark.parametrize("client,private,family,tld", [
+    ("Marie de Vries", "marie.de.vries@example.org", "kontakt@familie-de-vries.example", "de"),
+    ("Bo Li", "bo.li@example.org", "kontakt@familie-li.example", "li"),
+    ("Ada Com", "ada.com@example.org", "kontakt@familie-com.example", "com"),
+])
+def test_2620_tld_is_not_profile_identity(tmp_path, offline_real_ner, mode, client, private, family, tld):
+    retained = ("info@jugendamt." + tld, "kontakt@firma." + tld)
+    original = "Kontakt: " + "; ".join((private, family, *retained))
+    if mode == "direct":
+        anon = an.DocumentAnonymizer()
+        profile = anon.create_profile(real_name=client, geburtsdatum="15.03.2016")
+        path = tmp_path / "direct.txt"
+        path.write_text(original, encoding="utf-8")
+        assert anon.anonymize_file(str(path), profile)[0]
+        sent = path.read_text(encoding="utf-8")
+    else:
+        folder = tmp_path / "data_roh" / "Synthetic"
+        folder.mkdir(parents=True)
+        (folder / "Protokoll.txt").write_text(original, encoding="utf-8")
+        service = ReportWorkflowService(base_path=tmp_path)
+        session = service.start_session()
+        profile = service.create_temp_profile(session, client_name=client, geburtsdatum="15.03.2016",
+            scan_folder=tmp_path / "data_roh")
+        service.anonymize_to_bundles(session)
+        sent = service.extract_bundle_text(session).core_text
+    try:
+        assert all(email in sent for email in retained)
+        assert all(email not in sent for email in (private, family))
+        assert set(profile.mappings["emails"]) == {private, family}
+        if mode == "direct":
+            assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
+            assert path.read_text(encoding="utf-8") == original
+        else:
+            expected = {"private": private, "family": family}
+            response = {key: profile.mappings["emails"][value] for key, value in expected.items()}
+            assert service._deanonymize_json(response, profile) == expected
+    finally:
+        if mode == "workflow":
+            profile.cleanup()
