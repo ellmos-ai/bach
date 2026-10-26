@@ -499,7 +499,8 @@ def test_restart_after_backend_error_reports_the_created_subtask_instead_of_recr
             restarted.return_lease()
 
 
-def test_without_the_effect_log_the_restart_would_create_the_subtask_twice(binding, tmp_path, monkeypatch):
+def test_without_the_effect_log_the_restart_repeats_the_call_and_only_the_guard_prevents_a_duplicate(
+        binding, tmp_path, monkeypatch):
     from hub._services.chat import telegram_chat
 
     monkeypatch.setattr(telegram_chat, "_prior_effect_log", lambda binding: ([], 0))
@@ -507,7 +508,9 @@ def test_without_the_effect_log_the_restart_would_create_the_subtask_twice(bindi
     restarted = _restart(binding, "trace-generation-2")
     try:
         _protocol_following_run(restarted, "Kind B")
-        assert _tasks_titled(tmp_path, "Kind B") == 2
+        acknowledged = [event["tool_name"] for event in _events(restarted) if event["phase"] == "acknowledged"]
+        assert acknowledged.count("task_manage") == 2
+        assert _tasks_titled(tmp_path, "Kind B") == 1
     finally:
         if restarted._active:
             restarted.return_lease()
@@ -553,3 +556,52 @@ def test_effect_log_is_bounded_and_fails_closed_on_unreadable_trace():
     broken._client = type("Client", (), {"tool_trace_events": lambda *_args, **_kwargs: {"events": None}})()
     with pytest.raises(RuntimeError, match="Wirkungsprotokoll"):
         _prior_effect_log(broken)
+
+
+# --- #2660 follow-up: an open sibling with the same normalized title is reused, not re-created ----
+import re  # noqa: E402
+
+
+def _add(binding, title):
+    with _relay(binding) as relay:
+        result = _call(relay, {"action": "add", "title": title})
+        assert _ack(relay, result)["acknowledged"] is True
+    return int(re.search(r"Task #(\d+)", result["result"]).group(1)), result["result"]
+
+
+def test_duplicate_subtask_title_returns_the_open_sibling(binding, tmp_path):
+    first, _ = _add(binding, "Kind C")
+    again, message = _add(binding, "  kind   C ")
+    assert again == first and "besteht bereits" in message
+    assert _tasks_titled(tmp_path, "Kind C") == 1 and _tasks_titled(tmp_path, "  kind   C ") == 0
+    assert "nicht erneut angelegt" in binding.task_snapshot()["description"]
+
+
+def test_different_subtask_title_creates_a_new_sibling(binding, tmp_path):
+    first, _ = _add(binding, "Kind D")
+    second, message = _add(binding, "Kind E")
+    assert second != first and "erstellt" in message
+    assert _tasks_titled(tmp_path, "Kind D") == _tasks_titled(tmp_path, "Kind E") == 1
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_closed_sibling_is_not_reused(binding, tmp_path, status):
+    first, _ = _add(binding, "Kind F")
+    with closing(sqlite3.connect(tmp_path / "canonical.db")) as conn:
+        conn.execute("UPDATE tasks SET status=? WHERE id=?", (status, first))
+        conn.commit()
+    second, message = _add(binding, "Kind F")
+    assert second != first and "erstellt" in message
+    assert _tasks_titled(tmp_path, "Kind F") == 2
+
+
+def test_restart_that_ignores_the_effect_log_still_gets_the_existing_subtask(binding, tmp_path):
+    first, _ = _add(binding, "Kind G")
+    restarted = _restart(binding, "trace-generation-2")
+    try:
+        again, message = _add(restarted, "Kind G")
+        assert again == first and "besteht bereits" in message
+        assert _tasks_titled(tmp_path, "Kind G") == 1
+    finally:
+        if restarted._active:
+            restarted.return_lease()

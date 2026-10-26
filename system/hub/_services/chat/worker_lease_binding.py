@@ -1238,13 +1238,21 @@ class WorkerLeaseBinding:
                         "created_ids": tuple(ack.created_ids), "parent_closed": ack.parent_closed,
                     }
                 self._adopt_task_version(ack.task_version, previous_version=previous_version)
-                self._snapshot["description"] = (self._snapshot.get("description") or "") + (
-                    f"\n[In {ack.created_count} Teilaufgaben zerlegt: {list(ack.created_ids)}]")
+                new_ids = [value for value in ack.created_ids if value not in ack.reused_ids]
+                notes = f"\n[In {len(new_ids)} Teilaufgaben zerlegt: {new_ids}]" if new_ids else ""
+                if ack.reused_ids:
+                    notes += f"\n[Teilaufgabe bereits offen, nicht erneut angelegt: {list(ack.reused_ids)}]"
+                self._snapshot["description"] = (self._snapshot.get("description") or "") + notes
                 if ack.parent_closed:
                     self.invalidate()
                     raise LeaseProtocolError("Zerlegung hat unerlaubt den Parent abgeschlossen")
                 if action == "add":
+                    if ack.created_ids[0] in ack.reused_ids:
+                        return (f"Task #{ack.created_ids[0]} besteht bereits als offene Teilaufgabe mit gleichem "
+                                f"Titel; nicht erneut angelegt: {subtasks[0]['title']}")
                     return f"Task #{ack.created_ids[0]} erstellt: {subtasks[0]['title']}"
+                reused_note = (f"; bereits offen und wiederverwendet: IDs {list(ack.reused_ids)}"
+                               if ack.reused_ids else "")
                 return (f"Task #{self.task_id} in {ack.created_count} Teilaufgaben zerlegt: "
-                        f"IDs {list(ack.created_ids)}")
+                        f"IDs {list(ack.created_ids)}{reused_note}")
             raise LeaseProtocolError("Unbekannte Task-Aktion")
