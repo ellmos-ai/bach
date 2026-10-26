@@ -32,6 +32,28 @@ class LifeRoutineAuthTests(unittest.TestCase):
                 finally:
                     client.close()
 
+    def test_routine_activity_is_a_json_boolean(self):
+        # The shared /routinen page compares is_active === true; SQLite stores 1/0.
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "user.db"
+            with closing(sqlite3.connect(database)) as conn:
+                conn.execute("CREATE TABLE routines(id INTEGER PRIMARY KEY, name TEXT, category TEXT, interval_type TEXT, priority INTEGER, is_active INTEGER, next_due_at TEXT)")
+                conn.executemany("INSERT INTO routines(name, priority, is_active) VALUES (?, 1, ?)", [("aktiv", 1), ("pausiert", 0)])
+                conn.commit()
+            with (
+                patch.object(server, "get_user_db", side_effect=lambda: sqlite3.connect(database)),
+                patch.object(server, "validate_token", side_effect=lambda token: {"name": "fixture"} if token == "valid-fixture" else None),
+            ):
+                client = TestClient(server.app)
+                try:
+                    response = client.get("/api/routines", headers={"Authorization": "Bearer valid-fixture"})
+                    self.assertEqual(response.status_code, 200)
+                    activity = {r["name"]: r["is_active"] for r in response.json()["routines"]}
+                    self.assertIs(activity["aktiv"], True)
+                    self.assertIs(activity["pausiert"], False)
+                finally:
+                    client.close()
+
 
 if __name__ == "__main__":
     unittest.main()
