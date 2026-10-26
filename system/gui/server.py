@@ -14159,6 +14159,7 @@ async def get_routines(category: str = None, interval: str = None):
 
         for row in rows:
             r = dict(row)
+            r['is_active'] = bool(r['is_active'])  # SQLite INTEGER -> JSON boolean for the shared /routinen page
             r['is_due_today'] = False
             r['is_overdue'] = False
 
