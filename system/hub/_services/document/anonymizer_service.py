@@ -793,12 +793,22 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
 
 
 def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Iterable[str],
-                           manual_terms: Iterable[str] = ()) -> list[str]:
+                           manual_terms: Iterable[str] = (), *, trusted_names: Iterable[str] = ()) -> list[str]:
     """Private providers or evidenced identity parts, never a guessed domain policy."""
     normalize = lambda value: value.casefold().translate(str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}))
     allowed = {value.strip().casefold() for value in whitelist if value.strip()}
     name_parts = set()
     full_names = set()
+    # Explicit profile identities are authoritative, including short names and
+    # names that also happen to be ordinary words. NER candidates remain filtered.
+    trusted_parts = set()
+    trusted_compounds = set()
+    for name in trusted_names:
+        if name.casefold() not in allowed:
+            parts = [normalize(word) for word in re.findall(r"[^\W\d_]+", name)]
+            trusted_parts.update(parts)
+            if len(parts) > 1:
+                trusted_compounds.add("".join(parts))
     excluded = _NER_LEADING_ROLE_NOUNS | _NER_MID_SPAN_STOPWORDS | {"frau", "herr", "dr", "prof", "med"}
     for name in known_names:
         if name.casefold() in allowed:
@@ -818,7 +828,10 @@ def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Ite
             continue
         local_parts = re.findall(r"[a-z]+", normalize(local))
         compact = "".join(local_parts)
+        address_parts = set(re.findall(r"[a-z]+", normalize(email)))
         if (email not in found and (domain in _PRIVATE_EMAIL_DOMAINS or name_parts.intersection(local_parts)
+                or trusted_parts.intersection(address_parts)
+                or trusted_compounds.intersection(address_parts)
                 or any(name in compact for name in full_names)
                 or any(pattern.search(email) for pattern in manual_patterns))):
             found.append(email)  # exact spelling is needed for replacement and roundtrip
@@ -1243,7 +1256,8 @@ class DocumentAnonymizer:
         allowed = [*self.global_whitelist.get("names", []), *self.global_whitelist.get("organizations", []), *(whitelist or [])]
         ner_names = detect_person_names_ner(text, whitelist=allowed)
         found["ner_person_names"] = ner_names
-        found["emails"] = _find_sensitive_emails(text, [*(known_names or []), *ner_names, *found["table_row_names"]], allowed, manual_terms or [])
+        found["emails"] = _find_sensitive_emails(text, [*ner_names, *found["table_row_names"]], allowed,
+            manual_terms or [], trusted_names=known_names or [])
 
         return found
 
@@ -1517,7 +1531,7 @@ class DocumentAnonymizer:
         # A titled person may be introduced in another file of the same dossier.
         allowed = [*self.global_whitelist.get("names", []), *self.global_whitelist.get("organizations", []), *whitelist]
         combined["emails"] = _find_sensitive_emails(" ".join(email_candidates),
-            [*known_names, *combined["ner_person_names"], *combined["table_row_names"]], allowed, manual_terms)
+            [*combined["ner_person_names"], *combined["table_row_names"]], allowed, manual_terms, trusted_names=known_names)
         return combined
 
     def anonymize_file(self, filepath: str, profile: AnonymProfile) -> Tuple[bool, int]:
@@ -1529,6 +1543,17 @@ class DocumentAnonymizer:
         """
         path = Path(filepath)
         suffix = path.suffix.lower()
+
+        # Direct/loaded profiles do not necessarily pass through the scanner.
+        # Complete whole-address mappings before the shared replacement helpers
+        # suppress partial name replacements inside addresses.
+        text = self.extract_text_from_file(filepath)
+        existing = {key for category in profile.mappings.values() for key in category}
+        emails = _find_sensitive_emails(text, (), profile.whitelist,
+            profile.mappings.get("misc", ()), trusted_names=profile.mappings.get("names", ()))
+        for email in emails:
+            if email not in existing:
+                profile.mappings.setdefault("emails", {})[email] = _generate_fake_email(email)
 
         if suffix == ".docx":
             return self._anonymize_docx(path, profile)
@@ -1639,23 +1664,12 @@ class DocumentAnonymizer:
         doc = Document(str(path))
         count = 0
 
-        # Alle Mappings anwenden
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
+        sorted_replacements = self._sorted_replacements(profile)
 
-        # Nach Laenge sortieren (laengste zuerst, verhindert Teilersetzungen)
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
-
-        # Wortgrenzen-Patterns vorab kompilieren (verhindert kaputte Fragmente
+        # Gemeinsame Wortgrenzen-Ersetzung (verhindert kaputte Fragmente
         # wie "Person026sbesonderheiten" statt "Wahrnehmungsbesonderheiten",
         # wenn ein NER-erkannter Einzelwort-Name zufaellig Praefix eines
         # laengeren deutschen Kompositums ist).
-        compiled_replacements = [
-            (re.compile(r'\b' + re.escape(old) + r'\b'), new)
-            for old, new in sorted_replacements
-        ]
-
         def replace_in_paragraphs(paragraphs):
             nonlocal count
             for paragraph in paragraphs:
@@ -1674,8 +1688,8 @@ class DocumentAnonymizer:
                 # Erhalt von Run-Formatierung.
                 new_p_text = p_text
                 changed = False
-                for pattern, new in compiled_replacements:
-                    new_p_text, n = pattern.subn(lambda m: new, new_p_text)
+                for old, new in sorted_replacements:
+                    new_p_text, n = _replace_word_boundary(new_p_text, old, new)
                     if n:
                         count += n
                         changed = True
@@ -1717,11 +1731,7 @@ class DocumentAnonymizer:
             text = path.read_text(encoding="latin-1")
 
         count = 0
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
-
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+        sorted_replacements = self._sorted_replacements(profile)
 
         for old, new in sorted_replacements:
             text, occurrences = _replace_word_boundary(text, old, new)
@@ -1753,10 +1763,7 @@ class DocumentAnonymizer:
             return False, 0
 
         count = 0
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+        sorted_replacements = self._sorted_replacements(profile)
 
         for old, new in sorted_replacements:
             text, occurrences = _replace_word_boundary(text, old, new)
@@ -1787,6 +1794,7 @@ class DocumentAnonymizer:
             all_replacements = {
                 k: v for k, v in all_replacements.items()
                 if k.strip().lower() not in wl_lower
+                and not ("@" in k and k.rsplit("@", 1)[-1].lower() in wl_lower)
             }
         return sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
@@ -1919,12 +1927,7 @@ class DocumentAnonymizer:
             return False, 0
 
         count = 0
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
-
-        # Nach Laenge sortieren (laengste zuerst, verhindert Teilersetzungen)
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+        sorted_replacements = self._sorted_replacements(profile)
 
         date_mappings = profile.mappings.get("dates", {})
 
@@ -2101,7 +2104,8 @@ class DocumentDeanonymizer:
             client_id=profile.client_id,
             tarnname="",
             fake_geburtsdatum="",
-            mappings={}
+            mappings={},
+            whitelist=profile.whitelist
         )
 
         for category, mapping in profile.mappings.items():
