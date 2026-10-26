@@ -29,6 +29,23 @@ CUSTOM_THEME_DEFAULTS = {
 }
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
+UI_PRESETS = ("compact", "standard", "spacious")
+NAV_SCOPES = ("global", "section", "none")
+ICON_STYLES = ("solid", "outline", "none")
+DENSITIES = ("compact", "standard", "loose")
+UI_DEFAULTS = {
+    "preset": "standard",
+    "nav_scope": "global",
+    "icon_style": "solid",
+    "density": "standard",
+}
+_UI_ENUMS = {
+    "preset": UI_PRESETS,
+    "nav_scope": NAV_SCOPES,
+    "icon_style": ICON_STYLES,
+    "density": DENSITIES,
+}
+
 
 class ThemeHandler(BaseHandler):
     """Persist dashboard theme preferences without owning unrelated config."""
@@ -130,6 +147,87 @@ class ThemeHandler(BaseHandler):
             "theme": normalized,
             "custom": current_custom,
             "available": list(AVAILABLE_THEMES),
+            "configured": True,
+            "dry_run": bool(dry_run),
+        }
+
+    def get_ui(self) -> dict:
+        config = self._load_config()
+        gui_config = config.get("gui") if isinstance(config.get("gui"), dict) else {}
+        configured = any(key in gui_config for key in _UI_ENUMS)
+        values = {}
+        for key, allowed in _UI_ENUMS.items():
+            value = str(gui_config.get(key, UI_DEFAULTS[key])).lower()
+            if value not in allowed:
+                value = UI_DEFAULTS[key]
+            values[key] = value
+        return {
+            "preset": values["preset"],
+            "nav_scope": values["nav_scope"],
+            "icon_style": values["icon_style"],
+            "density": values["density"],
+            "available": {
+                "preset": list(UI_PRESETS),
+                "nav_scope": list(NAV_SCOPES),
+                "icon_style": list(ICON_STYLES),
+                "density": list(DENSITIES),
+            },
+            "configured": configured,
+        }
+
+    def set_ui(
+        self,
+        preset: str | None = None,
+        nav_scope: str | None = None,
+        icon_style: str | None = None,
+        density: str | None = None,
+        *,
+        dry_run: bool = False,
+    ) -> dict:
+        provided = {
+            "preset": preset,
+            "nav_scope": nav_scope,
+            "icon_style": icon_style,
+            "density": density,
+        }
+        validated = {}
+        for key, allowed in _UI_ENUMS.items():
+            value = provided[key]
+            if value is None:
+                continue
+            normalized = str(value).lower()
+            if normalized not in allowed:
+                raise ValueError(
+                    "Ungueltiger "
+                    + key
+                    + "-Wert. Erlaubt: "
+                    + ", ".join(allowed)
+                )
+            validated[key] = normalized
+
+        def apply_update(config: dict) -> dict:
+            gui_config = config.get("gui") if isinstance(config.get("gui"), dict) else {}
+            gui_config = dict(gui_config)
+            gui_config.update(validated)
+            config["gui"] = gui_config
+            return config
+
+        if dry_run:
+            config = apply_update(self._load_config())
+        else:
+            config = update_user_config(self.config_path, apply_update)
+        gui_config = config.get("gui") if isinstance(config.get("gui"), dict) else {}
+        return {
+            "preset": gui_config.get("preset", UI_DEFAULTS["preset"]),
+            "nav_scope": gui_config.get("nav_scope", UI_DEFAULTS["nav_scope"]),
+            "icon_style": gui_config.get("icon_style", UI_DEFAULTS["icon_style"]),
+            "density": gui_config.get("density", UI_DEFAULTS["density"]),
+            "available": {
+                "preset": list(UI_PRESETS),
+                "nav_scope": list(NAV_SCOPES),
+                "icon_style": list(ICON_STYLES),
+                "density": list(DENSITIES),
+            },
             "configured": True,
             "dry_run": bool(dry_run),
         }
