@@ -749,8 +749,12 @@ class WorkerLeaseBinding:
                 self._review_grant._last_answer = None
                 self._review_grant._last_answer_sha256 = None
 
-    def finish_model_execution(self, handle, *, result=None, failed=False, route_sha256=None):
-        """Confirm a returned backend answer; a CLI may already have submitted."""
+    def finish_model_execution(self, handle, *, result=None, failed=False, route_sha256=None,
+                               failure=None):
+        """Confirm a returned backend answer; a CLI may already have submitted.
+
+        ``failure`` is a fixed code from worker_execution_evidence.failure_code.
+        """
         should_record_review = False
         should_reconcile = False
         with self._lock:
@@ -769,6 +773,9 @@ class WorkerLeaseBinding:
                     finish_kwargs = {"failed": True}
                     if route_sha256 is not None:
                         finish_kwargs["route_sha256"] = route_sha256
+                    reason = failure if failed else "binding_inactive"
+                    if reason is not None:
+                        finish_kwargs["failure"] = reason
                     finish(self, handle, **finish_kwargs)
                 except Exception:
                     pass

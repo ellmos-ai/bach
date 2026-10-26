@@ -2061,7 +2061,8 @@ class ChatRuntime(_ModuleChatRuntime):
                         # A refreshed profile can legitimately narrow tools.
                         # Keep the call usable, but never attest the older hash.
                         try:
-                            call_binding.finish_model_execution(handle, failed=True)
+                            call_binding.finish_model_execution(
+                                handle, failed=True, failure="request_superseded")
                         except Exception:
                             pass
                         handle = None
@@ -2077,10 +2078,12 @@ class ChatRuntime(_ModuleChatRuntime):
                     )
                 else:
                     result = await backend.chat(*args, **kwargs)
-            except BaseException:
+            except BaseException as exc:
                 if handle is not None:
                     try:
-                        call_binding.finish_model_execution(handle, failed=True)
+                        from hub._services.worker_execution_evidence import failure_code
+                        call_binding.finish_model_execution(
+                            handle, failed=True, failure=failure_code(error=exc))
                     except Exception:
                         pass
                 raise
@@ -2088,8 +2091,10 @@ class ChatRuntime(_ModuleChatRuntime):
                 failed = not isinstance(result, dict) or bool(result.get("error"))
                 if getattr(session, "worker_task_binding", None) is call_binding:
                     try:
+                        from hub._services.worker_execution_evidence import failure_code
                         call_binding.finish_model_execution(
                             handle, result=None if failed else result, failed=failed,
+                            failure=failure_code(result) if failed else None,
                             route_sha256=(dispatch_route["route_sha256"]
                                 if dispatch_route and getattr(backend, "_controller_route", None) is dispatch_route_stamp
                                 and route_snapshot(backend) == dispatch_route else None),
@@ -2098,7 +2103,7 @@ class ChatRuntime(_ModuleChatRuntime):
                         pass
                 else:
                     try:
-                        call_binding.finish_model_execution(handle, failed=True)
+                        call_binding.finish_model_execution(handle, failed=True, failure="binding_changed")
                     except Exception:
                         pass
             # Ollama can reject malformed Qwen tool XML in its reserved error

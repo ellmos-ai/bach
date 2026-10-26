@@ -490,10 +490,13 @@ class TaskLeaseClient:
             kwargs["route_sha256"] = route_sha256
         return self._model_execution_call("start_execution", binding, **kwargs)
 
-    def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None):
+    def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None,
+                                failure=None):
         kwargs = {"result": result, "failed": failed}
         if route_sha256 is not None:
             kwargs["route_sha256"] = route_sha256
+        if failure is not None:
+            kwargs["failure"] = failure
         return self._model_execution_call("finish_execution", binding, handle, **kwargs)
 
     def _link_model_execution(self, binding, handle):

@@ -1606,6 +1606,9 @@ def test_rejected_tool_call_returns_task_or_shows_reason(tmp_path, monkeypatch, 
             assert execution.start_error is None
             activities = [e.get("activity") or "" for e in slots.get_activity_history(path=path)]
             assert any(f"Task #{first} zurückgegeben (model_failure:invalid_tool_call)" in a for a in activities)
+            receipts = [json.loads(row[0]) for row in conn.execute(
+                "SELECT receipt FROM worker_model_executions WHERE task_id=?", (first,))]
+            assert [(r["phase"], r.get("failure_code")) for r in receipts] == [("failed", "invalid_tool_call")]
         else:
             # Unknown trace state stays fail-closed, but the status names the fixed reason.
             assert len(calls) == 1 and notes(first) == [] and client.read(first).leased
