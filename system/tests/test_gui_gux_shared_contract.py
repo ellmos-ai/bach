@@ -260,6 +260,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
 
     def test_all_pinned_release_pages_use_exact_shared_bytes(self):
         import os
+        from gui.api.gui_capabilities import LEGACY_PAGE_FALLBACKS
         configured = os.environ.get("GUI_RELEASE_TEST_DIST")
         if not configured:
             self.skipTest("Explicit release distribution was not supplied")
@@ -281,6 +282,10 @@ class TestGuiServerEndpoints(unittest.TestCase):
             with self.subTest(page=name, route=route):
                 response = self.client.get(route)
                 self.assertEqual(response.status_code, 200)
+                if route in LEGACY_PAGE_FALLBACKS:
+                    # Registered, reasoned BACH fallback (#2626): the shared notice page must not replace it.
+                    self.assertNotEqual(response.content, (dist_path / name).read_bytes())
+                    continue
                 self.assertEqual(response.content, (dist_path / name).read_bytes())
 
     def test_route_gui_brand(self):
