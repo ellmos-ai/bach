@@ -2566,6 +2566,13 @@ class LeaseReleaseRequest(LeaseRefRequest):
     worker_result: Optional[dict] = None
 
 
+class LeaseReclaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operator: StrictStr
+    fence: StrictInt
+    reason: StrictStr
+
+
 class LeaseUpdateRequest(LeaseRefRequest):
     model_config = ConfigDict(extra="forbid")
     task_version: StrictStr
@@ -2899,6 +2906,15 @@ async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
                          task_version=body.task_version,
                          outcome=body.outcome, result_ref=body.result_ref or "",
                          note=body.note or "", worker_result=body.worker_result)
+
+
+@app.post("/api/tasks/{task_id}/lease/reclaim-unresolved")
+async def reclaim_unresolved_task_lease(task_id: int, body: LeaseReclaimRequest, request: Request):
+    """Operator: genau eine abgelaufene Task mit unklärbarem Tool-Trace auf blocked setzen."""
+    from hub._services.task_lease import reclaim_unresolved_lease
+    return _run_lease_op(reclaim_unresolved_lease, task_id, operator=body.operator,
+                         fence=body.fence, reason=body.reason,
+                         device=_lease_device_label(request))
 
 
 @app.post("/api/tasks/{task_id}/lease/update")
