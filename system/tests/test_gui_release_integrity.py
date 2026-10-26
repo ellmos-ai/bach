@@ -89,7 +89,7 @@ def test_configured_release_expands_host_home(monkeypatch, tmp_path):
     assert resolve_gui_distribution(tmp_path / "gui", "$GUI_RELEASE_ROOT/dist") == tmp_path / "dist"
 
 
-def test_gui_consumer_and_kit_pin_bind_same_024_release():
+def test_gui_consumer_and_kit_pin_bind_same_029_release():
     repo = Path(__file__).resolve().parents[2]
     consumer = json.loads((repo / "system/gui/gui-consumer.v1.json").read_text(encoding="utf-8"))
     kit = get_pinned_kit_manifest(repo / "system/gui/kit_manifest.json")
@@ -97,20 +97,20 @@ def test_gui_consumer_and_kit_pin_bind_same_024_release():
     assert consumer["schema"] == "ellmos.bach.gui-consumer.v1"
     assert consumer["id"] == "ellmos-system-gui"
     assert consumer["status"] == "pinned_release"
-    assert consumer["version"] == "0.2.24"
+    assert consumer["version"] == "0.2.29"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "ff13cccde77a997ab4d0a0173db43ff88ee3c2be",
-        "archive_sha256": "ac767dcb4b129f7e97a9f8ec7de312126638f9abbbcca5fe2868370dcd40abbf",
+        "commit": "a42adda6a9fe8d892578db3f7a09f7c1bef653ef",
+        "archive_sha256": "037516b1af6e658e06eee8aa57adaf81309bc430219198deeb6492ab816f29e1",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }
     assert kit["verified"] is True  # Identity metadata only; installed bytes are verified separately.
     assert kit["version"] == consumer["version"]
     assert kit["pinned_source_commit"] == consumer["source"]["commit"]
     assert kit["release_archive_sha256"] == consumer["source"]["archive_sha256"]
-    assert kit["release_archive"] == "ellmos-system-gui-0.2.24-ff13cccde77a.zip"
+    assert kit["release_archive"] == "ellmos-system-gui-0.2.29-a42adda6a9fe.zip"
     assert kit["dist_manifest_schema"] == "ellmos-system-gui.dist.v1"
-    assert kit["expected_page_count"] == 26
+    assert kit["expected_page_count"] == 39
     assert "installed" not in kit
     assert consumer["required_backend_routes"] == [
         "/api/gui/brand",
