@@ -885,13 +885,14 @@ def test_unscoped_review_records_one_verdict_for_the_current_package(text_world)
     verdict = _approved_review(child)
     assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
         "action": "submit_result", "task_id": task_id, "result": verdict})
-    evidence = review.record_review(world["conn"], child)
+    assert world["conn"].execute("SELECT COUNT(*) FROM worker_result_model_reviews").fetchone()[0] == 1
+    # The release recorded the verdict and accepted the tree-less target.
+    parent = read_result(world["conn"], world["task_id"])
+    assert parent["status"] == "done" and parent["result"]["accepted"] is True
+    evidence = parent["result"]["model_review"]
     assert evidence["availability"] == "recorded"
     assert evidence["reviewer_id"] == REVIEWER and evidence["independent"] is True
     assert evidence["result_revision"] == world["target"]["result_revision"]
-    assert world["conn"].execute("SELECT COUNT(*) FROM worker_result_model_reviews").fetchone()[0] == 1
-    parent = read_result(world["conn"], world["task_id"])
-    assert parent["status"] == "review" and parent["result"]["accepted"] is False
     assert read_result(world["conn"], task_id)["status"] == "done"
     projected = worker_scope_evidence.project_scope_evidence(parent)
     assert projected["result"]["model_review"]["availability"] == "available"
@@ -1045,7 +1046,7 @@ def test_unmapped_author_is_a_visible_placeholder_unless_the_model_ban_is_on(tex
     verdict = _approved_review(child)
     assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
         "action": "submit_result", "task_id": child.task_id, "result": verdict})
-    evidence = review.record_review(conn, child)
+    evidence = read_result(conn, world["task_id"])["result"]["model_review"]
     assert evidence["availability"] == "recorded" and evidence["independent"] is True
     receipt = json.loads(conn.execute("SELECT receipt FROM worker_result_model_reviews").fetchone()[0])
     assert receipt["author_id"] == placeholder
@@ -1087,3 +1088,90 @@ def test_review_backfill_cli_runs_one_small_batch(text_world, tmp_path, monkeypa
     assert seen == {"limit": 3, "first": (world["task_id"],)}
     assert handler.handle("review-backfill", [])[1] == "Keine neue Review-Aufgabe angelegt"
     assert handler.handle("review-backfill", ["--limit", "0"])[0] is False
+
+
+def _submit_bound_verdict(world, monkeypatch, *, status, contract_met, before_acceptance=None):
+    """One real review child on the submission-bound route; the release reconciles the target."""
+    prepared = review.prepare_review_task(world["conn"], world["binding"], **_paths(world))
+    assert prepared is not None and prepared["schema"] == UNSCOPED_INTENT
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    verdict = json.dumps({"status": status, "summary": "Auftrag gegen Ergebnis und Diff geprüft.",
+                          "task_contract_met": contract_met}, ensure_ascii=False)
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("bound completion review"), route_sha256=REVIEW_ROUTE)
+    assert child.finish_model_execution(
+        handle, result=_response(REVIEW_OBSERVED, verdict=(child.task_id, verdict)),
+        route_sha256=REVIEW_ROUTE) is True
+    if before_acceptance is not None:
+        actual = world["client"]._reconcile_task_completion
+
+        def change_then_reconcile(task_id):
+            before_acceptance(world)
+            return actual(task_id)
+
+        monkeypatch.setattr(world["client"], "_reconcile_task_completion", change_then_reconcile)
+    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
+        "action": "submit_result", "task_id": child.task_id, "result": verdict})
+    assert world["conn"].execute("SELECT COUNT(*) FROM worker_result_model_reviews").fetchone()[0] == 1
+    return read_result(world["conn"], world["task_id"])
+
+
+def test_approved_submission_bound_review_accepts_the_target(text_world, monkeypatch):
+    world = text_world
+    parent = _submit_bound_verdict(world, monkeypatch, status="approved", contract_met=True)
+    assert parent["status"] == "done" and parent["result"]["accepted"] is True
+    decision = parent["result"]["completion_decision"]
+    assert decision["availability"] == "available"
+    assert decision["result_revision"] == review.submission_bound_result_revision(
+        world["conn"], parent["result"])
+
+
+def test_approved_review_of_file_changes_still_needs_a_pull_request(
+        worker_context, tmp_path, monkeypatch):
+    # Existing rule (#1361): a task that changed files reaches Done only with a
+    # registered PR. A positive review records the verdict but does not bypass it.
+    world = _unscoped_world(worker_context, tmp_path, monkeypatch, own_tree=True,
+                            write_tool="write_file", before_submit=_uncommitted_work)
+    parent = _submit_bound_verdict(world, monkeypatch, status="approved", contract_met=True)
+    assert parent["status"] == "review" and parent["result"]["accepted"] is False
+    assert active_correction_request(world["conn"], world["task_id"]) is None
+
+
+def test_negative_submission_bound_review_starts_a_correction_round(text_world, monkeypatch):
+    world = text_world
+    parent = _submit_bound_verdict(world, monkeypatch, status="findings", contract_met=False)
+    assert parent["status"] == "pending" and parent["result"]["accepted"] is False
+    correction = active_correction_request(world["conn"], world["task_id"])
+    assert correction["source_result_id"] == world["target"]["result_id"]
+    assert "Auftrag gegen Ergebnis und Diff geprüft." in correction["correction_note"]
+
+
+def test_tree_change_before_acceptance_blocks_done(text_world, monkeypatch):
+    world = text_world
+
+    def add_task_tree(world):
+        # The reviewed package said "no tree"; a tree appearing now is not covered.
+        _git(["worktree", "add", str(world["tree"]["worktrees"] / f"task-{world['task_id']}"),
+              "-b", f"bach-task/{world['task_id']}", world["tree"]["base_head"]], world["tree"]["repo"])
+
+    parent = _submit_bound_verdict(world, monkeypatch, status="approved", contract_met=True,
+                                   before_acceptance=add_task_tree)
+    assert parent["status"] == "review" and parent["result"]["accepted"] is False
+    assert active_correction_request(world["conn"], world["task_id"]) is None
+
+
+@pytest.mark.parametrize("limit", [None, 40])
+def test_truncated_package_cannot_carry_an_approval(worker_context, tmp_path, monkeypatch, limit):
+    from hub._services.worker_completion_policy import evaluate_current_result
+
+    world = _unscoped_world(worker_context, tmp_path, monkeypatch, own_tree=True,
+                            write_tool="write_file", before_submit=_uncommitted_work)
+    if limit is not None:
+        monkeypatch.setattr(review, "_TREE_DIFF_LIMIT", limit)
+    _submit_bound_verdict(world, monkeypatch, status="approved", contract_met=True)
+    evaluation = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
+    assert evaluation["result_binding"] == "submission"
+    # Policy level: only the complete package can complete (the PR rule applies on top).
+    assert (evaluation["decision"]["state"] == "completed") is (limit is None)
