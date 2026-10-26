@@ -263,14 +263,33 @@ def _unscoped_guard(conn, record):
                              (record["task_id"],)).fetchone() is None)
 
 
-def _unscoped_target_record(conn, task_id, *, tree_state=None, repo_root=None, worktrees_dir=None):
+def tree_fingerprint(state):
+    """Identity of a tree package without its (possibly cut) diff text."""
+    if not _tree_state_valid(state):
+        return None
+    if state["availability"] == "absent":
+        return {"availability": "absent"}
+    return {key: state[key] for key in ("availability", "base_oid", "head_oid",
+                                        "diff_sha256", "diff_chars")}
+
+
+def _tree_unchanged(task_id, fingerprint, *, repo_root=None, worktrees_dir=None):
+    """Fresh Git observation: the task tree still equals the stored package."""
+    observed = tree_fingerprint(_tree_state(task_id, repo_root=repo_root,
+                                            worktrees_dir=worktrees_dir))
+    return observed is not None and observed == fingerprint
+
+
+def _unscoped_target_record(conn, task_id, *, tree_state=None, check_tree=False,
+                            repo_root=None, worktrees_dir=None):
     """Native result without a captured scope, bound to its submission and tree diff.
 
-    Without ``tree_state`` the task tree is observed once (Git, outside any
-    transaction) to build the review package. With the intent's stored state
-    every check is DB-only: same result, same submission, same guard facts.
+    Without ``tree_state`` the task tree is observed (Git, outside any
+    transaction) to build the review package. With the intent's stored state,
+    ``check_tree`` re-observes the tree: a package that no longer matches the
+    task tree is not a current target, exactly like a changed code scope.
     """
-    if tree_state is None and conn.in_transaction:
+    if (tree_state is None or check_tree) and conn.in_transaction:
         return None
     try:
         task = _row(conn.execute("SELECT claim_id FROM tasks WHERE id=?", (task_id,)))
@@ -284,6 +303,9 @@ def _unscoped_target_record(conn, task_id, *, tree_state=None, repo_root=None, w
             return None
         if tree_state is None:
             tree_state = _tree_state(task_id, repo_root=repo_root, worktrees_dir=worktrees_dir)
+        elif check_tree and not _tree_unchanged(task_id, tree_fingerprint(tree_state),
+                                                repo_root=repo_root, worktrees_dir=worktrees_dir):
+            return None
         revision = submission_bound_revision(record, tree_state)
         if revision is None:
             return None
@@ -682,15 +704,10 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None):
                 return None
             _ensure_schema(conn)
             unscoped = _intent_schema(target) == _UNSCOPED_INTENT_SCHEMA
-            if unscoped:
-                # One package per result, even if its tree moves after the first one.
-                old = _row(conn.execute("SELECT review_task_id FROM worker_result_review_intents "
-                                        "WHERE target_result_id=? ORDER BY review_task_id LIMIT 1",
-                                        (target["result_id"],)))
-            else:
-                old = _row(conn.execute("SELECT review_task_id FROM worker_result_review_intents "
-                                        "WHERE target_result_id=? AND target_revision=?",
-                                        (target["result_id"], target["result_revision"])))
+            # A changed tree is a new package revision and may get its own review.
+            old = _row(conn.execute("SELECT review_task_id FROM worker_result_review_intents "
+                                    "WHERE target_result_id=? AND target_revision=?",
+                                    (target["result_id"], target["result_revision"])))
             if old is not None:
                 result = review_task_metadata(conn, old["review_task_id"])
                 conn.commit()
@@ -745,9 +762,10 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None):
 def _intent_target(conn, found, *, repo_root=None, worktrees_dir=None):
     receipt = found["receipt"]
     if receipt["schema"] == _UNSCOPED_INTENT_SCHEMA:
-        # No Git revalidation: unchanged result and submission plus the stored diff.
+        # Unchanged result and submission, and the task tree still equals the package.
         target = _unscoped_target_record(conn, receipt["target_task_id"],
-                                         tree_state=receipt["tree_state"])
+                                         tree_state=receipt["tree_state"], check_tree=True,
+                                         repo_root=repo_root, worktrees_dir=worktrees_dir)
     else:
         target = _target_record(conn, receipt["target_task_id"], repo_root=repo_root,
                                 worktrees_dir=worktrees_dir)
@@ -1324,6 +1342,11 @@ def _obsolete_target_reason(conn, found, grant, *, repo_root=None, worktrees_dir
             or authority["identity_version"] != grant.identity_version
             or not _same_target_db(conn, target, authority)):
         return None
+    if intent["schema"] == _UNSCOPED_INTENT_SCHEMA:
+        observed_tree = tree_fingerprint(_tree_state(grant.target_task_id, repo_root=repo_root,
+                                                     worktrees_dir=worktrees_dir))
+        return ("target_revision_changed" if observed_tree is not None
+                and observed_tree != tree_fingerprint(intent["tree_state"]) else None)
     scope = target.get("scope", {})
     if (scope.get("availability") == "recorded"
             and type(scope.get("scope_receipt_sha256")) is str
@@ -1639,8 +1662,10 @@ def read_review_evidence(conn, record):
             or not _table(conn, "worker_result_model_reviews")):
         return _unavailable("review_not_recorded")
     try:
+        # A later package revision of the same result supersedes an older review.
         row = _row(conn.execute("SELECT * FROM worker_result_model_reviews "
-                                "WHERE target_result_id=?", (record["result_id"],)))
+                                "WHERE target_result_id=? ORDER BY event_id DESC LIMIT 1",
+                                (record["result_id"],)))
         if row is None:
             return _unavailable("review_not_recorded")
         receipt = json.loads(row["receipt"])
@@ -1728,9 +1753,10 @@ def read_review_evidence(conn, record):
                     and not _author_model_blocked(authority, receipt["reviewer_id"])),
                 "policy_eligible": receipt["reviewer_id"] in authority["eligible"],
                 "event_id": row["event_id"],
-                # Lets the scope projection keep a submission-bound review without a tree observation.
+                # Lets the scope projection re-observe the reviewed tree package.
                 **({"target_kind": "submission",
-                    "target_submission_revision": receipt["target_submission_revision"]}
+                    "target_submission_revision": receipt["target_submission_revision"],
+                    "target_tree": tree_fingerprint(found["receipt"]["tree_state"])}
                    if receipt["schema"] == _UNSCOPED_REVIEW_SCHEMA else {})}
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,
             settings.PolicyUnavailable):
