@@ -11,10 +11,11 @@ REJECTIONS = frozenset({
     "pickup_category", "pickup_priority", "pickup_tags", "excluded_tag",
     "ownership", "deferred_version", "changed_selection", "held", "not_claimable",
     "creator_priority", "stale_task_version", "already_held_by_caller",
-    "conflict",
+    "completion_guard", "conflict",
 })
 ACQUIRE_DENIALS = frozenset({"held", "not_claimable", "creator_priority",
-                           "stale_task_version", "already_held_by_caller", "conflict"})
+                           "stale_task_version", "already_held_by_caller",
+                           "completion_guard", "conflict"})
 REASONS = frozenset({
     "task_acquired", "empty_queue", "selection_excluded", "acquire_denied",
     "selection_error",
@@ -75,7 +76,8 @@ def queue_waiting_activity(raw):
         "deferred_version": "unveränderte Rückgabe", "changed_selection": "Task geändert",
         "held": "fremde Lease", "not_claimable": "Status/Abhängigkeiten",
         "creator_priority": "Creator-Schonfrist", "stale_task_version": "Taskversion",
-        "already_held_by_caller": "bereits gehalten", "conflict": "Übernahmekonflikt",
+        "already_held_by_caller": "bereits gehalten", "completion_guard": "Abschlussprüfung",
+        "conflict": "Übernahmekonflikt",
     }
     reasons = ", ".join(f"{labels[key]}: {count}" for key, count in report["rejected_counts"].items())
     prefix = "Keine offenen Kandidaten" if report["reason"] == "empty_queue" else "Keine übernehmbare Aufgabe"

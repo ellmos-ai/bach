@@ -494,7 +494,7 @@ def _native_creator_grant(conn, binding, row, version):
 
 
 def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
-                                 task_version, config=None, now=None):
+                                 task_version, ttl_profile=None, config=None, now=None):
     """Internal local entry; a persisted grant is required even outside the creator window."""
     if (not isinstance(delegation, _NativeCreatorBinding)
             or (task_id, worker_id, host, task_version) !=
@@ -506,7 +506,8 @@ def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
         raise LeaseValidationError("Private Creator-Delegation stimmt nicht mit dem Workerlauf überein")
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=delegation.acquire_request_id, task_version=task_version,
-        config=config, now=now, creator_delegation=delegation, result_generation=delegation.generation)
+        ttl_profile=ttl_profile, config=config, now=now,
+        creator_delegation=delegation, result_generation=delegation.generation)
 
 
 def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, host: str,
@@ -709,6 +710,31 @@ def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None =
         if lease_id and state["kind"] == "lease" and lease_id == row.get("claim_id"):
             payload["own"] = True
     return LeaseResult(payload)
+
+
+def read_worker_leases(conn: sqlite3.Connection, worker_id: str, *,
+                       config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+    """Complete holder-only view for one physical worker, across all task statuses."""
+    if not isinstance(worker_id, str) or not _WORKER_RE.fullmatch(worker_id):
+        raise LeaseValidationError("worker_id muss das Format <agent>@<host> haben")
+    ensure_task_lease_schema(conn)
+    cfg = config or LeaseConfig.from_env()
+    observed = now or _utcnow()
+    cursor = conn.execute("SELECT * FROM tasks WHERE claimed_by=? ORDER BY id", (worker_id,))
+    names = [column[0] for column in cursor.description]
+    leases = []
+    for value in cursor.fetchall():
+        row = dict(value) if isinstance(value, sqlite3.Row) else dict(zip(names, value))
+        if (row.get("status") == "in_progress" and row.get("claim_id")
+                and parse_ts(row.get("claim_expires_at")) is None):
+            raise LeaseValidationError("Worker-Lease-Lebensdauer ist nicht verifizierbar")
+        state = _lease_state(row, observed, cfg)
+        if state["live"]:
+            leases.append({"task_id": row["id"], "fence": int(row.get("claim_fence") or 0),
+                           "expires_at": _fmt(state["expires_at"]) if state["expires_at"] else None,
+                           "legacy": state["kind"] == "legacy"})
+    return LeaseResult({"schema": "bach.worker-leases.v1", "worker_id": worker_id,
+                        "server_now": _fmt(observed), "complete": True, "leases": leases})
 
 
 def _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version=None):

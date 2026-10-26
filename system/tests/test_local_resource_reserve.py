@@ -42,7 +42,7 @@ def resources(tmp_path, monkeypatch):
     monkeypatch.setattr(reserve.shutil, "disk_usage", lambda p: SimpleNamespace(free=4 * GIB))
     async def observed(*_):
         return {"external": False, "digest": DIGEST, "weight_floor_bytes": 2 * GIB,
-                "resident_context": None}
+                "resident_context": None, "server_responded": True}
     monkeypatch.setattr(reserve, "observe_ollama", observed)
     return path, OllamaBackend(default_model=MODEL, num_ctx=1024)
 
@@ -108,6 +108,7 @@ def test_ready_receipt_distinguishes_configured_budget_from_observation(resource
     assert result["memory_required_bytes"] == int(3.75 * GIB)
     assert result["weight_request_bytes"] == 2 * GIB
     assert result["resident_weight_credit"] is False
+    assert result["capacity_basis"] == "host_budget"
     assert len(result["policy_version"]) == 64 and result["checked_at"]
     assert str(path) not in json.dumps(result)
 
@@ -136,8 +137,205 @@ def test_resident_weight_credit_requires_actual_context(resources, monkeypatch, 
     monkeypatch.setattr(reserve, "observe_ollama", observed)
     result = asyncio.run(reserve.probe(backend, MODEL))
     assert result["resident_weight_credit"] is credit
-    assert result["weight_request_bytes"] == (0 if credit else 2 * GIB)
-    assert result["memory_required_bytes"] == int((1.75 if credit else 3.75) * GIB)
+    if credit:
+        assert result["capacity_basis"] == "resident_model"
+        assert result["weight_request_bytes"] == 0
+        assert result["memory_required_bytes"] == int(1.75 * GIB)
+        assert result["memory_total_bytes"] == 32 * GIB
+        assert result["disk_free_bytes"]["slots"] == 4 * GIB
+    else:
+        assert result["capacity_basis"] == "host_budget"
+        assert result["weight_request_bytes"] == 2 * GIB
+        assert result["memory_required_bytes"] == int(3.75 * GIB)
+
+
+@pytest.mark.parametrize("available,disk_free,state", [
+    (2 * GIB, 4 * GIB, "ready"),
+    (GIB, 4 * GIB, "waiting_memory_reserve"),
+    (2 * GIB, GIB // 2, "waiting_disk_reserve"),
+])
+def test_resident_model_keeps_remaining_memory_and_disk_gates(
+        resources, monkeypatch, available, disk_free, state):
+    _, backend = resources
+    async def observed(*_):
+        return {"external": False, "digest": DIGEST, "weight_floor_bytes": 2 * GIB,
+                "resident_context": 1024, "server_responded": True}
+    monkeypatch.setattr(reserve, "observe_ollama", observed)
+    monkeypatch.setattr(reserve.psutil, "virtual_memory",
+                        lambda: SimpleNamespace(total=32 * GIB, available=available))
+    monkeypatch.setattr(reserve.shutil, "disk_usage",
+                        lambda _path: SimpleNamespace(free=disk_free))
+    result = asyncio.run(reserve.probe(backend, MODEL))
+    assert result["state"] == state
+    assert result["admitted"] is (state == "ready")
+    assert result["weight_request_bytes"] == 0
+    assert result["memory_required_bytes"] == int(1.75 * GIB)
+    assert result["capacity_basis"] == "resident_model"
+
+
+@pytest.mark.parametrize("available,disk_free,state", [
+    (4 * GIB, 4 * GIB, "ready"),
+    (3 * GIB, 4 * GIB, "waiting_memory_reserve"),
+    (4 * GIB, GIB // 2, "waiting_disk_reserve"),
+])
+def test_responding_server_without_resident_model_keeps_full_host_budget(
+        resources, monkeypatch, available, disk_free, state):
+    _, backend = resources
+    monkeypatch.setattr(reserve.psutil, "virtual_memory",
+                        lambda: SimpleNamespace(total=32 * GIB, available=available))
+    monkeypatch.setattr(reserve.shutil, "disk_usage",
+                        lambda _path: SimpleNamespace(free=disk_free))
+    result = asyncio.run(reserve.probe(backend, MODEL, reuse_running_server=True))
+    assert result["state"] == state
+    assert result["admitted"] is (state == "ready")
+    assert result["capacity_basis"] == "host_budget"
+    assert result["weight_request_bytes"] == 2 * GIB
+    assert result["memory_required_bytes"] == int(3.75 * GIB)
+    assert result["resident_weight_credit"] is False
+
+
+def test_resident_model_receipt_precedes_running_server_receipt(resources, monkeypatch):
+    _, backend = resources
+
+    async def resident(*_args):
+        return {"external": False, "digest": DIGEST, "weight_floor_bytes": 2 * GIB,
+                "resident_context": 1024, "server_responded": True}
+
+    monkeypatch.setattr(reserve, "observe_ollama", resident)
+    result = asyncio.run(reserve.probe(backend, MODEL, reuse_running_server=True))
+    assert result["capacity_basis"] == "resident_model"
+    assert result["resident_weight_credit"] is True
+
+
+@pytest.mark.parametrize("slot_id,status,enabled,persistent_opt_in,basis", [
+    ("buddha_always_on", "error", True, False, "host_budget"),
+    ("another_worker", "running", True, True, "host_budget"),
+    ("buddha_always_on", "error", False, False, "host_budget"),
+])
+def test_chat_runtime_reuses_server_for_enabled_buddha_after_error(
+        resources, monkeypatch, slot_id, status, enabled, persistent_opt_in, basis):
+    _, backend = resources
+    runtime = ChatRuntime(backend)
+    session = runtime.get_session("buddha-probe")
+    session.worker_slot_reader = lambda: {
+        "id": slot_id, "backend": "ollama", "model": MODEL,
+        "type": "continuous", "status": status, "enabled": enabled,
+        "persistent_opt_in": persistent_opt_in,
+    }
+    monkeypatch.setattr(runtime, "_worker_backend_gate", lambda *_: None)
+    receipt, _binding = asyncio.run(runtime.prepare_inference_call(
+        backend, MODEL, chat_id="buddha-probe"))
+    assert receipt["capacity_basis"] == basis
+
+
+def _warmup_slot():
+    return {"id": "buddha_always_on", "backend": "ollama", "model": MODEL,
+            "type": "continuous", "status": "running", "enabled": True}
+
+
+def _warmup_backend_gate(session, *_args):
+    guard = getattr(session, "_buddha_warmup_guard", None)
+    problem = guard() if callable(guard) else None
+    return RuntimeError(problem) if problem else None
+
+
+def test_buddha_start_warmup_loads_nonresident_model_with_empty_chat(
+        resources, monkeypatch, tmp_path):
+    _, backend = resources
+    from hub import compute_lock
+
+    runtime = ChatRuntime(backend)
+    monkeypatch.setattr(runtime, "_worker_backend_gate", _warmup_backend_gate)
+    monkeypatch.setattr(compute_lock, "get_fackel_preference", lambda **_kwargs: "ollama")
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    calls = []
+
+    async def load(messages, tools=None, think=True, model=None):
+        calls.append((messages, tools, think, model))
+        return {"message": {"role": "assistant", "content": ""}, "done_reason": "load"}
+
+    monkeypatch.setattr(backend, "chat", load)
+    result = asyncio.run(runtime.warm_buddha_ollama_model(
+        backend, MODEL, slot_reader=_warmup_slot))
+
+    assert result == {"state": "loaded"}
+    assert calls == [([], None, False, MODEL)]
+    session = runtime.sessions["buddha_always_on"]
+    assert session.messages == []
+    assert session.worker_task_binding is None and session.require_task_binding is False
+    assert session.worker_slot_reader is None
+
+
+def test_buddha_warmup_reuses_resident_model_without_an_api_call(
+        resources, monkeypatch, tmp_path):
+    _, backend = resources
+    from hub import compute_lock
+
+    async def resident(*_args):
+        return {"external": False, "digest": DIGEST, "weight_floor_bytes": 2 * GIB,
+                "resident_context": 1024, "server_responded": True}
+
+    monkeypatch.setattr(reserve, "observe_ollama", resident)
+    monkeypatch.setattr(compute_lock, "get_fackel_preference", lambda **_kwargs: "ollama")
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    runtime = ChatRuntime(backend)
+    monkeypatch.setattr(runtime, "_worker_backend_gate", _warmup_backend_gate)
+    monkeypatch.setattr(backend, "chat", lambda *_args, **_kwargs: pytest.fail(
+        "a resident model must be reused without a warmup request"))
+
+    result = asyncio.run(runtime.warm_buddha_ollama_model(
+        backend, MODEL, slot_reader=_warmup_slot))
+    assert result == {"state": "resident"}
+
+
+def test_buddha_warmup_waits_when_fackel_prefers_compute(resources, monkeypatch):
+    _, backend = resources
+    from hub import compute_lock
+
+    monkeypatch.setattr(compute_lock, "get_fackel_preference", lambda **_kwargs: "compute")
+    monkeypatch.setattr(reserve, "observe_ollama", lambda *_args: pytest.fail(
+        "Fackel compute preference must stop the Ollama probe"))
+    runtime = ChatRuntime(backend)
+    result = asyncio.run(runtime.warm_buddha_ollama_model(
+        backend, MODEL, slot_reader=_warmup_slot))
+    assert result == {"state": "fackel_compute"}
+
+
+def test_buddha_warmup_rechecks_fackel_before_model_dispatch(resources, monkeypatch, tmp_path):
+    _, backend = resources
+    from hub import compute_lock
+
+    preference_reads = 0
+
+    def preference(**_kwargs):
+        nonlocal preference_reads
+        preference_reads += 1
+        return "ollama" if preference_reads <= 3 else "compute"
+
+    monkeypatch.setattr(compute_lock, "get_fackel_preference", preference)
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    runtime = ChatRuntime(backend)
+    monkeypatch.setattr(runtime, "_worker_backend_gate", _warmup_backend_gate)
+    calls = []
+
+    async def load(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {"message": {"content": ""}, "done_reason": "load"}
+
+    monkeypatch.setattr(backend, "chat", load)
+    result = asyncio.run(runtime.warm_buddha_ollama_model(
+        backend, MODEL, slot_reader=_warmup_slot))
+    assert result == {"state": "fackel_compute"}
+    assert preference_reads >= 4 and calls == []
+
+
+def test_buddha_warmup_skips_a_task_bound_session(resources, monkeypatch):
+    _, backend = resources
+    runtime = ChatRuntime(backend)
+    runtime.get_session("buddha_always_on").require_task_binding = True
+    result = asyncio.run(runtime.warm_buddha_ollama_model(
+        backend, MODEL, slot_reader=_warmup_slot))
+    assert result == {"state": "task_bound"}
 
 
 @pytest.mark.parametrize("field,value", [("digest", "b" * 64), ("weight_budget_bytes", GIB), ("num_ctx", 2048)])
@@ -196,6 +394,7 @@ def test_native_probe_reads_only_show_tags_ps_and_exact_identity(native_http):
     loaded.append({"name": "example:large", "digest": DIGEST, "context_length": 1024})
     observed = asyncio.run(reserve.observe_ollama(OllamaBackend(num_ctx=1024), MODEL))
     assert observed["resident_context"] is None
+    assert observed["server_responded"] is True
     assert calls == [("POST", "/api/show"), ("GET", "/api/tags"), ("GET", "/api/ps")]
 
 
@@ -683,3 +882,65 @@ def test_root_api_shim_resource_paths_without_database_access(tmp_path, operatio
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "ROOT_API_RESOURCE_PATHS_OK" in completed.stdout
+
+
+# --- #2648: the real probe receipt must pass the persistent-core validators ---------------------
+from hub._services.chat import host_resource_observation as host_observation  # noqa: E402
+from hub._services.chat import slots_config  # noqa: E402
+
+CORE_WORKER = {"model": MODEL, "backend": "ollama"}
+
+
+@pytest.mark.parametrize("state,available,disk_free", [
+    ("ready", 8 * GIB, 4 * GIB), ("waiting_memory_reserve", 3 * GIB, 4 * GIB), ("waiting_disk_reserve", 8 * GIB, GIB // 2),
+])
+def test_real_probe_receipt_is_accepted_by_the_persistent_core_validator(resources, monkeypatch, state, available, disk_free):
+    monkeypatch.setattr(reserve.psutil, "virtual_memory", lambda: SimpleNamespace(total=32 * GIB, available=available))
+    monkeypatch.setattr(reserve.shutil, "disk_usage", lambda p: SimpleNamespace(free=disk_free))
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))  # real probe, real host observation
+    assert receipt["state"] == state
+    assert set(receipt) == reserve.CAPACITY_RECEIPT_FIELDS
+    assert host_observation.valid_host_resources(receipt["host_resources"])
+    observed = slots_config._persistent_core_capacity_observation(receipt, worker=CORE_WORKER, expected_state=state)
+    assert observed is not None and observed["state"] == state
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda h: h.update(extra=1),
+    lambda h: h.pop("swap_used_bytes"),
+    lambda h: h.update(compression_added_to_capacity=True),
+    lambda h: h.update(swap_added_to_capacity=1),
+    lambda h: h.update(pressure_level=3),
+    lambda h: h.update(swap_used_bytes=-1),
+    lambda h: h.update(memory_available_bytes=True),
+    lambda h: h.update(memory_available_bytes=h["memory_total_bytes"] + 1),
+    lambda h: h.update(compressor_logical_bytes=4097 * GIB),
+    lambda h: h.update(errors=["anything_else"]),
+    lambda h: h.update(page_size_bytes=8192),
+    lambda h: h.update(checked_at="yesterday"),
+    lambda h: h.update(schema="bach.host-resource-observation.v2"),
+])
+def test_host_resources_outside_the_schema_invalidate_the_receipt(resources, mutate):
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))
+    mutate(receipt["host_resources"])
+    assert not reserve.valid_capacity_receipt_shape(receipt)
+    assert slots_config._persistent_core_capacity_observation(receipt, worker=CORE_WORKER, expected_state="ready") is None
+
+
+def test_failed_host_observation_stub_is_the_only_short_form(resources):
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))
+    receipt["host_resources"] = {"schema": host_observation.OBSERVATION_SCHEMA, "errors": ["host_observation_failed"]}
+    assert reserve.valid_capacity_receipt_shape(receipt)
+    receipt["host_resources"]["errors"] = []
+    assert not reserve.valid_capacity_receipt_shape(receipt)
+
+
+def test_receipt_fields_stay_exact(resources):
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))
+    assert not reserve.valid_capacity_receipt_shape({**receipt, "extra": 1})
+    assert not reserve.valid_capacity_receipt_shape({k: v for k, v in receipt.items() if k != "host_resources"})
+    assert reserve.valid_capacity_receipt_shape({**receipt, "local_admission": {}}, extra={"local_admission"})

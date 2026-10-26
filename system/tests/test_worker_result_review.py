@@ -289,6 +289,29 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
     assert review.record_review(world["conn"], child, **_paths(world)) is None
 
 
+def test_author_cannot_review_own_result_even_in_fresh_run(review_world):
+    # Independence gate: neither the author's principal nor its slot gets a
+    # review grant, also not in a fresh run; the parent stays unaccepted and an
+    # independent reviewer can still be granted.
+    world = review_world
+    prepared = _prepare(world)
+    task_id = prepared["review_task_id"]
+    author = world["binding"]
+    worker_id = author._ack.worker_id
+    stop = threading.Event()
+    route = {"backend_id": "ollama", "route_sha256": AUTHOR_ROUTE}
+    grant = review.issue_review_grant(
+        world["conn"], task_id, worker_id=worker_id, host="HOST",
+        generation="author-review-fresh-generation", slot_id=AUTHOR_SLOT, route=route,
+        requested_model=AUTHOR_MODEL, is_current=lambda: True,
+        stop_event=stop, clock=lambda: T0, **_paths(world))
+    assert grant is None
+    parent = read_result(world["conn"], world["task_id"])
+    assert parent["status"] == "review"
+    assert parent["result"]["accepted"] is False
+    assert _grant(world, task_id)[0] is not None
+
+
 @pytest.mark.parametrize("failure", ["no_return", "backend_error", "extra_call", "invalid_json",
                                      "unconfirmed_route", "unknown_provider_model",
                                      "terminal_history_tamper"])
@@ -604,7 +627,7 @@ def test_review_task_creation_is_idempotent_and_stays_in_normal_task_table(revie
     assert read_result(world["conn"], world["task_id"])["status"] == "review"
 
 
-def test_review_task_requires_private_fresh_grant_and_separate_principal(review_world):
+def test_review_task_requires_a_private_fresh_run_grant(review_world):
     world = review_world
     task_id = _prepare(world)["review_task_id"]
     snapshot = world["client"].task_snapshot(task_id)
