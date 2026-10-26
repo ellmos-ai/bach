@@ -368,9 +368,8 @@ class WorkerLeaseBinding:
                     if exc.reason == "conflict":
                         observation.denied(exc.reason)
                         raise  # A native no-grant conflict still stops this run.
-                    if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller",
-                                           "completion_guard"}:
+                    # Task-specific denials (incl. an unresolved prior trace) skip only this task.
+                    if exc.reason not in ACQUIRE_DENIALS:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:
@@ -393,6 +392,7 @@ class WorkerLeaseBinding:
     def _acquire_review_next(cls, client, slot, observation, *, review_route=None,
                              review_requested_model=None, **kwargs):
         """Review pickup runs only after every eligible ordinary task was tried."""
+        from .worker_queue_status import ACQUIRE_DENIALS
         if (getattr(client, "mode", None) != "local" or not isinstance(review_route, dict)
                 or not isinstance(review_requested_model, str) or not review_requested_model.strip()
                 or not callable(getattr(client, "_review_candidates", None))
@@ -455,9 +455,7 @@ class WorkerLeaseBinding:
                     if exc.reason == "conflict":
                         observation.denied(exc.reason)
                         raise
-                    if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller",
-                                           "completion_guard"}:
+                    if exc.reason not in ACQUIRE_DENIALS:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:

@@ -11,11 +11,12 @@ REJECTIONS = frozenset({
     "pickup_category", "pickup_priority", "pickup_tags", "excluded_tag",
     "ownership", "deferred_version", "changed_selection", "held", "not_claimable",
     "creator_priority", "stale_task_version", "already_held_by_caller",
-    "completion_guard", "conflict",
+    "completion_guard", "conflict", "unresolved_tool_trace",
 })
+# unresolved_tool_trace: a prior holder's tool effect is unknown; only that task waits for settlement.
 ACQUIRE_DENIALS = frozenset({"held", "not_claimable", "creator_priority",
                            "stale_task_version", "already_held_by_caller",
-                           "completion_guard", "conflict"})
+                           "completion_guard", "conflict", "unresolved_tool_trace"})
 REASONS = frozenset({
     "task_acquired", "empty_queue", "selection_excluded", "acquire_denied",
     "selection_error",
