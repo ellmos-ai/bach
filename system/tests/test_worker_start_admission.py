@@ -1311,3 +1311,79 @@ def test_bound_task_scope_resumes_dirty_registered_tree_without_accepting_it(
     result_scope = final_snapshot(task_id, repo_root=repo, worktrees_dir=worktrees)
     assert result_scope["availability"] == "unavailable"
     assert result_scope["reason"] == "git_dirty"
+
+
+def _marked_continuous_worker(slots, **changes):
+    """A continuous worker that was running when the service ended (#2633)."""
+    worker = add_worker({"name": "Restart resume", "type": "continuous"})
+    update_slot(worker["id"], {"enabled": True, "status": "running", **changes})
+    slots.reconcile_workers(active_worker_ids=set())
+    assert get_worker_slot(worker["id"])[slots.RESUME_AFTER_RESTART_FIELD] is True
+    return worker["id"]
+
+
+def _join_resume_threads(worker_id):
+    for thread in threading.enumerate():
+        if thread.name == f"worker-resume-{worker_id}":
+            thread.join(3)
+            assert not thread.is_alive()
+
+
+def test_restart_resumes_a_worker_that_was_running(startup, caplog):
+    control, slots = startup
+    caplog.set_level("INFO", logger="bach.telegram_chat")
+    worker_id = _marked_continuous_worker(slots)
+    assert control._resume_workers_after_restart(threading.Event()) == [
+        {"worker_id": worker_id, "state": "admitted"}]
+    execution = control._WORKER_EXECUTIONS[worker_id]
+    assert execution.thread.is_alive()
+    assert get_worker_slot(worker_id)[slots.RESUME_AFTER_RESTART_FIELD] is False
+    assert control._resume_workers_after_restart(threading.Event()) == []  # resumed exactly once
+    execution.stop_event.set()
+    execution.thread.join(3)
+    assert f"worker_resumed worker_id={worker_id} reason=after_restart" in caplog.text
+    assert f"worker_stopped worker_id={worker_id} reason=stop_requested" in caplog.text
+
+
+def test_restart_keeps_a_deliberate_stop_and_the_credit_pause(startup, caplog):
+    from datetime import datetime, timedelta, timezone
+    control, slots = startup
+    caplog.set_level("INFO", logger="bach.telegram_chat")
+    quota = {"provider": "ollama", "kind": "quota_exceeded", "quota_exceeded": True, "status_code": 429}
+    now = datetime.now(timezone.utc)
+    stopped = _marked_continuous_worker(slots)
+    confirmed, _updated, _receipt, status = control._request_worker_revocation(
+        stopped, get_worker_slot(stopped))
+    assert confirmed and status == 200
+    assert get_worker_slot(stopped)[slots.RESUME_AFTER_RESTART_FIELD] is False
+    paused = _marked_continuous_worker(slots, backend_error=quota,
+        **{slots.NO_CREDIT_RECHECK_FIELD: (now + timedelta(hours=1)).isoformat()})
+    due = _marked_continuous_worker(slots, backend_error=quota,
+        **{slots.NO_CREDIT_RECHECK_FIELD: (now - timedelta(minutes=1)).isoformat()})
+    stop = threading.Event()
+    outcomes = {item["worker_id"]: item for item in control._resume_workers_after_restart(stop)}
+    assert stopped not in outcomes and stopped not in control._WORKER_EXECUTIONS
+    assert outcomes[paused]["state"] == "deferred" and paused not in control._WORKER_EXECUTIONS
+    assert outcomes[due]["state"] == "admitted" and due in control._WORKER_EXECUTIONS
+    assert get_worker_slot(due).get(slots.NO_CREDIT_RECHECK_FIELD) is None
+    stop.set()  # a service shutdown ends the pause wait without any start
+    _join_resume_threads(paused)
+    assert paused not in control._WORKER_EXECUTIONS
+    assert get_worker_slot(paused)[slots.RESUME_AFTER_RESTART_FIELD] is True  # next restart again
+    assert f"worker_stop_requested worker_id={stopped} reason=revocation" in caplog.text
+    assert f"worker_resume_deferred worker_id={paused} reason=no_credit_pause" in caplog.text
+
+
+def test_startup_monitor_runs_the_restart_resume(startup, monkeypatch):
+    control, _slots = startup
+    called = threading.Event()
+    monkeypatch.setattr(control, "_resume_persistent_cloud_workers_at_startup", lambda _stop: {"profiles": []})
+    monkeypatch.setattr(control, "_resume_workers_after_restart", lambda _stop: called.set() or [])
+    monkeypatch.setattr(control, "_resume_always_on_at_startup", lambda _stop: {"state": "test", "retry": False})
+    server = control.QuietHTTPServer(("127.0.0.1", 0), control.ControlHandler)
+    try:
+        control._start_always_on_startup_monitor(server)
+        server.always_on_startup_thread.join(3)
+        assert called.is_set() and server.worker_restart_resume_result == []
+    finally:
+        server.server_close()

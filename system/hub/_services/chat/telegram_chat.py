@@ -132,8 +132,10 @@ from hub._services.chat.slots_config import (
     get_worker_slot,
     list_workers,
     load_slots_config,
+    NO_CREDIT_RECHECK_FIELD,
     reconcile_workers,
     record_activity,
+    RESUME_AFTER_RESTART_FIELD,
     remove_worker,
     reset_prompt_template,
     update_prompt_template,
@@ -1988,6 +1990,8 @@ def _request_worker_revocation(
     final_status = _worker_terminal_status(worker, requested_status)
     if worker_id == "buddha_always_on" and requested_status is None:
         final_status = "paused"
+    log.info("worker_stop_requested worker_id=%s reason=revocation final_status=%s",
+             worker_id, final_status)
     with _WORKER_CONTROL_LOCK:
         control, thread = _active_worker_control(worker_id)
         if expected_execution is not None:
@@ -2016,6 +2020,9 @@ def _request_worker_revocation(
             receipt = _worker_receipt(None, worker_id, confirmed=True, final_status=final_status,
                 outcome="no-live-thread")
             changes = {"status": final_status, "current_activity": activity}
+            if worker.get(RESUME_AFTER_RESTART_FIELD):
+                # A deliberate stop wins over a pending resume after a service restart.
+                changes[RESUME_AFTER_RESTART_FIELD] = False
             if final_status == "paused":
                 changes.update(auto_paused=False, pause_started_at="")
             updated = update_slot(worker_id, changes)
@@ -4384,9 +4391,26 @@ def start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                            expected_service_instance: str | None = None,
                            expected_configuration_version: str | None = None) -> tuple[dict, int]:
     """Public admission never accepts creator authority from content or request fields."""
-    return _start_worker_execution(worker_id, custom_prompt=custom_prompt, start_request_id=start_request_id,
+    response, status = _start_worker_execution(worker_id, custom_prompt=custom_prompt,
+        start_request_id=start_request_id,
         expected_service_instance=expected_service_instance,
         expected_configuration_version=expected_configuration_version)
+    if status == 200:
+        _clear_restart_resume(worker_id)
+    return response, status
+
+
+def _clear_restart_resume(worker_id):
+    """An actual start settles a pending restart resume and an older credit check time."""
+    try:
+        slot = get_worker_slot(worker_id)
+        stale = {field: (False if field == RESUME_AFTER_RESTART_FIELD else None)
+                 for field in (RESUME_AFTER_RESTART_FIELD, NO_CREDIT_RECHECK_FIELD)
+                 if isinstance(slot, dict) and slot.get(field)}
+        if stale:
+            update_slot(worker_id, stale)
+    except Exception as exc:  # noqa: BLE001 -- the started worker stays valid; only the marker remains
+        log.warning("worker_resume_marker_unconfirmed worker_id=%s reason=%s", worker_id, type(exc).__name__)
 
 
 def _start_sequence_worker_execution(worker_id, *, _creator_authority, **kwargs):
@@ -5464,15 +5488,20 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             control.task_binding = None
                             backend_retries += 1
                             backend_waited_seconds += retry_delay
+                        recheck_changes = {}
                         if _worker_no_credit(detail):
                             recheck = (datetime.now() + timedelta(seconds=retry_delay)).strftime("%d.%m. %H:%M")
                             waiting = (f"{error_activity} Kein Guthaben; Aufgabe bleibt offen. "
                                        f"Nächste Prüfung am {recheck}; ein Neustart prüft sofort.")
+                            # A service restart keeps this pause until the same check time (#2633).
+                            recheck_changes[NO_CREDIT_RECHECK_FIELD] = (
+                                datetime.now(timezone.utc) + timedelta(seconds=retry_delay)).isoformat()
                         else:
                             waiting = (f"{error_activity} Aufgabe bleibt offen. "
                                        f"Warte {retry_delay:g} Sekunden; danach neue Übernahme.")
                         if _update_worker_slot(control, {
                             "status": "running", "task_id": None, "current_activity": waiting,
+                            **recheck_changes,
                         }) is None:
                             return
                         worker_error = None
@@ -5974,6 +6003,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     _ACTIVE_WORKER_THREADS.pop(worker_id, None)
                 if _WORKER_CONTROLS.get(worker_id) is control:
                     _WORKER_CONTROLS.pop(worker_id, None)
+                # Fixed vocabulary: stop request, internal error code or a normal end.
+                log.info("worker_stopped worker_id=%s reason=%s", worker_id,
+                         "stop_requested" if control.stop_event.is_set()
+                         else control.start_error or "finished")
                 control.done_event.set()
 
     th = threading.Thread(target=_run_worker_job, daemon=True, name=f"worker-{worker_id}")
@@ -8169,6 +8202,66 @@ def _resume_always_on_at_startup(stop_event):
             "execution": response.get("execution")}
 
 
+def _resume_workers_after_restart(stop_event):
+    """Restart workers that were running when the service ended (#2633).
+
+    reconcile_workers marks them; a deliberate stop or any actual start clears the
+    mark. A credit pause (#535) keeps its persisted check time before the first call.
+    """
+    from hub.rheingold import get_lead_config
+    if stop_event.is_set() or get_lead_config().get("mode") != "lead":
+        return []
+    outcomes = []
+    for worker in load_slots_config(strict=True).get("dynamic_workers", []):
+        if not isinstance(worker, dict) or worker.get(RESUME_AFTER_RESTART_FIELD) is not True:
+            continue
+        try:
+            outcomes.append(_resume_worker_after_restart(worker["id"], stop_event))
+        except Exception as exc:  # noqa: BLE001 -- one worker never blocks the others
+            log.warning("worker_resume_skipped worker_id=%s reason=resume_error error=%s",
+                        worker.get("id"), type(exc).__name__)
+            outcomes.append({"worker_id": worker.get("id"), "state": "not_started", "reason": "resume_error"})
+    return outcomes
+
+
+def _resume_worker_after_restart(worker_id, stop_event):
+    if stop_event.is_set():
+        return {"worker_id": worker_id, "state": "shutdown"}
+    slot = get_worker_slot(worker_id)
+    if not isinstance(slot, dict) or slot.get(RESUME_AFTER_RESTART_FIELD) is not True:
+        return {"worker_id": worker_id, "state": "skipped", "reason": "marker_cleared"}
+    if slot.get("status") != "idle" or slot.get("enabled", True) is not True:
+        reason = ("disabled" if slot.get("enabled", True) is not True
+                  else f"status_{slot.get('status')}")
+        update_slot(worker_id, {RESUME_AFTER_RESTART_FIELD: False})
+        log.info("worker_resume_skipped worker_id=%s reason=%s", worker_id, reason)
+        return {"worker_id": worker_id, "state": "skipped", "reason": reason}
+    try:
+        recheck = datetime.fromisoformat(slot.get(NO_CREDIT_RECHECK_FIELD) or "")
+    except (TypeError, ValueError):
+        recheck = None
+    if (recheck is not None and recheck.tzinfo is not None
+            and _worker_no_credit(slot.get("backend_error"))
+            and recheck > datetime.now(timezone.utc)):
+        # The credit pause stays: wait for its daily check, then resume as usual.
+        log.info("worker_resume_deferred worker_id=%s reason=no_credit_pause until=%s",
+                 worker_id, recheck.isoformat())
+
+        def resume_at_check_time():
+            if not stop_event.wait((recheck - datetime.now(timezone.utc)).total_seconds()):
+                _resume_worker_after_restart(worker_id, stop_event)
+
+        threading.Thread(target=resume_at_check_time, daemon=True,
+                         name=f"worker-resume-{worker_id}").start()
+        return {"worker_id": worker_id, "state": "deferred", "until": recheck.isoformat()}
+    _response, status = start_worker_execution(worker_id)
+    if status == 200:
+        log.info("worker_resumed worker_id=%s reason=after_restart", worker_id)
+        return {"worker_id": worker_id, "state": "admitted"}
+    log.warning("worker_resume_skipped worker_id=%s reason=start_rejected status=%s", worker_id, status)
+    return {"worker_id": worker_id, "state": "not_started", "reason": "start_rejected", "status": status}
+
+
 def _start_always_on_startup_monitor(server):
     """Wait for the local model service; never issue cloud or creator grants."""
     stop = threading.Event()
@@ -8184,6 +8277,11 @@ def _start_always_on_startup_monitor(server):
         except Exception as exc:
             server.persistent_worker_startup_result = {"state": "unavailable", "profiles": []}
             log.warning("Persistent-Cloudworker-Start nicht bestätigt (%s)", type(exc).__name__)
+        try:
+            server.worker_restart_resume_result = _resume_workers_after_restart(stop)
+        except Exception as exc:
+            server.worker_restart_resume_result = []
+            log.warning("Worker-Wiederaufnahme nach Neustart nicht bestätigt (%s)", type(exc).__name__)
         while not stop.is_set():
             try:
                 result = _resume_always_on_at_startup(stop)

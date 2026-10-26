@@ -578,6 +578,9 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         assert bindings[-1].closed and bindings[-1].tool_dispatch_count == 1
         assert client.worker_leases(worker.lease_worker_id)["leases"] == []
         assert client.task_snapshot(42)["status"] == "pending"
+        # #2633: a service restart keeps the credit pause until this check time.
+        recheck = slots.get_slot(ident, path).get("no_credit_recheck_at")
+        assert (recheck is not None) is (backend_failure == "monthly_quota")
         worker.stop_event.set()
         return False
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
