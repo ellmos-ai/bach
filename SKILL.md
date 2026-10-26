@@ -22,7 +22,7 @@ description: >
 **Ablauf in einem Satz:** booten → Task wählen → **leasen, dann arbeiten** → eigener Worktree → Tests → PR → Ergebnis abgeben → nächste Task. Ohne ausdrückliche Stoppanweisung von Lukas hörst du nicht auf.
 
 ### 1. Booten und Modus
-- Zugang zum Mac Studio über den bereitgestellten SSH-Zugang; richte keine eigenen Zugangsdaten ein. Projekt `/Users/lukas/services/bach`, Python `/Users/lukas/.venvs/bach/bin/python`. Lies `AGENTS.md` und die Anweisungen des Teilprojekts, in dem du arbeitest.
+- Zugang zum Mac Studio über den bereitgestellten SSH-Zugang; richte keine eigenen Zugangsdaten ein. Projekt unter `$BACH_ROOT` (auf dem Mac Studio `~/services/bach`), Python aus dessen venv. Lies `AGENTS.md` und die Anweisungen des Teilprojekts, in dem du arbeitest.
 - **Modus B (Gemischt)** ist für Agenten, die aktiv mitarbeiten, der Normalfall. **Modus A (Bibliothek)** genügt, wenn du nur Tasks bearbeitest und BACH nicht als Sitzung nutzt: der Lease-Weg unten läuft über den Lead-Dienst und braucht keinen Session-Start. Modus C (Session) nur auf ausdrücklichen Wunsch.
 - Lies vor der ersten Task den aktuellen Plan `Desktop\OCEAN\AKTUELLER-PLAN.md` und `MODUL-ZUORDNUNG.md` (Bauorte).
 
@@ -38,12 +38,11 @@ description: >
 ### 3. Übernehmen, bevor du arbeitest
 ```python
 import os, sys
-from pathlib import Path
 os.environ["BACH_NO_AUTO_MIGRATE"] = "1"
-sys.path.insert(0, "/Users/lukas/services/bach/system")
+sys.path.insert(0, os.path.join(os.environ["BACH_ROOT"], "system"))
 from hub._services.task_lease_client import TaskLeaseClient
-token = Path("/Users/lukas/.credentials/bach_device_token_tray").read_text().strip()   # nie ausgeben
-client = TaskLeaseClient(lead_url="http://127.0.0.1:8000", device_token=token, timeout=35)
+# BACH_ROOT und BACH_DEVICE_TOKEN stellt der bereitgestellte Zugang; den Token nie ausgeben
+client = TaskLeaseClient(lead_url="http://127.0.0.1:8000", timeout=35)  # liest BACH_DEVICE_TOKEN
 snap = client.task_snapshot(task_id)                      # vollständige Beschreibung und Taskversion
 ack = client.acquire(task_id, worker_id="<agent>@<host>", host="<host>", ttl_profile="S")
 # neue request_id wird erzeugt; die Taskversion aus dem Snapshot kann als task_version=… mitgegeben werden
