@@ -1040,3 +1040,121 @@ class TestLeaseAPI:
         anon = TestClient(srv.app, raise_server_exceptions=False)
         assert anon.get("/api/tasks/1/lease").status_code == 401
         assert anon.post("/api/tasks/1/lease", json=self._body()).status_code == 401
+
+    def test_reclaim_unresolved_endpoint_blocks_one_task_with_device_audit(self, client, db_path, monkeypatch):
+        from hub._services import task_lease
+
+        tid, fence = _stuck_task(db_path, monkeypatch)
+        later = datetime.now(timezone.utc) + timedelta(days=2)
+        monkeypatch.setattr(task_lease, "_utcnow", lambda: later)
+        path = f"/api/tasks/{tid}/lease/reclaim-unresolved"
+        body = {"operator": "claude-code@ASUS-GEI", "fence": fence, "reason": "Neustart mitten im Werkzeuglauf"}
+        bad = client.post(path, json={**body, "operator": "worker-" + "b" * 32 + "@mac-studio"})
+        assert bad.status_code == 422
+        r = client.post(path, json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "blocked"
+        assert client.post(path, json=body).json()["reason"] == "not_claimable"
+        assert client.post(path, json={**body, "extra": 1}).status_code == 422
+        with _connect(db_path) as c:
+            detail = json.loads(c.execute("SELECT new_value FROM task_history WHERE task_id=? "
+                                          "AND action='lease_reclaim'", (tid,)).fetchone()[0])
+        assert detail["device"] and "test-device" in detail["device"]
+
+
+def _stuck_task(db_path, monkeypatch, **cols):
+    """A real holder starts a tool and ends without a terminal trace phase (#2592)."""
+    from hub._services import task_lease_client
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.chat.worker_tool_trace import digest_json
+
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
+    with _connect(db_path) as c:
+        tid = _insert(c, assigned_to="BACH", **cols)
+    binding = WorkerLeaseBinding.acquire(
+        task_lease_client.TaskLeaseClient(db_path=db_path), tid, worker_id="trace-worker@HOST",
+        host="HOST", generation=uuid.uuid4().hex, is_current=lambda: True,
+        stop_event=threading.Event())
+    binding.trace_tool_started(source="normal-loop", request_id=uuid.uuid4().hex,
+                               tool_name="start_task_worktree", arguments_sha256=digest_json({}))
+    return tid, binding._ack.fence
+
+
+def _expired_without_trace(conn):
+    tid = _insert(conn, assigned_to="BACH")
+    ack = acquire_lease(conn, tid, worker_id="other@HOST", host="HOST", request_id=_rid(),
+                        config=CFG, now=datetime.now(timezone.utc)).payload
+    return tid, ack["fence"]
+
+
+class TestReclaimUnresolved:
+    OPERATOR = "claude-code@ASUS-GEI"
+
+    def _reclaim(self, conn, tid, fence, *, now=None, **changes):
+        from hub._services.task_lease import reclaim_unresolved_lease
+        args = {"operator": self.OPERATOR, "fence": fence, "reason": "Neustart mitten im Werkzeuglauf"}
+        args.update(changes)
+        return reclaim_unresolved_lease(conn, tid, config=CFG, now=now, **args)
+
+    def test_blocks_exactly_one_expired_unresolved_task(self, db_path, monkeypatch):
+        tid, fence = _stuck_task(db_path, monkeypatch)
+        later = datetime.now(timezone.utc) + timedelta(days=2)
+        with _connect(db_path) as c:
+            other, _ = _expired_without_trace(c)
+            trace_before = c.execute("SELECT COUNT(*) FROM worker_tool_trace_events").fetchone()[0]
+            result = self._reclaim(c, tid, fence, now=later)
+            assert result.http_status == 200, result.payload
+            assert result.payload["reclaimed"] is True and result.payload["status"] == "blocked"
+            row = _get(c, tid)
+            assert row["status"] == "blocked" and row["claim_id"] is None and row["claimed_by"] is None
+            assert row["claim_fence"] == fence
+            assert _get(c, other)["status"] == "in_progress"  # unlike the global reaper
+            assert c.execute("SELECT COUNT(*) FROM worker_tool_trace_events").fetchone()[0] == trace_before
+            audit = c.execute("SELECT new_value, changed_by FROM task_history WHERE task_id=? "
+                              "AND action='lease_reclaim'", (tid,)).fetchall()
+            assert len(audit) == 1 and audit[0]["changed_by"] == self.OPERATOR
+            detail = json.loads(audit[0]["new_value"])
+            assert detail == {"fence": fence, "outcome": "blocked", "reason": "Neustart mitten im Werkzeuglauf",
+                              "trace_state": "unresolved", "previous_holder": "trace-worker@HOST",
+                              "device": None}
+            again = self._reclaim(c, tid, fence, now=later)
+            assert again.http_status == 409 and again.payload["reason"] == "not_claimable"
+            denied = acquire_lease(c, tid, worker_id="next@HOST", host="HOST", request_id=_rid(),
+                                   config=CFG, now=later)
+            assert denied.payload["granted"] is False
+
+    def test_denies_live_lease_other_fence_and_resolved_trace(self, db_path, monkeypatch):
+        tid, fence = _stuck_task(db_path, monkeypatch)
+        later = datetime.now(timezone.utc) + timedelta(days=2)
+        with _connect(db_path) as c:
+            clean, clean_fence = _expired_without_trace(c)
+            pending = _insert(c)
+            cases = [
+                (tid, fence, None, "held"),
+                (tid, fence + 1, later, "stale_fence"),
+                (clean, clean_fence, later, "no_unresolved_trace"),
+                (pending, 1, later, "not_claimable"),
+            ]
+            for task_id, task_fence, now, reason in cases:
+                before = _get(c, task_id)["status"]
+                result = self._reclaim(c, task_id, task_fence, now=now)
+                assert result.http_status == 409 and result.payload["reason"] == reason
+                assert _get(c, task_id)["status"] == before
+            assert c.execute("SELECT COUNT(*) FROM task_history WHERE action='lease_reclaim'").fetchone()[0] == 0
+
+    @pytest.mark.parametrize("changes", [
+        {"operator": "worker-" + "a" * 32 + "@mac-studio"},
+        {"operator": "ohne-host"},
+        {"reason": "  "},
+        {"reason": "x" * 501},
+        {"reason": "zwei\nZeilen"},
+        {"fence": 0},
+    ])
+    def test_rejects_worker_identity_and_invalid_input(self, db_path, monkeypatch, changes):
+        tid, fence = _stuck_task(db_path, monkeypatch)
+        with _connect(db_path) as c:
+            with pytest.raises(LeaseValidationError):
+                self._reclaim(c, tid, changes.pop("fence", fence),
+                              now=datetime.now(timezone.utc) + timedelta(days=2), **changes)
+            assert _get(c, tid)["status"] == "in_progress"
