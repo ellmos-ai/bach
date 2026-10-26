@@ -398,3 +398,31 @@ def test_invalid_argument_shape_never_starts_or_dispatches(binding):
     assert outcome.error_code == "invalid_tool_call"
     assert calls == []
     assert _events(binding) == []
+
+
+def test_deactivation_logs_one_fixed_reason_without_payload(binding, monkeypatch, caplog):
+    caplog.set_level("INFO", logger="bach.chat")
+    monkeypatch.setattr(
+        binding, "trace_tool_started",
+        lambda **kwargs: (_ for _ in ()).throw(WorkerToolTraceError("synthetic-private-detail")),
+    )
+    outcome = execute_normal_tool(binding, "search_text", {"query": "synthetic-private-arg"}, lambda *_: None)
+    assert outcome.error_code == "trace_start_unavailable"
+    assert binding.deactivation_reason == "trace_start_unavailable"
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("binding_deactivated")]
+    assert lines == [f"binding_deactivated reason=trace_start_unavailable closed=False "
+                     f"task_id={binding.task_id} generation=normal-loop-generation-1"]
+    binding.invalidate("heartbeat_failed")  # The first cause stays; no second line.
+    assert binding.deactivation_reason == "trace_start_unavailable"
+    assert sum(r.getMessage().startswith("binding_deactivated") for r in caplog.records) == 1
+    assert "synthetic-private" not in caplog.text
+    assert binding.return_lease() is False
+
+
+def test_return_logs_closed_reason(binding, caplog):
+    caplog.set_level("INFO", logger="bach.chat")
+    assert binding.deactivation_reason is None
+    assert binding.return_lease(note="worker_ended") is True
+    assert binding.deactivation_reason == "lease_returned"
+    assert any(r.getMessage().startswith("binding_deactivated reason=lease_returned closed=True")
+               for r in caplog.records)

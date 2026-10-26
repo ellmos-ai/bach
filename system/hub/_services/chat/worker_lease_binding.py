@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+import logging
 import threading
 from datetime import datetime, timezone
 
@@ -15,6 +16,8 @@ from hub._services.task_lease_client import (
     LeaseRequestRejectedError, LeaseSelfCheckRequiredError,
     LeaseReleaseAck, WorkerResultAck,
 )
+
+log = logging.getLogger("bach.chat")
 
 _EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
 
@@ -88,6 +91,7 @@ class WorkerLeaseBinding:
         self._quarantine_ack = None
         self._active = True
         self._closed = False
+        self._deactivation_reason = None
         self._completion_result = None
         self._submission_expected = None
         self._review_ack = None
@@ -372,9 +376,8 @@ class WorkerLeaseBinding:
                     if exc.reason == "conflict":
                         observation.denied(exc.reason)
                         raise  # A native no-grant conflict still stops this run.
-                    if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller",
-                                           "completion_guard"}:
+                    # Task-specific denials (incl. an unresolved prior trace) skip only this task.
+                    if exc.reason not in ACQUIRE_DENIALS:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:
@@ -397,6 +400,7 @@ class WorkerLeaseBinding:
     def _acquire_review_next(cls, client, slot, observation, *, review_route=None,
                              review_requested_model=None, **kwargs):
         """Review pickup runs only after every eligible ordinary task was tried."""
+        from .worker_queue_status import ACQUIRE_DENIALS
         if (getattr(client, "mode", None) != "local" or not isinstance(review_route, dict)
                 or not isinstance(review_requested_model, str) or not review_requested_model.strip()
                 or not callable(getattr(client, "_review_candidates", None))
@@ -459,9 +463,7 @@ class WorkerLeaseBinding:
                     if exc.reason == "conflict":
                         observation.denied(exc.reason)
                         raise
-                    if exc.reason not in {"held", "not_claimable", "creator_priority",
-                                           "stale_task_version", "already_held_by_caller",
-                                           "completion_guard"}:
+                    if exc.reason not in ACQUIRE_DENIALS:
                         raise
                     observation.reject(exc.reason)
             if not page["has_more"]:
@@ -549,8 +551,7 @@ class WorkerLeaseBinding:
             with self._lock:
                 if self._submission_expected == expected:
                     self._completion_result = copy.deepcopy(current)
-                    self._closed = True
-                    self._active = False
+                    self._deactivate("result_reconstructed", close=True)
                     reconstructed = True
         if record is not None:
             if (not isinstance(current, dict) or any(current.get(key) != record.get(key)
@@ -642,22 +643,22 @@ class WorkerLeaseBinding:
                 raise
             # A missing/malformed ACK may follow a committed operation.
             # Revoke locally; never guess a new version or retry this mutation.
-            self._active = False
+            self._deactivate("operation_lease_error")
             raise
         except Exception:
-            self._active = False
+            self._deactivate("operation_unconfirmed")
             raise LeaseProtocolError("Taskoperation fehlgeschlagen; Bestätigung fehlt") from None
 
     def _adopt_task_version(self, version, *, previous_version):
         # The caller holds the binding lock and supplies only a native ACK version.
         if (self._snapshot.get("task_version") != previous_version
                 or self._ack.task_version != previous_version):
-            self._active = False
+            self._deactivate("task_version_mismatch")
             raise LeaseProtocolError("Taskversion passt nicht zur bestaetigten Workerbindung")
         try:
             current_ack = replace(self._ack, task_version=version)
         except Exception:
-            self._active = False
+            self._deactivate("task_version_unconfirmed")
             raise LeaseProtocolError("Neue Taskversion ist nicht bestaetigt") from None
         self._ack = current_ack
         self._snapshot["task_version"] = current_ack.task_version
@@ -679,9 +680,31 @@ class WorkerLeaseBinding:
     def stop_requested(self):
         return self._stop_event.is_set()
 
-    def invalidate(self):
+    def _deactivate(self, reason, *, close=False):
+        """Revoke local authority; the first fixed reason stays, never payloads."""
         with self._lock:
+            if close:
+                self._closed = True
+            if self._active:
+                self._deactivation_reason = reason
+                (log.info if close else log.warning)(
+                    "binding_deactivated reason=%s closed=%s task_id=%s generation=%s",
+                    reason, close, self.task_id, self._generation)
             self._active = False
+
+    @property
+    def deactivation_reason(self):
+        """Fixed-vocabulary cause for an inactive binding, for logs and slot status."""
+        with self._lock:
+            if self._deactivation_reason is not None:
+                return self._deactivation_reason
+            if not self._is_current():
+                return "worker_not_current"
+            return "stop_requested" if self._stop_event.is_set() else None
+
+    def invalidate(self, reason="invalidated"):
+        with self._lock:
+            self._deactivate(reason)
             self._model_execution_pending = None
             self._model_execution_candidate = None
             if self._review_grant is not None:
@@ -732,8 +755,12 @@ class WorkerLeaseBinding:
                 self._review_grant._last_answer = None
                 self._review_grant._last_answer_sha256 = None
 
-    def finish_model_execution(self, handle, *, result=None, failed=False, route_sha256=None):
-        """Confirm a returned backend answer; a CLI may already have submitted."""
+    def finish_model_execution(self, handle, *, result=None, failed=False, route_sha256=None,
+                               failure=None):
+        """Confirm a returned backend answer; a CLI may already have submitted.
+
+        ``failure`` is a fixed code from worker_execution_evidence.failure_code.
+        """
         should_record_review = False
         should_reconcile = False
         with self._lock:
@@ -752,6 +779,9 @@ class WorkerLeaseBinding:
                     finish_kwargs = {"failed": True}
                     if route_sha256 is not None:
                         finish_kwargs["route_sha256"] = route_sha256
+                    reason = failure if failed else "binding_inactive"
+                    if reason is not None:
+                        finish_kwargs["failure"] = reason
                     finish(self, handle, **finish_kwargs)
                 except Exception:
                     pass
@@ -936,8 +966,7 @@ class WorkerLeaseBinding:
                                 check_policy=False)
             except LeaseError:
                 return False
-            self._closed = True
-            self._active = False
+            self._deactivate("lease_returned", close=True)
             return True
 
     def execute_task_command(self, operation, arguments):
@@ -964,11 +993,10 @@ class WorkerLeaseBinding:
             except LeaseError:
                 # A missing ACK may follow a committed quarantine. Neither
                 # Return-to-pending nor a guessed retry may undo that decision.
-                self._active = False
+                self._deactivate("quarantine_unconfirmed")
                 return False
             self._quarantine_ack = ack
-            self._closed = True
-            self._active = False
+            self._deactivate("lease_quarantined", close=True)
             return True
 
     def quarantined_effects_clear(self):
@@ -1069,11 +1097,10 @@ class WorkerLeaseBinding:
                         or type(release.task_id) is not int or release.task_id != self.task_id
                         or type(release.fence) is not int or release.fence != self._ack.fence
                         or release.outcome != "review" or release.status != "review"):
-                    self.invalidate()
+                    self.invalidate("review_release_unconfirmed")
                     raise LeaseProtocolError("Review-Freigabe nicht bestätigt")
                 self._review_ack = release
-                self._closed = True
-                self._active = False
+                self._deactivate("review_released", close=True)
             return True
 
     def execute_task_manage(self, args, *, _dispatch_marked=False):
@@ -1186,12 +1213,11 @@ class WorkerLeaseBinding:
                         or release.release.released is not True
                         or release.release.task_id != self.task_id or release.release.fence != self._ack.fence
                         or release.release.outcome != "review" or release.release.status != "review"):
-                    self.invalidate()
+                    self.invalidate("submission_unconfirmed")
                     raise LeaseProtocolError("Ergebnisabgabe nicht bestätigt")
                 self._completion_result = copy.deepcopy(release.record)
                 self._review_ack = release.release
-                self._closed = True
-                self._active = False
+                self._deactivate("result_submitted", close=True)
                 self._link_confirmed_model_execution()
                 return f"Task #{self.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
             if action == "update":
@@ -1226,8 +1252,7 @@ class WorkerLeaseBinding:
                     # Fixed reason codes; a saved partial state stays in the description.
                     note = "worker_returned_open" if outcome == "return" else "worker_blocked"
                     self._operation(self._client.release, outcome=outcome, note=note)
-                    self._closed = True
-                    self._active = False
+                    self._deactivate("status_released", close=True)
                 else:
                     ack = self._operation(self._client.update, changes=changes)
                     self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
@@ -1273,7 +1298,7 @@ class WorkerLeaseBinding:
                 self._snapshot["description"] = (self._snapshot.get("description") or "") + (
                     f"\n[In {ack.created_count} Teilaufgaben zerlegt: {list(ack.created_ids)}]")
                 if ack.parent_closed:
-                    self.invalidate()
+                    self.invalidate("decompose_closed_parent")
                     raise LeaseProtocolError("Zerlegung hat unerlaubt den Parent abgeschlossen")
                 if action == "add":
                     return f"Task #{ack.created_ids[0]} erstellt: {subtasks[0]['title']}"
