@@ -1865,14 +1865,9 @@ class ChatRuntime(_ModuleChatRuntime):
         except Exception:  # noqa: BLE001 -- malformed persisted proof fails closed
             return None
 
-        capacity_fields = {
-            "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-            "policy_version", "model", "wait_seconds", "poll_seconds",
-            "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
-            "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-            "resident_weight_credit", "capacity_basis",
-        }
-        if set(receipt) != capacity_fields | {"local_admission"}:
+        from hub._services.chat import local_resource_reserve
+
+        if not local_resource_reserve.valid_capacity_receipt_shape(receipt, extra={"local_admission"}):
             return None
         admission = receipt.get("local_admission")
         if (not isinstance(admission, dict)
@@ -1897,7 +1892,7 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         if admission.get("capacity") != {"status": "unknown", "certification": "not_provided"}:
             return None
-        capacity_receipt = {key: receipt[key] for key in capacity_fields}
+        capacity_receipt = {key: receipt[key] for key in local_resource_reserve.CAPACITY_RECEIPT_FIELDS}
         try:
             observation = slots_config._persistent_core_capacity_observation(
                 capacity_receipt, worker=worker, expected_state=receipt["state"],
