@@ -882,3 +882,65 @@ def test_root_api_shim_resource_paths_without_database_access(tmp_path, operatio
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "ROOT_API_RESOURCE_PATHS_OK" in completed.stdout
+
+
+# --- #2648: the real probe receipt must pass the persistent-core validators ---------------------
+from hub._services.chat import host_resource_observation as host_observation  # noqa: E402
+from hub._services.chat import slots_config  # noqa: E402
+
+CORE_WORKER = {"model": MODEL, "backend": "ollama"}
+
+
+@pytest.mark.parametrize("state,available,disk_free", [
+    ("ready", 8 * GIB, 4 * GIB), ("waiting_memory_reserve", 3 * GIB, 4 * GIB), ("waiting_disk_reserve", 8 * GIB, GIB // 2),
+])
+def test_real_probe_receipt_is_accepted_by_the_persistent_core_validator(resources, monkeypatch, state, available, disk_free):
+    monkeypatch.setattr(reserve.psutil, "virtual_memory", lambda: SimpleNamespace(total=32 * GIB, available=available))
+    monkeypatch.setattr(reserve.shutil, "disk_usage", lambda p: SimpleNamespace(free=disk_free))
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))  # real probe, real host observation
+    assert receipt["state"] == state
+    assert set(receipt) == reserve.CAPACITY_RECEIPT_FIELDS
+    assert host_observation.valid_host_resources(receipt["host_resources"])
+    observed = slots_config._persistent_core_capacity_observation(receipt, worker=CORE_WORKER, expected_state=state)
+    assert observed is not None and observed["state"] == state
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda h: h.update(extra=1),
+    lambda h: h.pop("swap_used_bytes"),
+    lambda h: h.update(compression_added_to_capacity=True),
+    lambda h: h.update(swap_added_to_capacity=1),
+    lambda h: h.update(pressure_level=3),
+    lambda h: h.update(swap_used_bytes=-1),
+    lambda h: h.update(memory_available_bytes=True),
+    lambda h: h.update(memory_available_bytes=h["memory_total_bytes"] + 1),
+    lambda h: h.update(compressor_logical_bytes=4097 * GIB),
+    lambda h: h.update(errors=["anything_else"]),
+    lambda h: h.update(page_size_bytes=8192),
+    lambda h: h.update(checked_at="yesterday"),
+    lambda h: h.update(schema="bach.host-resource-observation.v2"),
+])
+def test_host_resources_outside_the_schema_invalidate_the_receipt(resources, mutate):
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))
+    mutate(receipt["host_resources"])
+    assert not reserve.valid_capacity_receipt_shape(receipt)
+    assert slots_config._persistent_core_capacity_observation(receipt, worker=CORE_WORKER, expected_state="ready") is None
+
+
+def test_failed_host_observation_stub_is_the_only_short_form(resources):
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))
+    receipt["host_resources"] = {"schema": host_observation.OBSERVATION_SCHEMA, "errors": ["host_observation_failed"]}
+    assert reserve.valid_capacity_receipt_shape(receipt)
+    receipt["host_resources"]["errors"] = []
+    assert not reserve.valid_capacity_receipt_shape(receipt)
+
+
+def test_receipt_fields_stay_exact(resources):
+    _, backend = resources
+    receipt = asyncio.run(reserve.probe(backend, MODEL))
+    assert not reserve.valid_capacity_receipt_shape({**receipt, "extra": 1})
+    assert not reserve.valid_capacity_receipt_shape({k: v for k, v in receipt.items() if k != "host_resources"})
+    assert reserve.valid_capacity_receipt_shape({**receipt, "local_admission": {}}, extra={"local_admission"})

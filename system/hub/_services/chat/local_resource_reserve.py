@@ -28,6 +28,25 @@ _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}\Z")
 
 
+# The one definition of a probe receipt that reached the capacity arithmetic (#2648).
+# Consumers check exactly this field set; host_resources must pass its own validator.
+CAPACITY_RECEIPT_FIELDS = frozenset({
+    "schema", "state", "admitted", "enforced", "retryable", "checked_at",
+    "policy_version", "model", "wait_seconds", "poll_seconds",
+    "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
+    "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
+    "resident_weight_credit", "capacity_basis", "host_resources",
+})
+
+
+def valid_capacity_receipt_shape(receipt, *, extra=frozenset()):
+    """Exact fields (plus named caller additions) and a validated host observation."""
+    from hub._services.chat.host_resource_observation import valid_host_resources
+
+    return (isinstance(receipt, dict) and set(receipt) == CAPACITY_RECEIPT_FIELDS | set(extra)
+            and valid_host_resources(receipt["host_resources"]))
+
+
 class LocalReserveError(RuntimeError):
     """Public enum only: no URL, provider body, path or prompt escapes."""
 
