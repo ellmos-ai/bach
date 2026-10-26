@@ -5787,10 +5787,14 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             if cleanup_error:
                 worker_error = worker_error or RuntimeError("Worker-Cleanup nicht bestätigt")
                 control.start_error = "cleanup_error"
+                # Fixed vocabulary from the binding; never exception or tool text.
+                reason = getattr(control.task_binding, "deactivation_reason", None)
                 try:
                     _update_worker_slot(control, {
                         "status": "error",
-                        "current_activity": "Cleanup nicht bestätigt; Task-Lease nur kanonisch prüfen",
+                        "current_activity": "Cleanup nicht bestätigt"
+                            + (f" (Grund: {reason})" if isinstance(reason, str) else "")
+                            + "; Task-Lease nur kanonisch prüfen",
                     })
                 except Exception:
                     log.warning("Worker-Cleanup-Fehlerstatus konnte nicht gespeichert werden", exc_info=True)

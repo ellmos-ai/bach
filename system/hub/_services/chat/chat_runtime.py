@@ -332,6 +332,7 @@ _SAFE_FAILURE_REASON_CODES = frozenset({
     "cloud_call_retry_exhausted",
     "completion_reserve_context_exhausted",
     "handoff_context_too_large",
+    "invalid_tool_call",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -3197,8 +3198,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         dispatch_tool,
                     )
                     if traced_outcome.status != "returned":
-                        binding.invalidate()
                         session.current_tool = ""
+                        if traced_outcome.error_code == "invalid_tool_call":
+                            # Rejected before trace start and dispatch (e.g. truncated
+                            # JSON arguments): nothing ran, so the binding stays valid
+                            # and the worker returns the task with this reason.
+                            return FailedAnswer(
+                                f"{FailedAnswer.PREFIX}Werkzeugaufruf ungültig: Argumente sind kein JSON-Objekt",
+                                reason_code="invalid_tool_call",
+                            )
+                        binding.invalidate("tool_outcome_unconfirmed")
                         return FailedAnswer(
                             "Worker-Werkzeugnachweis fehlt oder Werkzeugwirkung ist ungeklärt"
                         )
@@ -3218,13 +3227,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     if traced_outcome is not None:
                         abandon_normal_tool_result(binding, traced_outcome)
                     elif binding is not None:
-                        binding.invalidate()
+                        binding.invalidate("tool_response_unconsumed")
                     session.current_tool = ""
                     raise RuntimeError("Werkzeugantwort konnte nicht konsumiert werden") from None
                 if traced_outcome is not None:
                     # This confirms consumption, never semantic task acceptance.
                     if not acknowledge_normal_tool_result(binding, traced_outcome):
-                        binding.invalidate()
+                        binding.invalidate("tool_ack_unconfirmed")
                         session.current_tool = ""
                         return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
                 if binding is not None:

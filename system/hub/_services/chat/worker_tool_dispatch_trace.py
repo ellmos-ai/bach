@@ -25,15 +25,15 @@ class TracedToolOutcome:
     _ack_attempted: bool = field(default=False, init=False, repr=False, compare=False)
 
 
-def _invalidate(binding: Any) -> None:
+def _invalidate(binding: Any, reason: str) -> None:
     # Cleanup exceptions can carry private tool data; invalidate silently.
     try:
-        binding.invalidate()
+        binding.invalidate(reason)
     except Exception:  # noqa: BLE001,S110 - redacted best-effort revocation
         pass
 
 
-def _quarantine_then_invalidate(binding: Any) -> None:
+def _quarantine_then_invalidate(binding: Any, reason: str) -> None:
     """Quarantine uncertain effects before local revocation; never infer ACK."""
     # Do not log arbitrary quarantine details or claim a blocked ACK without one.
     try:
@@ -44,7 +44,7 @@ def _quarantine_then_invalidate(binding: Any) -> None:
         # quarantine ACK is not evidence that the canonical task is blocked.
         pass
     finally:
-        _invalidate(binding)
+        _invalidate(binding, reason)
 
 
 def _require_accepted(ack: Any) -> None:
@@ -82,7 +82,7 @@ def execute_normal_tool(
         if not isinstance(identity, TraceIdentity):
             raise _TraceAckRejected()
     except Exception:  # noqa: BLE001 - trace sink details stay private; dispatch is denied
-        _invalidate(binding)
+        _invalidate(binding, "trace_start_unavailable")
         return TracedToolOutcome(status="unknown", error_code="trace_start_unavailable")
 
     try:
@@ -91,9 +91,9 @@ def execute_normal_tool(
         try:
             _require_accepted(binding.trace_tool_phase(identity, "failed"))
         except Exception:  # noqa: BLE001 - trace sink exception details stay private
-            _quarantine_then_invalidate(binding)
+            _quarantine_then_invalidate(binding, "trace_sink_unavailable")
             return TracedToolOutcome(status="unknown", error_code="trace_sink_unavailable")
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "tool_failed")
         return TracedToolOutcome(status="failed", error_code="tool_failed")
 
     try:
@@ -106,7 +106,7 @@ def execute_normal_tool(
             result_sha256=result_sha256,
         ))
     except Exception:  # noqa: BLE001 - serializer/sink details stay private; outcome is unknown
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "trace_sink_unavailable")
         return TracedToolOutcome(status="unknown", error_code="trace_sink_unavailable")
 
     return TracedToolOutcome(
@@ -142,7 +142,7 @@ def acknowledge_normal_tool_result(binding: Any, outcome: TracedToolOutcome) -> 
     except Exception:  # noqa: BLE001 - ACK sink details stay private; outcome is unknown
         outcome.status = "unknown"
         outcome.result = None
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "tool_ack_unconfirmed")
         return False
 
     outcome.status = "acknowledged"
@@ -172,5 +172,5 @@ def abandon_normal_tool_result(binding: Any, outcome: TracedToolOutcome) -> bool
         outcome.status = "unknown"
         outcome.error_code = "response_abandoned"
         outcome.result = None
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "response_abandoned")
     return True
