@@ -713,10 +713,10 @@ Interpersonelle Interaktionen:
                     doc.path for doc in collector_result.documents
                     if doc.category in (DocumentCategory.CORE, DocumentCategory.STUFE2)
                 ]
-                scanned = anonymizer.scan_files_for_sensitive_data(relevant_files)
+                scanned = anonymizer.scan_files_for_sensitive_data(relevant_files, known_names=mappings["names"], manual_terms=mappings["misc"], whitelist=wl)
             except Exception:
                 # Fallback: ganzer Ordner (alte, breitere Erkennung)
-                scanned = anonymizer.scan_folder_for_sensitive_data(str(scan_folder))
+                scanned = anonymizer.scan_folder_for_sensitive_data(str(scan_folder), known_names=mappings["names"], manual_terms=mappings["misc"], whitelist=wl)
 
             # Telefonnummern (kein Klartextwert im Log)
             for phone in scanned.get("phones", []):

@@ -420,9 +420,19 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
     if not old:
         return text, 0
     pattern = re.compile(r'\b' + re.escape(old) + r'\b')
-    count = len(pattern.findall(text))
-    if count:
-        text = pattern.sub(lambda m: new, text)
+    # Addresses are replaced as whole identities. Replacing a name component
+    # inside an allowed address corrupts it and can break the reverse mapping.
+    email_spans = [m.span() for m in EMAIL_PATTERN.finditer(text)] if "@" not in old else []
+    count = 0
+
+    def replace(match):
+        nonlocal count
+        if any(start <= match.start() and match.end() <= end for start, end in email_spans):
+            return match.group(0)
+        count += 1
+        return new
+
+    text = pattern.sub(replace, text)
     return text, count
 
 
@@ -433,10 +443,10 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # Telefonnummern (deutsch): 07761/123456, +49 7761 123456, 0049-7761-123456, 0761 12345678,
 # 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
 PHONE_PATTERN = re.compile(
-    r'(?:'
-    r'(?:\+49|0049)[\s\-/]?\d{2,4}(?:[\s\-/]?\d{2,4}){1,3}|'  # +49 oder 0049
-    r'0\d{2,4}[\s\-/]?\d{2,4}(?:[\s\-/]?\d{2,4}){0,2}'         # 0xxx/xxxxxxx (mit optionalen Gruppen)
-    r')',
+    r'(?<!\w)(?:'
+    r'(?:\+49|0049)[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){1,3}|'
+    r'0\d{2,4}[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){0,2}'
+    r')(?!\w)',
     re.IGNORECASE
 )
 
@@ -580,7 +590,7 @@ _NER_LEADING_ROLE_NOUNS = _NER_GENERIC_ROLE_NOUNS | {
 _NER_COMMON_WORDS = {
     "alltag", "anziehen", "ausziehen", "zuständig", "zustaendig", "situationen",
     "freizeit", "verhalten", "essen", "spielen", "lernen", "schlafen", "waschen",
-    "wahrnehmung", "kommunikation", "sprache", "schule", "kindergarten",
+    "wahrnehmung", "kommunikation", "sprache", "schule", "kindergarten", "beispiele",
 }
 # Endungen/Kopfwoerter typischer Gattungsbegriffe aus Foerderberichten. Bewusst
 # KEIN "-lich"/"-ig" (Nachnamen wie Ehrlich, Hennig).
@@ -662,11 +672,14 @@ def _detect_titled_names(text: str, wl_lower: set) -> set:
     for m in _TITLED_NAME_RE.finditer(text):
         title = re.sub(r"\s+", " ", m.group("title"))
         n1, n2 = m.group("n1"), m.group("n2")
-        if n1.lower() in _NER_GENERIC_ROLE_NOUNS:
+        if (n1.lower() in _NER_GENERIC_ROLE_NOUNS or n1.lower() in wl_lower
+                or f"{title} {n1}".lower() in wl_lower):
             continue
         start = m.start("title")
         spans = [text[start:m.end("n1")]]
         norm = [f"{title} {n1}"]
+        if not n2 and not _is_common_german_word(n1, text):
+            norm.append(n1)
         if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2):
             spans.append(text[start:m.end("n2")])
             norm.append(f"{title} {n1} {n2}")
@@ -777,6 +790,39 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
             found.update(chunk_names)
 
     return sorted(found)
+
+
+def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Iterable[str],
+                           manual_terms: Iterable[str] = ()) -> list[str]:
+    """Private providers or evidenced identity parts, never a guessed domain policy."""
+    normalize = lambda value: value.casefold().translate(str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}))
+    allowed = {value.strip().casefold() for value in whitelist if value.strip()}
+    name_parts = set()
+    full_names = set()
+    excluded = _NER_LEADING_ROLE_NOUNS | _NER_MID_SPAN_STOPWORDS | {"frau", "herr", "dr", "prof", "med"}
+    for name in known_names:
+        if name.casefold() in allowed:
+            continue
+        parts = [normalize(word) for word in re.findall(r"[^\W\d_]+", name)
+                 if len(word) >= 3 and word.casefold() not in excluded and not _is_common_german_word(word)]
+        name_parts.update(parts)
+        if len(parts) > 1:
+            full_names.add("".join(parts))
+    found = []
+    manual_patterns = [re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE)
+                       for term in manual_terms if term.strip()]
+    for match in EMAIL_PATTERN.finditer(text):
+        email = match.group(0)
+        local, domain = email.casefold().rsplit("@", 1)
+        if email.casefold() in allowed or domain in allowed:
+            continue
+        local_parts = re.findall(r"[a-z]+", normalize(local))
+        compact = "".join(local_parts)
+        if (email not in found and (domain in _PRIVATE_EMAIL_DOMAINS or name_parts.intersection(local_parts)
+                or any(name in compact for name in full_names)
+                or any(pattern.search(email) for pattern in manual_patterns))):
+            found.append(email)  # exact spelling is needed for replacement and roundtrip
+    return found
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1139,7 +1185,9 @@ class DocumentAnonymizer:
     def progress(self) -> ProgressInfo:
         return self._progress
 
-    def scan_text_for_sensitive_data(self, text: str) -> Dict[str, List[str]]:
+    def scan_text_for_sensitive_data(self, text: str, *, known_names: Iterable[str] | None = None,
+                                     manual_terms: Iterable[str] | None = None,
+                                     whitelist: Iterable[str] | None = None) -> Dict[str, List[str]]:
         """
         Scannt Text nach sensiblen Daten (Telefon, E-Mail, Adressen, Institutionen).
 
@@ -1164,15 +1212,6 @@ class DocumentAnonymizer:
             cleaned = phone.strip()
             if cleaned and cleaned not in found["phones"]:
                 found["phones"].append(cleaned)
-
-        # E-Mails finden (nur private Domains)
-        emails = EMAIL_PATTERN.findall(text)
-        for email in emails:
-            cleaned = email.strip().lower()
-            if cleaned and cleaned not in found["emails"]:
-                domain = cleaned.split("@", 1)[-1] if "@" in cleaned else ""
-                if domain in _PRIVATE_EMAIL_DOMAINS:
-                    found["emails"].append(cleaned)
 
         # Adressen finden
         addresses = STREET_PATTERN.findall(text)
@@ -1201,8 +1240,10 @@ class DocumentAnonymizer:
         # Generische Personennamen-Erkennung (spaCy NER, DE+EN) -- Hauptmechanismus
         # fuer unbekannte Drittpersonen; faengt auch Namen und Schreibvarianten,
         # die keine Regel/Liste explizit vorgesehen hat.
-        ner_names = detect_person_names_ner(text, whitelist=self.global_whitelist.get("names", []))
+        allowed = [*self.global_whitelist.get("names", []), *self.global_whitelist.get("organizations", []), *(whitelist or [])]
+        ner_names = detect_person_names_ner(text, whitelist=allowed)
         found["ner_person_names"] = ner_names
+        found["emails"] = _find_sensitive_emails(text, [*(known_names or []), *ner_names, *found["table_row_names"]], allowed, manual_terms or [])
 
         return found
 
@@ -1407,7 +1448,9 @@ class DocumentAnonymizer:
 
         return text
 
-    def scan_folder_for_sensitive_data(self, folder: str) -> Dict[str, List[str]]:
+    def scan_folder_for_sensitive_data(self, folder: str, *, known_names: Iterable[str] | None = None,
+                                       manual_terms: Iterable[str] | None = None,
+                                       whitelist: Iterable[str] | None = None) -> Dict[str, List[str]]:
         """
         Scannt ALLE Dateien in einem Ordner (rekursiv) nach sensiblen Daten.
 
@@ -1428,9 +1471,11 @@ class DocumentAnonymizer:
         src = Path(folder)
         supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls", ".eml", ".msg"}
         filepaths = [f for f in src.rglob("*") if f.is_file() and f.suffix.lower() in supported]
-        return self.scan_files_for_sensitive_data(filepaths)
+        return self.scan_files_for_sensitive_data(filepaths, known_names=known_names, manual_terms=manual_terms, whitelist=whitelist)
 
-    def scan_files_for_sensitive_data(self, filepaths: List[Path]) -> Dict[str, List[str]]:
+    def scan_files_for_sensitive_data(self, filepaths: List[Path], *, known_names: Iterable[str] | None = None,
+                                      manual_terms: Iterable[str] | None = None,
+                                      whitelist: Iterable[str] | None = None) -> Dict[str, List[str]]:
         """
         Scannt eine EXPLIZITE Liste von Dateien nach sensiblen Daten (statt
         blind einen ganzen Ordnerbaum zu durchsuchen). Damit lassen sich z.B.
@@ -1452,18 +1497,27 @@ class DocumentAnonymizer:
         }
 
         supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls", ".eml", ".msg"}
+        known_names = tuple(known_names or [])
+        manual_terms = tuple(manual_terms or [])
+        whitelist = tuple(whitelist or [])
+        email_candidates = []
 
         for filepath in filepaths:
             filepath = Path(filepath)
             if filepath.is_file() and filepath.suffix.lower() in supported:
                 text = self.extract_text_from_file(str(filepath))
-                found = self.scan_text_for_sensitive_data(text)
+                found = self.scan_text_for_sensitive_data(text, known_names=known_names, manual_terms=manual_terms, whitelist=whitelist)
+                email_candidates.extend(EMAIL_PATTERN.findall(text))
 
                 for key in combined:
                     for item in found.get(key, []):
                         if item not in combined[key]:
                             combined[key].append(item)
 
+        # A titled person may be introduced in another file of the same dossier.
+        allowed = [*self.global_whitelist.get("names", []), *self.global_whitelist.get("organizations", []), *whitelist]
+        combined["emails"] = _find_sensitive_emails(" ".join(email_candidates),
+            [*known_names, *combined["ner_person_names"], *combined["table_row_names"]], allowed, manual_terms)
         return combined
 
     def anonymize_file(self, filepath: str, profile: AnonymProfile) -> Tuple[bool, int]:

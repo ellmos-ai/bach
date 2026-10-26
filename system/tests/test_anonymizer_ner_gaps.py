@@ -271,3 +271,119 @@ def test_titled_name_with_irregular_whitespace_roundtrips_through_workflow(tmp_p
     sent = service.extract_bundle_text(session).core_text
     for clear in ("Nachtigall", "Kaiser", "Mustermann"):
         assert clear not in sent, f"{clear!r} im Modell-Input"
+
+
+# Task 2620: only synthetic inputs; no provider/LLM invocation.
+@pytest.fixture
+def offline_real_ner(monkeypatch):
+    import socket
+
+    import spacy
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("Network access is forbidden in synthetic anonymizer tests")
+
+    monkeypatch.setattr(socket.socket, "connect", no_network)
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    assert an.SPACY_AVAILABLE
+    for model_name in an.NER_MODELS:
+        model = an._get_spacy_model(model_name)
+        assert isinstance(model, spacy.language.Language), model_name
+        assert "ner" in model.pipe_names
+        assert model.meta["version"] == "3.8.0"
+
+
+@pytest.mark.parametrize("phone", ["07623 / 555123", "0761 / 2012345", "07623 555123", "0761/2012345"])
+def test_2620_phone_separator_variants_are_complete(phone, no_spacy):
+    found = an.DocumentAnonymizer().scan_text_for_sensitive_data("Telefon: " + phone)
+    assert phone in found["phones"]
+
+
+@pytest.mark.parametrize("date", ["2026-10-25", "2016-03-15", "Bericht_2026-10-25.txt", "15.03.2016"])
+def test_2620_dates_are_not_phone_numbers(date, no_spacy):
+    assert not an.DocumentAnonymizer().scan_text_for_sensitive_data(date)["phones"]
+
+
+def test_2620_title_only_surname_becomes_word_bounded_alias(no_spacy):
+    found = an.detect_person_names_ner("Frau Beispiel kommt.")
+    assert "Beispiel" in found
+    text = "Beispiel sagte zu. Die Beispiele und Beispielweg bleiben unverändert."
+    masked, count = an._replace_word_boundary(text, "Beispiel", "PersonXYZ")
+    assert count == 1
+    assert masked == "PersonXYZ sagte zu. Die Beispiele und Beispielweg bleiben unverändert."
+    for excluded in ("Alltag", "Anziehen", "Essen", "Mutter", "Hilfeplanzeitraum"):
+        assert excluded not in an.detect_person_names_ner("Frau " + excluded + " kommt.")
+    assert "Beispiel" not in an.detect_person_names_ner("Frau Beispiel kommt.", whitelist=["Frau Beispiel"])
+
+
+def test_2620_known_parent_email_is_masked_without_name_in_document(tmp_path, offline_real_ner):
+    folder = tmp_path / "data_roh" / "Muster, Max"
+    folder.mkdir(parents=True)
+    private = ("erika.beispiel@example.org", "ERIKA.BEISPIEL@familie.invalid")
+    retained = ("info@jugendamt.example", "kontakt@firma.example", "maximal@firma.example", "Erika.Beispiel@amt.example")
+    (folder / "Protokoll_1.txt").write_text("Kontakt: " + "; ".join(private + retained), encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Max Muster", geburtsdatum="15.03.2016",
+        parent_names=["Erika Beispiel"], whitelist=[retained[-1]], scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        sent = service.extract_bundle_text(session).core_text
+        for email in private:
+            assert email not in sent
+            assert email in profile.mappings["emails"]
+        for email in retained:
+            assert email in sent
+    finally:
+        profile.cleanup()
+
+
+def test_2620_real_spacy_workflow_leak_and_roundtrip(tmp_path, offline_real_ner):
+    folder = tmp_path / "data_roh" / "Muster, Max"
+    folder.mkdir(parents=True)
+    (folder / "Protokoll_1.txt").write_text(
+        "Max Muster kam. Frau Beispiel begrüßte ihn. Eltern: Erika Muster und Hans Muster. "
+        "Telefon: 07623 / 555123. E-Mail: erika.muster@example.org. Datum: 2026-10-25.\n", encoding="utf-8")
+    (folder / "Protokoll_2.txt").write_text("Beispiel sagte später zu. Beispiele und Beispielweg sind keine Namen.\n", encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Max Muster", geburtsdatum="15.03.2016",
+        parent_names=["Erika Muster", "Hans Muster"], scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        bundle = service.extract_bundle_text(session)
+        sent = bundle.core_text + (bundle.stufe2_text or "")
+        for clear in ("Max", "Muster", "Erika", "Hans", "Beispiel", "07623 / 555123", "erika.muster@example.org"):
+            assert not re.search(r"(?<!\w)" + re.escape(clear) + r"(?!\w)", sent), clear
+        assert "2026-10-25" in sent and "Beispielweg" in sent and "Beispiele" in sent
+        mappings = profile.get_all_mappings()
+        expected = {"name": "Max Muster", "parent": "Erika Muster", "title": "Frau Beispiel", "surname": "Beispiel",
+                    "phone": "07623 / 555123", "email": "erika.muster@example.org"}
+        # A local synthetic echo stands in for a model response; real spaCy above is untouched.
+        model_response = {key: mappings[value] for key, value in expected.items()}
+        restored = service._deanonymize_json(model_response, profile)
+        assert restored == expected
+        assert not re.search(r"Person\d{3}|BEGRIFF_", repr(restored))
+    finally:
+        profile.cleanup()
+
+
+@pytest.mark.parametrize("term,email", [("Nachtigall", "Nachtigall@familie.invalid"),
+                                      ("familie.invalid", "kontakt@familie.invalid"),
+                                      ("familie", "kontakt@familie.invalid")])
+def test_2620_manual_name_term_masks_whole_email_and_roundtrips(tmp_path, no_spacy, term, email):
+    folder = tmp_path / "data_roh" / "Muster, Max"
+    folder.mkdir(parents=True)
+    (folder / "Protokoll.txt").write_text("Kontakt: " + email, encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Max Muster", geburtsdatum="15.03.2016",
+        additional_terms=[term], scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        sent = service.extract_bundle_text(session).core_text
+        assert email not in sent and "Nachtigall" not in sent
+        mapped = profile.mappings["emails"][email]
+        assert service._deanonymize_json({"email": mapped}, profile) == {"email": email}
+    finally:
+        profile.cleanup()
