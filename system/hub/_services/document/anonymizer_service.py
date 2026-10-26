@@ -1541,9 +1541,6 @@ class DocumentAnonymizer:
         Returns:
             (success, replacement_count)
         """
-        path = Path(filepath)
-        suffix = path.suffix.lower()
-
         # Direct/loaded profiles do not necessarily pass through the scanner.
         # Complete whole-address mappings before the shared replacement helpers
         # suppress partial name replacements inside addresses.
@@ -1554,6 +1551,13 @@ class DocumentAnonymizer:
         for email in emails:
             if email not in existing:
                 profile.mappings.setdefault("emails", {})[email] = _generate_fake_email(email)
+
+        return self._apply_profile_to_file(filepath, profile)
+
+    def _apply_profile_to_file(self, filepath: str, profile: AnonymProfile) -> tuple[bool, int]:
+        """Apply existing mappings only; inverse profiles must never be enriched."""
+        path = Path(filepath)
+        suffix = path.suffix.lower()
 
         if suffix == ".docx":
             return self._anonymize_docx(path, profile)
@@ -2104,8 +2108,7 @@ class DocumentDeanonymizer:
             client_id=profile.client_id,
             tarnname="",
             fake_geburtsdatum="",
-            mappings={},
-            whitelist=profile.whitelist
+            mappings={}
         )
 
         for category, mapping in profile.mappings.items():
@@ -2113,7 +2116,7 @@ class DocumentDeanonymizer:
 
         # Anonymizer mit umgekehrten Mappings nutzen
         anon = DocumentAnonymizer()
-        return anon.anonymize_file(filepath, reverse_profile)
+        return anon._apply_profile_to_file(filepath, reverse_profile)
 
     def deanonymize_folder(
         self,

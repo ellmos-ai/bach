@@ -492,3 +492,24 @@ def test_2620_review_temp_profile_whitelist_default_and_conversion(tmp_path, no_
         assert profile.to_anonym_profile().whitelist == profile.whitelist
     finally:
         profile.cleanup()
+
+
+@pytest.mark.parametrize("allowed_domain", ["muster.org", "gmail.com"])
+def test_2620_review_reverse_uses_mapping_namespace_only(tmp_path, no_spacy, monkeypatch, allowed_domain):
+    # Only the synthetic fake-address generator is deterministic; no NER mock
+    # is substituted for the separate real-spaCy workflow tests.
+    fake = "maskiert@" + allowed_domain
+    monkeypatch.setattr(an, "_generate_fake_email", lambda original=None: fake)
+    anon = an.DocumentAnonymizer()
+    profile = anon.create_profile(real_name="Max Mustermann", geburtsdatum="15.03.2016",
+        weitere_daten={"secret": "Nachtigall"}, whitelist=[allowed_domain])
+    private = "Nachtigall@familie.invalid"
+    retained = "kontakt@" + allowed_domain
+    original = private + "; " + retained
+    path = tmp_path / "reverse.txt"
+    path.write_text(original, encoding="utf-8")
+    assert anon.anonymize_file(str(path), profile)[0]
+    assert path.read_text(encoding="utf-8") == fake + "; " + retained
+    assert profile.mappings["emails"] == {private: fake}
+    assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
+    assert path.read_text(encoding="utf-8") == original
