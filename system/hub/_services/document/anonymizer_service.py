@@ -452,6 +452,8 @@ PHONE_PATTERN = re.compile(
 
 # E-Mail-Adressen
 EMAIL_PATTERN = re.compile(
+    # Retry only at the start of a local-part token, not at each '%' in a run.
+    r'(?<![a-zA-Z0-9._%+-])'
     r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
     re.IGNORECASE
 )

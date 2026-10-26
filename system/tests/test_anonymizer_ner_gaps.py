@@ -6,7 +6,9 @@ Befund (synthetische Akte): 'Frau Beispiel' blieb im Prompt stehen (Nachname = G
 NER verfehlt ihn); 'Anziehen', 'Begruessung', 'Hilfeplanzeitraum' u. a. wurden als Namen maskiert.
 """
 
+import json
 import re
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -555,3 +557,28 @@ def test_2620_tld_is_not_profile_identity(tmp_path, offline_real_ner, mode, clie
     finally:
         if mode == "workflow":
             profile.cleanup()
+
+
+@pytest.mark.parametrize("case", ["percent_only", "percent_then_address", "long_local"])
+def test_2620_email_pattern_repetition_finishes_with_whole_matches(case):
+    if case == "long_local":
+        text = "a" * 100_000 + "@example.org"
+        expected = [[0, len(text)]]
+    else:
+        text = "%" * 100_000
+        expected = []
+        if case == "percent_then_address":
+            text += " max.muster@example.org"
+            expected = [[100_001, len(text)]]
+    # Execute only the actual pattern, inheriting the suite's child safety guard.
+    # A timeout kills the pathological search without hanging the test worker.
+    script = (
+        "import json,re,sys\n"
+        "spec=json.load(sys.stdin)\n"
+        "pattern=re.compile(spec['pattern'],spec['flags'])\n"
+        "print(json.dumps([list(m.span()) for m in pattern.finditer(spec['text'])]))\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script],
+        input=json.dumps({"pattern": an.EMAIL_PATTERN.pattern, "flags": an.EMAIL_PATTERN.flags, "text": text}),
+        capture_output=True, text=True, check=True, timeout=5)
+    assert json.loads(result.stdout) == expected
