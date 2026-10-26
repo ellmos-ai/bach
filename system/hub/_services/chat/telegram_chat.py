@@ -5852,6 +5852,13 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 except Exception:
                     control.start_error = "budget_terminal_unconfirmed"
                     log.warning("Modellanfragenlauf konnte nicht terminal bestätigt werden", exc_info=True)
+            if control.start_error and not control.stop_event.is_set():
+                # A run that ended in error gets one open resolver task (#2661).
+                try:
+                    _native_task_client().ensure_worker_resolver(worker_id, control.start_error)
+                except Exception as exc:  # noqa: BLE001 -- never delays the terminal state
+                    log.warning("resolver_task_unconfirmed origin=worker:%s reason=%s",
+                                worker_id, type(exc).__name__)
             with _WORKER_CONTROL_LOCK:
                 control.handoff.cancel()
                 control.task_actions.cancel()

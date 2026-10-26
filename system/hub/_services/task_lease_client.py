@@ -462,6 +462,27 @@ class TaskLeaseClient:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def ensure_worker_resolver(self, worker_id, error_code):
+        """Local controller only: one open resolver task for a worker that ended in error."""
+        if self.mode != "local":
+            return None
+        from hub.task_audit import ensure_worker_error_resolver
+        conn = self._get_local_connection()
+        try:
+            if conn.in_transaction:
+                return None
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                resolver = ensure_worker_error_resolver(conn, worker_id, error_code)
+                conn.commit()
+                return resolver
+            except BaseException:
+                conn.rollback()
+                raise
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _model_execution_call(self, operation, binding, *args, **kwargs):
         """Private controller path; HTTP workers cannot self-attest model calls."""
         if self.mode != "local" or getattr(binding, "_client", None) is not self:
