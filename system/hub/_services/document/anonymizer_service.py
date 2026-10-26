@@ -422,7 +422,7 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
     pattern = re.compile(r'\b' + re.escape(old) + r'\b')
     # Addresses are replaced as whole identities. Replacing a name component
     # inside an allowed address corrupts it and can break the reverse mapping.
-    email_spans = [m.span() for m in EMAIL_PATTERN.finditer(text)] if "@" not in old else []
+    email_spans = [m.span("email") for m in EMAIL_PATTERN.finditer(text)] if "@" not in old else []
     count = 0
 
     def replace(match):
@@ -452,9 +452,9 @@ PHONE_PATTERN = re.compile(
 
 # E-Mail-Adressen
 EMAIL_PATTERN = re.compile(
-    # Retry only at the start of a local-part token, not at each '%' in a run.
-    r'(?<![a-zA-Z0-9._%+-])'
-    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    # Consume the token boundary; only the named capture is the email identity.
+    r'(?:^|[^a-zA-Z0-9._%+-])'
+    r'(?P<email>[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
     re.IGNORECASE
 )
 
@@ -824,7 +824,7 @@ def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Ite
     manual_patterns = [re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE)
                        for term in manual_terms if term.strip()]
     for match in EMAIL_PATTERN.finditer(text):
-        email = match.group(0)
+        email = match.group("email")
         local, domain = email.casefold().rsplit("@", 1)
         if email.casefold() in allowed or domain in allowed:
             continue

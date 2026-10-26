@@ -20,7 +20,10 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub._services.document import anonymizer_service as an
-from hub._services.document.report_workflow_service import ReportWorkflowService
+from hub._services.document.report_workflow_service import (
+    DEFAULT_WHITELIST,
+    ReportWorkflowService,
+)
 
 
 @pytest.fixture
@@ -490,7 +493,7 @@ def test_2620_review_temp_profile_whitelist_default_and_conversion(tmp_path, no_
         whitelist=["example.org"])
     try:
         assert isinstance(profile.whitelist, list)
-        assert "example.org" in profile.whitelist
+        assert profile.whitelist == sorted({*DEFAULT_WHITELIST, "example.org"})
         assert profile.to_anonym_profile().whitelist == profile.whitelist
     finally:
         profile.cleanup()
@@ -576,9 +579,52 @@ def test_2620_email_pattern_repetition_finishes_with_whole_matches(case):
         "import json,re,sys\n"
         "spec=json.load(sys.stdin)\n"
         "pattern=re.compile(spec['pattern'],spec['flags'])\n"
-        "print(json.dumps([list(m.span()) for m in pattern.finditer(spec['text'])]))\n"
+        "print(json.dumps([list(m.span('email')) for m in pattern.finditer(spec['text'])]))\n"
     )
     result = subprocess.run([sys.executable, "-c", script],
         input=json.dumps({"pattern": an.EMAIL_PATTERN.pattern, "flags": an.EMAIL_PATTERN.flags, "text": text}),
         capture_output=True, text=True, check=True, timeout=5)
     assert json.loads(result.stdout) == expected
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("a@b.de", ["a@b.de"]),
+    ("<a@b.de>;b@c.org", ["a@b.de", "b@c.org"]),
+    ("a@b.de\nb@c.org", ["a@b.de", "b@c.org"]),
+    ("(a@b.de)(b@c.org)", ["a@b.de", "b@c.org"]),
+    ("word+tag@example.org A.B@Example.COM", ["word+tag@example.org", "A.B@Example.COM"]),
+    ("İ@i.org ı@İ.org ſ@k.org K@i.org", ["İ@i.org", "ı@İ.org", "ſ@k.org", "K@i.org"]),
+    ("%%% @not.an.address a@@b.de", []),
+    ("a@b.de@c@d.org", ["a@b.de", "c@d.org"]),
+    ("a@b.de,b@c.org;c@d.net", ["a@b.de", "b@c.org", "c@d.net"]),
+])
+def test_2620_named_email_capture_values_spans_and_findall(text, expected):
+    assert an.EMAIL_PATTERN.groups == 1
+    matches = list(an.EMAIL_PATTERN.finditer(text))
+    assert [match.group("email") for match in matches] == expected
+    assert an.EMAIL_PATTERN.findall(text) == expected
+    spans = []
+    cursor = 0
+    for email in expected:
+        start = text.index(email, cursor)
+        cursor = start + len(email)
+        spans.append((start, cursor))
+    assert [match.span("email") for match in matches] == spans
+
+
+def test_2620_named_email_capture_keeps_document_delimiters_and_roundtrip(tmp_path):
+    anon = an.DocumentAnonymizer()
+    retained = "Max.Mustermann@amt.example"
+    profile = anon.create_profile(real_name="Max Mustermann", geburtsdatum="15.03.2016",
+        weitere_daten={"secret": "Nachtigall"}, whitelist=[retained])
+    private = ("Max.Mustermann@example.org", "Nachtigall@familie.invalid")
+    original = f"Max Mustermann <{private[0]}>; {private[1]}\nKeep: {retained}."
+    path = tmp_path / "delimiters.txt"
+    path.write_text(original, encoding="utf-8")
+    assert anon.anonymize_file(str(path), profile)[0]
+    masked = path.read_text(encoding="utf-8")
+    assert masked == (f"{profile.tarnname} <{profile.mappings['emails'][private[0]]}>; "
+        f"{profile.mappings['emails'][private[1]]}\nKeep: {retained}.")
+    assert set(profile.mappings["emails"]) == set(private)
+    assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
+    assert path.read_text(encoding="utf-8") == original
