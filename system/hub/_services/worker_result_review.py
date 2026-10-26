@@ -122,7 +122,7 @@ def _route(value):
     return dict(value)
 
 
-def _policy_eligible(policy, author_id):
+def _policy_eligible(policy, author_id, *, exclude_author=True):
     """Select a configured reviewer; never infer a completion verdict here."""
     if (not isinstance(policy, dict) or policy.get("availability") != "available"
             or not isinstance(author_id, str)):
@@ -139,9 +139,15 @@ def _policy_eligible(policy, author_id):
     kernel = settings._kernel()
     mode = override.mode or typed.default_mode
     return tuple(reviewer.reviewer_id for reviewer in typed.reviewers
-                 if reviewer.reviewer_id != author_id
+                 if (not exclude_author or reviewer.reviewer_id != author_id)
                  and (mode is not kernel.CompletionMode.HIGH_SECURITY
                       or reviewer.tier is kernel.ReviewerTier.TOP))
+
+
+def _author_model_blocked(authority, principal):
+    # The fresh run is the fixed independence unit; the author's model is only
+    # excluded when the operator explicitly configured that rule.
+    return authority["exclude_author_model"] and principal == authority["author_id"]
 
 
 def _target_record(conn, task_id, *, repo_root=None, worktrees_dir=None):
@@ -179,15 +185,19 @@ def _target_authority(conn, record):
         current = _policy_snapshot(conn, record["task_id"])
         model_ids = _identity_snapshot(conn)
         author = author_principal(model_ids, record)
+        exclude_author = settings.exclude_author_model(conn)
+        eligible = (_policy_eligible(policy, author, exclude_author=exclude_author)
+                    if author is not None else ())
         if (policy.get("availability") != "available" or author is None
                 or policy.get("configuration_version") != current["configuration_version"]
                 or policy.get("policy") != settings._global(conn)["policy"]
                 or policy.get("override") != current["override"]
-                or not _policy_eligible(policy, author)):
+                or not eligible):
             return None
         return {"author_id": author, "policy_version": current["configuration_version"],
                 "identity_version": model_ids["configuration_version"],
-                "identity": model_ids, "eligible": _policy_eligible(policy, author)}
+                "identity": model_ids, "eligible": eligible,
+                "exclude_author_model": exclude_author}
     except (sqlite3.Error, ValueError, TypeError, KeyError, settings.PolicyUnavailable):
         return None
 
@@ -578,8 +588,7 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
             backend_id=route["backend_id"], route_sha256=route["route_sha256"],
             requested_model=requested_model)
         if (principal is None or principal not in authority["eligible"]
-                or principal == authority["author_id"]
-                or slot_id == author_slot(target)
+                or _author_model_blocked(authority, principal)
                 or generation == target["generation"]):
             return None
         # An explicit slot/model task route is an additional constraint, not
@@ -628,13 +637,13 @@ def validate_review_acquire(conn, task, *, worker_id, host, grant, now):
                 or target.get("submission_revision") != receipt["submission_revision"]
                 or not _intent_source_matches(receipt, target)
                 or target.get("generation") != receipt["author_generation"]
+                or grant.generation == target.get("generation")
                 or authority is None
                 or authority["author_id"] != receipt["author_id"]
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
                 or grant.principal_id not in authority["eligible"]
-                or grant.principal_id == authority["author_id"]
-                or grant.slot_id == author_slot(target)
+                or _author_model_blocked(authority, grant.principal_id)
                 or identity.principal_for_route(authority["identity"],
                     backend_id=grant.route["backend_id"],
                     route_sha256=grant.route["route_sha256"],
@@ -681,8 +690,7 @@ def guard_review_dispatch(conn, binding, *, route, requested_model,
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
                 or grant.principal_id not in authority["eligible"]
-                or grant.principal_id == authority["author_id"]
-                or grant.slot_id == author_slot(target)
+                or _author_model_blocked(authority, grant.principal_id)
                 or grant.generation == target["generation"]
                 or identity.principal_for_route(authority["identity"],
                     backend_id=route["backend_id"], route_sha256=route["route_sha256"],
@@ -746,8 +754,7 @@ def validate_review_release(conn, task, worker_result, binding):
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
                 or grant.principal_id not in authority["eligible"]
-                or grant.principal_id == authority["author_id"]
-                or grant.slot_id == author_slot(target)
+                or _author_model_blocked(authority, grant.principal_id)
                 or grant.generation == target["generation"]):
             return False
         answer = grant._last_answer
@@ -872,9 +879,8 @@ def _invalid_child(conn, found, target, authority, child_id, status_revision):
         return None
     execution = child["execution"]
     reviewer = identity.principal_for_execution(authority["identity"], execution)
-    if (reviewer is None or reviewer == authority["author_id"]
+    if (reviewer is None or _author_model_blocked(authority, reviewer)
             or reviewer not in authority["eligible"]
-            or execution.get("slot_id") == author_slot(target)
             or child.get("generation") == target.get("generation")
             or execution.get("generation") != child.get("generation")
             or task.get("assigned_slot") not in (None, "", execution.get("slot_id"))
@@ -1068,7 +1074,8 @@ def review_invalid_correction_matches(conn, row):
             and execution.get("execution_revision") == receipt.get("child_execution_revision")
             and execution.get("execution_id") == receipt.get("child_execution_id")
             and execution.get("model_principal_id") == receipt.get("reviewer_id")
-            and receipt.get("reviewer_id") != found["receipt"]["author_id"])
+            and (not settings.exclude_author_model(conn)
+                 or receipt.get("reviewer_id") != found["receipt"]["author_id"]))
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError):
         return False
 
@@ -1297,9 +1304,8 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
         actual_principal = identity.principal_for_execution(authority["identity"], execution)
         if (verdict is None or actual_principal is None
                 or actual_principal != grant.principal_id
-                or actual_principal == authority["author_id"]
+                or _author_model_blocked(authority, actual_principal)
                 or actual_principal not in authority["eligible"]
-                or grant.slot_id == author_slot(target)
                 or authority["policy_version"] != grant.policy_version
                 or authority["identity_version"] != grant.identity_version
                 or target["result_revision"] != grant.target_revision):
@@ -1501,8 +1507,8 @@ def read_review_evidence(conn, record):
                 "reviewer_id": receipt["reviewer_id"],
                 "status": receipt["status"], "summary": receipt["summary"],
                 "reviewer_asserted_task_contract_met": receipt["reviewer_asserted_task_contract_met"],
-                "independent": (receipt["reviewer_id"] != receipt["author_id"]
-                    and receipt["review_slot_id"] != author_slot(record)),
+                "independent": (receipt["review_generation"] != receipt["author_generation"]
+                    and not _author_model_blocked(authority, receipt["reviewer_id"])),
                 "policy_eligible": receipt["reviewer_id"] in authority["eligible"],
                 "event_id": row["event_id"]}
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,

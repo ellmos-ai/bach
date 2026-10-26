@@ -146,13 +146,20 @@ def _grant(world, task_id, *, slot=REVIEW_SLOT, generation=REVIEW_GENERATION,
     return grant, stop, current
 
 
-def _acquire_review(world, task_id, grant, stop, current, *, generation=REVIEW_GENERATION):
+def _acquire_review(world, task_id, grant, stop, current, *, generation=REVIEW_GENERATION,
+                    slot=REVIEW_SLOT, model=REVIEW_MODEL):
     return WorkerLeaseBinding.acquire(
         world["client"], task_id, worker_id="review-worker@HOST", host="HOST",
         generation=generation, is_current=lambda: current["value"],
         stop_event=stop, clock=lambda: T0,
-        slot={"id": REVIEW_SLOT, "model": REVIEW_MODEL, "backend": "ollama"},
+        slot={"id": slot, "model": model, "backend": "ollama"},
         automatic=True, _review_grant=grant)
+
+
+def _ban_author_model(world):
+    settings._persist(world["conn"], settings.INDEPENDENCE_KEY,
+                      {"exclude_author_model": True}, actor="test-operator")
+    world["conn"].commit()
 
 
 def _review_reader(world, monkeypatch):
@@ -289,26 +296,58 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
     assert review.record_review(world["conn"], child, **_paths(world)) is None
 
 
-def test_author_cannot_review_own_result_even_in_fresh_run(review_world):
-    # Independence gate: neither the author's principal nor its slot gets a
-    # review grant, also not in a fresh run; the parent stays unaccepted and an
-    # independent reviewer can still be granted.
+def test_same_model_and_slot_review_own_result_in_fresh_run(review_world):
+    # User decision 2026-10-24: the run, not the model or agent slot, is the
+    # independence unit; the author's model may review in its own new run.
     world = review_world
     prepared = _prepare(world)
-    task_id = prepared["review_task_id"]
-    author = world["binding"]
-    worker_id = author._ack.worker_id
-    stop = threading.Event()
-    route = {"backend_id": "ollama", "route_sha256": AUTHOR_ROUTE}
-    grant = review.issue_review_grant(
-        world["conn"], task_id, worker_id=worker_id, host="HOST",
-        generation="author-review-fresh-generation", slot_id=AUTHOR_SLOT, route=route,
-        requested_model=AUTHOR_MODEL, is_current=lambda: True,
-        stop_event=stop, clock=lambda: T0, **_paths(world))
-    assert grant is None
+    grant, stop, current = _grant(world, prepared["review_task_id"], slot=AUTHOR_SLOT,
+                                  route=AUTHOR_ROUTE, requested=AUTHOR_MODEL)
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current,
+                            slot=AUTHOR_SLOT, model=AUTHOR_MODEL)
+    verdict = json.dumps({"status": "approved", "summary": "Frische Prüfung bestanden.",
+                          "task_contract_met": True}, ensure_ascii=False)
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=AUTHOR_MODEL, slot_id=AUTHOR_SLOT,
+        request_sha256=_request_hash("fresh review prompt"), route_sha256=AUTHOR_ROUTE)
+    assert handle is not None
+    assert child.finish_model_execution(
+        handle, result=_response(AUTHOR_OBSERVED, verdict=(child.task_id, verdict)),
+        route_sha256=AUTHOR_ROUTE) is True
+    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
+        "action": "submit_result", "task_id": child.task_id, "result": verdict})
+    evidence = review.record_review(world["conn"], child, **_paths(world))
+    assert evidence["availability"] == "recorded"
+    assert evidence["reviewer_id"] == AUTHOR
+    assert evidence["independent"] is True
+
+
+def test_author_run_never_reviews_and_model_ban_is_a_rule(review_world):
+    # The author's own run is always excluded. Excluding the author's model is
+    # an explicit operator rule; an independent model stays eligible.
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    author_generation = world["binding"].generation
+    assert _grant(world, task_id, route=AUTHOR_ROUTE, requested=AUTHOR_MODEL,
+                  generation=author_generation)[0] is None
+    _ban_author_model(world)
+    assert _grant(world, task_id, route=AUTHOR_ROUTE, requested=AUTHOR_MODEL)[0] is None
+    assert _grant(world, task_id, route=AUTHOR_ALIAS_ROUTE,
+                  requested=AUTHOR_ALIAS_MODEL)[0] is None
     parent = read_result(world["conn"], world["task_id"])
     assert parent["status"] == "review"
     assert parent["result"]["accepted"] is False
+    assert _grant(world, task_id)[0] is not None
+
+
+def test_unreadable_independence_setting_fails_closed_to_the_model_ban(review_world):
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    world["conn"].execute("INSERT INTO system_config(key,value) VALUES (?,?)",
+                          (settings.INDEPENDENCE_KEY, "{not json"))
+    world["conn"].commit()
+    assert _grant(world, task_id, route=AUTHOR_ROUTE, requested=AUTHOR_MODEL)[0] is None
     assert _grant(world, task_id)[0] is not None
 
 
@@ -635,10 +674,11 @@ def test_review_task_requires_a_private_fresh_run_grant(review_world):
         world["client"].acquire(task_id, worker_id="review-worker@HOST", host="HOST",
             task_version=snapshot["task_version"], result_generation=REVIEW_GENERATION,
             now=T0)
-    assert _grant(world, task_id, slot=AUTHOR_SLOT)[0] is None
+    # Only the author's run is a fixed exclusion; slot and model are no criterion.
     assert _grant(world, task_id, generation=world["binding"].generation)[0] is None
+    assert _grant(world, task_id, slot=AUTHOR_SLOT)[0] is not None
     assert _grant(world, task_id, route=AUTHOR_ALIAS_ROUTE,
-                  requested=AUTHOR_ALIAS_MODEL)[0] is None
+                  requested=AUTHOR_ALIAS_MODEL)[0] is not None
     assert _grant(world, task_id)[0] is not None
 
 

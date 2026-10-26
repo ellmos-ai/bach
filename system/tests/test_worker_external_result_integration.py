@@ -309,13 +309,21 @@ def test_completion_writer_rechecks_external_provenance_after_both_observations(
 
 
 @pytest.mark.parametrize("external_world", [{"review_models": True, "same_model_reviewer": True}], indirect=True)
-def test_native_alias_of_external_author_is_not_an_independent_model(integrated):
+def test_native_alias_of_external_author_follows_the_author_model_rule(integrated):
+    # Default: the external author's model may review in a fresh native run.
+    # Only the explicit operator rule excludes it.
     world = integrated
     capture(world)
     prepared = prepare(world)
     assert prepared is not None
     conn = world["conn"]
     assert author_principal(identity_snapshot(conn), target(world)) == "model:shared"
+    before = history_count(conn)
+    assert _grant(world, prepared["review_task_id"])[0] is not None
+    assert history_count(conn) == before
+    settings._persist(conn, settings.INDEPENDENCE_KEY, {"exclude_author_model": True},
+                      actor="test-operator")
+    conn.commit()
     before = history_count(conn)
     grant, _, _ = _grant(world, prepared["review_task_id"])
     assert grant is None

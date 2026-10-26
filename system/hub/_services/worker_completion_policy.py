@@ -298,7 +298,12 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
                    else kernel.ExternalReviewStatus.NOT_APPLICABLE,
             task_id=str(task_id) if github.get("status") in {"verified", "rejected"} else None,
             result_revision=revision if github.get("status") in {"verified", "rejected"} else None)
-        context = kernel.WorkerReviewContext(task_id=str(task_id), author_id=author_id,
+        # The shared kernel excludes reviewer == author. Unless the operator
+        # banned the author's model, the author is its run, so the same model
+        # in a fresh run counts as a reviewer (user decision 2026-10-24).
+        kernel_author_id = (author_id if settings.exclude_author_model(conn)
+                            else f"{author_id}@run:{record['generation']}")
+        context = kernel.WorkerReviewContext(task_id=str(task_id), author_id=kernel_author_id,
             result_revision=revision, lease_valid=True, fence_valid=True,
             locks_clear=True, task_contract_met=task_contract_met,
             result_evidence_valid=True, user_review_required=bool(user_required),

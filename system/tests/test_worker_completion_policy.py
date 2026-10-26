@@ -332,7 +332,8 @@ def test_balanced_policy_waits_for_an_independent_current_review(
     assert pending["decision"]["completion_allowed"] is False
     assert pending["decision"]["worker_may_claim_next"] is True
     assert STANDARD_REVIEWER in pending["decision"]["eligible_reviewer_ids"]
-    assert AUTHOR not in pending["decision"]["eligible_reviewer_ids"]
+    # Default: the author's model may review in its own fresh run.
+    assert AUTHOR in pending["decision"]["eligible_reviewer_ids"]
     reconcile_current_result(conn, task_id, **_paths(world))
     assert read_result(conn, task_id)["status"] == "review"
 
@@ -344,6 +345,18 @@ def test_balanced_policy_waits_for_an_independent_current_review(
     assert ready["decision"]["reason"] == decision_reason
     assert reconcile_current_result(conn, task_id, **_paths(world))["status"] == "done"
     assert read_result(conn, task_id)["result"]["accepted"] is True
+
+
+def test_author_model_ban_removes_author_from_eligible_reviewers(completion_world):
+    world = completion_world(mode="balanced")
+    conn, task_id = world["conn"], world["task_id"]
+    settings._persist(conn, settings.INDEPENDENCE_KEY, {"exclude_author_model": True},
+                      actor="completion-fixture")
+    conn.commit()
+    pending = evaluate_current_result(conn, task_id, **_paths(world))
+    assert pending["decision"]["state"] == "awaiting_review"
+    assert STANDARD_REVIEWER in pending["decision"]["eligible_reviewer_ids"]
+    assert AUTHOR not in pending["decision"]["eligible_reviewer_ids"]
 
 
 @pytest.mark.parametrize("hard_gate", ["none", "user", "github"])
