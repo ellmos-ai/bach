@@ -14119,7 +14119,10 @@ async def export_contacts():
 
 @app.get("/routinen", response_class=HTMLResponse)
 async def routinen_page():
-    """Routinen Dashboard."""
+    """Routinen Dashboard: shared GUI page first; the BACH template only without a shared release page."""
+    astro_routinen = ASTRO_DIST_DIR / "routinen.html"
+    if astro_routinen.exists():
+        return FileResponse(astro_routinen)
     routinen_file = TEMPLATES_DIR / "routinen.html"
     if routinen_file.exists():
         return FileResponse(routinen_file)
