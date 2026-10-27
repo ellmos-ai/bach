@@ -293,19 +293,39 @@ def test_startup_adds_fixed_slots_once_without_changing_user_configuration(state
     assert open(state.path, "rb").read() == before
 
 
+def _result_receipt_binding_fixture(task_id, *, completed_task_ids=(), reviewed_task_ids=()):
+    state = {
+        "completed_task_ids": tuple(completed_task_ids),
+        "reviewed_task_ids": tuple(reviewed_task_ids),
+        "result": None,
+    }
+    return SimpleNamespace(
+        task_id=task_id,
+        has_result_receipt=True,
+        submitted_result={"task_id": task_id},
+        result_state=lambda: dict(state),
+    )
+
+
 def test_continuous_worker_keeps_actual_task_release_receipts_when_waiting(monkeypatch):
     control_module = importlib.import_module("hub._services.chat.telegram_chat")
     control = control_module._WorkerControl("slot", start_request_id="a" * 32)
-    control.task_binding = SimpleNamespace(completed_task_ids=(1834,), reviewed_task_ids=(90,))
+    control.task_binding = _result_receipt_binding_fixture(
+        1834, completed_task_ids=(1834,), reviewed_task_ids=(90,)
+    )
     control_module._retain_worker_task_receipts(control)
     control.task_binding = None
     monkeypatch.setattr(control_module, "_execution_worker_slot", lambda ident: {"status": "idle"})
     receipt = control_module._control_execution_receipt(control)
     assert receipt["completed_task_ids"] == [1834] and receipt["reviewed_task_ids"] == [90]
-    control.task_binding = SimpleNamespace(completed_task_ids=(1835,), reviewed_task_ids=())
+    assert receipt["submitted_task_ids"] == [1834] and receipt["results_verified"] is True
+    control.task_binding = _result_receipt_binding_fixture(1835, completed_task_ids=(1835,))
     control_module._retain_worker_task_receipts(control)
     control.task_binding = None
-    assert control_module._control_execution_receipt(control)["completed_task_ids"] == [1834, 1835]
+    receipt = control_module._control_execution_receipt(control)
+    assert receipt["completed_task_ids"] == [1834, 1835]
+    assert receipt["reviewed_task_ids"] == [90] and receipt["submitted_task_ids"] == [1834, 1835]
+    assert receipt["results_verified"] is True
 
 
 def test_chat_task_creation_update_and_decomposition_persist_slot_binding(tmp_path, monkeypatch):
