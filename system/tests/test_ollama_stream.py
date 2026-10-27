@@ -334,3 +334,123 @@ if __name__ == "__main__":
             _zuruecksetzen()
     print(f"\n{'ALLE GRUEN' if not fails else str(fails) + ' FEHLGESCHLAGEN'}")
     sys.exit(1 if fails else 0)
+
+
+
+def test_worker_stop_cancels_error_body_read_after_response_headers(monkeypatch):
+    import threading
+
+    import httpx
+    from hub._services.llm import backend_errors
+
+    body_started = threading.Event()
+    body_cancelled = threading.Event()
+    response_closed = threading.Event()
+
+    async def blocked_error_body(_response, *, timeout_seconds):
+        body_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            body_cancelled.set()
+            raise
+
+    class ErrorResponse:
+        status_code = 503
+        headers = {"Retry-After": "1"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            response_closed.set()
+            return False
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("503", request=None, response=None)
+
+    class ErrorClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return ErrorResponse()
+
+    monkeypatch.setattr(backend_errors, "read_error_payload", blocked_error_body)
+    backend = _backend(ErrorClient())
+    event = asyncio.Event()
+
+    async def run():
+        asyncio.get_running_loop().call_later(0.05, event.set)
+        return await backend.chat(
+            [{"role": "user", "content": "cancel error-body wait"}],
+            cancel_event=event,
+        )
+
+    result = asyncio.run(run())
+
+    assert body_started.is_set()
+    assert body_cancelled.is_set()
+    assert response_closed.is_set()
+    assert result["provider_request_aborted"] == "worker_stop"
+    assert result["tool_calls"] is None
+
+
+def test_total_deadline_covers_stream_open_and_response_headers(monkeypatch):
+    import threading
+
+    entered = threading.Event()
+    open_cancelled = threading.Event()
+    client_closed = threading.Event()
+    original_limit = backend_module.limit
+    monkeypatch.setattr(
+        backend_module,
+        "limit",
+        lambda name: 0.05 if name == "BACH_LLM_TOTAL_CAP"
+        else 10 if name == "BACH_LLM_IDLE_TIMEOUT"
+        else original_limit(name),
+    )
+
+    class WaitingStream:
+        async def __aenter__(self):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                open_cancelled.set()
+                raise
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class WaitingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            client_closed.set()
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return WaitingStream()
+
+    client = WaitingClient()
+    result = asyncio.run(_backend(client).chat(
+        [{"role": "user", "content": "header wait"}],
+    ))
+
+    assert entered.is_set()
+    assert open_cancelled.is_set()
+    assert client_closed.is_set()
+    assert result["provider_request_aborted"] == "total_deadline"
+    assert result["tool_calls"] is None
+    assert "Gesamtdeckel" in result["error"]

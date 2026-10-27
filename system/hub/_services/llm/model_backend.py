@@ -26,6 +26,7 @@ import sys
 import threading
 import time
 from abc import ABC, abstractmethod
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,88 @@ from hub._services.model_provenance import reported_model
 
 
 log = logging.getLogger(__name__)
+
+_OLLAMA_STREAM_CANCELLED = object()
+_OLLAMA_STREAM_TOTAL_TIMEOUT = object()
+
+
+async def _await_ollama_stream_line(iterator, *, cancel_event=None, total_timeout=None):
+    """Wait for one stream line, one exact worker-stop event, or the active total deadline."""
+    if cancel_event is not None:
+        if not isinstance(cancel_event, asyncio.Event):
+            raise TypeError("cancel_event muss ein asyncio.Event sein")
+        if cancel_event.is_set():
+            return _OLLAMA_STREAM_CANCELLED
+    read_task = asyncio.create_task(iterator.__anext__())
+    cancel_task = asyncio.create_task(cancel_event.wait()) if cancel_event is not None else None
+    waiters = {read_task}
+    if cancel_task is not None:
+        waiters.add(cancel_task)
+    try:
+        done, _pending = await asyncio.wait(
+            waiters, timeout=total_timeout, return_when=asyncio.FIRST_COMPLETED,
+        )
+        if cancel_task is not None and cancel_task in done and cancel_event.is_set():
+            read_task.cancel()
+            await asyncio.gather(read_task, return_exceptions=True)
+            return _OLLAMA_STREAM_CANCELLED
+        if read_task in done:
+            return await read_task
+        read_task.cancel()
+        await asyncio.gather(read_task, return_exceptions=True)
+        return _OLLAMA_STREAM_TOTAL_TIMEOUT
+    except BaseException:
+        if not read_task.done():
+            read_task.cancel()
+        await asyncio.gather(read_task, return_exceptions=True)
+        raise
+    finally:
+        if cancel_task is not None:
+            if not cancel_task.done():
+                cancel_task.cancel()
+            await asyncio.gather(cancel_task, return_exceptions=True)
+
+
+async def _await_ollama_stream_operation(operation, *, cancel_event=None, total_timeout=None):
+    """Bound one exact Ollama stream open by its worker stop and total deadline."""
+    if cancel_event is not None:
+        if not isinstance(cancel_event, asyncio.Event):
+            raise TypeError("cancel_event muss ein asyncio.Event sein")
+        if cancel_event.is_set():
+            return _OLLAMA_STREAM_CANCELLED
+    if total_timeout is not None and total_timeout <= 0:
+        return _OLLAMA_STREAM_TOTAL_TIMEOUT
+
+    operation_task = asyncio.create_task(operation())
+    cancel_task = asyncio.create_task(cancel_event.wait()) if cancel_event is not None else None
+    waiters = {operation_task}
+    if cancel_task is not None:
+        waiters.add(cancel_task)
+    try:
+        done, _pending = await asyncio.wait(
+            waiters, timeout=total_timeout, return_when=asyncio.FIRST_COMPLETED,
+        )
+        # If headers and Stop arrive together, keep the response so its
+        # AsyncExitStack can close it before the request returns.
+        if operation_task in done:
+            return await operation_task
+        if cancel_task is not None and cancel_task in done and cancel_event.is_set():
+            operation_task.cancel()
+            await asyncio.gather(operation_task, return_exceptions=True)
+            return _OLLAMA_STREAM_CANCELLED
+        operation_task.cancel()
+        await asyncio.gather(operation_task, return_exceptions=True)
+        return _OLLAMA_STREAM_TOTAL_TIMEOUT
+    except BaseException:
+        if not operation_task.done():
+            operation_task.cancel()
+        await asyncio.gather(operation_task, return_exceptions=True)
+        raise
+    finally:
+        if cancel_task is not None:
+            if not cancel_task.done():
+                cancel_task.cancel()
+            await asyncio.gather(cancel_task, return_exceptions=True)
 
 
 def _probe_model_api(
@@ -171,7 +254,7 @@ class OllamaBackend(ModelBackend):
         log.warning("Ollama hält %s statt %s - unser Modell wurde verdrängt", geladen, model)
         return False
 
-    async def chat(self, messages, tools=None, think=True, model=None):
+    async def chat(self, messages, tools=None, think=True, model=None, *, cancel_event=None):
         import httpx
 
         try:
@@ -215,51 +298,129 @@ class OllamaBackend(ModelBackend):
         done_reason = None
         chunk_count = 0
         started = time.time()
+        total_started = time.monotonic()
         last_activity = started
         probes = 0
         completed = False
         reported_models: set[str] = set()
         reported_model_invalid = False
 
-        def aborted(error: str, *, backend_error=None, transient_failure=None) -> dict:
+        def aborted(error: str, *, backend_error=None, transient_failure=None,
+                    discard_tool_calls=False, provider_request_aborted=None) -> dict:
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
             raw_message["content"] = content
             if thinking_parts:
                 raw_message["thinking"] = "".join(thinking_parts)
-            if tool_calls:
+            if discard_tool_calls:
+                raw_message.pop("tool_calls", None)
+            elif tool_calls:
                 raw_message["tool_calls"] = list(tool_calls)
             return {
                 "content": content,
-                "tool_calls": list(tool_calls) or None,
+                "tool_calls": None if discard_tool_calls else (list(tool_calls) or None),
                 "raw_message": raw_message,
                 "prompt_tokens": prompt_tokens,
                 "error": error,
                 "provider_reported_model": None,
+                **({"provider_request_aborted": provider_request_aborted}
+                   if provider_request_aborted in {"worker_stop", "total_deadline"} else {}),
                 **({"backend_error": backend_error} if backend_error else {}),
                 **({"transient_failure": transient_failure}
                    if transient_failure == "httpx_read_timeout" else {}),
             }
 
+        if cancel_event is not None and not isinstance(cancel_event, asyncio.Event):
+            raise TypeError("cancel_event muss ein asyncio.Event sein")
+        if cancel_event is not None and cancel_event.is_set():
+            return aborted("Worker-Request wurde vor dem Providerstart gestoppt",
+                           discard_tool_calls=True, provider_request_aborted="worker_stop")
+
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
         timeouts = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
         async with httpx.AsyncClient(timeout=timeouts) as client:
             try:
-                async with client.stream(
+                stream_manager = client.stream(
                     "POST", f"{self.base_url}/api/chat", json=payload
-                ) as response:
+                )
+                remaining_total = None
+                if total_cap > 0:
+                    remaining_total = max(0.0, float(total_cap) - (time.monotonic() - total_started))
+                    if remaining_total <= 0:
+                        return aborted(f"Gesamtdeckel {total_cap}s erreicht",
+                                       discard_tool_calls=True, provider_request_aborted="total_deadline")
+                response = await _await_ollama_stream_operation(
+                    stream_manager.__aenter__, cancel_event=cancel_event,
+                    total_timeout=remaining_total,
+                )
+                if response is _OLLAMA_STREAM_CANCELLED:
+                    return aborted("Worker-Request generationsgebunden gestoppt",
+                                   discard_tool_calls=True, provider_request_aborted="worker_stop")
+                if response is _OLLAMA_STREAM_TOTAL_TIMEOUT:
+                    return aborted(f"Gesamtdeckel {total_cap}s erreicht",
+                                   discard_tool_calls=True, provider_request_aborted="total_deadline")
+                async with AsyncExitStack() as stream_stack:
+                    stream_stack.push_async_exit(stream_manager.__aexit__)
                     if response.status_code >= 400:
                         from hub._services.llm.backend_errors import classify_ollama_error, read_error_payload
-                        error_budget = min(read_timeout, max(0, total_cap - (time.time() - started))) if total_cap > 0 else read_timeout
-                        detail = classify_ollama_error(await read_error_payload(response, timeout_seconds=error_budget),
+                        remaining_total = None
+                        if total_cap > 0:
+                            remaining_total = max(0.0, float(total_cap) - (time.monotonic() - total_started))
+                            if remaining_total <= 0:
+                                return aborted(
+                                    f"Gesamtdeckel {total_cap}s erreicht",
+                                    discard_tool_calls=True,
+                                    provider_request_aborted="total_deadline",
+                                )
+                        error_payload = await _await_ollama_stream_operation(
+                            lambda: read_error_payload(response, timeout_seconds=read_timeout),
+                            cancel_event=cancel_event,
+                            total_timeout=remaining_total,
+                        )
+                        if error_payload is _OLLAMA_STREAM_CANCELLED:
+                            return aborted(
+                                "Worker-Request generationsgebunden gestoppt",
+                                discard_tool_calls=True,
+                                provider_request_aborted="worker_stop",
+                            )
+                        if error_payload is _OLLAMA_STREAM_TOTAL_TIMEOUT:
+                            return aborted(
+                                f"Gesamtdeckel {total_cap}s erreicht",
+                                discard_tool_calls=True,
+                                provider_request_aborted="total_deadline",
+                            )
+                        if (total_cap > 0
+                                and time.monotonic() - total_started >= total_cap):
+                            return aborted(
+                                f"Gesamtdeckel {total_cap}s erreicht",
+                                discard_tool_calls=True,
+                                provider_request_aborted="total_deadline",
+                            )
+                        detail = classify_ollama_error(
+                            error_payload,
                             status_code=response.status_code,
-                            retry_after=response.headers.get("Retry-After"))
+                            retry_after=response.headers.get("Retry-After"),
+                        )
                         return aborted("HTTPStatusError: " + detail["message"], backend_error=detail)
                     response.raise_for_status()
                     lines = response.aiter_lines().__aiter__()
                     while True:
+                        remaining_total = None
+                        if total_cap > 0:
+                            remaining_total = max(0.0, float(total_cap) - (time.monotonic() - total_started))
+                            if remaining_total <= 0:
+                                return aborted(f"Gesamtdeckel {total_cap}s erreicht",
+                                               discard_tool_calls=True, provider_request_aborted="total_deadline")
                         try:
-                            line = await lines.__anext__()
+                            line = await _await_ollama_stream_line(
+                                lines, cancel_event=cancel_event, total_timeout=remaining_total,
+                            )
+                            if line is _OLLAMA_STREAM_CANCELLED:
+                                return aborted("Worker-Request generationsgebunden gestoppt",
+                                               discard_tool_calls=True, provider_request_aborted="worker_stop")
+                            if line is _OLLAMA_STREAM_TOTAL_TIMEOUT:
+                                return aborted(f"Gesamtdeckel {total_cap}s erreicht",
+                                               discard_tool_calls=True, provider_request_aborted="total_deadline")
                         except StopAsyncIteration:
                             break
                         except httpx.ReadTimeout as exc:
@@ -274,10 +435,12 @@ class OllamaBackend(ModelBackend):
                             # laesst sich der abgebrochene Response-Stream nicht.
                             while probes < grace:
                                 now = time.time()
-                                if total_cap > 0 and (now - started) > total_cap:
+                                if total_cap > 0 and (time.monotonic() - total_started) >= total_cap:
                                     return aborted(
                                         f"{timeout_error}; Gesamtdeckel "
-                                        f"{total_cap}s erreicht"
+                                        f"{total_cap}s erreicht",
+                                        discard_tool_calls=True,
+                                        provider_request_aborted="total_deadline",
                                     )
                                 if not await self._lebt(client, selected_model):
                                     break
@@ -292,6 +455,9 @@ class OllamaBackend(ModelBackend):
                             return aborted(timeout_error, transient_failure="httpx_read_timeout")
 
                         now = time.time()
+                        if total_cap > 0 and (time.monotonic() - total_started) >= total_cap:
+                            return aborted(f"Gesamtdeckel {total_cap}s erreicht",
+                                           discard_tool_calls=True, provider_request_aborted="total_deadline")
                         if line.strip():
                             chunk_count = min(chunk_count + 1, 1_000_000)
                             last_activity = now
@@ -329,8 +495,12 @@ class OllamaBackend(ModelBackend):
                                 completed = True
                                 break
 
-                        if total_cap > 0 and (now - started) > total_cap:
-                            return aborted(f"Gesamtdeckel {total_cap}s erreicht")
+                        if total_cap > 0 and (time.monotonic() - total_started) >= total_cap:
+                            return aborted(
+                                f"Gesamtdeckel {total_cap}s erreicht",
+                                discard_tool_calls=True,
+                                provider_request_aborted="total_deadline",
+                            )
                         if (now - last_activity) > idle:
                             if probes < grace and await self._lebt(client, selected_model):
                                 probes += 1
@@ -348,6 +518,12 @@ class OllamaBackend(ModelBackend):
                     ),
                 )
 
+        if total_cap > 0 and time.monotonic() - total_started >= total_cap:
+            return aborted(
+                f"Gesamtdeckel {total_cap}s erreicht",
+                discard_tool_calls=True,
+                provider_request_aborted="total_deadline",
+            )
         if not completed:
             return aborted("Ollama-Stream endete ohne Abschlussmarker (done=true)")
 
