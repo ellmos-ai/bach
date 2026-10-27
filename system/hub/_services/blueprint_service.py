@@ -307,6 +307,7 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
     # Additive Spaltenmigrationen
     for col, col_type in [
         ("governance_json", "TEXT DEFAULT '{}'"),
+        ("derived_from_json", "TEXT"),
         ("kind", "TEXT DEFAULT 'agent'"),
         ("start_prompt", "TEXT DEFAULT ''"),
         ("version", "INTEGER DEFAULT 1"),
@@ -327,6 +328,9 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
         ON agent_blueprints(provider, provider_template_id, provider_version)
         WHERE provider IS NOT NULL
     """)
+
+    from .blueprint_revisions import ensure_revision_schema
+    ensure_revision_schema(conn)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS partner_presence (
@@ -805,7 +809,9 @@ def validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus,
         raise ValueError("Blueprint-Konfiguration ist ungültig")
 
 
-def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
+def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any], *,
+                   _restored_from_version: int | None = None,
+                   _expected_id: int | None = None) -> dict[str, Any]:
     """Erstellt oder aktualisiert einen Blueprint mit Validierung (GUX-025, GUX-029)."""
     ensure_blueprint_schema(conn)
 
@@ -854,95 +860,119 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         resolve(conn, governance, blueprint_id=own[0] if own else None)
 
     # Serialize the revision check with its write across SQLite writers.
-    conn.execute("BEGIN IMMEDIATE")
-    existing = conn.execute("SELECT id, is_template, version, governance_json FROM agent_blueprints WHERE name = ?",
-                            (name,)).fetchone()
-    if existing:
-        is_tmpl = existing[1] if isinstance(existing, tuple) else existing["is_template"]
-        if is_tmpl == 1:
-            conn.rollback()
-            raise PermissionError(f"Vorlage '{name}' ist schreibgeschützt (GUX-026). Bitte wähle einen eigenen Namen.")
-
-    if is_template:
-        conn.rollback()
-        raise PermissionError("Systemvorlagen werden ausschließlich bei der Initialisierung angelegt")
-    curr_version = (existing[2] if isinstance(existing, tuple) else existing["version"]) if existing else 0
-    if type(payload.get("expected_version", 0)) is not int or payload.get("expected_version", 0) != curr_version:
-        conn.rollback()
-        raise RuntimeError("blueprint_version_conflict")
     try:
-        validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus, modus,
-                                  skills, contractus, governance)
-    except ValueError:
+        conn.execute("BEGIN IMMEDIATE")
+        from .blueprint_revisions import resolve_lineage, record_revision, read_blueprint
+        cursor = conn.execute("SELECT * FROM agent_blueprints WHERE name = ?", (name,))
+        found = cursor.fetchone()
+        existing = dict(zip([col[0] for col in cursor.description], found)) if found is not None else None
+        if _expected_id is not None and (not existing or existing["id"] != _expected_id):
+            raise RuntimeError("blueprint_identity_conflict")
+        if existing:
+            is_tmpl = existing["is_template"]
+            if is_tmpl == 1:
+                conn.rollback()
+                raise PermissionError(f"Vorlage '{name}' ist schreibgeschützt (GUX-026). Bitte wähle einen eigenen Namen.")
+
+        if is_template:
+            conn.rollback()
+            raise PermissionError("Systemvorlagen werden ausschließlich bei der Initialisierung angelegt")
+        curr_version = existing["version"] if existing else 0
+        if type(payload.get("expected_version", 0)) is not int or payload.get("expected_version", 0) != curr_version:
+            conn.rollback()
+            raise RuntimeError("blueprint_version_conflict")
+        try:
+            validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus, modus,
+                                      skills, contractus, governance)
+        except ValueError:
+            conn.rollback()
+            raise
+        derived = json.loads(existing.get("derived_from_json") or "null") if existing else None
+        if "derived_from" in payload:
+            if existing and payload["derived_from"] != derived:
+                raise ValueError("blueprint_lineage_immutable")
+            if not existing and payload["derived_from"] is not None:
+                derived = resolve_lineage(conn, payload["derived_from"])
+        if existing:
+            record_revision(conn, existing)
+        version = (curr_version + 1) if curr_version else 1
+        now = datetime.now(timezone.utc).isoformat()
+        from .governance_binding import with_pin_log
+        previous = {}
+        if existing:
+            try:
+                previous = json.loads(existing["governance_json"] or "{}")
+            except ValueError:
+                pass
+        governance = with_pin_log(previous if isinstance(previous, dict) else {}, governance,
+                                  blueprint_version=version)
+
+        # Startprompt erzeugen
+        item_for_prompt = {
+            "name": name,
+            "title": title,
+            "persona_role": persona_role,
+            "persona_prompt": persona_prompt,
+            "skills": skills,
+            "contractus": contractus,
+            "governance": governance,
+            "modus": modus,
+            "animus_type": animus,
+        }
+        try:
+            start_prompt = synthesize_start_prompt(item_for_prompt)
+        except (ValueError, KeyError):
+            start_prompt = payload.get("start_prompt", "")
+
+        conn.execute("""
+            INSERT INTO agent_blueprints (
+                name, title, description, persona_role, persona_prompt,
+                skills_json, animus_type, contractus_json, modus, is_template,
+                governance_json, kind, start_prompt, version, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                persona_role = excluded.persona_role,
+                persona_prompt = excluded.persona_prompt,
+                skills_json = excluded.skills_json,
+                animus_type = excluded.animus_type,
+                contractus_json = excluded.contractus_json,
+                modus = excluded.modus,
+                governance_json = excluded.governance_json,
+                kind = excluded.kind,
+                start_prompt = excluded.start_prompt,
+                version = excluded.version,
+                updated_at = excluded.updated_at
+        """, (
+            name, title, desc, persona_role, persona_prompt,
+            json.dumps(skills), animus, json.dumps(contractus), modus, is_template,
+            json.dumps(governance), kind, start_prompt, version, now
+        ))
+        blueprint_id = conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()[0]
+        conn.execute("UPDATE agent_blueprints SET derived_from_json=? WHERE id=?",
+                     (json.dumps(derived, sort_keys=True), blueprint_id))
+        revision_sha = record_revision(conn, read_blueprint(conn, blueprint_id),
+                                       restored_from_version=_restored_from_version)
+        conn.commit()
+
+        return {
+            "success": True,
+            "id": blueprint_id,
+            "derived_from": derived,
+            "snapshot_sha256": revision_sha,
+            "restored_from_version": _restored_from_version,
+            "name": name,
+            "title": title,
+            "kind": kind,
+            "version": version,
+            "start_prompt": start_prompt,
+            "start_prompt_length": len(start_prompt),
+            "status": "saved"
+        }
+    except Exception:
         conn.rollback()
         raise
-    version = (curr_version + 1) if curr_version else 1
-    now = datetime.now(timezone.utc).isoformat()
-    from .governance_binding import with_pin_log
-    previous = {}
-    if existing:
-        try:
-            previous = json.loads((existing[3] if isinstance(existing, tuple) else existing["governance_json"]) or "{}")
-        except ValueError:
-            pass
-    governance = with_pin_log(previous if isinstance(previous, dict) else {}, governance,
-                              blueprint_version=version)
-
-    # Startprompt erzeugen
-    item_for_prompt = {
-        "name": name,
-        "title": title,
-        "persona_role": persona_role,
-        "persona_prompt": persona_prompt,
-        "skills": skills,
-        "contractus": contractus,
-        "governance": governance,
-        "modus": modus,
-        "animus_type": animus,
-    }
-    try:
-        start_prompt = synthesize_start_prompt(item_for_prompt)
-    except (ValueError, KeyError):
-        start_prompt = payload.get("start_prompt", "")
-
-    conn.execute("""
-        INSERT INTO agent_blueprints (
-            name, title, description, persona_role, persona_prompt,
-            skills_json, animus_type, contractus_json, modus, is_template,
-            governance_json, kind, start_prompt, version, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-            title = excluded.title,
-            description = excluded.description,
-            persona_role = excluded.persona_role,
-            persona_prompt = excluded.persona_prompt,
-            skills_json = excluded.skills_json,
-            animus_type = excluded.animus_type,
-            contractus_json = excluded.contractus_json,
-            modus = excluded.modus,
-            governance_json = excluded.governance_json,
-            kind = excluded.kind,
-            start_prompt = excluded.start_prompt,
-            version = excluded.version,
-            updated_at = excluded.updated_at
-    """, (
-        name, title, desc, persona_role, persona_prompt,
-        json.dumps(skills), animus, json.dumps(contractus), modus, is_template,
-        json.dumps(governance), kind, start_prompt, version, now
-    ))
-    conn.commit()
-
-    return {
-        "success": True,
-        "id": conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()[0],
-        "name": name,
-        "title": title,
-        "kind": kind,
-        "version": version,
-        "start_prompt": start_prompt,
-        "start_prompt_length": len(start_prompt),
-        "status": "saved"
-    }
 
 
 def _execution_blueprint(conn, blueprint_id, expected_version):
