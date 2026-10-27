@@ -88,6 +88,10 @@ class NativeWorkerObserver:
                 if (type(proof) is not dict
                         or proof.get("schema") != "bach.tray-intent-reconcile-proof.v1"
                         or proof.get("effect") != "tray_intent_only"
+                        or proof.get("actor_verified") is not False
+                        or proof.get("authority_kind") != "control_api_authorized"
+                        or type(proof.get("claimed_actor")) is not str
+                        or not proof["claimed_actor"]
                         or type(proof.get("target_binding")) is not str
                         or proof["target_binding"] not in {"fixed", "guarded_reference"}
                         or proof.get("old_execution_terminal") is not False
@@ -199,7 +203,9 @@ class NativeWorkerObserver:
                        "target_task_id": target_task_id, "target_task_version": target_task_version}
             status, reply = self.request("POST", "/api/workers/tray-intent/reconcile", request)
             expected = {"schema": "bach.tray-intent-reconcile-proof.v1",
-                        "mode": mode, "actor": actor, "worker_id": WORKER_ID,
+                        "mode": mode, "claimed_actor": actor,
+                        "actor_verified": False, "authority_kind": "control_api_authorized",
+                        "worker_id": WORKER_ID,
                         "service_instance": old["service_instance"],
                         "start_request_id": old["start_request_id"],
                         "generation": old["generation"], "intent_sha256": intent_sha256,
@@ -246,6 +252,10 @@ class NativeWorkerObserver:
                         or proof.get("schema") != "bach.tray-intent-reconcile-proof.v1"
                         or proof.get("mode") not in {"retire_unconfirmed", "confirmed_inactive"}
                         or proof.get("effect") != "tray_intent_only"
+                        or proof.get("actor_verified") is not False
+                        or proof.get("authority_kind") != "control_api_authorized"
+                        or type(proof.get("claimed_actor")) is not str
+                        or not proof["claimed_actor"]
                         or type(proof.get("target_binding")) is not str
                         or proof["target_binding"] not in {"fixed", "guarded_reference"}
                         or proof.get("old_execution_terminal") is not False
@@ -255,7 +265,9 @@ class NativeWorkerObserver:
                         or proof.get("generation") != old["generation"]
                         or proof.get("intent_sha256") != self._raw_digest
                         or not _identifier(proof.get("current_service_instance"))
-                        or type(proof.get("actor")) is not str or not proof["actor"]):
+                        or type(proof.get("claimed_actor")) is not str or not proof["claimed_actor"]
+                        or proof.get("actor_verified") is not False
+                        or proof.get("authority_kind") != "control_api_authorized"):
                     raise ValueError("External tray state is not an exact retirement")
                 self.intent = None
                 self.execution = None

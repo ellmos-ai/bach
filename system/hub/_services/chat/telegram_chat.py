@@ -1033,7 +1033,8 @@ def prepare_tray_intent_reconciliation(request: dict) -> tuple[dict, int]:
             if request["mode"] == "retire_unconfirmed" and exact_inactive:
                 return {"error": "Für exakt belegten Lauf confirmed_inactive verwenden"}, 409
             proof = {"schema": "bach.tray-intent-reconcile-proof.v1",
-                     "mode": request["mode"], "actor": request["actor"],
+                     "mode": request["mode"], "claimed_actor": request["actor"],
+                     "actor_verified": False, "authority_kind": "control_api_authorized",
                      "worker_id": request["worker_id"],
                      "service_instance": request["service_instance"],
                      "start_request_id": request["start_request_id"],

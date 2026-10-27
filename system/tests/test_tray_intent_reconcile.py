@@ -84,6 +84,9 @@ def test_legacy_requires_explicit_retire_and_does_not_complete_task(backend):
     assert code == 200 and response["proof"]["mode"] == "retire_unconfirmed"
     assert response["proof"]["effect"] == "tray_intent_only"
     assert response["proof"]["old_execution_terminal"] is False
+    assert response["proof"]["claimed_actor"] == "operator@example"
+    assert response["proof"]["actor_verified"] is False
+    assert response["proof"]["authority_kind"] == "control_api_authorized"
     assert client.result is None
     assert telegram_chat.prepare_tray_intent_reconciliation(request("confirmed_inactive"))[1] == 409
 
@@ -152,10 +155,13 @@ def test_tray_retires_only_matching_bytes_after_two_idle_reads(tmp_path):
             return 200, {"ok": True, "execution": _idle()}
         assert body["intent_sha256"] == digest
         proof = {**body, "schema": "bach.tray-intent-reconcile-proof.v1",
+                 "claimed_actor": body["actor"], "actor_verified": False,
+                 "authority_kind": "control_api_authorized",
                  "current_service_instance": body["expected_current_service_instance"],
                  "target_binding": "guarded_reference",
                  "effect": "tray_intent_only", "old_execution_terminal": False}
         del proof["expected_current_service_instance"]
+        del proof["actor"]
         return 200, {"ok": True, "proof": proof}
     observer = NativeWorkerObserver("http://testhost:8081", path, transport)
     proof = observer.retire_unconfirmed(actor="operator@example", intent_sha256=digest,
@@ -179,10 +185,13 @@ def test_tray_aborts_if_current_run_changes_between_proof_and_cas(tmp_path):
             count += 1
             return 200, {"ok": True, "execution": _idle() if count == 1 else _running()}
         proof = {**body, "schema": "bach.tray-intent-reconcile-proof.v1",
+                 "claimed_actor": body["actor"], "actor_verified": False,
+                 "authority_kind": "control_api_authorized",
                  "current_service_instance": CURRENT,
                  "target_binding": "guarded_reference",
                  "effect": "tray_intent_only", "old_execution_terminal": False}
         del proof["expected_current_service_instance"]
+        del proof["actor"]
         return 200, {"ok": True, "proof": proof}
     observer = NativeWorkerObserver("http://testhost:8081", path, transport)
     with pytest.raises(ValueError, match="changed"):
@@ -200,9 +209,12 @@ def test_tray_aborts_if_intent_changes_during_server_readback(tmp_path):
             return 200, {"ok": True, "execution": _idle()}
         path.write_bytes(before + b" ")
         proof = {**body, "schema": "bach.tray-intent-reconcile-proof.v1",
+                 "claimed_actor": body["actor"], "actor_verified": False,
+                 "authority_kind": "control_api_authorized",
                  "current_service_instance": CURRENT, "target_binding": "guarded_reference",
                  "effect": "tray_intent_only", "old_execution_terminal": False}
         del proof["expected_current_service_instance"]
+        del proof["actor"]
         return 200, {"ok": True, "proof": proof}
     observer = NativeWorkerObserver("http://testhost:8081", path, transport)
     with pytest.raises(ValueError):
@@ -232,10 +244,13 @@ def test_running_tray_observes_only_exact_external_retirement(tmp_path):
         if method == "GET":
             return 200, {"ok": True, "execution": _idle()}
         proof = {**body, "schema": "bach.tray-intent-reconcile-proof.v1",
+                 "claimed_actor": body["actor"], "actor_verified": False,
+                 "authority_kind": "control_api_authorized",
                  "current_service_instance": CURRENT,
                  "target_binding": "guarded_reference",
                  "effect": "tray_intent_only", "old_execution_terminal": False}
         del proof["expected_current_service_instance"]
+        del proof["actor"]
         return 200, {"ok": True, "proof": proof}
     tray = NativeWorkerObserver("http://testhost:8081", path, transport)
     tray.step(allow_start=False)
@@ -320,9 +335,12 @@ def test_retirement_replay_does_not_rewrite_tombstone(tmp_path):
         if method == "GET":
             return 200, {"ok": True, "execution": _idle()}
         proof = {**body, "schema": "bach.tray-intent-reconcile-proof.v1",
+                 "claimed_actor": body["actor"], "actor_verified": False,
+                 "authority_kind": "control_api_authorized",
                  "current_service_instance": CURRENT, "target_binding": "guarded_reference",
                  "effect": "tray_intent_only", "old_execution_terminal": False}
         del proof["expected_current_service_instance"]
+        del proof["actor"]
         return 200, {"ok": True, "proof": proof}
     first = NativeWorkerObserver("http://testhost:8081", path, transport)
     first.retire_unconfirmed(actor="operator@example", intent_sha256=digest,
@@ -333,3 +351,15 @@ def test_retirement_replay_does_not_rewrite_tombstone(tmp_path):
         replay.retire_unconfirmed(actor="operator@example", intent_sha256=digest,
                                   target_task_id=TASK, target_task_version=VERSION)
     assert path.read_bytes() == after
+
+
+def test_actor_label_change_cannot_create_identity_authority(backend):
+    one = request()
+    two = request()
+    two["actor"] = "another-operator"
+    first, first_code = telegram_chat.prepare_tray_intent_reconciliation(one)
+    second, second_code = telegram_chat.prepare_tray_intent_reconciliation(two)
+    assert first_code == second_code == 200
+    assert first["proof"]["claimed_actor"] != second["proof"]["claimed_actor"]
+    assert first["proof"]["actor_verified"] is second["proof"]["actor_verified"] is False
+    assert first["proof"]["authority_kind"] == second["proof"]["authority_kind"] == "control_api_authorized"
