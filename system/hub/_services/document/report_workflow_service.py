@@ -186,6 +186,7 @@ class TempAnonymProfile:
     original_name: str = ""
     _temp_dir: Optional[Path] = None
     created: str = field(default_factory=lambda: datetime.now().isoformat())
+    whitelist: list[str] = field(default_factory=list)
 
     def get_all_mappings(self) -> Dict[str, str]:
         """Flache Map aller Ersetzungen (Original -> Tarn)."""
@@ -226,7 +227,8 @@ class TempAnonymProfile:
             tarnname=self.tarnname,
             fake_geburtsdatum=self.fake_geburtsdatum,
             mappings=self.mappings,
-            created=self.created
+            created=self.created,
+            whitelist=self.whitelist
         )
 
 
@@ -713,10 +715,10 @@ Interpersonelle Interaktionen:
                     doc.path for doc in collector_result.documents
                     if doc.category in (DocumentCategory.CORE, DocumentCategory.STUFE2)
                 ]
-                scanned = anonymizer.scan_files_for_sensitive_data(relevant_files)
+                scanned = anonymizer.scan_files_for_sensitive_data(relevant_files, known_names=mappings["names"], manual_terms=mappings["misc"], whitelist=wl)
             except Exception:
                 # Fallback: ganzer Ordner (alte, breitere Erkennung)
-                scanned = anonymizer.scan_folder_for_sensitive_data(str(scan_folder))
+                scanned = anonymizer.scan_folder_for_sensitive_data(str(scan_folder), known_names=mappings["names"], manual_terms=mappings["misc"], whitelist=wl)
 
             # Telefonnummern (kein Klartextwert im Log)
             for phone in scanned.get("phones", []):
@@ -795,7 +797,8 @@ Interpersonelle Interaktionen:
             fake_geburtsdatum=fake_geb,
             mappings=mappings,
             original_name=client_name,
-            _temp_dir=temp_dir
+            _temp_dir=temp_dir,
+            whitelist=sorted(wl)
         )
 
         session.profile = profile

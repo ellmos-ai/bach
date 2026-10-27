@@ -6,7 +6,9 @@ Befund (synthetische Akte): 'Frau Beispiel' blieb im Prompt stehen (Nachname = G
 NER verfehlt ihn); 'Anziehen', 'Begruessung', 'Hilfeplanzeitraum' u. a. wurden als Namen maskiert.
 """
 
+import json
 import re
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -18,7 +20,10 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub._services.document import anonymizer_service as an
-from hub._services.document.report_workflow_service import ReportWorkflowService
+from hub._services.document.report_workflow_service import (
+    DEFAULT_WHITELIST,
+    ReportWorkflowService,
+)
 
 
 @pytest.fixture
@@ -271,3 +276,355 @@ def test_titled_name_with_irregular_whitespace_roundtrips_through_workflow(tmp_p
     sent = service.extract_bundle_text(session).core_text
     for clear in ("Nachtigall", "Kaiser", "Mustermann"):
         assert clear not in sent, f"{clear!r} im Modell-Input"
+
+
+# Task 2620: only synthetic inputs; no provider/LLM invocation.
+@pytest.fixture
+def offline_real_ner(monkeypatch):
+    import socket
+
+    import spacy
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("Network access is forbidden in synthetic anonymizer tests")
+
+    monkeypatch.setattr(socket.socket, "connect", no_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", no_network)
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    assert an.SPACY_AVAILABLE
+    for model_name in an.NER_MODELS:
+        model = an._get_spacy_model(model_name)
+        assert isinstance(model, spacy.language.Language), model_name
+        assert "ner" in model.pipe_names
+        assert model.meta["version"] == "3.8.0"
+
+
+@pytest.mark.parametrize("phone", ["07623 / 555123", "0761 / 2012345", "07623 555123", "0761/2012345"])
+def test_2620_phone_separator_variants_are_complete(phone, no_spacy):
+    found = an.DocumentAnonymizer().scan_text_for_sensitive_data("Telefon: " + phone)
+    assert phone in found["phones"]
+
+
+@pytest.mark.parametrize("date", ["2026-10-25", "2016-03-15", "Bericht_2026-10-25.txt", "15.03.2016"])
+def test_2620_dates_are_not_phone_numbers(date, no_spacy):
+    assert not an.DocumentAnonymizer().scan_text_for_sensitive_data(date)["phones"]
+
+
+def test_2620_title_only_surname_becomes_word_bounded_alias(no_spacy):
+    found = an.detect_person_names_ner("Frau Beispiel kommt.")
+    assert "Beispiel" in found
+    text = "Beispiel sagte zu. Die Beispiele und Beispielweg bleiben unverändert."
+    masked, count = an._replace_word_boundary(text, "Beispiel", "PersonXYZ")
+    assert count == 1
+    assert masked == "PersonXYZ sagte zu. Die Beispiele und Beispielweg bleiben unverändert."
+    for excluded in ("Alltag", "Anziehen", "Essen", "Mutter", "Hilfeplanzeitraum"):
+        assert excluded not in an.detect_person_names_ner("Frau " + excluded + " kommt.")
+    assert "Beispiel" not in an.detect_person_names_ner("Frau Beispiel kommt.", whitelist=["Frau Beispiel"])
+
+
+def test_2620_known_parent_email_is_masked_without_name_in_document(tmp_path, offline_real_ner):
+    folder = tmp_path / "data_roh" / "Muster, Max"
+    folder.mkdir(parents=True)
+    private = ("erika.beispiel@example.org", "ERIKA.BEISPIEL@familie.invalid")
+    retained = ("info@jugendamt.example", "kontakt@firma.example", "maximal@firma.example", "Erika.Beispiel@amt.example")
+    (folder / "Protokoll_1.txt").write_text("Kontakt: " + "; ".join(private + retained), encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Max Muster", geburtsdatum="15.03.2016",
+        parent_names=["Erika Beispiel"], whitelist=[retained[-1]], scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        sent = service.extract_bundle_text(session).core_text
+        for email in private:
+            assert email not in sent
+            assert email in profile.mappings["emails"]
+        for email in retained:
+            assert email in sent
+    finally:
+        profile.cleanup()
+
+
+def test_2620_real_spacy_workflow_leak_and_roundtrip(tmp_path, offline_real_ner):
+    folder = tmp_path / "data_roh" / "Muster, Max"
+    folder.mkdir(parents=True)
+    (folder / "Protokoll_1.txt").write_text(
+        "Max Muster kam. Frau Beispiel begrüßte ihn. Eltern: Erika Muster und Hans Muster. "
+        "Telefon: 07623 / 555123. E-Mail: erika.muster@example.org. Datum: 2026-10-25.\n", encoding="utf-8")
+    (folder / "Protokoll_2.txt").write_text("Beispiel sagte später zu. Beispiele und Beispielweg sind keine Namen.\n", encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Max Muster", geburtsdatum="15.03.2016",
+        parent_names=["Erika Muster", "Hans Muster"], scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        bundle = service.extract_bundle_text(session)
+        sent = bundle.core_text + (bundle.stufe2_text or "")
+        for clear in ("Max", "Muster", "Erika", "Hans", "Beispiel", "07623 / 555123", "erika.muster@example.org"):
+            assert not re.search(r"(?<!\w)" + re.escape(clear) + r"(?!\w)", sent), clear
+        assert "2026-10-25" in sent and "Beispielweg" in sent and "Beispiele" in sent
+        mappings = profile.get_all_mappings()
+        expected = {"name": "Max Muster", "parent": "Erika Muster", "title": "Frau Beispiel", "surname": "Beispiel",
+                    "phone": "07623 / 555123", "email": "erika.muster@example.org"}
+        # A local synthetic echo stands in for a model response; real spaCy above is untouched.
+        model_response = {key: mappings[value] for key, value in expected.items()}
+        restored = service._deanonymize_json(model_response, profile)
+        assert restored == expected
+        assert not re.search(r"Person\d{3}|BEGRIFF_", repr(restored))
+    finally:
+        profile.cleanup()
+
+
+@pytest.mark.parametrize("term,email", [("Nachtigall", "Nachtigall@familie.invalid"),
+                                      ("familie.invalid", "kontakt@familie.invalid"),
+                                      ("familie", "kontakt@familie.invalid")])
+def test_2620_manual_name_term_masks_whole_email_and_roundtrips(tmp_path, no_spacy, term, email):
+    folder = tmp_path / "data_roh" / "Muster, Max"
+    folder.mkdir(parents=True)
+    (folder / "Protokoll.txt").write_text("Kontakt: " + email, encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Max Muster", geburtsdatum="15.03.2016",
+        additional_terms=[term], scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        sent = service.extract_bundle_text(session).core_text
+        assert email not in sent and "Nachtigall" not in sent
+        mapped = profile.mappings["emails"][email]
+        assert service._deanonymize_json({"email": mapped}, profile) == {"email": email}
+    finally:
+        profile.cleanup()
+
+
+@pytest.mark.parametrize("client,parents,email", [
+    ("Bo Li", [], "Bo.Li@example.org"),
+    ("Bo Li", [], "BoLi@example.org"),
+    ("Max Muster", ["Nora Li"], "li@example.org"),
+    ("Anna Essen", [], "essen@example.org"),
+    ("Max Muster", [], "kontakt@Muster.example"),
+])
+def test_2620_review_trusted_profile_email_roundtrip(tmp_path, offline_real_ner, client, parents, email):
+    folder = tmp_path / "data_roh" / "Synthetic"
+    folder.mkdir(parents=True)
+    retained = ("kontakt@firma.example", "bolivia@firma.example", "essential@firma.example")
+    (folder / "Protokoll.txt").write_text("Kontakt: " + "; ".join((email, *retained)), encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name=client, parent_names=parents,
+        geburtsdatum="15.03.2016", scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        sent = service.extract_bundle_text(session).core_text
+        assert email not in sent and all(address in sent for address in retained)
+        fake = profile.mappings["emails"][email]
+        assert service._deanonymize_json({"email": fake}, profile) == {"email": email}
+    finally:
+        profile.cleanup()
+
+
+@pytest.mark.parametrize("allowed", ["Max.Mustermann@amt.example", "amt.example"])
+@pytest.mark.parametrize("suffix", [".txt", ".docx"])
+def test_2620_review_direct_profile_whole_email_and_roundtrip(tmp_path, no_spacy, allowed, suffix):
+    anon = an.DocumentAnonymizer()
+    retained = "Max.Mustermann@amt.example"
+    profile = anon.create_profile(real_name="Max Mustermann", geburtsdatum="15.03.2016",
+        weitere_daten={"secret": "Nachtigall", "email": retained}, whitelist=[allowed])
+    private = ("Max.Mustermann@example.org", "Nachtigall@familie.invalid", "kontakt@Mustermann.example")
+    original = "Max Mustermann; " + "; ".join((*private, retained, "kontakt@firma.example"))
+    def write(path):
+        if suffix == ".docx":
+            assert an.DOCX_AVAILABLE
+            doc = an.Document()
+            doc.add_paragraph(original)
+            doc.save(path)
+        else:
+            path.write_text(original, encoding="utf-8")
+
+    def read(path):
+        if suffix == ".docx":
+            return "\n".join(p.text for p in an.Document(path).paragraphs)
+        return path.read_text(encoding="utf-8")
+
+    path = tmp_path / ("direct" + suffix)
+    write(path)
+    ok, _ = anon.anonymize_file(str(path), profile)
+    assert ok
+    masked = read(path)
+    for email in private:
+        assert email not in masked
+        assert email in profile.mappings["emails"]
+        assert profile.mappings["emails"][email] in masked
+    assert retained in masked and "kontakt@firma.example" in masked
+    mappings = dict(profile.mappings["emails"])
+    repeated = tmp_path / ("repeat" + suffix)
+    write(repeated)
+    assert anon.anonymize_file(str(repeated), profile)[0]
+    assert read(repeated) == masked
+    assert profile.mappings["emails"] == mappings
+    assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
+    assert read(path) == original
+
+
+@pytest.mark.parametrize("allowed", ["Bo.Li@example.org", "example.org"])
+def test_2620_review_trusted_short_name_whitelist(tmp_path, offline_real_ner, allowed):
+    folder = tmp_path / "data_roh" / "Synthetic"
+    folder.mkdir(parents=True)
+    email = "Bo.Li@example.org"
+    (folder / "Protokoll.txt").write_text("Kontakt: " + email, encoding="utf-8")
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Bo Li", geburtsdatum="15.03.2016",
+        whitelist=[allowed], scan_folder=tmp_path / "data_roh")
+    try:
+        service.anonymize_to_bundles(session)
+        assert email in service.extract_bundle_text(session).core_text
+        assert email not in profile.mappings["emails"]
+    finally:
+        profile.cleanup()
+
+
+def test_2620_review_temp_profile_whitelist_default_and_conversion(tmp_path, no_spacy):
+    from hub._services.document.report_workflow_service import TempAnonymProfile
+
+    legacy = TempAnonymProfile("Tarnname", "01.01.2016", {})
+    assert legacy.whitelist == [] and legacy.to_anonym_profile().whitelist == []
+    service = ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, client_name="Bo Li", geburtsdatum="15.03.2016",
+        whitelist=["example.org"])
+    try:
+        assert isinstance(profile.whitelist, list)
+        assert profile.whitelist == sorted({*DEFAULT_WHITELIST, "example.org"})
+        assert profile.to_anonym_profile().whitelist == profile.whitelist
+    finally:
+        profile.cleanup()
+
+
+@pytest.mark.parametrize("allowed_domain", ["muster.org", "gmail.com"])
+def test_2620_review_reverse_uses_mapping_namespace_only(tmp_path, no_spacy, monkeypatch, allowed_domain):
+    # Only the synthetic fake-address generator is deterministic; no NER mock
+    # is substituted for the separate real-spaCy workflow tests.
+    fake = "maskiert@" + allowed_domain
+    monkeypatch.setattr(an, "_generate_fake_email", lambda original=None: fake)
+    anon = an.DocumentAnonymizer()
+    profile = anon.create_profile(real_name="Max Mustermann", geburtsdatum="15.03.2016",
+        weitere_daten={"secret": "Nachtigall"}, whitelist=[allowed_domain])
+    private = "Nachtigall@familie.invalid"
+    retained = "kontakt@" + allowed_domain
+    original = private + "; " + retained
+    path = tmp_path / "reverse.txt"
+    path.write_text(original, encoding="utf-8")
+    assert anon.anonymize_file(str(path), profile)[0]
+    assert path.read_text(encoding="utf-8") == fake + "; " + retained
+    assert profile.mappings["emails"] == {private: fake}
+    assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
+    assert path.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize("mode", ["direct", "workflow"])
+@pytest.mark.parametrize("client,private,family,tld", [
+    ("Marie de Vries", "marie.de.vries@example.org", "kontakt@familie-de-vries.example", "de"),
+    ("Bo Li", "bo.li@example.org", "kontakt@familie-li.example", "li"),
+    ("Ada Com", "ada.com@example.org", "kontakt@familie-com.example", "com"),
+])
+def test_2620_tld_is_not_profile_identity(tmp_path, offline_real_ner, mode, client, private, family, tld):
+    retained = ("info@jugendamt." + tld, "kontakt@firma." + tld)
+    original = "Kontakt: " + "; ".join((private, family, *retained))
+    if mode == "direct":
+        anon = an.DocumentAnonymizer()
+        profile = anon.create_profile(real_name=client, geburtsdatum="15.03.2016")
+        path = tmp_path / "direct.txt"
+        path.write_text(original, encoding="utf-8")
+        assert anon.anonymize_file(str(path), profile)[0]
+        sent = path.read_text(encoding="utf-8")
+    else:
+        folder = tmp_path / "data_roh" / "Synthetic"
+        folder.mkdir(parents=True)
+        (folder / "Protokoll.txt").write_text(original, encoding="utf-8")
+        service = ReportWorkflowService(base_path=tmp_path)
+        session = service.start_session()
+        profile = service.create_temp_profile(session, client_name=client, geburtsdatum="15.03.2016",
+            scan_folder=tmp_path / "data_roh")
+        service.anonymize_to_bundles(session)
+        sent = service.extract_bundle_text(session).core_text
+    try:
+        assert all(email in sent for email in retained)
+        assert all(email not in sent for email in (private, family))
+        assert set(profile.mappings["emails"]) == {private, family}
+        if mode == "direct":
+            assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
+            assert path.read_text(encoding="utf-8") == original
+        else:
+            expected = {"private": private, "family": family}
+            response = {key: profile.mappings["emails"][value] for key, value in expected.items()}
+            assert service._deanonymize_json(response, profile) == expected
+    finally:
+        if mode == "workflow":
+            profile.cleanup()
+
+
+@pytest.mark.parametrize("case", ["percent_only", "percent_then_address", "long_local"])
+def test_2620_email_pattern_repetition_finishes_with_whole_matches(case):
+    if case == "long_local":
+        text = "a" * 100_000 + "@example.org"
+        expected = [[0, len(text)]]
+    else:
+        text = "%" * 100_000
+        expected = []
+        if case == "percent_then_address":
+            text += " max.muster@example.org"
+            expected = [[100_001, len(text)]]
+    # Execute only the actual pattern, inheriting the suite's child safety guard.
+    # A timeout kills the pathological search without hanging the test worker.
+    script = (
+        "import json,re,sys\n"
+        "spec=json.load(sys.stdin)\n"
+        "pattern=re.compile(spec['pattern'],spec['flags'])\n"
+        "print(json.dumps([list(m.span('email')) for m in pattern.finditer(spec['text'])]))\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script],
+        input=json.dumps({"pattern": an.EMAIL_PATTERN.pattern, "flags": an.EMAIL_PATTERN.flags, "text": text}),
+        capture_output=True, text=True, check=True, timeout=5)
+    assert json.loads(result.stdout) == expected
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("a@b.de", ["a@b.de"]),
+    ("<a@b.de>;b@c.org", ["a@b.de", "b@c.org"]),
+    ("a@b.de\nb@c.org", ["a@b.de", "b@c.org"]),
+    ("(a@b.de)(b@c.org)", ["a@b.de", "b@c.org"]),
+    ("word+tag@example.org A.B@Example.COM", ["word+tag@example.org", "A.B@Example.COM"]),
+    ("İ@i.org ı@İ.org ſ@k.org K@i.org", ["İ@i.org", "ı@İ.org", "ſ@k.org", "K@i.org"]),
+    ("%%% @not.an.address a@@b.de", []),
+    ("a@b.de@c@d.org", ["a@b.de", "c@d.org"]),
+    ("a@b.de,b@c.org;c@d.net", ["a@b.de", "b@c.org", "c@d.net"]),
+])
+def test_2620_named_email_capture_values_spans_and_findall(text, expected):
+    assert an.EMAIL_PATTERN.groups == 1
+    matches = list(an.EMAIL_PATTERN.finditer(text))
+    assert [match.group("email") for match in matches] == expected
+    assert an.EMAIL_PATTERN.findall(text) == expected
+    spans = []
+    cursor = 0
+    for email in expected:
+        start = text.index(email, cursor)
+        cursor = start + len(email)
+        spans.append((start, cursor))
+    assert [match.span("email") for match in matches] == spans
+
+
+def test_2620_named_email_capture_keeps_document_delimiters_and_roundtrip(tmp_path):
+    anon = an.DocumentAnonymizer()
+    retained = "Max.Mustermann@amt.example"
+    profile = anon.create_profile(real_name="Max Mustermann", geburtsdatum="15.03.2016",
+        weitere_daten={"secret": "Nachtigall"}, whitelist=[retained])
+    private = ("Max.Mustermann@example.org", "Nachtigall@familie.invalid")
+    original = f"Max Mustermann <{private[0]}>; {private[1]}\nKeep: {retained}."
+    path = tmp_path / "delimiters.txt"
+    path.write_text(original, encoding="utf-8")
+    assert anon.anonymize_file(str(path), profile)[0]
+    masked = path.read_text(encoding="utf-8")
+    assert masked == (f"{profile.tarnname} <{profile.mappings['emails'][private[0]]}>; "
+        f"{profile.mappings['emails'][private[1]]}\nKeep: {retained}.")
+    assert set(profile.mappings["emails"]) == set(private)
+    assert an.DocumentDeanonymizer().deanonymize_file(str(path), profile)[0]
+    assert path.read_text(encoding="utf-8") == original
