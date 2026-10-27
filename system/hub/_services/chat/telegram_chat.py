@@ -221,15 +221,47 @@ class _WorkerStopSignal:
         return True
 
 
+_PROVIDER_REQUEST_PHASE_ORDER = {
+    "registered": 0,
+    "request_starting": 1,
+    "transport_open": 2,
+    "awaiting_response_headers": 3,
+    "response_headers_received": 4,
+    "first_stream_chunk_received": 5,
+    "response_completed": 6,
+    "request_aborted": 7,
+    "request_failed": 7,
+    "response_cleanup_complete": 8,
+    "client_cleanup_complete": 9,
+    "runtime_call_complete": 10,
+}
+_PROVIDER_REQUEST_TERMINAL_REASONS = frozenset({
+    "worker_stop", "total_deadline", "httpx_read_timeout", "provider_error",
+    "backend_error", "backend_returned", "runtime_cancelled", "dispatch_rejected",
+})
+
+
 @dataclass
 class _ActiveWorkerModelRequest:
-    """One provider request owned by one worker generation and task binding."""
+    """Single request status bound to one worker generation and task fence."""
 
     worker_generation: str
     task_binding: Any
+    task_id: int
+    task_fence: Optional[int]
     loop: Any
     cancel_event: Any
     request_id: str
+    transport: str
+    transport_details_available: bool = False
+    cancellation_supported: bool = False
+    phase: str = "registered"
+    phase_at: str = ""
+    terminal_reason: Optional[str] = None
+    response_cleanup_complete: Optional[bool] = None
+    client_cleanup_complete: Optional[bool] = None
+    runtime_call_complete: bool = False
+    observer_error: bool = False
     cancel_requested: bool = False
 
 
@@ -286,6 +318,8 @@ class _WorkerControl:
     run_receipt_fields: Optional[Dict[str, Any]] = None
     model_request_budget: Any = None
     active_model_request: Any = None
+    # One latest request status for the current generation; never an event ledger.
+    last_model_request: Any = None
     handoff: WorkerHandoff = field(init=False)
     task_actions: WorkerTaskActions = field(init=False)
 
@@ -297,8 +331,31 @@ class _WorkerControl:
         if not self.startup_admission_required:
             self.startup_admission_confirmed.set()
 
-    def register_provider_request(self, task_binding, loop, cancel_event):
-        """Bind one Ollama transport read to this exact worker generation/task."""
+    @staticmethod
+    def _provider_binding_metadata(task_binding):
+        """Read active task identity and its optional exact lease-ACK fence."""
+        try:
+            task_binding.assert_active()
+            task_id = task_binding.task_id
+            task_generation = getattr(task_binding, "generation", None)
+        except Exception:
+            return None
+        if type(task_id) is not int or task_id <= 0:
+            return None
+        lease_ack = getattr(task_binding, "_ack", None)
+        raw_fence = getattr(lease_ack, "fence", None)
+        task_fence = raw_fence if type(raw_fence) is int and raw_fence > 0 else None
+        return task_id, task_generation, task_fence
+
+    def register_provider_request(self, task_binding, loop, cancel_event, *, transport="unavailable"):
+        """Bind one real backend call to this worker generation and task fence."""
+        metadata = self._provider_binding_metadata(task_binding)
+        if metadata is None:
+            return None
+        task_id, task_generation, task_fence = metadata
+        if task_generation != self.generation:
+            return None
+        transport = transport if transport == "ollama_httpx" else "unavailable"
         with _WORKER_CONTROL_LOCK:
             if (self.stop_event.is_set()
                     or _WORKER_CONTROLS.get(self.worker_id) is not self
@@ -308,18 +365,76 @@ class _WorkerControl:
             request = _ActiveWorkerModelRequest(
                 worker_generation=self.generation,
                 task_binding=task_binding,
+                task_id=task_id,
+                task_fence=task_fence,
                 loop=loop,
                 cancel_event=cancel_event,
                 request_id=uuid.uuid4().hex,
+                transport=transport,
+                transport_details_available=(transport == "ollama_httpx"),
+                cancellation_supported=(transport == "ollama_httpx"),
+                phase_at=datetime.now(timezone.utc).isoformat(),
             )
             self.active_model_request = request
             return request
+
+    def observe_provider_request(self, request, phase, *, reason=None):
+        """Accept only ordered, allowlisted lifecycle observations for this handle."""
+        if phase not in _PROVIDER_REQUEST_PHASE_ORDER:
+            return False
+        with _WORKER_CONTROL_LOCK:
+            if (self.active_model_request is not request
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding
+                    or _WORKER_CONTROLS.get(self.worker_id) is not self
+                    or request.runtime_call_complete):
+                return False
+            cleanup = phase in {"response_cleanup_complete", "client_cleanup_complete"}
+            if request.terminal_reason is not None and not cleanup:
+                return False
+            if (_PROVIDER_REQUEST_PHASE_ORDER[phase]
+                    < _PROVIDER_REQUEST_PHASE_ORDER.get(request.phase, -1)):
+                return False
+            if cleanup and not request.transport_details_available:
+                return False
+            if phase == "transport_open":
+                request.client_cleanup_complete = False
+            elif phase == "response_headers_received":
+                request.response_cleanup_complete = False
+            elif phase == "response_cleanup_complete":
+                request.response_cleanup_complete = True
+            elif phase == "client_cleanup_complete":
+                request.client_cleanup_complete = True
+            if phase == "request_aborted":
+                if reason not in {"worker_stop", "total_deadline"}:
+                    return False
+                request.terminal_reason = reason
+            elif phase == "request_failed":
+                request.terminal_reason = (
+                    reason if reason in _PROVIDER_REQUEST_TERMINAL_REASONS
+                    else "provider_error"
+                )
+            request.phase = phase
+            request.phase_at = datetime.now(timezone.utc).isoformat()
+            return True
+
+    def mark_provider_request_observer_error(self, request):
+        """Record a local observer fault without changing provider or lease flow."""
+        with _WORKER_CONTROL_LOCK:
+            if (self.active_model_request is request
+                    and request.worker_generation == self.generation
+                    and request.task_binding is self.task_binding
+                    and _WORKER_CONTROLS.get(self.worker_id) is self):
+                request.observer_error = True
+                return True
+        return False
 
     def cancel_active_model_request(self):
         """Signal only the currently registered request; never cancel runtime/tool work."""
         with _WORKER_CONTROL_LOCK:
             request = self.active_model_request
             if (not self.stop_event.is_set() or request is None
+                    or not request.cancellation_supported
                     or request.worker_generation != self.generation
                     or request.task_binding is not self.task_binding):
                 return False
@@ -339,10 +454,45 @@ class _WorkerControl:
                 return
         request.cancel_event.set()
 
-    def finish_provider_request(self, request):
+    def finish_provider_request(self, request, *, result=None, error=None):
+        """Finalize one request status after its backend call and observed cleanup."""
         with _WORKER_CONTROL_LOCK:
-            if self.active_model_request is request:
-                self.active_model_request = None
+            if (self.active_model_request is not request
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding):
+                return False
+            if request.terminal_reason is None:
+                if error is not None:
+                    reason = (
+                        "runtime_cancelled" if type(error).__name__ == "CancelledError"
+                        else "backend_error"
+                    )
+                    request.phase = "request_failed"
+                elif isinstance(result, dict):
+                    aborted = result.get("provider_request_aborted")
+                    if (request.transport_details_available
+                            and aborted in {"worker_stop", "total_deadline"}):
+                        reason = aborted
+                        request.phase = "request_aborted"
+                    elif result.get("worker_cancelled") is True and request.phase == "registered":
+                        reason = "dispatch_rejected"
+                        request.phase = "request_failed"
+                    elif result.get("error"):
+                        reason = "provider_error" if request.transport_details_available else "backend_error"
+                        request.phase = "request_failed"
+                    elif request.phase == "response_completed":
+                        reason = "response_completed"
+                    else:
+                        reason = "backend_returned"
+                else:
+                    reason = "backend_returned"
+                request.terminal_reason = reason
+            request.runtime_call_complete = True
+            request.phase = "runtime_call_complete"
+            request.phase_at = datetime.now(timezone.utc).isoformat()
+            self.last_model_request = request
+            self.active_model_request = None
+            return True
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -526,6 +676,30 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
             "worker_status": None, "error_code": control.start_error,
             "heartbeat_at": control.last_heartbeat_at,
             "stop_requested": control.stop_event.is_set()}
+        request = control.active_model_request or control.last_model_request
+        if (request is not None and binding is not None
+                and request.worker_generation == control.generation
+                and request.task_binding is binding
+                and request.task_id == getattr(binding, "task_id", None)):
+
+            receipt["provider_request"] = {
+                "request_id": request.request_id,
+                "generation": request.worker_generation,
+                "task_id": request.task_id,
+                "task_fence": request.task_fence,
+                "task_fence_available": type(request.task_fence) is int and request.task_fence > 0,
+                "phase": request.phase,
+                "phase_at": request.phase_at,
+                "terminal_reason": request.terminal_reason,
+                "transport": request.transport,
+                "transport_details_available": request.transport_details_available,
+                "cancellation_supported": request.cancellation_supported,
+                "cancel_requested": request.cancel_requested,
+                "response_cleanup_complete": request.response_cleanup_complete,
+                "client_cleanup_complete": request.client_cleanup_complete,
+                "runtime_call_complete": request.runtime_call_complete,
+                "observer_error": request.observer_error,
+            }
         if control.model_request_budget is not None:
             stored = _budget_execution_projection(worker_id, control.start_request_id)
             if stored is None:

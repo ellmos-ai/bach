@@ -138,6 +138,43 @@ def test_fragmente_werden_zusammengesetzt():
     assert r.get("error") is None
 
 
+def test_lifecycle_observer_is_best_effort_and_reports_only_phases():
+    closed = []
+    seen = []
+
+    class TrackingStream(_FakeStream):
+        async def __aexit__(self, *args):
+            closed.append("response")
+            return False
+
+    class TrackingClient(_FakeClient):
+        async def __aexit__(self, *args):
+            closed.append("client")
+            return False
+
+        def stream(self, method, url, **kwargs):
+            return TrackingStream([_zeile("safe", done=True)])
+
+    def observer(phase, reason=None):
+        seen.append((phase, reason))
+        raise RuntimeError("observer fixture failure")
+
+    result = asyncio.run(_backend(TrackingClient([])).chat(
+        [{"role": "user", "content": "private input"}],
+        lifecycle_observer=observer,
+    ))
+
+    assert result["content"] == "safe"
+    assert closed == ["response", "client"]
+    phases = [phase for phase, _reason in seen]
+    assert phases == [
+        "transport_open", "awaiting_response_headers", "response_headers_received",
+        "first_stream_chunk_received", "response_completed",
+        "response_cleanup_complete", "client_cleanup_complete",
+    ]
+    assert all(reason is None for _phase, reason in seen)
+
+
 def test_werkzeugaufruf_ueberlebt_den_stream():
     tc = [{"function": {"name": "get_datetime", "arguments": {}}}]
     client = _FakeClient([_zeile(""), _zeile("", done=True, tool_calls=tc)])
@@ -218,14 +255,22 @@ def test_read_timeout_prueft_liveness_bis_zur_begrenzten_grace():
         lambda name: 2 if name == "BACH_LLM_IDLE_GRACE" else original_limit(name)
     )
     client = TimeoutClient([], ps_models=[{"name": "m"}])
+    lifecycle = []
     try:
-        r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+        r = asyncio.run(_backend(client).chat(
+            [{"role": "user", "content": "x"}],
+            lifecycle_observer=lambda phase, reason=None: lifecycle.append((phase, reason)),
+        ))
     finally:
         backend_module.limit = original_limit
 
     assert client.ps_aufrufe == 2
     assert r["content"] == "partial"
     assert "ReadTimeout" in r["error"]
+    assert ("request_failed", "httpx_read_timeout") in lifecycle
+    assert lifecycle[-2:] == [
+        ("response_cleanup_complete", None), ("client_cleanup_complete", None),
+    ]
 
 
 def test_real_httpx_timeout_verbraucht_grace_und_behaelt_ursache():

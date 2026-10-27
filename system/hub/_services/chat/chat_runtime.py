@@ -2071,12 +2071,13 @@ class ChatRuntime(_ModuleChatRuntime):
                     request_control = (getattr(session, "worker_model_request_control", None)
                                        if session is not None else None)
                     from hub._services.llm.model_backend import OllamaBackend
-                    if (call_binding is not None and request_control is not None
-                            and type(backend) is OllamaBackend):
+                    if call_binding is not None and request_control is not None:
                         import asyncio
+                        instrumented_transport = type(backend) is OllamaBackend
                         cancel_event = asyncio.Event()
                         request_handle = request_control.register_provider_request(
                             call_binding, asyncio.get_running_loop(), cancel_event,
+                            transport="ollama_httpx" if instrumented_transport else "unavailable",
                         )
                         if request_handle is None:
                             result = {
@@ -2087,13 +2088,57 @@ class ChatRuntime(_ModuleChatRuntime):
                                 "worker_cancelled": True,
                             }
                         else:
+                            request_result = None
+                            request_error = None
+
+                            def report_lifecycle(phase, *, reason=None):
+                                try:
+                                    request_control.observe_provider_request(
+                                        request_handle, phase, reason=reason,
+                                    )
+                                except BaseException:
+                                    try:
+                                        request_control.mark_provider_request_observer_error(request_handle)
+                                    except BaseException:
+                                        pass
+
                             try:
                                 mark_model_dispatch()
-                                call_kwargs = dict(kwargs)
-                                call_kwargs["cancel_event"] = cancel_event
-                                result = await backend.chat(*args, **call_kwargs)
+                                try:
+                                    request_started = request_control.observe_provider_request(
+                                        request_handle, "request_starting",
+                                    )
+                                except BaseException:
+                                    request_started = True
+                                    try:
+                                        request_control.mark_provider_request_observer_error(request_handle)
+                                    except BaseException:
+                                        pass
+                                if not request_started:
+                                    result = {
+                                        "content": "", "tool_calls": None,
+                                        "raw_message": {"role": "assistant", "content": ""},
+                                        "error": "Worker-Request vor Providerstart beendet",
+                                        "provider_reported_model": None,
+                                        "worker_cancelled": True,
+                                    }
+                                else:
+                                    call_kwargs = dict(kwargs)
+                                    if instrumented_transport:
+                                        call_kwargs["cancel_event"] = cancel_event
+                                        call_kwargs["lifecycle_observer"] = report_lifecycle
+                                    result = await backend.chat(*args, **call_kwargs)
+                                request_result = result
+                            except BaseException as exc:
+                                request_error = exc
+                                raise
                             finally:
-                                request_control.finish_provider_request(request_handle)
+                                try:
+                                    request_control.finish_provider_request(
+                                        request_handle, result=request_result, error=request_error,
+                                    )
+                                except BaseException:
+                                    pass
                     else:
                         mark_model_dispatch()
                         result = await backend.chat(*args, **kwargs)

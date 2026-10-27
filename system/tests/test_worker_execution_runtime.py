@@ -172,6 +172,75 @@ def test_cloud_response_links_actual_call_to_submitted_result(task_state, monkey
     assert result["accepted"] is False and result["submission"]["availability"] == "available"
 
 
+@pytest.mark.parametrize("hide_ack_fence", [False, True])
+def test_non_ollama_bound_worker_exposes_generic_lifecycle_without_extra_kwargs(
+    task_state, monkeypatch, hide_ack_fence,
+):
+    from hub._services.chat import telegram_chat
+
+    canonical_binding = task_state["binding"]
+    binding = canonical_binding
+    if hide_ack_fence:
+        class _AckWithoutFence:
+            def __init__(self, ack):
+                self._ack = ack
+
+            def assert_locally_valid(self, **kwargs):
+                return self._ack.assert_locally_valid(**kwargs)
+
+        class _BindingWithoutFence:
+            def __getattr__(self, name):
+                if name == "_ack":
+                    return _AckWithoutFence(canonical_binding._ack)
+                return getattr(canonical_binding, name)
+
+        binding = _BindingWithoutFence()
+    worker_id = "generic-request-" + uuid.uuid4().hex[:10]
+    control = telegram_chat._WorkerControl(worker_id, generation=binding.generation)
+    control.task_binding = binding
+    control.thread = threading.current_thread()
+    control.physical_worker_id = "isolated-runtime-worker@HOST"
+    control.lease_worker_id = "isolated-runtime-worker@HOST"
+    control.worker_thread_started = True
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", {worker_id: control})
+    monkeypatch.setattr(telegram_chat, "_WORKER_EXECUTIONS", {worker_id: control})
+
+    backend = FakeOpenAIBackend(
+        response={"content": "generic result", "tool_calls": None,
+                  "raw_message": {"role": "assistant", "content": "generic result"}},
+    )
+    runtime = _runtime(backend, monkeypatch, chat_id=worker_id)
+    session = runtime.get_session(worker_id)
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    session.worker_model_request_control = control
+    session.worker_handoff = control.handoff
+    session.worker_task_actions = control.task_actions
+
+    answer = asyncio.run(runtime.process("generic worker request", worker_id))
+    assert answer == "generic result"
+    assert len(backend.calls) == 1
+    receipt = telegram_chat.worker_execution_receipt(
+        worker_id, control.start_request_id, verify_results=False,
+    )
+    request = receipt["provider_request"]
+    assert request["generation"] == control.generation
+    assert request["task_id"] == binding.task_id
+    if hide_ack_fence:
+        assert request["task_fence"] is None
+        assert request["task_fence_available"] is False
+    else:
+        assert request["task_fence"] == canonical_binding._ack.fence
+        assert request["task_fence_available"] is True
+    assert request["phase"] == "runtime_call_complete"
+    assert request["terminal_reason"] == "backend_returned"
+    assert request["transport"] == "unavailable"
+    assert request["transport_details_available"] is False
+    assert request["cancellation_supported"] is False
+    assert request["client_cleanup_complete"] is None
+    assert request["runtime_call_complete"] is True
+
+
 @pytest.mark.parametrize("change", ["stop", "generation", "deadline", "binding_swap"])
 def test_dispatch_rechecks_authority_after_real_execution_ledger_start(
     task_state, monkeypatch, change,
@@ -685,6 +754,16 @@ def test_worker_abort_discards_buffered_tool_candidates_before_runtime_dispatch(
     cleanup_order = []
     loop_holder = {}
     outcomes = {}
+    observer_error_phases = set()
+    original_observer = control.observe_provider_request
+
+    def fail_one_observer_phase(request, phase, *, reason=None):
+        if phase == "response_headers_received" and phase not in observer_error_phases:
+            observer_error_phases.add(phase)
+            raise RuntimeError("synthetic observer failure")
+        return original_observer(request, phase, reason=reason)
+
+    control.observe_provider_request = fail_one_observer_phase
 
     class FakeResponse:
         status_code = 200
@@ -747,6 +826,9 @@ def test_worker_abort_discards_buffered_tool_candidates_before_runtime_dispatch(
                 runtime.process("Run the isolated bound worker request.", worker_id,
                                 backend=session.backend, model="m")
             )
+            outcomes["provider_request"] = telegram_chat.worker_execution_receipt(
+                worker_id, control.start_request_id, verify_results=False,
+            ).get("provider_request")
             outcomes["pending_task_count"] = len(asyncio.all_tasks(loop))
         except BaseException as exc:
             outcomes["error"] = exc
@@ -793,8 +875,22 @@ def test_worker_abort_discards_buffered_tool_candidates_before_runtime_dispatch(
             raise AssertionError(
                 f"worker never reached provider read; alive={thread.is_alive()}, outcomes={outcomes!r}"
             )
+        active_execution = telegram_chat.worker_execution_receipt(
+            worker_id, control.start_request_id, verify_results=False,
+        )
+        active_provider_request = active_execution["provider_request"]
+        assert active_provider_request["request_id"]
+        assert active_provider_request["generation"] == control.generation
+        assert active_provider_request["task_id"] == binding.task_id
+        assert active_provider_request["task_fence"] == binding._ack.fence
+        assert active_provider_request["phase"] == "first_stream_chunk_received"
+        assert active_provider_request["transport"] == "ollama_httpx"
+        assert active_provider_request["transport_details_available"] is True
+        active_request_id = active_provider_request["request_id"]
+
         if abort_reason == "worker_stop":
-            old_cancel_event = control.active_model_request.cancel_event
+            old_request = control.active_model_request
+            old_cancel_event = old_request.cancel_event
             next_control = telegram_chat._WorkerControl(worker_id, generation="replacement-generation")
             next_binding, _ = task_state["make_binding"](
                 generation=next_control.generation,
@@ -813,6 +909,8 @@ def test_worker_abort_discards_buffered_tool_candidates_before_runtime_dispatch(
                 next_binding, loop_holder["loop"], next_event,
             )
             assert next_handle is not None
+            assert control.observe_provider_request(old_request, "response_completed") is False
+            assert next_control.active_model_request.phase == "registered"
 
             stale_expected = {
                 "service_instance": telegram_chat._WORKER_SERVICE_INSTANCE,
@@ -862,6 +960,21 @@ def test_worker_abort_discards_buffered_tool_candidates_before_runtime_dispatch(
     assert outcomes["pending_task_count"] == 0
     assert control.active_model_request is None
     assert outcomes["lease_returned"] is True
+    request = outcomes["provider_request"]
+    assert request is not None
+    assert request["request_id"] == active_request_id
+    assert request["generation"] == control.generation
+    assert request["task_id"] == binding.task_id
+    assert request["task_fence"] == binding._ack.fence
+    assert request["phase"] == "runtime_call_complete"
+    assert request["terminal_reason"] == abort_reason
+    assert request["transport"] == "ollama_httpx"
+    assert request["transport_details_available"] is True
+    assert request["response_cleanup_complete"] is True
+    assert request["client_cleanup_complete"] is True
+    assert request["runtime_call_complete"] is True
+    assert request["cancel_requested"] is (abort_reason == "worker_stop")
+    assert request["observer_error"] is True
     task_snapshot = task_state["client"].task_snapshot(binding.task_id)
     assert task_snapshot["status"] == "pending"
     assert task_state["client"].read(binding.task_id).leased is False

@@ -254,7 +254,8 @@ class OllamaBackend(ModelBackend):
         log.warning("Ollama hält %s statt %s - unser Modell wurde verdrängt", geladen, model)
         return False
 
-    async def chat(self, messages, tools=None, think=True, model=None, *, cancel_event=None):
+    async def chat(self, messages, tools=None, think=True, model=None, *, cancel_event=None,
+                   lifecycle_observer=None):
         import httpx
 
         try:
@@ -264,6 +265,19 @@ class OllamaBackend(ModelBackend):
             effective_ka = self.keep_alive
 
         selected_model = model or self.default_model
+        if lifecycle_observer is not None and not callable(lifecycle_observer):
+            raise TypeError("lifecycle_observer muss callable sein")
+
+        def notify(phase, reason=None):
+            if lifecycle_observer is None:
+                return
+            try:
+                lifecycle_observer(phase, reason=reason)
+            except BaseException:
+                # Telemetry must never change cancellation, transport cleanup or
+                # the caller's lease/finally behavior.
+                return
+
         # Mac Studio live probe (2026-09-15): GLM 5.3 Cloud puts untagged
         # reasoning in message.content with think=false. Only literal True
         # was verified to separate message.thinking from the answer. Do not
@@ -307,6 +321,14 @@ class OllamaBackend(ModelBackend):
 
         def aborted(error: str, *, backend_error=None, transient_failure=None,
                     discard_tool_calls=False, provider_request_aborted=None) -> dict:
+            if provider_request_aborted in {"worker_stop", "total_deadline"}:
+                notify("request_aborted", provider_request_aborted)
+            elif error:
+                safe_reason = (
+                    "httpx_read_timeout" if transient_failure == "httpx_read_timeout"
+                    else "provider_error"
+                )
+                notify("request_failed", safe_reason)
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
             raw_message["content"] = content
@@ -352,7 +374,21 @@ class OllamaBackend(ModelBackend):
 
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
         timeouts = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
-        async with httpx.AsyncClient(timeout=timeouts) as client:
+        class _ObservedAsyncClient:
+            def __init__(self, client):
+                self._client = client
+
+            async def __aenter__(self):
+                client = await self._client.__aenter__()
+                notify("transport_open")
+                return client
+
+            async def __aexit__(self, *exc):
+                result = await self._client.__aexit__(*exc)
+                notify("client_cleanup_complete")
+                return result
+
+        async with _ObservedAsyncClient(httpx.AsyncClient(timeout=timeouts)) as client:
             try:
                 stream_manager = client.stream(
                     "POST", f"{self.base_url}/api/chat", json=payload
@@ -363,6 +399,7 @@ class OllamaBackend(ModelBackend):
                     if remaining_total <= 0:
                         return aborted(f"Gesamtdeckel {total_cap}s erreicht",
                                        discard_tool_calls=True, provider_request_aborted="total_deadline")
+                notify("awaiting_response_headers")
                 response = await _await_ollama_stream_operation(
                     stream_manager.__aenter__, cancel_event=cancel_event,
                     total_timeout=remaining_total,
@@ -373,8 +410,14 @@ class OllamaBackend(ModelBackend):
                 if response is _OLLAMA_STREAM_TOTAL_TIMEOUT:
                     return aborted(f"Gesamtdeckel {total_cap}s erreicht",
                                    discard_tool_calls=True, provider_request_aborted="total_deadline")
+                notify("response_headers_received")
                 async with AsyncExitStack() as stream_stack:
-                    stream_stack.push_async_exit(stream_manager.__aexit__)
+                    async def close_response(*exc):
+                        result = await stream_manager.__aexit__(*exc)
+                        notify("response_cleanup_complete")
+                        return result
+
+                    stream_stack.push_async_exit(close_response)
                     if response.status_code >= 400:
                         from hub._services.llm.backend_errors import classify_ollama_error, read_error_payload
                         remaining_total = None
@@ -479,6 +522,8 @@ class OllamaBackend(ModelBackend):
                             return aborted(f"Gesamtdeckel {total_cap}s erreicht",
                                            discard_tool_calls=True, provider_request_aborted="total_deadline")
                         if line.strip():
+                            if chunk_count == 0:
+                                notify("first_stream_chunk_received")
                             chunk_count = min(chunk_count + 1, 1_000_000)
                             last_activity = now
                             probes = 0
@@ -511,6 +556,7 @@ class OllamaBackend(ModelBackend):
                             if chunk.get("eval_count") is not None:
                                 eval_tokens = chunk["eval_count"]
                             if chunk.get("done"):
+                                notify("response_completed")
                                 done_reason = chunk.get("done_reason")
                                 completed = True
                                 break
