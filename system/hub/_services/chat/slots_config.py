@@ -1835,7 +1835,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
 
 @_serialized_mutation
 def remove_worker(worker_id: str, path: str | None = None, *, _runtime_guard=None) -> bool:
-    """Delete only under a fresh controller proof, retaining terminal budget receipts."""
+    """Delegate fenced receipt archival and profile removal to agent-library."""
     cfg = load_slots_config(path, strict=True)
     workers = cfg.get("dynamic_workers", [])
     matches = [w for w in workers if w.get("id") == worker_id]
@@ -1851,23 +1851,37 @@ def remove_worker(worker_id: str, path: str | None = None, *, _runtime_guard=Non
         if _MODEL_REQUEST_RUNS_FIELD in worker:
             raise RuntimeError("Budgetierte Run-Belege benötigen die gefencete Controller-Löschung mit Archiv")
         raise RuntimeError("worker_delete_execution_unconfirmed")
-    # The caller holds the controller admission lock; this OS lock excludes
-    # configuration edits and admissions in other processes until removal.
-    _runtime_guard(worker)
-    runs = _model_request_runs(worker)
-    records = list(runs["terminal"])
-    if runs["current"] is not None:
-        records.append(runs["current"])
-    if any(record["phase"] != "terminal" for record in records):
-        raise RuntimeError("worker_delete_budget_unconfirmed")
-    from .worker_run_archive import archive_terminal_records
-    archive_terminal_records(worker_id, records, _resolve_path(path).parent / "worker-run-archive")
-    cfg["dynamic_workers"] = new_workers
-    # Removing the profile also atomically revokes its persistent opt-in.
-    save_slots_config(cfg, path, durable=os.name == "posix")
-    log.info("Removed dynamic worker %s", worker_id)
-    return True
 
+    from hub._services.agent_library import archive_then_remove_profile
+
+    def terminal_records(profile):
+        runs = _model_request_runs(profile)
+        records = list(runs["terminal"])
+        if runs["current"] is not None:
+            records.append(runs["current"])
+        return records
+
+    def archive(profile_id, records):
+        from .worker_run_archive import archive_terminal_records
+        return archive_terminal_records(
+            profile_id, list(records), _resolve_path(path).parent / "worker-run-archive"
+        )
+
+    def persist_removal():
+        cfg["dynamic_workers"] = new_workers
+        # Removing the profile also atomically revokes its persistent opt-in.
+        save_slots_config(cfg, path, durable=os.name == "posix")
+        log.info("Removed dynamic worker %s", worker_id)
+        return True
+
+    return archive_then_remove_profile(
+        worker_id,
+        worker,
+        assert_inactive=_runtime_guard,
+        terminal_records=terminal_records,
+        archive=archive,
+        remove=persist_removal,
+    )
 
 def _validated_controller_run(record: Any) -> dict[str, Any]:
     base = {"schema", "phase", "worker_id", "host", "pid", "process_create_time", "durable", "prior_runs_unconfirmed"}
