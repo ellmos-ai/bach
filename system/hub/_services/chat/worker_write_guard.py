@@ -88,13 +88,23 @@ def authorize_safe_read(binding) -> int:
     return task_id
 
 
-def _paths(repo_root=None, worktrees_dir=None):
+def _paths(repo_root=None, worktrees_dir=None, *, task_id=None):
     from hub import worker_git
-    repo = _NATIVE_PATH(repo_root or worker_git.get_live_repo_root()).expanduser().resolve(strict=True)
     root = _NATIVE_PATH(worktrees_dir or worker_git.get_worktrees_dir()).expanduser()
     root = _NATIVE_PATH(os.path.abspath(root))
     if root.is_symlink():
         raise WorkerWriteGuardError("Worktree-Verzeichnis ist ein Link")
+    if task_id is None:
+        repo_path = repo_root or worker_git.get_live_repo_root()
+    else:
+        tid = _task_id(task_id)
+        target = root / f"task-{tid}"
+        _, trusted_repo, _ = worker_git._resolve_task_source(
+            tid, require_current=(not target.exists() and repo_root is None))
+        if repo_root is not None and _NATIVE_PATH(repo_root).expanduser().resolve(strict=True) != trusted_repo:
+            raise WorkerWriteGuardError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
+        repo_path = trusted_repo
+    repo = _NATIVE_PATH(repo_path).expanduser().resolve(strict=True)
     return repo, root
 
 
@@ -147,7 +157,8 @@ def _registered_tree(repo: Path, worktrees_root: Path, task_id: int) -> Path:
             found = True
             break
     if not found:
-        raise WorkerWriteGuardError("Task-Arbeitsbaum ist in Git nicht exakt registriert")
+        raise WorkerWriteGuardError(
+            "Task-Arbeitsbaum ist nicht im aktuell vertrauenswürdigen Repo registriert; Altbindung prüfen, keine automatische Migration")
     top = _NATIVE_PATH(_run_readonly(["git", "rev-parse", "--show-toplevel"], target_real).strip()).resolve(strict=True)
     if top != target_real:
         raise WorkerWriteGuardError("Git-Root weicht vom Task-Arbeitsbaum ab")
@@ -302,8 +313,10 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     except (WorkerWriteGuardError, TypeError, ValueError):
         return _scope_unavailable("invalid_task_id")
     try:
-        repo, root = _paths(repo_root, worktrees_dir)
-    except (WorkerWriteGuardError, OSError, ValueError):
+        from hub._services.chat.worker_repo_registry import resolve_task_repository
+        task_repo = resolve_task_repository(tid)
+        repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
+    except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("paths_unavailable")
     try:
         target = _registered_tree(repo, root, tid)
@@ -315,10 +328,10 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         return _scope_unavailable("lock_unavailable")
     from hub import worker_git
     try:
-        origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], repo))
-        if worker_git._canonical_bach_origin(
-                _scope_text(["remote", "get-url", "origin"], target)) != origin:
+        origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], repo), task_repo.repository)
+        if worker_git._canonical_public_origin(
+                _scope_text(["remote", "get-url", "origin"], target), task_repo.repository) != origin:
             raise WorkerWriteGuardError("Git-Origin weicht ab")
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("origin_unavailable")
@@ -333,25 +346,10 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
             if len(values) != 1:
                 raise WorkerWriteGuardError("Mehrdeutige öffentliche Quellbindung")
             proof = json.loads(values[0])
-            if (not isinstance(proof, dict)
-                    or proof.get("schema") != "bach.task-public-source.v1"
-                    or proof.get("task_id") != str(tid)
-                    or proof.get("repository") != "ellmos-ai/bach"
-                    or proof.get("origin") != origin
-                    or proof.get("source_ref") != "refs/heads/main"
-                    or not isinstance(proof.get("source_sha"), str)
-                    or not re.fullmatch(r"[0-9a-f]{40}", proof["source_sha"])
-                    or proof.get("visibility") != "public"
-                    or proof.get("private") is not False
-                    or proof.get("metadata_verified") is not True
-                    or proof.get("ref_verified") is not True
-                    or not isinstance(proof.get("verified_at"), str)
-                    or not proof["verified_at"]):
-                raise WorkerWriteGuardError("Öffentliche Quellbindung ist ungültig")
-            if _scope_git(["merge-base", "--is-ancestor", proof["source_sha"], "HEAD"],
-                          target, allowed=(0, 1))[0] != 0:
-                raise WorkerWriteGuardError("Task-HEAD stammt nicht vom öffentlichen Pin ab")
-            source_pin = {key: proof[key] for key in
+            validated = worker_git.read_task_public_source_registration(repo, target, tid)
+            if proof != validated:
+                raise WorkerWriteGuardError("Öffentliche Quellbindung änderte sich während des Scope-Readbacks")
+            source_pin = {name: validated[name] for name in
                           ("schema", "source_ref", "source_sha", "verified_at")}
     except (WorkerWriteGuardError, RuntimeError, UnicodeError, KeyError, ValueError):
         return _scope_unavailable("source_pin_invalid")
@@ -426,14 +424,14 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         )
         if (final_stage != stage or final[:5] != (status, index, branch, head, tree)
                 or final[5] != (code, raw_pin)
-                or worker_git._canonical_bach_origin(final[6]) != origin
-                or worker_git._canonical_bach_origin(final[7]) != origin):
+                or worker_git._canonical_public_origin(final[6], task_repo.repository) != origin
+                or worker_git._canonical_public_origin(final[7], task_repo.repository) != origin):
             return _scope_unavailable("git_changed")
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("git_unavailable")
     snapshot = {
         "schema": _SCOPE_SCHEMA, "availability": "available", "task_id": tid,
-        "repository": "ellmos-ai/bach", "origin": origin, "branch": branch,
+        "repository": task_repo.repository, "origin": origin, "branch": branch,
         "head_oid": head, "tree_oid": tree,
         "repo_path_sha256": hashlib.sha256(str(repo).encode("utf-8")).hexdigest(),
         "worktree_path_sha256": hashlib.sha256(str(target).encode("utf-8")).hexdigest(),
@@ -476,17 +474,19 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
         return _task_start_scope_unavailable("invalid_source_capability")
     try:
         tid = _task_id(getattr(binding, "task_id", None))
-        repo, root = _paths(repo_root, worktrees_dir)
+        from hub._services.chat.worker_repo_registry import resolve_task_repository
+        task_repo = resolve_task_repository(tid)
+        repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
         target = authorize_start(binding, tid, repo_root=repo, worktrees_dir=root)
         if task_root is not None and _NATIVE_PATH(task_root).resolve(strict=True) != target:
             return _task_start_scope_unavailable("registration_unavailable")
 
         from hub import worker_git
-        origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], repo))
-        target_origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], target))
-        if origin != "https://github.com/ellmos-ai/bach" or target_origin != origin:
+        origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], repo), task_repo.repository)
+        target_origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], target), task_repo.repository)
+        if origin != task_repo.origin or target_origin != origin:
             return _task_start_scope_unavailable("origin_unavailable")
 
         branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
@@ -542,8 +542,8 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
         final_stage = _scope_stage(target)
         final_branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
         final_head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
-        final_origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], target))
+        final_origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], target), task_repo.repository)
         if (final_filter_code != 1 or final_pin_state != pin_state
                 or final_stage != stage or final_branch != branch
                 or final_head != head or final_origin != origin
@@ -651,8 +651,9 @@ def review_source_root(binding, *, repo_root=None, worktrees_dir=None) -> Path:
             or result.get("result_revision") != grant.target_revision
             or result.get("scope", {}).get("availability") != "available"):
         raise WorkerWriteGuardError("Review-Leseziel passt nicht zur gebundenen Ergebnisrevision")
-    repo, root = _paths(repo_root, worktrees_dir)
-    return _registered_tree(repo, root, _task_id(grant.target_task_id))
+    target_tid = _task_id(grant.target_task_id)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=target_tid)
+    return _registered_tree(repo, root, target_tid)
 
 
 def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, worktrees_dir=None) -> TaskReadScope:
@@ -661,14 +662,13 @@ def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, wor
         raise WorkerWriteGuardError("Vorhandene Secrets-Prüfung fehlt")
     tid = _task_id(getattr(binding, "task_id", None))
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
     grant = getattr(binding, "_review_grant", None)
+    source_tid = _task_id(grant.target_task_id) if grant is not None else tid
+    repo, root = _paths(repo_root, worktrees_dir, task_id=source_tid)
     if grant is not None:
         target = review_source_root(binding, repo_root=repo, worktrees_dir=root)
-        source_tid = _task_id(grant.target_task_id)
     else:
         target = _registered_tree(repo, root, tid)
-        source_tid = tid
     from hub import worker_git
     registration = worker_git.read_task_public_source_registration(repo, target, source_tid)
     requested = _task_relative_path(target, candidate)
@@ -810,7 +810,7 @@ def open_authorized_task_file(scope: TaskReadScope, path: Path):
 def authorize_start(binding, task_id, *, repo_root=None, worktrees_dir=None) -> Path:
     tid = _task_id(task_id)
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
     target = root / f"task-{tid}"
     _fresh_locks(repo, root, target)
     if target.exists():
@@ -851,7 +851,7 @@ def authorize_mutation(binding, task_id=None, *, paths: Iterable = (),
                        repo_root=None, worktrees_dir=None) -> tuple[Path, tuple[Path, ...]]:
     tid = _task_id(task_id if task_id is not None else binding.task_id)
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
     target = _registered_tree(repo, root, tid)
     checked = tuple(_safe_task_path(target, value) for value in paths)
     # Scan each source/target's nearest existing directory before parent mkdir.
