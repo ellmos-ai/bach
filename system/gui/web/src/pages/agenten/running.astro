@@ -260,6 +260,8 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
           <label>Worker-Modus<select id="worker-blueprint-sub-mode" required disabled><option value="">Modi werden geladen…</option></select></label>
           <label>Ausführung<select id="worker-blueprint-run-mode"><option value="continuous">Fortlaufend bis Stopp</option><option value="once">Einzellauf</option></select></label>
           <label>Task-ID (optional)<input id="worker-blueprint-task-id" type="number" min="1" max="2147483647" inputmode="numeric" placeholder="Für einen gezielten Auftrag"></label>
+          <label>Freigegebene Repositories (owner/repo, kommagetrennt)<input id="worker-blueprint-repositories" type="text" maxlength="4096" placeholder="ellmos-ai/bach"></label>
+          <small>Leer lassen sperrt die Task-Auswahl. Die Repo-ID gibt keine Source- oder Branch-Freigabe.</small>
           <label>Backend
             <select id="worker-blueprint-backend">
               <option value="ollama-cloud">Ollama Cloud</option>
@@ -536,6 +538,10 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
           input.append(option);
         }
         input.value = currentValue;
+      } else if (type === 'textarea') {
+        input = document.createElement('textarea');
+        input.rows = 2; input.maxLength = 4096;
+        input.value = Array.isArray(value) ? value.join(', ') : String(value ?? '');
       } else {
         input = document.createElement('input');
         input.type = type;
@@ -652,6 +658,8 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
         ['expert_role', 'boss_routing', 'task_worker', 'hintergrund_worker']);
       coreField(form, 'think', 'Denken', source.think, 'checkbox');
       coreField(form, 'allow_tools', 'Werkzeuge erlauben', source.allow_tools !== false, 'checkbox');
+      coreField(form, 'allowed_repositories', 'Freigegebene Repositories (owner/repo, kommagetrennt)',
+        source.allowed_repositories || [], 'textarea');
       coreField(form, 'max_tool_rounds', 'Maximale Tool-Runden', source.max_tool_rounds, 'number');
       coreField(form, 'pause_after', 'Pause nach', source.pause_after, 'number');
       coreField(form, 'pause_basis', 'Pausen zählen', source.pause_basis, 'select',
@@ -756,6 +764,7 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
         const field = input.dataset.coreField;
         if (field === 'preset') {preset = input.value; continue;}
         let value = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
+        if (field === 'allowed_repositories') value = parseRepositoryAllowlist(input.value);
         if (field.startsWith('custom_') && input.dataset.wasCustom !== 'true' && value === input.dataset.defaultText) value = '';
         if (!coreEditorAgent || value !== coreEditorAgent[field]) changes[field] = value;
       }
@@ -1360,6 +1369,7 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
         max_experts: subMode === 'boss_routing' ? Number(document.getElementById('worker-blueprint-max-experts').value) : 3,
         expert_models: {},
         task_id: taskId,
+        allowed_repositories: parseRepositoryAllowlist(document.getElementById('worker-blueprint-repositories').value),
         max_tool_rounds: Number(document.getElementById('worker-blueprint-turns').value),
         mode: document.getElementById('worker-blueprint-mode').value,
         think: document.getElementById('worker-blueprint-think').value === 'true',
@@ -1410,6 +1420,8 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
         document.getElementById('worker-blueprint-backend').value = config.backend || 'ollama';
         document.getElementById('worker-blueprint-turns').value = config.max_tool_rounds ?? 25;
         document.getElementById('worker-blueprint-task-prompt').value = config.task_prompt || '';
+        document.getElementById('worker-blueprint-repositories').value =
+          Array.isArray(config.allowed_repositories) ? config.allowed_repositories.join(', ') : '';
         const fields={sub_mode:'sub-mode',role_id:'role',mode:'mode',think:'think',pause_after:'pause-after',
           pause_basis:'pause-basis',pause_minutes:'pause-minutes',max_experts:'max-experts',task_id:'task-id'};
         for(const [field,id] of Object.entries(fields)) {
@@ -1445,6 +1457,10 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
       bossFields.hidden = subMode !== 'boss_routing';
       roleSelect.required = subMode === 'expert_role' && !multiRole.checked;
       roleSelect.disabled = subMode !== 'expert_role' || multiRole.checked;
+    }
+
+    function parseRepositoryAllowlist(value) {
+      return String(value || '').split(/[\s,]+/).map(item => item.trim()).filter(Boolean);
     }
 
     function drawWorkerAppearance() {

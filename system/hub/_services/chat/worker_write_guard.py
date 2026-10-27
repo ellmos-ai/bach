@@ -559,6 +559,7 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
         "schema": _TASK_START_SCOPE_SCHEMA,
         "availability": "available",
         "task_id": tid,
+        "repository": task_repo.repository,
         "branch": branch,
         "head_oid": head,
         "source_pin": source_pin,

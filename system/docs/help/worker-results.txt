@@ -21,6 +21,18 @@ allgemeine Queue auf assigned_to BACH, Buddha, Ollama oder die eigene Worker-ID,
 Rolle beziehungsweise sub_mode begrenzt. Ein aktivierter Filter ist eine
 ausdrückliche Auswahlkonfiguration, keine allgemeine Freigabe fremder Aufgaben.
 
+Taskworker prüfen vor jedem Leaseversuch die Task-Repo-Bindung aus der geschützten
+Task-Repo-Registry gegen die explizite Repo-Freigabeliste des Workerprofils.
+Die Liste enthält kanonische IDs wie ellmos-ai/bach; sie legt weder Origin,
+Default-Branch noch Source-Pin fest. Diese Source-Felder stammen ausschließlich
+aus der Task-Repo-Registry. Fehlende oder leere Freigaben sowie nicht gebundene,
+ungültige oder nicht erlaubte Repositories sperren die Taskauswahl vor dem Claim.
+Ältere Profile ohne diese Angabe erhalten keine pauschale Freigabe: vor ihrem
+nächsten Tasklauf muss eine begrenzte Repo-Liste über die versionsgebundene
+Worker-Konfiguration gesetzt werden. Vorschau und echte Auswahl verwenden
+dieselben Ablehnungsgründe; eine neue Task- oder Registryversion wird vor dem
+Lease erneut geprüft.
+
 Die live erhobene queue_status-Projektion nennt Kandidaten, Auswahlmatches,
 Übernahmeversuche, Quelle, Zeit und getrennte Ausschlusszahlen für Kategorie,
 Priorität, positive beziehungsweise ausgeschlossene Tags und native

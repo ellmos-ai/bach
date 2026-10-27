@@ -17,6 +17,8 @@ from hub._services.task_lease_client import (
 )
 
 _EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
+_REPOSITORY_REJECTIONS = frozenset({"repository_capability_missing", "repository_unverified",
+                                    "repository_not_allowed", "repository_changed"})
 
 
 def _external_profile_backend(slot):
@@ -34,6 +36,10 @@ def _external_profile_backend(slot):
 
 class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
+
+    def __init__(self, message, *, reason="changed_selection"):
+        self.reason = reason
+        super().__init__(message)
 
 
 class WorkerResultLimitLockedError(LeaseProtocolError):
@@ -110,13 +116,25 @@ class WorkerLeaseBinding:
                     or getattr(_review_grant, "worker_id", None) != worker_id
                     or getattr(_review_grant, "host", None) != host
                     or slot is None
-                    or getattr(_review_grant, "slot_id", None) != slot.get("id")
-                    or not cls._matches_review_slot(snapshot, slot)):
+                    or getattr(_review_grant, "slot_id", None) != slot.get("id")):
                 raise _TaskDoesNotMatch("Reviewtask passt nicht zur gebundenen Reviewerroute")
+            review_slot = {**slot, "pickup_filter": {"enabled": False}}
+            reason = cls._selection_rejection_reason(snapshot, review_slot)
+            if reason:
+                raise _TaskDoesNotMatch("Reviewtask passt nicht zur gebundenen Reviewerroute",
+                    reason="repository_changed" if reason in _REPOSITORY_REJECTIONS else "changed_selection")
+        elif automatic and slot is not None:
+            reason = cls._selection_rejection_reason(snapshot, slot)
+            if reason:
+                raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung",
+                    reason="repository_changed" if reason in _REPOSITORY_REJECTIONS else "changed_selection")
         else:
-            matches = cls._automatic_matches_slot if automatic else cls._matches_slot
-            if slot is not None and not matches(snapshot, slot):
-                raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
+            if slot is not None:
+                if not cls._matches_slot(snapshot, slot):
+                    raise _TaskDoesNotMatch("Task passt nicht zur aktuellen Workerbesetzung")
+                repository_reason = cls._repository_rejection_reason(snapshot, slot)
+                if repository_reason:
+                    raise _TaskDoesNotMatch(repository_reason, reason="repository_changed")
         kwargs = {"now": clock()} if clock is not None else {}
         if _external_profile_backend(slot):
             # Shorten stale-claim recovery for cloud workers while retaining
@@ -239,10 +257,29 @@ class WorkerLeaseBinding:
         # Explicit routing may select a personal task. A pickup filter scopes
         # general candidates but never overrides a foreign assignee.
         if snapshot.get("assigned_slot") or (isinstance(pickup, dict) and pickup.get("enabled")):
-            return None
+            return cls._repository_rejection_reason(snapshot, slot)
         if assigned_to not in allowed:
             return "ownership"
-        return None
+        return cls._repository_rejection_reason(snapshot, slot)
+
+    @classmethod
+    def _repository_rejection_reason(cls, snapshot, slot):
+        """Require a trusted task binding and an explicit worker repo capability."""
+        if not isinstance(slot, dict):
+            return "repository_capability_missing"
+        try:
+            from .worker_queue_status import worker_selection_policy
+            repositories = worker_selection_policy(slot)["allowed_repositories"]
+        except Exception:  # noqa: BLE001 -- malformed worker policy fails closed.
+            return "repository_capability_missing"
+        if not repositories:
+            return "repository_capability_missing"
+        try:
+            from .worker_repo_registry import resolve_task_repository
+            binding = resolve_task_repository(snapshot.get("id"))
+        except Exception:  # noqa: BLE001 -- unreadable/malformed registry fails closed.
+            return "repository_unverified"
+        return None if binding.repository in repositories else "repository_not_allowed"
 
     @classmethod
     def acquire_next(cls, client, slot, *, observe_queue=None, review_route=None,
@@ -267,9 +304,14 @@ class WorkerLeaseBinding:
             if isinstance(explicit, str) and explicit.isdecimal():
                 explicit = int(explicit)
             observation.candidate(explicit)
+            fixed_snapshot = client.task_snapshot(explicit)
+            repository_reason = cls._repository_rejection_reason(fixed_snapshot, slot)
+            if repository_reason:
+                observation.reject(repository_reason)
+                observation.waiting()
+                return None
             observation.record["matched_count"] += 1
             observation.record["attempted_count"] += 1
-            fixed_snapshot = client.task_snapshot(explicit)
             fixed_version = fixed_snapshot.get("task_version") if isinstance(fixed_snapshot, dict) else None
             review_grant = None
             if getattr(client, "mode", None) == "local":
@@ -298,6 +340,12 @@ class WorkerLeaseBinding:
                 if review_grant is not None:
                     acquire_kwargs["_review_grant"] = review_grant
                 binding = cls.acquire(client, explicit, slot=slot, **acquire_kwargs)
+            except _TaskDoesNotMatch as exc:
+                observation.reject(exc.reason if exc.reason in {"repository_capability_missing",
+                    "repository_unverified", "repository_not_allowed", "repository_changed"}
+                    else "changed_selection")
+                observation.waiting()
+                return None
             except LeaseDeniedError as exc:
                 if exc.reason not in ACQUIRE_DENIALS:
                     raise
@@ -348,8 +396,10 @@ class WorkerLeaseBinding:
                     binding = cls.acquire(client, task["id"], slot=slot, automatic=True, **kwargs)
                     observation.acquired(binding)
                     return binding
-                except _TaskDoesNotMatch:
-                    observation.reject("changed_selection")
+                except _TaskDoesNotMatch as exc:
+                    observation.reject(exc.reason if exc.reason in {"repository_capability_missing",
+                        "repository_unverified", "repository_not_allowed", "repository_changed"}
+                        else "changed_selection")
                     continue
                 except LeaseDeniedError as exc:
                     if exc.reason == "conflict":
@@ -414,7 +464,8 @@ class WorkerLeaseBinding:
                     task, {**slot, "pickup_filter": {"enabled": False}})
                 if reason:
                     observation.reject(reason if reason in {"slot_binding", "model_binding",
-                        "explicit_slot_required", "ownership"} else "ownership")
+                        "explicit_slot_required", "ownership", "repository_capability_missing",
+                        "repository_unverified", "repository_not_allowed", "repository_changed"} else "ownership")
                     continue
                 if deferred_versions.get(task["id"]) == task.get("task_version"):
                     observation.reject("deferred_version")
@@ -436,8 +487,10 @@ class WorkerLeaseBinding:
                         _review_grant=grant, **kwargs)
                     observation.acquired(binding)
                     return binding
-                except _TaskDoesNotMatch:
-                    observation.reject("changed_selection")
+                except _TaskDoesNotMatch as exc:
+                    observation.reject(exc.reason if exc.reason in {"repository_capability_missing",
+                        "repository_unverified", "repository_not_allowed", "repository_changed"}
+                        else "changed_selection")
                 except LeaseDeniedError as exc:
                     if exc.reason == "conflict":
                         observation.denied(exc.reason)

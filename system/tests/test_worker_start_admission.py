@@ -1,6 +1,7 @@
 """Observe actual native admission/worker lifetime without live inference."""
 import importlib
 from contextlib import contextmanager
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -10,6 +11,7 @@ import threading
 import pytest
 from system.tests.test_task_lease_client import mem_db
 from system.tests.test_worker_lease_supervision import binding as leased_binding
+from hub._services.chat.worker_repo_registry import resolve_task_repository as _resolve_task_repository_real
 
 from hub._services.chat.chat_runtime import ChatSession
 from hub._services.chat.slots_config import initialize_slots_config, add_worker, get_worker_slot, update_slot
@@ -28,7 +30,7 @@ def test_explicit_once_scope_precedes_model_dispatch(
 
     control, worker = admission
     update_slot(worker["id"], {"task_id": leased_binding.task_id,
-        "allowed_tools": tools, "allow_tools": True})
+        "allowed_tools": tools, "allowed_repositories": ["ellmos-ai/bach"], "allow_tools": True})
     observed = []
     monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
     monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
@@ -42,6 +44,7 @@ def test_explicit_once_scope_precedes_model_dispatch(
         task_id = binding.task_id
         observed.append(("scope", task_id))
         return {"availability": "available", "task_id": task_id,
+            "repository": "ellmos-ai/bach",
             "branch": f"refs/heads/bach-task/{task_id}",
             "source_pin": {"verified_public_main": "pinned"} if code_capability else None}
     async def process(*_args, **_kwargs):
@@ -77,7 +80,7 @@ def test_explicit_once_scope_failure_stops_before_model(
 
     control, worker = admission
     update_slot(worker["id"], {"task_id": leased_binding.task_id,
-        "allowed_tools": ["task_manage"], "allow_tools": True})
+        "allowed_tools": ["task_manage"], "allowed_repositories": ["ellmos-ai/bach"], "allow_tools": True})
     monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
     monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
     monkeypatch.setattr(control, "finish_assignment", lambda *_args, **_kwargs: None)
@@ -129,9 +132,11 @@ def test_bound_task_scope_precedes_model_for_every_worker_type(
         lambda task_id, **kwargs: started.append((task_id, kwargs["task_code_capability"])))
     monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope", lambda binding, **_kwargs: {
         "availability": "available", "task_id": binding.task_id,
+        "repository": "ellmos-ai/bach",
         "branch": f"refs/heads/bach-task/{binding.task_id}", "source_pin": None})
     control._prepare_bound_task_scope(leased_binding,
-        {"type": worker_type, "allowed_tools": ["task_manage"]})
+        {"type": worker_type, "allowed_tools": ["task_manage"],
+         "allowed_repositories": ["ellmos-ai/bach"]})
     assert started == [(leased_binding.task_id, False)]
 
 
@@ -169,8 +174,10 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     from hub._services.chat import worker_write_guard
 
     control, _once_worker = admission
-    worker = add_worker({"name": "Admission continuous", "type": "continuous"})
-    update_slot(worker["id"], {"allowed_tools": ["task_manage"], "allow_tools": True})
+    worker = add_worker({"name": "Admission continuous", "type": "continuous",
+                         "allowed_repositories": ["ellmos-ai/bach"]})
+    update_slot(worker["id"], {"allowed_tools": ["task_manage"],
+        "allowed_repositories": ["ellmos-ai/bach"], "allow_tools": True})
     observed = []
     worker_controls = []
     monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
@@ -192,6 +199,7 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     monkeypatch.setattr(worker_git, "start_task_worktree", start)
     monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope", lambda binding, **_kwargs: {
         "availability": "available", "task_id": binding.task_id,
+        "repository": "ellmos-ai/bach",
         "branch": f"refs/heads/bach-task/{binding.task_id}", "source_pin": None})
     async def process(*_args, **_kwargs):
         observed.append(("model",))
@@ -1048,7 +1056,8 @@ def recovery(real_acquire_before_fixture, startup, monkeypatch, mem_db):
             raise PermissionError("Fixture write lock")
     monkeypatch.setattr(skill_source_service, "check_write_locks", fixture_lock_guard)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
-    slots.update_slot("buddha_always_on", {"task_id": 42, "status": "running"})
+    slots.update_slot("buddha_always_on", {"task_id": 42, "status": "running",
+        "allowed_repositories": ["ellmos-ai/bach"]})
     execution = control._WorkerControl("buddha_always_on", startup_recovery=True)
     execution.slot_policy_reader = control._execution_slot_reader(slots.get_always_on_execution_slot())
     control._WORKER_CONTROLS[execution.worker_id] = execution
@@ -1223,6 +1232,8 @@ def test_bound_task_scope_resumes_dirty_registered_tree_without_accepting_it(
     git_home.mkdir()
     monkeypatch.setenv("HOME", str(git_home))
     monkeypatch.setenv("USERPROFILE", str(git_home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: git_home))
+    task_id = leased_binding.task_id
     subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "BACH Test"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.email", "bach-test@example.com"], cwd=repo, check=True)
@@ -1235,17 +1246,44 @@ def test_bound_task_scope_resumes_dirty_registered_tree_without_accepting_it(
     subprocess.run(["git", "remote", "add", "origin", "https://github.com/ellmos-ai/bach"],
                    cwd=repo, check=True)
 
+    source_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True,
+        text=True, encoding="utf-8").stdout.strip()
+    source_root = git_home / ".bach" / "task-repo-sources"
+    repo = source_root / "ellmos-ai" / "bach" / source_sha
+    repo.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", "--config", "core.autocrlf=false", "--no-hardlinks",
+                    str(tmp_path / "repo"), str(repo)],
+                   check=True, capture_output=True)
+    subprocess.run(["git", "remote", "set-url", "origin", "https://github.com/ellmos-ai/bach"],
+                   cwd=repo, check=True)
+    registry_path = git_home / ".bach" / "worker_repo_registry.v1.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({
+        "schema": "bach.worker-repo-registry.v1",
+        "repositories": {"ellmos-ai/bach": {
+            "origin": "https://github.com/ellmos-ai/bach", "default_branch": "main",
+            "visibility": "public"}},
+        "tasks": {str(task_id): {"repository": "ellmos-ai/bach", "source_sha": source_sha}},
+    }, sort_keys=True), encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(registry_path.parent, 0o700)
+        os.chmod(registry_path, 0o600)
+    from hub._services.chat import worker_repo_registry
+    monkeypatch.setattr(worker_repo_registry, "registry_path", lambda: registry_path)
+    monkeypatch.setattr(worker_repo_registry, "resolve_task_repository", _resolve_task_repository_real)
+    resolved_binding = worker_repo_registry.resolve_task_repository(task_id)
+    assert (resolved_binding.repository, resolved_binding.origin, resolved_binding.default_branch,
+            resolved_binding.source_sha) == (
+        "ellmos-ai/bach", "https://github.com/ellmos-ai/bach", "main", source_sha)
+
     worktrees.mkdir()
-    task_id = leased_binding.task_id
     task_root = worktrees / f"task-{task_id}"
     subprocess.run(["git", "worktree", "add", str(task_root), "-b",
                     f"bach-task/{task_id}", "main"], cwd=repo, check=True, capture_output=True)
     if has_pin:
-        source_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True,
-            text=True, encoding="utf-8").stdout.strip()
         worker_git._store_public_source_registration(repo, task_root, task_id, {
-            "schema": "bach.task-public-source.v1",
+            "schema": "bach.task-public-source.v2",
             "repository": "ellmos-ai/bach",
             "origin": "https://github.com/ellmos-ai/bach",
             "source_ref": "refs/heads/main",
@@ -1291,7 +1329,8 @@ def test_bound_task_scope_resumes_dirty_registered_tree_without_accepting_it(
         if failure in {"invalid_pin", "missing_pin"}:
             with pytest.raises(RuntimeError, match="Task-Arbeitsbaum vor Modellstart nicht bestätigt"):
                 control._prepare_bound_task_scope(leased_binding,
-                    {"type": "continuous", "allowed_tools": ["write_file"] if code_capability else ["task_manage"]})
+                    {"type": "continuous", "allowed_tools": ["write_file"] if code_capability else ["task_manage"],
+                     "allowed_repositories": ["ellmos-ai/bach"]})
         assert (task_root / "README.md").read_text(encoding="utf-8") == "saved partial work\n"
         assert (task_root / "partial.py").read_text(encoding="utf-8") == "PARTIAL = True\n"
         return
@@ -1299,7 +1338,8 @@ def test_bound_task_scope_resumes_dirty_registered_tree_without_accepting_it(
 
     allowed_tools = ["write_file"] if code_capability else ["task_manage"]
     control._prepare_bound_task_scope(leased_binding,
-        {"type": "continuous", "allowed_tools": allowed_tools})
+        {"type": "continuous", "allowed_tools": allowed_tools,
+         "allowed_repositories": ["ellmos-ai/bach"]})
 
     status = subprocess.run(["git", "status", "--porcelain=v1", "--untracked-files=all"],
                             cwd=task_root, check=True, capture_output=True,

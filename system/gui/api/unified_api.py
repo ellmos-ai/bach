@@ -3381,7 +3381,7 @@ async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -
         "name", "avatar", "symbol", "allowed_tools", "skill_refs", "backend", "model", "max_tool_rounds", "max_model_requests", "mode", "think",
         "pause_after", "pause_minutes", "pause_basis", "type", "ttl_minutes", "task_prompt",
         "include_system_prompt", "allow_tools", "sub_mode", "role_id",
-        "multi_role", "max_experts", "expert_models", "task_id",
+        "multi_role", "max_experts", "expert_models", "task_id", "allowed_repositories",
     }
     if set(payload) - allowed_fields:
         raise HTTPException(status_code=400, detail="Unbekannte Worker-Konfigurationsfelder")
@@ -3480,7 +3480,8 @@ async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -
             raise HTTPException(status_code=400, detail="Experten-Modell ist im aktuellen Providerkatalog nicht bestätigt")
 
     from hub._services.chat.slots_config import _validated_core_edits
-    appearance = {key: payload[key] for key in ("avatar", "symbol", "allowed_tools", "skill_refs") if key in payload}
+    appearance = {key: payload[key] for key in ("avatar", "symbol", "allowed_tools", "skill_refs",
+                  "allowed_repositories") if key in payload}
     try:
         appearance = _validated_core_edits(appearance) if appearance else {}
     except (ValueError, RuntimeError) as exc:
@@ -3506,6 +3507,7 @@ async def _validated_worker_config(payload: Dict[str, Any], device_token: str) -
         "pause_minutes": integer("pause_minutes", 1, 0, 1440),
         "pause_basis": pause_basis,
         "task_prompt": task_prompt,
+        "allowed_repositories": appearance.get("allowed_repositories", []),
     }
     if "max_model_requests" in payload:
         config["max_model_requests"] = integer("max_model_requests", 8, 3, 256)

@@ -34,6 +34,33 @@ from pathlib import Path
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _legacy_selector_tests_use_test_repository(request, monkeypatch):
+    """Keep pre-repository selector tests focused; the new gate has dedicated tests."""
+    modules = {
+        "test_idle_worker_parked", "test_task_worker_profiles", "test_worker_completion_policy",
+        "test_worker_configuration", "test_worker_lease_binding", "test_worker_pickup_diagnostics",
+        "test_worker_queue_status", "test_worker_review_runtime", "test_worker_start_admission",
+        "test_worker_tool_bridge",
+    }
+    if request.module.__name__.rsplit(".", 1)[-1] not in modules:
+        return
+    from types import SimpleNamespace
+    from hub._services.chat import worker_queue_status
+    from hub._services.chat import worker_repo_registry
+
+    original_policy = worker_queue_status.worker_selection_policy
+
+    def test_policy(worker):
+        if isinstance(worker, dict) and "allowed_repositories" not in worker:
+            worker = {**worker, "allowed_repositories": ["ellmos-ai/bach"]}
+        return original_policy(worker)
+
+    monkeypatch.setattr(worker_queue_status, "worker_selection_policy", test_policy)
+    monkeypatch.setattr(worker_repo_registry, "resolve_task_repository",
+                        lambda task_id: SimpleNamespace(repository="ellmos-ai/bach"))
+
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
 sys.dont_write_bytecode = True

@@ -950,14 +950,26 @@ def _prepare_bound_task_scope(binding, slot):
     code_capability = any(tool in _WRITE_TOOLS for tool in allowed)
     try:
         binding.assert_active()
+        from hub._services.chat.worker_queue_status import worker_selection_policy
+        from hub._services.chat.worker_repo_registry import canonical_repository_id, resolve_task_repository
+        allowed_repositories = worker_selection_policy(slot)["allowed_repositories"]
+        pinned_repository = resolve_task_repository(binding.task_id).repository
+        if not allowed_repositories or pinned_repository not in allowed_repositories:
+            raise RuntimeError("repository_capability_changed")
         task_root = worker_git.start_task_worktree(binding.task_id, base_branch="main",
             worker_task_binding=binding, require_task_binding=True,
-            task_code_capability=code_capability)
+            task_code_capability=code_capability, expected_repository=pinned_repository)
         scope = snapshot_task_start_scope(
             binding, task_root=task_root, source_pin_required=code_capability)
         binding.assert_active()
-        if (scope.get("availability") != "available"
-                or scope.get("task_id") != binding.task_id
+        if scope.get("availability") != "available":
+            raise RuntimeError("scope_unavailable")
+        scoped_repository = canonical_repository_id(scope.get("repository"))
+        current_repository = resolve_task_repository(binding.task_id).repository
+        if (not allowed_repositories or scoped_repository not in allowed_repositories
+                or scoped_repository != pinned_repository or current_repository != scoped_repository):
+            raise RuntimeError("repository_scope_changed")
+        if (scope.get("task_id") != binding.task_id
                 or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
                 or (code_capability and scope.get("source_pin") is None)):
             raise RuntimeError("scope_unavailable")

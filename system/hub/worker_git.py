@@ -579,6 +579,7 @@ def start_task_worktree(
     worker_task_binding=None,
     require_task_binding: bool = False,
     task_code_capability: bool = False,
+    expected_repository: str | None = None,
 ) -> Path:
     """Create a bound task worktree from its trusted public-source pin."""
     if require_task_binding and worker_task_binding is None:
@@ -609,6 +610,14 @@ def start_task_worktree(
                 raise RuntimeError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
             public_record = _validate_pinned_source_clone(
                 repo, binding, require_current=not target_dir.exists())
+        if expected_repository is not None:
+            from hub._services.chat.worker_repo_registry import canonical_repository_id
+            try:
+                expected = canonical_repository_id(expected_repository)
+            except Exception:
+                raise RuntimeError("Erwartete Task-Repo-Fähigkeit ist ungültig") from None
+            if binding.repository != expected:
+                raise RuntimeError("Task-Repo-Bindung änderte sich vor der Scope-Provisionierung")
         from hub._services.chat.worker_write_guard import authorize_start, authorize_mutation
         target_dir = authorize_start(worker_task_binding, task_id, repo_root=repo,
                                      worktrees_dir=worktrees_dir)
