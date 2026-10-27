@@ -1255,6 +1255,9 @@ def test_bound_task_scope_resumes_dirty_registered_tree_without_accepting_it(
     subprocess.run(["git", "clone", "--config", "core.autocrlf=false", "--no-hardlinks",
                     str(tmp_path / "repo"), str(repo)],
                    check=True, capture_output=True)
+    if os.name != "nt":
+        for cache_dir in (source_root, source_root / "ellmos-ai", repo):
+            os.chmod(cache_dir, 0o700)
     subprocess.run(["git", "remote", "set-url", "origin", "https://github.com/ellmos-ai/bach"],
                    cwd=repo, check=True)
     registry_path = git_home / ".bach" / "worker_repo_registry.v1.json"
