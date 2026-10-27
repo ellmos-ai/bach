@@ -410,7 +410,123 @@ class BACHTray:
                     and isinstance(holder, str)
                     and re.fullmatch(r"worker-[0-9a-f]{32}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}", holder)):
                 safe["lease_worker_id"] = holder
+        provider_request = BACHTray._safe_provider_request(
+            execution.get("provider_request"),
+            generation=safe.get("generation"),
+            execution_state=safe["state"],
+            execution_terminal=safe["terminal"],
+            active_task_id=safe.get("active_task_id"),
+        )
+        if provider_request is not None:
+            safe["provider_request"] = provider_request
         return safe
+
+    @staticmethod
+    def _safe_provider_request(request, *, generation, execution_state,
+                               execution_terminal, active_task_id=None):
+        """Project only typed lifecycle metadata into the tray DTO."""
+        if not isinstance(request, dict):
+            return None
+        request_id = request.get("request_id")
+        request_generation = request.get("generation")
+        task_id = request.get("task_id")
+        if (not isinstance(request_id, str)
+                or not re.fullmatch(r"[0-9a-f]{32}", request_id)
+                or not isinstance(request_generation, str)
+                or request_generation != generation
+                or not isinstance(request_generation, str)
+                or not re.fullmatch(r"[0-9a-f]{32}", request_generation)
+                or type(task_id) is not int or task_id <= 0):
+            return None
+        request_state = request.get("state")
+        phase = request.get("phase")
+        phases = {
+            "registered", "request_starting", "transport_open",
+            "awaiting_response_headers", "response_headers_received",
+            "first_stream_chunk_received", "response_completed",
+            "request_aborted", "request_failed", "response_cleanup_complete",
+            "client_cleanup_complete", "runtime_call_complete",
+        }
+        if (not isinstance(request_state, str) or request_state not in {"active", "terminal"}
+                or not isinstance(phase, str) or phase not in phases):
+            return None
+        phase_at = request.get("phase_at")
+        if not isinstance(phase_at, str) or len(phase_at) > 40 or "\x00" in phase_at:
+            return None
+        try:
+            datetime.datetime.fromisoformat(phase_at.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        terminal_reasons = {
+            "worker_stop", "total_deadline", "httpx_read_timeout", "provider_error",
+            "backend_error", "backend_returned", "runtime_cancelled",
+            "dispatch_rejected", "response_completed",
+        }
+        terminal_reason = request.get("terminal_reason")
+        if (terminal_reason is not None
+                and (not isinstance(terminal_reason, str) or terminal_reason not in terminal_reasons)):
+            return None
+        runtime_complete = request.get("runtime_call_complete")
+        if type(runtime_complete) is not bool:
+            return None
+        if request_state == "terminal":
+            if (not runtime_complete or phase != "runtime_call_complete"
+                    or execution_state in {"idle", "starting"}):
+                return None
+        else:
+            if (runtime_complete or phase == "runtime_call_complete"
+                    or execution_state not in {"running", "stopping", "finishing"}):
+                return None
+        if execution_terminal and request_state != "terminal":
+            return None
+        if active_task_id is not None and active_task_id != task_id:
+            return None
+        transport = request.get("transport")
+        if not isinstance(transport, str) or transport not in {"ollama_httpx", "unavailable"}:
+            return None
+        details_available = request.get("transport_details_available")
+        cancellation_supported = request.get("cancellation_supported")
+        if (type(details_available) is not bool or type(cancellation_supported) is not bool
+                or details_available != (transport == "ollama_httpx")
+                or cancellation_supported != (transport == "ollama_httpx")):
+            return None
+        fence_available = request.get("task_fence_available")
+        task_fence = request.get("task_fence")
+        if type(fence_available) is not bool:
+            return None
+        if fence_available:
+            if type(task_fence) is not int or task_fence <= 0:
+                return None
+        elif task_fence is not None:
+            return None
+        bool_fields = ("cancel_requested", "observer_error")
+        if any(type(request.get(key)) is not bool for key in bool_fields):
+            return None
+        cleanup_values = {}
+        for key in ("response_cleanup_complete", "client_cleanup_complete"):
+            value = request.get(key)
+            if value is not None and type(value) is not bool:
+                return None
+            cleanup_values[key] = value
+        return {
+            "request_id": request_id,
+            "generation": request_generation,
+            "task_id": task_id,
+            "task_fence": task_fence,
+            "task_fence_available": fence_available,
+            "state": request_state,
+            "phase": phase,
+            "phase_at": phase_at,
+            "terminal_reason": terminal_reason,
+            "transport": transport,
+            "transport_details_available": details_available,
+            "cancellation_supported": cancellation_supported,
+            "cancel_requested": request["cancel_requested"],
+            "response_cleanup_complete": cleanup_values["response_cleanup_complete"],
+            "client_cleanup_complete": cleanup_values["client_cleanup_complete"],
+            "runtime_call_complete": runtime_complete,
+            "observer_error": request["observer_error"],
+        }
 
     @staticmethod
     def _persistent_cloud_profile(worker):

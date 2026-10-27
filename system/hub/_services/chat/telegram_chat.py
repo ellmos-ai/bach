@@ -680,29 +680,40 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
             "heartbeat_at": control.last_heartbeat_at,
             "stop_requested": control.stop_event.is_set()}
         request = control.active_model_request or control.last_model_request
-        if (request is not None and binding is not None
-                and request.worker_generation == control.generation
+        if request is not None and request.worker_generation == control.generation:
+            same_binding = (
+                binding is not None
                 and request.task_binding is binding
-                and request.task_id == getattr(binding, "task_id", None)):
-
-            receipt["provider_request"] = {
-                "request_id": request.request_id,
-                "generation": request.worker_generation,
-                "task_id": request.task_id,
-                "task_fence": request.task_fence,
-                "task_fence_available": type(request.task_fence) is int and request.task_fence > 0,
-                "phase": request.phase,
-                "phase_at": request.phase_at,
-                "terminal_reason": request.terminal_reason,
-                "transport": request.transport,
-                "transport_details_available": request.transport_details_available,
-                "cancellation_supported": request.cancellation_supported,
-                "cancel_requested": request.cancel_requested,
-                "response_cleanup_complete": request.response_cleanup_complete,
-                "client_cleanup_complete": request.client_cleanup_complete,
-                "runtime_call_complete": request.runtime_call_complete,
-                "observer_error": request.observer_error,
-            }
+                and request.task_id == getattr(binding, "task_id", None)
+            )
+            active_request = (
+                control.active_model_request is request and same_binding and not terminal
+            )
+            terminal_request = (
+                control.last_model_request is request
+                and request.runtime_call_complete is True
+                and (binding is None or same_binding)
+            )
+            if active_request or terminal_request:
+                receipt["provider_request"] = {
+                    "request_id": request.request_id,
+                    "generation": request.worker_generation,
+                    "task_id": request.task_id,
+                    "task_fence": request.task_fence,
+                    "task_fence_available": type(request.task_fence) is int and request.task_fence > 0,
+                    "state": "terminal" if request.runtime_call_complete else "active",
+                    "phase": request.phase,
+                    "phase_at": request.phase_at,
+                    "terminal_reason": request.terminal_reason,
+                    "transport": request.transport,
+                    "transport_details_available": request.transport_details_available,
+                    "cancellation_supported": request.cancellation_supported,
+                    "cancel_requested": request.cancel_requested,
+                    "response_cleanup_complete": request.response_cleanup_complete,
+                    "client_cleanup_complete": request.client_cleanup_complete,
+                    "runtime_call_complete": request.runtime_call_complete,
+                    "observer_error": request.observer_error,
+                }
         if control.model_request_budget is not None:
             stored = _budget_execution_projection(worker_id, control.start_request_id)
             if stored is None:

@@ -460,6 +460,60 @@ def test_controller_tray_and_worker_projection_preserve_only_verified_holder(mon
     assert receipt["worker_thread_started"] is True
 
 
+def test_tray_worker_execution_projects_only_validated_provider_request_metadata():
+    from hub._services.chat.chat_tray import BACHTray
+
+    worker_id = "tray-provider-worker"
+    generation = uuid.uuid4().hex
+    request = {
+        "request_id": uuid.uuid4().hex,
+        "generation": generation,
+        "task_id": 23,
+        "task_fence": 8,
+        "task_fence_available": True,
+        "state": "terminal",
+        "phase": "runtime_call_complete",
+        "phase_at": "2026-10-27T14:37:00+00:00",
+        "terminal_reason": "worker_stop",
+        "transport": "ollama_httpx",
+        "transport_details_available": True,
+        "cancellation_supported": True,
+        "cancel_requested": True,
+        "response_cleanup_complete": True,
+        "client_cleanup_complete": True,
+        "runtime_call_complete": True,
+        "observer_error": False,
+    }
+    execution = {
+        "schema": "bach.worker-execution.v1",
+        "worker_id": worker_id,
+        "state": "terminal",
+        "terminal": True,
+        "service_instance": uuid.uuid4().hex,
+        "start_request_id": uuid.uuid4().hex,
+        "generation": generation,
+        "provider_request": {
+            **request,
+            "prompt": "synthetic private prompt",
+            "url": "https://provider.invalid/private",
+            "headers": {"Authorization": "synthetic-secret"},
+            "error": "private provider response",
+            "future_sensitive_field": "drop-me",
+        },
+    }
+
+    safe = BACHTray._safe_worker_execution(worker_id, execution)
+    assert safe["provider_request"] == request
+    serialized = json.dumps(safe, sort_keys=True)
+    for secret in ("synthetic private prompt", "provider.invalid", "synthetic-secret",
+                   "private provider response", "drop-me"):
+        assert secret not in serialized
+
+    mismatched = {**execution, "provider_request": {**request, "generation": uuid.uuid4().hex}}
+    safe_mismatch = BACHTray._safe_worker_execution(worker_id, mismatched)
+    assert "provider_request" not in safe_mismatch
+
+
 def test_verified_native_lease_projects_stable_hash_without_private_capability(db_path, monkeypatch):
     from hub._services.chat import telegram_chat
     from hub._services.chat.chat_tray import BACHTray

@@ -251,6 +251,100 @@ def test_non_ollama_bound_worker_exposes_generic_lifecycle_without_extra_kwargs(
     assert request["runtime_call_complete"] is True
 
 
+def test_terminal_provider_request_survives_public_reader_cleanup_and_generation_swap(
+    task_state, monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from hub._services.chat import telegram_chat
+    from hub._services.chat.chat_tray import BACHTray
+
+    binding, _current = task_state["make_binding"](generation=uuid.uuid4().hex)
+    worker_id = "terminal-reader-" + uuid.uuid4().hex[:8]
+    control = telegram_chat._WorkerControl(worker_id, generation=binding.generation)
+    control.task_binding = binding
+    control.thread = SimpleNamespace(is_alive=lambda: False)
+    control.launch_attempted = True
+    control.worker_thread_started = True
+    request = telegram_chat._ActiveWorkerModelRequest(
+        worker_generation=control.generation,
+        task_binding=binding,
+        task_id=binding.task_id,
+        task_fence=binding._ack.fence,
+        loop=None,
+        cancel_event=threading.Event(),
+        request_id=uuid.uuid4().hex,
+        transport="ollama_httpx",
+        transport_details_available=True,
+        cancellation_supported=True,
+        phase="runtime_call_complete",
+        phase_at="2026-10-27T14:37:00+00:00",
+        terminal_reason="worker_stop",
+        response_cleanup_complete=True,
+        client_cleanup_complete=True,
+        runtime_call_complete=True,
+        cancel_requested=True,
+    )
+    control.last_model_request = request
+    control.done_event.set()
+    release = binding.return_lease()
+    assert release is True
+    control.task_binding = None
+
+    executions = {worker_id: control}
+    monkeypatch.setattr(telegram_chat, "_WORKER_EXECUTIONS", executions)
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(telegram_chat, "_execution_worker_slot", lambda _worker_id: None)
+    monkeypatch.setattr(telegram_chat.ControlHandler, "_allow_control_request", lambda self: True)
+
+    writes = []
+    handler = telegram_chat.ControlHandler.__new__(telegram_chat.ControlHandler)
+    handler.path = (
+        "/api/workers/execution?id=" + worker_id
+        + "&start_request_id=" + control.start_request_id
+    )
+    handler.headers = {"Origin": "", "Host": "127.0.0.1"}
+    handler.send_response = lambda _status: None
+    handler.send_header = lambda *_args: None
+    handler.end_headers = lambda: None
+    handler.wfile = SimpleNamespace(write=writes.append)
+    handler.do_GET()
+
+    response = json.loads(writes[-1])
+    assert response["ok"] is True
+    execution = response["execution"]
+    assert execution["state"] == "terminal" and execution["terminal"] is True
+    assert "active_task_id" not in execution
+    provider_request = execution["provider_request"]
+    assert provider_request["state"] == "terminal"
+    assert provider_request["runtime_call_complete"] is True
+    assert provider_request["request_id"] == request.request_id
+    assert provider_request["generation"] == control.generation
+    assert provider_request["task_id"] == binding.task_id
+    assert provider_request["task_fence"] == binding._ack.fence
+    projected = BACHTray._safe_worker_execution(worker_id, execution)
+    assert projected["provider_request"] == provider_request
+
+    replacement = telegram_chat._WorkerControl(
+        worker_id, generation=uuid.uuid4().hex,
+    )
+    replacement.thread = SimpleNamespace(is_alive=lambda: True)
+    replacement.launch_attempted = True
+    replacement.worker_thread_started = True
+    executions[worker_id] = replacement
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", {worker_id: replacement})
+    handler.path = (
+        "/api/workers/execution?id=" + worker_id
+        + "&start_request_id=" + replacement.start_request_id
+    )
+    writes.clear()
+    handler.do_GET()
+    next_response = json.loads(writes[-1])
+    assert next_response["execution"]["generation"] == replacement.generation
+    assert "provider_request" not in next_response["execution"]
+    assert request.request_id not in json.dumps(next_response)
+
+
 @pytest.mark.parametrize("change", ["stop", "generation", "deadline", "binding_swap"])
 def test_dispatch_rechecks_authority_after_real_execution_ledger_start(
     task_state, monkeypatch, change,
