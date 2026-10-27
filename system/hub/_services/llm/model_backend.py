@@ -78,7 +78,7 @@ async def _await_ollama_stream_line(iterator, *, cancel_event=None, total_timeou
 
 
 async def _await_ollama_stream_operation(operation, *, cancel_event=None, total_timeout=None):
-    """Bound one exact Ollama stream open by its worker stop and total deadline."""
+    """Bound one exact Ollama transport operation by its worker stop and total deadline."""
     if cancel_event is not None:
         if not isinstance(cancel_event, asyncio.Event):
             raise TypeError("cancel_event muss ein asyncio.Event sein")
@@ -330,6 +330,20 @@ class OllamaBackend(ModelBackend):
                    if transient_failure == "httpx_read_timeout" else {}),
             }
 
+        async def probe_liveness(client):
+            remaining_total = None
+            if total_cap > 0:
+                remaining_total = max(
+                    0.0, float(total_cap) - (time.monotonic() - total_started),
+                )
+                if remaining_total <= 0:
+                    return _OLLAMA_STREAM_TOTAL_TIMEOUT
+            return await _await_ollama_stream_operation(
+                lambda: self._lebt(client, selected_model),
+                cancel_event=cancel_event,
+                total_timeout=remaining_total,
+            )
+
         if cancel_event is not None and not isinstance(cancel_event, asyncio.Event):
             raise TypeError("cancel_event muss ein asyncio.Event sein")
         if cancel_event is not None and cancel_event.is_set():
@@ -434,18 +448,24 @@ class OllamaBackend(ModelBackend):
                             # begrenzt ueber /api/ps ausgewertet; fortsetzen
                             # laesst sich der abgebrochene Response-Stream nicht.
                             while probes < grace:
-                                now = time.time()
-                                if total_cap > 0 and (time.monotonic() - total_started) >= total_cap:
+                                liveness = await probe_liveness(client)
+                                if liveness is _OLLAMA_STREAM_CANCELLED:
+                                    return aborted(
+                                        "Worker-Request generationsgebunden gestoppt",
+                                        discard_tool_calls=True,
+                                        provider_request_aborted="worker_stop",
+                                    )
+                                if liveness is _OLLAMA_STREAM_TOTAL_TIMEOUT:
                                     return aborted(
                                         f"{timeout_error}; Gesamtdeckel "
                                         f"{total_cap}s erreicht",
                                         discard_tool_calls=True,
                                         provider_request_aborted="total_deadline",
                                     )
-                                if not await self._lebt(client, selected_model):
+                                if not liveness:
                                     break
                                 probes += 1
-                                last_activity = now
+                                last_activity = time.time()
                                 log.info(
                                     "Ollama-Stream ReadTimeout, Modell lebt "
                                     "(%d/%d Grace-Pruefungen)",
@@ -502,10 +522,24 @@ class OllamaBackend(ModelBackend):
                                 provider_request_aborted="total_deadline",
                             )
                         if (now - last_activity) > idle:
-                            if probes < grace and await self._lebt(client, selected_model):
-                                probes += 1
-                                last_activity = now
-                                continue
+                            if probes < grace:
+                                liveness = await probe_liveness(client)
+                                if liveness is _OLLAMA_STREAM_CANCELLED:
+                                    return aborted(
+                                        "Worker-Request generationsgebunden gestoppt",
+                                        discard_tool_calls=True,
+                                        provider_request_aborted="worker_stop",
+                                    )
+                                if liveness is _OLLAMA_STREAM_TOTAL_TIMEOUT:
+                                    return aborted(
+                                        f"Gesamtdeckel {total_cap}s erreicht",
+                                        discard_tool_calls=True,
+                                        provider_request_aborted="total_deadline",
+                                    )
+                                if liveness:
+                                    probes += 1
+                                    last_activity = time.time()
+                                    continue
                             return aborted(
                                 f"Ollama antwortet seit {idle}s nicht und meldet "
                                 "unser Modell nicht mehr"
