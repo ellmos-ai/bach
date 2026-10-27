@@ -438,7 +438,7 @@ def worker_admission_transaction(path: str | None = None):
                 _admit_model_request_run(config, model_request_run)
             if controller_run is not None:
                 _validated_controller_run(controller_run)
-                worker = _model_request_worker(config, controller_run["worker_id"])
+                worker = _controller_run_worker(config, controller_run["worker_id"])
                 worker[_CONTROLLER_RUN_FIELD] = dict(controller_run)
             config["admission_revision"] = uuid.uuid4().hex
             if model_request_run is None and (controller_run is None or not controller_run["durable"]):
@@ -2025,6 +2025,14 @@ def _model_request_worker(config: dict[str, Any], worker_id: str) -> dict[str, A
     if len(matches) != 1:
         raise RuntimeError("budget_worker_not_unique")
     return matches[0]
+
+
+def _controller_run_worker(config: dict[str, Any], worker_id: str) -> dict[str, Any]:
+    """Resolve the sole core Always-On or dynamic controller record owner."""
+    if worker_id == "buddha_always_on":
+        _always_on_execution_slot_from_config(config)
+        return config["slots"][worker_id]
+    return _model_request_worker(config, worker_id)
 
 
 def _validated_model_request_record(record: Any) -> dict[str, Any]:

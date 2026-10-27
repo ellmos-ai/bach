@@ -949,6 +949,106 @@ def _worker_result_binding(control, task_id, generation):
     return binding
 
 
+def prepare_tray_intent_reconciliation(request: dict) -> tuple[dict, int]:
+    """Authorize only an explicit, fenced retirement of one tray start intent.
+
+    A legacy retirement is an operator decision about the tray's own pending
+    start request. It is never a terminal execution, Task result or lease ACK.
+    The caller must CAS the exact local intent bytes after this readback.
+    """
+    fields = {"schema", "mode", "actor", "worker_id", "service_instance",
+              "start_request_id", "generation", "intent_sha256",
+              "expected_current_service_instance", "target_task_id", "target_task_version"}
+    if (type(request) is not dict or set(request) != fields
+            or request.get("schema") != "bach.tray-intent-reconcile-request.v1"
+            or type(request.get("mode")) is not str
+            or request["mode"] not in {"confirmed_inactive", "retire_unconfirmed"}
+            or request.get("worker_id") != "buddha_always_on"
+            or type(request.get("actor")) is not str
+            or re.fullmatch(r"[A-Za-z0-9._@-]{3,128}", request["actor"]) is None
+            or any(type(request.get(key)) is not str
+                   or re.fullmatch(r"[0-9a-f]{32}", request[key]) is None
+                   for key in ("service_instance", "start_request_id", "expected_current_service_instance"))
+            or request["service_instance"] == request["expected_current_service_instance"]
+            or request.get("generation") is not None and (
+                type(request["generation"]) is not str
+                or re.fullmatch(r"[0-9a-f]{32}", request["generation"]) is None)
+            or type(request.get("intent_sha256")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", request["intent_sha256"]) is None
+            or type(request.get("target_task_id")) is not int or request["target_task_id"] <= 0
+            or type(request.get("target_task_version")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", request["target_task_version"]) is None):
+        return {"error": "Ungültiger Tray-Intent-Reconcile-Vertrag"}, 400
+    if request["expected_current_service_instance"] != _WORKER_SERVICE_INSTANCE:
+        return {"error": "Controller-Serviceepoch geändert", "error_code": "service_instance_conflict"}, 409
+    from hub._services.chat.slots_config import (
+        worker_admission_transaction, get_always_on_execution_slot, _validated_controller_run,
+    )
+    from hub.agent_process_provider import inspect_process_identity
+    try:
+        # Same lock order as native admission. No revision or task mutation.
+        with _WORKER_CONTROL_LOCK, worker_admission_transaction():
+            if request["expected_current_service_instance"] != _WORKER_SERVICE_INSTANCE:
+                return {"error": "Controller-Serviceepoch geändert"}, 409
+            slot = get_always_on_execution_slot()
+            slot_task_id = slot.get("task_id")
+            if (slot.get("enabled") is not False
+                    or slot_task_id is not None and (
+                        type(slot_task_id) is not int or slot_task_id != request["target_task_id"])):
+                return {"error": "Core-Slot ist aktiv oder fremd taskgebunden"}, 409
+            current, thread = _active_worker_control("buddha_always_on")
+            retained = _WORKER_EXECUTIONS.get("buddha_always_on")
+            if (_thread_is_alive(thread)
+                    or current is not None and current.admission_pending
+                    or retained is not None and (
+                        retained.admission_pending or not retained.done_event.is_set()
+                        or _thread_is_alive(retained.thread))):
+                return {"error": "Aktueller Core-Lauf ist nicht beendet"}, 409
+            client = _native_task_client()
+            lease = client.read(request["target_task_id"])
+            result = client.task_result_snapshot(request["target_task_id"])
+            if (lease.leased is not False or lease.status != "pending"
+                    or lease.task_version != request["target_task_version"]
+                    or result.get("verified") is not True
+                    or result.get("status") != "pending"
+                    or result.get("task_version") != request["target_task_version"]
+                    or result.get("result") is not None):
+                return {"error": "Zieltask ist nicht pending, leasefrei und resultfrei"}, 409
+            marker = slot.get("_controller_run")
+            exact_inactive = False
+            if marker is not None:
+                _validated_controller_run(marker)
+                if marker["worker_id"] != "buddha_always_on" or marker["host"] != socket.gethostname():
+                    return {"error": "Controller-Owner nicht verifizierbar"}, 409
+                process_state, _ = inspect_process_identity(marker)
+                if (marker["phase"] != "admitted" or marker["durable"] is not True
+                        or process_state not in {"gone", "mismatch"}
+                        or client.worker_leases(marker["lease_worker_id"])["leases"]):
+                    return {"error": "Vorheriger Controller oder dessen Leases nicht beendet"}, 409
+                exact_inactive = (marker["service_instance"] == request["service_instance"]
+                    and marker["start_request_id"] == request["start_request_id"]
+                    and (request["generation"] is None or marker["generation"] == request["generation"]))
+            if request["mode"] == "confirmed_inactive" and not exact_inactive:
+                return {"error": "Exakte alte Admission nicht dauerhaft belegt"}, 409
+            if request["mode"] == "retire_unconfirmed" and exact_inactive:
+                return {"error": "Für exakt belegten Lauf confirmed_inactive verwenden"}, 409
+            proof = {"schema": "bach.tray-intent-reconcile-proof.v1",
+                     "mode": request["mode"], "actor": request["actor"],
+                     "worker_id": request["worker_id"],
+                     "service_instance": request["service_instance"],
+                     "start_request_id": request["start_request_id"],
+                     "generation": request["generation"],
+                     "intent_sha256": request["intent_sha256"],
+                     "current_service_instance": _WORKER_SERVICE_INSTANCE,
+                     "target_task_id": request["target_task_id"],
+                     "target_task_version": request["target_task_version"],
+                     "target_binding": "fixed" if slot_task_id is not None else "guarded_reference",
+                     "effect": "tray_intent_only", "old_execution_terminal": False}
+            return {"ok": True, "proof": proof}, 200
+    except Exception:
+        return {"error": "Reconcile-Belege nicht vollständig lesbar"}, 503
+
+
 def worker_execution_result(worker_id, request_id, generation, task_id):
     """Private native-chain handoff after ACK and physical thread completion."""
     with _WORKER_CONTROL_LOCK:
@@ -4800,6 +4900,12 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     except Exception:
                         return rejected({"error": "Vorherige Worker-Generation nicht beendet oder leasefrei bestätigt",
                                          "error_code": "worker_previous_run_unconfirmed"}, 409)
+                elif worker_id == "buddha_always_on" and slot.get("_controller_run") is not None:
+                    try:
+                        _assert_worker_profile_inactive(slot)
+                    except Exception:
+                        return rejected({"error": "Vorheriger Core-Lauf nicht beendet oder leasefrei bestätigt",
+                                         "error_code": "core_previous_run_unconfirmed"}, 409)
                 budget_record = None
                 if slot.get("max_model_requests") is not None:
                     from hub._services.chat.slots_config import (
@@ -4866,20 +4972,25 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 control.thread = control.admission_handle
                 control.lease_worker_id = control.lease_worker_id or f"{control.physical_worker_id}@{socket.gethostname()}"
                 controller_run = None
-                if not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS:
+                if worker_id == "buddha_always_on" or (not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS):
                     from hub.agent_process_provider import capture_process_create_time
                     from hub._services.chat.slots_config import _model_request_runs
                     prior_record = slot.get("_controller_run")
-                    prior_budget = _model_request_runs(slot)["current"]
-                    prior_runs_unconfirmed = (prior_record["prior_runs_unconfirmed"]
-                        if prior_record is not None else not (
-                            slot.get("max_model_requests") is not None and slot.get("type") == "once"
-                            and prior_budget is not None and prior_budget["phase"] == "terminal"))
-                    if (prior_record is not None and prior_record["phase"] == "never_admitted"
-                            and not prior_record["durable"] and (
-                                prior_record["pid"] != os.getpid()
-                                or prior_record["process_create_time"] != capture_process_create_time(os.getpid()))):
-                        prior_runs_unconfirmed = True
+                    if worker_id == "buddha_always_on":
+                        # This marker proves this exact new admission only. A missing
+                        # marker never retrospectively proves a legacy tray start.
+                        prior_runs_unconfirmed = False if prior_record is None else prior_record["prior_runs_unconfirmed"]
+                    else:
+                        prior_budget = _model_request_runs(slot)["current"]
+                        prior_runs_unconfirmed = (prior_record["prior_runs_unconfirmed"]
+                            if prior_record is not None else not (
+                                slot.get("max_model_requests") is not None and slot.get("type") == "once"
+                                and prior_budget is not None and prior_budget["phase"] == "terminal"))
+                        if (prior_record is not None and prior_record["phase"] == "never_admitted"
+                                and not prior_record["durable"] and (
+                                    prior_record["pid"] != os.getpid()
+                                    or prior_record["process_create_time"] != capture_process_create_time(os.getpid()))):
+                            prior_runs_unconfirmed = True
                     controller_run = {
                         "schema": "bach.worker-controller-run.v1", "phase": "admitted",
                         "worker_id": worker_id, "service_instance": _WORKER_SERVICE_INSTANCE,
@@ -7275,6 +7386,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(exc)}, 409)
             except Exception:
                 self._json({"error": "Workerlauf nicht verifizierbar"}, 503)
+
+        elif path == "/api/workers/tray-intent/reconcile":
+            response, status = prepare_tray_intent_reconciliation(body)
+            self._json(response, status)
 
         elif path == "/api/workers/run":
             response, status = start_worker_execution(
