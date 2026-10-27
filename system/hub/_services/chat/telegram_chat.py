@@ -342,8 +342,11 @@ class _WorkerControl:
             return None
         if type(task_id) is not int or task_id <= 0:
             return None
-        lease_ack = getattr(task_binding, "_ack", None)
-        raw_fence = getattr(lease_ack, "fence", None)
+        try:
+            lease_ack = getattr(task_binding, "_ack", None)
+            raw_fence = getattr(lease_ack, "fence", None)
+        except Exception:
+            raw_fence = None
         task_fence = raw_fence if type(raw_fence) is int and raw_fence > 0 else None
         return task_id, task_generation, task_fence
 

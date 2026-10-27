@@ -172,29 +172,35 @@ def test_cloud_response_links_actual_call_to_submitted_result(task_state, monkey
     assert result["accepted"] is False and result["submission"]["availability"] == "available"
 
 
-@pytest.mark.parametrize("hide_ack_fence", [False, True])
+@pytest.mark.parametrize("ack_fence_mode", ["available", "missing", "raises", "inactive"])
 def test_non_ollama_bound_worker_exposes_generic_lifecycle_without_extra_kwargs(
-    task_state, monkeypatch, hide_ack_fence,
+    task_state, monkeypatch, ack_fence_mode,
 ):
     from hub._services.chat import telegram_chat
 
     canonical_binding = task_state["binding"]
     binding = canonical_binding
-    if hide_ack_fence:
-        class _AckWithoutFence:
-            def __init__(self, ack):
-                self._ack = ack
+    if ack_fence_mode != "available":
+        class _AckMetadataProxy:
+            def __getattr__(self, name):
+                if name == "fence":
+                    if ack_fence_mode == "raises":
+                        raise RuntimeError("synthetic optional fence read failure")
+                    raise AttributeError(name)
+                return getattr(canonical_binding._ack, name)
 
-            def assert_locally_valid(self, **kwargs):
-                return self._ack.assert_locally_valid(**kwargs)
+        class _BindingMetadataProxy:
+            def assert_active(self):
+                if ack_fence_mode == "inactive":
+                    raise RuntimeError("synthetic active-lease denial")
+                return canonical_binding.assert_active()
 
-        class _BindingWithoutFence:
             def __getattr__(self, name):
                 if name == "_ack":
-                    return _AckWithoutFence(canonical_binding._ack)
+                    return _AckMetadataProxy()
                 return getattr(canonical_binding, name)
 
-        binding = _BindingWithoutFence()
+        binding = _BindingMetadataProxy()
     worker_id = "generic-request-" + uuid.uuid4().hex[:10]
     control = telegram_chat._WorkerControl(worker_id, generation=binding.generation)
     control.task_binding = binding
@@ -218,20 +224,24 @@ def test_non_ollama_bound_worker_exposes_generic_lifecycle_without_extra_kwargs(
     session.worker_task_actions = control.task_actions
 
     answer = asyncio.run(runtime.process("generic worker request", worker_id))
-    assert answer == "generic result"
-    assert len(backend.calls) == 1
     receipt = telegram_chat.worker_execution_receipt(
         worker_id, control.start_request_id, verify_results=False,
     )
+    if ack_fence_mode == "inactive":
+        assert len(backend.calls) == 0
+        assert "provider_request" not in receipt
+        return
+    assert answer == "generic result"
+    assert len(backend.calls) == 1
     request = receipt["provider_request"]
     assert request["generation"] == control.generation
     assert request["task_id"] == binding.task_id
-    if hide_ack_fence:
-        assert request["task_fence"] is None
-        assert request["task_fence_available"] is False
-    else:
+    if ack_fence_mode == "available":
         assert request["task_fence"] == canonical_binding._ack.fence
         assert request["task_fence_available"] is True
+    else:
+        assert request["task_fence"] is None
+        assert request["task_fence_available"] is False
     assert request["phase"] == "runtime_call_complete"
     assert request["terminal_reason"] == "backend_returned"
     assert request["transport"] == "unavailable"
