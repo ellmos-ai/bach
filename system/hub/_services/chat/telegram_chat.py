@@ -265,6 +265,7 @@ class _WorkerControl:
     persistent_core_capacity_exhausted: bool = False
     persistent_core_capacity_receipt: dict[str, Any] | None = None
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
+    return_note: str = ""
     scope_preparation_deferrals: ScopePreparationDeferrals = field(default_factory=ScopePreparationDeferrals)
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
@@ -1368,6 +1369,19 @@ def _record_worker_activity(
             pass
         record_activity(control.worker_id, activity, status, det or None)
         return True
+
+
+_WORKER_TASK_FAILURE_LIMIT = 3
+
+
+def _worker_return_note(detail, reason_code):
+    """Fixed-vocabulary return reason; provider text never reaches task history."""
+    if reason_code:
+        return f"model_failure:{reason_code}"
+    if detail:
+        status = detail.get("status_code")
+        return f"backend_error:{detail['provider']}:{detail['kind']}" + (f":{status}" if status else "")
+    return "model_failure:unclassified"
 
 
 _WORKER_BACKEND_RETRY_LIMIT = 3
@@ -4994,6 +5008,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
 
             prompt_to_run = initial_prompt
             run_count = 0
+            task_failures = 0
             buddha_warmup_complete = False
             initial_recovery = control.persistent_core_recovery_state
             backend_retries = (
@@ -5197,7 +5212,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         returned = control.task_binding.task_snapshot()
                         control.lease_supervisor.close()
                         control.lease_supervisor = None
-                        if not control.task_binding.return_lease():
+                        if not control.task_binding.return_lease(note="task_scope_unavailable"):
                             raise
                         finish_assignment(current_assignment, status="released",
                                           result="task_returned", reason="task_scope_unavailable")
@@ -5270,6 +5285,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     from hub._services.llm.backend_errors import normalize_backend_error
                     detail = normalize_backend_error(getattr(ans, "backend_error", None))
                     failure_reason = getattr(ans, "reason_code", None)
+                    control.return_note = _worker_return_note(detail, failure_reason)
                     if failure_reason == "local_reserve_reserve_wait_expired":
                         error_activity = "Lokale Ressourcenreserve wurde nicht rechtzeitig frei"
                     elif failure_reason == "local_reserve_reserve_wait_lease_return_required":
@@ -5351,8 +5367,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if supervisor.is_alive or supervisor.failure is not None:
                             raise RuntimeError("Lease-Supervisor vor Rückgabe nicht beendet")
                         control.lease_supervisor = None
-                        if not control.task_binding.return_lease():
+                        if not control.task_binding.return_lease(note=control.return_note):
                             raise RuntimeError("Task-Lease vor Wiederaufnahme nicht bestätigt zurückgegeben")
+                        control.return_note = ""
                         if assignment_open:
                             finish_assignment(current_assignment, status="error",
                                               result="backend_error",
@@ -5481,10 +5498,57 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         # creator/dependency gates and acquires a fresh fence.
                         prompt_to_run = initial_prompt
                         continue
+                    # A failure confined to this run (no provider error, e.g. a full
+                    # completion reserve) is logged above; the task goes back with its
+                    # reason and the worker takes the next one. Repeats still stop it.
+                    task_local = (
+                        not control.task_binding.closed
+                        and (detail is None or detail["kind"] == "tool_parse_error")
+                        and current_slot.get("type") in {"continuous", "persistent"}
+                        and control.persistent_core_intent_id is None
+                        and control.model_request_budget is None)
+                    if task_local:
+                        task_failures += 1
+                    if task_local and task_failures < _WORKER_TASK_FAILURE_LIMIT:
+                        returned = control.task_binding.task_snapshot()
+                        supervisor = control.lease_supervisor
+                        if supervisor is None:
+                            raise RuntimeError("Task-Rückgabe ohne Lease-Supervisor")
+                        supervisor.close()
+                        if supervisor.is_alive or supervisor.failure is not None:
+                            raise RuntimeError("Lease-Supervisor vor Rückgabe nicht beendet")
+                        control.lease_supervisor = None
+                        if not control.task_binding.return_lease(note=control.return_note):
+                            raise RuntimeError("Task-Lease vor Weiterarbeit nicht bestätigt zurückgegeben")
+                        if assignment_open:
+                            finish_assignment(current_assignment, status="error",
+                                              result="task_failed", reason=control.return_note)
+                            assignment_open = False
+                        returned_id = control.task_binding.task_id
+                        control.deferred_task_versions[returned_id] = returned["task_version"]
+                        worker_session.worker_task_binding = None
+                        control.task_binding = None
+                        worker_error = None
+                        control.start_error = None
+                        _record_worker_activity(control,
+                            f"Task #{returned_id} zurückgegeben ({control.return_note}); Worker arbeitet weiter",
+                            "pending")
+                        control.return_note = ""
+                        if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                "current_activity": f"Task #{returned_id} zurückgegeben; suche nächste passende Aufgabe"}) is None:
+                            break
+                        if not _wait_worker_cooldown(control, event_type="runs"):
+                            break
+                        prompt_to_run = initial_prompt
+                        continue
+                    if task_local:
+                        _update_worker_slot(control, {"current_activity":
+                            f"{error_activity} {task_failures} Tasks in Folge fehlgeschlagen; Worker angehalten."})
                     if detail and detail["kind"] == "rate_limited" and backend_retries:
                         _update_worker_slot(control, {"current_activity":
                             f"{error_activity} Wiederaufnahme begrenzt beendet; erneut ausdrücklich starten."})
                     return
+                task_failures = 0
                 resolved = getattr(worker_session, "resolved_model", None)
                 if isinstance(resolved, str) and resolved.strip():
                     _update_worker_slot(control, {"resolved_model": resolved})
@@ -5712,7 +5776,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 log.warning("Worker-Ergebnisbindung konnte nicht behalten werden", exc_info=True)
             if control.task_binding is not None and not control.task_binding.closed:
                 try:
-                    if not control.task_binding.return_lease():
+                    if not control.task_binding.return_lease(note=control.return_note or (
+                            "worker_stopped" if control.stop_event.is_set() else "worker_ended")):
                         cleanup_error = True
                     else:
                         persistent_lease_returned = True
