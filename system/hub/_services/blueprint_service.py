@@ -306,6 +306,7 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
     """)
     # Additive Spaltenmigrationen
     for col, col_type in [
+        ("color", "TEXT"),
         ("governance_json", "TEXT DEFAULT '{}'"),
         ("kind", "TEXT DEFAULT 'agent'"),
         ("start_prompt", "TEXT DEFAULT ''"),
@@ -815,6 +816,9 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     if not name or not _ID.fullmatch(name):
         raise ValueError("Ungültiger oder fehlender Blueprint-Name (nur Alphanumerik, .-_)")
 
+    from .chat.slots_config import validate_agent_color
+    supplied_color = validate_agent_color(payload["color"]) if "color" in payload else None
+
     kind = payload.get("kind", "agent")
     if not isinstance(kind, str) or kind not in ALLOWED_KINDS:
         raise ValueError(f"Ungültiger Kind '{kind}'. Erlaubt: {', '.join(sorted(ALLOWED_KINDS))}")
@@ -855,7 +859,7 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
 
     # Serialize the revision check with its write across SQLite writers.
     conn.execute("BEGIN IMMEDIATE")
-    existing = conn.execute("SELECT id, is_template, version, governance_json FROM agent_blueprints WHERE name = ?",
+    existing = conn.execute("SELECT id, is_template, version, governance_json, color FROM agent_blueprints WHERE name = ?",
                             (name,)).fetchone()
     if existing:
         is_tmpl = existing[1] if isinstance(existing, tuple) else existing["is_template"]
@@ -876,6 +880,7 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     except ValueError:
         conn.rollback()
         raise
+    color = supplied_color if "color" in payload else (existing[4] if existing else None)
     version = (curr_version + 1) if curr_version else 1
     now = datetime.now(timezone.utc).isoformat()
     from .governance_binding import with_pin_log
@@ -909,8 +914,8 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         INSERT INTO agent_blueprints (
             name, title, description, persona_role, persona_prompt,
             skills_json, animus_type, contractus_json, modus, is_template,
-            governance_json, kind, start_prompt, version, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            governance_json, kind, start_prompt, version, updated_at, color
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
@@ -924,11 +929,12 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
             kind = excluded.kind,
             start_prompt = excluded.start_prompt,
             version = excluded.version,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            color = excluded.color
     """, (
         name, title, desc, persona_role, persona_prompt,
         json.dumps(skills), animus, json.dumps(contractus), modus, is_template,
-        json.dumps(governance), kind, start_prompt, version, now
+        json.dumps(governance), kind, start_prompt, version, now, color
     ))
     conn.commit()
 
@@ -941,6 +947,7 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         "version": version,
         "start_prompt": start_prompt,
         "start_prompt_length": len(start_prompt),
+        "color": color,
         "status": "saved"
     }
 
@@ -989,7 +996,7 @@ def blueprint_slot_changes(bp: dict, execution: dict, parents: list[dict] = ()) 
 
     ``parents`` are the governance dicts of the pinned parent templates; they only narrow.
     """
-    from .chat.slots_config import DEFAULT_ROLE_PROMPTS
+    from .chat.slots_config import DEFAULT_ROLE_PROMPTS, validate_agent_color
     if not isinstance(execution, dict) or not execution.get("backend") or not execution.get("model"):
         raise ValueError("Anbieter und konkretes Modell sind erforderlich")
     modus = bp.get("modus", "casualis")
@@ -1014,6 +1021,7 @@ def blueprint_slot_changes(bp: dict, execution: dict, parents: list[dict] = ()) 
     changes.update({"name": bp["title"] or bp["name"], "description": bp.get("description") or "",
         "role_id": role, "sub_mode": "boss_routing" if role == "boss_routing" else "expert_role",
         "custom_role_prompt": prompt, "skill_refs": skill_refs,
+        "blueprint_color": validate_agent_color(bp.get("color")),
         "max_tool_rounds": contractus.get("turns", contractus.get("max_turns", 20)),
         "allowed_tools": sorted(allowed), "allow_tools": bool(allowed), "enabled": True,
         "worker_type": "once" if modus == "casualis" else "continuous"})
