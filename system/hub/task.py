@@ -105,11 +105,20 @@ class TaskHandler(BaseHandler):
             "priority": t("task_priority_desc", default="Prioritaet aendern"),
             "assign": t("task_assign_desc", default="Task(s) zuweisen (Multi-ID)"),
             "depends": t("task_depends_desc", default="Abhaengigkeit setzen/anzeigen"),
+            "next": t("task_next_desc", default="Uebernehmbare Tasks anzeigen (pending, ohne aktives Lease, ohne OLLAMA)"),
+            "take": t("task_take_desc", default="Task per Lease uebernehmen (bach task take <id> --by <user> [--ttl M] [--result-generation <gen>])"),
+            "renew": t("task_renew_desc", default="Eigenes Task-Lease verlaengern (bach task renew <id> --by <user> --fence <int>)"),
+            "submit": t("task_submit_desc", default="Ergebnis aus Lease abgeben (bach task submit <id> --by <user> --fence <int> --result <text>)"),
+            "return": t("task_return_desc", default="Task aus Lease zurueckgeben (bach task return <id> --by <user> --fence <int>)"),
             "sync": "Offene Offline-Entwürfe (Drafts) und Server-Zustand mit Rheingold synchronisieren",
             "pull": "Tasks vom Rheingold-Lead in den lokalen Bachgrund spiegeln",
             "lead": "Rheingold Lead-Konfiguration für Multi-Host-Federation verwalten (show|set|clear)",
             "claim": "Task exklusiv beanspruchen (bach task claim <id> --by <name> [--lease SECONDS])",
             "release": "Task-Claim freigeben (bach task release <id> --by <name>)",
+            "lease": "Task-Lease erwerben (Vertrag §5.2 / BACH #1722). Usage: bach task lease <id> --by <worker_id> [--ttl M|L|S] [--intent <text>]",
+            "lease-show": "Holder-Ansicht eines Task-Leases anzeigen (Vertrag §5.2 / BACH #1722). Usage: bach task lease-show <id> [--lease-id <uuid>]",
+            "lease-renew": "Task-Lease verlängern (Vertrag §5.3 / BACH #1722). Usage: bach task lease-renew <id> --lease-id <uuid> --fence <int>",
+            "lease-release": "Task-Lease freigeben oder abschließen (Vertrag §5.4 / BACH #1722). Usage: bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done|return|blocked|review] [--ref <ref>] [--note <note>]",
             "reap": "Abgelaufene in_progress-Claims zuruecksetzen (bach task reap [--lease SECONDS])",
             "result-history": "Verifizierte Ergebnis-, Abnahme- und Korrekturhistorie anzeigen",
             "result-policy": "Aktuelle Abschlussentscheidung lesend prüfen (kein Taskabschluss)",
@@ -213,6 +222,8 @@ class TaskHandler(BaseHandler):
         elif operation == "block":
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
+            if "--lease-id" in args:
+                return self._block_lease(args)
             return self._block(args)
         elif operation == "unblock":
             if dry_run:
@@ -252,6 +263,24 @@ class TaskHandler(BaseHandler):
             return self._pull(args)
         elif operation == "lead":
             return self._lead(args)
+        elif operation == "next":
+            return self._next(args)
+        elif operation == "take":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._take(args)
+        elif operation == "renew":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._renew(args)
+        elif operation == "submit":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._submit(args)
+        elif operation == "return":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._return(args)
         elif operation == "claim":
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
@@ -1623,6 +1652,286 @@ class TaskHandler(BaseHandler):
                     note=note,
                 )
                 return True, f"[OK] Task {task_id} Lease freigegeben (Outcome={ack.outcome}, Status={ack.status}, Fence={ack.fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Freigabe abgelehnt: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _next(self, args: List[str]) -> Tuple[bool, str]:
+        """Uebernehmbare Tasks anzeigen (pending, ohne aktives Lease, ohne OLLAMA-Delegation)."""
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
+        db = self._get_db()
+        try:
+            rows = db.execute(
+                "SELECT id, priority, title FROM tasks WHERE status='pending' "
+                "AND (claim_id IS NULL OR claim_expires_at IS NULL OR claim_expires_at<=?) "
+                "AND (claimed_by IS NULL OR (claim_expires_at IS NOT NULL AND claim_expires_at<=?)) "
+                "AND COALESCE(UPPER(assigned_to),'')<>'OLLAMA' "
+                "AND COALESCE(UPPER(delegated_to),'')<>'OLLAMA' "
+                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 "
+                "WHEN 'P4' THEN 4 ELSE 5 END, id LIMIT 10",
+                (now, now),
+            ).fetchall()
+        finally:
+            db.close()
+        if not rows:
+            return True, "[OK] Keine uebernehmbaren Tasks (pending, ohne aktives Lease, ohne OLLAMA-Delegation)"
+        lines = ["[OK] Uebernehmbare Tasks:"]
+        for i, row in enumerate(rows, 1):
+            lines.append(f"{i}. #{row['id']} [{row['priority']}] {row['title']}")
+        lines.append("Uebernahme: bach task take <id> --by <user>")
+        return True, "\n".join(lines)
+
+    def _take(self, args: List[str]) -> Tuple[bool, str]:
+        """Task per Lease uebernehmen (Vertrag §5.2 / BACH #1722).
+        Usage: bach task take <id> --by <user> [--ttl M] [--result-generation <gen>]
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task take <id> --by <user> [--ttl M] [--result-generation <gen>]"
+        by = None
+        host = None
+        ttl = "M"
+        intent = ""
+        result_generation = None
+        i = 0
+        while i < len(rest):
+            arg = rest[i]
+            if arg in ("--by", "--worker") and i + 1 < len(rest):
+                by = rest[i + 1]
+                i += 2
+            elif arg.startswith("--by=") or arg.startswith("--worker="):
+                by = arg.split("=", 1)[1]
+                i += 1
+            elif arg == "--host" and i + 1 < len(rest):
+                host = rest[i + 1]
+                i += 2
+            elif arg.startswith("--host="):
+                host = arg.split("=", 1)[1]
+                i += 1
+            elif arg in ("--ttl", "--profile") and i + 1 < len(rest):
+                ttl = rest[i + 1].upper()
+                i += 2
+            elif arg.startswith("--ttl=") or arg.startswith("--profile="):
+                ttl = arg.split("=", 1)[1].upper()
+                i += 1
+            elif arg == "--intent" and i + 1 < len(rest):
+                intent = rest[i + 1]
+                i += 2
+            elif arg.startswith("--intent="):
+                intent = arg.split("=", 1)[1]
+                i += 1
+            elif arg == "--result-generation" and i + 1 < len(rest):
+                result_generation = rest[i + 1]
+                i += 2
+            elif arg.startswith("--result-generation="):
+                result_generation = arg.split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+        if not by or not by.strip():
+            return False, "Usage-Fehler: --by <user> ist erforderlich (Format: <user> oder <user>@<host>)"
+        by, host = self._normalize_worker(by, host)
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.acquire(
+                    task_id, worker_id=by, host=host, ttl_profile=ttl, intent=intent,
+                    task_version=self._lease_task_version(rest), result_generation=result_generation,
+                )
+                return True, (
+                    f"[OK] Task {task_id} uebernommen von {ack.worker_id} (Fence {ack.fence}, "
+                    f"Profil {ack.ttl_profile}, Frist bis {ack.expires_at})\n"
+                    f"Auftragsversion: {ack.task_version}"
+                )
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _parse_by_fence(self, rest: List[str]) -> Tuple[Optional[str], Optional[int]]:
+        """--by <user> und --fence <int> aus Rest-Argumenten lesen."""
+        by = None
+        fence = None
+        i = 0
+        while i < len(rest):
+            arg = rest[i]
+            if arg in ("--by", "--worker") and i + 1 < len(rest):
+                by = rest[i + 1]
+                i += 2
+            elif arg.startswith("--by=") or arg.startswith("--worker="):
+                by = arg.split("=", 1)[1]
+                i += 1
+            elif arg == "--fence" and i + 1 < len(rest):
+                try:
+                    fence = int(rest[i + 1])
+                except ValueError:
+                    pass
+                i += 2
+            elif arg.startswith("--fence="):
+                try:
+                    fence = int(arg.split("=", 1)[1])
+                except ValueError:
+                    pass
+                i += 1
+            else:
+                i += 1
+        return by, fence
+
+    def _normalize_worker(self, by: str, host: str = None) -> Tuple[str, str]:
+        """Worker-ID normalisieren: <user> -> <user>@<hostname>."""
+        by = by.strip()
+        if not host:
+            if "@" in by:
+                host = by.rsplit("@", 1)[1]
+            else:
+                host = socket.gethostname()
+                by = f"{by}@{host}"
+        return by, host
+
+    def _claim_row(self, task_id: int) -> Optional[sqlite3.Row]:
+        """Aktuelle Lease-Spalten eines Tasks lesen."""
+        db = self._get_db()
+        try:
+            return db.execute(
+                "SELECT claim_id, claimed_by, claim_task_version, claim_result_generation FROM tasks WHERE id=?",
+                (task_id,),
+            ).fetchone()
+        finally:
+            db.close()
+
+    def _renew(self, args: List[str]) -> Tuple[bool, str]:
+        """Eigenes Task-Lease verlaengern.
+        Usage: bach task renew <id> --by <user> --fence <int>
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task renew <id> --by <user> --fence <int>"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.renew(
+                    task_id, lease_id=row["claim_id"], fence=fence,
+                    task_version=self._lease_task_version(rest) or row["claim_task_version"],
+                )
+                return True, f"[OK] Task {task_id} Lease verlaengert bis {ack.expires_at} (Fence {ack.fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _submit(self, args: List[str]) -> Tuple[bool, str]:
+        """Ergebnis aus Lease abgeben.
+        Usage: bach task submit <id> --by <user> --fence <int> --result <text>
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task submit <id> --by <user> --fence <int> --result <text>"
+        result_text = None
+        i = 0
+        while i < len(rest):
+            arg = rest[i]
+            if arg == "--result" and i + 1 < len(rest):
+                result_text = rest[i + 1]
+                i += 2
+            elif arg.startswith("--result="):
+                result_text = arg.split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+        if result_text is None or not result_text.strip():
+            return False, "Usage-Fehler: --result <text> ist erforderlich"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        task_version = self._lease_task_version(rest) or row["claim_task_version"]
+        generation = row["claim_result_generation"]
+        if not generation:
+            return False, f"[ERROR] Task {task_id}: keine result_generation im Lease — bitte beim take --result-generation angeben"
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                client.submit_result(
+                    task_id, lease_id=row["claim_id"], fence=fence, task_version=task_version,
+                    generation=generation, result=result_text,
+                )
+            return True, f"[OK] Task {task_id} Ergebnis zur Abnahme eingereicht (Status review, Fence {fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _return(self, args: List[str]) -> Tuple[bool, str]:
+        """Task aus Lease zurueckgeben.
+        Usage: bach task return <id> --by <user> --fence <int>
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task return <id> --by <user> --fence <int>"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.release(
+                    task_id, lease_id=row["claim_id"], fence=fence,
+                    task_version=self._lease_task_version(rest) or row["claim_task_version"],
+                    outcome="return",
+                )
+                return True, f"[OK] Task {task_id} zurueckgegeben (Status {ack.status}, Fence {ack.fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _block_lease(self, args: List[str]) -> Tuple[bool, str]:
+        """Task aus Lease blockieren (release outcome=blocked).
+        Usage: bach task block <id> --lease-id --by <user> --fence <int> [--note <text>|--reason <text>]
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task block <id> --lease-id --by <user> --fence <int> [--note <text>|--reason <text>]"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        note = self._get_note(rest) or self._get_reason(rest) or ""
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.release(
+                    task_id, lease_id=row["claim_id"], fence=fence,
+                    task_version=self._lease_task_version(rest) or row["claim_task_version"],
+                    outcome="blocked", note=note,
+                )
+                return True, f"[OK] Task {task_id} blockiert (Status {ack.status}, Fence {ack.fence})"
         except LeaseDeniedError as e:
             return False, f"[CONFLICT] Freigabe abgelehnt: {e.reason}"
         except LeaseError as e:
