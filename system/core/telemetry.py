@@ -53,6 +53,7 @@ COUNTERS: dict[str, set] = {
     "agent_starts": {"agent"},
     "model_calls": {"model"},
     "tool_calls": {"tool"},
+    "provider_request_phases": {"phase", "agent"},
 }
 
 #: Erlaubte outcome-Werte (fix, klein).
@@ -215,6 +216,15 @@ def increment(counter: str,
             return True
         finally:
             conn.close()
+    except Exception:
+        return False
+
+
+def add_provider_request_phase(phase, outcome="ok", db_path=None, agent=None):
+    """Zaehlt einen Provider-Request-Phasenuebergang (phase+agent, fail-silent)."""
+    try:
+        return increment("provider_request_phases", outcome=outcome,
+                         db_path=db_path, phase=phase, agent=agent)
     except Exception:
         return False
 

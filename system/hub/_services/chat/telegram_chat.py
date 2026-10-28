@@ -379,6 +379,11 @@ class _WorkerControl:
                 phase_at=datetime.now(timezone.utc).isoformat(),
             )
             self.active_model_request = request
+            try:
+                from core.telemetry import add_provider_request_phase
+                add_provider_request_phase("registered", agent=self.worker_id)
+            except Exception:
+                pass
             return request
 
     def observe_provider_request(self, request, phase, *, reason=None):
@@ -419,6 +424,12 @@ class _WorkerControl:
                 )
             request.phase = phase
             request.phase_at = datetime.now(timezone.utc).isoformat()
+            try:
+                from core.telemetry import add_provider_request_phase
+                _outcome = "error" if phase in ("request_failed", "request_aborted") else "ok"
+                add_provider_request_phase(phase, outcome=_outcome, agent=self.worker_id)
+            except Exception:
+                pass
             return True
 
     def mark_provider_request_observer_error(self, request):
@@ -495,6 +506,15 @@ class _WorkerControl:
             request.phase_at = datetime.now(timezone.utc).isoformat()
             self.last_model_request = request
             self.active_model_request = None
+            try:
+                from core.telemetry import add_provider_request_phase
+                _reason = request.terminal_reason
+                _outcome = ("ok" if _reason == "response_completed"
+                            else "timeout" if _reason == "httpx_read_timeout"
+                            else "error")
+                add_provider_request_phase("runtime_call_complete", outcome=_outcome, agent=self.worker_id)
+            except Exception:
+                pass
             return True
 
 
