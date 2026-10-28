@@ -1,0 +1,111 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+Worker Errors and Provider Limits
+===============================
+
+Ollama errors are additionally stored as backend_error and projected via the
+authenticated worker status API. The contract contains only verified
+fields: provider, kind, status_code (if actually present), quota_exceeded,
+quota_period=month (for an explicitly reported monthly limit),
+retry_after_seconds (if a valid Retry-After header is present), and a
+message generated from fixed texts. Provider bodies, URLs, keys and other
+headers do not belong in this contract. Error bodies are evaluated at most up to
+16 KiB. Reading also honors the remaining overall budget
+BACH_LLM_TOTAL_CAP and the existing read timeout. Unreadable, too slowly
+delivered or larger bodies do not yield a quota acceptance; the actually
+received HTTP status is preserved. System slot snapshots also contain
+exclusively the normalized error fields.
+
+HTTP 429 alone does not prove a monthly limit. Without a concrete monthly limit
+report, a request limit appears. Retry-After accepts whole, non-negative seconds
+or an HTTP date with time zone; the date is evaluated relative to the current
+time. Invalid or missing headers produce no wait time. A
+Retry-After is not a commitment to reset a monthly quota.
+
+FailedAnswer receives the verified contract also when saving and reloading
+a chat history. This metadata is not sent back to a model.
+On hard provider errors, the worker ends, returns its current task lease
+acknowledged, and retains the error text. The correlated assignment_ended
+event remains stored separately in the history; it does not overwrite the error cause.
+A confirmed new start removes the error of the previous generation.
+
+An already explicitly started continuous Ollama Cloud worker can
+resume after a temporary HTTP 429 within the same run, provided
+that it can be demonstrated that no tool has yet started for the current task lease.
+This evidence also holds across multiple model blocks and for tools via
+the CLI bridge. Tool work already begun or a missing or
+invalid evidence suppresses the automatic resumption. After a
+confirmed quarantine ACK, the task is locked for review with the native status blocked
+and its lease is released; the error display is retained.
+Another worker cannot automatically take over this confirmed quarantine. If the
+quarantine ACK is missing or invalid, the retry remains
+suppressed; the actual task status and the lease must be checked via the canonical
+task API. A missing ACK may occur before or after the commit
+and therefore proves neither blocked nor a release. The worker does not fall back to
+return-to-pending. Before a renewed release, any tool effects already performed must be checked.
+The repetition rule does not guarantee idempotent
+tool work.
+Before the
+waiting phase, the lease renewal thread is terminated, the task is returned
+acknowledged, and the assignment is closed. Without a confirmed return, nothing
+is waited for or worked on again. While waiting, the worker is active but
+processes no task: worker_active=true, running=false, active_task_id=null.
+
+The local resumption rule allows at most three consecutive
+resumptions with a total of at most 900 seconds of planned wait time.
+Without a longer valid Retry-After, the wait times are 60, 120 and 240 seconds.
+An actually present longer Retry-After is honored; if it
+exceeds the remaining wait budget, the worker ends. These values are program rules,
+not observed quota reset times. Only a successful backend response
+resets the counter and removes the old error display. A monthly limit,
+authentication errors, unknown errors and single runs are not repeated.
+
+Stop, deactivation, pause, expiry and a generation change interrupt
+the waiting. Afterwards, slot, model, task version, dependencies, foreign leases
+and the creator grace period are checked again. There is no new start approval,
+no model change and no cloud auto-start by this resumption.
+
+The existing shared GUI cards show current_activity. Therefore the
+readable error text remains usable for GUI versions that do not
+yet evaluate backend_error. Old errors without a stored contract are not retroactively
+reported as a monthly limit. There are neither cloud auto-starts nor unlimited retries
+nor a paid model change. The user starts Cloud workers.
+
+
+For an outdated overall version pin of the worker slot, the precheck returns
+the start with HTTP 409 and error_code=configuration_version_conflict.
+The response contains admission.admitted=false; no generation or thread
+is created. Read the current system-slots configuration state
+again and send a deliberately new start request. Other non-verifiable
+slot or admission errors remain HTTP 503 with error_code=worker_slot_unavailable.
+
+
+OpenRouter/Hermes Transport Errors
+---------------------------------
+The existing contract also accepts provider=openrouter and provider=hermes.
+OpenRouter is named only for the actually configured host openrouter.ai;
+other OpenAI-compatible Hermes targets receive the adapter identifier hermes.
+error_type comes from fixed HTTPX class families: ConnectTimeout, ReadTimeout,
+WriteTimeout, PoolTimeout, TimeoutException, ConnectError, RequestError or
+HTTPStatusError. Other RequestError subclasses are only classified as the general
+RequestError family; their arbitrary class names are not
+adopted. Empty exception texts therefore do not lose the safe error class.
+HTTP status is taken only from the actually present HTTP error response.
+Exception texts, URLs, raw bodies, keys and headers are neither displayed nor
+logged. HTTP bodies are not read for this. quota_exceeded=false
+here means no quota classification, not evidence of a free quota.
+
+The RuntimeError-compatible carrier remains an exception. FailedAnswer normalizes
+its metadata again; stored chats, slot status and GUI use the same
+contract. Even after the end of the assignment, the safe cause is retained.
+Manipulated metadata yields no verified cause and does not adopt
+any arbitrary exception text.
+
+The Hermes transport attempts remain limited to four with unchanged timeout and
+existing wait times. This metadata permits neither an additional
+model fallback nor the Ollama Cloud resumption. Models, free price binding,
+tool quarantine, lease and result gates remain unchanged. Tool effects already begun or
+unknown are not automatically repeated.
+
+For the historical attempt #2169, the actual transport error class
+is not documented. The new contract only classifies actually caught
+exceptions going forward; it attributes neither ConnectTimeout nor provider quota to old errors.
