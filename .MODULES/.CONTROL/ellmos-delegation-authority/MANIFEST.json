@@ -1,0 +1,41 @@
+{
+  "name": "ellmos-delegation-authority",
+  "version": "0.1.0",
+  "description": "Außenwirkungs-Erlaubnisse für Ocean/BACH: pro Handlung (Bildschirmsteuerung, LinkedIn, YouTube, Mail) und Akteur (Buddha, Claude-Konsole, Codex, Hintergrundworker) wird eine Entscheidung erlaubt / Rückfrage / nie getroffen. Rangfolge: explizite Zelle > Zeilen-Standard > Spalten-Standard > Fallback. Standard ist Rückfrage, Hintergrundworker nie. Rückfragen laufen als Freigabekarte über ticket-master.",
+  "author": "BACH/Ocean Shared Modules",
+  "license": "MIT",
+  "notice": "Teile dieses Moduls (Grundidee und Matrixstruktur permission_matrix) wurden aus SentinelFleet (AGPL-3.0) übernommen. Lukas ist alleiniger Rechteinhaber von SentinelFleet und hat die übernommenen Teile mit Zustimmung neu lizenziert: sie stehen hier unter MIT. Siehe NOTICE in diesem Ordner.",
+  "entry_point": "delegation_authority.py",
+  "exports": [
+    "ACTIONS",
+    "ACTORS",
+    "DECISIONS",
+    "DEFAULT_MATRIX",
+    "OPERATOR_RANK",
+    "ESCALATION_LADDER",
+    "PermissionDecision",
+    "PermissionDenied",
+    "evaluate_permission",
+    "controlcenter_evaluate_permission",
+    "get_permission_matrix_overview"
+  ],
+  "dependencies": [],
+  "consumers": [
+    {
+      "name": "BACH",
+      "version": ">=1.0",
+      "integration": "adapter"
+    },
+    {
+      "name": "Ocean",
+      "version": ">=1.0",
+      "integration": "adapter"
+    }
+  ],
+  "separation_of_concerns": {
+    "file_project_permissions": "LOCK.permissions.json / Lock-Master (Datei- und Projektrechte)",
+    "outside_permissions": "dieses Modul ellmos-delegation-authority (Außenwirkung von Handlungen)",
+    "evaluation": "controlcenter_evaluate_permission (gemeinsame Prüfschnittstelle für beide Bereiche)",
+    "tickets": "ticket-master (Freigabekarten für Rückfragen)"
+  }
+}

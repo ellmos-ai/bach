@@ -11208,6 +11208,18 @@ async def prompt_library_page():
     return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
 
 
+@app.get("/governance", response_class=HTMLResponse)
+async def governance_page():
+    """Governance & Control als GUI-Seite: Erlaubnisse für Außenwirkung, Policy-Registry, Sperren, Hooks & Guards, Logs & Audit."""
+    astro_page = ASTRO_DIST_DIR / "governance.html"
+    if astro_page.is_file():
+        return FileResponse(astro_page)
+    template = TEMPLATES_DIR / "governance.html"
+    if template.exists():
+        return HTMLResponse(content=template.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Template governance.html fehlt</h1>", status_code=404)
+
+
 @app.get("/api/prompt-library")
 async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
     """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
