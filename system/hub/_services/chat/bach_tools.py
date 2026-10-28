@@ -1592,6 +1592,15 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if worker_task_binding is not None and args.get("handler") == "task":
                 try:
                     return worker_task_binding.execute_task_command(args.get("operation", ""), args.get("args", []))
+                except ValueError:
+                    # The bound parser rejects malformed, unsupported, or
+                    # foreign task arguments before entering the native
+                    # mutation path. That is a proven policy denial; lease
+                    # and transport failures below remain unknown effects.
+                    return _tool_policy_denial(
+                        "invalid_arguments",
+                        "BLOCKIERT: Gebundener Task-Befehl ist ungültig oder nicht freigegeben.",
+                    )
                 except Exception:
                     return _tool_effect_unconfirmed()
             if not bach_app:

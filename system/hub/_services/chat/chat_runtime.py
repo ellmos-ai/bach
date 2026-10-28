@@ -3136,6 +3136,13 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 fn = tc.get("function", {})
                 t_name = fn.get("name", "")
                 t_args = fn.get("arguments", {})
+                if isinstance(t_args, str):
+                    try:
+                        t_args = json.loads(t_args)
+                    except (TypeError, ValueError):
+                        t_args = {}
+                if not isinstance(t_args, dict):
+                    t_args = {}
                 session.current_tool = t_name
                 if t_name and t_name not in session.last_tools:
                     session.last_tools = (session.last_tools + [t_name])[-5:]
