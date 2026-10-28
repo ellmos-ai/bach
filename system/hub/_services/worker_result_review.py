@@ -531,6 +531,53 @@ def _intent(conn, review_task_id):
         return None
 
 
+def _bound_intent(conn, record):
+    """Intent of this unscoped result's latest recorded review (the reviewed package), DB only."""
+    if (_unscoped_pin(record) is None or type(record.get("result_id")) is not int
+            or not _table(conn, "worker_result_model_reviews") or not _unscoped_guard(conn, record)):
+        return None
+    # The same latest-review choice as read_review_evidence.
+    row = _row(conn.execute("SELECT review_task_id FROM worker_result_model_reviews "
+                            "WHERE target_result_id=? ORDER BY event_id DESC LIMIT 1",
+                            (record["result_id"],)))
+    found = _intent(conn, row["review_task_id"]) if row is not None else None
+    if (found is None or found["receipt"]["schema"] != _UNSCOPED_INTENT_SCHEMA
+            or found["receipt"]["target_task_id"] != record["task_id"]
+            or found["receipt"]["submission_revision"] != record.get("submission_revision")):
+        return None
+    return found["receipt"]
+
+
+def submission_bound_result_revision(conn, record):
+    """Completion revision of an unscoped result: its reviewed package, never a Git read."""
+    try:
+        receipt = _bound_intent(conn, record)
+    except (sqlite3.Error, ValueError, TypeError, KeyError):
+        return None
+    return receipt["target_revision"] if receipt is not None else None
+
+
+def submission_bound_tree(conn, record):
+    try:
+        receipt = _bound_intent(conn, record)
+    except (sqlite3.Error, ValueError, TypeError, KeyError):
+        return None
+    return copy.deepcopy(receipt["tree_state"]) if receipt is not None else None
+
+
+def submission_bound_tree_current(conn, record, *, repo_root=None, worktrees_dir=None):
+    """Git bracket before Done: the task tree still equals the reviewed package."""
+    stored = submission_bound_tree(conn, record)
+    return stored is not None and _tree_unchanged(record["task_id"], tree_fingerprint(stored),
+                                                  repo_root=repo_root, worktrees_dir=worktrees_dir)
+
+
+def review_author_id(conn, record):
+    """Author principal the review route uses, including the unmapped placeholder."""
+    authority = _target_authority(conn, record)
+    return authority["author_id"] if authority is not None else None
+
+
 def review_task_metadata(conn, task_id):
     """Read-only validated task/intent projection; missing old schema is empty."""
     found = _intent(conn, task_id)

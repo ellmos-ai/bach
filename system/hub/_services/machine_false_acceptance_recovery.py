@@ -302,7 +302,7 @@ def repair_machine_false_acceptance(conn, task_id, *, expected, request_id,
                 or source.get("completion_decision_sha256") != expected["completion_decision_sha256"]
                 or source.get("user_review_event_id") is not None
                 or source.get("user_review_revision") is not None
-                or _current_revision_from_db(source) != expected["result_revision"]
+                or _current_revision_from_db(conn, source) != expected["result_revision"]
                 or _db_fingerprint(source) != evaluation["db_evidence_sha256"]
                 or source.get("model_review", {}).get("event_id") != expected["review_event_id"]
                 or source.get("model_review", {}).get("review_task_id") != expected["review_task_id"]
