@@ -86,7 +86,7 @@ def set_binding_error(monkeypatch):
 
 def _reason(snapshot: dict, slot: dict):
     """Ruft den Gate-Helfer direkt auf."""
-    return worker_lease_binding.TaskLeaseClient._repository_rejection_reason(snapshot, slot)
+    return worker_lease_binding.WorkerLeaseBinding._repository_rejection_reason(snapshot, slot)
 
 
 # --------------------------------------------------------------------------
@@ -186,7 +186,7 @@ def test_automatic_matches_slot_rejects_wrong_repository(
     set_resolved_repository(OTHER_REPO)
 
     slot = {"id": "slot-h", "automatic": {"enabled": True, "pickup": {"enabled": True}}}
-    assert worker_lease_binding.TaskLeaseClient._automatic_matches_slot(snapshot, slot) is False
+    assert worker_lease_binding.WorkerLeaseBinding._automatic_matches_slot(snapshot, slot) is False
 
 
 def test_automatic_matches_slot_accepts_allowed_repository(
@@ -196,7 +196,7 @@ def test_automatic_matches_slot_accepts_allowed_repository(
     set_resolved_repository(ALLOWED_REPO)
 
     slot = {"id": "slot-i", "automatic": {"enabled": True, "pickup": {"enabled": True}}}
-    assert worker_lease_binding.TaskLeaseClient._automatic_matches_slot(snapshot, slot) is True
+    assert worker_lease_binding.WorkerLeaseBinding._automatic_matches_slot(snapshot, slot) is True
 
 
 # --------------------------------------------------------------------------
@@ -216,7 +216,7 @@ def test_repository_check_runs_before_ownership(
     owned["assigned_slot"] = "slot-j"
 
     slot = {"id": "slot-j", "worker": "slot-j"}
-    reason = worker_lease_binding.TaskLeaseClient._selection_rejection_reason(owned, slot)
+    reason = worker_lease_binding.WorkerLeaseBinding._selection_rejection_reason(owned, slot)
     assert reason == "repository_not_allowed"
 
 
