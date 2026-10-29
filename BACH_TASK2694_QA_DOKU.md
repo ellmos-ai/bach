@@ -2,6 +2,10 @@
 
 result_correction_request_id: 90 · incarnation 2104fb35 · version c7b68c0f · claim_fence 15
 Status: Implementierung IM Worktree (WIP-Commit gepusht, kein PR). Testlauf NICHT bestätigt.
+Lauf-3-Zusatz: Statische Verifikation VOLLSTÄNDIG — _WorkerControl komplett verifiziert
+(telegram_chat.py Z.237–354: register_provider_request Z.300–316, cancel_active_model_request
+Z.318–331, _signal_provider_request_cancel Z.333–340, finish_provider_request Z.342–345,
+_WORKER_STOP_WAIT_SECONDS Z.351; Aufrufstelle Z.2030–2088; stimmt mit Testfällen T2–T4 überein).
 
 ## 1. Verifikationsstand (statisch, mit funktionierenden Lese-Werkzeugen bestätigt)
 
@@ -25,8 +29,13 @@ Status: Implementierung IM Worktree (WIP-Commit gepusht, kein PR). Testlauf NICH
 
 ## 2. Blocker (deterministisch, nicht Code-bezogen)
 - `execute_command` liefert in diesem Lauf für ALLE Befehle (pytest, compileall, minimal)
-  „Werkzeugausführung nicht bestätigt; Wirkung unbekannt." — dokumentierte 41er-Serie
-  (23× Arg-Fehler, 18× unbestätigt). Kein PR über finish_task (is_wip=false abgelehnt).
+  „Werkzeugausführung nicht bestätigt; Wirkung unbekannt." — dokumentierte 43er-Serie
+  (23× Arg-Fehler, 20× unbestätigt). Kein PR über finish_task (is_wip=false abgelehnt).
+- Lauf 3: 2 weitere Versuche unbestätigt (`python -m pytest -q [--]
+  system/tests/test_task2694_provider_cancel.py`, cwd=Worktree-Root) — keine weiteren Versuche,
+  Blocker gilt als endgültig dokumentiert.
+- Negativbeleg per Seiteneffekt-Sonde: .pytest_cache (Worktree-Root, 4 Einträge) unverändert,
+  Erstellt==Geändert=2026-10-27 12:54:04 — die Befehlsversuche liefen nachweislich nicht.
 - Lese-Werkzeuge (search_text/file_info/write_file) funktionieren in diesem Lauf zuverlässig.
 
 ## 3. Offene Pflicht (Fortsetzungsschritt)
