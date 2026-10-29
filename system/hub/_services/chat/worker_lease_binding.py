@@ -1151,6 +1151,20 @@ class WorkerLeaseBinding:
                 self._submission_expected = {"task_id": self.task_id, "fence": self._ack.fence,
                     "generation": self._generation, "task_version": self._snapshot["task_version"],
                     "result_sha256": digest, "result": text}
+                # Nutzerentscheid 25.10.2026: Ungecommittete Änderungen im
+                # Task-Arbeitsbaum werden vor der Abgabe automatisch als Commit
+                # auf dem Task-Zweig gesichert statt zur Abweisung zu führen.
+                try:
+                    from hub import worker_git as _worker_git
+                    auto_commit = _worker_git.auto_commit_task_worktree(
+                        self.task_id, worker_task_binding=self)
+                except Exception as _exc:
+                    auto_commit = {"committed": False, "error": str(_exc)}
+                if auto_commit.get("error"):
+                    self._submission_expected = None
+                    raise LeaseProtocolError(
+                        "Abgabe abgewiesen, ungecommittete Änderungen konnten nicht "
+                        "automatisch gesichert werden: " + str(auto_commit["error"]))
                 try:
                     release = self._operation(self._client.submit_result,
                                               generation=self._generation, result=text,
@@ -1173,7 +1187,12 @@ class WorkerLeaseBinding:
                 self._closed = True
                 self._active = False
                 self._link_confirmed_model_execution()
-                return f"Task #{self.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
+                if auto_commit.get("committed"):
+                    _hash = str(auto_commit.get("commit") or "")[:12]
+                    _note = f" Ungecommittete Änderungen automatisch als Commit {_hash or 'erstellt'} gesichert;"
+                else:
+                    _note = ""
+                return f"Task #{self.task_id}: Ergebnis gespeichert;{_note} Abschlussstatus wird nach Policy ermittelt."
             if action == "update":
                 allowed = {"title", "description", "category", "priority", "depends_on",
                            "assigned_to", "required_model", "assigned_slot", "status", "result_max_chars"}
