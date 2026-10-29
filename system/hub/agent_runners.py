@@ -66,6 +66,13 @@ BUILTIN: dict[str, dict] = {
         "full_access": ["--mode", "full"],
         "restricted": ["--mode", "safe"],
     },
+    "pickup_category": {
+        "match": ["pickup_category", "Picker", "pickup"],
+        "cmd": ["pickup", "category", "--exclude", "food,clothing,electronics,toys,books,media,health,finance,utilities,home,gardening,travel,automotive,construction", "--priority", "high"],
+        "full_access": ["--dangerously-skip-permissions"],
+        "restricted": ["--allowed_tools", "read_only"],
+        "priority": "high",
+    },
 }
 
 
