@@ -75,9 +75,8 @@ def test_next_hides_taken_tasks(tmp_path):
 
 def test_next_orders_by_priority(tmp_path):
     handler = _handler(tmp_path)
-    _add_pending(handler, "P3-Kandidat", "P3")
-    _add_pending(handler, "P1-Kandidat", "P1")
-    _add_pending(handler, "P2-Kandidat", "P2")
+    for t, p in (("P3-Kandidat", "P3"), ("P1-Kandidat", "P1"), ("P2-Kandidat", "P2")):
+        _add_pending(handler, t, p)
     ok, out = handler.handle("next", [])
     assert ok, out
     assert out.index("P1-Kandidat") < out.index("P2-Kandidat") < out.index("P3-Kandidat")

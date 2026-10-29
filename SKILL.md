@@ -16,7 +16,7 @@ description: >
 
 # ALS AGENT OFFENE TASKS ABARBEITEN (Einstieg für Claude, Codex, Kimi, Gemini)
 
-> **Neu seit v3.10.0 (2026-10-25).** Lautet dein Auftrag „lies die SKILL.md und arbeite offene Tasks ab“, gilt **zuerst dieser Abschnitt**. Alles weitere in dieser Datei ist Referenz und wird nur bei Bedarf gelesen.
+> **Neu seit v3.10.0 (2026-10-25).** Lautet dein Auftrag „lies die SKILL.md und arbeite offene Tasks ab“, gilt **zuerst dieser Abschnitt**. Alles weitere in dieser Datei ist Referenz und wird nur bei Bedarf gelesen. Native CLI: `bach task next|take|renew|submit|return|block` (Abschnitte 2, 3, 5).
 > Ausführliche, kopierbare Fassung: `Desktop\OCEAN\EINWEISUNG-EXTERNE-WORKER.md` (OneDrive von Lukas, nicht im Repo). Lease-Vertrag: `docs/architecture/TASKDB-SALT-LEASE-VERTRAG-v1.md`, Clients: `docs/architecture/TASKDB-SALT-LEASE-CLIENTS-v1.md`. Lokaler Worker-Harness (Buddha): `docs/architecture/LOKALER-WORKER-HARNESS.md` (PR #520).
 
 **Ablauf in einem Satz:** booten → Task wählen → **leasen, dann arbeiten** → eigener Worktree → Tests → PR → Ergebnis abgeben → nächste Task. Ohne ausdrückliche Stoppanweisung von Lukas hörst du nicht auf.
@@ -27,7 +27,7 @@ description: >
 - Lies vor der ersten Task den aktuellen Plan `Desktop\OCEAN\AKTUELLER-PLAN.md` und `MODUL-ZUORDNUNG.md` (Bauorte).
 
 ### 2. Freie Tasks finden
-- **Nativ:** `TaskLeaseClient.task_candidates(limit=100, offset=…)` (alle Seiten lesen, nicht nur die erste), danach `task_snapshot(task_id)` für die vollständige Beschreibung. `bach task list` zeigt dieselben Tasks nur zur Ansicht.
+- **Nativ (CLI):** `bach task next` zeigt übernehmbare Tasks (höchste Priorität zuerst, ohne aktive Lease, max. 10) und endet mit `Uebernahme: bach task take <id> --by <user>`. SDK-Weg: `TaskLeaseClient.task_candidates(limit=100, offset=…)` (alle Seiten lesen), danach `task_snapshot(task_id)` für die vollständige Beschreibung. `bach task list` zeigt dieselben Tasks nur zur Ansicht.
 - **Auswahlregel:**
   1. Nur Tasks, deren Abhängigkeiten erfüllt sind, ohne fremde aktive Lease, und für die deine Werkzeuge ausreichen.
   2. **Höchste Priorität zuerst** (P0 vor P1 vor P2). Bei gleicher Priorität zuerst, was zu den Agenda-Schwerpunkten passt (Stand 25.10.2026: Förderplaner, Agentenvorlagen/-steuerung, Running & Living, GUI-Umbau, Worker-Zuverlässigkeit; maßgeblich ist `AKTUELLER-PLAN.md`).
@@ -36,23 +36,18 @@ description: >
   5. Hängt eine Task an einer offenen Nutzerentscheidung oder passt sie nicht zu deinen Möglichkeiten: Frage bzw. Grund festhalten (Task-Notiz) und die nächste nehmen. Ändere nie Regeln oder Schutzgates, nur um eine Task übernehmen zu können.
 
 ### 3. Übernehmen, bevor du arbeitest
-```python
-import os, sys
-os.environ["BACH_NO_AUTO_MIGRATE"] = "1"
-sys.path.insert(0, os.path.join(os.environ["BACH_ROOT"], "system"))
-from hub._services.task_lease_client import TaskLeaseClient
-# BACH_ROOT und BACH_DEVICE_TOKEN stellt der bereitgestellte Zugang; den Token nie ausgeben
-client = TaskLeaseClient(lead_url="http://127.0.0.1:8000", timeout=35)  # liest BACH_DEVICE_TOKEN
-snap = client.task_snapshot(task_id)                      # vollständige Beschreibung und Taskversion
-ack = client.acquire(task_id, worker_id="<agent>@<host>", host="<host>", ttl_profile="S")
-# neue request_id wird erzeugt; die Taskversion aus dem Snapshot kann als task_version=… mitgegeben werden
-# ack.lease_id, ack.fence, ack.task_version: für diesen Lauf aufbewahren, nie in Berichte schreiben
-client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, auch bei langen Arbeiten
 ```
+bach task take <id> --by <agent>@<host>          # Erfolg: "…uebernommen…" + Fence + Frist; Lease-ID/Fence merken
+bach task renew <id> --by <user> --fence <int>   # rechtzeitig verlaengern; bei Fence-Wechsel Schreibaktionen stoppen
+bach task submit <id> --by <user> --fence <int> --result "<Ergebnistext>"
+bach task return <id> --by <user> --fence <int>  # Freigabe, Status zurueck auf pending
+bach task block <id> --lease-id <uuid> --by <user> --fence <int> [--note "<text>"]  # outcome=blocked
+```
+- Ohne `--lease-id` blockiert `bach task block` nur den Task-Status (Multi-ID), ohne Lease. `--by <user>` wird automatisch zu `<user>@<host>` ergänzt; SDK-Weg (task_snapshot, acquire, renew) bleibt TaskLeaseClient.
 - Worker-ID **`<agent>@<host>`**, eigene Request-ID und Generation, nie mit einem anderen Worker teilen. Beginne erst nach bestätigter Zusage.
 - Lehnt `renew` ab, ist die Lease abgelaufen oder hat sich die Fence geändert: **alle Schreibaktionen für diese Task beenden.** Nach bestätigten Inhaltsänderungen die gespeicherte Taskversion aktualisieren.
-- **Nicht verwenden:** `bach task claim` (älterer Claim ohne Fence/Lease-ID) und `~/compute/luna-gui/task_tool.py claim` (setzt nur `assigned_to`, keine Lease). Beide sind keine native Übernahme und schützen nicht gegen doppelte Bearbeitung. `task_tool.py note` (Text an die Beschreibung anhängen) und `list` sind als Behelf nutzbar, bis es ein natives Gegenstück gibt.
-- Signaturen verbindlich aus `system/hub/_services/task_lease_client.py` lesen, nicht aus diesem Beispiel.
+- **Nicht verwenden:** `bach task claim` (älterer Claim ohne Fence/Lease-ID). `~/compute/luna-gui/task_tool.py` gilt als **veraltet** (claim setzt nur `assigned_to`, keine Lease) — native Gegenstücke sind jetzt `bach task take|renew|submit|return|block`. Beide alten Wege schützen nicht gegen doppelte Bearbeitung.
+- Signaturen verbindlich aus `system/hub/_services/task_lease_client.py` bzw. `bach task --help` lesen, nicht aus diesem Beispiel.
 
 ### 4. Arbeiten
 - **Eigener Worktree je Task** von `origin/main`: `git worktree add ~/services/bach-worktrees/<zweig> -b <zweig> origin/main`. Zweigname `<agent>/<task>-<kurz>-<datum>`. Der Hauptcheckout `~/services/bach` ist belegt (fremde, uncommittete Änderungen): dort wird nicht gearbeitet, gemessen oder gebaut.
@@ -62,8 +57,8 @@ client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, a
 - Branch pushen, **PR gegen `main` anlegen** und in der Task vermerken. Commit, Push, PR, Merge, Deploy und fachliche Abnahme einzeln ausweisen. Ein Branch ist noch kein ausgelieferter Stand.
 
 ### 5. Abgeben
-- **Fertig:** `client.submit_result(task_id, lease_id=…, fence=…, task_version=…, generation="<neue-Generation>", result="<Text>")`. `result` ist ein konkreter Text mit **höchstens 3000 Zeichen** (erreichte Kriterien, Änderungen, PR-Link, Commit-SHA, echte Prüfergebnisse, Grenzen); eine reine Erledigungsmeldung („done“) wird abgelehnt. Die Abgabe setzt die Task auf `review` und gibt die Lease frei. Danach `task_result_snapshot(task_id)` lesen und Ergebnis-ID/Hash prüfen; ein Chat-Text allein ist keine Abgabe.
-- **Teilstand oder Blockade:** WIP-Branch pushen, dann `client.release(task_id, lease_id=…, fence=…, outcome="return" | "blocked", note="<Branch, SHA, nächster Schritt>")`. Kein pauschales `done`, keine künstlich verlängerte Lease, während du auf Menschen wartest. (`complete=false` gibt es nur im Task-Werkzeug des lokalen Buddha-Laufs, siehe Harness-Dokument, nicht im SDK.)
+- **Fertig:** `bach task submit <id> --by <user> --fence <int> --result "<Text>"` (SDK-Weg: `client.submit_result(task_id, lease_id=…, fence=…, task_version=…, generation="<neue-Generation>", result="<Text>")`). `result` ist ein konkreter Text mit **höchstens 3000 Zeichen** (erreichte Kriterien, Änderungen, PR-Link, Commit-SHA, echte Prüfergebnisse, Grenzen); eine reine Erledigungsmeldung („done“) wird abgelehnt. Die Abgabe setzt die Task auf `review` und gibt die Lease frei. Danach `task_result_snapshot(task_id)` lesen und Ergebnis-ID/Hash prüfen; ein Chat-Text allein ist keine Abgabe.
+- **Teilstand oder Blockade:** WIP-Branch pushen, dann `bach task return <id> --by <user> --fence <int>` (Status zurück auf pending) oder `bach task block <id> --lease-id <uuid> --by <user> --fence <int> [--note "<Branch, SHA, nächster Schritt>"]` (outcome=blocked); SDK-Weg: `client.release(task_id, lease_id=…, fence=…, outcome="return" | "blocked", note="…")`. Kein pauschales `done`, keine künstlich verlängerte Lease, während du auf Menschen wartest. (`complete=false` gibt es nur im Task-Werkzeug des lokalen Buddha-Laufs, siehe Harness-Dokument, nicht im SDK.)
 - Danach **sofort die nächste Task** (Schritt 2). Ist gerade keine übernehmbar: belegte Gründe melden, kurz warten, erneut prüfen. Beende deinen Auftrag nicht selbst.
 - Kurzbericht je Task: Task-ID, Arbeit, Belege, Commit-/Remote-SHA, PR, zurückgelesener Task-/Ergebnis-/Leasezustand. Ein Review eigener Arbeit ist als nicht unabhängig zu kennzeichnen.
 
