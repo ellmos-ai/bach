@@ -169,3 +169,15 @@ unabhängig davon verbleiben (es wird ohne Adapter nicht geladen).
   `ExecutionReceipt` in `trithon_dispatch.py`/`routing_contract.py` zeigen
   die Claim→Besetzung→Ausführung→Receipt-Kette mit derselben
   Korrelationsidentität.
+
+## 11. Moduldefinition: agent-library
+
+**Pfad:** `.MODULES/.CONTROL/agent-library/agent_library.py` · **Version:** v0.1.0
+
+- **Kontrollpfad:** `delete_worker_profile` (`system/hub/_services/chat/telegram_chat.py`) ruft `slots_config.remove_worker`, das innerhalb der Mutation `archive_then_remove_profile` aus dem Adapter `system/hub/_services/agent_library.py` importiert. Der Adapter lädt das kanonische Modul über `importlib` (`bach_agent_library_core`), prüft `assert_inactive`, erzeugt Terminalbelege via `terminal_records`, archiviert sie immer (auch leere Belege) über `archive` und persistiert die Entfernung durable.
+- **Belegarchiv:** `worker_run_archive.py` schreibt jeden Terminalbeleg als JSON nach `<config>/worker-run-archive/` (Dateiname `sha256(worker_id)-{start_request_id}.json`, `record_sha256`-Bindung); ungültige oder nicht terminal gebundene Belege werden abgelehnt (`WorkerRunArchiveError`).
+- **Fehlercodes:** Kanonische `ProfileDeletionRejected`-Codes (`profile_identity_invalid`, `profile_identity_mismatch`, `execution_proof_required`, `deletion_port_unavailable`, `terminal_receipts_unconfirmed`) mappt der Adapter über `_BACH_ERRORS` auf BACH-`RuntimeError`-Codes (`worker_delete_execution_unconfirmed`, `worker_delete_budget_unconfirmed`); Guard-Ablehnungen propagieren unverändert. `delete_worker_profile` antwortet auf bekannte Codes 409 mit `error_code`, sonst fail-closed 503.
+- **Post-Lösch-Readback (fail-closed, neu):** Nach erfolgreicher `remove_worker` wird die Konfiguration strikt neu gelesen; enthält die `dynamic_workers`-Liste den Eintrag noch oder ist sie keine Liste, antwortet der Endpoint 503 statt Erfolg.
+- **Tote Pfade:** `agents_heart.delete_worker_profile` wird nicht mehr aufgerufen; der FAIL-OPEN-Vorbehalt (agents_heart Z107–110) bleibt bis zum endgültigen Rückbau dokumentiert.
+- **Referenzen:** Ocean-Transfer-Plan `.MODULES/.OCEAN/ocean-transfer-plan.md` Z18, Z67–74, Z82–84.
+- **Nachweis:** `system/tests/test_agent_library_delete.py` — Erfolg inklusive Readback und Archivaufruf, 409/400/404-Ablehnungen, Guard-Direktprüfung, Adapter-Fehlercodes, fail-closed Readback.

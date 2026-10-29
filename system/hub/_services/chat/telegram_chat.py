@@ -1886,7 +1886,12 @@ def _assert_worker_profile_inactive(worker, *, allow_legacy_start=False):
 
 
 def delete_worker_profile(worker_id):
-    """One fenced delete operation shared by both POST aliases and DELETE."""
+    """One fenced delete operation shared by both POST aliases and DELETE.
+
+    Removal is re-read afterwards (fail-closed): if the survivor list still
+    contains the worker entry or the configuration is unreadable, the request
+    answers 503 instead of reporting success.
+    """
     if not isinstance(worker_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", worker_id) is None:
         return {"error": "Worker-ID ist ungültig"}, 400
     with _WORKER_CONTROL_LOCK:
@@ -1911,6 +1916,14 @@ def delete_worker_profile(worker_id):
             return {"error": "Worker-Löschung oder Belegarchiv nicht verifizierbar"}, 503
         if not ok:
             return {"error": "Workerprofil nicht gefunden"}, 404
+        try:
+            survivors = load_slots_config(None, strict=True).get("dynamic_workers")
+            if not isinstance(survivors, list) or any(
+                isinstance(entry, dict) and entry.get("id") == worker_id for entry in survivors):
+                raise RuntimeError("worker_delete_unverified")
+        except Exception as exc:
+            log.warning("Worker-Löschung nicht verifizierbar (%s)", type(exc).__name__)
+            return {"error": "Worker-Löschung oder Belegarchiv nicht verifizierbar"}, 503
         return {"ok": True, "id": worker_id}, 200
 
 
