@@ -41,7 +41,7 @@ bach task take <id> --by <agent>@<host>          # Erfolg: "…uebernommen…" +
 bach task renew <id> --by <user> --fence <int>   # rechtzeitig verlaengern; bei Fence-Wechsel Schreibaktionen stoppen
 bach task submit <id> --by <user> --fence <int> --result "<Ergebnistext>"
 bach task return <id> --by <user> --fence <int>  # Freigabe, Status zurueck auf pending
-bach task block <id> --lease-id <uuid> --by <user> --fence <int> [--note "<text>"]  # outcome=blocked
+bach task block <id> --lease-id --by <user> --fence <int> [--note "<text>"]  # outcome=blocked
 ```
 - Ohne `--lease-id` blockiert `bach task block` nur den Task-Status (Multi-ID), ohne Lease. `--by <user>` wird automatisch zu `<user>@<host>` ergänzt; SDK-Weg (task_snapshot, acquire, renew) bleibt TaskLeaseClient.
 - Worker-ID **`<agent>@<host>`**, eigene Request-ID und Generation, nie mit einem anderen Worker teilen. Beginne erst nach bestätigter Zusage.
