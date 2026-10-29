@@ -47,10 +47,21 @@ _WORKER_STOP_WAIT_SECONDS Z.351; Aufrufstelle Z.2030–2088; stimmt mit Testfäl
 - Negativbeleg per Seiteneffekt-Sonde: .pytest_cache (Worktree-Root, 4 Einträge) unverändert,
   Erstellt==Geändert=2026-10-27 12:54:04 — die Befehlsversuche liefen nachweislich nicht.
 - Lese-Werkzeuge (search_text/file_info/write_file) funktionieren in diesem Lauf zuverlässig.
+- Lauf 6 (Korrekturrunde 90): 9 weitere unbestätigte execute_command-Versuche trotz
+  erneut bestätigter start_task_worktree(2694)-Registrierung — Varianten: pytest mit beiden
+  Testdateien, nur Task-Datei, `python`, `.venv/bin/python`, `compileall`, jeweils vor und
+  nach Re-Registrierung; Fehlerbild durchgehend „Werkzeugausführung nicht bestätigt;
+  Wirkung unbekannt". Gesamtserie: 61 unbestätigte Versuche über alle Läufe. Negativbeleg:
+  list_directory im Worktree-Root zeigt KEIN .pytest_cache → Befehle liefen nachweislich
+  nicht. unittest-Variante sinnlos: 0 Treffer für „unittest|pytest|class Test" in der
+  Testdatei (reine pytest-Funktionen). Doku-Korrektur: `system/tests/test_ollama_stream.py`
+  existiert NICHT — der Name taucht nur als Referenz in test_provider_model_provenance.py:350
+  auf; frühere Existenzbehauptungen sind zurückgenommen. Letzter verbleibender Hebel:
+  interner Testlauf von finish_task(is_wip=false).
 
 ## 3. Offene Pflicht (Fortsetzungsschritt)
 1. In einem Lauf mit funktionierendem execute_command:
-   `python -m pytest -q system/tests/test_task2694_provider_cancel.py system/tests/test_ollama_stream.py`
+   `python -m pytest -q system/tests/test_task2694_provider_cancel.py`
    im Worktree /Users/lukas/services/bach-worktrees/task-2694 — Ergebnis als bestätigt sichern.
 2. 2785: unabhängige Review + Source-Commit; danach finish_task is_wip=false (PR).
 3. submit_result complete=true NUR nach bestätigtem Testlauf + Review.

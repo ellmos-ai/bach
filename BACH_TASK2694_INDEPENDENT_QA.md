@@ -92,7 +92,7 @@ Testdatei: `system/tests/test_task2694_provider_cancel.py`
 | `test_worker_control_register_guards_and_finish` | **BLOCKIERT – nicht ausgeführt** |
 | `test_worker_control_cancel_active_model_request` | **BLOCKIERT – nicht ausgeführt** |
 | `test_worker_control_cancel_rejects_unauthorized_states` | **BLOCKIERT – nicht ausgeführt** |
-| Regressionen `test_ollama_stream.py` (worker_stop Z. 277/331/354; provider_request_aborted Z. 358/372/386) | **BLOCKIERT – nicht ausgeführt** |
+| Regressionen `test_ollama_stream.py` | **ENTFALLEN – Datei existiert nicht** (Lauf 6 verifiziert: nur Namensreferenz in test_provider_model_provenance.py:350; frühere Zeilenangaben zurückgenommen) |
 | Regressionen `test_worker_execution_runtime.py` | **BLOCKIERT – nicht ausgeführt** |
 
 Keine Behauptung über E2E-Verhalten: Alle Ergebnisse stehen aus; ein
@@ -145,10 +145,12 @@ Alle 4 Tests arbeiten ausschließlich mit Fakes/Monkeypatching:
    (is_wip=false) + `submit_result` complete=true.
 3. Bei fortgesetzter Blockade: Teilstand via `finish_task` (is_wip=true)
    sichern und Abgabe mit complete=false inkl. Blockadebelegen.
-   **→ Blockade hält an (Stand Fortsetzungslauf 2): 41 Versuche ohne
-   bestätigte Ausführung (23× Argumente-Fehler, 18× Bestätigungsfehler,
-   davon 3 in Fortsetzungslauf 2); `system/tests` ohne `__pycache__`, kein
-   `pytest_2694.xml` – erneut negativ verifiziert. finish_task(is_wip=false)
-   in Fortsetzungslauf 2 erneut versucht, danach WIP-Sicherung via
-   finish_task(is_wip=true); Ausgang wird in der Abgabe dokumentiert.
-   Abgabe mit complete=false und exaktem Blocker — ohne Testbehauptung.**
+   **→ Blockade hält an (Stand Korrekturrunde 90, Lauf 6): Gesamtserie
+   61 Versuche (52 + 9 in Lauf 6) ohne bestätigte execute_command-Wirkung,
+   Fehlerbild unverändert („Werkzeugausführung nicht bestätigt; Wirkung
+   unbekannt“); kein `.pytest_cache` im Worktree-Root, unittest-Variante
+   sinnlos (0 Treffer für `unittest|pytest|class Test` in der Task-Datei).
+   Doku-Korrektur: `test_ollama_stream.py` existiert nicht (nur Referenz
+   in `test_provider_model_provenance.py:350`) – in beiden QA-Dokus
+   korrigiert. Letzter Hebel: `finish_task` (is_wip=false); Ausgang wird
+   in der Abgabe dokumentiert — ohne Testbehauptung.**
