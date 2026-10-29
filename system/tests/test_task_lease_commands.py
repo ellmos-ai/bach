@@ -7,7 +7,59 @@ UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 
 
 def _handler(tmp_path):
-    return TaskHandler(base_path=tmp_path)
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    db_file = data_dir / "bach.db"
+    if not db_file.exists():
+        with sqlite3.connect(db_file) as conn:
+            conn.execute(
+                """
+                CREATE TABLE tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    category TEXT DEFAULT 'general',
+                    priority TEXT DEFAULT 'P3',
+                    status TEXT DEFAULT 'pending',
+                    effort TEXT DEFAULT 'medium',
+                    description TEXT,
+                    depends_on TEXT,
+                    assigned_to TEXT,
+                    delegated_to TEXT,
+                    delegation_note TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    started_at TEXT,
+                    completed_at TEXT,
+                    updated_at TEXT,
+                    created_by TEXT DEFAULT 'user',
+                    completed_by TEXT,
+                    notes TEXT,
+                    tags TEXT,
+                    project TEXT,
+                    source TEXT,
+                    source_file TEXT,
+                    recurrence TEXT,
+                    due_date TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE task_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER,
+                    action TEXT,
+                    field_changed TEXT,
+                    old_value TEXT,
+                    new_value TEXT,
+                    changed_by TEXT,
+                    changed_at TEXT
+                )
+                """
+            )
+            conn.commit()
+    handler = TaskHandler(base_path=tmp_path)
+    assert handler.db_path == db_file
+    return handler
 
 
 def _connect(handler):
@@ -75,8 +127,9 @@ def test_next_hides_taken_tasks(tmp_path):
 
 def test_next_orders_by_priority(tmp_path):
     handler = _handler(tmp_path)
-    for t, p in (("P3-Kandidat", "P3"), ("P1-Kandidat", "P1"), ("P2-Kandidat", "P2")):
-        _add_pending(handler, t, p)
+    _add_pending(handler, "P3-Kandidat", "P3")
+    _add_pending(handler, "P1-Kandidat", "P1")
+    _add_pending(handler, "P2-Kandidat", "P2")
     ok, out = handler.handle("next", [])
     assert ok, out
     assert out.index("P1-Kandidat") < out.index("P2-Kandidat") < out.index("P3-Kandidat")
