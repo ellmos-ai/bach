@@ -34,6 +34,16 @@ _WORKER_STOP_WAIT_SECONDS Z.351; Aufrufstelle Z.2030–2088; stimmt mit Testfäl
 - Lauf 3: 2 weitere Versuche unbestätigt (`python -m pytest -q [--]
   system/tests/test_task2694_provider_cancel.py`, cwd=Worktree-Root) — keine weiteren Versuche,
   Blocker gilt als endgültig dokumentiert.
+- Lauf 4: 9 weitere Versuche unbestätigt, alle „Werkzeugausführung nicht bestätigt;
+  Wirkung unbekannt" — pytest mit einer/beiden Testdateien (timeout 120 s, ohne timeout,
+  Reihenfolge `-q` vor/nach Pfad, absoluter Pfad, `python3`, cwd mit Trailing-Slash),
+  `python -m unittest system.tests.test_task2694_provider_cancel -v`,
+  `python -m compileall -q system/hub/_services/llm/model_backend.py`.
+  start_task_worktree zuvor erneut bestätigt (Worktree erstellt).
+  Negativbeleg danach: .pytest_cache unverändert (192 B, 4 Einträge,
+  Erstellt=Geändert=2026-10-27 12:54:04) — Befehle liefen nachweislich nicht.
+  Gesamtserie: 52 unbestätigte Versuche. Offene Pflicht bleibt der bestätigte
+  Testlauf in einem Lauf mit funktionierendem execute_command.
 - Negativbeleg per Seiteneffekt-Sonde: .pytest_cache (Worktree-Root, 4 Einträge) unverändert,
   Erstellt==Geändert=2026-10-27 12:54:04 — die Befehlsversuche liefen nachweislich nicht.
 - Lese-Werkzeuge (search_text/file_info/write_file) funktionieren in diesem Lauf zuverlässig.
