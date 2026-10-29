@@ -153,7 +153,7 @@ def test_edit_remote_task_readback_missing(monkeypatch, native_task_environment)
     ok, msg = env.proxy.raw("edit", str(task_id), "--title", "Neuer Titel")
 
     assert not ok
-    assert "[COLLISION] Lead-Readback fehlgeschlagen" in msg
+    assert f"Task {task_id}: Lead-Readback fehlgeschlagen" in msg
     row = _fetch_task(env, task_id)
     assert row["title"] == "Testaufgabe"
 
@@ -177,7 +177,7 @@ def test_edit_remote_task_readback_diverges(monkeypatch, native_task_environment
     ok, msg = env.proxy.raw("edit", str(task_id), "--title", "Neuer Titel")
 
     assert not ok
-    assert "[COLLISION] Lead-Readback weicht ab" in msg
+    assert f"Task {task_id}: Lead-Readback weicht ab" in msg
     assert "title" in msg
     row = _fetch_task(env, task_id)
     assert row["title"] == "Testaufgabe"
