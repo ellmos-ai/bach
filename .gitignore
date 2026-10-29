@@ -9,6 +9,8 @@
 # === TASK-2617 LOKALE SCRATCH-DATEI (nicht committen) ===
 # Lokaler Test-Treiber aus der Entwicklungsphase von Task #2617, kein Projektbestandteil.
 /run2617.py
+# Laufzeit-Receipt der pytest-Ausführung (conftest.py), kein Projektbestandteil.
+test2617_receipt.json
 
 # === CLAUDE BRIDGE LAUFZEIT (User-spezifisch, niemals committen!) ===
 /system/hub/_services/claude_bridge/config.json
