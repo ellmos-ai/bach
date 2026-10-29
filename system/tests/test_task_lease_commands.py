@@ -137,8 +137,3 @@ def test_submit_sets_review(tmp_path):
     ok, out = handler.handle("submit", [str(tid), "--by", "worker1@host1", "--fence", str(fence), "--result", "Ergebnis"])
     assert ok, out
     assert _row(handler, tid)["status"] == "review"
-
-
-def test_2617_gegenprobe_absichtlich_scheitern():
-    """Gegenprobe Task 2617: absichtlich scheiternder Test, muss failed>0 im Receipt erzeugen."""
-    assert False, "Gegenprobe Task 2617: absichtlicher Fehlschlag"
