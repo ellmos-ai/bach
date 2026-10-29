@@ -74,7 +74,7 @@ def test_no_chunk_stream_obeys_worker_stop_without_ping(monkeypatch):
             return NoChunkStream()
 
         async def get(self, *_args, **_kwargs):
-            nonlocal ping_calls
+            global ping_calls
             ping_calls += 1
             await asyncio.Event().wait()
 

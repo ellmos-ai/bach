@@ -46,6 +46,9 @@ Lektüre von `model_backend.py`, `telegram_chat.py`, `chat_runtime.py`):
     `content in (None, "")`.
   - Env-Grenzen: `BACH_LLM_TOTAL_CAP`, `BACH_LLM_IDLE_TIMEOUT`,
     `BACH_LLM_IDLE_GRACE`, `BACH_LLM_PING_TIMEOUT`.
+  - Korrekturlauf 2: toter Import `_request_worker_revocation` (Z. 35)
+    entfernt; `search_text` über `system/hub/_services/llm` bestätigt 0
+    Treffer – Importfix im Task-Worktree enthalten.
 - `system/hub/_services/chat/telegram_chat.py` (~Z. 225–345)
   - `worker_id` Pflicht, `generation=uuid4().hex`.
   - `active_model_request` (Z. 288/306/315), `register_provider_request`
@@ -94,14 +97,15 @@ Testdatei: `system/tests/test_task2694_provider_cancel.py`
 
 Keine Behauptung über E2E-Verhalten: Alle Ergebnisse stehen aus; ein
 JUnit-XML (`pytest_2694.xml`) existiert nicht, `system/tests` enthält kein
-`__pycache__` – Befehle liefen nachweislich nicht.
+`__pycache__` – Befehle liefen nachweislich nicht (Fortsetzungslauf 2:
+erneut per list_directory negativ verifiziert).
 
 ## (f) Blockade-Dokumentation
 
-- `execute_command`: **30 Versuche ohne bestätigte Ausführung** (inkl.
+- `execute_command`: **41 Versuche ohne bestätigte Ausführung** (inkl.
   Vorlauf; Bilanz: 23× „Prüfargumente oder Prüfpfade sind nicht zugelassen",
-  7× „Werkzeugausführung nicht bestätigt; Wirkung unbekannt", davon 3 in
-  Korrekturrunde 1). Varianten geprüft: pytest mit/ohne `--`, nach erneutem
+  18× „Werkzeugausführung nicht bestätigt; Wirkung unbekannt", davon 3 in
+  Korrekturrunde 1, 11 in Korrekturrunde 2). Varianten geprüft: pytest mit/ohne `--`, nach erneutem
   `start_task_worktree`, `compileall` relativ/absolut, `--collect-only`,
   `--version`, `--junitxml` (mehrfach, zuletzt 3× in Folge), pytest ohne
   `python -m`, `unittest discover`, `python -c` (validierungsseitig BLOCKIERT).
@@ -141,8 +145,10 @@ Alle 4 Tests arbeiten ausschließlich mit Fakes/Monkeypatching:
    (is_wip=false) + `submit_result` complete=true.
 3. Bei fortgesetzter Blockade: Teilstand via `finish_task` (is_wip=true)
    sichern und Abgabe mit complete=false inkl. Blockadebelegen.
-   **→ Blockade hält an: finish_task(is_wip=false) 2× mit Fehler
-   „Worktree-Ergebnis oder Taskänderung nicht bestätigt" (kein bestätigter
-   Testlauf, kein bestätigter Commit/PR). Letzter Sonderversuch: WIP-Sicherung
-   via finish_task(is_wip=true); Ausgang wird in der Abgabe dokumentiert.
+   **→ Blockade hält an (Stand Fortsetzungslauf 2): 41 Versuche ohne
+   bestätigte Ausführung (23× Argumente-Fehler, 18× Bestätigungsfehler,
+   davon 3 in Fortsetzungslauf 2); `system/tests` ohne `__pycache__`, kein
+   `pytest_2694.xml` – erneut negativ verifiziert. finish_task(is_wip=false)
+   in Fortsetzungslauf 2 erneut versucht, danach WIP-Sicherung via
+   finish_task(is_wip=true); Ausgang wird in der Abgabe dokumentiert.
    Abgabe mit complete=false und exaktem Blocker — ohne Testbehauptung.**

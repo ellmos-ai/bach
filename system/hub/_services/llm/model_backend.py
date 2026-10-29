@@ -32,7 +32,6 @@ from typing import Any
 
 from hub._services.limits import limit
 from hub._services.model_provenance import reported_model
-from hub._services.chat.telegram_chat import _request_worker_revocation
 
 
 log = logging.getLogger(__name__)
@@ -480,6 +479,10 @@ class OllamaBackend(ModelBackend):
                             return aborted(f"Gesamtdeckel {total_cap}s erreicht",
                                            discard_tool_calls=True, provider_request_aborted="total_deadline")
                         if line.strip():
+                            if cancel_event.is_set():
+                                return aborted("Worker-Request generationsgebunden gestoppt",
+                                              discard_tool_calls=True,
+                                              provider_request_aborted="worker_stop")
                             chunk_count = min(chunk_count + 1, 1_000_000)
                             last_activity = now
                             probes = 0
