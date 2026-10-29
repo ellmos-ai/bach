@@ -141,5 +141,8 @@ Alle 4 Tests arbeiten ausschließlich mit Fakes/Monkeypatching:
    (is_wip=false) + `submit_result` complete=true.
 3. Bei fortgesetzter Blockade: Teilstand via `finish_task` (is_wip=true)
    sichern und Abgabe mit complete=false inkl. Blockadebelegen.
-   **→ Dieser Pfad wurde gewählt; WIP-Sicherung erfolgt unmittelbar nach
-   dieser Doku-Finalisierung.**
+   **→ Blockade hält an: finish_task(is_wip=false) 2× mit Fehler
+   „Worktree-Ergebnis oder Taskänderung nicht bestätigt" (kein bestätigter
+   Testlauf, kein bestätigter Commit/PR). Letzter Sonderversuch: WIP-Sicherung
+   via finish_task(is_wip=true); Ausgang wird in der Abgabe dokumentiert.
+   Abgabe mit complete=false und exaktem Blocker — ohne Testbehauptung.**
