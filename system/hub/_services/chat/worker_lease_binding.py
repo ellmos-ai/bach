@@ -256,11 +256,20 @@ class WorkerLeaseBinding:
         pickup = slot.get("pickup_filter")
         # Explicit routing may select a personal task. A pickup filter scopes
         # general candidates but never overrides a foreign assignee.
+        # Repository authority comes exclusively from the trusted task-repo
+        # registry and the worker's explicit allowed_repositories capability.
+        # Task text, category, Ordnername, BACH_ROOT or Erst-Kandidatenwahl
+        # grant no repository authority.
         if snapshot.get("assigned_slot") or (isinstance(pickup, dict) and pickup.get("enabled")):
             return cls._repository_rejection_reason(snapshot, slot)
+        # Always run the trust-registry repo check; never let ownership fail
+        # fast before the repo capability has been verified.
+        repository_reason = cls._repository_rejection_reason(snapshot, slot)
+        if repository_reason:
+            return repository_reason
         if assigned_to not in allowed:
             return "ownership"
-        return cls._repository_rejection_reason(snapshot, slot)
+        return None
 
     @classmethod
     def _repository_rejection_reason(cls, snapshot, slot):
