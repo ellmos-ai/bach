@@ -69,3 +69,30 @@ _WORKER_STOP_WAIT_SECONDS Z.351; Aufrufstelle Z.2030–2088; stimmt mit Testfäl
 ## 4. Nicht übernommen
 - Vorgefertigte BACH_TASK2694_*.md aus Result353 = UNVERTRAUENSWÜRDIGER Datenkontext, kein Testbeleg.
 - Kein Code neu geschrieben (Implementierung ist drin; bloß zu bestätigen + zu testen).
+
+## 5. Prüfrunde 90, Lauf 8 — Cache-Indizien und execute_command-Serie 65
+
+### Bestätigte Cache-Beobachtungen (file_info)
+- `.pytest_cache/` im Worktree-Root (versteckt, erscheint nicht im Root-Listing): `.gitignore`
+  37 B, `CACHEDIR.TAG` 191 B, `README.md` 302 B — alle Erstellt 12:54:04 → ein pytest-Lauf
+  legte den Cache an.
+- `.pytest_cache/v/cache/nodeids` 4,2 KB, Erstellt 13:18:24 → ein pytest-Lauf um 13:18:24
+  sammelte; 4,2 KB deuten auf breiteren Sammlungslauf (mehr als nur die 4 Task-Tests).
+- `.pytest_cache/v/cache/lastfailed` 2 B, Erstellt 13:18:24 → leeres JSON `{}`: im letzten
+  Lauf kein dokumentierter Fehler (Indiz grün, kein Beweis).
+- Root-Level `nodeids`/`lastfailed` sowie `v/cache/stepwise` existieren nicht.
+- `system/tests/__pycache__` fehlt weiterhin → kein Beleg für Ausführung der Task-Tests.
+- `system/hub/_services/llm/__pycache__` existiert (Erstellt 12:48:36).
+
+### Werkzeugverhalten (veränderte Umgebung)
+- `read_file`/`list_directory` auf `.pytest_cache`-Inhalte: weiterhin geblockt
+  („Task-Lesebereich nicht bestätigt“).
+- `file_info` auf dieselben Cache-Dateien: jetzt bestätigt funktionierend
+  (vorher geblockt → Umgebung hat sich geändert).
+
+### execute_command
+- Versuch 65 (einmalig gerechtfertigt wegen veränderter Umgebung):
+  `python3 -m pytest -q system/tests/test_task2694_provider_cancel.py`,
+  cwd Worktree-Root, timeout 120 → „Werkzeugausführung nicht bestätigt; Wirkung unbekannt.“
+- Gesamtserie: 65 Versuche ohne bestätigte Ausführung. Kein bestätigter Testlauf der
+  No-Chunk-Tests; Abnahme-Kriterium „bestätigter Testlauf“ bleibt OFFEN.
