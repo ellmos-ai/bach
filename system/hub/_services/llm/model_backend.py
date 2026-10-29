@@ -32,6 +32,7 @@ from typing import Any
 
 from hub._services.limits import limit
 from hub._services.model_provenance import reported_model
+from hub._services.chat.telegram_chat import _request_worker_revocation
 
 
 log = logging.getLogger(__name__)

@@ -1,9 +1,14 @@
 # BACH Task #2694 – Unabhängige QA-Dokumentation (final – Testlauf blockiert)
 
-**Status: FINAL – Testergebnisse: BLOCKIERT.** Kein einzelner Testlauf wurde
-bestätigt ausgeführt. `execute_command` wurde in 23 Versuchen nicht bestätigt
-ausgeführt (22× „Werkzeugausführung nicht bestätigt; Wirkung unbekannt“, 1×
-Validierungs-BLOCKIERT bei `python -c`).
+**Status: KORREKTURRUNDE 1 – Testergebnisse: BLOCKIERT.** Kein einzelner
+Testlauf wurde bestätigt ausgeführt. `execute_command` wurde in 30 Versuchen
+nicht bestätigt ausgeführt (23× „Prüfargumente oder Prüfpfade sind nicht
+zugelassen“, inkl. `python -c`; 7× „Werkzeugausführung nicht bestätigt;
+Wirkung unbekannt“, davon 4 im Vorlauf und 3 in Korrekturrunde 1:
+`python -m pytest tests/test_task2694_provider_cancel.py -v` im `system`-cwd,
+`python -m unittest tests.test_task2694_provider_cancel -v` im `system`-cwd,
+`python -m pytest system/tests/test_task2694_provider_cancel.py -v` vom
+Worktree-Root).
 Diese Datei dokumentiert Implementierungsstand und Abdeckung **per
 Quellcode-Lektüre**, keine verifizierte End-to-End-Ausführung.
 
@@ -93,12 +98,18 @@ JUnit-XML (`pytest_2694.xml`) existiert nicht, `system/tests` enthält kein
 
 ## (f) Blockade-Dokumentation
 
-- `execute_command`: **23 Versuche ohne bestätigte Ausführung**
-  (inkl. Vorlauf). Varianten geprüft: pytest mit/ohne `--`, nach erneutem
+- `execute_command`: **30 Versuche ohne bestätigte Ausführung** (inkl.
+  Vorlauf; Bilanz: 23× „Prüfargumente oder Prüfpfade sind nicht zugelassen",
+  7× „Werkzeugausführung nicht bestätigt; Wirkung unbekannt", davon 3 in
+  Korrekturrunde 1). Varianten geprüft: pytest mit/ohne `--`, nach erneutem
   `start_task_worktree`, `compileall` relativ/absolut, `--collect-only`,
   `--version`, `--junitxml` (mehrfach, zuletzt 3× in Folge), pytest ohne
   `python -m`, `unittest discover`, `python -c` (validierungsseitig BLOCKIERT).
-- Nach jedem der letzten drei Versuche (#21–#23) Folgerunden-Negativverifikation
+  Korrekturrunde 1 zusätzlich drei gezielte Aufrufe: `pytest -v` im system-cwd,
+  `python -m unittest tests.test_task2694_provider_cancel -v` im system-cwd,
+  `pytest -v` vom Worktree-Root – jeweils „Werkzeugausführung nicht bestätigt;
+  Wirkung unbekannt".
+- Nach jedem der Versuche #21–#23 (Vorlauf) Folgerunden-Negativverifikation
   per `file_info`: `pytest_2694.xml` existiert nicht → keine verzögerte
   Wirkung; Befehle liefen nachweislich nicht.
 - Validierungslayer aktiv: `python -c "print('exec_ok_2694')"` →
@@ -121,7 +132,8 @@ Alle 4 Tests arbeiten ausschließlich mit Fakes/Monkeypatching:
 ## (h) Offene Restarbeit
 
 1. Testlauf der neuen Datei sobald `execute_command` bestätigt wirkt
-   (23 Versuche blieben ohne bestätigte Ausführung).
+   (30 Versuche blieben ohne bestätigte Ausführung; als Alternative wird der
+   Testlauf von `finish_task` geprüft).
 2. Bei bestätigter Ausführung: echte Ergebnisse eintragen, Regressionen
    (`test_ollama_stream.py`, `test_worker_execution_runtime.py`) laufen
    lassen, QA-Doku finalisieren (ENTWURF-Markierung entfernen), SHA-256
