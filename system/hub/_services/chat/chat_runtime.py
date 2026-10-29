@@ -2127,6 +2127,9 @@ class ChatRuntime(_ModuleChatRuntime):
                                     if instrumented_transport:
                                         call_kwargs["cancel_event"] = cancel_event
                                         call_kwargs["lifecycle_observer"] = report_lifecycle
+                                        call_kwargs["provider_request_id"] = getattr(
+                                            request_handle, "request_id", None
+                                        )
                                     result = await backend.chat(*args, **call_kwargs)
                                 request_result = result
                             except BaseException as exc:

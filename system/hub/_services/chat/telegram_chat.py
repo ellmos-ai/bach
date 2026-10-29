@@ -494,7 +494,11 @@ class _WorkerControl:
                     elif result.get("error"):
                         reason = "provider_error" if request.transport_details_available else "backend_error"
                         request.phase = "request_failed"
-                    elif request.phase == "response_completed":
+                    elif request.phase in (
+                        "response_completed",
+                        "response_cleanup_complete",
+                        "client_cleanup_complete",
+                    ):
                         reason = "response_completed"
                     else:
                         reason = "backend_returned"

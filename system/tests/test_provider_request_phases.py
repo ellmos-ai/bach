@@ -236,3 +236,79 @@ def test_label_clamping(tmp_path, monkeypatch):
 def test_counter_definition():
     """Der Counter ist mit den Labels „phase“ und „agent“ definiert."""
     assert telemetry.COUNTERS["provider_request_phases"] == {"phase", "agent"}
+
+
+def test_provider_request_id_header_kein_netz(monkeypatch, tmp_path):
+    """Regression (b/c): echter httpx.AsyncClient mit MockTransport, kein Netz.
+
+    Der Header „X-BACH-Provider-Request-Id“ trägt die im Worker registrierte
+    request_id; alle Happy-Path-Phasen werden gezählt, Privatsphäre gilt.
+    """
+    import httpx
+
+    from hub._services.llm.model_backend import OllamaBackend
+
+    db = _patch_db(monkeypatch, tmp_path)
+    control, binding = _make_control(monkeypatch)
+    req = _register_ok(control, binding)
+    assert control.observe_provider_request(req, "request_starting") is True
+
+    gefangener_header = {}
+
+    class _AntwortStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            zeilen = [
+                {"message": {"role": "assistant", "content": "hal"}, "done": False},
+                {"message": {"role": "assistant", "content": "lo"}, "done": False},
+                {"message": {"role": "assistant", "content": ""},
+                 "done": True, "prompt_eval_count": 3, "eval_count": 4},
+            ]
+            for zeile in zeilen:
+                yield (json.dumps(zeile) + "\n").encode("utf-8")
+
+    async def handler(request):
+        if request.url.path == "/api/chat":
+            gefangener_header["X-BACH-Provider-Request-Id"] = (
+                request.headers.get("X-BACH-Provider-Request-Id")
+            )
+            return httpx.Response(200, stream=_AntwortStream())
+        if request.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": [{"name": "m"}]})
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *a, **k: client)
+    backend = OllamaBackend(default_model="m")
+
+    def report_lifecycle(phase, *, reason=None):
+        control.observe_provider_request(req, phase, reason=reason)
+
+    async def _aufruf():
+        return await backend.chat(
+            [{"role": "user", "content": "x"}],
+            lifecycle_observer=report_lifecycle,
+            provider_request_id=req.request_id,
+        )
+
+    ergebnis = asyncio.run(_aufruf())
+    assert control.finish_provider_request(req, result=ergebnis, error=None) is True
+
+    assert gefangener_header["X-BACH-Provider-Request-Id"] == req.request_id
+    all_rows = _rows(db)
+    for phase in (
+        "request_starting",
+        "transport_open",
+        "awaiting_response_headers",
+        "response_headers_received",
+        "first_stream_chunk_received",
+        "response_completed",
+        "response_cleanup_complete",
+        "client_cleanup_complete",
+        "runtime_call_complete",
+    ):
+        _assert_row(all_rows, phase, "ok", "w-test-1")
+
+    verboten = {req.request_id, "77", str(control.generation)}
+    for _counter, labels, _value in all_rows:
+        for wert in _parsed(labels).values():
+            assert str(wert) not in verboten

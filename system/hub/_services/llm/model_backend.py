@@ -255,7 +255,7 @@ class OllamaBackend(ModelBackend):
         return False
 
     async def chat(self, messages, tools=None, think=True, model=None, *, cancel_event=None,
-                   lifecycle_observer=None):
+                   lifecycle_observer=None, provider_request_id=None):
         import httpx
 
         try:
@@ -391,7 +391,12 @@ class OllamaBackend(ModelBackend):
         async with _ObservedAsyncClient(httpx.AsyncClient(timeout=timeouts)) as client:
             try:
                 stream_manager = client.stream(
-                    "POST", f"{self.base_url}/api/chat", json=payload
+                    "POST", f"{self.base_url}/api/chat", json=payload,
+                    headers=(
+                        {"X-BACH-Provider-Request-Id": str(provider_request_id)}
+                        if provider_request_id is not None
+                        else None
+                    ),
                 )
                 remaining_total = None
                 if total_cap > 0:
