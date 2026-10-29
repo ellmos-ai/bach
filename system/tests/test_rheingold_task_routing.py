@@ -57,6 +57,7 @@ def _create_tasks_table(conn):
 def _add_remote_columns(conn):
     conn.execute("ALTER TABLE tasks ADD COLUMN source TEXT")
     conn.execute("ALTER TABLE tasks ADD COLUMN creation_origin TEXT")
+    conn.execute("ALTER TABLE tasks ADD COLUMN claimed_by TEXT")
     conn.commit()
 
 
