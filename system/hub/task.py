@@ -1797,25 +1797,6 @@ class TaskHandler(BaseHandler):
                 if not row:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
-                existing_row = dict(row)
-                route = self._propagate_to_rheingold_lead(conn, task_id, existing_row, {"assigned_to": partner, "delegated_to": partner})
-                if route is not None and not route[0]:
-                    results.append(route[1])
-                    continue
-                now = conn.execute("SELECT datetime('now')").fetchone()[0]
-                apply_task_field_changes(conn, task_id, existing_row, {"assigned_to": partner},
-                                          changed_by="cli-task", now=now)
-                conn.execute("UPDATE tasks SET delegated_to = ?, updated_at = ? WHERE id = ?",
-                             (partner, now, task_id))
-                old_delegated = existing_row.get("delegated_to")
-                if old_delegated != partner:
-                    conn.execute(
-                        """INSERT INTO task_history
-                           (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
-                           VALUES (?, 'field_change', 'delegated_to', ?, ?, 'cli-task', ?)""",
-                        (task_id, old_delegated, partner, now),
-                    )
-                
                 conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                 results.append(f"[OK] Task {task_id} geloescht: {row['title'][:40]}")
             
