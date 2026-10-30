@@ -1,0 +1,58 @@
+{
+  "evidence": "http429_probe",
+  "task": 2993,
+  "generated_at": "2026-02-21",
+  "source": "system/tests/test_http429_telemetry_probe.py",
+  "reproduction": {
+    "server": "ThreadingHTTPServer auf 127.0.0.1:0 (Daemon-Thread)",
+    "request": "POST /v1/chat/completions via HermesBackend.chat(..., retry_transient=False)",
+    "response": {
+      "status": 429,
+      "headers": {
+        "Content-Type": "application/json",
+        "Retry-After": "0"
+      },
+      "body": {
+        "error": {
+          "message": "rate limit exceeded"
+        }
+      }
+    }
+  },
+  "event": {
+    "status_code": 429,
+    "provider": "hermes",
+    "kind": "http_error",
+    "retry_after_seconds": 0,
+    "error_type": "HTTPStatusError",
+    "quota_exceeded": false,
+    "timestamp": null
+  },
+  "telemetry": {
+    "call": "telemetry.increment('model_calls', outcome='error', model='hermes')",
+    "expected_return": true,
+    "note": "fail-silent; schreibt in die Test-DB aus conftest (BACH_DB -> tmp)"
+  },
+  "static_verification": {
+    "method": "read_file/review, kein Testlauf",
+    "harness_lines": "84 Zeilen, vollstaendig gelesen",
+    "checks": [
+      "Fixture startet ThreadingHTTPServer auf ('127.0.0.1', 0) im daemon-Thread",
+      "finally-Block: server.shutdown(), server.server_close(), thread.join(timeout=5)",
+      "Handler: 429, Content-Type application/json, Retry-After 0, Content-Length gesetzt",
+      "chat(..., retry_transient=False) => max_retries 1 => kein Retry, raise nach 1. Versuch",
+      "Assertions gegen exc.backend_error (dict), nicht gegen Attribut am Exception-Objekt",
+      "telemetry.increment(...) is True als Zaehlbeleg"
+    ],
+    "open_risk": "Laufzeitverhalten (Portbindung in Sandbox, telemetry-Enable-Flag in conftest) nur durch echten pytest-Lauf belegbar"
+  },
+  "execution_status": {
+    "harness_written": true,
+    "pytest_executed": false,
+    "pytest_attempts": "in dieser Sitzung erneut 1x versucht (execute_command, cwd=Worktree task-2993) -> erneut 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'",
+    "secrets_scan": "nicht ausgefuehrt (Shell nicht verfuegbar); manuell geprueft: Test nutzt nur Dummy-Key 'dummy', keine echten Credentials",
+    "git_diff_check": "nicht ausgefuehrt (Shell nicht verfuegbar)",
+    "blocker": "execute_command lieferte in dieser Sitzung durchgehend 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt' - keine Laufbestaetigung moeglich",
+    "open": "pytest system/tests/test_http429_telemetry_probe.py -q ausfuehren, event.timestamp aus echtem Lauf nachtragen, secrets-scan + git diff --check nachziehen"
+  }
+}
