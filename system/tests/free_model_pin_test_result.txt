@@ -75,3 +75,13 @@ Kind-Tasks #3253/#3254 existieren nicht (Erwaehnung veraltet).
 Es folgt genau ein finaler finish_task(2563, is_wip=false)-Versuch; nur ein
 bestaetigter Testlauf daraus waere der erste belastbare Nachweis. Scheitert er, wird
 der Stand als WIP gesichert und submit_result mit complete=false abgegeben.
+
+NACHTRAG 4 (finaler Fortsetzungslauf, Werkzeugrunde 138/360)
+-----------------------------------------------------------
+Letzter gezielter Versuch im Worktree /Users/lukas/services/bach-worktrees/task-2563:
+  python -m pytest -q -- system/tests/test_free_model_pin.py   (Timeout 90 s)
+Ergebnis erneut: "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt."
+=> weiterhin KEIN TESTNACHWEIS. Kein PASSED-/FAIL-Text, keine Exit-Code-Angabe.
+Keine Codeaenderung in diesem Lauf. Sachstand unveraendert gegenueber Nachtrag 3.
+Entscheidung laut RESUME: Stand als WIP per finish_task(2563, is_wip=true) sichern
+und submit_result(2563, complete=false) abgeben.
