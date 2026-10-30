@@ -70,6 +70,20 @@ Statisch belegt (Zeilenverweise oben, im Korrekturlauf erneut geprüft):
 - `telegram_chat.py:1485-1538` – Cloud-Backoff `max(min(900, BASE*2^min(retries,4)), retry_after)` und lokale Limits.
 - `telegram_chat.py:1642-1682` – `_wait_worker_cooldown`: Warten in 1-s-Schritten auf `stop_event` (Nutzerstopp responsiv), Status `paused` → `running` (Wiederaufnahme des nächsten Laufs).
 
+### Erneute Belegsuche (Nachprüfung, Korrekturlauf 1)
+
+Lauf im Kontext 22.10.2026, Korrekturlauf 1 (Korrektur-ID 58). Der Blocker persistiert: `~/.bach/operator-checkpoints` bleibt für diesen Task-Lesebereich blockiert („BLOCKIERT: Task-Lesebereich nicht bestätigt"); die dort möglichen lease-/servicegebundenen Logdaten sind erneut nicht lesbar.
+
+Ergebnis der Nachsuche:
+- Rekurrierte Textsuche nach „429" über ganz `system/hub` wurde zweimal nicht bestätigt (Werkzeugaufruf ohne belastbares Ergebnis); stattdessen wurde `system/hub/_services` direkt durchsucht.
+- Gezielt `system/hub/_services`: ausschließlich Quellcode-Referenzen, kein Log-/Journal-Artefakt eines natürlichen 429-Zyklus. Treffer: `chat_runtime.py:850` (`status_code in {429,502,503,504,529}`), `chat_runtime.py:948` (`status_code == 429`), `telegram_chat.py:1501`, `telegram_chat.py:6798`, `worker_tool_bridge.py:174`, `backend_errors.py:43,91,123,124,129,147,170,220`, `model_backend.py:742-743`, `openrouter_catalog.py:23`.
+- Suche in `docs/`: neuer Bericht `CLOUD429-EXHAUSTED-REASON-2433.md` (Task #2433) gefunden — reine Code-Änderungsdoku zu `cloud_call_retry_exhausted` in der äußeren Cloud-Warte (7 Zeilen, ohne Logdaten); dort selbst vermerkt: „tatsächlicher leasefreier Cooldown wird separat belegt". Kein dynamischer Beleg.
+- `MARKETING-LOG.txt` ist Marketingtext, kein Beleg.
+
+Die statischen Zitate wurden im Korrekturlauf erneut geprüft und bestätigt: `worker_lease_binding.py:52,55` (`_GUIDANCE` mit decompose_parent/update_status), `worker_lease_binding.py:170-177` (Cloud-Worker-Kategorienfilter leer), `chat_runtime.py:331-339` (`_SAFE_FAILURE_REASON_CODES` mit `cloud_call_retry_exhausted`, Zeile 332). Zusätzlich wurde `telegram_chat.py:1642-1682` in diesem Lauf direkt gelesen: 1-s-Warteschleife auf `stop_event` (Nutzerstopp responsiv), Status `paused` → `running`, Wiederaufnahme des nächsten Laufs — konsistent mit dem Zitat oben.
+
+Fazit: Auch nach erneuter Suche liegt im lesbaren Bereich kein natürlich aufgetretener HTTP-429-Zyklus (Cooldown, Nutzerstopp, offene Rückgabe, Wiederaufnahme) mit lease-/servicegebundenen Logdaten vor. Der dynamische Beleg bleibt offen und ist beim nächsten natürlichen 429 aus dem Laufzeitlog nachzutragen; kein künstlicher Trigger, kein Test-/Worker-Start, kein kostenpflichtiger Fallback.
+
 ## Grenzen und Auslieferung
 
 Vorhandene Arbeit bleibt erhalten und ist beim regulären Wiederaufnehmen zu berücksichtigen. Eine offene Rückgabe ist kein erledigtes Ergebnis. Anbieterquoten werden nicht umgangen; es gibt keinen zusätzlichen kostenpflichtigen Modellfallback.
