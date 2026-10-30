@@ -240,3 +240,37 @@ NACHTRAG 10 (Fortsetzungslauf, Worker, Runde 12-14) - KEIN TESTNACHWEIS
   (python -m pytest -q -- system/tests/test_free_model_pin.py im Worktree),
   Ergebnis hier als Nachtrag 11, danach bei PASSED finish_task(2563,
   is_wip=false) + submit_result(complete=true).
+
+NACHTRAG 11 (Fortsetzungslauf, Worker, Werkzeugrunde 9-10) - KEIN TESTNACHWEIS
+- Kein neuer pytest-Versuch (Sackgasse 5x belegt, Nachtraege 5-9; laut
+  Uebergabezettel NICHT erneut probieren).
+- Belegbefund Uebergabe: execute_command pytest 3 Varianten erneut
+  "Werkzeugausfuehrung nicht bestätigt; Wirkung unbekannt" (Runden 3-5,
+  mit/ohne --, cwd gesetzt); list_directory(system/tests, 2x, Runde 2 und 6):
+  test_free_model_pin.py vorhanden, keine __pycache__/.pytest_cache ->
+  kein realer Lauf. file_info test_free_model_pin.py: geaendert 2026-10-30 16:37.
+- Nachtrag 11: 2026-10-30 Worker-Lauf - execute_command pytest 3 Varianten
+  erneut 'Werkzeugausfuehrung nicht bestätigt'; list_directory: keine
+  __pycache__/.pytest_cache -> kein Lauf; Test bleibt operatorpflichtig.
+- Status unveraendert: Implementierung + Test fertig im Worktree
+  /Users/lukas/services/bach-worktrees/task-2563, WIP auf bach-task/2563
+  gepusht, PR #597 offen. task_version 5a85980d6811cfb9ccfa1b2ec27ab1780144e78f
+  ...02cfe84f5687fdbaa751a7d0 (gekuerzt im Dateinachtrag), claim_fence 114,
+  assigned_to CLAUDE. PASSED im Worker nicht belegbar.
+- Offene Pflichtarbeit: 1) Operator-Lauf
+  python -m pytest -q -- system/tests/test_free_model_pin.py
+  (cwd /Users/lukas/services/bach-worktrees/task-2563), 2) Ergebnis hier als
+  Nachtrag 12, 3) bei PASSED finish_task(2563, is_wip=false) +
+  submit_result(complete=true), 4) bei FAIL minimale Korrektur und erneut.
+  Diese Sitzung endet mit submit_result(2563, complete=false) = Teilstand.
+
+NACHTRAG 12 (Fortsetzungslauf 2, Worker, Werkzeugrunde 5-7) - KEIN TESTNACHWEIS
+- Erneute 2 Umgehungsversuche: python -m compileall (beide Dateien) und
+  python -m unittest discover (test_free_model_pin.py) → beide 'Werkzeugausführung
+  nicht bestätigt; Wirkung unbekannt'.
+- Wirkungsbeleg list_directory: kein __pycache__ in hub/_services/llm und
+  tests, kein .pytest_cache → keine reale Ausführung, auch nicht compileall.
+- Keine Codeänderung in diesem Lauf. Offene Pflichtarbeit: Operator-Lauf
+  python -m pytest -q -- system/tests/test_free_model_pin.py (cwd Worktree),
+  Ergebnis ab jetzt als NACHTRAG 13 protokollieren; bei PASSED finish_task(2563,
+  is_wip=false) + submit_result(complete=true), bei FAIL minimale Korrektur.
