@@ -50,18 +50,19 @@
     "harness_written": true,
     "harness_statisch_verifiziert": true,
     "pytest_executed": false,
-    "pytest_attempts_total": 5,
+    "pytest_attempts_total": 6,
     "pytest_attempt_log": [
       "Versuch 1 (Vorsitzung): python -m pytest -q, cwd=Worktree -> 'nicht bestaetigt'",
       "Versuch 2 (Vorsitzung): python -m compileall -q -> 'nicht bestaetigt'",
       "Versuch 3 (Vorsitzung): pytest erneut nach finish_task(WIP) -> 'nicht bestaetigt'",
       "Versuch 4 (Sitzung 3): python -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree, timeout=120 -> 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'",
-      "Versuch 5 (Sitzung 4): python -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree, timeout=120 -> 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'"
+      "Versuch 5 (Sitzung 4): python -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree, timeout=120 -> 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'",
+      "Versuch 6 (Sitzung 5): python -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree, timeout=120 -> 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'"
     ],
     "symptom": "execute_command antwortet sitzungsuebergreifend konstant mit 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt', unabhaengig von Kommando, cwd und Timeout. Andere Werkzeuge (read_file, edit_file, task_manage, finish_task) arbeiten normal.",
     "secrets_scan": "nicht ausgefuehrt (Shell nicht verfuegbar); manuell geprueft: Test nutzt ausschliesslich Dummy-Key 'dummy' und Loopback-URL, keine echten Credentials",
     "git_diff_check": "nicht ausgefuehrt (Shell nicht verfuegbar)",
-    "blocker": "Kein bestaetigter Testlauf moeglich (5 Versuche ueber 4 Sitzungen, identisches Symptom) -> Task 2993 nicht abschliessbar; WIP-Stand auf branch bach-task/2993 gepusht; Arbeit zerlegt in #3329 (pytest-Lauf) und #3330 (Gate/Abschluss)",
+    "blocker": "Kein bestaetigter Testlauf moeglich (6 Versuche ueber 5 Sitzungen, identisches Symptom) -> Task 2993 nicht abschliessbar; WIP-Stand auf branch bach-task/2993 gepusht; Arbeit zerlegt in #3329 (pytest-Lauf) und #3330 (Gate/Abschluss)",
     "open": "pytest system/tests/test_http429_telemetry_probe.py -q in funktionierender Shell ausfuehren (Kind-Task #3329); danach dieses JSON schliessen und Gate/Abschluss per #3330"
   },
   "next_steps": {
