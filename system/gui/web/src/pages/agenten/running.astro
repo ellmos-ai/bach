@@ -835,21 +835,100 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
       }
     }
 
+    // ── SUBSCRIPTION PROMPT AGENTS (Anzeige unter "Running") ──
+    function formatSubscriptionRemaining(expiresAt) {
+      if (!expiresAt) return 'kein Auto-Logout geplant';
+      const raw = String(expiresAt).trim();
+      const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+      const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(normalized);
+      const target = Date.parse(hasZone ? normalized : normalized + 'Z');
+      if (!Number.isFinite(target)) return 'Auto-Logout unbekannt';
+      const remainingMs = target - Date.now();
+      if (remainingMs <= 0) return 'Auto-Logout fällig';
+      const totalSeconds = Math.floor(remainingMs / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      if (hours > 0) return `Auto-Logout in ${hours}h ${String(minutes).padStart(2, '0')}m`;
+      return `Auto-Logout in ${minutes}:${String(seconds).padStart(2, '0')} min`;
+    }
+
+    function renderSubscriptionAgentCard(agent) {
+      const status = String(agent.status || 'idle').toLowerCase();
+      const badge = status === 'running' ? ['#0284c7', '⚡ RUNNING']
+        : status === 'stopped' ? ['#64748b', '⏹ Gestoppt']
+        : ['#059669', '● Living · Bereit'];
+      const agentId = escapeHtml(agent.id);
+      return `
+        <div class="core-agent-card" data-subscription-agent-id="${agentId}" style="border-color:#a855f7;background:rgba(168,85,247,0.05);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+            <span class="badge" style="background:${badge[0]};color:#fff;font-size:0.75rem;">${badge[1]}</span>
+            <small style="color:var(--accent);font-size:0.7rem;letter-spacing:0.02em;">subscription prompt agent</small>
+          </div>
+          <h3 style="font-size:1.05rem;font-weight:700;margin-bottom:0.25rem;">${escapeHtml(agent.name || agent.id)}</h3>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;">
+            Modell: <code>${escapeHtml(agent.model || 'Standard')}</code>
+          </p>
+          <p style="font-size:0.8rem;color:var(--text);margin-bottom:0.75rem;">
+            🔒 ${escapeHtml(formatSubscriptionRemaining(agent.expires_at))}
+          </p>
+
+          <div style="display:flex;justify-content:flex-end;gap:0.4rem;border-top:1px solid var(--border);padding-top:0.6rem;">
+            <button class="btn btn-sm" onclick="subscriptionAgentAction('${agentId}', 'heartbeat')">♥ Verlängern</button>
+            <button class="btn btn-sm" onclick="subscriptionAgentAction('${agentId}', 'duplicate')">⧉ Duplizieren</button>
+            <button class="btn btn-sm" style="color:var(--error);" onclick="subscriptionAgentAction('${agentId}', 'stop')">⏹ Stoppen</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function subscriptionAgentAction(agentId, action) {
+      const summary = document.getElementById('worker-status-summary');
+      if (!['heartbeat', 'stop', 'duplicate'].includes(action)) return;
+      summary.textContent = 'Subscription-Agent-Aktion wird angefordert…';
+      try {
+        const response = await fetch(`/api/agent-studio/subscription-agents/${encodeURIComponent(agentId)}/${action}`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Aktion nicht bestätigt');
+        summary.textContent = action === 'heartbeat' ? 'Auto-Logout des Subscription-Agenten verlängert.'
+          : action === 'stop' ? 'Subscription-Agent gestoppt.'
+          : 'Subscription-Agent dupliziert.';
+        await loadBackgroundWorkers();
+      } catch (error) {
+        summary.textContent = 'Subscription-Agent-Aktion fehlgeschlagen: ' + (error.message || 'unbekannter Fehler');
+      }
+    }
+
     // ── BACKGROUND WORKERS (EINSATZBEREIT vs. RUNNING) ──
     async function loadBackgroundWorkers() {
       const summary = document.getElementById('worker-status-summary');
       const readyGrid = document.getElementById('ready-agents-grid');
       const runningList = document.getElementById('running-workers-list');
       try {
-        const response = await fetch('/api/system/workers');
+        const [response, subscriptionResponse] = await Promise.all([
+          fetch('/api/system/workers'),
+          fetch('/api/agent-studio/subscription-agents/list').catch(()=>null)
+        ]);
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const data = await response.json();
         const workers = (data.workers || []).filter(worker=>worker.system!==true);
 
+        let subscriptionAgents = [];
+        try {
+          if (subscriptionResponse && subscriptionResponse.ok) {
+            const subscriptionData = await subscriptionResponse.json();
+            subscriptionAgents = (subscriptionData.agents || []).filter(agent => String(agent.status).toLowerCase() !== 'expired');
+          }
+        } catch (error) {
+          subscriptionAgents = [];
+        }
+
         const runningWorkers = workers.filter(w => String(w.status).toLowerCase() === 'running');
         const readyWorkers = workers.filter(w => String(w.status).toLowerCase() !== 'running');
 
-        summary.textContent = `${workers.length} Worker registriert · ${readyWorkers.length} einsatzbereit (Living) · ${runningWorkers.length} aktiv (Running) · Geprüft ${new Date().toLocaleTimeString('de-DE')}`;
+        summary.textContent = `${workers.length} Worker registriert · ${readyWorkers.length} einsatzbereit (Living) · ${runningWorkers.length} aktiv (Running) · ${subscriptionAgents.length} subscription prompt agents · Geprüft ${new Date().toLocaleTimeString('de-DE')}`;
 
         // 1. Render Einsatzbereite Agenten
         if (readyWorkers.length === 0) {
@@ -908,11 +987,11 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
           }).join('');
         }
 
-        // 2. Render Running Workers
-        if (runningWorkers.length === 0) {
+        // 2. Render Running Workers (inkl. Subscription-Prompt-Agents)
+        if (runningWorkers.length === 0 && subscriptionAgents.length === 0) {
           runningList.innerHTML = `
             <p style="grid-column:1/-1;color:var(--text-muted);font-size:0.85rem;padding:0.75rem;background:var(--bg-dark);border-radius:4px;">
-              Derzeit rechnet kein externer Worker aktiv im Hintergrund.
+              Derzeit rechnet kein externer Worker und kein subscription prompt agent aktiv im Hintergrund.
             </p>
           `;
         } else {
@@ -940,7 +1019,7 @@ import {TICKET_SYMBOL_URLS} from '../../lib/ticket-symbol-assets.mjs';
                 </div>
               </div>
             `;
-          }).join('');
+          }).join('') + subscriptionAgents.map(renderSubscriptionAgentCard).join('');
         }
         for(const card of document.querySelectorAll('[data-appearance-worker]')) {
           const worker=workers.find(item=>item.id===card.dataset.appearanceWorker);
