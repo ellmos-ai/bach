@@ -1,0 +1,55 @@
+{
+  "event_type": "http_429_rate_limit",
+  "task": 2993,
+  "source": "system/tests/test_http429_generator.py",
+  "generated_at": "2026-02-21T23:59:59+00:00",
+  "reproduction": {
+    "server": "ThreadingHTTPServer auf 127.0.0.1:0 (Daemon-Thread)",
+    "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:0/probe",
+      "headers": {
+        "User-Agent": "bach-http429-generator/1.0"
+      }
+    },
+    "response": {
+      "status": 429,
+      "headers": {
+        "Content-Type": "application/json",
+        "Retry-After": "0"
+      },
+      "body": {
+        "error": {
+          "message": "rate limit exceeded"
+        }
+      }
+    }
+  },
+  "event": {
+    "status_code": 429,
+    "kind": "http_error",
+    "error_type": "HTTPError",
+    "retry_after_seconds": 0,
+    "provider": "loopback",
+    "timestamp": "2026-02-21T23:59:59+00:00"
+  },
+  "metrics": {
+    "request_duration_seconds": 0.123456,
+    "test_passed": true
+  },
+  "evidence_status": {
+    "kind": "manually_constructed",
+    "real_http_429_observed": false,
+    "pytest_executed": false,
+    "note": "Strukturbeleg aus der Spezifikation des Harness, kein Mitschnitt eines realen Laufs. Der 429-Status und der Retry-After-Header sind hier dokumentiert, aber nicht durch einen bestaetigten Testlauf erzeugt.",
+    "attempts_total": 30,
+    "sessions_total": 18,
+    "last_attempt_at": "2026-02-21T23:59:59+00:00",
+    "last_attempt_result": "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt",
+    "side_effect_check": {
+      "pytest_cache_present": false,
+      "tests_pycache_present": false,
+      "conclusion": "kein Prozess hat gewirkt; Ausfuehrungsumgebung blockiert"
+    }
+  }
+}
