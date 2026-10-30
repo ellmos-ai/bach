@@ -298,3 +298,37 @@ NACHTRAG 13 (Fortsetzungslauf 3, Worker, Werkzeugrunde 7-10) - KEIN TESTNACHWEIS
   4) bei FAIL: minimale Korrektur, dann erneut testen
 - Abschluss dieses Laufs: submit_result(2563, complete=false) = Teilstand.
   Ein Taskabschluss ohne PASSED-Beleg wird ausdruecklich nicht behauptet.
+
+NACHTRAG 14 (Fortsetzungs-Session nach Nachtrag 13, Worker) - KEIN TESTNACHWEIS
+- Neue Session: start_task_worktree(2563) bestaetigt; alle Arbeiten nur im
+  registrierten Worktree /Users/lukas/services/bach-worktrees/task-2563.
+- Keine neuen Pruefversuche in dieser Session (laut Uebergabezettel keine
+  Wiederholungen mehr). Stattdessen Spurpruefung der 4 Pruefversuche der
+  Vorgaenger-Session (Runden 3-6), laut Uebergabe alle abgewiesen mit
+  "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt":
+  1) python -m pytest -q -- system/tests/test_free_model_pin.py (timeout 120 s)
+  2) pytest -q ohne "--" (sonst identisch)
+  3) python -m compileall -q free_model_pin.py (timeout 60 s)
+  4) python -m unittest discover -s system/tests -p test_free_model_pin.py
+     (timeout 120 s)
+- Blockade damit 9x belegt, sitzungsunabhaengig, sitzt in der
+  Werkzeugbestaetigungsschicht vor Python-Start; Ursache NICHT in Testcode,
+  Importpfad oder pytest.ini.
+- Spurpruefung dieser Session (list_directory 3x, alle negativ):
+  system/hub/_services/llm ohne __pycache__ (nur SKILL.md, __init__.py,
+  backend_errors.py, controller_route.py, free_model_pin.py, model_backend.py,
+  openrouter_catalog.py); system/tests ohne __pycache__/.pytest_cache
+  (test_free_model_pin.py und free_model_pin_test_result.txt vorhanden);
+  Worktree-Root ohne .pytest_cache (pytest.ini im Root -> Rootdir waere Root).
+  -> keine reale Python-Ausführung stattgefunden.
+- Keine Codeaenderung in dieser Session: Implementierung
+  system/hub/_services/llm/free_model_pin.py (212 Zeilen) und Suite
+  system/tests/test_free_model_pin.py (494 Zeilen) unverändert fertig.
+- Restarbeit: Operator-Pruflauf ausserhalb der blockierten Schicht, getrennt
+  als Kind-Tasks #3253 (bestaetigter Prueflauf) und #3254 (Abschlussmeldung)
+  erfasst. Abschluss von #2563 erst bei bestaetigtem PASSED
+  (finish_task is_wip=false + submit_result complete=true).
+- Abschluss dieser Session: finish_task(2563, is_wip=true) = WIP-Commit und
+  Push auf bach-task/2563 (PR #597 bleibt offen, kein Merge), danach
+  submit_result(2563, complete=false) = Teilstand. Ein Taskabschluss ohne
+  PASSED-Beleg wird ausdruecklich nicht behauptet.
