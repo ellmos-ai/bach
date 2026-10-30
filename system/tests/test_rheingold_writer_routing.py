@@ -139,7 +139,7 @@ def test_local_row_without_provenance_is_not_routed(monkeypatch):
         readback_result={"assigned_to": "worker-1"},
     )
     conn = _make_conn()
-    _insert_task(conn, source="promoted:draft:task-1", creation_origin="local", status="pending")
+    _insert_task(conn, source="draft:task-1", creation_origin="local", status="pending")
 
     assert _call(conn) is None
     assert calls["mutate"] == []
