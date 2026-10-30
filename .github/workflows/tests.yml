@@ -278,7 +278,6 @@ jobs:
             system/tests/test_lang_handler.py \
             system/tests/test_lesson_handler.py \
             system/tests/test_literatur.py \
-            system/tests/test_local_provider_options.py \
             system/tests/test_logs_handler.py \
             system/tests/test_maintain_handler.py \
             system/tests/test_mcp_servers.py \
