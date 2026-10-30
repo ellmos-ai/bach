@@ -192,3 +192,20 @@ def ensure_task_result_contract_columns(conn: sqlite3.Connection) -> None:
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
+
+
+def ensure_task_build_site(conn: sqlite3.Connection) -> None:
+    """Add the optional per-task build site used by worker Git routing."""
+    table = conn.execute(
+        "SELECT type FROM sqlite_master WHERE name = 'tasks'"
+    ).fetchone()
+    if not table or table[0] != "table":
+        raise RuntimeError("Task-Migration abgebrochen: tasks-Tabelle fehlt.")
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "build_site" not in columns:
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN build_site TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise

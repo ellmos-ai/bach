@@ -96,9 +96,11 @@ class AgentManager:
             snapshot = core_system_agents_snapshot(self.slots_path)
             snapshot["agents"].extend({**worker, "execution_kind": "worker"}
                 for worker in load_slots_config(self.slots_path, strict=True)["dynamic_workers"])
+            from hub.worker_git import _user_access_level
             for slot in snapshot["agents"]:
                 slot["execution"] = self.execution_receipt(slot["id"])
-            fields = {"id", "name", "role_id", "backend", "model", "mode", "enabled", "execution_kind", "allowed_tools", "execution"}
+                slot["access_level"] = _user_access_level()
+            fields = {"id", "name", "role_id", "backend", "model", "mode", "enabled", "execution_kind", "allowed_tools", "execution", "access_level"}
             return {"source": "native_controller", "configuration_version": snapshot["configuration_version"],
                     "role_ids": snapshot["role_ids"],
                     "agents": [{k: v for k, v in slot.items() if k in fields} for slot in snapshot["agents"]]}
