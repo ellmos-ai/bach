@@ -67,7 +67,7 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypat
             "ref_verified": True,
             "verified_at": "2026-10-15T12:00:00+00:00",
         })
-    worker_git._store_public_source_registration(repo, target, task_id, reg_data)
+        worker_git._store_public_source_registration(repo, target, task_id, reg_data)
     return {
         "repo": repo,
         "worktrees": worktrees,
