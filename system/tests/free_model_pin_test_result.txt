@@ -103,3 +103,31 @@ NACHTRAG 5 (Fortsetzungslauf, Werkzeugrunden 3-6/360)
   Nachtrag 5 per finish_task(2563, is_wip=true) gesichert und
   submit_result(2563, complete=false) abgegeben; Pflichtarbeit (bestaetigter
   pytest-Lauf + finish_task ohne WIP + Abgabe complete=true) bleibt offen.
+
+NACHTRAG 6 (Fortsetzungslauf, Werkzeugrunden 5-12/360)
+-----------------------------------------------------
+- start_task_worktree(2563): OK, cwd=/Users/lukas/services/bach-worktrees/task-2563.
+- Versuch A (regelkonform, ohne Shell-Verkettung):
+  execute_command('python -m pytest -q system/tests/test_free_model_pin.py',
+  cwd=Worktree, timeout=120) -> "Werkzeugausfuehrung nicht bestaetigt;
+  Wirkung unbekannt". Der in RESUME vorgeschlagene 'cd ... && ... | tail'-Aufruf
+  wurde bewusst NICHT verwendet (Toolregel verbietet Verkettung).
+- Versuch B (Kontrollprobe auf Werkzeugebene, trivial und risikofrei):
+  execute_command('python -m compileall -q system/tests/test_free_model_pin.py',
+  cwd=Worktree, timeout=60) -> identisch "nicht bestaetigt". Damit ist belegt:
+  die Blockade haengt weder am Befehl (pytest/unittest/compileall), noch am
+  Timeout, noch an der Argumentform, sondern an der Bestaetigungsschicht.
+- Wirkungsverifikation: file_info('system/tests/__pycache__') -> "Datei oder
+  Verzeichnis wurde nicht gefunden"; list_directory('system/tests') zeigt
+  weiterhin kein __pycache__. => auch der compileall-Lauf hat real NICHT
+  stattgefunden. "Wirkung unbekannt" bedeutet in diesem Fall: keine Ausfuehrung.
+- Lesepfad funktioniert unveraendert: pytest.ini gelesen (testpaths=system/tests,
+  pythonpath=system), Protokoll und Testdatei lesbar, mtime unveraendert.
+- Fazit: Ein bestaetigter pytest-Lauf ist in dieser Worker-Session nicht
+  herstellbar. Die Pflichtarbeit bleibt inhaltlich winzig (1 Testdatei, 1 Lauf),
+  ist aber an eine defekte Ausfuehrerschicht gebunden. Naechster sinnvoller
+  Schritt ist die Reparatur/Diagnose dieser Schicht oder ein Lauf ausserhalb
+  des Workers (Operator-Shell), danach finish_task(2563, is_wip=false) und
+  submit_result(2563, complete=true).
+- Keine Codeaenderung in diesem Lauf. Kein complete=true ohne echten Output
+  (PASSED/FAIL/Exit-Code).
