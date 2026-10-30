@@ -2146,7 +2146,19 @@ if not OWNER_ID:
         "bedeutete vorher 'jeder darf')."
     )
 
+# Lauf-ID für das OpenRouter-Free-Pinning: innerhalb eines Laufs stabil,
+# ein Neustart/eine neue Session erzeugt eine neue ID und rotiert das Modell.
+_CHAT_RUN_ID = uuid.uuid4().hex
+
+
+def _current_chat_run_id() -> str:
+    """Run-ID des aktuellen Chat-Laufs (OpenRouter-Free-Rotation pro Lauf)."""
+    return _CHAT_RUN_ID
+
+
 # Backend + Runtime initialisieren
+if isinstance(CONFIG.get("backend"), dict):
+    CONFIG["backend"].setdefault("run_id", _current_chat_run_id())
 backend = create_backend(CONFIG["backend"])
 
 try:
@@ -2584,6 +2596,8 @@ def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
                 config["default_model"] = model
 
         try:
+            # Free-Modell pro Telegram-Lauf pinnen (Rotation nur zwischen Laeufen)
+            config["run_id"] = _current_chat_run_id()
             b = create_backend(config)
             from hub._services.llm.controller_route import bind_controller_backend
             bind_controller_backend(b, credential_ref=credential_ref)
@@ -2764,6 +2778,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         config_for_backend = {k: v for k, v in preset.items()
                               if k not in ("method", "description")}
+        config_for_backend["run_id"] = _current_chat_run_id()
         new_backend = create_backend(config_for_backend)
         available, availability_status = await asyncio.to_thread(
             _checked_backend_availability,
@@ -3766,7 +3781,7 @@ async function refresh() {
   if (s.error) return;
   document.getElementById('conn-dot').className = 'dot green';
   document.getElementById('s-backend').textContent = s.backend + (s.backend_cli ? ' (' + s.backend_cli + ')' : '');
-  document.getElementById('s-model').textContent = s.model;
+  document.getElementById('s-model').textContent = s.resolved_model || s.model;
   document.getElementById('s-mode').textContent = s.mode;
   document.getElementById('s-think').textContent = s.think ? 'AN' : 'AUS';
   document.getElementById('s-bach').textContent = s.bach ? 'Ja' : 'Nein';
@@ -4104,6 +4119,7 @@ def _probe_backend_inventory_entry(
                 return False, "Key fehlt"
             candidate_config["api_key"] = api_key
 
+        candidate_config["run_id"] = _current_chat_run_id()
         candidate = create_backend(candidate_config)
         return _checked_backend_availability(
             candidate,
@@ -6330,6 +6346,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "backend_id": backend_identifier(runtime.backend),
                     "backend_cli": cli_name,
                     "model": model,
+                    "resolved_model": getattr(runtime.backend, "last_resolved_model", "") or model,
+                    "free_pin": getattr(runtime.backend, "last_free_pin_decision", None),
                     "mode": mode,
                     "think": think,
                     "manages_own_tools": owns_tools,
@@ -6352,6 +6370,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "backend_id": backend_identifier(runtime.backend),
                     "backend_cli": getattr(runtime.backend, "cli_name", ""),
                     "model": _global_defaults.get("model") or getattr(runtime.backend, "get_default_model", lambda: "?")(),
+                    "resolved_model": getattr(runtime.backend, "last_resolved_model", "")
+                    or _global_defaults.get("model")
+                    or getattr(runtime.backend, "get_default_model", lambda: "?")(),
+                    "free_pin": getattr(runtime.backend, "last_free_pin_decision", None),
                     "mode": _global_defaults.get("mode", "safe"),
                     "think": _global_defaults.get("think", True),
                     "manages_own_tools": getattr(runtime.backend, "manages_own_tools", False),
@@ -6429,6 +6451,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                         configured = bool(api_key)
                         if api_key:
                             config["api_key"] = api_key
+                    config["run_id"] = _current_chat_run_id()
                     selected_backend = create_backend(config)
                     models = selected_backend.list_models()
                     self._json({
@@ -6713,6 +6736,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 config = {k: v for k, v in preset.items()
                           if k not in ("method", "description")}
+                config["run_id"] = _current_chat_run_id()
                 new_backend = create_backend(config)
                 selected_model = preset["default_model"]
                 available, availability_status = _checked_backend_availability(

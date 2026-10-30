@@ -138,12 +138,13 @@ def _identity(conn):
         return None
 
 
-def start_execution(conn, binding, *, backend_id, requested_model, slot_id, request_sha256, route_sha256=None):
+def start_execution(conn, binding, *, backend_id, requested_model, pinned_model=None, slot_id, request_sha256, route_sha256=None):
     """Write one actual attempt under the current task holder, no raw payloads."""
     if conn.in_transaction:
         return None
     backend_id = _metadata(backend_id)
     requested_model = _metadata(requested_model)
+    pinned_model = _metadata(pinned_model, required=False)
     slot_id = _metadata(slot_id, required=False)
     if not isinstance(request_sha256, str) or not _HEX.fullmatch(request_sha256):
         return None
@@ -161,7 +162,7 @@ def start_execution(conn, binding, *, backend_id, requested_model, slot_id, requ
             "task_id": binding.task_id, "fence": binding._ack.fence,
             "generation": binding.generation, "input_task_version": binding._snapshot["task_version"],
             "backend_id": backend_id, "requested_model": requested_model,
-            "observed_model": None, "model_provenance": "unknown",
+            "pinned_model": pinned_model, "observed_model": None, "model_provenance": "unknown",
             "slot_id": slot_id, "request_sha256": request_sha256,
             "response_sha256": None, "phase": "attempted", "started_at": _fmt(now), "returned_at": None}
         if route_sha256 is not None:

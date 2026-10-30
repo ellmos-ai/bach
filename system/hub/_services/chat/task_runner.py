@@ -210,7 +210,12 @@ def main(argv: list[str] | None = None) -> int:
         session.mode = args.mode
         session.think = True
         if args.model:
-            session.model = args.model
+            if args.model == "openrouter/free":
+                from hub._services.llm.free_model_pin import pick_free_model
+                decision = pick_free_model(f"run-{t['id']}-{time.time_ns()}")
+                session.model = decision["model"]
+            else:
+                session.model = args.model
         runtime.goal = t["title"]
 
         auftrag = []

@@ -475,11 +475,13 @@ class TaskLeaseClient:
                 conn.close()
 
     def _start_model_execution(self, binding, *, backend_id, requested_model, slot_id,
-                               request_sha256, route_sha256=None):
+                               request_sha256, route_sha256=None, pinned_model=None):
         kwargs = {"backend_id": backend_id, "requested_model": requested_model,
                   "slot_id": slot_id, "request_sha256": request_sha256}
         if route_sha256 is not None:
             kwargs["route_sha256"] = route_sha256
+        if pinned_model is not None:
+            kwargs["pinned_model"] = pinned_model
         return self._model_execution_call("start_execution", binding, **kwargs)
 
     def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None):

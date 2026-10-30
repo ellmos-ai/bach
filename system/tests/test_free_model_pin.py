@@ -1,0 +1,494 @@
+"""Tests fuer das Per-Lauf-Pinning eines tool-faehigen freien OpenRouter-Modells.
+
+Geprueft wird ausschliesslich die Entscheidungslogik von
+``hub._services.llm.free_model_pin``: Determinismus pro Lauf, Rotation zwischen
+Laeufen, Ausschluss des Provider-Routers aus dem Rotationspool und der
+Rueckfall auf ``openrouter/free``.  Kataloge werden als reine dicts uebergeben,
+es findet kein Netzzugriff statt.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+SYSTEM_ROOT = Path(__file__).resolve().parent.parent
+if str(SYSTEM_ROOT) not in sys.path:
+    sys.path.insert(0, str(SYSTEM_ROOT))
+
+from hub._services.llm import free_model_pin as pin  # noqa: E402
+from hub._services.llm.openrouter_catalog import FREE_ROUTER_ID  # noqa: E402
+
+
+def _catalog(*model_ids: str, stale: bool = False, failure_code=None) -> dict:
+    """Baut einen Katalog-Snapshot im Format von get_openrouter_catalog()."""
+    models = [
+        {"id": model_id, "name": model_id, "free": True, "kind": "model"}
+        for model_id in model_ids
+    ]
+    catalog = {
+        "models": models,
+        "source": "openrouter_models_api",
+        "stale": stale,
+        "observed_at": "2026-10-30T00:00:00+00:00",
+    }
+    if failure_code is not None:
+        catalog["failure_code"] = failure_code
+    return catalog
+
+
+ROUTER_RECORD = {
+    "id": FREE_ROUTER_ID,
+    "name": "Auto Router",
+    "free": True,
+    "kind": "provider_router",
+}
+
+
+def test_fallback_id_is_openrouter_free():
+    assert FREE_ROUTER_ID == "openrouter/free"
+    assert pin.FALLBACK_REASONS == (
+        "run_id_missing",
+        "catalog_stale",
+        "no_free_candidates",
+    )
+
+
+def test_same_run_id_pins_same_model():
+    catalog = _catalog("gamma:free", "alpha:free", "beta:free")
+    first = pin.pick_free_model("run-42", catalog=catalog)
+    second = pin.pick_free_model("run-42", catalog=catalog)
+    assert first["model"] == second["model"]
+    assert first["rotation_index"] == second["rotation_index"]
+    assert first["pinned"] is True
+    assert first["fallback"] is False
+    assert first["reason"] is None
+
+
+def test_pinned_model_is_member_of_candidates():
+    catalog = _catalog("gamma:free", "alpha:free", "beta:free")
+    result = pin.pick_free_model("run-42", catalog=catalog)
+    assert result["model"] in result["candidates"]
+    assert len(result["candidates"]) == 3
+
+
+def test_candidates_are_sorted_deterministically():
+    catalog = _catalog("Gamma:free", "alpha:free", "beta:free", "Beta:free")
+    candidates = pin.free_candidates(catalog)
+    assert candidates == sorted(candidates, key=lambda item: (item.casefold(), item))
+    assert candidates[0] == "alpha:free"
+
+
+def test_runs_rotate_over_candidate_pool():
+    catalog = _catalog("alpha:free", "beta:free", "gamma:free")
+    chosen = {
+        pin.pinned_model(f"run-{index}", catalog=catalog) for index in range(12)
+    }
+    assert len(chosen) > 1
+    assert chosen <= set(pin.free_candidates(catalog))
+
+
+def test_router_is_never_a_rotation_member():
+    catalog = _catalog("alpha:free", "beta:free", "gamma:free")
+    catalog["models"].append(dict(ROUTER_RECORD))
+    candidates = pin.free_candidates(catalog)
+    assert FREE_ROUTER_ID not in candidates
+    assert len(candidates) == 3
+    for index in range(12):
+        assert pin.pinned_model(f"run-{index}", catalog=catalog) != FREE_ROUTER_ID
+
+
+def test_stale_catalog_falls_back_to_router_with_failure_code():
+    catalog = _catalog(
+        "alpha:free", "beta:free", stale=True, failure_code="catalog_timeout"
+    )
+    result = pin.pick_free_model("run-7", catalog=catalog)
+    assert result["model"] == "openrouter/free"
+    assert result["fallback"] is True
+    assert result["pinned"] is False
+    assert result["reason"] == "catalog_timeout"
+    assert result["stale"] is True
+    assert result["rotation_index"] is None
+
+
+def test_stale_catalog_without_failure_code_uses_catalog_stale():
+    catalog = _catalog("alpha:free", stale=True)
+    result = pin.pick_free_model("run-7", catalog=catalog)
+    assert result["model"] == "openrouter/free"
+    assert result["reason"] == "catalog_stale"
+
+
+def test_empty_pool_falls_back_to_router():
+    result = pin.pick_free_model("run-9", catalog=_catalog())
+    assert result["model"] == "openrouter/free"
+    assert result["fallback"] is True
+    assert result["reason"] == "no_free_candidates"
+    assert result["candidates"] == []
+
+
+def test_router_only_catalog_falls_back_to_router():
+    catalog = {"models": [dict(ROUTER_RECORD)], "source": "cache", "stale": False}
+    result = pin.pick_free_model("run-9", catalog=catalog)
+    assert result["model"] == "openrouter/free"
+    assert result["reason"] == "no_free_candidates"
+
+
+@pytest.mark.parametrize("run_id", [None, "", "   "])
+def test_missing_run_id_falls_back_to_router(run_id):
+    catalog = _catalog("alpha:free", "beta:free", "gamma:free")
+    result = pin.pick_free_model(run_id, catalog=catalog)
+    assert result["model"] == "openrouter/free"
+    assert result["fallback"] is True
+    assert result["pinned"] is False
+    assert result["reason"] == "run_id_missing"
+
+
+def test_tool_capable_only_false_keeps_free_models_without_kind():
+    catalog = {
+        "models": [
+            {"id": "alpha:free", "name": "alpha", "free": True, "kind": "model"},
+            {"id": "delta:free", "name": "delta", "free": False},
+            dict(ROUTER_RECORD),
+        ],
+        "source": "cache",
+        "stale": False,
+    }
+    strict = pin.free_candidates(catalog, tool_capable_only=True)
+    loose = pin.free_candidates(catalog, tool_capable_only=False)
+    assert strict == ["alpha:free"]
+    assert loose == ["alpha:free", "delta:free"]
+
+
+def test_rotation_index_is_bounded_and_salted():
+    size = 5
+    for run_id in ("run-1", "run-2", "run-3"):
+        index = pin.rotation_index(run_id, size)
+        assert isinstance(index, int)
+        assert 0 <= index < size
+    assert pin.rotation_index("run-1", size) == pin.rotation_index("run-1", size)
+    assert pin.rotation_index("run-1", size) != size
+
+
+def test_rotation_index_rejects_empty_pool():
+    with pytest.raises(ValueError):
+        pin.rotation_index("run-1", 0)
+
+
+def test_pick_uses_cached_catalog_when_none_given(monkeypatch):
+    catalog = _catalog("alpha:free", "beta:free", "gamma:free")
+    calls = []
+
+    def fake_get_openrouter_catalog(**kwargs):
+        calls.append(kwargs)
+        return catalog
+
+    monkeypatch.setattr(pin, "get_openrouter_catalog", fake_get_openrouter_catalog)
+    result = pin.pick_free_model("run-11")
+    assert calls == [{}]
+    assert result["pinned"] is True
+    assert result["model"] in pin.free_candidates(catalog)
+
+
+def test_pick_tolerates_non_mapping_catalog(monkeypatch):
+    monkeypatch.setattr(pin, "get_openrouter_catalog", lambda **kwargs: "kaputt")
+    result = pin.pick_free_model("run-12")
+    assert result["model"] == "openrouter/free"
+    assert result["reason"] == "no_free_candidates"
+
+
+# ---------------------------------------------------------------------------
+# Integration: OpenRouterBackend pinnt ein freies Modell pro Lauf
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+from hub._services.llm import model_backend as mb  # noqa: E402
+from hub._services.llm.model_backend import (  # noqa: E402
+    HermesBackend,
+    OpenRouterBackend,
+    backend_identifier,
+    create_backend,
+)
+
+
+def _selection_catalog(*model_ids: str, stale: bool = False, failure_code=None) -> dict:
+    catalog = _catalog(*model_ids, stale=stale, failure_code=failure_code)
+    catalog["selection"] = {"allowed": True, "reason": "model_free"}
+    return catalog
+
+
+def _install_catalog(monkeypatch, catalog):
+    def fake_get_openrouter_catalog(**kwargs):
+        return catalog
+
+    monkeypatch.setattr(pin, "get_openrouter_catalog", fake_get_openrouter_catalog)
+    monkeypatch.setattr(
+        "hub._services.llm.openrouter_catalog.get_openrouter_catalog",
+        fake_get_openrouter_catalog,
+    )
+
+
+def _install_super_chat(monkeypatch, captured):
+    async def fake_chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
+        captured.append(model)
+        return {"content": "ok", "tool_calls": None}
+
+    monkeypatch.setattr(mb.HermesBackend, "chat", fake_chat)
+
+
+def _chat_once(backend, model=None):
+    return asyncio.run(
+        backend.chat([{"role": "user", "content": "hi"}], model=model)
+    )
+
+
+def test_backend_pins_same_model_across_calls_in_one_run(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free", "gamma:free")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-42")
+    assert _chat_once(backend) == {"content": "ok", "tool_calls": None}
+    _chat_once(backend)
+
+    assert len(captured) == 2
+    assert captured[0] == captured[1]
+    assert captured[0] in pin.free_candidates(catalog)
+    assert captured[0] != FREE_ROUTER_ID
+    assert backend.last_free_pin_decision["pinned"] is True
+    assert backend.last_resolved_model == captured[0]
+
+
+def test_backend_rotates_model_between_runs(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free", "gamma:free")
+    _install_catalog(monkeypatch, catalog)
+
+    chosen = set()
+    expected = set()
+    for index in range(8):
+        captured = []
+        _install_super_chat(monkeypatch, captured)
+        backend = OpenRouterBackend(api_key="testkey", run_id=f"run-{index}")
+        _chat_once(backend)
+        chosen.add(captured[0])
+        expected.add(pin.pinned_model(f"run-{index}", catalog=catalog))
+
+    assert chosen == expected
+    assert len(chosen) > 1
+    assert chosen <= set(pin.free_candidates(catalog))
+
+
+def test_backend_without_run_id_keeps_router_id(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey")
+    _chat_once(backend)
+
+    assert captured == [FREE_ROUTER_ID]
+    assert backend.last_free_pin_decision["pinned"] is False
+    assert backend.last_free_pin_decision["reason"] == "run_id_missing"
+    assert backend.last_resolved_model == FREE_ROUTER_ID
+
+
+def test_backend_with_stale_catalog_falls_back_to_router(monkeypatch):
+    catalog = _selection_catalog("alpha:free", stale=True, failure_code="catalog_timeout")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-7")
+    _chat_once(backend)
+
+    assert captured == [FREE_ROUTER_ID]
+    assert backend.last_free_pin_decision["reason"] == "catalog_timeout"
+
+
+def test_backend_with_empty_pool_falls_back_to_router(monkeypatch):
+    catalog = _selection_catalog(stale=False)
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-9")
+    _chat_once(backend)
+
+    assert captured == [FREE_ROUTER_ID]
+    assert backend.last_free_pin_decision["reason"] == "no_free_candidates"
+
+
+def test_backend_pinned_model_passes_catalog_selection(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free")
+    calls = []
+
+    def fake_get(**kwargs):
+        calls.append(kwargs)
+        return catalog
+
+    monkeypatch.setattr(pin, "get_openrouter_catalog", fake_get)
+    monkeypatch.setattr(
+        "hub._services.llm.openrouter_catalog.get_openrouter_catalog", fake_get
+    )
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-5")
+    _chat_once(backend)
+
+    assert any(kwargs.get("model_id") for kwargs in calls)
+    assert captured[0] in pin.free_candidates(catalog)
+
+
+def test_backend_availability_reports_pinned_free_model(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free", "gamma:free")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+
+    def fake_availability(self, model=None, timeout=1.5):
+        captured.append(model)
+        return True, "ok"
+
+    monkeypatch.setattr(mb.HermesBackend, "availability", fake_availability)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-av")
+    ok, msg = backend.availability()
+
+    assert ok is True
+    assert captured[0] in pin.free_candidates(catalog)
+    assert captured[0] != FREE_ROUTER_ID
+    assert backend.last_free_pin_decision["pinned"] is True
+
+
+def test_create_backend_openrouter_free_passes_run_id():
+    config = {
+        "type": "openrouter",
+        "free_only": True,
+        "api_key": "testkey",
+        "run_id": "run-77",
+    }
+    backend = create_backend(config)
+    assert isinstance(backend, OpenRouterBackend)
+    assert backend.run_id == "run-77"
+    assert backend_identifier(backend) == "openrouter"
+
+
+def test_create_backend_openrouter_without_run_id_defaults_empty():
+    config = {"type": "openrouter", "free_only": True, "api_key": "testkey"}
+    backend = create_backend(config)
+    assert isinstance(backend, OpenRouterBackend)
+    assert backend.run_id == ""
+
+
+def test_create_backend_legacy_hermes_alias_unaffected():
+    config = {"type": "openrouter", "api_key": "testkey", "default_model": "x/y"}
+    backend = create_backend(config)
+    assert isinstance(backend, HermesBackend)
+    assert not isinstance(backend, OpenRouterBackend)
+
+
+def test_rotation_index_matches_hash_formula():
+    """rotation_index folgt exakt der gesalzenen sha256-Formel aus dem Pin."""
+    import hashlib
+
+    run_id = "run-hash-formula-77"
+    for size in (1, 3, 7, 13):
+        expected = (
+            int(
+                hashlib.sha256(
+                    f"bach-free-model-pin-v1:{run_id}".encode()
+                ).hexdigest(),
+                16,
+            )
+            % size
+        )
+        assert pin.rotation_index(run_id, size) == expected
+
+
+def test_pick_free_model_follows_success_rates():
+    """Hoehere Erfolgsquote gewinnt den Pin, unabhaengig vom Run-Key."""
+    catalog = _catalog("alpha:free", "beta:free")
+    rates = {"alpha:free": 0.9, "beta:free": 0.1}
+    for run_key in ("run-a", "run-b", "run-c", "run-d", "run-e"):
+        decision = pin.pick_free_model(run_key, catalog=catalog, success_rates=rates)
+        assert decision["pinned"] is True and decision["fallback"] is False
+        assert decision["model"] == "alpha:free"
+        assert decision["candidates"][0] == "alpha:free"
+
+
+def test_pick_free_model_without_rates_stays_deterministic():
+    """Ohne success_rates bleibt der Basis-Zweig, stabil und sortiert pro Run-Key."""
+    catalog = _catalog("gamma:free", "alpha:free", "beta:free")
+    first = pin.pick_free_model("run-stable", catalog=catalog)
+    again = pin.pick_free_model("run-stable", catalog=catalog)
+    assert first["model"] == again["model"]
+    assert first["rotation_index"] == again["rotation_index"]
+    assert first["candidates"] == ["alpha:free", "beta:free", "gamma:free"]
+    assert first["model"] == first["candidates"][first["rotation_index"]]
+
+
+def test_pick_free_model_tie_breaks_by_salted_hash():
+    """Gleiche Quoten: ascending Sortierkey (-rate, salted digest) -> kleinster Digest."""
+    import hashlib
+
+    catalog = _catalog("gamma:free", "alpha:free", "beta:free")
+    models = pin.free_candidates(catalog)
+    assert len(models) >= 2
+    rates = {model_id: 0.5 for model_id in models}
+    chosen = set()
+    for index in range(8):
+        decision = pin.pick_free_model(f"run-{index}", catalog=catalog, success_rates=rates)
+        expected = min(
+            models,
+            key=lambda item: int.from_bytes(
+                hashlib.sha256(
+                    f"bach-free-model-pin-v1:run-{index}:{item}".encode("utf-8")
+                ).digest()[:8],
+                "big",
+            ),
+        )
+        assert decision["model"] == expected
+        chosen.add(decision["model"])
+    assert len(chosen) >= 2
+
+
+def test_reserve_model_request_persists_pinned_model(tmp_path):
+    """Der Reserve-Aufruf persistiert das gepinnte Modell im Budget-Beleg."""
+    import os
+
+    from hub._services.chat import slots_config
+
+    slots_path = str(tmp_path / "slots.json")
+    slots_config.initialize_slots_config(slots_path)
+    worker = {"id": "worker-free-pin", "type": "once", "task_id": 2563,
+              "max_model_requests": 3}
+    config = slots_config.load_slots_config(slots_path, strict=True)
+    config["dynamic_workers"].append(worker)
+    configuration_version = slots_config._worker_profile_version(worker)
+    record = {
+        "schema": slots_config._MODEL_REQUEST_RUN_SCHEMA,
+        "worker_id": "worker-free-pin",
+        "service_instance": "a" * 32, "pid": os.getpid(),
+        "process_create_time": 1750000000, "start_request_id": "b" * 32,
+        "generation": "c" * 32, "task_id": 2563, "task_version": None,
+        "configuration_version": configuration_version, "limit": 3,
+        "reserved_count": 0, "phase": "admitted", "reason": "", "sequence": 0,
+    }
+    slots_config._admit_model_request_run(config, record)
+    slots_config.save_slots_config(config, slots_path)
+    match = dict(service_instance="a" * 32, start_request_id="b" * 32,
+                 generation="c" * 32, task_id=2563, task_version="d" * 64,
+                 configuration_version=configuration_version,
+                 model="openrouter/gpt-oss-20b:free", path=slots_path)
+    slots_config.reserve_model_request("worker-free-pin", **match)
+    stored = slots_config.model_request_run_record("worker-free-pin", path=slots_path)
+    assert stored["model"] == "openrouter/gpt-oss-20b:free"
+    renewed = dict(match); renewed.pop("model")
+    slots_config.reserve_model_request("worker-free-pin", **renewed)
+    assert slots_config.model_request_run_record("worker-free-pin", path=slots_path)["model"] == "openrouter/gpt-oss-20b:free"
+    with pytest.raises(slots_config.ModelRequestBudgetError):
+        invalid = dict(match); invalid["model"] = " bad"
+        slots_config.reserve_model_request("worker-free-pin", **invalid)

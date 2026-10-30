@@ -245,6 +245,38 @@ def test_catalog_reasons_separate_absence_price_and_ambiguity(monkeypatch):
         assert all(name not in repr(result) for name in ("Hidden Missing", "Hidden Invalid", "Hidden Paid", "Hidden Promo"))
 
 
+def test_catalog_rejects_free_model_without_published_tool_support(monkeypatch):
+    _reset_cache(monkeypatch)
+    rows = [
+        {
+            "id": "vendor/tools:free",
+            "name": "Tool Capable",
+            "pricing": {"prompt": "0", "completion": "0"},
+            "supported_parameters": ["tools", "completion"],
+        },
+        {
+            "id": "vendor/chat-only:free",
+            "name": "Chat Only",
+            "pricing": {"prompt": "0", "completion": "0"},
+            "supported_parameters": ["completion", "prompt"],
+        },
+    ]
+    monkeypatch.setattr(catalog.httpx, "get", lambda *_args, **_kwargs: _Response({"data": rows}))
+
+    admitted = catalog.get_openrouter_catalog(force_refresh=True, model_id="vendor/tools:free")
+    assert admitted["selection"] == {"allowed": True, "reason": None}
+    admitted_ids = [item["id"] for item in admitted["models"]]
+    assert "vendor/tools:free" in admitted_ids
+    assert "vendor/chat-only:free" not in admitted_ids
+
+    denied = catalog.get_openrouter_catalog(force_refresh=True, model_id="vendor/chat-only:free")
+    assert denied["selection"] == {"allowed": False, "reason": "model_tools_unsupported"}
+    denied_ids = [item["id"] for item in denied["models"]]
+    assert "vendor/chat-only:free" not in denied_ids
+    assert "vendor/tools:free" in denied_ids
+    assert "Chat Only" not in repr(denied)
+
+
 def test_failed_refresh_invalidates_expired_individual_model_proof(monkeypatch):
     _reset_cache(monkeypatch)
     good_payload = {

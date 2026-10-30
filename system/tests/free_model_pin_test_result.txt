@@ -1,0 +1,87 @@
+STATUS: KEIN TESTNACHWEIS
+=========================
+Diese Datei ist ein manuell verfasster Statusbericht. Sie enthaelt KEIN
+Ergebnis eines echten pytest-Laufs und darf NICHT als PASS/FAIL-Nachweis
+fuer system/tests/test_free_model_pin.py verwendet werden.
+
+Task: #2563 - OpenRouter Free: ein Modell pro Lauf pinnen, Rotation zwischen Laeufen
+Branch: bach-task/2563
+Pull Request: #597 (offen)
+
+WAS FERTIG IST (Dateilese-Pruefung, nicht Testlauf)
+----------------------------------------------------
+- system/hub/_services/llm/free_model_pin.py
+  * FALLBACK_REASONS (~Z. 30-34)
+  * rotation_index(run_id, size) = int(sha256("salt:run_id")) % size, deterministisch (Z. 98-103)
+  * pick_free_model(run_id, catalog, tool_capable_only, success_rates) (Z. 128-183)
+  * Rueckfall FREE_ROUTER_ID ("openrouter/free") mit Grund im Ergebnisdict
+  * "stale"-Katalog -> failure_code als Grund (Z. 147-153)
+  * success_rates (Callable oder Mapping) sortiert Kandidaten nach Erfolgsquote (Z. 166-183)
+- system/tests/test_free_model_pin.py vorhanden (~408 Zeilen)
+
+WAS FEHLT
+---------
+Ein bestaetigter Testlauf:
+  python -m pytest -q -- system/tests/test_free_model_pin.py
+  cwd: /Users/lukas/services/bach-worktrees/task-2563
+
+Die Werkzeugebene (execute_command) lieferte in mehreren Laeufen nur
+"Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt". Auch
+finish_task(2563) brach mit "Gebundener Testlauf nicht sicher bestaetigt" ab.
+Ursache ist die Bestaetigungsschicht des Ausfuehrers, nicht die Befehlsform:
+pytest, unittest und compileall wurden in Standard- und Variantenform versucht.
+
+NACHTRAG (Fortsetzungs-Lauf): Zwei weitere gezielte Versuche in exakt
+zugelassener Form (python -m pytest -q -- system/tests/test_free_model_pin.py,
+cwd=/Users/lukas/services/bach-worktrees/task-2563), Timeout 90 s und 45 s:
+erneut "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt". Die Blockade
+besteht damit unabhaengig von Timeout und Session fort; weitere Wiederholungen
+bleiben bis zur Behebung der Bestaetigungsschicht zwecklos. Teilstand wird per
+finish_task(is_wip=true) gesichert; Task #2563 bleibt offen, die Kinder
+#3253 (bestaetigter pytest-Lauf) und #3254 (Abschlussmeldung) sind
+weiterhin zu erledigen. Code unveraendert fertig laut Dateilese.
+
+NAECHSTER SCHRITT
+-----------------
+Kind-Task #3253: bestaetigten pytest-Lauf erbringen (nur echte PASSED/FAIL-Ausgabe zaehlt).
+Kind-Task #3254: bei PASSED finish_task(2563, ...) + submit_result(complete=true),
+                bei FAIL minimale Korrektur im Worktree und erneut testen.
+
+NACHTRAG 2 (Fortsetzungslauf, Werkzeugrunde 4)
+----------------------------------------------
+Erneuter Einzelversuch im Worktree /Users/lukas/services/bach-worktrees/task-2563:
+  python -m pytest -q -- system/tests/test_free_model_pin.py   (Timeout 90 s)
+Ergebnis: "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt."
+=> weiterhin KEIN TESTNACHWEIS. Kein PASSED-/FAIL-Text, keine Exit-Code-Angabe.
+Keine Codeaenderung in diesem Lauf. Sachstand unveraendert gegenueber Nachtrag 1.
+
+Korrektur zur Pfadangabe: system/tests/test_free_model_pin.py hat 494 Zeilen
+(frueher hier faelschlich als 408 Zeilen notiert).
+
+Offen bleibt allein die Bestaetigungsschicht des Ausfuehrers: solange
+execute_command keine echte Ausgabe liefert und finish_task deshalb mit
+"Gebundener Testlauf nicht sicher bestaetigt" abbricht, ist weder
+finish_task(2563) ohne WIP noch submit_result(complete=true) zulaessig.
+
+NACHTRAG 3 (Belegbewertung abgeschlossen, vor finalem finish_task-Versuch):
+Diese Datei bleibt ein manueller Statusbericht, kein pytest-Protokoll; file_info zeigt
+mtime = Erstellt 2026-10-30 16:56:34 (keine Modifikation durch einen Testlauf). Als
+Testbeleg ungeeignet; STATUS: KEIN TESTNACHWEIS bleibt gueltig.
+system/tests/test_free_model_pin.py ist vollstaendig gelesen (494 Zeilen, ~25
+Testfunktionen) und inhaltlich konsistent mit free_model_pin.py (Rotation, Fallback,
+success_rates, Tie-Break, Backend-Integration, slots_config).
+task_manage(list) zeigt ausschliesslich Task #2563; die in Nachtrag 1 erwaehnten
+Kind-Tasks #3253/#3254 existieren nicht (Erwaehnung veraltet).
+Es folgt genau ein finaler finish_task(2563, is_wip=false)-Versuch; nur ein
+bestaetigter Testlauf daraus waere der erste belastbare Nachweis. Scheitert er, wird
+der Stand als WIP gesichert und submit_result mit complete=false abgegeben.
+
+NACHTRAG 4 (finaler Fortsetzungslauf, Werkzeugrunde 138/360)
+-----------------------------------------------------------
+Letzter gezielter Versuch im Worktree /Users/lukas/services/bach-worktrees/task-2563:
+  python -m pytest -q -- system/tests/test_free_model_pin.py   (Timeout 90 s)
+Ergebnis erneut: "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt."
+=> weiterhin KEIN TESTNACHWEIS. Kein PASSED-/FAIL-Text, keine Exit-Code-Angabe.
+Keine Codeaenderung in diesem Lauf. Sachstand unveraendert gegenueber Nachtrag 3.
+Entscheidung laut RESUME: Stand als WIP per finish_task(2563, is_wip=true) sichern
+und submit_result(2563, complete=false) abgeben.

@@ -897,9 +897,14 @@ class HermesBackend(OpenAIBackend):
 class OpenRouterBackend(HermesBackend):
     """OpenRouter provider with explicit model IDs and a safe free router default.
 
-    openrouter/free is sent to OpenRouter unchanged. The provider, rather
-    than this client, chooses a free model for each request. In particular,
-    this class never substitutes a locally selected model for that router ID.
+    openrouter/free is normally sent to OpenRouter unchanged and the
+    provider, rather than this class, chooses a free model per request.
+    Exception: with a ``run_id`` the backend pins one tool-capable free
+    catalog model per run (stable across all calls of that run, rotating
+    between runs; see hub._services.llm.free_model_pin) and substitutes
+    that pinned model for the router ID. Without a ``run_id``, or when the
+    catalog is stale or has no free candidates, it falls back to the
+    ``openrouter/free`` router ID unchanged.
     """
 
     def __init__(
@@ -909,11 +914,15 @@ class OpenRouterBackend(HermesBackend):
         default_model: str = "openrouter/free",
         site_url: str = "https://github.com/ellmos-ai/bach",
         app_name: str = "BACH Agent",
+        run_id: str | None = None,
     ):
         if not api_key:
             from hub._services.llm.openrouter_catalog import read_openrouter_api_key
 
             api_key = read_openrouter_api_key()
+        self.run_id = str(run_id) if run_id is not None else ""
+        self.last_free_pin_decision = None
+        self._free_pin_model: str | None = None
         super().__init__(
             base_url=base_url or "https://openrouter.ai/api/v1",
             api_key=api_key,
@@ -943,10 +952,41 @@ class OpenRouterBackend(HermesBackend):
                 code if isinstance(code, str) else "catalog_invalid_schema"
             )
 
+    def _pin_free_router_model(self) -> str:
+        """Pin one free catalog model for this run, else fall back to the router ID.
+
+        The decision (including the fallback to the router ID) is made once
+        per backend instance, i.e. once per run, and cached afterwards. A
+        catalog refresh between two calls of the same run therefore cannot
+        swap the model mid-run. Rotation between runs is preserved because
+        every run gets its own backend instance with its own cache.
+        """
+        if self._free_pin_model is not None:
+            return self._free_pin_model
+        from hub._services.llm.free_model_pin import pick_free_model
+
+        decision = pick_free_model(self.run_id)
+        self.last_free_pin_decision = decision
+        pinned_model = decision.get("model") if isinstance(decision, dict) else None
+        if (
+            isinstance(decision, dict)
+            and decision.get("pinned") is True
+            and isinstance(pinned_model, str)
+            and pinned_model.strip()
+        ):
+            pinned_model = pinned_model.strip()
+        else:
+            pinned_model = "openrouter/free"
+        self._free_pin_model = pinned_model
+        return pinned_model
+
     async def chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
         target_model = str(model or self.default_model).strip()
+        if target_model == "openrouter/free":
+            target_model = self._pin_free_router_model()
         if target_model != "openrouter/free":
             self._require_catalog_selection(target_model)
+        self.last_resolved_model = target_model
         return await super().chat(
             messages=messages,
             tools=tools,
@@ -963,6 +1003,8 @@ class OpenRouterBackend(HermesBackend):
         if not str(self.api_key or "").strip():
             return False, "Key fehlt"
         target_model = str(model or self.default_model).strip()
+        if target_model == "openrouter/free":
+            target_model = self._pin_free_router_model()
         if target_model != "openrouter/free":
             try:
                 self._require_catalog_selection(target_model)
@@ -1745,6 +1787,7 @@ def create_backend(config: dict) -> ModelBackend:
         'default_model': '...',  # optional
         'permission_mode': '...',  # optional (CLI backends: restricted/full)
         'free_only': True,         # optional OpenRouter free-catalog guard
+        'run_id': '...',           # optional (openrouter free: pins one free model per run)
     }
     """
     backend_type = config.get("type", "ollama").lower()
@@ -1782,7 +1825,14 @@ def create_backend(config: dict) -> ModelBackend:
         )
         if not default_model and backend_class is OpenRouterBackend:
             default_model = "openrouter/free"
-        return backend_class(
+        if backend_class is OpenRouterBackend:
+            return OpenRouterBackend(
+                base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
+                api_key=config.get("api_key", ""),
+                default_model=default_model,
+                run_id=config.get("run_id"),
+            )
+        return HermesBackend(
             base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
             api_key=config.get("api_key", ""),
             default_model=default_model or "nousresearch/hermes-3-llama-3.1-8b",
