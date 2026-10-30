@@ -1048,9 +1048,9 @@ TOOLS_SAFE = [
         "query": {"type": "string", "description": "Suchanfrage"},
         "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
     }, ["query"]),
-    _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
+    _tool("task_manage", "BACH-Tasks verwalten (Status, Zerlegung, Ergebnis)", {
         "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
-                   "description": "Task-API ist die einzige Fortschrittsquelle: ohne bestätigten Werkzeugbeleg (Toolaufruf) gilt ein Task als nicht abgeschlossen – success behaupten ohne submit_result/Beleg ist ein Verstoß. add/decompose: Beschreibung mit Datei:Zeile + exaktem Tun; submit_result/done immer mit Ergebnistext und complete-Flag; update nur Status ohne Inhaltsfelder; list bei gebundener Task ohne task_id."},
+                   "description": "list (bei Bindung ohne task_id), add, detail, update (nur Status), decompose, submit_result/done (result + complete)"},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
