@@ -157,3 +157,31 @@ NACHTRAG 7 (dieser Lauf, Wrapper-Variante):
   oder python run_pytest_wrapper.py (schreibt junit.xml + wrapper_log.txt in
   system/tests). Danach Nachtrag 8 mit Ergebnis, finish_task(2563, is_wip=false)
   und submit_result(complete=true). Kein complete=true ohne echten Output.
+
+NACHTRAG 8 (Fortsetzungslauf, RESUME-Schritt, Werkzeugrunden 4-7/360)
+----------------------------------------------------------------------
+- Regelkonformer RESUME-Versuch exakt wie vorgegeben:
+  execute_command('python run_pytest_wrapper.py',
+  cwd=/Users/lukas/services/bach-worktrees/task-2563, timeout=180)
+  -> "BLOCKIERT: Pruefargumente oder Pruefpfade sind nicht zugelassen.
+  Beispiel: python -m pytest -q -- system/tests/test_datei.py mit cwd im
+  Task-Arbeitsbaum."
+  Die Abweisung erfolgte sofort und deterministisch (Guard-Pruefung), nicht als
+  Transportfehler. Timeout 180 statt 120 aendert nichts: die Sperre greift vor
+  der Ausfuehrung. Damit ist auch der letzte in RESUME vorgesehene Weg belegt
+  gesperrt; die Sackgassenliste ist vollstaendig (pytest-Varianten, unittest,
+  compileall, Shell-Verkettung, Wrapper mit pytest.main, Wrapper-Skriptaufruf).
+- Folge gemaess RESUME-Anweisung: keine weiteren pytest-Wiederholungen; WIP
+  sichern statt weiterer Versuche.
+- Testnachweis-Status: weiterhin KEIN bestaetigter Lauf, kein Exit-Code, kein
+  PASSED/FAIL, keine junit.xml, kein __pycache__. Der Code- und Teststand ist
+  unveraendert gegenueber WIP (free_model_pin.py, test_free_model_pin.py 494
+  Zeilen, mtime 2026-10-30 16:37:02).
+- Abschluss dieses Laufs: finish_task(2563, is_wip=true) + Nachtrag 8 als
+  WIP-Commit auf bach-task/2563 (PR #597), danach submit_result(2563,
+  complete=false). Kein complete=true ohne echten Testoutput.
+- Offene Pflichtarbeit (unveraendert, klein): 1) bestaetigter Lauf von
+  system/tests/test_free_model_pin.py ausserhalb des Workers (Operator-Shell im
+  Worktree), 2) Ergebnis hier als Nachtrag 9 protokollieren, 3) bei PASSED
+  finish_task(2563, is_wip=false) und submit_result(complete=true), 4) bei FAIL
+  minimale Korrektur und erneut testen.
