@@ -12,6 +12,7 @@ Ollama Handler - Lokale AI-Interaktion
 Refactored: 2026-01-23 - Nutzt jetzt tools/ollama_client.py
 """
 import json
+import os
 import sys
 import sqlite3
 from datetime import datetime
@@ -173,6 +174,13 @@ class OllamaHandler(BaseHandler):
                 models_config = {}
             model_entry = models_config.get(model)
             num_ctx = model_entry.get("num_ctx") if isinstance(model_entry, dict) else None
+            if num_ctx is None:
+                env_num_ctx = os.environ.get("OLLAMA_NUM_CTX") or os.environ.get("OLLAMA_NUM_CFG")
+                if env_num_ctx:
+                    try:
+                        num_ctx = int(env_num_ctx)
+                    except (TypeError, ValueError):
+                        num_ctx = None
             response = self.client.generate(prompt, model=model, num_ctx=num_ctx)
             self._telemetry_model_call(model, bool(getattr(response, "success", False)))
             if response.success:

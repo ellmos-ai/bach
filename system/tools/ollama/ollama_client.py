@@ -24,6 +24,9 @@ from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass
 
 
+DEFAULT_NUM_CTX = 4096
+
+
 @dataclass
 class OllamaModel:
     """Modell-Information."""
@@ -31,7 +34,7 @@ class OllamaModel:
     size_bytes: int
     modified_at: str = ""
     digest: str = ""
-    num_ctx: int = 4096
+    num_ctx: int = DEFAULT_NUM_CTX
     
     @property
     def size_gb(self) -> float:
@@ -88,11 +91,11 @@ class OllamaClient:
         Args:
             base_url: Ollama-Server URL (default: http://localhost:11434)
             timeout: Request-Timeout in Sekunden
-            num_ctx: Kontextfenster-Groesse num_ctx (default: OLLAMA_NUM_CTX bzw. 4096)
+            num_ctx: Kontextfenster-Groesse num_ctx (default: OLLAMA_NUM_CTX bzw. OLLAMA_NUM_CFG bzw. 4096)
         """
         self.base_url = base_url or self.DEFAULT_URL
         self.timeout = timeout
-        env_num_ctx = os.environ.get("OLLAMA_NUM_CTX", "4096")
+        env_num_ctx = os.environ.get("OLLAMA_NUM_CTX") or os.environ.get("OLLAMA_NUM_CFG", "4096")
         try:
             self.num_ctx = int(num_ctx if num_ctx is not None else env_num_ctx)
         except (TypeError, ValueError):
