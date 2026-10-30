@@ -50,7 +50,7 @@
     "harness_written": true,
     "harness_statisch_verifiziert": true,
     "pytest_executed": false,
-    "pytest_attempts_total": 15,
+    "pytest_attempts_total": 18,
     "pytest_attempt_log": [
       "Versuch 1 (Vorsitzung): python -m pytest -q, cwd=Worktree -> 'nicht bestaetigt'",
       "Versuch 2 (Vorsitzung): python -m compileall -q -> 'nicht bestaetigt'",
@@ -66,12 +66,15 @@
       "Versuch 12 (Sitzung 8): python3 -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree, timeout=60 -> 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'",
       "Versuch 13 (Sitzung N): python -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree - nicht bestätigt",
       "Versuch 14 (Sitzung N): python -m pytest -q system/tests/test_http429_telemetry_probe.py --junitxml=system/logs/evidence/http429_junit_2026-02-21.xml, cwd=Worktree, timeout=120 - nicht bestätigt",
-      "Versuch 15 (Sitzung N): junitxml-Variante erneut (--junitxml=system/logs/evidence/http429_junit_2026-02-21.xml), cwd=Worktree, timeout=120 - nicht bestätigt; danach Dateibeleg-Prüfung (file_info/list_directory): .pytest_cache, JUnit-XML und system/tests/__pycache__ fehlen"
+      "Versuch 15 (Sitzung N): junitxml-Variante erneut (--junitxml=system/logs/evidence/http429_junit_2026-02-21.xml), cwd=Worktree, timeout=120 - nicht bestätigt; danach Dateibeleg-Prüfung (file_info/list_directory): .pytest_cache, JUnit-XML und system/tests/__pycache__ fehlen",
+      "Versuch 16 (Sitzung N+1): python -m pytest system/tests/test_http429_telemetry_probe.py -v, cwd=Worktree, timeout=120 - nicht bestätigt",
+      "Versuch 17 (Sitzung N+1): dieselbe Datei mit --junitxml=system/logs/evidence/http429_junit.xml, cwd=Worktree, timeout=120 - nicht bestätigt; file_info auf die JUnit-XML: Datei nicht gefunden",
+      "Versuch 18 (Sitzung N+2): python -m pytest system/tests/test_http429_telemetry_probe.py -v, cwd=/Users/lukas/services/bach-worktrees/task-2993 (frisch über start_task_worktree bestätigt), timeout=120 -> 'Werkzeugausführung nicht bestätigt; Wirkung unbekannt'"
     ],
-    "symptom": "execute_command antwortet sitzungsuebergreifend konstant mit 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt', unabhaengig von Kommando, cwd und Timeout; bestätigt über 15 Versuche / 9+ Sitzungen; auch nach Worktree-Neubindung (start_task_worktree, Sitzung 7) identisches Symptom; kommandounabhängig (-x-Variante eingeschlossen); junitxml-Strategie versucht (Versuche 14/15) - ebenfalls ohne Wirkung. Dateibeleg-Prüfung nach jedem Lauf (file_info/list_directory): erwartbare Nebenwirkungen .pytest_cache (Worktree-Root), system/tests/__pycache__ (aus dem Test-Import) und die JUnit-XML system/logs/evidence/http429_junit_2026-02-21.xml fehlen durchgehend -> ein Lauf wirkt NACHWEISLICH nicht (nicht nur unbestätigt). Andere Werkzeuge (read_file, edit_file, task_manage, finish_task) arbeiten normal.",
+    "symptom": "execute_command antwortet sitzungsuebergreifend konstant mit 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt', unabhaengig von Kommando, cwd und Timeout; bestätigt über 18 Versuche / 11 Sitzungen; auch nach Worktree-Neubindung (start_task_worktree, Sitzung 7) identisches Symptom; kommandounabhängig (-x-Variante eingeschlossen); junitxml-Strategie versucht (Versuche 14/15) - ebenfalls ohne Wirkung. Dateibeleg-Prüfung nach jedem Lauf (file_info/list_directory): erwartbare Nebenwirkungen .pytest_cache (Worktree-Root), system/tests/__pycache__ (aus dem Test-Import) und die JUnit-XML system/logs/evidence/http429_junit_2026-02-21.xml fehlen durchgehend -> ein Lauf wirkt NACHWEISLICH nicht (nicht nur unbestätigt). Andere Werkzeuge (read_file, edit_file, task_manage, finish_task) arbeiten normal.",
     "secrets_scan": "nicht ausgefuehrt (Shell nicht verfuegbar); manuell geprueft: Test nutzt ausschliesslich Dummy-Key 'dummy' und Loopback-URL, keine echten Credentials",
     "git_diff_check": "nicht ausgefuehrt (Shell nicht verfuegbar)",
-    "blocker": "Kein bestaetigter Testlauf moeglich (15 Versuche ueber 9+ Sitzungen, identisches Symptom; Blocker als endgueltig behandelt; auch junitxml-Strategie ohne Dateiwirkung; Import-Nebenwirkung __pycache__ fehlt - Beweis, dass kein Python-Prozess auf den Worktree wirkte) -> Task 2993 nicht abschliessbar; WIP-Stand auf branch bach-task/2993 gepusht; Arbeit zerlegt in #3329 (pytest-Lauf) und #3330 (Gate/Abschluss)",
+    "blocker": "Kein bestaetigter Testlauf moeglich (18 Versuche ueber 11 Sitzungen, identisches Symptom; Blocker als endgueltig behandelt; auch junitxml-Strategie ohne Dateiwirkung; Import-Nebenwirkung __pycache__ fehlt - Beweis, dass kein Python-Prozess auf den Worktree wirkte) -> Task 2993 nicht abschliessbar; WIP-Stand auf branch bach-task/2993 gepusht; Arbeit zerlegt in #3329 (pytest-Lauf) und #3330 (Gate/Abschluss)",
     "open": "pytest system/tests/test_http429_telemetry_probe.py -q in funktionierender Shell ausfuehren (Kind-Task #3329); danach dieses JSON schliessen und Gate/Abschluss per #3330"
   },
   "next_steps": {
