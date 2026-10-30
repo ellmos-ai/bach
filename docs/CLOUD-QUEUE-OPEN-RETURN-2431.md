@@ -50,6 +50,26 @@ Im Task-Arbeitsbaum `task-2431` wurden folgende Prüfversuche unternommen:
 - Eine künstliche Triggerung von HTTP-429-Antworten wurde nicht durchgeführt und ist für diese Dokumentationsaufgabe nicht vorgesehen.
 - Die beschriebene 429-Cooldown-Logik beruht ausschließlich auf dem gelesenen Quellcode.
 
+### Ergebnis der Log-Belegsuche (Korrekturlauf #2431)
+
+Gesucht wurde ausschließlich passiv, ohne Start, Trigger oder Modellaufruf, in den im Task lesbaren Pfaden:
+
+- Arbeitsbaum `task-2431`: keine Log-, Journal- oder Checkpoint-Artefakte mit 429-Zyklus. Die Wurzel enthält nur Quell- und Textdateien (`MARKETING-LOG.txt` ist Marketingtext, kein Laufzeitlog).
+- `docs/` rekursiv nach `429`: nur Beschreibungen. `docs/operations/` enthält keine Treffer auf `429`, `docs/architecture/` keine Treffer auf `ratelimit`/`rate_limited`/`cooldown`.
+- `system/hub/` führt kein Logverzeichnis; `logs.py` ist Code, keine Ablage. Laufzeitlogs und Operator-Checkpoints liegen außerhalb des bestätigten Lesebebereichs (`~/.bach/…`, `~/.bach/operator-checkpoints`) und waren nicht zugänglich.
+
+Damit ist der dynamische Beleg in diesem Lauf nicht erreichbar. **Offener Blocker:** Es fehlt ein real beobachteter HTTP-429-Durchlauf mit Cooldown, Nutzerstopp, offener Rückgabe und Wiederaufnahme.
+
+Begründung gegen einen künstlichen Trigger: Ein erzwungener 429 würde genau den Zyklus verfälschen, der belegt werden soll (Anbieterantwort, Retry-After, echtes Lease-Verhalten), zusätzliche Kosten verursachen und die Sperre „kein künstlicher 429, kein Test-/Worker-Start, kein kostenpflichtiger Fallback" verletzen. Der Beleg muss beim nächsten natürlich auftretenden 429 aus dem dann vorliegenden Laufzeitlog nachgetragen werden.
+
+Statisch belegt (Zeilenverweise oben, im Korrekturlauf erneut geprüft):
+- `backend_errors.py:161-172` – `cloud_call_retry_delay`: Grenze `0 <= retries < 3`, Budget 900 s, Basis 60 s bei 429, sonst 5 s, `max(2^retries, retry_after_seconds)`.
+- `backend_errors.py:142-158` – `cloud_call_retry_eligible`: 429 nur für `(ollama, rate_limited)` oder `(openrouter, http_error)`, `quota_exceeded` zwingend `False`.
+- `chat_runtime.py:331-339` – `cloud_call_retry_exhausted` in `_SAFE_FAILURE_REASON_CODES`.
+- `chat_runtime.py:934-956` – Retry-Schleife, „Versuch %s/3", danach `reason_code="cloud_call_retry_exhausted"`.
+- `telegram_chat.py:1485-1538` – Cloud-Backoff `max(min(900, BASE*2^min(retries,4)), retry_after)` und lokale Limits.
+- `telegram_chat.py:1642-1682` – `_wait_worker_cooldown`: Warten in 1-s-Schritten auf `stop_event` (Nutzerstopp responsiv), Status `paused` → `running` (Wiederaufnahme des nächsten Laufs).
+
 ## Grenzen und Auslieferung
 
 Vorhandene Arbeit bleibt erhalten und ist beim regulären Wiederaufnehmen zu berücksichtigen. Eine offene Rückgabe ist kein erledigtes Ergebnis. Anbieterquoten werden nicht umgangen; es gibt keinen zusätzlichen kostenpflichtigen Modellfallback.
