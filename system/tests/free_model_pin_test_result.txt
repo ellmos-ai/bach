@@ -64,3 +64,47 @@ Empfohlene naechste Schritte
    ausfuehren; Ergebnis steht automatisch in dieser Datei.
 3. Sobald echte Testausgabe vorliegt, diese Datei durch den Laeufer
    ueberschreiben lassen und finish_task(is_wip=false) erneut pruefen.
+
+===============================================================
+UPDATE Blockade-Evidenz (Fortsetzungs-Lauf zu Task 2563)
+===============================================================
+
+Zusaetzlich gepruefte execute_command-Varianten in diesem Lauf,
+alle abgewiesen mit „Werkzeugausführung nicht bestätigt; Wirkung
+unbekannt":
+
+1. python3 -m pytest -q system/tests/test_free_model_pin.py
+   (python3-Interpreter-Variante, cwd=Task-Worktree)
+2. python -m unittest -v system.tests.test_free_model_pin
+   (unittest-Form ohne pytest)
+3. python -m compileall system/tests system/hub/_services/llm
+   (Syntax-/Bytecode-Kompilierprüfung als minimaler Wirkungsnachweis)
+
+Dateisystem-Nachweis (list_directory im Task-Worktree task-2563):
+- KEIN .pytest_cache im Worktree-Root (pytest.ini liegt im Root,
+  rootdir=Worktree-Root; ein tatsächlich gelaufener pytest haette
+  den Cache erzeugt)
+- KEIN __pycache__ in system/tests
+- KEIN __pycache__ in system/hub/_services/llm
+
+Damit ist widerlegt, dass einer der Blockade-Aufrufe tatsaechlich
+gelaufen ist. Die Testausführung ist in dieser Umgebung nachweislich
+unmoeglich; die Pflichtarbeit (echte Testausführung) kann hier nicht
+erbracht werden.
+
+Implementierungsstand (vollständiger Quellen-Review dieses Laufs):
+- free_model_pin.py: pick_free_model normalisiert run_id
+  (run_id_missing-Fallback), catalog_stale / no_free_candidates,
+  deterministische Rotation via sha256("bach-free-model-pin-v1:run_id")
+  % len(Kandidaten), Router FREE_ROUTER_ID "openrouter/free" nie
+  Kandidat; _fallback liefert model="openrouter/free", pinned=False.
+- model_backend.py OpenRouterBackend: run_id-Parameter,
+  _free_pin_model, last_free_pin_decision, default_model
+  "openrouter/free", Pinning/Rotation/Fallback dokumentiert.
+- test_free_model_pin.py (408 Zeilen): Unit- und Integrationstests zu
+  Rotation zwischen Läufen, gleichem Pin pro Lauf, Router-Ausschluss,
+  tool_capable_only, Stale-/Leer-Fallbacks und Backend-Integration.
+
+Naechster Schritt: Freigabe von execute_command pruefen, dann
+`python system/tools/testing/run_free_model_pin_test.py` ausfuehren
+und diese Datei durch echte Testausgabe ersetzen lassen.
