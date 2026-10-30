@@ -154,9 +154,20 @@ def _log_bound_task_manage_denial(stage, binding, args, exc=None):
 
 _READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
 _READ_EVIDENCE_READ_ONLY_TOOLS = frozenset({"read_file", "search_text", "task_manage"})
-# Zusatzlesewerkzeuge fuer read-evidence: rein lesend, aber ohne den
-# exakten 3-Werkzeug-Match (read-evidence ist davon entkoppelt).
-_READ_EVIDENCE_EXTRA_READ_TOOLS = frozenset({"list_directory", "get_datetime"})
+# Weitere fuer read-evidence zulaessige Werkzeuge ohne den exakten
+# 3-Werkzeug-Match: Zusatzlesewerkzeuge plus Datei-Mutationswerkzeuge.
+# read-evidence heisst "kein Ausfuehrungs-/Delegationsrecht", nicht
+# "nur lesen".
+_READ_EVIDENCE_EXTRA_READ_TOOLS = frozenset({
+    "list_directory",
+    "get_datetime",
+    "write_file",
+    "edit_file",
+    "create_directory",
+    "move_file",
+    "copy_file",
+    "recycle",
+})
 _READ_EVIDENCE_REASONS = frozenset({
     "formatter_capability_unverified",
     "reviewer_profile_required",
@@ -166,11 +177,15 @@ _READ_EVIDENCE_REASONS = frozenset({
 
 
 def _read_evidence_readonly_worker_enabled(worker_task_binding, allowed_tools) -> bool:
-    """Read-evidence: aktive Fence-Bindung plus rein lesende Werkzeugliste.
+    """Read-evidence: aktive Fence-Bindung, Werkzeuge ohne Ausfuehrungsrecht.
 
     Entkoppelt vom exakten 3-Werkzeug-Match: read_file muss enthalten sein,
     jeder andere Name muss in _READ_EVIDENCE_READ_ONLY_TOOLS oder
-    _READ_EVIDENCE_EXTRA_READ_TOOLS liegen.
+    _READ_EVIDENCE_EXTRA_READ_TOOLS liegen. Datei-Mutationswerkzeuge
+    (write_file, edit_file, create_directory, move_file, copy_file,
+    recycle) sind zulaessig: read-evidence meint "kein Ausfuehrungs-/
+    Delegationsrecht" (kein execute_command, kein delegate, kein
+    worktree-Abschluss), nicht "nur lesen".
     """
     if not isinstance(worker_task_binding, WorkerLeaseBinding):
         return False
@@ -1055,7 +1070,7 @@ TOOLS_SAFE = [
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
         "result": {"type": "string", "description": "Fertiges Ergebnis bei submit_result/done (max. 3000 Zeichen). Werkzeugbeleg Pflicht; complete=false: Teilstand, Task bleibt offen."},
-        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done einer gebundenen Task: true nur nach vollständiger Pflichtarbeit mit bestätigtem Werkzeugbeleg (Toolaufruf); false speichert result als Teilstand, Task bleibt offen."},
+        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done; true nur mit bestätigtem Werkzeugbeleg."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
