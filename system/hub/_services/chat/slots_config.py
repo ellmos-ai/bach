@@ -1229,10 +1229,10 @@ def _validated_core_edits(
                     or any(not isinstance(name, str) or name not in known for name in value)
                     or len(set(value)) != len(value))):
                 raise ValueError("Toolfreigabe enthält unbekannte oder doppelte Werkzeuge")
-            elif field == "tool_profile":
-                from .bach_tools import TOOL_PROFILES
-                if value is not None and (not isinstance(value, str) or value not in TOOL_PROFILES):
-                    raise ValueError(f"Unbekanntes Toolset-Profil: {value}")
+        elif field == "tool_profile":
+            from .bach_tools import TOOL_PROFILES
+            if value is not None and (not isinstance(value, str) or value not in TOOL_PROFILES):
+                raise ValueError(f"Unbekanntes Toolset-Profil: {value}")
         elif field == "avatar":
             value = validate_agent_avatar(value)
         elif field == "symbol":
