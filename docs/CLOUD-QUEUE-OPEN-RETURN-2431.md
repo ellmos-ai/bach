@@ -101,6 +101,21 @@ Scope-Abgrenzung dieses Korrekturlaufs: geprüft wurden ausschließlich die im A
 
 Resultrevision: Der Task bleibt **offen** (nicht `complete`). Nächster Schritt bleibt unverändert das Nachziehen des Belegs aus dem Laufzeitlog, sobald ein natürlicher 429 vorliegt oder der Lesebebereich für `~/.bach/operator-checkpoints` bestätigt ist.
 
+### Erneute Belegsuche (Nachprüfung, Korrekturlauf 3)
+
+Lauf im Kontext 30.10.2026 (Fortsetzungssitzung nach Altstand 13:30), Korrekturlauf 3 zur Korrektur-ID 58. Scope dieses Laufs: ausschließlich die erneute Belegsuche nach einem natürlich aufgetretenen HTTP-429-Zyklus (Cooldown, Nutzerstopp, offene Rückgabe, Wiederaufnahme) in lease-/servicegebundenen Laufzeitdaten — keine Codeänderung, kein künstlicher 429, kein Test-/Worker-Start, kein kostenpflichtiger Fallback, keine `.SYNC`-Ausführung, kein Merge/Deploy; nur statische/lesende Prüfungen.
+
+Prüfumfang und Ergebnisse (nur lesend):
+- `~/.bach/operator-checkpoints`: erneut blockiert („Task-Lesebereich nicht bestätigt"); identische Systemsperrung wie in den Vorgängerläufen. Der einzige bekannte Ort leasegebundener Laufzeitdaten bleibt unzugänglich.
+- `system/logs` rekursiv nach `429` durchsucht: 0 Treffer — kein Logartefakt eines natürlichen 429-Zyklus.
+- Struktur `system/logs` unverändert: nur `daily/` mit der einzigen Datei `2026-02-21.md` (altes Session-Log-Gerüst ohne 429-/Cooldown-Einträge) sowie `wiki_author/` (Fachberichte, keine Laufzeitdaten).
+- Laut Altstand ohne Logablage: `system/data/sessions` (nur `.gitkeep`) und `system/exports`; diese Sackgassen wurden nicht erneut durchlaufen.
+- Statische Quellbelege unverändert gültig (aus Teilstand 30.10., 13:30): `backend_errors.py:142-172`; `chat_runtime.py:331-339, 934-956`; `telegram_chat.py:1485-1538, 1642-1682`; `worker_lease_binding.py:52,55,170-177`.
+
+Ergebnis: Ein dynamischer, lease-/servicegebundener Beleg eines natürlichen 429-Zyklus ist weiterhin **nicht** vorhanden. Der offene Blocker bleibt unverändert bestehen: es fehlt der real beobachtete Durchlauf (Cooldown, Nutzerstopp, Rückgabe, Wiederaufnahme) aus einem Laufzeitlog; ein künstlicher Trigger bleibt untersagt. Der Task bleibt **offen**.
+
+Resultrevision: Korrekturlauf 3 zu Korrektur-ID 58 — der Bericht ist gegenüber dem Korrekturlauf 2 nicht unverändert erneut eingereicht, sondern um die frischen Prüforte und -ergebnisse dieses Laufs ergänzt und als neuer Teilstand gemeldet (`submit_result`, `complete=false`). Nächster Schritt unverändert: beim nächsten natürlichen HTTP-429-Zyklus den lease-/servicegebundenen Beleg (Cooldown, Nutzerstopp, Rückgabe, Wiederaufnahme) aus dem Laufzeitlog nachziehen; liegt dann erneut kein Beleg vor, ist der Blocker **neu** zu dokumentieren (nicht Alttext einreichen), Task offen lassen.
+
 ## Grenzen und Auslieferung
 
 Vorhandene Arbeit bleibt erhalten und ist beim regulären Wiederaufnehmen zu berücksichtigen. Eine offene Rückgabe ist kein erledigtes Ergebnis. Anbieterquoten werden nicht umgangen; es gibt keinen zusätzlichen kostenpflichtigen Modellfallback.
