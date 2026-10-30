@@ -58,10 +58,21 @@ def local_backend_configs(config=None):
         }
         if provider == "ollama":
             for key in ("num_ctx", "timeout_seconds"):
-                if key in selected:
-                    if type(selected[key]) is bool:
+                if key in selected and selected[key] is not None:
+                    value = selected[key]
+                    if type(value) is bool:
                         raise ValueError("Ollama-Kontext und Timeout dürfen keine Wahrheitswerte sein")
-                    result[provider][key] = selected[key]
+                    if key == "num_ctx":
+                        if not isinstance(value, int) or not 512 <= value <= 262144:
+                            raise ValueError(
+                                "Ollama num_ctx muss eine ganze Zahl zwischen 512 und 262144 sein"
+                            )
+                    elif key == "timeout_seconds":
+                        if not isinstance(value, (int, float)) or not 1 <= value <= 3600:
+                            raise ValueError(
+                                "Ollama timeout_seconds muss eine Zahl zwischen 1 und 3600 sein"
+                            )
+                    result[provider][key] = value
         if provider == "lmstudio" and selected.get("api_key"):
             result[provider]["api_key"] = selected["api_key"]
     return result
