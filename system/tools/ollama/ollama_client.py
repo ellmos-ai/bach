@@ -188,6 +188,7 @@ class OllamaClient:
         stream: bool = False,
         think: Optional[bool] = None,
         num_predict: Optional[int] = None,
+        num_ctx: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None,
     ) -> OllamaResponse:
         """
@@ -218,6 +219,8 @@ class OllamaClient:
             merged_options["temperature"] = temperature
         if num_predict is not None:
             merged_options["num_predict"] = num_predict
+        if num_ctx is not None:
+            merged_options["num_ctx"] = num_ctx
         if merged_options:
             payload["options"] = merged_options
         if think is not None:
@@ -247,6 +250,7 @@ class OllamaClient:
         think: Optional[bool] = None,
         temperature: Optional[float] = None,
         num_predict: Optional[int] = None,
+        num_ctx: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None,
     ) -> OllamaResponse:
         """
@@ -272,6 +276,8 @@ class OllamaClient:
             merged_options["temperature"] = temperature
         if num_predict is not None:
             merged_options["num_predict"] = num_predict
+        if num_ctx is not None:
+            merged_options["num_ctx"] = num_ctx
         if merged_options:
             payload["options"] = merged_options
         if think is not None:
