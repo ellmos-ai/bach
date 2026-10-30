@@ -407,6 +407,28 @@ async def get_contractus_presets():
     }
 
 
+@router.get("/taskmaster/roles")
+async def get_taskmaster_roles():
+    """Return the versioned native Taskmaster role contract.
+
+    This is a read-only projection.  Role descriptors do not acquire tasks,
+    create a second queue, or start a provider; execution remains bound to the
+    existing blueprint, controller and Lead-Lease paths.
+    """
+    from hub._services.taskmaster_roles import role_catalog
+    return role_catalog()
+
+
+@router.get("/taskmaster/policy")
+async def get_taskmaster_policy():
+    """Expose the versioned operating policy without enabling execution."""
+    from hub._services.taskmaster_policy import read_policy
+    try:
+        return await asyncio.to_thread(read_policy)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 @router.post("/agent-studio/synthesize-prompt")
 async def synthesize_prompt_endpoint(payload: Dict[str, Any]):
     """Synthetisiert und validiert einen authentischen Startprompt ([Boot:Agent], [Boot:System], [Boot:Aufgabe])."""
