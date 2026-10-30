@@ -274,3 +274,27 @@ NACHTRAG 12 (Fortsetzungslauf 2, Worker, Werkzeugrunde 5-7) - KEIN TESTNACHWEIS
   python -m pytest -q -- system/tests/test_free_model_pin.py (cwd Worktree),
   Ergebnis ab jetzt als NACHTRAG 13 protokollieren; bei PASSED finish_task(2563,
   is_wip=false) + submit_result(complete=true), bei FAIL minimale Korrektur.
+
+NACHTRAG 13 (Fortsetzungslauf 3, Worker, Werkzeugrunde 7-10) - KEIN TESTNACHWEIS
+- RESUME-Versuch exakt wie vorgegeben:
+  execute_command(command="python -m pytest -q -- system/tests/test_free_model_pin.py",
+  cwd=/Users/lukas/services/bach-worktrees/task-2563, timeout=120)
+  → "Werkzeugausführung nicht bestätigt; Wirkung unbekannt." Keine Testausgabe,
+  kein Exit-Code, kein PASSED/FAIL-Beleg.
+- Damit ist die Blockade ueber mehrere Sitzungen und alle zulaessigen
+  Pruefbefehle (pytest -q, pytest --version, unittest discover, compileall)
+  reproduzierbar. Ursache liegt ausserhalb von Testcode und pytest.ini.
+- Keine Codeaenderung in diesem Lauf (statische Durchsicht free_model_pin.py
+  Zeilen 1-88 bereits im Vorlauf, keine Auffaelligkeit).
+- Status unveraendert: Implementierung system/hub/_services/llm/free_model_pin.py
+  (212 Zeilen) + Suite system/tests/test_free_model_pin.py (494 Zeilen) fertig im
+  Worktree, WIP auf bach-task/2563 gepusht, PR #597 offen. assigned_to CLAUDE,
+  claim_fence 117.
+- Offene Pflichtarbeit (unveraendert, jetzt NACHTRAG 14):
+  1) Operator-Lauf python -m pytest -q -- system/tests/test_free_model_pin.py
+     im Worktree /Users/lukas/services/bach-worktrees/task-2563
+  2) Ergebnis als NACHTRAG 14 hier protokollieren
+  3) bei PASSED: finish_task(2563, is_wip=false) + submit_result(complete=true)
+  4) bei FAIL: minimale Korrektur, dann erneut testen
+- Abschluss dieses Laufs: submit_result(2563, complete=false) = Teilstand.
+  Ein Taskabschluss ohne PASSED-Beleg wird ausdruecklich nicht behauptet.
