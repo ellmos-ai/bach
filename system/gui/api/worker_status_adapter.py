@@ -669,7 +669,13 @@ def worker_action(
         method, endpoint, device_token=device_token, body=payload, timeout=timeout,
     )
     if result.get("ok") is not True:
-        raise WorkerActionRejected("Control-API hat die Workeraktion nicht bestätigt", 409)
+        error_message = result.get("error")
+        if not isinstance(error_message, str) or not error_message.strip():
+            error_message = "Control-API hat die Workeraktion nicht bestätigt"
+        error_code = result.get("error_code")
+        if not isinstance(error_code, int):
+            error_code = 409
+        raise WorkerActionRejected(error_message, error_code)
 
     response: dict[str, Any] = {"ok": True, "action": action}
     if isinstance(result.get("worker"), dict):

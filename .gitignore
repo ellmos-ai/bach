@@ -6,12 +6,6 @@
 /user/
 /system/user/
 
-# === TASK-2617 LOKALE SCRATCH-DATEI (nicht committen) ===
-# Lokaler Test-Treiber aus der Entwicklungsphase von Task #2617, kein Projektbestandteil.
-/run2617.py
-# Laufzeit-Receipt der pytest-Ausführung (conftest.py), kein Projektbestandteil.
-test2617_receipt.json
-
 # === CLAUDE BRIDGE LAUFZEIT (User-spezifisch, niemals committen!) ===
 /system/hub/_services/claude_bridge/config.json
 /system/hub/_services/claude_bridge/state.json
@@ -375,6 +369,9 @@ _codex/*.log
 # Generated Gardener adapter test reports contain local execution paths.
 /tests_tmp_gardener/*_output.txt
 
+# Ad-hoc scratch tests written during task work stay local, never committed.
+/tests_tmp_gardener/*_tmp.py
+
 # Mac live tree: deploy artifacts and runtime state. The harvester snapshots
 # every other uncommitted path, so these must stay out (GUI release folders
 # with their deploy backups, runtime task DB, agent PID files, lock guards).
@@ -383,6 +380,6 @@ _codex/*.log
 /system/data/agent_pids/
 LOCK*.guard
 
-# Task-Worker-Laufzeitartefakte
+# Task #1694: fremde Übergabe-Artefakte im Task-Worktree aus Commit halten
 /task_result.md
 /tests_tmp_gardener/

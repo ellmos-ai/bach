@@ -165,7 +165,13 @@ def test_catalog_retries_one_transient_status_then_admits_confirmed_free_model(m
         (401, "catalog_auth_rejected", 1, 401),
         (403, "catalog_auth_rejected", 1, 403),
         (404, "catalog_http_error", 1, None),
+        (408, "catalog_http_transient", 2, 408),
+        (425, "catalog_http_transient", 2, 425),
         (429, "catalog_http_transient", 2, 429),
+        (500, "catalog_http_transient", 2, 500),
+        (502, "catalog_http_transient", 2, 502),
+        (503, "catalog_http_transient", 2, 503),
+        (504, "catalog_http_transient", 2, 504),
     ],
 )
 def test_catalog_retry_policy_uses_only_fixed_http_statuses(

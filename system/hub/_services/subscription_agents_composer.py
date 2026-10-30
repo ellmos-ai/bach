@@ -16,6 +16,8 @@ from .task_lease_client import TaskLeaseClient
 
 REQUEST_SCHEMA = "bach.subscription-agent-onboarding.request.v1"
 PREVIEW_SCHEMA = "bach.subscription-agent-onboarding.preview.v1"
+REQUEST_SCHEMA_V2 = "bach.subscription-agent-onboarding.request.v2"
+PREVIEW_SCHEMA_V2 = "bach.subscription-agent-onboarding.preview.v2"
 MAX_REQUEST_BYTES = 256 * 1024
 MAX_PROMPT_CHARS = 120_000
 MAX_USER_TASK_CHARS = 16_000
@@ -427,14 +429,35 @@ class SubscriptionAgentsComposer:
             ))
         return records, missing, prompt_refs
 
+    @staticmethod
+    def _boot_sources(value: Any) -> dict[str, dict[str, str]]:
+        """Resolve roles to pinned IDs in the existing skill library, never file paths."""
+        sources = _strict_mapping(value, "boot_sources", {"system", "bach"})
+        if set(sources) != {"system", "bach"}:
+            raise ValueError("Systemwissen und BACH-Anleitung müssen ausdrücklich gebunden sein")
+        result = {}
+        for role in ("system", "bach"):
+            ref = _strict_mapping(sources[role], f"boot_sources.{role}", {"id", "source_version"})
+            skill_id, revision = ref.get("id"), ref.get("source_version")
+            if (not isinstance(skill_id, str) or not _SKILL_ID.fullmatch(skill_id)
+                    or not isinstance(revision, str) or not _SHA256.fullmatch(revision)):
+                raise ValueError("Bootquellen benötigen eine gültige Skill-ID und einen SHA-256-Pin")
+            for previous in result.values():
+                if previous["id"] == skill_id and previous["source_version"] != revision:
+                    raise ValueError("Widersprüchliche Revisionen derselben Bootquelle")
+            result[role] = {"id": skill_id, "source_version": revision}
+        return result
+
     def compose(self, request: dict) -> dict:
         """Compose a bounded preview from a normalized request; all reads are non-mutating."""
-        top = _strict_mapping(request, "request", {
-            "schema", "target_client", "blueprint", "selected_skill_ids", "user_task",
-            "task_refs", "task_selection_rule", "governance",
-        })
-        if top.get("schema") != REQUEST_SCHEMA:
-            raise ValueError(f"schema muss {REQUEST_SCHEMA} sein")
+        version_two = isinstance(request, dict) and request.get("schema") == REQUEST_SCHEMA_V2
+        fields = {"schema", "target_client", "blueprint", "selected_skill_ids", "user_task",
+                  "task_refs", "task_selection_rule", "governance"}
+        top = _strict_mapping(request, "request", fields | ({"boot_sources"} if version_two else set()))
+        if top.get("schema") not in (REQUEST_SCHEMA, REQUEST_SCHEMA_V2):
+            raise ValueError(f"schema muss {REQUEST_SCHEMA} oder {REQUEST_SCHEMA_V2} sein")
+        boot_sources = self._boot_sources(top.get("boot_sources")) if version_two else {}
+        boot_ids = list(dict.fromkeys(ref["id"] for ref in boot_sources.values()))
         target = self._target(top.get("target_client"))
         blueprint, blueprint_source, role_source = self._blueprint(top.get("blueprint"))
 
@@ -443,7 +466,7 @@ class SubscriptionAgentsComposer:
                 or any(not isinstance(item, str) or not _SKILL_ID.fullmatch(item) for item in selected)
                 or len(set(selected)) != len(selected)):
             raise ValueError("Bis zu 30 unterschiedliche Skill-IDs auswählen")
-        skill_ids = list(dict.fromkeys(blueprint["skills"] + selected))
+        skill_ids = list(dict.fromkeys(boot_ids + blueprint["skills"] + selected))
         if len(skill_ids) > MAX_SKILLS:
             raise ValueError("Blueprint und Auswahl überschreiten zusammen 30 Skills")
 
@@ -514,7 +537,8 @@ class SubscriptionAgentsComposer:
             content = item.get("content")
             revision = item.get("source_version")
             if (not isinstance(content, str) or not isinstance(revision, str)
-                    or not _SHA256.fullmatch(revision)):
+                    or not _SHA256.fullmatch(revision)
+                    or hashlib.sha256(content.encode("utf-8")).hexdigest() != revision):
                 missing.append({"id": skill_id, "kind": "skill", "reason": "source_invalid"})
                 source_records.append(_source_record(
                     source_id=f"skill:{skill_id}", kind="skill", state="invalid",
@@ -522,6 +546,9 @@ class SubscriptionAgentsComposer:
                     details={"tools_granted": False},
                 ))
                 continue
+            if any(ref["id"] == skill_id and ref["source_version"] != revision
+                   for ref in boot_sources.values()):
+                raise ValueError("Bootquelle wurde geändert; aktuelle Revision erneut auswählen")
             _no_credentials(content, f"Skill {skill_id}")
             skill_pins.append({"id": skill_id, "source_version": revision,
                                "version": str(item.get("version") or "")})
@@ -541,6 +568,12 @@ class SubscriptionAgentsComposer:
             _no_credentials(pinned_instructions, "gebundene Skill-Anleitungen")
         else:
             pinned_instructions = ""
+
+        if version_two:
+            for record in source_records:
+                if record["kind"] == "skill":
+                    record["boot_roles"] = [role for role, ref in boot_sources.items()
+                                            if record["id"] == f"skill:{ref['id']}"]
 
         task_sources, task_missing = self._read_tasks(task_refs)
         source_records.extend(item["source"] for item in task_sources)
@@ -596,6 +629,17 @@ class SubscriptionAgentsComposer:
             base_prompt,
             "\n".join(contractus_lines),
         ]
+        if version_two:
+            prompt_parts.append(
+                "## Bootquellen\n" + "\n".join(
+                    f"- {role}: {ref['id']} · SHA-256 {ref['source_version']} · "
+                    + ("Quelle fehlt oder ist ungültig" if any(
+                        item["kind"] == "skill" and item["id"] == ref["id"] for item in missing
+                    ) else "vollständiger Text eingebettet")
+                    for role, ref in boot_sources.items()
+                ) + "\nDie Rollen wurden ausdrücklich zugeordnet; ihre fachliche Eignung ist vor Übernahme zu prüfen. "
+                "Verfügbare Texte folgen vollständig und je Skill-ID einmal. Fehlende Quellen sind ausdrücklich markiert."
+            )
         if pinned_instructions:
             prompt_parts.append("## Ausgewählte Skill-Anleitungen\n\n" + pinned_instructions)
         prompt_parts.append("## Governance-Quellen und Geltungsbereich\n" +
@@ -628,8 +672,8 @@ class SubscriptionAgentsComposer:
                 details={"queue_scanned": False, "tasks_claimed": False},
             ))
 
-        return {
-            "schema": PREVIEW_SCHEMA,
+        result = {
+            "schema": PREVIEW_SCHEMA_V2 if version_two else PREVIEW_SCHEMA,
             "status": "needs_sources" if missing else "ready_for_review",
             "target_client": target,
             "blueprint": {"id": blueprint["id"], "name": blueprint["name"],
@@ -646,3 +690,12 @@ class SubscriptionAgentsComposer:
             "limits": {"credential_scan": "heuristic_only",
                        "task_context": "reference_only", "governance_enforcement_verified": False},
         }
+        if version_two:
+            result["boot_sources"] = boot_sources
+            result["boot_delivery"] = {
+                "mode": "text",
+                "source": "current_skill_library",
+                "target_readability_verified": False,
+                "role_suitability_verified": False,
+            }
+        return result

@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-05-30 (registry sync hub/*.py + core/aliases.py)
+# Next review: 2026-11-30
 
 CLI 约定（基于 v2.0 注册表）
 =======================================
@@ -138,18 +138,47 @@ DID-YOU-MEAN（模糊匹配）：
   bach skill_export  → tools/skill_export.py
   bach backup_manager → tools/backup_manager.py
 
-注册处理程序（截至 2026 年 3 月 4 日）：
+注册处理程序（截至 2026 年 5 月 30 日）：
 ----------------------------------------
-通过自动发现的 109 个以上处理程序 (hub/*.py)：
-abo、代理、ati、备份、节拍、报告、之间、日历、链、时钟、
-连接、连接器、整合、联系人、上下文、倒计时、简历、
-守护进程（=调度程序）、数据、db、dist、doc、docs、电子邮件、扩展、fs、health、gui、
-家庭、健康检查、帮助、钩子、注入、长、课程、日志、维护、
-mem、内存、安装、味精、通知、黑曜石、ollama、合作伙伴、路径、配置文件、
-探查器、重复、反射、例行程序、扫描、会话、关闭、技能、
-技能、智能家居、快照、来源、启动、状态、税收、同步、任务、
-测试、计时器、令牌、工具、工具、垃圾、tuev、更新、用例、
-保险，维基
+处理程序在运行时通过 hub/*.py 自动发现并注册
+（system/core/registry.py，类扫描；仅限本地定义且带有
+profile_name 的类）。以下 profile_name 已确认（按字母顺序）：
+abo, agent, agents, api, apiprober, ati, backup, beat, bericht, between,
+calendar, chain, claude-bridge, clock, cloud, clutch, connections, connector,
+consolidation, contact, context, cookbook, countdown, cv, daily-agent, data,
+db, denkarium, dist, doc, docs, email, extensions, fs, gesundheit, gui,
+haushalt, healthcheck, help, hooks, inject, integration, lang, learning,
+lesson, literatur, logs, maintain, mcp, media, mediplaner, mem, memory,
+mount, msg, news, newspaper, notespace, notify, obsidian, ollama, partner,
+path, pipeline, press, profile, profiler, prompt, recurring, reflection,
+restore, routine, sandbox, scan, search, security, session, settings, setup,
+shared-mem, shutdown, skill, skills, smarthome, snapshot, sources, startup,
+status, steuer, sync, task, telemetry, test, theme, timer, tokens, tool, tools,
+trash, tuev, update, upgrade, usecase, versicherung, watcher, web-parse,
+web-scrape, wiki, worker-policy
++ 通过自动发现获得的更多处理程序（hub/*.py；上述列表为已核实状态）。
+多重处理程序：time (clock, timer, countdown, between, beat)、tuev (tuev, usecase)。
+
+别名表（core/aliases.py，COMMAND_ALIASES）：
+----------------------------------------
+别名在分发到处理程序之前解析。
+  别名          目标处理程序
+  mem           memory
+  cv            curriculum
+  msg           messages
+  tool          tools
+  skill         skills
+  data          data_analysis
+  mail          email
+  hook          hooks
+  plugin        plugins
+  daemon        scheduler
+  health        healthcheck
+  swarm         schwarm
+  consolidate   consolidation
+
+注意：`bach daemon` 不是独立的处理程序，而是 scheduler 的别名。
+每个处理程序的默认操作：aliases.py，DEFAULT_OPERATIONS。
 
 另请参阅：
 ----------------------------------------

@@ -462,10 +462,10 @@ class WorkerLeaseBinding:
         with self._lock:
             return self._tool_dispatch_count
 
-    def mark_tool_dispatch(self):
+    def mark_tool_dispatch(self, *, soft=False):
         """Record a possible effect before entry into a bound dispatcher."""
         with self._lock:
-            self.assert_active()
+            self.assert_active(soft=soft)
             self._tool_dispatch_count += 1
 
     @property
@@ -582,15 +582,20 @@ class WorkerLeaseBinding:
                 task_version=self._snapshot["task_version"], generation=self._generation,
             )
 
-    def _assert_authority_active(self):
+    def _assert_authority_active(self, soft=False):
         with self._lock:
-            if not self._active or self._closed or not self._is_current() or self._stop_event.is_set():
+             # READ actions (detail/list/decompose-close_parent=False) must not
+             # be killed by a stale _active flag left by a prior failed write;
+             # they re-check liveness through _closed/_is_current/stop/locally_valid.
+            if self._closed or not self._is_current() or self._stop_event.is_set():
+                raise LeaseProtocolError("Taskbindung oder Workerlauf ist nicht mehr aktiv")
+            if not soft and not self._active:
                 raise LeaseProtocolError("Taskbindung oder Workerlauf ist nicht mehr aktiv")
             self._ack.assert_locally_valid(now=self._clock())
 
-    def assert_active(self):
+    def assert_active(self, soft=False):
         with self._lock:
-            self._assert_authority_active()
+            self._assert_authority_active(soft=soft)
             if self._policy_guard is not None:
                 try:
                     self._policy_guard()
@@ -607,9 +612,10 @@ class WorkerLeaseBinding:
             args["now"] = self._clock()
         return args
 
-    def _operation(self, function, *, keep_max_total=False, check_policy=True, **kwargs):
+    def _operation(self, function, *, keep_max_total=False, keep_denied=False,
+                   check_policy=True, soft=False, **kwargs):
         if check_policy:
-            self.assert_active()
+            self.assert_active(soft=soft)
         try:
             return function(self.task_id, **self._ref(), **kwargs)
         except LeaseSelfCheckRequiredError:
@@ -619,6 +625,10 @@ class WorkerLeaseBinding:
             if keep_max_total and isinstance(exc, LeaseMaxTotalReachedError):
                 # Known denial: the last confirmed lease still owns its
                 # remaining lifetime. No ACK, deadline or version is guessed.
+                raise
+            if keep_denied and isinstance(exc, (LeaseDeniedError, LeaseProtocolError)):
+                # An explicit server denial commits no mutation, so the last
+                # confirmed lease keeps owning this read-only attempt.
                 raise
             # A missing/malformed ACK may follow a committed operation.
             # Revoke locally; never guess a new version or retry this mutation.
@@ -649,7 +659,7 @@ class WorkerLeaseBinding:
             if self._renew_exhausted:
                 return False
             try:
-                self._ack = self._operation(self._client.renew, keep_max_total=True, check_policy=False)
+                self._ack = self._operation(self._client.renew, keep_max_total=True, keep_denied=True, check_policy=False)
             except LeaseMaxTotalReachedError:
                 self._renew_exhausted = True
                 return False
@@ -1083,14 +1093,14 @@ class WorkerLeaseBinding:
 
     def _execute_task_manage_locked(self, args, *, _dispatch_marked=False):
         with self._lock:
-            self.assert_active()
+            action = args.get("action", "list")
+            soft_read = (action in {"list", "detail"}
+                         or (action == "decompose" and not args.get("close_parent")))
+            self.assert_active(soft=soft_read)
             # Native controller actions also need proof without a dispatcher.
             # The private flag prevents counting the same dispatch twice.
             if not _dispatch_marked:
-                self.mark_tool_dispatch()
-            if not isinstance(args, dict):
-                raise LeaseProtocolError("Ungültige Task-Werkzeugargumente")
-            action = args.get("action", "list")
+                self.mark_tool_dispatch(soft=soft_read)
             if self._review_grant is not None:
                 if action == "detail":
                     if (set(args) != {"action", "task_id"}
@@ -1151,6 +1161,20 @@ class WorkerLeaseBinding:
                 self._submission_expected = {"task_id": self.task_id, "fence": self._ack.fence,
                     "generation": self._generation, "task_version": self._snapshot["task_version"],
                     "result_sha256": digest, "result": text}
+                # Nutzerentscheid 25.10.2026: Ungecommittete Änderungen im
+                # Task-Arbeitsbaum werden vor der Abgabe automatisch als Commit
+                # auf dem Task-Zweig gesichert statt zur Abweisung zu führen.
+                try:
+                    from hub import worker_git as _worker_git
+                    auto_commit = _worker_git.auto_commit_task_worktree(
+                        self.task_id, worker_task_binding=self)
+                except Exception as _exc:
+                    auto_commit = {"committed": False, "error": str(_exc)}
+                if auto_commit.get("error"):
+                    self._submission_expected = None
+                    raise LeaseProtocolError(
+                        "Abgabe abgewiesen, ungecommittete Änderungen konnten nicht "
+                        "automatisch gesichert werden: " + str(auto_commit["error"]))
                 try:
                     release = self._operation(self._client.submit_result,
                                               generation=self._generation, result=text,
@@ -1173,7 +1197,12 @@ class WorkerLeaseBinding:
                 self._closed = True
                 self._active = False
                 self._link_confirmed_model_execution()
-                return f"Task #{self.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
+                if auto_commit.get("committed"):
+                    _hash = str(auto_commit.get("commit") or "")[:12]
+                    _note = f" Ungecommittete Änderungen automatisch als Commit {_hash or 'erstellt'} gesichert;"
+                else:
+                    _note = ""
+                return f"Task #{self.task_id}: Ergebnis gespeichert;{_note} Abschlussstatus wird nach Policy ermittelt."
             if action == "update":
                 allowed = {"title", "description", "category", "priority", "depends_on",
                            "assigned_to", "required_model", "assigned_slot", "status", "result_max_chars"}
@@ -1235,7 +1264,9 @@ class WorkerLeaseBinding:
                                     for item in subtasks]
                 previous_version = self._snapshot["task_version"]
                 ack = self._operation(self._client.decompose, subtasks=subtasks,
-                                      close_parent=close_parent, sequential=args.get("sequential", False))
+                                      close_parent=close_parent, sequential=args.get("sequential", False),
+                                      keep_denied=(action == "decompose"),
+                                      soft=(action == "decompose"))
                 if action == "decompose":
                     self._decomposition_receipt = {
                         "task_id": self.task_id, "previous_version": previous_version,

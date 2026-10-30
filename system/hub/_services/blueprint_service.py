@@ -645,17 +645,24 @@ def migrate_taskmaster_skill_bindings(conn: sqlite3.Connection, payload: dict[st
 def get_available_skills(
     skills_root: Path | None = None,
     category: str | None = None,
-    search: str | None = None
+    search: str | None = None,
+    requested_locale: str | None = None,
 ) -> list[dict[str, Any]]:
     """Liest echte Skills aus dem Dateisystem oder liefert Core-Skills (GUX-022)."""
-    from .skill_source_service import source_catalog, skill_roots, user_skills_root
+    from .skill_source_service import resolve_requested_locale, source_catalog, skill_roots, user_skills_root
+    requested = resolve_requested_locale(requested_locale)
     roots = [user_skills_root(), skills_root] if skills_root else skill_roots()
-    catalog = source_catalog(roots)
+    catalog = source_catalog(roots, requested_locale=requested)
     skills_map = {key: {k: v for k, v in item.items() if k not in {"path", "root"}}
                   for key, item in catalog.items()}
     for item in FALLBACK_CORE_SKILLS:
         if item["id"] not in skills_map:
-            skills_map[item["id"]] = {**item, "evidence_type": "core_declared", "source_version": None}
+            skills_map[item["id"]] = {
+                **item, "canonical_skill_id": item["id"], "locale": "en",
+                "requested_locale": requested, "resolved_locale": "en",
+                "fallback_used": requested != "en",
+                "evidence_type": "core_declared", "source_version": None,
+            }
     result = list(skills_map.values())
     if category:
         result = [s for s in result if s.get("category") == category]
