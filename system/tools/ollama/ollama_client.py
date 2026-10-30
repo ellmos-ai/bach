@@ -18,6 +18,7 @@ Erstellt: 2026-01-23 (Task 296)
 Version: 1.0.0
 """
 import json
+import os
 import subprocess
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ class OllamaModel:
     size_bytes: int
     modified_at: str = ""
     digest: str = ""
+    num_ctx: int = 4096
     
     @property
     def size_gb(self) -> float:
@@ -78,16 +80,25 @@ class OllamaClient:
     DEFAULT_MODEL = "llama3.2"
     DEFAULT_EMBED_MODEL = "nomic-embed-text"
     
-    def __init__(self, base_url: str = None, timeout: int = 120):
+    def __init__(self, base_url: str = None, timeout: int = 120,
+                 num_ctx: Optional[int] = None):
         """
         Initialisiert den Client.
         
         Args:
             base_url: Ollama-Server URL (default: http://localhost:11434)
             timeout: Request-Timeout in Sekunden
+            num_ctx: Kontextfenster-Groesse num_ctx (default: OLLAMA_NUM_CTX bzw. 4096)
         """
         self.base_url = base_url or self.DEFAULT_URL
         self.timeout = timeout
+        env_num_ctx = os.environ.get("OLLAMA_NUM_CTX", "4096")
+        try:
+            self.num_ctx = int(num_ctx if num_ctx is not None else env_num_ctx)
+        except (TypeError, ValueError):
+            raise ValueError("Ollama num_ctx muss eine ganze Zahl sein")
+        if not (512 <= self.num_ctx <= 262144):
+            raise ValueError("Ollama num_ctx muss zwischen 512 und 262144 liegen")
         self._requests = None
         self._load_requests()
     
@@ -188,6 +199,7 @@ class OllamaClient:
         stream: bool = False,
         think: Optional[bool] = None,
         num_predict: Optional[int] = None,
+        num_ctx: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None,
     ) -> OllamaResponse:
         """
@@ -218,6 +230,8 @@ class OllamaClient:
             merged_options["temperature"] = temperature
         if num_predict is not None:
             merged_options["num_predict"] = num_predict
+        effective_num_ctx = num_ctx if num_ctx is not None else self.num_ctx
+        merged_options.setdefault("num_ctx", effective_num_ctx)
         if merged_options:
             payload["options"] = merged_options
         if think is not None:
@@ -247,6 +261,7 @@ class OllamaClient:
         think: Optional[bool] = None,
         temperature: Optional[float] = None,
         num_predict: Optional[int] = None,
+        num_ctx: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None,
     ) -> OllamaResponse:
         """
@@ -272,6 +287,8 @@ class OllamaClient:
             merged_options["temperature"] = temperature
         if num_predict is not None:
             merged_options["num_predict"] = num_predict
+        effective_num_ctx = num_ctx if num_ctx is not None else self.num_ctx
+        merged_options.setdefault("num_ctx", effective_num_ctx)
         if merged_options:
             payload["options"] = merged_options
         if think is not None:

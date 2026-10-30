@@ -11,6 +11,7 @@ Ollama Handler - Lokale AI-Interaktion
 
 Refactored: 2026-01-23 - Nutzt jetzt tools/ollama_client.py
 """
+import json
 import sys
 import sqlite3
 from datetime import datetime
@@ -59,7 +60,8 @@ class OllamaHandler(BaseHandler):
             "status": "Ollama-Server Status pruefen",
             "ask": "Anfrage an Ollama senden",
             "models": "Verfuegbare Modelle auflisten",
-            "embed": "Embedding erstellen"
+            "embed": "Embedding erstellen",
+            "set_num_ctx": "num_ctx eines Modells setzen"
         }
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -71,6 +73,8 @@ class OllamaHandler(BaseHandler):
             return self._ask(args, dry_run)
         elif operation == "embed":
             return self._embed(args, dry_run)
+        elif operation == "set_num_ctx":
+            return self._set_num_ctx(args, dry_run)
         else:
             return self._status()
     
@@ -163,7 +167,13 @@ class OllamaHandler(BaseHandler):
         results.append("")
         
         try:
-            response = self.client.generate(prompt, model=model)
+            config = self._load_num_ctx_config()
+            models_config = config.get("models")
+            if not isinstance(models_config, dict):
+                models_config = {}
+            model_entry = models_config.get(model)
+            num_ctx = model_entry.get("num_ctx") if isinstance(model_entry, dict) else None
+            response = self.client.generate(prompt, model=model, num_ctx=num_ctx)
             self._telemetry_model_call(model, bool(getattr(response, "success", False)))
             if response.success:
                 results.append("  Antwort:")
@@ -188,6 +198,76 @@ class OllamaHandler(BaseHandler):
         
         return True, "\n".join(results)
     
+    def _load_num_ctx_config(self) -> dict:
+        """Laedt die num_ctx-Konfiguration (ollama_config.json)."""
+        try:
+            with open(self.target_file, "r", encoding="utf-8") as file:
+                config = json.load(file)
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(config, dict):
+            return {}
+        return config
+
+    def set_num_ctx(self, model: str, num_ctx: int = None, num_ctx_recommended: int = None) -> tuple:
+        """Setzt num_ctx / num_ctx_recommended fuer ein Modell in der Config."""
+        if not model:
+            return False, "Fehler: Ollama set_num_ctx benoetigt ein Modell"
+        config = self._load_num_ctx_config()
+        models = config.setdefault("models", {})
+        entry = models.setdefault(model, {})
+        if num_ctx is not None:
+            entry["num_ctx"] = num_ctx
+        if num_ctx_recommended is not None:
+            entry["num_ctx_recommended"] = num_ctx_recommended
+        self.target_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.target_file, "w", encoding="utf-8") as file:
+            json.dump(config, file, indent=2, ensure_ascii=False)
+        details = []
+        if num_ctx is not None:
+            details.append(f"num_ctx={num_ctx}")
+        if num_ctx_recommended is not None:
+            details.append(f"num_ctx_recommended={num_ctx_recommended}")
+        return True, "Ollama num_ctx fuer '{}' gespeichert: {}".format(model, ", ".join(details))
+
+    def _set_num_ctx(self, args: list, dry_run: bool = False) -> tuple:
+        """CLI: ollama set_num_ctx <modell> [--num-ctx N] [--num-ctx-recommended N]."""
+        if not args:
+            return False, (
+                "Fehler: Ollama set_num_ctx benoetigt ein Modell\n"
+                "Usage: ollama set_num_ctx <modell> [--num-ctx 8192] [--num-ctx-recommended 16384]"
+            )
+        model = args[0]
+        num_ctx = None
+        num_ctx_recommended = None
+        for arg in args[1:]:
+            if arg.startswith("--num-ctx-recommended="):
+                try:
+                    num_ctx_recommended = int(arg.split("=", 1)[1])
+                except (TypeError, ValueError):
+                    return False, "Fehler: Ollama num_ctx_recommended muss eine ganze Zahl sein"
+            elif arg.startswith("--num-ctx="):
+                try:
+                    num_ctx = int(arg.split("=", 1)[1])
+                except (TypeError, ValueError):
+                    return False, "Fehler: Ollama num_ctx muss eine ganze Zahl sein"
+        if num_ctx is None and num_ctx_recommended is None:
+            return False, (
+                "Fehler: Ollama set_num_ctx benoetigt --num-ctx oder --num-ctx-recommended\n"
+                "Usage: ollama set_num_ctx <modell> [--num-ctx 8192] [--num-ctx-recommended 16384]"
+            )
+        for value in (num_ctx, num_ctx_recommended):
+            if value is not None and not (512 <= value <= 262144):
+                return False, "Fehler: Ollama num_ctx muss zwischen 512 und 262144 liegen"
+        if dry_run:
+            details = []
+            if num_ctx is not None:
+                details.append(f"num_ctx={num_ctx}")
+            if num_ctx_recommended is not None:
+                details.append(f"num_ctx_recommended={num_ctx_recommended}")
+            return True, "[DRY-RUN] Wuerde Ollama num_ctx fuer '{}' setzen: {}".format(model, ", ".join(details))
+        return self.set_num_ctx(model, num_ctx=num_ctx, num_ctx_recommended=num_ctx_recommended)
+
     def _embed(self, args: list, dry_run: bool = False) -> tuple:
         """Embedding erstellen."""
         text = " ".join([a for a in args if not a.startswith("--")])
