@@ -3781,7 +3781,7 @@ async function refresh() {
   if (s.error) return;
   document.getElementById('conn-dot').className = 'dot green';
   document.getElementById('s-backend').textContent = s.backend + (s.backend_cli ? ' (' + s.backend_cli + ')' : '');
-  document.getElementById('s-model').textContent = s.model;
+  document.getElementById('s-model').textContent = s.resolved_model || s.model;
   document.getElementById('s-mode').textContent = s.mode;
   document.getElementById('s-think').textContent = s.think ? 'AN' : 'AUS';
   document.getElementById('s-bach').textContent = s.bach ? 'Ja' : 'Nein';
@@ -6346,6 +6346,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "backend_id": backend_identifier(runtime.backend),
                     "backend_cli": cli_name,
                     "model": model,
+                    "resolved_model": getattr(runtime.backend, "last_resolved_model", "") or model,
+                    "free_pin": getattr(runtime.backend, "last_free_pin_decision", None),
                     "mode": mode,
                     "think": think,
                     "manages_own_tools": owns_tools,
@@ -6368,6 +6370,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "backend_id": backend_identifier(runtime.backend),
                     "backend_cli": getattr(runtime.backend, "cli_name", ""),
                     "model": _global_defaults.get("model") or getattr(runtime.backend, "get_default_model", lambda: "?")(),
+                    "resolved_model": getattr(runtime.backend, "last_resolved_model", "")
+                    or _global_defaults.get("model")
+                    or getattr(runtime.backend, "get_default_model", lambda: "?")(),
+                    "free_pin": getattr(runtime.backend, "last_free_pin_decision", None),
                     "mode": _global_defaults.get("mode", "safe"),
                     "think": _global_defaults.get("think", True),
                     "manages_own_tools": getattr(runtime.backend, "manages_own_tools", False),
