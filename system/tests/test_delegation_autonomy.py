@@ -8,9 +8,7 @@ Prüft:
 """
 
 import importlib.util
-import os
-import sys
-import tempfile
+import pytest
 from pathlib import Path
 
 # Importiere delegation_authority.py und agents_heart.py dynamisch
@@ -31,6 +29,23 @@ AUTOMATION_MASTER_PATH = BASE / "automation_master.py"
 delegation = _import_module("delegation_authority", DELEGATION_PATH)
 agents_heart = _import_module("agents_heart", AGENTS_HEART_PATH)
 automation_master = _import_module("automation_master", AUTOMATION_MASTER_PATH)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_automation_state(tmp_path, monkeypatch):
+    # Testisolation: Kein Modul-Lese-/Schreibzugriff auf die Repo-Datei
+    # system/_state/areas_autonomy.json – beide geladenen automation_master-
+    # Instanzen (Testdatei-Eigene via spec_from_file_location UND die
+    # sys.modules-Instanz, die agents_heart über seinen Fallback-Import
+    # bindet) zeigen auf eine Temp-Datei; der agents_heart-Level-Cache
+    # wird pro Test geleert.
+    tmp_config = tmp_path / "areas_autonomy.json"
+    import automation_master as automation_master_impl
+    monkeypatch.setattr(automation_master, "_CONFIG_PATH", tmp_config)
+    monkeypatch.setattr(automation_master_impl, "_CONFIG_PATH", tmp_config)
+    agents_heart._effective_autonomy_levels_cache.clear()
+    yield
+    agents_heart._effective_autonomy_levels_cache.clear()
 
 def test_normalize_autonomy_level():
     # Gültige Stufen
@@ -95,6 +110,8 @@ def test_agents_heart_evaluate_permission_for_area():
 
 def test_automation_master_set_autonomy():
     # automation_master.py: set_autonomy(area, level)
+    # Isolation: Fixture-Config startet leer -> Bereich vor Nutzung registrieren
+    automation_master.register_areas(["linkedin"])
     # Setze Bereich auf "vollautomatisch"
     automation_master.set_autonomy("linkedin", "vollautomatisch")
     assert automation_master.get_autonomy("linkedin") == "vollautomatisch"
