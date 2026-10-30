@@ -9,7 +9,7 @@ Task #2431 · Nutzerauftrag vom 22.10.2026
 - Vor Rückgabe endet der Lease-Supervisor; die native Rückgabe muss bestätigt sein. Fremde aktive Leases werden nicht verändert.
 - Ergebnisannahme läuft getrennt von der Auswahl der nächsten Aufgabe.
 - Ollama Cloud und OpenRouter warten bei HTTP 429 ohne Task-Lease und versuchen danach eine neue reguläre Übernahme. Nach drei Versuchen wird der Queueworker nicht mehr dauerhaft beendet. Retry-After, Nutzerstopp und Profilablauf gelten weiterhin.
-- Cloudworker erhalten bis zum Vierfachen ihres eingestellten Rundenwertes, höchstens 1000, ohne einen höheren ausdrücklich eingestellten Wert zu senken. Der Agent sieht den wirksamen Wert. Ein separates Modellanfragenbudget wird nicht erhöht.
+- Cloudworker erhalten bis zum Vierfachen ihres eingestellten Rundenwertes, höchstens 360, ohne einen höheren ausdrücklich eingestellten Wert zu senken. Der Agent sieht den wirksamen Wert. Ein separates Modellanfragenbudget wird nicht erhöht.
 - Lokale Modelle behalten den eingestellten Rundenwert und die bestehenden RAM-/Reservegrenzen.
 
 ## Quellenbelege
@@ -400,3 +400,15 @@ Nächster Schritt: Beim nächsten natürlichen HTTP-429-Zyklus den lease-/servic
 - Korrektur zu Lauf 20 (Doku-Hygiene, kein Belegzugewinn): Die dortige Formulierung, live fehle chat_runtime.py/telegram_chat.py, war ein Fehlschluss des Übergabezettels. system/hub/_services/chat ist per list_directory lesbar und enthält u. a. chat_runtime.py, telegram_chat.py, worker_lease_binding.py, bach_tools.py. Die inhaltliche worker_lease_binding-Verifikation aus Lauf 20 (Worktree-Pfad, Z30–31 ollama-cloud-Zweig, Z1230–1231 release outcome „return“) bleibt davon unberührt und gültig.
 - Blocker unverändert, zweiteilig: (a) kein aufgezeichneter natürlicher HTTP429-Zyklus im gesamten lesbaren Prüfbereich — nun zusätzlich durch das inhaltlich leere Tageslog 2026-02-21, die trefferfreie wiki_author-Suche und die leeren data-Unterordner bestätigt; (b) der Anstoß eines solchen Zyklus ist durch die Auftragsgrenzen untersagt. scope_not_recorded bleibt bestehen; die verlangte lease-/servicegebundene Resultrevision ist weiterhin nicht herstellbar.
 - Status: Task #2431 bleibt offen (pending, complete=false). Kein identischer Bericht zu Lauf 20: neu sind die drei Live-Spuren (Tageslog-Inhalt, wiki_author-Listing + Suche, data-Unterordner) sowie die ausdrückliche Korrektur der chat-Pfadangabe. Fortsetzung als WIP auf Branch bach-task/2431, kein PR, kein Merge, kein Deploy.
+
+## Korrekturlauf 22 (Korrektur-ID 58)
+- Prüfidentität: Task #2431; claim_fence 73; task_version 6fbb69909ac28a32eb4b0eaa7c8a5f778650636e8c07f6c1f5197fac9c298a7d; task_incarnation_id ad4ffbfd565c9a466f5127e484346a6c; updated_at 2026-10-30T18:31:00.431499; result_correction_request_id 58; Subtasks 2993/2994/2995. Grenzen unverändert: keine künstlichen 429, keine Tests/Workerstarts, kein bezahlter Fallback, kein .SYNC, kein Deploy; PR #598 bleibt unverändert (Draft).
+- Weitere Live-Log-Pfade geprüft (jeweils list_directory im Arbeitsbaum task-2431, bestätigte Werkzeugantworten dieses Laufs):
+  - /Users/lukas/services/bach-worktrees/task-2431/system/hub/_services/llm/Logs → „BLOCKIERT: Task-Lesebereich nicht bestätigt."
+  - /Users/lukas/services/bach-worktrees/task-2431/system/hub/_services/chat/Logs → „BLOCKIERT: Task-Lesebereich nicht bestätigt."
+  - /Users/lukas/services/bach-worktrees/task-2431/var/log/bach → „BLOCKIERT: Task-Lesebereich nicht bestätigt."
+  - /Users/lukas/.bach/logs → „BLOCKIERT: Task-Lesebereich nicht bestätigt."
+  - /var/log/bach → „BLOCKIERT: Task-Lesebereich nicht bestätigt."
+- Dokumentation der bisher nicht erfolgreich geprüften / blockierten potenziellen Live-Log-Pfade (zur Vollständigkeit des Blockerbildes; keine erfolgreiche Lesung, daher kein Beleginhalt): service-spezifische Log-Verzeichnisse unter system/hub/_services/<service>/Logs (insbesondere llm, chat), das Worktree-Logverzeichnis var/log/bach, das Nutzer-Logverzeichnis ~/.bach/logs und das systemweite /var/log/bach. Diese Pfade könnten Provider-Cooldown-, Retry-After- oder Worker-Lease-Einträge enthalten; sie sind im aktuellen Task-Lesebereich nicht zugänglich.
+- Blocker unverändert und fortgeschrieben, scope_not_recorded, zweiteilig: (a) kein aufgezeichneter natürlicher HTTP429-Zyklus im gesamten lesbaren Prüfbereich — nun zusätzlich durch die fünf blockierten Live-Log-Pfade bestätigt, die ebenfalls keinen zugänglichen Beleg liefern; (b) der Anstoß eines solchen Zyklus ist durch die Auftragsgrenzen untersagt. Die verlangte lease-/servicegebundene Resultrevision/Scope-Bindung des Belegs ist weiterhin nicht herstellbar.
+- Status: Task #2431 bleibt offen (pending, complete=false). Kein identischer Bericht zu Lauf 21: neu sind die fünf bestätigten Leseblockaden auf weiteren Live-Log-Pfaden und die Dokumentation der ungeprüften/blocked potenziellen Log-Pfade. Fortsetzung als WIP auf Branch bach-task/2431, kein PR, kein Merge, kein Deploy.
