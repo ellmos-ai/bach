@@ -173,3 +173,24 @@ Nächster Schritt: Beim nächsten natürlichen HTTP-429-Zyklus den lease-/servic
 **Abgabestand:** WIP-Commit auf `bach-task/2431` ohne PR; Abgabe als frischer Blockerbericht via `submit_result` mit `complete=false`. Der Task bleibt OFFEN.
 
 **Nächster Schritt:** Sobald `~/.bach/operator-checkpoints` oder die Live-Logs lesbar sind, beim nächsten natürlich aufgetretenen 429 den lease-/servicegebundenen Zyklus (Warten → Nutzungspause → offene Rückgabe → Wiederaufnahme) nachziehen. Solange kein Laufzeitbeleg existiert, bleibt der Task offen; ein Folgelauf dokumentiert den Blocker erneut mit frischen Prüfergebnissen.
+
+## Blocker NEU — Korrekturlauf 6 (Korrektur-ID 58)
+
+**Resultrevision:** Prüfrunde 6 zu Korrektur-ID 58. Diese Sektion ist keine Wiedereinreichung des Altberichts; sie hält ausschließlich die in diesem Lauf erhobenen Befunde fest. Der Blocker wird NEU dokumentiert.
+
+**Scope / `scope_not_recorded`:** Gefordert bleibt ein lease-/servicegebundener Laufzeitbeleg eines natürlichen HTTP-429-Zyklus (Warten → Nutzungspause → offene Rückgabe → Wiederaufnahme). Für diesen Lauf gilt erneut: **`scope_not_recorded`** — kein Laufzeitbeleg vorhanden, damit ist der geforderte Nachweisumfang nicht abgedeckt. Statische Codezitate ersetzen den Laufzeitbeleg nicht und werden hier nicht als solcher geführt.
+
+**Frisch geprüft (dieser Lauf, ausschließlich lesend):**
+
+1. `search_text` nach „429" rekursiv über `system/logs` im Taskarbeitsbaum: **keine Treffer** — unverändert kein Logartefakt eines natürlichen 429-Zyklus.
+2. `file_info` auf `~/.bach/operator-checkpoints`: Ordner bestätigt, Rechte 700, 150 Einträge, geändert 2026-10-22 18:12:03. Das belegt Existenz und Aktualität des Checkpoint-Ordners, **nicht** Inhalt oder einen 429-Zyklus.
+3. `list_directory` auf denselben Pfad: erneut „BLOCKIERT: Task-Lesebereich nicht bestätigt" — der erwartete Ablageort leasegebundener Laufzeitdaten ist in diesem Lauf weiterhin unzugänglich.
+4. Bewusst nicht wiederholt (Altstand ohne Wirkung bzw. ohne Erkenntnisgewinn): rekursive Suche in `system/hub`; `compileall`-/`py_compile`-Varianten. Aus diesen Vorläufen wird kein Ergebnis behauptet.
+
+**Blockerstatus (unverändert gegenüber Korrekturlauf 5):** Der Laufzeitbeleg ist nicht erbringbar, weil (a) die Laufzeitdaten für dieses Task-Werkzeug nicht lesbar sind (Live-Repo und `~/.bach` → „Task-Lesebereich nicht bestätigt") und (b) der gezielte Anstoß eines 429-Zyklus laut Korrekturhinweis untersagt ist (kein künstlicher 429, kein Test-/Worker-Start, kein kostenpflichtiger Modellfallback).
+
+**Statische Belege — Status unverändert, keine Neubewertung:** `backend_errors.py:142-172`, `chat_runtime.py:331-339` und `:934-956`, `telegram_chat.py:1485-1538` und `:1642-1682`; die Zuordnungskorrektur zu `worker_lease_binding.py:52,55,170-177` (kein 429-Bezug) bleibt gültig.
+
+**Abgabestand:** WIP-Commit auf `bach-task/2431`, kein PR. Abgabe als Teilstand über `submit_result` mit `complete=false`. Der Task bleibt **OFFEN** und ist nicht abzunehmen.
+
+**Nächster Schritt:** Sobald `~/.bach/operator-checkpoints` oder die Live-Logs lesbar sind, den beim nächsten natürlich aufgetretenen 429 entstandenen Zyklus nachziehen. Liegt dann weiterhin kein Beleg vor, ist der Blocker im Folgelauf erneut NEU zu dokumentieren — nicht Alttext unverändert einzureichen.
