@@ -574,3 +574,64 @@ def test_release_model_locked_returns_false_when_guard_missing_or_failing(monkey
 
     monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: OkGuard())
     assert gate_mod._release_model_locked("qwen-test") is True
+
+
+
+def test_release_model_now_holds_real_exclusive_lock_during_unload(tmp_path, monkeypatch):
+    """Regressionstest: Der echte _exclusive_lock muss waehrend des Unload gehalten werden."""
+    import os
+
+    import hub._services.chat.host_inference_gate as gate_mod
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    gate = HostInferenceGate(tmp_path)
+    lock_path = (tmp_path / "inference").with_name("inference.lock")
+    state = {"spy_called": False, "gate_holds_lock": None}
+
+    def spy(model, digest=None, timeout_seconds=None, wait=True):
+        state["spy_called"] = True
+        if os.name != "nt":
+            import fcntl
+
+            with open(lock_path, "a+b") as probe:
+                try:
+                    fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    state["gate_holds_lock"] = True
+                else:
+                    state["gate_holds_lock"] = False
+                    raise AssertionError(
+                        "release_model_now haelt den exklusiven Lock waehrend des Unload nicht"
+                    )
+        return True
+
+    monkeypatch.setattr(gate_mod, "_release_model_locked", spy)
+
+    result = gate.release_model_now({"model": "qwen-test"})
+
+    assert state["spy_called"] is True
+    assert state["gate_holds_lock"] is not False
+    assert result == {"ok": True, "released": True, "warning": None, "error": None}
+
+
+def test_release_model_now_warns_cleanly_when_real_lock_is_busy(tmp_path):
+    """Verhaltens-Guard: extern gehaltener Lock fuehrt zu sauberem Warning statt Exception."""
+    import os
+
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    if os.name == "nt":
+        return
+
+    import fcntl
+
+    gate = HostInferenceGate(tmp_path)
+    lock_path = (tmp_path / "inference").with_name("inference.lock")
+    with open(lock_path, "a+b") as holder:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = gate.release_model_now({"model": "qwen-test"}, timeout_seconds=0)
+
+    assert result["ok"] is False
+    assert result["released"] is False
+    assert result["warning"] is not None
+    assert result["error"] is None

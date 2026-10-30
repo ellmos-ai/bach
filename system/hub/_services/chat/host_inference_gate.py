@@ -95,6 +95,7 @@ class HostInferenceGate:
         result = {"ok": False, "released": False, "warning": None, "error": None}
         try:
             lock = _exclusive_lock(self.root / "inference", timeout_seconds=timeout_seconds)
+            lock.__enter__()
             try:
                 model = model_target.get("model", "")
                 digest = self._target_digest(model_target) if model_target else None
