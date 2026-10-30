@@ -1947,3 +1947,91 @@ def gc_completed_task_worktrees(
         "skipped_task_ids": [d["task_id"] for d in diagnostics if not d.get("eligible")],
         "diagnostics": diagnostics,
     }
+
+
+def reconcile_github_pr_task_state(
+    task_id: int,
+    pr_state: dict[str, Any],
+    *,
+    db_path: sqlite3.Connection | Path | str | None = None,
+    allow_internal_review: bool = False,
+) -> dict[str, Any]:
+    """Koppelt den GitHub-PR-Status an den BACH-Taskstatus (#2453).
+
+    - Gemergter PR -> Task done mit Beleg (PR-Nummer, Merge-SHA, Merger, URL).
+    - Geschlossener PR ohne Merge -> Task pending (Korrektur) mit Korrekturhinweis.
+    - Offener PR -> Task 
+eview mit github_external_review=True (kein doppeltes internes Review im Default).
+    """
+    if isinstance(task_id, bool) or not isinstance(task_id, int) or task_id <= 0:
+        raise ValueError("task_id muss eine positive Ganzzahl sein")
+    if not isinstance(pr_state, dict):
+        raise ValueError("pr_state muss ein dict sein")
+
+    state_raw = str(pr_state.get("state") or "").strip().upper()
+    merged = bool(pr_state.get("merged")) or state_raw == "MERGED"
+    pr_number = pr_state.get("number")
+    merge_sha = str(pr_state.get("merge_commit_sha") or pr_state.get("mergeCommit") or "").strip()
+    merged_by = str(pr_state.get("merged_by") or pr_state.get("mergedBy") or "github").strip()
+    pr_url = str(pr_state.get("url") or "").strip()
+    close_reason = str(pr_state.get("close_reason") or "PR ohne Merge geschlossen").strip()
+    external_review = not bool(allow_internal_review)
+
+    with _db_context(db_path) as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        row = conn.execute(
+            "SELECT id, status, description FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"Task #{task_id} nicht gefunden")
+
+        if merged:
+            receipt = (
+                f"GitHub PR #{pr_number} merged (merge_sha={merge_sha or 'n/a'}, "
+                f"merged_by={merged_by}{', url=' + pr_url if pr_url else ''})"
+            )
+            old_desc = str(row[2] or "")
+            new_desc = old_desc if receipt in old_desc else (old_desc + "\n[MERGE-RECEIPT] " + receipt).strip()
+            if "result" in cols:
+                conn.execute(
+                    "UPDATE tasks SET status = 'done', completed_at = datetime('now'), description = ?, result = ? WHERE id = ?",
+                    (new_desc, receipt, task_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE tasks SET status = 'done', completed_at = datetime('now'), description = ? WHERE id = ?",
+                    (new_desc, task_id),
+                )
+            conn.commit()
+            return {
+                "task_id": task_id,
+                "status": "done",
+                "action": "completed_on_merge",
+                "github_external_review": external_review,
+                "receipt": receipt,
+            }
+
+        if state_raw == "CLOSED":
+            old_desc = str(row[2] or "")
+            note = f"\n[PR-KORREKTUR #{pr_number}] {close_reason}"
+            updated_desc = old_desc if note in old_desc else (old_desc + note).strip()
+            conn.execute(
+                "UPDATE tasks SET status = 'pending', description = ? WHERE id = ?",
+                (updated_desc, task_id),
+            )
+            conn.commit()
+            return {
+                "task_id": task_id,
+                "status": "pending",
+                "action": "reopened_for_correction",
+                "github_external_review": external_review,
+                "reason": close_reason,
+            }
+
+        return {
+            "task_id": task_id,
+            "status": str(row[1] or "review"),
+            "action": "awaiting_external_pr_review" if external_review else "awaiting_internal_review",
+            "github_external_review": external_review,
+        }
