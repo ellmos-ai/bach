@@ -37,9 +37,86 @@ _PUBLIC_REPO = "ellmos-ai/bach"
 _PUBLIC_SOURCE_SCHEMA = "bach.task-public-source.v1"
 _PUBLIC_SHA = re.compile(r"^[0-9a-f]{40}$")
 
+_DEFAULT_REPO = "ellmos-ai/bach"
+_OCEAN_REPOS = frozenset({
+    "ellmos-ai/bach", "ellmos-ai/open-ocean", "ellmos-ai/ellmos-system-gui",
+    "ellmos-ai/ellmos-unified-gui", "ellmos-ai/ellmos-universal-gui",
+    "ellmos-ai/policy-registry",
+})
 
-def _canonical_bach_origin(value: str) -> str:
-    """Return the one approved BACH GitHub identity, or fail closed."""
+
+def _ocean_repos() -> frozenset[str]:
+    env = os.environ.get("BACH_OCEAN_REPOS")
+    if not env:
+        return _OCEAN_REPOS
+    entries = []
+    for item in env.split(","):
+        name = item.strip().lower()
+        if not name:
+            continue
+        if "/" not in name:
+            raise ValueError("BACH_OCEAN_REPOS: Eintrag ohne Organgabe ist unzulässig")
+        entries.append(name)
+    return frozenset(entries)
+
+
+def _ocean_clone_root() -> Path:
+    env_dir = os.environ.get("BACH_OCEAN_CLONE_DIR")
+    if env_dir:
+        return Path(env_dir).expanduser().resolve()
+    return (Path.home() / "services" / "ocean-klone").expanduser().resolve()
+
+
+def _repo_clone_dir(repo: str) -> Path:
+    return _ocean_clone_root() / repo.split("/", 1)[1]
+
+
+def _resolve_task_repo(category: str | None) -> str:
+    """Ziel-Repo einer Task aus category bestimmen (Positivliste)."""
+    value = str(category or "").strip().lower()
+    repos = _ocean_repos()
+    if not value:
+        return _DEFAULT_REPO
+    if "/" in value:
+        if value not in repos:
+            raise ValueError(f"Ziel-Repo {value!r} ist nicht in der Positivliste")
+        return value
+    for slug in sorted(repos):
+        if slug.split("/", 1)[1] == value:
+            return slug
+    return _DEFAULT_REPO
+
+
+def _ensure_clone(repo: str) -> Path:
+    clone_dir = _repo_clone_dir(repo)
+    if (clone_dir / ".git").exists():
+        return clone_dir
+    _ocean_clone_root().mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(["git", "clone", f"https://github.com/{repo}.git", str(clone_dir)],
+                            capture_output=True, text=True, encoding="utf-8", errors="replace",
+                            stdin=subprocess.DEVNULL, check=False, timeout=180)
+    if result.returncode != 0 or not (clone_dir / ".git").exists():
+        raise RuntimeError(f"Klon des Ziel-Repos {repo} konnte nicht erstellt werden")
+    return clone_dir
+
+
+def _task_category(task_id: int | str) -> str:
+    try:
+        numeric = int(task_id)
+    except (TypeError, ValueError):
+        return "general"
+    try:
+        with _db_context() as conn:
+            row = conn.execute("SELECT category FROM tasks WHERE id = ?", (numeric,)).fetchone()
+    except Exception:  # noqa: BLE001 - DB-Fehler fallen auf bach zurück.
+        return "general"
+    if row is None or not row["category"]:
+        return "general"
+    return str(row["category"])
+
+
+def _canonical_origin(repo: str, value: str) -> str:
+    """Return the one approved GitHub identity for repo, or fail closed."""
     raw = str(value or "").strip()
     if raw.startswith("git@github.com:"):
         host, path = raw[len("git@"):].split(":", 1)
@@ -64,9 +141,9 @@ def _canonical_bach_origin(value: str) -> str:
     path = path.rstrip("/")
     if path.endswith(".git"):
         path = path.removesuffix(".git")
-    if path.lower() != _PUBLIC_REPO:
+    if path.lower() != repo:
         raise RuntimeError("Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand")
-    return "https://github.com/ellmos-ai/bach"
+    return f"https://github.com/{repo}"
 
 
 def _git_text(
@@ -119,19 +196,19 @@ def _github_json(url: str) -> dict:
     return value
 
 
-def _public_main_source(repo: Path) -> dict[str, str | bool]:
+def _public_main_source(repo: Path, repo_slug: str = _PUBLIC_REPO) -> dict[str, str | bool]:
     """Pin only the exact current, anonymously verified public main commit."""
-    origin = _canonical_bach_origin(_git_text(repo, "origin"))
-    metadata = _github_json("https://api.github.com/repos/ellmos-ai/bach")
+    origin = _canonical_origin(repo_slug, _git_text(repo, "origin"))
+    metadata = _github_json(f"https://api.github.com/repos/{repo_slug}")
     full_name = metadata.get("full_name")
     if not (
-        isinstance(full_name, str) and full_name.lower() == _PUBLIC_REPO
+        isinstance(full_name, str) and full_name.lower() == repo_slug
         and metadata.get("private") is False
         and metadata.get("visibility") == "public"
         and metadata.get("default_branch") == "main"
     ):
         raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
-    branch = _github_json("https://api.github.com/repos/ellmos-ai/bach/branches/main")
+    branch = _github_json(f"https://api.github.com/repos/{repo_slug}/branches/main")
     commit = branch.get("commit") if branch.get("name") == "main" else None
     sha = commit.get("sha") if isinstance(commit, dict) else None
     if not isinstance(sha, str) or not _PUBLIC_SHA.fullmatch(sha):
@@ -142,7 +219,7 @@ def _public_main_source(repo: Path) -> dict[str, str | bool]:
     return {
         "schema": _PUBLIC_SOURCE_SCHEMA,
         "task_id": "",  # set by the caller before persistence
-        "repository": _PUBLIC_REPO,
+        "repository": repo_slug,
         "origin": origin,
         "source_ref": "refs/heads/main",
         "source_sha": sha,
@@ -164,13 +241,13 @@ def _public_source_config_key(task_id: int | str) -> str:
     return f"branch.bach-task/{numeric_id}.bach-public-source"
 
 
-def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict) -> dict:
+def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict, repo_slug: str = _PUBLIC_REPO) -> dict:
     record = dict(proof)
     source_sha = record.get("source_sha")
     if not (
         record.get("schema") == _PUBLIC_SOURCE_SCHEMA
-        and record.get("repository") == _PUBLIC_REPO
-        and record.get("origin") == "https://github.com/ellmos-ai/bach"
+        and record.get("repository") == repo_slug
+        and record.get("origin") == f"https://github.com/{repo_slug}"
         and record.get("source_ref") == "refs/heads/main"
         and isinstance(source_sha, str) and _PUBLIC_SHA.fullmatch(source_sha)
         and record.get("visibility") == "public" and record.get("private") is False
@@ -195,7 +272,7 @@ def _store_public_source_registration(repo: Path, target: Path, task_id: int | s
     return record
 
 
-def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str) -> dict:
+def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str, repo_slug: str = _PUBLIC_REPO) -> dict:
     """Validate the stored task-worktree source pin without fetching or moving it."""
     try:
         raw = _git_text(target, "registration", task_id=task_id)
@@ -205,14 +282,14 @@ def read_task_public_source_registration(repo: Path, target: Path, task_id: int 
     if not isinstance(record, dict):
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig")  # noqa: TRY004 - RuntimeError ist der öffentliche Fail-closed-Vertrag.
     try:
-        origin = _canonical_bach_origin(_git_text(repo, "origin"))
+        origin = _canonical_origin(repo_slug, _git_text(repo, "origin"))
     except Exception:  # noqa: BLE001 - fehlerhafte Taskbindung bleibt unverfügbar.
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
     if not (
         record.get("schema") == _PUBLIC_SOURCE_SCHEMA
         and record.get("task_id") == str(task_id)
-        and record.get("repository") == _PUBLIC_REPO
-        and record.get("origin") == origin == "https://github.com/ellmos-ai/bach"
+        and record.get("repository") == repo_slug
+        and record.get("origin") == origin == f"https://github.com/{repo_slug}"
         and record.get("source_ref") == "refs/heads/main"
         and isinstance(record.get("source_sha"), str)
         and _PUBLIC_SHA.fullmatch(record["source_sha"])
@@ -294,6 +371,19 @@ def is_live_path_blocked(path: str | Path) -> Optional[str]:
     if _is_under(resolved, live_root):
         return "Nutze start_task_worktree()"
 
+    for env_name in ("BACH_OCEAN_ROOTS", "BACH_SOFTWARE_ROOTS"):
+        env_value = os.environ.get(env_name)
+        if not env_value:
+            continue
+        for item in env_value.replace(":", ",").split(","):
+            root = item.strip()
+            if not root:
+                continue
+            if _is_under(resolved, _resolve(root)):
+                return "Nutze start_task_worktree()"
+    if _is_under(resolved, _ocean_clone_root()):
+        return "Nutze start_task_worktree()"
+
     return None
 
 
@@ -314,6 +404,9 @@ def start_task_worktree(
     if task_code_capability:
         # Reject aliases before authorization, mkdir, or any Git side effect.
         _public_source_config_key(task_id)
+    repo_slug = _resolve_task_repo(_task_category(task_id))
+    if repo_root is None and repo_slug != _DEFAULT_REPO:
+        repo_root = _ensure_clone(repo_slug)
     repo = (repo_root or get_live_repo_root()).resolve()
     task_id_str = str(task_id).strip()
     worktrees_dir = get_worktrees_dir()
@@ -326,7 +419,7 @@ def start_task_worktree(
                                      worktrees_dir=worktrees_dir)
         if target_dir.exists():
             if task_code_capability:
-                read_task_public_source_registration(repo, target_dir, task_id_str)
+                read_task_public_source_registration(repo, target_dir, task_id_str, repo_slug)
                 authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
             return target_dir
         if base_branch not in {"main", "origin/main"}:
@@ -335,7 +428,7 @@ def start_task_worktree(
             raise RuntimeError("Worktree-Zielverzeichnis ist ein Link")
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
-        public_record = _public_main_source(repo) if task_code_capability else None
+        public_record = _public_main_source(repo, repo_slug) if task_code_capability else None
         if task_code_capability:
             selected_base = public_record["source_sha"]
         else:
@@ -358,8 +451,8 @@ def start_task_worktree(
         authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
         if public_record is not None:
             authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
-            _store_public_source_registration(repo, target_dir, task_id_str, public_record)
-            read_task_public_source_registration(repo, target_dir, task_id_str)
+            _store_public_source_registration(repo, target_dir, task_id_str, public_record, repo_slug)
+            read_task_public_source_registration(repo, target_dir, task_id_str, repo_slug)
             authorize_mutation(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
         return target_dir.resolve(strict=True)
 
@@ -737,6 +830,7 @@ def _finish_task(
     # exact registered task tree, never a caller-provided cwd.
     from hub._services.chat.worker_write_guard import authorize_mutation
     authorize_mutation(worker_task_binding, int(task_id_str), paths=(target_dir,))
+    repo_slug = _resolve_task_repo(_task_category(task_id_str))
     # Secrets-Scan
     secrets = scan_for_secrets(target_dir)
     if secrets:
@@ -852,6 +946,10 @@ def _finish_task(
         }
 
     # Push
+    try:
+        _canonical_origin(repo_slug, _git_text(target_dir, "origin"))
+    except Exception:
+        return {"success": False, "error": f"origin passt nicht zum Ziel-Repo {repo_slug}"}
     res_push = run_checked(
         ["git", "push", "-u", "origin", branch_name],
         cwd=str(target_dir),
@@ -871,7 +969,8 @@ def _finish_task(
         "gh", "pr", "create",
         "--base", "main",
         "--title", commit_msg,
-        "--body", f"Automatisierter PR für Task #{task_id_str}: {message}",
+        "--body", f"Automatisierter PR für Task #{task_id_str}: {message}"
+        + "\n\nNutzstufe für dieses Modul: Sandbox/Ocean/Free – Standard Ocean, bitte als Nutzereinstellung bestätigen.",
     ]
     res_pr = run_checked(
         cmd_pr,
@@ -1110,6 +1209,18 @@ def _has_unpushed_commits(
         return True, "git_push_check_failed"
 
 
+def _task_repo_root(task_id: int | str, repo_root: Path | None = None) -> Path:
+    if repo_root is not None:
+        return Path(repo_root).resolve()
+    slug = _resolve_task_repo(_task_category(task_id))
+    if slug == _DEFAULT_REPO:
+        return get_live_repo_root()
+    clone_dir = _repo_clone_dir(slug)
+    if (clone_dir / ".git").exists():
+        return clone_dir
+    return get_live_repo_root()
+
+
 def inspect_task_worktree_cleanup(
     task_id: int | str,
     *,
@@ -1132,7 +1243,7 @@ def inspect_task_worktree_cleanup(
             "head_oid": None,
         }
     tid = int(task_id_str)
-    repo = (repo_root or get_live_repo_root()).resolve()
+    repo = _task_repo_root(tid, repo_root)
     wt_root = _resolve(worktrees_dir) if worktrees_dir is not None else get_worktrees_dir()
     target_guess = wt_root / f"task-{tid}"
     branch_name = f"bach-task/{tid}"
@@ -1371,7 +1482,7 @@ def cleanup_task_worktree(
     if worker_task_binding is not None:
         # A live worker must leave its registered tree for independent review.
         return False
-    repo = (repo_root or get_live_repo_root()).resolve()
+    repo = _task_repo_root(task_id, repo_root)
     wt_root = _resolve(worktrees_dir) if worktrees_dir is not None else get_worktrees_dir()
     task_id_str = str(task_id).strip()
     try:
@@ -1449,7 +1560,7 @@ def cleanup_completed_task_worktree(
     if not diag.get("eligible") or dry_run:
         return result
 
-    repo = (repo_root or get_live_repo_root()).resolve()
+    repo = _task_repo_root(diag["task_id"], repo_root)
     wt_root = _resolve(worktrees_dir) if worktrees_dir is not None else get_worktrees_dir()
     cleaned = cleanup_task_worktree(
         diag["task_id"],

@@ -54,6 +54,8 @@ def git_run(bridge, tmp_path, monkeypatch):
     calls = []
     def physical(cmd, **kwargs):
         calls.append(cmd)
+        if cmd[:4] == ["git", "remote", "get-url", "origin"]:
+            return SimpleNamespace(returncode=0, stdout="https://github.com/ellmos-ai/bach.git", stderr="")
         return SimpleNamespace(returncode=0, stdout=PR if cmd[:3] == ["gh", "pr", "create"] else "", stderr="")
     monkeypatch.setattr(worker_git.subprocess, "run", physical)
     return calls
@@ -532,7 +534,7 @@ def test_bound_task_manage_hides_unknown_native_submission_ack(bridge, monkeypat
     "ssh://git@github.com/ellmos-ai/bach.git",
 ])
 def test_canonical_public_bach_origin_accepts_only_supported_forms(origin):
-    assert worker_git._canonical_bach_origin(origin) == "https://github.com/ellmos-ai/bach"
+    assert worker_git._canonical_origin("ellmos-ai/bach", origin) == "https://github.com/ellmos-ai/bach"
 
 
 @pytest.mark.parametrize("origin", [
@@ -545,7 +547,7 @@ def test_canonical_public_bach_origin_accepts_only_supported_forms(origin):
 ])
 def test_canonical_public_bach_origin_rejects_untrusted_identity(origin):
     with pytest.raises(RuntimeError):
-        worker_git._canonical_bach_origin(origin)
+        worker_git._canonical_origin("ellmos-ai/bach", origin)
 
 
 def test_public_source_proof_requires_anonymous_public_metadata_and_exact_local_main(tmp_path, monkeypatch):
@@ -609,7 +611,7 @@ def _public_bound_repo(tmp_path, monkeypatch):
     monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: repo)
     monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: worktrees)
     monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
-    monkeypatch.setattr(worker_git, "_public_main_source", lambda _repo: dict(proof))
+    monkeypatch.setattr(worker_git, "_public_main_source", lambda _repo, _slug=None: dict(proof))
     return repo, worktrees, proof
 
 
@@ -648,7 +650,7 @@ def test_bound_public_worktree_does_not_create_when_public_proof_is_unavailable(
     task_bridge = request.getfixturevalue("bridge")
     _repo, worktrees, _proof = _public_bound_repo(tmp_path, monkeypatch)
     monkeypatch.setattr(worker_git, "_public_main_source",
-                        lambda _repo: (_ for _ in ()).throw(RuntimeError("unavailable")))
+                        lambda _repo, _slug=None: (_ for _ in ()).throw(RuntimeError("unavailable")))
     target = worktrees / f"task-{task_bridge.binding.task_id}"
     with pytest.raises(RuntimeError, match="unavailable"):
         worker_git.start_task_worktree(
@@ -771,3 +773,52 @@ def test_bound_public_start_rejects_noncanonical_id_before_git_or_directory_crea
         cwd=repo, capture_output=True,
     )
     assert branch.returncode == 1
+
+
+def test_resolve_task_repo_maps_categories_to_positive_list(monkeypatch):
+    monkeypatch.delenv("BACH_OCEAN_REPOS", raising=False)
+    assert worker_git._resolve_task_repo(None) == "ellmos-ai/bach"
+    assert worker_git._resolve_task_repo("") == "ellmos-ai/bach"
+    assert worker_git._resolve_task_repo("general") == "ellmos-ai/bach"
+    assert worker_git._resolve_task_repo("coding") == "ellmos-ai/bach"
+    assert worker_git._resolve_task_repo("open-ocean") == "ellmos-ai/open-ocean"
+    assert worker_git._resolve_task_repo("ellmos-system-gui") == "ellmos-ai/ellmos-system-gui"
+    assert worker_git._resolve_task_repo("ellmos-ai/bach") == "ellmos-ai/bach"
+    with pytest.raises(ValueError, match="Positivliste"):
+        worker_git._resolve_task_repo("ellmes-ai/fremd")
+
+
+def test_ocean_repos_rejects_entries_without_org(monkeypatch):
+    monkeypatch.setenv("BACH_OCEAN_REPOS", "ellmos-ai/bach, open-ocean")
+    with pytest.raises(ValueError):
+        worker_git._ocean_repos()
+    monkeypatch.setenv("BACH_OCEAN_REPOS", "ellmos-ai/open-ocean")
+    assert worker_git._ocean_repos() == frozenset({"ellmos-ai/open-ocean"})
+
+
+def test_ocean_clone_root_and_repo_clone_dir_follow_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_OCEAN_CLONE_DIR", str(tmp_path))
+    assert worker_git._ocean_clone_root() == tmp_path.resolve()
+    assert worker_git._repo_clone_dir("ellmos-ai/open-ocean") == tmp_path.resolve() / "open-ocean"
+
+
+def test_is_live_path_blocked_blocks_ocean_roots_and_clones(tmp_path, monkeypatch):
+    live_root = tmp_path / "live-repo"
+    worktrees_root = tmp_path / "worktrees"
+    ocean_root = tmp_path / "ocean"
+    software_root = tmp_path / "software"
+    clone_root = tmp_path / "klone"
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: live_root.resolve())
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: worktrees_root.resolve())
+    monkeypatch.delenv("BACH_ALLOW_LIVE_WRITE", raising=False)
+    monkeypatch.setenv("BACH_OCEAN_ROOTS", str(ocean_root))
+    monkeypatch.setenv("BACH_SOFTWARE_ROOTS", str(software_root))
+    monkeypatch.setenv("BACH_OCEAN_CLONE_DIR", str(clone_root))
+
+    blocked = "Nutze start_task_worktree()"
+    assert worker_git.is_live_path_blocked(live_root / "system" / "hub" / "x.py") == blocked
+    assert worker_git.is_live_path_blocked(ocean_root / "open-ocean" / "README.md") == blocked
+    assert worker_git.is_live_path_blocked(software_root / "ellmos-system-gui" / "app.py") == blocked
+    assert worker_git.is_live_path_blocked(clone_root / "open-ocean" / "x.py") == blocked
+    assert worker_git.is_live_path_blocked(worktrees_root / "task-1234") is None
+    assert worker_git.is_live_path_blocked(tmp_path / "fremder-ordner") is None
