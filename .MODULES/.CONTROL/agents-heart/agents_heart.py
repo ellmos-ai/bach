@@ -69,6 +69,7 @@ class Assignment:
     session_id: str
     initiated_by: str
     started_at: str
+    autonomy_levels: Dict[str, str] | None = None
 
 
 def authorize_role(role_id: str, mode: str) -> RoleContract:
@@ -97,6 +98,32 @@ def _require_text(name: str, value: Any) -> str:
     return text
 
 
+def effective_autonomy_levels(autonomy_levels: Dict[str, str] | None, mode: str) -> Dict[str, str] | None:
+    """Autonomiestufen je Bereich für den Ausführungsmodus bereinigen.
+
+    None bleibt None. Unbekannte Modi, Nicht-Mappings sowie leere Bereiche
+    oder Stufen lösen einen ValueError aus. Im Modus „safe" wird
+    „vollautomatisch" auf „teilautomatisch" gedeckelt. Zurückgegeben wird
+    eine Kopie.
+    """
+    if autonomy_levels is None:
+        return None
+    if mode not in {"safe", "full"}:
+        raise ValueError(f"unbekannter Ausführungsmodus: {mode!r}")
+    if not isinstance(autonomy_levels, dict):
+        raise ValueError("autonomy_levels muss ein Mapping Bereich->Stufe sein")
+    effective: Dict[str, str] = {}
+    for area, level in autonomy_levels.items():
+        area_text = str(area or "").strip()
+        level_text = str(level or "").strip()
+        if not area_text or not level_text:
+            raise ValueError("Autonomie-Bereich und -Stufe dürfen nicht leer sein")
+        if mode == "safe" and level_text == "vollautomatisch":
+            level_text = "teilautomatisch"
+        effective[area_text] = level_text
+    return effective
+
+
 def _event_details(
     assignment: Assignment,
     *,
@@ -121,6 +148,8 @@ def _event_details(
         "started_at": assignment.started_at,
         "status": status,
     }
+    if getattr(assignment, "autonomy_levels", None):
+        details["autonomy_levels"] = dict(assignment.autonomy_levels)
     if ended_at:
         details["ended_at"] = ended_at
     if result:
@@ -142,6 +171,7 @@ def begin_assignment(
     session_id: str | None = None,
     initiated_by: str | None = None,
     event_recorder: Callable[[Dict[str, Any]], None],
+    autonomy_levels: Dict[str, str] | None = None,
 ) -> Assignment:
     """Beginnt eine Task-Besetzung und zeichnet den Startnachweis auf.
 
@@ -159,6 +189,8 @@ def begin_assignment(
     session_id = session_id or str(uuid.uuid4())
     started_at = _utc_now()
 
+    effective_levels = effective_autonomy_levels(autonomy_levels, mode)
+
     assignment = Assignment(
         assignment_id=assignment_id,
         role_id=role_id,
@@ -171,6 +203,7 @@ def begin_assignment(
         session_id=session_id,
         initiated_by=initiated_by or agent_instance_id,  # Fallback auf Instanz-ID
         started_at=started_at,
+        autonomy_levels=effective_levels,
     )
 
     details = _event_details(

@@ -93,11 +93,23 @@ dahin gilt: jede Ausführung über agents-heart ist unbudgetiert und
 nicht-idempotent; Absicherung erfolgt über Claim-Sperre (ein Besetzer pro
 Task) und Activity-Log.
 
+## 5a. Verwandtes Kontrollmodul: automation-master
+
+automation-master ist die EINE Setting-Quelle für Autonomiestufen je
+Bereich (manuell, teilautomatisch, vollautomatisch; voll = handeln und
+informieren, teil = Außenwirkung nur bei direktem Auftrag) inklusive
+Testmodus (kappt voll auf teil), Budget-/Override-Governance für
+Geldflüsse (linkedin, youtube) und Messung je Bereich. Die
+Entscheidungsebene bleibt ellmos-delegation-authority (evaluate_permission
+mit autonomy_level/direct_order), Besetzungen laufen über agents-heart
+(autonomy_levels). Details siehe MANIFEST.json im Modulordner.
+
 ## 6. Ownership-Matrix
 
 | Bereich | Owner |
 |---|---|
 | agents-heart (Besetzung/Autorisierung, `.MODULES/.CONTROL/agents-heart`) | BACH/Ocean Shared Modules |
+| automation-master (Autonomiestufen/Testmodus/Budget-Governance, `.MODULES/.CONTROL/automation-master`) | BACH/Ocean Shared Modules |
 | TaskDB, Lease/Claim, Task-Lebenszyklus | Task-Master (Lead-TaskDB, Trithon-Adapter) |
 | Prozesssteuerung (Start/Stop/Neustart von Worker-Prozessen) | agent-launcher |
 | LLM-Modelle und Provider-Anbindung | Backend-Module |
