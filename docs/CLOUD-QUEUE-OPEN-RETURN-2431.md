@@ -84,6 +84,23 @@ Die statischen Zitate wurden im Korrekturlauf erneut geprüft und bestätigt: `w
 
 Fazit: Auch nach erneuter Suche liegt im lesbaren Bereich kein natürlich aufgetretener HTTP-429-Zyklus (Cooldown, Nutzerstopp, offene Rückgabe, Wiederaufnahme) mit lease-/servicegebundenen Logdaten vor. Der dynamische Beleg bleibt offen und ist beim nächsten natürlichen 429 aus dem Laufzeitlog nachzutragen; kein künstlicher Trigger, kein Test-/Worker-Start, kein kostenpflichtiger Fallback.
 
+### Erneute Belegsuche (Nachprüfung, Korrekturlauf 2)
+
+Lauf im Kontext 22.10.2026, Korrekturlauf 2 (Korrektur-ID 58). Die Suche wurde in diesem Lauf auf die bisher ungeprüften Ablageorte innerhalb des bestätigten Arbeitsbaums ausgeweitet, um eine Log-Quelle ohne Zugriff auf gesperrte Pfade zu finden.
+
+Ergebnis der Nachsuche (nur lesende Aufrufe, kein Start, kein Trigger, kein Modellaufruf):
+- `~/.bach` (dort liegen `operator-checkpoints`): erneut `BLOCKIERT: Task-Lesebereich nicht bestätigt`. Der Pfad bleibt unzugänglich; damit bleibt die einzige bekannte Quelle lease-/servicegebundener Laufzeitdaten versperrt.
+- `system/logs/`: enthält nur `daily/` und `wiki_author/`. `daily/2026-02-21.md` wurde gelesen — ein reines Session-Log-Gerüst (Überschriften „Session-Log", Zeitstempel, leere Rümpfe) ohne Fehler-, 429- oder Cooldown-Eintrag. `wiki_author/` enthält ausschließlich sechs Fachberichte (reflection, memory, skills_board, word_template_service, versicherungen), keine Laufzeitdaten.
+- `system/data/sessions/`: nur `.gitkeep`, keine Sitzungsjournale. `system/data/` enthält `config`, `domain_pins.json`, `inbox`, `schema`, `skill_sources.json`, `swarm` — keine Log- oder Checkpoint-Ablage. `system/exports/`: nur `.gitkeep` und `translations`, keine Artefakte.
+- Rekursive Textsuche nach `operator-checkpoints` und `checkpoint` über den Arbeitsbaum bzw. `system/hub`: die baumweite Suche wurde nicht bestätigt („Werkzeugausführung nicht bestätigt; Wirkung unbekannt", ohne belastbares Ergebnis); die gezielte Suche über `system/hub/_services/llm` lieferte keine Treffer. `system/hub` führt also weiterhin keine Checkpoint-Datei.
+- `system/hub/_services` nach `429`: erneut ausschließlich Quellcode-Referenzen (`chat_runtime.py:850,948`, `telegram_chat.py:1501,6798`, `worker_tool_bridge.py:174`, `backend_errors.py:43,91,123,124,129,147,170,220`, `model_backend.py:742-743`, `openrouter_catalog.py:23`) — kein Log-, Journal- oder Checkpoint-Artefakt eines natürlichen 429-Zyklus.
+
+Damit ist in diesem Lauf keine neue Belegquelle erschlossen. **Offener Blocker bleibt bestehen:** Es fehlt weiterhin ein real beobachteter HTTP-429-Durchlauf mit Cooldown, Nutzerstopp, offener Rückgabe und Wiederaufnahme, belegt aus einem Laufzeitlog. Die statischen Zitate oben sind unverändert gültig; sie ersetzen den dynamischen Beleg nicht.
+
+Scope-Abgrenzung dieses Korrekturlaufs: geprüft wurden ausschließlich die im Arbeitsbaum lesbaren Ablageorte (`system/logs`, `system/data`, `system/exports`, `system/hub/_services`). Nicht geprüft werden konnten die gesperrten Pfade (`~/.bach`, `~/.bach/operator-checkpoints`) — dort liegt die erwartete Evidenz. Kein künstlicher 429, kein Test-/Worker-Start, kein kostenpflichtiger Modellfallback, keine `.SYNC`-Ausführung, kein Merge oder Deploy.
+
+Resultrevision: Der Task bleibt **offen** (nicht `complete`). Nächster Schritt bleibt unverändert das Nachziehen des Belegs aus dem Laufzeitlog, sobald ein natürlicher 429 vorliegt oder der Lesebebereich für `~/.bach/operator-checkpoints` bestätigt ist.
+
 ## Grenzen und Auslieferung
 
 Vorhandene Arbeit bleibt erhalten und ist beim regulären Wiederaufnehmen zu berücksichtigen. Eine offene Rückgabe ist kein erledigtes Ergebnis. Anbieterquoten werden nicht umgangen; es gibt keinen zusätzlichen kostenpflichtigen Modellfallback.
