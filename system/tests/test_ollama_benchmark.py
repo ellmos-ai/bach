@@ -1,166 +1,266 @@
-"""Smoke-Tests fuer die num_ctx-Messroutine (ollama_benchmark).
+"""Tests für den num_ctx-Benchmark (tools.ollama.ollama_benchmark).
 
-Abgedeckt: Handoff-Budget-Berechnung relativ zum Kontextfenster,
-Textform der Budget-Zeile, Prompt-Bau fuer den optionalen LLM-Rat und
-der fehlertolerante --advice-Pfad.
-
-Kein Ollama-Server noetig: alle Tests arbeiten mit reinen Daten bzw.
-Fake-Clients.
+Alle Tests laufen ohne Netzwerkzugriff: client.generate wird durch einen
+Stub ersetzt, der vorbestimmte OllamaResponse-Objekte liefert. Geprüft
+werden Prompt-Aufbau, Messung pro Stufe, die Stop-Regeln von _benchmark,
+das Übergabebudget, der Beratungsprompt und die advice-Ausgabepfade.
 """
-
-import io
-import contextlib
 
 import pytest
 
 from tools.ollama.ollama_benchmark import (
-    BUDGET_LOW_RATIO,
     BUDGET_HIGH_RATIO,
+    BUDGET_LOW_RATIO,
     CHARS_PER_TOKEN,
+    DEFAULT_LEVELS,
+    DEFAULT_PROMPT_CHARS,
+    DEFAULT_RUNS,
+    _benchmark,
     _build_advice_prompt,
-    _format_handoff_budget,
-    _format_rows_summary,
+    _build_prompt,
     _handoff_budget,
     _print_advice,
+    _run_level,
 )
+from tools.ollama.ollama_client import OllamaResponse
 
 
-def _row(num_ctx, ok=3, runs=3, median_time=1.0, median_tokens=100,
-         median_tp=100.0, first_error=""):
-    return {
-        "num_ctx": num_ctx,
-        "ok": ok,
-        "runs": runs,
-        "median_time": median_time,
-        "median_tokens": median_tokens,
-        "median_tp": median_tp,
-        "first_error": first_error,
-    }
+class StubClient:
+    """Ersatz für OllamaClient: kein Netzwerk, vorbestimmte Antworten.
+
+    Enthält `responses` noch Einträge, werden diese der Reihe nach
+    zurückgegeben (Exceptions werden ausgelöst); danach liefert der Stub
+    erfolgreich Antworten mit completion_tokens=10.
+    """
+
+    def __init__(self, responses=None):
+        self.responses = list(responses or [])
+        self.calls = []
+
+    def generate(self, prompt, model=None, num_ctx=None, **kwargs):
+        self.calls.append({"prompt": prompt, "model": model, "num_ctx": num_ctx})
+        if self.responses:
+            response = self.responses.pop(0)
+        else:
+            response = OllamaResponse(success=True, completion_tokens=10)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
-# --- _handoff_budget -------------------------------------------------------
-
-def test_handoff_budget_uses_configured_ratios():
-    budget = _handoff_budget(4096)
-    assert budget["low_tokens"] == int(4096 * BUDGET_LOW_RATIO)
-    assert budget["high_tokens"] == int(4096 * BUDGET_HIGH_RATIO)
-    assert budget["low_chars"] == budget["low_tokens"] * CHARS_PER_TOKEN
-    assert budget["high_chars"] == budget["high_tokens"] * CHARS_PER_TOKEN
-
-
-def test_handoff_budget_stays_below_window():
-    for num_ctx in (512, 4096, 8192, 32768, 262144):
-        budget = _handoff_budget(num_ctx)
-        assert 0 < budget["low_tokens"] < budget["high_tokens"] < num_ctx
+def _successful_run():
+    """Benchmark mit zwei erfolgreichen Stufen als Testdaten-Lieferant."""
+    client = StubClient()
+    rows, recommended, best_median, stop_reason = _benchmark(
+        client, "llama3.2", "prompt", [2048, 8192], runs=1
+    )
+    assert stop_reason == ""
+    assert recommended == 8192
+    assert best_median > 0.0
+    return rows, recommended, best_median
 
 
-def test_handoff_budget_is_monotonic():
-    small = _handoff_budget(2048)
-    large = _handoff_budget(8192)
-    assert small["high_tokens"] < large["low_tokens"]
+# --- Konstanten ---
 
 
-@pytest.mark.parametrize("num_ctx", [0, -1, -4096])
-def test_handoff_budget_degenerate_window_returns_zero(num_ctx):
-    budget = _handoff_budget(num_ctx)
-    assert budget == {"low_tokens": 0, "high_tokens": 0,
-                      "low_chars": 0, "high_chars": 0}
+def test_documented_constants():
+    assert DEFAULT_LEVELS == "2048,4096,8192,16384,32768"
+    assert DEFAULT_RUNS == 2
+    assert DEFAULT_PROMPT_CHARS == 2000
+    assert BUDGET_LOW_RATIO == 0.60
+    assert BUDGET_HIGH_RATIO == 0.80
+    assert CHARS_PER_TOKEN == 4
 
 
-# --- _format_handoff_budget ------------------------------------------------
-
-def test_format_handoff_budget_contains_numbers_and_label():
-    text = _format_handoff_budget(4096, "num_ctx")
-    budget = _handoff_budget(4096)
-    assert text.startswith("Handoff budget:")
-    assert "%d-%d tokens" % (budget["low_tokens"], budget["high_tokens"]) in text
-    assert "%d-%d chars" % (budget["low_chars"], budget["high_chars"]) in text
-    assert "num_ctx=4096" in text
-    assert "60%-80%" in text
+# --- _build_prompt ---
 
 
-def test_format_handoff_budget_supports_alternative_label():
-    assert "default num_ctx=8192" in _format_handoff_budget(8192, "default num_ctx")
+def test_build_prompt_deterministic_and_exact_length():
+    for chars in (1, 100, 500, DEFAULT_PROMPT_CHARS, 5000):
+        first = _build_prompt(chars)
+        second = _build_prompt(chars)
+        assert len(first) == chars
+        assert first == second
 
 
-# --- _format_rows_summary -------------------------------------------------
-
-def test_format_rows_summary_lists_all_levels():
-    rows = [_row(2048, median_tp=50.0), _row(4096, median_tp=80.0)]
-    text = _format_rows_summary(rows)
-    assert "num_ctx=2048: 3/3 ok, 50.00 tok/s" in text
-    assert "num_ctx=4096: 3/3 ok, 80.00 tok/s" in text
-    assert "; " in text
+def test_build_prompt_nonpositive_returns_seed():
+    zero = _build_prompt(0)
+    assert zero == _build_prompt(-7)
 
 
-def test_format_rows_summary_handles_missing_throughput():
-    rows = [_row(2048, ok=0, median_time=None, median_tokens=None, median_tp=None,
-                 first_error="timeout")]
-    text = _format_rows_summary(rows)
-    assert "num_ctx=2048: 0/3 ok, - tok/s" in text
+# --- _run_level ---
 
 
-# --- _build_advice_prompt -------------------------------------------------
-
-def test_build_advice_prompt_mentions_model_and_budget():
-    rows = [_row(2048, median_tp=50.0), _row(4096, median_tp=80.0)]
-    prompt = _build_advice_prompt("qwen2.5:7b", 12000, rows, 4096, 80.0)
-    budget = _handoff_budget(4096)
-    assert "qwen2.5:7b" in prompt
-    assert "Recommended num_ctx=4096" in prompt
-    assert "80.00 tok/s" in prompt
-    assert str(12000) in prompt
-    assert str(budget["low_tokens"]) in prompt
-    assert str(budget["high_chars"]) in prompt
-    assert "num_ctx=2048: 3/3 ok" in prompt
-
-
-# --- _print_advice --------------------------------------------------------
-
-class _BoomClient:
-    def generate(self, *args, **kwargs):
-        raise RuntimeError("ollama not reachable")
+def test_run_level_all_success():
+    client = StubClient()
+    row = _run_level(client, "llama3.2", "prompt", 4096, runs=2)
+    assert row["num_ctx"] == 4096
+    assert row["ok"] == 2
+    assert row["runs"] == 2
+    assert row["median_tokens"] == 10
+    assert row["median_time"] > 0.0
+    assert row["median_tp"] > 0.0
+    assert row["first_error"] == ""
+    assert len(client.calls) == 2
+    assert all(call["num_ctx"] == 4096 for call in client.calls)
+    assert all(call["model"] == "llama3.2" for call in client.calls)
+    assert all(call["prompt"] == "prompt" for call in client.calls)
 
 
-class _FailingClient:
-    def generate(self, *args, **kwargs):
-        return type("Resp", (), {"success": False, "error": "model not found",
-                                 "text": ""})()
+def test_run_level_all_failed():
+    client = StubClient([OllamaResponse(success=False, error="boom")] * 2)
+    row = _run_level(client, "llama3.2", "prompt", 4096, runs=2)
+    assert row["num_ctx"] == 4096
+    assert row["ok"] == 0
+    assert row["runs"] == 2
+    assert row["median_time"] is None
+    assert row["median_tokens"] is None
+    assert row["median_tp"] is None
+    assert row["first_error"] == "boom"
 
 
-class _OkClient:
-    def __init__(self):
-        self.called = {}
-
-    def generate(self, prompt, model=None, num_ctx=None):
-        self.called = {"prompt": prompt, "model": model, "num_ctx": num_ctx}
-        return type("Resp", (), {"success": True, "error": "",
-                                 "text": "  Fenster passt.  "})()
-
-
-def _run_print_advice(client):
-    err = io.StringIO()
-    rows = [_row(4096)]
-    with contextlib.redirect_stderr(err):
-        _print_advice(client, "qwen2.5:7b", 12000, rows, 4096, 80.0)
-    return err.getvalue()
+def test_run_level_mixed_keeps_first_error():
+    client = StubClient(
+        [
+            OllamaResponse(success=False, error="boom"),
+            OllamaResponse(success=True, completion_tokens=10),
+        ]
+    )
+    row = _run_level(client, "llama3.2", "prompt", 4096, runs=2)
+    assert row["ok"] == 1
+    assert row["median_tokens"] == 10
+    assert row["median_tp"] > 0.0
+    assert row["first_error"] == "boom"
 
 
-def test_print_advice_swallows_exceptions():
-    err = _run_print_advice(_BoomClient())
-    assert "--advice warning" in err
-    assert "ollama not reachable" in err
+def test_run_level_zero_runs_normalized():
+    client = StubClient()
+    row = _run_level(client, "llama3.2", "prompt", 4096, runs=0)
+    assert row["num_ctx"] == 4096
+    assert row["runs"] == 1
 
 
-def test_print_advice_reports_model_error_without_raising():
-    err = _run_print_advice(_FailingClient())
-    assert "--advice warning" in err
-    assert "model not found" in err
+# --- _benchmark ---
 
 
-def test_print_advice_uses_recommended_window():
-    client = _OkClient()
-    _run_print_advice(client)
-    assert client.called["model"] == "qwen2.5:7b"
-    assert client.called["num_ctx"] == 4096
-    assert "Handoff" in client.called["prompt"] or "budget" in client.called["prompt"]
+def test_benchmark_all_levels_ok_recommends_last():
+    client = StubClient()
+    rows, recommended, best_median, stop_reason = _benchmark(
+        client, "llama3.2", "prompt", [2048, 4096, 8192], runs=2
+    )
+    assert [row["num_ctx"] for row in rows] == [2048, 4096, 8192]
+    assert all(row["ok"] == 2 for row in rows)
+    assert recommended == 8192
+    assert best_median > 0.0
+    assert stop_reason == ""
+    assert len(client.calls) == 6
+
+
+def test_benchmark_stops_on_no_success():
+    client = StubClient([OllamaResponse(success=False, error="boom")] * 2)
+    rows, recommended, best_median, stop_reason = _benchmark(
+        client, "llama3.2", "prompt", [2048, 4096, 8192], runs=2
+    )
+    assert len(rows) == 1
+    assert recommended is None
+    assert best_median == 0.0
+    assert stop_reason == "no successful generation (error: boom)"
+
+
+def test_benchmark_stops_on_throughput_collapse():
+    client = StubClient(
+        [OllamaResponse(success=True, completion_tokens=100)] * 2
+        + [OllamaResponse(success=True, completion_tokens=0)] * 2
+    )
+    rows, recommended, best_median, stop_reason = _benchmark(
+        client, "llama3.2", "prompt", [2048, 4096], runs=2
+    )
+    assert len(rows) == 2
+    assert recommended == 2048
+    assert best_median > 0.0
+    expected = "throughput collapse at num_ctx=4096 (median 0.00 tok/s, best %.2f tok/s)" % best_median
+    assert stop_reason == expected
+    assert len(client.calls) == 4
+
+
+# --- _handoff_budget ---
+
+
+def test_handoff_budget_uses_ratios():
+    budget = _handoff_budget(8192)
+    expected_low_tokens = int(8192 * BUDGET_LOW_RATIO)
+    expected_high_tokens = int(8192 * BUDGET_HIGH_RATIO)
+    assert budget["low_tokens"] == expected_low_tokens
+    assert budget["high_tokens"] == expected_high_tokens
+    assert budget["low_chars"] == expected_low_tokens * CHARS_PER_TOKEN
+    assert budget["high_chars"] == expected_high_tokens * CHARS_PER_TOKEN
+    assert (budget["low_tokens"], budget["high_tokens"]) == (4915, 6553)
+
+
+def test_handoff_budget_non_positive_is_zero():
+    for value in (0, -100):
+        assert _handoff_budget(value) == {
+            "low_tokens": 0,
+            "high_tokens": 0,
+            "low_chars": 0,
+            "high_chars": 0,
+        }
+
+
+# --- _build_advice_prompt ---
+
+
+def test_build_advice_prompt_contents():
+    rows, recommended, best_median = _successful_run()
+    prompt = _build_advice_prompt(
+        "llama3.2", DEFAULT_PROMPT_CHARS, rows, recommended, best_median
+    )
+    assert "llama3.2" in prompt
+    assert "Recommended num_ctx=%d, median throughput %.2f tok/s." % (
+        recommended,
+        best_median,
+    ) in prompt
+    budget = _handoff_budget(recommended)
+    assert "roughly %d-%d tokens (%d-%d characters)" % (
+        budget["low_tokens"],
+        budget["high_tokens"],
+        budget["low_chars"],
+        budget["high_chars"],
+    ) in prompt
+
+
+# --- _print_advice ---
+
+
+def test_print_advice_success(capsys):
+    rows, recommended, best_median = _successful_run()
+    client = StubClient([OllamaResponse(success=True, text="Nimm 8192 als Kontextfenster.")])
+    _print_advice(client, "llama3.2", DEFAULT_PROMPT_CHARS, rows, recommended, best_median)
+    captured = capsys.readouterr()
+    assert "Advisor note from llama3.2 (optional, verify before acting):" in captured.out
+    assert "Nimm 8192 als Kontextfenster." in captured.out
+    assert client.calls and client.calls[0]["num_ctx"] == recommended
+
+
+def test_print_advice_request_failed(capsys):
+    rows, recommended, best_median = _successful_run()
+    client = StubClient([RuntimeError("Verbindung fehlgeschlagen")])
+    _print_advice(client, "llama3.2", DEFAULT_PROMPT_CHARS, rows, recommended, best_median)
+    captured = capsys.readouterr()
+    assert "--advice warning: request failed: Verbindung fehlgeschlagen" in captured.err
+
+
+def test_print_advice_model_error(capsys):
+    rows, recommended, best_median = _successful_run()
+    client = StubClient([OllamaResponse(success=False, error="boom")])
+    _print_advice(client, "llama3.2", DEFAULT_PROMPT_CHARS, rows, recommended, best_median)
+    captured = capsys.readouterr()
+    assert "--advice warning: model returned an error: boom" in captured.err
+
+
+def test_print_advice_empty_answer(capsys):
+    rows, recommended, best_median = _successful_run()
+    client = StubClient([OllamaResponse(success=True, text="")])
+    _print_advice(client, "llama3.2", DEFAULT_PROMPT_CHARS, rows, recommended, best_median)
+    captured = capsys.readouterr()
+    assert "--advice warning: model returned an empty answer." in captured.err
