@@ -2061,8 +2061,8 @@ class ChatRuntime(_ModuleChatRuntime):
                         handle = None
                         # Even retiring an obsolete receipt can wait on SQLite.
                         check_dispatch_binding(call_binding)
-                mark_model_dispatch()
                 if bound:
+                    mark_model_dispatch()
                     result = await backend.chat_bound(
                         *args, **kwargs, binding=call_binding, mode=session.mode,
                         guard=check_binding, bach_app=self.bach_app,
@@ -2070,7 +2070,35 @@ class ChatRuntime(_ModuleChatRuntime):
                         **(agent_kwargs or {}),
                     )
                 else:
-                    result = await backend.chat(*args, **kwargs)
+                    request_control = (getattr(session, "worker_model_request_control", None)
+                                       if session is not None else None)
+                    from hub._services.llm.model_backend import OllamaBackend
+                    if (call_binding is not None and request_control is not None
+                            and type(backend) is OllamaBackend):
+                        import asyncio
+                        cancel_event = asyncio.Event()
+                        request_handle = request_control.register_provider_request(
+                            call_binding, asyncio.get_running_loop(), cancel_event,
+                        )
+                        if request_handle is None:
+                            result = {
+                                "content": "", "tool_calls": None,
+                                "raw_message": {"role": "assistant", "content": ""},
+                                "error": "Worker-Request vor Providerstart beendet",
+                                "provider_reported_model": None,
+                                "worker_cancelled": True,
+                            }
+                        else:
+                            try:
+                                mark_model_dispatch()
+                                call_kwargs = dict(kwargs)
+                                call_kwargs["cancel_event"] = cancel_event
+                                result = await backend.chat(*args, **call_kwargs)
+                            finally:
+                                request_control.finish_provider_request(request_handle)
+                    else:
+                        mark_model_dispatch()
+                        result = await backend.chat(*args, **kwargs)
             except BaseException:
                 if handle is not None:
                     try:
@@ -3031,6 +3059,28 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
             last_prompt_tokens = result.get("prompt_tokens")
+
+            from hub._services.llm.model_backend import OllamaBackend
+            if (
+                type(selected_backend) is OllamaBackend
+                and getattr(session, "worker_model_request_control", None) is not None
+                and result.get("provider_request_aborted") in {"worker_stop", "total_deadline"}
+            ):
+                # Interrupted output is never parsed as a text fallback or sent
+                # through the normal tool-dispatch path.
+                session.current_tool = ""
+                reason = (
+                    "Worker-Providerrequest generationsgebunden gestoppt"
+                    if result["provider_request_aborted"] == "worker_stop"
+                    else "Zeitdeckel für den Ollama-Providerrequest erreicht"
+                )
+                partial = result.get("content") or ""
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}{reason}"
+                    + (f"\n[Teilantwort vor dem Abbruch]\n{partial}" if partial else ""),
+                    backend_error=result.get("backend_error"),
+                    transient_failure=result.get("transient_failure"),
+                )
 
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine

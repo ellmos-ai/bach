@@ -222,6 +222,18 @@ class _WorkerStopSignal:
 
 
 @dataclass
+class _ActiveWorkerModelRequest:
+    """One provider request owned by one worker generation and task binding."""
+
+    worker_generation: str
+    task_binding: Any
+    loop: Any
+    cancel_event: Any
+    request_id: str
+    cancel_requested: bool = False
+
+
+@dataclass
 class _WorkerControl:
     """Generation-bound cooperative cancellation state for one worker run."""
 
@@ -274,6 +286,7 @@ class _WorkerControl:
     supports_step_actions: bool = False
     run_receipt_fields: Optional[Dict[str, Any]] = None
     model_request_budget: Any = None
+    active_model_request: Any = None
     handoff: WorkerHandoff = field(init=False)
     task_actions: WorkerTaskActions = field(init=False)
 
@@ -284,6 +297,53 @@ class _WorkerControl:
             self.persistent_core_startup_confirmed.set()
         if not self.startup_admission_required:
             self.startup_admission_confirmed.set()
+
+    def register_provider_request(self, task_binding, loop, cancel_event):
+        """Bind one Ollama transport read to this exact worker generation/task."""
+        with _WORKER_CONTROL_LOCK:
+            if (self.stop_event.is_set()
+                    or _WORKER_CONTROLS.get(self.worker_id) is not self
+                    or task_binding is None or self.task_binding is not task_binding
+                    or self.active_model_request is not None):
+                return None
+            request = _ActiveWorkerModelRequest(
+                worker_generation=self.generation,
+                task_binding=task_binding,
+                loop=loop,
+                cancel_event=cancel_event,
+                request_id=uuid.uuid4().hex,
+            )
+            self.active_model_request = request
+            return request
+
+    def cancel_active_model_request(self):
+        """Signal only the currently registered request; never cancel runtime/tool work."""
+        with _WORKER_CONTROL_LOCK:
+            request = self.active_model_request
+            if (not self.stop_event.is_set() or request is None
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding):
+                return False
+            request.cancel_requested = True
+        try:
+            request.loop.call_soon_threadsafe(self._signal_provider_request_cancel, request)
+        except RuntimeError:
+            return False
+        return True
+
+    def _signal_provider_request_cancel(self, request):
+        with _WORKER_CONTROL_LOCK:
+            if (self.active_model_request is not request
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding
+                    or not self.stop_event.is_set()):
+                return
+        request.cancel_event.set()
+
+    def finish_provider_request(self, request):
+        with _WORKER_CONTROL_LOCK:
+            if self.active_model_request is request:
+                self.active_model_request = None
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -2029,6 +2089,14 @@ def _request_worker_revocation(
             control.task_actions.cancel()
         elif control.stop_status is None:
             control.stop_status = final_status
+
+    # Wake only the provider read registered to this exact generation. The
+    # worker/runtime coroutine, tool dispatch and subprocess cleanup keep running.
+    try:
+        control.cancel_active_model_request()
+    except Exception:
+        log.warning("Worker %s Provider-Read konnte nicht signalisiert werden", worker_id,
+                    exc_info=True)
 
     # Never hold the controller lock while the captured worker finishes.
     if thread is not None and thread is not threading.current_thread() and _thread_is_alive(thread):
@@ -5257,6 +5325,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     worker_session.worker_handoff = control.handoff
                     worker_session.worker_task_actions = control.task_actions
                     worker_session.worker_task_binding = control.task_binding
+                    worker_session.worker_model_request_control = control
                     worker_session.require_task_binding = True
                     worker_session.model_request_budget = control.model_request_budget
                     worker_session._persistent_core_model_call_control = (
@@ -5278,6 +5347,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 finally:
                     if worker_session is not None:
                         worker_session._persistent_core_model_call_control = None
+                        worker_session.worker_model_request_control = None
                         worker_session.model_request_budget = None
                     try:
                         loop.run_until_complete(loop.shutdown_asyncgens())
