@@ -23,9 +23,16 @@ def _git(args, cwd):
     )
 
 
-def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix=""):
+def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypatch=None):
     """Create a real, isolated origin-shaped repository and registered task tree."""
     base.mkdir(parents=True, exist_ok=True)
+    if monkeypatch is not None:
+        home = base / "home"
+        local_bach = home / ".bach"
+        local_bach.mkdir(parents=True, exist_ok=True)
+        local_bach.chmod(0o700)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("BACH_LOCAL_DIR", str(local_bach))
     repo = base / f"repo{suffix}"
     worktrees = base / f"worktrees{suffix}"
     repo.mkdir()
@@ -42,22 +49,25 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix=""):
 
     target = worktrees / f"task-{task_id}"
     _git(["worktree", "add", str(target), "-b", f"bach-task/{task_id}", base_head], repo)
-    if pinned:
-        from hub import worker_git
 
-        worker_git._store_public_source_registration(repo, target, task_id, {
-            "schema": "bach.task-public-source.v1",
-            "task_id": "",
-            "repository": "ellmos-ai/bach",
-            "origin": ORIGIN,
-            "source_ref": "refs/heads/main",
-            "source_sha": base_head,
+    from hub import worker_git
+    reg_data = {
+        "schema": "bach.task-public-source.v1",
+        "task_id": task_id,
+        "repository": "ellmos-ai/bach",
+        "origin": ORIGIN,
+        "source_ref": "refs/heads/main",
+        "source_sha": base_head,
+    }
+    if pinned:
+        reg_data.update({
             "visibility": "public",
             "private": False,
             "metadata_verified": True,
             "ref_verified": True,
             "verified_at": "2026-10-15T12:00:00+00:00",
         })
+        worker_git._store_public_source_registration(repo, target, task_id, reg_data)
     return {
         "repo": repo,
         "worktrees": worktrees,
@@ -89,7 +99,7 @@ def _install_lock_scanner(tmp_path, monkeypatch, *, locks=None, twin_status="ok"
 
 @pytest.fixture
 def scope_repo(tmp_path, monkeypatch):
-    tree = _new_scope_repo(tmp_path, pinned=False)
+    tree = _new_scope_repo(tmp_path, pinned=False, monkeypatch=monkeypatch)
     _install_lock_scanner(tmp_path, monkeypatch)
     return tree
 
@@ -140,7 +150,7 @@ def test_clean_registered_tree_returns_json_safe_git_identity_without_raw_paths(
 def test_optional_verified_public_source_pin_is_projected_without_extra_claims(
     tmp_path, monkeypatch
 ):
-    tree = _new_scope_repo(tmp_path, pinned=True)
+    tree = _new_scope_repo(tmp_path, pinned=True, monkeypatch=monkeypatch)
     _install_lock_scanner(tmp_path, monkeypatch)
 
     snapshot = _snapshot(tree)
@@ -194,8 +204,8 @@ def test_branch_change_or_detached_head_is_not_the_registered_task_tree(scope_re
 
 
 def test_worktree_from_another_git_project_is_not_accepted_as_registered(tmp_path, monkeypatch):
-    canonical = _new_scope_repo(tmp_path, pinned=False, suffix="-canonical")
-    foreign = _new_scope_repo(tmp_path, pinned=False, suffix="-foreign")
+    canonical = _new_scope_repo(tmp_path, pinned=False, suffix="-canonical", monkeypatch=monkeypatch)
+    foreign = _new_scope_repo(tmp_path, pinned=False, suffix="-foreign", monkeypatch=monkeypatch)
     _install_lock_scanner(tmp_path, monkeypatch)
 
     snapshot = _snapshot(canonical, repo=foreign["repo"], worktrees=canonical["worktrees"])
@@ -206,8 +216,8 @@ def test_worktree_from_another_git_project_is_not_accepted_as_registered(tmp_pat
 def test_common_directory_mismatch_fails_closed_after_candidate_path_selection(
     tmp_path, monkeypatch
 ):
-    canonical = _new_scope_repo(tmp_path, pinned=False, suffix="-canonical")
-    foreign = _new_scope_repo(tmp_path, pinned=False, suffix="-foreign")
+    canonical = _new_scope_repo(tmp_path, pinned=False, suffix="-canonical", monkeypatch=monkeypatch)
+    foreign = _new_scope_repo(tmp_path, pinned=False, suffix="-foreign", monkeypatch=monkeypatch)
     _install_lock_scanner(tmp_path, monkeypatch)
     # Isolate the final common-directory proof: the returned candidate is a
     # genuine clean task worktree, but its Git common directory belongs to the
