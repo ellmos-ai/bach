@@ -10,6 +10,15 @@ Autonome Stufen:
 AUTONOMY_LEVELS = ["manuell", "teilautomatisch", "vollautomatisch"]
 DEFAULT_AUTONOMY_LEVEL = "manuell"
 
+# Bekannte Bereiche, für die Autonomiestufen konfiguriert werden können.
+ACTIONS = ["bildschirmsteuerung", "linkedin", "youtube", "mail"]
+
+
+class PermissionDenied(Exception):
+    """Ausnahme, wenn eine Handlung aufgrund ungültiger Autonomie abgelehnt wird."""
+    pass
+
+
 # Bereichsautonomie-Leitfaden: Bereich → Ebene
 _AUTONOMY_OVERRIDES = {}
 
@@ -17,6 +26,7 @@ _AUTONOMY_OVERRIDES = {}
 _PERMISSION_MAP = {
     # Beispiel-Matrix (Vollständig wie in Produktion implementiert)
 }
+
 
 def _normalize_autonomy_level(level):
     """
@@ -37,13 +47,17 @@ def _normalize_autonomy_level(level):
             f"Erlaubt sind: {', '.join(AUTONOMY_LEVELS)}"
         )
     return level
+
+
 def _get_override(area):
     """Ruft den expliziten Autonomielevel für den Bereich (falls definiert) ab.
 
     Returns:
-        der Overrid-Level oder None
+        der Override-Level oder None
     """
     return _AUTONOMY_OVERRIDES.get(area)
+
+
 def evaluate_permission(act, actor, autonomy_level):
     """
     Berechnet, ob eine Aktion × Akteur die Autonomielevel-Regel für einen Bereich erfüllt.
@@ -59,17 +73,22 @@ def evaluate_permission(act, actor, autonomy_level):
                "autonomy_level": Autonomielevel,
                "direct_order": bool,
                "inform": bool}
-    """
-    level = _normalize_autonomy_level(autonomy_level)
 
-    # Rangfolge: explizite Overridung → Datensatz-Level → Spalte-Level → Fallback „manuell“
-    # Vorab: keine Overrid, Standardregeln aus agents_heart.py laden
+    Raises:
+        PermissionDenied: wenn autonomy_level kein gültiger Autonomielevel ist
+    """
+    try:
+        level = _normalize_autonomy_level(autonomy_level)
+    except ValueError as exc:
+        raise PermissionDenied(
+            f"Ungültige Autonomiestufe: {autonomy_level}. "
+            f"Erlaubt sind: {', '.join(AUTONOMY_LEVELS)}"
+        ) from exc
 
     area = act.split("/")[0] if "/" in act else "unbekannt"
     override = _get_override(area)
     effective_level = _normalize_autonomy_level(override) if override is not None else level
 
-    # Automatische Überführung „rueckfrage“ → „erlaubt“ bei Vollautomatisierung
     decision = "rueckfrage"
     needs_ticket = True
     direct_order = False
@@ -81,14 +100,11 @@ def evaluate_permission(act, actor, autonomy_level):
         direct_order = True
         inform = True
     elif effective_level == "teilautomatisch":
-        # Beispiellogik: wenn die Handlung außerhalb des Bereichs liegt → Einwilligung erforderlich
-        # Für vereinfachte Implementierung sind alle erlaubten Handlungen direkt
         decision = "erlaubt"
         needs_ticket = False
         direct_order = True
         inform = False
     elif effective_level == "manuell":
-        # auf „rueckfrage“ bleiben
         pass
 
     return {
