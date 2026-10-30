@@ -922,6 +922,7 @@ class OpenRouterBackend(HermesBackend):
             api_key = read_openrouter_api_key()
         self.run_id = str(run_id) if run_id is not None else ""
         self.last_free_pin_decision = None
+        self._free_pin_model: str | None = None
         super().__init__(
             base_url=base_url or "https://openrouter.ai/api/v1",
             api_key=api_key,
@@ -952,7 +953,16 @@ class OpenRouterBackend(HermesBackend):
             )
 
     def _pin_free_router_model(self) -> str:
-        """Pin one free catalog model for this run, else fall back to the router ID."""
+        """Pin one free catalog model for this run, else fall back to the router ID.
+
+        The decision (including the fallback to the router ID) is made once
+        per backend instance, i.e. once per run, and cached afterwards. A
+        catalog refresh between two calls of the same run therefore cannot
+        swap the model mid-run. Rotation between runs is preserved because
+        every run gets its own backend instance with its own cache.
+        """
+        if self._free_pin_model is not None:
+            return self._free_pin_model
         from hub._services.llm.free_model_pin import pick_free_model
 
         decision = pick_free_model(self.run_id)
@@ -964,8 +974,11 @@ class OpenRouterBackend(HermesBackend):
             and isinstance(pinned_model, str)
             and pinned_model.strip()
         ):
-            return pinned_model.strip()
-        return "openrouter/free"
+            pinned_model = pinned_model.strip()
+        else:
+            pinned_model = "openrouter/free"
+        self._free_pin_model = pinned_model
+        return pinned_model
 
     async def chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
         target_model = str(model or self.default_model).strip()
@@ -1814,7 +1827,7 @@ def create_backend(config: dict) -> ModelBackend:
             return OpenRouterBackend(
                 base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
                 api_key=config.get("api_key", ""),
-                default_model=default_model or "nousresearch/hermes-3-llama-3.1-8b",
+                default_model=default_model,
                 run_id=config.get("run_id"),
             )
         return HermesBackend(
