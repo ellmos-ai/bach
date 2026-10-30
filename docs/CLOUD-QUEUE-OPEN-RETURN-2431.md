@@ -238,3 +238,14 @@ Nächster Schritt: Beim nächsten natürlichen HTTP-429-Zyklus den lease-/servic
 **Scope/Revision (dieser Lauf):** Taskarbeitsbaum `/Users/lukas/services/bach-worktrees/task-2431` (über `start_task_worktree` für Task #2431 registriert), Branch `bach-task/2431`, bestehender PR **#598**. HEAD bleibt nicht ermittelbar (`.git`-Lesezugriff und Git-Befehle im gebundenen Lauf gesperrt). Revision verankert über `task_version=5d34a44f1fbd80f6dc59dfb60d4450cc880dcd2b3776af14d300a1c6ac184f67` plus Korrekturlauf 8 (2026-10-30, Korrektur-ID 58).
 
 **Status/Abgabe:** WIP-Abgabe auf `bach-task/2431`, kein neuer PR; Task #2431 bleibt OFFEN. Nächster Schritt unverändert (siehe oben): Sobald `~/.bach/operator-checkpoints` oder die Live-Logs lesbar sind, den beim nächsten natürlich aufgetretenen 429 entstandenen Zyklus nachziehen; liegt dann weiterhin kein Beleg vor, ist der Blocker im Folgelauf erneut NEU zu dokumentieren.
+
+## Korrekturlauf 9 (Korrektur-ID 58)
+
+- Prüfziel unverändert wie Lauf 8: Beleg eines natürlichen HTTP-429-Zyklus (Cooldown → Nutzerstopp → offene Rückgabe → Wiederaufnahme); kein künstlicher 429, kein Test-/Workerstart, kein kostenpflichtiger Fallback, kein Merge/Deploy, keine .SYNC.
+- Belegsuche im Taskarbeitsbaum: rekursive Suche nach „429" in system/logs → 0 Treffer; in system/data → 0 Treffer.
+- Live-Vergleich (file_info, unverändert ggü. Lauf 8): /Users/lukas/services/bach/system/logs 32 Einträge, mtime 2026-10-05 23:48:06; /Users/lukas/services/bach/system/data 44 Einträge, mtime 2026-10-27 11:28:45 (keine Bewegung seit Lauf 8); /Users/lukas/.bach/operator-checkpoints 150 Einträge, mtime 2026-10-22 18:12:03; operator-checkpoints/cloud-queue-2431 weiterhin nicht vorhanden.
+- Statische Verifikation backend_errors.py (system/hub/_services/llm/backend_errors.py, 242 Zeilen) ggü. Z210–214: parse_retry_after-Anwendung Z136–138; 429-Eligibility Z147–149 (ollama/rate_limited, openrouter/http_error); Retry-Kurve Z170–171 (Basis 60 s bei 429, 60·2^retries → 60/120/240 s, inkl. Retry-After-Maximum); max 3 Retries Z163 (0 <= retries < 3); Budget 900 s Z172 (waited_seconds + delay <= 900). Implementierung deckt sich mit den zitierten Stellen, erzeugt aber keinen Beleg für einen tatsächlich durchlaufenen Zyklus.
+- Syntaxprüfung: compileall für backend_errors.py einmal versucht, Werkzeugausführung wurde nicht bestätigt; keine bestätigte compileall-Prüfung dokumentiert.
+- Befund: kein natürlicher 429-Zyklusbeleg (0 Treffer, keine Log-/Data-Bewegung seit Lauf 8, kein Checkpoint cloud-queue-2431).
+- Blocker NEU dokumentiert (wie Lauf 8, Z232–234): scope_not_recorded — kein aufgezeichneter natürlicher 429-Zyklus im Prüfzeitraum vorhanden.
+- Status: WIP auf Branch bach-task/2431 (kein PR); Task #2431 bleibt offen, keine Annahme. Prüfbasis wie Z238 (task_version=5d34a44f1fbd80f6dc59dfb60d4450cc880dcd2b3776af14d300a1c6ac184f67).
