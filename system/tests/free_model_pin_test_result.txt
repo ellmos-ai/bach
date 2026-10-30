@@ -217,3 +217,26 @@ NACHTRAG 9 (Fortsetzungs-Session 2, Werkzeugrunden 8-12/360)
   im Worktree), 2) Ergebnis hier als Nachtrag 10 protokollieren, 3) bei
   PASSED finish_task(2563, is_wip=false) und submit_result(complete=true),
   4) bei FAIL minimale Korrektur und erneut testen.
+
+NACHTRAG 10 (Fortsetzungslauf, Worker, Runde 12-14) - KEIN TESTNACHWEIS
+- Kein neuer pytest-Versuch in diesem Lauf: die Sackgasse ist 5x belegt
+  (siehe Nachträge 5-9). Statt einer sechsten Wiederholung wurde nur der
+  Zustand belegt.
+- Wirkungspruefung: list_directory(system/tests) im Worktree
+  /Users/lukas/services/bach-worktrees/task-2563 erfolgreich. Enthalten sind
+  test_free_model_pin.py und diese Ergebnisdatei; es fehlt weiterhin jedes
+  __pycache__ (auch kein .pytest_cache). Damit ist erneut belegt: es gab
+  keine reale Python-Ausfuehrung, also auch kein PASSED/FAIL.
+- Codeaenderung in diesem Lauf: keine. free_model_pin.py und
+  test_free_model_pin.py sind unveraendert; diese Datei ist die einzige
+  Aenderung und wird als WIP gesichert.
+- Blockade unveraendert: der Werkzeugausfuehrer bestaetigt keine
+  execute_command-Aufrufe ("Werkzeugausfuehrung nicht bestaetigt; Wirkung
+  unbekannt") und weist run_pytest_wrapper.py mit
+  "BLOCKIERT: Pruefargumente oder Pruefpfaede sind nicht zugelassen" ab.
+  Die Ursache liegt vor der Python-Ausfuehrung, nicht in Testcode,
+  Importpfad (hub._services.llm.*), Timeout oder pytest.ini.
+- Restarbeit unveraendert: genau 1 Operator-Lauf
+  (python -m pytest -q -- system/tests/test_free_model_pin.py im Worktree),
+  Ergebnis hier als Nachtrag 11, danach bei PASSED finish_task(2563,
+  is_wip=false) + submit_result(complete=true).
