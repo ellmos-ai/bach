@@ -16,7 +16,7 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
-from bach_api import _TaskProxy
+from system.bach_api import _TaskProxy
 from hub.task import TaskHandler
 
 

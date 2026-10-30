@@ -2681,3 +2681,7 @@ Beispiele:
   bach task list pending --assigned COPILOT
   bach task list all --unassigned
 """
+
+
+# Alias for backwards/test compatibility (#1694/#2879)
+TaskManager = TaskHandler

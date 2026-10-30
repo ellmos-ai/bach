@@ -5,7 +5,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .worker_tool_trace import TraceIdentity, digest_json, digest_text
+from .worker_tool_trace import (
+    TraceIdentity, digest_json, digest_text, DiagnosticToolText, validate_diagnostic,
+)
+from .worker_tool_errors import ToolErrorText
 
 
 class _TraceAckRejected(Exception):
@@ -25,15 +28,15 @@ class TracedToolOutcome:
     _ack_attempted: bool = field(default=False, init=False, repr=False, compare=False)
 
 
-def _invalidate(binding: Any) -> None:
+def _invalidate(binding: Any, reason: str) -> None:
     # Cleanup exceptions can carry private tool data; invalidate silently.
     try:
-        binding.invalidate()
+        binding.invalidate(reason)
     except Exception:  # noqa: BLE001,S110 - redacted best-effort revocation
         pass
 
 
-def _quarantine_then_invalidate(binding: Any) -> None:
+def _quarantine_then_invalidate(binding: Any, reason: str) -> None:
     """Quarantine uncertain effects before local revocation; never infer ACK."""
     # Do not log arbitrary quarantine details or claim a blocked ACK without one.
     try:
@@ -44,7 +47,7 @@ def _quarantine_then_invalidate(binding: Any) -> None:
         # quarantine ACK is not evidence that the canonical task is blocked.
         pass
     finally:
-        _invalidate(binding)
+        _invalidate(binding, reason)
 
 
 def _require_accepted(ack: Any) -> None:
@@ -56,6 +59,22 @@ def _result_digest(result: Any) -> str:
     if isinstance(result, str):
         return digest_text(result)
     return digest_json(result)
+
+
+def _result_diagnostic(name, result):
+    if type(result) is DiagnosticToolText:
+        return validate_diagnostic(result._trace_diagnostic)
+    if type(result) is ToolErrorText:
+        if (name == "execute_command" and result._code == "tool_policy_denied"
+                and result._effect_state == "not_applied"
+                and result._reason in {"invalid_arguments", "command_not_authorized", "mode_not_authorized"}):
+            return validate_diagnostic({"outcome_class": "policy_rejected",
+                "stage": "pre_dispatch_validation", "code": result._reason,
+                "sandbox_returncode": None})
+        if result._code == "bach_tool_effect_unconfirmed":
+            return validate_diagnostic({"outcome_class": "unconfirmed", "stage": "unknown",
+                "code": "execution_unconfirmed", "sandbox_returncode": None})
+    return None
 
 
 def execute_normal_tool(
@@ -82,31 +101,35 @@ def execute_normal_tool(
         if not isinstance(identity, TraceIdentity):
             raise _TraceAckRejected()
     except Exception:  # noqa: BLE001 - trace sink details stay private; dispatch is denied
-        _invalidate(binding)
+        _invalidate(binding, "trace_start_unavailable")
         return TracedToolOutcome(status="unknown", error_code="trace_start_unavailable")
 
     try:
         result = execute(name, args)
     except Exception:  # noqa: BLE001 - tool exception text may contain private arguments/results
         try:
-            _require_accepted(binding.trace_tool_phase(identity, "failed"))
+            _require_accepted(binding.trace_tool_phase(identity, "failed", diagnostic={
+                "outcome_class": "unconfirmed", "stage": "unknown",
+                "code": "tool_exception", "sandbox_returncode": None}))
         except Exception:  # noqa: BLE001 - trace sink exception details stay private
-            _quarantine_then_invalidate(binding)
+            _quarantine_then_invalidate(binding, "trace_sink_unavailable")
             return TracedToolOutcome(status="unknown", error_code="trace_sink_unavailable")
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "tool_failed")
         return TracedToolOutcome(status="failed", error_code="tool_failed")
 
     try:
         result_sha256 = _result_digest(result)
+        diagnostic = _result_diagnostic(name, result)
         receipt_id = uuid.uuid4().hex
         _require_accepted(binding.trace_tool_phase(
             identity,
             "returned",
             receipt_id=receipt_id,
             result_sha256=result_sha256,
+            **({"diagnostic": diagnostic} if diagnostic is not None else {}),
         ))
     except Exception:  # noqa: BLE001 - serializer/sink details stay private; outcome is unknown
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "trace_sink_unavailable")
         return TracedToolOutcome(status="unknown", error_code="trace_sink_unavailable")
 
     return TracedToolOutcome(
@@ -142,7 +165,7 @@ def acknowledge_normal_tool_result(binding: Any, outcome: TracedToolOutcome) -> 
     except Exception:  # noqa: BLE001 - ACK sink details stay private; outcome is unknown
         outcome.status = "unknown"
         outcome.result = None
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "tool_ack_unconfirmed")
         return False
 
     outcome.status = "acknowledged"
@@ -172,5 +195,5 @@ def abandon_normal_tool_result(binding: Any, outcome: TracedToolOutcome) -> bool
         outcome.status = "unknown"
         outcome.error_code = "response_abandoned"
         outcome.result = None
-        _quarantine_then_invalidate(binding)
+        _quarantine_then_invalidate(binding, "response_abandoned")
     return True

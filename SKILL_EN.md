@@ -1,10 +1,10 @@
 ---
 name: bach
-version: 3.9.1
+version: 3.10.0
 type: skill
 author: BACH Team
 created: 2025-12-01
-updated: 2026-03-12
+updated: 2026-10-29
 anthropic_compatible: true
 
 description: >
@@ -23,6 +23,56 @@ description: >
 # Version check: bach skills version bach
 
 # Welcome to Bach
+
+---
+
+# WORK OPEN TASKS AS AN AGENT (entry point for Claude, Codex, Kimi, Gemini)
+
+> **New since v3.10.0 (2026-10-25).** If your assignment reads "read the SKILL.md and work off open tasks", **this section applies first**. Everything else in this file is reference and is read only as needed. Native CLI: `bach task next|take|renew|submit|return|block` (sections 2, 3, 5).
+> Extended, copyable version: `Desktop\OCEAN\EINWEISUNG-EXTERNE-WORKER.md` (Lukas' OneDrive, not in the repo). Lease contract: `docs/architecture/TASKDB-SALT-LEASE-VERTRAG-v1.md`, clients: `docs/architecture/TASKDB-SALT-LEASE-CLIENTS-v1.md`. Local worker harness (Buddha): `docs/architecture/LOKALER-WORKER-HARNESS.md` (PR #520).
+
+**Flow in one sentence:** boot → pick a task → **lease it, then work** → own worktree → tests → PR → submit the result → next task. Without an explicit stop instruction from Lukas you do not stop.
+
+### 1. Boot and mode
+- Access the Mac Studio via the provided SSH access; do not set up your own credentials. Project under `$BACH_ROOT` (on the Mac Studio `~/services/bach`), Python from its venv. Read `AGENTS.md` and the instructions of the sub-project you work in.
+- **Mode B (mixed)** is the normal case for agents who contribute actively. **Mode A (library)** is enough if you only work on tasks and do not use BACH as a session: the lease path below runs via the lead service and needs no session start. Mode C (session) only on explicit request.
+- Before your first task, read the current plan `Desktop\OCEAN\AKTUELLER-PLAN.md` and `MODUL-ZUORDNUNG.md` (build locations).
+
+### 2. Find free tasks
+- **Native (CLI):** `bach task next` shows takeable tasks (highest priority first, without active lease, max. 10) and ends with `Uebernahme: bach task take <id> --by <user>` (German CLI output). SDK path: `TaskLeaseClient.task_candidates(limit=100, offset=…)` (read all pages), then `task_snapshot(task_id)` for the full description. `bach task list` shows the same tasks for viewing only.
+- **Selection rules:**
+  1. Only tasks whose dependencies are met, without a foreign active lease, and for which your tools suffice.
+  2. **Highest priority first** (P0 before P1 before P2). At equal priority, take what matches the agenda focus first (as of 2026-10-25: grant planner, agent templates/control, running & living, GUI rework, worker reliability; authoritative is `AKTUELLER-PLAN.md`).
+  3. **No `OLLAMA` tasks.** That is the background queue of the local workers (Buddha, Ollama Cloud, OpenRouter). Tasks for `USER`/`HUMAN`/`LUKAS` and tasks reserved by others also stay put. `BACH` means jointly workable. Do not invent additional slot duties.
+  4. Review and verification tasks from other authors are explicitly suitable.
+  5. If a task hinges on an open user decision or does not fit your capabilities: ask or record the reason (task note) and take the next one. Never change rules or protective gates just to be able to take a task.
+
+### 3. Take over before you work
+```
+bach task take <id> --by <agent>@<host>          # success: "...uebernommen..." + fence + deadline; note lease ID/fence
+bach task renew <id> --by <user> --fence <int>   # extend in time; on fence change stop write actions
+bach task submit <id> --by <user> --fence <int> --result "<result text>"
+bach task return <id> --by <user> --fence <int>  # release, status back to pending
+bach task block <id> --lease-id --by <user> --fence <int> [--note "<text>"]  # outcome=blocked
+```
+- Without `--lease-id`, `bach task block` only blocks the task status (multi-ID), without a lease. `--by <user>` is automatically completed to `<user>@<host>`; the SDK path (task_snapshot, acquire, renew) remains TaskLeaseClient.
+- Worker ID **`<agent>@<host>`**, own request ID and generation, never shared with another worker. Start only after a confirmed grant.
+- If `renew` is denied, the lease has expired or the fence has changed: **stop all write actions for this task.** After confirmed content changes, update the stored task version.
+- **Do not use:** `bach task claim` (older claim without fence/lease ID). `~/compute/luna-gui/task_tool.py` is considered **deprecated** (claim only sets `assigned_to`, no lease) — native counterparts now are `bach task take|renew|submit|return|block`. Neither old path protects against duplicate work.
+- Read binding signatures from `system/hub/_services/task_lease_client.py` or `bach task --help`, not from this example.
+
+### 4. Work
+- **Own worktree per task** from `origin/main`: `git worktree add ~/services/bach-worktrees/<branch> -b <branch> origin/main`. Branch name `<agent>/<task>-<short>-<date>`. The main checkout `~/services/bach` is occupied (foreign, uncommitted changes): do not work, measure, or build there.
+- **Build location:** new domain logic belongs into the matching Ocean module repo per `MODUL-ZUORDNUNG.md`, not into the BACH core.
+- Check the result against the task's acceptance criteria. Run tests of the changed areas and claim only what you can prove. German end-user texts with real umlauts.
+- Before the commit: secrets scan, read the diff, commit only your own files (no bulk commit).
+- Push the branch, **open a PR against `main`** and note it in the task. Report commit, push, PR, merge, deploy, and domain acceptance separately. A branch is not a delivered state.
+
+### 5. Submit
+- **Done:** `bach task submit <id> --by <user> --fence <int> --result "<text>"` (SDK path: `client.submit_result(task_id, lease_id=…, fence=…, task_version=…, generation="<new generation>", result="<text>")`). `result` is a concrete text with **at most 3000 characters** (criteria reached, changes, PR link, commit SHA, real test results, limits); a bare completion note ("done") is rejected. Submitting sets the task to `review` and frees the lease. Afterwards read `task_result_snapshot(task_id)` and check result ID/hash; a chat text alone is not a submission.
+- **Partial state or blockage:** push the WIP branch, then `bach task return <id> --by <user> --fence <int>` (status back to pending) or `bach task block <id> --lease-id <uuid> --by <user> --fence <int> [--note "<branch, SHA, next step>"]` (outcome=blocked); SDK path: `client.release(task_id, lease_id=…, fence=…, outcome="return" | "blocked", note="…")`. No blanket `done`, no artificially extended lease while waiting for humans. (`complete=false` exists only in the task tool of the local Buddha run, see harness document, not in the SDK.)
+- Then **immediately the next task** (step 2). If none is takeable right now: report evidenced reasons, wait briefly, check again. Do not end your assignment yourself.
+- Short report per task: task ID, work, evidence, commit/remote SHA, PR, read-back task/result/lease state. A review of your own work is to be marked as not independent.
 
 ---
 

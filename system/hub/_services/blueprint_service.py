@@ -32,6 +32,16 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 ALLOWED_KINDS = {"agent", "role", "skill", "workflow", "service", "contractus"}
 VALID_BLUEPRINT_KINDS = ALLOWED_KINDS
 
+_TASKMASTER_TEMPLATE_SKILLS = {
+    "taskmaster-maintainer": ["docs-analysis", "tidy-up", "folder-organization"],
+    "taskmaster-operator": ["operator", "orchestrator", "budgetierung"],
+}
+_TASKMASTER_LEGACY_SKILLS = {
+    "taskmaster-maintainer": ["dedup", "project-docs", "maintenance"],
+    "taskmaster-operator": ["scheduling", "budgeting", "review"],
+}
+
+
 CONTRACTUS_PROJECTION_VERSION = "bach.contractus-projection.v1"
 CONTRACTUS_MODES = frozenset({"casualis", "usus", "impetus_causa", "impetus_temporal"})
 CONTRACTUS_ANIMUS_TYPES = frozenset({"api", "cli", "subscription", "local"})
@@ -392,6 +402,51 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
             1, 1, json.dumps({"profile": "full_dev_guarded", "tool_whitelist": ["read_files", "write_files", "execute_command"]}),
             "agent", "", 1, now, now
         ),
+        # Native Taskmaster roles (Task2325): templates only, never materialize/start.
+        (
+            "taskmaster-maintainer",
+            "Taskmaster · Maintainer",
+            "Hält freigegebene Projekt- und Dokumentationsbestände geordnet.",
+            "taskmaster-maintainer",
+            ("Du bist der Taskmaster-Maintainer. Prüfe zuerst Projektregeln, Freigaben "
+            "und Locks. Erkenne Duplikate und pflege freigegebene Projekt- und "
+            "Dokumentationsbestände mit dedup, project-docs und maintenance. "
+            "Erhalte Quellen, fachliche Identitäten, Revisionen und fremde Arbeit. "
+            "Löschen, Verschieben und Änderungen benötigen die dafür geltende "
+            "Freigabe und einen nachvollziehbaren Nachweis. Melde offene Punkte; "
+            "starte keine Agenten und übernimm keine fremden Claims."),
+            json.dumps(_TASKMASTER_TEMPLATE_SKILLS["taskmaster-maintainer"]),
+            "api",
+            json.dumps({"max_turns": 20, "cooldown_seconds": 30,
+                        "task_types": ["maintenance"]}),
+            "casualis",
+            1, 0, json.dumps({"profile": "fail_closed_standard",
+                             "tool_whitelist": ["read_files", "search_content"]}),
+            "agent", "", 1, now, now
+        ),
+        (
+            "taskmaster-operator",
+            "Taskmaster · Operator",
+            "Koordiniert Aufgaben, Budgets, Reihenfolge und Abnahme.",
+            "taskmaster-operator",
+            ("Du bist der Taskmaster-Operator. Koordiniere Aufgaben, Budgets, "
+            "Reihenfolge und Abnahme mit scheduling, budgeting und review. "
+            "Nutze vorhandene native Aufgaben-, Lease- und Freigabeverträge; "
+            "führe keine eigene Claimqueue. Beachte Abhängigkeiten, Locks und "
+            "Modellbindungen. Übergib Ausführung an zuständige Rollen und trenne "
+            "Ergebnis, Prüfung und Abnahme. Starte keine Agenten ohne ausdrückliche "
+            "Freigabe und erteile keine Abnahme ohne aktuellen Nachweis. "
+            "Du ersetzt weder coding-agent noch taskmaster-writer oder "
+            "taskmaster-solver."),
+            json.dumps(_TASKMASTER_TEMPLATE_SKILLS["taskmaster-operator"]),
+            "api",
+            json.dumps({"max_turns": 20, "cooldown_seconds": 30,
+                        "task_types": ["routing", "triage", "audit"]}),
+            "casualis",
+            1, 0, json.dumps({"profile": "fail_closed_standard",
+                             "tool_whitelist": ["read_files", "search_content"]}),
+            "agent", "", 1, now, now
+        ),
         # ROLES (GUX-015, GUX-021, GUX-025)
         (
             "role_lawchecker",
@@ -500,6 +555,92 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+
+def migrate_taskmaster_skill_bindings(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
+    """CAS-migrate only the two unmaterialized legacy Taskmaster system seeds.
+
+    Callers select existing revisions, never replacement skills or permissions.
+    Ordinary system-template saves remain forbidden.
+    """
+    if conn.in_transaction:
+        raise RuntimeError("taskmaster_migration_requires_own_transaction")
+    if not isinstance(payload, dict) or set(payload) != {"expected"}:
+        raise ValueError("taskmaster_migration_payload_invalid")
+    expected = payload["expected"]
+    if not isinstance(expected, list) or len(expected) != 2:
+        raise ValueError("taskmaster_migration_pair_required")
+    pins = {}
+    for pin in expected:
+        if (not isinstance(pin, dict)
+                or set(pin) != {"id", "name", "expected_version", "content_sha256"}
+                or type(pin["id"]) is not int or pin["id"] <= 0
+                or type(pin["expected_version"]) is not int or pin["expected_version"] != 1
+                or not isinstance(pin["name"], str)
+                or pin["name"] not in _TASKMASTER_TEMPLATE_SKILLS
+                or not isinstance(pin["content_sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", pin["content_sha256"])
+                or pin["name"] in pins):
+            raise ValueError("taskmaster_migration_pin_invalid")
+        pins[pin["name"]] = pin
+    if set(pins) != set(_TASKMASTER_TEMPLATE_SKILLS):
+        raise ValueError("taskmaster_migration_pair_required")
+
+    from .skill_capabilities_service import validate_blueprint_skills
+    from .governance_binding import blueprint_sha256
+    skill_ids = [skill for skills in _TASKMASTER_TEMPLATE_SKILLS.values() for skill in skills]
+    validation = validate_blueprint_skills(skill_ids)
+    if (validation.get("valid") is not True
+            or {item["id"] for item in validation.get("matched", [])} != set(skill_ids)):
+        raise ValueError("taskmaster_canonical_skills_unavailable")
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        prepared = []
+        for name, pin in pins.items():
+            cursor = conn.execute("SELECT * FROM agent_blueprints WHERE id=? AND name=?",
+                                  (pin["id"], name))
+            raw = cursor.fetchone()
+            row = (dict(raw) if isinstance(raw, sqlite3.Row)
+                   else dict(zip((column[0] for column in cursor.description), raw))) if raw is not None else None
+            if (row is None or row.get("version") != pin["expected_version"]
+                    or row.get("is_template") != 1 or row.get("is_materialized") != 0
+                    or row.get("kind") != "agent" or row.get("persona_role") != name
+                    or row.get("animus_type") != "api"
+                    or any(row.get(field) is not None for field in
+                           ("provider", "provider_template_id", "provider_version"))
+                    or blueprint_sha256(row) != pin["content_sha256"]):
+                raise RuntimeError("taskmaster_template_revision_conflict")
+            try:
+                legacy = json.loads(row["skills_json"])
+            except (ValueError, TypeError):
+                raise RuntimeError("taskmaster_template_revision_conflict") from None
+            if legacy != _TASKMASTER_LEGACY_SKILLS[name]:
+                raise RuntimeError("taskmaster_template_revision_conflict")
+            prepared.append((name, pin, row["skills_json"]))
+
+        now = datetime.now(timezone.utc).isoformat()
+        migrated = []
+        for name, pin, previous_skills in prepared:
+            cursor = conn.execute(
+                "UPDATE agent_blueprints SET skills_json=?,version=version+1,updated_at=? "
+                "WHERE id=? AND name=? AND version=? AND is_template=1 "
+                "AND is_materialized=0 AND skills_json=?",
+                (json.dumps(_TASKMASTER_TEMPLATE_SKILLS[name]), now, pin["id"], name,
+                 pin["expected_version"], previous_skills))
+            if cursor.rowcount != 1:
+                raise RuntimeError("taskmaster_template_revision_conflict")
+            migrated.append({"id": pin["id"], "name": name, "version": 2,
+                             "skills": list(_TASKMASTER_TEMPLATE_SKILLS[name])})
+        conn.commit()
+        return {"success": True, "migration": "taskmaster-skills.v1",
+                "templates": migrated, "skills_validation": validation,
+                "materialized": False, "workers_started": False}
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+
+
 def get_available_skills(
     skills_root: Path | None = None,
     category: str | None = None,
@@ -509,11 +650,13 @@ def get_available_skills(
     from .skill_source_service import source_catalog, skill_roots, user_skills_root
     roots = [user_skills_root(), skills_root] if skills_root else skill_roots()
     catalog = source_catalog(roots)
-    skills_map = {key: {k: v for k, v in item.items() if k not in {"path", "root"}}
+    skills_map = {key: {**{k: v for k, v in item.items() if k not in {"path", "root"}},
+                        "executable": True, "selectable": True}
                   for key, item in catalog.items()}
     for item in FALLBACK_CORE_SKILLS:
         if item["id"] not in skills_map:
-            skills_map[item["id"]] = {**item, "evidence_type": "core_declared", "source_version": None}
+            skills_map[item["id"]] = {**item, "evidence_type": "core_declared", "source_version": None,
+                                       "executable": False, "selectable": False}
     result = list(skills_map.values())
     if category:
         result = [s for s in result if s.get("category") == category]
@@ -711,6 +854,12 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         from .governance_binding import resolve
         own = conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()
         resolve(conn, governance, blueprint_id=own[0] if own else None)
+
+    # Validate selected prompt skills against the same executable source used by materialization.
+    # Existing saved IDs are preserved; a user must explicitly remove an unavailable selection.
+    if skills:
+        from .skill_source_service import pin_skills
+        pin_skills(skills)
 
     # Serialize the revision check with its write across SQLite writers.
     conn.execute("BEGIN IMMEDIATE")

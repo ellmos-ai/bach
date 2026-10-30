@@ -43,7 +43,7 @@ BUILTIN: dict[str, dict] = {
         "max_turns": ["--max-turns", "{max_turns}"],
         "full_access": ["--dangerously-skip-permissions"],
         "restricted": ["--allowedTools", "{allowed_tools}"],
-        "plan": ["--plan-mode", "plan"],
+        "plan": ["--permission-mode", "plan"],
     },
     "codex": {
         "match": ["gpt-*", "o1*", "o3*", "codex*"],

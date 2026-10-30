@@ -22,6 +22,47 @@ def test_catalog_uses_real_version_and_excludes_archive(tmp_path):
     assert len(catalog["example"]["source_version"]) == 64
 
 
+def test_locale_resolver_prefers_requested_base_then_english_without_other_locale(tmp_path):
+    root = tmp_path / "skills"
+    variants = {
+        "example-de": ("de", "Deutsche Anleitung"),
+        "example-en": ("en", "English guide"),
+        "example-fr": ("fr", "Guide français"),
+    }
+    for directory, (locale, body) in variants.items():
+        path = root / "guides" / directory / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"---\nid: example\nname: Example\nlanguage: {locale}\nversion: 1.0\n---\n{body}\n",
+            encoding="utf-8",
+        )
+
+    german = source.source_catalog([root], requested_locale="de-DE")["example"]
+    assert german["resolved_locale"] == "de"
+    assert german["requested_locale"] == "de-de"
+    assert german["fallback_used"] is True
+    assert source.read_skill("example", roots=[root], requested_locale="de-DE")["content"].splitlines()[-1] == "Deutsche Anleitung"
+
+    english = source.source_catalog([root], requested_locale="en")['example']
+    assert english["resolved_locale"] == "en" and english["fallback_used"] is False
+
+    french = source.source_catalog([root], requested_locale="fr-FR")['example']
+    assert french["resolved_locale"] == "fr"
+
+    unresolved = source.source_catalog([root], requested_locale="es", include_unresolved=True)['example']
+    assert unresolved["missing_locale"] is False
+    assert unresolved["resolved_locale"] == "en"  # English is the only permitted fallback.
+
+    only_french = tmp_path / "only-french"
+    path = only_french / "guides" / "only-fr" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\nid: only\nlanguage: fr\n---\nBonjour\n", encoding="utf-8")
+    assert source.source_catalog([only_french], requested_locale="de") == {}
+    missing = source.source_catalog([only_french], requested_locale="de", include_unresolved=True)["only"]
+    assert missing["missing_locale"] is True
+    assert missing["available_locales"] == ["fr"]
+
+
 def test_skill_symbol_is_current_source_metadata_and_part_of_historical_version(tmp_path, monkeypatch):
     own = tmp_path / 'own'
     monkeypatch.setenv('BACH_USER_SKILLS_ROOT', str(own))

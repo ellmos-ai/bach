@@ -703,6 +703,33 @@ def test_startup_resumes_one_physical_always_on_and_preserves_empty_queue(startu
     assert slots.get_always_on_execution_slot()["status"] == "running"
 
 
+def test_buddha_start_warms_model_before_first_queue_claim(startup, monkeypatch):
+    control, _slots = startup
+    observed = []
+    claim_seen = threading.Event()
+
+    async def warmup(backend, model, *, slot_reader, stop_event):
+        observed.append(("warmup", backend, model, slot_reader()["id"], stop_event.is_set()))
+        return {"state": "loaded"}
+
+    def claim(*_args):
+        observed.append(("claim",))
+        control._WORKER_CONTROLS["buddha_always_on"].stop_event.set()
+        claim_seen.set()
+        return None
+
+    monkeypatch.setattr(control.runtime, "warm_buddha_ollama_model", warmup)
+    monkeypatch.setattr(control, "_acquire_worker_task", claim)
+    result = control._resume_always_on_at_startup(threading.Event())
+    assert result["state"] == "admitted" and result["retry"] is False
+    assert claim_seen.wait(5), "Buddha did not reach its first queue claim"
+    execution = control._WORKER_EXECUTIONS["buddha_always_on"]
+    execution.thread.join(3)
+    assert not execution.thread.is_alive()
+    assert observed[0][0] == "warmup" and observed[1] == ("claim",)
+    assert observed[0][3] == "buddha_always_on" and observed[0][4] is False
+
+
 @pytest.mark.parametrize("changes", [
     {"enabled": False}, {"status": "paused", "auto_paused": False},
     {"status": "stopping"}, {"status": "completed"}, {"status": "expired"},
@@ -1000,22 +1027,28 @@ def recovery(real_acquire_before_fixture, startup, monkeypatch, mem_db):
     return control, slots, client, execution, real_acquire_before_fixture, mem_db
 
 
-def test_crash_recovery_waits_for_real_held_lease_then_acquires_fresh_fence(recovery):
+def test_crash_recovery_releases_held_pin_and_claims_next_task(recovery):
     control, slots, client, execution, acquire, db = recovery
     db.execute("INSERT INTO tasks(id,title,status,category,priority) VALUES(42,'Crash recovery','pending','INBOX','P1')")
+    db.execute("INSERT INTO tasks(id,title,status,category,priority) VALUES(43,'Next claim','pending','INBOX','P1')")
     db.commit()
     old = client.acquire(42, worker_id="old-process@fixture", host="fixture")
-    assert acquire(execution, slots.get_always_on_execution_slot(), "new-process") is None
-    assert db.execute("SELECT claim_fence FROM tasks WHERE id=42").fetchone()[0] == old.fence
-    client.release(42, lease_id=old.lease_id, fence=old.fence, outcome="return", task_version=old.task_version)
     fresh = acquire(execution, slots.get_always_on_execution_slot(), "new-process")
     try:
-        assert fresh.task_id == 42
-        assert fresh._ack.fence > old.fence
+        assert fresh.task_id == 43
+        assert fresh._ack.fence > 0
         fresh.assert_active()
+        cleared = slots.get_always_on_execution_slot()
+        assert cleared["task_id"] is None
+        assert "Task #42 abgelehnt (fremde Lease)" in cleared["current_activity"]
         assert control._control_execution_receipt(execution)["completed_task_ids"] == []
+        held = db.execute("SELECT status,claim_fence FROM tasks WHERE id=42").fetchone()
+        assert held["status"] == "in_progress" and held["claim_fence"] == old.fence
     finally:
-        fresh.return_lease()
+        if fresh is not None:
+            fresh.return_lease()
+    assert db.execute("SELECT claim_fence FROM tasks WHERE id=42").fetchone()[0] == old.fence
+    client.release(42, lease_id=old.lease_id, fence=old.fence, outcome="return", task_version=old.task_version)
 
 
 def test_crash_recovery_preserves_real_creator_priority_window(recovery):

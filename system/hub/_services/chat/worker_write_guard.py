@@ -33,6 +33,23 @@ class WorkerWriteGuardError(RuntimeError):
     """A worker write or check lacks current task/worktree/lock authority."""
 
 
+class WorkerCheckPolicyRejected(WorkerWriteGuardError):
+    """Known pre-launch rejection: no check process has been dispatched."""
+
+    _MESSAGES = {
+        "check_cwd_required": "BLOCKIERT: cwd muss den bestätigten Task-Arbeitsbaum angeben.",
+        "check_command_required": "BLOCKIERT: Ein taskgebundener Prüfbefehl fehlt.",
+        "check_command_not_authorized": "BLOCKIERT: Nur taskgebundene Prüfbefehle, keine Shellverkettung. Beispiel: python -m pytest -q -- system/tests/test_datei.py mit cwd im Task-Arbeitsbaum.",
+        "check_arguments_not_authorized": "BLOCKIERT: Prüfargumente oder Prüfpfade sind nicht zugelassen. Beispiel: python -m pytest -q -- system/tests/test_datei.py mit cwd im Task-Arbeitsbaum.",
+    }
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        self.policy_reason = ("invalid_arguments" if reason in {
+            "check_cwd_required", "check_command_required"} else "command_not_authorized")
+        super().__init__(self._MESSAGES[reason])
+
+
 def is_write_tool(name: str) -> bool:
     return name in _WRITE_TOOLS
 
@@ -88,13 +105,23 @@ def authorize_safe_read(binding) -> int:
     return task_id
 
 
-def _paths(repo_root=None, worktrees_dir=None):
+def _paths(repo_root=None, worktrees_dir=None, *, task_id=None):
     from hub import worker_git
-    repo = _NATIVE_PATH(repo_root or worker_git.get_live_repo_root()).expanduser().resolve(strict=True)
     root = _NATIVE_PATH(worktrees_dir or worker_git.get_worktrees_dir()).expanduser()
     root = _NATIVE_PATH(os.path.abspath(root))
     if root.is_symlink():
         raise WorkerWriteGuardError("Worktree-Verzeichnis ist ein Link")
+    if task_id is None:
+        repo_path = repo_root or worker_git.get_live_repo_root()
+    else:
+        tid = _task_id(task_id)
+        target = root / f"task-{tid}"
+        _, trusted_repo, _ = worker_git._resolve_task_source(
+            tid, require_current=(not target.exists() and repo_root is None))
+        if repo_root is not None and _NATIVE_PATH(repo_root).expanduser().resolve(strict=True) != trusted_repo:
+            raise WorkerWriteGuardError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
+        repo_path = trusted_repo
+    repo = _NATIVE_PATH(repo_path).expanduser().resolve(strict=True)
     return repo, root
 
 
@@ -147,7 +174,8 @@ def _registered_tree(repo: Path, worktrees_root: Path, task_id: int) -> Path:
             found = True
             break
     if not found:
-        raise WorkerWriteGuardError("Task-Arbeitsbaum ist in Git nicht exakt registriert")
+        raise WorkerWriteGuardError(
+            "Task-Arbeitsbaum ist nicht im aktuell vertrauenswürdigen Repo registriert; Altbindung prüfen, keine automatische Migration")
     top = _NATIVE_PATH(_run_readonly(["git", "rev-parse", "--show-toplevel"], target_real).strip()).resolve(strict=True)
     if top != target_real:
         raise WorkerWriteGuardError("Git-Root weicht vom Task-Arbeitsbaum ab")
@@ -179,12 +207,24 @@ def _scanner_path() -> Path:
     return scanner.resolve(strict=True)
 
 
-def _scan_locks(path: Path, *, main_repo=False) -> dict:
+def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = None) -> dict:
     scanner = _scanner_path()
+    argv = [sys.executable, str(scanner), "--check-dir", str(path), "--json"]
+    anchor_identity = None
+    if creation_anchor is not None:
+        if main_repo or path.exists() or path.is_symlink() or creation_anchor == path or creation_anchor not in path.parents:
+            raise WorkerWriteGuardError("Erstellungsprüfung ist nicht an ein fehlendes Ziel gebunden")
+        if creation_anchor.resolve(strict=True) != creation_anchor or creation_anchor.is_symlink():
+            raise WorkerWriteGuardError("Erstellungsanker ist kein physisches Verzeichnis")
+        info = creation_anchor.lstat()
+        if not stat.S_ISDIR(info.st_mode):
+            raise WorkerWriteGuardError("Erstellungsanker ist kein Verzeichnis")
+        anchor_identity = {"dev": info.st_dev, "ino": info.st_ino, "mode": info.st_mode}
+        argv = [sys.executable, str(scanner), "--check-create-dir", str(path),
+                "--creation-anchor", str(creation_anchor), "--json"]
     try:
         result = _RUN(
-            [sys.executable, str(scanner), "--check-dir", str(path), "--json"],
-            cwd=str(path if path.is_dir() else path.parent), shell=False,
+            argv, cwd=str(creation_anchor or (path if path.is_dir() else path.parent)), shell=False,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             stdin=subprocess.DEVNULL, timeout=15,
         )
@@ -199,6 +239,27 @@ def _scan_locks(path: Path, *, main_repo=False) -> dict:
         raise WorkerWriteGuardError("Twin-Sperrstatus ist unbekannt")
     if main_repo and payload.get("twin_status") != "ok":
         raise WorkerWriteGuardError("Kanonischer BACH-Twin wurde nicht bestätigt")
+    if creation_anchor is not None:
+        info = creation_anchor.lstat()
+        after = {"dev": info.st_dev, "ino": info.st_ino, "mode": info.st_mode}
+        if (result.returncode != 0 or payload.get("checked") != str(path)
+                or payload.get("check_mode") != "check-create-dir-v1"
+                or payload.get("creation_anchor") != str(creation_anchor)
+                or payload.get("creation_anchor_identity") != anchor_identity or after != anchor_identity
+                or payload.get("missing_suffix") != list(path.relative_to(creation_anchor).parts)
+                or payload.get("target_exists") is not False
+                or payload.get("target_descendants_state") != "absent-confirmed"
+                or payload.get("descendants_complete") is not None
+                or payload.get("twins_descendants_complete") is not True
+                or payload.get("checks_complete") is not True
+                or path.exists() or path.is_symlink()
+                or creation_anchor.resolve(strict=True) != creation_anchor):
+            raise WorkerWriteGuardError("Typisierter Erstellungsnachweis fehlt oder ist veraltet")
+    elif ("descendants_complete" in payload
+          and payload.get("descendants_complete") is not True):
+        raise WorkerWriteGuardError("Sperrscan ist unvollständig")
+    if payload.get("hook_guards") != []:
+        raise WorkerWriteGuardError("Sperrscan ist unvollständig oder ein Hook-Guard blockiert")
     locks = payload.get("locks")
     if not isinstance(locks, list) or locks:
         raise WorkerWriteGuardError("Fremde oder unbekannte Projektsperre blockiert")
@@ -228,17 +289,45 @@ def _nearest_existing_directory(path: Path) -> Path:
 
 def _fresh_locks(repo: Path, worktrees_root: Path, target: Path | None,
                  paths: Iterable[Path] = ()) -> None:
-    _scan_locks(repo, main_repo=True)
-    scan_dirs = [_nearest_existing_directory(worktrees_root)]
+    from hub import worker_git
+    canonical = worker_git.get_live_repo_root().resolve(strict=True)
+    # The canonical service always retains its full physical twin check.
+    _scan_locks(canonical, main_repo=True)
     if target is not None:
-        scan_dirs.append(_nearest_existing_directory(target))
-    scan_dirs.extend(_nearest_existing_directory(path) for path in paths)
+        if target.parent != worktrees_root or not target.name.startswith("task-"):
+            raise WorkerWriteGuardError("Sperrprüfung ist nicht an den Taskpfad gebunden")
+        _task_id(target.name[len("task-"):])
+        if target.is_symlink() or target.resolve(strict=False) != target:
+            raise WorkerWriteGuardError("Task-Sperrprüfungspfad enthält einen Link")
+    if repo != canonical:
+        if target is None or target.parent != worktrees_root or not target.name.startswith("task-"):
+            raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht taskgebunden")
+        try:
+            tid = _task_id(target.name[len("task-"):])
+            _, source, _ = worker_git._resolve_task_source(tid, require_current=False)
+            if source != repo or repo.resolve(strict=True) != repo:
+                raise RuntimeError("Sourcepfad weicht ab")
+        except (RuntimeError, OSError, ValueError) as exc:
+            raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht exakt gepinnt") from exc
+        # Only this independently revalidated SHA-addressed source may have no twin.
+        _scan_locks(repo)
+    # Cleanup without a concrete task remains conservative. A bound task checks
+    # its exact subtree and logical ancestors through the lock owner, never all
+    # siblings. Missing targets need a distinct, positively attested create mode.
+    scan_dirs = ([_nearest_existing_directory(worktrees_root)] if target is None else [target])
+    for path in paths:
+        if target is None or (path != target and target not in path.parents):
+            raise WorkerWriteGuardError("Zusätzlicher Sperrpfad liegt außerhalb des Task-Arbeitsbaums")
+        scan_dirs.append(path if path.is_dir() else path.parent)
     seen = set()
     for directory in scan_dirs:
         if directory == repo or directory in seen:
             continue
         seen.add(directory)
-        _scan_locks(directory)
+        if directory.is_dir():
+            _scan_locks(directory)
+        else:
+            _scan_locks(directory, creation_anchor=_nearest_existing_directory(directory))
 
 
 _SCOPE_SCHEMA = "bach.task-scope-snapshot.v1"
@@ -302,8 +391,10 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     except (WorkerWriteGuardError, TypeError, ValueError):
         return _scope_unavailable("invalid_task_id")
     try:
-        repo, root = _paths(repo_root, worktrees_dir)
-    except (WorkerWriteGuardError, OSError, ValueError):
+        from hub._services.chat.worker_repo_registry import resolve_task_repository
+        task_repo = resolve_task_repository(tid)
+        repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
+    except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("paths_unavailable")
     try:
         target = _registered_tree(repo, root, tid)
@@ -315,10 +406,10 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         return _scope_unavailable("lock_unavailable")
     from hub import worker_git
     try:
-        origin = worker_git._canonical_bach_origin(
-            _scope_text(["remote", "get-url", "origin"], repo))
-        if worker_git._canonical_bach_origin(
-                _scope_text(["remote", "get-url", "origin"], target)) != origin:
+        origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], repo), task_repo.repository)
+        if worker_git._canonical_public_origin(
+                _scope_text(["remote", "get-url", "origin"], target), task_repo.repository) != origin:
             raise WorkerWriteGuardError("Git-Origin weicht ab")
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("origin_unavailable")
@@ -333,25 +424,10 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
             if len(values) != 1:
                 raise WorkerWriteGuardError("Mehrdeutige öffentliche Quellbindung")
             proof = json.loads(values[0])
-            if (not isinstance(proof, dict)
-                    or proof.get("schema") != "bach.task-public-source.v1"
-                    or proof.get("task_id") != str(tid)
-                    or proof.get("repository") != "ellmos-ai/bach"
-                    or proof.get("origin") != origin
-                    or proof.get("source_ref") != "refs/heads/main"
-                    or not isinstance(proof.get("source_sha"), str)
-                    or not re.fullmatch(r"[0-9a-f]{40}", proof["source_sha"])
-                    or proof.get("visibility") != "public"
-                    or proof.get("private") is not False
-                    or proof.get("metadata_verified") is not True
-                    or proof.get("ref_verified") is not True
-                    or not isinstance(proof.get("verified_at"), str)
-                    or not proof["verified_at"]):
-                raise WorkerWriteGuardError("Öffentliche Quellbindung ist ungültig")
-            if _scope_git(["merge-base", "--is-ancestor", proof["source_sha"], "HEAD"],
-                          target, allowed=(0, 1))[0] != 0:
-                raise WorkerWriteGuardError("Task-HEAD stammt nicht vom öffentlichen Pin ab")
-            source_pin = {key: proof[key] for key in
+            validated = worker_git.read_task_public_source_registration(repo, target, tid)
+            if proof != validated:
+                raise WorkerWriteGuardError("Öffentliche Quellbindung änderte sich während des Scope-Readbacks")
+            source_pin = {name: validated[name] for name in
                           ("schema", "source_ref", "source_sha", "verified_at")}
     except (WorkerWriteGuardError, RuntimeError, UnicodeError, KeyError, ValueError):
         return _scope_unavailable("source_pin_invalid")
@@ -426,14 +502,14 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         )
         if (final_stage != stage or final[:5] != (status, index, branch, head, tree)
                 or final[5] != (code, raw_pin)
-                or worker_git._canonical_bach_origin(final[6]) != origin
-                or worker_git._canonical_bach_origin(final[7]) != origin):
+                or worker_git._canonical_public_origin(final[6], task_repo.repository) != origin
+                or worker_git._canonical_public_origin(final[7], task_repo.repository) != origin):
             return _scope_unavailable("git_changed")
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("git_unavailable")
     snapshot = {
         "schema": _SCOPE_SCHEMA, "availability": "available", "task_id": tid,
-        "repository": "ellmos-ai/bach", "origin": origin, "branch": branch,
+        "repository": task_repo.repository, "origin": origin, "branch": branch,
         "head_oid": head, "tree_oid": tree,
         "repo_path_sha256": hashlib.sha256(str(repo).encode("utf-8")).hexdigest(),
         "worktree_path_sha256": hashlib.sha256(str(target).encode("utf-8")).hexdigest(),
@@ -452,6 +528,120 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         "status_sha256": snapshot["status_sha256"],
         "index_sha256": snapshot["index_sha256"]})
     return snapshot
+
+
+_TASK_START_SCOPE_SCHEMA = "bach.task-start-scope.v1"
+
+
+def _task_start_scope_unavailable(reason: str) -> dict:
+    return {"schema": _TASK_START_SCOPE_SCHEMA, "availability": "unavailable",
+            "reason": reason}
+
+
+def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=False,
+                              repo_root=None, worktrees_dir=None) -> dict:
+    """Authorize the registered task tree for a new worker run, including WIP.
+
+    This deliberately does not require a clean worktree and is never evidence
+    for a completed result. Final result capture continues to use
+    snapshot_task_scope(), which rejects dirty trees.
+    """
+    from hub._services.task_lease_client import LeaseError
+
+    if type(source_pin_required) is not bool:
+        return _task_start_scope_unavailable("invalid_source_capability")
+    try:
+        tid = _task_id(getattr(binding, "task_id", None))
+        from hub._services.chat.worker_repo_registry import resolve_task_repository
+        task_repo = resolve_task_repository(tid)
+        repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
+        target = authorize_start(binding, tid, repo_root=repo, worktrees_dir=root)
+        if task_root is not None and _NATIVE_PATH(task_root).resolve(strict=True) != target:
+            return _task_start_scope_unavailable("registration_unavailable")
+
+        from hub import worker_git
+        origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], repo), task_repo.repository)
+        target_origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], target), task_repo.repository)
+        if origin != task_repo.origin or target_origin != origin:
+            return _task_start_scope_unavailable("origin_unavailable")
+
+        branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
+        head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
+        if (branch != f"refs/heads/bach-task/{tid}"
+                or not _GIT_OID.fullmatch(head)):
+            return _task_start_scope_unavailable("registration_unavailable")
+
+        filter_code, _ = _scope_git(
+            ["config", "--get-regexp", r"^filter\..*\.(process|clean|smudge)$"],
+            target, allowed=(0, 1))
+        if filter_code == 0:
+            return _task_start_scope_unavailable("git_unavailable")
+        stage = _scope_stage(target)
+        if any(entry.startswith(b"160000 ") for entry in stage.split(b"\0")[:-1]):
+            return _task_start_scope_unavailable("submodule_scope_unsupported")
+
+        key = worker_git._public_source_config_key(tid)
+        pin_state = _scope_git(
+            ["config", "--local", "--get-all", key], target, allowed=(0, 1))
+        if pin_state[0] == 0:
+            # A valid prior code-source pin remains valid for a later read-only
+            # run. Its presence grants no write capability to that run.
+            values = pin_state[1].decode("utf-8", "strict").splitlines()
+            if len(values) != 1:
+                return _task_start_scope_unavailable("source_pin_invalid")
+            proof = json.loads(values[0])
+            validated = worker_git.read_task_public_source_registration(repo, target, tid)
+            if proof != validated:
+                return _task_start_scope_unavailable("git_changed")
+            source_pin = {name: validated[name] for name in
+                          ("schema", "source_ref", "source_sha", "verified_at")}
+        else:
+            if source_pin_required:
+                return _task_start_scope_unavailable("source_pin_invalid")
+            source_pin = None
+
+        common_raw = _scope_text(["rev-parse", "--git-common-dir"], target)
+        common = _NATIVE_PATH(common_raw)
+        common = (target / common).resolve(strict=True) if not common.is_absolute() else common.resolve(strict=True)
+        repo_common_raw = _scope_text(["rev-parse", "--git-common-dir"], repo)
+        repo_common = _NATIVE_PATH(repo_common_raw)
+        repo_common = ((repo / repo_common).resolve(strict=True) if not repo_common.is_absolute()
+                       else repo_common.resolve(strict=True))
+        if common != repo_common:
+            return _task_start_scope_unavailable("registration_unavailable")
+
+        final_filter_code, _ = _scope_git(
+            ["config", "--get-regexp", r"^filter\..*\.(process|clean|smudge)$"],
+            target, allowed=(0, 1))
+        final_pin_state = _scope_git(
+            ["config", "--local", "--get-all", key], target, allowed=(0, 1))
+        final_stage = _scope_stage(target)
+        final_branch = _scope_text(["symbolic-ref", "--quiet", "HEAD"], target)
+        final_head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
+        final_origin = worker_git._canonical_public_origin(
+            _scope_text(["remote", "get-url", "origin"], target), task_repo.repository)
+        if (final_filter_code != 1 or final_pin_state != pin_state
+                or final_stage != stage or final_branch != branch
+                or final_head != head or final_origin != origin
+                or _registered_tree(repo, root, tid) != target
+                or authorize_start(binding, tid, repo_root=repo, worktrees_dir=root) != target):
+            return _task_start_scope_unavailable("git_changed")
+    except LeaseError:
+        return _task_start_scope_unavailable("lease_unavailable")
+    except (WorkerWriteGuardError, RuntimeError, OSError, UnicodeError, KeyError, ValueError):
+        return _task_start_scope_unavailable("registration_unavailable")
+
+    return {
+        "schema": _TASK_START_SCOPE_SCHEMA,
+        "availability": "available",
+        "task_id": tid,
+        "repository": task_repo.repository,
+        "branch": branch,
+        "head_oid": head,
+        "source_pin": source_pin,
+    }
 
 
 
@@ -540,8 +730,9 @@ def review_source_root(binding, *, repo_root=None, worktrees_dir=None) -> Path:
             or result.get("result_revision") != grant.target_revision
             or result.get("scope", {}).get("availability") != "available"):
         raise WorkerWriteGuardError("Review-Leseziel passt nicht zur gebundenen Ergebnisrevision")
-    repo, root = _paths(repo_root, worktrees_dir)
-    return _registered_tree(repo, root, _task_id(grant.target_task_id))
+    target_tid = _task_id(grant.target_task_id)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=target_tid)
+    return _registered_tree(repo, root, target_tid)
 
 
 def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, worktrees_dir=None) -> TaskReadScope:
@@ -550,14 +741,13 @@ def authorize_task_read(binding, candidate, *, secret_check, repo_root=None, wor
         raise WorkerWriteGuardError("Vorhandene Secrets-Prüfung fehlt")
     tid = _task_id(getattr(binding, "task_id", None))
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
     grant = getattr(binding, "_review_grant", None)
+    source_tid = _task_id(grant.target_task_id) if grant is not None else tid
+    repo, root = _paths(repo_root, worktrees_dir, task_id=source_tid)
     if grant is not None:
         target = review_source_root(binding, repo_root=repo, worktrees_dir=root)
-        source_tid = _task_id(grant.target_task_id)
     else:
         target = _registered_tree(repo, root, tid)
-        source_tid = tid
     from hub import worker_git
     registration = worker_git.read_task_public_source_registration(repo, target, source_tid)
     requested = _task_relative_path(target, candidate)
@@ -699,7 +889,7 @@ def open_authorized_task_file(scope: TaskReadScope, path: Path):
 def authorize_start(binding, task_id, *, repo_root=None, worktrees_dir=None) -> Path:
     tid = _task_id(task_id)
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
     target = root / f"task-{tid}"
     _fresh_locks(repo, root, target)
     if target.exists():
@@ -740,7 +930,7 @@ def authorize_mutation(binding, task_id=None, *, paths: Iterable = (),
                        repo_root=None, worktrees_dir=None) -> tuple[Path, tuple[Path, ...]]:
     tid = _task_id(task_id if task_id is not None else binding.task_id)
     _fresh_lease(binding, tid)
-    repo, root = _paths(repo_root, worktrees_dir)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
     target = _registered_tree(repo, root, tid)
     checked = tuple(_safe_task_path(target, value) for value in paths)
     # Scan each source/target's nearest existing directory before parent mkdir.
@@ -1127,7 +1317,7 @@ def _prepare_typechecker(task_root, cwd, base, args, checked):
 
 
 def _worker_check_environment(task_root):
-    state = task_root / ".worker-check"
+    state = task_root / ".cache" / ".worker-check"
     paths = {
         "HOME": state / "home",
         "TMPDIR": state / "tmp",
@@ -1166,6 +1356,191 @@ def _worker_check_environment(task_root):
     return env, checked, state
 
 
+_WORKER_CHECK_DIRECTORY_KEYS = (
+    "HOME", "TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
+    "XDG_STATE_HOME", "PYTHONPYCACHEPREFIX", "RUFF_CACHE_DIR", "MYPY_CACHE_DIR",
+    "PYRIGHT_PYTHON_CACHE_DIR", "npm_config_cache", "PIP_CACHE_DIR",
+    "UV_CACHE_DIR", "PRE_COMMIT_HOME", "PYTEST_DEBUG_TEMPROOT",
+    "LOCALAPPDATA", "APPDATA", "USERPROFILE",
+)
+
+
+
+def _create_task_directory_windows(task_root: Path, candidate: Path) -> None:
+    """Walk and create through held directory handles, rejecting reparse points.
+
+    NtCreateFile's RootDirectory resolves a single child relative to its
+    actual parent handle. FILE_OPEN_REPARSE_POINT prevents following a child
+    junction, and omitting FILE_SHARE_DELETE holds every ancestor in place.
+    Existing ancestors are opened, never created outside the authorized root.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    root = _NATIVE_PATH(os.path.abspath(task_root))
+    target = _NATIVE_PATH(os.path.abspath(candidate))
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        raise WorkerWriteGuardError("Prüfverzeichnis liegt außerhalb des Task-Arbeitsbaums") from None
+    anchor = _NATIVE_PATH(root.anchor)
+    if not root.is_absolute() or not root.anchor:
+        raise WorkerWriteGuardError("Windows-Prüfverzeichnis hat keine sichere Wurzel")
+
+    class UnicodeString(ctypes.Structure):
+        _fields_ = [("Length", wintypes.USHORT), ("MaximumLength", wintypes.USHORT),
+                    ("Buffer", wintypes.LPWSTR)]
+
+    class ObjectAttributes(ctypes.Structure):
+        _fields_ = [("Length", wintypes.ULONG), ("RootDirectory", wintypes.HANDLE),
+                    ("ObjectName", ctypes.POINTER(UnicodeString)), ("Attributes", wintypes.ULONG),
+                    ("SecurityDescriptor", wintypes.LPVOID), ("SecurityQualityOfService", wintypes.LPVOID)]
+
+    class StatusValue(ctypes.Union):
+        _fields_ = [("Status", wintypes.LONG), ("Pointer", wintypes.LPVOID)]
+
+    class IoStatusBlock(ctypes.Structure):
+        _fields_ = [("Status", StatusValue), ("Information", ctypes.c_size_t)]
+
+    class AttributeTagInfo(ctypes.Structure):
+        _fields_ = [("FileAttributes", wintypes.DWORD), ("ReparseTag", wintypes.DWORD)]
+
+    handles = []
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        native = ctypes.WinDLL("ntdll")
+        kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                      wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel.CreateFileW.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        kernel.GetFileInformationByHandleEx.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                       wintypes.LPVOID, wintypes.DWORD]
+        kernel.GetFileInformationByHandleEx.restype = wintypes.BOOL
+        native.NtCreateFile.argtypes = [ctypes.POINTER(wintypes.HANDLE), wintypes.DWORD,
+                                       ctypes.POINTER(ObjectAttributes), ctypes.POINTER(IoStatusBlock),
+                                       wintypes.LPVOID, wintypes.ULONG, wintypes.ULONG, wintypes.ULONG,
+                                       wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
+        native.NtCreateFile.restype = wintypes.LONG
+
+        def checked_handle(handle):
+            handles.append(handle)
+            state = AttributeTagInfo()
+            if (not kernel.GetFileInformationByHandleEx(handle, 9, ctypes.byref(state), ctypes.sizeof(state))
+                    or not state.FileAttributes & 0x10 or state.FileAttributes & 0x400):
+                raise WorkerWriteGuardError("Windows-Prüfverzeichnis ist kein reparsefreier Ordner")
+            return handle
+
+        # OPEN_EXISTING; BACKUP_SEMANTICS | OPEN_REPARSE_POINT. Read/write
+        # sharing is permitted, delete/rename sharing deliberately is not.
+        handle = kernel.CreateFileW(str(anchor), 0x00100081, 0x3, None, 3, 0x02200000, None)
+        if handle in (None, ctypes.c_void_p(-1).value):
+            raise WorkerWriteGuardError("Windows-Verzeichniswurzel konnte nicht sicher geöffnet werden")
+        handle = checked_handle(handle)
+        existing = root.relative_to(anchor).parts
+        parts = (*existing, *relative.parts)
+        for index, part in enumerate(parts):
+            if (part in {"", ".", ".."} or any(char in part for char in "\\/:\x00")
+                    or part.rstrip(" .") != part):
+                raise WorkerWriteGuardError("Windows-Prüfverzeichniskomponente ist ungültig")
+            encoded_length = len(part.encode("utf-16-le"))
+            if encoded_length > 65532:
+                raise WorkerWriteGuardError("Windows-Prüfverzeichniskomponente ist zu lang")
+            buffer = ctypes.create_unicode_buffer(part, encoded_length // 2 + 1)
+            value = UnicodeString(encoded_length, encoded_length + 2,
+                                  ctypes.cast(buffer, wintypes.LPWSTR))
+            attributes = ObjectAttributes(ctypes.sizeof(ObjectAttributes), handle,
+                                          ctypes.pointer(value), 0x40, None, None)
+            child = wintypes.HANDLE()
+            status = IoStatusBlock()
+            # FILE_OPEN for the already-authorized root chain. FILE_OPEN_IF
+            # only for descendants of that root; DIRECTORY | SYNCHRONOUS_IO
+            # | OPEN_REPARSE_POINT ensures a directory handle without traversal.
+            disposition = 1 if index < len(existing) else 3
+            result = native.NtCreateFile(ctypes.byref(child), 0x00100081,
+                                         ctypes.byref(attributes), ctypes.byref(status), None,
+                                         0x10, 0x3, disposition, 0x00200021, None, 0)
+            if result != 0 or not child.value:
+                if child.value:
+                    kernel.CloseHandle(child)
+                raise WorkerWriteGuardError("Windows-Prüfverzeichnis konnte nicht relativ geöffnet werden")
+            handle = checked_handle(child)
+    except WorkerWriteGuardError:
+        raise
+    except Exception:
+        raise WorkerWriteGuardError("Sicheres Windows-Verzeichnisverfahren ist nicht verfügbar") from None
+    finally:
+        for handle in reversed(handles):
+            kernel.CloseHandle(handle)
+
+
+def _create_task_directory(task_root: Path, candidate: Path) -> None:
+    """Create one authorized task directory without following symlinks."""
+    root = _NATIVE_PATH(os.path.abspath(task_root))
+    target = _safe_task_path(root, candidate)
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        raise WorkerWriteGuardError("Prüfverzeichnis liegt außerhalb des Task-Arbeitsbaums") from None
+    if not relative.parts:
+        return
+    if os.name == "nt":
+        _create_task_directory_windows(root, target)
+        return
+
+    if (os.name == "posix" and hasattr(os, "O_NOFOLLOW")
+            and hasattr(os, "O_DIRECTORY")
+            and os.open in getattr(os, "supports_dir_fd", set())
+            and os.mkdir in getattr(os, "supports_dir_fd", set())):
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        descriptor = None
+        try:
+            descriptor = os.open(root, flags)
+            for part in relative.parts:
+                if part in {"", ".", ".."}:
+                    raise WorkerWriteGuardError("Prüfverzeichnis ist ungültig")
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+                next_descriptor = os.open(part, flags, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = next_descriptor
+        except WorkerWriteGuardError:
+            raise
+        except Exception:
+            raise WorkerWriteGuardError("Prüfverzeichnis konnte nicht symlinkfrei angelegt werden") from None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        return
+
+    raise WorkerWriteGuardError("Symlinkfreies Anlegen von Prüfverzeichnissen ist nicht verfügbar")
+
+
+def _create_worker_check_directories(task_root: Path, state_dir: Path, env: dict,
+                                     checked: Iterable[Path]) -> None:
+    """Materialize task-local environment directories after lease authorization."""
+    checked_paths = {_NATIVE_PATH(path) for path in checked}
+    directories = [state_dir]
+    for key in _WORKER_CHECK_DIRECTORY_KEYS:
+        value = env.get(key)
+        if isinstance(value, str) and value:
+            candidate = _NATIVE_PATH(value)
+            if candidate in checked_paths:
+                directories.append(candidate)
+    for name in ("pytest-temp", "pytest-cache"):
+        candidate = state_dir / name
+        if candidate in checked_paths:
+            directories.append(candidate)
+    seen = set()
+    for candidate in directories:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        _create_task_directory(task_root, candidate)
+
+
 def _prepare_bound_check_args(task_root, cwd, base, args, checked, state_dir):
     if base in {"python", "python3"}:
         if len(args) < 2 or args[0] != "-m" or args[1] not in _PYTHON_MODULES:
@@ -1190,9 +1565,130 @@ def _prepare_bound_check_args(task_root, cwd, base, args, checked, state_dir):
     return list(args)
 
 
+def _prepare_pytest_cache_run(binding, target, argv, checked):
+    """Give this authorized invocation its own checked pytest basetemp."""
+    if os.name == "nt" or len(argv) < 3 or argv[1:3] != ["-m", "pytest"]:
+        return None
+    import uuid
+    if sum(value == "--basetemp" or value.startswith("--basetemp=") for value in argv) != 1:
+        raise WorkerCheckPolicyRejected("check_arguments_not_authorized")
+    index = next((i for i, value in enumerate(argv) if value == "--basetemp"), None)
+    joined = next((i for i, value in enumerate(argv) if value.startswith("--basetemp=")), None)
+    if index is not None and index + 1 < len(argv):
+        basis = _NATIVE_PATH(argv[index + 1])
+    elif joined is not None:
+        basis = _NATIVE_PATH(argv[joined].partition("=")[2])
+    else:
+        raise WorkerWriteGuardError("Gebundene pytest-Cachebasis fehlt")
+    try:
+        basis.relative_to(target)
+    except ValueError:
+        raise WorkerWriteGuardError("pytest-Cachebasis liegt außerhalb der Task") from None
+    run = basis / ("run-" + uuid.uuid4().hex)
+    if index is not None:
+        argv[index + 1] = str(run)
+    else:
+        argv[joined] = "--basetemp=" + str(run)
+    checked.extend([basis, run])
+    return {"binding": binding, "task_id": binding.task_id,
+            "generation": binding._generation, "fence": binding._ack.fence,
+            "task_version": binding._snapshot["task_version"],
+            "target": target, "basis": basis, "run": run,
+            "argv": tuple(argv), "materialized": False}
+
+
+def _materialize_pytest_cache_run(owner):
+    if owner is None:
+        return
+    basis, run = owner["basis"], owner["run"]
+    _create_task_directory(owner["target"], basis)
+    if run.exists() or run.is_symlink():
+        raise WorkerWriteGuardError("pytest-Runpfad ist nicht exklusiv neu")
+    run.mkdir(mode=0o700)
+    def anchor(path):
+        info = path.stat()
+        if path.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+            raise WorkerWriteGuardError("pytest-Cacheanker ist nicht geschützt")
+        return (info.st_dev, info.st_ino, info.st_uid)
+    owner["target_anchor"] = anchor(owner["target"])
+    owner["basis_anchor"] = anchor(basis)
+    if list(run.iterdir()):
+        raise WorkerWriteGuardError("pytest-Runbaseline ist nicht leer")
+    owner["materialized"] = True
+
+
+def _cleanup_pytest_current_links(owner, result):
+    """Unlink only new convenience pointers in this terminal run; retain data."""
+    if owner is None:
+        return 0
+    binding, run, basis = owner["binding"], owner["run"], owner["basis"]
+    def verify_owner():
+        if (not owner["materialized"] or binding.task_id != owner["task_id"]
+                or binding._generation != owner["generation"] or binding._ack.fence != owner["fence"]):
+            raise WorkerWriteGuardError("pytest-Runowner ist nicht bestätigt")
+        for path, expected in [(owner["target"], owner["target_anchor"]), (basis, owner["basis_anchor"])]:
+            info = path.stat()
+            if (path.is_symlink() or path.resolve(strict=True) != path or info.st_mode & 0o022
+                    or (info.st_dev, info.st_ino, info.st_uid) != expected):
+                raise WorkerWriteGuardError("pytest-Cacheanker wurde verändert")
+        lease = binding._client.read(owner["task_id"])
+        if (lease.leased is not True or lease.fence != owner["fence"]
+                or lease.task_version != owner["task_version"]):
+            raise WorkerWriteGuardError("pytest-Cleanup besitzt nicht mehr seine Tasklease")
+        if run.is_symlink() or not run.is_dir() or run.parent != basis or run.stat().st_uid != os.getuid():
+            raise WorkerWriteGuardError("pytest-Runpfad ist nicht bestätigt")
+    verify_owner()
+    candidates = []
+    run_anchor = (run.stat().st_dev, run.stat().st_ino)
+    for path in run.iterdir():
+        if not path.is_symlink():
+            continue
+        raw = os.readlink(path)
+        raw_target = _NATIVE_PATH(raw) if _NATIVE_PATH(raw).is_absolute() else run / raw
+        resolved = path.resolve(strict=True)
+        prefix = path.name[:-len("current")] if path.name.endswith("current") else ""
+        if (not prefix or raw_target.parent != run or raw_target.is_symlink()
+                or raw_target.resolve(strict=True) != raw_target or resolved.parent != run
+                or not re.fullmatch(re.escape(prefix) + r"[0-9]+", resolved.name)
+                or not resolved.is_dir() or resolved.stat().st_uid != os.getuid()):
+            raise WorkerWriteGuardError("Fremder oder entweichender pytest-Pointer bleibt gesperrt")
+        info = path.lstat()
+        if info.st_uid != os.getuid():
+            raise WorkerWriteGuardError("pytest-Pointerowner ist unbekannt")
+        candidates.append((path, raw, info.st_dev, info.st_ino, info.st_mtime_ns, resolved,
+                           resolved.stat().st_dev, resolved.stat().st_ino))
+    if not candidates:
+        return 0
+    if (getattr(result, "cleanup_confirmed", None) is not True
+            or getattr(result, "watchdog_joined", None) is not True
+            or getattr(result, "cleanup_scope", None) != "owned_posix_process_group"):
+        raise WorkerWriteGuardError("Aktiver oder unbekannter pytest-Run darf nicht bereinigt werden")
+    verify_owner()
+    if (run.stat().st_dev, run.stat().st_ino) != run_anchor:
+        raise WorkerWriteGuardError("pytest-Rundirectory wurde ausgetauscht")
+    # All candidates are checked before any mutation; never delete target data.
+    for path, raw, dev, ino, mtime, resolved, target_dev, target_ino in candidates:
+        info = path.lstat()
+        if (not stat.S_ISLNK(info.st_mode) or (info.st_dev, info.st_ino, info.st_mtime_ns) != (dev, ino, mtime)
+                or os.readlink(path) != raw or path.resolve(strict=True) != resolved
+                or (resolved.stat().st_dev, resolved.stat().st_ino) != (target_dev, target_ino)):
+            raise WorkerWriteGuardError("pytest-Pointer wurde während der Prüfung verändert")
+    for path, raw, dev, ino, mtime, resolved, target_dev, target_ino in candidates:
+        verify_owner()
+        info = path.lstat()
+        if (not stat.S_ISLNK(info.st_mode) or (info.st_dev, info.st_ino, info.st_mtime_ns) != (dev, ino, mtime)
+                or os.readlink(path) != raw or path.resolve(strict=True) != resolved
+                or (resolved.stat().st_dev, resolved.stat().st_ino) != (target_dev, target_ino)):
+            raise WorkerWriteGuardError("pytest-Pointer wurde vor Unlink verändert")
+        path.unlink()
+    return len(candidates)
+
+
 def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, return_result=False) -> str | SandboxResult:
     if not isinstance(command, str) or not command.strip():
-        raise WorkerWriteGuardError("Befehl fehlt")
+        raise WorkerCheckPolicyRejected("check_command_required")
+    if cwd is None or cwd == "":
+        raise WorkerCheckPolicyRejected("check_cwd_required")
     target, checked = authorize_mutation(binding, paths=(cwd,))
     checked = list(checked)
     run_cwd = checked[0]
@@ -1209,11 +1705,13 @@ def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, retur
                               "du", "uptime", "ps", "top", "sw_vers", "sysctl", "git"})
                    if safe else _CHECK_BASES)
         argv = safe_exec.resolve_executable(command, allowed)
+    except safe_exec.CommandRejected as exc:
+        raise WorkerCheckPolicyRejected("check_command_not_authorized") from None
     except Exception as exc:
         raise WorkerWriteGuardError("Befehl ist nicht für den Task-Worker zugelassen") from exc
     args = tokens[1:]
     env = None
-    state_dir = target / ".worker-check"
+    state_dir = target / ".cache" / ".worker-check"
     if base == "git":
         if not args or args[0] not in _GIT_READ_SUBCOMMANDS:
             raise WorkerWriteGuardError("Git-Schreibbefehle sind nur über den Task-Workflow erlaubt")
@@ -1229,16 +1727,27 @@ def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, retur
     else:
         if base in {"python", "python3", "ruff", "mypy", "pyright", "npm"}:
             env, env_paths, state_dir = _worker_check_environment(target)
-            prepared = _prepare_bound_check_args(target, run_cwd, base, args, checked, state_dir)
+            try:
+                prepared = _prepare_bound_check_args(target, run_cwd, base, args, checked, state_dir)
+            except WorkerWriteGuardError:
+                raise WorkerCheckPolicyRejected("check_arguments_not_authorized") from None
             argv = [argv[0], *prepared]
             checked.extend(env_paths)
+            checked.append(state_dir)
         else:
             raise WorkerWriteGuardError("Prüfbefehl ist nicht sicher gebunden")
+    pytest_owner = _prepare_pytest_cache_run(binding, target, argv, checked)
     timeout = min(max(int(timeout), 1), 120)
     authorize_mutation(binding, paths=(run_cwd, *checked))
     from core import sandbox
     if os.name == "nt" and not sandbox.HAS_PSUTIL:
         raise WorkerWriteGuardError("Prozessbaum kann auf Windows ohne psutil nicht sicher beendet werden")
+    if env is not None:
+        _create_worker_check_directories(target, state_dir, env, checked)
+        _materialize_pytest_cache_run(pytest_owner)
+        # Recheck the lease, symlink-free paths, and all enclosing locks after
+        # materialization and immediately before launching the child process.
+        authorize_mutation(binding, paths=(run_cwd, *checked))
     try:
         result = sandbox.run_isolated(
             argv, limits=sandbox.SandboxLimits(timeout_sec=timeout, memory_mb=None),
@@ -1246,6 +1755,22 @@ def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, retur
         )
     except Exception as exc:
         raise WorkerWriteGuardError("Prüfbefehl konnte nicht sicher gestartet werden") from exc
+    if (not isinstance(result, sandbox.SandboxResult)
+            or type(result.timed_out) is not bool
+            or type(result.memory_exceeded) is not bool):
+        raise WorkerWriteGuardError("Prüfergebnis ist unbekannt oder nicht typisiert")
+    if getattr(result, "cleanup_confirmed", None) is False:
+        raise WorkerWriteGuardError("Prüfabbruch oder Nachherbereinigung nicht bestätigt")
+    # A returned timeout/memory flag does not prove descendant cleanup.
+    # The sandbox owner must attest its own completed abort before a normal
+    # failed-test result may leave this guard (including return_result=True).
+    if (getattr(result, "timed_out", False) or getattr(result, "memory_exceeded", False)
+            or getattr(result, "cleanup_required", False)):
+        if (getattr(result, "cleanup_confirmed", None) is not True
+                or getattr(result, "watchdog_joined", None) is not True
+                or getattr(result, "cleanup_scope", None) != "owned_posix_process_group"):
+            raise WorkerWriteGuardError("Prüfabbruch oder Nachherbereinigung nicht bestätigt")
+    _cleanup_pytest_current_links(pytest_owner, result)
     if return_result:
         if not isinstance(result, sandbox.SandboxResult):
             raise WorkerWriteGuardError("Prüfergebnis ist unbekannt oder nicht typisiert")

@@ -13,6 +13,8 @@ from .model_provenance import reported_model
 
 KEY = "worker_model_principals.v1"
 SCHEMA = "bach.worker-model-principals.v1"
+CATALOG_KEY = "worker_model_principal_catalog.v1"
+CATALOG_SCHEMA = "bach.worker-model-principal-catalog.v1"
 BACKENDS = frozenset({"ollama", "openai", "lmstudio", "hermes", "openrouter", "claude-api"})
 _HEX = re.compile(r"[a-f0-9]{64}\Z")
 
@@ -93,17 +95,122 @@ def read_model_bindings(db_path=None):
         return identity_snapshot(conn)
 
 
+def model_principal_catalog(conn):
+    """One global model namespace, independent of native/external source.
+
+    Existing native bindings already register canonical model principals.
+    The explicit catalog additionally permits a genuine external-only model
+    without inventing a native backend route or provider observation.
+    """
+    stored = settings._stored(conn, CATALOG_KEY)
+    values = ({"principal_ids": [], "retired_principal_ids": []}
+              if stored["values"] is None else stored["values"])
+    try:
+        settings._object(values, {"principal_ids", "retired_principal_ids"})
+        normalized = {}
+        for field, limit in (("principal_ids", 256), ("retired_principal_ids", 4096)):
+            entries = values[field]
+            if type(entries) is not list or len(entries) > limit:
+                raise ValueError("Principal-Liste erforderlich")
+            normalized[field] = [_principal(value) for value in entries]
+            if len(set(normalized[field])) != len(entries):
+                raise ValueError("Doppelte Modellprincipal-ID")
+        configured, retired = normalized["principal_ids"], normalized["retired_principal_ids"]
+        if set(configured) & set(retired):
+            raise ValueError("Stillgelegter Modellprincipal ist aktiv")
+    except (ValueError, TypeError) as exc:
+        raise settings.PolicyUnavailable("Globaler Modellprincipal-Katalog ist ungültig") from exc
+    native = identity_snapshot(conn)
+    principals = sorted((set(configured) | {binding["principal_id"] for binding in native["bindings"]})
+                        - set(retired))
+    return {"schema": CATALOG_SCHEMA, "availability": "available",
+            "configuration_version": settings._digest({"catalog": stored,
+                "native_configuration_version": native["configuration_version"]}),
+            "principal_ids": principals, "explicit_principal_ids": list(configured),
+            "retired_principal_ids": list(retired)}
+
+
+def read_model_principal_catalog(db_path=None):
+    with settings._connection(db_path) as conn:
+        return model_principal_catalog(conn)
+
+
+def write_model_principal_catalog(payload, *, operator_token, db_path=None):
+    settings._object(payload, {"configuration_version", "principal_ids"})
+    values = payload["principal_ids"]
+    if type(values) is not list or len(values) > 256:
+        raise ValueError("Globale Modellprincipal-Liste erforderlich")
+    principals = [_principal(value) for value in values]
+    if len(set(principals)) != len(principals):
+        raise ValueError("Globale Modellprincipal-IDs müssen eindeutig sein")
+    if type(payload["configuration_version"]) is not str or not _HEX.fullmatch(payload["configuration_version"]):
+        raise ValueError("Gültige globale Konfigurationsrevision erforderlich")
+    with settings._connection(db_path, write=True) as conn:
+        actor = require_operator(conn, operator_token)
+        before = model_principal_catalog(conn)
+        if payload["configuration_version"] != before["configuration_version"]:
+            raise settings.PolicyConflict("Globaler Modellkatalog wurde parallel geändert")
+        retired = set(before["retired_principal_ids"])
+        if retired & set(principals):
+            raise ValueError("Stillgelegte globale Modellprincipal-ID darf nicht wiederverwendet werden")
+        native_ids = {binding["principal_id"] for binding in identity_snapshot(conn)["bindings"]}
+        # Removing an explicit principal which has no remaining native route
+        # permanently retires that identifier. Re-adding the same text must
+        # never revive an old external receipt with a different meaning.
+        retired |= set(before["explicit_principal_ids"]) - set(principals) - native_ids
+        if len(retired) > 4096:
+            raise ValueError("Globale Modellprincipal-Historie ist voll")
+        settings._persist(conn, CATALOG_KEY,
+                          {"principal_ids": principals, "retired_principal_ids": sorted(retired)},
+                          actor=actor)
+        return {"schema": CATALOG_SCHEMA, "updated": True, "worker_started": False,
+                "configuration_version": model_principal_catalog(conn)["configuration_version"]}
+
+
 def write_model_bindings(payload, *, operator_token, db_path=None):
-    settings._object(payload, {"configuration_version", "bindings"})
+    registration_fields = {"expected_catalog_version", "new_principal_id"}
+    registration = isinstance(payload, dict) and bool(set(payload) & registration_fields)
+    fields = {"configuration_version", "bindings"}
+    settings._object(payload, fields | registration_fields if registration else fields)
     bindings = validate_bindings(payload["bindings"])
+    if registration:
+        expected_catalog = payload["expected_catalog_version"]
+        if type(expected_catalog) is not str or not _HEX.fullmatch(expected_catalog):
+            raise ValueError("Bestätigte Katalogversion erforderlich")
+        new_principal = _principal(payload["new_principal_id"])
     with settings._connection(db_path, write=True) as conn:
         actor = require_operator(conn, operator_token)
         before = identity_snapshot(conn)
         if payload["configuration_version"] != before["configuration_version"]:
             raise settings.PolicyConflict("Modellzuordnungen wurden parallel geändert")
+        catalog = model_principal_catalog(conn)
+        retired = set(catalog["retired_principal_ids"])
+        if registration:
+            if expected_catalog != catalog["configuration_version"]:
+                raise settings.PolicyConflict("Modellprincipal-Katalog wurde parallel geändert")
+            if new_principal in set(catalog["principal_ids"]) | retired:
+                raise settings.PolicyConflict("Neue Modellprincipal-ID ist bereits belegt")
+            if (len(bindings) != len(before["bindings"]) + 1
+                    or bindings[:-1] != before["bindings"]
+                    or bindings[-1]["principal_id"] != new_principal):
+                raise ValueError("Registrierung muss bestehende Bindungen erhalten und genau eine neue anfügen")
+        if any(binding["principal_id"] in retired for binding in bindings):
+            raise ValueError("Stillgelegte globale Modellprincipal-ID darf nicht neu gebunden werden")
+        remaining = set(catalog["explicit_principal_ids"]) | {binding["principal_id"] for binding in bindings}
+        new_retired = retired | (set(catalog["principal_ids"]) - remaining)
+        if len(new_retired) > 4096:
+            raise ValueError("Globale Modellprincipal-Historie ist voll")
         settings._persist(conn, KEY, bindings, actor=actor)
-        return {"schema": SCHEMA, "updated": True, "worker_started": False,
-                "configuration_version": identity_snapshot(conn)["configuration_version"]}
+        if new_retired != retired:
+            settings._persist(conn, CATALOG_KEY,
+                              {"principal_ids": catalog["explicit_principal_ids"],
+                               "retired_principal_ids": sorted(new_retired)}, actor=actor)
+        result = {"schema": SCHEMA, "updated": True, "worker_started": False,
+                  "configuration_version": identity_snapshot(conn)["configuration_version"]}
+        if registration:
+            result.update({"catalog_configuration_version": model_principal_catalog(conn)["configuration_version"],
+                           "new_principal_id": new_principal})
+        return result
 
 
 def principal_for_route(snapshot, *, backend_id, route_sha256, requested_model):
