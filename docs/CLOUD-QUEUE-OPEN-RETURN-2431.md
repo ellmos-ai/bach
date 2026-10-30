@@ -217,4 +217,24 @@ Nächster Schritt: Beim nächsten natürlichen HTTP-429-Zyklus den lease-/servic
 
 **Scope/Revision (dieser Lauf):** Taskarbeitsbaum `~/services/bach-worktrees/task-2431` (registriert über `start_task_worktree` für Task #2431), Branch `bach-task/2431`, bestehender PR #598. HEAD nicht ermittelbar: `git rev-parse HEAD` wurde mit „Nur taskgebundene Prüfbefehle" blockiert, `.git`-Lesezugriff mit „Task-Lesebereich nicht bestätigt". Resultrevision verankert über `task_version=60f224b337380aa0a3c3c3e28fb7ff18f917dcc99fe75c77455c8294160a6690` plus Korrekturlauf 7 (2026-10-30, Korrektur-ID 58).
 
+## Blocker/Prüfung — Korrekturlauf 8 (Korrektur-ID 58) — 2026-10-30
+
+**Prüfdatum:** 2026-10-30, Korrekturlauf 8 zur Korrektur-ID 58. Resultrevision (aktuell, verbindlich): `task_version=5d34a44f1fbd80f6dc59dfb60d4450cc880dcd2b3776af14d300a1c6ac184f67`; die in Korrekturlauf 7 genannte Revision `60f224b3…6690` ist damit überholt.
+
+**Null-Befund (kein natürlicher 429-Beleg) — in diesem Lauf NEU erhoben:**
+- `search_text("429")` im Taskarbeitsbaum `~/services/bach-worktrees/task-2431` auf `system/logs` → **0 Treffer** (bestätigt); auf `system/data` → **0 Treffer** (bestätigt).
+- Live `~/services/bach/system/logs`: `file_info` bestätigt 32 Einträge, mtime unverändert **2026-10-05 23:48:06** → seit dem letzten Prüfpunkt kein Laufzeitlog mit 429 geschrieben.
+- `~/.bach/operator-checkpoints`: `file_info` bestätigt 150 Einträge, mtime unverändert **2026-10-22 18:12:03** → keine neuen Checkpoint-Zyklen.
+- Live `~/services/bach/system/data`: `file_info` bestätigt 44 Einträge, mtime **2026-10-27 11:28:45**; inhaltliche Suche dort in diesem Lauf **blockiert** („Task-Lesebereich nicht bestätigt") — die Bewegung ist also nicht auf 429 prüfbar.
+- Gezielter Checkpoint-Pfad `~/.bach/operator-checkpoints/cloud-queue-2431`: **nicht vorhanden** („Datei oder Verzeichnis wurde nicht gefunden").
+- `list_directory` auf `~/.bach` bzw. dessen Checkpoint-Verzeichnis bleibt blockiert („Task-Lesebereich nicht bestätigt").
+
+**Blocker — frisch dokumentiert (Status `scope_not_recorded` gilt unverändert weiter):**
+(a) Kein natürlicher 429-Beleg beschaffbar: In den lesbaren Belegquellen existiert kein 429-Ereignis; die einzige inhaltlich bewegte Quelle (`system/data`, mtime 2026-10-27) ist im gebundenen Lauf nicht durchsuchbar. Damit fehlt der lease-/servicegebundene 429-Belegzyklus (Cooldown → Nutzerstopp → Rückgabe → Wiederaufnahme) weiterhin vollständig.
+(b) Anstoß untersagt: Künstlicher 429, Test-/Worker-Start, bezahlter Modellfallback, Merge/Deploy sind auftragsgemäß ausgeschlossen. Statische Quellzitate (Korrekturlauf 7, Z. 210–214) belegen die Retry-/Cooldown-Implementierung, ersetzen aber keinen Laufzeitbeleg.
+
+**Syntax-Check (compileall):** In diesem Lauf erneut versucht; Ergebnis im Abgabetext dieses Laufs ausgewiesen. Ein „OK" wird ohne bestätigte Werkzeugantwort ausdrücklich NICHT behauptet.
+
+**Scope/Revision (dieser Lauf):** Taskarbeitsbaum `/Users/lukas/services/bach-worktrees/task-2431` (über `start_task_worktree` für Task #2431 registriert), Branch `bach-task/2431`, bestehender PR **#598**. HEAD bleibt nicht ermittelbar (`.git`-Lesezugriff und Git-Befehle im gebundenen Lauf gesperrt). Revision verankert über `task_version=5d34a44f1fbd80f6dc59dfb60d4450cc880dcd2b3776af14d300a1c6ac184f67` plus Korrekturlauf 8 (2026-10-30, Korrektur-ID 58).
+
 **Status/Abgabe:** WIP-Abgabe auf `bach-task/2431`, kein neuer PR; Task #2431 bleibt OFFEN. Nächster Schritt unverändert (siehe oben): Sobald `~/.bach/operator-checkpoints` oder die Live-Logs lesbar sind, den beim nächsten natürlich aufgetretenen 429 entstandenen Zyklus nachziehen; liegt dann weiterhin kein Beleg vor, ist der Blocker im Folgelauf erneut NEU zu dokumentieren.
