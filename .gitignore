@@ -77,6 +77,7 @@ id_ed25519.*
 **/daemon.pid
 
 # === SYSTEM LAUFZEIT-DATEN ===
+/system/_state/
 /system/data/.clock_state
 /system/data/.*_state*
 /system/data/*.lock
