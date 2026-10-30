@@ -2071,8 +2071,19 @@ def _model_request_worker(config: dict[str, Any], worker_id: str) -> dict[str, A
     return matches[0]
 
 
+def _validated_model_name(model: Any) -> Any:
+    if (type(model) is not str
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}", model) is None):
+        raise RuntimeError("budget_model_invalid")
+    return model
+
+
 def _validated_model_request_record(record: Any) -> dict[str, Any]:
-    if (type(record) is not dict or set(record) != _MODEL_REQUEST_RUN_FIELDS
+    if (type(record) is not dict
+            or set(record) - _MODEL_REQUEST_RUN_FIELDS not in (set(), {"model"})
+            or _MODEL_REQUEST_RUN_FIELDS - set(record)
+            or record.get("model") is not None
+            and _validated_model_name(record["model"]) != record["model"]
             or record.get("schema") != _MODEL_REQUEST_RUN_SCHEMA
             or any(type(record.get(key)) is not str or
                    re.fullmatch(r"[0-9a-f]{32}", record[key]) is None
@@ -2180,6 +2191,7 @@ def reserve_model_request(worker_id: str, *, service_instance: str,
                           start_request_id: str, generation: str, task_id: int,
                           task_version: str, configuration_version: str,
                           confirmed_version_transitions: tuple = (),
+                          model: str | None = None,
                           path: str | None = None) -> dict[str, Any]:
     """Persist one non-refundable backend attempt before provider dispatch."""
     config = load_slots_config(path, strict=True)
@@ -2212,6 +2224,8 @@ def reserve_model_request(worker_id: str, *, service_instance: str,
         raise ModelRequestBudgetError(
             f"Modellanfragenbudget ausgeschöpft: Run {start_request_id}, "
             f"{record['reserved_count']}/{record['limit']}, verbleibend 0")
+    if model is not None:
+        record["model"] = _validated_model_name(model)
     record["task_version"] = task_version
     record["reserved_count"] += 1
     record["sequence"] += 1

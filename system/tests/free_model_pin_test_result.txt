@@ -1,130 +1,38 @@
-Free-Model-Pin Test Run – manuell erstellte Dokumentation
-===========================================================
+STATUS: KEIN TESTNACHWEIS
+=========================
+Diese Datei ist ein manuell verfasster Statusbericht. Sie enthaelt KEIN
+Ergebnis eines echten pytest-Laufs und darf NICHT als PASS/FAIL-Nachweis
+fuer system/tests/test_free_model_pin.py verwendet werden.
 
-Zeitpunkt: 2025-01-23 (Laufzeit-Agent)
+Task: #2563 - OpenRouter Free: ein Modell pro Lauf pinnen, Rotation zwischen Laeufen
 Branch: bach-task/2563
-PR: #597
+Pull Request: #597 (offen)
 
-Kontext
--------
-Diese Datei wurde manuell angelegt, weil die externe Testausführung im
-BACH-Worktree durch den Agenten-Werkzeugaufruf `execute_command` derzeit
-nicht möglich ist. Jede Python-Invocation (python/python3/pytest) wird
-mit "BLOCKIERT: Prüfargumente oder Prüfpfade sind nicht zugelassen"
-abgewiesen; auch triviale Shell-Befehle (echo, date, git status) liefern
-nur "BLOCKIERT" oder "Werkzeugausführung nicht bestätigt".
-
-Durchgeführte Schritte
-----------------------
-1. Worktree /Users/lukas/services/bach-worktrees/task-2563 neu aktiviert.
-2. execute_command("python -c \"print('ok')\"") -> BLOCKIERT
-3. Ein dedizierter Testlaeufer
-   system/tools/testing/run_free_model_pin_test.py angelegt, der pytest
-   aufruft und Ergebnisse in diese Datei schreiben wuerde.
-4. execute_command("python system/tools/testing/run_free_model_pin_test.py")
-   -> BLOCKIERT (Prüfargumente nicht zugelassen).
-5. Da keine externe Testausführung moeglich ist, wird das Ergebnis anhand
-der vorhandenen Quellen dokumentiert.
-
-Implementierungsnachweise
---------------------------
+WAS FERTIG IST (Dateilese-Pruefung, nicht Testlauf)
+----------------------------------------------------
 - system/hub/_services/llm/free_model_pin.py
-  Enthaelt die Logik zur Verwaltung und Rotation des pro Worker-Lauf
-  gepinnten OpenRouter-Free-Modells (z.B. Modellauswahl, Persistierung,
-  Ablaufhandling).
+  * FALLBACK_REASONS (~Z. 30-34)
+  * rotation_index(run_id, size) = int(sha256("salt:run_id")) % size, deterministisch (Z. 98-103)
+  * pick_free_model(run_id, catalog, tool_capable_only, success_rates) (Z. 128-183)
+  * Rueckfall FREE_ROUTER_ID ("openrouter/free") mit Grund im Ergebnisdict
+  * "stale"-Katalog -> failure_code als Grund (Z. 147-153)
+  * success_rates (Callable oder Mapping) sortiert Kandidaten nach Erfolgsquote (Z. 166-183)
+- system/tests/test_free_model_pin.py vorhanden (~408 Zeilen)
 
-- system/hub/_services/llm/model_backend.py
-  Integriert die Free-Model-Pin-Logik in den OpenRouterBackend.
-  Relevante Stellen (Treffer aus vorheriger Suche):
-  * Verwendung der Pin-Information beim Request-Aufbau
-  * last_free_pin / pick_free_model / FREE_ROUTER_ID / run_id
-    (Vorkommen ab Zeile 897/902/905)
+WAS FEHLT
+---------
+Ein bestaetigter Testlauf:
+  python -m pytest -q -- system/tests/test_free_model_pin.py
+  cwd: /Users/lukas/services/bach-worktrees/task-2563
 
-- system/tests/test_free_model_pin.py
-  Enthaelt die zugehörige Test-Suite (408 Zeilen) mit Testfaellen fuer:
-  * Modellrotation / Pinning-Verhalten
-  * Worker-Lauf-Isolation
-  * Ablauf und Neuvergabe des Free-Modell-Pins
+Die Werkzeugebene (execute_command) lieferte in mehreren Laeufen nur
+"Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt". Auch
+finish_task(2563) brach mit "Gebundener Testlauf nicht sicher bestaetigt" ab.
+Ursache ist die Bestaetigungsschicht des Ausfuehrers, nicht die Befehlsform:
+pytest, unittest und compileall wurden in Standard- und Variantenform versucht.
 
-Status
-------
-- Implementierungscode: vollstaendig.
-- Automatische Testausfuehrung im Worktree: nicht moeglich, weil
-  execute_command Python-Aufrufe blockiert.
-- Testlaeufer run_free_model_pin_test.py angelegt, der bei Freigabe des
-  Werkzeugs sofort ausgefuehrt werden kann.
-- Keine Testergebnisse (PASS/FAIL) koennen derzeit erbracht werden, da kein
-  Subprozess gestartet werden darf.
-
-Empfohlene naechste Schritte
-----------------------------
-1. Freigabe oder Reparatur von execute_command fuer Python-Invocationen
-   im Worktree pruefen.
-2. Nach Freigabe: `python system/tools/testing/run_free_model_pin_test.py`
-   ausfuehren; Ergebnis steht automatisch in dieser Datei.
-3. Sobald echte Testausgabe vorliegt, diese Datei durch den Laeufer
-   ueberschreiben lassen und finish_task(is_wip=false) erneut pruefen.
-
-===============================================================
-UPDATE Blockade-Evidenz (Fortsetzungs-Lauf zu Task 2563)
-===============================================================
-
-Zusaetzlich gepruefte execute_command-Varianten in diesem Lauf,
-alle abgewiesen mit „Werkzeugausführung nicht bestätigt; Wirkung
-unbekannt":
-
-1. python3 -m pytest -q system/tests/test_free_model_pin.py
-   (python3-Interpreter-Variante, cwd=Task-Worktree)
-2. python -m unittest -v system.tests.test_free_model_pin
-   (unittest-Form ohne pytest)
-3. python -m compileall system/tests system/hub/_services/llm
-   (Syntax-/Bytecode-Kompilierprüfung als minimaler Wirkungsnachweis)
-
-Dateisystem-Nachweis (list_directory im Task-Worktree task-2563):
-- KEIN .pytest_cache im Worktree-Root (pytest.ini liegt im Root,
-  rootdir=Worktree-Root; ein tatsächlich gelaufener pytest haette
-  den Cache erzeugt)
-- KEIN __pycache__ in system/tests
-- KEIN __pycache__ in system/hub/_services/llm
-
-Damit ist widerlegt, dass einer der Blockade-Aufrufe tatsaechlich
-gelaufen ist. Die Testausführung ist in dieser Umgebung nachweislich
-unmoeglich; die Pflichtarbeit (echte Testausführung) kann hier nicht
-erbracht werden.
-
-Implementierungsstand (vollständiger Quellen-Review dieses Laufs):
-- free_model_pin.py: pick_free_model normalisiert run_id
-  (run_id_missing-Fallback), catalog_stale / no_free_candidates,
-  deterministische Rotation via sha256("bach-free-model-pin-v1:run_id")
-  % len(Kandidaten), Router FREE_ROUTER_ID "openrouter/free" nie
-  Kandidat; _fallback liefert model="openrouter/free", pinned=False.
-- model_backend.py OpenRouterBackend: run_id-Parameter,
-  _free_pin_model, last_free_pin_decision, default_model
-  "openrouter/free", Pinning/Rotation/Fallback dokumentiert.
-- test_free_model_pin.py (408 Zeilen): Unit- und Integrationstests zu
-  Rotation zwischen Läufen, gleichem Pin pro Lauf, Router-Ausschluss,
-  tool_capable_only, Stale-/Leer-Fallbacks und Backend-Integration.
-
-Naechster Schritt: Freigabe von execute_command pruefen, dann
-`python system/tools/testing/run_free_model_pin_test.py` ausfuehren
-und diese Datei durch echte Testausgabe ersetzen lassen.
-
-===============================================================
-UPDATE Blockade-Evidenz (Fortsetzungs-Lauf zu Task 2563 – aktueller Lauf)
-===============================================================
-
-Zusaetzlich gepruefte execute_command-Varianten in diesem Lauf:
-
-1. pwd
-   -> BLOCKIERT: Nur taskgebundene Prüfbefehle, keine Shellverkettung.
-2. python -m pytest -q -- system/tests/test_datei.py
-   (exakt das vom Filter genannte Beispiel, cwd=/Users/lukas/services/bach-worktrees/task-2563)
-   -> Werkzeugausführung nicht bestätigt; Wirkung unbekannt.
-
-Fazit dieses Laufs
-------------------
-execute_command ist in dieser Sitzung vollstaendig gesperrt. Selbst das
-vom Sicherheitsfilter explizit als erlaubt genannte Beispiel wird
-abgewiesen. Eine tatsaechliche Testausfuehrung kann daher in diesem Lauf
-nicht erbracht werden. Der Task bleibt blockiert, bis execute_command
-fuer pytest/Python-Aufrufe im Task-Arbeitsbaum freigegeben wird.
+NAECHSTER SCHRITT
+-----------------
+Kind-Task #3253: bestaetigten pytest-Lauf erbringen (nur echte PASSED/FAIL-Ausgabe zaehlt).
+Kind-Task #3254: bei PASSED finish_task(2563, ...) + submit_result(complete=true),
+                bei FAIL minimale Korrektur im Worktree und erneut testen.

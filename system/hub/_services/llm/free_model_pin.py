@@ -130,6 +130,7 @@ def pick_free_model(
     *,
     catalog: Mapping[str, Any] | None = None,
     tool_capable_only: bool = True,
+    success_rates: Any = None,
 ) -> dict[str, Any]:
     """Pin one tool-capable free model for ``run_id``.
 
@@ -162,6 +163,27 @@ def pick_free_model(
         )
 
     index = rotation_index(run_key, len(candidates))
+    if success_rates is not None:
+
+        def _rate(model_id: str) -> float:
+            if callable(success_rates):
+                return float(success_rates(model_id))
+            value = success_rates.get(model_id)
+            return 0.0 if value is None else float(value)
+
+        ordered = sorted(candidates, key=lambda item: (-_rate(item), int.from_bytes(hashlib.sha256(f"{_ROTATION_SALT}:{run_key}:{item}".encode("utf-8")).digest()[:8], "big")))
+        return {
+            "model": ordered[0],
+            "run_id": run_key,
+            "fallback": False,
+            "pinned": True,
+            "reason": None,
+            "candidates": ordered,
+            "rotation_index": index,
+            "source": snapshot.get("source"),
+            "stale": False,
+            "tool_capable_only": tool_capable_only,
+        }
     return {
         "model": candidates[index],
         "run_id": run_key,

@@ -406,3 +406,89 @@ def test_rotation_index_matches_hash_formula():
             % size
         )
         assert pin.rotation_index(run_id, size) == expected
+
+
+def test_pick_free_model_follows_success_rates():
+    """Hoehere Erfolgsquote gewinnt den Pin, unabhaengig vom Run-Key."""
+    catalog = _catalog("alpha:free", "beta:free")
+    rates = {"alpha:free": 0.9, "beta:free": 0.1}
+    for run_key in ("run-a", "run-b", "run-c", "run-d", "run-e"):
+        decision = pin.pick_free_model(run_key, catalog=catalog, success_rates=rates)
+        assert decision["pinned"] is True and decision["fallback"] is False
+        assert decision["model"] == "alpha:free"
+        assert decision["candidates"][0] == "alpha:free"
+
+
+def test_pick_free_model_without_rates_stays_deterministic():
+    """Ohne success_rates bleibt der Basis-Zweig, stabil und sortiert pro Run-Key."""
+    catalog = _catalog("gamma:free", "alpha:free", "beta:free")
+    first = pin.pick_free_model("run-stable", catalog=catalog)
+    again = pin.pick_free_model("run-stable", catalog=catalog)
+    assert first["model"] == again["model"]
+    assert first["rotation_index"] == again["rotation_index"]
+    assert first["candidates"] == ["alpha:free", "beta:free", "gamma:free"]
+    assert first["model"] == first["candidates"][first["rotation_index"]]
+
+
+def test_pick_free_model_tie_breaks_by_salted_hash():
+    """Gleiche Quoten: ascending Sortierkey (-rate, salted digest) -> kleinster Digest."""
+    import hashlib
+
+    catalog = _catalog("gamma:free", "alpha:free", "beta:free")
+    models = pin.free_candidates(catalog)
+    assert len(models) >= 2
+    rates = {model_id: 0.5 for model_id in models}
+    chosen = set()
+    for index in range(8):
+        decision = pin.pick_free_model(f"run-{index}", catalog=catalog, success_rates=rates)
+        expected = min(
+            models,
+            key=lambda item: int.from_bytes(
+                hashlib.sha256(
+                    f"bach-free-model-pin-v1:run-{index}:{item}".encode("utf-8")
+                ).digest()[:8],
+                "big",
+            ),
+        )
+        assert decision["model"] == expected
+        chosen.add(decision["model"])
+    assert len(chosen) >= 2
+
+
+def test_reserve_model_request_persists_pinned_model(tmp_path):
+    """Der Reserve-Aufruf persistiert das gepinnte Modell im Budget-Beleg."""
+    import os
+
+    from hub._services.chat import slots_config
+
+    slots_path = str(tmp_path / "slots.json")
+    slots_config.initialize_slots_config(slots_path)
+    worker = {"id": "worker-free-pin", "type": "once", "task_id": 2563,
+              "max_model_requests": 3}
+    config = slots_config.load_slots_config(slots_path, strict=True)
+    config["dynamic_workers"].append(worker)
+    configuration_version = slots_config._worker_profile_version(worker)
+    record = {
+        "schema": slots_config._MODEL_REQUEST_RUN_SCHEMA,
+        "worker_id": "worker-free-pin",
+        "service_instance": "a" * 32, "pid": os.getpid(),
+        "process_create_time": 1750000000, "start_request_id": "b" * 32,
+        "generation": "c" * 32, "task_id": 2563, "task_version": None,
+        "configuration_version": configuration_version, "limit": 3,
+        "reserved_count": 0, "phase": "admitted", "reason": "", "sequence": 0,
+    }
+    slots_config._admit_model_request_run(config, record)
+    slots_config.save_slots_config(config, slots_path)
+    match = dict(service_instance="a" * 32, start_request_id="b" * 32,
+                 generation="c" * 32, task_id=2563, task_version="d" * 64,
+                 configuration_version=configuration_version,
+                 model="openrouter/gpt-oss-20b:free", path=slots_path)
+    slots_config.reserve_model_request("worker-free-pin", **match)
+    stored = slots_config.model_request_run_record("worker-free-pin", path=slots_path)
+    assert stored["model"] == "openrouter/gpt-oss-20b:free"
+    renewed = dict(match); renewed.pop("model")
+    slots_config.reserve_model_request("worker-free-pin", **renewed)
+    assert slots_config.model_request_run_record("worker-free-pin", path=slots_path)["model"] == "openrouter/gpt-oss-20b:free"
+    with pytest.raises(slots_config.ModelRequestBudgetError):
+        invalid = dict(match); invalid["model"] = " bad"
+        slots_config.reserve_model_request("worker-free-pin", **invalid)
