@@ -14,22 +14,25 @@ Dieses Dokument definiert den Meilenstein und seine Abnahmekriterien. Versionsme
 
 | Nachweis | Wert |
 |---|---|
-| Version | `0.2.19` |
-| Quellcommit / Tag | `e909dd92bd2ce50710f565b44e0ccd8ddf66b9d2` / `v0.2.19` |
-| Archiv | `ellmos-system-gui-0.2.19-e909dd92bd2c.zip` |
-| Archivgröße | 16.016.360 Bytes |
-| Archiv-SHA-256 | `66aba8081743aa4c8e44c9cea09644ce7f88cfb15365ef0822f27536decc03b4` |
-| Distmanifest-SHA-256 | `6e684938bdb0078105fd96984ae5188a2bdf4ef28a98c73e9673e4dd1240f750` |
-| Seiteninventar-SHA-256 | `f29759b8e0fac9daa08a77ae50622623eeac2d9f8a5e9fb67eefb5c2cd02d44d` |
-| Buildinventar | 25 HTML-Seiten; 194 Distdateien einschließlich Distmanifest |
+| Version | `0.2.29` |
+| Quellcommit / Tag | `a42adda6a9fe8d892578db3f7a09f7c1bef653ef` / Tag-Beleg offen |
+| Archiv | `ellmos-system-gui-0.2.29-a42adda6a9fe.zip` |
+| Archivgröße | Beleg offen (im BACH-Repo nicht verankert) |
+| Archiv-SHA-256 | `037516b1af6e658e06eee8aa57adaf81309bc430219198deeb6492ab816f29e1` |
+| Distmanifest-SHA-256 | Beleg offen (im BACH-Repo nicht verankert) |
+| Seiteninventar-SHA-256 | Beleg offen (im BACH-Repo nicht verankert) |
+| Buildinventar | 39 HTML-Seiten; Distdateienzahl offen |
+| Pin-Status | `pinned_release`, gepinnt am 2026-10-26T05:41:35Z |
 
-Das Seiteninventar `page-reads.v1.json` ist Bestandteil des Pakets. Der veröffentlichte GUI-Pin enthält das Robotericon und die Entfernung des Werkstatt-Hintergrundbildes. Das später veröffentlichte Schiffsbrückenbanner betrifft ausschließlich die README des GUI-Repositorys und verändert dieses Releasearchiv nicht.
+Scope-Entscheid: Der in der Planung vorgesehene Zwischenpin 0.2.27 war überholt, da das BACH-Repo bereits auf 0.2.29 steht und die Integritätstests 0.2.29 verriegeln; ein Downgrade wird nicht durchgeführt. Diese Doku ist auf 0.2.29 nachgezogen. Die Mac-Aktivierung des Deployments bleibt eine eigene offene Arbeit.
+
+Das Seiteninventar `page-reads.v1.json` ist Bestandteil des Pakets. Die bisherige inhaltliche Beschreibung (Robotericon, Entfernung des Werkstatt-Hintergrundbildes, README-Schiffsbrückenbanner) bezog sich auf GUI 0.2.19 und wird für 0.2.29 nicht vorausgesetzt; maßgeblich sind die Upstream-Releasebelege von 0.2.29.
 
 ## Abnahme vor BACH-Tag und Veröffentlichung
 
 1. JSON-/Hook-Ausgabekorrektur aus BACH PR #343 und GUI-Verbraucherpin aus PR #345 gegen den aktuellen Main-Stand prüfen und regulär integrieren. Unabhängige Modellprüfung und die geltenden GitHub-Regeln bleiben verbindlich.
 2. Beide BACH-Paketmetadaten (`pyproject.toml`, `setup.py`) und aktuelle Root-README-Versionsangaben müssen `3.15.0` führen. Historische Versionsvergleiche, Skillvertragsversionen und ältere generierte Handbücher werden nicht pauschal umgeschrieben.
-3. Verwendete GUI-Bytes gegen den veröffentlichten Pin prüfen; sämtliche 25 HTML-Routen und ihre etablierten Tab-Aliase über den realen BACH-Server lesen. Eine Pfadliste allein genügt nicht als Funktionsnachweis.
+3. Verwendete GUI-Bytes gegen den veröffentlichten Pin prüfen; sämtliche 39 HTML-Routen und ihre etablierten Tab-Aliase über den realen BACH-Server lesen. Eine Pfadliste allein genügt nicht als Funktionsnachweis.
 4. Vor dem Mac-Deploy Host, Konfiguration, Locks, Dirty State, Datenhoheit, Taskleases und Toolgrenzen prüfen. Bestehende private Daten sowie fremde Dateien erhalten; Code und GUI-Pin sichern. Task #2102 bleibt bei ungeklärten Toolwirkungen zur Prüfung blockiert.
 5. Nach kontrolliertem Reload den tatsächlichen BACH-Commit, GUI-Pin, Manifest, Seiten und Assets am Mac erneut prüfen. Ein TestClient-Lauf ersetzt diesen Produktivnachweis nicht. Deployment startet keine Cloudworker.
 6. Erst danach den geprüften BACH-Commit als annotierten `v3.15.0` taggen und veröffentlichen. Titel: **BACH fließt ins Meer – gemeinsame GUI**. Releasebelege müssen Quellcommit, GUI-Pin, Prüfumfang, Produktivreadback und verbleibende Gates nennen.
