@@ -121,3 +121,31 @@ Resultrevision: Korrekturlauf 3 zu Korrektur-ID 58 — der Bericht ist gegenübe
 Vorhandene Arbeit bleibt erhalten und ist beim regulären Wiederaufnehmen zu berücksichtigen. Eine offene Rückgabe ist kein erledigtes Ergebnis. Anbieterquoten werden nicht umgangen; es gibt keinen zusätzlichen kostenpflichtigen Modellfallback.
 
 Implementierung, unabhängiger Quellreview, Commit/Push, Mac-Deployment und Runtime-Abnahme sind getrennte Schritte. Dieser Text allein belegt keinen dieser Schritte. Es wurden keine Tests hinzugefügt oder manuell ausgeführt.
+
+## Blocker NEU — Korrekturlauf 4 (Korrektur-ID 58)
+
+Korrekturlauf 4 zur Korrektur-ID 58. Auftrag: lease-/servicegebundener Beleg eines NATÜRLICHEN HTTP-429-Zyklus (Cooldown, Nutzungsstopp, offene Rückgabe, Wiederaufnahme) aus Laufzeitdaten; liegt kein natürlicher Zyklus vor, ist der Blocker NEU zu dokumentieren und der Task offen zu lassen. Alle Verbote eingehalten: kein künstlicher 429, kein Test-/Worker-Start, kein kostenpflichtiger Modellfallback, keine `.SYNC`-Ausführung, kein Merge/Deploy; ausschließlich lesende/statische Prüfungen.
+
+Ergebnis: Ein natürlicher 429-Zyklus ist aus Laufzeitdaten NICHT belegbar — alle zugänglichen Quellen liefern 0 Treffer oder sind gesperrt.
+
+Geprüfte Laufzeitquellen dieses Laufs (lesend, ohne 429-Artefakt):
+- `system/logs` rekursiv nach `429`: 0 Treffer. `system/logs/daily` enthält nur die alte Datei `2026-02-21.md` (kein 429-/Cooldown-Eintrag); `system/logs/wiki_author` enthält sechs Fachberichte (09-12 bis 09-18), keine Laufzeitdaten.
+- `system/data/sessions`: nur `.gitkeep` (Sackgasse bestätigt).
+- `system/exports`: nur `.gitkeep` und `translations` (Sackgasse bestätigt).
+- `~/.bach` und `~/.bach/operator-checkpoints`: beide blockiert („Task-Lesebereich nicht bestätigt“). Neu gegenüber Korrekturlauf 3: `~/.bach` ist jetzt KOMPLETT gesperrt (zuvor nur `operator-checkpoints`); der erwartete Evidenzort leasegebundener Laufzeitdaten ist damit vollständig unzugänglich.
+
+Frisch verifizierte statische Codebelege (per read_file, dieser Lauf — 429-Handling implementiert, aber nur Code, kein Laufzeitnachweis):
+- `system/hub/_services/llm/backend_errors.py:142-172` — `cloud_call_retry_eligible` behandelt 429 (`ollama/rate_limited`, `openrouter/http_error`); `cloud_call_retry_delay`: Basis 60 s bei 429, Berücksichtigung von `retry_after_seconds`, Begrenzung auf 3 Retries/900 s.
+- `system/hub/_services/chat/chat_runtime.py:331-339` — `_SAFE_FAILURE_REASON_CODES` enthält `cloud_call_retry_exhausted`.
+- `system/hub/_services/chat/chat_runtime.py:934-956` — Retry-Schleife; bei `status_code==429` Log „Cloud-Anfragelimit: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)“; `_wait_model_call_retry`.
+- `system/hub/_services/chat/telegram_chat.py:1485-1538` — „Cloud retry waits are lease-free“; 429-/`rate_limited`-/`Retry-After`-Behandlung für continuous/persistent Cloud-Slots; Wartezeit `max(900, 2^n)`-basiert.
+- `system/hub/_services/chat/telegram_chat.py:1642-1682` — `_wait_worker_cooldown` (Status `paused`→`running`, „Automatische Pause beendet“) — bestätigt, aber nur generischer Run-Cooldown, KEIN Laufzeitbeleg eines 429-Zyklus.
+
+Korrektur des Altberichts (Fehlzuordnungen richtiggestellt):
+- `worker_lease_binding.py:52,55` belegt NICHT 429-Handling: dort stehen `task_manage`-Guidance-Strings (`update_status`, `decompose_parent`), die die offene Rückgabe regeln — kein 429-Bezug.
+- `worker_lease_binding.py:170-177` belegt die freie Cloud-Worker-Aufgabenwahl („Cloud workers may pick any task type“), NICHT 429.
+- Ein natürlicher 429-Zyklus ist ausschließlich im Live-Betrieb belegbar. Dessen gezielter Anstoß ist laut Korrekturhinweis verboten (kein künstlicher 429, kein Worker-/Teststart, kein kostenpflichtiger Fallback).
+
+Fazit: Blocker NEU dokumentiert. Ein lease-/servicegebundener Beleg eines natürlichen HTTP-429-Zyklus (Cooldown, Nutzungsstopp, Rückgabe, Wiederaufnahme) aus Laufzeitdaten liegt in diesem Lauf nicht vor; er kann nur durch einen künftig natürlich auftretenden 429 im Live-Betrieb nachgezogen werden. Der Task bleibt OFFEN; die Abgabe erfolgt als frisch formulierter Teilstand (`submit_result`, `complete=false`) — keine unveränderte Neueinreichung des Altberichts, sondern eine um die Prüfungen dieses Laufs (einschließlich Altberichtskorrektur) ergänzte Neufassung.
+
+Nächster Schritt: Beim nächsten natürlichen HTTP-429-Zyklus den lease-/servicegebundenen Laufzeitbeleg nachziehen, sobald `~/.bach/operator-checkpoints` lesbar ist oder ein 429-Artefakt in den Logs vorliegt; andernfalls ist der Blocker im Folgelauf erneut NEU zu dokumentieren, nicht mit Alttext zu wiederholen.
