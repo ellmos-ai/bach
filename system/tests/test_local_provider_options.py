@@ -48,6 +48,8 @@ def test_absent_or_null_options_retain_backend_environment_fallback(monkeypatch,
     ("timeout_seconds", 0), ("timeout_seconds", "invalid"),
     ("num_ctx", True), ("num_ctx", False),
     ("timeout_seconds", True), ("timeout_seconds", False),
+    ("num_ctx", 262145), ("num_ctx", 512.5),
+    ("timeout_seconds", 0.5), ("timeout_seconds", 3601),
 ])
 def test_invalid_explicit_settings_are_not_silently_discarded(key, value):
     with pytest.raises(ValueError):
@@ -75,3 +77,15 @@ def test_context_options_do_not_change_url_model_environment_precedence(monkeypa
     assert backend.base_url == "http://127.0.0.1:19112"
     assert backend.default_model == "override:27b"
     assert backend.num_ctx == 4096 and backend.request_timeout == 120
+
+
+@pytest.mark.parametrize("num_ctx,timeout_seconds", [
+    (512, 1), (262144, 3600), (512, 3600), (262144, 1),
+])
+def test_valid_boundary_values_are_accepted(num_ctx, timeout_seconds):
+    projected = local_backend_configs({"backend": {
+        "type": "ollama", "num_ctx": num_ctx, "timeout_seconds": timeout_seconds,
+    }})["ollama"]
+    backend = create_backend(projected)
+    assert backend.num_ctx == num_ctx
+    assert backend.request_timeout == timeout_seconds
