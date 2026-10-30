@@ -85,3 +85,21 @@ Ergebnis erneut: "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt."
 Keine Codeaenderung in diesem Lauf. Sachstand unveraendert gegenueber Nachtrag 3.
 Entscheidung laut RESUME: Stand als WIP per finish_task(2563, is_wip=true) sichern
 und submit_result(2563, complete=false) abgeben.
+
+NACHTRAG 5 (Fortsetzungslauf, Werkzeugrunden 3-6/360)
+-----------------------------------------------------
+- execute_command('python -m pytest -q -- system/tests/test_free_model_pin.py',
+  cwd=Worktree, timeout=90): erneut "Werkzeugausfuehrung nicht bestaetigt;
+  Wirkung unbekannt" (identische Bestaetigungsblockade, nicht blind wiederholt,
+  sondern mit Wirkungspruefung kombiniert).
+- Wirkungsverifikation: system/tests/__pycache__ existiert nicht (file_info:
+  nicht gefunden; list_directory darauf: BLOCKIERT mit Task-Lesebereich-Sperre).
+  => keine Spur einer Import-/Testausfuehrung im Worktree.
+- test_free_model_pin.py: mtime unverändert 2026-10-30 16:37:02, 17.7 KB.
+- task_manage(list): ausschliesslich #2563; #3253/#3254 existieren weiterhin nicht.
+- Fazit: kein bestaetigter Testlauf moeglich; Blockade liegt allein in der
+  Bestaetigungsschicht des Ausfuehrers. Erster belastbarer Nachweis waere
+  weiterhin echter pytest-Output (PASSED/FAIL/Exit-Code). Teilstand wird mit
+  Nachtrag 5 per finish_task(2563, is_wip=true) gesichert und
+  submit_result(2563, complete=false) abgegeben; Pflichtarbeit (bestaetigter
+  pytest-Lauf + finish_task ohne WIP + Abgabe complete=true) bleibt offen.

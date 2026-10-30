@@ -14,7 +14,9 @@ sys.path.insert(0, str(ROOT / "system"))
 import pytest
 
 TARGET = "system/tests/test_free_model_pin.py"
-LOG = ROOT / "free_model_pin_test_result.txt"
+import tempfile
+
+LOG = pathlib.Path(tempfile.gettempdir()) / "free_model_pin_test_result.txt"
 
 if __name__ == "__main__":
     args = ["-q", "--tb=short", TARGET]
