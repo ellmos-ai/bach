@@ -62,7 +62,8 @@ class OllamaHandler(BaseHandler):
             "ask": "Anfrage an Ollama senden",
             "models": "Verfuegbare Modelle auflisten",
             "embed": "Embedding erstellen",
-            "set_num_ctx": "num_ctx eines Modells setzen"
+            "set_num_ctx": "num_ctx eines Modells setzen",
+            "recommend_num_ctx": "num_ctx-Empfehlung fuer ein Modell ermitteln"
         }
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -76,6 +77,8 @@ class OllamaHandler(BaseHandler):
             return self._embed(args, dry_run)
         elif operation == "set_num_ctx":
             return self._set_num_ctx(args, dry_run)
+        elif operation == "recommend_num_ctx":
+            return self._recommend_num_ctx(args, dry_run)
         else:
             return self._status()
     
@@ -174,6 +177,9 @@ class OllamaHandler(BaseHandler):
                 models_config = {}
             model_entry = models_config.get(model)
             num_ctx = model_entry.get("num_ctx") if isinstance(model_entry, dict) else None
+            if not (type(num_ctx) is int and num_ctx > 0):
+                recommended = model_entry.get("num_ctx_recommended") if isinstance(model_entry, dict) else None
+                num_ctx = recommended if type(recommended) is int and recommended > 0 else None
             if num_ctx is None:
                 env_num_ctx = os.environ.get("OLLAMA_NUM_CTX") or os.environ.get("OLLAMA_NUM_CFG")
                 if env_num_ctx:
@@ -181,7 +187,10 @@ class OllamaHandler(BaseHandler):
                         num_ctx = int(env_num_ctx)
                     except (TypeError, ValueError):
                         num_ctx = None
-            response = self.client.generate(prompt, model=model, num_ctx=num_ctx)
+            if num_ctx is None:
+                response = self.client.generate(prompt, model=model)
+            else:
+                response = self.client.generate(prompt, model=model, num_ctx=num_ctx)
             self._telemetry_model_call(model, bool(getattr(response, "success", False)))
             if response.success:
                 results.append("  Antwort:")
@@ -217,8 +226,8 @@ class OllamaHandler(BaseHandler):
             return {}
         return config
 
-    def set_num_ctx(self, model: str, num_ctx: int = None, num_ctx_recommended: int = None) -> tuple:
-        """Setzt num_ctx / num_ctx_recommended fuer ein Modell in der Config."""
+    def set_num_ctx(self, model: str, num_ctx: int = None, num_ctx_recommended: int = None, num_ctx_advice: int = None) -> tuple:
+        """Setzt num_ctx / num_ctx_recommended / num_ctx_advice fuer ein Modell in der Config."""
         if not model:
             return False, "Fehler: Ollama set_num_ctx benoetigt ein Modell"
         config = self._load_num_ctx_config()
@@ -228,6 +237,8 @@ class OllamaHandler(BaseHandler):
             entry["num_ctx"] = num_ctx
         if num_ctx_recommended is not None:
             entry["num_ctx_recommended"] = num_ctx_recommended
+        if num_ctx_advice is not None:
+            entry["num_ctx_advice"] = num_ctx_advice
         self.target_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.target_file, "w", encoding="utf-8") as file:
             json.dump(config, file, indent=2, ensure_ascii=False)
@@ -236,7 +247,87 @@ class OllamaHandler(BaseHandler):
             details.append(f"num_ctx={num_ctx}")
         if num_ctx_recommended is not None:
             details.append(f"num_ctx_recommended={num_ctx_recommended}")
+        if num_ctx_advice is not None:
+            details.append(f"num_ctx_advice={num_ctx_advice}")
         return True, "Ollama num_ctx fuer '{}' gespeichert: {}".format(model, ", ".join(details))
+
+    def _recommend_num_ctx(self, args: list, dry_run: bool = False) -> tuple:
+        """Ermittelt eine num_ctx-Empfehlung fuer ein Modell und legt sie ab.
+
+        Vermessen werden Modellgroesse und freier Arbeitsspeicher; ein LLM-Rat
+        via --num-ctx-advice gewinnt ueber die Vermessung.
+        """
+        if not args:
+            return False, ("Fehler: Ollama recommend_num_ctx benoetigt ein Modell\n"
+                           "Usage: ollama recommend_num_ctx <modell> [--num-ctx-advice 16384]")
+        model = args[0]
+        advice = None
+        rest = args[1:]
+        index = 0
+        while index < len(rest):
+            arg = rest[index]
+            if arg == "--num-ctx-advice":
+                index += 1
+                if index >= len(rest):
+                    return False, "Fehler: Ollama --num-ctx-advice benoetigt einen Wert"
+                raw = rest[index]
+            elif arg.startswith("--num-ctx-advice="):
+                raw = arg.split("=", 1)[1]
+            else:
+                return False, "Fehler: Ollama recommend_num_ctx kennt das Argument '{}' nicht".format(arg)
+            try:
+                advice = int(raw)
+            except (TypeError, ValueError):
+                return False, "Fehler: Ollama num_ctx_advice muss eine ganze Zahl sein"
+            if not 512 <= advice <= 262144:
+                return False, "Fehler: Ollama num_ctx_advice muss zwischen 512 und 262144 liegen"
+            index += 1
+        try:
+            client = self.client
+        except ImportError:
+            return False, "Fehler: OllamaClient nicht verfuegbar"
+        try:
+            import psutil
+        except ImportError:
+            return False, "Fehler: psutil nicht verfuegbar"
+        memory = psutil.virtual_memory()
+        total_bytes = int(memory.total)
+        available_bytes = int(memory.available)
+        size_bytes = None
+        try:
+            entries = client.list_models()
+            for entry in entries:
+                if getattr(entry, "name", None) == model:
+                    size_bytes = int(float(getattr(entry, "size_gb", 0.0)) * 1024 ** 3)
+                    break
+        except Exception as e:
+            return False, "Fehler: Modellliste nicht lesbar ({})".format(e)
+        if size_bytes is None:
+            return False, "Fehler: Modell '{}' nicht gefunden".format(model)
+        recommendation = None
+        for candidate in (8192, 16384, 32768):
+            required_bytes = size_bytes + candidate * 64 * 1024 + int(1.5 * 1024 ** 3)
+            if available_bytes - required_bytes < 4 * 1024 ** 3:
+                break
+            recommendation = candidate
+        if advice is not None:
+            recommendation = advice
+        if recommendation is None:
+            return False, ("Fehler: Kein num_ctx-Kandidat passt in den freien Arbeitsspeicher "
+                           "(verfuegbar: {:.1f} GiB, Modell: {:.1f} GiB)".format(
+                               available_bytes / 1024.0 ** 3, size_bytes / 1024.0 ** 3))
+        report = ("num_ctx-Empfehlung fuer '{}': {} Token. Arbeitsspeicher: {:.1f} GiB total, "
+                  "{:.1f} GiB verfuegbar; Modellgroesse: {:.1f} GiB. Uebergabeschwelle: {} Token "
+                  "(~80 % des Fensters).").format(
+                      model, recommendation, total_bytes / 1024.0 ** 3,
+                      available_bytes / 1024.0 ** 3, size_bytes / 1024.0 ** 3,
+                      int(recommendation * 0.8))
+        if advice is not None:
+            report += " LLM-Rat (--num-ctx-advice={}) gewinnt ueber die Vermessung.".format(advice)
+        if dry_run:
+            return True, "[DRY-RUN] " + report
+        _, saved = self.set_num_ctx(model, num_ctx_recommended=recommendation, num_ctx_advice=advice)
+        return True, report + " " + saved
 
     def _set_num_ctx(self, args: list, dry_run: bool = False) -> tuple:
         """CLI: ollama set_num_ctx <modell> [--num-ctx N] [--num-ctx-recommended N]."""

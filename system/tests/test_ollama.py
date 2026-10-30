@@ -56,7 +56,7 @@ class TestProperties:
 
     def test_get_operations_keys(self, ollama_env):
         ops = ollama_env.get_operations()
-        expected = {"status", "ask", "models", "embed"}
+        expected = {"status", "ask", "models", "embed", "set_num_ctx", "recommend_num_ctx"}
         assert set(ops.keys()) == expected
 
 
@@ -245,3 +245,88 @@ class TestHandleEmbed:
         ok, text = ollama_env.handle("embed", ["--model=xyz"])
         assert ok is False
         assert "Kein Text" in text
+
+
+class TestHandleRecommendNumCtx:
+
+    def test_recommend_num_ctx_requires_model(self, ollama_env, mock_client):
+        ollama_env._client = mock_client
+        ok, text = ollama_env.handle("recommend_num_ctx", [])
+        assert ok is False
+        assert "Usage: ollama recommend_num_ctx" in text
+
+    def test_recommend_num_ctx_rejects_invalid_advice(self, ollama_env, mock_client):
+        ollama_env._client = mock_client
+        ok, text = ollama_env.handle("recommend_num_ctx", ["llama3.2", "--num-ctx-advice=abc"])
+        assert ok is False
+        assert "ganze Zahl" in text
+        ok, text = ollama_env.handle("recommend_num_ctx", ["llama3.2", "--num-ctx-advice=64"])
+        assert ok is False
+        assert "512 und 262144" in text
+
+    def test_recommend_num_ctx_unknown_model(self, ollama_env, mock_client, monkeypatch):
+        ollama_env._client = mock_client
+        monkeypatch.setattr(
+            "psutil.virtual_memory",
+            lambda: SimpleNamespace(total=32 * 1024 ** 3, available=16 * 1024 ** 3))
+        ok, text = ollama_env.handle("recommend_num_ctx", ["gibtsnicht"])
+        assert ok is False
+        assert "nicht gefunden" in text
+
+    def test_recommend_num_ctx_saves_recommendation(self, ollama_env, mock_client, monkeypatch):
+        import json
+
+        ollama_env._client = mock_client
+        monkeypatch.setattr(
+            "psutil.virtual_memory",
+            lambda: SimpleNamespace(total=32 * 1024 ** 3, available=16 * 1024 ** 3))
+        ok, text = ollama_env.handle("recommend_num_ctx", ["llama3.2"])
+        assert ok is True
+        assert "32768" in text
+        assert "26214" in text
+        entry = json.loads(ollama_env.target_file.read_text(encoding="utf-8"))["models"]["llama3.2"]
+        assert entry["num_ctx_recommended"] == 32768
+        assert "num_ctx_advice" not in entry
+
+    def test_recommend_num_ctx_advice_wins(self, ollama_env, mock_client, monkeypatch):
+        import json
+
+        ollama_env._client = mock_client
+        monkeypatch.setattr(
+            "psutil.virtual_memory",
+            lambda: SimpleNamespace(total=32 * 1024 ** 3, available=16 * 1024 ** 3))
+        ok, text = ollama_env.handle("recommend_num_ctx", ["llama3.2", "--num-ctx-advice=8192"])
+        assert ok is True
+        assert "8192" in text
+        entry = json.loads(ollama_env.target_file.read_text(encoding="utf-8"))["models"]["llama3.2"]
+        assert entry["num_ctx_recommended"] == 8192
+        assert entry["num_ctx_advice"] == 8192
+
+    def test_recommend_num_ctx_dry_run(self, ollama_env, mock_client, monkeypatch):
+        ollama_env._client = mock_client
+        monkeypatch.setattr(
+            "psutil.virtual_memory",
+            lambda: SimpleNamespace(total=32 * 1024 ** 3, available=16 * 1024 ** 3))
+        ok, text = ollama_env.handle("recommend_num_ctx", ["llama3.2"], dry_run=True)
+        assert ok is True
+        assert "[DRY-RUN]" in text
+        assert "32768" in text
+        assert not ollama_env.target_file.exists()
+
+    def test_recommend_num_ctx_no_fitting_candidate(self, ollama_env, mock_client, monkeypatch):
+        ollama_env._client = mock_client
+        monkeypatch.setattr(
+            "psutil.virtual_memory",
+            lambda: SimpleNamespace(total=32 * 1024 ** 3, available=6 * 1024 ** 3))
+        ok, text = ollama_env.handle("recommend_num_ctx", ["llama3.2"])
+        assert ok is False
+        assert "Kein num_ctx-Kandidat" in text
+        assert not ollama_env.target_file.exists()
+
+    def test_recommend_num_ctx_client_unavailable(self, ollama_env, mock_client):
+        ollama_env._client = mock_client
+        with patch.object(type(ollama_env), "client", new_callable=PropertyMock,
+                          side_effect=ImportError("OllamaClient nicht verfuegbar")):
+            ok, text = ollama_env.handle("recommend_num_ctx", ["llama3.2"])
+        assert ok is False
+        assert "nicht verfuegbar" in text
