@@ -254,6 +254,15 @@ class WorkerLeaseBinding:
             return pickup_filter_rejection(
                 snapshot, cls._effective_pickup_slot(snapshot, slot)) or "pickup_filter"
         pickup = slot.get("pickup_filter")
+        # Early repository capability check: reject if slot lacks explicit repo capability
+        try:
+            from .worker_queue_status import worker_selection_policy
+            allowed_repos = worker_selection_policy(slot)["allowed_repositories"]
+            if not isinstance(slot, dict) or not allowed_repos:
+                return "repository_capability_missing"
+        except Exception:  # noqa: BLE001 -- malformed policy fails closed
+            return "repository_capability_missing"
+
         # Explicit routing may select a personal task. A pickup filter scopes
         # general candidates but never overrides a foreign assignee.
         # Repository authority comes exclusively from the trusted task-repo
