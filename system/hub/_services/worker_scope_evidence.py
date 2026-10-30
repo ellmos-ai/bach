@@ -65,12 +65,19 @@ def _ensure_schema(conn):
 
 
 def _snapshot_valid(snapshot, task_id):
+    repository = snapshot.get("repository") if isinstance(snapshot, dict) else None
+    try:
+        from .chat.worker_repo_registry import canonical_repository_id
+        repository = canonical_repository_id(repository)
+        expected_origin = f"https://github.com/{repository}"
+    except Exception:
+        return False
     if (not isinstance(snapshot, dict) or set(snapshot) != _SNAPSHOT_KEYS
             or snapshot.get("schema") != "bach.task-scope-snapshot.v1"
             or snapshot.get("availability") != "available"
             or type(snapshot.get("task_id")) is not int or snapshot["task_id"] != task_id
-            or snapshot.get("repository") != "ellmos-ai/bach"
-            or snapshot.get("origin") != "https://github.com/ellmos-ai/bach"
+            or snapshot.get("repository") != repository
+            or snapshot.get("origin") != expected_origin
             or snapshot.get("branch") != f"refs/heads/bach-task/{task_id}"
             or snapshot.get("clean_scope") != "porcelain-v1-z-all-untracked-no-ignored"
             or not _OID.fullmatch(snapshot.get("head_oid", ""))
@@ -86,8 +93,11 @@ def _snapshot_valid(snapshot, task_id):
     pin = snapshot["source_pin"]
     if pin is not None and (not isinstance(pin, dict)
             or set(pin) != {"schema", "source_ref", "source_sha", "verified_at"}
-            or pin["schema"] != "bach.task-public-source.v1"
-            or pin["source_ref"] != "refs/heads/main"
+            or pin["schema"] not in {"bach.task-public-source.v1", "bach.task-public-source.v2"}
+            or (pin["schema"] == "bach.task-public-source.v1" and repository != "ellmos-ai/bach")
+            or not isinstance(pin["source_ref"], str)
+            or not pin["source_ref"].startswith("refs/heads/")
+            or len(pin["source_ref"]) > 120
             or not isinstance(pin["source_sha"], str)
             or not re.fullmatch(r"[0-9a-f]{40}", pin["source_sha"])
             or not isinstance(pin["verified_at"], str) or not pin["verified_at"]):
@@ -336,12 +346,21 @@ def project_scope_evidence(data, *, repo_root=None, worktrees_dir=None) -> dict:
     result = data.get("result")
     if not isinstance(result, dict):
         return data.copy()
-    try:
-        scope = _project_scope_record(result.get("scope"), repo_root=repo_root,
-                                      worktrees_dir=worktrees_dir)
-    except (KeyError, TypeError, ValueError, AttributeError):
-        scope = _unavailable("scope_evidence_invalid")
-    projected_result = {**result, "scope": scope,
+    from .worker_result_provenance import source_kind, external_scope
+    if source_kind(result) == "external_attested":
+        from .worker_external_attestation import project_external_attestation
+        provenance = project_external_attestation(result.get("external_provenance"),
+            repo_root=repo_root, worktrees_dir=worktrees_dir)
+        scope = external_scope(provenance)
+        projected_result = {**result, "external_provenance": provenance}
+    else:
+        try:
+            scope = _project_scope_record(result.get("scope"), repo_root=repo_root,
+                                          worktrees_dir=worktrees_dir)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            scope = _unavailable("scope_evidence_invalid")
+        projected_result = result
+    projected_result = {**projected_result, "scope": scope,
                         "result_revision": scope.get("result_revision")}
     review = result.get("model_review")
     if isinstance(review, dict) and review.get("availability") == "recorded":

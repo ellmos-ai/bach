@@ -20,6 +20,7 @@ import logging
 import math
 import os
 import re
+import socket
 import threading
 import time
 import uuid
@@ -32,6 +33,11 @@ from typing import Any
 from hub._services.user_config_store import _exclusive_lock
 
 log = logging.getLogger("bach.slots_config")
+
+#: Set when a running worker lost its thread with the service; cleared by start or stop.
+RESUME_AFTER_RESTART_FIELD = "resume_after_restart"
+#: Next daily credit check of a worker paused without credit (#535), UTC ISO time.
+NO_CREDIT_RECHECK_FIELD = "no_credit_recheck_at"
 
 _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 DEFAULT_SLOTS_FILE = os.environ.get(
@@ -48,6 +54,8 @@ _MODEL_REQUEST_RUN_FIELDS = frozenset({
     "configuration_version", "limit", "reserved_count", "phase", "reason", "sequence",
 })
 _MODEL_REQUEST_TERMINAL_LIMIT = 64
+_CONTROLLER_RUN_FIELD = "_controller_run"
+_CONTROLLER_RUN_SCHEMA = "bach.worker-controller-run.v1"
 
 
 class ModelRequestBudgetError(RuntimeError):
@@ -56,6 +64,7 @@ class ModelRequestBudgetError(RuntimeError):
 DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     "buddha_chat": {
         "id": "buddha_chat",
+        "allowed_repositories": [],
         "name": "Buddha Chat",
         "description": "Interaktiver Chat (GUI & WebChat)",
         "backend": "ollama",
@@ -75,6 +84,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     },
     "buddha_always_on": {
         "id": "buddha_always_on",
+        "allowed_repositories": [],
         "name": "Buddha Always-On",
         "description": "Hintergrundworker für offene Aufgaben; lokale Inferenz teilt die Fackel mit dem Vordergrund",
         "enabled": True,
@@ -103,6 +113,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     },
     "buddha_connector": {
         "id": "buddha_connector",
+        "allowed_repositories": [],
         "name": "Buddha Connector",
         "description": "Messaging-Konnektoren (Telegram, WhatsApp, Signal)",
         "backend": "ollama",
@@ -423,7 +434,8 @@ def worker_admission_transaction(path: str | None = None):
     with _exclusive_lock(target), _config_lock:
         published = False
 
-        def advance_revision(*, model_request_run: dict[str, Any] | None = None):
+        def advance_revision(*, model_request_run: dict[str, Any] | None = None,
+                             controller_run: dict[str, Any] | None = None):
             nonlocal published
             if published:
                 raise RuntimeError("Admission revision already advanced")
@@ -432,8 +444,12 @@ def worker_admission_transaction(path: str | None = None):
             config = json.loads(raw.decode("utf-8"))
             if model_request_run is not None:
                 _admit_model_request_run(config, model_request_run)
+            if controller_run is not None:
+                _validated_controller_run(controller_run)
+                worker = _controller_run_worker(config, controller_run["worker_id"])
+                worker[_CONTROLLER_RUN_FIELD] = dict(controller_run)
             config["admission_revision"] = uuid.uuid4().hex
-            if model_request_run is None:
+            if model_request_run is None and (controller_run is None or not controller_run["durable"]):
                 save_slots_config(config, path)
             else:
                 save_slots_config(config, path, durable=True)
@@ -549,9 +565,18 @@ def is_slot_paused(slot: dict[str, Any]) -> bool:
         return False
 
 
-def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None) -> bool:
-    """Enforce task model and slot binding even when pickup filtering is off."""
+def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None, *, selection_policy=None) -> bool:
+    """A canonical policy makes routing preferences non-exclusive."""
     slot = slot or {}
+    if selection_policy is not None:
+        try:
+            from hub._services.worker_policy_settings import _selection_kernel
+            policy = _selection_kernel().SelectionPolicy(
+                require_assigned_slot=selection_policy['require_assigned_slot'],
+                enforce_model_binding=selection_policy['enforce_model_binding'])
+            return policy.rejection(task,slot) is None
+        except (KeyError,ValueError,TypeError,RuntimeError):
+            return False
     if slot.get("require_assigned_slot") is True and task.get("assigned_slot") != slot.get("id"):
         return False
     for task_key, slot_key in (("required_model", "model"), ("assigned_slot", "id")):
@@ -561,21 +586,21 @@ def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None)
     return True
 
 
-def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> bool:
+def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any], *, selection_policy=None) -> bool:
     """Return True if *task* satisfies the slot's pickup_filter rules.
 
     A missing or disabled filter rejects every task when checking against a
     slot's pickup_filter, so callers like chat_tray can fall back to standard
     assignee matching.
     """
-    return pickup_filter_rejection(task, slot) is None
+    return pickup_filter_rejection(task, slot, selection_policy=selection_policy) is None
 
 
-def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any]) -> str | None:
+def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any], *, selection_policy=None) -> str | None:
     """Explain the same filter decision used by the selector; grant no authority."""
     if not isinstance(slot, dict):
         return "pickup_filter"
-    if not task_matches_slot_binding(task, slot):
+    if not task_matches_slot_binding(task, slot, selection_policy=selection_policy):
         return "pickup_filter"
     # Slot activation and pickup-filter activation are separate flags.
     pickup_filter = slot.get("pickup_filter") if "pickup_filter" in slot else slot
@@ -795,15 +820,17 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
             PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD,
             PERSISTENT_CORE_RECOVERY_FIELD} & set(updates):
         raise ValueError("Dauerbetriebsfreigabe erfordert den Versions-CAS-Endpunkt")
-    if {"_model_request_runs", "max_model_requests"} & set(updates):
+    if {"_model_request_runs", "max_model_requests", _CONTROLLER_RUN_FIELD} & set(updates):
         raise ValueError("Modellanfragenbudget erfordert den Konfigurations-CAS-Endpunkt")
+    if {"system", "execution_kind"} & set(updates):
+        raise ValueError("Systemidentität ist kein editierbares Workerfeld")
     if "id" in updates and updates["id"] != slot_id:
         raise ValueError("Slot-/Worker-ID darf nicht geändert werden")
     if "allow_tools" in updates and not isinstance(updates["allow_tools"], bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     if MATERIALIZE_OWNED_FIELDS & set(updates):
         raise ValueError("Blueprint-Bindung wird nur beim Materialisieren gesetzt")
-    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs") if key in updates}
+    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs", "allowed_repositories") if key in updates}
     if capability_edits:
         updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
@@ -869,7 +896,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
-    "memory_hook_opt_in", "model_fallbacks",
+    "memory_hook_opt_in", "model_fallbacks", "allowed_repositories",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -974,7 +1001,7 @@ def _core_configuration_version(config: dict[str, Any]) -> str:
     if isinstance(workers, list):
         content["dynamic_workers"] = [
             {field: value for field, value in worker.items()
-             if field not in progress | {"history", "_model_request_runs"}}
+             if field not in progress | {"history", "_model_request_runs", _CONTROLLER_RUN_FIELD}}
             if isinstance(worker, dict) else worker for worker in workers
         ]
     encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -1037,6 +1064,8 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "backend": slot.get("backend"),
             "model": slot.get("model"),
             "model_fallbacks": model_fallbacks,
+            "allowed_repositories": _validated_worker_repository_allowlist(
+                slot.get("allowed_repositories", defaults.get("allowed_repositories", []))),
             "resolved_model": slot.get("resolved_model") or "",
             "mode": slot.get("mode"),
             "think": slot.get("think"),
@@ -1183,13 +1212,15 @@ def _validated_core_edits(
     for field, value in changes.items():
         if field == "model_fallbacks":
             value = _validated_model_fallbacks(value)
+        elif field == "allowed_repositories":
+            value = _validated_worker_repository_allowlist(value)
         elif field == "skill_refs":
             from hub._services.skill_source_service import load_skill_instructions
             load_skill_instructions(value)
             value = json.loads(json.dumps(value))
         elif field == "allowed_tools":
-            from .bach_tools import TOOLS_FULL
-            known = {tool["function"]["name"] for tool in TOOLS_FULL}
+            from .bach_tools import REQUEST_TOOLS, TOOLS_FULL
+            known = {tool["function"]["name"] for tool in TOOLS_FULL} | {REQUEST_TOOLS}
             if (value is not None and (not isinstance(value, list) or len(value) > 100
                     or any(not isinstance(name, str) or name not in known for name in value)
                     or len(set(value)) != len(value))):
@@ -1534,6 +1565,14 @@ def reconcile_workers(
                 w["status"] = next_st
                 w["current_activity"] = ("Modellanfragenlauf unbestätigt; Wiederaufnahme gesperrt"
                                          if pending_budget else "Bereit (wiederhergestellt)")
+                # Running without its thread (service restart or lost thread) means
+                # wanted running: the next startup resumes it. Opted-in profiles
+                # have their own resume path.
+                if (next_st == "idle" and w.get("type") in {"continuous", "persistent"}
+                        and w.get("persistent_opt_in") is not True and not w.get("system")):
+                    w[RESUME_AFTER_RESTART_FIELD] = True
+                log.warning("worker_stopped worker_id=%s reason=%s", wid,
+                            "model_request_run_unsettled" if pending_budget else "thread_lost")
                 dirty = True
 
     if dirty:
@@ -1730,7 +1769,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     allow_tools = worker_data.get("allow_tools", True)
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
-    capability_edits = {key: worker_data[key] for key in ("allowed_tools", "skill_refs") if key in worker_data}
+    capability_edits = {key: worker_data[key] for key in
+                        ("allowed_tools", "skill_refs", "allowed_repositories") if key in worker_data}
     capabilities = _validated_core_edits(capability_edits) if capability_edits else {}
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
@@ -1781,6 +1821,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "memory_hook_opt_in": False,
         "allowed_tools": capabilities.get("allowed_tools"),
         "skill_refs": capabilities.get("skill_refs", []),
+        "allowed_repositories": capabilities.get("allowed_repositories", []),
         "system_prompt": composed_prompt,
         "custom_system_prompt": custom_system_prompt,
         "task_prompt": task_prompt,
@@ -1807,21 +1848,28 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "pause_started_at": "",
     }
 
+    from hub.agent_process_provider import capture_process_create_time
+    worker[_CONTROLLER_RUN_FIELD] = {
+        "schema": _CONTROLLER_RUN_SCHEMA, "phase": "never_admitted",
+        "worker_id": worker_id, "pid": os.getpid(),
+        "process_create_time": capture_process_create_time(os.getpid()),
+        "host": socket.gethostname(),
+        "durable": os.name == "posix",
+        "prior_runs_unconfirmed": False,
+    }
     workers.append(worker)
     _reconcile_available_model_bindings(cfg, worker_id)
-    save_slots_config(cfg, path)
+    save_slots_config(cfg, path, durable=os.name == "posix")
     log.info("Created dynamic worker %s (%s, sub_mode=%s, model=%s)", worker_id, name, sub_mode, model)
     return worker
 
 
 @_serialized_mutation
-def remove_worker(worker_id: str, path: str | None = None) -> bool:
-    """Delete a dynamic worker by ID."""
+def remove_worker(worker_id: str, path: str | None = None, *, _runtime_guard=None) -> bool:
+    """Delete only under a fresh controller proof, retaining terminal budget receipts."""
     cfg = load_slots_config(path, strict=True)
     workers = cfg.get("dynamic_workers", [])
     matches = [w for w in workers if w.get("id") == worker_id]
-    if matches and "_model_request_runs" in matches[0]:
-        raise RuntimeError("Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden")
     if len(matches) > 1 or (matches and (
         worker_id in cfg.get("slots", {}) or worker_id in DEFAULT_CORE_SLOTS
     )):
@@ -1829,10 +1877,60 @@ def remove_worker(worker_id: str, path: str | None = None) -> bool:
     new_workers = [w for w in workers if w.get("id") != worker_id]
     if len(new_workers) == len(workers):
         return False
+    worker = matches[0]
+    if _runtime_guard is None:
+        if _MODEL_REQUEST_RUNS_FIELD in worker:
+            raise RuntimeError("Budgetierte Run-Belege benötigen die gefencete Controller-Löschung mit Archiv")
+        raise RuntimeError("worker_delete_execution_unconfirmed")
+    # The caller holds the controller admission lock; this OS lock excludes
+    # configuration edits and admissions in other processes until removal.
+    _runtime_guard(worker)
+    runs = _model_request_runs(worker)
+    records = list(runs["terminal"])
+    if runs["current"] is not None:
+        records.append(runs["current"])
+    if any(record["phase"] != "terminal" for record in records):
+        raise RuntimeError("worker_delete_budget_unconfirmed")
+    from .worker_run_archive import archive_terminal_records
+    archive_terminal_records(worker_id, records, _resolve_path(path).parent / "worker-run-archive")
     cfg["dynamic_workers"] = new_workers
-    save_slots_config(cfg, path)
+    # Removing the profile also atomically revokes its persistent opt-in.
+    save_slots_config(cfg, path, durable=os.name == "posix")
     log.info("Removed dynamic worker %s", worker_id)
     return True
+
+
+def _validated_controller_run(record: Any) -> dict[str, Any]:
+    base = {"schema", "phase", "worker_id", "host", "pid", "process_create_time", "durable", "prior_runs_unconfirmed"}
+    if (type(record) is not dict or record.get("schema") != _CONTROLLER_RUN_SCHEMA
+            or record.get("phase") not in {"never_admitted", "admitted"}
+            or type(record.get("worker_id")) is not str
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", record["worker_id"]) is None
+            or type(record.get("host")) is not str
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", record["host"]) is None
+            or type(record.get("pid")) is not int or record["pid"] <= 0
+            or type(record.get("process_create_time")) not in {int, float}
+            or not math.isfinite(record["process_create_time"])
+            or record["process_create_time"] <= 0 or type(record.get("durable")) is not bool
+            or type(record.get("prior_runs_unconfirmed")) is not bool
+            or record["phase"] == "never_admitted" and record["prior_runs_unconfirmed"]):
+        raise RuntimeError("worker_controller_run_invalid")
+    if record["phase"] == "admitted":
+        base |= {"service_instance", "start_request_id", "generation", "physical_worker_id", "lease_worker_id"}
+        from hub._services.task_lease import _WORKER_RE
+        if (any(type(record.get(key)) is not str or
+                re.fullmatch(r"[0-9a-f]{32}", record[key]) is None
+                for key in ("service_instance", "start_request_id", "generation"))
+                or type(record.get("physical_worker_id")) is not str
+                or re.fullmatch(r"worker-[0-9a-f]{32}", record["physical_worker_id"]) is None
+                or type(record.get("lease_worker_id")) is not str
+                or not _WORKER_RE.fullmatch(record["lease_worker_id"])
+                or record["lease_worker_id"].split("@")[0] != record["physical_worker_id"]
+                or record["lease_worker_id"].split("@")[1] != record["host"]):
+            raise RuntimeError("worker_controller_run_invalid")
+    if set(record) != base:
+        raise RuntimeError("worker_controller_run_invalid")
+    return record
 
 
 @_serialized_mutation
@@ -1901,6 +1999,7 @@ WORKER_EDITABLE_FIELDS = frozenset({
     "allowed_tools", "skill_refs", "persistent_opt_in",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
+    "allowed_repositories",
 }) | WORKER_EDITABLE_POLICY_FIELDS
 
 
@@ -1930,11 +2029,28 @@ def _validated_worker_pickup_filter(value: Any) -> dict[str, Any]:
     return projected["pickup_filter"]
 
 
+def _validated_worker_repository_allowlist(value: Any) -> list[str]:
+    """Validate bounded canonical repo IDs; capability does not bind source."""
+    if type(value) is not list or len(value) > 32 or any(type(item) is not str for item in value):
+        raise ValueError("Worker-Repo-Freigaben müssen eine begrenzte Liste sein")
+    from .worker_repo_registry import RepositoryBindingError, canonical_repository_id
+    result = []
+    for item in value:
+        try:
+            canonical = canonical_repository_id(item)
+        except RepositoryBindingError as exc:
+            raise ValueError("Worker-Repo-Freigabe muss eine kanonische Repository-ID sein") from exc
+        if canonical != item or canonical in result:
+            raise ValueError("Worker-Repo-Freigabe muss kanonisch und duplikatfrei sein")
+        result.append(canonical)
+    return result
+
+
 def _worker_profile_version(worker: dict[str, Any]) -> str:
     from .worker_queue_status import worker_selection_policy
     configuration = {
         field: worker.get(field, False if field == "memory_hook_opt_in" else
-                          [] if field == "model_fallbacks" else None)
+                          [] if field in {"model_fallbacks", "allowed_repositories"} else None)
         for field in sorted(WORKER_EDITABLE_FIELDS)
     }
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
@@ -1958,6 +2074,14 @@ def _model_request_worker(config: dict[str, Any], worker_id: str) -> dict[str, A
     if len(matches) != 1:
         raise RuntimeError("budget_worker_not_unique")
     return matches[0]
+
+
+def _controller_run_worker(config: dict[str, Any], worker_id: str) -> dict[str, Any]:
+    """Resolve the sole core Always-On or dynamic controller record owner."""
+    if worker_id == "buddha_always_on":
+        _always_on_execution_slot_from_config(config)
+        return config["slots"][worker_id]
+    return _model_request_worker(config, worker_id)
 
 
 def _validated_model_request_record(record: Any) -> dict[str, Any]:
@@ -2186,7 +2310,7 @@ def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
     )
     configuration = {
         field: worker.get(field, False if field == "memory_hook_opt_in" else
-                          [] if field == "model_fallbacks" else None)
+                          [] if field in {"model_fallbacks", "allowed_repositories"} else None)
         for field in sorted(scalar_configuration_fields)
     }
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
@@ -2265,7 +2389,7 @@ def _persistent_core_capacity_observation(
         "policy_version", "model", "wait_seconds", "poll_seconds",
         "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
         "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-        "resident_weight_credit",
+        "resident_weight_credit", "capacity_basis",
     }
     if not isinstance(receipt, dict) or set(receipt) != fields:
         return None
@@ -2296,14 +2420,17 @@ def _persistent_core_capacity_observation(
     age = datetime.now(timezone.utc) - checked_at.astimezone(timezone.utc)
     if age.total_seconds() < 0 or age.total_seconds() > 120:
         return None
+    capacity_basis = receipt.get("capacity_basis")
+    if capacity_basis not in {"host_budget", "resident_model"}:
+        return None
     integer_limits = {
         "wait_seconds": (1, 3600),
         "poll_seconds": (1, 60),
+        "disk_reserve_bytes": (1, 256 * 1024**3),
+        "weight_request_bytes": (0, 1024 * 1024**3),
         "memory_total_bytes": (1, 4096 * 1024**3),
         "memory_available_bytes": (0, 4096 * 1024**3),
         "memory_required_bytes": (1, 1024 * 1024**3),
-        "disk_reserve_bytes": (1, 256 * 1024**3),
-        "weight_request_bytes": (0, 1024 * 1024**3),
     }
     for name, (low, high) in integer_limits.items():
         value = receipt.get(name)
@@ -2313,7 +2440,8 @@ def _persistent_core_capacity_observation(
         return None
     disk = receipt.get("disk_free_bytes")
     if (not isinstance(disk, dict) or set(disk) != {"taskdb", "runtime", "slots"}
-            or any(type(value) is not int or value < 0 for value in disk.values())):
+            or any(type(value) is not int or value < 0 for value in disk.values())
+            or receipt["resident_weight_credit"] is not (capacity_basis == "resident_model")):
         return None
     try:
         from hub._services.chat import local_resource_reserve
@@ -2327,7 +2455,7 @@ def _persistent_core_capacity_observation(
     budget = policy.get("models", {}).get(receipt["model"])
     if not isinstance(budget, dict):
         return None
-    expected_weight = 0 if receipt["resident_weight_credit"] else budget["weight_budget_bytes"]
+    expected_weight = 0 if capacity_basis == "resident_model" else budget["weight_budget_bytes"]
     required = (policy["memory_reserve_bytes"] + expected_weight
                 + budget["kv_headroom_bytes"] + budget["overhead_bytes"])
     if (receipt["weight_request_bytes"] != expected_weight
@@ -2345,11 +2473,13 @@ def _persistent_core_capacity_observation(
         "schema": "bach.persistent-core-capacity-observation.v1",
         "state": derived_state,
         "model": receipt["model"],
+        "capacity_basis": capacity_basis,
         "policy_version": policy_version,
         "memory_total_bytes": receipt["memory_total_bytes"],
         "memory_available_bytes": receipt["memory_available_bytes"],
         "memory_required_bytes": required,
-        "disk_free_bytes": {key: disk[key] for key in sorted(disk)},
+        "disk_free_bytes": ({key: disk[key] for key in sorted(disk)}
+                            if isinstance(disk, dict) else None),
         "disk_reserve_bytes": policy["disk_reserve_bytes"],
         "weight_request_bytes": expected_weight,
         "resident_weight_credit": receipt["resident_weight_credit"],
@@ -2899,7 +3029,7 @@ def _persistent_worker_reconciliation_proof_valid(
 def set_persistent_worker_controller_checkpoint(
     worker_id: str, expected_configuration_version: str, expected_profile_version: str,
     expected_intent_id: str, expected_checkpoint: dict[str, Any] | None,
-    checkpoint: dict[str, Any] | None, *, path: str | None = None,
+    checkpoint: dict[str, Any] | None, *, path: str | None = None, _runtime_guard=None,
 ) -> dict[str, Any]:
     """CAS-update private controller metadata without changing execution/consent digests."""
     config = load_slots_config(path, strict=True)
@@ -2927,6 +3057,13 @@ def set_persistent_worker_controller_checkpoint(
         if current is None:
             if checkpoint.get("phase") != "admission_pending":
                 raise ValueError("Ein Start muss mit admission_pending beginnen")
+            if _CONTROLLER_RUN_FIELD not in worker:
+                raise RuntimeError("worker_previous_run_unconfirmed")
+            if (_CONTROLLER_RUN_FIELD in worker and
+                    _validated_controller_run(worker[_CONTROLLER_RUN_FIELD])["phase"] == "admitted"):
+                if _runtime_guard is None:
+                    raise RuntimeError("worker_previous_run_unconfirmed")
+                _runtime_guard(worker)
         elif (not _valid_persistent_worker_controller_checkpoint(current)
                 or current.get("phase") != "admission_pending"
                 or checkpoint.get("phase") != "admitted"
@@ -2946,7 +3083,7 @@ def set_persistent_worker_controller_checkpoint(
 def settle_persistent_worker_controller_checkpoint(
     worker_id: str, expected_configuration_version: str, expected_profile_version: str,
     expected_intent_id: str, expected_checkpoint: dict[str, Any], expected_status: str,
-    reconciliation_proof: dict[str, Any], *, path: str | None = None,
+    reconciliation_proof: dict[str, Any], *, path: str | None = None, _runtime_guard=None,
 ) -> dict[str, Any]:
     """CAS-settle a stale opted-in generation after complete stable native reads."""
     if expected_status not in {"idle", "running"}:
@@ -2959,6 +3096,13 @@ def settle_persistent_worker_controller_checkpoint(
     if len(workers) != 1:
         raise KeyError("Workerprofil nicht eindeutig gefunden")
     worker = workers[0]
+    if _CONTROLLER_RUN_FIELD not in worker:
+        raise RuntimeError("worker_previous_run_unconfirmed")
+    if (_CONTROLLER_RUN_FIELD in worker and
+            _validated_controller_run(worker[_CONTROLLER_RUN_FIELD])["phase"] == "admitted"):
+        if _runtime_guard is None:
+            raise RuntimeError("worker_previous_run_unconfirmed")
+        _runtime_guard(worker)
     current_version = _worker_configuration(worker)["configuration_version"]
     if current_version != expected_configuration_version:
         raise RuntimeError("configuration_version_conflict")
@@ -3138,6 +3282,8 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
     for field, value in edits.items():
         if field == "pickup_filter":
             edits[field] = _validated_worker_pickup_filter(value)
+        if field == "allowed_repositories":
+            edits[field] = _validated_worker_repository_allowlist(value)
         if field == "persistent_opt_in":
             continue
         if field in {"allowed_tools", "skill_refs", "avatar", "symbol"}:

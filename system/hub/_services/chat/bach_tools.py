@@ -44,7 +44,7 @@ except ImportError:
         return Mode(str(getattr(v, "value", v)).strip().lower())
 
 from hub import safe_exec
-from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError
+from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError, WorkerSubmissionScopeError
 from hub._services.chat.worker_tool_errors import ToolErrorText
 from hub._services.chat.worker_lease_binding import (
     WorkerLeaseBinding,
@@ -53,7 +53,7 @@ from hub._services.chat.worker_lease_binding import (
 )
 from hub._services.task_lease_client import (
     LeaseConnectionError, LeaseDeniedError, LeaseProtocolError,
-    LeaseSelfCheckRequiredError,
+    LeaseRequestRejectedError, LeaseSelfCheckRequiredError,
     TaskResultOperationError, _SAFE_DENIAL_REASONS,
 )
 from hub._services.limits import limit
@@ -107,6 +107,19 @@ def _return_partial_state(binding, args):
     return f"Task #{task_id}: Teilstand gespeichert und offen zurückgegeben (pending); kein Abschluss."
 
 
+# Fixed texts from validate_submission that a model needs to correct its result.
+_PUBLIC_RESULT_ERRORS = ("Konkretes Ergebnis mit höchstens ",
+                         "Eine Erledigungsbestätigung ist kein fachliches Ergebnis")
+
+
+def _invalid_result_text(exc):
+    """Neutral typed text (#379); only a known public check reason is added."""
+    reason = str(exc)
+    if reason.startswith(_PUBLIC_RESULT_ERRORS):
+        return ToolErrorText(f"Taskergebnis ist ungültig: {reason}.", code="invalid_task_result")
+    return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
+
+
 def _log_bound_task_manage_denial(stage, binding, args, exc=None):
     """Finite operator diagnosis; never log tool arguments, result or ACK text."""
     action = args.get("action", "list") if type(args) is dict else None
@@ -121,6 +134,8 @@ def _log_bound_task_manage_denial(stage, binding, args, exc=None):
         kind = "argument_shape"
     elif isinstance(exc, LeaseSelfCheckRequiredError):
         kind = "self_check_required"
+    elif isinstance(exc, LeaseRequestRejectedError):
+        kind = "request_rejected"
     elif isinstance(exc, LeaseDeniedError):
         kind = "lease_denied"
     elif isinstance(exc, LeaseProtocolError):
@@ -995,7 +1010,7 @@ TOOLS_SAFE = [
     }),
     _tool("read_file", "Datei lesen (max. 200 physische Zeilen); Task-Reads zeigen standardmäßig 1-basierte Zeilennummern und Bereichs-/Abschneidungshinweise. Zeilenangaben sind Navigationshilfe, kein Wahrheitsbeleg; unnummerierte oder abgeschnittene Zitate sind nicht verifiziert. line_numbers=false erhält die rohe Legacy-Ausgabe.", {
         "path": {"type": "string", "description": "Dateipfad"},
-        "lines": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximale Zeilenzahl (Standard 50)"},
+        "lines": {"type": "integer", "minimum": 1, "maximum": 200, "description": "Maximale Zeilenzahl (Standard 50, bei Task-Reads 200; Ausgabe höchstens 4000 Zeichen)"},
         "offset": {"type": "integer", "minimum": 1, "maximum": 2147483647, "description": "Physische Startzeile (1-basiert, Standard 1)"},
         "line_numbers": {"type": "boolean", "description": "Zeilennummern und Metadaten anzeigen; Standard an für Task-Reads, sonst aus."},
     }, ["path"]),
@@ -1169,10 +1184,65 @@ def tools_for_mode(mode: str, *, bound_worker: bool = False) -> list:
     if bound_worker:
         # Native tasks may use their selected provider, never the legacy
         # paid delegation fallback or destructive post-merge cleanup.
-        return [tool for tool in tools if tool["function"]["name"] not in {
+        bound_tools = [copy.deepcopy(tool) for tool in tools if tool["function"]["name"] not in {
             "delegate", "cleanup_task_worktree",
         }]
+        for tool in bound_tools:
+            function = tool["function"]
+            if function["name"] == "execute_command":
+                function["description"] = "Taskgebundene Prüfungen ausführen: python -m pytest, unittest oder compileall; keine Shellverkettung und keine Git-Schreibbefehle."
+                function["parameters"]["properties"]["command"]["description"] = "Ein einzelner Prüfbefehl, zum Beispiel python -m pytest -q -- system/tests/test_datei.py."
+                function["parameters"]["properties"]["cwd"]["description"] = "Bestätigter Task-Arbeitsbaum aus start_task_worktree; erforderlich."
+                function["parameters"]["required"] = ["command", "cwd"]
+        return bound_tools
     return tools
+
+
+#: Werkzeuge nach Bedarf (BACH-Harness, 25.10.2026): Steht dieses Meta-Werkzeug
+#: in den allowed_tools eines gebundenen Workers, bekommt er zuerst nur den
+#: Kernsatz und holt Gruppen selbst nach. Die übrigen allowed_tools bleiben die
+#: Obergrenze; Gruppen öffnen nie ein Werkzeug außerhalb davon.
+REQUEST_TOOLS = "request_tools"
+CORE_TOOLS = frozenset({"task_manage", "read_file", "search_text", "list_directory"})
+TOOL_GROUPS = {
+    "dateien": ("Dateien schreiben", ("write_file", "edit_file", "create_directory", "file_info",
+                                      "move_file", "copy_file", "recycle")),
+    "lieferung": ("Code-Lieferung/Git", ("start_task_worktree", "finish_task")),
+    "ausfuehren": ("Ausführen", ("execute_command", "safe_shell")),
+    "web": ("Web", ("web_search", "web_fetch")),
+    "system": ("System", ("system_status", "ollama_info", "get_datetime", "bach_command",
+                          "maintain", "weather", "foerderbericht")),
+    "skills": ("Skills", ("skill_create", "agent_manage")),
+}
+
+
+def tool_groups_available(tools) -> dict:
+    """Gruppen mit ihren Werkzeugen, soweit sie in ``tools`` schon freigegeben sind."""
+    offered = {tool["function"]["name"] for tool in tools}
+    groups = {group: [name for name in names if name in offered]
+              for group, (_label, names) in TOOL_GROUPS.items()}
+    return {group: names for group, names in groups.items() if names}
+
+
+def on_demand_tools(tools, requested_groups) -> list:
+    """Kernsatz, angeforderte Gruppen und ungruppierte Werkzeuge; dazu request_tools.
+
+    ``tools`` ist der bereits nach Modus und allowed_tools gefilterte Satz.
+    """
+    groups = tool_groups_available(tools)
+    grouped = {name for _label, names in TOOL_GROUPS.values() for name in names}
+    keep = {name for group in requested_groups for name in groups.get(group, ())}
+    result = [tool for tool in tools if tool["function"]["name"] in keep
+              or tool["function"]["name"] in CORE_TOOLS
+              or tool["function"]["name"] not in grouped]
+    missing = [group for group in groups if group not in requested_groups]
+    if missing:
+        result.append(_tool(
+            REQUEST_TOOLS,
+            "Weitere Werkzeuge ab der nächsten Runde freischalten. Gruppen:\n" + "\n".join(
+                f"{group}: {TOOL_GROUPS[group][0]} ({', '.join(groups[group])})" for group in missing),
+            {"group": {"type": "string", "enum": missing}}, ["group"]))
+    return result
 
 
 # --- Delegation ---
@@ -1238,6 +1308,37 @@ def _tool_effect_unconfirmed() -> ToolErrorText:
         "Werkzeugausführung nicht bestätigt; Wirkung unbekannt.",
         code="bach_tool_effect_unconfirmed",
     )
+
+
+def _bound_check_text(result, timeout):
+    """Keep the legacy display; expose an exit only from confirmed clean owner data."""
+    from core.sandbox import SandboxResult
+    from hub._services.chat.worker_tool_trace import DiagnosticToolText
+    if type(result) is not SandboxResult:
+        return _tool_effect_unconfirmed()
+    output = result.stdout or ""
+    if result.stderr:
+        output += "\n[stderr] " + result.stderr
+    timeout = min(max(int(timeout), 1), 120)
+    if result.timed_out:
+        status = f"Prüfung fehlgeschlagen; Timeout nach {timeout}s; Exitcode {result.returncode}"
+    elif result.memory_exceeded:
+        status = f"Prüfung fehlgeschlagen; Speichergrenze; Exitcode {result.returncode}"
+    elif result.returncode == 0:
+        status = f"Prüfung erfolgreich; Exitcode {result.returncode}"
+    else:
+        status = f"Prüfung fehlgeschlagen; Exitcode {result.returncode}"
+    text = (status + "\n" + (output or "(keine Ausgabe)"))[:4000]
+    clean = (type(result.returncode) is int and -(2 ** 31) <= result.returncode < 2 ** 32
+             and result.timed_out is False and result.memory_exceeded is False
+             and result.cleanup_confirmed is True and result.watchdog_joined is True
+             and result.cleanup_scope == "owned_posix_process_group"
+             and type(result.cleanup_errors) is tuple and result.cleanup_errors == ())
+    if not clean:
+        return text
+    return DiagnosticToolText(text, {"outcome_class": "sandbox_terminal",
+        "stage": "sandbox_execution", "code": "sandbox_exit",
+        "sandbox_returncode": result.returncode})
 
 
 def exec_tool(name: str, args: Any, mode: str, bach_app=None,
@@ -1426,7 +1527,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return rendered if rendered is not None else _read_evidence_unavailable(
                     "formatter_capability_unverified"
                 )
-            requested_lines = args.get("lines", 50)
+            # Task readers page by the 4000-character output cap, not by 50 lines:
+            # fewer calls for the same context (BACH harness, 25.10.2026).
+            requested_lines = args.get("lines", MAX_READ_FILE_LINES if task_code_capability else 50)
             if type(requested_lines) is not int or requested_lines < 1:
                 return "Fehler: lines muss eine positive Ganzzahl sein."
             lines = min(requested_lines, MAX_READ_FILE_LINES)
@@ -1654,9 +1757,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if is_blocked(cmd):
                 return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             if worker_task_binding is not None:
-                from hub._services.chat.worker_write_guard import run_bound_check
+                from hub._services.chat.worker_write_guard import run_bound_check, WorkerCheckPolicyRejected
                 try:
-                    return run_bound_check(worker_task_binding, cmd, args.get("cwd"), t)
+                    result = run_bound_check(worker_task_binding, cmd, args.get("cwd"), t, return_result=True)
+                    return _bound_check_text(result, t)
+                except WorkerCheckPolicyRejected as exc:
+                    return _tool_policy_denial(exc.policy_reason, str(exc))
                 except Exception as e:
                     return _tool_effect_unconfirmed()
             from hub.worker_git import is_live_path_blocked
@@ -1802,7 +1908,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         )
                     except ValueError as exc:
                         _log_bound_task_manage_denial("submission_validation", worker_task_binding, args, exc)
-                        return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
+                        return _invalid_result_text(exc)
                     except Exception as exc:
                         _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
                         return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")
@@ -1822,7 +1928,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                                 max_chars=worker_task_binding.task_snapshot().get("result_max_chars"))
                         except ValueError as exc:
                             _log_bound_task_manage_denial("submission_validation", worker_task_binding, args, exc)
-                            return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
+                            return _invalid_result_text(exc)
                         except Exception as exc:
                             _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
                             return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")
@@ -1840,6 +1946,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         # Optional evidence must never hide a confirmed ACK.
                         pass
                     return response
+                except WorkerSubmissionScopeError as exc:
+                    _log_bound_task_manage_denial("submission_scope", worker_task_binding, args, exc)
+                    return ToolErrorText(exc.user_message, code="task_preflight_unavailable")
                 except WorkerResultLimitLockedError as exc:
                     _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     # This bounded policy denial is safe to explain and leaves the lease active.
@@ -1850,6 +1959,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 except WorkerTaskManageArgumentError as exc:
                     _log_bound_task_manage_denial("arguments", worker_task_binding, args, exc)
                     return ToolErrorText(exc.user_message, code="invalid_task_arguments")
+                except LeaseRequestRejectedError as exc:
+                    _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
+                    # Rejected before applying: the lease stays active and the model can correct its arguments.
+                    return ToolErrorText(LeaseRequestRejectedError.user_message, code="invalid_task_arguments")
                 except Exception as exc:
                     _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     # The task operation may have applied before the acknowledgement was lost.
@@ -2609,8 +2722,10 @@ HANDOFF_PROMPT = (
     "STAND: <was gerade halb fertig ist>\n"
     "OFFEN: <was noch zu tun ist, in der Reihenfolge>\n"
     "GEPRUEFT: <welche Pruefbefehle laufen, mit Ergebnis>\n"
+    "FAKTEN: <festgestellte Befunde mit Datei:Zeile, die du nicht erneut nachlesen musst>\n"
     "SACKGASSEN: <was du schon erfolglos versucht hast - damit du es nicht wiederholst>\n"
     "RESUME: <der naechste konkrete Befehl oder Schritt>\n\n"
+    "Gelesene Dateien und Zeilenbereiche haengt BACH automatisch an; schreibe sie nicht ab.\n"
     "Keine Erklaerungen, keine Hoeflichkeit, nur die Uebergabe."
 )
 

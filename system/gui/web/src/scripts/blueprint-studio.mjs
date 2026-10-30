@@ -2,8 +2,19 @@
 // One editor for the former factory and the real blueprint/controller contracts.
 import {createAvatar,mountAvatarPicker} from '../lib/agent-avatar.mjs';
 import {createSymbol,mountSymbolPicker} from '../lib/ticket-symbol.mjs';
+export const SKILL_LIBRARY_ENDPOINT = "/api/capabilities/skills/library";
 export const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
+export function skillItemsForEditor(available, selectedIds) {
+  const items = (Array.isArray(available) ? available : [])
+    .filter(skill => skill?.evidence_type === "filesystem_present" && typeof skill.source_version === "string")
+    .map(skill => ({id:skill.id,name:skill.name||skill.id,description:"Dateisystem · "+(skill.category||"")}));
+  for (const id of Array.isArray(selectedIds) ? selectedIds : []) {
+    if (typeof id === "string" && !items.some(item => item.id === id))
+      items.push({id,name:id,description:"Gespeichert · Quelle nicht verfügbar"});
+  }
+  return items;
+}
 export function blueprintState(blueprint) {
   const slot = blueprint.instance;
   if (!slot) return "Vorlage";
@@ -115,7 +126,7 @@ function initializeStudio() {
     notify("studio-status","Bibliothek wird geladen…");
     const data=await api("/api/agent-studio/blueprints");
     state.blueprints=[...(data.templates||[]),...(data.blueprints||[])];
-    const requests=[["teams","/api/agenten/teams","teams"],["skills","/api/capabilities/skills","skills"],
+    const requests=[["teams","/api/agenten/teams","teams"],["skills",SKILL_LIBRARY_ENDPOINT,"skills"],
       ["tools","/api/agent-studio/tools","tools"],["contracts","/api/agent-studio/contractus-presets","presets"],
       ["governance","/api/agent-studio/governance-presets","presets"],["core","/api/system/core-agents",null],
       ["prompts","/api/system/core-prompts",null]];
@@ -165,8 +176,7 @@ function initializeStudio() {
     state.avatar=config.avatar||"";state.symbol=config.symbol||"";drawAvatar();
     selectOptions($("bp-contractus-preset"),[{value:"",label:"Eigener Arbeitsvertrag"},...state.contracts.map(p=>({value:p.id,label:p.title,disabled:p.execution_supported===false}))],"");
     selectOptions($("bp-governance"),state.governance.map(p=>({value:p.id,label:p.name})),bp.governance?.profile||"fail_closed_standard");
-    const skillItems=state.skills.map(skill=>({id:skill.id,name:skill.name||skill.id,description:skill.evidence_type==="filesystem_present"?"Dateisystem · "+(skill.category||""):"Katalogeintrag · Installation nicht bestätigt"}));
-    for(const id of bp.skills||[]) if(!skillItems.some(item=>item.id===id))skillItems.push({id,name:id,description:"Gespeichert · Quelle nicht verfügbar"});
+    const skillItems=skillItemsForEditor(state.skills,bp.skills||[]);
     optionList($("bp-skills"),skillItems,bp.skills||[]);
     const selected=normalizeTools(bp.governance?.tool_whitelist||["read_file","list_directory","search_text","task_manage"]);
     const toolItems=state.tools.map(tool=>({id:tool.name,name:tool.name,description:tool.description}));

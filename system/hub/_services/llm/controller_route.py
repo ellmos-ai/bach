@@ -15,8 +15,8 @@ _SEAL = object()
 _CREDENTIAL_REFS = {
     "openai": {"env:OPENAI_API_KEY", "file:openai_api_key"},
     "claude-api": {"env:ANTHROPIC_API_KEY", "file:anthropic_api_key"},
-    "hermes": {"env:OPENROUTER_API_KEY", "file:openrouter_api_key"},
-    "openrouter": {"env:OPENROUTER_API_KEY", "file:openrouter_api_key"},
+    "hermes": {"env:OPENROUTER_API_KEY", "file:openrouter_api_key", "credentials_dir:openrouter.env:OPENROUTER_API_KEY"},
+    "openrouter": {"env:OPENROUTER_API_KEY", "file:openrouter_api_key", "credentials_dir:openrouter.env:OPENROUTER_API_KEY"},
 }
 
 

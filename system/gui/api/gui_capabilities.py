@@ -13,7 +13,7 @@ PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-
 # a prefix or a path-only comparison would catalog those as well.
 EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme", "GET /api/setup/ocean-map",
                "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates", "GET /api/system/external-artifacts",
-               "GET /api/task-capabilities")
+               "GET /api/task-capabilities", "GET /api/routines")
 # Reads of src/layouts/BachLayout.astro -> src/components/Header.astro:242,280 and src/lib/domain-pins.mjs:46 (domain menu): every
 # page makes them. Only the pages checked so far list them; completeness for all pages is a task of the GUI manifest (#2087).
 LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]
@@ -28,9 +28,9 @@ PAGE_READS = {
     "/": ["/api/agent-studio/blueprints", "/api/tasks"],
     "/tasks": ["/api/tasks", "/api/task-assignees"],
     "/agenten/running": ["/api/system/core-agents", "/api/system/core-agents/timeline"],
-    "/agenten/blueprints": ["/api/agent-studio/blueprints"],
+    "/agenten/blueprints": ["/api/agent-studio/blueprints", "/api/capabilities/skills/library"],
     "/agenten/subscription-agents": ["/api/agent-studio/blueprints", "/api/capabilities/skills/library"],
-    "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills"],
+    "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills/library"],
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
     "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
                          "/api/agent-history/sessions/{snapshot_id}", "/api/agents"],
@@ -44,6 +44,7 @@ PAGE_READS = {
     "/user-inbox": ["/api/user-inbox"],
     "/memory": ["/api/memory/search"],
     "/domains": ["/api/domains/installed"],
+    "/routinen": ["/api/routines"],
     "/artefakte": ["/api/artefakte"],
     "/governance": ["/api/governance/policy-registry", "/api/governance/locks"],
     "/governance/logs": ["/api/governance/audit"],
@@ -52,6 +53,17 @@ PAGE_READS = {
                  "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
 }
 # Required actions retain their HTTP method; compose is a preview POST, never a GET.
+# Shared GUI 0.2.29 ships pages for these paths that only announce the missing conversion (Task #2468 fallback notice).
+# BACH keeps serving its own working page there; each entry is a reasoned fallback, not a silent legacy render (#2626).
+_NOTICE_ONLY = "shared release ships only a conversion notice; the BACH page keeps the working function"
+LEGACY_PAGE_FALLBACKS = {
+    path: _NOTICE_ONLY
+    for path in ("/ati", "/chat", "/denkarium", "/financial", "/gesundheit", "/help", "/kontakte", "/maintenance",
+                 "/persoenlich", "/steuer", "/tools")
+}
+LEGACY_PAGE_FALLBACKS["/inbox"] = (_NOTICE_ONLY + "; it holds the file inbox including the Förderplaner "
+                                   "quarantine/anonymisation tab")
+
 PAGE_ACTIONS = {
     "/agenten/subscription-agents": ["POST /api/agent-studio/subscription-agents/compose"],
 }

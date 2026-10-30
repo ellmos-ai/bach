@@ -7,14 +7,18 @@ from datetime import datetime, timezone
 
 SCHEMA = "bach.worker-queue.v1"
 REJECTIONS = frozenset({
-    "slot_binding", "model_binding", "explicit_slot_required", "pickup_filter",
+    "slot_binding", "model_binding", "explicit_slot_required", "selection_policy_unavailable", "pickup_filter",
     "pickup_category", "pickup_priority", "pickup_tags", "excluded_tag",
+    "repository_capability_missing", "repository_unverified", "repository_not_allowed",
+    "repository_changed",
     "ownership", "deferred_version", "changed_selection", "held", "not_claimable",
     "creator_priority", "stale_task_version", "already_held_by_caller",
-    "conflict",
+    "completion_guard", "conflict", "unresolved_tool_trace",
 })
+# unresolved_tool_trace: a prior holder's tool effect is unknown; only that task waits for settlement.
 ACQUIRE_DENIALS = frozenset({"held", "not_claimable", "creator_priority",
-                           "stale_task_version", "already_held_by_caller", "conflict"})
+                           "stale_task_version", "already_held_by_caller",
+                           "completion_guard", "conflict", "unresolved_tool_trace"})
 REASONS = frozenset({
     "task_acquired", "empty_queue", "selection_excluded", "acquire_denied",
     "selection_error",
@@ -31,8 +35,22 @@ def project_selection_policy(raw):
     if (not isinstance(raw, dict) or raw.get("schema") != "bach.worker-selection.v1"
             or type(raw.get("require_assigned_slot")) is not bool):
         return None
+    enforce_model_binding = raw.get("enforce_model_binding", False)
+    if type(enforce_model_binding) is not bool:
+        return None
     pickup = raw.get("pickup_filter")
     if not isinstance(pickup, dict) or type(pickup.get("enabled")) is not bool:
+        return None
+    repositories = raw.get("allowed_repositories", [])
+    if (not isinstance(repositories, list) or len(repositories) > 32
+            or any(type(value) is not str for value in repositories)
+            or len(set(repositories)) != len(repositories)):
+        return None
+    try:
+        from .worker_repo_registry import canonical_repository_id
+        if any(canonical_repository_id(repository) != repository for repository in repositories):
+            return None
+    except (ImportError, ValueError, RuntimeError):
         return None
     projected = {"enabled": pickup["enabled"]}
     for key in ("categories", "priorities", "tags", "exclude_tags"):
@@ -42,9 +60,8 @@ def project_selection_policy(raw):
             return None
         projected[key] = list(values)
     return {"schema": raw["schema"], "require_assigned_slot": raw["require_assigned_slot"],
-            "pickup_filter": projected,
-            "unrouted_ownership": ("explicit_pickup_filter" if pickup["enabled"]
-                                  else "bach_or_own_worker_role")}
+            "enforce_model_binding": enforce_model_binding, "pickup_filter": projected, "allowed_repositories": list(repositories),
+            "unrouted_ownership": "preference_only"}
 
 
 def worker_selection_policy(worker):
@@ -52,7 +69,9 @@ def worker_selection_policy(worker):
     if not isinstance(pickup, dict):
         pickup = {}
     raw = {"schema": "bach.worker-selection.v1",
-           "require_assigned_slot": worker.get("require_assigned_slot") is True,
+           "require_assigned_slot": worker.get("require_assigned_slot", False),
+           "enforce_model_binding": worker.get("enforce_model_binding", False),
+           "allowed_repositories": worker.get("allowed_repositories", []),
            "pickup_filter": {"enabled": pickup.get("enabled", False),
                             **{key: pickup.get(key) or [] for key in
                                ("categories", "priorities", "tags", "exclude_tags")}}}
@@ -71,11 +90,16 @@ def queue_waiting_activity(raw):
         "pickup_category": "Kategorie", "pickup_priority": "Priorität",
         "pickup_tags": "erforderliche Tags", "excluded_tag": "ausgeschlossene Tags",
         "pickup_filter": "Auswahlfilter", "slot_binding": "Slot", "model_binding": "Modell",
-        "explicit_slot_required": "Slotzuweisung fehlt", "ownership": "Zuständigkeit",
+        "explicit_slot_required": "Slotzuweisung fehlt", "selection_policy_unavailable": "Auswahlpolicy ungeprüft", "ownership": "Zuständigkeit",
         "deferred_version": "unveränderte Rückgabe", "changed_selection": "Task geändert",
         "held": "fremde Lease", "not_claimable": "Status/Abhängigkeiten",
         "creator_priority": "Creator-Schonfrist", "stale_task_version": "Taskversion",
-        "already_held_by_caller": "bereits gehalten", "conflict": "Übernahmekonflikt",
+        "already_held_by_caller": "bereits gehalten", "completion_guard": "Abschlussprüfung",
+        "conflict": "Übernahmekonflikt",
+        "repository_capability_missing": "keine Repo-Freigabe",
+        "repository_unverified": "Repo-Bindung ungeprüft",
+        "repository_not_allowed": "Repo nicht freigegeben",
+        "repository_changed": "Repo änderte sich vor Claim",
     }
     reasons = ", ".join(f"{labels[key]}: {count}" for key, count in report["rejected_counts"].items())
     prefix = "Keine offenen Kandidaten" if report["reason"] == "empty_queue" else "Keine übernehmbare Aufgabe"
@@ -147,7 +171,8 @@ def project_queue_status(raw):
         return None
     if result["state"] in {"waiting", "acquired"}:
         acquired = int(result["state"] == "acquired")
-        attempted_rejections = sum(rejected.get(key, 0) for key in ACQUIRE_DENIALS | {"changed_selection"})
+        attempted_rejections = sum(rejected.get(key, 0) for key in ACQUIRE_DENIALS |
+                                   {"changed_selection", "repository_changed"})
         if (sum(rejected.values()) + acquired != result["candidate_count"]
                 or attempted_rejections + acquired != result["attempted_count"]
                 or result["attempted_count"] != result["matched_count"]):

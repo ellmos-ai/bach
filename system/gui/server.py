@@ -1717,6 +1717,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
                 or path == "/api/system/task-lease-settings"
+                or path == "/api/tasks/leases/by-worker"
                 or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")
@@ -2566,6 +2567,13 @@ class LeaseReleaseRequest(LeaseRefRequest):
     worker_result: Optional[dict] = None
 
 
+class LeaseReclaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operator: StrictStr
+    fence: StrictInt
+    reason: StrictStr
+
+
 class LeaseUpdateRequest(LeaseRefRequest):
     model_config = ConfigDict(extra="forbid")
     task_version: StrictStr
@@ -2796,6 +2804,38 @@ async def reconcile_task_result(task_id: int, body: TaskResultReconcileRequest, 
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
+@app.get("/api/tasks/{task_id}/legacy-review/eligibility")
+async def legacy_review_reopen_eligibility_read(task_id: int, request: Request):
+    """Correction-owner-only observation; the reopen writer still rechecks all gates."""
+    from hub._services.legacy_review_reopen import legacy_review_reopen_eligibility
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return legacy_review_reopen_eligibility(conn, task_id, operator_token=operator_token)
+        finally:
+            conn.close()
+
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={
+            "code": "result_operator_correction_scope_required", "message": str(exc),
+        }) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "legacy_review_eligibility_unavailable", "message": str(exc),
+        }) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "legacy_review_request_invalid", "message": str(exc),
+        }) from None
+
+
 @app.post("/api/tasks/{task_id}/legacy-review/reopen")
 async def reopen_legacy_review_task(
         task_id: int, body: LegacyReviewReopenRequest, request: Request):
@@ -2831,6 +2871,54 @@ async def reopen_legacy_review_task(
         }) from None
 
 
+@app.get("/api/tasks/{task_id}/review-requeue/eligibility")
+async def review_task_requeue_eligibility_read(task_id: int, request: Request):
+    """Personal correction-owner observation, without exposing note/intent contents."""
+    from hub._services.review_task_requeue import review_requeue_eligibility
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return review_requeue_eligibility(conn, task_id, operator_token=operator_token)
+        finally:
+            conn.close()
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": "result_operator_correction_scope_required", "message": str(exc)}) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": "review_requeue_eligibility_unavailable", "message": str(exc)}) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "review_requeue_request_invalid", "message": str(exc)}) from None
+
+
+@app.post("/api/tasks/{task_id}/review-requeue")
+async def review_task_requeue_write(task_id: int, body: dict, request: Request):
+    """Single-task atomic CAS; preserve prior result, note, intent and history rows."""
+    from hub._services.review_task_requeue import requeue_review_task
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return requeue_review_task(conn, task_id, body, operator_token=operator_token)
+        finally:
+            conn.close()
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": "result_operator_correction_scope_required", "message": str(exc)}) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": "review_requeue_changed_reload", "message": str(exc)}) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "review_requeue_request_invalid", "message": str(exc)}) from None
+
+
 def _run_lease_op(op, *args, **kwargs):
     from hub._services.task_lease import LeaseValidationError, TaskNotFound
     conn = get_bach_db()
@@ -2861,6 +2949,13 @@ async def read_task_lease(task_id: int, request: Request):
     """Wer hält die Task? (Vertrag §5.2). Ohne lease_id; ``own`` nur mit passendem X-Lease-Id."""
     from hub._services.task_lease import read_lease
     return _run_lease_op(read_lease, task_id, lease_id=request.headers.get("X-Lease-Id") or None)
+
+
+@app.get("/api/tasks/leases/by-worker")
+async def read_physical_worker_leases(worker_id: str):
+    """Complete, capability-free holder readback for deletion/recovery guards."""
+    from hub._services.task_lease import read_worker_leases
+    return _run_lease_op(read_worker_leases, worker_id)
 
 
 @app.get("/api/tasks/{task_id}/lease/correction-context")
@@ -2899,6 +2994,15 @@ async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
                          task_version=body.task_version,
                          outcome=body.outcome, result_ref=body.result_ref or "",
                          note=body.note or "", worker_result=body.worker_result)
+
+
+@app.post("/api/tasks/{task_id}/lease/reclaim-unresolved")
+async def reclaim_unresolved_task_lease(task_id: int, body: LeaseReclaimRequest, request: Request):
+    """Operator: genau eine abgelaufene Task mit unklärbarem Tool-Trace auf blocked setzen."""
+    from hub._services.task_lease import reclaim_unresolved_lease
+    return _run_lease_op(reclaim_unresolved_lease, task_id, operator=body.operator,
+                         fence=body.fence, reason=body.reason,
+                         device=_lease_device_label(request))
 
 
 @app.post("/api/tasks/{task_id}/lease/update")
@@ -14119,7 +14223,10 @@ async def export_contacts():
 
 @app.get("/routinen", response_class=HTMLResponse)
 async def routinen_page():
-    """Routinen Dashboard."""
+    """Routinen Dashboard: shared GUI page first; the BACH template only without a shared release page."""
+    astro_routinen = ASTRO_DIST_DIR / "routinen.html"
+    if astro_routinen.exists():
+        return FileResponse(astro_routinen)
     routinen_file = TEMPLATES_DIR / "routinen.html"
     if routinen_file.exists():
         return FileResponse(routinen_file)
@@ -14156,6 +14263,7 @@ async def get_routines(category: str = None, interval: str = None):
 
         for row in rows:
             r = dict(row)
+            r['is_active'] = bool(r['is_active'])  # SQLite INTEGER -> JSON boolean for the shared /routinen page
             r['is_due_today'] = False
             r['is_overdue'] = False
 

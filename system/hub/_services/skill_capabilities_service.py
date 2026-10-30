@@ -618,19 +618,21 @@ converted_at: {now_iso}
 
 def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
     """
-    Prueft, dass Blueprints auf dieselben Skill-IDs und Versionen referenzieren
-    (GUX-031: kein Duplikat-Store, einheitliches Skillmodell).
+    Distinguishes declared capability IDs from skills with executable SKILL.md sources.
     """
     if not skills:
         return {"valid": True, "total_referenced": 0, "matched_count": 0,
                 "unmatched_count": 0, "matched": [], "unmatched": [], "missing": [],
+                "executable": True, "executable_count": 0, "missing_source": [],
                 "canonical_registry_size": len(CANONICAL_CORE_SKILLS)}
     from .skill_source_service import source_catalog, skill_roots
+    source_skills = source_catalog(skill_roots())
     known_skills = {s["id"]: s for s in CANONICAL_CORE_SKILLS}
-    known_skills.update(source_catalog(skill_roots()))
+    known_skills.update(source_skills)
 
     matched = []
     unmatched = []
+    missing_source = []
 
     for item in skills:
         s_id = item if isinstance(item, str) else (item.get("id") or item.get("name") if isinstance(item, dict) else "")
@@ -639,14 +641,19 @@ def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
             continue
         if s_id in known_skills:
             info = known_skills[s_id]
+            has_source = s_id in source_skills
             matched.append({
                 "id": s_id,
                 "name": info.get("name", s_id),
                 "category": info.get("category", "general"),
                 "version": info.get("version", "ohne Versionsnummer"),
                 "source_version": info.get("source_version"),
-                "matched": True
+                "matched": True,
+                "executable": has_source,
+                "source_state": "filesystem_present" if has_source else "declared_only"
             })
+            if not has_source:
+                missing_source.append({"id": s_id, "reason": "skill_source_not_executable"})
         else:
             unmatched.append({
                 "id": s_id,
@@ -656,12 +663,15 @@ def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
 
     return {
         "valid": len(unmatched) == 0,
+        "executable": len(unmatched) == 0 and len(missing_source) == 0,
         "total_referenced": len(skills),
         "matched_count": len(matched),
         "unmatched_count": len(unmatched),
+        "executable_count": sum(1 for item in matched if item["executable"]),
         "matched": matched,
         "unmatched": unmatched,
-        "missing": [u["id"] for u in unmatched],
+        "missing_source": missing_source,
+        "missing": [u["id"] for u in unmatched] + [u["id"] for u in missing_source],
         "canonical_registry_size": len(known_skills)
     }
 

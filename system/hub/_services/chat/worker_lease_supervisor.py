@@ -50,7 +50,7 @@ class WorkerLeaseSupervisor:
                 # Stop/close may race this check. Neither is a lost ACK.
                 if self.binding.stop_requested or self.binding.closed:
                     return
-                self.binding.invalidate()
+                self.binding.invalidate("heartbeat_failed")
                 self._failure = LeaseProtocolError("Lease-Bestätigung oder Sicherheitsfrist fehlt")
                 self._failed.set()
                 return
