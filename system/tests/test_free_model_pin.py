@@ -368,3 +368,21 @@ def test_create_backend_legacy_hermes_alias_unaffected():
     backend = create_backend(config)
     assert isinstance(backend, HermesBackend)
     assert not isinstance(backend, OpenRouterBackend)
+
+
+def test_rotation_index_matches_hash_formula():
+    """rotation_index folgt exakt der gesalzenen sha256-Formel aus dem Pin."""
+    import hashlib
+
+    run_id = "run-hash-formula-77"
+    for size in (1, 3, 7, 13):
+        expected = (
+            int(
+                hashlib.sha256(
+                    f"bach-free-model-pin-v1:{run_id}".encode()
+                ).hexdigest(),
+                16,
+            )
+            % size
+        )
+        assert pin.rotation_index(run_id, size) == expected
