@@ -149,3 +149,27 @@ Korrektur des Altberichts (Fehlzuordnungen richtiggestellt):
 Fazit: Blocker NEU dokumentiert. Ein lease-/servicegebundener Beleg eines natürlichen HTTP-429-Zyklus (Cooldown, Nutzungsstopp, Rückgabe, Wiederaufnahme) aus Laufzeitdaten liegt in diesem Lauf nicht vor; er kann nur durch einen künftig natürlich auftretenden 429 im Live-Betrieb nachgezogen werden. Der Task bleibt OFFEN; die Abgabe erfolgt als frisch formulierter Teilstand (`submit_result`, `complete=false`) — keine unveränderte Neueinreichung des Altberichts, sondern eine um die Prüfungen dieses Laufs (einschließlich Altberichtskorrektur) ergänzte Neufassung.
 
 Nächster Schritt: Beim nächsten natürlichen HTTP-429-Zyklus den lease-/servicegebundenen Laufzeitbeleg nachziehen, sobald `~/.bach/operator-checkpoints` lesbar ist oder ein 429-Artefakt in den Logs vorliegt; andernfalls ist der Blocker im Folgelauf erneut NEU zu dokumentieren, nicht mit Alttext zu wiederholen.
+
+## Blocker NEU — Korrekturlauf 5 (Korrektur-ID 58)
+
+**Resultrevision:** Korrektur-ID 58, erneute Prüfrunde. Diese Sektion wiederholt keinen Alttext; sie dokumentiert die Prüfergebnisse dieses Laufs und formuliert den Blocker NEU.
+
+**Scope:** Gefordert ist ein lease-/servicegebundener Laufzeitbeleg eines natürlichen HTTP-429-Zyklus (Warten → Nutzungspause → offene Rückgabe → Wiederaufnahme). Statische Codebelege ergänzen das Bild, ersetzen aber keinen Laufzeitbeleg. **scope_not_recorded:** Ein Laufzeitbeleg liegt weiterhin nicht vor.
+
+**Geprüft (dieser Lauf, ausschließlich lesend):**
+
+1. Statische Codebelege, frisch per `read_file` verifiziert:
+   - `backend_errors.py:142-172`: `cloud_call_retry_eligible` stuft 429 nur für `ollama/rate_limited` und `openrouter/http_error` als wiederholbar ein; `cloud_call_retry_delay` nutzt bei 429 eine Basis von 60 s, berücksichtigt `retry_after_seconds` und deckelt auf 3 Retries bzw. 900 s.
+   - `chat_runtime.py:331-339`: `_SAFE_FAILURE_REASON_CODES` enthält `cloud_call_retry_exhausted`; `chat_runtime.py:934-956`: Retry-Schleife mit Logzeile „Cloud-Anfragelimit: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)" bei `status_code==429`.
+   - `telegram_chat.py:1485-1538`: „Cloud retry waits are lease-free"; 429/rate_limited/Retry-After mit Delay `max(900, Basis·2^n)`; ein konfigurierter Worker-Stopp oder TTL beendet die Warteschleife, nicht drei Retries. `telegram_chat.py:1642-1682`: `_wait_worker_cooldown` setzt `paused` auf `running` und loggt das Ende der automatischen Pause.
+   - `worker_lease_binding.py:52,55` und `:170-177`: Neubestätigung der Zuordnungskorrektur aus Korrekturlauf 4 — Z. 52/55 enthalten `task_manage`-Guidance-Strings (`update_status`, `decompose_parent`), Z. 170-177 regeln in `_effective_pickup_slot` die freie Cloud-Worker-Aufgabenwahl. Beide Stellen haben keinen 429-Bezug und werden nicht als Evidenz geführt.
+2. Laufzeitdaten im Taskarbeitsbaum: rekursive Suche nach „429" in `system/logs` ergab 0 Treffer; `daily/` enthält nur `2026-02-21.md`; `data/sessions/` nur `.gitkeep`; `exports/` nur `.gitkeep` und `translations`. Kein 429-Artefakt im Worktree.
+3. Live-Repo `/Users/lukas/services/bach`: `file_info` auf `system/logs` lesbar (Ordner, 32 Einträge, Rechte 755, geändert 2026-10-05) — `search_text` nach „429" darauf sowie `list_directory` auf `daily/`, `data/sessions/` und `exports/` wurden mit „Task-Lesebereich nicht bestätigt" abgewiesen. Live-Laufzeitdaten bleiben unzugänglich.
+4. `~/.bach/operator-checkpoints`: `file_info` bestätigt den Ordner (150 Einträge, Rechte 700); `list_directory` blockiert. Unterpfad `cloud-queue-2431-46da46dd93264670878400ced7dbc1e1`: `file_info` bestätigt Ordner (18 Einträge, 640 B, geändert 2026-10-22 11:23:21); Inhalt nicht listbar. Metadaten belegen Existenz und Aktualität des Checkpoint-Ordners, nicht einen 429-Zyklus.
+5. Statischer Compile-Check: vier Aufrufvarianten (`python3` bzw. `python -m compileall -q` auf `system/hub/_services`, auf `system/hub/_services/chat`, auf `telegram_chat.py`) wurden je mit „Werkzeugausführung nicht bestätigt; Wirkung unbekannt" quittiert. Kein bestätigter Lauf, daher wird kein Compile-Ergebnis behauptet.
+
+**Blocker:** Der Laufzeitbeleg bleibt unerbringbar, weil (a) die Live-Laufzeitdaten für die Werkzeuge dieses Tasks nicht lesbar sind (Task-Lesebereich nicht bestätigt) und (b) ein gezielter Anstoß eines 429-Zyklus laut Korrekturhinweis verboten ist (kein künstlicher 429, kein Worker-/Teststart, kein kostenpflichtiger Fallback).
+
+**Abgabestand:** WIP-Commit auf `bach-task/2431` ohne PR; Abgabe als frischer Blockerbericht via `submit_result` mit `complete=false`. Der Task bleibt OFFEN.
+
+**Nächster Schritt:** Sobald `~/.bach/operator-checkpoints` oder die Live-Logs lesbar sind, beim nächsten natürlich aufgetretenen 429 den lease-/servicegebundenen Zyklus (Warten → Nutzungspause → offene Rückgabe → Wiederaufnahme) nachziehen. Solange kein Laufzeitbeleg existiert, bleibt der Task offen; ein Folgelauf dokumentiert den Blocker erneut mit frischen Prüfergebnissen.
