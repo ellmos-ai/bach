@@ -48,11 +48,45 @@
   },
   "execution_status": {
     "harness_written": true,
+    "harness_statisch_verifiziert": true,
     "pytest_executed": false,
-    "pytest_attempts": "in dieser Sitzung erneut 1x versucht (execute_command, cwd=Worktree task-2993) -> erneut 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'",
-    "secrets_scan": "nicht ausgefuehrt (Shell nicht verfuegbar); manuell geprueft: Test nutzt nur Dummy-Key 'dummy', keine echten Credentials",
+    "pytest_attempts_total": 5,
+    "pytest_attempt_log": [
+      "Versuch 1 (Vorsitzung): python -m pytest -q, cwd=Worktree -> 'nicht bestaetigt'",
+      "Versuch 2 (Vorsitzung): python -m compileall -q -> 'nicht bestaetigt'",
+      "Versuch 3 (Vorsitzung): pytest erneut nach finish_task(WIP) -> 'nicht bestaetigt'",
+      "Versuch 4 (Sitzung 3): python -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree, timeout=120 -> 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'",
+      "Versuch 5 (Sitzung 4): python -m pytest -q system/tests/test_http429_telemetry_probe.py, cwd=Worktree, timeout=120 -> 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt'"
+    ],
+    "symptom": "execute_command antwortet sitzungsuebergreifend konstant mit 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt', unabhaengig von Kommando, cwd und Timeout. Andere Werkzeuge (read_file, edit_file, task_manage, finish_task) arbeiten normal.",
+    "secrets_scan": "nicht ausgefuehrt (Shell nicht verfuegbar); manuell geprueft: Test nutzt ausschliesslich Dummy-Key 'dummy' und Loopback-URL, keine echten Credentials",
     "git_diff_check": "nicht ausgefuehrt (Shell nicht verfuegbar)",
-    "blocker": "execute_command lieferte in dieser Sitzung durchgehend 'Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt' - keine Laufbestaetigung moeglich",
-    "open": "pytest system/tests/test_http429_telemetry_probe.py -q ausfuehren, event.timestamp aus echtem Lauf nachtragen, secrets-scan + git diff --check nachziehen"
+    "blocker": "Kein bestaetigter Testlauf moeglich (5 Versuche ueber 4 Sitzungen, identisches Symptom) -> Task 2993 nicht abschliessbar; WIP-Stand auf branch bach-task/2993 gepusht; Arbeit zerlegt in #3329 (pytest-Lauf) und #3330 (Gate/Abschluss)",
+    "open": "pytest system/tests/test_http429_telemetry_probe.py -q in funktionierender Shell ausfuehren (Kind-Task #3329); danach dieses JSON schliessen und Gate/Abschluss per #3330"
+  },
+  "next_steps": {
+    "step_1_testlauf": {
+      "command": "python -m pytest -q system/tests/test_http429_telemetry_probe.py",
+      "cwd": "~/services/bach-worktrees/task-2993",
+      "erwartung": "1 passed; schreibt Telemetrie-Zeile in die tmp-BACH_DB aus conftest.py",
+      "danach_dieses_json": {
+        "event.timestamp": "echter ISO-8601-UTC-Zeitstempel des Laufs",
+        "execution_status.pytest_executed": true,
+        "execution_status.pytest_summary": "Ergebniszeile aus pytest (z.B. '1 passed')",
+        "execution_status.blocker": "entfernen"
+      }
+    },
+    "step_2_bei_fehlschlag": {
+      "ursache_portbindung": "Sandbox ohne Loopback-Bindung -> Fallback: _FakeResponse/_FakeClient + monkeypatch httpx.AsyncClient/asyncio.sleep (Muster: test_model_backend.py:1142-1183)",
+      "ursache_telemetrie": "BACH_TELEMETRY_DISABLED gesetzt -> increment() gibt False zurueck und Assertion schlaegt fehl; in conftest pruefen",
+      "regel": "Harness nur anpassen, wenn der Fehler belegt ist; keine Aenderung auf Verdacht"
+    },
+    "step_3_abschluss": {
+      "secrets_scan": "git diff/grep auf api_key, token, password, sk- vor dem Commit",
+      "git_diff_check": "git diff --check im Worktree",
+      "daily_log": "Abschnitt 'Task 2993' in system/logs/daily/2026-02-21.md: 'pytest steht aus' durch Lauf-Ergebnis ersetzen",
+      "finish_task": "finish_task(task_id=2993, is_wip=false, message=<Laufbeleg + Gate-Ergebnis>)",
+      "submit_result": "task_manage(action='submit_result', task_id=2993, result=..., complete=true)"
+    }
   }
 }
