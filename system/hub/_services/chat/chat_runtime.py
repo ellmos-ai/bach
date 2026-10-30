@@ -2844,19 +2844,21 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         configured_max_rounds = max_rounds
         from hub._services.llm.model_backend import backend_identifier
         cloud_worker = (
-            getattr(session, "worker_task_binding", None) is not None
-            and (backend_identifier(selected_backend) == "openrouter"
-                 or (backend_identifier(selected_backend) == "ollama"
-                     and isinstance(selected_model, str)
-                     and selected_model.lower().endswith(":cloud")))
+            backend_identifier(selected_backend) in {"openrouter", "ollama-cloud"}
+            or (backend_identifier(selected_backend) == "ollama"
+                and isinstance(selected_model, str)
+                and selected_model.lower().endswith(":cloud"))
         )
-        if cloud_worker and max_rounds > 0:
-            max_rounds = max(max_rounds, min(1000, max_rounds * 4))
+        if cloud_worker:
+            if getattr(session, "max_tool_rounds", None) is None:
+                max_rounds = limit("BACH_CLOUD_MAX_TOOL_ROUNDS")
+            else:
+                max_rounds = min(max_rounds, limit("BACH_CLOUD_MAX_TOOL_ROUNDS_CAP"))
         session.effective_max_tool_rounds = max_rounds
         if cloud_worker and max_rounds != configured_max_rounds:
             msgs.append({"role": "user", "content": (
-                f"Cloud-Rundenreserve: {configured_max_rounds} reguläre Runden, "
-                f"bis {max_rounds} Runden einschließlich Abschlussreserve. "
+                f"Cloud-Turnbudget: {max_rounds} Modellrunden für diesen Turn "
+                f"(Konfiguration: {configured_max_rounds}). "
                 "Modellanfragenbudget, Nutzerstopp und Anbieterlimits gelten weiterhin."
             )})
         round_num = 0
