@@ -332,3 +332,30 @@ NACHTRAG 14 (Fortsetzungs-Session nach Nachtrag 13, Worker) - KEIN TESTNACHWEIS
   Push auf bach-task/2563 (PR #597 bleibt offen, kein Merge), danach
   submit_result(2563, complete=false) = Teilstand. Ein Taskabschluss ohne
   PASSED-Beleg wird ausdruecklich nicht behauptet.
+
+NACHTRAG 15 (Fortsetzungs-Session nach Nachtrag 14, Worker) - KEIN TESTNACHWEIS
+- Worktree in dieser Session neu erstellt und bestaetigt:
+  /Users/lukas/services/bach-worktrees/task-2563. Keine Arbeiten ausserhalb.
+- Genau EIN neuer Pruefversuch am RESUME-Punkt, wie uebergeben:
+    cwd = /Users/lukas/services/bach-worktrees/task-2563
+    python -m pytest -q -- system/tests/test_free_model_pin.py   (timeout 120 s)
+  Ergebnis: "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt."
+  => kein PASSED-/FAIL-Text, kein Exit-Code, keine Testzusammenfassung.
+- Damit ist die Blockade sitzungsuebergreifend 12x belegt (11 Belege aus
+  Vorgaengern + dieser Lauf), jeweils mit identischer Signatur. Die Ursache
+  liegt weiterhin in der Werkzeugbestaetigungsschicht VOR dem Python-Start,
+  nicht in Testcode, Importpfad, pytest.ini oder Aufrufsyntax (9+ Varianten
+  bereits dokumentiert; keine Wiederholung ohne neuen Ansatz).
+- Kein neuer Ansatz in dieser Session verfuegbar: jeder Ausfuehrungsweg des
+  Workers laeuft durch dieselbe Bestaetigungsschicht (pytest/unittest/
+  compileall). Ein unabhaengiger Ausfuehrungsweg besteht fuer den Worker nicht.
+- Keine Codeaenderung: free_model_pin.py (212 Zeilen) und
+  test_free_model_pin.py (494 Zeilen) unveraendert; Stand entspricht PR #597.
+- Restarbeit bleibt delegiert: Kind-Task #3253 (bestaetigter pytest-Lauf
+  ausserhalb der Werkzeugschicht / durch Operator) und Kind-Task #3254
+  (bei PASSED: finish_task(2563, is_wip=false) + submit_result complete=true).
+  Reihenfolge sequentiell, #3254 haengt an #3253.
+- Abschluss dieser Session: kein Taskabschluss. Teilstand wird mit
+  finish_task(2563, is_wip=true) gesichert (WIP-Commit, PR #597 bleibt offen,
+  kein Merge) und ueber submit_result(2563, complete=false) gemeldet.
+  Erfolg wird ausdruecklich NICHT behauptet.
