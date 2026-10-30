@@ -774,8 +774,12 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
                 raise ValueError("Fremde Task")
             return _finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests,
                                 repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding)
-        except Exception:
-            return {"success": False, "error": "Worktree-Ergebnis oder Taskänderung nicht bestätigt"}
+        except Exception as exc:  # noqa: BLE001 - Ursache muss sichtbar bleiben
+            return {
+                "success": False,
+                "error": "Worktree-Ergebnis oder Taskänderung nicht bestätigt: "
+                         f"{type(exc).__name__}: {exc}",
+            }
 
 
 def _finish_task(
@@ -1005,6 +1009,13 @@ def _finish_task(
                 "success": False,
                 "error": f"gh pr create fehlgeschlagen: {res_pr.stderr}",
             }
+
+    if not re.fullmatch(r"https://github\.com/[^/\s]+/[^/\s]+/pull/\d+", pr_url or ""):
+        return {
+            "success": False,
+            "error": "Keine gültige PR-URL bestätigt: "
+                     f"stdout={res_pr.stdout!r} stderr={res_pr.stderr!r}",
+        }
 
     worker_task_binding.record_worktree_result(int(task_id_str), f"PR: {pr_url}", review=True, result_ref=pr_url)
     return {"success": True, "pr_url": pr_url, "status": "review"}
