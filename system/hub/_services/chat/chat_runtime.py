@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
 from hub._services.chat.slots_config import ModelRequestBudgetError
+from hub._services.llm.free_model_pin import pinned_model
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
@@ -2032,9 +2033,11 @@ class ChatRuntime(_ModuleChatRuntime):
 
                     # Logical call digest after the budget hint/tools were built.
                     request_sha256 = model_request_digest()
+                    pinned_model_value = getattr(backend, "_free_pin_model", None)
                     handle = call_binding.begin_model_execution(
                         backend_id=backend_identifier(backend),
-                        requested_model=kwargs.get("model") or backend.get_default_model(),
+                        requested_model=kwargs.get("model") or pinned_model_value or backend.get_default_model(),
+                        pinned_model=pinned_model_value,
                         slot_id=session.chat_id, request_sha256=request_sha256,
                         route_sha256=dispatch_route["route_sha256"] if dispatch_route else None,
                     )

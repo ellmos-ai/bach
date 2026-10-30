@@ -679,7 +679,7 @@ class WorkerLeaseBinding:
                 self._review_grant._last_answer_sha256 = None
 
     def begin_model_execution(self, *, backend_id, requested_model, slot_id, request_sha256,
-                              route_sha256=None):
+                              route_sha256=None, pinned_model=None):
         """Start optional private evidence for this exact live binding and call."""
         with self._lock:
             # A new attempt, including a fallback, supersedes the prior answer.
@@ -705,6 +705,8 @@ class WorkerLeaseBinding:
                                 "slot_id": slot_id, "request_sha256": request_sha256}
                 if route_sha256 is not None:
                     start_kwargs["route_sha256"] = route_sha256
+                if pinned_model is not None:
+                    start_kwargs["pinned_model"] = pinned_model
                 handle = start(self, **start_kwargs)
             except Exception:
                 # Evidence is optional for the existing personal review path.
