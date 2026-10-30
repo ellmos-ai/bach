@@ -57,14 +57,14 @@ def _load_unload_guard():
         return None
 
 
-def _release_model_locked(model):
+def _release_model_locked(model, *, digest=None, timeout_seconds=0, wait=True):
     """Entlädt ein Modell und verifiziert per Poll; niemals eine Exception nach außen."""
     guard = _load_unload_guard()
     if guard is None:
         _LOG.warning("Unload-Wächter nicht verfügbar; Modell %r bleibt geladen", model)
         return False
     try:
-        report = guard.unload(model)
+        report = guard.unload(model, digest=digest, timeout_s=timeout_seconds, wait=wait)
     except Exception as exc:
         _LOG.warning("Unload von %r fehlgeschlagen: %s", model, exc)
         return False
@@ -96,7 +96,11 @@ class HostInferenceGate:
         try:
             lock = _exclusive_lock(self.root / "inference", timeout_seconds=timeout_seconds)
             try:
-                released = _release_model_locked(model_target.get("model", ""))
+                model = model_target.get("model", "")
+                digest = self._target_digest(model_target) if model_target else None
+                released = _release_model_locked(
+                    model, digest=digest, timeout_seconds=timeout_seconds, wait=True
+                )
                 result["released"] = bool(released)
                 result["ok"] = bool(released)
             except Exception as exc:
@@ -122,54 +126,40 @@ class HostInferenceGate:
 
     @staticmethod
     def _alive(record):
-        pid, created = record.get("pid"), record.get("created")
-        if type(pid) is not int or pid <= 0 or type(created) not in (int, float):
-            raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
-        try:
-            valid_creation_time = math.isfinite(created) and created > 0
-        except (OverflowError, TypeError, ValueError):
-            valid_creation_time = False
-        if not valid_creation_time:
-            raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
-        try:
-            process = psutil.Process(pid)
-            # Prüfe, ob Prozess läuft und nicht zombie
-            if not (process.is_running() and process.status() != psutil.STATUS_ZOMBIE):
-                return False
+        """Prüft, ob ein Inferenz-Record noch aktiv ist.
 
-            # Prüfe, ob Modell gerade geladen ist oder Ladevorgang läuft
-            # 1. Prüfe aktive Modellprozesse über ps/pgrep (echtes HostInferenceGate-Verhalten)
-            active_processes = []
-            try:
-                # Prüfe auf Qwen3, Ollama, torch-LLM oder ähnliche Modellprozesse
-                result = os.popen('ps aux | grep -E "(ollama|qwen|torch|llm|model)" | grep -v grep').read()
-                if result:
-                    active_processes = [line.split()[11] for line in result.strip().split('\n') if len(line.split()) > 10]
-            except:
-                pass
+        Verwendet den memory-pressure-unload-guard: ein als entladen
+        gemeldetes Modell gilt als nicht mehr alive; ein in list_running
+        gefundenes Modell/digest als alive. Ohne Modellnachweis oder ohne
+        Guard bleibt der Record erhalten (unknown is not proof).
+        """
+        model_target = record.get("model_target")
+        guard = _load_unload_guard()
+        if guard is None:
+            return True
 
-            # 2. Prüfe Idle-Flag-Datei mit TTL (falls aktiv)
-            idle_flag_path = Path("/tmp/idle_model_maintenance.flag")
-            if idle_flag_path.exists():
-                try:
-                    with open(idle_flag_path, 'r') as f:
-                        content = f.read().strip()
-                        if content and content != "0":
-                            # Flag zeigt aktiven Lade-/Rechenvorgang an
-                            return True
-                except:
-                    pass
+        digest = None
+        model_name = None
+        if isinstance(model_target, dict):
+            digest = HostInferenceGate._target_digest(model_target)
+            model_name = model_target.get("model")
 
-            # 3. Prüfe, ob Prozess mit diesem PID noch existiert (zusätzliche Sicherheit)
-            try:
-                return process.create_time() == created  # Genauere Zeitüberprüfung
-            except:
-                return False
-
-        except psutil.NoSuchProcess:
+        if digest and guard.is_unloaded(digest=digest):
             return False
-        except psutil.AccessDenied:
-            return True  # Unknown is not proof that a request is abandoned.
+
+        running = guard.list_running()
+        for item in running:
+            if digest and item.get("digest") == digest:
+                return True
+            if model_name and (
+                item.get("model") == model_name or item.get("name") == model_name
+            ):
+                return True
+
+        # Legacy-Records ohne Modellnachweis können nicht per Guard bewertet werden.
+        if digest is None and model_name is None:
+            return True
+        return False
 
     @staticmethod
     def _read(path):

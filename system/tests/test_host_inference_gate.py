@@ -501,8 +501,11 @@ def test_release_model_now_releases_under_exclusive_lock(tmp_path, monkeypatch):
         seen["timeout"] = timeout_seconds
         return lock
 
-    def fake_release(model):
+    def fake_release(model, *, digest=None, timeout_seconds=0, wait=True):
         seen["model"] = model
+        seen["digest"] = digest
+        seen["timeout_release"] = timeout_seconds
+        seen["wait"] = wait
         return True
 
     monkeypatch.setattr(gate_mod, "_exclusive_lock", fake_lock)
@@ -510,8 +513,12 @@ def test_release_model_now_releases_under_exclusive_lock(tmp_path, monkeypatch):
 
     result = HostInferenceGate(tmp_path).release_model_now({"model": "qwen-test"})
 
+    expected_digest = HostInferenceGate._target_digest({"model": "qwen-test"})
     assert result == {"ok": True, "released": True, "warning": None, "error": None}
     assert seen["model"] == "qwen-test"
+    assert seen["digest"] == expected_digest
+    assert seen["timeout_release"] == 0
+    assert seen["wait"] is True
     assert seen["path"] == (tmp_path / "inference").expanduser().resolve()
     assert lock.exited is True
 
@@ -541,28 +548,28 @@ def test_release_model_locked_returns_false_when_guard_missing_or_failing(monkey
     assert gate_mod._release_model_locked("qwen-test") is False
 
     class RaisingGuard:
-        def unload(self, model):
+        def unload(self, model, *, digest=None, timeout_s=0, wait=True):
             raise RuntimeError("Ollama nicht erreichbar")
 
     monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: RaisingGuard())
     assert gate_mod._release_model_locked("qwen-test") is False
 
     class NotUnloadedGuard:
-        def unload(self, model):
+        def unload(self, model, *, digest=None, timeout_s=0, wait=True):
             return {"unloaded": False, "warning": "noch geladen"}
 
     monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: NotUnloadedGuard())
     assert gate_mod._release_model_locked("qwen-test") is False
 
     class OddReportGuard:
-        def unload(self, model):
+        def unload(self, model, *, digest=None, timeout_s=0, wait=True):
             return "unerwartet"
 
     monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: OddReportGuard())
     assert gate_mod._release_model_locked("qwen-test") is False
 
     class OkGuard:
-        def unload(self, model):
+        def unload(self, model, *, digest=None, timeout_s=0, wait=True):
             return {"unloaded": True}
 
     monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: OkGuard())
