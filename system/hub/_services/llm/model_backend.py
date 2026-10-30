@@ -1003,6 +1003,8 @@ class OpenRouterBackend(HermesBackend):
         if not str(self.api_key or "").strip():
             return False, "Key fehlt"
         target_model = str(model or self.default_model).strip()
+        if target_model == "openrouter/free":
+            target_model = self._pin_free_router_model()
         if target_model != "openrouter/free":
             try:
                 self._require_catalog_selection(target_model)

@@ -85,7 +85,13 @@ def free_candidates(
     if not isinstance(models, list):
         return []
     check = _is_tool_capable_candidate if tool_capable_only else _is_plain_candidate
-    ids = {record["id"].strip() for record in models if check(record)}
+    ids: set[str] = set()
+    for record in models:
+        if not check(record):
+            continue
+        model_id = record.get("id")
+        if isinstance(model_id, str):
+            ids.add(model_id.strip())
     return sorted(ids, key=lambda item: (item.casefold(), item))
 
 

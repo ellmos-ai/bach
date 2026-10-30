@@ -343,6 +343,26 @@ def test_backend_pinned_model_passes_catalog_selection(monkeypatch):
     assert captured[0] in pin.free_candidates(catalog)
 
 
+def test_backend_availability_reports_pinned_free_model(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free", "gamma:free")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+
+    def fake_availability(self, model=None, timeout=1.5):
+        captured.append(model)
+        return True, "ok"
+
+    monkeypatch.setattr(mb.HermesBackend, "availability", fake_availability)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-av")
+    ok, msg = backend.availability()
+
+    assert ok is True
+    assert captured[0] in pin.free_candidates(catalog)
+    assert captured[0] != FREE_ROUTER_ID
+    assert backend.last_free_pin_decision["pinned"] is True
+
+
 def test_create_backend_openrouter_free_passes_run_id():
     config = {
         "type": "openrouter",
