@@ -154,6 +154,20 @@ def _log_bound_task_manage_denial(stage, binding, args, exc=None):
 
 _READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
 _READ_EVIDENCE_READ_ONLY_TOOLS = frozenset({"read_file", "search_text", "task_manage"})
+# Weitere fuer read-evidence zulaessige Werkzeuge ohne den exakten
+# 3-Werkzeug-Match: Zusatzlesewerkzeuge plus Datei-Mutationswerkzeuge.
+# read-evidence heisst "kein Ausfuehrungs-/Delegationsrecht", nicht
+# "nur lesen".
+_READ_EVIDENCE_EXTRA_READ_TOOLS = frozenset({
+    "list_directory",
+    "get_datetime",
+    "write_file",
+    "edit_file",
+    "create_directory",
+    "move_file",
+    "copy_file",
+    "recycle",
+})
 _READ_EVIDENCE_REASONS = frozenset({
     "formatter_capability_unverified",
     "reviewer_profile_required",
@@ -163,17 +177,30 @@ _READ_EVIDENCE_REASONS = frozenset({
 
 
 def _read_evidence_readonly_worker_enabled(worker_task_binding, allowed_tools) -> bool:
-    """Require an active fenced binding and the exact current read-only tool profile."""
+    """Read-evidence: aktive Fence-Bindung, Werkzeuge ohne Ausfuehrungsrecht.
+
+    Entkoppelt vom exakten 3-Werkzeug-Match: read_file muss enthalten sein,
+    jeder andere Name muss in _READ_EVIDENCE_READ_ONLY_TOOLS oder
+    _READ_EVIDENCE_EXTRA_READ_TOOLS liegen. Datei-Mutationswerkzeuge
+    (write_file, edit_file, create_directory, move_file, copy_file,
+    recycle) sind zulaessig: read-evidence meint "kein Ausfuehrungs-/
+    Delegationsrecht" (kein execute_command, kein delegate, kein
+    worktree-Abschluss), nicht "nur lesen".
+    """
     if not isinstance(worker_task_binding, WorkerLeaseBinding):
         return False
     if not isinstance(allowed_tools, (set, frozenset, tuple, list)):
         return False
-    if len(allowed_tools) != len(_READ_EVIDENCE_READ_ONLY_TOOLS):
-        return False
     try:
         if any(type(tool) is not str for tool in allowed_tools):
             return False
-        if frozenset(allowed_tools) != _READ_EVIDENCE_READ_ONLY_TOOLS:
+        grants = frozenset(allowed_tools)
+        if not grants:
+            return False
+        if "read_file" not in grants:
+            return False
+        if not grants.issubset(
+                _READ_EVIDENCE_READ_ONLY_TOOLS | _READ_EVIDENCE_EXTRA_READ_TOOLS):
             return False
         # The runtime supplies allowed_tools only after its live worker-profile
         # reader has refreshed the session. The lease check binds this tool
@@ -1036,14 +1063,14 @@ TOOLS_SAFE = [
         "query": {"type": "string", "description": "Suchanfrage"},
         "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
     }, ["query"]),
-    _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
+    _tool("task_manage", "BACH-Tasks verwalten (Status, Zerlegung, Ergebnis)", {
         "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
-                   "description": "Bei gebundener Task: list ohne task_id; update-Status (pending/open/blocked) ohne Inhaltsfelder; decompose mit subtasks=[{\"title\":\"Kind\",\"description\":\"Arbeit\"}], close_parent=false. Ergebnis nur mit submit_result (done als Alias) und complete=true/false abgeben. Abschluss nach konfiguriertem Modus."},
+                   "description": "list (bei Bindung ohne task_id), add, detail, update (nur Status), decompose, submit_result/done (result + complete)"},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Im einfachen Modus ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext als ausdrückliche Fertigmeldung; tatsächliche Arbeit und Prüfung nennen. Ein negativer oder unvollständiger JSON-Selbstcheck ist keine Fertigmeldung. Offene Pflichtarbeit oder Teilstand: submit_result mit complete=false (Teilstand wird gespeichert, Task bleibt offen). Andere Modi folgen ihrer Review-Regel."},
-        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done einer gebundenen Task: true nur, wenn die Pflichtarbeit vollständig erledigt ist; false speichert result als Teilstand in der Task und gibt sie offen zurück (pending)."},
+        "result": {"type": "string", "description": "Fertiges Ergebnis bei submit_result/done (max. 3000 Zeichen). Werkzeugbeleg Pflicht; complete=false: Teilstand, Task bleibt offen."},
+        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done; true nur mit bestätigtem Werkzeugbeleg."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
@@ -1186,6 +1213,44 @@ def tools_for_mode(mode: str, *, bound_worker: bool = False) -> list:
             "delegate", "cleanup_task_worktree",
         }]
     return tools
+
+
+#: Benannte Toolset-Profile fuer Slots (slot.tool_profile). Namen statt
+#: freier allowed_tools-Listen: weniger fehleranfaellig, ohne Write-Lock
+#: aenderbar; Wechsel greift beim naechsten start_local.
+_TOOL_PROFILE_READONLY = frozenset({
+    "read_file", "search_text", "task_manage", "list_directory", "get_datetime",
+})
+_TOOL_PROFILE_FILES = _TOOL_PROFILE_READONLY | frozenset({
+    "file_info", "write_file", "edit_file", "create_directory",
+    "move_file", "copy_file", "recycle",
+})
+_TOOL_PROFILE_CODE_DELIVERY = _TOOL_PROFILE_READONLY | frozenset({
+    "file_info", "write_file", "edit_file", "execute_command",
+    "start_task_worktree", "finish_task",
+})
+
+#: name -> frozenset der Werkzeugnamen.
+TOOL_PROFILES = {
+    "standard": frozenset(t["function"]["name"] for t in TOOLS_SAFE),
+    "readonly": _TOOL_PROFILE_READONLY,
+    "files": _TOOL_PROFILE_FILES,
+    "code_delivery": _TOOL_PROFILE_CODE_DELIVERY,
+    "all": frozenset(t["function"]["name"] for t in TOOLS_FULL),
+}
+
+
+def resolve_tool_profile(name: str, *, bound_worker: bool = False):
+    """Werkzeugnamen eines benannten Profils als sortierte Liste; None bei
+    unbekanntem Namen. Mit bound_worker werden delegate und
+    cleanup_task_worktree herausgefiltert (wie in tools_for_mode).
+    """
+    grants = TOOL_PROFILES.get(name)
+    if grants is None:
+        return None
+    if bound_worker:
+        grants = grants - {"delegate", "cleanup_task_worktree"}
+    return sorted(grants)
 
 
 # --- Delegation ---

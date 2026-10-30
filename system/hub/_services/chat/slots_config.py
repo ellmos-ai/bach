@@ -834,7 +834,7 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     if MATERIALIZE_OWNED_FIELDS & set(updates):
         raise ValueError("Blueprint-Bindung wird nur beim Materialisieren gesetzt")
-    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs") if key in updates}
+    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs", "tool_profile") if key in updates}
     if capability_edits:
         updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
@@ -899,7 +899,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "symbol", "backend", "model", "mode", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
-    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
+    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs", "tool_profile",
     "memory_hook_opt_in", "model_fallbacks", "color_override",
 })
 CORE_KNOWN_BACKENDS = frozenset({
@@ -1229,6 +1229,13 @@ def _validated_core_edits(
                     or any(not isinstance(name, str) or name not in known for name in value)
                     or len(set(value)) != len(value))):
                 raise ValueError("Toolfreigabe enthält unbekannte oder doppelte Werkzeuge")
+        elif field == "tool_profile":
+            # Gueltige Namen: Schluessel von TOOL_PROFILES
+            # (standard/readonly/files/code_delivery/all);
+            # None = keine Toolset-Einschraenkung.
+            from .bach_tools import TOOL_PROFILES
+            if value is not None and (not isinstance(value, str) or value not in TOOL_PROFILES):
+                raise ValueError(f"Unbekanntes Toolset-Profil: {value}")
         elif field == "avatar":
             value = validate_agent_avatar(value)
         elif field == "symbol":
@@ -1770,7 +1777,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     allow_tools = worker_data.get("allow_tools", True)
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
-    capability_edits = {key: worker_data[key] for key in ("allowed_tools", "skill_refs") if key in worker_data}
+    capability_edits = {key: worker_data[key] for key in ("allowed_tools", "skill_refs", "tool_profile") if key in worker_data}
     capabilities = _validated_core_edits(capability_edits) if capability_edits else {}
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
