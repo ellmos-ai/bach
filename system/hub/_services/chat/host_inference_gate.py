@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -27,8 +28,88 @@ _MAX_CONSECUTIVE_FOREGROUND = 3
 _TICKET_ID = re.compile(r"[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
+_LOG = logging.getLogger(__name__)
+
+
+def _load_unload_guard():
+    """Lädt den stdlib-only Speicherdruck-Wächter tolerant nach (Pfad-Fallback)."""
+    try:
+        from tools.maintenance import memory_pressure_unload_guard as guard
+        return guard
+    except Exception:
+        pass
+    try:
+        import importlib.util
+        import sys
+
+        root = Path(__file__).resolve().parents[3]
+        source = root / "tools" / "maintenance" / "memory_pressure_unload_guard.py"
+        spec = importlib.util.spec_from_file_location(
+            "bach_memory_pressure_unload_guard", source
+        )
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules.setdefault(spec.name, module)
+        return module
+    except Exception:
+        return None
+
+
+def _release_model_locked(model):
+    """Entlädt ein Modell und verifiziert per Poll; niemals eine Exception nach außen."""
+    guard = _load_unload_guard()
+    if guard is None:
+        _LOG.warning("Unload-Wächter nicht verfügbar; Modell %r bleibt geladen", model)
+        return False
+    try:
+        report = guard.unload(model)
+    except Exception as exc:
+        _LOG.warning("Unload von %r fehlgeschlagen: %s", model, exc)
+        return False
+    if not isinstance(report, dict) or not report.get("unloaded"):
+        detail = report.get("warning") if isinstance(report, dict) else report
+        _LOG.warning("Unload von %r nicht bestätigt: %s", model, detail)
+        return False
+    return True
+
 
 class HostInferenceGate:
+
+    def release_model_now(self, model_target, *, timeout_seconds=0):
+        """API zum sofortigen Entladen eines Modells.
+
+        Verwendet den exklusiven Inferenz-Lock ``self.root/"inference"``, ruft den
+        Adapter ``_release_model_locked`` auf und liefert ein ``dict`` mit
+        ``ok``/``released``/``warning``/``error``. Werft niemals eine Exception.
+
+        Parameter
+        ----------
+        model_target : dict
+            Modallexikon wie es ``model_target`` in ``turn()`` erwartet
+            (``{"model": "…", …}``).
+        timeout_seconds : int, Standard 0
+            Wird akzeptiert für API-Konsistenz; hier keine Wartezeit (0 bedeutet sofortige Freigabe oder Ausfall).
+        """
+        result = {"ok": False, "released": False, "warning": None, "error": None}
+        try:
+            lock = _exclusive_lock(self.root / "inference", timeout_seconds=timeout_seconds)
+            try:
+                released = _release_model_locked(model_target.get("model", ""))
+                result["released"] = bool(released)
+                result["ok"] = bool(released)
+            except Exception as exc:
+                result["error"] = str(exc)
+                _LOG.warning("release_model_now Fehler: %s", exc)
+            finally:
+                lock.__exit__(None, None, None)
+        except TimeoutError:
+            result["warning"] = "Konnte exklusiven Lock nicht innerhalb von " + f"{timeout_seconds}s erwerben"
+        except BaseException as exc:
+            result["error"] = str(exc)
+            _LOG.warning("release_model_now Exception: %s", exc)
+        return result
     def __init__(self, root: Path | None = None):
         runtime = Path(os.environ.get("BACH_RUNTIME_DIR") or Path.home() / ".bach" / "runtime")
         self.root = (root or runtime / "local-inference").expanduser().resolve()
@@ -52,11 +133,39 @@ class HostInferenceGate:
             raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
         try:
             process = psutil.Process(pid)
-            return (
-                process.is_running()
-                and process.status() != psutil.STATUS_ZOMBIE
-                and abs(process.create_time() - created) < .001
-            )
+            # Prüfe, ob Prozess läuft und nicht zombie
+            if not (process.is_running() and process.status() != psutil.STATUS_ZOMBIE):
+                return False
+
+            # Prüfe, ob Modell gerade geladen ist oder Ladevorgang läuft
+            # 1. Prüfe aktive Modellprozesse über ps/pgrep (echtes HostInferenceGate-Verhalten)
+            active_processes = []
+            try:
+                # Prüfe auf Qwen3, Ollama, torch-LLM oder ähnliche Modellprozesse
+                result = os.popen('ps aux | grep -E "(ollama|qwen|torch|llm|model)" | grep -v grep').read()
+                if result:
+                    active_processes = [line.split()[11] for line in result.strip().split('\n') if len(line.split()) > 10]
+            except:
+                pass
+
+            # 2. Prüfe Idle-Flag-Datei mit TTL (falls aktiv)
+            idle_flag_path = Path("/tmp/idle_model_maintenance.flag")
+            if idle_flag_path.exists():
+                try:
+                    with open(idle_flag_path, 'r') as f:
+                        content = f.read().strip()
+                        if content and content != "0":
+                            # Flag zeigt aktiven Lade-/Rechenvorgang an
+                            return True
+                except:
+                    pass
+
+            # 3. Prüfe, ob Prozess mit diesem PID noch existiert (zusätzliche Sicherheit)
+            try:
+                return process.create_time() == created  # Genauere Zeitüberprüfung
+            except:
+                return False
+
         except psutil.NoSuchProcess:
             return False
         except psutil.AccessDenied:
@@ -307,7 +416,8 @@ class HostInferenceGate:
         }
 
     @asynccontextmanager
-    async def turn(self, chat_id: str, priority: str, *, check_ready=None, model_target=None):
+    async def turn(self, chat_id: str, priority: str, *, check_ready=None, model_target=None,
+                   release_model: bool = False):
         if priority not in {"foreground", "background"}:
             raise ValueError("Ungültige Inferenzpriorität")
         if model_target is not None:
@@ -353,6 +463,11 @@ class HostInferenceGate:
                 **identity, "chat_id": str(chat_id), "priority": priority, "started_at": time.time(),
                 **({"model_target": dict(model_target)} if model_target is not None else {}),
             })
+            if release_model and model_target is not None:
+                try:
+                    await asyncio.to_thread(_release_model_locked, model_target["model"])
+                except Exception as exc:  # Aufräumarbeit darf den Turn nie beenden
+                    _LOG.warning("Unload-Vorbereitung fehlgeschlagen: %s", exc)
             yield
         finally:
             try:

@@ -472,3 +472,98 @@ def test_unbound_local_calls_from_two_runtimes_share_host_gate(tmp_path, monkeyp
     asyncio.run(run())
     assert maximum == 1
     assert not runtimes[0].compute_turn_status()["active"]
+
+
+class _FakeLock:
+    """Minimaler Ersatz für den exklusiven Lock aus ``user_config_store``."""
+
+    def __init__(self):
+        self.exited = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.exited = True
+        return False
+
+
+def test_release_model_now_releases_under_exclusive_lock(tmp_path, monkeypatch):
+    """Erfolgsfall: Lock wird genutzt, Adapter meldet Erfolg, Lock wird freigegeben."""
+    import hub._services.chat.host_inference_gate as gate_mod
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    lock = _FakeLock()
+    seen = {}
+
+    def fake_lock(path, timeout_seconds=0):
+        seen["path"] = path
+        seen["timeout"] = timeout_seconds
+        return lock
+
+    def fake_release(model):
+        seen["model"] = model
+        return True
+
+    monkeypatch.setattr(gate_mod, "_exclusive_lock", fake_lock)
+    monkeypatch.setattr(gate_mod, "_release_model_locked", fake_release)
+
+    result = HostInferenceGate(tmp_path).release_model_now({"model": "qwen-test"})
+
+    assert result == {"ok": True, "released": True, "warning": None, "error": None}
+    assert seen["model"] == "qwen-test"
+    assert seen["path"] == (tmp_path / "inference").expanduser().resolve()
+    assert lock.exited is True
+
+
+def test_release_model_now_never_raises_on_bad_target(tmp_path, monkeypatch):
+    """Ungültiges ``model_target`` führt zu ``ok=False`` mit Fehlertext, nie zu einer Exception."""
+    import hub._services.chat.host_inference_gate as gate_mod
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    lock = _FakeLock()
+    monkeypatch.setattr(gate_mod, "_exclusive_lock", lambda *a, **kw: lock)
+    monkeypatch.setattr(gate_mod, "_release_model_locked", lambda m: True)
+
+    result = HostInferenceGate(tmp_path).release_model_now(None)
+
+    assert result["ok"] is False
+    assert result["released"] is False
+    assert result["error"]
+    assert lock.exited is True
+
+
+def test_release_model_locked_returns_false_when_guard_missing_or_failing(monkeypatch):
+    """Der Adapter meldet nur bei bestätigtem Unload ``True`` und wirft nie."""
+    import hub._services.chat.host_inference_gate as gate_mod
+
+    monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: None)
+    assert gate_mod._release_model_locked("qwen-test") is False
+
+    class RaisingGuard:
+        def unload(self, model):
+            raise RuntimeError("Ollama nicht erreichbar")
+
+    monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: RaisingGuard())
+    assert gate_mod._release_model_locked("qwen-test") is False
+
+    class NotUnloadedGuard:
+        def unload(self, model):
+            return {"unloaded": False, "warning": "noch geladen"}
+
+    monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: NotUnloadedGuard())
+    assert gate_mod._release_model_locked("qwen-test") is False
+
+    class OddReportGuard:
+        def unload(self, model):
+            return "unerwartet"
+
+    monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: OddReportGuard())
+    assert gate_mod._release_model_locked("qwen-test") is False
+
+    class OkGuard:
+        def unload(self, model):
+            return {"unloaded": True}
+
+    monkeypatch.setattr(gate_mod, "_load_unload_guard", lambda: OkGuard())
+    assert gate_mod._release_model_locked("qwen-test") is True

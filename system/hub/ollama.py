@@ -8,6 +8,8 @@ Ollama Handler - Lokale AI-Interaktion
     --model=NAME          Modell waehlen (default: llama3.2)
 --ollama models           Verfuegbare Modelle auflisten
 --ollama embed "text"     Embedding erstellen
+--ollama ps               Im Speicher gehaltene Modelle auflisten
+--ollama unload NAME      Modell racefrei freigeben (ueber Waechter-Modul)
 
 Refactored: 2026-01-23 - Nutzt jetzt tools/ollama_client.py
 """
@@ -25,6 +27,37 @@ try:
 except ImportError:
     OllamaClient = None
     OllamaModel = None
+
+
+def _load_unload_guard():
+    """Laedt das Waechter-Modul memory_pressure_unload_guard (Sensor/Aktor).
+
+    Reine Fachlogik liegt in system/tools/maintenance/; hier nur Adapter.
+    Gibt None zurueck, wenn das Modul nicht ladbar ist.
+    """
+    root = Path(__file__).resolve().parents[1]  # .../system
+    try:
+        from tools.maintenance import memory_pressure_unload_guard as guard
+        return guard
+    except Exception:
+        pass
+    try:
+        import importlib.util
+
+        guard_path = root / "tools" / "maintenance" / "memory_pressure_unload_guard.py"
+        if not guard_path.is_file():
+            return None
+        spec = importlib.util.spec_from_file_location(
+            "bach_memory_pressure_unload_guard", guard_path
+        )
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("bach_memory_pressure_unload_guard", module)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
 
 
 class OllamaHandler(BaseHandler):
@@ -59,7 +92,9 @@ class OllamaHandler(BaseHandler):
             "status": "Ollama-Server Status pruefen",
             "ask": "Anfrage an Ollama senden",
             "models": "Verfuegbare Modelle auflisten",
-            "embed": "Embedding erstellen"
+            "embed": "Embedding erstellen",
+            "ps": "Im Speicher gehaltene Modelle auflisten",
+            "unload": "Modell aus dem Speicher freigeben (racefrei ueber Waechter)"
         }
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -71,9 +106,47 @@ class OllamaHandler(BaseHandler):
             return self._ask(args, dry_run)
         elif operation == "embed":
             return self._embed(args, dry_run)
+        elif operation == "ps":
+            return self._ps(args)
+        elif operation == "unload":
+            return self._unload(args, dry_run)
         else:
             return self._status()
     
+    def _ps(self, args: list) -> tuple:
+        """Sensor: laufende Modelle ueber den Waechter abfragen."""
+        guard = _load_unload_guard()
+        if guard is None:
+            return (False, "Waechter-Modul memory_pressure_unload_guard nicht verfuegbar")
+        try:
+            running = guard.list_running()
+        except Exception as exc:
+            return (False, f"Ollama /api/ps nicht abfragbar: {exc}")
+        lines = ["[OLLAMA] Im Speicher gehaltene Modelle", "=" * 50]
+        if not running:
+            lines.append("(keine Modelle geladen)")
+        for entry in running:
+            lines.append(f"- {entry.get('name')}  vram={entry.get('size_vram')} expires={entry.get('expires_at')}")
+        return (True, "\n".join(lines))
+
+    def _unload(self, args: list, dry_run: bool = False) -> tuple:
+        """Aktor: Modell freigeben, ohne den OllamaClient zu bemuehen."""
+        model = args[0] if args else ""
+        if dry_run:
+            return (True, f"[DRY-RUN] wuerde Modell freigeben: {model or '(ohne Namen)'}")
+        guard = _load_unload_guard()
+        if guard is None:
+            return (False, "Waechter-Modul memory_pressure_unload_guard nicht verfuegbar")
+        try:
+            report = guard.unload(model)
+        except ValueError as exc:
+            return (False, str(exc))
+        except Exception as exc:
+            return (False, f"Unload fehlgeschlagen: {exc}")
+        if report.get("unloaded"):
+            return (True, f"Modell {report.get('model')} entladen (verifiziert in {report.get('elapsed_s')}s)")
+        return (False, f"Modell {report.get('model')} nach Timeout noch geladen; {report.get('warning') or report.get('done_reason')}")
+
     def _status(self) -> tuple:
         """Ollama-Server Status pruefen."""
         results = []
