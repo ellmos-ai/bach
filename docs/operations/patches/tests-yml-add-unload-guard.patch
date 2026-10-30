@@ -1,0 +1,29 @@
+CI-Abdeckung fuer system/tests/test_memory_pressure_unload_guard.py
+===================================================================
+
+Status: NICHT angewendet. Der Patch konnte nicht ueber den BACH-Worker
+gepusht werden, weil der GitHub-OAuth-App-Token des Workers keinen
+`workflow`-Scope besitzt:
+
+  ! [remote rejected] bach-task/2419 -> bach-task/2419
+  (refusing to allow an OAuth App to create or update workflow
+   `.github/workflows/tests.yml` without `workflow` scope)
+
+Anwendung: mit einem Token/Account, der `.github/workflows/` schreiben
+darf (menschlicher Maintainer oder App mit `workflow`-Scope).
+
+  git apply docs/operations/patches/tests-yml-add-unload-guard.patch
+
+Inhalt: Ergaenzung des bestehenden Steps
+"Local model sockets and host admission" (kein neuer Step, keine
+Aenderung der Ausschlussliste, keine Aenderung des Sammel-Steps).
+
+--- a/.github/workflows/tests.yml
++++ b/.github/workflows/tests.yml
+@@ -141,5 +141,5 @@
+       - name: Local model sockets and host admission
+         env:
+           PYTHONIOENCODING: utf-8
+           PYTHONDONTWRITEBYTECODE: '1'
+-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_model_socket_callers.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py
++        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_model_socket_callers.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py system/tests/test_memory_pressure_unload_guard.py

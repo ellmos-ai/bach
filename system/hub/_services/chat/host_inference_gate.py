@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -27,8 +28,93 @@ _MAX_CONSECUTIVE_FOREGROUND = 3
 _TICKET_ID = re.compile(r"[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
+_LOG = logging.getLogger(__name__)
+
+
+def _load_unload_guard():
+    """Lädt den stdlib-only Speicherdruck-Wächter tolerant nach (Pfad-Fallback)."""
+    try:
+        from tools.maintenance import memory_pressure_unload_guard as guard
+        return guard
+    except Exception:
+        pass
+    try:
+        import importlib.util
+        import sys
+
+        root = Path(__file__).resolve().parents[3]
+        source = root / "tools" / "maintenance" / "memory_pressure_unload_guard.py"
+        spec = importlib.util.spec_from_file_location(
+            "bach_memory_pressure_unload_guard", source
+        )
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules.setdefault(spec.name, module)
+        return module
+    except Exception:
+        return None
+
+
+def _release_model_locked(model, *, digest=None, timeout_seconds=0, wait=True):
+    """Entlädt ein Modell und verifiziert per Poll; niemals eine Exception nach außen."""
+    guard = _load_unload_guard()
+    if guard is None:
+        _LOG.warning("Unload-Wächter nicht verfügbar; Modell %r bleibt geladen", model)
+        return False
+    try:
+        report = guard.unload(model, digest=digest, timeout_s=timeout_seconds, wait=wait)
+    except Exception as exc:
+        _LOG.warning("Unload von %r fehlgeschlagen: %s", model, exc)
+        return False
+    if not isinstance(report, dict) or not report.get("unloaded"):
+        detail = report.get("warning") if isinstance(report, dict) else report
+        _LOG.warning("Unload von %r nicht bestätigt: %s", model, detail)
+        return False
+    return True
+
 
 class HostInferenceGate:
+
+    def release_model_now(self, model_target, *, timeout_seconds=0):
+        """API zum sofortigen Entladen eines Modells.
+
+        Verwendet den exklusiven Inferenz-Lock ``self.root/"inference"``, ruft den
+        Adapter ``_release_model_locked`` auf und liefert ein ``dict`` mit
+        ``ok``/``released``/``warning``/``error``. Werft niemals eine Exception.
+
+        Parameter
+        ----------
+        model_target : dict
+            Modallexikon wie es ``model_target`` in ``turn()`` erwartet
+            (``{"model": "…", …}``).
+        timeout_seconds : int, Standard 0
+            Wird akzeptiert für API-Konsistenz; hier keine Wartezeit (0 bedeutet sofortige Freigabe oder Ausfall).
+        """
+        result = {"ok": False, "released": False, "warning": None, "error": None}
+        try:
+            lock = _exclusive_lock(self.root / "inference", timeout_seconds=timeout_seconds)
+            lock.__enter__()
+            try:
+                model = model_target.get("model", "")
+                digest = self._target_digest(model_target) if model_target else None
+                released = _release_model_locked(
+                    model, digest=digest, timeout_seconds=timeout_seconds, wait=True
+                )
+                result["released"] = bool(released)
+                result["ok"] = bool(released)
+            except Exception as exc:
+                result["error"] = str(exc)
+                _LOG.warning("release_model_now Fehler: %s", exc)
+            finally:
+                lock.__exit__(None, None, None)
+        except TimeoutError:
+            result["warning"] = "Konnte exklusiven Lock nicht innerhalb von " + f"{timeout_seconds}s erwerben"
+        except BaseException as exc:
+            result["error"] = str(exc)
+            _LOG.warning("release_model_now Exception: %s", exc)
+        return result
     def __init__(self, root: Path | None = None):
         runtime = Path(os.environ.get("BACH_RUNTIME_DIR") or Path.home() / ".bach" / "runtime")
         self.root = (root or runtime / "local-inference").expanduser().resolve()
@@ -41,26 +127,40 @@ class HostInferenceGate:
 
     @staticmethod
     def _alive(record):
-        pid, created = record.get("pid"), record.get("created")
-        if type(pid) is not int or pid <= 0 or type(created) not in (int, float):
-            raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
-        try:
-            valid_creation_time = math.isfinite(created) and created > 0
-        except (OverflowError, TypeError, ValueError):
-            valid_creation_time = False
-        if not valid_creation_time:
-            raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
-        try:
-            process = psutil.Process(pid)
-            return (
-                process.is_running()
-                and process.status() != psutil.STATUS_ZOMBIE
-                and abs(process.create_time() - created) < .001
-            )
-        except psutil.NoSuchProcess:
+        """Prüft, ob ein Inferenz-Record noch aktiv ist.
+
+        Verwendet den memory-pressure-unload-guard: ein als entladen
+        gemeldetes Modell gilt als nicht mehr alive; ein in list_running
+        gefundenes Modell/digest als alive. Ohne Modellnachweis oder ohne
+        Guard bleibt der Record erhalten (unknown is not proof).
+        """
+        model_target = record.get("model_target")
+        guard = _load_unload_guard()
+        if guard is None:
+            return True
+
+        digest = None
+        model_name = None
+        if isinstance(model_target, dict):
+            digest = HostInferenceGate._target_digest(model_target)
+            model_name = model_target.get("model")
+
+        if digest and guard.is_unloaded(digest=digest):
             return False
-        except psutil.AccessDenied:
-            return True  # Unknown is not proof that a request is abandoned.
+
+        running = guard.list_running()
+        for item in running:
+            if digest and item.get("digest") == digest:
+                return True
+            if model_name and (
+                item.get("model") == model_name or item.get("name") == model_name
+            ):
+                return True
+
+        # Legacy-Records ohne Modellnachweis können nicht per Guard bewertet werden.
+        if digest is None and model_name is None:
+            return True
+        return False
 
     @staticmethod
     def _read(path):
@@ -307,7 +407,8 @@ class HostInferenceGate:
         }
 
     @asynccontextmanager
-    async def turn(self, chat_id: str, priority: str, *, check_ready=None, model_target=None):
+    async def turn(self, chat_id: str, priority: str, *, check_ready=None, model_target=None,
+                   release_model: bool = False):
         if priority not in {"foreground", "background"}:
             raise ValueError("Ungültige Inferenzpriorität")
         if model_target is not None:
@@ -353,6 +454,11 @@ class HostInferenceGate:
                 **identity, "chat_id": str(chat_id), "priority": priority, "started_at": time.time(),
                 **({"model_target": dict(model_target)} if model_target is not None else {}),
             })
+            if release_model and model_target is not None:
+                try:
+                    await asyncio.to_thread(_release_model_locked, model_target["model"])
+                except Exception as exc:  # Aufräumarbeit darf den Turn nie beenden
+                    _LOG.warning("Unload-Vorbereitung fehlgeschlagen: %s", exc)
             yield
         finally:
             try:

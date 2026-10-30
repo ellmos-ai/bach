@@ -9,6 +9,7 @@ Interne Tools für System-Wartung, Synchronisation und Monitoring.
 | `archive_done_tasks.py` | Erledigte Tasks archivieren |
 | `create_boot_checks.py` | Boot-Checks erstellen |
 | `generate_skills_report.py` | Skills-Report generieren |
+| `memory_pressure_unload_guard.py` | Ollama-Modell-Unload überwachen (racefrei, Sensor/Aktor) |
 | `register_skills.py` | Skills in DB registrieren |
 | `registry_watcher.py` | Registry überwachen |
 | `skill_health_monitor.py` | Skill-Gesundheit prüfen |
