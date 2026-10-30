@@ -1,0 +1,1 @@
+# obsolete diagnostic artifact from task 3292 probe runs; intentionally neutralized; safe to delete
