@@ -15,14 +15,14 @@ Dieses Dokument definiert den Meilenstein und seine Abnahmekriterien. Versionsme
 | Nachweis | Wert |
 |---|---|
 | Version | `0.2.29` |
-| Quellcommit / Tag | `a42adda6a9fe8d892578db3f7a09f7c1bef653ef` / Tag-Beleg offen |
-| Archiv | `ellmos-system-gui-0.2.29-a42adda6a9fe.zip` |
+| Quellcommit / Tag | `a42adda6a9fe8d892578db3f7a09f7c1bef653ef` (belegt: `system/gui/gui-consumer.v1.json`, `commit`; `system/gui/kit_manifest.json`, `pinned_source_commit`) / Tag-Beleg offen |
+| Archiv | `ellmos-system-gui-0.2.29-a42adda6a9fe.zip` (belegt: `system/gui/kit_manifest.json`, `release_archive`) |
 | Archivgröße | Beleg offen (im BACH-Repo nicht verankert) |
-| Archiv-SHA-256 | `037516b1af6e658e06eee8aa57adaf81309bc430219198deeb6492ab816f29e1` |
+| Archiv-SHA-256 | `037516b1af6e658e06eee8aa57adaf81309bc430219198deeb6492ab816f29e1` (belegt: `system/gui/gui-consumer.v1.json`, `archive_sha256`; `system/gui/kit_manifest.json`, `release_archive_sha256`) |
 | Distmanifest-SHA-256 | Beleg offen (im BACH-Repo nicht verankert) |
 | Seiteninventar-SHA-256 | Beleg offen (im BACH-Repo nicht verankert) |
-| Buildinventar | 39 HTML-Seiten; Distdateienzahl offen |
-| Pin-Status | `pinned_release`, gepinnt am 2026-10-26T05:41:35Z |
+| Buildinventar | 39 HTML-Seiten laut `expected_page_count` in `system/gui/kit_manifest.json` (Erwartungswert des Pins, kein Byte-Inventarbeleg); Distdateienzahl offen |
+| Pin-Status | `pinned_release` (belegt: `system/gui/gui-consumer.v1.json`, `status`), gepinnt am 2026-10-26T05:41:35Z (belegt: `system/gui/kit_manifest.json`, `pinned_at`) |
 
 Scope-Entscheid: Der in der Planung vorgesehene Zwischenpin 0.2.27 war überholt, da das BACH-Repo bereits auf 0.2.29 steht und die Integritätstests 0.2.29 verriegeln; ein Downgrade wird nicht durchgeführt. Diese Doku ist auf 0.2.29 nachgezogen. Die Mac-Aktivierung des Deployments bleibt eine eigene offene Arbeit.
 
