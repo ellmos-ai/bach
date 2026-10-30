@@ -195,3 +195,176 @@ def test_pick_tolerates_non_mapping_catalog(monkeypatch):
     result = pin.pick_free_model("run-12")
     assert result["model"] == "openrouter/free"
     assert result["reason"] == "no_free_candidates"
+
+
+# ---------------------------------------------------------------------------
+# Integration: OpenRouterBackend pinnt ein freies Modell pro Lauf
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+from hub._services.llm import model_backend as mb  # noqa: E402
+from hub._services.llm.model_backend import (  # noqa: E402
+    HermesBackend,
+    OpenRouterBackend,
+    backend_identifier,
+    create_backend,
+)
+
+
+def _selection_catalog(*model_ids: str, stale: bool = False, failure_code=None) -> dict:
+    catalog = _catalog(*model_ids, stale=stale, failure_code=failure_code)
+    catalog["selection"] = {"allowed": True, "reason": "model_free"}
+    return catalog
+
+
+def _install_catalog(monkeypatch, catalog):
+    def fake_get_openrouter_catalog(**kwargs):
+        return catalog
+
+    monkeypatch.setattr(pin, "get_openrouter_catalog", fake_get_openrouter_catalog)
+    monkeypatch.setattr(
+        "hub._services.llm.openrouter_catalog.get_openrouter_catalog",
+        fake_get_openrouter_catalog,
+    )
+
+
+def _install_super_chat(monkeypatch, captured):
+    async def fake_chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
+        captured.append(model)
+        return {"content": "ok", "tool_calls": None}
+
+    monkeypatch.setattr(mb.HermesBackend, "chat", fake_chat)
+
+
+def _chat_once(backend, model=None):
+    return asyncio.run(
+        backend.chat([{"role": "user", "content": "hi"}], model=model)
+    )
+
+
+def test_backend_pins_same_model_across_calls_in_one_run(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free", "gamma:free")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-42")
+    assert _chat_once(backend) == {"content": "ok", "tool_calls": None}
+    _chat_once(backend)
+
+    assert len(captured) == 2
+    assert captured[0] == captured[1]
+    assert captured[0] in pin.free_candidates(catalog)
+    assert captured[0] != FREE_ROUTER_ID
+    assert backend.last_free_pin_decision["pinned"] is True
+    assert backend.last_resolved_model == captured[0]
+
+
+def test_backend_rotates_model_between_runs(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free", "gamma:free")
+    _install_catalog(monkeypatch, catalog)
+
+    chosen = set()
+    expected = set()
+    for index in range(8):
+        captured = []
+        _install_super_chat(monkeypatch, captured)
+        backend = OpenRouterBackend(api_key="testkey", run_id=f"run-{index}")
+        _chat_once(backend)
+        chosen.add(captured[0])
+        expected.add(pin.pinned_model(f"run-{index}", catalog=catalog))
+
+    assert chosen == expected
+    assert len(chosen) > 1
+    assert chosen <= set(pin.free_candidates(catalog))
+
+
+def test_backend_without_run_id_keeps_router_id(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey")
+    _chat_once(backend)
+
+    assert captured == [FREE_ROUTER_ID]
+    assert backend.last_free_pin_decision["pinned"] is False
+    assert backend.last_free_pin_decision["reason"] == "run_id_missing"
+    assert backend.last_resolved_model == FREE_ROUTER_ID
+
+
+def test_backend_with_stale_catalog_falls_back_to_router(monkeypatch):
+    catalog = _selection_catalog("alpha:free", stale=True, failure_code="catalog_timeout")
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-7")
+    _chat_once(backend)
+
+    assert captured == [FREE_ROUTER_ID]
+    assert backend.last_free_pin_decision["reason"] == "catalog_timeout"
+
+
+def test_backend_with_empty_pool_falls_back_to_router(monkeypatch):
+    catalog = _selection_catalog(stale=False)
+    _install_catalog(monkeypatch, catalog)
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-9")
+    _chat_once(backend)
+
+    assert captured == [FREE_ROUTER_ID]
+    assert backend.last_free_pin_decision["reason"] == "no_free_candidates"
+
+
+def test_backend_pinned_model_passes_catalog_selection(monkeypatch):
+    catalog = _selection_catalog("alpha:free", "beta:free")
+    calls = []
+
+    def fake_get(**kwargs):
+        calls.append(kwargs)
+        return catalog
+
+    monkeypatch.setattr(pin, "get_openrouter_catalog", fake_get)
+    monkeypatch.setattr(
+        "hub._services.llm.openrouter_catalog.get_openrouter_catalog", fake_get
+    )
+    captured = []
+    _install_super_chat(monkeypatch, captured)
+
+    backend = OpenRouterBackend(api_key="testkey", run_id="run-5")
+    _chat_once(backend)
+
+    assert any(kwargs.get("model_id") for kwargs in calls)
+    assert captured[0] in pin.free_candidates(catalog)
+
+
+def test_create_backend_openrouter_free_passes_run_id():
+    config = {
+        "type": "openrouter",
+        "free_only": True,
+        "api_key": "testkey",
+        "run_id": "run-77",
+    }
+    backend = create_backend(config)
+    assert isinstance(backend, OpenRouterBackend)
+    assert backend.run_id == "run-77"
+    assert backend_identifier(backend) == "openrouter"
+
+
+def test_create_backend_openrouter_without_run_id_defaults_empty():
+    config = {"type": "openrouter", "free_only": True, "api_key": "testkey"}
+    backend = create_backend(config)
+    assert isinstance(backend, OpenRouterBackend)
+    assert backend.run_id == ""
+
+
+def test_create_backend_legacy_hermes_alias_unaffected():
+    config = {"type": "openrouter", "api_key": "testkey", "default_model": "x/y"}
+    backend = create_backend(config)
+    assert isinstance(backend, HermesBackend)
+    assert not isinstance(backend, OpenRouterBackend)
