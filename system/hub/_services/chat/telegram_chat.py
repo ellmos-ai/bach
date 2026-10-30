@@ -1386,7 +1386,7 @@ def _worker_return_note(detail, reason_code):
 
 _WORKER_BACKEND_RETRY_LIMIT = 3
 _WORKER_BACKEND_RETRY_BASE_SECONDS = 60
-_WORKER_BACKEND_RETRY_BUDGET_SECONDS = 900
+_WORKER_BACKEND_RETRY_BUDGET_SECONDS = 360
 
 
 def _persistent_local_retry_binding(slot):
