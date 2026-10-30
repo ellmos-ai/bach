@@ -1040,6 +1040,7 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
             raise LeaseValidationError(str(exc)) from exc
     if any(
         not (name == "result_max_chars" and (value is None or type(value) is int))
+        and not (name in {"required_model", "assigned_slot"} and value is None)
         and name != "tags"
         and not isinstance(value, str)
         for name, value in changes.items()

@@ -57,6 +57,7 @@ from .rheingold import (
     set_lead_url,
     clear_lead_config,
     post_task_to_rheingold,
+    patch_task_to_rheingold,
     generate_draft_hash,
     sync_drafts_to_rheingold,
     pull_tasks_from_rheingold,
@@ -119,6 +120,44 @@ class TaskHandler(BaseHandler):
             "help": t("hilfe", default="Hilfe anzeigen")
         }
     
+    def _remote_writer_target(self):
+        """None means explicit local authority; errors must never mean local."""
+        if Path(self.db_path).resolve() != Path(self._canonical_db).resolve():
+            return None
+        if os.environ.get("BACH_RHEINGOLD_DISABLED") == "1":
+            return None
+        cfg = get_lead_config()
+        if cfg.get("mode") in {"lead", "isolated"}:
+            return None
+        # A worker with a missing URL (or an unknown role) stays fail-closed.
+        return (cfg.get("lead_url") or "") if cfg.get("mode") == "worker" else ""
+
+    def _remote_content_update(self, task_id, fields, args):
+        target = self._remote_writer_target()
+        if target is None:
+            return None
+        if not target:
+            return False, "[ERROR] Fester Lead fehlt; lokale Projektion unverändert"
+        values = {}
+        for name in ("lease-id", "fence", "task-version"):
+            matches = []
+            for index, arg in enumerate(args):
+                if arg == "--" + name:
+                    matches.append(args[index + 1] if index + 1 < len(args) else "")
+                elif arg.startswith("--" + name + "="):
+                    matches.append(arg.split("=", 1)[1])
+            if len(matches) != 1 or not matches[0]:
+                return False, "[ERROR] Genau eine eigene --lease-id, --fence und --task-version erforderlich"
+            values[name] = matches[0]
+        try:
+            fence = int(values["fence"])
+        except ValueError:
+            return False, "[ERROR] Ungültiger Fence; lokale Projektion unverändert"
+        return patch_task_to_rheingold(
+            target, task_id, fields, lease_id=values["lease-id"], fence=fence,
+            task_version=values["task-version"],
+        )
+
     def _get_db(self):
         """Datenbankverbindung holen"""
         conn = sqlite3.connect(str(self.db_path))
@@ -937,6 +976,42 @@ class TaskHandler(BaseHandler):
         if title is None and description is None and category is None and assigned_to is None and not slot_fields_set and not result_max_chars_set:
             return False, "Mindestens eine Option angeben: --title, --description, --category, --assigned, --required-model, --assigned-slot, --result-max-chars"
         
+        # field_values: {DB-Spalte: neuer_wert} fuer apply_task_field_changes
+        # (T-20260906-833218904 -- schliesst dieselbe task_history-Luecke wie
+        # server.py/headless.py; siehe hub/task_audit.py).
+        field_values = {}
+        changes = []
+
+        if title is not None:
+            field_values["title"] = title
+            changes.append(f"Titel -> {title[:40]}...")
+
+        if description is not None:
+            field_values["description"] = description
+            changes.append(f"Beschreibung aktualisiert ({len(description)} Zeichen)")
+
+        if category is not None:
+            field_values["category"] = category
+            changes.append(f"Kategorie -> {category}")
+
+        if assigned_to is not None:
+            field_values["assigned_to"] = assigned_to
+            changes.append(f"Zugewiesen -> {assigned_to}")
+
+        if "required_model" in slot_fields_set:
+            field_values["required_model"] = required_model
+            changes.append(f"Modell -> {required_model or 'frei'}")
+        if "assigned_slot" in slot_fields_set:
+            field_values["assigned_slot"] = assigned_slot
+            changes.append(f"Slot -> {assigned_slot or 'frei'}")
+        if result_max_chars_set:
+            field_values["result_max_chars"] = result_max_chars
+            changes.append(f"Ergebnislimit -> {result_max_chars if result_max_chars is not None else 'keine zusätzliche Begrenzung'}")
+
+        remote = self._remote_content_update(task_id, field_values, args[1:])
+        if remote is not None:
+            return remote
+
         with self._get_db() as conn:
             if slot_fields_set:
                 ensure_task_slot_columns(conn)
@@ -947,38 +1022,6 @@ class TaskHandler(BaseHandler):
             if not existing:
                 return False, f"Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}"
             existing_row = dict(existing)
-
-            # field_values: {DB-Spalte: neuer_wert} fuer apply_task_field_changes
-            # (T-20260906-833218904 -- schliesst dieselbe task_history-Luecke wie
-            # server.py/headless.py; siehe hub/task_audit.py).
-            field_values = {}
-            changes = []
-
-            if title is not None:
-                field_values["title"] = title
-                changes.append(f"Titel -> {title[:40]}...")
-
-            if description is not None:
-                field_values["description"] = description
-                changes.append(f"Beschreibung aktualisiert ({len(description)} Zeichen)")
-
-            if category is not None:
-                field_values["category"] = category
-                changes.append(f"Kategorie -> {category}")
-
-            if assigned_to is not None:
-                field_values["assigned_to"] = assigned_to
-                changes.append(f"Zugewiesen -> {assigned_to}")
-
-            if "required_model" in slot_fields_set:
-                field_values["required_model"] = required_model
-                changes.append(f"Modell -> {required_model or 'frei'}")
-            if "assigned_slot" in slot_fields_set:
-                field_values["assigned_slot"] = assigned_slot
-                changes.append(f"Slot -> {assigned_slot or 'frei'}")
-            if result_max_chars_set:
-                field_values["result_max_chars"] = result_max_chars
-                changes.append(f"Ergebnislimit -> {result_max_chars if result_max_chars is not None else 'keine zusätzliche Begrenzung'}")
 
             # now ueber SQLite (nicht Python-datetime): task.py nutzt durchgaengig
             # datetime('now') (UTC) fuer created_at/updated_at -- ein Python-seitiges
@@ -1209,6 +1252,40 @@ class TaskHandler(BaseHandler):
     
     def _done(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Task(s) als erledigt markieren - Multi-ID Support"""
+        target = self._remote_writer_target()
+        if target is not None:
+            if not target:
+                return False, "[ERROR] Fester Lead fehlt; lokale Projektion unverändert"
+            # The native release owns completion/result gates. Do not turn a
+            # missing capability into a generic PUT or a local done flag.
+            task_id, remaining = self._parse_single_task_args(args)
+            value_options = {"--lease-id", "--fence", "--task-version",
+                             "--ref", "--result-ref", "--note"}
+            index = 0
+            values = {}
+            while index < len(remaining):
+                option = remaining[index].split("=", 1)[0]
+                option = "--ref" if option == "--result-ref" else option
+                if option not in value_options or option in values:
+                    return False, "[ERROR] Lead-Abschluss benötigt eine Task und eindeutige native Lease-Optionen"
+                if "=" in remaining[index]:
+                    value = remaining[index].split("=", 1)[1]
+                else:
+                    if index + 1 >= len(remaining):
+                        return False, "[ERROR] Fehlender Wert für native Lease-Option"
+                    index += 1
+                    value = remaining[index]
+                values[option] = value
+                index += 1
+            if task_id is None or not {"--lease-id", "--fence", "--task-version"} <= values.keys():
+                return False, "[ERROR] Lead-Abschluss benötigt --lease-id, --fence und --task-version"
+            # Encode each parsed value as one option token. A note/ref that
+            # looks like --task-version must remain data in the legacy parser.
+            canonical = [str(task_id)] + [
+                key + "=" + value for key, value in values.items()
+            ]
+            return self._lease_release(canonical + ["--outcome=done"])
+
         ids, rest = self._parse_ids(args)
         
         if not ids:
@@ -1323,6 +1400,14 @@ class TaskHandler(BaseHandler):
 
         if not by or not by.strip():
             return False, "Usage-Fehler: --by <name> ist erforderlich. Nutze: bach task claim <id> --by <name> [--lease SECONDS]"
+
+        target = self._remote_writer_target()
+        if target is not None:
+            if not target:
+                return False, "[ERROR] Fester Lead fehlt; lokale Projektion unverändert"
+            if any(arg in ("--lease", "--lease-seconds") or arg.startswith(("--lease=", "--lease-seconds=")) for arg in rest):
+                return False, "[ERROR] Lead-Claim verwendet native --ttl S|M|L|XL statt --lease SECONDS"
+            return self._lease(args)
 
         by = by.strip()
         with self._get_db() as conn:
@@ -1814,6 +1899,10 @@ class TaskHandler(BaseHandler):
         if priority not in ["P1", "P2", "P3", "P4"]:
             return False, "Prioritaet muss P1, P2, P3 oder P4 sein"
         
+        remote = self._remote_content_update(task_id, {"priority": priority}, args[2:])
+        if remote is not None:
+            return remote
+
         with self._get_db() as conn:
             row = conn.execute("SELECT title FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if not row:
@@ -1826,8 +1915,19 @@ class TaskHandler(BaseHandler):
     
     def _assign(self, args: List[str]) -> Tuple[bool, str]:
         """Task(s) einem Partner zuweisen - Multi-ID Support"""
-        ids, rest = self._parse_ids(args)
-        
+        id_args = []
+        index = 0
+        while index < len(args):
+            if args[index] in ("--lease-id", "--fence", "--task-version"):
+                index += 2
+                continue
+            if args[index].startswith(("--lease-id=", "--fence=", "--task-version=")):
+                index += 1
+                continue
+            id_args.append(args[index])
+            index += 1
+        ids, rest = self._parse_ids(id_args)
+
         if not ids:
             return False, "Usage: bach task assign <id> [id2...] --to PARTNER"
         
@@ -1849,6 +1949,15 @@ class TaskHandler(BaseHandler):
         else:
             warning = ""
         
+        target = self._remote_writer_target()
+        if target is not None:
+            # One capability binds exactly one task. Never reuse it for a batch.
+            if len(ids) != 1:
+                return False, "[ERROR] Lead-Zuweisung benötigt genau eine Task und deren eigene Lease"
+            return self._remote_content_update(
+                ids[0], {"assigned_to": partner, "delegated_to": partner}, args,
+            )
+
         results = []
         
         with self._get_db() as conn:
