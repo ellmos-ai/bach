@@ -45,6 +45,45 @@ _OCEAN_REPOS = frozenset({
 })
 
 
+_ACCESS_LEVELS = ("sandbox", "ocean", "free")
+
+
+def _user_config_path() -> Path:
+    env_path = os.environ.get("BACH_USER_CONFIG")
+    if env_path:
+        return Path(env_path).expanduser()
+    from hub import bach_paths
+
+    return Path(bach_paths.BACH_DB).with_name("bach-user-config.json")
+
+
+def _user_access_level() -> str:
+    env_level = (os.environ.get("BACH_ACCESS_LEVEL") or "").strip().lower()
+    if env_level in _ACCESS_LEVELS:
+        return env_level
+    if env_level:
+        return "ocean"
+    try:
+        from hub._services.user_config_store import load_user_config
+
+        level = str(load_user_config(_user_config_path(), strict=False).get("access_level", "")).strip().lower()
+        if level in _ACCESS_LEVELS:
+            return level
+    except Exception:  # noqa: BLE001 - Konfigurationsfehler fallen auf ocean zurück.
+        return "ocean"
+    return "ocean"
+
+
+def set_user_access_level(level: str) -> str:
+    value = str(level).strip().lower()
+    if value not in _ACCESS_LEVELS:
+        raise ValueError(f"Unbekannte Zugriffsstufe {level!r}; erlaubt: {', '.join(_ACCESS_LEVELS)}")
+    from hub._services.user_config_store import update_user_config
+
+    update_user_config(_user_config_path(), lambda current: {**current, "access_level": value})
+    return value
+
+
 def _ocean_repos() -> frozenset[str]:
     env = os.environ.get("BACH_OCEAN_REPOS")
     if not env:
@@ -100,19 +139,27 @@ def _ensure_clone(repo: str) -> Path:
     return clone_dir
 
 
-def _task_category(task_id: int | str) -> str:
+def _task_build_site(task_id: int | str) -> str:
     try:
         numeric = int(task_id)
     except (TypeError, ValueError):
         return "general"
     try:
         with _db_context() as conn:
-            row = conn.execute("SELECT category FROM tasks WHERE id = ?", (numeric,)).fetchone()
-    except Exception:  # noqa: BLE001 - DB-Fehler fallen auf bach zurück.
+            from hub._services.task_schema import ensure_task_build_site
+
+            ensure_task_build_site(conn)
+            conn.commit()
+            row = conn.execute("SELECT build_site, category FROM tasks WHERE id = ?", (numeric,)).fetchone()
+    except Exception:  # noqa: BLE001 - DB-Fehler fallen auf general zurück.
         return "general"
-    if row is None or not row["category"]:
+    if row is None:
         return "general"
-    return str(row["category"])
+    if row["build_site"]:
+        return str(row["build_site"])
+    if row["category"]:
+        return str(row["category"])
+    return "general"
 
 
 def _canonical_origin(repo: str, value: str) -> str:
@@ -361,6 +408,8 @@ def is_live_path_blocked(path: str | Path) -> Optional[str]:
     """
     if os.environ.get("BACH_ALLOW_LIVE_WRITE") == "1":
         return None
+    if _user_access_level() == "free":
+        return None
 
     resolved = _resolve(path)
     worktrees_root = get_worktrees_dir()
@@ -404,7 +453,9 @@ def start_task_worktree(
     if task_code_capability:
         # Reject aliases before authorization, mkdir, or any Git side effect.
         _public_source_config_key(task_id)
-    repo_slug = _resolve_task_repo(_task_category(task_id))
+    repo_slug = _resolve_task_repo(_task_build_site(task_id))
+    if _user_access_level() == "sandbox" and repo_slug != _DEFAULT_REPO:
+        raise RuntimeError(f"Zugriffsstufe sandbox erlaubt nur Ziel-Repo {_DEFAULT_REPO}; für {repo_slug} Stufe ocean oder free setzen")
     if repo_root is None and repo_slug != _DEFAULT_REPO:
         repo_root = _ensure_clone(repo_slug)
     repo = (repo_root or get_live_repo_root()).resolve()
@@ -835,7 +886,7 @@ def _finish_task(
     # exact registered task tree, never a caller-provided cwd.
     from hub._services.chat.worker_write_guard import authorize_mutation
     authorize_mutation(worker_task_binding, int(task_id_str), paths=(target_dir,))
-    repo_slug = _resolve_task_repo(_task_category(task_id_str))
+    repo_slug = _resolve_task_repo(_task_build_site(task_id_str))
     # Secrets-Scan
     secrets = scan_for_secrets(target_dir)
     if secrets:
@@ -878,7 +929,7 @@ def _finish_task(
 
         if res_push.returncode != 0:
             return {"success": False, "error": "WIP-Push nicht bestätigt"}
-        worker_task_binding.record_worktree_result(int(task_id_str), f"[WIP] Stand auf {branch_name} gesichert")
+        worker_task_binding.record_worktree_result(int(task_id_str), f"[WIP] Stand auf {branch_name} gesichert (Zugriffsstufe {_user_access_level()})")
         return {"success": True, "wip": True, "branch": branch_name, "status": "wip_pushed"}
 
     # Normaler Abschluss: Tests aller geänderten getrackten und neuen Dateien.
@@ -975,7 +1026,8 @@ def _finish_task(
         "--base", "main",
         "--title", commit_msg,
         "--body", f"Automatisierter PR für Task #{task_id_str}: {message}"
-        + "\n\nNutzstufe für dieses Modul: Sandbox/Ocean/Free – Standard Ocean, bitte als Nutzereinstellung bestätigen.",
+        + "\n\nNutzstufe für dieses Modul: Sandbox/Ocean/Free – Standard Ocean, bitte als Nutzereinstellung bestätigen."
+        + f"\n\nZugriffsstufe dieses Worker-Laufs: {_user_access_level()}.",
     ]
     res_pr = run_checked(
         cmd_pr,
@@ -1017,7 +1069,7 @@ def _finish_task(
                      f"stdout={res_pr.stdout!r} stderr={res_pr.stderr!r}",
         }
 
-    worker_task_binding.record_worktree_result(int(task_id_str), f"PR: {pr_url}", review=True, result_ref=pr_url)
+    worker_task_binding.record_worktree_result(int(task_id_str), f"PR: {pr_url} (Zugriffsstufe {_user_access_level()})", review=True, result_ref=pr_url)
     return {"success": True, "pr_url": pr_url, "status": "review"}
 
 
@@ -1224,7 +1276,7 @@ def _has_unpushed_commits(
 def _task_repo_root(task_id: int | str, repo_root: Path | None = None) -> Path:
     if repo_root is not None:
         return Path(repo_root).resolve()
-    slug = _resolve_task_repo(_task_category(task_id))
+    slug = _resolve_task_repo(_task_build_site(task_id))
     if slug == _DEFAULT_REPO:
         return get_live_repo_root()
     clone_dir = _repo_clone_dir(slug)

@@ -186,7 +186,7 @@ def test_bound_finish_records_review_only_at_canonical_authority(bridge, git_run
                                    db_path=decoy, worker_task_binding=bridge.binding, require_task_binding=True)
     assert result == {"success": True, "pr_url": PR, "status": "review"}
     canonical = bridge.binding._client.task_snapshot(bridge.binding.task_id)
-    assert canonical["status"] == "review" and canonical["description"] == "PR: " + PR
+    assert canonical["status"] == "review" and canonical["description"].startswith("PR: " + PR)
     assert not decoy.exists()
     assert bridge.binding.closed and bridge.binding.completed_task_ids == ()
     assert bridge.binding.return_lease() is False
@@ -289,7 +289,7 @@ def test_unknown_content_ack_blocks_review_release_without_retry(bridge, git_run
     result = worker_git.finish_task(bridge.binding.task_id, "Review", run_tests=False,
                                    worker_task_binding=bridge.binding, require_task_binding=True)
     assert result["success"] is False and not release_calls
-    assert bridge.binding._client.task_snapshot(bridge.binding.task_id)["description"] == "PR: " + PR
+    assert bridge.binding._client.task_snapshot(bridge.binding.task_id)["description"].startswith("PR: " + PR)
     assert bridge.binding.return_lease() is False
 
 
@@ -822,3 +822,153 @@ def test_is_live_path_blocked_blocks_ocean_roots_and_clones(tmp_path, monkeypatc
     assert worker_git.is_live_path_blocked(clone_root / "open-ocean" / "x.py") == blocked
     assert worker_git.is_live_path_blocked(worktrees_root / "task-1234") is None
     assert worker_git.is_live_path_blocked(tmp_path / "fremder-ordner") is None
+
+
+def _bound_db_context(monkeypatch, db_path):
+    import contextlib
+    import sqlite3
+
+    @contextlib.contextmanager
+    def fake_context():
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    monkeypatch.setattr(worker_git, "_db_context", fake_context)
+
+
+def _user_config_file(tmp_path, monkeypatch):
+    config_path = tmp_path / "bach-user-config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("BACH_USER_CONFIG", str(config_path))
+    monkeypatch.delenv("BACH_ACCESS_LEVEL", raising=False)
+    return config_path
+
+
+def test_ensure_task_build_site_is_idempotent(tmp_path):
+    import sqlite3
+    from hub._services.task_schema import ensure_task_build_site
+
+    db = tmp_path / "tasks.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY, category TEXT)")
+    conn.commit()
+    ensure_task_build_site(conn)
+    ensure_task_build_site(conn)
+    conn.commit()
+    assert "build_site" in [row[1] for row in conn.execute("PRAGMA table_info(tasks)")]
+    conn.close()
+
+    empty = sqlite3.connect(tmp_path / "empty.db")
+    empty.execute("CREATE TABLE other (id INTEGER)")
+    empty.commit()
+    with pytest.raises(RuntimeError, match="Task-Migration"):
+        ensure_task_build_site(empty)
+    empty.close()
+
+
+def test_task_build_site_fallback_chain(bridge, tmp_path, monkeypatch):
+    from system.tests.test_task_lease_service import _connect, _insert
+
+    _user_config_file(tmp_path, monkeypatch)
+    _bound_db_context(monkeypatch, bridge.binding._client._db_path)
+    with _connect(bridge.binding._client._db_path) as conn:
+        task_id = _insert(conn, title="Build site fallback", assigned_to="BACH")
+    worker_git._task_build_site(task_id)
+    with _connect(bridge.binding._client._db_path) as conn:
+        conn.execute("UPDATE tasks SET build_site='open-ocean', category='coding' WHERE id=?", (task_id,))
+        conn.commit()
+    assert worker_git._task_build_site(task_id) == "open-ocean"
+    with _connect(bridge.binding._client._db_path) as conn:
+        conn.execute("UPDATE tasks SET build_site=NULL, category='coding' WHERE id=?", (task_id,))
+        conn.commit()
+    assert worker_git._task_build_site(task_id) == "coding"
+    with _connect(bridge.binding._client._db_path) as conn:
+        conn.execute("UPDATE tasks SET build_site=NULL, category=NULL WHERE id=?", (task_id,))
+        conn.commit()
+    assert worker_git._task_build_site(task_id) == "general"
+    assert worker_git._task_build_site(task_id + 12345) == "general"
+    assert worker_git._task_build_site("x") == "general"
+
+
+def test_build_site_routes_to_ocean_repo(bridge, tmp_path, monkeypatch):
+    from system.tests.test_task_lease_service import _connect, _insert
+
+    _user_config_file(tmp_path, monkeypatch)
+    _bound_db_context(monkeypatch, bridge.binding._client._db_path)
+    with _connect(bridge.binding._client._db_path) as conn:
+        task_id = _insert(conn, title="Ocean routing", assigned_to="BACH")
+    worker_git._task_build_site(task_id)
+    with _connect(bridge.binding._client._db_path) as conn:
+        conn.execute("UPDATE tasks SET build_site='open-ocean' WHERE id=?", (task_id,))
+        conn.commit()
+    assert worker_git._resolve_task_repo(worker_git._task_build_site(task_id)) == "ellmos-ai/open-ocean"
+
+
+def test_sandbox_level_blocks_non_default_repo(bridge, git_run, tmp_path, monkeypatch):
+    from system.tests.test_task_lease_service import _connect
+
+    _user_config_file(tmp_path, monkeypatch)
+    _bound_db_context(monkeypatch, bridge.binding._client._db_path)
+    worker_git._task_build_site(bridge.binding.task_id)
+    with _connect(bridge.binding._client._db_path) as conn:
+        conn.execute("UPDATE tasks SET build_site='open-ocean' WHERE id=?", (bridge.binding.task_id,))
+        conn.commit()
+    monkeypatch.setenv("BACH_ACCESS_LEVEL", "sandbox")
+    with pytest.raises(RuntimeError, match="sandbox"):
+        worker_git.start_task_worktree(bridge.binding.task_id, base_branch="main",
+                                       worker_task_binding=bridge.binding, require_task_binding=True)
+
+
+def test_free_level_lifts_live_path_block(tmp_path, monkeypatch):
+    live_root = tmp_path / "live-repo"
+    worktrees_root = tmp_path / "worktrees"
+    _user_config_file(tmp_path, monkeypatch)
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: live_root.resolve())
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: worktrees_root.resolve())
+    monkeypatch.delenv("BACH_ALLOW_LIVE_WRITE", raising=False)
+    monkeypatch.setenv("BACH_OCEAN_ROOTS", str(tmp_path / "ocean"))
+    monkeypatch.setenv("BACH_SOFTWARE_ROOTS", str(tmp_path / "software"))
+    monkeypatch.setenv("BACH_OCEAN_CLONE_DIR", str(tmp_path / "klone"))
+    assert worker_git.is_live_path_blocked(live_root / "x.py") == "Nutze start_task_worktree()"
+    monkeypatch.setenv("BACH_ACCESS_LEVEL", "free")
+    assert worker_git.is_live_path_blocked(live_root / "x.py") is None
+
+
+def test_access_level_resolution_and_persistence(tmp_path, monkeypatch):
+    config_path = _user_config_file(tmp_path, monkeypatch)
+    monkeypatch.setenv("BACH_ACCESS_LEVEL", "nope")
+    assert worker_git._user_access_level() == "ocean"
+    monkeypatch.setenv("BACH_ACCESS_LEVEL", "free")
+    assert worker_git._user_access_level() == "free"
+    monkeypatch.delenv("BACH_ACCESS_LEVEL", raising=False)
+    from hub._services.user_config_store import update_user_config
+
+    update_user_config(config_path, lambda current: {**current, "access_level": "sandbox"})
+    assert worker_git._user_access_level() == "sandbox"
+    assert worker_git.set_user_access_level("free") == "free"
+    assert worker_git._user_access_level() == "free"
+    with pytest.raises(ValueError, match="Unbekannte Zugriffsstufe"):
+        worker_git.set_user_access_level("bogus")
+
+
+def test_receipts_and_pr_body_carry_access_level(bridge, git_run, tmp_path, monkeypatch):
+    _user_config_file(tmp_path, monkeypatch)
+    decoy = tmp_path / "projection-must-not-open.db"
+    result = worker_git.finish_task(bridge.binding.task_id, "WIP mit Stufe", is_wip=True, db_path=decoy,
+                                    worker_task_binding=bridge.binding, require_task_binding=True)
+    assert result["success"] is True and result["wip"] is True
+    assert "(Zugriffsstufe ocean" in bridge.binding.task_snapshot()["description"]
+    result = worker_git.finish_task(bridge.binding.task_id, "Fertig", run_tests=False, db_path=decoy,
+                                    worker_task_binding=bridge.binding, require_task_binding=True)
+    assert result == {"success": True, "pr_url": PR, "status": "review"}
+    description = bridge.binding._client.task_snapshot(bridge.binding.task_id)["description"]
+    assert description.startswith("PR: " + PR) and "(Zugriffsstufe ocean" in description
+    assert not decoy.exists()
+    pr_cmd = next(cmd for cmd in git_run if cmd[:3] == ["gh", "pr", "create"])
+    body = pr_cmd[pr_cmd.index("--body") + 1]
+    assert "Zugriffsstufe dieses Worker-Laufs: ocean" in body
+    assert "Nutzstufe" in body
