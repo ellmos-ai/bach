@@ -194,3 +194,27 @@ Nächster Schritt: Beim nächsten natürlichen HTTP-429-Zyklus den lease-/servic
 **Abgabestand:** WIP-Commit auf `bach-task/2431`, kein PR. Abgabe als Teilstand über `submit_result` mit `complete=false`. Der Task bleibt **OFFEN** und ist nicht abzunehmen.
 
 **Nächster Schritt:** Sobald `~/.bach/operator-checkpoints` oder die Live-Logs lesbar sind, den beim nächsten natürlich aufgetretenen 429 entstandenen Zyklus nachziehen. Liegt dann weiterhin kein Beleg vor, ist der Blocker im Folgelauf erneut NEU zu dokumentieren — nicht Alttext unverändert einzureichen.
+
+## Blocker/Prüfung — Korrekturlauf 7 (Korrektur-ID 58) — 2026-10-30
+
+**Prüfdatum:** 2026-10-30, Korrekturlauf 7 zur Korrektur-ID 58 (task_version 60f224b337380aa0a3c3c3e28fb7ff18f917dcc99fe75c77455c8294160a6690).
+
+**Null-Befund (429-Laufzeitbeleg):** Seit dem letzten Prüfpunkt 2026-10-30 14:27 sind keine neuen 429-Ereignisse nachweisbar. Beleglage:
+- `search_text` nach „429" im Taskarbeitsbaum `~/services/bach-worktrees/task-2431`: 0 Treffer in `system/logs`, 0 Treffer in `system/data` (je bestätigt).
+- Live `system/logs`: `file_info` bestätigt 32 Einträge, unverändert mtime 2026-10-05 23:48:06 — keine Bewegung, daher kein natürliches 429-Ereignis in die Live-Logs geschrieben.
+- `~/.bach/operator-checkpoints`: `file_info` bestätigt 150 Einträge, unverändert mtime 2026-10-22 18:12:03; `list_directory` auf dieses Verzeichnis wurde blockiert („Task-Lesebereich nicht bestätigt").
+
+**Blocker — frisch dokumentiert (Status `scope_not_recorded` gilt unverändert weiter):**
+(a) Laufzeitdaten unlesbar bzw. ohne natürlichen 429-Zyklus: Die für den Beleg erforderlichen Laufzeitdaten (Live-Logs, Operator-Checkpoints) sind im Taskarbeitsbaum nicht lesbar bzw. seit dem letzten Prüfpunkt nicht bewegt; ein natürlicher 429-Zyklus ist im Zeitfenster nicht entstanden. (b) Anstoß untersagt: Ein künstliches Auslösen eines 429, das Starten von Tests/Workern sowie Merge/Deploy sind vom Auftrag ausgeschlossen. Statische Quellzitate ersetzen keinen Laufzeitbeleg; deshalb bleibt `scope_not_recorded` bestehen.
+
+**Statische Verifikation des Quellfixes (dieser Lauf, vollständig):**
+- `system/hub/_services/llm/backend_errors.py`: Z136-138 `parse_retry_after` → `raw["retry_after_seconds"]`; Z142-159 `cloud_call_retry_eligible` (429: `ollama/rate_limited`, `openrouter/http_error`; auch 504/Timeouts); Z161-172 `cloud_call_retry_delay`: Basis 60 s bei 429, `delay = max(base*(2**retries), retry_after_seconds)`, Abbruch bei `retries >= 3`, Budget `waited + delay <= 900`.
+- `system/hub/_services/chat/chat_runtime.py`: Z331-344 `_SAFE_FAILURE_REASON_CODES` enthält `cloud_call_retry_exhausted`; Z928-956 Retry-Schleife: Z943-944 offene Rückgabe `{"error","backend_error","reason_code":"cloud_call_retry_exhausted"}`; Z948-950 429-Log „Cloud-Anfragelimit: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)".
+- `system/hub/_services/chat/telegram_chat.py`: Z1387-1389 Konstanten `_WORKER_BACKEND_RETRY_LIMIT=3`, `_WORKER_BACKEND_RETRY_BASE_SECONDS=60`, `_WORKER_BACKEND_RETRY_BUDGET_SECONDS=900`; Z1481-1539 `_worker_backend_retry_delay` (Docstring Z1485 „Cloud retry waits are lease-free"); Z1519 „A configured worker's stop/TTL, not three retries, ends this wait loop"; Z1521 `max(min(900, _WORKER_BACKEND_RETRY_BASE_SECONDS*(2**min(retries,4))), retry_after_seconds)` → 60/120/240/480/900-Kurve (belegt „90→360"); Z1524 `retries >= _WORKER_BACKEND_RETRY_LIMIT`; Z1537-1538 Budget-Prüfung; Z1544-1555 lokale Retry-Bindung (`httpx_read_timeout`) mit denselben Konstanten (Z1551, Z1554-1555); Z5367 `backend_retries >= _WORKER_BACKEND_RETRY_LIMIT` → `persistent_core_capacity_exhausted`; Z5855 `retry_count == _WORKER_BACKEND_RETRY_LIMIT`; Z1642-1682 `_wait_worker_cooldown` (automatische Pause, stop-responsiv, `paused→running`).
+- `system/hub/_services/chat/worker_lease_binding.py` (1285 Zeilen): Z162-180 `_effective_pickup_slot` (Z170-177 assigned_slot-Routing/Cloud-Worker-Kategorien), ab Z182 `_matches_external_profile_route` — kein 429-Bezug, bestätigt die KL6-Zuordnung.
+
+**Syntax-Check (compileall):** 4 Versuche (Mehrfachziel, Einzeldatei, Verzeichnisform mit `-q`) — jeweils „Werkzeugausführung nicht bestätigt; Wirkung unbekannt". Es liegt KEIN bestätigtes compileall-Ergebnis vor; ein „OK" wird daher ausdrücklich NICHT behauptet. Status: nicht bestätigt.
+
+**Scope/Revision (dieser Lauf):** Taskarbeitsbaum `~/services/bach-worktrees/task-2431` (registriert über `start_task_worktree` für Task #2431), Branch `bach-task/2431`, bestehender PR #598. HEAD nicht ermittelbar: `git rev-parse HEAD` wurde mit „Nur taskgebundene Prüfbefehle" blockiert, `.git`-Lesezugriff mit „Task-Lesebereich nicht bestätigt". Resultrevision verankert über `task_version=60f224b337380aa0a3c3c3e28fb7ff18f917dcc99fe75c77455c8294160a6690` plus Korrekturlauf 7 (2026-10-30, Korrektur-ID 58).
+
+**Status/Abgabe:** WIP-Abgabe auf `bach-task/2431`, kein neuer PR; Task #2431 bleibt OFFEN. Nächster Schritt unverändert (siehe oben): Sobald `~/.bach/operator-checkpoints` oder die Live-Logs lesbar sind, den beim nächsten natürlich aufgetretenen 429 entstandenen Zyklus nachziehen; liegt dann weiterhin kein Beleg vor, ist der Blocker im Folgelauf erneut NEU zu dokumentieren.
