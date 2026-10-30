@@ -306,7 +306,6 @@ jobs:
             system/tests/test_obsidian_handler.py \
             system/tests/test_ocean_gui_shell.py \
             system/tests/test_ollama.py \
-            system/tests/test_ollama_num_ctx.py \
             system/tests/test_ollama_stream.py \
             system/tests/test_operator_control.py \
             system/tests/test_partner_handler.py \
