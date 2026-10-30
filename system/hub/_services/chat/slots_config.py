@@ -1230,6 +1230,9 @@ def _validated_core_edits(
                     or len(set(value)) != len(value))):
                 raise ValueError("Toolfreigabe enthält unbekannte oder doppelte Werkzeuge")
         elif field == "tool_profile":
+            # Gueltige Namen: Schluessel von TOOL_PROFILES
+            # (standard/readonly/files/code_delivery/all);
+            # None = keine Toolset-Einschraenkung.
             from .bach_tools import TOOL_PROFILES
             if value is not None and (not isinstance(value, str) or value not in TOOL_PROFILES):
                 raise ValueError(f"Unbekanntes Toolset-Profil: {value}")
