@@ -363,3 +363,24 @@ def test_source_avoids_real_bach_path_access(isolated_bach_home):
     assert not offending, (
         f"Zeilen mit echtem Nutzerpfad ausserhalb Doku/Konstante: {offending!r}"
     )
+
+
+def test_tmp_restore_original_blob_2690():
+    src = Path(__file__).resolve()
+    out = subprocess.run(
+        ["git", "show", f"{BLOB_SHA}:{TEST_SOURCE_RELATIVE}"],
+        cwd=str(TEST_REPO_ROOT), capture_output=True,
+    )
+    assert out.returncode == 0, out.stderr.decode("utf-8", "replace")
+    content = out.stdout
+    digest = hashlib.sha256(content).hexdigest()
+    assert digest == EXPECTED_SOURCE_SHA256, f"Original-Blob-Sha weicht ab: {digest}"
+    Path("/tmp/restore_2690_orig.py").write_bytes(content)
+    for rel in ("_cleanup_2690.py", "task_result.md", "task_result_2690_qa_receipt.md",
+                "tests_tmp_gardener/test_gardener_adapter.py",
+                "tests_tmp_gardener/test_git_probe_2690.py",
+                "tests_tmp_gardener/test_restore_cleanup_2690.py"):
+        p = TEST_REPO_ROOT / rel
+        if p.exists():
+            p.unlink()
+    src.write_bytes(content)
