@@ -1,0 +1,122 @@
+# 可移植性：通用
+# 版本：1.0.0
+# 最后验证：2026-09-17
+# 下次检查：2027-03-17
+# 资源：[hub/subscription_agents.py, hub/_services/subscription_agents_composer.py]
+
+================================================================================
+subscription_agents - 版本化入职提示预览
+================================================================================
+
+描述
+--------------------------------------------------------------------------------
+`subscription_agents` 处理程序根据当前 BACH 源生成
+版本化的入职提示预览（Subscription-Agents-Compose）。
+处理程序读取 JSON 格式的
+请求文件，将内容
+传递给 Composer（`hub/_services/subscription_agents_composer.py`），
+并将结果作为按规范排序的 JSON
+输出到 stdout。
+
+处理程序对请求文件仅执行读取操作：
+既不修改请求文件，
+也不修改配置或系统文件。
+输出适合作为版本化提示/入职状态的依据，
+也可传递给下游工具。
+
+处理程序仅提供一个操作：`compose`。
+
+注册名：                  subscription_agents
+模块：                    system/hub/subscription_agents.py
+关联服务：                system/hub/_services/subscription_agents_composer.py
+操作：                    compose
+
+操作
+--------------------------------------------------------------------------------
+compose <请求-JSON-文件>
+    根据当前 BACH 源创建版本化的入职提示预览。
+
+    参数：
+      <请求-JSON-文件>       包含 JSON 对象的 JSON 文件路径。
+                             前导 `~` 会扩展为执行用户的主目录。
+
+    参数传递规则：
+      - 必须提供且仅提供一个参数。
+      - 参数必须是非空字符串。
+      - 参数不得以 `-` 开头（不进行选项解析）。
+
+    请求文件的错误处理：
+      - 文件不可读
+        （OSError/PermissionError）
+        -> "请求文件不可读"
+      - 文件大于 MAX_REQUEST_BYTES（256 KB）
+        -> "请求文件超过 256 KB"
+      - 内容不是有效的 UTF-8 JSON、不是 JSON 对象
+        或包含重复字段名
+        -> "请求文件必须包含具有唯一字段的有效 UTF-8 JSON"
+        -> "请求文件必须包含一个 JSON 对象"
+
+    如果操作或参数不被接受，处理程序将返回以下用法行：
+
+      bach subscription_agents compose <请求-JSON-文件>
+
+示例
+--------------------------------------------------------------------------------
+1）通过处理程序的短名称进行标准调用：
+
+     python bach.py subscription_agents compose ./request.json
+
+2）通过选项形式调用（绑定到处理程序）：
+
+     python bach.py --subscription_agents compose ./request.json
+
+3）主目录中的请求文件（波浪号扩展）：
+
+     python bach.py subscription_agents compose ~/requests/onboarding.json
+
+4）将结果重定向到文件（排序/键保持不变）：
+
+     python bach.py subscription_agents compose ./request.json > preview.json
+
+5）最小请求文件（JSON 对象、UTF-8、无重复字段）：
+
+     {"topic": "onboarding", "audience": "new_agent"}
+
+输出格式
+--------------------------------------------------------------------------------
+- 成功情况：stdout 上输出一个 JSON 对象，使用
+  `json.dumps(result, ensure_ascii=False, sort_keys=True)` 序列化。键按字母
+  顺序排序，非 ASCII 字符保持未转义（UTF-8）。
+- 错误情况：通过常规处理程序返回文本
+  （错误消息或用法行）；退出状态由
+  调用 CLI 决定。
+- 输出不包含处理程序添加的时间戳格式；
+  所有内容字段均来自 Composer 结果。
+
+文件
+--------------------------------------------------------------------------------
+system/hub/subscription_agents.py
+    处理程序：参数校验、请求读取、调用 Composer、输出。
+
+system/hub/_services/subscription_agents_composer.py
+    Composer 服务：包含 `SubscriptionAgentsComposer` 和常量
+    `MAX_REQUEST_BYTES`（请求文件 256 KB 上限）。
+
+<请求-JSON-文件>
+    调用方提供的输入文件（JSON 对象、UTF-8，最大 256 KB、无重复字段名）。
+    仅读取。
+
+system/docs/help/subscription_agents.txt
+    本帮助文件。通过 `--help subscription_agents` 解析（帮助查找使用
+    `docs/help/<主题>.txt`，注册名和模块名相同），并自动出现在
+    `--help list` 中。
+
+另请参见
+--------------------------------------------------------------------------------
+- `--help prompt`（system/docs/help/prompt.txt）：提示构建和
+  仓库中的提示约定。
+- `--help abo`：系统的
+  订阅/订购上下文。
+- `--help list`：所有可用帮助主题概览。
+- ARCHITECTURE.md：CLI 调用约定（`python bach.py <命令>` 或
+  `python bach.py --<handler>`）以及通过 `docs/help/<主题>.txt` 进行帮助解析。
