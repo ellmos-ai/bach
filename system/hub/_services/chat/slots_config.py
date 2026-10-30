@@ -2074,7 +2074,9 @@ def _model_request_worker(config: dict[str, Any], worker_id: str) -> dict[str, A
 def _validated_model_name(model: Any) -> Any:
     if (type(model) is not str
             or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}", model) is None):
-        raise RuntimeError("budget_model_invalid")
+        # ModelRequestBudgetError ist RuntimeError-Subklasse: Aufrufer, die
+        # RuntimeError erwarten, bleiben unverändert gültig.
+        raise ModelRequestBudgetError("budget_model_invalid")
     return model
 
 
