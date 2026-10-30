@@ -47,8 +47,8 @@ def test_external_handoff_threshold_uses_config_num_ctx(resources, monkeypatch):
 
     monkeypatch.setattr(reserve, "observe_ollama", external)
     monkeypatch.setattr(reserve, "_ollama_num_ctx_config", lambda: {MODEL: {"num_ctx": 4096}})
-    state, result = asyncio.run(reserve.probe(backend, MODEL))
-    assert state == "external_target"
+    result = asyncio.run(reserve.probe(backend, MODEL))
+    assert result["state"] == "external_target"
     assert result["handoff_context_threshold"] == 3276
 
 
@@ -60,8 +60,8 @@ def test_external_handoff_threshold_uses_config_recommendation(resources, monkey
 
     monkeypatch.setattr(reserve, "observe_ollama", external)
     monkeypatch.setattr(reserve, "_ollama_num_ctx_config", lambda: {MODEL: {"num_ctx_recommended": 2048}})
-    state, result = asyncio.run(reserve.probe(backend, MODEL))
-    assert state == "external_target"
+    result = asyncio.run(reserve.probe(backend, MODEL))
+    assert result["state"] == "external_target"
     assert result["handoff_context_threshold"] == 1638
 
 
@@ -73,8 +73,8 @@ def test_external_handoff_threshold_falls_back_to_backend(resources, monkeypatch
 
     monkeypatch.setattr(reserve, "observe_ollama", external)
     monkeypatch.setattr(reserve, "_ollama_num_ctx_config", lambda: {})
-    state, result = asyncio.run(reserve.probe(backend, MODEL))
-    assert state == "external_target"
+    result = asyncio.run(reserve.probe(backend, MODEL))
+    assert result["state"] == "external_target"
     assert result["handoff_context_threshold"] == 819
 
 
@@ -84,13 +84,13 @@ def test_matching_config_num_ctx_is_no_conflict(resources, monkeypatch):
     data["models"][MODEL]["num_ctx"] = 4096
     path.write_text(json.dumps(data), encoding="utf-8")
     monkeypatch.setattr(reserve, "_ollama_num_ctx_config", lambda: {MODEL: {"num_ctx": 4096}})
-    state, result = asyncio.run(reserve.probe(backend, MODEL))
-    assert state == "ready"
+    result = asyncio.run(reserve.probe(backend, MODEL))
+    assert result["state"] == "ready"
 
 
 def test_mismatched_config_num_ctx_conflicts(resources, monkeypatch):
     _, backend = resources
     monkeypatch.setattr(reserve, "_ollama_num_ctx_config", lambda: {MODEL: {"num_ctx": 2048}})
-    state, result = asyncio.run(reserve.probe(backend, MODEL))
-    assert state == "model_budget_conflict"
+    result = asyncio.run(reserve.probe(backend, MODEL))
+    assert result["state"] == "model_budget_conflict"
     assert result["retryable"] is False
