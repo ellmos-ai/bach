@@ -275,6 +275,9 @@ token.json
 
 # === TEMPORÄRE SKRIPTE (Übersetzungsarbeit, Debugging) ===
 /auto_translator.py
+/check.py
+/check_pin.py
+/probe.py
 /check_db.py
 /check_lang*.py
 /check_translations.py
