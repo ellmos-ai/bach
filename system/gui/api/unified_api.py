@@ -3651,8 +3651,19 @@ async def stop_system_worker(worker_id: str, request: Request):
 
 
 @router.post("/system/workers/{worker_id}/delete")
-async def delete_system_worker(worker_id: str, request: Request):
+async def delete_system_worker_post(worker_id: str, request: Request):
     """Delete a dynamic profile through the existing Control API after user action."""
+    return await _delete_system_worker(worker_id, request)
+
+
+@router.delete("/system/workers/{worker_id}")
+async def delete_system_worker(worker_id: str, request: Request):
+    """Delete a dynamic profile via DELETE, mirroring the POST delete path."""
+    return await _delete_system_worker(worker_id, request)
+
+
+async def _delete_system_worker(worker_id: str, request: Request):
+    """Shared implementation for POST and DELETE worker deletion."""
     device_token = _require_memory_device_token(request)
     from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, worker_action
 
