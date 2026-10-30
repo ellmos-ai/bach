@@ -185,3 +185,35 @@ NACHTRAG 8 (Fortsetzungslauf, RESUME-Schritt, Werkzeugrunden 4-7/360)
   Worktree), 2) Ergebnis hier als Nachtrag 9 protokollieren, 3) bei PASSED
   finish_task(2563, is_wip=false) und submit_result(complete=true), 4) bei FAIL
   minimale Korrektur und erneut testen.
+
+NACHTRAG 9 (Fortsetzungs-Session 2, Werkzeugrunden 8-12/360)
+----------------------------------------------------------------------
+- Ausgangslage: drei frische pytest-Versuche dieser Session (Runden 3-5)
+  waren mit "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt"
+  abgewiesen worden. Wirkungspruefung dafuer (Runde 9):
+  free_model_pin_junit.xml und free_model_pin_wrapper_log.txt existieren
+  nicht, system/tests/__pycache__ und .pytest_cache existieren nicht ->
+  die drei Versuche wurden real nicht ausgefuehrt (Verwurf vor Python-Start).
+- Einziger regelkonformer Wiederholungsversuch (Runde 10), exakt in
+  Werkzeugbeispiel-Form: execute_command('python -m pytest -q --
+  system/tests/test_free_model_pin.py', cwd=/Users/lukas/services/bach-
+  worktrees/task-2563, timeout=120) -> erneut "Werkzeugausfuehrung nicht
+  bestaetigt; Wirkung unbekannt".
+- Sofortige Wirkungspruefung (Runde 11): system/tests/__pycache__,
+  .pytest_cache und system/hub/_services/llm/__pycache__ -> alle "nicht
+  gefunden". Keine Spuren, also keine reale Ausfuehrung.
+- Fazit: 4 frische pytest-Versuche in dieser Session, alle deterministisch
+  abgewiesen, null Dateispuren (kein __pycache__, kein .pytest_cache, keine
+  junit.xml, kein Wrapper-Log). Die Blockade liegt in der
+  Bestaetigungsschicht des Werkzeugausfuehrers vor jeglicher Python-Ausfuehrung;
+  nicht am Befehl, nicht am Timeout, nicht am Code. Ein bestaetigter
+  PASSED/FAIL bleibt im Worker unmoeglich. Keine weiteren Wiederholungen
+  (Sackgasse vollstaendig vermessen).
+- Folge: kein complete=true; dieser Nachtrag wird per finish_task(2563,
+  is_wip=true) als WIP-Commit auf bach-task/2563 (PR #597) gesichert und per
+  submit_result(complete=false) mit ehrlicher Diagnose abgegeben.
+- Offene Pflichtarbeit (unveraendert): 1) bestaetigter Lauf von
+  system/tests/test_free_model_pin.py ausserhalb des Workers (Operator-Shell
+  im Worktree), 2) Ergebnis hier als Nachtrag 10 protokollieren, 3) bei
+  PASSED finish_task(2563, is_wip=false) und submit_result(complete=true),
+  4) bei FAIL minimale Korrektur und erneut testen.
