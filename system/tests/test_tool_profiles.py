@@ -95,3 +95,24 @@ class TestToolProfiles:
             slots._validated_core_edits({"tool_profile": "superprofile"})
         with pytest.raises(ValueError):
             slots._validated_core_edits({"tool_profile": 7})
+
+    def test_resolve_tool_profile_bound_worker_filters_delegate(self):
+        assert set(bach_tools.TOOL_PROFILES) == {
+            "standard", "readonly", "files", "code_delivery", "all",
+        }
+        assert bach_tools.resolve_tool_profile("does-not-exist") is None
+        assert bach_tools.resolve_tool_profile(
+            "does-not-exist", bound_worker=True
+        ) is None
+        for name, grants in bach_tools.TOOL_PROFILES.items():
+            full = bach_tools.resolve_tool_profile(name)
+            assert full == sorted(grants)
+            bound = bach_tools.resolve_tool_profile(name, bound_worker=True)
+            assert bound == sorted(grants - {"delegate", "cleanup_task_worktree"})
+            assert "delegate" not in bound
+            assert "cleanup_task_worktree" not in bound
+        # Der Filter muss in mindestens einem Profil wirklich Werkzeuge entfernen.
+        assert any(
+            "delegate" in g or "cleanup_task_worktree" in g
+            for g in bach_tools.TOOL_PROFILES.values()
+        )
