@@ -49,22 +49,25 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypat
 
     target = worktrees / f"task-{task_id}"
     _git(["worktree", "add", str(target), "-b", f"bach-task/{task_id}", base_head], repo)
-    if pinned:
-        from hub import worker_git
 
-        worker_git._store_public_source_registration(repo, target, task_id, {
-            "schema": "bach.task-public-source.v1",
-            "task_id": task_id,
-            "repository": "ellmos-ai/bach",
-            "origin": ORIGIN,
-            "source_ref": "refs/heads/main",
-            "source_sha": base_head,
+    from hub import worker_git
+    reg_data = {
+        "schema": "bach.task-public-source.v1",
+        "task_id": task_id,
+        "repository": "ellmos-ai/bach",
+        "origin": ORIGIN,
+        "source_ref": "refs/heads/main",
+        "source_sha": base_head,
+    }
+    if pinned:
+        reg_data.update({
             "visibility": "public",
             "private": False,
             "metadata_verified": True,
             "ref_verified": True,
             "verified_at": "2026-10-15T12:00:00+00:00",
         })
+    worker_git._store_public_source_registration(repo, target, task_id, reg_data)
     return {
         "repo": repo,
         "worktrees": worktrees,
