@@ -247,6 +247,8 @@ async def delete_subscription_agent_record(agent_id: str, request: Request):
     await _authorize_active_device(request)
     try:
         removed = await asyncio.to_thread(_run_store, delete_subscription_agent, agent_id)
+    except (LookupError, ValueError):
+        raise _error(404, "agent_not_found", "Der Agent wurde nicht gefunden.") from None
     except Exception:
         raise _error(503, "store_unavailable", "Die Agentenablage ist derzeit nicht verfügbar.") from None
     if not removed:
