@@ -118,6 +118,10 @@ id_ed25519.*
 /system/data/logs/
 /system/data/messages/
 /system/data/ati/
+
+# === TASK-WORKER PROBEDATEIEN (temporär, nie committen) ===
+.task*_write_probe
+.task*-probe*
 /system/data/backups/
 /system/data/cache/
 /system/data/mail_attachments/
