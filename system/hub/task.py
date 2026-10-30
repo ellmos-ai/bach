@@ -63,6 +63,9 @@ from .rheingold import (
     assert_local_task_id_available,
     RheingoldTaskCollision,
     LEAD_CONFIG_FILE,
+    mutate_task_on_rheingold,
+    readback_task_from_rheingold,
+    task_row_is_remote_managed,
 )
 
 
@@ -102,14 +105,24 @@ class TaskHandler(BaseHandler):
             "reopen": t("task_reopen_desc", default="Task(s) wieder oeffnen (Multi-ID)"),
             "show": t("task_show_desc", default="Task-Details anzeigen"),
             "delete": t("task_delete_desc", default="Task(s) loeschen (Multi-ID)"),
+            "purge-cancelled": "Abgebrochene Worker-Mülltasks löschen und echte Alt-Tasks archivieren (oder --all für Komplettlöschung)",
             "priority": t("task_priority_desc", default="Prioritaet aendern"),
             "assign": t("task_assign_desc", default="Task(s) zuweisen (Multi-ID)"),
             "depends": t("task_depends_desc", default="Abhaengigkeit setzen/anzeigen"),
+            "next": t("task_next_desc", default="Uebernehmbare Tasks anzeigen (pending, ohne aktives Lease, ohne OLLAMA)"),
+            "take": t("task_take_desc", default="Task per Lease uebernehmen (bach task take <id> --by <user> [--ttl M] [--result-generation <gen>])"),
+            "renew": t("task_renew_desc", default="Eigenes Task-Lease verlaengern (bach task renew <id> --by <user> --fence <int>)"),
+            "submit": t("task_submit_desc", default="Ergebnis aus Lease abgeben (bach task submit <id> --by <user> --fence <int> --result <text>)"),
+            "return": t("task_return_desc", default="Task aus Lease zurueckgeben (bach task return <id> --by <user> --fence <int>)"),
             "sync": "Offene Offline-Entwürfe (Drafts) und Server-Zustand mit Rheingold synchronisieren",
             "pull": "Tasks vom Rheingold-Lead in den lokalen Bachgrund spiegeln",
             "lead": "Rheingold Lead-Konfiguration für Multi-Host-Federation verwalten (show|set|clear)",
             "claim": "Task exklusiv beanspruchen (bach task claim <id> --by <name> [--lease SECONDS])",
             "release": "Task-Claim freigeben (bach task release <id> --by <name>)",
+            "lease": "Task-Lease erwerben (Vertrag §5.2 / BACH #1722). Usage: bach task lease <id> --by <worker_id> [--ttl M|L|S] [--intent <text>]",
+            "lease-show": "Holder-Ansicht eines Task-Leases anzeigen (Vertrag §5.2 / BACH #1722). Usage: bach task lease-show <id> [--lease-id <uuid>]",
+            "lease-renew": "Task-Lease verlängern (Vertrag §5.3 / BACH #1722). Usage: bach task lease-renew <id> --lease-id <uuid> --fence <int>",
+            "lease-release": "Task-Lease freigeben oder abschließen (Vertrag §5.4 / BACH #1722). Usage: bach task lease-release <id> --lease-id <uuid> --fence <int> [--outcome done|return|blocked|review] [--ref <ref>] [--note <note>]",
             "reap": "Abgelaufene in_progress-Claims zuruecksetzen (bach task reap [--lease SECONDS])",
             "result-history": "Verifizierte Ergebnis-, Abnahme- und Korrekturhistorie anzeigen",
             "result-policy": "Aktuelle Abschlussentscheidung lesend prüfen (kein Taskabschluss)",
@@ -213,6 +226,8 @@ class TaskHandler(BaseHandler):
         elif operation == "block":
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
+            if "--lease-id" in args:
+                return self._block_lease(args)
             return self._block(args)
         elif operation == "unblock":
             if dry_run:
@@ -228,6 +243,10 @@ class TaskHandler(BaseHandler):
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
             return self._delete(args)
+        elif operation == "purge-cancelled":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._purge_cancelled(args)
         elif operation == "priority":
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
@@ -252,6 +271,24 @@ class TaskHandler(BaseHandler):
             return self._pull(args)
         elif operation == "lead":
             return self._lead(args)
+        elif operation == "next":
+            return self._next(args)
+        elif operation == "take":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._take(args)
+        elif operation == "renew":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._renew(args)
+        elif operation == "submit":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._submit(args)
+        elif operation == "return":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._return(args)
         elif operation == "claim":
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
@@ -847,6 +884,114 @@ class TaskHandler(BaseHandler):
         except (TypeError, ValueError):
             return None
     
+    def _propagate_to_rheingold_lead(self, conn, task_id, existing_row, payload):
+        """Lead-first-Routing für Remote-Tasks (edit/assign/claim/done).
+
+        None = lokal weiter (kein Remote-Pfad / kein Worker-Modus).
+        (True, remote_row) = Lead-Mutation per Readback bestätigt.
+        (False, meldung) = Fail-Closed (Lead unerreichbar) oder Kollision.
+
+        Jeder Ausgang des Remote-Pfads wird als ``remote_write`` in
+        ``task_history`` auditiert (changed_by='rheingold-lead'). Nach
+        bestätigtem Readback wird die lokale Provenienz (source/
+        creation_origin) nachgezogen, damit die Zeile dauerhaft als
+        remote-verwaltet gilt.
+        """
+        if not task_row_is_remote_managed(existing_row.get("source"), existing_row.get("creation_origin")):
+            return None
+        if get_lead_config()["mode"] != "worker":
+            return None
+
+        payload_json = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+
+        def _short(value, limit=500):
+            """Kürzt Audit-Werte auf eine speicherbare Länge."""
+            text = "" if value is None else str(value)
+            return text if len(text) <= limit else text[: max(limit - 3, 0)] + "..."
+
+        def _audit_lead_route(field_changed, old_value, new_value):
+            """Protokolliert einen Schritt des Lead-Routings (best effort)."""
+            try:
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                conn.execute(
+                    "INSERT INTO task_history "
+                    "(task_id, action, field_changed, old_value, new_value, changed_by, changed_at) "
+                    "VALUES (?, 'remote_write', ?, ?, ?, 'rheingold-lead', ?)",
+                    (
+                        task_id,
+                        _short(field_changed, 120),
+                        _short(old_value),
+                        _short(new_value),
+                        now,
+                    ),
+                )
+                conn.commit()
+            except sqlite3.Error:
+                pass
+
+        base = get_rheingold_url()
+        if base is None:
+            _audit_lead_route(
+                "lead_route:blocked", payload_json, "Lead unerreichbar (Fail-Closed)"
+            )
+            return (False, f"[BLOCKED] Lead unerreichbar, Remote-Task {task_id} nicht lokal geändert (Fail-Closed)")
+        ok, body = mutate_task_on_rheingold(base, task_id, payload)
+        if not ok:
+            detail = body.get("error", body) if isinstance(body, dict) else body
+            _audit_lead_route(
+                "lead_route:error",
+                payload_json,
+                f"Mutation fehlgeschlagen: {detail}",
+            )
+            return (False, f"[ERROR] Remote-Task {task_id}: Lead-Mutation fehlgeschlagen ({detail})")
+        remote = readback_task_from_rheingold(base, task_id)
+        if remote is None:
+            _audit_lead_route(
+                "lead_route:collision", payload_json, "Readback fehlgeschlagen"
+            )
+            return (False, f"[COLLISION] Task {task_id}: Lead-Readback fehlgeschlagen, keine lokale Änderung")
+        for field, value in payload.items():
+            if str(remote.get(field)) != str(value):
+                _audit_lead_route(
+                    f"lead_route:collision:{field}",
+                    remote.get(field),
+                    value,
+                )
+                return (False, f"[COLLISION] Task {task_id}: Lead-Readback weicht ab ({field}='{remote.get(field)}' != '{value}'), keine lokale Änderung")
+
+        # Provenienz nachziehen: die Zeile gehört jetzt nachweislich dem Lead.
+        old_source = existing_row.get("source")
+        provenance_source = old_source
+        if not (isinstance(provenance_source, str) and provenance_source.startswith("rheingold:")):
+            provenance_source = f"rheingold:{base}"
+        old_origin = existing_row.get("creation_origin")
+        try:
+            ensure_task_creation_origin(conn)
+            conn.execute(
+                "UPDATE tasks SET source = ?, creation_origin = 'remote' WHERE id = ?",
+                (provenance_source, task_id),
+            )
+            conn.commit()
+        except sqlite3.Error as exc:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            _audit_lead_route("lead_route:provenance_failed", payload_json, exc)
+            return (False, f"[ERROR] Task {task_id}: Lead bestätigt, aber lokale Provenienz nicht schreibbar ({exc})")
+
+        if provenance_source != old_source:
+            _audit_lead_route("source", old_source, provenance_source)
+        if old_origin != "remote":
+            _audit_lead_route("creation_origin", old_origin, "remote")
+        try:
+            existing_row["source"] = provenance_source
+            existing_row["creation_origin"] = "remote"
+        except (TypeError, KeyError):
+            # sqlite3.Row o. Ä. ist unveränderlich - Aufrufer liest dann neu.
+            pass
+        return (True, remote)
+
     def _edit(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Task bearbeiten - Titel, Beschreibung, Kategorie, Zuweisung aendern"""
         if not args:
@@ -985,6 +1130,9 @@ class TaskHandler(BaseHandler):
             # datetime.now().isoformat() (lokale Zeit) wuerde dieselbe Zeile inkonsistent
             # stempeln.
             now = conn.execute("SELECT datetime('now')").fetchone()[0]
+            route = self._propagate_to_rheingold_lead(conn, task_id, existing_row, field_values)
+            if route is not None and not route[0]:
+                return False, route[1]
             apply_task_field_changes(conn, task_id, existing_row, field_values,
                                       changed_by="cli-task", now=now)
             conn.commit()
@@ -1226,6 +1374,11 @@ class TaskHandler(BaseHandler):
                     continue
                 existing_row = dict(existing)
 
+                route = self._propagate_to_rheingold_lead(conn, task_id, existing_row, {"status": "done"})
+                if route is not None and not route[0]:
+                    results.append(route[1])
+                    continue
+
                 # Task als done markieren -- apply_task_field_changes setzt completed_at
                 # automatisch (T-20260906-833218904: 'done' ist Teil von
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
@@ -1326,6 +1479,13 @@ class TaskHandler(BaseHandler):
 
         by = by.strip()
         with self._get_db() as conn:
+            existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if not existing:
+                return False, f"Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}"
+            existing_row = dict(existing)
+            route = self._propagate_to_rheingold_lead(conn, task_id, existing_row, {"claimed_by": by})
+            if route is not None and not route[0]:
+                return False, route[1]
             ok = claim_task_atomic(conn, task_id, by, lease_seconds=lease_seconds)
             if ok:
                 conn.commit()
@@ -1628,6 +1788,290 @@ class TaskHandler(BaseHandler):
         except LeaseError as e:
             return False, f"[ERROR] {e}"
 
+    def _next(self, args: List[str]) -> Tuple[bool, str]:
+        """Uebernehmbare Tasks anzeigen (pending, ohne aktives Lease, ohne OLLAMA-Delegation)."""
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
+        from ._services.task_lease import ensure_task_lease_schema
+        db = self._get_db()
+        try:
+            ensure_task_lease_schema(db)
+            rows = db.execute(
+                "SELECT id, priority, title FROM tasks WHERE status='pending' "
+                "AND (claim_id IS NULL OR claim_expires_at IS NULL OR claim_expires_at<=?) "
+                "AND (claimed_by IS NULL OR (claim_expires_at IS NOT NULL AND claim_expires_at<=?)) "
+                "AND COALESCE(UPPER(assigned_to),'')<>'OLLAMA' "
+                "AND COALESCE(UPPER(delegated_to),'')<>'OLLAMA' "
+                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 "
+                "WHEN 'P4' THEN 4 ELSE 5 END, id LIMIT 10",
+                (now, now),
+            ).fetchall()
+        finally:
+            db.close()
+        if not rows:
+            return True, "[OK] Keine uebernehmbaren Tasks (pending, ohne aktives Lease, ohne OLLAMA-Delegation)"
+        lines = ["[OK] Uebernehmbare Tasks:"]
+        for i, row in enumerate(rows, 1):
+            lines.append(f"{i}. #{row['id']} [{row['priority']}] {row['title']}")
+        lines.append("Uebernahme: bach task take <id> --by <user>")
+        return True, "\n".join(lines)
+
+    def _take(self, args: List[str]) -> Tuple[bool, str]:
+        """Task per Lease uebernehmen (Vertrag §5.2 / BACH #1722).
+        Usage: bach task take <id> --by <user> [--ttl M] [--result-generation <gen>]
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task take <id> --by <user> [--ttl M] [--result-generation <gen>]"
+        by = None
+        host = None
+        ttl = "M"
+        intent = ""
+        result_generation = None
+        i = 0
+        while i < len(rest):
+            arg = rest[i]
+            if arg in ("--by", "--worker") and i + 1 < len(rest):
+                by = rest[i + 1]
+                i += 2
+            elif arg.startswith("--by=") or arg.startswith("--worker="):
+                by = arg.split("=", 1)[1]
+                i += 1
+            elif arg == "--host" and i + 1 < len(rest):
+                host = rest[i + 1]
+                i += 2
+            elif arg.startswith("--host="):
+                host = arg.split("=", 1)[1]
+                i += 1
+            elif arg in ("--ttl", "--profile") and i + 1 < len(rest):
+                ttl = rest[i + 1].upper()
+                i += 2
+            elif arg.startswith("--ttl=") or arg.startswith("--profile="):
+                ttl = arg.split("=", 1)[1].upper()
+                i += 1
+            elif arg == "--intent" and i + 1 < len(rest):
+                intent = rest[i + 1]
+                i += 2
+            elif arg.startswith("--intent="):
+                intent = arg.split("=", 1)[1]
+                i += 1
+            elif arg == "--result-generation" and i + 1 < len(rest):
+                result_generation = rest[i + 1]
+                i += 2
+            elif arg.startswith("--result-generation="):
+                result_generation = arg.split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+        if not by or not by.strip():
+            return False, "Usage-Fehler: --by <user> ist erforderlich (Format: <user> oder <user>@<host>)"
+        by, host = self._normalize_worker(by, host)
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.acquire(
+                    task_id, worker_id=by, host=host, ttl_profile=ttl, intent=intent,
+                    task_version=self._lease_task_version(rest), result_generation=result_generation,
+                )
+                return True, (
+                    f"[OK] Task {task_id} uebernommen von {ack.worker_id} (Fence {ack.fence}, "
+                    f"Profil {ack.ttl_profile}, Frist bis {ack.expires_at})\n"
+                    f"Auftragsversion: {ack.task_version}"
+                )
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _parse_by_fence(self, rest: List[str]) -> Tuple[Optional[str], Optional[int]]:
+        """--by <user> und --fence <int> aus Rest-Argumenten lesen."""
+        by = None
+        fence = None
+        i = 0
+        while i < len(rest):
+            arg = rest[i]
+            if arg in ("--by", "--worker") and i + 1 < len(rest):
+                by = rest[i + 1]
+                i += 2
+            elif arg.startswith("--by=") or arg.startswith("--worker="):
+                by = arg.split("=", 1)[1]
+                i += 1
+            elif arg == "--fence" and i + 1 < len(rest):
+                try:
+                    fence = int(rest[i + 1])
+                except ValueError:
+                    pass
+                i += 2
+            elif arg.startswith("--fence="):
+                try:
+                    fence = int(arg.split("=", 1)[1])
+                except ValueError:
+                    pass
+                i += 1
+            else:
+                i += 1
+        return by, fence
+
+    def _normalize_worker(self, by: str, host: str = None) -> Tuple[str, str]:
+        """Worker-ID normalisieren: <user> -> <user>@<hostname>."""
+        by = by.strip()
+        if not host:
+            if "@" in by:
+                host = by.rsplit("@", 1)[1]
+            else:
+                host = socket.gethostname()
+                by = f"{by}@{host}"
+        return by, host
+
+    def _claim_row(self, task_id: int) -> Optional[sqlite3.Row]:
+        """Aktuelle Lease-Spalten eines Tasks lesen."""
+        from ._services.task_lease import ensure_task_lease_schema
+        db = self._get_db()
+        try:
+            ensure_task_lease_schema(db)
+            return db.execute(
+                "SELECT claim_id, claimed_by, claim_task_version, claim_result_generation FROM tasks WHERE id=?",
+                (task_id,),
+            ).fetchone()
+        finally:
+            db.close()
+
+    def _renew(self, args: List[str]) -> Tuple[bool, str]:
+        """Eigenes Task-Lease verlaengern.
+        Usage: bach task renew <id> --by <user> --fence <int>
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task renew <id> --by <user> --fence <int>"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.renew(
+                    task_id, lease_id=row["claim_id"], fence=fence,
+                    task_version=self._lease_task_version(rest) or row["claim_task_version"],
+                )
+                return True, f"[OK] Task {task_id} Lease verlaengert bis {ack.expires_at} (Fence {ack.fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _submit(self, args: List[str]) -> Tuple[bool, str]:
+        """Ergebnis aus Lease abgeben.
+        Usage: bach task submit <id> --by <user> --fence <int> --result <text>
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task submit <id> --by <user> --fence <int> --result <text>"
+        result_text = None
+        i = 0
+        while i < len(rest):
+            arg = rest[i]
+            if arg == "--result" and i + 1 < len(rest):
+                result_text = rest[i + 1]
+                i += 2
+            elif arg.startswith("--result="):
+                result_text = arg.split("=", 1)[1]
+                i += 1
+            else:
+                i += 1
+        if result_text is None or not result_text.strip():
+            return False, "Usage-Fehler: --result <text> ist erforderlich"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        task_version = self._lease_task_version(rest) or row["claim_task_version"]
+        generation = row["claim_result_generation"]
+        if not generation:
+            return False, f"[ERROR] Task {task_id}: keine result_generation im Lease — bitte beim take --result-generation angeben"
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                client.submit_result(
+                    task_id, lease_id=row["claim_id"], fence=fence, task_version=task_version,
+                    generation=generation, result=result_text,
+                )
+            return True, f"[OK] Task {task_id} Ergebnis zur Abnahme eingereicht (Status review, Fence {fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _return(self, args: List[str]) -> Tuple[bool, str]:
+        """Task aus Lease zurueckgeben.
+        Usage: bach task return <id> --by <user> --fence <int>
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task return <id> --by <user> --fence <int>"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.release(
+                    task_id, lease_id=row["claim_id"], fence=fence,
+                    task_version=self._lease_task_version(rest) or row["claim_task_version"],
+                    outcome="return",
+                )
+                return True, f"[OK] Task {task_id} zurueckgegeben (Status {ack.status}, Fence {ack.fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Task {task_id}: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
+    def _block_lease(self, args: List[str]) -> Tuple[bool, str]:
+        """Task aus Lease blockieren (release outcome=blocked).
+        Usage: bach task block <id> --lease-id --by <user> --fence <int> [--note <text>|--reason <text>]
+        """
+        task_id, rest = self._parse_single_task_args(args)
+        if task_id is None:
+            return False, "Usage: bach task block <id> --lease-id --by <user> --fence <int> [--note <text>|--reason <text>]"
+        by, fence = self._parse_by_fence(rest)
+        if not by or not by.strip() or fence is None:
+            return False, "Usage-Fehler: --by <user> und --fence <int> sind erforderlich"
+        worker_id, _ = self._normalize_worker(by)
+        row = self._claim_row(task_id)
+        if row is None or not row["claim_id"]:
+            return False, f"[ERROR] Task {task_id}: kein aktives Lease"
+        if row["claimed_by"] and row["claimed_by"] != worker_id:
+            return False, f"[CONFLICT] Task {task_id}: Lease gehoert {row['claimed_by']}"
+        note = self._get_note(rest) or self._get_reason(rest) or ""
+        from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseDeniedError
+        try:
+            with TaskLeaseClient.for_task_db(self._get_db) as client:
+                ack = client.release(
+                    task_id, lease_id=row["claim_id"], fence=fence,
+                    task_version=self._lease_task_version(rest) or row["claim_task_version"],
+                    outcome="blocked", note=note,
+                )
+                return True, f"[OK] Task {task_id} blockiert (Status {ack.status}, Fence {ack.fence})"
+        except LeaseDeniedError as e:
+            return False, f"[CONFLICT] Freigabe abgelehnt: {e.reason}"
+        except LeaseError as e:
+            return False, f"[ERROR] {e}"
+
     def _block(self, args: List[str]) -> Tuple[bool, str]:
         """Task(s) blockieren - Multi-ID Support"""
         ids, rest = self._parse_ids(args)
@@ -1750,17 +2194,56 @@ class TaskHandler(BaseHandler):
         
         with self._get_db() as conn:
             for task_id in ids:
-                row = conn.execute("SELECT title FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
                 if not row:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
-                
+                conn.execute("DELETE FROM task_history WHERE task_id = ?", (task_id,))
+                try:
+                    conn.execute("DELETE FROM worker_task_results WHERE task_id = ?", (task_id,))
+                except Exception:
+                    pass
                 conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                 results.append(f"[OK] Task {task_id} geloescht: {row['title'][:40]}")
             
             conn.commit()
         
         return True, "\n".join(results)
+
+    def _purge_cancelled(self, args: List[str]) -> Tuple[bool, str]:
+        """Bereinigt abgebrochene (cancelled) Tasks: Worker-Duplikate hart loeschen, Historie archivieren."""
+        delete_all = "--all" in args
+        now = datetime.now().isoformat()
+        with self._get_db() as conn:
+            if delete_all:
+                rows = conn.execute("SELECT id FROM tasks WHERE status = 'cancelled'").fetchall()
+                del_ids = [r["id"] for r in rows]
+                arch_ids = []
+            else:
+                rows_del = conn.execute(
+                    "SELECT id FROM tasks WHERE status = 'cancelled' AND created_by LIKE 'worker-%'"
+                ).fetchall()
+                del_ids = [r["id"] for r in rows_del]
+                rows_arch = conn.execute(
+                    "SELECT id FROM tasks WHERE status = 'cancelled' AND (created_by IS NULL OR created_by NOT LIKE 'worker-%')"
+                ).fetchall()
+                arch_ids = [r["id"] for r in rows_arch]
+
+            if del_ids:
+                placeholders = ",".join(["?"] * len(del_ids))
+                conn.execute(f"DELETE FROM task_history WHERE task_id IN ({placeholders})", del_ids)
+                try:
+                    conn.execute(f"DELETE FROM worker_task_results WHERE task_id IN ({placeholders})", del_ids)
+                except Exception:
+                    pass
+                conn.execute(f"DELETE FROM tasks WHERE id IN ({placeholders})", del_ids)
+
+            for tid in arch_ids:
+                conn.execute("UPDATE tasks SET status = 'archived', updated_at = ? WHERE id = ?", (now, tid))
+                self._log_task_history(conn, tid, "archive", "status", "cancelled", "archived", changed_by="system")
+
+            conn.commit()
+        return True, f"[OK] purge-cancelled: {len(del_ids)} geloescht, {len(arch_ids)} archiviert." 
     
     def _show(self, args: List[str]) -> Tuple[bool, str]:
         """Task-Details anzeigen"""
@@ -1853,15 +2336,27 @@ class TaskHandler(BaseHandler):
         
         with self._get_db() as conn:
             for task_id in ids:
-                row = conn.execute("SELECT title FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
                 if not row:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
+                existing_row = dict(row)
                 
-                conn.execute("""
-                    UPDATE tasks SET assigned_to = ?, delegated_to = ?, updated_at = datetime('now')
-                    WHERE id = ?
-                """, (partner, partner, task_id))
+                # assigned_to/delegated_to werden über apply_task_field_changes
+                # bzw. den expliziten delegated_to-Update gesetzt (Lead-first Routing).
+                route = self._propagate_to_rheingold_lead(conn, task_id, existing_row, {"assigned_to": partner})
+                if route is not None and not route[0]:
+                    results.append(f"[BLOCKED] Task {task_id}: {route[1]}")
+                    continue
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                apply_task_field_changes(conn, task_id, existing_row, {"assigned_to": partner},
+                                          changed_by="cli-task", now=now)
+                conn.execute("UPDATE tasks SET delegated_to = ? WHERE id = ?", (partner, task_id))
+                conn.execute(
+                    "INSERT INTO task_history (task_id, action, field_changed, old_value, new_value, changed_by, changed_at) "
+                    "VALUES (?, 'field_change', 'delegated_to', ?, ?, 'cli-task', ?)",
+                    (task_id, existing_row.get("delegated_to"), partner, now),
+                )
                 
                 results.append(f"[OK] Task {task_id} -> {partner}")
             
