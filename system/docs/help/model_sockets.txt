@@ -1,0 +1,85 @@
+# Portabilität: UNIVERSAL
+# Zuletzt validiert: 2026-10-21
+# Quellen: hub/model_sockets.py, hub/_services/chat/model_sockets.py, hub/_services/chat/local_model_catalog.py, core/registry.py
+
+MODELLSTECKPLÄTZE FÜR LOKALE MODELLE
+===================================
+
+Hilfe aufrufen
+--------------
+bach help model-sockets
+
+Die CLI verwaltet lokale Modellangebote und Bindungen zwischen vorhandenen
+Agentenprofilen und Modellsteckplätzen. Die Konfiguration liegt in der
+bestehenden BACH-Slots-Konfiguration. Die Befehle laden oder starten kein
+Modell und starten keinen Worker.
+
+BEFEHLE
+-------
+bach model-sockets list
+    Liest die Konfiguration und gibt unter anderem configuration_version,
+    migration_required, Steckplatz- und Bindungs-IDs aus. Der Lesezugriff
+    speichert keine Migration. Bei einer alten Konfiguration kann list eine
+    vorläufige Projektion anzeigen.
+
+bach model-sockets catalog
+    Liest begrenzte Metadaten konfigurierter lokaler Provider. Der aktuelle
+    Metadatenadapter liest Ollama; für LM Studio meldet der Katalog
+    capability_adapter_pending. Ein Katalogeintrag belegt weder eine
+    erfolgreiche Inferenz noch Modell-Residency oder verfügbare Kapazität.
+    Der Aufruf zieht, lädt oder startet kein Modell.
+
+bach model-sockets migrate --version VERSION_AUS_AKTUELLEM_LIST
+    Führt die Migration ausdrücklich aus, wenn list migration_required=true
+    meldet. Die Migration ergänzt die Modellsteckplatz-Registry einmalig und
+    erhält bestehende Profile, Fortschritt und unbekannte Konfigurationsfelder.
+
+bach model-sockets configure --backend BACKEND --model MODELL --version VERSION_AUS_AKTUELLEM_LIST
+    Registriert oder ändert ein lokales Modellangebot. BACKEND ist ollama oder
+    lmstudio. Optional: --enabled true|false, --max-active-slots ZAHL
+    (1 bis 1000) und --residency-policy exclusive|shared. Cloudmodelle sind
+    keine lokalen Modellsteckplätze.
+
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+    Bindet ein vorhandenes Agentenprofil an einen vorhandenen Steckplatz.
+    Optional: --enabled true|false, --priority foreground|background und
+    --context-tokens ZAHL (1 bis 1.048.576).
+
+bach model-sockets unbind --binding BINDUNGS_ID --version VERSION_AUS_AKTUELLEM_LIST
+    Entfernt die angegebene Bindung.
+
+VERSIONS- UND SCHREIBREGELN
+---------------------------
+Vor jeder schreibenden Operation zuerst bach model-sockets list ausführen.
+Den aktuellen configuration_version-Wert unverändert als --version übergeben.
+Die Mutation verwendet Compare-and-Swap und prüft Schreibsperren. Bei einem
+Versionskonflikt erneut list ausführen und die Änderung mit dem aktuellen
+Stand abgleichen; die CLI wiederholt eine abgewiesene Mutation nicht selbst.
+
+Der Handler besitzt einen internen dry_run-Parameter, aber der aktuelle
+bach-CLI-Dispatcher stellt für model-sockets keinen nutzbaren Dry-run-Schalter
+bereit. --dry-run und -n werden an den Operationsparser weitergereicht und dort
+abgewiesen. Alle Mutationsbefehle benötigen daher --version.
+
+Erfolgreiche echte Mutationen bestätigen nur das Speichern der Konfiguration:
+worker_started=false und runtime_verified=false. Sie bestätigen keinen
+Worker-Start, keine Modellnutzung und keine Laufzeitprüfung.
+
+Konfigurationswerte wie max_active_slots und residency_policy sind keine
+Messwerte. Die Laufzeitbelegung und tatsächliche Modell-Residency werden durch
+diese CLI nicht festgestellt. Erfolgreiche Antworten sind JSON; --json kann
+zusätzlich angegeben werden.
+
+BEISPIELABLAUF
+--------------
+Die Platzhalter durch Werte aus der eigenen Umgebung ersetzen.
+
+bach model-sockets list
+bach model-sockets configure --backend ollama --model MODELLNAME --version VERSION_AUS_AKTUELLEM_LIST
+bach model-sockets list
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+
+VERWANDTE HILFE
+---------------
+bach help ollama
+bach help agent_launcher

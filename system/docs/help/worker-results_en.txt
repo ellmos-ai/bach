@@ -1,0 +1,64 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+Worker results and personal acceptance
+========================================
+
+Native workers store a concrete professional result with task_manage,
+action=submit_result. Their completion aliases also lead to result submission.
+A mere completion acknowledgment is not sufficient. The task then waits
+in Review; the task lease is released. A submission does not complete the task.
+
+A task expressly assigned to a system slot is taken on regardless of that
+slot's general category and priority selection. Tag filters, in particular
+excluded tags such as waiting or delegated, remain binding. The
+assigned slot and required_model must match the actual assignment. Dependencies, the
+creator grace period, and existing task leases remain binding. For tasks
+without an explicit slot assignment, the usual queue and assignee filters apply.
+
+An enabled pickup filter requires all configured filter groups:
+category (category, project or categories), priority, at least one
+positive tag, and no excluded tag. Empty groups do not
+restrict. Without an enabled filter and without an explicit slot assignment, the
+general queue is limited to assigned_to BACH, Buddha, Ollama, or the worker's own
+worker ID, role, or sub_mode respectively. An enabled filter is an
+explicit selection configuration, not a general authorization for foreign tasks.
+
+The live-collected queue_status projection lists candidates, selection matches,
+pickup attempts, source, time, and separate exclusion counts for category,
+priority, positive versus excluded tags, and native
+pickup limits. A selection match is not yet a confirmed lease.
+current_activity also shows the key numbers on older GUI cards.
+The authenticated configuration retrieval delivers selection_policy separately from
+the editable fields. This display changes, starts, or claims nothing;
+its selection values are bound into the configuration version.
+
+For operations review, the configuration and execution evidence of
+the running control service are decisive. A newly started CLI can read a
+different slot configuration file through different environment variables and therefore
+alone does not prove which tasks the actually running worker can select.
+
+In the task details, Review shows the stored result text. The user checks
+it and accepts it with their own operator key. The acceptance binds the
+exact result, its SHA-256, the task content version, and the status revision.
+A fresh retrieval confirms the actually stored acceptance.
+
+The operator is set up exclusively locally on the canonical backend:
+gui.device_auth.create_task_result_operator(name). The function creates a new
+device credential; existing tray, worker, and general device keys do not
+thereby gain acceptance rights. The key is transferred privately to the user
+and stored in the current browser tab. Forgetting removes it from this tab.
+It belongs neither in repositories nor in tickets, logs, model context, or SYNC.
+
+GET /api/tasks/{id}/result reads submission and current acceptance.
+POST /api/tasks/{id}/result/accept additionally requires X-BACH-Result-Operator.
+General device authentication alone does not permit this acceptance. Revoked
+operator devices, changed results, task content, or status revisions are
+rejected. Historical results remain available for inspection, without being considered
+a currently confirmed acceptance.
+
+A stage waits, after the physical worker end, for this separate acceptance.
+With an unconfirmed result source, it retains the same step binding and waits.
+Only the confirmed current acceptance enables handoff to the following step.
+An explicit stop remains possible even while waiting for a missing source.
+
+Installation and GUI pin: gui-integration.txt.
+Provider errors, monthly limit, and task cleanup: worker-errors.txt.

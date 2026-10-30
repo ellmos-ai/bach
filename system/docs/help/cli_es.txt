@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-05-30 (registry sync hub/*.py + core/aliases.py)
+# Next review: 2026-11-30
 
 CONVENCIONES CLI (v2.0 basada en registro)
 =======================================
@@ -138,18 +138,47 @@ Si no se encuentra ningún controlador, BACH prueba una herramienta desde herram
   bach skill_export  → herramientas/skill_export.py
   bach backup_manager → tools/backup_manager.py
 
-MANEJADORES REGISTRADOS (a partir del 4 de marzo de 2026):
+MANEJADORES REGISTRADOS (a partir del 30 de mayo de 2026):
 ----------------------------------------
-109+ controladores mediante descubrimiento automático (hub/*.py):
-abo, agentes, ati, copia de seguridad, batea, cadena, calendario,
-conexiones, conector, consolidación, contacto, contexto, cuenta regresiva, cv,
-demonio (= programador), datos, db, dist, doc, docs, correo electrónico, extensiones, fs, salud, gui,
-Hogar, chequeo de salud, ayuda, ganchos, inyectar, largo, lección, registros, mantener,
-mem, memoria, monte, msj, notificar, obsidiana, ollama, pareja, camino, perfil,
-perfilador, recurrente, reflexión, rutina, escaneo, sesión, apagado, habilidad,
-habilidades, hogar inteligente, instantánea, fuentes, inicio, estado, impuestos, sincronización, tarea,
-prueba, temporizador, tokens, herramienta, herramientas, basura, tuev, actualización, caso de uso,
-seguros, wiki
+Los manejadores se registran en tiempo de ejecución mediante autodescubrimiento en hub/*.py
+(system/core/registry.py, escaneo de clases; solo clases definidas localmente con
+un profile_name). Los siguientes profile_names están confirmados (alfabético):
+abo, agent, agents, api, apiprober, ati, backup, beat, bericht, between,
+calendar, chain, claude-bridge, clock, cloud, clutch, connections, connector,
+consolidation, contact, context, cookbook, countdown, cv, daily-agent, data,
+db, denkarium, dist, doc, docs, email, extensions, fs, gesundheit, gui,
+haushalt, healthcheck, help, hooks, inject, integration, lang, learning,
+lesson, literatur, logs, maintain, mcp, media, mediplaner, mem, memory,
+mount, msg, news, newspaper, notespace, notify, obsidian, ollama, partner,
+path, pipeline, press, profile, profiler, prompt, recurring, reflection,
+restore, routine, sandbox, scan, search, security, session, settings, setup,
+shared-mem, shutdown, skill, skills, smarthome, snapshot, sources, startup,
+status, steuer, sync, task, telemetry, test, theme, timer, tokens, tool, tools,
+trash, tuev, update, upgrade, usecase, versicherung, watcher, web-parse,
+web-scrape, wiki, worker-policy
++ más manejadores mediante autodescubrimiento (hub/*.py; la lista anterior es el estado verificado).
+Multimanejadores: time (clock, timer, countdown, between, beat), tuev (tuev, usecase).
+
+TABLA DE ALIAS (core/aliases.py, COMMAND_ALIASES):
+----------------------------------------
+Un alias se resuelve antes del despacho al manejador.
+  Alias         Manejador destino
+  mem           memory
+  cv            curriculum
+  msg           messages
+  tool          tools
+  skill         skills
+  data          data_analysis
+  mail          email
+  hook          hooks
+  plugin        plugins
+  daemon        scheduler
+  health        healthcheck
+  swarm         schwarm
+  consolidate   consolidation
+
+Nota: `bach daemon` no es un manejador propio, sino el alias de scheduler.
+Operaciones por defecto por manejador: aliases.py, DEFAULT_OPERATIONS.
 
 VER TAMBIÉN:
 ----------------------------------------
