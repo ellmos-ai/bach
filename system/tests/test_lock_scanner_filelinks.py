@@ -98,13 +98,10 @@ def test_cycle_symlink_blocks_scan():
 def test_path_redirect_blocks_scan():
     """Ein Symlink im Abfragepfad (Vorfahren-Umleitung) blockiert den Scan."""
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
         real_dir = Path(tmp) / "real_root"
         real_dir.mkdir()
         (real_dir / "file.txt").write_text("content")
-        # root ist ein Symlink auf real_dir
-        if root.exists():
-            shutil.rmtree(root)
+        root = Path(tmp) / "redirect_root"
         root.symlink_to(real_dir)
 
         code, payload = run_scanner(root)
