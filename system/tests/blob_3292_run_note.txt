@@ -1,0 +1,6 @@
+Run-Notiz zu Task 3292 (Blob-Dekodierung)
+
+Zweck: Ausführungsnotiz für den Dekodiertest system/tests/test_blob_3292.py.
+Der Test dekodiert den Blob mit SHA1 5a9bd46fb3269f66e8804e33689ade1f2a9523ea aus dem Git-Objektspeicher (zuerst Packsuche über pack-*.idx inkl. OFS_DELTA/REF_DELTA, Fallback auf loose Objekte), prueft Header und recomputed SHA1 und schreibt das byte-exakte Resultat (common_git_dir, header, size, sha256, recomputed_sha1, Vollinhalt) nach system/tests/blob_3292_result.txt.
+
+Diese Notiz dient als Committ-Ausloeser, da der Arbeitsbaum nach dem WIP-Commit sauber war und finish_task ohne aenderung abbricht. Der Testlauf wird ueber finish_task angestossen; die Asserts (recomputed_sha1 == Ziel-SHA1, Header beginnt mit "blob ") laufen vor dem Schreiben der Result-Datei, sodass deren Existenz den Nachweis erbringt.
