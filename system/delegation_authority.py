@@ -64,11 +64,10 @@ def evaluate_permission(act, actor, autonomy_level):
 
     # Rangfolge: explizite Overridung → Datensatz-Level → Spalte-Level → Fallback „manuell“
     # Vorab: keine Overrid, Standardregeln aus agents_heart.py laden
-    from . import agents_heart
 
     area = act.split("/")[0] if "/" in act else "unbekannt"
     override = _get_override(area)
-    effective_level = override if override is not None else agents_heart.effective_autonomy_levels.get(area, DEFAULT_AUTONOMY_LEVEL)
+    effective_level = _normalize_autonomy_level(override) if override is not None else level
 
     # Automatische Überführung „rueckfrage“ → „erlaubt“ bei Vollautomatisierung
     decision = "rueckfrage"
@@ -78,12 +77,14 @@ def evaluate_permission(act, actor, autonomy_level):
 
     if effective_level == "vollautomatisch":
         decision = "erlaubt"
+        needs_ticket = False
         direct_order = True
         inform = True
     elif effective_level == "teilautomatisch":
         # Beispiellogik: wenn die Handlung außerhalb des Bereichs liegt → Einwilligung erforderlich
         # Für vereinfachte Implementierung sind alle erlaubten Handlungen direkt
         decision = "erlaubt"
+        needs_ticket = False
         direct_order = True
         inform = False
     elif effective_level == "manuell":
