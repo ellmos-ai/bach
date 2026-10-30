@@ -1,0 +1,17 @@
+Zweiter Dekodier-Anlauf (nach Worktree-Neuregistrierung im selben Lauf).
+
+Ziel: system/tests/test_blob_3292.py dekodiert den Git-Blob
+5a9bd46fb3269f66e8804e33689ade1f2a9523ea und schreibt nach bestandenen
+Asserts das Ergebnis nach system/tests/blob_3292_result.txt
+(common_git_dir, Header, size, sha256, recomputed_sha1, Vollinhalt).
+
+Diese Datei dokumentiert nur den Versuchsfortschritt; sie ist kein
+Testergebnis und kein Ersatz für blob_3292_result.txt.
+
+Vorheriger Stand: finish_task scheiterte zweimal im Vorlauf mit
+„Worktree-Ergebnis oder Taskänderung nicht bestätigt“, jeweils ohne
+Registrierung im selben Lauf. Nach start_task_worktree(3292) in diesem
+Lauf trat derselbe Fehler erneut auf, obwohl die ältere Run-Notiz
+(blob_3292_run_note.txt, 838 B) uncommittet im Worktree lag. Annahme:
+finish_task verlangt eine Änderung, die NACH der Registrierung im
+Worktree entstand. Diese Datei erzeugt genau diese Änderung.
