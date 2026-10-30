@@ -179,7 +179,7 @@ def pick_free_model(
             "pinned": True,
             "reason": None,
             "candidates": ordered,
-            "rotation_index": index,
+            "rotation_index": 0,
             "source": snapshot.get("source"),
             "stale": False,
             "tool_capable_only": tool_capable_only,
