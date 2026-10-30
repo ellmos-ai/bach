@@ -10,6 +10,15 @@ best previous level). With --save the recommendation is stored through
 OllamaHandler.set_num_ctx(num_ctx_recommended=...); nothing else is written
 and no environment variables are touched.
 
+Every report states why a level was recommended and, when the run stopped
+early, why. It also prints the handoff budget derived from the chosen window:
+60-80 % of num_ctx (BUDGET_LOW_RATIO/BUDGET_HIGH_RATIO) are considered safely
+usable, converted to characters with CHARS_PER_TOKEN=4, i.e. num_ctx=8192
+means roughly 4915-6553 usable tokens or 19660-26212 characters of handoff
+prompt. With --advice the model itself is asked for a short note on the
+recommendation (off by default; failures are warnings and never change the
+exit code).
+
 All work happens in main(): importing this module has no network or config
 side effects.
 """
@@ -37,6 +46,12 @@ except ImportError:  # pragma: no cover - depends on installation layout
 DEFAULT_LEVELS = "2048,4096,8192,16384,32768"
 DEFAULT_RUNS = 2
 DEFAULT_PROMPT_CHARS = 2000
+
+# Handoff budget: a prompt should only use a part of the context window, the
+# rest is needed for the model's own output and for safety margin.
+BUDGET_LOW_RATIO = 0.60
+BUDGET_HIGH_RATIO = 0.80
+CHARS_PER_TOKEN = 4
 
 _PROMPT_SEED = (
     "Explain in a few bullet points how to tune a database for heavy read "
@@ -118,6 +133,37 @@ def _benchmark(client: OllamaClient, model: str, prompt: str,
     return rows, recommended, best_median, stop_reason
 
 
+def _handoff_budget(num_ctx: int) -> Dict[str, int]:
+    """Return the handoff character/token budget derived from num_ctx.
+
+    A prompt handed over to a local model should never fill the whole
+    context window: the model needs room for its own answer and some safety
+    margin. So the budget is expressed as a range from BUDGET_LOW_RATIO to
+    BUDGET_HIGH_RATIO of the window.
+    """
+    if num_ctx <= 0:
+        return {"low_tokens": 0, "high_tokens": 0, "low_chars": 0,
+                "high_chars": 0}
+    low_tokens = int(num_ctx * BUDGET_LOW_RATIO)
+    high_tokens = int(num_ctx * BUDGET_HIGH_RATIO)
+    return {
+        "low_tokens": low_tokens,
+        "high_tokens": high_tokens,
+        "low_chars": low_tokens * CHARS_PER_TOKEN,
+        "high_chars": high_tokens * CHARS_PER_TOKEN,
+    }
+
+
+def _format_handoff_budget(num_ctx: int, label: str) -> str:
+    """Return the one-line handoff budget message for a num_ctx value."""
+    budget = _handoff_budget(num_ctx)
+    return ("Handoff budget: ~%d-%d tokens (~%d-%d chars) at %s=%d "
+            "(%.0f%%-%.0f%% of the window)"
+            % (budget["low_tokens"], budget["high_tokens"],
+               budget["low_chars"], budget["high_chars"], label, num_ctx,
+               BUDGET_LOW_RATIO * 100, BUDGET_HIGH_RATIO * 100))
+
+
 def _print_report(model: str, prompt_chars: int, runs: int,
                   rows: List[Dict[str, Any]], recommended: Optional[int],
                   best_median: float, stop_reason: str,
@@ -145,10 +191,82 @@ def _print_report(model: str, prompt_chars: int, runs: int,
     if recommended is not None:
         print("Recommended num_ctx: %d (best median throughput: %.2f tok/s)"
               % (recommended, best_median))
+        print("Why: it is the largest level that still finished all runs "
+              "without errors and without a throughput collapse, and it has "
+              "the best median throughput (%.2f tok/s) of all measured "
+              "levels." % best_median)
     else:
         print("No num_ctx level could be recommended.")
+        print("Why: every measured level failed (no successful generation or "
+              "a throughput collapse); see the note column and the stop "
+              "reason below.")
     if stop_reason:
         print("Stopped early: %s" % stop_reason)
+        print("Reason: the benchmark stops at the first level that produces "
+              "no successful generation or whose median throughput drops "
+              "below half of the best previous level, because larger windows "
+              "only add cost from that point on.")
+    budget_ctx = recommended if recommended is not None else default_num_ctx
+    if budget_ctx:
+        label = "num_ctx" if recommended is not None else "default num_ctx"
+        print(_format_handoff_budget(budget_ctx, label))
+    else:
+        print("Handoff budget: unknown (no num_ctx available).")
+
+
+def _format_rows_summary(rows: List[Dict[str, Any]]) -> str:
+    """Return a compact one-line summary of the measured levels."""
+    parts = []
+    for row in rows:
+        tp = "-" if row["median_tp"] is None else "%.2f" % row["median_tp"]
+        parts.append("num_ctx=%d: %d/%d ok, %s tok/s"
+                     % (row["num_ctx"], row["ok"], row["runs"], tp))
+    return "; ".join(parts)
+
+
+def _build_advice_prompt(model: str, prompt_chars: int, rows: List[Dict[str, Any]],
+                         recommended: int, best_median: float) -> str:
+    """Return the prompt used for the optional --advice note."""
+    budget = _handoff_budget(recommended)
+    return (
+        "You are advising on the context window (num_ctx) of the local "
+        "Ollama model %s.\n"
+        "Benchmark results: %s.\n"
+        "Recommended num_ctx=%d, median throughput %.2f tok/s.\n"
+        "Planned handoff prompts have about %d characters; the safe budget "
+        "at this window is roughly %d-%d tokens (%d-%d characters).\n"
+        "Answer with at most 4 short bullet points: does the window fit that "
+        "prompt size, and what must stay below the handoff budget? Be "
+        "concrete and do not just repeat the numbers."
+        % (model, _format_rows_summary(rows), recommended, best_median,
+           prompt_chars, budget["low_tokens"], budget["high_tokens"],
+           budget["low_chars"], budget["high_chars"]))
+
+
+def _print_advice(client: OllamaClient, model: str, prompt_chars: int,
+                  rows: List[Dict[str, Any]], recommended: int,
+                  best_median: float) -> None:
+    """Print an optional LLM note; every failure is a warning only."""
+    prompt = _build_advice_prompt(model, prompt_chars, rows, recommended,
+                                  best_median)
+    try:
+        resp = client.generate(prompt, model=model, num_ctx=recommended)
+    except Exception as exc:  # advice must never break the benchmark run
+        print("--advice warning: request failed: %s" % exc, file=sys.stderr)
+        return
+    if not getattr(resp, "success", False):
+        print("--advice warning: model returned an error: %s"
+              % (getattr(resp, "error", "") or "unknown error"),
+              file=sys.stderr)
+        return
+    text = (getattr(resp, "text", "") or "").strip()
+    if not text:
+        print("--advice warning: model returned an empty answer.",
+              file=sys.stderr)
+        return
+    print("")
+    print("Advisor note from %s (optional, verify before acting):" % model)
+    print(text)
 
 
 def _save_recommendation(model: str, recommended: int) -> int:
@@ -191,6 +309,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--save", action="store_true",
                         help="Persist the recommendation via "
                              "OllamaHandler.set_num_ctx(num_ctx_recommended=...)")
+    parser.add_argument("--advice", action="store_true",
+                        help="Optional: ask the model itself for a short note "
+                             "on the recommended level (off by default)")
     args = parser.parse_args(argv)
 
     levels: List[int] = []
@@ -219,6 +340,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     _print_report(args.model, args.prompt_chars, args.runs, rows,
                   recommended, best_median, stop_reason,
                   OllamaClient.DEFAULT_NUM_CTX)
+
+    if args.advice:
+        if recommended is None:
+            print("--advice skipped: no level passed the checks.",
+                  file=sys.stderr)
+        else:
+            _print_advice(client, args.model, args.prompt_chars, rows,
+                          recommended, best_median)
 
     if args.save:
         if recommended is None:
