@@ -143,6 +143,26 @@ def _price_rejection(pricing: Any) -> str | None:
     return None
 
 
+def _tools_rejection(model: dict[str, Any]) -> str | None:
+    """Reject free models that cannot serve tool calls.
+
+    ``supported_parameters`` is optional in the OpenRouter payload. A missing,
+    empty or unreadable value is treated as *unknown* and therefore admitted;
+    only a published parameter list without ``tools`` denies admission. This
+    keeps the free-catalog contract stable for providers that do not publish
+    the field (and for existing fixtures).
+    """
+    supported = model.get("supported_parameters")
+    if not isinstance(supported, (list, tuple, set)):
+        return None
+    normalized = {str(item).strip().lower() for item in supported if isinstance(item, str)}
+    if not normalized:
+        return None
+    if "tools" in normalized:
+        return None
+    return "model_tools_unsupported"
+
+
 def _model_admission_rejection(model: dict[str, Any]) -> str | None:
     model_id = model.get("id")
     if not isinstance(model_id, str) or not model_id.strip():
@@ -155,7 +175,7 @@ def _model_admission_rejection(model: dict[str, Any]) -> str | None:
         return price_rejection
     if not model_id.endswith(":free"):
         return "model_not_free_variant"
-    return None
+    return _tools_rejection(model)
 
 
 def _model_record(model: dict[str, Any]) -> dict[str, Any] | None:
