@@ -46,3 +46,19 @@ NAECHSTER SCHRITT
 Kind-Task #3253: bestaetigten pytest-Lauf erbringen (nur echte PASSED/FAIL-Ausgabe zaehlt).
 Kind-Task #3254: bei PASSED finish_task(2563, ...) + submit_result(complete=true),
                 bei FAIL minimale Korrektur im Worktree und erneut testen.
+
+NACHTRAG 2 (Fortsetzungslauf, Werkzeugrunde 4)
+----------------------------------------------
+Erneuter Einzelversuch im Worktree /Users/lukas/services/bach-worktrees/task-2563:
+  python -m pytest -q -- system/tests/test_free_model_pin.py   (Timeout 90 s)
+Ergebnis: "Werkzeugausfuehrung nicht bestaetigt; Wirkung unbekannt."
+=> weiterhin KEIN TESTNACHWEIS. Kein PASSED-/FAIL-Text, keine Exit-Code-Angabe.
+Keine Codeaenderung in diesem Lauf. Sachstand unveraendert gegenueber Nachtrag 1.
+
+Korrektur zur Pfadangabe: system/tests/test_free_model_pin.py hat 494 Zeilen
+(frueher hier faelschlich als 408 Zeilen notiert).
+
+Offen bleibt allein die Bestaetigungsschicht des Ausfuehrers: solange
+execute_command keine echte Ausgabe liefert und finish_task deshalb mit
+"Gebundener Testlauf nicht sicher bestaetigt" abbricht, ist weder
+finish_task(2563) ohne WIP noch submit_result(complete=true) zulaessig.
