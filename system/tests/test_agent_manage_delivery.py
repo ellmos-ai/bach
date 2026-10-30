@@ -322,30 +322,14 @@ def _accepted_result_receipt_binding_fixture(task_id):
 
 
 def _review_ack_binding_fixture(task_id):
-    # Create a protocol-complete test object that matches WorkerLeaseBinding's receipt contract
-    # Without relying on actual WorkerLeaseBinding class to avoid production dependencies
-    result_text = f"Reviewed worker result for task {task_id}"
-    result = {
-        "schema": "bach.worker-result.v1",
-        "task_id": task_id,
-        "result_id": task_id + 10000,
-        "result": result_text,
-        "fence": 1,
-        "generation": f"test-generation-{task_id}",
-        "task_version": hashlib.sha256(f"task-version-{task_id}".encode("utf-8")).hexdigest(),
-        "result_sha256": hashlib.sha256(result_text.encode("utf-8")).hexdigest(),
-        "reviewed": True,
-        "reviewed_by": "test-reviewer",
-        "acceptance_event_id": 1,
-        "review_event_id": 1,
-        "status_revision": 1,
-        "reason": "reviewed",
-    }
-    state = {"completed_task_ids": (), "reviewed_task_ids": (task_id,), "result": result}
+    # Mirrors WorkerLeaseBinding for a plain Review release ACK: no worker result
+    # was submitted (_completion_result is None), so submitted_result stays None and
+    # result_state() reports only the reviewed task id without a result record.
+    state = {"completed_task_ids": (), "reviewed_task_ids": (task_id,), "result": None}
     return SimpleNamespace(
         task_id=task_id,
         has_result_receipt=True,
-        submitted_result=result,
+        submitted_result=None,
         result_state=lambda: dict(state),
     )
 
