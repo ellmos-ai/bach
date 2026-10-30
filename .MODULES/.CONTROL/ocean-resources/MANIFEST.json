@@ -1,0 +1,15 @@
+{
+  "schema": "ellmos.module.v2",
+  "id": "control.ocean-resources",
+  "version": "1.0.0",
+  "title": "Ocean Resources — RAM-Distributor & Modell-Runtime",
+  "category": "control",
+  "entrypoint": "ram_distributor.py",
+  "replaces_bach_core": [
+    "fackel.py",
+    "compute_lock",
+    "host_inference_gate.py",
+    "local_resource_reserve.py",
+    "buddha_cold_start.py"
+  ]
+}
