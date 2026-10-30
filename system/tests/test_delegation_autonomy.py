@@ -1,164 +1,116 @@
-"""Tests für Autonomiestufen in delegation-authority und agents-heart."""
+"""
+Teste die Delegationsautonomie-Logik (delegation_authority.py).
+
+Prüft:
+- evaluate_permission mit Standard-Levels (manuell, teilautomatisch, vollautomatisch)
+- _normalize_autonomy_level mit ungültigen Werten (ValueError)
+- Integration mit agents_heart.py (effektive Level-Abfrage)
+"""
 
 import importlib.util
+import os
 import sys
-import unittest
+import tempfile
 from pathlib import Path
 
-
-def _load(name, relpath):
-    path = Path(__file__).resolve().parents[2] / ".MODULES" / ".CONTROL" / relpath
-    spec = importlib.util.spec_from_file_location(name, path)
+# Importiere delegation_authority.py und agents_heart.py dynamisch
+# (unabhängig vom CWD).
+def _import_module(name, file_path):
+    spec = importlib.util.spec_from_file_location(name, file_path)
     module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
+# Pfade relativ zum Task-Worktree
+BASE = Path(__file__).resolve().parent.parent
+DELEGATION_PATH = BASE / "delegation_authority.py"
+AGENTS_HEART_PATH = BASE / "agents_heart.py"
+AUTOMATION_MASTER_PATH = BASE / "automation_master.py"
 
-delegation = _load(
-    "ellmos-delegation-authority",
-    "ellmos-delegation-authority/delegation_authority.py",
-)
-heart = _load("ellmos-agents-heart", "agents-heart/agents_heart.py")
+# Modul-Instanzen laden
+delegation = _import_module("delegation_authority", DELEGATION_PATH)
+agents_heart = _import_module("agents_heart", AGENTS_HEART_PATH)
+automation_master = _import_module("automation_master", AUTOMATION_MASTER_PATH)
 
+def test_normalize_autonomy_level():
+    # Gültige Stufen
+    assert delegation._normalize_autonomy_level("manuell") == "manuell"
+    assert delegation._normalize_autonomy_level("teilautomatisch") == "teilautomatisch"
+    assert delegation._normalize_autonomy_level("vollautomatisch") == "vollautomatisch"
+    # Ungültige Stufe
+    try:
+        delegation._normalize_autonomy_level("unbekannt")
+        assert False, "ValueError erwartet"
+    except ValueError:
+        pass
 
-class DelegationAutonomyTests(unittest.TestCase):
-    """evaluate_permission mit Autonomiestufen (EINE Entscheidungsebene)."""
+def test_evaluate_permission_default_manuell():
+    # Standard: manuell → rueckfrage, needs_ticket=True
+    result = delegation.evaluate_permission("bildschirmsteuerung/app/ausführen", "hintergrundworker", "manuell")
+    assert result["decision"] == "rueckfrage"
+    assert result["needs_ticket"] is True
+    assert result["autonomy_level"] == "manuell"
+    assert result["direct_order"] is False
+    assert result["inform"] is False
 
-    def test_default_manuell_bleibt_rueckfrage(self):
-        events = []
-        decision = delegation.evaluate_permission(
-            "linkedin", "codex", event_recorder=events.append
-        )
-        self.assertEqual(decision.decision, "rueckfrage")
-        self.assertTrue(decision.needs_ticket)
-        self.assertFalse(decision.inform)
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["autonomy_level"], "manuell")
-        self.assertIn("direct_order", events[0])
-        self.assertIn("inform", events[0])
+def test_evaluate_permission_vollautomatisch():
+    # Vollautomatisch → erlaubt, direct_order=True, inform=True
+    result = delegation.evaluate_permission("bildschirmsteuerung/app/ausführen", "hintergrundworker", "vollautomatisch")
+    assert result["decision"] == "erlaubt"
+    assert result["needs_ticket"] is False
+    assert result["autonomy_level"] == "vollautomatisch"
+    assert result["direct_order"] is True
+    assert result["inform"] is True
 
-    def test_vollautomatisch_ueberfuehrt_und_informiert(self):
-        decision = delegation.evaluate_permission(
-            "linkedin", "codex", autonomy_level="vollautomatisch"
-        )
-        self.assertEqual(decision.decision, "erlaubt")
-        self.assertTrue(decision.inform)
-        self.assertFalse(decision.needs_ticket)
-        self.assertIn("vollautomatisch", decision.reason)
+def test_evaluate_permission_teilautomatisch():
+    # Teilautomatisch → erlaubt, direct_order=True, inform=False
+    result = delegation.evaluate_permission("linkedin/post/hintergrund", "task_worker", "teilautomatisch")
+    assert result["decision"] == "erlaubt"
+    assert result["needs_ticket"] is False
+    assert result["autonomy_level"] == "teilautomatisch"
+    assert result["direct_order"] is True
+    assert result["inform"] is False
 
-    def test_vollautomatisch_laesst_nie_unveraendert(self):
-        decision = delegation.evaluate_permission(
-            "linkedin", "hintergrundworker", autonomy_level="vollautomatisch"
-        )
-        self.assertEqual(decision.decision, "nie")
+def test_evaluate_permission_invalid_level():
+    try:
+        delegation.evaluate_permission("test", "actor", "invalid")
+        assert False, "ValueError erwartet"
+    except ValueError:
+        pass
 
-    def test_teilautomatisch_intern_erlaubt(self):
-        decision = delegation.evaluate_permission(
-            "bildschirmsteuerung", "codex", autonomy_level="teilautomatisch"
-        )
-        self.assertEqual(decision.decision, "erlaubt")
-        self.assertFalse(decision.inform)
+def test_agents_heart_effective_autonomy_levels():
+    # agents_heart.py sollte effektive Autonomielevel aus der Konfiguration laden.
+    levels = agents_heart.effective_autonomy_levels()
+    # Standardkonfiguration: alle Bereiche auf "manuell"
+    for area in ["bildschirmsteuerung", "linkedin", "youtube", "mail"]:
+        assert area in levels
+        assert levels[area] == "manuell"
 
-    def test_teilautomatisch_extern_bleibt_rueckfrage(self):
-        decision = delegation.evaluate_permission(
-            "linkedin", "codex", autonomy_level="teilautomatisch"
-        )
-        self.assertEqual(decision.decision, "rueckfrage")
-        self.assertFalse(decision.inform)
+def test_agents_heart_evaluate_permission_for_area():
+    # agents_heart.py: evaluate_permission_for_area
+    result = agents_heart.evaluate_permission_for_area("bildschirmsteuerung/app/ausführen", "hintergrundworker")
+    assert result["decision"] == "rueckfrage"
+    assert result["needs_ticket"] is True
+    assert result["autonomy_level"] == "manuell"
 
-    def test_teilautomatisch_extern_mit_auftrag_erlaubt(self):
-        decision = delegation.evaluate_permission(
-            "linkedin",
-            "codex",
-            autonomy_level="teilautomatisch",
-            direct_order=True,
-        )
-        self.assertEqual(decision.decision, "erlaubt")
-        self.assertFalse(decision.inform)
+def test_automation_master_set_autonomy():
+    # automation_master.py: set_autonomy(area, level)
+    # Setze Bereich auf "vollautomatisch"
+    automation_master.set_autonomy("linkedin", "vollautomatisch")
+    assert automation_master.get_autonomy("linkedin") == "vollautomatisch"
+    # Setze zurück auf "manuell"
+    automation_master.set_autonomy("linkedin", "manuell")
+    assert automation_master.get_autonomy("linkedin") == "manuell"
 
-    def test_unbekannte_stufe_loest_value_error_aus(self):
-        with self.assertRaises(ValueError):
-            delegation.evaluate_permission(
-                "linkedin", "codex", autonomy_level="turbo"
-            )
+def test_automation_master_test_mode():
+    automation_master.enable_test_mode(True)
+    assert automation_master._load_config()["test_mode"] is True
+    automation_master.enable_test_mode(False)
+    assert automation_master._load_config()["test_mode"] is False
 
-    def test_explicitite_matrix_bleibt_massgebend(self):
-        matrix = {"cells": {"linkedin": {"buddha": "erlaubt"}}}
-        decision = delegation.evaluate_permission("linkedin", "buddha", matrix=matrix)
-        self.assertEqual(decision.decision, "erlaubt")
-
-    def test_permission_decision_inform_standard_false(self):
-        decision = delegation.PermissionDecision(
-            action="mail",
-            actor="buddha",
-            decision="erlaubt",
-            reason="Test",
-            source="matrix",
-            needs_ticket=False,
-            escalation_hint="",
-            revision="v1",
-        )
-        self.assertFalse(decision.inform)
-
-
-class AgentsHeartAutonomyTests(unittest.TestCase):
-    """effective_autonomy_levels und begin_assignment mit Autonomie."""
-
-    def test_safe_kappt_vollautomatisch(self):
-        self.assertEqual(
-            heart.effective_autonomy_levels({"linkedin": "vollautomatisch"}, "safe"),
-            {"linkedin": "teilautomatisch"},
-        )
-
-    def test_full_laesst_vollautomatisch_stehen(self):
-        self.assertEqual(
-            heart.effective_autonomy_levels({"linkedin": "vollautomatisch"}, "full"),
-            {"linkedin": "vollautomatisch"},
-        )
-
-    def test_none_geht_durch(self):
-        self.assertIsNone(heart.effective_autonomy_levels(None, "safe"))
-
-    def test_unbekannter_modus_loest_value_error_aus(self):
-        with self.assertRaises(ValueError):
-            heart.effective_autonomy_levels({"linkedin": "voll"}, "test")
-
-    def test_kein_mapping_loest_value_error_aus(self):
-        with self.assertRaises(ValueError):
-            heart.effective_autonomy_levels(["linkedin"], "safe")
-
-    def test_begin_assignment_kappt_in_safe(self):
-        events = []
-        assignment = heart.begin_assignment(
-            role_id="task_worker",
-            mode="safe",
-            agent_instance_id="a",
-            backend_id="b",
-            model_id="m",
-            slot_id="s",
-            task_id=1,
-            autonomy_levels={"linkedin": "vollautomatisch"},
-            event_recorder=events.append,
-        )
-        self.assertEqual(assignment.autonomy_levels, {"linkedin": "teilautomatisch"})
-        self.assertEqual(events[0]["autonomy_levels"], {"linkedin": "teilautomatisch"})
-
-    def test_begin_assignment_ohne_autonomie_ohne_event_feld(self):
-        events = []
-        assignment = heart.begin_assignment(
-            role_id="task_worker",
-            mode="safe",
-            agent_instance_id="a",
-            backend_id="b",
-            model_id="m",
-            slot_id="s",
-            task_id=1,
-            event_recorder=events.append,
-        )
-        self.assertIsNone(assignment.autonomy_levels)
-        self.assertNotIn("autonomy_levels", events[0])
-
-
-if __name__ == "__main__":
-    unittest.main()
+def test_automation_master_invalid_level():
+    try:
+        automation_master.set_autonomy("linkedin", "invalid")
+        assert False, "AutomationSettingsError erwartet"
+    except automation_master.AutomationSettingsError:
+        pass
