@@ -136,7 +136,7 @@ def list_running(*, base_url=None, timeout_s=DEFAULT_REQUEST_TIMEOUT_S):
     return running
 
 
-def _matches(entry, name, digest):
+def _matches(entry, name, digest=None):
     """Ein Bestandseintrag passt zu Name und/oder Digest."""
     if digest and entry.get("digest") and entry["digest"] == _normalize_digest(digest):
         return True
