@@ -95,7 +95,9 @@ class OllamaClient:
         """
         self.base_url = base_url or self.DEFAULT_URL
         self.timeout = timeout
-        env_num_ctx = os.environ.get("OLLAMA_NUM_CTX") or os.environ.get("OLLAMA_NUM_CFG", "4096")
+        env_num_ctx = os.environ.get("OLLAMA_NUM_CTX")
+        if env_num_ctx is None:
+            env_num_ctx = os.environ.get("OLLAMA_NUM_CFG", "4096")
         try:
             self.num_ctx = int(num_ctx if num_ctx is not None else env_num_ctx)
         except (TypeError, ValueError):
