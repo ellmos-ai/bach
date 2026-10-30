@@ -389,3 +389,10 @@ def test_control_decomposition_route_validates_before_queueing(monkeypatch, inva
         assert not calls and not replies
     else:
         assert replies[0][1] == 400 and not calls
+
+
+def test_decompose_request_carries_the_cut_rule(binding):
+    from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
+    actions, _ = requested(binding)
+    text = actions.consume(binding, backend="isolated", model="test-model")
+    assert TASK_CUT_RULE_SHORT in text
