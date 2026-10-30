@@ -1,0 +1,79 @@
+name: githubbot-hold
+
+# GitHubBot: HOLD-Mechanismus für BACH-PRs
+# Dieser Bot prüft BACH-PRs auf den module-gate-Status
+# und setzt HOLD, wenn der Gate-Check nicht grün ist.
+# Gilt auch für Draft-PRs (24-h-Draft-Freigabe).
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  hold-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prüfe module-gate Status
+        id: check_gate
+        run: |
+          # Prüfe, ob der module-gate Workflow gelaufen ist
+          # Dies geschieht über die GitHub Actions API
+          echo "Prüfe module-gate Status..."
+          
+          # Lade den Gate-Report, falls vorhanden
+          if [ -f ".gate_report.txt" ]; then
+            echo "Gate-Report gefunden:"
+            cat .gate_report.txt
+            GATE_STATUS=$(grep -oP 'gate_status::\K\w+' .gate_report.txt || echo "UNKNOWN")
+            echo "Gate-Status: $GATE_STATUS"
+          else
+            echo "Kein Gate-Report gefunden - Gate-Check hat noch nicht gelaufen"
+            GATE_STATUS="UNKNOWN"
+          fi
+          echo "gate_status=$GATE_STATUS" >> $GITHUB_OUTPUT
+
+      - name: Setze HOLD falls Gate nicht grün
+        if: steps.check_gate.outputs.gate_status != 'PASS'
+        run: |
+          echo "Gate-Status ist nicht grün: ${{ steps.check_gate.outputs.gate_status }}"
+          echo "Setze HOLD auf PR #${{ github.event.pull_request.number }}"
+          
+          # GitHub API aufrufen, um HOLD zu setzen
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" \
+            -d '{"labels": ["HOLD", "module-gate-fehler"]}'
+          
+          echo "HOLD-Label gesetzt."
+          
+          # Comment auf der PR hinzufügen
+          curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            -d '{"body": "⚠️ **HOLD**: Der module-gate-Check ist nicht grün. Dieser PR kann nicht freigegeben werden, bis der Gate-Check bestanden ist. Bitte prüfe den Gate-Report und korrigiere die Modul-Grenzen."}'
+          
+          echo "HOLD-Comment hinzugefügt."
+
+      - name: Entferne HOLD falls Gate grün
+        if: steps.check_gate.outputs.gate_status == 'PASS'
+        run: |
+          echo "Gate-Status ist grün. Entferne HOLD-Label falls vorhanden."
+          
+          curl -s -X DELETE \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/HOLD"
+          
+          echo "HOLD-Label entfernt."
