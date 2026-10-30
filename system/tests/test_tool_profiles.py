@@ -39,6 +39,7 @@ class TestToolProfiles:
             "move_file",
             "copy_file",
             "file_info",
+            "create_directory",
         }
 
         code_delivery = set(bach_tools.TOOL_PROFILES["code_delivery"])
