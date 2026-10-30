@@ -138,6 +138,43 @@ def test_fragmente_werden_zusammengesetzt():
     assert r.get("error") is None
 
 
+def test_lifecycle_observer_is_best_effort_and_reports_only_phases():
+    closed = []
+    seen = []
+
+    class TrackingStream(_FakeStream):
+        async def __aexit__(self, *args):
+            closed.append("response")
+            return False
+
+    class TrackingClient(_FakeClient):
+        async def __aexit__(self, *args):
+            closed.append("client")
+            return False
+
+        def stream(self, method, url, **kwargs):
+            return TrackingStream([_zeile("safe", done=True)])
+
+    def observer(phase, reason=None):
+        seen.append((phase, reason))
+        raise RuntimeError("observer fixture failure")
+
+    result = asyncio.run(_backend(TrackingClient([])).chat(
+        [{"role": "user", "content": "private input"}],
+        lifecycle_observer=observer,
+    ))
+
+    assert result["content"] == "safe"
+    assert closed == ["response", "client"]
+    phases = [phase for phase, _reason in seen]
+    assert phases == [
+        "transport_open", "awaiting_response_headers", "response_headers_received",
+        "first_stream_chunk_received", "response_completed",
+        "response_cleanup_complete", "client_cleanup_complete",
+    ]
+    assert all(reason is None for _phase, reason in seen)
+
+
 def test_werkzeugaufruf_ueberlebt_den_stream():
     tc = [{"function": {"name": "get_datetime", "arguments": {}}}]
     client = _FakeClient([_zeile(""), _zeile("", done=True, tool_calls=tc)])
@@ -218,14 +255,22 @@ def test_read_timeout_prueft_liveness_bis_zur_begrenzten_grace():
         lambda name: 2 if name == "BACH_LLM_IDLE_GRACE" else original_limit(name)
     )
     client = TimeoutClient([], ps_models=[{"name": "m"}])
+    lifecycle = []
     try:
-        r = asyncio.run(_backend(client).chat([{"role": "user", "content": "x"}]))
+        r = asyncio.run(_backend(client).chat(
+            [{"role": "user", "content": "x"}],
+            lifecycle_observer=lambda phase, reason=None: lifecycle.append((phase, reason)),
+        ))
     finally:
         backend_module.limit = original_limit
 
     assert client.ps_aufrufe == 2
     assert r["content"] == "partial"
     assert "ReadTimeout" in r["error"]
+    assert ("request_failed", "httpx_read_timeout") in lifecycle
+    assert lifecycle[-2:] == [
+        ("response_cleanup_complete", None), ("client_cleanup_complete", None),
+    ]
 
 
 def test_real_httpx_timeout_verbraucht_grace_und_behaelt_ursache():
@@ -262,6 +307,148 @@ def test_real_httpx_timeout_verbraucht_grace_und_behaelt_ursache():
     assert r["content"] == "partial"
     assert "ReadTimeout" in r["error"]
     assert "transport stalled" in r["error"]
+
+
+def _run_blocked_liveness_probe(monkeypatch, *, trigger, abort_by):
+    import threading
+
+    import httpx
+
+    ping_started = threading.Event()
+    ping_cancelled = threading.Event()
+    response_closed = threading.Event()
+    client_closed = threading.Event()
+    ping_calls = 0
+    total_cap = 2.0 if abort_by == "worker_stop" else 0.08
+    idle_timeout = 0.01 if trigger == "idle" else 1.0
+    original_limit = backend_module.limit
+
+    def bounded_limit(name):
+        if name == "BACH_LLM_TOTAL_CAP":
+            return total_cap
+        if name == "BACH_LLM_IDLE_TIMEOUT":
+            return idle_timeout
+        if name == "BACH_LLM_IDLE_GRACE":
+            return 2
+        if name == "BACH_LLM_PING_TIMEOUT":
+            return 10
+        return original_limit(name)
+
+    monkeypatch.setattr(backend_module, "limit", bounded_limit)
+
+    class ProbeStream(_FakeStream):
+        async def __aexit__(self, *_args):
+            response_closed.set()
+            return False
+
+        async def aiter_lines(self):
+            yield _zeile("partial")
+            if trigger == "idle":
+                await asyncio.sleep(0.02)
+                yield ""
+            else:
+                raise httpx.ReadTimeout("stream stalled")
+
+    class ProbeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            client_closed.set()
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return ProbeStream([])
+
+        async def get(self, *_args, **_kwargs):
+            nonlocal ping_calls
+            ping_calls += 1
+            ping_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                ping_cancelled.set()
+                raise
+
+    client = ProbeClient()
+
+    async def run():
+        cancel_event = asyncio.Event() if abort_by == "worker_stop" else None
+        if cancel_event is not None:
+            asyncio.get_running_loop().call_later(0.04, cancel_event.set)
+        result = await _backend(client).chat(
+            [{"role": "user", "content": "bounded liveness probe"}],
+            cancel_event=cancel_event,
+        )
+        pending = [
+            task for task in asyncio.all_tasks()
+            if task is not asyncio.current_task() and not task.done()
+        ]
+        return result, pending
+
+    result, pending = asyncio.run(run())
+    return result, pending, {
+        "ping_started": ping_started.is_set(),
+        "ping_cancelled": ping_cancelled.is_set(),
+        "response_closed": response_closed.is_set(),
+        "client_closed": client_closed.is_set(),
+        "ping_calls": ping_calls,
+    }
+
+
+def test_read_timeout_ping_probe_obeys_worker_stop(monkeypatch):
+    result, pending, signals = _run_blocked_liveness_probe(
+        monkeypatch, trigger="read_timeout", abort_by="worker_stop",
+    )
+    assert result["provider_request_aborted"] == "worker_stop"
+    assert result["tool_calls"] is None
+    assert result["content"] == "partial"
+    assert signals == {
+        "ping_started": True, "ping_cancelled": True,
+        "response_closed": True, "client_closed": True, "ping_calls": 1,
+    }
+    assert pending == []
+
+
+def test_read_timeout_ping_probe_obeys_remaining_total_deadline(monkeypatch):
+    result, pending, signals = _run_blocked_liveness_probe(
+        monkeypatch, trigger="read_timeout", abort_by="total_deadline",
+    )
+    assert result["provider_request_aborted"] == "total_deadline"
+    assert "ReadTimeout" in result["error"]
+    assert result["tool_calls"] is None
+    assert signals == {
+        "ping_started": True, "ping_cancelled": True,
+        "response_closed": True, "client_closed": True, "ping_calls": 1,
+    }
+    assert pending == []
+
+
+def test_idle_ping_probe_obeys_worker_stop(monkeypatch):
+    result, pending, signals = _run_blocked_liveness_probe(
+        monkeypatch, trigger="idle", abort_by="worker_stop",
+    )
+    assert result["provider_request_aborted"] == "worker_stop"
+    assert result["tool_calls"] is None
+    assert result["content"] == "partial"
+    assert signals == {
+        "ping_started": True, "ping_cancelled": True,
+        "response_closed": True, "client_closed": True, "ping_calls": 1,
+    }
+    assert pending == []
+
+
+def test_idle_ping_probe_obeys_remaining_total_deadline(monkeypatch):
+    result, pending, signals = _run_blocked_liveness_probe(
+        monkeypatch, trigger="idle", abort_by="total_deadline",
+    )
+    assert result["provider_request_aborted"] == "total_deadline"
+    assert result["tool_calls"] is None
+    assert signals == {
+        "ping_started": True, "ping_cancelled": True,
+        "response_closed": True, "client_closed": True, "ping_calls": 1,
+    }
+    assert pending == []
 
 
 def test_leere_zeilen_zaehlen_nicht_als_regung():
@@ -334,3 +521,123 @@ if __name__ == "__main__":
             _zuruecksetzen()
     print(f"\n{'ALLE GRUEN' if not fails else str(fails) + ' FEHLGESCHLAGEN'}")
     sys.exit(1 if fails else 0)
+
+
+
+def test_worker_stop_cancels_error_body_read_after_response_headers(monkeypatch):
+    import threading
+
+    import httpx
+    from hub._services.llm import backend_errors
+
+    body_started = threading.Event()
+    body_cancelled = threading.Event()
+    response_closed = threading.Event()
+
+    async def blocked_error_body(_response, *, timeout_seconds):
+        body_started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            body_cancelled.set()
+            raise
+
+    class ErrorResponse:
+        status_code = 503
+        headers = {"Retry-After": "1"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            response_closed.set()
+            return False
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("503", request=None, response=None)
+
+    class ErrorClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return ErrorResponse()
+
+    monkeypatch.setattr(backend_errors, "read_error_payload", blocked_error_body)
+    backend = _backend(ErrorClient())
+    event = asyncio.Event()
+
+    async def run():
+        asyncio.get_running_loop().call_later(0.05, event.set)
+        return await backend.chat(
+            [{"role": "user", "content": "cancel error-body wait"}],
+            cancel_event=event,
+        )
+
+    result = asyncio.run(run())
+
+    assert body_started.is_set()
+    assert body_cancelled.is_set()
+    assert response_closed.is_set()
+    assert result["provider_request_aborted"] == "worker_stop"
+    assert result["tool_calls"] is None
+
+
+def test_total_deadline_covers_stream_open_and_response_headers(monkeypatch):
+    import threading
+
+    entered = threading.Event()
+    open_cancelled = threading.Event()
+    client_closed = threading.Event()
+    original_limit = backend_module.limit
+    monkeypatch.setattr(
+        backend_module,
+        "limit",
+        lambda name: 0.05 if name == "BACH_LLM_TOTAL_CAP"
+        else 10 if name == "BACH_LLM_IDLE_TIMEOUT"
+        else original_limit(name),
+    )
+
+    class WaitingStream:
+        async def __aenter__(self):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                open_cancelled.set()
+                raise
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class WaitingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            client_closed.set()
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return WaitingStream()
+
+    client = WaitingClient()
+    result = asyncio.run(_backend(client).chat(
+        [{"role": "user", "content": "header wait"}],
+    ))
+
+    assert entered.is_set()
+    assert open_cancelled.is_set()
+    assert client_closed.is_set()
+    assert result["provider_request_aborted"] == "total_deadline"
+    assert result["tool_calls"] is None
+    assert "Gesamtdeckel" in result["error"]

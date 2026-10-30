@@ -78,13 +78,15 @@ def task_state(tmp_path, monkeypatch):
         finally:
             conn.close()
 
-    def make_binding(*, generation=None, current=None, title="Execution evidence task"):
+    def make_binding(*, generation=None, current=None, title="Execution evidence task",
+                     stop_event=None):
         task_id = add_task(title)
         current = current if current is not None else {"value": True}
         binding = WorkerLeaseBinding.acquire(
             client, task_id, worker_id="isolated-runtime-worker@HOST", host="HOST",
             generation=generation or f"generation-{len(state['bindings']) + 1}",
-            is_current=lambda: current["value"], stop_event=threading.Event(),
+            is_current=lambda: current["value"],
+            stop_event=stop_event if stop_event is not None else threading.Event(),
         )
         state["bindings"].append(binding)
         return binding, current
@@ -168,6 +170,179 @@ def test_cloud_response_links_actual_call_to_submitted_result(task_state, monkey
     result = _result_snapshot(binding)
     assert result["execution"]["execution_id"] == evidence["execution_id"]
     assert result["accepted"] is False and result["submission"]["availability"] == "available"
+
+
+@pytest.mark.parametrize("ack_fence_mode", ["available", "missing", "raises", "inactive"])
+def test_non_ollama_bound_worker_exposes_generic_lifecycle_without_extra_kwargs(
+    task_state, monkeypatch, ack_fence_mode,
+):
+    from hub._services.chat import telegram_chat
+
+    canonical_binding = task_state["binding"]
+    binding = canonical_binding
+    if ack_fence_mode != "available":
+        class _AckMetadataProxy:
+            def __getattr__(self, name):
+                if name == "fence":
+                    if ack_fence_mode == "raises":
+                        raise RuntimeError("synthetic optional fence read failure")
+                    raise AttributeError(name)
+                return getattr(canonical_binding._ack, name)
+
+        class _BindingMetadataProxy:
+            def assert_active(self):
+                if ack_fence_mode == "inactive":
+                    raise RuntimeError("synthetic active-lease denial")
+                return canonical_binding.assert_active()
+
+            def __getattr__(self, name):
+                if name == "_ack":
+                    return _AckMetadataProxy()
+                return getattr(canonical_binding, name)
+
+        binding = _BindingMetadataProxy()
+    worker_id = "generic-request-" + uuid.uuid4().hex[:10]
+    control = telegram_chat._WorkerControl(worker_id, generation=binding.generation)
+    control.task_binding = binding
+    control.thread = threading.current_thread()
+    control.physical_worker_id = "isolated-runtime-worker@HOST"
+    control.lease_worker_id = "isolated-runtime-worker@HOST"
+    control.worker_thread_started = True
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", {worker_id: control})
+    monkeypatch.setattr(telegram_chat, "_WORKER_EXECUTIONS", {worker_id: control})
+
+    backend = FakeOpenAIBackend(
+        response={"content": "generic result", "tool_calls": None,
+                  "raw_message": {"role": "assistant", "content": "generic result"}},
+    )
+    runtime = _runtime(backend, monkeypatch, chat_id=worker_id)
+    session = runtime.get_session(worker_id)
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    session.worker_model_request_control = control
+    session.worker_handoff = control.handoff
+    session.worker_task_actions = control.task_actions
+
+    answer = asyncio.run(runtime.process("generic worker request", worker_id))
+    receipt = telegram_chat.worker_execution_receipt(
+        worker_id, control.start_request_id, verify_results=False,
+    )
+    if ack_fence_mode == "inactive":
+        assert len(backend.calls) == 0
+        assert "provider_request" not in receipt
+        return
+    assert answer == "generic result"
+    assert len(backend.calls) == 1
+    request = receipt["provider_request"]
+    assert request["generation"] == control.generation
+    assert request["task_id"] == binding.task_id
+    if ack_fence_mode == "available":
+        assert request["task_fence"] == canonical_binding._ack.fence
+        assert request["task_fence_available"] is True
+    else:
+        assert request["task_fence"] is None
+        assert request["task_fence_available"] is False
+    assert request["phase"] == "runtime_call_complete"
+    assert request["terminal_reason"] == "backend_returned"
+    assert request["transport"] == "unavailable"
+    assert request["transport_details_available"] is False
+    assert request["cancellation_supported"] is False
+    assert request["client_cleanup_complete"] is None
+    assert request["runtime_call_complete"] is True
+
+
+def test_terminal_provider_request_survives_public_reader_cleanup_and_generation_swap(
+    task_state, monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from hub._services.chat import telegram_chat
+    from hub._services.chat.chat_tray import BACHTray
+
+    binding, _current = task_state["make_binding"](generation=uuid.uuid4().hex)
+    worker_id = "terminal-reader-" + uuid.uuid4().hex[:8]
+    control = telegram_chat._WorkerControl(worker_id, generation=binding.generation)
+    control.task_binding = binding
+    control.thread = SimpleNamespace(is_alive=lambda: False)
+    control.launch_attempted = True
+    control.worker_thread_started = True
+    request = telegram_chat._ActiveWorkerModelRequest(
+        worker_generation=control.generation,
+        task_binding=binding,
+        task_id=binding.task_id,
+        task_fence=binding._ack.fence,
+        loop=None,
+        cancel_event=threading.Event(),
+        request_id=uuid.uuid4().hex,
+        transport="ollama_httpx",
+        transport_details_available=True,
+        cancellation_supported=True,
+        phase="runtime_call_complete",
+        phase_at="2026-10-27T14:37:00+00:00",
+        terminal_reason="worker_stop",
+        response_cleanup_complete=True,
+        client_cleanup_complete=True,
+        runtime_call_complete=True,
+        cancel_requested=True,
+    )
+    control.last_model_request = request
+    control.done_event.set()
+    release = binding.return_lease()
+    assert release is True
+    control.task_binding = None
+
+    executions = {worker_id: control}
+    monkeypatch.setattr(telegram_chat, "_WORKER_EXECUTIONS", executions)
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", {})
+    monkeypatch.setattr(telegram_chat, "_execution_worker_slot", lambda _worker_id: None)
+    monkeypatch.setattr(telegram_chat.ControlHandler, "_allow_control_request", lambda self: True)
+
+    writes = []
+    handler = telegram_chat.ControlHandler.__new__(telegram_chat.ControlHandler)
+    handler.path = (
+        "/api/workers/execution?id=" + worker_id
+        + "&start_request_id=" + control.start_request_id
+    )
+    handler.headers = {"Origin": "", "Host": "127.0.0.1"}
+    handler.send_response = lambda _status: None
+    handler.send_header = lambda *_args: None
+    handler.end_headers = lambda: None
+    handler.wfile = SimpleNamespace(write=writes.append)
+    handler.do_GET()
+
+    response = json.loads(writes[-1])
+    assert response["ok"] is True
+    execution = response["execution"]
+    assert execution["state"] == "terminal" and execution["terminal"] is True
+    assert "active_task_id" not in execution
+    provider_request = execution["provider_request"]
+    assert provider_request["state"] == "terminal"
+    assert provider_request["runtime_call_complete"] is True
+    assert provider_request["request_id"] == request.request_id
+    assert provider_request["generation"] == control.generation
+    assert provider_request["task_id"] == binding.task_id
+    assert provider_request["task_fence"] == binding._ack.fence
+    projected = BACHTray._safe_worker_execution(worker_id, execution)
+    assert projected["provider_request"] == provider_request
+
+    replacement = telegram_chat._WorkerControl(
+        worker_id, generation=uuid.uuid4().hex,
+    )
+    replacement.thread = SimpleNamespace(is_alive=lambda: True)
+    replacement.launch_attempted = True
+    replacement.worker_thread_started = True
+    executions[worker_id] = replacement
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", {worker_id: replacement})
+    handler.path = (
+        "/api/workers/execution?id=" + worker_id
+        + "&start_request_id=" + replacement.start_request_id
+    )
+    writes.clear()
+    handler.do_GET()
+    next_response = json.loads(writes[-1])
+    assert next_response["execution"]["generation"] == replacement.generation
+    assert "provider_request" not in next_response["execution"]
+    assert request.request_id not in json.dumps(next_response)
 
 
 @pytest.mark.parametrize("change", ["stop", "generation", "deadline", "binding_swap"])
@@ -538,3 +713,376 @@ def test_unbound_chat_keeps_ordinary_response_and_legacy_binding_never_fakes_evi
     assert asyncio.run(legacy_runtime.process("legacy", "legacy-runtime-chat")) == "Legacy-compatible answer"
     assert len(legacy.calls) == 1
     assert _result_snapshot(binding) is None
+
+
+@pytest.mark.parametrize("abort_reason", ["worker_stop", "total_deadline"])
+def test_worker_abort_discards_buffered_tool_candidates_before_runtime_dispatch(
+    task_state, tmp_path, monkeypatch, abort_reason,
+):
+    import os
+    import time
+
+    import httpx
+
+    from hub._services.chat import chat_runtime as runtime_module
+    from hub._services.chat import slots_config as slots
+    from hub._services.chat import telegram_chat
+    from hub._services.llm import model_backend
+    from hub._services.llm.model_backend import OllamaBackend
+
+    worker_id = "cancel-runtime-" + uuid.uuid4().hex[:10]
+    control = telegram_chat._WorkerControl(worker_id)
+    binding, _current = task_state["make_binding"](
+        generation=control.generation,
+        title="Buffered provider tool cancellation",
+        stop_event=control.stop_event,
+    )
+    control.task_binding = binding
+    control.physical_worker_id = "isolated-runtime-worker@HOST"
+    control.lease_worker_id = "isolated-runtime-worker@HOST"
+    control.launch_attempted = True
+    control.worker_thread_started = True
+
+    slots_path = tmp_path / "cancel-runtime-slots.json"
+    slots.initialize_slots_config(str(slots_path))
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", str(slots_path))
+    profile = slots.add_worker({
+        "id": worker_id,
+        "name": "Isolated cancellation integration",
+        "backend": "ollama",
+        "model": "m",
+        "mode": "safe",
+        "max_tool_rounds": 3,
+        "task_id": binding.task_id,
+        "type": "once",
+        "allow_tools": True,
+        "allowed_tools": ["task_manage"],
+        "max_model_requests": 8,
+    }, path=str(slots_path))
+    profile.update({"status": "running", "enabled": True})
+    configuration_version = slots._worker_profile_version(profile)
+    budget_record = {
+        "schema": "bach.worker-model-requests.v1",
+        "worker_id": worker_id,
+        "service_instance": telegram_chat._WORKER_SERVICE_INSTANCE,
+        "pid": os.getpid(),
+        "process_create_time": max(time.time(), 1.0),
+        "start_request_id": control.start_request_id,
+        "generation": control.generation,
+        "task_id": binding.task_id,
+        "task_version": None,
+        "configuration_version": configuration_version,
+        "limit": 8,
+        "reserved_count": 0,
+        "phase": "admitted",
+        "reason": "",
+        "sequence": 0,
+    }
+    with slots.worker_admission_transaction(str(slots_path)) as advance_revision:
+        advance_revision(model_request_run=budget_record)
+    budget = telegram_chat._ModelRequestBudget(
+        worker_id=worker_id,
+        service_instance=budget_record["service_instance"],
+        start_request_id=control.start_request_id,
+        generation=control.generation,
+        task_id=binding.task_id,
+        configuration_version=configuration_version,
+    )
+    control.model_request_budget = budget
+
+    from pathlib import Path
+    source_root = Path(__file__).resolve().parents[1]
+    imported_paths = {
+        "chat_runtime": Path(runtime_module.__file__).resolve(),
+        "telegram_chat": Path(telegram_chat.__file__).resolve(),
+        "model_backend": Path(model_backend.__file__).resolve(),
+    }
+    assert all(path.is_relative_to(source_root) for path in imported_paths.values())
+    print("CANCEL_TEST_IMPORTS", {name: str(path) for name, path in imported_paths.items()})
+    runtime = runtime_module.ChatRuntime(OllamaBackend(default_model="m"))
+    runtime.max_tool_rounds = 3
+    runtime.hook_every = 999
+    runtime._get_bach_context = lambda _text: ""
+    runtime._get_memory_hook_context = lambda *_args: ""
+    # The host inference semaphore is outside this deterministic fake transport;
+    # keep the task, budget, handoff and tool authority gates live.
+    runtime._uses_local_compute = lambda _backend: False
+    session = runtime.get_session(worker_id)
+    session.chat_id = worker_id
+    session.backend = runtime.backend
+    session.model = "m"
+    session.mode = profile["mode"]
+    session.allow_tools = True
+    session.allowed_tools = ["task_manage"]
+    session.max_tool_rounds = 3
+    session.worker_task_binding = binding
+    session.require_task_binding = True
+    session.worker_slot_reader = lambda: dict(profile)
+    session.worker_model_request_control = control
+    session.worker_handoff = control.handoff
+    session.worker_task_actions = control.task_actions
+    session.model_request_budget = budget
+
+    escaped_actions = []
+    monkeypatch.setattr(runtime_module, "exec_tool",
+                        lambda *args, **kwargs: escaped_actions.append((args, kwargs)))
+    monkeypatch.setattr(telegram_chat, "_execution_worker_slot",
+                        lambda _ident: dict(profile))
+    monkeypatch.setattr(telegram_chat, "update_slot",
+                        lambda _ident, changes: profile.update(changes))
+    monkeypatch.setattr(telegram_chat, "record_activity", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(telegram_chat, "_WORKER_STOP_WAIT_SECONDS", 2.0)
+
+    action = {
+        "action": "done",
+        "task_id": binding.task_id,
+        "result": "This must remain inert because the answer never completed.",
+    }
+    tool_call = {"function": {"name": "task_manage", "arguments": action}}
+    text_action = "<tool_call>" + json.dumps(
+        {"name": "task_manage", "arguments": action}, separators=(",", ":")
+    ) + "</tool_call>"
+    first_chunk = json.dumps({
+        "model": "m",
+        "message": {
+            "role": "assistant",
+            "content": text_action,
+            "tool_calls": [tool_call],
+        },
+        "done": False,
+    })
+    read_started = threading.Event()
+    read_cancelled = threading.Event()
+    response_closed = threading.Event()
+    client_closed = threading.Event()
+    cleanup_order = []
+    loop_holder = {}
+    outcomes = {}
+    observer_error_phases = set()
+    original_observer = control.observe_provider_request
+
+    def fail_one_observer_phase(request, phase, *, reason=None):
+        if phase == "response_headers_received" and phase not in observer_error_phases:
+            observer_error_phases.add(phase)
+            raise RuntimeError("synthetic observer failure")
+        return original_observer(request, phase, reason=reason)
+
+    control.observe_provider_request = fail_one_observer_phase
+
+    class FakeResponse:
+        status_code = 200
+        headers = {}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            response_closed.set()
+            cleanup_order.append("response_closed")
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield first_chunk
+            read_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                read_cancelled.set()
+
+    response = FakeResponse()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            client_closed.set()
+            cleanup_order.append("client_closed")
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return response
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    original_limit = model_backend.limit
+    monkeypatch.setattr(
+        model_backend,
+        "limit",
+        lambda name: (
+            0.05 if abort_reason == "total_deadline" and name == "BACH_LLM_TOTAL_CAP"
+            else 30 if name in {"BACH_LLM_IDLE_TIMEOUT", "BACH_LLM_TOTAL_CAP"}
+            else original_limit(name)
+        ),
+    )
+
+    def run_worker():
+        loop = asyncio.new_event_loop()
+        loop_holder["loop"] = loop
+        asyncio.set_event_loop(loop)
+        try:
+            outcomes["answer"] = loop.run_until_complete(
+                runtime.process("Run the isolated bound worker request.", worker_id,
+                                backend=session.backend, model="m")
+            )
+            outcomes["provider_request"] = telegram_chat.worker_execution_receipt(
+                worker_id, control.start_request_id, verify_results=False,
+            ).get("provider_request")
+            outcomes["pending_task_count"] = len(asyncio.all_tasks(loop))
+        except BaseException as exc:
+            outcomes["error"] = exc
+        finally:
+            try:
+                if binding._active:
+                    outcomes["lease_returned"] = binding.return_lease()
+                    cleanup_order.append("lease_returned")
+                record = slots.model_request_run_record(worker_id, control.start_request_id)
+                if record is not None and record["phase"] != "terminal":
+                    slots.terminalize_model_request_run(
+                        worker_id,
+                        service_instance=telegram_chat._WORKER_SERVICE_INSTANCE,
+                        start_request_id=control.start_request_id,
+                        generation=control.generation,
+                        expected_sequence=record["sequence"],
+                        reason="controller_cleanup_confirmed",
+                    )
+            except BaseException as exc:
+                outcomes["cleanup_error"] = exc
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            finally:
+                loop.close()
+                with telegram_chat._WORKER_CONTROL_LOCK:
+                    control.done_event.set()
+                    if telegram_chat._WORKER_CONTROLS.get(worker_id) is control:
+                        telegram_chat._WORKER_CONTROLS.pop(worker_id, None)
+                    telegram_chat._ACTIVE_WORKER_THREADS.pop(worker_id, None)
+
+    controls = {worker_id: control}
+    executions = {worker_id: control}
+    active_threads = {}
+    monkeypatch.setattr(telegram_chat, "_WORKER_CONTROLS", controls)
+    monkeypatch.setattr(telegram_chat, "_WORKER_EXECUTIONS", executions)
+    monkeypatch.setattr(telegram_chat, "_ACTIVE_WORKER_THREADS", active_threads)
+    thread = threading.Thread(target=run_worker)
+    control.thread = thread
+    active_threads[worker_id] = thread
+    thread.start()
+
+    try:
+        if not read_started.wait(5):
+            raise AssertionError(
+                f"worker never reached provider read; alive={thread.is_alive()}, outcomes={outcomes!r}"
+            )
+        active_execution = telegram_chat.worker_execution_receipt(
+            worker_id, control.start_request_id, verify_results=False,
+        )
+        active_provider_request = active_execution["provider_request"]
+        assert active_provider_request["request_id"]
+        assert active_provider_request["generation"] == control.generation
+        assert active_provider_request["task_id"] == binding.task_id
+        assert active_provider_request["task_fence"] == binding._ack.fence
+        assert active_provider_request["phase"] == "first_stream_chunk_received"
+        assert active_provider_request["transport"] == "ollama_httpx"
+        assert active_provider_request["transport_details_available"] is True
+        active_request_id = active_provider_request["request_id"]
+
+        if abort_reason == "worker_stop":
+            old_request = control.active_model_request
+            old_cancel_event = old_request.cancel_event
+            next_control = telegram_chat._WorkerControl(worker_id, generation="replacement-generation")
+            next_binding, _ = task_state["make_binding"](
+                generation=next_control.generation,
+                title="Replacement generation remains isolated",
+                stop_event=next_control.stop_event,
+            )
+            next_control.task_binding = next_binding
+            next_control.launch_attempted = True
+            next_control.worker_thread_started = True
+            next_event = asyncio.Event()
+            with telegram_chat._WORKER_CONTROL_LOCK:
+                controls[worker_id] = next_control
+                executions[worker_id] = next_control
+                active_threads[worker_id] = None
+            next_handle = next_control.register_provider_request(
+                next_binding, loop_holder["loop"], next_event,
+            )
+            assert next_handle is not None
+            assert control.observe_provider_request(old_request, "response_completed") is False
+            assert next_control.active_model_request.phase == "registered"
+
+            stale_expected = {
+                "service_instance": telegram_chat._WORKER_SERVICE_INSTANCE,
+                "start_request_id": control.start_request_id,
+                "generation": control.generation,
+            }
+            confirmed, _slot, stale_receipt, stale_code = telegram_chat._request_worker_revocation(
+                worker_id, profile, expected_execution=stale_expected,
+            )
+            assert stale_code == 409 and not confirmed
+            assert stale_receipt["confirmed"] is False
+            assert not old_cancel_event.is_set()
+            assert not next_event.is_set()
+            next_control.finish_provider_request(next_handle)
+
+            with telegram_chat._WORKER_CONTROL_LOCK:
+                controls[worker_id] = control
+                executions[worker_id] = control
+                active_threads[worker_id] = thread
+            _status_persisted, _slot, receipt, code = telegram_chat._request_worker_revocation(
+                worker_id, profile, expected_execution=stale_expected,
+            )
+        thread.join(4)
+    finally:
+        if thread.is_alive():
+            control.stop_event.set()
+            control.cancel_active_model_request()
+            thread.join(4)
+    assert not thread.is_alive()
+    assert "error" not in outcomes, repr(outcomes.get("error"))
+    assert "cleanup_error" not in outcomes, repr(outcomes.get("cleanup_error"))
+    if abort_reason == "worker_stop":
+        assert code == 200
+        assert receipt["confirmed"] is True
+        assert receipt["execution"]["terminal"] is True
+        assert receipt["execution"]["generation"] == control.generation
+    else:
+        assert not control.stop_event.is_set()
+        assert control.done_event.is_set()
+    assert isinstance(outcomes["answer"], FailedAnswer)
+    assert text_action in str(outcomes["answer"])
+    assert escaped_actions == []
+    assert read_cancelled.is_set()
+    assert response_closed.is_set()
+    assert client_closed.is_set()
+    assert cleanup_order == ["response_closed", "client_closed", "lease_returned"]
+    assert outcomes["pending_task_count"] == 0
+    assert control.active_model_request is None
+    assert outcomes["lease_returned"] is True
+    request = outcomes["provider_request"]
+    assert request is not None
+    assert request["request_id"] == active_request_id
+    assert request["generation"] == control.generation
+    assert request["task_id"] == binding.task_id
+    assert request["task_fence"] == binding._ack.fence
+    assert request["phase"] == "runtime_call_complete"
+    assert request["terminal_reason"] == abort_reason
+    assert request["transport"] == "ollama_httpx"
+    assert request["transport_details_available"] is True
+    assert request["response_cleanup_complete"] is True
+    assert request["client_cleanup_complete"] is True
+    assert request["runtime_call_complete"] is True
+    assert request["cancel_requested"] is (abort_reason == "worker_stop")
+    assert request["observer_error"] is True
+    task_snapshot = task_state["client"].task_snapshot(binding.task_id)
+    assert task_snapshot["status"] == "pending"
+    assert task_state["client"].read(binding.task_id).leased is False
+    assert task_state["client"].task_result_snapshot(binding.task_id)["result"] is None
+    final_budget = slots.model_request_run_record(worker_id, control.start_request_id)
+    assert final_budget["phase"] == "terminal"
+    assert final_budget["reserved_count"] == 1

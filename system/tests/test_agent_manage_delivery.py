@@ -4,6 +4,7 @@ import importlib
 import json
 import sqlite3
 import threading
+import uuid
 from contextlib import closing
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -75,6 +76,53 @@ def test_create_materialize_list_and_start_use_real_state(state):
     assert kwargs["expected_configuration_version"] == catalog["configuration_version"]
     assert len(kwargs["start_request_id"]) == 32
     assert state.guard.call_count >= 5
+
+
+def test_agent_list_preserves_sanitized_terminal_provider_request_metadata(state):
+    _blueprint, materialized = configure(state)
+    worker_id = materialized["slot_id"]
+    generation = uuid.uuid4().hex
+    provider_request = {
+        "request_id": uuid.uuid4().hex,
+        "generation": generation,
+        "task_id": 23,
+        "task_fence": 8,
+        "task_fence_available": True,
+        "state": "terminal",
+        "phase": "runtime_call_complete",
+        "phase_at": "2026-10-27T14:37:00+00:00",
+        "terminal_reason": "worker_stop",
+        "transport": "ollama_httpx",
+        "transport_details_available": True,
+        "cancellation_supported": True,
+        "cancel_requested": True,
+        "response_cleanup_complete": True,
+        "client_cleanup_complete": True,
+        "runtime_call_complete": True,
+        "observer_error": False,
+    }
+    terminal_execution = {
+        "schema": "bach.worker-execution.v1",
+        "worker_id": worker_id,
+        "state": "terminal",
+        "terminal": True,
+        "service_instance": uuid.uuid4().hex,
+        "start_request_id": uuid.uuid4().hex,
+        "generation": generation,
+        "provider_request": provider_request,
+    }
+    state.receipt.side_effect = lambda ident: (
+        terminal_execution if ident == worker_id else {
+            "schema": "bach.worker-execution.v1", "worker_id": ident,
+            "state": "idle", "terminal": False, "service_instance": "owned-service",
+            "start_request_id": None, "generation": None,
+        }
+    )
+
+    catalog = invoke(state, {"action": "list"})
+    listed = next(agent for agent in catalog["agents"] if agent["id"] == worker_id)
+    assert listed["execution"]["provider_request"] == provider_request
+    state.start.assert_not_called()
 
 
 def test_native_catalog_survives_progress_but_keeps_current_runtime_state(state):

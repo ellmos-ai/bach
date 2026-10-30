@@ -221,6 +221,50 @@ class _WorkerStopSignal:
         return True
 
 
+_PROVIDER_REQUEST_PHASE_ORDER = {
+    "registered": 0,
+    "request_starting": 1,
+    "transport_open": 2,
+    "awaiting_response_headers": 3,
+    "response_headers_received": 4,
+    "first_stream_chunk_received": 5,
+    "response_completed": 6,
+    "request_aborted": 7,
+    "request_failed": 7,
+    "response_cleanup_complete": 8,
+    "client_cleanup_complete": 9,
+    "runtime_call_complete": 10,
+}
+_PROVIDER_REQUEST_TERMINAL_REASONS = frozenset({
+    "worker_stop", "total_deadline", "httpx_read_timeout", "provider_error",
+    "backend_error", "backend_returned", "runtime_cancelled", "dispatch_rejected",
+})
+
+
+@dataclass
+class _ActiveWorkerModelRequest:
+    """Single request status bound to one worker generation and task fence."""
+
+    worker_generation: str
+    task_binding: Any
+    task_id: int
+    task_fence: Optional[int]
+    loop: Any
+    cancel_event: Any
+    request_id: str
+    transport: str
+    transport_details_available: bool = False
+    cancellation_supported: bool = False
+    phase: str = "registered"
+    phase_at: str = ""
+    terminal_reason: Optional[str] = None
+    response_cleanup_complete: Optional[bool] = None
+    client_cleanup_complete: Optional[bool] = None
+    runtime_call_complete: bool = False
+    observer_error: bool = False
+    cancel_requested: bool = False
+
+
 @dataclass
 class _WorkerControl:
     """Generation-bound cooperative cancellation state for one worker run."""
@@ -274,6 +318,9 @@ class _WorkerControl:
     supports_step_actions: bool = False
     run_receipt_fields: Optional[Dict[str, Any]] = None
     model_request_budget: Any = None
+    active_model_request: Any = None
+    # One latest request status for the current generation; never an event ledger.
+    last_model_request: Any = None
     handoff: WorkerHandoff = field(init=False)
     task_actions: WorkerTaskActions = field(init=False)
 
@@ -284,6 +331,172 @@ class _WorkerControl:
             self.persistent_core_startup_confirmed.set()
         if not self.startup_admission_required:
             self.startup_admission_confirmed.set()
+
+    @staticmethod
+    def _provider_binding_metadata(task_binding):
+        """Read active task identity and its optional exact lease-ACK fence."""
+        try:
+            task_binding.assert_active()
+            task_id = task_binding.task_id
+            task_generation = getattr(task_binding, "generation", None)
+        except Exception:
+            return None
+        if type(task_id) is not int or task_id <= 0:
+            return None
+        try:
+            lease_ack = getattr(task_binding, "_ack", None)
+            raw_fence = getattr(lease_ack, "fence", None)
+        except Exception:
+            raw_fence = None
+        task_fence = raw_fence if type(raw_fence) is int and raw_fence > 0 else None
+        return task_id, task_generation, task_fence
+
+    def register_provider_request(self, task_binding, loop, cancel_event, *, transport="unavailable"):
+        """Bind one real backend call to this worker generation and task fence."""
+        metadata = self._provider_binding_metadata(task_binding)
+        if metadata is None:
+            return None
+        task_id, task_generation, task_fence = metadata
+        if task_generation != self.generation:
+            return None
+        transport = transport if transport == "ollama_httpx" else "unavailable"
+        with _WORKER_CONTROL_LOCK:
+            if (self.stop_event.is_set()
+                    or _WORKER_CONTROLS.get(self.worker_id) is not self
+                    or task_binding is None or self.task_binding is not task_binding
+                    or self.active_model_request is not None):
+                return None
+            request = _ActiveWorkerModelRequest(
+                worker_generation=self.generation,
+                task_binding=task_binding,
+                task_id=task_id,
+                task_fence=task_fence,
+                loop=loop,
+                cancel_event=cancel_event,
+                request_id=uuid.uuid4().hex,
+                transport=transport,
+                transport_details_available=(transport == "ollama_httpx"),
+                cancellation_supported=(transport == "ollama_httpx"),
+                phase_at=datetime.now(timezone.utc).isoformat(),
+            )
+            self.active_model_request = request
+            return request
+
+    def observe_provider_request(self, request, phase, *, reason=None):
+        """Accept only ordered, allowlisted lifecycle observations for this handle."""
+        if phase not in _PROVIDER_REQUEST_PHASE_ORDER:
+            return False
+        with _WORKER_CONTROL_LOCK:
+            if (self.active_model_request is not request
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding
+                    or _WORKER_CONTROLS.get(self.worker_id) is not self
+                    or request.runtime_call_complete):
+                return False
+            cleanup = phase in {"response_cleanup_complete", "client_cleanup_complete"}
+            if request.terminal_reason is not None and not cleanup:
+                return False
+            if (_PROVIDER_REQUEST_PHASE_ORDER[phase]
+                    < _PROVIDER_REQUEST_PHASE_ORDER.get(request.phase, -1)):
+                return False
+            if cleanup and not request.transport_details_available:
+                return False
+            if phase == "transport_open":
+                request.client_cleanup_complete = False
+            elif phase == "response_headers_received":
+                request.response_cleanup_complete = False
+            elif phase == "response_cleanup_complete":
+                request.response_cleanup_complete = True
+            elif phase == "client_cleanup_complete":
+                request.client_cleanup_complete = True
+            if phase == "request_aborted":
+                if reason not in {"worker_stop", "total_deadline"}:
+                    return False
+                request.terminal_reason = reason
+            elif phase == "request_failed":
+                request.terminal_reason = (
+                    reason if reason in _PROVIDER_REQUEST_TERMINAL_REASONS
+                    else "provider_error"
+                )
+            request.phase = phase
+            request.phase_at = datetime.now(timezone.utc).isoformat()
+            return True
+
+    def mark_provider_request_observer_error(self, request):
+        """Record a local observer fault without changing provider or lease flow."""
+        with _WORKER_CONTROL_LOCK:
+            if (self.active_model_request is request
+                    and request.worker_generation == self.generation
+                    and request.task_binding is self.task_binding
+                    and _WORKER_CONTROLS.get(self.worker_id) is self):
+                request.observer_error = True
+                return True
+        return False
+
+    def cancel_active_model_request(self):
+        """Signal only the currently registered request; never cancel runtime/tool work."""
+        with _WORKER_CONTROL_LOCK:
+            request = self.active_model_request
+            if (not self.stop_event.is_set() or request is None
+                    or not request.cancellation_supported
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding):
+                return False
+            request.cancel_requested = True
+        try:
+            request.loop.call_soon_threadsafe(self._signal_provider_request_cancel, request)
+        except RuntimeError:
+            return False
+        return True
+
+    def _signal_provider_request_cancel(self, request):
+        with _WORKER_CONTROL_LOCK:
+            if (self.active_model_request is not request
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding
+                    or not self.stop_event.is_set()):
+                return
+        request.cancel_event.set()
+
+    def finish_provider_request(self, request, *, result=None, error=None):
+        """Finalize one request status after its backend call and observed cleanup."""
+        with _WORKER_CONTROL_LOCK:
+            if (self.active_model_request is not request
+                    or request.worker_generation != self.generation
+                    or request.task_binding is not self.task_binding):
+                return False
+            if request.terminal_reason is None:
+                if error is not None:
+                    reason = (
+                        "runtime_cancelled" if type(error).__name__ == "CancelledError"
+                        else "backend_error"
+                    )
+                    request.phase = "request_failed"
+                elif isinstance(result, dict):
+                    aborted = result.get("provider_request_aborted")
+                    if (request.transport_details_available
+                            and aborted in {"worker_stop", "total_deadline"}):
+                        reason = aborted
+                        request.phase = "request_aborted"
+                    elif result.get("worker_cancelled") is True and request.phase == "registered":
+                        reason = "dispatch_rejected"
+                        request.phase = "request_failed"
+                    elif result.get("error"):
+                        reason = "provider_error" if request.transport_details_available else "backend_error"
+                        request.phase = "request_failed"
+                    elif request.phase == "response_completed":
+                        reason = "response_completed"
+                    else:
+                        reason = "backend_returned"
+                else:
+                    reason = "backend_returned"
+                request.terminal_reason = reason
+            request.runtime_call_complete = True
+            request.phase = "runtime_call_complete"
+            request.phase_at = datetime.now(timezone.utc).isoformat()
+            self.last_model_request = request
+            self.active_model_request = None
+            return True
 
 
 # A blocking runtime cannot be killed safely from a control/API thread. The
@@ -467,6 +680,41 @@ def _control_execution_receipt(control: _WorkerControl, *, verify_results=True) 
             "worker_status": None, "error_code": control.start_error,
             "heartbeat_at": control.last_heartbeat_at,
             "stop_requested": control.stop_event.is_set()}
+        request = control.active_model_request or control.last_model_request
+        if request is not None and request.worker_generation == control.generation:
+            same_binding = (
+                binding is not None
+                and request.task_binding is binding
+                and request.task_id == getattr(binding, "task_id", None)
+            )
+            active_request = (
+                control.active_model_request is request and same_binding and not terminal
+            )
+            terminal_request = (
+                control.last_model_request is request
+                and request.runtime_call_complete is True
+                and (binding is None or same_binding)
+            )
+            if active_request or terminal_request:
+                receipt["provider_request"] = {
+                    "request_id": request.request_id,
+                    "generation": request.worker_generation,
+                    "task_id": request.task_id,
+                    "task_fence": request.task_fence,
+                    "task_fence_available": type(request.task_fence) is int and request.task_fence > 0,
+                    "state": "terminal" if request.runtime_call_complete else "active",
+                    "phase": request.phase,
+                    "phase_at": request.phase_at,
+                    "terminal_reason": request.terminal_reason,
+                    "transport": request.transport,
+                    "transport_details_available": request.transport_details_available,
+                    "cancellation_supported": request.cancellation_supported,
+                    "cancel_requested": request.cancel_requested,
+                    "response_cleanup_complete": request.response_cleanup_complete,
+                    "client_cleanup_complete": request.client_cleanup_complete,
+                    "runtime_call_complete": request.runtime_call_complete,
+                    "observer_error": request.observer_error,
+                }
         if control.model_request_budget is not None:
             stored = _budget_execution_projection(worker_id, control.start_request_id)
             if stored is None:
@@ -700,6 +948,107 @@ def _worker_result_binding(control, task_id, generation):
     if binding is None or binding.task_id != task_id or binding.generation != generation:
         return None
     return binding
+
+
+def prepare_tray_intent_reconciliation(request: dict) -> tuple[dict, int]:
+    """Authorize only an explicit, fenced retirement of one tray start intent.
+
+    A legacy retirement is an operator decision about the tray's own pending
+    start request. It is never a terminal execution, Task result or lease ACK.
+    The caller must CAS the exact local intent bytes after this readback.
+    """
+    fields = {"schema", "mode", "actor", "worker_id", "service_instance",
+              "start_request_id", "generation", "intent_sha256",
+              "expected_current_service_instance", "target_task_id", "target_task_version"}
+    if (type(request) is not dict or set(request) != fields
+            or request.get("schema") != "bach.tray-intent-reconcile-request.v1"
+            or type(request.get("mode")) is not str
+            or request["mode"] not in {"confirmed_inactive", "retire_unconfirmed"}
+            or request.get("worker_id") != "buddha_always_on"
+            or type(request.get("actor")) is not str
+            or re.fullmatch(r"[A-Za-z0-9._@-]{3,128}", request["actor"]) is None
+            or any(type(request.get(key)) is not str
+                   or re.fullmatch(r"[0-9a-f]{32}", request[key]) is None
+                   for key in ("service_instance", "start_request_id", "expected_current_service_instance"))
+            or request["service_instance"] == request["expected_current_service_instance"]
+            or request.get("generation") is not None and (
+                type(request["generation"]) is not str
+                or re.fullmatch(r"[0-9a-f]{32}", request["generation"]) is None)
+            or type(request.get("intent_sha256")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", request["intent_sha256"]) is None
+            or type(request.get("target_task_id")) is not int or request["target_task_id"] <= 0
+            or type(request.get("target_task_version")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", request["target_task_version"]) is None):
+        return {"error": "Ungültiger Tray-Intent-Reconcile-Vertrag"}, 400
+    if request["expected_current_service_instance"] != _WORKER_SERVICE_INSTANCE:
+        return {"error": "Controller-Serviceepoch geändert", "error_code": "service_instance_conflict"}, 409
+    from hub._services.chat.slots_config import (
+        worker_admission_transaction, get_always_on_execution_slot, _validated_controller_run,
+    )
+    from hub.agent_process_provider import inspect_process_identity
+    try:
+        # Same lock order as native admission. No revision or task mutation.
+        with _WORKER_CONTROL_LOCK, worker_admission_transaction():
+            if request["expected_current_service_instance"] != _WORKER_SERVICE_INSTANCE:
+                return {"error": "Controller-Serviceepoch geändert"}, 409
+            slot = get_always_on_execution_slot()
+            slot_task_id = slot.get("task_id")
+            if (slot.get("enabled") is not False
+                    or slot_task_id is not None and (
+                        type(slot_task_id) is not int or slot_task_id != request["target_task_id"])):
+                return {"error": "Core-Slot ist aktiv oder fremd taskgebunden"}, 409
+            current, thread = _active_worker_control("buddha_always_on")
+            retained = _WORKER_EXECUTIONS.get("buddha_always_on")
+            if (_thread_is_alive(thread)
+                    or current is not None and current.admission_pending
+                    or retained is not None and (
+                        retained.admission_pending or not retained.done_event.is_set()
+                        or _thread_is_alive(retained.thread))):
+                return {"error": "Aktueller Core-Lauf ist nicht beendet"}, 409
+            client = _native_task_client()
+            lease = client.read(request["target_task_id"])
+            result = client.task_result_snapshot(request["target_task_id"])
+            if (lease.leased is not False or lease.status != "pending"
+                    or lease.task_version != request["target_task_version"]
+                    or result.get("verified") is not True
+                    or result.get("status") != "pending"
+                    or result.get("task_version") != request["target_task_version"]
+                    or result.get("result") is not None):
+                return {"error": "Zieltask ist nicht pending, leasefrei und resultfrei"}, 409
+            marker = slot.get("_controller_run")
+            exact_inactive = False
+            if marker is not None:
+                _validated_controller_run(marker)
+                if marker["worker_id"] != "buddha_always_on" or marker["host"] != socket.gethostname():
+                    return {"error": "Controller-Owner nicht verifizierbar"}, 409
+                process_state, _ = inspect_process_identity(marker)
+                if (marker["phase"] != "admitted" or marker["durable"] is not True
+                        or process_state not in {"gone", "mismatch"}
+                        or client.worker_leases(marker["lease_worker_id"])["leases"]):
+                    return {"error": "Vorheriger Controller oder dessen Leases nicht beendet"}, 409
+                exact_inactive = (marker["service_instance"] == request["service_instance"]
+                    and marker["start_request_id"] == request["start_request_id"]
+                    and (request["generation"] is None or marker["generation"] == request["generation"]))
+            if request["mode"] == "confirmed_inactive" and not exact_inactive:
+                return {"error": "Exakte alte Admission nicht dauerhaft belegt"}, 409
+            if request["mode"] == "retire_unconfirmed" and exact_inactive:
+                return {"error": "Für exakt belegten Lauf confirmed_inactive verwenden"}, 409
+            proof = {"schema": "bach.tray-intent-reconcile-proof.v1",
+                     "mode": request["mode"], "claimed_actor": request["actor"],
+                     "actor_verified": False, "authority_kind": "control_api_authorized",
+                     "worker_id": request["worker_id"],
+                     "service_instance": request["service_instance"],
+                     "start_request_id": request["start_request_id"],
+                     "generation": request["generation"],
+                     "intent_sha256": request["intent_sha256"],
+                     "current_service_instance": _WORKER_SERVICE_INSTANCE,
+                     "target_task_id": request["target_task_id"],
+                     "target_task_version": request["target_task_version"],
+                     "target_binding": "fixed" if slot_task_id is not None else "guarded_reference",
+                     "effect": "tray_intent_only", "old_execution_terminal": False}
+            return {"ok": True, "proof": proof}, 200
+    except Exception:
+        return {"error": "Reconcile-Belege nicht vollständig lesbar"}, 503
 
 
 def worker_execution_result(worker_id, request_id, generation, task_id):
@@ -2029,6 +2378,14 @@ def _request_worker_revocation(
             control.task_actions.cancel()
         elif control.stop_status is None:
             control.stop_status = final_status
+
+    # Wake only the provider read registered to this exact generation. The
+    # worker/runtime coroutine, tool dispatch and subprocess cleanup keep running.
+    try:
+        control.cancel_active_model_request()
+    except Exception:
+        log.warning("Worker %s Provider-Read konnte nicht signalisiert werden", worker_id,
+                    exc_info=True)
 
     # Never hold the controller lock while the captured worker finishes.
     if thread is not None and thread is not threading.current_thread() and _thread_is_alive(thread):
@@ -4571,6 +4928,12 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     except Exception:
                         return rejected({"error": "Vorherige Worker-Generation nicht beendet oder leasefrei bestätigt",
                                          "error_code": "worker_previous_run_unconfirmed"}, 409)
+                elif worker_id == "buddha_always_on" and slot.get("_controller_run") is not None:
+                    try:
+                        _assert_worker_profile_inactive(slot)
+                    except Exception:
+                        return rejected({"error": "Vorheriger Core-Lauf nicht beendet oder leasefrei bestätigt",
+                                         "error_code": "core_previous_run_unconfirmed"}, 409)
                 budget_record = None
                 if slot.get("max_model_requests") is not None:
                     from hub._services.chat.slots_config import (
@@ -4637,20 +5000,25 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 control.thread = control.admission_handle
                 control.lease_worker_id = control.lease_worker_id or f"{control.physical_worker_id}@{socket.gethostname()}"
                 controller_run = None
-                if not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS:
+                if worker_id == "buddha_always_on" or (not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS):
                     from hub.agent_process_provider import capture_process_create_time
                     from hub._services.chat.slots_config import _model_request_runs
                     prior_record = slot.get("_controller_run")
-                    prior_budget = _model_request_runs(slot)["current"]
-                    prior_runs_unconfirmed = (prior_record["prior_runs_unconfirmed"]
-                        if prior_record is not None else not (
-                            slot.get("max_model_requests") is not None and slot.get("type") == "once"
-                            and prior_budget is not None and prior_budget["phase"] == "terminal"))
-                    if (prior_record is not None and prior_record["phase"] == "never_admitted"
-                            and not prior_record["durable"] and (
-                                prior_record["pid"] != os.getpid()
-                                or prior_record["process_create_time"] != capture_process_create_time(os.getpid()))):
-                        prior_runs_unconfirmed = True
+                    if worker_id == "buddha_always_on":
+                        # This marker proves this exact new admission only. A missing
+                        # marker never retrospectively proves a legacy tray start.
+                        prior_runs_unconfirmed = False if prior_record is None else prior_record["prior_runs_unconfirmed"]
+                    else:
+                        prior_budget = _model_request_runs(slot)["current"]
+                        prior_runs_unconfirmed = (prior_record["prior_runs_unconfirmed"]
+                            if prior_record is not None else not (
+                                slot.get("max_model_requests") is not None and slot.get("type") == "once"
+                                and prior_budget is not None and prior_budget["phase"] == "terminal"))
+                        if (prior_record is not None and prior_record["phase"] == "never_admitted"
+                                and not prior_record["durable"] and (
+                                    prior_record["pid"] != os.getpid()
+                                    or prior_record["process_create_time"] != capture_process_create_time(os.getpid()))):
+                            prior_runs_unconfirmed = True
                     controller_run = {
                         "schema": "bach.worker-controller-run.v1", "phase": "admitted",
                         "worker_id": worker_id, "service_instance": _WORKER_SERVICE_INSTANCE,
@@ -5257,6 +5625,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     worker_session.worker_handoff = control.handoff
                     worker_session.worker_task_actions = control.task_actions
                     worker_session.worker_task_binding = control.task_binding
+                    worker_session.worker_model_request_control = control
                     worker_session.require_task_binding = True
                     worker_session.model_request_budget = control.model_request_budget
                     worker_session._persistent_core_model_call_control = (
@@ -5278,6 +5647,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 finally:
                     if worker_session is not None:
                         worker_session._persistent_core_model_call_control = None
+                        worker_session.worker_model_request_control = None
                         worker_session.model_request_budget = None
                     try:
                         loop.run_until_complete(loop.shutdown_asyncgens())
@@ -7095,6 +7465,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 self._json({"error": str(exc)}, 409)
             except Exception:
                 self._json({"error": "Workerlauf nicht verifizierbar"}, 503)
+
+        elif path == "/api/workers/tray-intent/reconcile":
+            response, status = prepare_tray_intent_reconciliation(body)
+            self._json(response, status)
 
         elif path == "/api/workers/run":
             response, status = start_worker_execution(
