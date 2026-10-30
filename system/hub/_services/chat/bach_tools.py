@@ -1054,7 +1054,7 @@ TOOLS_SAFE = [
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen: konkreter Ergebnistext mit tatsächlicher Arbeit und Prüfung; Ergebnis nur mit Werkzeugbeleg als Fertigmeldung abgeben (keine leere JSON-Selbstcheck). Offene Pflichtarbeit oder Teilstand: submit_result mit complete=false, Task bleibt offen. Andere Modi folgen ihrer Review-Regel."},
+        "result": {"type": "string", "description": "Fertiges Ergebnis bei submit_result/done (max. 3000 Zeichen). Werkzeugbeleg Pflicht; complete=false: Teilstand, Task bleibt offen."},
         "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done einer gebundenen Task: true nur nach vollständiger Pflichtarbeit mit bestätigtem Werkzeugbeleg (Toolaufruf); false speichert result als Teilstand, Task bleibt offen."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
