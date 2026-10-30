@@ -62,3 +62,16 @@ Offen bleibt allein die Bestaetigungsschicht des Ausfuehrers: solange
 execute_command keine echte Ausgabe liefert und finish_task deshalb mit
 "Gebundener Testlauf nicht sicher bestaetigt" abbricht, ist weder
 finish_task(2563) ohne WIP noch submit_result(complete=true) zulaessig.
+
+NACHTRAG 3 (Belegbewertung abgeschlossen, vor finalem finish_task-Versuch):
+Diese Datei bleibt ein manueller Statusbericht, kein pytest-Protokoll; file_info zeigt
+mtime = Erstellt 2026-10-30 16:56:34 (keine Modifikation durch einen Testlauf). Als
+Testbeleg ungeeignet; STATUS: KEIN TESTNACHWEIS bleibt gueltig.
+system/tests/test_free_model_pin.py ist vollstaendig gelesen (494 Zeilen, ~25
+Testfunktionen) und inhaltlich konsistent mit free_model_pin.py (Rotation, Fallback,
+success_rates, Tie-Break, Backend-Integration, slots_config).
+task_manage(list) zeigt ausschliesslich Task #2563; die in Nachtrag 1 erwaehnten
+Kind-Tasks #3253/#3254 existieren nicht (Erwaehnung veraltet).
+Es folgt genau ein finaler finish_task(2563, is_wip=false)-Versuch; nur ein
+bestaetigter Testlauf daraus waere der erste belastbare Nachweis. Scheitert er, wird
+der Stand als WIP gesichert und submit_result mit complete=false abgegeben.
