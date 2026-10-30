@@ -796,6 +796,7 @@ def _finish_task(
     3. git add -A && commit [task <id>] message
     4. git push -u origin bach-task/<id>
     5. gh pr create --base main
+    5a. existierender PR wird per gh pr view übernommen
     6. PR-URL in Task eintragen, Status auf review
 
     WIP-Modus:
