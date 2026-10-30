@@ -856,23 +856,106 @@ class TaskHandler(BaseHandler):
         None = lokal weiter (kein Remote-Pfad / kein Worker-Modus).
         (True, remote_row) = Lead-Mutation per Readback bestätigt.
         (False, meldung) = Fail-Closed (Lead unerreichbar) oder Kollision.
+
+        Jeder Ausgang des Remote-Pfads wird als ``remote_write`` in
+        ``task_history`` auditiert (changed_by='rheingold-lead'). Nach
+        bestätigtem Readback wird die lokale Provenienz (source/
+        creation_origin) nachgezogen, damit die Zeile dauerhaft als
+        remote-verwaltet gilt.
         """
         if not task_row_is_remote_managed(existing_row.get("source"), existing_row.get("creation_origin")):
             return None
         if get_lead_config()["mode"] != "worker":
             return None
+
+        payload_json = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+
+        def _short(value, limit=500):
+            """Kürzt Audit-Werte auf eine speicherbare Länge."""
+            text = "" if value is None else str(value)
+            return text if len(text) <= limit else text[: max(limit - 3, 0)] + "..."
+
+        def _audit_lead_route(field_changed, old_value, new_value):
+            """Protokolliert einen Schritt des Lead-Routings (best effort)."""
+            try:
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                conn.execute(
+                    "INSERT INTO task_history "
+                    "(task_id, action, field_changed, old_value, new_value, changed_by, changed_at) "
+                    "VALUES (?, 'remote_write', ?, ?, ?, 'rheingold-lead', ?)",
+                    (
+                        task_id,
+                        _short(field_changed, 120),
+                        _short(old_value),
+                        _short(new_value),
+                        now,
+                    ),
+                )
+                conn.commit()
+            except sqlite3.Error:
+                pass
+
         base = get_rheingold_url()
         if base is None:
+            _audit_lead_route(
+                "lead_route:blocked", payload_json, "Lead unerreichbar (Fail-Closed)"
+            )
             return (False, f"[BLOCKED] Lead unerreichbar, Remote-Task {task_id} nicht lokal geändert (Fail-Closed)")
         ok, body = mutate_task_on_rheingold(base, task_id, payload)
         if not ok:
-            return (False, f"[ERROR] Remote-Task {task_id}: Lead-Mutation fehlgeschlagen ({body.get('error', body)})")
+            detail = body.get("error", body) if isinstance(body, dict) else body
+            _audit_lead_route(
+                "lead_route:error",
+                payload_json,
+                f"Mutation fehlgeschlagen: {detail}",
+            )
+            return (False, f"[ERROR] Remote-Task {task_id}: Lead-Mutation fehlgeschlagen ({detail})")
         remote = readback_task_from_rheingold(base, task_id)
         if remote is None:
+            _audit_lead_route(
+                "lead_route:collision", payload_json, "Readback fehlgeschlagen"
+            )
             return (False, f"[COLLISION] Task {task_id}: Lead-Readback fehlgeschlagen, keine lokale Änderung")
         for field, value in payload.items():
             if str(remote.get(field)) != str(value):
+                _audit_lead_route(
+                    f"lead_route:collision:{field}",
+                    remote.get(field),
+                    value,
+                )
                 return (False, f"[COLLISION] Task {task_id}: Lead-Readback weicht ab ({field}='{remote.get(field)}' != '{value}'), keine lokale Änderung")
+
+        # Provenienz nachziehen: die Zeile gehört jetzt nachweislich dem Lead.
+        old_source = existing_row.get("source")
+        provenance_source = old_source
+        if not (isinstance(provenance_source, str) and provenance_source.startswith("rheingold:")):
+            provenance_source = f"rheingold:{base}"
+        old_origin = existing_row.get("creation_origin")
+        try:
+            ensure_task_creation_origin(conn)
+            conn.execute(
+                "UPDATE tasks SET source = ?, creation_origin = 'remote' WHERE id = ?",
+                (provenance_source, task_id),
+            )
+            conn.commit()
+        except sqlite3.Error as exc:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            _audit_lead_route("lead_route:provenance_failed", payload_json, exc)
+            return (False, f"[ERROR] Task {task_id}: Lead bestätigt, aber lokale Provenienz nicht schreibbar ({exc})")
+
+        if provenance_source != old_source:
+            _audit_lead_route("source", old_source, provenance_source)
+        if old_origin != "remote":
+            _audit_lead_route("creation_origin", old_origin, "remote")
+        try:
+            existing_row["source"] = provenance_source
+            existing_row["creation_origin"] = "remote"
+        except (TypeError, KeyError):
+            # sqlite3.Row o. Ä. ist unveränderlich - Aufrufer liest dann neu.
+            pass
         return (True, remote)
 
     def _edit(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
