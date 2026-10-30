@@ -7,16 +7,37 @@ Verwaltet:
 - Ausgabenbudgets, die vom Automatisierungssystem definiert werden
 """
 
+import sys
 from pathlib import Path
-from .delegation_authority import evaluate_permission, AUTONOMY_LEVELS
-from .automation_master import (
-    get_autonomy,
-    set_autonomy,
-    enable_test_mode,
-    record_metric,
-    set_budget,
-    use_budget,
-)
+
+_MODULE_DIR = str(Path(__file__).resolve().parent)
+if _MODULE_DIR not in sys.path:
+    sys.path.insert(0, _MODULE_DIR)
+
+try:  # Regulärer Paketimport (z. B. system.agents_heart)
+    from .delegation_authority import evaluate_permission, AUTONOMY_LEVELS
+    from .automation_master import (
+        AutomationSettingsError,
+        get_autonomy,
+        register_areas,
+        set_autonomy,
+        enable_test_mode,
+        record_metric,
+        set_budget,
+        use_budget,
+    )
+except ImportError:  # Direktimport bzw. dynamisches Laden als Top-Level-Modul
+    from delegation_authority import evaluate_permission, AUTONOMY_LEVELS  # type: ignore[no-redef]
+    from automation_master import (  # type: ignore[no-redef]
+        AutomationSettingsError,
+        get_autonomy,
+        register_areas,
+        set_autonomy,
+        enable_test_mode,
+        record_metric,
+        set_budget,
+        use_budget,
+    )
 
 # Externe Einfuhr: Definiere hier die Aktionen × Akteure des Systems.
 # Im vollständigen System wird dies aus der Fächerdatei importiert.
@@ -60,12 +81,23 @@ def _load_areas_from_filesystem():
     return ["bildschirmsteuerung", "linkedin", "youtube", "mail"]
 def _ensure_cached():
     if not _effective_autonomy_levels_cache:
-        for area in _load_areas_from_filesystem():
+        areas = _load_areas_from_filesystem()
+        # Bereiche zuerst bekannt machen, sonst lehnt set_autonomy() sie ab.
+        try:
+            register_areas(areas)
+        except AutomationSettingsError:
+            pass
+        for area in areas:
             lvl = get_autonomy(area)
             if lvl is None:
                 # Standardkonfiguration, falls nicht festgelegt
                 lvl = "manuell"
-                set_autonomy(area, lvl)
+                try:
+                    set_autonomy(area, lvl)
+                except AutomationSettingsError:
+                    # Persistieren nicht möglich: Standard nur im Cache halten,
+                    # damit die Initialisierung nicht hart scheitert.
+                    pass
             _effective_autonomy_levels_cache[area] = lvl
 
 # Berechtigungen pro Akteur (rollenbasiert)

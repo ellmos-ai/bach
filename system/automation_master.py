@@ -10,8 +10,24 @@ Verwaltet eine JSON-Konfiguration in _state/areas_autonomy.json:
 
 import json
 import os
+import sys
 from pathlib import Path
-from .delegation_authority import AUTONOMY_LEVELS, DEFAULT_AUTONOMY_LEVEL, _normalize_autonomy_level
+
+try:  # Regulärer Paketimport (z. B. system.automation_master)
+    from .delegation_authority import (
+        AUTONOMY_LEVELS,
+        DEFAULT_AUTONOMY_LEVEL,
+        _normalize_autonomy_level,
+    )
+except ImportError:  # Direktimport bzw. dynamisches Laden als Top-Level-Modul
+    _MODULE_DIR = str(Path(__file__).resolve().parent)
+    if _MODULE_DIR not in sys.path:
+        sys.path.insert(0, _MODULE_DIR)
+    from delegation_authority import (  # type: ignore[no-redef]
+        AUTONOMY_LEVELS,
+        DEFAULT_AUTONOMY_LEVEL,
+        _normalize_autonomy_level,
+    )
 
 _STATE_DIR = Path(__file__).parent / "_state"
 _STATE_DIR.mkdir(exist_ok=True)
@@ -53,6 +69,24 @@ def _validate_level(level):
         _normalize_autonomy_level(level)
     except ValueError as e:
         raise AutomationSettingsError(str(e)) from e
+def register_areas(areas):
+    """
+    Bereiche idempotent in der Konfiguration bekannt machen.
+
+    set_autonomy() akzeptiert nur Bereiche, die in cfg["areas"] stehen. Diese
+    Funktion synchronisiert die Bereichsliste, ohne bestehende Einträge zu
+    verändern, und liefert die aktuelle Liste zurück.
+    """
+    cfg = _load_config()
+    known = cfg.setdefault("areas", [])
+    changed = False
+    for area in areas:
+        if area and area not in known:
+            known.append(area)
+            changed = True
+    if changed:
+        _save_config(cfg)
+    return list(known)
 def set_autonomy(area, level):
     """
     Konfiguriere die Autonomiestufe für einen Bereich.
