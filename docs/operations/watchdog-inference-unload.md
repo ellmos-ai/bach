@@ -43,6 +43,10 @@ ausschliesslich die lokale Ollama-HTTP-API.
 | `is_unloaded(model)` | `True`, wenn kein Eintrag mehr passt. Einziger belastbarer Unload-Beweis. |
 | `wait_until_unloaded(model, ...)` | Poll auf `is_unloaded()` bis Erfolg oder `timeout`. |
 
+Die Zuordnung ist bewusst konservativ: Ein Namens-Treffer gilt auch dann als
+Treffer, wenn der erwartete Digest abweicht. `is_unloaded()` meldet damit nie
+vorschnell «entladen», solange noch ein Modell unter demselben Namen läuft.
+
 Sensoren sind ohne Nebenwirkung: Sie lösen keinen Ladevorgang aus und
 verändern den Ollama-Zustand nicht.
 

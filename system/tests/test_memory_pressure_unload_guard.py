@@ -88,7 +88,15 @@ def test_guard_normalize_digest_and_matching():
     }
     assert matches(entry, "qwen3:8b") is True
     assert matches(entry, "qwen3:8b", "abc123") is True
-    assert matches(entry, "qwen3:8b", "def456") is False
+    # Konservative OR-Semantik (Doc: Name **oder** Digest): ein Namens-Treffer
+    # bleibt gueltig, auch wenn der erwartete Digest abweicht. Andernfalls
+    # wuerde is_unloaded() ein laufendes Modell als entladen melden.
+    assert matches(entry, "qwen3:8b", "def456") is True
+    # Ein Digest-Treffer allein genuegt ebenfalls, auch bei fremdem Namen.
+    assert matches(entry, None, "abc123") is True
+    assert matches(entry, "llama3:8b", "abc123") is True
+    # Weder Name noch Digest passen.
+    assert matches(entry, None, "def456") is False
     assert matches(entry, "llama3:8b") is False
 
 
