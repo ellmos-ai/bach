@@ -54,7 +54,7 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypat
 
         worker_git._store_public_source_registration(repo, target, task_id, {
             "schema": "bach.task-public-source.v1",
-            "task_id": "",
+            "task_id": task_id,
             "repository": "ellmos-ai/bach",
             "origin": ORIGIN,
             "source_ref": "refs/heads/main",
