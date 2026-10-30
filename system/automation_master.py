@@ -8,6 +8,7 @@ Verwaltet eine JSON-Konfiguration in _state/areas_autonomy.json:
 - budgets: Bereich → {limit, used} für Ausgaben (z. B. Marketing-Buchungen)
 """
 
+import copy
 import json
 import os
 import sys
@@ -47,13 +48,16 @@ class AutomationSettingsError(Exception):
     pass
 def _load_config():
     if not _CONFIG_PATH.exists():
-        return DEFAULT_CONFIG.copy()
+        # Tiefe Kopie: sonst würden "levels"/"metrics"/"budgets"/"areas" als
+        # geteilte Objekte in DEFAULT_CONFIG zurückgeschrieben und Zustand
+        # zwischen Aufrufen (und Tests) lecken.
+        return copy.deepcopy(DEFAULT_CONFIG)
     try:
         with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
             cfg = json.load(f)
         # Stelle sicher, dass alle erforderlichen Schlüssel vorhanden sind (Kompatibilität)
         for key in DEFAULT_CONFIG:
-            cfg.setdefault(key, DEFAULT_CONFIG[key])
+            cfg.setdefault(key, copy.deepcopy(DEFAULT_CONFIG[key]))
         return cfg
     except json.JSONDecodeError as e:
         raise AutomationSettingsError(f"Ungültiges JSON in der Automatisierungs-Konfiguration: {e}") from e
