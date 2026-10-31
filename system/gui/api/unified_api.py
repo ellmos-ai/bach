@@ -364,6 +364,10 @@ async def list_agent_blueprints(
         for r in rows:
             item = dict(r)
             item.setdefault("color", None)
+            try:
+                item["derived_from"] = json.loads(item.get("derived_from_json") or "null")
+            except (ValueError, TypeError):
+                item["derived_from"] = None
             item["kind"] = item.get("kind") or "agent"
             item["version"] = item.get("version") or "1.0.0"
             item["start_prompt"] = item.get("start_prompt") or ""
@@ -423,6 +427,7 @@ async def list_agent_blueprints(
             "total_blueprints": len(blueprints),
             "total": len(templates) + len(blueprints),
             "configuration_version": slots["configuration_version"],
+            "blueprint_revision_contract": "bach.blueprint-revisions.v1",
         }
     finally:
         conn.close()
@@ -495,6 +500,90 @@ async def save_agent_blueprint(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         conn.close()
+
+
+def _blueprint_revision_error(exc):
+    if isinstance(exc, KeyError):
+        return HTTPException(404, "Blueprint oder aufgezeichnete Revision nicht gefunden")
+    if isinstance(exc, (RuntimeError, PermissionError)):
+        return HTTPException(409, "Revision oder Quellbindung wurde geändert; neu laden")
+    if isinstance(exc, (ValueError, TypeError)):
+        return HTTPException(422, "Ungültige Revisionsanfrage oder nicht mehr gültige Konfiguration")
+    return HTTPException(503, "Blueprint-Revisionen sind derzeit nicht verfügbar")
+
+
+async def _blueprint_revision_read(request, operation):
+    await asyncio.to_thread(_require_memory_device, request)
+    def read():
+        conn = _get_agent_studio_ro_conn()
+        try:
+            conn.execute("BEGIN")
+            return operation(conn)
+        finally:
+            conn.close()
+    try:
+        return await asyncio.to_thread(read)
+    except (KeyError, RuntimeError, PermissionError, ValueError, TypeError, sqlite3.Error) as exc:
+        raise _blueprint_revision_error(exc) from None
+
+
+@router.get("/agent-studio/blueprints/{blueprint_id}/revisions")
+async def blueprint_revision_history(blueprint_id: int, request: Request,
+                                     limit: int = Query(50, ge=1, le=100),
+                                     before_version: Optional[int] = Query(None, ge=1)):
+    from hub._services.blueprint_revisions import history
+    return await _blueprint_revision_read(request, lambda conn: history(
+        conn, blueprint_id, limit=limit, before_version=before_version))
+
+
+@router.get("/agent-studio/blueprints/{blueprint_id}/revisions/diff")
+async def blueprint_revision_diff(blueprint_id: int, request: Request,
+                                 from_version: int = Query(..., ge=1),
+                                 to_version: int = Query(..., ge=1)):
+    from hub._services.blueprint_revisions import diff_revisions
+    return await _blueprint_revision_read(request, lambda conn: diff_revisions(
+        conn, blueprint_id, from_version, to_version))
+
+
+@router.get("/agent-studio/blueprints/{blueprint_id}/revisions/{version}")
+async def blueprint_revision_content(blueprint_id: int, version: int, request: Request):
+    from hub._services.blueprint_revisions import revision
+    return await _blueprint_revision_read(request, lambda conn: revision(conn, blueprint_id, version))
+
+
+async def _blueprint_revision_write(request, operation):
+    await asyncio.to_thread(_require_memory_device, request)
+    def write():
+        conn = _get_conn()
+        try:
+            return operation(conn)
+        finally:
+            conn.close()
+    try:
+        return await asyncio.to_thread(write)
+    except (KeyError, RuntimeError, PermissionError, ValueError, TypeError, sqlite3.Error) as exc:
+        raise _blueprint_revision_error(exc) from None
+
+
+@router.post("/agent-studio/blueprints/{blueprint_id}/revisions/{version}/restore")
+async def blueprint_revision_restore(blueprint_id: int, version: int, request: Request,
+                                     payload: Dict[str, Any] = Body(...)):
+    if set(payload) != {"expected_version"}:
+        raise HTTPException(422, "Nur die aktuelle expected_version angeben")
+    from hub._services.blueprint_revisions import restore_revision
+    return await _blueprint_revision_write(request, lambda conn: restore_revision(
+        conn, blueprint_id, version, expected_version=payload["expected_version"]))
+
+
+@router.post("/agent-studio/blueprints/{blueprint_id}/clone")
+async def blueprint_revision_clone(blueprint_id: int, request: Request,
+                                   payload: Dict[str, Any] = Body(...)):
+    if set(payload) != {"name", "expected_version", "source_sha256"}:
+        raise HTTPException(422, "Name und exakte Quellversion mit Inhaltshash angeben")
+    from hub._services.blueprint_revisions import clone_blueprint
+    return await _blueprint_revision_write(request, lambda conn: clone_blueprint(
+        conn, blueprint_id, name=payload["name"], expected_version=payload["expected_version"],
+        source_sha256=payload["source_sha256"]))
 
 
 @router.post("/agent-studio/bootstrap")
