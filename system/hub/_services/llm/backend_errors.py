@@ -39,6 +39,10 @@ def _normalize_request_error(raw):
     if status is not None:
         result["status_code"] = status
         message += f" HTTP {status}."
+    retry = raw.get("retry_after_seconds")
+    if status in {429, 504} and type(retry) is int and 0 <= retry <= 2_147_483_647:
+        result["retry_after_seconds"] = retry
+        message += f" Retry-After: {retry} Sekunden bis zu einem neuen Versuch."
     result["message"] = message
     return result
 
@@ -115,7 +119,8 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     if isinstance(error, dict):
         error = error.get("message")
     text = " ".join(error.lower().split()) if isinstance(error, str) else ""
-    monthly = status_code in (None, 429) and "monthly usage limit reached" in text
+    # Ollama Cloud words it "you (...) have reached your monthly usage limit".
+    monthly = status_code in (None, 429) and "monthly usage limit" in text and "reached" in text
     tool_parse = (not monthly and status_code != 429
                   and "xml syntax error" in text and "<function>" in text
                   and "</parameter>" in text)
@@ -132,6 +137,39 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     if retry is not None:
         raw["retry_after_seconds"] = retry
     return normalize_backend_error(raw)
+
+
+def cloud_call_retry_eligible(detail):
+    """Allow typed cloud failures only; the caller must reject partial output."""
+    error = normalize_backend_error(detail)
+    if not error or error.get("quota_exceeded") is not False:
+        return False
+    if (error.get("status_code") == 429
+            and (error["provider"], error["kind"]) in {
+                ("ollama", "rate_limited"), ("openrouter", "http_error")}):
+        return True
+    if (error["provider"] == "openrouter"
+            and error["kind"] == "http_error"
+            and error.get("status_code") == 504):
+        return True
+    return (error["provider"] == "openrouter"
+            and error["kind"] in {
+                "connect_timeout", "read_timeout", "write_timeout", "pool_timeout",
+                "transport_timeout", "connection_error", "transport_error"})
+
+
+def cloud_call_retry_delay(detail, *, retries, waited_seconds):
+    """Bound one call to three retries/900s; transport backs off at 5/10/20s."""
+    if (type(retries) is not int or not 0 <= retries < 3
+            or type(waited_seconds) not in (int, float)
+            or not math.isfinite(waited_seconds) or waited_seconds < 0):
+        return None
+    error = normalize_backend_error(detail)
+    if not cloud_call_retry_eligible(error):
+        return None
+    base = 60 if error.get("status_code") == 429 else 5
+    delay = max(base * (2 ** retries), error.get("retry_after_seconds", 0))
+    return delay if waited_seconds + delay <= 900 else None
 
 
 class BackendRequestFailure(RuntimeError):
@@ -179,6 +217,10 @@ class BackendRequestFailure(RuntimeError):
                   "error_type": _REQUEST_ERROR_KINDS[kind][0], "quota_exceeded": False}
         if status is not None:
             detail["status_code"] = status
+        if status in {429, 504}:
+            retry = parse_retry_after(exc.response.headers.get("retry-after"))
+            if retry is not None:
+                detail["retry_after_seconds"] = retry
         return cls(detail)
 
 

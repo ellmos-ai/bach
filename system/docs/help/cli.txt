@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Zuletzt validiert: 2026-03-04 (Root-Docs-Review)
-# Nächste Prüfung: 2026-09-04
+# Zuletzt validiert: 2026-05-30 (Registry-Abgleich hub/*.py + core/aliases.py)
+# Nächste Prüfung: 2026-11-30
 
 CLI-KONVENTIONEN (v2.0 Registry-Based)
 =======================================
@@ -139,18 +139,47 @@ Wenn kein Handler gefunden wird, versucht BACH ein Tool aus tools/:
   bach skill_export  → tools/skill_export.py
   bach backup_manager → tools/backup_manager.py
 
-REGISTRIERTE HANDLER (Stand 2026-03-04):
+REGISTRIERTE HANDLER (Stand 2026-05-30):
 ----------------------------------------
-112+ Handler via Auto-Discovery (hub/*.py):
-abo, agents, ati, backup, beat, bericht, between, calendar, chain, clock,
-connections, connector, consolidation, contact, context, countdown, cv,
-daemon (=scheduler), data, db, dist, doc, docs, email, extensions, fs, gesundheit, gui,
-haushalt, healthcheck, help, hooks, inject, lang, lesson, logs, maintain, mediplaner,
-mem, memory, mount, msg, notify, obsidian, ollama, partner, path, profile,
-profiler, recurring, reflection, routine, scan, session, shutdown, skill,
-skills, smarthome, snapshot, sources, startup, status, steuer, sync, task,
-test, timer, tokens, tool, tools, trash, tuev, update, usecase,
-versicherung, wiki
+Handler werden zur Laufzeit via Auto-Discovery aus hub/*.py registriert
+(system/core/registry.py, Klassenscan; nur lokal definierte Klassen mit
+profile_name). Folgende profile_name sind bestätigt (alphabetisch):
+abo, agent, agents, api, apiprober, ati, backup, beat, bericht, between,
+calendar, chain, claude-bridge, clock, cloud, clutch, connections, connector,
+consolidation, contact, context, cookbook, countdown, cv, daily-agent, data,
+db, denkarium, dist, doc, docs, email, extensions, fs, gesundheit, gui,
+haushalt, healthcheck, help, hooks, inject, integration, lang, learning,
+lesson, literatur, logs, maintain, mcp, media, mediplaner, mem, memory,
+mount, msg, news, newspaper, notespace, notify, obsidian, ollama, partner,
+path, pipeline, press, profile, profiler, prompt, recurring, reflection,
+restore, routine, sandbox, scan, search, security, session, settings, setup,
+shared-mem, shutdown, skill, skills, smarthome, snapshot, sources, startup,
+status, steuer, sync, task, telemetry, test, theme, timer, tokens, tool, tools,
+trash, tuev, update, upgrade, usecase, versicherung, watcher, web-parse,
+web-scrape, wiki, worker-policy
++ weitere Handler via Auto-Discovery (hub/*.py; Liste oben ist der geprüfte Stand).
+Mehrfach-Handler: time (clock, timer, countdown, between, beat), tuev (tuev, usecase).
+
+ALIAS-TABELLE (core/aliases.py, COMMAND_ALIASES):
+----------------------------------------
+Ein Alias wird beim Start vor der Handler-Auflösung ersetzt.
+  Alias         Ziel-Handler
+  mem           memory
+  cv            curriculum
+  msg           messages
+  tool          tools
+  skill         skills
+  data          data_analysis
+  mail          email
+  hook          hooks
+  plugin        plugins
+  daemon        scheduler
+  health        healthcheck
+  swarm         schwarm
+  consolidate   consolidation
+
+Hinweis: `bach daemon` ist kein eigener Handler, sondern der Alias auf
+scheduler. Default-Operationen je Handler: aliases.py, DEFAULT_OPERATIONS.
 
 SIEHE AUCH:
 ----------------------------------------

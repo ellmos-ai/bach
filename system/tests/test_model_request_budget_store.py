@@ -79,9 +79,14 @@ def _admit(path: Path, *, task_id: int = TASK_ID, limit: int = 8,
 
 
 def _admit_same_service_run(path: Path, task_id: int, client, telegram) -> dict:
-    """Create a genuine active record owned by this service process."""
+    """Create a pre-fence budget-only run owned by this service process."""
     from hub.agent_process_provider import capture_process_create_time
 
+    # This migration fixture represents a run admitted before universal
+    # controller identities existed, rather than a never-admitted new profile.
+    config = slots.load_slots_config(str(path), strict=True)
+    slots._model_request_worker(config, WORKER_ID).pop("_controller_run", None)
+    slots.save_slots_config(config, str(path))
     record = _new_record(path, task_id=task_id, limit=5)
     record["service_instance"] = telegram._WORKER_SERVICE_INSTANCE
     record["process_create_time"] = capture_process_create_time(os.getpid())

@@ -1,0 +1,16 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+BACH GUI THEMES
+===============
+
+Show theme:
+  bach theme status
+
+Set theme:
+  bach theme set dark
+  bach theme set light
+  bach theme set warm
+  bach theme set custom --accent=#ff6b8a --bg_dark=#140e28
+
+The selection is stored in data/user_config.json under gui.theme and
+is shared by the CLI, the library API and the web GUI. Custom colors
+only accept values in the format #RRGGBB. A dry run does not write the configuration.

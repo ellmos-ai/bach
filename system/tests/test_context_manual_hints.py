@@ -94,7 +94,7 @@ def test_quoted_or_invalid_complete_python_argument_is_preserved(target):
 @pytest.mark.parametrize('hint', ['python tools/absent.py', 'python "absent.py"',
                                  'python3 absent.py', 'python ../outside.py'])
 def test_unknown_python_paths_remain_filtered(hint):
-    import bach_api
+    from system import bach_api
     proxy = bach_api._InjectorProxy()
     proxy.set_mode('api')
     assert proxy._filter_cli(['[KONTEXT] ' + hint]) == []
@@ -119,7 +119,7 @@ def test_legacy_selects_visible_hint_before_usage(monkeypatch):
 
 
 def test_api_passes_mode_before_context_selection(monkeypatch):
-    import bach_api
+    from system import bach_api
     seen = []
 
     class System:
@@ -137,7 +137,7 @@ def test_api_passes_mode_before_context_selection(monkeypatch):
 
 
 def test_actual_legacy_api_does_not_consume_cooldown_for_unknown_hint(tmp_path, monkeypatch):
-    import bach_api
+    from system import bach_api
     ci = injectors.ContextInjector
     system = injectors.InjectorSystem(tmp_path)
     monkeypatch.setattr(ci, 'base_path', tmp_path)

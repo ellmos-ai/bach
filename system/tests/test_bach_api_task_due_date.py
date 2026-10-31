@@ -12,7 +12,7 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
-from bach_api import BachAPIError, _TaskProxy
+from system.bach_api import BachAPIError, _TaskProxy
 
 
 def test_structured_task_add_forwards_due_date_keyword(monkeypatch):
@@ -295,7 +295,7 @@ def test_structured_task_reap(monkeypatch):
 
 
 def _task_db(tmp_path, monkeypatch, rows):
-    import bach_api
+    from system import bach_api
 
     db = tmp_path / "bach.db"
     conn = sqlite3.connect(db)
@@ -321,3 +321,70 @@ def test_task_list_status_all_returns_every_status(tmp_path, monkeypatch):
 def test_task_list_status_all_on_empty_db_is_empty_not_error(tmp_path, monkeypatch):
     _task_db(tmp_path, monkeypatch, [])
     assert _TaskProxy("task").list(status="all") == []
+
+
+@pytest.mark.parametrize(
+    "call_args, call_kwargs, expected_tail",
+    [
+        ((), {"creation_origin": "agent:foerderplaner"}, ("--creation-origin", "agent:foerderplaner")),
+        (("--creation-origin", "agent:foerderplaner"), {}, ("--creation-origin", "agent:foerderplaner")),
+        (("--creation-origin=agent:foerderplaner",), {}, ("--creation-origin", "agent:foerderplaner")),
+    ],
+)
+def test_structured_task_add_forwards_creation_origin_forms(
+    monkeypatch, call_args, call_kwargs, expected_tail
+):
+    proxy = _TaskProxy("task")
+    captured = {}
+
+    def fake_raw(operation, *raw_args):
+        captured["operation"] = operation
+        captured["args"] = raw_args
+        return True, "[OK] Task 77 erstellt: Ursprung"
+
+    monkeypatch.setattr(proxy, "raw", fake_raw)
+    monkeypatch.setattr(
+        proxy,
+        "show",
+        lambda task_id: {"id": task_id, "title": "Ursprung", "creation_origin": "agent:foerderplaner"},
+    )
+
+    created = proxy.add("Ursprung", *call_args, **call_kwargs)
+
+    assert captured["operation"] == "add"
+    assert captured["args"][-2:] == expected_tail
+    assert created["creation_origin"] == "agent:foerderplaner"
+
+
+def test_structured_task_add_persists_creation_origin_with_countercheck(tmp_path, monkeypatch):
+    import bach_api
+    from hub.task import TaskHandler
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    db_path = data_dir / "bach.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE tasks ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, status TEXT, priority TEXT, "
+        "category TEXT, description TEXT, assigned_to TEXT, delegated_to TEXT, depends_on TEXT, "
+        "created_at TEXT, completed_at TEXT, updated_at TEXT, due_date TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("BACH_RHEINGOLD_SYNC", "0")
+    monkeypatch.setattr(bach_api, "_resolve_db_path", lambda: db_path)
+    handler = TaskHandler(base_path=tmp_path)
+    assert handler.db_path == db_path
+
+    proxy = _TaskProxy("task")
+    monkeypatch.setattr(proxy, "raw", lambda op, *a: handler.handle(op, list(a)))
+
+    with_origin = proxy.add("Mit Ursprung", creation_origin="agent:foerderplaner#2620")
+    assert with_origin["creation_origin"] == "agent:foerderplaner#2620"
+    assert proxy.show(with_origin["id"])["creation_origin"] == "agent:foerderplaner#2620"
+
+    without_origin = proxy.add("Ohne Ursprung")
+    assert without_origin.get("creation_origin") is None
+    assert proxy.show(without_origin["id"]).get("creation_origin") is None

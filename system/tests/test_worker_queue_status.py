@@ -82,6 +82,47 @@ def test_selection_reasons_share_actual_constraints(mem_db, fields, slot, reason
     assert not client.read(tid).leased
 
 
+@pytest.mark.parametrize("backend,model", [
+    ("openrouter", "cloud-model"),
+    ("ollama-cloud", "cloud-model"),
+    ("ollama", "glm-5.3:cloud"),
+])
+def test_cloud_workers_take_any_category_with_short_lease(mem_db, backend, model):
+    tid = _insert_task(mem_db)
+    columns = {row[1] for row in mem_db.execute("PRAGMA table_info(tasks)")}
+    if "category" not in columns:
+        mem_db.execute("ALTER TABLE tasks ADD COLUMN category TEXT")
+    mem_db.execute("UPDATE tasks SET category='GUI' WHERE id=?", (tid,))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    reports = []
+    binding = select(client, reports, {
+        "id": "cloud-slot", "backend": backend, "model": model,
+        "pickup_filter": {"enabled": True, "categories": ["WORKER"]},
+    })
+
+    assert binding.task_id == tid
+    assert binding._ack.ttl_profile == "S"
+    assert reports[0]["state"] == "acquired"
+
+
+def test_cloud_category_flexibility_keeps_priority_filter(mem_db):
+    tid = _insert_task(mem_db)
+    columns = {row[1] for row in mem_db.execute("PRAGMA table_info(tasks)")}
+    if "category" not in columns:
+        mem_db.execute("ALTER TABLE tasks ADD COLUMN category TEXT")
+    if "priority" not in columns:
+        mem_db.execute("ALTER TABLE tasks ADD COLUMN priority TEXT")
+    mem_db.execute("UPDATE tasks SET category='GUI', priority='P3' WHERE id=?", (tid,))
+    mem_db.commit()
+    reports = []
+    assert select(TaskLeaseClient(conn=mem_db), reports, {
+        "id": "cloud-slot", "backend": "openrouter", "model": "cloud-model",
+        "pickup_filter": {"enabled": True, "categories": ["WORKER"], "priorities": ["P1"]},
+    }) is None
+    assert reports[0]["rejected_counts"] == {"pickup_priority": 1}
+
+
 def test_explicit_assignment_and_real_ack_are_separate_from_generic_filters(mem_db):
     tid = _insert_task(mem_db)
     client = TaskLeaseClient(conn=mem_db)
@@ -136,6 +177,47 @@ def test_explicit_foreign_lease_is_diagnosed_without_changing_exception_or_holde
     assert not report["scan_complete"]
     assert client.read(tid, lease_id=holder.lease_id, now=T0).own
     assert holder.lease_id not in str(report)
+
+
+@pytest.mark.parametrize("status", ["done", "blocked"])
+def test_rejected_fixed_assignment_is_released_and_next_task_is_claimed(mem_db, status):
+    pinned = _insert_task(mem_db)
+    available = _insert_task(mem_db)
+    mem_db.execute("UPDATE tasks SET status=? WHERE id=?", (status, pinned))
+    mem_db.commit()
+    client = TaskLeaseClient(conn=mem_db)
+    slot = {"id": "our-slot", "task_id": pinned}
+    releases = []
+    reports = []
+    binding = select(client, reports, slot,
+        on_fixed_task_rejected=lambda task_id, reason, version:
+            (releases.append((task_id, reason, version)), slot.update(task_id=None)))
+    assert binding is not None and binding.task_id == available
+    assert [(task_id, reason) for task_id, reason, _ in releases] == [(pinned, "not_claimable")]
+    assert isinstance(releases[0][2], str)
+    report, = reports
+    assert report["state"] == "acquired" and report["selected_task_id"] == available
+    assert report["rejected_counts"].get("not_claimable") == 1
+
+
+def test_rejected_fixed_assignment_continues_after_completion_guard(mem_db, monkeypatch):
+    pinned, available = _insert_task(mem_db), _insert_task(mem_db)
+    client = TaskLeaseClient(conn=mem_db)
+    original = client.acquire
+    def deny_pinned(task_id, **kwargs):
+        if task_id == pinned:
+            raise LeaseDeniedError(task_id, "completion_guard", {
+                "task_id": task_id, "reason": "completion_guard"})
+        return original(task_id, **kwargs)
+    monkeypatch.setattr(client, "acquire", deny_pinned)
+    slot = {"id": "our-slot", "task_id": pinned}
+    reports, releases = [], []
+    binding = select(client, reports, slot,
+        on_fixed_task_rejected=lambda task_id, reason, version:
+            (releases.append((task_id, reason)), slot.update(task_id=None)))
+    assert binding.task_id == available
+    assert releases == [(pinned, "completion_guard")]
+    assert reports[0]["rejected_counts"].get("completion_guard") == 1
 
 
 @pytest.mark.parametrize("explicit", [True, False])
