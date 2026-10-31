@@ -1,0 +1,83 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-21
+# Sources: hub/model_sockets.py, hub/_services/chat/model_sockets.py, hub/_services/chat/local_model_catalog.py, core/registry.py
+
+LOCAL MODEL SOCKETS
+===================
+
+Open this help topic with:
+bach help model-sockets
+
+The CLI manages local model offers and bindings between existing agent profiles
+and model sockets. Configuration is stored in BACH's existing slots
+configuration. These commands do not load or start a model and do not start a
+worker.
+
+COMMANDS
+--------
+bach model-sockets list
+    Reads the configuration and reports fields including
+    configuration_version, migration_required, socket IDs and binding IDs.
+    The read does not persist a migration. For a legacy configuration, list
+    may show a projected view.
+
+bach model-sockets catalog
+    Reads bounded metadata from configured local providers. The current
+    metadata adapter reads Ollama; LM Studio reports
+    capability_adapter_pending. A catalog entry does not prove successful
+    inference, model residency, or available capacity. This command does not
+    pull, load, or start a model.
+
+bach model-sockets migrate --version VERSION_FROM_CURRENT_LIST
+    Performs an explicit migration when list reports migration_required=true.
+    The one-time migration adds the model socket registry and preserves
+    existing profiles, progress, and unknown configuration fields.
+
+bach model-sockets configure --backend BACKEND --model MODEL --version VERSION_FROM_CURRENT_LIST
+    Registers or edits a local model offer. BACKEND is ollama or lmstudio.
+    Optional: --enabled true|false, --max-active-slots NUMBER
+    (1 to 1000), and --residency-policy exclusive|shared. Cloud models are not
+    local sockets.
+
+bach model-sockets bind --agent AGENT_ID --socket SOCKET_ID --version VERSION_FROM_CURRENT_LIST
+    Binds an existing agent profile to an existing socket.
+    Optional: --enabled true|false, --priority foreground|background, and
+    --context-tokens NUMBER (1 to 1,048,576).
+
+bach model-sockets unbind --binding BINDING_ID --version VERSION_FROM_CURRENT_LIST
+    Removes the specified binding.
+
+VERSION AND WRITE RULES
+-----------------------
+Before each write, run bach model-sockets list and pass the current
+configuration_version unchanged as --version. Mutations use compare-and-swap
+and check write locks. On a version conflict, run list again and reconcile
+the intended change against the current state; the CLI does not retry a
+rejected mutation automatically.
+
+The handler has an internal dry_run parameter, but the current bach CLI
+dispatcher does not provide a usable dry-run switch for model-sockets.
+--dry-run and -n are passed to the operation parser and rejected. All CLI
+mutation commands therefore require --version.
+
+A successful real mutation confirms only that configuration was saved:
+worker_started=false and runtime_verified=false. It does not confirm a worker
+start, model use, or runtime verification.
+
+Values such as max_active_slots and residency_policy are configuration, not
+measurements. This CLI does not establish runtime occupancy or actual model
+residency. Successful responses are JSON; --json can also be supplied.
+
+EXAMPLE
+-------
+Replace the placeholders with values from your environment.
+
+bach model-sockets list
+bach model-sockets configure --backend ollama --model MODEL_NAME --version VERSION_FROM_CURRENT_LIST
+bach model-sockets list
+bach model-sockets bind --agent AGENT_ID --socket SOCKET_ID --version VERSION_FROM_CURRENT_LIST
+
+RELATED HELP
+------------
+bach help ollama
+bach help agent_launcher
