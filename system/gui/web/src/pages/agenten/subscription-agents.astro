@@ -1,0 +1,38 @@
+---
+import BachLayout from "../../layouts/BachLayout.astro";
+---
+<BachLayout title="Subscription-Prompt-Agents" currentPath="/agenten/subscription-agents">
+  <header class="chain-header"><div><p class="chain-eyebrow">Agenten</p><h1>Subscription-Prompt-Agents</h1><p>Wiederkehrende Prompt-Agenten mit eigenem Abo-Prompt, Heartbeat und automatischem Logout nach Ablauf.</p></div>
+    <div class="chain-actions"><button class="btn" id="sa-refresh">Aktualisieren</button><button class="btn btn-primary" id="sa-new">Neuer Prompt-Agent</button><button class="btn" id="sa-new-prompt">Neuer Abo-Prompt</button><a class="btn" href="/agenten/running">Living &amp; Running</a></div>
+  </header>
+  <p id="sa-status" role="status" aria-live="polite">Prompt-Agenten und Abo-Prompts werden geladen…</p>
+  <p id="sa-count">0 Agenten · 0 Prompts</p>
+  <section><h2>Abo-Prompts</h2><p>Ein Abo-Prompt gehört genau einem Prompt-Agenten. Wird der Agent gelöscht, verschwindet sein Prompt mit.</p><div id="sa-prompts" class="chain-grid"></div></section>
+  <section><h2>Prompt-Agenten</h2><p>Nur lokale Modelle sind zulässig; Cloud- und interne Modelle sind gesperrt. Nach Ablauf des Heartbeats beendet sich der Agent selbst.</p><div id="sa-grid" class="chain-grid"></div></section>
+  <section id="sa-editor" class="chain-dialog" hidden aria-expanded="false">
+    <form id="sa-form"><header class="chain-header"><h2 id="sa-editor-title">Neuer Prompt-Agent</h2><button type="button" class="btn" data-close="sa-editor">Schließen</button></header>
+      <div class="chain-fields"><label>Kennung<input id="sa-name" required maxlength="80" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" /></label>
+      <label>Bezeichnung<input id="sa-title" maxlength="200" /></label>
+      <label>Modell<input id="sa-model" maxlength="120" placeholder="z. B. llama3.1:8b" /><small>Nur lokale Modelle – Cloud-/interne Modelle sind gesperrt.</small></label>
+      <label>Blueprint<select id="sa-blueprint"><option value="">Kein Blueprint</option></select></label>
+      <label>Skills<input id="sa-skills" maxlength="4000" placeholder="kommagetrennt, z. B. recherche,struktur" /></label></div>
+      <label>Beschreibung<textarea id="sa-description" rows="2" maxlength="20000"></textarea></label>
+      <label>Abo-Prompt<textarea id="sa-prompt" rows="5" maxlength="120000" placeholder="Welchen Auftrag soll der Agent bei jedem Beat abarbeiten?"></textarea></label>
+      <div id="sa-avatar"></div><label>Avatar-Bild (PNG, JPEG oder WebP)<input id="sa-avatar-upload" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+      <p id="sa-editor-status" role="status" aria-live="polite"></p>
+      <footer class="chain-actions"><button type="button" class="btn" data-close="sa-editor">Abbrechen</button><button class="btn btn-primary" id="sa-save">Speichern</button></footer>
+    </form>
+  </section>
+  <section id="sa-prompt-editor" class="chain-dialog" hidden aria-expanded="false">
+    <form id="sa-prompt-form"><header class="chain-header"><h2 id="sa-prompt-title">Neuer Abo-Prompt</h2><button type="button" class="btn" data-close="sa-prompt-editor">Schließen</button></header>
+      <label>Kennung<input id="sa-prompt-name" required maxlength="80" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" /></label>
+      <label>Prompt<textarea id="sa-prompt-text" rows="8" maxlength="120000" required></textarea></label>
+      <p id="sa-prompt-status" role="status" aria-live="polite"></p>
+      <footer class="chain-actions"><button type="button" class="btn" data-close="sa-prompt-editor">Abbrechen</button><button class="btn btn-primary" id="sa-prompt-save">Speichern</button></footer>
+    </form>
+  </section>
+  <script>import "../../scripts/subscription-agents.mjs";</script>
+  <style>
+    .chain-header{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-end;justify-content:space-between;margin-bottom:1rem}.chain-eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.72rem;color:var(--muted,#6b7280);margin:0 0 .25rem}.chain-actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}.chain-grid{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fill,minmax(18rem,1fr));margin:1rem 0 2rem}.chain-dialog{border:1px solid var(--border,#d1d5db);border-radius:.75rem;max-width:44rem;width:92vw;padding:1.25rem;background:var(--surface,#fff);color:inherit}.chain-dialog::backdrop{background:rgba(15,23,42,.45)}.chain-fields{display:grid;gap:.75rem;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));margin:.75rem 0}.chain-dialog label{display:block;margin:.5rem 0;font-size:.9rem}.chain-dialog input,.chain-dialog select,.chain-dialog textarea{width:100%;box-sizing:border-box;margin-top:.25rem}.chain-dialog small{display:block;margin-top:.25rem;color:var(--muted,#6b7280)}.chain-card{border:1px solid var(--border,#d1d5db);border-radius:.6rem;padding:.75rem;display:flex;flex-direction:column;gap:.5rem;background:var(--surface,#fff)}.chain-meta{display:flex;flex-wrap:wrap;gap:.35rem .75rem;font-size:.8rem;color:var(--muted,#6b7280)}.chain-badge{display:inline-block;border-radius:999px;padding:.05rem .5rem;font-size:.72rem;border:1px solid currentColor}.chain-empty{margin:.5rem 0;padding:.75rem;border:1px dashed var(--border,#d1d5db);border-radius:.5rem;color:var(--muted,#6b7280)}[data-error="true"]{color:#b91c1c}.chain-dialog[hidden]{display:none}.chain-badge--running{color:#15803d}.chain-badge--stopped{color:#6b7280}.chain-badge--expired{color:#b91c1c}.chain-badge--idle{color:inherit}.chain-prompt-text{cursor:pointer}
+  </style>
+</BachLayout>
