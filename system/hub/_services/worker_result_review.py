@@ -492,15 +492,38 @@ def prepare_external_review_task(conn, task_id, *, operator_token, expected=None
 
 
 def _prepare_target_review(conn, target, authority, *, operator_token=None,
-                            diff_chars=0, diff_truncated=False, diff_sha256=""):
-    """One ordinary review task for either proven source; DB CAS only here."""
+                            diff_chars=0, diff_truncated=False, diff_sha256="",
+                            diff_pages=None):
+    """One ordinary review task for either proven source; DB CAS only here.
+
+    diff_pages (optional): je Diff-Seite das sha256 des Seitentexts, in
+    Seitenreihenfolge. Die Seitenhashes reisen im Intent mit, damit das
+    Accept-Gate spaeter genau diese Hashes gegen die Verdict-Seiten binden
+    kann. Fehlt diff_pages bei paging_required, bleibt die Anlage zulaessig
+    (kein Crash), aber es kann kein approved-Grant entstehen.
+    """
     if conn.in_transaction:
         raise ValueError("Reviewanlage benötigt eine freie DB-Verbindung")
+    if diff_pages is None:
+        diff_pages = []
     if (type(diff_chars) is not int or diff_chars < 0
             or type(diff_truncated) is not bool
+            or type(diff_sha256) is not str
             or (diff_sha256 != "" and not _HEX.fullmatch(diff_sha256))
-            or (diff_truncated and (diff_chars <= 0 or diff_sha256 == ""))):
+            or (diff_truncated and (diff_chars <= 0 or diff_sha256 == ""))
+            or type(diff_pages) is not list
+            or any(type(page) is not str or not _HEX.fullmatch(page)
+                   for page in diff_pages)):
         raise ValueError("Unvollständige Review-Diff-Metadaten")
+    # Paging-Plan vor der ersten DB-Anweisung: die Seiten-Erwartung ist ohne
+    # DB-Zustand berechenbar und muss die Laengenpruefung mitbestimmen.
+    chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
+    max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
+    paging_required = bool(diff_truncated
+                           or diff_chars > max(0, max_diff_chars - chunk))
+    page_count = max(1, (int(diff_chars) + chunk - 1) // chunk)
+    if diff_pages and len(diff_pages) != page_count:
+        raise ValueError("Seitenanzahl passt nicht zum Diff")
     conn.execute("BEGIN IMMEDIATE")
     try:
         if source_kind(target) == "external_attested":
@@ -519,11 +542,6 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None,
                 return result
             now = _utcnow()
             stamp = now.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
-            max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
-            paging_required = bool(diff_truncated
-                                   or diff_chars > max(0, max_diff_chars - chunk))
-            page_count = max(1, (int(diff_chars) + chunk - 1) // chunk)
             if paging_required:
                 description = ("Controllergebundenes Ergebnisreview; Ziel nur aus privatem Intent lesen. "
                                f"Diff zu lang für ein Slot-Fenster: hole Diff-Seiten via Reviewer-Tool "
@@ -554,7 +572,8 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None,
                        "author_id": authority["author_id"],
                        "policy_version": authority["policy_version"],
                        "identity_version": authority["identity_version"], "diff_chars": diff_chars,
-                       "diff_truncated": diff_truncated, "diff_sha256": diff_sha256}
+                       "diff_truncated": diff_truncated, "diff_sha256": diff_sha256,
+                       "diff_pages": list(diff_pages)}
             digest = _digest(receipt)
             event_id = _history(conn, target["task_id"], "worker_result_review_task", _ACTOR,
                                 now, {"intent_sha256": digest, "review_task_id": review_task_id,
@@ -618,7 +637,9 @@ def _paging_plan(receipt):
     # pruefbar, wenn er in das modellierte Restfenster passt.
     paging_required = diff_truncated or diff_chars > max(0, max_diff_chars - chunk)
     page_count = max(1, (diff_chars + chunk - 1) // chunk)
-    return paging_required, page_count, diff_sha256
+    # Intentgebundene Seitenhashes: das Verdict muss exakt diese Seiten liefern.
+    expected_pages = receipt.get("diff_pages") or []
+    return paging_required, page_count, diff_sha256, expected_pages
 
 
 def _grant_valid(grant):
@@ -652,7 +673,7 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
         if target_pair is None:
             return None
         target, authority = target_pair
-        paging_required, _page_count, diff_sha256 = _paging_plan(found["receipt"])
+        paging_required, _page_count, diff_sha256, _expected = _paging_plan(found["receipt"])
         # Fail-closed: gekuerzter (oder nicht ins Restfenster passender) Diff
         # ohne diff_sha256 ist nicht seitenpruefbar und damit nicht reviewbar.
         if paging_required and not diff_sha256:
@@ -1398,13 +1419,19 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                 or authority["identity_version"] != grant.identity_version
                 or target["result_revision"] != grant.target_revision):
             return None
-        paging_required, page_count, diff_sha256 = _paging_plan(found["receipt"])
-        if paging_required:
-            if verdict["status"] == "approved":
-                pages = verdict.get("diff_pages", [])
-                if (diff_sha256 == "" or len(pages) != page_count
-                        or any(type(page) is not dict or page.get("page") != index + 1
-                               for index, page in enumerate(pages))):
+        paging_required, page_count, diff_sha256, expected = _paging_plan(found["receipt"])
+        pages = verdict.get("diff_pages") or []
+        # Approval nur mit vollstaendigen, an diff_sha256 und Intent gebundenen
+        # Seitenhashes: Anzahl, Nummerierung und Hash muessen exakt passen.
+        if paging_required and verdict["status"] == "approved":
+            if (diff_sha256 == "" or not expected or len(expected) != page_count
+                    or len(pages) != page_count):
+                return None
+            for index, page in enumerate(pages):
+                if (type(page) is not dict or page.get("page") != index + 1
+                        or type(page.get("sha256")) is not str
+                        or not _HEX.fullmatch(page.get("sha256"))
+                        or page["sha256"] != expected[index]):
                     return None
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -1474,13 +1501,16 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                          (grant.task_id, target["task_id"], target["result_id"],
                           target["result_revision"], child["result_id"], _json(receipt),
                           digest, event_id))
-            if "diff_pages" in verdict:
-                for page in verdict["diff_pages"]:
+            if (paging_required and pages and expected
+                    and len(expected) == page_count and len(pages) == page_count):
+                # Persistiert werden ausschliesslich die an den Intent gebundenen
+                # Seitenhashes; page_no stammt aus der Positionsnummer.
+                for index, page_sha256 in enumerate(expected):
                     conn.execute("INSERT INTO worker_result_review_pages "
                                  "(receipt_sha256,target_result_id,target_revision,diff_sha256,"
                                  "page_no,page_sha256,created_at) VALUES (?,?,?,?,?,?,?)",
                                  (digest, target["result_id"], target["result_revision"],
-                                  diff_sha256, page["page"], page["sha256"], _local_naive(now)))
+                                  diff_sha256, index + 1, page_sha256, _local_naive(now)))
             # The performed review is finished administrative work. This
             # accepts only its own verdict record, never the target's result.
             from .task_result_service import _Acceptance, _status_revision

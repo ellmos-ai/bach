@@ -676,6 +676,25 @@ def test_review_task_requires_a_private_fresh_run_grant(review_world):
             now=T0)
 
 
+def test_paged_review_approved_rejected_when_expected_pages_are_empty(review_world, monkeypatch):
+    world = review_world
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=True, diff_sha256="ab" * 32)
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert _guard(world, child) is True
+    verdict = json.dumps({"status": "approved", "summary": "Seitenprüfung ohne erwartete Seiten.",
+                          "task_contract_met": True,
+                          "diff_pages": [{"page": 1, "sha256": "ab" * 32},
+                                         {"page": 2, "sha256": "bc" * 32},
+                                         {"page": 3, "sha256": "cd" * 32}]}, ensure_ascii=False)
+    assert _record_child(world, child, verdict) is None
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM worker_result_review_pages").fetchone()[0] == 0
+
+
 def test_paged_review_prompt_carries_digest_and_page_count(review_world, monkeypatch):
     """Gekürztes Review-Paket: Beschreibung fordert Paging via Reviewer-Tool."""
     world = review_world
