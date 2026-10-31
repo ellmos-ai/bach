@@ -457,7 +457,14 @@ def load_skill_instructions(pins: list[dict], *, roots: list[Path] | None = None
 def check_write_locks(path: Path) -> None:
     """Use the installed canonical scanner, including parent and twin locks."""
     configured = os.environ.get("BACH_LOCK_TOOLS_ROOT")
-    directory = Path(configured).expanduser() if configured else Path.home() / "OneDrive/_scripts"
+    if configured:
+        directory = Path(configured).expanduser()
+    elif os.environ.get("BACH_LOCK_SCAN"):
+        directory = Path(os.environ["BACH_LOCK_SCAN"]).expanduser().parent
+    else:
+        directory = Path.home() / "OneDrive/_scripts"
+        if sys.platform == "darwin" and not (directory / "lock_scan.py").is_file():
+            directory = Path.home() / "services/lock-master/pure-locking"
     scanner = directory / "lock_scan.py"
     config = directory / "lock_roots.json"
     if not scanner.is_file() or not config.is_file():

@@ -14,7 +14,7 @@ DEFAULT_AUTONOMY_LEVEL = "manuell"
 ACTIONS = ["bildschirmsteuerung", "linkedin", "youtube", "mail"]
 
 
-class PermissionDenied(Exception):
+class PermissionDenied(ValueError):
     """Ausnahme, wenn eine Handlung aufgrund ungültiger Autonomie abgelehnt wird."""
     pass
 

@@ -571,12 +571,23 @@ def _public_source_config_key(task_id: int | str) -> str:
 
 
 def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict) -> dict:
-    from hub._services.chat.worker_repo_registry import resolve_task_repository
-    binding = resolve_task_repository(task_id)
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, resolve_task_repository
     record = dict(proof)
     source_sha = record.get("source_sha")
+    try:
+        binding = resolve_task_repository(task_id)
+    except Exception:
+        if record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
+            raise
+        binding = RepositoryBinding(
+            task_id=int(task_id),
+            repository=_PUBLIC_REPO,
+            origin="https://github.com/ellmos-ai/bach",
+            default_branch="main",
+            source_sha=str(source_sha or ""),
+        )
     if not (
-        record.get("schema") == _PUBLIC_SOURCE_SCHEMA
+        record.get("schema") in {_PUBLIC_SOURCE_SCHEMA, _LEGACY_PUBLIC_SOURCE_SCHEMA}
         and record.get("repository") == binding.repository
         and record.get("origin") == binding.origin
         and record.get("source_ref") == f"refs/heads/{binding.default_branch}"
@@ -606,8 +617,7 @@ def _store_public_source_registration(repo: Path, target: Path, task_id: int | s
 
 def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str) -> dict:
     """Validate the stored task-worktree source pin without fetching or moving it."""
-    from hub._services.chat.worker_repo_registry import resolve_task_repository
-    binding = resolve_task_repository(task_id)
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, resolve_task_repository
     try:
         raw = _git_text(target, "registration", task_id=task_id)
         record = json.loads(raw)
@@ -615,6 +625,18 @@ def read_task_public_source_registration(repo: Path, target: Path, task_id: int 
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
     if not isinstance(record, dict):
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig")  # noqa: TRY004 - RuntimeError ist der öffentliche Fail-closed-Vertrag.
+    try:
+        binding = resolve_task_repository(task_id)
+    except Exception:
+        if record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
+            raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
+        binding = RepositoryBinding(
+            task_id=int(task_id),
+            repository=_PUBLIC_REPO,
+            origin="https://github.com/ellmos-ai/bach",
+            default_branch="main",
+            source_sha=str(record.get("source_sha") or ""),
+        )
     try:
         origin = _canonical_public_origin(_git_text(repo, "origin"), binding.repository)
     except Exception:  # noqa: BLE001 - fehlerhafte Taskbindung bleibt unverfügbar.
@@ -895,7 +917,7 @@ def check_git_diff(worktree_path: Path) -> list[str]:
     """Check tracked diffs and untracked text for whitespace errors, failing closed."""
     try:
         result = subprocess.run(
-            ["git", "diff", "--no-ext-diff", "--no-textconv", "--check", "HEAD"],
+            ["git", "-c", "core.whitespace=-cr-at-eol", "diff", "--no-ext-diff", "--no-textconv", "--check", "HEAD"],
             cwd=str(worktree_path), capture_output=True, check=False, timeout=15,
         )
         output = result.stdout or b""

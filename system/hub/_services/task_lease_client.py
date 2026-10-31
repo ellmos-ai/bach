@@ -397,6 +397,7 @@ class LeaseDecomposeAck:
     fence: int
     task_version: str
     server_now: str
+    reused_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -482,6 +483,27 @@ class TaskLeaseClient:
         conn = self._get_local_connection()
         try:
             return read_task_policy(task_id, conn=conn)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def ensure_worker_resolver(self, worker_id, error_code):
+        """Local controller only: one open resolver task for a worker that ended in error."""
+        if self.mode != "local":
+            return None
+        from hub.task_audit import ensure_worker_error_resolver
+        conn = self._get_local_connection()
+        try:
+            if conn.in_transaction:
+                return None
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                resolver = ensure_worker_error_resolver(conn, worker_id, error_code)
+                conn.commit()
+                return resolver
+            except BaseException:
+                conn.rollback()
+                raise
         finally:
             if self._conn is None:
                 conn.close()
@@ -1613,6 +1635,10 @@ class TaskLeaseClient:
                 or len(set(ids)) != len(ids) or type(data.get("created_count")) is not int
                 or data["created_count"] != len(ids)):
             raise LeaseProtocolError("Zerlegungs-ACK passt nicht zur Anfrage")
+        reused = data.get("reused_ids", [])  # absent on older authorities: nothing reused
+        if (not isinstance(reused, list) or len(set(reused)) != len(reused)
+                or any(type(i) is not int or i not in ids for i in reused)):
+            raise LeaseProtocolError("Zerlegungs-ACK passt nicht zur Anfrage")
         version = _version(data.get("task_version"), required=True)
         if version == task_version:
             raise LeaseProtocolError("Zerlegungs-ACK hat keine neue Inhaltsversion")
@@ -1621,7 +1647,8 @@ class TaskLeaseClient:
             self._held.pop(task_id, None)
         elif previous:
             self._held[task_id] = replace(previous, task_version=version)
-        return LeaseDecomposeAck(task_id, tuple(ids), len(ids), close_parent, fence, version, data["server_now"])
+        return LeaseDecomposeAck(task_id, tuple(ids), len(ids), close_parent, fence, version, data["server_now"],
+                                 tuple(reused))
 
     def _raise_denied(self, task_id, payload):
         raw_reason = payload.get("reason") if isinstance(payload, dict) else None

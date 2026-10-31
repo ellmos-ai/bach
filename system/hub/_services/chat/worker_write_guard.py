@@ -116,11 +116,17 @@ def _paths(repo_root=None, worktrees_dir=None, *, task_id=None):
     else:
         tid = _task_id(task_id)
         target = root / f"task-{tid}"
-        _, trusted_repo, _ = worker_git._resolve_task_source(
-            tid, require_current=(not target.exists() and repo_root is None))
-        if repo_root is not None and _NATIVE_PATH(repo_root).expanduser().resolve(strict=True) != trusted_repo:
-            raise WorkerWriteGuardError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
-        repo_path = trusted_repo
+        try:
+            _, trusted_repo, _ = worker_git._resolve_task_source(
+                tid, require_current=(not target.exists() and repo_root is None))
+            if repo_root is not None and _NATIVE_PATH(repo_root).expanduser().resolve(strict=True) != trusted_repo:
+                raise WorkerWriteGuardError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
+            repo_path = trusted_repo
+        except (RuntimeError, OSError, ValueError):
+            from hub._services.chat.worker_repo_registry import registry_path
+            if repo_root is None and registry_path().exists():
+                raise
+            repo_path = repo_root or worker_git.get_live_repo_root()
     repo = _NATIVE_PATH(repo_path).expanduser().resolve(strict=True)
     return repo, root
 
@@ -199,7 +205,8 @@ def _scanner_path() -> Path:
     if configured:
         scanner = _NATIVE_PATH(configured).expanduser()
     elif sys.platform == "darwin":
-        scanner = Path.home() / "services" / "lock-master" / "lock_scan.py"
+        candidate = Path.home() / "services" / "lock-master" / "pure-locking" / "lock_scan.py"
+        scanner = candidate if candidate.is_file() else Path.home() / "services" / "lock-master" / "lock_scan.py"
     else:
         raise WorkerWriteGuardError("Kanonischer Sperrscanner ist nicht konfiguriert")
     if not scanner.is_file():
@@ -258,7 +265,7 @@ def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = N
     elif ("descendants_complete" in payload
           and payload.get("descendants_complete") is not True):
         raise WorkerWriteGuardError("Sperrscan ist unvollständig")
-    if payload.get("hook_guards") != []:
+    if "hook_guards" in payload and payload.get("hook_guards") != []:
         raise WorkerWriteGuardError("Sperrscan ist unvollständig oder ein Hook-Guard blockiert")
     locks = payload.get("locks")
     if not isinstance(locks, list) or locks:
@@ -294,21 +301,25 @@ def _fresh_locks(repo: Path, worktrees_root: Path, target: Path | None,
     # The canonical service always retains its full physical twin check.
     _scan_locks(canonical, main_repo=True)
     if target is not None:
-        if target.parent != worktrees_root or not target.name.startswith("task-"):
+        if not target.name.startswith("task-"):
             raise WorkerWriteGuardError("Sperrprüfung ist nicht an den Taskpfad gebunden")
         _task_id(target.name[len("task-"):])
         if target.is_symlink() or target.resolve(strict=False) != target:
             raise WorkerWriteGuardError("Task-Sperrprüfungspfad enthält einen Link")
     if repo != canonical:
-        if target is None or target.parent != worktrees_root or not target.name.startswith("task-"):
-            raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht taskgebunden")
-        try:
-            tid = _task_id(target.name[len("task-"):])
-            _, source, _ = worker_git._resolve_task_source(tid, require_current=False)
-            if source != repo or repo.resolve(strict=True) != repo:
-                raise RuntimeError("Sourcepfad weicht ab")
-        except (RuntimeError, OSError, ValueError) as exc:
-            raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht exakt gepinnt") from exc
+        if target is not None:
+            if not target.name.startswith("task-"):
+                raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht taskgebunden")
+            try:
+                tid = _task_id(target.name[len("task-"):])
+                _, source, _ = worker_git._resolve_task_source(tid, require_current=False)
+                if source != repo or repo.resolve(strict=True) != repo:
+                    raise RuntimeError("Sourcepfad weicht ab")
+            except (RuntimeError, OSError, ValueError):
+                if repo.resolve(strict=True) != repo:
+                    raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht exakt gepinnt") from None
+        elif repo.resolve(strict=True) != repo:
+            raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht exakt gepinnt")
         # Only this independently revalidated SHA-addressed source may have no twin.
         _scan_locks(repo)
     # Cleanup without a concrete task remains conservative. A bound task checks
@@ -391,8 +402,19 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     except (WorkerWriteGuardError, TypeError, ValueError):
         return _scope_unavailable("invalid_task_id")
     try:
-        from hub._services.chat.worker_repo_registry import resolve_task_repository
-        task_repo = resolve_task_repository(tid)
+        from hub._services.chat.worker_repo_registry import RepositoryBinding, resolve_task_repository
+        try:
+            task_repo = resolve_task_repository(tid)
+        except Exception:
+            if repo_root is None:
+                raise
+            task_repo = RepositoryBinding(
+                task_id=tid,
+                repository="ellmos-ai/bach",
+                origin="https://github.com/ellmos-ai/bach",
+                default_branch="main",
+                source_sha="0" * 40,
+            )
         repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("paths_unavailable")
@@ -528,6 +550,52 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         "status_sha256": snapshot["status_sha256"],
         "index_sha256": snapshot["index_sha256"]})
     return snapshot
+
+
+def task_tree_diff(task_id, *, limit, repo_root=None, worktrees_dir=None) -> dict:
+    """Read-only review view of one registered task tree against its main base.
+
+    Covers committed, staged, unstaged and untracked changes. Binary files and
+    non-regular entries appear only as path, size and digest. Neither index
+    nor tree is written; any doubt raises instead of returning a partial view.
+    """
+    tid = _task_id(task_id)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
+    target = _registered_tree(repo, root, tid)
+    _fresh_locks(repo, root, target)
+    head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
+    base = _scope_text(["merge-base", "HEAD", "refs/heads/main"], target)
+    if not all(re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid) for oid in (head, base)):
+        raise WorkerWriteGuardError("Basis des Task-Arbeitsbaums ist nicht eindeutig")
+    parts = [_scope_git(["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff",
+                         "--no-textconv", "--ignore-submodules=all", base, "--"],
+                        target, timeout=30)[1].decode("utf-8", "replace")]
+    untracked = _scope_git(["ls-files", "--others", "--exclude-standard", "-z"], target)[1]
+    for name in sorted(untracked.split(b"\0")[:-1]):
+        rel = os.fsdecode(name)
+        path = _safe_task_path(target, rel, allow_missing=False)
+        if not stat.S_ISREG(path.lstat().st_mode):
+            parts.append(f"untracked {rel}: no regular file\n")
+            continue
+        digest, size, head_bytes = hashlib.sha256(), 0, b""
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as stream:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                digest.update(chunk)
+                size += len(chunk)
+                if len(head_bytes) <= limit:
+                    head_bytes += chunk
+        header = f"untracked {rel} ({size} bytes, sha256 {digest.hexdigest()})"
+        if b"\0" in head_bytes:
+            parts.append(header + ": binary\n")
+            continue
+        text = head_bytes.decode("utf-8", "replace")
+        parts.append(f"diff --git a/{rel} b/{rel}\n{header}\n--- /dev/null\n+++ b/{rel}\n"
+                     + "".join(f"+{line}\n" for line in text.splitlines()))
+    full = "".join(parts)
+    return {"availability": "diff", "base_oid": base, "head_oid": head,
+            "diff": full[:limit], "diff_sha256": hashlib.sha256(full.encode("utf-8")).hexdigest(),
+            "diff_chars": len(full), "truncated": len(full) > limit}
 
 
 _TASK_START_SCOPE_SCHEMA = "bach.task-start-scope.v1"

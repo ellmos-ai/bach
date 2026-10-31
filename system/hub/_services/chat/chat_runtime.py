@@ -57,9 +57,18 @@ _DECOMPOSE_RECEIPT_RE = re.compile(
 #: fertigstellen kann, zerlegt sie selbst und stellt die Teilaufgaben ein.
 #: Das Zerlegen ist ein Erfolg, kein Abbruch.
 SELF_DECOMPOSE_INSTRUCTION = (
-    "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen (zu groß, Werkzeugrunden "
-    "werden knapp, Teilschritte fehlen), dann zerlege sie selbst in kleinere, einzeln erledigbare "
-    "Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
+    "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen, unterscheide strikt: "
+    "1. TEILERFOLG GESCHAFFT (z. B. 50 % erledigt, Rest offen): Lege mit task_manage(action='add', "
+    "title='Rest: ...', description='<nur der noch ungeschaffte Teil>') eine neue Folgetask nur für den "
+    "offenen Rest an, begrenze die aktuelle Task mit task_manage(action='update', task_id=<ID>, "
+    "description='<auf den geschafften Teil begrenzt; Rest in #<Neu-ID>>') auf das Erreichte und schließe "
+    "die aktuelle Task danach regulär für das Geschaffte ab. "
+    "2. NICHT MACHBAR / BLOCKER (kein abschließbarer Teil): Wenn ein Werkzeug oder Recht fehlt oder ein "
+    "technischer Blocker vorliegt, zerlege die Aufgabe NICHT, sondern gib sie direkt ohne Zerlegung mit "
+    "task_manage(action='submit_result', task_id=<ID>, result='<konkreter Grund der Unmachbarkeit>', "
+    "complete=false) offen zurück. "
+    "3. NUR BEI ECHTEM GROSSUMFANG (noch nicht begonnen und noch nicht zerlegt): Zerlege sie einmalig in "
+    "kleinere Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
     "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true, close_parent=false). "
     "Die bestätigte Teilaufgabenanlage ist ein Fortschritt; sie erledigt den Eltern-Task nicht. "
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
@@ -2768,7 +2777,7 @@ REGELN:
 TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
 - Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget. Große oder unklare Aufgaben NICHT endlos durchsuchen!
 - 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
-- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true) in konkrete Einzelschritte zerlegen. Erst die Werkzeugbestätigung belegt einen Abschluss.
+- 2. TEILERFOLG ODER ZERLEGEN: Hast du einen sauberen Teil (z. B. 50 %) fertig, lege für den offenen Rest mit task_manage(action='add', title='Rest: ...', description='...') eine Folgetask an, begrenze die aktuelle Task per task_manage(action='update', task_id=<ID>, description='...') auf das Geschaffte und schließe sie mit submit_result(complete=true) ab. Ist die Aufgabe unmachbar/blockiert, gib sie ohne Zerlegung mit submit_result(complete=false) zurück. Nur bei noch unbegonnenem Großumfang einmalig mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true, close_parent=false) gliedern.
 - 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
 - 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
 

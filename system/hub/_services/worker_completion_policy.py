@@ -162,7 +162,13 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         if (type(revision) is not str or not _HEX.fullmatch(revision)
                 or record.get("scope", {}).get("availability") != "available"
                 or source_pin(record) is None):
-            return _unavailable(task_id, "full_result_revision_unavailable", record=record)
+            # Without a captured scope the reviewed package (submission plus
+            # stored tree diff) is the result revision (user decision 2026-10-25).
+            from .worker_result_review import submission_bound_result_revision, submission_bound_tree
+            revision = submission_bound_result_revision(conn, record)
+            bound_tree = submission_bound_tree(conn, record) if revision is not None else None
+            if revision is None or bound_tree is None:
+                return _unavailable(task_id, "full_result_revision_unavailable", record=record)
         task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
         if task is None or task.get("claim_id"):
             return _unavailable(task_id, "task_claim_or_row_changed", record=record)
@@ -178,7 +184,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         policy = settings.validate_policy(frozen["policy"])
         override = settings.validate_override(frozen["override"])
         identity = identity_snapshot(conn)
-        author_id = author_principal(identity, record)
+        author_id = _author_id(conn, identity, record)
         if author_id is None:
             return _unavailable(task_id, "author_identity_unavailable", record=record)
         if type(task.get("require_user_review")) not in {type(None), int} or task.get("require_user_review") not in {None, 0, 1}:
@@ -348,7 +354,14 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
 
 def _current_revision_from_db(conn, record):
     """Rebuild only the immutable revision inputs inside an SQLite writer."""
-    return current_result_revision(record)
+    from .worker_result_review import submission_bound_result_revision
+    return current_result_revision(record) or submission_bound_result_revision(conn, record)
+
+
+def _author_id(conn, identity, record):
+    """Catalogue principal, else the review route's author (incl. unmapped placeholder)."""
+    from .worker_result_review import review_author_id
+    return author_principal(identity, record) or review_author_id(conn, record)
 
 
 def _same_db_result(conn, evaluation):
@@ -375,7 +388,7 @@ def _same_db_result(conn, evaluation):
             or view["override"] != frozen.get("override")
             or (current_identity := identity_snapshot(conn))["configuration_version"]
                 != evaluation["identity_configuration_version"]
-            or author_principal(current_identity, record) != evaluation["author_id"]):
+            or _author_id(conn, current_identity, record) != evaluation["author_id"]):
         return None, None, None
     return task, record, observed
 

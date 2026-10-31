@@ -654,7 +654,7 @@ class ConnectionManager:
 
     """Verwaltet aktive WebSocket-Verbindungen fuer Real-time Updates."""
 
-    
+
 
     def __init__(self):
 
@@ -663,7 +663,7 @@ class ConnectionManager:
         # Values are hashes; explicit bearer/subprotocol clients stay independent.
         self._cookie_hashes: dict[WebSocket, str] = {}
 
-    
+
 
     async def connect(self, websocket: WebSocket, *, cookie_token: str = ""):
 
@@ -726,7 +726,7 @@ class ConnectionManager:
 
         return all(await asyncio.gather(*(close_transport(connection) for connection in targets)))
 
-    
+
 
     def disconnect(self, websocket: WebSocket):
 
@@ -739,7 +739,7 @@ class ConnectionManager:
 
         print(f"[WEBSOCKET] Client getrennt. Aktive: {len(self.active_connections)}")
 
-    
+
 
     async def broadcast(self, message: dict):
 
@@ -1205,7 +1205,7 @@ async def lifespan(app: FastAPI):
 
         print(f"[BACH GUI] Financial-Tabellen nicht initialisiert: {type(exc).__name__}")
 
-    
+
 
     # File Watcher für Live-Updates (Phase 4.3)
 
@@ -1227,7 +1227,7 @@ async def lifespan(app: FastAPI):
 
             loop = asyncio.get_running_loop()
 
-            
+
 
             def combined_callback(event_type: str, path: str, file_type: str):
 
@@ -1235,13 +1235,13 @@ async def lifespan(app: FastAPI):
 
                 print(f"[FILE-WATCHER] {event_type}: {path} ({file_type})")
 
-                
+
 
                 # 1. DB Sync (Task #439)
 
                 on_file_change(event_type, path, file_type)
 
-                
+
 
                 # 2. WebSocket-Broadcast (GUI_003b)
 
@@ -1265,7 +1265,7 @@ async def lifespan(app: FastAPI):
 
                     asyncio.run_coroutine_threadsafe(
 
-                        ws_manager.broadcast(message), 
+                        ws_manager.broadcast(message),
 
                         loop
 
@@ -1275,7 +1275,7 @@ async def lifespan(app: FastAPI):
 
                     print(f"[FILE-WATCHER] Broadcast-Fehler: {e}")
 
-            
+
 
             file_watcher = init_watcher(combined_callback)
 
@@ -1287,11 +1287,11 @@ async def lifespan(app: FastAPI):
 
         print(f"[BACH GUI] File-Watcher Fehler: {e}")
 
-    
+
 
     yield
 
-    
+
 
     # Cleanup
 
@@ -1830,6 +1830,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
                 or path == "/api/system/task-lease-settings"
+                or path == "/api/system/task-resolver-settings"
                 or path == "/api/tasks/leases/by-worker"
                 or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
@@ -2298,25 +2299,25 @@ async def api_tasks_export():
 
         conn.close()
 
-        
+
 
         export_dir = BACH_DIR / "user" / "exports"
 
         export_dir.mkdir(parents=True, exist_ok=True)
 
-        
+
 
         filename = f"tasks_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
         export_path = export_dir / filename
 
-        
+
 
         with open(export_path, "w", encoding="utf-8") as f:
 
             json.dump(tasks, f, indent=2, ensure_ascii=False)
 
-            
+
 
         return {"success": True, "path": str(export_path), "count": len(tasks)}
 
@@ -2461,7 +2462,7 @@ async def api_get_tasks(
             WHEN UPPER(TRIM(priority)) IN ('P4','4','MINIMAL') THEN 4
             ELSE 5 END ASC, created_at DESC, id DESC LIMIT ? OFFSET ?"""
         params.extend((limit + 1 if limit > 0 else limit, max(0, offset)))
-        
+
         rows = conn.execute(query, params).fetchall()
         has_more = limit > 0 and len(rows) > limit
         if has_more:
@@ -3300,8 +3301,8 @@ async def list_assignees():
     try:
         # Get latest status for each partner (assuming id increases with time)
         rows = conn.execute("""
-            SELECT partner_name, status 
-            FROM partner_presence 
+            SELECT partner_name, status
+            FROM partner_presence
             WHERE id IN (SELECT MAX(id) FROM partner_presence GROUP BY partner_name)
         """).fetchall()
         for r in rows:
@@ -3457,7 +3458,7 @@ async def api_list_agents():
 
         conn = get_bach_db()
 
-        
+
 
         # Agenten laden
 
@@ -3465,7 +3466,7 @@ async def api_list_agents():
 
         agents = rows_to_list(agents_rows)
 
-        
+
 
         # Experten laden
 
@@ -3509,7 +3510,7 @@ async def api_list_agents():
                 elif agent['name'] in ['ati', 'developer-assistent']:
                     agent["dashboard"] = "/agents/ati"
 
-        
+
 
         conn.close()
 
@@ -3596,7 +3597,7 @@ async def api_toggle_agent(agent_id: int):
 
             raise HTTPException(status_code=404, detail="Agent nicht gefunden")
 
-        
+
 
         new_state = 0 if current["is_active"] else 1
 
@@ -3798,7 +3799,7 @@ async def api_list_mounts():
 
         success, output = handler._list_mounts()
 
-        
+
 
         mounts = []
 
@@ -4872,13 +4873,13 @@ async def get_token_usage():
 
         conn = get_bach_db()
 
-        
+
 
         # Gesamtverbrauch last 30 days
 
         usage = conn.execute("""
 
-            SELECT 
+            SELECT
 
                 SUM(tokens_total) as total_tokens,
 
@@ -4892,25 +4893,25 @@ async def get_token_usage():
 
         """).fetchone()
 
-        
+
 
         # Top Modell
 
         top_model_row = conn.execute("""
 
-            SELECT model, SUM(tokens_total) as val 
+            SELECT model, SUM(tokens_total) as val
 
-            FROM monitor_tokens 
+            FROM monitor_tokens
 
             WHERE model IS NOT NULL
 
-            GROUP BY model 
+            GROUP BY model
 
             ORDER BY val DESC LIMIT 1
 
         """).fetchone()
 
-        
+
 
         # Wechselkurs & Datum
 
@@ -4920,11 +4921,11 @@ async def get_token_usage():
 
         rate_date = rate_row['timestamp'].split('T')[0] if rate_row and rate_row['timestamp'] else datetime.now().strftime("%Y-%m-%d")
 
-        
+
 
         conn.close()
 
-        
+
 
         return {
 
@@ -5020,7 +5021,7 @@ async def run_scanner(background_tasks: BackgroundTasks):
 
             print(f"[ERROR] Scan fehlgeschlagen: {e}")
 
-    
+
 
     background_tasks.add_task(do_scan)
 
@@ -5130,23 +5131,23 @@ async def get_ati_stats():
             "sessions_today": 0,
             "completed_today": 0
         }
-        
+
         # Grundstatistiken
         stats["total_tasks"] = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
         stats["open_tasks"] = conn.execute("SELECT COUNT(*) FROM ati_tasks WHERE status = 'offen'").fetchone()[0]
         stats["tools_scanned"] = conn.execute("SELECT COUNT(DISTINCT tool_name) FROM ati_tasks").fetchone()[0]
-        
+
         # Tages-Zähler (Sessions)
         today = datetime.now().strftime("%Y-%m-%d")
         stats["sessions_today"] = conn.execute(
             "SELECT COUNT(*) FROM memory_sessions WHERE started_at LIKE ?", (f"{today}%",)
         ).fetchone()[0]
-        
+
         # Tages-Zähler (Erledigt) - nutze last_modified statt updated_at
         stats["completed_today"] = conn.execute(
             "SELECT COUNT(*) FROM ati_tasks WHERE status = 'erledigt' AND last_modified LIKE ?", (f"{today}%",)
         ).fetchone()[0]
-        
+
         conn.close()
         return stats
     except Exception as e:
@@ -6045,7 +6046,7 @@ async def agenten_sessions_page():
     raise HTTPException(status_code=503, detail="Sessions-Seite noch nicht gebaut")
 
 
-    
+
 
     # Fallback: Einfache Status-Seite
 
@@ -7005,13 +7006,13 @@ async def api_ai_headless_run(payload: dict = Body(...)):
     from threading import Thread
     from tools.headless_agent import run_headless_query
 
-    
+
 
     prompt = str(payload.get("prompt") or "")
 
     partner = safe_partner_name(payload.get("partner", "claude"))
 
-    
+
 
     if not prompt:
 
@@ -7065,7 +7066,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
     python_tools = []
 
-    
+
 
     categories_map = {
 
@@ -7085,11 +7086,11 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
     }
 
-    
+
 
     found_categories = set()
 
-    
+
 
     if TOOLS_DIR.exists():
 
@@ -7099,7 +7100,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
                 continue
 
-                
+
 
             name = tool_file.stem
 
@@ -7117,11 +7118,11 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
                     break
 
-            
+
 
             found_categories.add(category)
 
-            
+
 
             # Docstring extrahieren
 
@@ -7141,7 +7142,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
                 pass
 
-                
+
 
             python_tools.append({
 
@@ -7159,7 +7160,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
             })
 
-            
+
 
     # Mock DB tools if none exist (or load from real DB if available)
 
@@ -7209,9 +7210,9 @@ async def api_steuer_unlinked_docs(username: str = "user", jahr: int = 2025):
 
         rows = conn.execute("""
 
-            SELECT id, dateiname, status, posten_anzahl, hochgeladen_am 
+            SELECT id, dateiname, status, posten_anzahl, hochgeladen_am
 
-            FROM steuer_dokumente 
+            FROM steuer_dokumente
 
             WHERE username = ? AND steuerjahr = ? AND posten_anzahl = 0
 
@@ -7243,7 +7244,7 @@ async def api_steuer_link_posten(posten_id: int, payload: dict = Body(...)):
 
         return {"success": False, "error": "Keine dokument_id angegeben"}
 
-        
+
 
     try:
 
@@ -7253,13 +7254,13 @@ async def api_steuer_link_posten(posten_id: int, payload: dict = Body(...)):
 
         conn.execute("UPDATE steuer_posten SET dokument_id = ? WHERE id = ?", (doc_id, posten_id))
 
-        
+
 
         # 2. Dokumentenzähler aktualisieren
 
         conn.execute("UPDATE steuer_dokumente SET posten_anzahl = posten_anzahl + 1, status = 'ERFASST' WHERE id = ?", (doc_id,))
 
-        
+
 
         conn.commit()
 
@@ -7292,13 +7293,13 @@ async def api_steuer_match_bank(payload: dict = Body(...)):
     if jahr < 2000 or jahr > 2100:
         raise HTTPException(status_code=400, detail="Ungueltiges Jahr")
 
-    
+
 
     if not camt_file:
 
         return {"success": False, "error": "CAMT Datei fehlt"}
 
-        
+
 
     normalized_camt = camt_file.replace("\\", "/")
     if "/" in normalized_camt:
@@ -7340,7 +7341,7 @@ async def api_get_tool_detail(name: str):
 
     tool_file = resolve_tool_file(name)
 
-            
+
 
     if tool_file and tool_file.exists():
 
@@ -7354,7 +7355,7 @@ async def api_get_tool_detail(name: str):
 
             docstring = docstring_match.group(1).strip()
 
-            
+
 
         return {
 
@@ -7370,7 +7371,7 @@ async def api_get_tool_detail(name: str):
 
         }
 
-        
+
 
     # 2. In DB suchen
 
@@ -7408,18 +7409,18 @@ async def api_run_tool(name: str, payload: dict = Body(...)):
 
     import sys
 
-    
+
 
     name = safe_tool_name(name)
     tool_file = resolve_tool_file(name)
 
-            
+
 
     if not tool_file or not tool_file.exists():
 
         raise HTTPException(status_code=404, detail="Tool nicht gefunden oder nicht ausführbar")
 
-        
+
 
     args = payload.get("args", [])
     if args:
@@ -8322,13 +8323,13 @@ async def search_help(term: str):
 
         return {"results": [], "count": 0}
 
-    
+
 
     results = []
 
     term_lower = term.lower()
 
-    
+
 
     for help_file in HELP_DIR.glob("*.txt"):
 
@@ -8360,7 +8361,7 @@ async def search_help(term: str):
 
                             break
 
-                
+
 
                 results.append({
 
@@ -8376,13 +8377,13 @@ async def search_help(term: str):
 
             pass
 
-    
+
 
     # Nach Anzahl Treffer sortieren
 
     results.sort(key=lambda x: x['match_count'], reverse=True)
 
-    
+
 
     return {
 
@@ -10099,13 +10100,13 @@ def get_extrapolated_session_count(start_time_str: str, interval_min: int) -> in
 
         safety_buffer_min = 0.75  # 45 Sek Initial-Verzögerung
 
-        
+
 
         if elapsed_min < safety_buffer_min:
 
             return 0
 
-            
+
 
         return math.floor((elapsed_min - safety_buffer_min) / interval_min)
 
@@ -10135,7 +10136,7 @@ def get_next_session_seconds(start_time_str: str, interval_min: int) -> int:
 
         elapsed_sec = (now - start_time).total_seconds()
 
-        
+
 
         # Modulo ergibt vergangene Zeit im aktuellen Intervall
 
@@ -10185,7 +10186,7 @@ def is_quiet_time(quiet_start: str, quiet_end: str) -> bool:
 
         end = datetime.strptime(quiet_end, "%H:%M").time()
 
-        
+
 
         if start <= end:
 
@@ -10217,7 +10218,7 @@ async def update_daemon_config(request: Request):
 
         data = await request.json()
 
-        
+
 
         # Bestehende Config laden oder neu erstellen
 
@@ -10229,7 +10230,7 @@ async def update_daemon_config(request: Request):
 
                 config = json.load(f)
 
-        
+
 
         # Aktualierungen anwenden
 
@@ -10241,13 +10242,13 @@ async def update_daemon_config(request: Request):
 
             config["max_sessions"] = int(val) if val and int(val) > 0 else 0
 
-        
+
 
         if "interval_minutes" in data:
 
             config["interval_minutes"] = int(data["interval_minutes"])
 
-        
+
 
         # Speichern
 
@@ -10257,7 +10258,7 @@ async def update_daemon_config(request: Request):
 
             json.dump(config, f, indent=2)
 
-        
+
 
         return {"status": "ok", "config": config}
 
@@ -10288,7 +10289,7 @@ async def get_recurring_tasks():
 
         raise HTTPException(status_code=503, detail="Recurring Tasks Modul nicht verfuegbar")
 
-    
+
 
     try:
 
@@ -10320,7 +10321,7 @@ async def check_recurring():
 
         raise HTTPException(status_code=503, detail="Recurring Tasks Modul nicht verfuegbar")
 
-    
+
 
     try:
 
@@ -10352,7 +10353,7 @@ async def trigger_recurring(task_id: str):
 
         raise HTTPException(status_code=503, detail="Recurring Tasks Modul nicht verfuegbar")
 
-    
+
 
     try:
 
@@ -10925,7 +10926,7 @@ async def get_memory_db_stats():
 
             cursor = conn.cursor()
 
-            
+
 
             # Alle Tabellen laden
 
@@ -10933,7 +10934,7 @@ async def get_memory_db_stats():
 
             tables = [row['name'] for row in cursor.fetchall()]
 
-            
+
 
             stats = []
 
@@ -10943,7 +10944,7 @@ async def get_memory_db_stats():
 
                 count = cursor.fetchone()[0]
 
-                
+
 
                 # Letztes Update (falls Spalte existiert)
 
@@ -10965,7 +10966,7 @@ async def get_memory_db_stats():
 
                     last_update = cursor.fetchone()[0]
 
-                
+
 
                 stats.append({
 
@@ -10977,7 +10978,7 @@ async def get_memory_db_stats():
 
                 })
 
-            
+
 
             return {"success": True, "tables": stats, "count": len(stats)}
 
@@ -11001,7 +11002,7 @@ async def memory_maintenance_cleanup():
 
             results = {}
 
-            
+
 
             # 1. Orphans in memory_consolidation (Source existiert nicht mehr)
 
@@ -11009,15 +11010,15 @@ async def memory_maintenance_cleanup():
 
             cursor = conn.cursor()
 
-            
+
 
             # Zu loeschende Consolidation-Eintraege finden
 
             cursor.execute("""
 
-                DELETE FROM memory_consolidation 
+                DELETE FROM memory_consolidation
 
-                WHERE source_table = 'memory_working' 
+                WHERE source_table = 'memory_working'
 
                 AND source_id NOT IN (SELECT id FROM memory_working)
 
@@ -11025,13 +11026,13 @@ async def memory_maintenance_cleanup():
 
             results["orphans_working_removed"] = cursor.rowcount
 
-            
+
 
             cursor.execute("""
 
-                DELETE FROM memory_consolidation 
+                DELETE FROM memory_consolidation
 
-                WHERE source_table = 'memory_lessons' 
+                WHERE source_table = 'memory_lessons'
 
                 AND source_id NOT IN (SELECT id FROM memory_lessons)
 
@@ -11039,7 +11040,7 @@ async def memory_maintenance_cleanup():
 
             results["orphans_lessons_removed"] = cursor.rowcount
 
-            
+
 
             # 2. Inaktive Eintraege endgueltig loeschen (optional, je nach Policy)
 
@@ -11049,7 +11050,7 @@ async def memory_maintenance_cleanup():
 
             results["inactive_working_count"] = cursor.fetchone()[0]
 
-            
+
 
             conn.commit()
 
@@ -11075,7 +11076,7 @@ async def get_session_detail(session_id: str):
 
             conn.row_factory = sqlite3.Row
 
-            
+
 
             if session_id.isdigit():
 
@@ -11085,23 +11086,23 @@ async def get_session_detail(session_id: str):
 
                 row = conn.execute("SELECT * FROM memory_sessions WHERE session_id = ?", (session_id,)).fetchone()
 
-            
+
 
             if not row:
 
                 raise HTTPException(status_code=404, detail="Session nicht gefunden")
 
-            
+
 
             session_data = dict(row)
 
-            
+
 
             # Optional: Zugehoerige Tasks laden
 
             # row['tasks_completed'] usw. sind schon drin
 
-            
+
 
             return {"success": True, "session": session_data}
 
@@ -13696,7 +13697,7 @@ async def get_insurances():
 
         conn.close()
 
-        
+
 
         # Stats berechnen
 
@@ -13706,7 +13707,7 @@ async def get_insurances():
 
         yearly += sum(float(i.get('beitrag', 0) or 0) for i in insurances if i.get('zahlweise') == 'jaehrlich')
 
-        
+
 
         return {"success": True, "insurances": insurances, "count": total, "yearly_cost": yearly}
 
@@ -13732,7 +13733,7 @@ async def get_financial_deadlines():
 
         cursor = conn.cursor()
 
-        
+
 
         deadlines = []
 
@@ -13756,7 +13757,7 @@ async def get_financial_deadlines():
 
                 frist_datum = ablauf - timedelta(days=frist_tage)
 
-                
+
 
                 if frist_datum <= warning_limit:
 
@@ -13794,7 +13795,7 @@ async def get_financial_deadlines():
 
                 frist_datum = ablauf - timedelta(days=frist_tage)
 
-                
+
 
                 if frist_datum <= warning_limit:
 
@@ -13822,7 +13823,7 @@ async def get_financial_deadlines():
 
         deadlines.sort(key=lambda x: x['days_left'])
 
-        
+
 
         return {"success": True, "deadlines": deadlines, "count": len(deadlines)}
 
@@ -15470,13 +15471,13 @@ async def sort_inbox_file(data: dict):
 
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        
+
 
         final_name = safe_path_segment(new_name, field_name="Zieldateiname") if new_name else source_path.name
 
         target_path = resolve_child_file(target_dir, final_name)
 
-        
+
 
         # Falls Zieldatei existiert, Zeitstempel anhaengen
 
@@ -15496,7 +15497,7 @@ async def sort_inbox_file(data: dict):
 
         shutil.move(str(source_path), str(target_path))
 
-        
+
 
         return {"success": True, "moved_to": str(target_path)}
 
@@ -15518,13 +15519,13 @@ async def get_inbox_preview(filename: str):
 
         config = json.loads(INBOX_CONFIG_FILE.read_text(encoding='utf-8'))
 
-    
+
 
     unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
     file_path = resolve_child_file(unsorted_dir, filename, must_exist=True)
 
-    
+
 
     # MIME Type bestimmen
 
@@ -15532,7 +15533,7 @@ async def get_inbox_preview(filename: str):
 
     mime, _ = mimetypes.guess_type(str(file_path))
 
-    
+
 
     return FileResponse(file_path, media_type=mime)
 
@@ -15550,13 +15551,13 @@ async def analyze_inbox_file(filename: str):
 
         config = json.loads(INBOX_CONFIG_FILE.read_text(encoding='utf-8'))
 
-    
+
 
     unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
     file_path = resolve_child_file(unsorted_dir, filename)
 
-    
+
 
     if not file_path.exists():
 
@@ -15584,17 +15585,17 @@ async def analyze_inbox_file(filename: str):
 
     target_suggestion = None
 
-    
+
 
     if file_path.suffix.lower() == '.txt':
 
         content = file_path.read_text(encoding='utf-8', errors='ignore')
 
-    
+
 
     # TODO: PDF OCR integration hier falls noetig
 
-    
+
 
     for r in rules:
 
@@ -15606,11 +15607,11 @@ async def analyze_inbox_file(filename: str):
 
             break
 
-            
+
 
     return {
 
-        "success": True, 
+        "success": True,
 
         "filename": filename,
 
@@ -15670,7 +15671,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     WebSocket-Endpoint fuer Real-time GUI-Updates.
 
-    
+
 
     Clients verbinden sich hier und erhalten:
 
@@ -15682,7 +15683,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     - daemon_event: Daemon-Job Status
 
-    
+
 
     Usage (JavaScript):
 
@@ -15830,9 +15831,9 @@ async def upload_anon_file(file: Request):
 
     Upload file for quarantine.
 
-    Expects multipart/form-data via Request body parsing manually 
+    Expects multipart/form-data via Request body parsing manually
 
-    or simpler: just raw bytes if single file. 
+    or simpler: just raw bytes if single file.
 
     For now, placeholder logic.
 
@@ -16415,6 +16416,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    
+
 
     run_server(args.host, args.port)

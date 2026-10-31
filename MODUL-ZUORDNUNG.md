@@ -59,3 +59,23 @@ Bestaetigte Kind-Task-IDs (sequential, Eltern bleibt offen):
 Jede Extraktion (A-D) ist an module-gate #2445 + die Kern-Grenze
 `system/core/README.md` A 2 gebunden. ocean.py (#2616) ist extern und in
 diesem Lauf nicht umsetzbar.
+
+### 0.5 Taskkern `taskplan` (Task #2216 — Nutzerentscheidung PLANABGLEICH-20261024N-TASKKERN)
+
+- Nutzerentscheidung (24.10.2026, gueltige Fassung in Task #2216): Der
+  **Taskkern / das Modul `taskplan`** (Fachlogik Taskverwaltung; BACH und
+  Ocean schreiben beide ueber den Taskkern) wird im Repo **`task-master`**
+  gebaut. Die historische Fassung (Bauort `ticket-master`) ist aufgehoben.
+- Der Audit-Befund „taskplan bridge implementation is not in the taskkern
+  module“ ist damit zutreffend und wird hier dokumentiert statt im BACH-Code
+  umgebaut (Bauort ausserhalb dieses Arbeitsbaums): Die Taskkern-
+  Implementierung liegt gewollt ausserhalb des BACH-Repos. In BACH bleibt
+  bewusst nur der duenne Adapter `system/hub/_services/taskplan_bridge.py`
+  uebrig (additiver Spiegel BACH-Tasks -> taskplan-DB,
+  `write_policy=legacy_only`; kein zweiter Store/Scheduler im Kern —
+  konsistent mit Abschnitt 0.2). Er ist die BACH-seitige Bindung an den
+  Taskkern und implementiert den Taskkern NICHT selbst.
+- ocean.py-Bindung an den Taskkern: extern (OneDrive `open-ocean/`, analog
+  Folgetask E #2616) und im OCEAN-Rueckmodularisierungslauf zu ziehen. Für
+  Ausbau des Taskkerns selbst ist das `task-master`-Repo der Bauort; ein
+  Folgetask dort wird bei Bedarf gelegt.

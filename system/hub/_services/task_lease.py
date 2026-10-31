@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sqlite3
+import unicodedata
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -78,6 +79,30 @@ XL_MIN_ESTIMATED_MINUTES = 480
 
 CLAIMABLE_STATUSES = frozenset({"pending", "open"})
 TERMINAL_STATUSES = frozenset({"done", "completed", "cancelled", "blocked"})
+# Subtask idempotency (#2660): only open siblings are reused; done or cancelled ones never count.
+_CLOSED_CHILD_STATUSES = frozenset({"done", "completed", "cancelled"})
+_DECOMPOSE_NOTE = re.compile(
+    r"\[(?:In \d+ Teilaufgaben zerlegt|Teilaufgabe bereits offen, nicht erneut angelegt): \[([0-9, ]*)\]\]")
+
+
+def _normalized_title(title: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", title).casefold().split())
+
+
+def _open_children_by_title(conn: sqlite3.Connection, parent: Mapping[str, Any]) -> dict[str, int]:
+    """Open subtasks named in the parent's decomposition notes, keyed by normalized title."""
+    ids = sorted({int(value) for match in _DECOMPOSE_NOTE.finditer(parent.get("description") or "")
+                  for value in match.group(1).replace(" ", "").split(",") if value})
+    if not ids:
+        return {}
+    rows = conn.execute(
+        f"SELECT id, title, status FROM tasks WHERE id IN ({','.join('?' * len(ids))}) ORDER BY id", ids,
+    ).fetchall()
+    children = {}
+    for row in rows:
+        if row[2] not in _CLOSED_CHILD_STATUSES and isinstance(row[1], str):
+            children.setdefault(_normalized_title(row[1]), row[0])
+    return children
 RELEASE_OUTCOMES = {"return": "pending", "done": "done", "blocked": "blocked", "review": "review"}
 
 #: Additive Lease-Spalten (Vertrag §4 + §11.1). Keine Daten werden umgeschrieben.
@@ -906,7 +931,8 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         try:
             apply_task_field_changes(conn, task_id, row, {"status": new_status},
                                      changed_by=worker, allow_reopen=True,
-                                     lease_authorized=True)
+                                     lease_authorized=True,
+                                     block_reason=f"lease_release: {note or outcome}")
         except (ValueError, GateReopenBlocked) as exc:  # z. B. Abschluss-Guard "Codeänderungen ohne PR"
             conn.rollback()
             return _deny(task_id, "completion_guard", now, detail=str(exc))
@@ -1003,7 +1029,8 @@ def reclaim_unresolved_lease(conn: sqlite3.Connection, task_id: int, *, operator
             conn.rollback()
             return _deny(task_id, "no_unresolved_trace", now)
         apply_task_field_changes(conn, task_id, row, {"status": "blocked"},
-                                 changed_by=operator, lease_authorized=True)
+                                 changed_by=operator, lease_authorized=True,
+                                 block_reason=f"reclaim-unresolved (unklärbarer Werkzeug-Trace): {reason}")
         assignments = ", ".join(f"{name} = NULL" for name in _CLEARED_ON_RELEASE)
         cursor = conn.execute(
             f"UPDATE tasks SET {assignments} WHERE id = ? AND claim_id = ? AND claim_fence = ?",
@@ -1163,7 +1190,14 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
             conn.rollback()
             return _deny(task_id, "completion_guard", now, detail="Native Zerlegung darf den Parent nicht als Done abschließen")
         created = []
+        reused = []
+        open_children = _open_children_by_title(conn, parent)
         for item in normalized:
+            existing = open_children.get(_normalized_title(item["title"]))
+            if existing is not None and existing not in created:
+                created.append(existing)
+                reused.append(existing)
+                continue
             dependency = item.get("depends_on") or (str(created[-1]) if sequential and created else "")
             dependencies = inspect_task_dependencies(conn, dependency)
             if dependencies["missing"] or dependencies["invalid"]:
@@ -1183,9 +1217,12 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
                  _local_naive(now), _local_naive(now)),
             )
             created.append(cursor.lastrowid)
-        changes = {"description": (parent.get("description") or "") +
-                   f"\n[In {len(created)} Teilaufgaben zerlegt: {created}]"}
-        if parent.get("needs_split"):
+        new_ids = [value for value in created if value not in reused]
+        notes = f"\n[In {len(new_ids)} Teilaufgaben zerlegt: {new_ids}]" if new_ids else ""
+        if reused:
+            notes += f"\n[Teilaufgabe bereits offen, nicht erneut angelegt: {reused}]"
+        changes = {"description": (parent.get("description") or "") + notes}
+        if parent.get("needs_split") and new_ids:
             changes["needs_split"] = 0
         if close_parent:
             changes["status"] = "done"
@@ -1213,9 +1250,9 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
             conn.rollback()
             return _deny(task_id, "stale_fence", now)
         _history(conn, task_id, "lease_decompose", parent.get("claimed_by") or "lease-holder", now,
-                 {"fence": fence, "created_ids": created, "parent_closed": close_parent,
+                 {"fence": fence, "created_ids": created, "reused_ids": reused, "parent_closed": close_parent,
                   "previous_task_version": task_version, "task_version": version})
-        payload = {"decomposed": True, "task_id": task_id, "created_ids": created,
+        payload = {"decomposed": True, "task_id": task_id, "created_ids": created, "reused_ids": reused,
                    "created_count": len(created), "parent_closed": close_parent,
                    "fence": fence, "task_version": version, "server_now": _fmt(now)}
         conn.commit()

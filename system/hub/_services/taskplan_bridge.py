@@ -5,6 +5,11 @@
 The bridge is intentionally additive: it can mirror selected BACH tasks into a
 taskplan database without changing or deleting rows in BACH's own ``tasks``
 table. This keeps the GUI/API surfaces stable while taskplan adoption is gated.
+
+Module mapping: the canonical ``taskplan`` task kernel lives in the separate
+``task-master`` repo (decision PLANABGLEICH-20261024N-TASKKERN, task #2216).
+This bridge is only the thin BACH-side adapter — it does not implement the
+task kernel (see ``MODUL-ZUORDNUNG.md``, section 0.5).
 """
 
 from __future__ import annotations
@@ -415,6 +420,31 @@ def find_taskplan_mirror(client: Any, bach_task_id: int) -> dict[str, Any] | Non
         return None
 
 
+def find_taskplan_mirror_by_source(client: Any, source: str) -> dict[str, Any] | None:
+    """Find an existing taskplan row by its exact ``source`` value."""
+    if not source:
+        return None
+    db_path = Path(client.db_path).expanduser()
+    if not db_path.exists():
+        return None
+    try:
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                f"""
+                SELECT {TASKPLAN_SELECT_COLUMNS}
+                FROM rinnsal_tasks
+                WHERE source = ?
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                (str(source),),
+            ).fetchone()
+            return row_to_taskplan_dict(row) if row else None
+    except sqlite3.Error:
+        return None
+
+
 def _sync_existing_status(
     client: Any,
     existing: dict[str, Any],
@@ -443,6 +473,7 @@ def mirror_bach_task(
     db_path: str | Path | None = None,
     agent_id: str = "bach",
     project_path: str | Path | None = None,
+    source: str = "bach.db:tasks",
 ) -> dict[str, Any]:
     """Mirror one BACH task into taskplan, idempotently."""
     task = dict(bach_task)
@@ -479,7 +510,7 @@ def mirror_bach_task(
         scope="central",
         project_path=str(project_path or ""),
         root_id="BACH",
-        source="bach.db:tasks",
+        source=str(source or "bach.db:tasks"),
     )
     if target_status == "active":
         client.activate(int(created["id"]))
@@ -499,6 +530,7 @@ def mirror_bach_tasks(
     db_path: str | Path | None = None,
     agent_id: str = "bach",
     project_path: str | Path | None = None,
+    source: str = "bach.db:tasks",
 ) -> list[dict[str, Any]]:
     return [
         mirror_bach_task(
@@ -506,6 +538,7 @@ def mirror_bach_tasks(
             db_path=db_path,
             agent_id=agent_id,
             project_path=project_path,
+            source=source,
         )
         for task in bach_tasks
     ]

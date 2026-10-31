@@ -665,6 +665,8 @@ def check_safe_shell_args(tokens: list) -> Optional[str]:
     return None
 
 CMD_TIMEOUT = limit("BACH_CMD_TIMEOUT")
+SEARCH_TIMEOUT = limit("BACH_SEARCH_TIMEOUT", 15)
+SEARCH_MAX_BYTES = limit("BACH_SEARCH_MAX_BYTES", 8_388_608)
 
 
 def is_blocked(cmd: str) -> bool:
@@ -1665,11 +1667,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     resolved.glob("*") if resolved.is_dir() else [resolved]
                 )
             hits = []
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + SEARCH_TIMEOUT
             bytes_read = 0
+            truncated = False
             for n, f in enumerate(files):
                 if time.monotonic() >= deadline:
-                    return _tool_effect_unconfirmed()
+                    truncated = True
+                    break
                 if n >= 5000:
                     break
                 fr = f if task_scope is not None else _resolve(f)
@@ -1695,18 +1699,30 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         while line := fh.readline(65536):
                             i += 1
                             bytes_read += len(line.encode("utf-8"))
+                            if bytes_read > SEARCH_MAX_BYTES:
+                                truncated = True
+                                break
                             remaining = deadline - time.monotonic()
-                            if bytes_read > 8_388_608 or remaining <= 0:
-                                return _tool_effect_unconfirmed()
+                            if remaining <= 0:
+                                truncated = True
+                                break
                             if rx.search(line, timeout=min(.05, remaining), concurrent=True):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")
                                 if len(hits) >= 200:
                                     break
+                        if truncated:
+                            break
                 except TimeoutError:
-                    return _tool_effect_unconfirmed()
+                    continue
                 except OSError:
                     continue
-            return ("\n".join(hits) or "(keine Treffer)")[:4000]
+            result = "\n".join(hits) or "(keine Treffer)"
+            if truncated:
+                result += (
+                    f"\n… Teilabbruch nach {SEARCH_TIMEOUT}s bzw. "
+                    f"{SEARCH_MAX_BYTES} Bytes – bisherige Treffer sind gültig."
+                )
+            return result[:4000]
 
         if name == "system_status":
             values = [
@@ -1809,12 +1825,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if is_blocked(cmd):
                 return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             if worker_task_binding is not None:
-                from hub._services.chat.worker_write_guard import run_bound_check, WorkerCheckPolicyRejected
+                from hub._services.chat.worker_write_guard import (
+                    run_bound_check, WorkerCheckPolicyRejected, WorkerWriteGuardError,
+                )
                 try:
                     result = run_bound_check(worker_task_binding, cmd, args.get("cwd"), t, return_result=True)
                     return _bound_check_text(result, t)
                 except WorkerCheckPolicyRejected as exc:
                     return _tool_policy_denial(exc.policy_reason, str(exc))
+                except WorkerWriteGuardError as e:
+                    # run_bound_check ist fail-closed: jede Exception entsteht VOR
+                    # sandbox.run_isolated(...) — der Prozess wurde nie gestartet.
+                    # Also keine unbekannte Wirkung, sondern eine saubere Ablehnung.
+                    return _tool_policy_denial("bound_check_denied", f"BLOCKIERT: {e}")
                 except Exception as e:
                     return _tool_effect_unconfirmed()
             from hub.worker_git import is_live_path_blocked

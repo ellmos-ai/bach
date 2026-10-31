@@ -89,6 +89,7 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "decomposed_parent_completion": 'Zerlegung ist kein Abschluss: Gib für einen zerlegten Eltern-Task complete=false mit dem Teilstand an.',
         "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
+        "decompose_already_decomposed": 'Diese Aufgabe wurde bereits in Teilaufgaben zerlegt; keine erneute Zerlegung anlegen, sondern Zwischenstand mit submit_result(complete=false) zurückgeben.',
         "mutation_scope": 'Änderungen nur an der gebundenen Task: task_id ist die eigene ID als Zahl, nicht als Text.',
     }
 
@@ -365,9 +366,12 @@ class WorkerLeaseBinding:
         except Exception:  # noqa: BLE001 -- malformed worker policy fails closed.
             return "repository_capability_missing"
         try:
-            from .worker_repo_registry import resolve_task_repository
+            from .worker_repo_registry import registry_path, resolve_task_repository
             binding = resolve_task_repository(snapshot.get("id"))
         except Exception:  # noqa: BLE001 -- unreadable/malformed registry fails closed.
+            from .worker_repo_registry import registry_path
+            if not repositories and not registry_path().exists():
+                return None
             return "repository_unverified"
         from hub._services.worker_policy_settings import _selection_kernel
         return _selection_kernel().repository_rejection(binding.repository,repositories)
@@ -743,7 +747,7 @@ class WorkerLeaseBinding:
             return
         pin = self._effective_selection_policy_snapshot(self._client,self._snapshot,self._selection_profile)
         if (pin is None or self._selection_policy_pin is None or
-                pin['configuration_version'] != self._selection_policy_pin['configuration_version'] or
+                (bool(self._selection_profile) and pin['configuration_version'] != self._selection_policy_pin['configuration_version']) or
                 pin['policy'] != self._selection_policy_pin['policy'] or
                 self._selection_constraints_changed(pin)):
             raise LeaseProtocolError('Gespeicherte Task-Auswahlpolicy ist nicht mehr zugelassen')
@@ -1359,13 +1363,7 @@ class WorkerLeaseBinding:
             if (not callable(guard) or not guard(self, route=grant.route,
                                                 requested_model=grant.requested_model)):
                 raise LeaseProtocolError("Review-Ziel ist vor der Abgabe nicht mehr aktuell")
-        submitting = (grant is None and isinstance(args, dict) and (
-            args.get("action") in {"done", "submit_result"}
-            or (args.get("action") == "update" and args.get("status") in {"done", "completed"})))
-        prepared_scope = self._prepare_submission_scope() if submitting else None
         result = self._execute_task_manage_locked(args, _dispatch_marked=_dispatch_marked)
-        if prepared_scope is not None:
-            self._confirm_submission_scope(prepared_scope)
         with self._lock:
             submitted_review = (self._review_grant is not None
                 and self._completion_result is not None and self._review_ack is not None)
@@ -1459,8 +1457,21 @@ class WorkerLeaseBinding:
                 # auf dem Task-Zweig gesichert statt zur Abweisung zu führen.
                 try:
                     from hub import worker_git as _worker_git
-                    auto_commit = _worker_git.auto_commit_task_worktree(
-                        self.task_id, worker_task_binding=self)
+                    from .worker_repo_registry import registry_path, resolve_task_repository
+                    if registry_path().exists():
+                        try:
+                            resolve_task_repository(self.task_id)
+                            has_repo_binding = True
+                        except Exception:
+                            has_repo_binding = False
+                    else:
+                        has_repo_binding = False
+                    auto_commit = (
+                        _worker_git.auto_commit_task_worktree(
+                            self.task_id, worker_task_binding=self)
+                        if has_repo_binding
+                        else {"committed": False, "reason": "no-repo-binding"}
+                    )
                 except Exception as _exc:
                     auto_commit = {"committed": False, "error": str(_exc)}
                 if auto_commit.get("error"):
@@ -1551,6 +1562,9 @@ class WorkerLeaseBinding:
                     close_parent = args.get("close_parent", False)
                     if close_parent is not False:
                         raise WorkerTaskManageArgumentError("decompose_parent")
+                    if (self._decomposition_receipt is not None
+                            or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[", str(self._snapshot.get("description") or ""))):
+                        raise WorkerTaskManageArgumentError("decompose_already_decomposed")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in (
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")
@@ -1572,14 +1586,92 @@ class WorkerLeaseBinding:
                         "task_id": self.task_id, "previous_version": previous_version,
                         "created_ids": tuple(ack.created_ids), "parent_closed": ack.parent_closed,
                     }
+                self._inherit_decomposed_subtask_bindings(ack.created_ids)
                 self._adopt_task_version(ack.task_version, previous_version=previous_version)
-                self._snapshot["description"] = (self._snapshot.get("description") or "") + (
-                    f"\n[In {ack.created_count} Teilaufgaben zerlegt: {list(ack.created_ids)}]")
+                new_ids = [value for value in ack.created_ids if value not in ack.reused_ids]
+                notes = f"\n[In {len(new_ids)} Teilaufgaben zerlegt: {new_ids}]" if new_ids else ""
+                if ack.reused_ids:
+                    notes += f"\n[Teilaufgabe bereits offen, nicht erneut angelegt: {list(ack.reused_ids)}]"
+                self._snapshot["description"] = (self._snapshot.get("description") or "") + notes
                 if ack.parent_closed:
                     self.invalidate("decompose_closed_parent")
                     raise LeaseProtocolError("Zerlegung hat unerlaubt den Parent abgeschlossen")
                 if action == "add":
+                    if ack.created_ids[0] in ack.reused_ids:
+                        return (f"Task #{ack.created_ids[0]} besteht bereits als offene Teilaufgabe mit gleichem "
+                                f"Titel; nicht erneut angelegt: {subtasks[0]['title']}")
                     return f"Task #{ack.created_ids[0]} erstellt: {subtasks[0]['title']}"
+                reused_note = (f"; bereits offen und wiederverwendet: IDs {list(ack.reused_ids)}"
+                               if ack.reused_ids else "")
                 return (f"Task #{self.task_id} in {ack.created_count} Teilaufgaben zerlegt: "
-                        f"IDs {list(ack.created_ids)}")
+                        f"IDs {list(ack.created_ids)}{reused_note}")
             raise LeaseProtocolError("Unbekannte Task-Aktion")
+
+    def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None):
+        """Propagate verified parent repository binding to newly decomposed child tasks."""
+        if not created_ids:
+            return False
+        try:
+            import json
+            import os
+            import tempfile
+            from pathlib import Path
+
+            if registry_file is None:
+                # Only auto-mutate the live registry when bound to the canonical local DB.
+                if (getattr(self._client, "mode", None) != "local"
+                        or getattr(self._client, "_conn", None) is not None):
+                    return False
+                canonical_db = Path.home() / ".bach" / "bach.db"
+                client_db = getattr(self._client, "_db_path", None)
+                if client_db is not None and Path(client_db).resolve(strict=False) != canonical_db.resolve(strict=False):
+                    return False
+                reg_path = Path.home() / ".bach" / "worker_repo_registry.v1.json"
+            else:
+                reg_path = Path(registry_file)
+
+            if not reg_path.is_file() or reg_path.is_symlink():
+                return False
+            data = json.loads(reg_path.read_text(encoding="utf-8"))
+            tasks_map = data.get("tasks")
+            if not isinstance(tasks_map, dict):
+                return False
+            parent_entry = tasks_map.get(str(self.task_id))
+            if not isinstance(parent_entry, dict) or "repository" not in parent_entry or "source_sha" not in parent_entry:
+                return False
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            changed = False
+            for cid in created_ids:
+                cid_str = str(int(cid))
+                if cid_str in tasks_map:
+                    continue
+                entry = {
+                    "repository": parent_entry["repository"],
+                    "source_sha": parent_entry["source_sha"],
+                }
+                if "source_proof_sha256" in parent_entry:
+                    snap_fn = getattr(self._client, "_task_policy_snapshot", None)
+                    child_snap = snap_fn(int(cid)) if callable(snap_fn) else None
+                    child_ver = child_snap.get("task_version") if isinstance(child_snap, dict) else None
+                    if isinstance(child_ver, str) and len(child_ver) == 64:
+                        entry["task_version"] = child_ver
+                        entry["operator"] = parent_entry.get("operator", "operator:decompose-inherit")
+                        entry["registered_at"] = now_iso
+                        entry["source_proof_sha256"] = parent_entry["source_proof_sha256"]
+                tasks_map[cid_str] = entry
+                changed = True
+
+            if not changed:
+                return False
+            raw = (json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+            with tempfile.NamedTemporaryFile(dir=reg_path.parent, prefix=".repo-inherit-", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+                os.chmod(tmp_path, 0o600)
+                tmp.write(raw)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+            os.replace(tmp_path, reg_path)
+            return True
+        except Exception:
+            return False

@@ -633,7 +633,8 @@ def _completion_decision_readback(conn, record):
                 or detail.get("decision", {}).get("completion_allowed") is not True):
             raise ValueError("receipt mismatch")
         from .worker_result_provenance import current_result_revision
-        revision = current_result_revision(record)
+        from .worker_result_review import submission_bound_result_revision
+        revision = current_result_revision(record) or submission_bound_result_revision(conn, record)
         if revision is None or revision != detail["result_revision"]:
             raise ValueError("revision changed")
         return {"availability": "available", "event_id": event_id,

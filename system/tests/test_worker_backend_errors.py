@@ -607,7 +607,8 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         snapshot = client.task_snapshot(42)
         assert snapshot["claim_fence"] == 1 and snapshot["status"] == "pending"
         assert not client.read(42).leased
-        children = conn.execute("SELECT COUNT(*) FROM tasks WHERE id != 42").fetchone()[0]
+        own_tasks = "SELECT COUNT(*) FROM tasks WHERE id != 42 AND COALESCE(source, '') NOT LIKE 'resolver:%'"
+        children = conn.execute(own_tasks).fetchone()[0]
         assert children == (1 if action == "add" else 0)
         current = slots.get_slot(ident, path)
         if backend_failure == "server_error":
@@ -618,6 +619,10 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         assert current["backend_error"]["kind"] == expected_kind
         assert bindings[-1].tool_dispatch_count == 1 and bindings[-1].closed
         assert execution.start_error == ("backend_error" if backend_failure == "server_error" else None)
+        # #2661: a run that ended in error gets exactly one resolver task; a stop gets none.
+        resolvers = conn.execute("SELECT assigned_to, status FROM tasks WHERE source = ?",
+                                 (f"resolver:worker:{ident}",)).fetchall()
+        assert [tuple(row) for row in resolvers] == ([("BACH", "pending")] if backend_failure == "server_error" else [])
         # A fresh holder may resume the open task. Acquiring it must preserve
         # the earlier child/files and must not execute any provider/tool call.
         import threading
@@ -626,7 +631,7 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
             generation="b" * 32, is_current=lambda: True, stop_event=threading.Event())
         assert second.task_id == 42 and second._ack.fence == 2
         assert second.task_snapshot()["title"] == snapshot["title"]
-        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE id != 42").fetchone()[0] == children
+        assert conn.execute(own_tasks).fetchone()[0] == children
         assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0)
         assert second.return_lease()
         history = conn.execute("SELECT new_value FROM task_history WHERE task_id=42 AND action='lease_release'").fetchall()

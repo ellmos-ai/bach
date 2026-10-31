@@ -19,6 +19,7 @@ der eine der APIs brechen wuerde.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from datetime import datetime, timedelta
@@ -28,6 +29,91 @@ try:
     from hub._services.task_schema import ensure_task_claim_columns
 except ImportError:
     from ._services.task_schema import ensure_task_claim_columns
+
+log = logging.getLogger("bach.task_audit")
+
+# Nutzerregel 26.10.2026 (#2661): Jede Sperre bekommt genau eine offene
+# Auflöse-Task, damit niemand sie per Hand aus der Quarantäne holen muss.
+# Die Zuweisung ist die Systemeinstellung task_resolver_settings (Standard BACH).
+RESOLVER_CATEGORY = "Wartung"
+RESOLVER_CRITERION = ("Abnahmekriterium: Ursprung wieder bearbeitbar oder sauber ersetzt "
+                      "und geschlossen.")
+_RESOLVER_CODE = re.compile(r"[a-z][a-z0-9_]{0,47}\Z")
+_RESOLVER_WORKER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}\Z")
+
+
+def ensure_resolver_task(conn: sqlite3.Connection, key: str, *, title: str, evidence: str,
+                         priority: Optional[str] = None, now: Optional[str] = None) -> Optional[int]:
+    """Create the one open resolver task for a block; an open one is never duplicated."""
+    now = _iso_now(now)
+    source = f"resolver:{key}"
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "source" not in columns:
+        return None  # Without the source key no duplicate check is possible.
+    if conn.execute(
+            "SELECT 1 FROM tasks WHERE source = ? AND status NOT IN ('done', 'completed', 'cancelled')",
+            (source,)).fetchone():
+        return None
+    from hub._services.task_resolver_settings import stored_assignee
+    values = {"title": title[:200], "description": f"{evidence}\n\n{RESOLVER_CRITERION}",
+              "priority": priority or "P2", "category": RESOLVER_CATEGORY,
+              "assigned_to": stored_assignee(conn), "created_by": "auto-resolver", "source": source,
+              "status": "pending", "created_at": now, "updated_at": now}
+    values = {name: value for name, value in values.items() if name in columns}
+    cursor = conn.execute(
+        f"INSERT INTO tasks ({', '.join(values)}) VALUES ({', '.join('?' for _ in values)})",
+        tuple(values.values()))
+    log.info("resolver_task_created origin=%s resolver=%s", key, cursor.lastrowid)
+    return cursor.lastrowid
+
+
+def _ensure_block_resolver(conn, task_id, existing_row, *, reason, changed_by, now):
+    """Hook at the transition into blocked; a failure never undoes the block itself."""
+    title = str(existing_row.get("title") or "")
+    evidence = (
+        f"Automatisch angelegt beim Übergang von #{task_id} auf blocked ({now}, durch {changed_by}).\n"
+        f"Ursprungstask: #{task_id} „{title[:120]}“ (vorher {existing_row.get('status')}, "
+        f"zugewiesen an {existing_row.get('assigned_to') or '-'}).\n"
+        f"Sperrgrund: {str(reason)[:500] if reason else 'nicht angegeben'}\n"
+        f"Belege: task_history von #{task_id}; vorheriger Holder "
+        f"{existing_row.get('claimed_by') or '-'}, Fence {existing_row.get('claim_fence') or 0}.")
+    try:
+        conn.execute("SAVEPOINT block_resolver")
+        try:
+            resolver = ensure_resolver_task(conn, f"task:{task_id}",
+                title=f"Sperre von #{task_id} auflösen: {title[:80]}", evidence=evidence,
+                priority=existing_row.get("priority"), now=now)
+            if resolver is not None:
+                conn.execute(
+                    """INSERT INTO task_history
+                       (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
+                       VALUES (?, 'resolver_task', 'status', NULL, ?, 'auto-resolver', ?)""",
+                    (task_id, json.dumps({"resolver_task_id": resolver}), now))
+            conn.execute("RELEASE SAVEPOINT block_resolver")
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT block_resolver")
+            conn.execute("RELEASE SAVEPOINT block_resolver")
+            raise
+    except Exception as exc:  # noqa: BLE001 -- a quarantine must still take effect
+        log.warning("resolver_task_unconfirmed origin=task:%s reason=%s", task_id, type(exc).__name__)
+        return None
+    return resolver
+
+
+def ensure_worker_error_resolver(conn: sqlite3.Connection, worker_id: str, error_code: str,
+                                 now: Optional[str] = None) -> Optional[int]:
+    """One open resolver task for a worker whose run ended with a fixed error code."""
+    if not isinstance(worker_id, str) or not _RESOLVER_WORKER.fullmatch(worker_id):
+        raise ValueError("worker_id ist ungültig")
+    if not isinstance(error_code, str) or not _RESOLVER_CODE.fullmatch(error_code):
+        raise ValueError("error_code muss ein fester Code sein")
+    now = _iso_now(now)
+    evidence = (f"Automatisch angelegt: Worker {worker_id} hat seinen Lauf mit {error_code} beendet "
+                f"({now}). Belege: Worker-Aktivität im Slot und telegram-bot.err.log. "
+                f"Mit Grund neu starten oder die Ursache beheben.")
+    return ensure_resolver_task(conn, f"worker:{worker_id}",
+        title=f"Worker {worker_id} nach {error_code} wieder in Gang bringen",
+        evidence=evidence, priority="P2", now=now)
 
 # Status, bei denen completed_at gesetzt wird. GUI-Server nutzt 'completed',
 # CLI/Headless/Chat nutzen 'done' -- beide bleiben gueltig, keiner wird umbenannt.
@@ -251,6 +337,7 @@ def apply_task_field_changes(
     allow_reopen: bool = False,
     lease_authorized: bool = False,
     result_acceptance: Any = None,
+    block_reason: Optional[str] = None,
 ) -> bool:
     """Schreibt das UPDATE auf `tasks` plus die zugehoerigen `task_history`-
     Zeilen. Committet NICHT selbst -- der Aufrufer bleibt fuer Transaktions-
@@ -432,6 +519,9 @@ def apply_task_field_changes(
             (task_id, action, field_changed, old_value, new_value, changed_by, now),
         )
 
+    if new_status == "blocked" and existing_row.get("status") != "blocked":
+        _ensure_block_resolver(conn, task_id, existing_row, reason=block_reason,
+                               changed_by=changed_by, now=now)
     return True
 
 
