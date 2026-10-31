@@ -112,6 +112,7 @@ def git_snapshot(root: Path, previous: str | None) -> tuple[str, list[str]]:
             "--",
             "system/hub",
             "system/gui/api",
+            "system/skills/workflows",
             "docs",
             "README.md",
         ]
@@ -126,6 +127,7 @@ def git_snapshot(root: Path, previous: str | None) -> tuple[str, list[str]]:
             "--",
             "system/hub",
             "system/gui/api",
+            "system/skills/workflows",
             "docs",
         ]
     )
@@ -251,13 +253,17 @@ class DocumentationDispatcher:
             "doc_freshness": "freshness",
             "docs_changelog_review": "freshness",
         }.get(package, "anhand des Dokumenttyps bestimmen")
+        references = "\n".join(
+            "- system/skills/workflows/" + workflow + ".md" for workflow in WORKFLOWS
+        )
+        selected = "\n".join("- " + name for name in files[:6])
         return (
             "[BACH-DOCS-LOOP-v1] Zuerst den BACH-Adapter vollständig lesen: "
             "system/skills/workflows/doc-reality-loop-bach.md; "
             "Shared-Quellpin: system/skills/workflows/doc-reality-loop-source.v1.json. "
             f"Variante: {variant}. "
-            "Der gepinnte gemeinsame doc-reality-loop-Vertrag ist die Methode; "
-            "die folgenden alten Workflowverweise dienen nur als Herkunft. "
+            "Der gepinnte gemeinsame doc-reality-loop-Vertrag ist die einzige maßgebliche Methode; "
+            "die historischen Workflowdateien dienen ausschließlich als Herkunft und Fachkontext. "
             "Quellen, betroffene Leser und prüfbare Aussagen vollständig erfassen; "
             "Host/Instanz/Version/Oberfläche und Belege getrennt festhalten. "
             "Unerreichbare Wirkung bleibt unknown. Fehlende Register-/Lesernachweise "
@@ -266,7 +272,22 @@ class DocumentationDispatcher:
             "diese Zustände benötigen jeweils die vollständigen eigenen Belege. "
             "Offene Sollanforderungen mit Quelle erhalten; fehlende Folgetask-IDs "
             "als offen melden, keine IDs erfinden oder Aufgaben selbst anlegen.\n\n"
-            + self._description(package, revision, files)
+            f"Paket: {package}; tatsächlicher Quellcommit: {revision}.\n"
+            "Quellen dieses Änderungspakets (höchstens sechs pro Durchlauf):\n"
+            + selected
+            + "\n"
+            f"Weitere Dateien im Delta: {max(0, len(files) - 6)}; nicht still als geprüft markieren.\n"
+            "Historische Herkunftsverweise (nicht als Methode ausführen):\n"
+            + references
+            + "\n"
+            "Alte Modell-, Fanout-, Pfad-, Archivierungs- und Zeitvorgaben darin sind keine aktuellen Befugnisse. "
+            "Rootregeln, Locks, Host/Instanz und installierten Pin frisch prüfen. Fachliche Aussagen anhand "
+            "belegter nativer CLI/API/GUI-Empirie vergleichen; Codepräsenz ist kein Laufnachweis. "
+            "Bestätigte Realität hat bei Tatsachendoku Vorrang; offene bessere Sollanforderungen bleiben Tasks. "
+            "Eine konkrete Differenz mit Source-/Eventlokator und kleinem Korrekturvorschlag liefern. "
+            "Keine Dateien ändern/archivieren/löschen, keine Dienste/Modelle starten, keine weiteren Tasks claimen. "
+            "Keine Differenz ist ein gültiges Ergebnis. Gespeicherter Vorschlag, unabhängiger Review, "
+            "tatsächlicher Dokurepair und persönliche Ergebnisfreigabe sind getrennte Schritte."
         )
 
     def _ensure_task(self, title, description, *, priority="P2", previous_description=None):
