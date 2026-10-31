@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timezone
 
 from . import worker_policy_settings as settings
+from .limits import limit
 from . import worker_review_identity as identity
 from .task_lease import _history, _local_naive, _utcnow, task_content_version
 from .task_result_service import read_result
@@ -97,6 +98,13 @@ def _ensure_schema(conn):
         child_result_id INTEGER NOT NULL UNIQUE, receipt TEXT NOT NULL,
         receipt_sha256 TEXT NOT NULL, event_id INTEGER NOT NULL,
         UNIQUE(target_result_id,target_revision))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS worker_result_review_pages (
+        receipt_sha256 TEXT NOT NULL, target_result_id INTEGER NOT NULL,
+        target_revision TEXT NOT NULL, diff_sha256 TEXT NOT NULL,
+        page_no INTEGER NOT NULL, page_sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL, UNIQUE(target_result_id,target_revision,page_no))""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_review_pages_receipt "
+                 "ON worker_result_review_pages(receipt_sha256)")
 
 
 def _policy_snapshot(conn, task_id):
@@ -321,12 +329,21 @@ def _intent(conn, review_task_id):
                 or type(row["target_task_id"]) is not int or row["target_task_id"] <= 0
                 or type(row["target_result_id"]) is not int or row["target_result_id"] <= 0
                 or not isinstance(receipt, dict) or not _intent_source_valid(receipt)
-                or set(receipt) != {"schema", "review_task_id", "target_task_id",
-                                    "target_result_id", "target_revision",
-                                    "submission_revision", "author_generation", "author_id",
-                                    "policy_version", "identity_version"} | (
-                                        {"author_source"} if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA else
-                                        {"execution_revision", "scope_receipt_sha256", "author_execution_id", "author_slot_id"})
+                or set(receipt) not in ({"schema", "review_task_id", "target_task_id",
+                                         "target_result_id", "target_revision",
+                                         "submission_revision", "author_generation", "author_id",
+                                         "policy_version", "identity_version"}
+                                        | ({"author_source"} if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA
+                                           else {"execution_revision", "scope_receipt_sha256",
+                                                 "author_execution_id", "author_slot_id"}),
+                                        {"schema", "review_task_id", "target_task_id",
+                                         "target_result_id", "target_revision",
+                                         "submission_revision", "author_generation", "author_id",
+                                         "policy_version", "identity_version",
+                                         "diff_chars", "diff_truncated", "diff_sha256"}
+                                        | ({"author_source"} if receipt.get("schema") == _EXTERNAL_INTENT_SCHEMA
+                                           else {"execution_revision", "scope_receipt_sha256",
+                                                 "author_execution_id", "author_slot_id"}))
                 or _digest(receipt) != row["intent_sha256"]
                 or receipt.get("review_task_id") != review_task_id
                 or receipt.get("target_task_id") != row["target_task_id"]
@@ -408,7 +425,8 @@ def list_review_candidates(conn, limit=100, offset=0):
     return result
 
 
-def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
+def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None,
+                         diff_chars=0, diff_truncated=False, diff_sha256=""):
     """Create one ordinary pending review task after a real author submission."""
     if conn.in_transaction or getattr(getattr(binding, "_client", None), "mode", None) != "local":
         return None
@@ -424,7 +442,9 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
         authority = _target_authority(conn, target)
         if authority is None:
             return None
-        return _prepare_target_review(conn, target, authority)
+        return _prepare_target_review(conn, target, authority,
+                                       diff_chars=diff_chars, diff_truncated=diff_truncated,
+                                       diff_sha256=diff_sha256)
     except (sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError,
             settings.PolicyUnavailable):
         return None
@@ -444,7 +464,8 @@ def validate_external_review_target(payload):
 
 
 def prepare_external_review_task(conn, task_id, *, operator_token, expected=None,
-                                 repo_root=None, worktrees_dir=None):
+                                 repo_root=None, worktrees_dir=None,
+                                 diff_chars=0, diff_truncated=False, diff_sha256=""):
     """Explicit enrolled-operator entry after a verified external attestation."""
     if conn.in_transaction:
         raise ValueError("Externe Reviewanlage benötigt eine freie DB-Verbindung")
@@ -465,13 +486,21 @@ def prepare_external_review_task(conn, task_id, *, operator_token, expected=None
     authority = _target_authority(conn, target)
     if authority is None:
         return None
-    return _prepare_target_review(conn, target, authority, operator_token=operator_token)
+    return _prepare_target_review(conn, target, authority, operator_token=operator_token,
+                                  diff_chars=diff_chars, diff_truncated=diff_truncated,
+                                  diff_sha256=diff_sha256)
 
 
-def _prepare_target_review(conn, target, authority, *, operator_token=None):
+def _prepare_target_review(conn, target, authority, *, operator_token=None,
+                            diff_chars=0, diff_truncated=False, diff_sha256=""):
     """One ordinary review task for either proven source; DB CAS only here."""
     if conn.in_transaction:
         raise ValueError("Reviewanlage benötigt eine freie DB-Verbindung")
+    if (type(diff_chars) is not int or diff_chars < 0
+            or type(diff_truncated) is not bool
+            or (diff_sha256 != "" and not _HEX.fullmatch(diff_sha256))
+            or (diff_truncated and (diff_chars <= 0 or diff_sha256 == ""))):
+        raise ValueError("Unvollständige Review-Diff-Metadaten")
     conn.execute("BEGIN IMMEDIATE")
     try:
         if source_kind(target) == "external_attested":
@@ -510,7 +539,8 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None):
                        "author_generation": target["generation"],
                        "author_id": authority["author_id"],
                        "policy_version": authority["policy_version"],
-                       "identity_version": authority["identity_version"]}
+                       "identity_version": authority["identity_version"], "diff_chars": diff_chars,
+                       "diff_truncated": diff_truncated, "diff_sha256": diff_sha256}
             digest = _digest(receipt)
             event_id = _history(conn, target["task_id"], "worker_result_review_task", _ACTOR,
                                 now, {"intent_sha256": digest, "review_task_id": review_task_id,
@@ -584,6 +614,13 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
         if target_pair is None:
             return None
         target, authority = target_pair
+        max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
+        diff_chars = found["receipt"].get("diff_chars", 0)
+        diff_truncated = found["receipt"].get("diff_truncated", False)
+        diff_sha256 = found["receipt"].get("diff_sha256", "")
+        paging_required = diff_truncated or diff_chars > max_diff_chars
+        if paging_required and not diff_sha256:
+            return None
         principal = identity.principal_for_route(authority["identity"],
             backend_id=route["backend_id"], route_sha256=route["route_sha256"],
             requested_model=requested_model)
@@ -817,7 +854,8 @@ def _parse_verdict(result_text):
     except (ValueError, TypeError):
         return None
     if (type(verdict) is not dict
-            or set(verdict) != {"status", "summary", "task_contract_met"}
+            or set(verdict) not in ({"status", "summary", "task_contract_met"},
+                                    {"status", "summary", "task_contract_met", "diff_pages"})
             or verdict["status"] not in {"approved", "findings", "rejected"}
             or type(verdict["summary"]) is not str
             or not verdict["summary"] or verdict["summary"] != verdict["summary"].strip()
@@ -826,6 +864,20 @@ def _parse_verdict(result_text):
             or type(verdict["task_contract_met"]) is not bool
             or (verdict["status"] == "approved" and not verdict["task_contract_met"])):
         return None
+    if "diff_pages" in verdict:
+        pages = verdict["diff_pages"]
+        if type(pages) is not list:
+            return None
+        seen = set()
+        last = 0
+        for page in pages:
+            if (type(page) is not dict or set(page) != {"page", "sha256"}
+                    or type(page["page"]) is not int or page["page"] < 1
+                    or page["page"] <= last or page["page"] in seen
+                    or type(page["sha256"]) is not str or not _HEX.fullmatch(page["sha256"])):
+                return None
+            seen.add(page["page"])
+            last = page["page"]
     return verdict
 
 
@@ -1310,6 +1362,20 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                 or authority["identity_version"] != grant.identity_version
                 or target["result_revision"] != grant.target_revision):
             return None
+        max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
+        diff_chars = found["receipt"].get("diff_chars", 0)
+        diff_truncated = found["receipt"].get("diff_truncated", False)
+        diff_sha256 = found["receipt"].get("diff_sha256", "")
+        paging_required = diff_truncated or diff_chars > max_diff_chars
+        if paging_required:
+            chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
+            page_count = max(1, (diff_chars + chunk - 1) // chunk)
+            if verdict["status"] == "approved":
+                pages = verdict.get("diff_pages", [])
+                if (diff_sha256 == "" or len(pages) != page_count
+                        or any(type(page) is not dict or page.get("page") != index + 1
+                               for index, page in enumerate(pages))):
+                    return None
         conn.execute("BEGIN IMMEDIATE")
         try:
             if not _same_target_db(conn, target, authority):
@@ -1378,6 +1444,13 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                          (grant.task_id, target["task_id"], target["result_id"],
                           target["result_revision"], child["result_id"], _json(receipt),
                           digest, event_id))
+            if "diff_pages" in verdict:
+                for page in verdict["diff_pages"]:
+                    conn.execute("INSERT INTO worker_result_review_pages "
+                                 "(receipt_sha256,target_result_id,target_revision,diff_sha256,"
+                                 "page_no,page_sha256,created_at) VALUES (?,?,?,?,?,?,?)",
+                                 (digest, target["result_id"], target["result_revision"],
+                                  diff_sha256, page["page"], page["sha256"], _local_naive(now)))
             # The performed review is finished administrative work. This
             # accepts only its own verdict record, never the target's result.
             from .task_result_service import _Acceptance, _status_revision

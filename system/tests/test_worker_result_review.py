@@ -682,6 +682,96 @@ def test_review_task_requires_a_private_fresh_run_grant(review_world):
     assert _grant(world, task_id)[0] is not None
 
 
+def _prepare_diff(world, **meta):
+    prepared = review.prepare_review_task(world["conn"], world["binding"], **_paths(world), **meta)
+    assert prepared is not None
+    return prepared
+
+
+def _record_child(world, child, verdict):
+    answer = _response(REVIEW_OBSERVED, verdict=(child.task_id, verdict))
+    handle = child.begin_model_execution(
+        backend_id="ollama", requested_model=REVIEW_MODEL, slot_id=REVIEW_SLOT,
+        request_sha256=_request_hash("diff review prompt"), route_sha256=REVIEW_ROUTE)
+    assert handle is not None
+    assert child.finish_model_execution(
+        handle, result=answer, route_sha256=REVIEW_ROUTE) is True
+    assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
+        "action": "submit_result", "task_id": child.task_id, "result": verdict})
+    return review.record_review(world["conn"], child, **_paths(world))
+
+
+def _guard(world, child):
+    return review.guard_review_dispatch(
+        world["conn"], child, route={"backend_id": "ollama", "route_sha256": REVIEW_ROUTE},
+        requested_model=REVIEW_MODEL, **_paths(world))
+
+
+def test_default_diff_metadata_grant_and_record_still_work(review_world):
+    world = review_world
+    prepared = _prepare(world)
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert _guard(world, child) is True
+    verdict = json.dumps({"status": "approved", "summary": "Standardprüfung ohne Diff-Metadaten bestanden.",
+                          "task_contract_met": True}, ensure_ascii=False)
+    evidence = _record_child(world, child, verdict)
+    assert evidence is not None and evidence["availability"] == "recorded"
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM worker_result_review_pages").fetchone()[0] == 0
+
+
+def test_paged_review_grant_requires_diff_sha256(review_world, monkeypatch):
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "1024")
+    prepared = _prepare_diff(review_world, diff_chars=5000, diff_truncated=False, diff_sha256="")
+    assert _grant(review_world, prepared["review_task_id"])[0] is None
+
+
+def test_paged_review_grant_with_diff_sha256_succeeds(review_world, monkeypatch):
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "1024")
+    prepared = _prepare_diff(review_world, diff_chars=5000, diff_truncated=False, diff_sha256="ab" * 32)
+    assert _grant(review_world, prepared["review_task_id"])[0] is not None
+
+
+def test_paged_review_approved_with_full_diff_pages_records_evidence(review_world, monkeypatch):
+    world = review_world
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=False, diff_sha256="ab" * 32)
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert _guard(world, child) is True
+    verdict = json.dumps({"status": "approved", "summary": "Vollständige Seitenprüfung abgeschlossen.",
+                          "task_contract_met": True,
+                          "diff_pages": [{"page": 1, "sha256": "ab" * 32},
+                                         {"page": 2, "sha256": "bc" * 32},
+                                         {"page": 3, "sha256": "cd" * 32}]}, ensure_ascii=False)
+    evidence = _record_child(world, child, verdict)
+    assert evidence is not None and evidence["availability"] == "recorded"
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM worker_result_review_pages").fetchone()[0] == 3
+
+
+def test_paged_review_approved_needs_all_pages_findings_do_not(review_world, monkeypatch):
+    world = review_world
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=False, diff_sha256="ab" * 32)
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert _guard(world, child) is True
+    approved = json.dumps({"status": "approved", "summary": "Ohne Seitenbelege nicht abnehmbar.",
+                           "task_contract_met": True}, ensure_ascii=False)
+    assert _record_child(world, child, approved) is None
+    findings = json.dumps({"status": "findings", "summary": "Befunde ohne Seitenbelege dokumentiert.",
+                           "task_contract_met": False}, ensure_ascii=False)
+    evidence = _record_child(world, child, findings)
+    assert evidence is not None and evidence["availability"] == "recorded"
+
+
 def test_git_scope_change_after_grant_blocks_dispatch(review_world):
     world = review_world
     task_id = _prepare(world)["review_task_id"]
