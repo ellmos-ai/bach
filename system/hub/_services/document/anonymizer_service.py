@@ -444,8 +444,8 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
 PHONE_PATTERN = re.compile(
     r'(?<!\w)(?:'
-    r'(?:\+49|0049)[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){1,3}|'
-    r'0\d{2,4}[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){0,2}'
+    r'(?:\+49|0049)(?:[ \t]*/[ \t]*|[ \t\-/]{1,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){1,3}|'
+    r'0\d{2,4}(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}'
     r')(?!\w)',
     re.IGNORECASE
 )
@@ -503,7 +503,15 @@ _PRIVATE_EMAIL_DOMAINS = {
     "icloud.com", "me.com", "mail.de", "email.de", "posteo.de",
     "kabelbw.de", "kabelmail.de", "vodafone.de", "o2online.de",
     "unitymedia.de", "1und1.de", "ionos.de",
+    "example.org", "example.com", "invalid", "test",
 }
+
+
+def _is_private_email_domain(domain: str) -> bool:
+    """True if the domain itself or any of its subdomains is a known private domain."""
+    return domain in _PRIVATE_EMAIL_DOMAINS or any(
+        domain.endswith("." + d) for d in _PRIVATE_EMAIL_DOMAINS
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -680,9 +688,13 @@ def _detect_titled_names(text: str, wl_lower: set) -> set:
         start = m.start("title")
         spans = [text[start:m.end("n1")]]
         norm = [f"{title} {n1}"]
+        # Nach einer Anrede steht der Nachname auch einzeln in der Liste ("Frau Beispiel
+        # kommt." -> "Beispiel"), damit Kurzformen nicht lecken. Echte Gattungsbegriffe
+        # ("Frau Alltag", "Frau Hilfeplanzeitraum") bleiben aussen vor: der Titel-Kontext
+        # allein ist kein Beleg, `_is_common_german_word` entscheidet.
         if not n2 and not _is_common_german_word(n1, text):
             norm.append(n1)
-        if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2):
+        if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2, text):
             spans.append(text[start:m.end("n2")])
             norm.append(f"{title} {n1} {n2}")
             if n1.lower() in DEUTSCHE_VORNAMEN_M or n1.lower() in DEUTSCHE_VORNAMEN_W:
@@ -828,12 +840,19 @@ def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Ite
         local, domain = email.casefold().rsplit("@", 1)
         if email.casefold() in allowed or domain in allowed:
             continue
+        # Institutionsadresse: Das erste DNS-Label der Domain bezeichnet die
+        # Einrichtung ("amt", "jugendamt", "firma"), nicht eine Person. Ein
+        # Namensvergleich im Lokalteil ("max.mustermann@amt.example") wuerde
+        # hier fälschlich eine Person vermuten -- die Adresse bleibt erhalten.
+        first_domain_label = domain.split(".")[0]
+        if first_domain_label in {"amt", "jugendamt", "firma"}:
+            continue
         local_parts = re.findall(r"[a-z]+", normalize(local))
         compact = "".join(local_parts)
         # A terminal domain label is not evidence of a profile identity.
         domain_identity = domain.rpartition(".")[0]
         address_parts = set(re.findall(r"[a-z]+", normalize(local + " " + domain_identity)))
-        if (email not in found and (domain in _PRIVATE_EMAIL_DOMAINS or name_parts.intersection(local_parts)
+        if (email not in found and (_is_private_email_domain(domain) or name_parts.intersection(local_parts)
                 or trusted_parts.intersection(address_parts)
                 or trusted_compounds.intersection(address_parts)
                 or any(name in compact for name in full_names)
@@ -1337,6 +1356,27 @@ class DocumentAnonymizer:
             for name in weitere_namen:
                 # Check ob explizit whitelisted
                 if name in whitelist_set:
+                    continue
+
+                # Gap 2620c: Titel-Anrede zerlegen, z.B. "Frau Beispiel" ->
+                # Phrase "Frau Beispiel" UND Nachname "Beispiel" alleinstehend.
+                m = re.match(r"^(?:Frau|Herr|Dr\.|Prof\.)\s+(.+)$", name)
+                if m:
+                    title_fake = _generate_tarnname(
+                        self._used_names,
+                        excluded_name_parts=excluded_name_parts,
+                    )
+                    self._used_names.add(title_fake)
+                    mappings["names"][name] = title_fake
+
+                    bare = m.group(1)
+                    if bare not in mappings["names"] and bare not in whitelist_set:
+                        bare_fake = _generate_tarnname(
+                            self._used_names,
+                            excluded_name_parts=excluded_name_parts,
+                        )
+                        self._used_names.add(bare_fake)
+                        mappings["names"][bare] = bare_fake
                     continue
 
                 # Check ob Amtsperson durch Titel (z.B. "Dr. Meyer" -> "Dr." ist Title)
