@@ -1,6 +1,6 @@
 # BACH Agenten-System
 
-> **Stand:** 2026-09-17 | **Struktur:** `agents/` (Top-Level)
+> **Stand:** 2026-10-16 | **Struktur:** `agents/` (Top-Level)
 
 ## Ueberblick
 
@@ -51,6 +51,19 @@ dependencies) in seiner SKILL.md bzw. CONCEPT.md.
 | ATI | `ati/` | Advanced Tool Integration, Projekt-Bootstrapping |
 | Reflection-Agent | `reflection/` | Selbstreflexion, Performance-Analyse |
 | Test-Agent | `test-agent/` | QA, Smoke-Tests (Referenz-Agent in `tests/test_smoke.py`) |
+
+### System-Agenten (Blueprints)
+
+| Agent | Verzeichnis | Zweck |
+|-------|-------------|-------|
+| Queue-Maintainer | `queue-maintainer/` | Wartungsaufgaben aus belegten Queue-Befunden ableiten (Befund, Quelle, naechster Schritt, Abnahmekriterium) |
+| Zuordnungsregler | `zuordnungsregler/` | Neuzuordnungsvorschlaege bei Claimhindernissen (Klassifikation, Auswirkungsanalyse, Freigabepflicht) |
+
+Beide sind versionierbare Systemagent-Blueprints (v1.0.0 nach
+`system/skills/_templates/TEMPLATE_AGENT.md`, Umsetzungspaket 4 des
+Ocean-Orchestrierungsauftrags, Ticket T-20261014-514217448). Keine
+Runtime-Registrierung in `bach_agents` ohne Freigabe; Registrierung und
+konkreter Lauf sind separat zu belegen.
 
 ### Experten
 
