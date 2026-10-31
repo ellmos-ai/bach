@@ -289,8 +289,13 @@ python bach.py --shutdown "Summary"
 Direct access to handlers without session overhead. For scripts, quick queries, or LLMs only needing single operations.
 
 ```python
-from bach_api import task
-task.list()       # Immediately usable
+from bach_api import task, memory, steuer, partner, tools, injector
+
+task.list()                              # Query tasks
+memory.write("Important note")           # Write memory
+steuer.status()                          # Control status
+partner.list()                           # List partners
+injector.process("I am blocked")         # Cognitive help
 ```
 
 ##### Mode 3: Mixed mode (API + Session-Lifecycle)
@@ -382,7 +387,7 @@ from bach_api import (
 
 ---
 
-### (1) STARTEP now BACH [B/C]: (1) → (2) → (3) → (4) → (5) → (6)
+## (1) STARTEP now BACH [B/C]: (1) → (2) → (3) → (4) → (5) → (6)
 
 *Only in Mode B (Mixed) and C (Session). Mode A skips this section.*
 
@@ -576,7 +581,7 @@ Complete schema: `system/data/schema/schema.sql` (138 tables + Views + FTS)
   |  | hooks.on/emit (14 Ev) |
   |  | Plugin API (planned)  |
   |  +-----------------------+
-  ```
+```
 
 ---
 
@@ -906,6 +911,24 @@ injector.toggle("strategy_injector")  # Individually on/off
 injector.set_mode("api")              # Filter CLI hints from context
 ```
 
+```bash
+bach --inject status            # Status aller Injektoren
+bach --inject toggle <name>     # An/Aus schalten
+```
+
+```python
+from bach_api import injector
+
+injector.process("text")              # Alle Injektoren auf Text anwenden
+injector.check_between("task done")   # Quality-Check nach Task-Abschluss
+injector.tool_reminder()              # Verfuegbare Tools (einmalig)
+injector.assign_task()                # Naechste Aufgabe automatisch zuweisen
+injector.time_check()                 # Uhrzeit + Nachrichten
+injector.status()                     # Status aller Injektoren
+injector.toggle("strategy_injector")  # Einzeln an/aus
+injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
+```
+
 ---
 
 ## CHANGELOG
@@ -996,3 +1019,7 @@ injector.set_mode("api")              # Filter CLI hints from context
 - Version-Check-Principle introduced
 - Standard header
   completed.
+
+### v2.0.2 (2026-01-01)
+
+- Initial version

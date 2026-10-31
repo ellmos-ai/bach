@@ -289,8 +289,13 @@ python bach.py --shutdown "Resumen"
 Acceso directo a handlers sin overhead de sesión. Para scripts, consultas rápidas, o LLMs que solo necesitan operaciones individuales.
 
 ```python
-from bach_api import task
-task.list()       # Inmediatamente usable
+from bach_api import task, memory, steuer, partner, tools, injector
+
+task.list()                              # Consultar tareas
+memory.write("Nota importante")          # Escribir memoria
+steuer.status()                          # Estado del control
+partner.list()                           # Listar socios
+injector.process("estoy bloqueado")      # Ayuda cognitiva
 ```
 
 ##### Modo 3: Modo Mixto (API con Lifecycle de Sesión)
@@ -382,7 +387,7 @@ from bach_api import (
 
 ---
 
-### (1) INICIA ahora BACH [B/C]: (1) → (2) → (3) → (4) → (5) → (6)
+## (1) INICIA ahora BACH [B/C]: (1) → (2) → (3) → (4) → (5) → (6)
 
 *Solo en Modo B (Mixto) y C (Sesión). Modo A salta esta sección.*
 
@@ -576,7 +581,7 @@ Esquema completo: `system/data/schema/schema.sql` (138 tablas + Views + FTS)
   |  | hooks.on/emit (14 Ev) |
   |  | Plugin API (planned)  |
   |  +-----------------------+
-  ```
+```
 
 ---
 
@@ -905,6 +910,24 @@ injector.toggle("strategy_injector")  # Individualmente on/off
 injector.set_mode("api")              # Filtrar pistas CLI del contexto
 ```
 
+```bash
+bach --inject status            # Status aller Injektoren
+bach --inject toggle <name>     # An/Aus schalten
+```
+
+```python
+from bach_api import injector
+
+injector.process("text")              # Alle Injektoren auf Text anwenden
+injector.check_between("task done")   # Quality-Check nach Task-Abschluss
+injector.tool_reminder()              # Verfuegbare Tools (einmalig)
+injector.assign_task()                # Naechste Aufgabe automatisch zuweisen
+injector.time_check()                 # Uhrzeit + Nachrichten
+injector.status()                     # Status aller Injektoren
+injector.toggle("strategy_injector")  # Einzeln an/aus
+injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
+```
+
 ---
 
 ## CHANGELOG
@@ -995,3 +1018,7 @@ injector.set_mode("api")              # Filtrar pistas CLI del contexto
 - Principio de comprobación de versión introducido
 - Header estándar
   completado.
+
+### v2.0.2 (2026-01-01)
+
+- Versión inicial
