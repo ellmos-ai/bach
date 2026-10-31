@@ -28,9 +28,11 @@ import asyncio
 import copy
 from contextvars import ContextVar
 import hashlib
+import ipaddress
 import json
 import logging
 import os
+import platform
 import re
 import shlex
 import sqlite3
@@ -40,7 +42,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
@@ -728,6 +730,11 @@ class ChatSession(_ModuleChatSession):
         self.operator_control: Any = None
         self.worker_handoff: Any = None
         self.resolved_model: str = ""
+        self.resolved_execution_target: str = ""
+        self.resolved_execution_host: str = ""
+        self.resolved_execution_locality: str = "unknown"
+        self.resolved_execution_observed_at: str = ""
+        self.resolved_execution_session_hash: str = ""
         self.worker_task_actions: Any = None
         self.worker_task_binding: Any = None
         self.require_task_binding: bool = False
@@ -1589,6 +1596,53 @@ class ChatRuntime(_ModuleChatRuntime):
             return False
         return hostname in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
+    @classmethod
+    def _record_resolved_execution(cls, session, backend, model, chat_id: str) -> None:
+        """Record the selected backend at the live inference boundary, never from profile config."""
+        from hub._services.llm.model_backend import backend_identifier
+
+        try:
+            backend_id = backend_identifier(backend) or str(getattr(backend, "backend_id", "") or "").lower()
+        except Exception:  # Runtime classification must never prevent an inference call.
+            backend_id = str(getattr(backend, "backend_id", "") or "").lower()
+        selected_model = str(model or "").strip()
+        target = f"{backend_id}:{selected_model}" if backend_id and selected_model else ""
+        cloud_model = selected_model.lower().endswith(":cloud")
+        hostname = ""
+        base_url = getattr(backend, "base_url", None)
+        if isinstance(base_url, str):
+            try:
+                hostname = urllib.parse.urlsplit(base_url).hostname or ""
+            except ValueError:
+                hostname = ""
+        loopback_endpoint = hostname in {"localhost", "0.0.0.0"}
+        if hostname and not loopback_endpoint:
+            try:
+                loopback_endpoint = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                pass
+        # OpenAI-compatible providers can point at a local vLLM or other
+        # loopback service. Keep compute admission's narrower Ollama/LM
+        # Studio rule, but report the resolved endpoint's actual locality.
+        local_endpoint = (cls._uses_local_compute(backend) or loopback_endpoint) and not cloud_model
+        known_external = backend_id in {"claude", "codex", "openrouter", "anthropic", "openai", "google", "gemini"}
+        locality = ("local" if local_endpoint else "external" if cloud_model or known_external or hostname or
+                    backend_id in {"ollama", "lmstudio"} else "unknown")
+        host = "unknown"
+        if local_endpoint:
+            host = platform.node() or "unknown"
+        elif cloud_model:
+            host = (backend_id if backend_id.endswith("-cloud") else f"{backend_id}-cloud") if backend_id else "cloud"
+        else:
+            host = backend_id if known_external else hostname or "unknown"
+
+        observed_at = datetime.now(timezone.utc).isoformat()
+        session.resolved_execution_target = target
+        session.resolved_execution_host = host
+        session.resolved_execution_locality = locality
+        session.resolved_execution_observed_at = observed_at
+        session.resolved_execution_session_hash = hashlib.sha256(str(chat_id).encode("utf-8")).hexdigest()
+
     @staticmethod
     def _process_priority(chat_id: str, requested: str | None) -> str:
         if requested in {"foreground", "background"}:
@@ -2111,6 +2165,22 @@ class ChatRuntime(_ModuleChatRuntime):
                         )
         check_binding()
         session = self.get_session(turn_context[0]) if turn_context else None
+        if session is not None and turn_context:
+            resolved_model = kwargs.get("model")
+            if not resolved_model:
+                get_default_model = getattr(backend, "get_default_model", None)
+                if callable(get_default_model):
+                    try:
+                        resolved_model = get_default_model()
+                    except Exception:
+                        resolved_model = ""
+            try:
+                self._record_resolved_execution(
+                    session, backend, resolved_model, str(turn_context[0])
+                )
+            except Exception as exc:
+                # Runtime evidence is advisory; it must never block the model call.
+                log.debug("Skipping resolved execution projection (%s)", type(exc).__name__)
         binding = getattr(session, "worker_task_binding", None)
         dispatch_binding = binding
         def mark_model_dispatch():

@@ -116,6 +116,48 @@ def _project_active_execution(raw: Any, worker_id: str) -> dict[str, Any] | None
             "lease_worker_id": holder, "heartbeat_at": heartbeat}
 
 
+def _project_resolved_execution(raw: Any, active_execution: dict[str, Any] | None = None,
+                               *, require_active_execution: bool = False) -> dict[str, Any]:
+    """Expose a target only when a live turn and its correlation evidence agree."""
+    if (not isinstance(raw, dict) or raw.get("runtime_verified") is not True
+            or raw.get("running") is not True):
+        return {}
+    if require_active_execution and active_execution is None:
+        return {}
+    target = _text(raw.get("resolved_execution_target"), limit=320)
+    host = _text(raw.get("resolved_execution_host"), limit=160) or "unknown"
+    locality = raw.get("resolved_execution_locality")
+    evidence = raw.get("resolved_execution_evidence")
+    if (target is None or locality not in {"local", "external", "unknown"}
+            or not isinstance(evidence, dict)
+            or evidence.get("schema") != "bach.resolved-execution.v1"
+            or evidence.get("state") != "active"
+            or not isinstance(evidence.get("session_hash"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", evidence["session_hash"])
+            or not isinstance(evidence.get("observed_at"), str)):
+        return {}
+    try:
+        datetime.fromisoformat(evidence["observed_at"].replace("Z", "+00:00"))
+    except ValueError:
+        return {}
+    if active_execution is not None:
+        generation = evidence.get("generation")
+        task_id = evidence.get("task_id")
+        if (active_execution.get("state") != "running"
+                or generation != active_execution.get("generation")
+                or task_id != active_execution.get("active_task_id")):
+            return {}
+    return {"resolved_execution_target": target,
+            "resolved_execution_host": host,
+            "resolved_execution_locality": locality,
+            "resolved_execution_evidence": {
+                "schema": evidence["schema"], "state": evidence["state"],
+                "session_hash": evidence["session_hash"], "observed_at": evidence["observed_at"],
+                **({"generation": evidence["generation"]} if active_execution is not None else {}),
+                **({"task_id": evidence["task_id"]} if active_execution is not None else {}),
+            }}
+
+
 def _project_worker(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise WorkerStatusUnavailable("Workerantwort enthält einen ungültigen Eintrag")
@@ -184,6 +226,9 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     execution = _project_active_execution(raw.get("execution"), worker_id)
     if execution is not None:
         item["execution"] = execution
+    resolved = _project_resolved_execution(raw, execution, require_active_execution=True)
+    if resolved:
+        item.update(resolved)
     capabilities = raw.get("action_capabilities")
     if isinstance(capabilities, dict):
         item["action_capabilities"] = {
