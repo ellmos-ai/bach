@@ -43,6 +43,19 @@ _PR_REFERENCE = re.compile(r"github\.com/[^/\s]+/[^/\s]+/pull/\d+", re.IGNORECAS
 # Bounded for small local reviewer contexts; a cut diff can never be approved.
 _TREE_DIFF_LIMIT = 40000
 _SOURCE = "worker-result-review:v1:"
+_HASHBOUND_INTENT_SCHEMA = "bach.worker-result-review-intent.hash-bound.v1"
+_HASHBOUND_REVIEW_SCHEMA = "bach.worker-result-model-review.hash-bound.v1"
+_INTENTS_DDL = """CREATE TABLE IF NOT EXISTS worker_result_review_intents (
+    review_task_id INTEGER PRIMARY KEY, target_task_id INTEGER NOT NULL,
+    target_result_id INTEGER NOT NULL, target_revision TEXT NOT NULL,
+    intent TEXT NOT NULL, intent_sha256 TEXT NOT NULL, event_id INTEGER NOT NULL,
+    UNIQUE(target_result_id,target_revision))"""
+_REVIEWS_DDL = """CREATE TABLE IF NOT EXISTS worker_result_model_reviews (
+    review_task_id INTEGER PRIMARY KEY, target_task_id INTEGER NOT NULL,
+    target_result_id INTEGER NOT NULL, target_revision TEXT NOT NULL,
+    child_result_id INTEGER NOT NULL UNIQUE, receipt TEXT NOT NULL,
+    receipt_sha256 TEXT NOT NULL, event_id INTEGER NOT NULL,
+    UNIQUE(target_result_id,target_revision))"""
 
 
 class ReviewGrant:
