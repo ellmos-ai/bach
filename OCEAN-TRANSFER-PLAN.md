@@ -65,7 +65,18 @@ Fehlendes Paket, falsche Provenienz oder fehlende Registry ergeben einen Fehler;
 
 Beim ersten Mac-Readback am 8. Oktober wurden fünf vorhandene Entscheidungsquellen mit dem nativen Adapter registriert: vier bestätigte Dateihashes und ein vorhandener Verzeichniszeiger. Am 9. Oktober scheiterte ein erneuter Readback am Betriebssystemfehler EAGAIN einer Quelldatei. Der native Provider 0.2.4 weist solche Quellen einzeln als `unreadable` aus und prüft die übrigen Zeiger weiter. Dieser Stand ist ein Quellenprüfzustand; er bestätigt keine Durchsetzung der Policy. Das produktive Readback nach Installation des neuen Pins bleibt eine getrennte Abnahme. Die vollständige Policy-Adoption des Macs und der menschliche DecisionClicker-Schreibpfad sind ebenfalls noch nicht abgenommen.
 
-## Installer und Paketgrenzen
+## Installer, Nutzer-Einstieg, Editions-Branding und Paketgrenzen
+
+1. **Nutzer-Einstieg & Betriebssystem-Installer:**
+   - Normale Nutzer landen bei der Suche auf `open-ocean` oder `bach` und werden von der jeweiligen README direkt zum **Installer für ihr Betriebssystem** geleitet (**Windows `.exe`/`.msi`**, **macOS `.dmg`/`.pkg`**, **Linux `.AppImage`/`.deb`**; die App-Stores wie der Windows Store sind ein zusätzlicher Komfort-Service).
+   - Der Installer führt durch die Erstinstallation (Standard-Ocean-Ausdehnung mit lokaler Ollama- und nicht-lokaler Cloud-/Abo-Modellunterstützung oder individuelle Modulwahl **Rinnsal ↔ BACH ↔ Meer**). Bestandteile können **später jederzeit nachinstalliert oder deinstalliert** werden.
+2. **Eintrittsweg bestimmt das Branding (`open-ocean` vs. `bach`):**
+   - **Einstieg über `bach`:** Aktiviert das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
+   - **Einstieg über `open-ocean`:** Reines **Ocean-Branding** (das BACH-Branding entfällt).
+3. **Berechtigungs- & Systemstufen (`full-ocean` · `ocean-dev` · `ocean-admin`):**
+   - **`full-ocean`:** An den `ellmos-installer` gebundenes Zugangskonzept — erfüllt das Versprechen des Zugangs zum vollen Ocean-Katalog, soweit der Nutzer dazu berechtigt ist.
+   - **`ocean-dev`:** Entwickler-, Diagnose- und Prüfmodule (teilweise öffentlich, aber für normale Endnutzer optional).
+   - **`ocean-admin`:** Das Betreiber-/Maintainer-Gesamtsystem von Lukas mit dem Mac Studio als Leader und allen privaten/unveröffentlichten Fach- und Forschungsmodulen.
 
 Ein Installer verwendet Produktprofile und versionierte Komponentenmanifeste. BACH und Ocean erhalten dasselbe GUI-Paket, aber eigene Backend-Adapter und Betriebszustände. Nutzerdaten, Zugangsdaten, TaskDB, lokale Rollen und OneDrive-Steuerdokumente bleiben außerhalb der Codearchive.
 

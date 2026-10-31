@@ -30,11 +30,16 @@ Mit dem GUI-Meilenstein `v3.15.0` (*„BACH fließt ins Meer – gemeinsame GUI�
 
 ## Verbindliche Produkt- & Meilenstein-Roadmap (Nutzerentscheidung 2026-10-31)
 
-### 1. Die Meilenstein-Linie: Vom Monolithen zu Ocean
+### 1. Die Meilenstein-Linie & Nutzer-Reise: Vom Monolithen zu Ocean
 1. **`BACH meets Ocean` (`v3.15.0`) — ERREICHT:** Gemeinsame GUI (`ellmos-system-gui`) für BACH und Ocean.
 2. **`BACH flows into Ocean` (`v3.15.0-ocean-stack-m1` bis `v3.x`) — AKTIV:**
    - Schrittweise Weiter-Modularisierung und Modifikation von BACH zu Ocean: Modul für Modul über `ocean_stack_bridge.py` / Adapter anschließen, BACH-Altcode mit `@deprecated_legacy_bach` kennzeichnen und nach Parität abbauen.
-   - **Primäres Endnutzer-Produkt:** Ein **einfach installierbares BACH/Ocean mit GUI über den Windows Store** (Tauri-Desktop-App, Standardversion zum direkten Holen, die out-of-the-box sowohl mit **lokalen Modellen** wie Ollama als auch mit **nicht-lokalen Modellen** wie Cloud/API/Abos umgehen kann).
+   - **Nutzer-Einstieg & Betriebssystem-Installer (Windows `.exe` · macOS `.dmg`/`.pkg` · Linux `.AppImage`/`.deb` + App-Stores als Zusatzservice):**
+     - Normale Nutzer, die nach Ocean oder BACH suchen, landen auf `open-ocean` oder `bach` und werden von der jeweiligen README direkt zum aktuellen **Installer für ihr Betriebssystem** geleitet (ergänzt um die jeweiligen App-Stores wie den Windows Store als Zusatzservice).
+     - Nach dem Start führt der Installer Schritt für Schritt durch die Installation (sofort einsatzbereit für **lokale Modelle** wie Ollama und **nicht-lokale Modelle** wie Cloud/API/Abos). Bestandteile (Module, Bundles, Skills) können **später jederzeit nachinstalliert oder deinstalliert** werden.
+   - **Eintrittsweg bestimmt das Branding (`open-ocean` vs. `bach`):**
+     - **Eintritt über `bach`:** Der Nutzer erhält das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als eine kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
+     - **Eintritt über `open-ocean`:** Das BACH-Branding entfällt; es erscheint reines **Ocean-Branding**.
 3. **`BACH becomes Ocean` / `BACH is Ocean` (`v4.0.0`) — ZIELBILD:** Sobald die Modularisierung abgeschlossen ist, bestehen BACH und Ocean vollständig aus denselben Ocean-Modulen.
 
 ### 2. Kanonische Definition der Ocean-Ausdehnungen und Berechtigungsstufen (2026-10-31)
@@ -43,8 +48,8 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 
 | Achse | Stufe / Begriff | Verbindliche Definition |
 | :--- | :--- | :--- |
-| **1. Individuelle Ausdehnung**<br/>*(Konfiguration durch An-/Abwählen von Modulen & Bundles)* | **Standard-Ocean / BACH (Windows Store)** | Die öffentliche Standard-Ausdehnung mit GUI (`ellmos-system-gui` + Tauri-App), die man sich direkt holen kann und die sofort lokale + nicht-lokale Modelle, Memory, Tasks und Alltags-Workflows beherrscht. |
-| | **Rinnsal ↔ BACH ↔ Meer (Individuelles Ocean)** | Über `ellmos-installer` und die System-GUI lassen sich Module und Bundles beliebig abwählen oder hinzunehmen — das eigene Ocean kann schlank wie ein **Rinnsal**, kuratiert wie ein **BACH** oder breit ausgebaut wie ein **Meer** sein. |
+| **1. Individuelle Ausdehnung**<br/>*(Konfiguration durch An-/Abwählen von Modulen & Bundles)* | **Standard-Ocean / BACH (OS-Installer & Stores)** | Die öffentliche Standard-Ausdehnung mit GUI (`ellmos-system-gui` + Desktop-App via Windows `.exe`, macOS, Linux und Stores), die man sich direkt holen kann und die sofort lokale + nicht-lokale Modelle, Memory, Tasks und Alltags-Workflows beherrscht. |
+| | **Rinnsal ↔ BACH ↔ Meer (Individuelles Ocean)** | Über `ellmos-installer` und die System-GUI lassen sich Module und Bundles bei der Installation und jederzeit nachträglich abwählen oder hinzunehmen — das eigene Ocean kann schlank wie ein **Rinnsal**, kuratiert wie ein **BACH** oder breit ausgebaut wie ein **Meer** sein. |
 | **2. Berechtigungs- & Systemstufen**<br/>*(Zugangskonzept am Installer & Host)* | **`full-ocean`** *(Installer-Zugangsversprechen)* | An den **`ellmos-installer`** gebundenes Berechtigungskonzept: Der Installer erfüllt das Versprechen des Zugangs zum **vollen Ocean-Katalog, soweit der jeweilige Nutzer dazu berechtigt ist** (für normale Nutzer alle öffentlichen Module; für berechtigte Personen zusätzlich nicht-öffentliche/lizenzierte Fachmodule gemäß Systemkonfiguration/Grants). |
 | | **`ocean-dev`** | Entwickler-, Diagnose- und Bau-Module (`system-explorer`, `system-auditor`, `system-gap-master`, `ellmos-tests`, `module-gate` u. a.), die durchaus öffentlich sein können, die ein normaler Endnutzer in der Standardversion aber nicht zwingend mitinstalliert. |
 | | **`ocean-admin`** | Das vollständige Betreiber-/Maintainer-System von Lukas (mit **Mac Studio als 24/7-Leader**, `ASUS-GEI`, `WORKSTATION-LG`, `IDEAPAD-GEI`, allen unveröffentlichten privaten Fach- und Forschungsmodulen, `.SYNC` und voller Systemkonfiguration). |
