@@ -288,17 +288,11 @@ function commitTheme(theme, custom = null) {
 }
 
 async function persistThemePreference(theme, custom = null) {
-    const previousTheme = normalizeTheme(localStorage.getItem(THEME_KEY) || 'dark');
-    const previousCustom = loadCustomTheme();
     const normalized = normalizeTheme(theme);
     const nextCustom = custom || loadCustomTheme();
-    previewTheme(normalized, nextCustom);
-    if (await saveThemePreference(normalized, nextCustom)) {
-        commitTheme(normalized, nextCustom);
-        return true;
-    }
-    previewTheme(previousTheme, previousCustom);
-    return false;
+    commitTheme(normalized, nextCustom);
+    await saveThemePreference(normalized, nextCustom);
+    return true;
 }
 
 // Backward-compatible local commit for pages importing the previous helper.
@@ -308,12 +302,15 @@ function setTheme(theme, custom = null) {
 
 async function loadThemePreference() {
     try {
+        const storedLocal = localStorage.getItem(THEME_KEY);
         const response = await fetch(themeSettingsUrl());
         if (!response.ok) return null;
         const data = await response.json();
         if (!data.success) return null;
         if (!data.configured) return data;
-        commitTheme(data.theme, data.custom);
+        if (!storedLocal || !VALID_THEMES.includes(storedLocal)) {
+            commitTheme(data.theme, data.custom);
+        }
         return data;
     } catch (_) {
         return null;
