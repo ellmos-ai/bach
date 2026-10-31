@@ -165,6 +165,21 @@ def _require_memory_device(request: Request) -> int:
                 "SELECT id FROM devices WHERE token_hash = ? AND status = 'active'",
                 (token_hash,),
             ).fetchone()
+            if row is None:
+                try:
+                    row = conn.execute(
+                        """
+                        SELECT d.id
+                        FROM browser_sessions bs
+                        JOIN devices d ON d.id = bs.device_id
+                        WHERE bs.session_hash = ?
+                          AND d.status = 'active'
+                          AND bs.expires_at > CURRENT_TIMESTAMP
+                        """,
+                        (token_hash,),
+                    ).fetchone()
+                except sqlite3.OperationalError:
+                    row = None
     except (OSError, sqlite3.Error):
         raise HTTPException(status_code=503, detail="Device authorization unavailable")
     if row is None:

@@ -1728,7 +1728,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                          or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
                 response = await call_next(request)
                 if (request.method == "GET"
-                        and path in ("/device-fetch.js", "/static/js/device-fetch.js")
+                        and (path in self.PUBLIC_PAGE_PATHS or path in ("/device-fetch.js", "/static/js/device-fetch.js"))
                         and _hostname(request.headers.get("host", "")) in LOOPBACK_HOSTS
                         and request.cookies.get("bach_manual_logout") != "1"):
                     existing_cookie = request.cookies.get("bach_device_token", "").strip()
