@@ -429,6 +429,13 @@ class ThemeUpdate(BaseModel):
     custom: Optional[dict[str, str]] = None
 
 
+class UIUpdate(BaseModel):
+    preset: Optional[str] = None
+    nav_scope: Optional[str] = None
+    icon_style: Optional[str] = None
+    density: Optional[str] = None
+
+
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -1841,7 +1848,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")
-                or (path == "/api/settings/theme" and request.method == "PUT")):
+                or (path == "/api/settings/theme" and request.method == "PUT")
+                or (path == "/api/settings/ui" and request.method == "PUT")):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
@@ -5783,6 +5791,40 @@ async def update_gui_theme(payload: ThemeUpdate):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (OSError, TimeoutError) as exc:
         raise HTTPException(status_code=503, detail="Theme-Speicherung nicht verfügbar") from exc
+
+
+@app.get("/api/settings/ui")
+async def get_gui_ui():
+    """Return the user-neutral GUI style preferences (preset, nav_scope, icon_style, density)."""
+    try:
+        return {"success": True, **ThemeHandler(BACH_DIR).get_ui()}
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=public_error_message()) from exc
+
+
+@app.put("/api/settings/ui")
+async def update_gui_ui(payload: UIUpdate):
+    """Validate and persist the GUI style settings in user_config.json."""
+    try:
+        handler = ThemeHandler(BACH_DIR)
+        result = handler.set_ui(
+            payload.preset,
+            payload.nav_scope,
+            payload.icon_style,
+            payload.density,
+        )
+        persisted = handler.get_ui()
+        mismatch = any(
+            persisted.get(field) != result.get(field)
+            for field in ("preset", "nav_scope", "icon_style", "density")
+        )
+        if mismatch:
+            raise HTTPException(status_code=503, detail="UI-Speicherung nicht bestätigt")
+        return {"success": True, **persisted}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, TimeoutError) as exc:
+        raise HTTPException(status_code=503, detail="UI-Speicherung nicht verfügbar") from exc
 
 
 # ═══════════════════════════════════════════════════════════════

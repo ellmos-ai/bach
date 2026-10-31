@@ -12,9 +12,10 @@ PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-
 # Exact "METHOD /path" pairs for single reads whose path or parent path also holds routes that are not page reads (GET+PUT on
 # /api/settings/theme, /api/agents/runtime, PUT /api/agents/{agent_id}/toggle, POST /api/system/external-artifacts/import):
 # a prefix or a path-only comparison would catalog those as well.
-EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme", "GET /api/setup/ocean-map",
-               "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates", "GET /api/system/external-artifacts",
-               "GET /api/task-capabilities", "GET /api/routines")
+EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme", "GET /api/settings/ui",
+               "GET /api/setup/ocean-map", "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates",
+               "GET /api/system/external-artifacts", "GET /api/task-capabilities", "GET /api/routines")
+EXACT_WRITES = ("PUT /api/settings/ui",)
 # Reads of src/layouts/BachLayout.astro -> src/components/Header.astro:242,280 and src/lib/domain-pins.mjs:46 (domain menu): every
 # page makes them. Only the pages checked so far list them; completeness for all pages is a task of the GUI manifest (#2087).
 LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]
@@ -52,7 +53,7 @@ PAGE_READS = {
     "/governance/usecases": [], "/governance/funk": [],
     "/denkarium": [], "/help": [], "/maintenance": [], "/tools": [],
     "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/setup/ocean-map", "/api/settings/theme",
-                 "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
+                 "/api/settings/ui", "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
 }
 # Required actions retain their HTTP method; compose is a preview POST, never a GET.
 # Shared GUI 0.2.29 ships pages for these paths that only announce the missing conversion (Task #2468 fallback notice).
@@ -107,7 +108,7 @@ def declaration(routes, kit, brand, modules, *, public_paths=(), module_sources=
             if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                 continue
             registered.add(f"{method} {path}")
-            if (not by_prefix and f"{method} {path}" not in EXACT_READS
+            if (not by_prefix and f"{method} {path}" not in EXACT_READS and f"{method} {path}" not in EXACT_WRITES
                     and f"{method} {normalize(path)}" not in declared):
                 continue
             endpoints.append({"method": method, "path": path,
