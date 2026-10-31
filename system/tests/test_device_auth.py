@@ -282,3 +282,30 @@ def test_invalid_browser_reauth_clears_previous_cookie(monkeypatch, tmp_path):
     assert "Max-Age=0" in invalid.headers["set-cookie"]
     assert client.get("/api/devices").status_code == 401
     conn.close()
+
+
+def test_auto_session_by_device_id_on_loopback(monkeypatch, tmp_path):
+    """Loopback clients can establish an HttpOnly session via Device-ID without manual token paste."""
+    test_db = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(test_db))
+    conn.row_factory = sqlite3.Row
+    init_devices_db(conn)
+
+    import gui.device_auth as da
+    monkeypatch.setattr(da, "GET_CONNECTION", lambda: sqlite3.connect(str(test_db)))
+
+    client = TestClient(app)
+    res = client.post(
+        "/api/devices/auto-session",
+        json={"device_id": "ASUS-GEI"},
+        headers={"Host": "127.0.0.1:8000", "Origin": "http://127.0.0.1:8000"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["valid"] is True
+    assert data["mode"] == "device-id"
+    assert data["device"]["name"] == "ASUS-GEI"
+    assert "bach_device_token=" in res.headers["set-cookie"]
+    assert client.get("/api/devices", headers={"Host": "127.0.0.1:8000"}).status_code == 200
+    conn.close()

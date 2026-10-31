@@ -151,31 +151,49 @@
 </head>
 
 <body>
+    <header id="main-header"></header>
     <div class="token-container">
-        <h1>🔐 BACH Geräte- & Token-Strategie</h1>
+        <h1>🆔 BACH / Ocean Geräte-ID &amp; Kanal-Identitäten</h1>
         <p style="color: var(--text-muted, #8a8a9e); margin-bottom: 2rem;">
-            Ein permanenter, individueller Token pro Gerät (Laptop, Workstation, Handy, Browser).
-            Nach der Prüfung hält ein HttpOnly-Session-Cookie die Browseranmeldung.
-            Der Token wird nicht im Browser-Speicher abgelegt.
+            Lokale Sitzungen auf <code>localhost</code> / <code>127.0.0.1</code> werden automatisch über die <strong>Geräte-ID</strong>
+            (z.&nbsp;B. <code>ASUS-GEI</code>, <code>mac-studio</code>, <code>WORKSTATION-LG</code>) per HttpOnly-Session-Cookie angemeldet — ohne manuelles Token-Kopieren.
         </p>
 
         <!-- Sektion 1: Dieses Gerät / Browser -->
         <div class="auth-card" id="this-device-card">
             <h2>📱 Dieses Gerät / Dieser Browser</h2>
-            <div id="auth-status-container">
+            <div id="auth-status-container" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
                 <span class="status-badge unauthenticated" id="current-auth-badge">Prüfe Status...</span>
+                <span id="active-device-id-pill" style="font-size: 0.85rem; color: var(--text-muted, #8a8a9e);"></span>
             </div>
 
-            <div id="login-section" style="display: none; margin-top: 1rem;">
-                <p>Gib den Token für dieses Gerät ein, um den Browser für diese Sitzung anzumelden:</p>
-                <div class="input-group">
-                    <input type="password" id="device-token-input" placeholder="Geräte-Token eingeben..." />
-                    <button class="btn btn-primary" onclick="saveDeviceToken()">Token speichern</button>
+            <div id="device-id-quick-section" style="margin-top: 1rem;">
+                <label for="device-id-select" style="display: block; font-size: 0.9rem; margin-bottom: 0.4rem;">Aktive Geräte-ID für diese lokale Instanz:</label>
+                <div class="input-group" style="margin-top: 0.4rem;">
+                    <select id="device-id-select" style="padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border, #3a3a52); background: var(--bg-input, #12121c); color: var(--text, #fff); font-family: inherit; min-width: 220px;">
+                        <option value="ASUS-GEI">ASUS-GEI (Laptop / Hauptgerät)</option>
+                        <option value="mac-studio">mac-studio (Server / Leader)</option>
+                        <option value="WORKSTATION-LG">WORKSTATION-LG (Workstation)</option>
+                        <option value="IDEAPAD-GEI">IDEAPAD-GEI (Mobile)</option>
+                        <option value="tray">tray (Desktop / Tauri-App)</option>
+                    </select>
+                    <button class="btn btn-primary" type="button" onclick="loginWithDeviceId()">Mit Geräte-ID anmelden</button>
                 </div>
             </div>
 
+            <div id="login-section" style="display: none; margin-top: 1rem;">
+                <details style="margin-top: 0.75rem;">
+                    <summary style="cursor: pointer; color: var(--text-muted, #8a8a9e); font-size: 0.9rem;">Erweitert: Manuelle Token-Anmeldung (nur für externe Nicht-Loopback-Geräte)</summary>
+                    <p style="margin-top: 0.5rem;">Gib den Token für dieses Gerät ein, um einen externen Browser für diese Sitzung anzumelden:</p>
+                    <div class="input-group">
+                        <input type="password" id="device-token-input" placeholder="Geräte-Token eingeben..." />
+                        <button class="btn btn-secondary" onclick="saveDeviceToken()">Token speichern</button>
+                    </div>
+                </details>
+            </div>
+
             <div id="authenticated-section" style="display: none; margin-top: 1rem;">
-                <p>Dieser Browser ist mit einem gültigen Geräte-Token angemeldet.</p>
+                <p>Dieser Browser ist über die Geräte-ID-Sitzung angemeldet.</p>
                 <button class="btn btn-danger" id="device-logout-button" onclick="logoutDevice()">Gerät abmelden</button>
             </div>
             <p id="legacy-token-cleanup-warning" role="status" hidden>
@@ -254,22 +272,67 @@ print(token)</pre>
             return removed;
         }
 
-        function setAuthUI(authenticated) {
+        function setAuthUI(authenticated, activeDeviceName) {
             const badge = document.getElementById("current-auth-badge");
             const loginSec = document.getElementById("login-section");
             const authSec = document.getElementById("authenticated-section");
+            const pill = document.getElementById("active-device-id-pill");
 
             if (authenticated) {
+                const devId = activeDeviceName || (typeof localStorage !== "undefined" && localStorage.getItem("bach_device_id")) || "ASUS-GEI";
                 badge.className = "status-badge active";
-                badge.textContent = "Angemeldet";
+                badge.textContent = "Angemeldet (" + devId + ")";
+                if (pill) pill.textContent = "Geräte-ID: " + devId;
                 loginSec.style.display = "none";
                 authSec.style.display = "block";
+                const banner = document.getElementById("bach-device-login-needed");
+                if (banner) banner.remove();
             } else {
                 badge.className = "status-badge unauthenticated";
                 badge.textContent = "Nicht angemeldet";
+                if (pill) pill.textContent = "";
                 loginSec.style.display = "block";
                 authSec.style.display = "none";
             }
+        }
+
+        async function loginWithDeviceId(silent = false) {
+            if (deviceSessionPending) return false;
+            const select = document.getElementById("device-id-select");
+            const deviceId = (select && select.value) ? select.value.trim() : "ASUS-GEI";
+            try {
+                localStorage.setItem("bach_device_id", deviceId);
+                sessionStorage.removeItem("bach_manual_logout");
+            } catch (_) {}
+            window.__bachAutoSessionTried = false;
+            const epoch = ++deviceAuthEpoch;
+            deviceSessionPending = true;
+            try {
+                const resp = await fetch("/api/devices/auto-session", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ device_id: deviceId })
+                });
+                const data = await resp.json();
+                if (epoch !== deviceAuthEpoch) return false;
+                if (resp.ok && data.valid) {
+                    document.getElementById("device-logout-status").hidden = true;
+                    deviceSessionPending = false;
+                    setAuthUI(true, data.device || deviceId);
+                    await loadDevices();
+                    return true;
+                } else if (!silent) {
+                    setAuthUI(false);
+                    alert("Geräte-ID-Anmeldung nicht möglich: " + (data.reason || "Unbekannter Grund"));
+                }
+            } catch (err) {
+                if (!silent) {
+                    alert("Geräte-ID-Anmeldung fehlgeschlagen: " + err.message);
+                }
+            } finally {
+                deviceSessionPending = false;
+            }
+            return false;
         }
 
         function updateAuthUI() {
@@ -286,6 +349,7 @@ print(token)</pre>
                 return;
             }
 
+            try { sessionStorage.removeItem("bach_manual_logout"); } catch (_) {}
             const epoch = ++deviceAuthEpoch;
             deviceSessionPending = true;
             // Verify with backend
@@ -324,6 +388,7 @@ print(token)</pre>
             ++deviceAuthEpoch;
             status.hidden = false;
             status.textContent = "Abmeldung wird bestätigt…";
+            try { sessionStorage.setItem("bach_manual_logout", "1"); } catch (_) {}
             clearLegacyDeviceCredential();
             try {
                 const response = await fetch("/api/devices/session/logout", { method: "POST" });
@@ -481,11 +546,19 @@ print(token)</pre>
         }
 
         // Init
-        document.addEventListener("DOMContentLoaded", () => {
+        document.addEventListener("DOMContentLoaded", async () => {
             clearLegacyDeviceCredential();
-            loadDevices();
+            try {
+                const savedId = localStorage.getItem("bach_device_id");
+                const select = document.getElementById("device-id-select");
+                if (savedId && select) {
+                    select.value = savedId;
+                }
+            } catch (_) {}
+            await loadDevices();
         });
     </script>
+    <script src="/static/js/nav.js?v=4"></script>
 </body>
 
 </html>
