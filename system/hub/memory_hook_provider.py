@@ -23,18 +23,15 @@ Audit-Trail (Plan Stufe 6): Jede Kontextinjektion wird als JSONL-Zeile neben
 der BACH_DB protokolliert (memoryhooker_audit.jsonl).
 
 WICHTIG: Hooks != Injektoren (core/hooks.py). Der Injector-Pfad
-(ChatRuntime._get_bach_context) bleibt bestehen; er ueberspringt nur die
-Injektoren, die dieser Seam nachweislich uebernimmt (handled_injectors, S3 von
-T-20260920-823767362): Strategy (source='strategy', Seed: Migration 044),
-Context (alle uebrigen Quellen als eine Gruppe, nur mit
-BACH_CONTEXT_TRIGGERS_DB=1, Sichtung: Migration 045) und Tool-Warn
-(source='tool_warn', Seed: Migration 046); im CLI (bach.py _run_injectors)
-zusaetzlich Between (source='between', Seed: Migration 047, geprueft gegen
-'<command> <operation>'). Die BACH-Schalter
-(bach inject toggle, config.json "injectors") gelten weiter: ChatRuntime
-reicht abgeschaltete Injektoren als disabled durch. Rueckweg je Injektor:
-BACH_LEGACY_INJECTORS=strategy,context,tool_warn,between (kommagetrennt) oder der
-Gesamtschalter oben.
+(ChatRuntime._get_bach_context) bleibt bestehen; er ueberspringt die
+Injektoren, die dieser Seam uebernimmt (handled_injectors, S3/S3-Nachlauf von
+T-20260920-823767362 / T-20260926-537523074): Strategy (source='strategy',
+Seed: Migration 044), Context (alle uebrigen Quellen als eine Gruppe,
+Sichtung: Migration 045) und Tool-Warn (source='tool_warn', Seed: Migration 046);
+im CLI (bach.py _run_injectors) zusaetzlich Between (source='between', Seed:
+Migration 047, geprueft gegen '<command> <operation>'). Die BACH-Schalter
+(bach inject toggle, config.json "injectors") gelten weiter: ChatRuntime und
+InjectorSystem reichen abgeschaltete Injektoren als disabled durch.
 """
 from __future__ import annotations
 
@@ -43,9 +40,10 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -81,18 +79,15 @@ _REQUIRED_SYMBOLS = {
 
 _AUDIT_FILENAME = "memoryhooker_audit.jsonl"
 
-#: Rueckweg je Injektor (S3): diese Injektoren bleiben im BACH-Altpfad.
-LEGACY_INJECTORS_ENV = "BACH_LEGACY_INJECTORS"
-
 #: Injektoren, die der Seam uebernimmt, mit BACHs bisherigem Cooldown in
-#: Sekunden (tools/injectors.py CooldownManager.DEFAULT_COOLDOWNS).
+#: Sekunden (tools/injectors.py).
 HOOKER_INJECTORS = {"strategy": 120, "context": 60, "tool_warn": 300, "between": 180}
 
 #: Nur im CLI-Pfad: Between prueft den Befehl ("task done"), nie einen Prompt.
 CLI_ONLY_INJECTORS = frozenset({"between"})
 
 #: Sitzungszustand des CLI-Pfads (jeder bach-Aufruf ist ein neuer Prozess;
-#: wie data/.injector_cooldowns im Altpfad muessen Cooldowns ueberdauern).
+#: Cooldowns muessen ueber Prozessgrenzen ueberdauern).
 _CLI_STATE_FILENAME = "memoryhooker_cli_state.json"
 
 #: BACH-Konfigurationsschalter je Injektor (tools/injectors.py InjectorConfig);
@@ -100,21 +95,61 @@ _CLI_STATE_FILENAME = "memoryhooker_cli_state.json"
 INJECTOR_SWITCHES = {"strategy": "strategy_injector", "context": "context_injector",
                      "tool_warn": "context_injector", "between": "between_injector"}
 
-#: Context liest context_triggers nur mit diesem Schalter (wie der
-#: ContextInjector in tools/injectors.py, S3 Einheit 2a).
+#: DB ist seit S3-Nachlauf (T-20260926-537523074) die Standard-Quelle fuer
+#: context_triggers; Abschaltung nur noch explizit per 0/false/no/off.
 CONTEXT_TRIGGERS_DB_ENV = "BACH_CONTEXT_TRIGGERS_DB"
 _ON_VALUES = {"1", "true", "yes", "on"}
 
-#: Tabellenquellen, die der ContextInjector als eine Liste las.
+#: Tabellenquellen, die der Context-Injektor als eine Liste liest.
 CONTEXT_SOURCES = ["manual", "theme", "lesson", "tool", "workflow", "skill"]
 
+
 def _context_triggers_db_on() -> bool:
-    return os.environ.get(CONTEXT_TRIGGERS_DB_ENV, "").strip().lower() in _ON_VALUES
+    raw = os.environ.get(CONTEXT_TRIGGERS_DB_ENV, "1").strip().lower()
+    return raw not in _OFF_VALUES
 
 
-def _legacy_injectors() -> set:
-    raw = os.environ.get(LEGACY_INJECTORS_ENV, "")
-    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+def _compile_context_trigger(phrases: tuple[str, ...]) -> Optional[re.Pattern]:
+    """Kompiliert Kontext-Trigger-Phrasen mit Wortgrenzen (T-20260926-363436040).
+
+    Kurze Trigger (<= 3 Zeichen), englische Kollisionen ('import', 'export')
+    sowie Mehrwort-Phrasen fordern Wortgrenzen an beiden Enden (z. B. 'abo'
+    trifft nicht 'labor' oder 'about', 'import' trifft nicht 'important').
+    Fuer laengere deutsche Woerter genuegt die Wortgrenze am Beginn, um
+    Komposita und Beugungen wie 'Steuererklaerung', 'Arzttermin' oder
+    'Medikamenten' zu erfassen.
+    """
+    parts = []
+    for a in phrases:
+        a = a.strip()
+        if not a:
+            continue
+        escaped = re.escape(a)
+        if len(a) <= 3 or a.lower() in ("import", "export") or " " in a:
+            parts.append(rf"\b{escaped}\b")
+        else:
+            parts.append(rf"\b{escaped}")
+    if not parts:
+        return None
+    return re.compile("|".join(parts), re.IGNORECASE)
+
+
+_BOUNDED_RULE_CLS = None
+
+
+def _get_bounded_rule_cls():
+    global _BOUNDED_RULE_CLS
+    if _BOUNDED_RULE_CLS is None:
+        from memoryhooker.triggers import TriggerRule
+
+        @dataclass(frozen=True)
+        class _BoundedTriggerRule(TriggerRule):
+            def matches(self, lowered_prompt: str) -> bool:
+                pat = _compile_context_trigger(self.phrases)
+                return bool(pat.search(lowered_prompt)) if pat else super().matches(lowered_prompt)
+
+        _BOUNDED_RULE_CLS = _BoundedTriggerRule
+    return _BOUNDED_RULE_CLS
 
 
 def external_memoryhooker_available() -> bool:
@@ -321,7 +356,7 @@ class BachMemoryBackend:
     def triggers(self, sources: list, agent_id: str = "default") -> list:
         """context_triggers-Regeln der Quellen (read-only, Leseregel im Modul)."""
         try:
-            from memoryhooker.triggers import read_context_triggers
+            from memoryhooker.triggers import TriggerRule, read_context_triggers
         except ImportError:
             return []
         if not sources or not self.db_path.exists():
@@ -331,9 +366,22 @@ class BachMemoryBackend:
         except sqlite3.Error:
             return []
         try:
-            return read_context_triggers(conn, list(sources), agent_id)
+            raw_rules = read_context_triggers(conn, list(sources), agent_id)
         finally:
             conn.close()
+
+        bounded_cls = _get_bounded_rule_cls()
+        return [
+            bounded_cls(
+                phrases=r.phrases,
+                hint=r.hint,
+                source=r.source,
+                rule_id=r.rule_id,
+            )
+            if r.source in CONTEXT_SOURCES
+            else r
+            for r in raw_rules
+        ]
 
     @staticmethod
     def _has_column(conn, table: str, column: str) -> bool:
@@ -432,12 +480,9 @@ class ExternalMemoryHook:
         """
         if self._evaluate_triggers is None or not external_memoryhooker_available():
             return frozenset()
-        legacy = _legacy_injectors()
         cfg = self._config.triggers
         handled = set()
         for key in cfg.sources:
-            if key in legacy:
-                continue
             if key == "context" and not (self._groups_supported and _context_triggers_db_on()):
                 continue
             table_sources = getattr(cfg, "groups", {}).get(key, [key])
