@@ -17,7 +17,9 @@ class WorkerPolicyHandler(BaseHandler):
 
     def get_operations(self):
         return {"status": "Globale Worker-Regeln lesen", "set": "Globale Regeln als JSON mit CAS speichern",
-                "task_show": "Taskregeln lesen: ID", "task_set": "Taskregeln speichern: ID JSON"}
+                "task_show": "Taskregeln lesen: ID", "task_set": "Taskregeln speichern: ID JSON",
+                "commit_status": "Commit-Policy getrennt von Review und Taskabschluss lesen",
+                "commit_set": "Commit-Policy als JSON mit CAS speichern"}
 
     def handle(self, operation, args, dry_run=False):
         try:
@@ -25,17 +27,22 @@ class WorkerPolicyHandler(BaseHandler):
                 result = service.read_global_policy(db_path=self.target_file)
             elif operation == "task_show" and len(args) == 1:
                 result = service.read_task_policy(int(args[0]), db_path=self.target_file)
-            elif operation in {"set", "task_set"}:
+            elif operation == "commit_status" and not args:
+                result = service.read_commit_policy(db_path=self.target_file)
+            elif operation in {"set", "task_set", "commit_set"}:
                 if dry_run:
-                    return False, "Schreibprüfung ohne Speichern: zuerst status/task_show lesen; kein CAS-Verbrauch"
+                    return False, "Schreibprüfung ohne Speichern: zuerst status/task_show/commit_status lesen; kein CAS-Verbrauch"
                 if operation == "set" and len(args) == 1:
                     result = service.write_global_policy(json.loads(args[0]), actor="local:worker-policy", db_path=self.target_file)
                 elif operation == "task_set" and len(args) == 2:
                     result = service.write_task_policy(int(args[0]), json.loads(args[1]), actor="local:worker-policy", db_path=self.target_file)
+                elif operation == "commit_set" and len(args) == 1:
+                    result = service.write_commit_policy(json.loads(args[0]), actor="local:worker-policy", db_path=self.target_file)
                 else:
-                    return False, "Erwartet: set JSON oder task_set ID JSON"
+                    return False, "Erwartet: set JSON, task_set ID JSON oder commit_set JSON"
             else:
-                return False, "Erwartet: status | task_show ID | set JSON | task_set ID JSON"
+                return False, ("Erwartet: status | task_show ID | set JSON | task_set ID JSON | "
+                               "commit_status | commit_set JSON")
             return True, json.dumps(result, ensure_ascii=False, sort_keys=True)
         except (service.PolicyUnavailable, service.PolicyConflict, ValueError, TypeError, KeyError) as exc:
             return False, str(exc)
