@@ -16,3 +16,15 @@ Kurze Beschreibung der Änderungen.
 
 ## Zusammenfassung
 Was wurde geändert und warum?
+
+## Bauort (PFLICHTFELD)
+**Dieses Feld ist verpflichtend. PRs ohne Bauort werden als HOLD eingestuft.**
+
+Bauort: modul:<id>@<sha> | adapter:<id> | ausnahme:<Task> | kern | core | module-gate | gui | ocean | generic
+
+Beispiele:
+- `modul:agents-heart@abc123`
+- `adapter:policy-registry`
+- `ausnahme:2451`
+- `kern`
+- `gui`
