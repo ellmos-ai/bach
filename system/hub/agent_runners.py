@@ -1,3 +1,4 @@
+import sys
 # -*- coding: utf-8 -*-
 """Anbieterneutrale Startbefehle fuer BACH-Agenten.
 
@@ -65,6 +66,20 @@ BUILTIN: dict[str, dict] = {
         "max_turns": ["--max-rounds", "{max_turns}"],
         "full_access": ["--mode", "full"],
         "restricted": ["--mode", "safe"],
+    },
+    "pickup_category": {
+        "match": ["pickup_category", "Picker", "pickup"],
+        "cmd": [
+            sys.executable,
+            str(Path(__file__).resolve().with_name("pickup_category.py")),
+            "--exclude",
+            "food,clothing,electronics,toys,books,media,health,finance,utilities,home,gardening,travel,automotive,construction",
+            "--priority",
+            "high",
+        ],
+        "full_access": ["--dangerously-skip-permissions"],
+        "restricted": ["--allowed_tools", "read_only"],
+        "priority": "high",
     },
 }
 
