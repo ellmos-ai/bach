@@ -452,6 +452,14 @@ def scan_for_secrets(worktree_path: Path) -> list[str]:
     return findings
 
 
+def changed_worktree_files(worktree_path: Path) -> list[str]:
+    """Return tracked and untracked relative paths without reading their contents."""
+    root = Path(worktree_path).resolve(strict=True)
+    raw = _git_read_bytes(root, ["git", "diff", "--name-only", "--no-renames", "-z", "HEAD"])
+    tracked = [os.fsdecode(item) for item in raw.split(b"\x00") if item]
+    return sorted(set(tracked + _untracked_names(root)))
+
+
 def check_git_diff(worktree_path: Path) -> list[str]:
     """Check tracked diffs and untracked text for whitespace errors, failing closed."""
     try:
@@ -557,6 +565,16 @@ def task_has_file_changes(
             )
             if res.stdout and res.stdout.strip():
                 return True
+            res_diff = subprocess.run(
+                ["git", "diff", "--name-only", "refs/heads/main...HEAD"],
+                cwd=str(worktree),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            if res_diff.stdout and res_diff.stdout.strip():
+                return True
         except Exception:
             pass
 
@@ -640,7 +658,8 @@ def auto_commit_task_worktree(
 
 
 def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=None, db_path=None,
-                worker_task_binding=None, require_task_binding=False):
+                worker_task_binding=None, require_task_binding=False,
+                result_annotation=None, needs_split=False):
     """Preserve private ownership through every Git mutation and task receipt."""
     if require_task_binding and worker_task_binding is None:
         return {"success": False, "error": "Taskbindung fehlt"}
@@ -665,7 +684,8 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
                 is_current=lambda: True, stop_event=threading.Event())
             with WorkerLeaseSupervisor(binding):
                 result = finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests, repo_root=repo_root,
-                                     worker_task_binding=binding, require_task_binding=True)
+                                     worker_task_binding=binding, require_task_binding=True,
+                                     result_annotation=result_annotation, needs_split=needs_split)
         except Exception:
             result = {"success": False, "error": "Kanonische Worktree-Taskbindung nicht bestätigt"}
         finally:
@@ -680,7 +700,8 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
             if isinstance(task_id, bool) or str(task_id) != str(worker_task_binding.task_id):
                 raise ValueError("Fremde Task")
             return _finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests,
-                                repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding)
+                                repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding,
+                                result_annotation=result_annotation, needs_split=needs_split)
         except Exception:
             return {"success": False, "error": "Worktree-Ergebnis oder Taskänderung nicht bestätigt"}
 
@@ -694,6 +715,8 @@ def _finish_task(
     repo_root: Path | None = None,
     db_path: Path | None = None,
     worker_task_binding=None,
+    result_annotation: str | None = None,
+    needs_split: bool = False,
 ) -> dict[str, Any]:
     """Schließt einen Task im Worktree ab oder sichert den WIP-Stand.
 
@@ -713,6 +736,10 @@ def _finish_task(
     """
     if worker_task_binding is None:
         return {"success": False, "error": "Private Taskbindung fehlt"}
+    if type(needs_split) is not bool:
+        return {"success": False, "error": "needs_split muss boolesch sein"}
+    if result_annotation is not None and (not isinstance(result_annotation, str) or not result_annotation.strip()):
+        return {"success": False, "error": "WIP-Notiz darf nicht leer sein"}
 
     def run_checked(cmd, **kwargs):
         if worker_task_binding is not None:
@@ -779,8 +806,11 @@ def _finish_task(
 
         if res_push.returncode != 0:
             return {"success": False, "error": "WIP-Push nicht bestätigt"}
-        worker_task_binding.record_worktree_result(int(task_id_str), f"[WIP] Stand auf {branch_name} gesichert")
-        return {"success": True, "wip": True, "branch": branch_name, "status": "wip_pushed"}
+        annotation = result_annotation or f"[WIP] Stand auf {branch_name} gesichert"
+        worker_task_binding.record_worktree_result(
+            int(task_id_str), annotation, needs_split=needs_split)
+        return {"success": True, "wip": True, "branch": branch_name,
+                "status": "wip_pushed", "needs_split": needs_split}
 
     # Normaler Abschluss: Tests aller geänderten getrackten und neuen Dateien.
     if run_tests:

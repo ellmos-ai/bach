@@ -256,6 +256,9 @@ async def observe_ollama(backend, name):
             "server_responded": True}
 
 
+EXTERNAL_CONTEXT_FACTOR = 0.8
+
+
 def _decision(state, *, admitted=False, enforced=True, retryable=False, **fields):
     return {"schema": SCHEMA, "state": state, "admitted": admitted, "enforced": enforced,
             "retryable": retryable, "checked_at": datetime.now(timezone.utc).isoformat(), **fields}
@@ -283,7 +286,11 @@ async def probe(backend, model, *, reuse_running_server=False, cold_start=False)
     except (OSError, ValueError, TypeError, httpx.HTTPError, TimeoutError):
         return _decision("unknown_model_observation", retryable=True, **common)
     if observed["external"]:
-        return _decision("external_target", admitted=True, enforced=False, **common)
+        backend_num_ctx = getattr(backend, "num_ctx", None)
+        threshold = (int(backend_num_ctx * EXTERNAL_CONTEXT_FACTOR)
+                     if type(backend_num_ctx) is int and backend_num_ctx > 0 else None)
+        return _decision("external_target", admitted=True, enforced=False,
+                         handoff_context_threshold=threshold, **common)
     budget = policy["models"].get(model)
     if budget is None:
         return _decision("missing_model_budget", **common)

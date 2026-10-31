@@ -274,6 +274,11 @@ def execute_intent_v1(
     )
 
     client = None
+    lease_id = None
+    fence = None
+    task_version = None
+    lease_held = False
+    outcome_val = "return"
     try:
         client = TaskLeaseClient.for_task_db(
             lambda: sqlite3.connect(str(ticket.db_path), timeout=10.0)
@@ -311,6 +316,8 @@ def execute_intent_v1(
                         assignment_id=assignment.assignment_id, run_id=run_id)
         lease_id = lease_ack.lease_id
         fence = lease_ack.fence
+        task_version = lease_ack.task_version
+        lease_held = True
 
         # 2b. Atomares Claim des Tickets im Ledger.
         try:
@@ -358,18 +365,9 @@ def execute_intent_v1(
         evidence_with_fence["host"] = host
         receipt = generate_receipt(run, assignment, outcome, evidence_with_fence)
 
-        # 6b. Task in DB via Lease-Release abschließen (Vertrag §5.4 / fail-closed)
+        # 6b. Outcome für Lease-Release bestimmen; Release erfolgt im finally-Block
+        #     (fail-closed: bei Backendfehlern wird der Lease in jedem Fall zurückgegeben).
         outcome_val = "done" if outcome.get("status") == "done" else "return"
-        try:
-            client.release(ticket.task_id, lease_id=lease_id, fence=fence,
-                           task_version=lease_ack.task_version, outcome=outcome_val,
-                           result_ref=f"run:{run_id}", note=f"Trithon dispatch receipt {receipt.signature}")
-        except LeaseDeniedError as exc:
-            finish_assignment(assignment, status="interrupted",
-                              reason=f"lease_release_failed_{exc.reason}", path=str(ticket.slots_path))
-            return dict(success=False, status="release_failed", reason=exc.reason,
-                        ticket_id=ticket.ticket_id, task_id=ticket.task_id,
-                        assignment_id=assignment.assignment_id, run_id=run_id)
 
         # Ledger is evidence only; terminal receipt follows authoritative release.
         dispatch_to_ticket_master(ticket, receipt)
@@ -432,4 +430,18 @@ def execute_intent_v1(
 
     finally:
         if client is not None:
+            if lease_held and ticket.task_id in client._held:
+                try:
+                    client.release(
+                        ticket.task_id,
+                        lease_id=lease_id,
+                        fence=fence,
+                        task_version=task_version,
+                        outcome=outcome_val,
+                        result_ref=f"run:{run_id}",
+                        note=f"Trithon dispatch outcome {outcome_val}",
+                    )
+                except Exception:  # noqa: BLE001
+                    # Best effort: Release darf den eigentlichen Fehler nicht verdecken.
+                    pass
             client.__exit__(None, None, None)

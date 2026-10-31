@@ -30,9 +30,15 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE
 from hub._services.user_config_store import _exclusive_lock
 
 log = logging.getLogger("bach.slots_config")
+
+#: Set when a running worker lost its thread with the service; cleared by start or stop.
+RESUME_AFTER_RESTART_FIELD = "resume_after_restart"
+#: Next daily credit check of a worker paused without credit (#535), UTC ISO time.
+NO_CREDIT_RECHECK_FIELD = "no_credit_recheck_at"
 
 _DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 DEFAULT_SLOTS_FILE = os.environ.get(
@@ -184,7 +190,8 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Deine Kernaufgabe ist die methodische Analyse komplexer, umfangreicher Großaufgaben im Backlog.\n"
         "Sobald eine Aufgabe mehr als 2-3 Teilschritte oder Fachbereiche betrifft: Zerlege sie vorab in handhabbare,\n"
         "atomare Teilpakete (nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder erstelle Teil-Tasks).\n"
-        "Formuliere präzise Akzeptanzkriterien für jeden Teilschritt und weise sie passenden Rollen zu."
+        "Formuliere präzise Akzeptanzkriterien für jeden Teilschritt und weise sie passenden Rollen zu.\n"
+        + TASK_CUT_RULE
     ),
     "ticket-master": (
         "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\n"
@@ -1223,8 +1230,8 @@ def _validated_core_edits(
             load_skill_instructions(value)
             value = json.loads(json.dumps(value))
         elif field == "allowed_tools":
-            from .bach_tools import TOOLS_FULL
-            known = {tool["function"]["name"] for tool in TOOLS_FULL}
+            from .bach_tools import REQUEST_TOOLS, TOOLS_FULL
+            known = {tool["function"]["name"] for tool in TOOLS_FULL} | {REQUEST_TOOLS}
             if (value is not None and (not isinstance(value, list) or len(value) > 100
                     or any(not isinstance(name, str) or name not in known for name in value)
                     or len(set(value)) != len(value))):
@@ -1574,6 +1581,14 @@ def reconcile_workers(
                 w["status"] = next_st
                 w["current_activity"] = ("Modellanfragenlauf unbestätigt; Wiederaufnahme gesperrt"
                                          if pending_budget else "Bereit (wiederhergestellt)")
+                # Running without its thread (service restart or lost thread) means
+                # wanted running: the next startup resumes it. Opted-in profiles
+                # have their own resume path.
+                if (next_st == "idle" and w.get("type") in {"continuous", "persistent"}
+                        and w.get("persistent_opt_in") is not True and not w.get("system")):
+                    w[RESUME_AFTER_RESTART_FIELD] = True
+                log.warning("worker_stopped worker_id=%s reason=%s", wid,
+                            "model_request_run_unsettled" if pending_budget else "thread_lost")
                 dirty = True
 
     if dirty:

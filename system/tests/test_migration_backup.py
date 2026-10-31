@@ -96,7 +96,7 @@ def test_update_handler_run_backs_up(tmp_path, monkeypatch):
     (["task", "list"], None),
 ])
 def test_bach_cli_sets_no_auto_migrate_for_read_commands(monkeypatch, argv, flag):
-    import bach as bach_cli
+    from system import bach as bach_cli
     monkeypatch.setenv(core_db.NO_AUTO_MIGRATE_ENV, "vorher")  # Teardown stellt den Ausgangszustand her
     monkeypatch.delenv(core_db.NO_AUTO_MIGRATE_ENV)
     monkeypatch.setattr(sys, "argv", ["bach.py", *argv, "--help"])  # Hilfe-Pfad: keine Nebenwirkung

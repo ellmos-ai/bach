@@ -153,6 +153,11 @@ fehlgeschlagener Threadstart wird nicht als „kein Worker“ interpretiert: Bis
 nachgewiesenen Ende bleibt er unbestätigt und verhindert einen weiteren Start.
 Gespeicherte Taskabschluss-IDs stammen ausschließlich aus der privaten Bindung.
 
+GET /api/workers verlangt ebenfalls Control-Auth. Die Prüfung erfolgt vor
+_worker_execution_snapshots(), weil der Snapshot über die laufende
+Reconciliation persistierte Workerzustände bereinigen kann. Eine abgewiesene
+Anfrage liefert 401 und führt weder Snapshot-Lesen noch Reconciliation aus.
+
 ### Tray als Starter und Beobachter
 
 Der Tray verwendet für Always-On ausschließlich den exakten Kernslot. Er

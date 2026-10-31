@@ -12,7 +12,7 @@ SYSTEM_ROOT = Path(__file__).parent.parent
 if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
-from bach_api import BachAPIError, _TaskProxy
+from system.bach_api import BachAPIError, _TaskProxy
 
 
 def test_structured_task_add_forwards_due_date_keyword(monkeypatch):
@@ -295,7 +295,7 @@ def test_structured_task_reap(monkeypatch):
 
 
 def _task_db(tmp_path, monkeypatch, rows):
-    import bach_api
+    from system import bach_api
 
     db = tmp_path / "bach.db"
     conn = sqlite3.connect(db)
@@ -357,7 +357,7 @@ def test_structured_task_add_forwards_creation_origin_forms(
 
 
 def test_structured_task_add_persists_creation_origin_with_countercheck(tmp_path, monkeypatch):
-    import bach_api
+    from system import bach_api
     from hub.task import TaskHandler
 
     data_dir = tmp_path / "data"

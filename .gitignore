@@ -77,6 +77,7 @@ id_ed25519.*
 **/daemon.pid
 
 # === SYSTEM LAUFZEIT-DATEN ===
+/system/_state/
 /system/data/.clock_state
 /system/data/.*_state*
 /system/data/*.lock
@@ -278,6 +279,7 @@ token.json
 /check_db.py
 /check_lang*.py
 /check_translations.py
+/_check_phone.py
 /merge_db.py
 /quality_check.py
 /scratch_dump.json
@@ -383,8 +385,3 @@ LOCK*.guard
 # Task #1694: fremde Übergabe-Artefakte im Task-Worktree aus Commit halten
 /task_result.md
 /tests_tmp_gardener/
-
-# Task #2619: Ad-hoc-Generator- und Spiegeldateien im Task-Worktree aus Commit halten
-/parity2619.py
-/parity2619_helpers.py
-/test_parity.py

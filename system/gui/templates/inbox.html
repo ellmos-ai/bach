@@ -568,10 +568,7 @@
     <script>
         // Private file metadata and previews require the existing device login.
         async function inboxFetch(url, options = {}) {
-            const token = localStorage.getItem('bach_device_token');
-            if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
             const headers = new Headers(options.headers || {});
-            headers.set('Authorization', 'Bearer ' + token);
             const response = await fetch(url, { ...options, headers });
             if (response.status === 401 || response.status === 403) {
                 throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');

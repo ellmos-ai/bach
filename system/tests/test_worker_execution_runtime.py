@@ -268,8 +268,8 @@ def test_stop_after_real_failed_ledger_finish_blocks_dispatch_after_tool_hash_dr
         session.allowed_tools = []
         return handle
 
-    def finish_then_request_stop(handle, *, result=None, failed=False):
-        outcome = real_finish(handle, result=result, failed=failed)
+    def finish_then_request_stop(handle, *, result=None, failed=False, **fields):
+        outcome = real_finish(handle, result=result, failed=failed, **fields)
         finish_calls.append((failed, outcome))
         if failed:
             binding._stop_event.set()

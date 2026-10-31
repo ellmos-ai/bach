@@ -100,6 +100,32 @@ def test_line_request_above_cap_is_honestly_limited_to_200(tmp_path, monkeypatch
     assert "   201 |" not in result
 
 
+def test_task_reader_default_page_is_200_lines_and_unbound_default_stays_50(tmp_path, monkeypatch):
+    # Harness 25.10.2026: a task read without ``lines`` pages by the output cap, not by 50 lines.
+    rows = "".join(f"z{number}\n" for number in range(1, 301)).encode()
+    _target, path = _task_file(tmp_path, monkeypatch, rows)
+
+    bound = _bound_provider().execute("read_file", {"path": str(path)}, "safe")
+    legacy = bach_tools.BachToolProvider().execute("read_file", {"path": str(path)}, "safe")
+
+    assert bound.startswith(
+        "Physische Zeilen 1–200 von 300; Offset=1; angezeigt=200/200; "
+        "weitere Zeilen vorhanden; fortsetzen mit offset=201.")
+    assert "Anfrage auf höchstens" not in bound
+    assert legacy.splitlines() == [f"z{number}" for number in range(1, 51)]
+
+
+def test_task_reader_default_page_still_stops_at_4000_chars_with_resume_offset(tmp_path, monkeypatch):
+    content = "".join(f"row-{number:03d}-" + ("x" * 60) + "\n" for number in range(1, 301))
+    _target, path = _task_file(tmp_path, monkeypatch, content.encode())
+
+    result = _bound_provider().execute("read_file", {"path": str(path)}, "safe")
+
+    assert len(result) <= MAX_READ_FILE_OUTPUT_CHARS
+    assert result.startswith("Auszug ab physischer Zeile 1; Limit=200; Datei=300 physische Zeilen.")
+    assert "Weiterlesen mit offset=" in result
+
+
 def test_long_line_is_numbered_and_truncation_is_visible_within_4000_chars(tmp_path, monkeypatch):
     _target, path = _task_file(tmp_path, monkeypatch, ("x" * 6000 + "\nrest\n").encode())
     result = _bound_provider().execute(
@@ -143,7 +169,7 @@ def test_empty_file_and_offset_after_eof_are_explicit(tmp_path, monkeypatch):
         "read_file", {"path": str(target / "src" / "review.txt"), "offset": 3}, "safe",
     )
 
-    assert empty == "Datei leer (0 physische Zeilen); Offset=1; angezeigt=0/50."
+    assert empty == "Datei leer (0 physische Zeilen); Offset=1; angezeigt=0/200."
     assert "Dateiende bei Zeile 2; Offset=3 liegt dahinter" in past_eof
 
 

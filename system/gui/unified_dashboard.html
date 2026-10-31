@@ -724,9 +724,8 @@
     }
 
     function artifactAuthHeaders() {
-        const token = localStorage.getItem('bach_device_token');
-        if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
-        return { Authorization: 'Bearer ' + token };
+        // Same-origin requests carry the server-managed HttpOnly device cookie.
+        return {};
     }
 
     async function artifactRequest(url) {

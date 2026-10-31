@@ -45,6 +45,8 @@ from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
 from hub._services.chat.slots_config import ModelRequestBudgetError
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
+from hub._services.chat.worker_tool_errors import ToolErrorText
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
@@ -63,7 +65,8 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
     "bestätigte Kind-IDs, offene Arbeit>', complete=false) den gesicherten Teilstand zurück. "
     "Der Eltern-Task bleibt pending; die Zerlegung ist kein Abschluss und kein Anlass zur Abnahme. "
-    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten."
+    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten. "
+    + TASK_CUT_RULE_SHORT
 )
 
 
@@ -127,23 +130,144 @@ def _completion_reserve_hint(binding, remaining, *, task_tool_offered):
             "Freier Text ersetzt keinen bestätigten Task-Werkzeugaufruf.")
 
 
+#: Lesespur im Übergabezettel (BACH-Harness, 25.10.): Nach Übergaben las der
+#: lokale Worker dieselben Dateien neu (#2505: 37 von 53 Aufrufen read_file).
+READ_TRAIL_HEADER = "[LESESPUR dieses Laufs, automatisch aus deinen Werkzeugaufrufen]"
+READ_TRAIL_LIMIT = 40
+READ_TRAIL_MAX_CHARS = 2400
+_READ_TRAIL_ROW = re.compile(r"^\s*(\d+) \| ", re.MULTILINE)
+_READ_TRAIL_CUT = re.compile(r"Zeichen gekürzt; Zeile \d+ ist (?:un|nicht )vollständig angezeigt\. "
+                             r"Weiterlesen mit offset=(\d+)\.\]")
+_READ_TRAIL_HIT = re.compile(r"^(.+?):(\d+):", re.MULTILINE)
+
+
+class _ReadTrail:
+    """Erfolgreiche read_file-/search_text-Aufrufe eines Laufs, über Übergaben hinweg.
+
+    Ein Eintrag je Datei bzw. Suche; es bleiben die jüngsten READ_TRAIL_LIMIT.
+    Abgelehnte oder unbestätigte Aufrufe zählen nicht als gelesen.
+    """
+
+    def __init__(self):
+        self._entries: dict = {}
+
+    def record(self, name, arguments, result) -> None:
+        if name not in ("read_file", "search_text") or isinstance(result, ToolErrorText):
+            return
+        text = str(result)
+        if text.startswith(("Fehler", "BLOCKIERT", "Werkzeugausführung nicht bestätigt")):
+            return
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except ValueError:
+                return
+        if not isinstance(arguments, dict):
+            return
+        path = arguments.get("path")
+        if name == "read_file":
+            span = _read_trail_span(text)
+            if type(path) is not str or not path or span is None:
+                return
+            key = ("read", path)
+            merged = []
+            for start, end in sorted(self._entries.pop(key, []) + [span]):
+                if merged and start <= merged[-1][1] + 1:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+                else:
+                    merged.append((start, end))
+            self._entries[key] = merged
+        else:
+            pattern = arguments.get("pattern")
+            if type(pattern) is not str:
+                return
+            hits = [] if text == "(keine Treffer)" else _READ_TRAIL_HIT.findall(text)
+            count = f"{len(hits)}{'+' if len(text) >= 4000 else ''}"
+            places = [f"{Path(file).name}:{line}" for file, line in hits[:3]]
+            key = ("search", pattern, str(path or "."))
+            self._entries.pop(key, None)
+            self._entries[key] = (count, places)
+        while len(self._entries) > READ_TRAIL_LIMIT:
+            del self._entries[next(iter(self._entries))]
+
+    def render(self) -> str:
+        lines = []
+        for key, value in self._entries.items():
+            if key[0] == "read":
+                ranges = ", ".join(f"{start}–{end}" for start, end in value)
+                lines.append(f"- gelesen {_read_trail_label(key[1], 160)}: Zeilen {ranges}")
+            else:
+                count, places = value
+                lines.append(f"- gesucht {_read_trail_label(key[1], 80)!r} in "
+                             f"{_read_trail_label(key[2], 160)}: {count} Treffer"
+                             + (f" ({', '.join(places)})" if places else ""))
+        while lines and len("\n".join(lines)) > READ_TRAIL_MAX_CHARS:
+            lines.pop(0)
+        if not lines:
+            return ""
+        return (READ_TRAIL_HEADER + "\n" + "\n".join(lines) + "\n"
+                "Lies diese Bereiche nicht erneut; lies nur nach, wenn du für eine "
+                "Änderung den exakten Wortlaut brauchst. Zeilenangaben sind Navigationshilfe.")
+
+
+def _read_trail_label(value: str, limit: int) -> str:
+    """Kürzt nur die Anzeige; ein Prüfsummenkürzel hält gekürzte Pfade unterscheidbar."""
+    if len(value) <= limit:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:8]
+    return f"…{value[-(limit - 11):]} #{digest}"
+
+
+def _read_trail_span(text):
+    """Nur vollständig gezeigte Zeilen; Rohausgabe ohne Zeilennummern belegt nichts."""
+    if text.startswith("{"):
+        try:
+            page = json.loads(text)
+        except ValueError:
+            return None
+        rows = page.get("lines") if page.get("schema") == "ellmos.read-evidence.v1" else None
+        full = [row["line"] for row in rows or () if isinstance(row, dict)
+                and row.get("char_offset") == 0 and row.get("line_complete") is True
+                and type(row.get("line")) is int]
+        return (full[0], full[-1]) if full else None
+    if not text.startswith(("Physische Zeilen ", "Auszug ab physischer Zeile ")):
+        return None
+    rows = [int(number) for number in _READ_TRAIL_ROW.findall(text)]
+    cut = _READ_TRAIL_CUT.search(text)
+    if cut:
+        # The formatter names the first line that was not shown completely.
+        rows = [number for number in rows if number < int(cut.group(1))]
+    return (rows[0], rows[-1]) if rows else None
+
+
 def _resume_handoff_context(original, summary, *, background_task, has_tools,
-                            round_num, max_rounds):
+                            round_num, max_rounds, read_trail: str = ""):
     """Bewahrt die Rolle und setzt genau die aktuellen Laufhinweise ein."""
     history = [
         message for message in summary
         if message.get("role") != "system"
         and message.get("content") != SELF_DECOMPOSE_INSTRUCTION
+        and not str(message.get("content", "")).startswith(READ_TRAIL_HEADER)
         and not re.fullmatch(
             r"\[Werkzeugrunde \d+(?:/\d+ · noch \d+| · ohne Limit)\]",
             str(message.get("content", "")),
         )
     ]
+    if read_trail:
+        history.append({"role": "user", "content": read_trail})
     messages = [message for message in original if message.get("role") == "system"] + history
     if background_task and has_tools:
         messages.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
     messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
     return messages, history
+
+
+def _resume_with_handoff_state(session, original, summary, **kwargs):
+    resumed, history = _resume_handoff_context(original, summary, **kwargs)
+    session.last_handoff_summary = summary
+    session.last_handoff_read_trail = kwargs.get("read_trail") or ""
+    return resumed, history
+
 
 try:
     from ellmos_chat import (
@@ -231,6 +355,10 @@ from hub._services.chat.bach_tools import (
     TOOLS_FULL,
     TOOLS_PLAN,
     tools_for_mode,
+    REQUEST_TOOLS,
+    on_demand_tools,
+    tool_groups_available,
+    _tool_policy_denial,
     exec_tool,
     is_blocked,
     is_safe_command,
@@ -332,6 +460,7 @@ _SAFE_FAILURE_REASON_CODES = frozenset({
     "cloud_call_retry_exhausted",
     "completion_reserve_context_exhausted",
     "handoff_context_too_large",
+    "invalid_tool_call",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -1910,6 +2039,16 @@ class ChatRuntime(_ModuleChatRuntime):
         """Build the request schema from the already-refreshed bound session."""
         if enabled is not True or session.allow_tools is not True:
             return []
+        tools = self._granted_worker_tools(session, backend)
+        if completion_reserve:
+            return _completion_reserve_tools(tools, session.worker_task_binding)
+        grants = _effective_tool_grants(session)
+        if grants is not None and REQUEST_TOOLS in grants:
+            return on_demand_tools(tools, getattr(session, "requested_tool_groups", ()))
+        return tools
+
+    def _granted_worker_tools(self, session, backend) -> list[dict]:
+        """Every tool the bound session's live mode and allowed_tools grant."""
         default_model = getattr(backend, "get_default_model", None)
         if not callable(default_model):
             default_model = None
@@ -1921,9 +2060,19 @@ class ChatRuntime(_ModuleChatRuntime):
             allowed_tools=_effective_tool_grants(session),
             agent_operations=self.agent_operations,
         )
-        tools = provider.get_tools(session.mode)
-        return (_completion_reserve_tools(tools, session.worker_task_binding)
-                if completion_reserve else tools)
+        return provider.get_tools(session.mode)
+
+    def _request_tool_group(self, session, backend, arguments) -> str:
+        """Meta tool: open one group from the next round, only within allowed_tools."""
+        group = arguments.get("group") if isinstance(arguments, dict) else None
+        available = tool_groups_available(self._granted_worker_tools(session, backend))
+        if type(group) is not str or group not in available:
+            return _tool_policy_denial(
+                "tool_not_authorized",
+                "BLOCKIERT: Werkzeuggruppe ist nicht verfügbar. Verfügbar: "
+                + (", ".join(available) or "keine"))
+        session.requested_tool_groups.add(group)
+        return f"Ab der nächsten Runde verfügbar: {', '.join(available[group])}"
 
     async def _chat_with_compute_turn(self, backend, *args, **kwargs):
         """Hold the local-compute gate for one model call, then yield to waiters."""
@@ -2055,7 +2204,8 @@ class ChatRuntime(_ModuleChatRuntime):
                         # A refreshed profile can legitimately narrow tools.
                         # Keep the call usable, but never attest the older hash.
                         try:
-                            call_binding.finish_model_execution(handle, failed=True)
+                            call_binding.finish_model_execution(
+                                handle, failed=True, failure="request_superseded")
                         except Exception:
                             pass
                         handle = None
@@ -2071,10 +2221,12 @@ class ChatRuntime(_ModuleChatRuntime):
                     )
                 else:
                     result = await backend.chat(*args, **kwargs)
-            except BaseException:
+            except BaseException as exc:
                 if handle is not None:
                     try:
-                        call_binding.finish_model_execution(handle, failed=True)
+                        from hub._services.worker_execution_evidence import failure_code
+                        call_binding.finish_model_execution(
+                            handle, failed=True, failure=failure_code(error=exc))
                     except Exception:
                         pass
                 raise
@@ -2082,8 +2234,10 @@ class ChatRuntime(_ModuleChatRuntime):
                 failed = not isinstance(result, dict) or bool(result.get("error"))
                 if getattr(session, "worker_task_binding", None) is call_binding:
                     try:
+                        from hub._services.worker_execution_evidence import failure_code
                         call_binding.finish_model_execution(
                             handle, result=None if failed else result, failed=failed,
+                            failure=failure_code(result) if failed else None,
                             route_sha256=(dispatch_route["route_sha256"]
                                 if dispatch_route and getattr(backend, "_controller_route", None) is dispatch_route_stamp
                                 and route_snapshot(backend) == dispatch_route else None),
@@ -2092,7 +2246,7 @@ class ChatRuntime(_ModuleChatRuntime):
                         pass
                 else:
                     try:
-                        call_binding.finish_model_execution(handle, failed=True)
+                        call_binding.finish_model_execution(handle, failed=True, failure="binding_changed")
                     except Exception:
                         pass
             # Ollama can reject malformed Qwen tool XML in its reserved error
@@ -2844,19 +2998,21 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         configured_max_rounds = max_rounds
         from hub._services.llm.model_backend import backend_identifier
         cloud_worker = (
-            getattr(session, "worker_task_binding", None) is not None
-            and (backend_identifier(selected_backend) == "openrouter"
-                 or (backend_identifier(selected_backend) == "ollama"
-                     and isinstance(selected_model, str)
-                     and selected_model.lower().endswith(":cloud")))
+            backend_identifier(selected_backend) in {"openrouter", "ollama-cloud"}
+            or (backend_identifier(selected_backend) == "ollama"
+                and isinstance(selected_model, str)
+                and selected_model.lower().endswith(":cloud"))
         )
-        if cloud_worker and max_rounds > 0:
-            max_rounds = max(max_rounds, min(1000, max_rounds * 4))
+        if cloud_worker:
+            if getattr(session, "max_tool_rounds", None) is None:
+                max_rounds = limit("BACH_CLOUD_MAX_TOOL_ROUNDS")
+            else:
+                max_rounds = min(max_rounds, limit("BACH_CLOUD_MAX_TOOL_ROUNDS_CAP"))
         session.effective_max_tool_rounds = max_rounds
         if cloud_worker and max_rounds != configured_max_rounds:
             msgs.append({"role": "user", "content": (
-                f"Cloud-Rundenreserve: {configured_max_rounds} reguläre Runden, "
-                f"bis {max_rounds} Runden einschließlich Abschlussreserve. "
+                f"Cloud-Turnbudget: {max_rounds} Modellrunden für diesen Turn "
+                f"(Konfiguration: {configured_max_rounds}). "
                 "Modellanfragenbudget, Nutzerstopp und Anbieterlimits gelten weiterhin."
             )})
         round_num = 0
@@ -2866,10 +3022,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         seit_hook = 0
         session.tool_round = 0
         session.last_tools = []
+        session.requested_tool_groups = set()
         result = {}
         chars_at_last_call = 0
         last_prompt_tokens = None  # measured prompt of the last main call; cleared by every handoff
         offered_tools = tools
+        read_trail = _ReadTrail()
         reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
         background_task = turn_context is not None and turn_context[1] == "background"
@@ -2931,10 +3089,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     summary = await self._handoff(
                         msgs, session, backend=selected_backend, model=selected_model, strict=True,
                     )
-                    resumed, history = _resume_handoff_context(
+                    resumed, history = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,
+                        read_trail=read_trail.render(),
                     )
                     if not handoff_control.finish(request_id, succeeded=True):
                         return FailedAnswer.from_exception(RuntimeError("Workerlauf während Übergabe beendet"))
@@ -2987,10 +3146,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         summary = await self._handoff(
                             msgs, session, backend=selected_backend, model=selected_model,
                             strict=selected_model == "glm-5.3:cloud")
-                        msgs, session.messages = _resume_handoff_context(
+                        msgs, session.messages = _resume_with_handoff_state(session,
                             msgs, summary, background_task=background_task,
                             has_tools=session.allow_tools is True and bool(offered_tools),
-                            round_num=round_num, max_rounds=max_rounds)
+                            round_num=round_num, max_rounds=max_rounds,
+                            read_trail=read_trail.render())
                     except Exception as e:
                         session.current_tool = ""
                         return FailedAnswer.from_exception(e)
@@ -3081,10 +3241,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
                     )
-                    msgs, session.messages = _resume_handoff_context(
+                    msgs, session.messages = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,
+                        read_trail=read_trail.render(),
                     )
                 except Exception as e:
                     session.current_tool = ""
@@ -3174,6 +3335,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 def dispatch_tool(name, arguments):
                     if reserve_denied:
                         return "BLOCKIERT: In der Abschlussreserve sind nur bestätigbare Task-Abschlussaktionen erlaubt."
+                    if name == REQUEST_TOOLS and binding is not None:
+                        return self._request_tool_group(session, selected_backend, arguments)
                     return exec_tool(
                         name, arguments, session.mode,
                         bach_app=self.bach_app,
@@ -3192,8 +3355,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         dispatch_tool,
                     )
                     if traced_outcome.status != "returned":
-                        binding.invalidate()
                         session.current_tool = ""
+                        if traced_outcome.error_code == "invalid_tool_call":
+                            # Rejected before trace start and dispatch (e.g. truncated
+                            # JSON arguments): nothing ran, so the binding stays valid
+                            # and the worker returns the task with this reason.
+                            return FailedAnswer(
+                                f"{FailedAnswer.PREFIX}Werkzeugaufruf ungültig: Argumente sind kein JSON-Objekt",
+                                reason_code="invalid_tool_call",
+                            )
+                        binding.invalidate("tool_outcome_unconfirmed")
                         return FailedAnswer(
                             "Worker-Werkzeugnachweis fehlt oder Werkzeugwirkung ist ungeklärt"
                         )
@@ -3213,15 +3384,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     if traced_outcome is not None:
                         abandon_normal_tool_result(binding, traced_outcome)
                     elif binding is not None:
-                        binding.invalidate()
+                        binding.invalidate("tool_response_unconsumed")
                     session.current_tool = ""
                     raise RuntimeError("Werkzeugantwort konnte nicht konsumiert werden") from None
                 if traced_outcome is not None:
                     # This confirms consumption, never semantic task acceptance.
                     if not acknowledge_normal_tool_result(binding, traced_outcome):
-                        binding.invalidate()
+                        binding.invalidate("tool_ack_unconfirmed")
                         session.current_tool = ""
                         return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
+                read_trail.record(t_name, t_args, t_result)
                 if binding is not None:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":

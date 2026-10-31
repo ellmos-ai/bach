@@ -1486,6 +1486,29 @@ class TestControlHandlerEndpoints:
         assert target["status"] == "idle"
         assert "Bereit (wiederhergestellt)" in target["current_activity"]
 
+    def test_reconcile_marks_only_wanted_running_workers_for_resume(self, tmp_path, caplog):
+        """#2633: a worker that was running when the service ended is resumed later."""
+        from hub._services.chat.slots_config import (
+            RESUME_AFTER_RESTART_FIELD, add_worker, reconcile_workers, update_slot,
+        )
+        cfg_file = str(tmp_path / "test_slots.json")
+        initialize_slots_config(cfg_file)
+        ids = {kind: add_worker({"name": kind, "type": kind}, path=cfg_file)["id"]
+               for kind in ("continuous", "once")}
+        ids["paused"] = add_worker({"name": "paused", "type": "continuous"}, path=cfg_file)["id"]
+        for kind in ("continuous", "once"):
+            update_slot(ids[kind], {"status": "running"}, path=cfg_file)
+        update_slot(ids["paused"], {"status": "paused"}, path=cfg_file)
+        caplog.set_level("WARNING", logger="bach.slots_config")
+        workers = {w["id"]: w for w in reconcile_workers(active_worker_ids=set(), path=cfg_file)}
+        assert workers[ids["continuous"]]["status"] == "idle"
+        assert workers[ids["continuous"]][RESUME_AFTER_RESTART_FIELD] is True
+        assert workers[ids["once"]]["status"] == "completed"
+        assert RESUME_AFTER_RESTART_FIELD not in workers[ids["once"]]
+        assert RESUME_AFTER_RESTART_FIELD not in workers[ids["paused"]]  # a deliberate stop stays
+        assert (f"worker_stopped worker_id={ids['continuous']} reason=thread_lost"
+                in caplog.text)
+
     def test_compose_task_divider_prompt(self, tmp_path):
         from hub._services.chat.slots_config import compose_worker_prompt
         cfg_file = tmp_path / "test_slots.json"

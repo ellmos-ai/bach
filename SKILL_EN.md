@@ -36,18 +36,12 @@ description: >
   5. If a task attaches to an open user decision or does not fit your abilities: ask or note in task note and take the next one. Never change rules or protective gates just to take a task.
 
 ### 3. Take over before you work
-```python
-import os, sys
-os.environ["BACH_NO_AUTO_MIGRATE"] = "1"
-sys.path.insert(0, os.path.join(os.environ["BACH_ROOT"], "system"))
-from hub._services.task_lease_client import TaskLeaseClient
-# BACH_ROOT and BACH_DEVICE_TOKEN provided by the access; never output the token
-client = TaskLeaseClient(lead_url="http://127.0.0.1:8000", timeout=35)  # reads BACH_DEVICE_TOKEN
-snap = client.task_snapshot(task_id)                      # full description and task version
-ack = client.acquire(task_id, worker_id="<agent>@<host>", host="<host>", ttl_profile="S")
-# new request_id generated; task version from snapshot can be passed as task_version=…
-# ack.lease_id, ack.fence, ack.task_version: keep for this run, never in reports
-client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # timely, also for long work
+```
+bach task take <id> --by <agent>@<host>          # Erfolg: "…uebernommen…" + Fence + Frist; Lease-ID/Fence merken
+bach task renew <id> --by <user> --fence <int>   # rechtzeitig verlaengern; bei Fence-Wechsel Schreibaktionen stoppen
+bach task submit <id> --by <user> --fence <int> --result "<Ergebnistext>"
+bach task return <id> --by <user> --fence <int>  # Freigabe, Status zurueck auf pending
+bach task block <id> --lease-id --by <user> --fence <int> [--note "<text>"]  # outcome=blocked
 ```
 - Worker ID **`<agent>@<host>`**, own request ID and generation, never share with another worker. Start only after confirmed acceptance.
 - Reject `renew` if lease expired or fence changed: **end all write operations for this task.** After confirmed content changes, update stored task version.
@@ -103,7 +97,7 @@ client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # timely, also f
 
 **(1) VERSION CHECK:** If multiple versions of this SKILL.md are available (local, central), compare version numbers and switch to the newest version if necessary, then continue reading there.
 ```bash
-bach skills version bach   # Check if a newer version exists
+bach skills version bach   # Prueft ob aktuellere Version existiert
 ```
 
 **(2) OPERATING SYSTEM CHECK:** Detect whether you are running on Windows, Mac, or Linux.
@@ -157,8 +151,8 @@ Read additional packages when needed. No startup required, no shutdown expected.
 
 ```python
 from bach_api import task, memory, tools, steuer
-task.list()         # Immediately usable
-tools.search("ocr") # Find a tool
+task.list()         # Sofort nutzbar
+tools.search("ocr") # Werkzeug finden
 ```
 
 ---
@@ -166,49 +160,49 @@ tools.search("ocr") # Find a tool
 ### Document structure (Navigation map)
 
 ```
-ALWAYS (before anything else)
-+-- (1) VERSION CHECK
-+-- (2) OPERATING SYSTEM CHECK
+IMMER (vor allem anderen)
+├── (1) VERSIONS-CHECK
+└── (2) BETRIEBSSYSTEM-CHECK
 
-CLARIFY ACCESS TYPE
-+-- A) Library       -> Guest, read-only, tool
-+-- B) Mixed         -> User-guided, API + Startup (recommended)
-+-- C) Session       -> Classic, CLI + full protocol
+ZUGRIFFSART klaeren
+├── A) Bibliothek    → Gast, lesend, Werkzeug
+├── B) Gemischt      → User-gefuehrt, API + Startup (empfohlen)
+└── C) Session       → Klassisch, CLI + volles Protokoll
 
-IN MODE B and C
-+-- (1) Reading = Co-development
-|   +-- (a) Handler First
-|   +-- (b) Fill gaps
-|   +-- (c) Own creations welcome
-|   +-- (d) Fix-or-Task
-|   +-- (e) Self-Healing
-+-- (2) Execute startup procedure
-|   +-- (1) Start              [B/C]
-|   +-- (2) System knowledge   [B/C]
-|   +-- (3) Memory             [B/C]
-|   +-- (4) Capabilities       [B/C]
-|   +-- (5) Task planning      [B/C]
-|   +-- (6) Protocols           [C]
-+-- (3) Additional packages when needed
+IM MODUS B und C
+├── (1) Lesen = Mitentwicklung
+│   ├── (a) Handler First
+│   ├── (b) Luecken fuellen
+│   ├── (c) Eigenes erwuenscht
+│   ├── (d) Fix-or-Task
+│   └── (e) Self-Healing
+├── (2) Startprozedur durchfuehren
+│   ├── (1) Start              [B/C]
+│   ├── (2) Systemwissen       [B/C]
+│   ├── (3) Memory             [B/C]
+│   ├── (4) Faehigkeiten       [B/C]
+│   ├── (5) Aufgabenplanung    [B/C]
+│   └── (6) Protokolle          [C]
+└── (3) Zusatzpakete bei Bedarf
 
-IN MODE A
-+-- Additional packages when needed
+IM MODUS A
+└── Zusatzpakete bei Bedarf
 
-TOPIC PACKAGES (all modes, when needed)
-+-- Teamwork
-+-- Problem solving
-+-- Coding
-+-- Maintenance
-+-- File management
-+-- Self-Extension              [B/C]
-+-- Shutdown                    [B/C]
+THEMEN-PAKETE (alle Modi, bei Bedarf)
+├── Teamarbeit
+├── Problemloesung
+├── Coding
+├── Wartung
+├── Dateiverwaltung
+├── Self-Extension              [B/C]
+└── Shutdown                    [B/C]
 
-REFERENCE
-+-- Skill Architecture
-+-- Three Access Modes (API modules, when-to-use-what)
-+-- Overall Architecture Diagram
-+-- Hooks & Injektoren
-+-- Changelog
+REFERENZ
+├── Skill-Architektur
+├── Drei Zugriffsmodi (API-Module, Wann-was-nutzen)
+├── Gesamtarchitektur-Diagramm
+├── Hooks & Injektoren
+└── Changelog
 ```
 
 ---
@@ -220,8 +214,8 @@ REFERENCE
 **ALWAYS use the newest version** - regardless of whether stored locally or centrally:
 
 ```bash
-bach skills version <name>    # Check versions
-bach tools version <name>     # Check tool versions
+bach skills version <name>    # Prüfe Versionen
+bach tools version <name>     # Prüfe Tool-Versionen
 ```
 
 #### Skill Structure: One Skill = One Folder
@@ -230,10 +224,10 @@ Each skill, agent, expert is **fully self-contained** in its own folder:
 
 ```
 agents/entwickler/
-+-- SKILL.md              # Definition with standard header
-+-- tool_xyz.py           # Specific tools (flat)
-+-- protocol_abc.md       # Specific protocols (flat)
-+-- config.json           # Optional
+├── SKILL.md              # Definition mit Standard-Header
+├── tool_xyz.py           # Spezifische Tools (flat)
+├── protocol_abc.md       # Spezifische Protokolle (flat)
+└── config.json           # Optional
 ```
 
 **Rules:**
@@ -259,7 +253,7 @@ dependencies:
   services: []
   protocols: []
 description: >
-  [Description]
+  [Beschreibung]
 ---
 ```
 
@@ -280,8 +274,8 @@ Full startup/shutdown logging over the command line. For interactive terminal se
 ```bash
 cd system
 python bach.py --startup --partner=claude --mode=silent --watch
-# ... work ...
-python bach.py --shutdown "Summary"
+# ... arbeiten ...
+python bach.py --shutdown "Zusammenfassung"
 ```
 
 ##### Mode 2: Library mode (API -- lightweight)
@@ -291,11 +285,11 @@ Direct access to handlers without session overhead. For scripts, quick queries, 
 ```python
 from bach_api import task, memory, steuer, partner, tools, injector
 
-task.list()                              # Query tasks
-memory.write("Important note")           # Write memory
-steuer.status()                          # Control status
-partner.list()                           # List partners
-injector.process("I am blocked")         # Cognitive help
+task.list()                              # Tasks abfragen
+memory.write("Wichtige Notiz")           # Memory schreiben
+steuer.status()                          # Steuer-Status
+partner.list()                           # Partner auflisten
+injector.process("ich bin blockiert")    # Kognitive Hilfe
 ```
 
 ##### Mode 3: Mixed mode (API + Session-Lifecycle)
@@ -305,16 +299,16 @@ Full startup/shutdown over the API. **Recommended for LLM sessions** -- combines
 ```python
 from bach_api import session, task, memory, injector
 
-# Session start (= python bach.py --startup --partner=claude --mode=silent)
+# Session starten (= python bach.py --startup --partner=claude --mode=silent)
 session.startup(partner="claude", mode="silent")
 
-# Working with API
+# Arbeiten mit API
 task.list()
-memory.write("Note")
-injector.process("complex task")
+memory.write("Notiz")
+injector.process("komplexe aufgabe")
 
-# Session end (= python bach.py --shutdown "What was done. Next: What comes")
-session.shutdown("What was done. Next: What comes.")
+# Session beenden (= python bach.py --shutdown "Zusammenfassung")
+session.shutdown("Was gemacht wurde. Naechste: Was kommt.")
 ```
 
 ##### Available API modules
@@ -324,13 +318,13 @@ from bach_api import (
     # Session-Lifecycle
     session,     # startup(), shutdown(), shutdown_quick(), shutdown_emergency()
 
-    # Core handlers
+    # Kern-Handler
     task,        # add(), list(), done(), assign(), ...
     memory,      # write(), read(), status(), fact(), search(), ...
     backup,      # create(), list(), info()
     status,      # run()
 
-    # Domain handlers
+    # Domain-Handler
     steuer,      # status(), beleg(), posten(), export()
     lesson,      # add(), last(), list(), search()
     partner,     # list(), status(), delegate(), info()
@@ -338,16 +332,16 @@ from bach_api import (
     msg,         # send(), unread(), read()
     email,       # send(), draft(), drafts(), confirm(), setup()
 
-    # Cognitive injectors
+    # Kognitive Injektoren
     injector,    # process(), check_between(), tool_reminder(), status(), toggle()
 
     # Hook-Framework
     hooks,       # on(), off(), emit(), status(), list_events()
 
-    # Plugin-API (dynamic extension)
+    # Plugin-API (Dynamische Erweiterung)
     plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
 
-    # Raw access (any handler)
+    # Raw-Zugriff (beliebiger Handler)
     app,         # app().execute("handler", "operation", ["args"])
 )
 ```
@@ -412,9 +406,9 @@ session.startup(partner="claude", mode="silent")
 **For Gemini:**
 
 ```python
-# Mode B (API)
+# Modus B (API)
 session.startup(partner="gemini", mode="silent")
-# Mode C (CLI)
+# Modus C (CLI)
 # python bach.py --startup --partner=gemini --mode=silent --watch
 ```
 
@@ -439,24 +433,24 @@ Or API: `help.run("cli")`, `help.run("features")`, etc.
 BACH has 113+ handlers in `hub/`. **Each handler is a CLI command.** To find handlers, tools, skills, or help topics:
 
 ```bash
-# Fuzzy search in help topics (187+ topics, fuzzy match!)
-bach help <search-term>           # e.g. bach help web → suggests web_scrape, web_parse
+# Fuzzy-Suche in Help-Themen (187+ Themen, Fuzzy-Match!)
+bach help <suchbegriff>           # z.B. bach help web → schlaegt web_scrape, web_parse vor
 
-# List handlers
-bach help list                    # All 187+ help topics
-bach help cli                     # CLI command overview
+# Handler auflisten
+bach help list                    # Alle 187+ Help-Themen
+bach help cli                     # CLI-Befehlsuebersicht
 
-# Search tools
-bach tools list                   # All Python tools
-bach tools search <keyword>       # Full-text search in tool names and contents
+# Tools durchsuchen
+bach tools list                   # Alle Python-Tools
+bach tools search <keyword>       # Volltextsuche in Tool-Namen und -Inhalten
 
-# Search skills & agents
-bach skills list                  # All skills in DB
-bach skills search <keyword>      # Skills filtered by keyword
-bach agent list                   # All agents
+# Skills & Agents durchsuchen
+bach skills list                  # Alle Skills in der DB
+bach skills search <keyword>      # Skills nach Keyword filtern
+bach agent list                   # Alle Agenten
 
-# Call any handler directly
-bach <handler-name> <operation>   # e.g. bach web-scrape get <url>
+# Beliebigen Handler direkt aufrufen
+bach <handler-name> <operation>   # z.B. bach web-scrape get <url>
 ```
 
 **Important:** If you don’t know which handler exists, use `bach help <search-term>` -- fuzzy search suggests matching topics, even with imprecise terms.
@@ -539,48 +533,48 @@ Complete schema: `system/data/schema/schema.sql` (138 tables + Views + FTS)
   |  +-----------+  +-----------+  +-----------+  +-------------------+ |
   |  |    CLI    |  | Lib-API   |  |    GUI    |  |  MCP v2.2 (IDE)   | |
   |  |  bach.py  |  | bach_api  |  | server.py |  |  mcp_server.py   | |
-  |  |  +-----+-----+  +-----+-----+  +-----+-----+  +--------+--------+ |
-  |  +========|==============|==============|==================|===========+
-  |            |              |              |                  |
-  |  +========v==============v==============v==================v===========+
-  |  |                    CORE LAYER (core/*.py)                           |
-  |  |  app.py → registry.py → Auto-Discovery of 75+ handlers            |
-  |  |  base.py (BaseHandler) | db.py (Schema-First) | hooks.py (Events)  |
-  |  +=========|==============|=======================================+====+
-  |             |              |                                       |
-  |  +==========v==============v=======================================v===+
-  |  |                          HUB LAYER (hub/*.py)                       |
-  |  |  System: startup, shutdown, status, backup, tokens, inject, hooks   |
-  |  |  Domain: steuer, abo, haushalt, gesundheit, contact, calendar, email|
-  |  |  Data: task, memory, db, session, logs, wiki, docs, inbox           |
-  |  |  Multi-AI: agents, partner, daemon, ollama, ati                     |
-  |  |  Extension: skills (create/reload), hooks (status/events/log/test)  |
-  |  +====|======================|======================|=================+
-  |        |                      |                      |
-  |  +----v------------------+   |   +------------------v-----------------+
-  |  |   AGENTS LAYER        |   |   |   CONNECTORS & PARTNERS           |
-  |  |                       |   |   |                                    |
-  |  | agents/ (folders)      |   |   | connectors/ (MCP, APIs)           |
-  |  | agents/_experts/       |   |   | partners/ (Multi-LLM config)      |
-  |  +-----------------------+   |   +------------------------------------+
-  |                               |
-  |  +---------------------------v----------------------------------------+
-  |  |   SKILLS & TOOLS LAYER                     |    DATA LAYER         |
-  |  |                                            |                       |
-  |  | skills/workflows/ (formerly _workflows)    | bach.db (Unified)     |
-  |  | skills/_templates/ (Standard templates)    | File system            |
-  |  | hub/_services/ (folders)                   | inbox/outbox/          |
-  |  | tools/*.py | c_*.py | injectors.py         |                       |
-  |  +--------------------------------------------+-----------------------+
-  |               |
-  |  +-----------v-----------+
-  |  | SELF-EXTENSION LAYER  |
-  |  |                       |
-  |  | skills create (6 typ) |
-  |  | skills reload (Hot)   |
-  |  | hooks.on/emit (14 Ev) |
-  |  | Plugin API (planned)  |
-  |  +-----------------------+
+  |  +-----+-----+  +-----+-----+  +-----+-----+  +--------+--------+ |
+  +========|==============|==============|==================|===========+
+           |              |              |                  |
+  +========v==============v==============v==================v===========+
+  |                    CORE LAYER (core/*.py)                           |
+  |  app.py → registry.py → Auto-Discovery von 75+ Handlern            |
+  |  base.py (BaseHandler) | db.py (Schema-First) | hooks.py (Events)  |
+  +=========|==============|=======================================+====+
+            |              |                                       |
+  +==========v==============v=======================================v===+
+  |                          HUB LAYER (hub/*.py)                       |
+  |  System: startup, shutdown, status, backup, tokens, inject, hooks   |
+  |  Domain: steuer, abo, haushalt, gesundheit, contact, calendar, email|
+  |  Data: task, memory, db, session, logs, wiki, docs, inbox           |
+  |  Multi-AI: agents, partner, daemon, ollama, ati                     |
+  |  Extension: skills (create/reload), hooks (status/events/log/test)  |
+  +====|======================|======================|=================+
+       |                      |                      |
+  +----v------------------+   |   +------------------v-----------------+
+  |   AGENTS LAYER        |   |   |   CONNECTORS & PARTNERS           |
+  |                       |   |   |                                    |
+  | agents/ (Ordner)      |   |   | connectors/ (MCP, APIs)           |
+  | agents/_experts/      |   |   | partners/ (Multi-LLM-Konfig)      |
+  +-----------------------+   |   +------------------------------------+
+                              |
+  +---------------------------v----------------------------------------+
+  |   SKILLS & TOOLS LAYER                     |    DATA LAYER         |
+  |                                            |                       |
+  | skills/workflows/ (ehem. _workflows)      | bach.db (Unified)     |
+  | skills/_templates/ (Standard-Templates)    | Dateisystem            |
+  | hub/_services/ (Ordner)                    | inbox/outbox/          |
+  | tools/*.py | c_*.py | injectors.py         |                       |
+  +--------------------------------------------+-----------------------+
+              |
+  +-----------v-----------+
+  | SELF-EXTENSION LAYER  |
+  |                       |
+  | skills create (6 Typ) |
+  | skills reload (Hot)   |
+  | hooks.on/emit (14 Ev) |
+  | Plugin-API (geplant)  |
+  +-----------------------+
 ```
 
 ---
@@ -641,7 +635,7 @@ bach help tools
 #### (5.2) Load task context
 
 ```python
-# API (preferred)
+# API (bevorzugt)
 from bach_api import task
 task.list()
 ```
@@ -687,9 +681,9 @@ bach help delegate
 ```python
 # API
 from bach_api import msg, partner
-msg.send("gemini", "Please research...")
+msg.send("gemini", "Bitte recherchiere...")
 msg.unread()
-partner.delegate("Research", "--to=gemini")
+partner.delegate("Recherche", "--to=gemini")
 ```
 
 ```bash
@@ -701,9 +695,9 @@ bach msg unread
 **Lock system:**
 
 ```bash
-bach llm lock <file>           # Lock BEFORE writing
-bach llm unlock [file]         # Release lock
-bach llm status                 # Who has which locks?
+bach llm lock <datei>           # Lock VOR Schreiben
+bach llm unlock [datei]         # Lock freigeben
+bach llm status                 # Wer hat welche Locks?
 ```
 
 ---
@@ -713,10 +707,10 @@ bach llm status                 # Who has which locks?
 *When to read:* You encounter problems or blockages.
 
 ```bash
-bach help operators
+bach help operatoren
 bach help planning
-bach help problem_solving
-bach help strategies
+bach help problemloesung
+bach help strategien
 ```
 
 ---
@@ -739,7 +733,7 @@ bach help bugfix
 
 ```bash
 bach help maintain
-bach help maintenance
+bach help wartung
 bach help recurring
 bach daemon status
 ```
@@ -793,11 +787,11 @@ bach help skills
 **Create new capabilities (5 types):**
 
 ```bash
-bach skills create voice-processor --type tool       # New tool scaffolded
-bach skills create email-agent --type agent           # New agent scaffolded
-bach skills create tax-expert --type expert            # New expert scaffolded
-bach skills create api-gateway --type handler          # New CLI command scaffolded
-bach skills create data-sync --type service            # New service scaffolded
+bach skills create voice-processor --type tool       # Neues Tool scaffolden
+bach skills create email-agent --type agent           # Neuen Agent scaffolden
+bach skills create tax-expert --type expert            # Neuen Experten scaffolden
+bach skills create api-gateway --type handler          # Neuen CLI-Befehl scaffolden
+bach skills create data-sync --type service            # Neuen Service scaffolden
 ```
 
 **After creation: Hot-Reload (no restart!)**
@@ -811,11 +805,11 @@ bach skills reload
 ```python
 from core.hooks import hooks
 
-# Attach own logic to system events
-hooks.on('after_task_create', my_function, name='my_plugin')
-hooks.on('after_startup', startup_check, name='my_plugin')
+# Eigene Logik an System-Events haengen
+hooks.on('after_task_create', meine_funktion, name='mein_plugin')
+hooks.on('after_startup', startup_check, name='mein_plugin')
 
-# Display events
+# Events anzeigen
 # bach hooks events
 ```
 
@@ -831,11 +825,19 @@ hooks.on('after_startup', startup_check, name='my_plugin')
 
 **Mode B (API -- recommended):**
 ```python
-from bach_api import session, memory
-memory.session("TOPIC: What was done. NEXT: What comes.", session_id="SESSION_ID", partner="claude")
-session.shutdown("Summary", partner="claude", session_id="SESSION_ID")
-# Or quick:
-session.shutdown_quick("Short note", partner="claude", session_id="SESSION_ID")
+from bach_api import plugins
+
+# Tool registrieren (sofort nutzbar)
+plugins.register_tool("mein_tool", meine_funktion, "Beschreibung")
+
+# Hook registrieren (Event abonnieren)
+plugins.register_hook("after_task_done", callback, plugin="mein-plugin")
+
+# Handler registrieren (neuer CLI-Befehl!)
+plugins.register_handler("mein_cmd", MeinHandler)
+
+# Plugin aus Manifest laden
+plugins.load_plugin("plugins/mein-plugin/plugin.json")
 ```
 
 `SESSION_ID` is the own ID from the startup report. For multiple open
@@ -843,9 +845,11 @@ session.shutdown_quick("Short note", partner="claude", session_id="SESSION_ID")
 
 **Mode C (CLI):**
 ```bash
-bach help shutdown
-bach --memory session "TOPIC: What was done. NEXT: What comes."
-bach --shutdown
+# CLI: Plugin-Verwaltung
+bach plugins list          # Geladene Plugins
+bach plugins create name   # Plugin scaffolden
+bach plugins load pfad     # Plugin laden
+bach plugins unload name   # Plugin entladen
 ```
 
 ---
@@ -857,16 +861,11 @@ bach --shutdown
 Hooks allow to attach own logic to 14 lifecycle events -- without changing existing code.
 
 ```python
-from core.hooks import hooks
-
-# Register listeners
-hooks.on('after_task_done', auto_backup, name='backup_plugin')
-hooks.on('after_startup', health_check, priority=10, name='health')
-
-# CLI
-# bach hooks status    → Shows all hooks
-# bach hooks events    → Lists all 14 events
-# bach hooks log       → Last executions
+from bach_api import session, memory
+memory.session("THEMA: Was gemacht. NAECHSTE: Was kommt.", session_id="SESSION_ID", partner="claude")
+session.shutdown("Zusammenfassung", partner="claude", session_id="SESSION_ID")
+# Oder schnell:
+session.shutdown_quick("Kurze Notiz", partner="claude", session_id="SESSION_ID")
 ```
 
 **Events:** `before_startup`, `after_startup`, `before_shutdown`, `after_shutdown`, `before_command`, `after_command`, `after_task_create`, `after_task_done`, `after_task_delete`, `after_memory_write`, `after_lesson_add`, `after_skill_create`, `after_skill_reload`, `after_email_send`
@@ -893,22 +892,23 @@ The 6 injectors simulate **thinking and associations** as **Central Executive**.
 
 **CLI:**
 ```bash
-bach --inject status            # Status of all injectors
-bach --inject toggle <name>     # Turn on/off
+bach help shutdown
+bach --memory session "THEMA: Was gemacht. NAECHSTE: Was kommt."
+bach --shutdown
 ```
 
 **API:**
 ```python
-from bach_api import injector
+from core.hooks import hooks
 
-injector.process("text")              # Apply all injectors to text
-injector.check_between("task done")   # Quality-check after task completion
-injector.tool_reminder()              # Available tools (once)
-injector.assign_task()                # Next task auto-assignment
-injector.time_check()                 # Clock time + news
-injector.status()                      # Status of all injectors
-injector.toggle("strategy_injector")  # Individually on/off
-injector.set_mode("api")              # Filter CLI hints from context
+# Listener registrieren
+hooks.on('after_task_done', auto_backup, name='backup_plugin')
+hooks.on('after_startup', health_check, priority=10, name='health')
+
+# CLI
+# bach hooks status    → Zeigt alle Hooks
+# bach hooks events    → Listet alle 14 Events
+# bach hooks log       → Letzte Ausfuehrungen
 ```
 
 ```bash

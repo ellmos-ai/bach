@@ -9,13 +9,14 @@ SCHEMA = "bach.worker-queue.v1"
 REJECTIONS = frozenset({
     "slot_binding", "model_binding", "explicit_slot_required", "pickup_filter",
     "pickup_category", "pickup_priority", "pickup_tags", "excluded_tag",
-    "ownership", "deferred_version", "changed_selection", "held", "not_claimable",
+    "ownership", "needs_split", "deferred_version", "changed_selection", "held", "not_claimable",
     "creator_priority", "stale_task_version", "already_held_by_caller",
-    "completion_guard", "conflict",
+    "completion_guard", "conflict", "unresolved_tool_trace",
 })
+# unresolved_tool_trace: a prior holder's tool effect is unknown; only that task waits for settlement.
 ACQUIRE_DENIALS = frozenset({"held", "not_claimable", "creator_priority",
                            "stale_task_version", "already_held_by_caller",
-                           "completion_guard", "conflict"})
+                           "completion_guard", "conflict", "unresolved_tool_trace"})
 REASONS = frozenset({
     "task_acquired", "empty_queue", "selection_excluded", "acquire_denied",
     "selection_error",
@@ -73,6 +74,7 @@ def queue_waiting_activity(raw):
         "pickup_tags": "erforderliche Tags", "excluded_tag": "ausgeschlossene Tags",
         "pickup_filter": "Auswahlfilter", "slot_binding": "Slot", "model_binding": "Modell",
         "explicit_slot_required": "Slotzuweisung fehlt", "ownership": "Zuständigkeit",
+        "needs_split": "Zerlegung erforderlich",
         "deferred_version": "unveränderte Rückgabe", "changed_selection": "Task geändert",
         "held": "fremde Lease", "not_claimable": "Status/Abhängigkeiten",
         "creator_priority": "Creator-Schonfrist", "stale_task_version": "Taskversion",

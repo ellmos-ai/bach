@@ -17,3 +17,12 @@ The current BACH reader does not attest that it read the complete file, so its v
 ## Release boundary
 
 At this source phase, the upstream PR5 candidate may be loaded only in isolated conformance QA. There is no production dependency pin, installation, service activation, or native-worker acceptance claim until PR5 is regularly merged and an immutable installation source is verified. The BACH regression suite covers the profile gate, no-I/O unavailable paths, bridge/MCP string transport, hash-only trace, and unchanged legacy schema. Exact candidate conformance is recorded separately from those local test doubles.
+
+Correction, measured 2026-10-25 on the Mac Studio (the paragraph above describes the source phase and is outdated):
+
+- ellmos-chat PR #5 was merged regularly on 2026-10-13; its merge commit `1a12f79aa2bb81487758458f9f94a524afc84906` is identical to ellmos-chat `main`.
+- BACH `requirements.txt` pins exactly that commit since #384 (2026-10-14).
+- The service environment `~/.venvs/bach` has ellmos-chat 0.3.3 installed from exactly that commit (PEP 610 `direct_url.json`), and `_read_evidence_formatter()` validates there.
+- Production chat transcripts (`session_snapshots`) contain real v1 pages from 2026-10-18 to 2026-10-24. Between 2026-10-17 and 2026-10-21 some transcripts also contain `formatter_capability_unverified` envelopes.
+- No documented acceptance or activation record was found; #384 required verifying the installed service and a real worker read before productive activation. This note records the measured state and is not an acceptance claim.
+- Scope stays the exact read-only profile. Since 2026-10-25 the local worker runs with eleven tools, so v1 is not offered to it. Extending v1 to write profiles was measured and rejected for context cost (see `LOKALER-WORKER-HARNESS.md`, section 5).
