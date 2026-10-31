@@ -197,6 +197,58 @@ def post_task_to_rheingold(
         return False, {"error": str(e)}
 
 
+def patch_task_to_rheingold(
+    url: str,
+    task_id: object,
+    changes_dict: dict,
+    provenance: Optional[dict] = None,
+) -> Tuple[bool, str]:
+    """Aktualisiert einen Task auf dem Rheingold-Server (PUT)."""
+    endpoint = f"{url.rstrip('/')}/api/tasks/{task_id}"
+    payload = dict(changes_dict)
+    if provenance is not None:
+        payload["provenance"] = provenance
+    data_bytes = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint,
+        data=data_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "BACH-RheingoldClient/1.0",
+        },
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            body = resp.read().decode("utf-8")
+            if resp.status in (200, 201, 204):
+                msg = body
+                try:
+                    parsed = json.loads(body)
+                    if isinstance(parsed, dict):
+                        if parsed.get("success") is False or parsed.get("status") in {
+                            "claim_failed",
+                            "error",
+                            "conflict",
+                            "rejected",
+                        }:
+                            err_msg = str(parsed.get("message") or parsed.get("detail") or parsed.get("status") or parsed)
+                            return False, err_msg
+                        msg = str(parsed.get("message", parsed))
+                    else:
+                        msg = str(parsed)
+                except (ValueError, TypeError):
+                    if not body:
+                        msg = f"HTTP {resp.status}"
+                return True, msg
+            return False, f"HTTP {resp.status}: {body}"
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        return False, f"HTTP {e.code}: {detail}"
+    except Exception as e:
+        return False, f"Netzwerkfehler: {e}"
+
+
 def sync_drafts_to_rheingold(
     conn: sqlite3.Connection,
     base_url: str,
