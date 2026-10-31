@@ -60,9 +60,12 @@ Whether you discover **BACH** or **[open-ocean](https://github.com/ellmos-ai/ope
    - **macOS:** Native `.dmg` / `.pkg` installer
    - **Linux:** Native `.AppImage` / `.deb` / `.rpm` installer
    - Powered by [`ellmos-installer`](https://github.com/ellmos-ai/ellmos-installer) and the transactional [`open-ocean`](https://github.com/ellmos-ai/open-ocean) engine.
-2. **Guided Setup & Anytime Component Management (`Rinnsal ↔ BACH ↔ Meer`):**
-   - Starting the installer guides you step by step through configuring your system — ready out of the box for both **local models (Ollama)** and **non-local models (Cloud APIs & Subscriptions)**.
-   - Public Ocean ships with a **Standard Extent** of modules. By deselecting or adding modules and bundles during setup — or **installing / uninstalling components at any time later** via the installer or System GUI — you shape your own custom Ocean: minimal like a **Rinnsal** (streamlet), curated like **BACH**, or broadly expanded like a **Meer** (sea/ocean).
+2. **Hermes-Inspired 4-Stage Out-of-the-Box Onboarding & Anytime Component Management (`Rinnsal ↔ BACH ↔ Meer`):**
+   - Starting the installer (`ellmos-installer onboarding`) guides you through setup ordered strictly from most important to least important:
+     1. **Stage 1 — Models, Subscriptions & API Keys:** Local models (**Ollama**) + subscriptions/API keys (**Claude**, **Codex/OpenAI**, **Gemini**, **OpenRouter**, **Ollama Cloud**, **Kimi**) stored safely in your local keyring.
+     2. **Stage 2 — Core System MCPs, Permissions & Authority:** Configure **`ellmos-filecommander`** and **`ellmos-controlcenter-mcp`** (plus `codecommander`/`homebase`), workspace write-scopes (`sandbox | ocean | free`), review policy, and the 5-tier escalation ladder.
+     3. **Stage 3 — Connectors:** Link **Telegram**, **WhatsApp**, **Discord**, and **Email** bridges.
+     4. **Stage 4 — Extent (`Rinnsal ↔ BACH ↔ Meer`), Plugins, Additional MCPs & Skills:** Public Ocean ships with a **Standard Extent** of modules. By deselecting or adding modules, plugins, MCPs, and skills during setup — or **installing / uninstalling components at any time later** via the installer or System GUI — you shape your own custom Ocean: minimal like a **Rinnsal** (streamlet), curated like **BACH**, or broadly expanded like a **Meer** (sea/ocean).
 3. **Entry-Point Branding (`bach` vs. `open-ocean`):**
    - **Entering via `bach` (this repository):** You receive the **BACH Branding**, where **Ocean still stands at the forefront of the GUI**, and BACH is presented as a curated version/form of Ocean (*"BACH — a curated edition of Ocean"*).
    - **Entering via [`open-ocean`](https://github.com/ellmos-ai/open-ocean):** Installs the system with pure **Ocean branding** (without BACH branding).

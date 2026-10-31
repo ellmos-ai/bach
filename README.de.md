@@ -49,9 +49,12 @@ Egal ob du über eine Suche auf **BACH** oder auf **[open-ocean](https://github.
    - **macOS:** Nativer `.dmg`- / `.pkg`-Installer
    - **Linux:** Nativer `.AppImage`- / `.deb`- / `.rpm`-Installer
    - Technisch getragen vom [`ellmos-installer`](https://github.com/ellmos-ai/ellmos-installer) und der transaktionalen [`open-ocean`](https://github.com/ellmos-ai/open-ocean)-Engine.
-2. **Geführte Einrichtung & jederzeitiges Nach-/Deinstallieren (`Rinnsal ↔ BACH ↔ Meer`):**
-   - Nach dem Start leitet dich der Installer Schritt für Schritt durch die Installation — direkt einsatzbereit für **lokale Modelle (Ollama)** und **nicht-lokale Modelle (Cloud-APIs & Abos)**.
-   - Das öffentliche Ocean bringt eine **Standard-Ausdehnung** an Modulen mit. Indem du Module und Bundles bei der Einrichtung an- oder abwählst — oder **Bestandteile später jederzeit über den Installer bzw. die System-GUI nachinstallierst oder deinstallierst** — erhältst du dein individuelles Ocean: schlank wie ein **Rinnsal**, kuratiert wie ein **BACH** oder breit ausgebaut wie ein **Meer**.
+2. **Hermes-inspirierte 4-stufige Out-of-the-Box-Menüführung & jederzeitiges Nach-/Deinstallieren (`Rinnsal ↔ BACH ↔ Meer`):**
+   - Nach dem Start leitet dich der Installer (`ellmos-installer onboarding`) streng geordnet von wichtig zu unwichtiger durch alle Verbindungen:
+     1. **Stufe 1 — Modelle, Subscriptions & API-Zugänge:** Lokale Modelle (**Ollama**) erkennen sowie Subscriptions und API-Keys (**Claude**, **Codex/OpenAI**, **Gemini**, **OpenRouter**, **Ollama Cloud**, **Kimi**) sicher im lokalen Keyring hinterlegen.
+     2. **Stufe 2 — Wichtige System-MCPs, Berechtigungs- & Autoritätseinstellungen:** **`ellmos-filecommander`** und **`ellmos-controlcenter-mcp`** (sowie `codecommander`/`homebase`) konfigurieren; Arbeitsbaum-Zugriffsbereich (`sandbox | ocean | free`), Review-Modus und 5-stufige Eskalationsleiter einstellen.
+     3. **Stufe 3 — Connectoren:** **Telegram**, **WhatsApp**, **Discord** und **E-Mail-Bridge** direkt verbinden.
+     4. **Stufe 4 — Ausdehnung (`Rinnsal ↔ BACH ↔ Meer`), Plugins, weitere MCPs & Skills:** Das öffentliche Ocean bringt eine **Standard-Ausdehnung** an Modulen mit. Indem du Module, Plugins, MCPs und Skills bei der Einrichtung an- oder abwählst — oder **Bestandteile später jederzeit über den Installer bzw. die System-GUI nachinstallierst oder deinstallierst** — erhältst du dein individuelles Ocean: schlank wie ein **Rinnsal**, kuratiert wie ein **BACH** oder breit ausgebaut wie ein **Meer**.
 3. **Eintrittsweg bestimmt das Branding (`bach` vs. `open-ocean`):**
    - **Einstieg über `bach` (dieses Repository):** Du erhältst das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
    - **Einstieg über [`open-ocean`](https://github.com/ellmos-ai/open-ocean):** Reines **Ocean-Branding** (das BACH-Branding entfällt).
