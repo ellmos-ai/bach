@@ -247,3 +247,50 @@ class TestEdgeCases:
         ok, output = handler.handle("cl", [])
         assert ok is False
         assert "cli" in output
+
+
+WORKER_HELP_TOPICS = (
+    "worker-policy", "worker-execution-evidence", "worker-errors",
+    "worker-scope-evidence", "worker-results",
+    "worker-result-submission-receipt", "worker-result-review",
+)
+
+
+class TestWorkerHelpTopics:
+    @pytest.mark.parametrize("topic", WORKER_HELP_TOPICS)
+    @pytest.mark.parametrize("language", ["de", "en"])
+    @pytest.mark.parametrize("spelling", ["hyphen", "underscore"])
+    def test_worker_help_resolves_named_file_and_selected_language(
+            self, handler, monkeypatch, topic, language, spelling):
+        monkeypatch.setattr("hub.help.get_lang", lambda: language)
+        german = f"Deutsche Hilfe für {topic}\n"
+        english = f"English help for {topic}\n"
+        (handler.help_dir / f"{topic}.txt").write_text(german, encoding="utf-8")
+        (handler.help_dir / f"{topic}_en.txt").write_text(english, encoding="utf-8")
+        request = topic if spelling == "hyphen" else topic.replace("-", "_")
+        ok, output = handler.handle(request, [])
+        assert ok is True
+        assert output == (english if language == "en" else german)
+
+    @pytest.mark.parametrize("topic", WORKER_HELP_TOPICS)
+    @pytest.mark.parametrize("spelling", ["hyphen", "underscore"])
+    def test_explicit_english_topic_from_listing_is_readable(
+            self, handler, monkeypatch, topic, spelling):
+        monkeypatch.setattr("hub.help.get_lang", lambda: "de")
+        english = f"English help for {topic}\n"
+        (handler.help_dir / f"{topic}_en.txt").write_text(english, encoding="utf-8")
+        assert f"{topic}_en" in handler.handle("list", [])[1]
+        request = f"{topic}_en"
+        if spelling == "underscore":
+            request = request.replace("-", "_")
+        ok, output = handler.handle(request, [])
+        assert ok is True
+        assert output == english
+
+    def test_missing_english_worker_help_keeps_german_fallback(self, handler, monkeypatch):
+        monkeypatch.setattr("hub.help.get_lang", lambda: "en")
+        german = "Deutsche Hilfe für Worker-Ergebnisse\n"
+        (handler.help_dir / "worker-results.txt").write_text(german, encoding="utf-8")
+        ok, output = handler.handle("worker-results", [])
+        assert ok is True
+        assert output == german

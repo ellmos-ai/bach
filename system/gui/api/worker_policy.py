@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request, Query
 
 from hub._services import task_lease_settings as lease_settings
 from hub._services import worker_policy_settings as service
@@ -52,6 +52,24 @@ async def put_worker_policy(request: Request, payload: dict = Body(...)):
     actor = _actor(request)
     return await _call(service.write_global_policy, payload, actor=actor,
                        operator_token=request.headers.get("X-BACH-Result-Operator", ""))
+
+
+@router.get("/system/workers/{worker_id}/selection-preview")
+async def get_worker_selection_preview(worker_id: str, request: Request,
+                                       limit: int = Query(50, ge=1, le=100),
+                                       offset: int = Query(0, ge=0, le=100_000)):
+    from .unified_api import _require_memory_device_token
+    from .worker_status_adapter import (
+        WorkerActionRejected, WorkerStatusUnavailable, read_worker_selection_preview,
+    )
+    token = _require_memory_device_token(request)
+    try:
+        return await asyncio.to_thread(read_worker_selection_preview, worker_id,
+            device_token=token, limit=limit, offset=offset)
+    except WorkerActionRejected as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except WorkerStatusUnavailable as exc:
+        raise HTTPException(503, "Auswahlvorschau nicht bestätigt") from exc
 
 
 @router.get("/system/worker-model-principals")

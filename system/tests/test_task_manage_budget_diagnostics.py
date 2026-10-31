@@ -17,6 +17,7 @@ if str(TESTS) not in sys.path:
     sys.path.insert(0, str(TESTS))
 
 from hub._services.chat import bach_tools, chat_runtime
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
 from hub._services.task_lease_client import (
     LeaseDeniedError, LeaseProtocolError, LeaseSelfCheckRequiredError,
 )
@@ -140,7 +141,7 @@ def test_confirmed_self_check_denial_returns_only_fixed_guidance(caplog, monkeyp
     ({"action": "update", "task_id": 0, "status": "completed", "complete": True},
      'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.'),
     ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parnt": False},
-     'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.'),
+     'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder. ' + TASK_CUT_RULE_SHORT),
     ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parent": True},
      'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.'),
 ])

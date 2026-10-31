@@ -1,0 +1,20 @@
+Agentenfarben
+=============
+
+Eine Blueprintfarbe ist optional. Erlaubt sind null oder sechs Hexziffern mit
+vorangestelltem #, zum Beispiel #12abef. Großbuchstaben werden kleingeschrieben.
+Andere CSS-Werte sind ungültig.
+
+Beim Speichern ohne Farbfeld bleibt die bisherige Farbe erhalten. null löscht
+sie. Änderungen benötigen die aktuelle Blueprintversion.
+
+Beim Materialisieren übernimmt die Instanz die Blueprintfarbe. Ein ausdrücklich
+gesetzter Instanzoverride hat Vorrang. null beim Instanzoverride bedeutet wieder
+erben. Erneutes Materialisieren aktualisiert die Blueprintfarbe, erhält aber den
+Instanzoverride. Beide Schritte benötigen die jeweils aktuelle Konfigurationsversion.
+Ein Instanzreset löscht den Override; eine vorhandene Blueprintfarbe wird geerbt.
+
+Ohne gespeicherte Farbe meldet die API color=null und color_source=default.
+Die Oberfläche verwendet dann ihr Standarddesign. Das Lesen alter Profile
+speichert keine neuen Farbfelder. Die Farbe gewährt keine Rechte und startet
+keinen Worker, Provider oder Modellaufruf.

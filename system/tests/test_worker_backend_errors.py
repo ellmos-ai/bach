@@ -995,6 +995,7 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
             "weight_request_bytes": gib,
             "resident_weight_credit": False,
             "capacity_basis": "host_budget",
+            "host_resources": {"schema": "bach.host-resource-observation.v1", "errors": ["host_observation_failed"]},
         }
 
     blocked_receipt = capacity_receipt("waiting_memory_reserve", 3 * gib)
@@ -1275,6 +1276,7 @@ def test_persistent_core_pre_effect_reserve_returns_typed_failure_without_model_
         "disk_reserve_bytes": gib, "weight_request_bytes": gib,
         "resident_weight_credit": False,
         "capacity_basis": "host_budget",
+        "host_resources": {"schema": "bach.host-resource-observation.v1", "errors": ["host_observation_failed"]},
     }
     composed = local_model_admission.compose_admission_receipt(
         blocked, binding=None, require_model_socket=False,
@@ -1497,6 +1499,11 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         return FailedAnswer(f"{FailedAnswer.PREFIX}RuntimeError: Kontextfenster in der Abschlussreserve erschöpft",
                             reason_code="completion_reserve_context_exhausted")
     monkeypatch.setattr(runtime, "process", process)
+    wip_calls = []
+    def secure_wip(control_arg, session_arg, reason):
+        wip_calls.append((control_arg.task_binding.task_id, reason))
+        return {"success": True}
+    monkeypatch.setattr(control, "_secure_context_wip", secure_wip)
     thread = None
     try:
         response, code = control.start_worker_execution(ident)
@@ -1507,6 +1514,7 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         assert not thread.is_alive()
         # Two failures let the worker continue; the third in a row stops it.
         assert sorted(taken) == [42, 43, 44] and len(taken) == 3
+        assert wip_calls == [(task_id, "completion_reserve_context_exhausted") for task_id in taken]
         for task_id in taken:
             task = dict(conn.execute("SELECT status, claim_salt_ref FROM tasks WHERE id=?", (task_id,)).fetchone())
             assert task["status"] == "pending" and task["claim_salt_ref"] is None

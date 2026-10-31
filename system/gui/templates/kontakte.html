@@ -494,10 +494,6 @@
 
         function apiFetch(url, options = {}) {
             const headers = new Headers(options.headers || {});
-            try {
-                const token = localStorage.getItem('bach_device_token');
-                if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
-            } catch (_) { /* Public reads still use the server's normal auth response. */ }
             return fetch(url, { ...options, headers });
         }
 

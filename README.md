@@ -27,9 +27,9 @@ BACH uses Codex both as a first-class runtime backend and as a repository-develo
 
 ## Languages
 
-BACH is documented and shipped with translation surfaces for six languages:
+README documentation is available in eleven languages. Runtime translation coverage is separate and currently includes de, en, es, ru, ja, and zh in the release snapshot.
 
-**🇬🇧 English** | [🇩🇪 Deutsch](README.de.md) | [🇪🇸 Español](README.es.md) | [🇷🇺 Русский](README.ru.md) | [🇯🇵 日本語](README.ja.md) | [🇨🇳 中文](README.zh.md)
+**English** | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 
 The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `system/exports/translations/languages_config.release.json` and exports matching locale files in `system/exports/translations/locales/`. For crawlers and direct language entry points, each language also has its own `README.md` under `docs/i18n/<lang>/`.
 
@@ -349,7 +349,7 @@ Native documentation maintenance, activation and evidence boundaries:
 - **[Ocean-BACH transfer plan](OCEAN-TRANSFER-PLAN.md)** - Installer boundaries and incremental module transfer
 - **[Deprecation register](DEPRICATED.md)** - Replacements, acceptance and rollback
 
-- **Languages:** [English](README.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [日本語](README.ja.md) | [中文](README.zh.md)
+**English** | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
 - **[Quickstart Guide](QUICKSTART.md)** - Get your first workflow running in 5 minutes
 - **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
 - **[Skills Catalog](SKILLS.template.md)** - Template and public entry point for available skills

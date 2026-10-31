@@ -51,6 +51,8 @@ DEFAULTS = {
     "BACH_LLM_IDLE_GRACE": 10,
     "BACH_LLM_PING_TIMEOUT": 10,
     "BACH_LLM_TOTAL_CAP": 7200,
+    "BACH_CLOUD_MAX_TOOL_ROUNDS": 90,
+    "BACH_CLOUD_MAX_TOOL_ROUNDS_CAP": 360,
     # 0 heisst: nicht gesetzt, also messen (Metal bzw. was laeuft).
     # Nur setzen, wo die Messung fehlschlaegt oder bewusst
     # gedeckelt werden soll - siehe hub/_services/fackel.py.

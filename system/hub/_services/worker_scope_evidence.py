@@ -354,9 +354,21 @@ def project_scope_evidence(data, *, repo_root=None, worktrees_dir=None) -> dict:
                         "result_revision": scope.get("result_revision")}
     review = result.get("model_review")
     if isinstance(review, dict) and review.get("availability") == "recorded":
-        matches = (scope.get("availability") == "available"
-                   and isinstance(scope.get("result_revision"), str)
-                   and review.get("result_revision") == scope["result_revision"])
+        # A submission-bound review has no captured scope; the DB reader bound
+        # it to this submission, and the task tree must still equal its package.
+        submission_bound = (source_kind(result) != "external_attested"
+                            and scope.get("reason") == "scope_not_recorded"
+                            and review.get("target_kind") == "submission"
+                            and isinstance(result.get("submission_revision"), str)
+                            and review.get("target_submission_revision") == result["submission_revision"])
+        if submission_bound:
+            from .worker_result_review import _tree_unchanged
+            submission_bound = _tree_unchanged(result.get("task_id"), review.get("target_tree"),
+                                               repo_root=repo_root, worktrees_dir=worktrees_dir)
+        matches = ((scope.get("availability") == "available"
+                    and isinstance(scope.get("result_revision"), str)
+                    and review.get("result_revision") == scope["result_revision"])
+                   or submission_bound)
         projected_result["model_review"] = {
             **review, "availability": "available" if matches else "unavailable",
             **({} if matches else {"reason": "review_scope_not_current"}),

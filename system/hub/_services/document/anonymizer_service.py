@@ -420,9 +420,19 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
     if not old:
         return text, 0
     pattern = re.compile(r'\b' + re.escape(old) + r'\b')
-    count = len(pattern.findall(text))
-    if count:
-        text = pattern.sub(lambda m: new, text)
+    # Addresses are replaced as whole identities. Replacing a name component
+    # inside an allowed address corrupts it and can break the reverse mapping.
+    email_spans = [m.span("email") for m in EMAIL_PATTERN.finditer(text)] if "@" not in old else []
+    count = 0
+
+    def replace(match):
+        nonlocal count
+        if any(start <= match.start() and match.end() <= end for start, end in email_spans):
+            return match.group(0)
+        count += 1
+        return new
+
+    text = pattern.sub(replace, text)
     return text, count
 
 
@@ -433,16 +443,18 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # Telefonnummern (deutsch): 07761/123456, +49 7761 123456, 0049-7761-123456, 0761 12345678,
 # 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
 PHONE_PATTERN = re.compile(
-    r'(?:'
-    r'(?:\+49|0049)[\s\-/]?\d{2,4}(?:[\s\-/]?\d{2,4}){1,3}|'  # +49 oder 0049
-    r'0\d{2,4}[\s\-/]?\d{2,4}(?:[\s\-/]?\d{2,4}){0,2}'         # 0xxx/xxxxxxx (mit optionalen Gruppen)
-    r')',
+    r'(?<!\w)(?:'
+    r'(?:\+49|0049)[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){1,3}|'
+    r'0\d{2,4}[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){0,2}'
+    r')(?!\w)',
     re.IGNORECASE
 )
 
 # E-Mail-Adressen
 EMAIL_PATTERN = re.compile(
-    r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    # Consume the token boundary; only the named capture is the email identity.
+    r'(?:^|[^a-zA-Z0-9._%+-])'
+    r'(?P<email>[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
     re.IGNORECASE
 )
 
@@ -566,6 +578,124 @@ def _looks_like_person_name(name: str) -> bool:
     return True
 
 
+# Rollenbegriffe, die NER gern als Namensbestandteil mitnimmt ("Freund Tim",
+# "Mutter Erika"): fuehrend abschneiden, der Rest ist der eigentliche Name.
+_NER_LEADING_ROLE_NOUNS = _NER_GENERIC_ROLE_NOUNS | {
+    "freund", "freundin", "onkel", "tante", "oma", "opa", "nachbar", "nachbarin",
+    "cousin", "cousine", "kollege", "kollegin", "sohn", "tochter",
+}
+
+# Gewoehnliche deutsche Woerter, die NER (v. a. das EN-Modell auf deutschem
+# Fliesstext) als PERSON markiert. Ersetzung zerstoert den Satz ("Im Person008
+# sagte ...") ohne Datenschutzgewinn. Gilt nur fuer EINZELWORT-Treffer ohne
+# Anrede; erweiterbar.
+_NER_COMMON_WORDS = {
+    "alltag", "anziehen", "ausziehen", "zuständig", "zustaendig", "situationen",
+    "freizeit", "verhalten", "essen", "spielen", "lernen", "schlafen", "waschen",
+    "wahrnehmung", "kommunikation", "sprache", "schule", "kindergarten", "beispiele",
+}
+# Endungen/Kopfwoerter typischer Gattungsbegriffe aus Foerderberichten. Bewusst
+# KEIN "-lich"/"-ig" (Nachnamen wie Ehrlich, Hennig).
+_NER_COMMON_SUFFIXES = ("ung", "ungen", "heit", "keit", "schaft", "tion", "tionen", "ismus", "tät")
+_NER_COMMON_HEADS = (
+    "bericht", "protokoll", "gespräch", "plan", "zeitraum", "therapie",
+    "diagnostik", "gutachten", "bescheid", "antrag", "verlauf",
+)
+
+# Anrede/Titel + Name: deterministisch, unabhaengig vom NER-Modell (NER verfehlt
+# Nachnamen, die auch Gattungsbegriffe sind, z. B. "Frau Beispiel").
+_TITLED_NAME_RE = re.compile(
+    r"(?<!\w)(?P<title>Frau|Herr|Fr\.|Hr\.|Dr\.(?:\s+(?:med|rer\.\s*nat|phil|jur|dent)\.)?|Prof\.(?:\s+Dr\.)?)"
+    r"\s+(?P<n1>[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?)"
+    r"(?:[ \t]+(?P<n2>[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?))?"
+)
+
+
+# Artikel/Praepositionen, die ein Substantiv einleiten. Eine Endung wie "-ung" allein belegt kein
+# Substantiv (Nachname "Hartung"); erst ein Vorkommen MIT solchem Vorwort ("bei der Begruessung").
+_NOUN_CONTEXT_RE = (
+    r"(?:der|die|das|dem|den|des|ein|eine|einer|einen|einem|im|am|zum|zur|beim|vom|ins|"
+    r"bei|mit|nach|von|durch|fuer|für|ohne|unsere|unser|seine|sein|ihre|ihr|diese|dieser|dieses)"
+)
+
+
+def _has_noun_context(word: str, text: str) -> bool:
+    """True, wenn `word` irgendwo im Text direkt nach einem Artikel/Vorwort steht."""
+    if not text:
+        return False
+    pat = r"(?<!\w)" + _NOUN_CONTEXT_RE + r"\s+" + re.escape(word) + r"(?!\w)"
+    return re.search(pat, text, flags=re.IGNORECASE) is not None
+
+
+def _is_common_german_word(name: str, text: str = "") -> bool:
+    """True, wenn ein Einzelwort-Treffer ein Gattungsbegriff und kein Name ist.
+
+    - feste Wortliste und Kopfwoerter (-bericht, -protokoll, ...): immer
+    - Endungen (-ung, -heit, ...): NUR mit Substantiv-Kontext im Text (`text`), sonst koennte es
+      ein Nachname sein (Hartung, Rosenheit)
+    """
+    words = name.split()
+    if len(words) != 1:
+        return False
+    w = words[0].strip(".,;:!?()[]{}\"'-").lower()
+    if w in _NER_COMMON_WORDS:
+        return True
+    if any(w.endswith(h) and len(w) > len(h) for h in _NER_COMMON_HEADS):
+        return True
+    if len(w) > 6 and w.endswith(_NER_COMMON_SUFFIXES):
+        return _has_noun_context(words[0].strip(".,;:!?()[]{}\"'-"), text)
+    return False
+
+
+def _strip_leading_role_noun(name: str) -> str:
+    """'Freund Tim' -> 'Tim'; 'Mutter' bleibt unveraendert (wird anderweitig verworfen)."""
+    if "\n" in name or "\t" in name:
+        return name  # mehrzeilige Treffer weiter von _looks_like_person_name verwerfen lassen
+    words = name.split()
+    stripped = False
+    while len(words) > 1 and words[0].lower() in _NER_LEADING_ROLE_NOUNS:
+        words = words[1:]
+        stripped = True
+    return " ".join(words) if stripped else name
+
+
+def _detect_titled_names(text: str, wl_lower: set) -> set:
+    """Namen mit Anrede/Titel ('Frau Beispiel', 'Dr. med. Weber', 'Herr Anna Kaiser').
+
+    Liefert Anrede+Nachname sowie, falls ein zweites grossgeschriebenes Wort folgt,
+    Anrede+beide Woerter (beide Formen, damit spaetere Kurzformen nicht lecken).
+    Folgt auf den ersten Namen ein bekannter Vorname, kommt der Nachname einzeln dazu.
+    Die Kandidaten behalten die EXAKTE Quell-Schreibweise (Mehrfach-Leerzeichen, Tab, Zeilenumbruch),
+    weil die Ersetzung exakt matcht; zusaetzlich die normalisierte Einzelleerzeichen-Form. Bei
+    Tab/Zeilenumbruch zwischen Anrede und Name steht der Nachname auch einzeln in der Liste (Absatz-
+    und Zellgrenzen in DOCX/XLSX trennen die Teile).
+    """
+    found = set()
+    for m in _TITLED_NAME_RE.finditer(text):
+        title = re.sub(r"\s+", " ", m.group("title"))
+        n1, n2 = m.group("n1"), m.group("n2")
+        if (n1.lower() in _NER_GENERIC_ROLE_NOUNS or n1.lower() in wl_lower
+                or f"{title} {n1}".lower() in wl_lower):
+            continue
+        start = m.start("title")
+        spans = [text[start:m.end("n1")]]
+        norm = [f"{title} {n1}"]
+        if not n2 and not _is_common_german_word(n1, text):
+            norm.append(n1)
+        if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2):
+            spans.append(text[start:m.end("n2")])
+            norm.append(f"{title} {n1} {n2}")
+            if n1.lower() in DEUTSCHE_VORNAMEN_M or n1.lower() in DEUTSCHE_VORNAMEN_W:
+                norm.append(n2)
+        if any(ch in text[start:m.end("n1")] for ch in "\n\t") or "  " in text[start:m.end("n1")]:
+            norm.append(n1)
+        for c in spans + norm:
+            if re.sub(r"\s+", " ", c).lower() in wl_lower or n1.lower() in wl_lower:
+                continue
+            found.add(c)
+    return found
+
+
 _spacy_model_cache: Dict[str, "object"] = {}
 
 
@@ -610,11 +740,14 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
     Returns:
         Sortierte Liste eindeutiger erkannter Personennamen
     """
-    if not SPACY_AVAILABLE or not text.strip():
+    if not text.strip():
         return []
 
     wl_lower = {w.lower() for w in (whitelist or [])}
-    found = set()
+    # Anrede+Name unabhaengig von spaCy (fail-closed auch ohne NER-Modelle)
+    found = _detect_titled_names(text, wl_lower)
+    if not SPACY_AVAILABLE:
+        return sorted(found)
 
     for model_name in NER_MODELS:
         nlp = _get_spacy_model(model_name)
@@ -635,7 +768,8 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
                     continue
                 if name.lower() in wl_lower:
                     continue
-                if not _looks_like_person_name(name):
+                name = _strip_leading_role_noun(name)
+                if not _looks_like_person_name(name) or _is_common_german_word(name, chunk):
                     continue
                 # Wortgrenzen-Check: folgt direkt (ohne Trennzeichen) ein
                 # Kleinbuchstabe, ist die Entitaet nur der ANFANG eines
@@ -658,6 +792,54 @@ def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) ->
             found.update(chunk_names)
 
     return sorted(found)
+
+
+def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Iterable[str],
+                           manual_terms: Iterable[str] = (), *, trusted_names: Iterable[str] = ()) -> list[str]:
+    """Private providers or evidenced identity parts, never a guessed domain policy."""
+    normalize = lambda value: value.casefold().translate(str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}))
+    allowed = {value.strip().casefold() for value in whitelist if value.strip()}
+    name_parts = set()
+    full_names = set()
+    # Explicit profile identities are authoritative, including short names and
+    # names that also happen to be ordinary words. NER candidates remain filtered.
+    trusted_parts = set()
+    trusted_compounds = set()
+    for name in trusted_names:
+        if name.casefold() not in allowed:
+            parts = [normalize(word) for word in re.findall(r"[^\W\d_]+", name)]
+            trusted_parts.update(parts)
+            if len(parts) > 1:
+                trusted_compounds.add("".join(parts))
+    excluded = _NER_LEADING_ROLE_NOUNS | _NER_MID_SPAN_STOPWORDS | {"frau", "herr", "dr", "prof", "med"}
+    for name in known_names:
+        if name.casefold() in allowed:
+            continue
+        parts = [normalize(word) for word in re.findall(r"[^\W\d_]+", name)
+                 if len(word) >= 3 and word.casefold() not in excluded and not _is_common_german_word(word)]
+        name_parts.update(parts)
+        if len(parts) > 1:
+            full_names.add("".join(parts))
+    found = []
+    manual_patterns = [re.compile(r"\b" + re.escape(term) + r"\b", re.IGNORECASE)
+                       for term in manual_terms if term.strip()]
+    for match in EMAIL_PATTERN.finditer(text):
+        email = match.group("email")
+        local, domain = email.casefold().rsplit("@", 1)
+        if email.casefold() in allowed or domain in allowed:
+            continue
+        local_parts = re.findall(r"[a-z]+", normalize(local))
+        compact = "".join(local_parts)
+        # A terminal domain label is not evidence of a profile identity.
+        domain_identity = domain.rpartition(".")[0]
+        address_parts = set(re.findall(r"[a-z]+", normalize(local + " " + domain_identity)))
+        if (email not in found and (domain in _PRIVATE_EMAIL_DOMAINS or name_parts.intersection(local_parts)
+                or trusted_parts.intersection(address_parts)
+                or trusted_compounds.intersection(address_parts)
+                or any(name in compact for name in full_names)
+                or any(pattern.search(email) for pattern in manual_patterns))):
+            found.append(email)  # exact spelling is needed for replacement and roundtrip
+    return found
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1020,7 +1202,9 @@ class DocumentAnonymizer:
     def progress(self) -> ProgressInfo:
         return self._progress
 
-    def scan_text_for_sensitive_data(self, text: str) -> Dict[str, List[str]]:
+    def scan_text_for_sensitive_data(self, text: str, *, known_names: Iterable[str] | None = None,
+                                     manual_terms: Iterable[str] | None = None,
+                                     whitelist: Iterable[str] | None = None) -> Dict[str, List[str]]:
         """
         Scannt Text nach sensiblen Daten (Telefon, E-Mail, Adressen, Institutionen).
 
@@ -1045,15 +1229,6 @@ class DocumentAnonymizer:
             cleaned = phone.strip()
             if cleaned and cleaned not in found["phones"]:
                 found["phones"].append(cleaned)
-
-        # E-Mails finden (nur private Domains)
-        emails = EMAIL_PATTERN.findall(text)
-        for email in emails:
-            cleaned = email.strip().lower()
-            if cleaned and cleaned not in found["emails"]:
-                domain = cleaned.split("@", 1)[-1] if "@" in cleaned else ""
-                if domain in _PRIVATE_EMAIL_DOMAINS:
-                    found["emails"].append(cleaned)
 
         # Adressen finden
         addresses = STREET_PATTERN.findall(text)
@@ -1082,9 +1257,11 @@ class DocumentAnonymizer:
         # Generische Personennamen-Erkennung (spaCy NER, DE+EN) -- Hauptmechanismus
         # fuer unbekannte Drittpersonen; faengt auch Namen und Schreibvarianten,
         # die keine Regel/Liste explizit vorgesehen hat.
-        if SPACY_AVAILABLE:
-            ner_names = detect_person_names_ner(text, whitelist=self.global_whitelist.get("names", []))
-            found["ner_person_names"] = ner_names
+        allowed = [*self.global_whitelist.get("names", []), *self.global_whitelist.get("organizations", []), *(whitelist or [])]
+        ner_names = detect_person_names_ner(text, whitelist=allowed)
+        found["ner_person_names"] = ner_names
+        found["emails"] = _find_sensitive_emails(text, [*ner_names, *found["table_row_names"]], allowed,
+            manual_terms or [], trusted_names=known_names or [])
 
         return found
 
@@ -1289,7 +1466,9 @@ class DocumentAnonymizer:
 
         return text
 
-    def scan_folder_for_sensitive_data(self, folder: str) -> Dict[str, List[str]]:
+    def scan_folder_for_sensitive_data(self, folder: str, *, known_names: Iterable[str] | None = None,
+                                       manual_terms: Iterable[str] | None = None,
+                                       whitelist: Iterable[str] | None = None) -> Dict[str, List[str]]:
         """
         Scannt ALLE Dateien in einem Ordner (rekursiv) nach sensiblen Daten.
 
@@ -1310,9 +1489,11 @@ class DocumentAnonymizer:
         src = Path(folder)
         supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls", ".eml", ".msg"}
         filepaths = [f for f in src.rglob("*") if f.is_file() and f.suffix.lower() in supported]
-        return self.scan_files_for_sensitive_data(filepaths)
+        return self.scan_files_for_sensitive_data(filepaths, known_names=known_names, manual_terms=manual_terms, whitelist=whitelist)
 
-    def scan_files_for_sensitive_data(self, filepaths: List[Path]) -> Dict[str, List[str]]:
+    def scan_files_for_sensitive_data(self, filepaths: List[Path], *, known_names: Iterable[str] | None = None,
+                                      manual_terms: Iterable[str] | None = None,
+                                      whitelist: Iterable[str] | None = None) -> Dict[str, List[str]]:
         """
         Scannt eine EXPLIZITE Liste von Dateien nach sensiblen Daten (statt
         blind einen ganzen Ordnerbaum zu durchsuchen). Damit lassen sich z.B.
@@ -1334,18 +1515,27 @@ class DocumentAnonymizer:
         }
 
         supported = {".docx", ".doc", ".txt", ".md", ".pdf", ".xlsx", ".xls", ".eml", ".msg"}
+        known_names = tuple(known_names or [])
+        manual_terms = tuple(manual_terms or [])
+        whitelist = tuple(whitelist or [])
+        email_candidates = []
 
         for filepath in filepaths:
             filepath = Path(filepath)
             if filepath.is_file() and filepath.suffix.lower() in supported:
                 text = self.extract_text_from_file(str(filepath))
-                found = self.scan_text_for_sensitive_data(text)
+                found = self.scan_text_for_sensitive_data(text, known_names=known_names, manual_terms=manual_terms, whitelist=whitelist)
+                email_candidates.extend(EMAIL_PATTERN.findall(text))
 
                 for key in combined:
                     for item in found.get(key, []):
                         if item not in combined[key]:
                             combined[key].append(item)
 
+        # A titled person may be introduced in another file of the same dossier.
+        allowed = [*self.global_whitelist.get("names", []), *self.global_whitelist.get("organizations", []), *whitelist]
+        combined["emails"] = _find_sensitive_emails(" ".join(email_candidates),
+            [*combined["ner_person_names"], *combined["table_row_names"]], allowed, manual_terms, trusted_names=known_names)
         return combined
 
     def anonymize_file(self, filepath: str, profile: AnonymProfile) -> Tuple[bool, int]:
@@ -1355,6 +1545,21 @@ class DocumentAnonymizer:
         Returns:
             (success, replacement_count)
         """
+        # Direct/loaded profiles do not necessarily pass through the scanner.
+        # Complete whole-address mappings before the shared replacement helpers
+        # suppress partial name replacements inside addresses.
+        text = self.extract_text_from_file(filepath)
+        existing = {key for category in profile.mappings.values() for key in category}
+        emails = _find_sensitive_emails(text, (), profile.whitelist,
+            profile.mappings.get("misc", ()), trusted_names=profile.mappings.get("names", ()))
+        for email in emails:
+            if email not in existing:
+                profile.mappings.setdefault("emails", {})[email] = _generate_fake_email(email)
+
+        return self._apply_profile_to_file(filepath, profile)
+
+    def _apply_profile_to_file(self, filepath: str, profile: AnonymProfile) -> tuple[bool, int]:
+        """Apply existing mappings only; inverse profiles must never be enriched."""
         path = Path(filepath)
         suffix = path.suffix.lower()
 
@@ -1467,23 +1672,12 @@ class DocumentAnonymizer:
         doc = Document(str(path))
         count = 0
 
-        # Alle Mappings anwenden
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
+        sorted_replacements = self._sorted_replacements(profile)
 
-        # Nach Laenge sortieren (laengste zuerst, verhindert Teilersetzungen)
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
-
-        # Wortgrenzen-Patterns vorab kompilieren (verhindert kaputte Fragmente
+        # Gemeinsame Wortgrenzen-Ersetzung (verhindert kaputte Fragmente
         # wie "Person026sbesonderheiten" statt "Wahrnehmungsbesonderheiten",
         # wenn ein NER-erkannter Einzelwort-Name zufaellig Praefix eines
         # laengeren deutschen Kompositums ist).
-        compiled_replacements = [
-            (re.compile(r'\b' + re.escape(old) + r'\b'), new)
-            for old, new in sorted_replacements
-        ]
-
         def replace_in_paragraphs(paragraphs):
             nonlocal count
             for paragraph in paragraphs:
@@ -1502,8 +1696,8 @@ class DocumentAnonymizer:
                 # Erhalt von Run-Formatierung.
                 new_p_text = p_text
                 changed = False
-                for pattern, new in compiled_replacements:
-                    new_p_text, n = pattern.subn(lambda m: new, new_p_text)
+                for old, new in sorted_replacements:
+                    new_p_text, n = _replace_word_boundary(new_p_text, old, new)
                     if n:
                         count += n
                         changed = True
@@ -1545,11 +1739,7 @@ class DocumentAnonymizer:
             text = path.read_text(encoding="latin-1")
 
         count = 0
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
-
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+        sorted_replacements = self._sorted_replacements(profile)
 
         for old, new in sorted_replacements:
             text, occurrences = _replace_word_boundary(text, old, new)
@@ -1581,10 +1771,7 @@ class DocumentAnonymizer:
             return False, 0
 
         count = 0
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+        sorted_replacements = self._sorted_replacements(profile)
 
         for old, new in sorted_replacements:
             text, occurrences = _replace_word_boundary(text, old, new)
@@ -1615,6 +1802,7 @@ class DocumentAnonymizer:
             all_replacements = {
                 k: v for k, v in all_replacements.items()
                 if k.strip().lower() not in wl_lower
+                and not ("@" in k and k.rsplit("@", 1)[-1].lower() in wl_lower)
             }
         return sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
@@ -1747,12 +1935,7 @@ class DocumentAnonymizer:
             return False, 0
 
         count = 0
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
-
-        # Nach Laenge sortieren (laengste zuerst, verhindert Teilersetzungen)
-        sorted_replacements = sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
+        sorted_replacements = self._sorted_replacements(profile)
 
         date_mappings = profile.mappings.get("dates", {})
 
@@ -1937,7 +2120,7 @@ class DocumentDeanonymizer:
 
         # Anonymizer mit umgekehrten Mappings nutzen
         anon = DocumentAnonymizer()
-        return anon.anonymize_file(filepath, reverse_profile)
+        return anon._apply_profile_to_file(filepath, reverse_profile)
 
     def deanonymize_folder(
         self,

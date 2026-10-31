@@ -1,0 +1,36 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+TELEMETRY (OPS-TELEM-001)
+=========================
+
+bach telemetry    - Low-cardinality, privacy-first counters
+
+
+DESCRIPTION
+===========
+
+Captures aggregated counters with validated labels.
+Counter: agent_starts / model_calls / tool_calls
+Outcome: ok / error / dummy / timeout
+
+Privacy: ONLY aggregated counters are stored --
+no payloads, prompts, paths or user data.
+Opt-out: BACH_TELEMETRY_DISABLED=1
+
+
+COMMANDS
+=======
+
+bach telemetry report [days]      Counters of the last N days (default 7)
+bach telemetry status             Capture/schema status
+bach telemetry reset --confirm    Delete all counters
+
+
+SOURCE
+======
+
+Handler: hub/telemetry.py (TelemetryHandler, v1.0.0)
+Introduction: OPS-TELEM-001, ROADMAP Security-Prio-1, Task #1315

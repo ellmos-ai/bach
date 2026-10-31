@@ -68,6 +68,32 @@ Eine Rollenbesetzung oder Taskzuordnung in einer Teilaufgabe ist noch kein
 delegierter Providerlauf. Der native Running-Client muss den bestätigten
 Auftrag und dessen Version mit seinem tatsächlich gestarteten Worker verbinden.
 
+## Operator-Reclaim bei unklärbarem Werkzeug-Trace (Task #2644)
+
+Endet ein Holder während eines Werkzeuglaufs (z. B. Dienstneustart), bleibt sein
+`started`-Trace dauerhaft `unresolved`: Die Trace-Tabelle ist append-only und das
+Abschluss-Token ist mit dem Prozess verloren. Jede Übernahme wird dann mit
+`unresolved_tool_trace` abgelehnt, und Worker überspringen die Task.
+
+`POST /api/tasks/{id}/lease/reclaim-unresolved` verlangt Geräteauth sowie:
+
+```json
+{"operator": "claude-code@ASUS-GEI", "fence": 6, "reason": "Neustart mitten in start_task_worktree"}
+```
+
+Unter `BEGIN IMMEDIATE` gilt der Reclaim nur, wenn genau dieser Fence eine
+abgelaufene Lease einer `in_progress`-Task hält und der Trace `unresolved` ist.
+`operator` hat das Format `<agent>@<host>` und ist keine native Worker-Identität
+(`worker-<hex>@…`); `reason` hat 1–500 Zeichen ohne Steuerzeichen. Die Task wird
+`blocked`, ihre Capability-Felder werden geleert, der Fence bleibt. Der Audit-Eintrag
+`lease_reclaim` hält Fence, Grund, Operator, vorigen Holder und Gerät fest. Der
+Trace selbst und mögliche Wirkungen des Holders bleiben unverändert; ob das
+abgebrochene Werkzeug etwas angelegt hat, prüft ein Mensch. Lebende Leases
+(`held`), andere Fences (`stale_fence`), andere Status (`not_claimable`),
+geklärte Traces (`no_unresolved_trace`) und unlesbare Traces
+(`tool_trace_unavailable`) werden abgelehnt. Anders als `bach task reap`
+berührt der Reclaim keine andere Task.
+
 ## Nativer Ausführungspfad (Quellstand Task #1729)
 
 `start_worker_execution` ist der gemeinsame Controller für den direkten lokalen
@@ -126,6 +152,11 @@ Workerstart genügt das tatsächliche Ende der synchronen Startprüfung. Ein
 fehlgeschlagener Threadstart wird nicht als „kein Worker“ interpretiert: Bis zum
 nachgewiesenen Ende bleibt er unbestätigt und verhindert einen weiteren Start.
 Gespeicherte Taskabschluss-IDs stammen ausschließlich aus der privaten Bindung.
+
+GET /api/workers verlangt ebenfalls Control-Auth. Die Prüfung erfolgt vor
+_worker_execution_snapshots(), weil der Snapshot über die laufende
+Reconciliation persistierte Workerzustände bereinigen kann. Eine abgewiesene
+Anfrage liefert 401 und führt weder Snapshot-Lesen noch Reconciliation aus.
 
 ### Tray als Starter und Beobachter
 

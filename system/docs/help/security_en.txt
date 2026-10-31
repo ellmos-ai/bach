@@ -1,0 +1,36 @@
+[machine translated from German, unreviewed]
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+SECURITY
+========
+
+bach security    - Static security scan for BACH
+
+
+DESCRIPTION
+===========
+
+Scans BACH-specific code paths for dangerous patterns and produces
+a categorized report. Uses the capability system
+(core.capabilities) for the actual pattern detection.
+
+Default paths: tools, skills, hub, core, scripts, bin
+Latest report: security_scan_latest.json
+
+
+COMMANDS
+========
+
+bach security scan                Scans default paths
+bach security scan tools/         Scans a specific directory
+bach security scan --json         JSON report
+bach security scan --dry-run      Shows what would be scanned
+bach security status              Display the latest report
+
+
+SOURCE
+======
+
+Handler: hub/security.py (SecurityHandler)

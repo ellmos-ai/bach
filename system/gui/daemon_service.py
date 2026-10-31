@@ -330,18 +330,17 @@ class DaemonService:
                     parsed_arguments = shlex.split(
                         job.arguments, posix=False
                     )
-                    if os.name == 'nt':
-                        # posix=False preserves surrounding quotes.  They are
-                        # shell syntax, not part of the argument passed to a
-                        # script via subprocess.run(list).
-                        parsed_arguments = [
-                            value[1:-1]
-                            if len(value) >= 2
-                            and value[0] == value[-1]
-                            and value[0] in {'"', "'"}
-                            else value
-                            for value in parsed_arguments
-                        ]
+                    # posix=False preserves surrounding quotes.  They are
+                    # shell syntax, not part of the argument passed to a
+                    # script via subprocess.run(list).
+                    parsed_arguments = [
+                        value[1:-1]
+                        if len(value) >= 2
+                        and value[0] == value[-1]
+                        and value[0] in {'"', "'"}
+                        else value
+                        for value in parsed_arguments
+                    ]
                     cmd_list.extend(parsed_arguments)
                 process = subprocess.run(
                     cmd_list,

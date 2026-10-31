@@ -94,6 +94,7 @@ LEASE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("claim_request_id", "TEXT"),
     ("claim_task_version", "TEXT"),
     ("claim_result_generation", "TEXT"),
+    ("needs_split", "INTEGER NOT NULL DEFAULT 0"),
 )
 #: Spalten, die Release/Invalidierung leert; claim_fence bleibt als Hochwassermarke.
 _CLEARED_ON_RELEASE = (
@@ -755,8 +756,12 @@ def _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version=None
 
 def renew_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                 task_version: str | None = None,
-                config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
-    """Vertrag §5.3. Verlängert nie verkürzend, nur lebend, gedeckelt auf profile_max_total."""
+                config: LeaseConfig | None = None, now: datetime | None = None,
+                _project_binding: str | None = None) -> LeaseResult:
+    """Vertrag §5.3. Verlängert nie verkürzend, nur lebend, gedeckelt auf profile_max_total.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
+    """
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     lease_id, fence = _validate_lease_ref(lease_id, fence)
@@ -803,11 +808,14 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
                   outcome: str, result_ref: str = "", note: str = "",
                   worker_result: dict | None = None,
                   config: LeaseConfig | None = None, now: datetime | None = None,
-                  _review_binding=None) -> LeaseResult:
+                  _review_binding=None,
+                  _project_binding: str | None = None) -> LeaseResult:
     """Vertrag §5.4 + §8.4. Einziger Weg für den Abschluss einer geleasten Task.
 
     Bei veraltetem Fence oder abgelaufenem Lease wird nichts am Status geändert;
     ein mitgeliefertes Ergebnis wird nur als ``late_result`` protokolliert.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
     """
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
@@ -935,10 +943,91 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
     return LeaseResult(ack)
 
 
+#: Native worker identities never act as operators for their own stuck tasks.
+_NATIVE_WORKER_RE = re.compile(r"^worker-[0-9a-f]{32}@", re.IGNORECASE)
+
+
+def reclaim_unresolved_lease(conn: sqlite3.Connection, task_id: int, *, operator: str, fence: int,
+                             reason: str, device: str | None = None,
+                             config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+    """Operator reclaim of exactly one task whose expired holder left an unresolvable tool trace.
+
+    Only an expired lease with exactly this fence and an ``unresolved`` trace qualifies.
+    The task becomes ``blocked`` for human review; the append-only trace and the
+    holder's possible effects stay untouched. Every other case is denied, never reaped.
+    """
+    cfg = config or LeaseConfig.from_env()
+    task_id = _validate_task_id(task_id)
+    if (not isinstance(operator, str) or not _WORKER_RE.fullmatch(operator)
+            or _NATIVE_WORKER_RE.match(operator)):
+        raise LeaseValidationError("operator muss <agent>@<host> sein und darf kein nativer Worker sein")
+    if type(fence) is not int or fence <= 0:
+        raise LeaseValidationError("fence muss eine positive Ganzzahl sein")
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if not reason or len(reason) > 500 or any(ord(char) < 32 for char in reason):
+        raise LeaseValidationError("reason muss 1 bis 500 Zeichen ohne Steuerzeichen haben")
+    ensure_task_lease_schema(conn)
+    try:
+        from hub.task_audit import apply_task_field_changes
+    except ImportError:  # pragma: no cover
+        from ..task_audit import apply_task_field_changes  # type: ignore
+
+    _begin(conn)
+    try:
+        now = now if now is not None else _utcnow()
+        row = _row(conn, task_id)
+        if row is None:
+            raise TaskNotFound(task_id)
+        if row.get("status") != "in_progress" or not row.get("claim_id"):
+            conn.rollback()
+            return _deny(task_id, "not_claimable", now, status=row.get("status"))
+        if int(row.get("claim_fence") or 0) != fence:
+            conn.rollback()
+            return _deny(task_id, "stale_fence", now)
+        if _lease_state(row, now, cfg)["live"]:
+            conn.rollback()
+            return _deny(task_id, "held", now)
+        try:
+            from hub._services.chat.worker_tool_trace import task_trace_recovery_state
+            trace_state = task_trace_recovery_state(conn, task_id)
+        except Exception:  # noqa: BLE001 -- Fail closed; raw trace errors stay private.
+            conn.rollback()
+            return _deny(task_id, "tool_trace_unavailable", now)
+        if trace_state != "unresolved":
+            conn.rollback()
+            return _deny(task_id, "no_unresolved_trace", now)
+        apply_task_field_changes(conn, task_id, row, {"status": "blocked"},
+                                 changed_by=operator, lease_authorized=True)
+        assignments = ", ".join(f"{name} = NULL" for name in _CLEARED_ON_RELEASE)
+        cursor = conn.execute(
+            f"UPDATE tasks SET {assignments} WHERE id = ? AND claim_id = ? AND claim_fence = ?",
+            (task_id, row["claim_id"], fence),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return _deny(task_id, "stale_fence", now)
+        _history(conn, task_id, "lease_reclaim", operator, now,
+                 {"fence": fence, "outcome": "blocked", "reason": reason,
+                  "trace_state": "unresolved", "previous_holder": row.get("claimed_by"),
+                  "device": device},
+                 old_value="in_progress")
+        conn.commit()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    return LeaseResult({"reclaimed": True, "task_id": task_id, "status": "blocked",
+                        "fence": fence, "server_now": _fmt(now)})
+
+
 def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                  task_version: str, changes: dict[str, Any],
-                 config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
-    """Update content and its holder binding in one fenced transaction."""
+                 config: LeaseConfig | None = None, now: datetime | None = None,
+                 _project_binding: str | None = None) -> LeaseResult:
+    """Update content and its holder binding in one fenced transaction.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
+    """
     from hub.task_audit import ALLOWED_COLUMNS, apply_task_field_changes, normalize_task_tags
 
     cfg = config or LeaseConfig.from_env()
@@ -955,6 +1044,8 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
         for name, value in changes.items()
     ):
         raise LeaseValidationError("result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein")
+    if "needs_split" in changes and (type(changes["needs_split"]) is not int or changes["needs_split"] < 0):
+        raise LeaseValidationError("needs_split muss eine nichtnegative Ganzzahl sein")
     if "tags" in changes:
         # Task #2065: Tags dürfen Liste/Text/null sein; Form prüft der gemeinsame Normalisierer.
         try:
@@ -962,7 +1053,7 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
         except ValueError as exc:
             raise LeaseValidationError(str(exc)) from exc
     if any(
-        not (name == "result_max_chars" and (value is None or type(value) is int))
+        not (name in {"result_max_chars", "needs_split"} and (value is None or type(value) is int))
         and name != "tags"
         and not isinstance(value, str)
         for name, value in changes.items()
@@ -1011,8 +1102,12 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
 def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                     task_version: str, subtasks: list[dict[str, Any]], close_parent: bool = True,
                     sequential: bool = False, config: LeaseConfig | None = None,
-                    now: datetime | None = None) -> LeaseResult:
-    """Lease, Taskversion, Teilaufgaben und Elternabschluss bilden eine Transaktion."""
+                    now: datetime | None = None,
+                    _project_binding: str | None = None) -> LeaseResult:
+    """Lease, Taskversion, Teilaufgaben und Elternabschluss bilden eine Transaktion.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
+    """
     try:
         from hub.task_audit import apply_task_field_changes
     except ImportError:  # pragma: no cover - package import from system/hub
@@ -1084,6 +1179,8 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
             created.append(cursor.lastrowid)
         changes = {"description": (parent.get("description") or "") +
                    f"\n[In {len(created)} Teilaufgaben zerlegt: {created}]"}
+        if parent.get("needs_split"):
+            changes["needs_split"] = 0
         if close_parent:
             changes["status"] = "done"
         try:

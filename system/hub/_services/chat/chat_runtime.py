@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
 from hub._services.chat.slots_config import ModelRequestBudgetError
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
 from hub._services.chat.worker_tool_errors import ToolErrorText
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
@@ -64,7 +65,8 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
     "bestätigte Kind-IDs, offene Arbeit>', complete=false) den gesicherten Teilstand zurück. "
     "Der Eltern-Task bleibt pending; die Zerlegung ist kein Abschluss und kein Anlass zur Abnahme. "
-    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten."
+    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten. "
+    + TASK_CUT_RULE_SHORT
 )
 
 
@@ -258,6 +260,14 @@ def _resume_handoff_context(original, summary, *, background_task, has_tools,
         messages.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
     messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
     return messages, history
+
+
+def _resume_with_handoff_state(session, original, summary, **kwargs):
+    resumed, history = _resume_handoff_context(original, summary, **kwargs)
+    session.last_handoff_summary = summary
+    session.last_handoff_read_trail = kwargs.get("read_trail") or ""
+    return resumed, history
+
 
 try:
     from ellmos_chat import (
@@ -1986,14 +1996,9 @@ class ChatRuntime(_ModuleChatRuntime):
         except Exception:  # noqa: BLE001 -- malformed persisted proof fails closed
             return None
 
-        capacity_fields = {
-            "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-            "policy_version", "model", "wait_seconds", "poll_seconds",
-            "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
-            "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-            "resident_weight_credit", "capacity_basis",
-        }
-        if set(receipt) != capacity_fields | {"local_admission"}:
+        from hub._services.chat import local_resource_reserve
+
+        if not local_resource_reserve.valid_capacity_receipt_shape(receipt, extra={"local_admission"}):
             return None
         admission = receipt.get("local_admission")
         if (not isinstance(admission, dict)
@@ -2018,7 +2023,7 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         if admission.get("capacity") != {"status": "unknown", "certification": "not_provided"}:
             return None
-        capacity_receipt = {key: receipt[key] for key in capacity_fields}
+        capacity_receipt = {key: receipt[key] for key in local_resource_reserve.CAPACITY_RECEIPT_FIELDS}
         try:
             observation = slots_config._persistent_core_capacity_observation(
                 capacity_receipt, worker=worker, expected_state=receipt["state"],
@@ -2993,19 +2998,21 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         configured_max_rounds = max_rounds
         from hub._services.llm.model_backend import backend_identifier
         cloud_worker = (
-            getattr(session, "worker_task_binding", None) is not None
-            and (backend_identifier(selected_backend) == "openrouter"
-                 or (backend_identifier(selected_backend) == "ollama"
-                     and isinstance(selected_model, str)
-                     and selected_model.lower().endswith(":cloud")))
+            backend_identifier(selected_backend) in {"openrouter", "ollama-cloud"}
+            or (backend_identifier(selected_backend) == "ollama"
+                and isinstance(selected_model, str)
+                and selected_model.lower().endswith(":cloud"))
         )
-        if cloud_worker and max_rounds > 0:
-            max_rounds = max(max_rounds, min(1000, max_rounds * 4))
+        if cloud_worker:
+            if getattr(session, "max_tool_rounds", None) is None:
+                max_rounds = limit("BACH_CLOUD_MAX_TOOL_ROUNDS")
+            else:
+                max_rounds = min(max_rounds, limit("BACH_CLOUD_MAX_TOOL_ROUNDS_CAP"))
         session.effective_max_tool_rounds = max_rounds
         if cloud_worker and max_rounds != configured_max_rounds:
             msgs.append({"role": "user", "content": (
-                f"Cloud-Rundenreserve: {configured_max_rounds} reguläre Runden, "
-                f"bis {max_rounds} Runden einschließlich Abschlussreserve. "
+                f"Cloud-Turnbudget: {max_rounds} Modellrunden für diesen Turn "
+                f"(Konfiguration: {configured_max_rounds}). "
                 "Modellanfragenbudget, Nutzerstopp und Anbieterlimits gelten weiterhin."
             )})
         round_num = 0
@@ -3082,7 +3089,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     summary = await self._handoff(
                         msgs, session, backend=selected_backend, model=selected_model, strict=True,
                     )
-                    resumed, history = _resume_handoff_context(
+                    resumed, history = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,
@@ -3139,7 +3146,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         summary = await self._handoff(
                             msgs, session, backend=selected_backend, model=selected_model,
                             strict=selected_model == "glm-5.3:cloud")
-                        msgs, session.messages = _resume_handoff_context(
+                        msgs, session.messages = _resume_with_handoff_state(session,
                             msgs, summary, background_task=background_task,
                             has_tools=session.allow_tools is True and bool(offered_tools),
                             round_num=round_num, max_rounds=max_rounds,
@@ -3234,7 +3241,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
                     )
-                    msgs, session.messages = _resume_handoff_context(
+                    msgs, session.messages = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,

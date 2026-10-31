@@ -454,6 +454,52 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     return snapshot
 
 
+def task_tree_diff(task_id, *, limit, repo_root=None, worktrees_dir=None) -> dict:
+    """Read-only review view of one registered task tree against its main base.
+
+    Covers committed, staged, unstaged and untracked changes. Binary files and
+    non-regular entries appear only as path, size and digest. Neither index
+    nor tree is written; any doubt raises instead of returning a partial view.
+    """
+    tid = _task_id(task_id)
+    repo, root = _paths(repo_root, worktrees_dir)
+    target = _registered_tree(repo, root, tid)
+    _fresh_locks(repo, root, target)
+    head = _scope_text(["rev-parse", "--verify", "HEAD^{commit}"], target)
+    base = _scope_text(["merge-base", "HEAD", "refs/heads/main"], target)
+    if not all(re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid) for oid in (head, base)):
+        raise WorkerWriteGuardError("Basis des Task-Arbeitsbaums ist nicht eindeutig")
+    parts = [_scope_git(["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff",
+                         "--no-textconv", "--ignore-submodules=all", base, "--"],
+                        target, timeout=30)[1].decode("utf-8", "replace")]
+    untracked = _scope_git(["ls-files", "--others", "--exclude-standard", "-z"], target)[1]
+    for name in sorted(untracked.split(b"\0")[:-1]):
+        rel = os.fsdecode(name)
+        path = _safe_task_path(target, rel, allow_missing=False)
+        if not stat.S_ISREG(path.lstat().st_mode):
+            parts.append(f"untracked {rel}: no regular file\n")
+            continue
+        digest, size, head_bytes = hashlib.sha256(), 0, b""
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as stream:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                digest.update(chunk)
+                size += len(chunk)
+                if len(head_bytes) <= limit:
+                    head_bytes += chunk
+        header = f"untracked {rel} ({size} bytes, sha256 {digest.hexdigest()})"
+        if b"\0" in head_bytes:
+            parts.append(header + ": binary\n")
+            continue
+        text = head_bytes.decode("utf-8", "replace")
+        parts.append(f"diff --git a/{rel} b/{rel}\n{header}\n--- /dev/null\n+++ b/{rel}\n"
+                     + "".join(f"+{line}\n" for line in text.splitlines()))
+    full = "".join(parts)
+    return {"availability": "diff", "base_oid": base, "head_oid": head,
+            "diff": full[:limit], "diff_sha256": hashlib.sha256(full.encode("utf-8")).hexdigest(),
+            "diff_chars": len(full), "truncated": len(full) > limit}
+
+
 _TASK_START_SCOPE_SCHEMA = "bach.task-start-scope.v1"
 
 

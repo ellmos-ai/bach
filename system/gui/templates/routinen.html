@@ -643,10 +643,7 @@
     <script>
         const ROUTINES_API = '/api/routines';
         function routineFetch(url, options = {}) {
-            let token = '';
-            try { token = localStorage.getItem('bach_device_token') || ''; } catch (_) {}
             const headers = new Headers(options.headers || {});
-            if (token) headers.set('Authorization', `Bearer ${token}`);
             return fetch(url, { ...options, headers });
         }
 

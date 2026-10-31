@@ -1,0 +1,46 @@
+{
+  "schema": "ellmos.module.v2",
+  "id": "agent-library",
+  "display_name": "agent-library",
+  "version": "0.1.0",
+  "category": "control",
+  "kind": "library",
+  "status": "staging",
+  "visibility": "private",
+  "description": "Provider-neutrale Agentenprofil-Verwaltung mit gefenceter Lösch- und Belegarchivierungsreihenfolge.",
+  "provides": [
+    "control.agent-profile.delete",
+    "control.agent-profile.archive"
+  ],
+  "requires": [],
+  "optional": [],
+  "conflicts": [],
+  "surfaces": [
+    "library"
+  ],
+  "entrypoints": {
+    "library": "agent_library"
+  },
+  "state": {
+    "ownership": "module",
+    "location": "user-local"
+  },
+  "boundaries": {
+    "network": "none",
+    "data": "user-local",
+    "platforms": [
+      "windows",
+      "macos",
+      "linux"
+    ]
+  },
+  "source_of_truth": {
+    "type": "git-repository",
+    "path": ".",
+    "repository": "https://github.com/ellmos-ai/bach"
+  },
+  "provenance": {
+    "source": "BACH Task 2332",
+    "origin_path": "system/hub/_services/chat/slots_config.py"
+  }
+}

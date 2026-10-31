@@ -6,7 +6,7 @@ import pytest
 
 from system.tests.test_task_lease_client import mem_db, _insert_task
 from system.tests.test_task_lease_client_review import T0
-from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError
+from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError, LeaseProtocolError
 from system.tests.test_worker_tool_trace import binding as trace_binding
 from system.tests.worker_completion_fixtures import CompletionHarness
 from hub._services import worker_policy_settings as settings
@@ -731,6 +731,33 @@ def test_task_manage_detail_reads_only_the_bound_snapshot(binding, monkeypatch):
     assert "Foreign secret" not in detail
 
 
+def test_denied_decomposition_keeps_binding_active_for_follow_ups(binding):
+    before = binding._client.task_snapshot(binding.task_id)
+    with pytest.raises(LeaseError):
+        binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
+                                     "subtasks": [{"title": "Kind"}], "close_parent": True})
+    assert binding._active is True
+    assert binding._client.task_snapshot(binding.task_id) == before
+    detail = binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+    assert f"id: {binding.task_id}" in detail
+
+
+def test_denied_foreign_detail_keeps_binding_active(binding):
+    with pytest.raises(LeaseProtocolError):
+        binding.execute_task_manage({"action": "detail", "task_id": binding.task_id + 1000})
+    assert binding._active is True
+    assert f"id: {binding.task_id}" in binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+
+
+def test_external_version_change_terminates_binding_on_update(binding):
+    binding._client._conn.execute("UPDATE tasks SET description = 'extern geändert' WHERE id = ?", (binding.task_id,))
+    binding._client._conn.commit()
+    with pytest.raises(LeaseError):
+        binding.execute_task_manage({"action": "update", "task_id": binding.task_id, "description": "Änderung"})
+    assert binding._active is False
+    with pytest.raises(LeaseError): binding.assert_active()
+
+
 @pytest.mark.parametrize(("backend", "model", "owner"), [
     ("openrouter", "openrouter/free", "openrouter"),
     ("ollama-cloud", "glm-5.3:cloud", "ollama-cloud"),
@@ -858,6 +885,34 @@ def test_external_profile_acquire_rejects_mismatched_route(
     assert client.read(task_id, now=T0).leased is False
 
 
+def test_stale_active_flag_keeps_read_actions_usable(binding):
+    binding._active = False
+    listing = binding.execute_task_manage({"action": "list"})
+    assert str(binding.task_id) in listing
+    detail = binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+    assert f"id: {binding.task_id}" in detail
+
+
+def test_stale_active_flag_still_rejects_task_manage_writes(binding):
+    binding._active = False
+    with pytest.raises(LeaseProtocolError, match="nicht mehr aktiv"):
+        binding.execute_task_manage({"action": "done", "task_id": binding.task_id,
+                                     "result": "Fertig", "complete": True})
+    assert binding._active is False
+
+
+def test_denied_renew_keeps_binding_usable_for_reads(binding, monkeypatch):
+    from hub._services.task_lease_client import LeaseDeniedError
+
+    def denied(*args, **kwargs):
+        raise LeaseDeniedError(0, "device_auth_required", {})
+
+    monkeypatch.setattr(binding._client, "renew", denied)
+    with pytest.raises(LeaseDeniedError):
+        binding.renew()
+    assert binding._active is True
+    detail = binding.execute_task_manage({"action": "detail", "task_id": binding.task_id})
+    assert f"id: {binding.task_id}" in detail
 def test_model_status_return_carries_a_fixed_reason(mem_db):
     """A partial-state return (update status=pending) is no longer an empty return (25.10.2026)."""
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding

@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-05-30 (registry sync hub/*.py + core/aliases.py)
+# Next review: 2026-11-30
 
 КОНВЕНЦИИ CLI (на основе реестра версии 2.0)
 =======================================
@@ -138,18 +138,47 @@ TOOL FALLBACK:
   bach skill_export  → Tools/skill_export.py
   bach backup_manager → tools/backup_manager.py
 
-ЗАРЕГИСТРИРОВАННЫЕ ОБРАБОТЧИКИ (по состоянию на 04.03.2026):
+ЗАРЕГИСТРИРОВАННЫЕ ОБРАБОТЧИКИ (по состоянию на 30.05.2026):
 ----------------------------------------
-109+ обработчиков посредством автоматического обнаружения (hub/*.py):
-або, агенты, ати, резервное копирование, удар, отчет, между, календарь, цепочка, часы,
-связи, соединитель, консолидация, контакт, контекст, обратный отсчет, резюме,
-демон (=планировщик), данные, БД, дист, документ, документы, электронная почта, расширения, фс, здоровье, графический интерфейс,
-домашнее хозяйство, проверка здоровья, помощь, крючки, вводить, длинный, урок, журналы, поддерживать,
-мем, память, монтирование, сообщение, уведомление, обсидиан, оллама, партнер, путь, профиль,
-профилировщик, повторяющийся, отражение, рутина, сканирование, сеанс, выключение, навык,
-навыки, умный дом, снимок, источники, запуск, статус, налог, синхронизация, задача,
-тест, таймер, жетоны, инструмент, инструменты, мусор, туев, обновление, вариант использования,
-страхование, вики
+Обработчики регистрируются во время выполнения через автопоиск в hub/*.py
+(system/core/registry.py, сканирование классов; только локально определённые
+классы с profile_name). Подтверждены следующие profile_name (по алфавиту):
+abo, agent, agents, api, apiprober, ati, backup, beat, bericht, between,
+calendar, chain, claude-bridge, clock, cloud, clutch, connections, connector,
+consolidation, contact, context, cookbook, countdown, cv, daily-agent, data,
+db, denkarium, dist, doc, docs, email, extensions, fs, gesundheit, gui,
+haushalt, healthcheck, help, hooks, inject, integration, lang, learning,
+lesson, literatur, logs, maintain, mcp, media, mediplaner, mem, memory,
+mount, msg, news, newspaper, notespace, notify, obsidian, ollama, partner,
+path, pipeline, press, profile, profiler, prompt, recurring, reflection,
+restore, routine, sandbox, scan, search, security, session, settings, setup,
+shared-mem, shutdown, skill, skills, smarthome, snapshot, sources, startup,
+status, steuer, sync, task, telemetry, test, theme, timer, tokens, tool, tools,
+trash, tuev, update, upgrade, usecase, versicherung, watcher, web-parse,
+web-scrape, wiki, worker-policy
++ дополнительные обработчики через автопоиск (hub/*.py; список выше — проверенное состояние).
+Мультиобработчики: time (clock, timer, countdown, between, beat), tuev (tuev, usecase).
+
+ТАБЛИЦА ПСЕВДОНИМОВ (core/aliases.py, COMMAND_ALIASES):
+----------------------------------------
+Псевдоним разрешается до передачи управления обработчику.
+  Псевдоним     Целевой обработчик
+  mem           memory
+  cv            curriculum
+  msg           messages
+  tool          tools
+  skill         skills
+  data          data_analysis
+  mail          email
+  hook          hooks
+  plugin        plugins
+  daemon        scheduler
+  health        healthcheck
+  swarm         schwarm
+  consolidate   consolidation
+
+Примечание: `bach daemon` — не отдельный обработчик, а псевдоним scheduler.
+Операции по умолчанию для обработчика: aliases.py, DEFAULT_OPERATIONS.
 
 СМОТРИТЕ ТАКЖЕ:
 ----------------------------------------

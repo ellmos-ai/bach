@@ -23,6 +23,7 @@ import os
 import sys
 import json
 import subprocess
+import io
 from pathlib import Path
 from datetime import datetime
 from .base import BaseHandler
@@ -58,6 +59,7 @@ class TestHandler(BaseHandler):
         return {
             "self": "BACH selbst testen (QUICK/STANDARD/FULL)",
             "run": "System testen: run <path> [PROFIL]",
+            "pytest": "Pytest direkt ausfuehren: pytest <path> [pytest-args...]",
             "compare": "Mit BACH vergleichen: compare <path> [PROFIL]",
             "profiles": "Verfuegbare Profile anzeigen",
             "results": "Testergebnisse anzeigen"
@@ -79,6 +81,8 @@ class TestHandler(BaseHandler):
             return self._run_self_test(args)
         elif op == "run":
             return self._run_system_test(args)
+        elif op == "pytest":
+            return self._run_pytest(args)
         elif op == "compare":
             return self._compare_with_bach(args)
         elif op == "profiles":
@@ -254,6 +258,40 @@ class TestHandler(BaseHandler):
             return result.returncode == 0, output
         except Exception as e:
             return False, f"Fehler: {e}"
+
+    def _run_pytest(self, args: list) -> tuple:
+        """Fuehrt pytest direkt im aktuellen Prozess aus."""
+        if not args:
+            return False, r"Fehler: Pfad zur Testdatei erforderlich\nBeispiel: bach --test pytest system/tests/test_ollama_num_ctx.py"
+
+        test_path = args[0]
+        extra_args = args[1:] if len(args) > 1 else []
+
+        if not Path(test_path).exists():
+            return False, f"Pfad existiert nicht: {test_path}"
+
+        try:
+            import pytest
+        except ImportError as e:
+            return False, f"Fehler: pytest nicht verfuegbar: {e}"
+
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        out = io.StringIO()
+        err = io.StringIO()
+        sys.stdout = out
+        sys.stderr = err
+        try:
+            exit_code = pytest.main([test_path] + extra_args)
+            output = out.getvalue()
+            if exit_code != 0:
+                output += err.getvalue()
+            return exit_code == 0, output
+        except Exception as e:
+            return False, f"Fehler beim Ausfuehren von pytest: {e}\n{err.getvalue()}"
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
     def _compare_with_bach(self, args: list) -> tuple:
         """Vergleicht ein System mit BACH."""
