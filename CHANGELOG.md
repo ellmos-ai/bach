@@ -1,6 +1,6 @@
 # BACH Changelog
 
-## [3.15.0] – BACH fließt ins Meer (Releasekandidat)
+## [3.15.0] – BACH fließt ins Meer – gemeinsame GUI (2026-10-31)
 
 - Gemeinsame Frontendquelle: ellmos-system-gui; BACH behält seine nativen APIs und privaten Daten. GUI-Pin 0.2.29/a42adda6 ist über den Verbraucher-PR angebunden (`pinned_release`, gepinnt am 2026-10-26).
 - Doku-Nachführung: der geplante Zwischenpin 0.2.27 war überholt; die Integritätstests verriegeln auf 0.2.29, ein Downgrade wird nicht durchgeführt. Mac-Deploy bleibt separat offen.
