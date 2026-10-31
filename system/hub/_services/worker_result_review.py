@@ -598,7 +598,14 @@ def _intent_target(conn, found, *, repo_root=None, worktrees_dir=None):
 
 
 def _paging_plan(receipt):
-    """Diff-Paging-Plan: Paging notwendig, Seitenzahl und Diff-Digest."""
+    """Diff-Paging-Plan: Paging notwendig, Seitenzahl und Diff-Digest.
+
+    Kontextfenster-Gate (Review-Anforderung 1): Ein Grant ist nur dann ohne
+    Seitenabruf zulaessig, wenn der Diff das Restfenster des Slots nicht
+    ueberschreitet. Genau das prueft die Restfensterformel unten; ein zu
+    kleiner Slot-Kontext erzwingt Paging und damit einen diff_sha256 im Grant.
+    Eine separate Slot-Fensterabfrage ist deshalb nicht noetig.
+    """
     max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
     chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
     diff_chars = receipt.get("diff_chars", 0)

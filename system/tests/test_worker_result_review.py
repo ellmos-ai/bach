@@ -691,6 +691,18 @@ def test_paged_review_prompt_carries_digest_and_page_count(review_world, monkeyp
     assert "Seitennummern strikt aufsteigend" in description
 
 
+def test_full_review_prompt_needs_no_paging(review_world, monkeypatch):
+    """Ungekürztes Review-Paket: Beschreibung verweist auf das Slot-Fenster, kein Seitenabruf."""
+    world = review_world
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    prepared = _prepare_diff(world, diff_chars=50, diff_truncated=False)
+    description = world["conn"].execute(
+        "SELECT description FROM tasks WHERE id=?", (prepared["review_task_id"],)).fetchone()[0]
+    assert "kein Seitenabruf nötig" in description
+    assert "hole Diff-Seiten via Reviewer-Tool" not in description
+
+
 def _prepare_diff(world, **meta):
     prepared = review.prepare_review_task(world["conn"], world["binding"], **_paths(world), **meta)
     assert prepared is not None
