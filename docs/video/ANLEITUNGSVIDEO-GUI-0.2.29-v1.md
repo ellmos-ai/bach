@@ -23,7 +23,7 @@ Status: Szenenplan v1 (Drehbuchgerüst), Stand 2026-10-26, bezogen auf den Sourc
 
 ## 3 Produktionsrichtlinien (Auftragsbindung, im Repo nicht belegt)
 
-Die folgenden Vorgaben beruhen auf Auftragsbindung und sind im Repository nicht belegt; sie sind als Arbeitskonvention kenntlich gemacht:
+Die folgenden Vorgaben beruhen auf Auftragsbindung und sind im Repository nicht belegt (vgl. [WETTBEWERBSANALYSE-GUI-v1.md](../WETTBEWERBSANALYSE-GUI-v1.md):79); sie sind als Arbeitskonvention kenntlich gemacht:
 
 - Stimme: en-US-AndrewNeural (P-015).
 - Musik: P-016 (Auswahl nach Auftragsbindung, im Repo nicht belegt).
