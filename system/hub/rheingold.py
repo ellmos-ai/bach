@@ -221,11 +221,19 @@ def patch_task_to_rheingold(
     try:
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             body = resp.read().decode("utf-8")
-            if resp.status in (200, 201, 204, 206):
+            if resp.status in (200, 201, 204):
                 msg = body
                 try:
                     parsed = json.loads(body)
                     if isinstance(parsed, dict):
+                        if parsed.get("success") is False or parsed.get("status") in {
+                            "claim_failed",
+                            "error",
+                            "conflict",
+                            "rejected",
+                        }:
+                            err_msg = str(parsed.get("message") or parsed.get("detail") or parsed.get("status") or parsed)
+                            return False, err_msg
                         msg = str(parsed.get("message", parsed))
                     else:
                         msg = str(parsed)
