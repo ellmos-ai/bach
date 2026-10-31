@@ -26,6 +26,24 @@ test('core configuration conflicts reject before a success response', async () =
   await assert.rejects(request('/buddha_chat', 'PUT', {configuration_version:'a'.repeat(64)}), /inzwischen geändert/);
 });
 
+test('Running layout separates active runs, history and collapsed ready/system views', () => {
+  const running = page.indexOf('id="running-active"');
+  const timeline = page.indexOf('id="activity-timeline"');
+  const ready = page.indexOf('aria-labelledby="ready-agents-title"');
+  const teams = page.indexOf('👥 Einsatzbereite fertige Teams');
+  const system = page.indexOf('id="core-agents-section"');
+  assert.ok(running >= 0 && running < timeline && timeline < ready && ready < teams && teams < system);
+  assert.match(page, /id="running-system-slots-list"/);
+  assert.match(page, /id="running-workers-list"/);
+  assert.match(page, /Agenten erstellen/);
+  assert.match(page, /Teams erstellen/);
+  assert.match(page, /Staffel erstellen/);
+  assert.match(page, /<details class="staffel-card">/);
+  assert.match(page, /id="core-agents-title">Systemslots/);
+  assert.doesNotMatch(page, /<details[^>]+aria-labelledby="ready-agents-title"[^>]+open/);
+  assert.doesNotMatch(page, /<details[^>]+id="core-agents-section"[^>]+open/);
+});
+
 function renderer() {
   const elements = [];
   const target = {children:[], replaceChildren(...children) {this.children = children;}, append(...children) {this.children.push(...children);}};
