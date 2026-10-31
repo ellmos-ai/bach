@@ -53,7 +53,8 @@ class TestPickupCategoryLogik(unittest.TestCase):
     def test_runner_registrierung(self):
         spec = agent_runners.BUILTIN["pickup_category"]
         self.assertIn("pickup_category", spec["match"])
-        self.assertEqual(spec["cmd"][0], "pickup")
+        self.assertEqual(spec["cmd"][0], sys.executable)
+        self.assertEqual(Path(spec["cmd"][1]).name, "pickup_category.py")
         self.assertEqual(spec["priority"], "high")
 
     def test_beleglage_dokumentiert(self):

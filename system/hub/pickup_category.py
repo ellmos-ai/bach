@@ -98,12 +98,34 @@ def resolve_priority(task_priority: str = "") -> str:
 
 def main(argv: list[str]) -> int:
     """Haupt-Einstiegspunkt für den pickup_category-Runner."""
-    if len(argv) < 2:
-        print("Usage: pickup_category <task_category> [task_priority]", file=sys.stderr)
+    args = list(argv[1:])
+    configured_priority = ""
+    idx = 0
+    positional: list[str] = []
+    while idx < len(args):
+        token = args[idx]
+        if token == "--exclude" and idx + 1 < len(args):
+            idx += 2
+            continue
+        if token == "--priority" and idx + 1 < len(args):
+            configured_priority = args[idx + 1]
+            idx += 2
+            continue
+        if token in ("--dangerously-skip-permissions",):
+            idx += 1
+            continue
+        if token == "--allowed_tools" and idx + 1 < len(args):
+            idx += 2
+            continue
+        positional.append(token)
+        idx += 1
+
+    if not positional:
+        print("Usage: pickup_category [--exclude ...] [--priority ...] <task_category> [task_priority]", file=sys.stderr)
         return 2
 
-    task_category = argv[1]
-    task_priority = argv[2] if len(argv) > 2 else ""
+    task_category = positional[0]
+    task_priority = positional[1] if len(positional) > 1 else configured_priority
 
     category = resolve_category(task_category)
     priority = resolve_priority(task_priority)

@@ -7,6 +7,8 @@ DEFAULT_PRIORITY "normal" (kein explizites P2-Mapping).
 """
 import hashlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from hub import agent_runners
@@ -40,20 +42,31 @@ def test_main_bach_ocean_p2(capsys):
                                "priority_level": 2, "excluded": False}
 
 
-def test_runner_registrierung():
+def test_runner_registrierung_und_echter_aufruf():
     spec = agent_runners.BUILTIN["pickup_category"]
     assert spec["match"] == ["pickup_category", "Picker", "pickup"]
+    assert spec["cmd"][0] == sys.executable
+    assert Path(spec["cmd"][1]).name == "pickup_category.py"
+    assert Path(spec["cmd"][1]).is_file()
     i = spec["cmd"].index("--exclude")
     assert spec["cmd"][i + 1] == ",".join(EXCL)
     assert spec["priority"] == "high"
+    proc = subprocess.run(
+        [*spec["cmd"], "BACH-OCEAN", "P2"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    assert json.loads(proc.stdout) == {
+        "pickup_category": "general",
+        "priority": "normal",
+        "priority_level": 2,
+        "excluded": False,
+    }
 
 
 def test_beleglage_dokumentiert():
-    # Beleglage (Korrektur 88): Kein Ausführungskanal wurde bestätigt
-    # (pytest/unittest/compileall mehrfach unbestätigt), daher ist die
-    # SHA256-Attestierung der Picker-Quellen nicht möglich. Stattdessen
-    # wird dokumentiert geprüft, dass die belegten Quellen existieren
-    # und nicht leer sind; Hashes werden nur berechnet, nicht attestiert.
     base = Path(__file__).resolve().parent.parent / "hub"
     for name in ("pickup_category.py", "agent_runners.py"):
         raw = (base / name).read_bytes()
