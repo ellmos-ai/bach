@@ -1,0 +1,6 @@
+PROBEDATEI – versehentlich im Arbeitsbaum verblieben (Task #2628).
+Zweck war nur der Nachweis von Schreibrechten im Worktree.
+Diese Datei gehoert NICHT zum Auftrag und muss vor dem Merge geloescht werden.
+Loeschen war im Worker-Lauf nicht moeglich: es steht kein Loesch-/Shell-Werkzeug
+zur Verfuegung, und execute_command wurde in 9 Versuchen nicht bestaetigt
+(Wirkung unbekannt). Bitte beim Review entfernen: rm system/tests/_probe_2628.txt
