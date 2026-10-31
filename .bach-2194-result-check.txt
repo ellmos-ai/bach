@@ -1,0 +1,10 @@
+READ-ONLY-Prüfung Ergebnis-Auth-Pfad (Worktree task-2194), 3 Befunde, je Negativtest:
+
+B1 Operator-Freigabe: gui/device_auth.py devices.status nur ('active','revoked') (45–55); sha256-Hex-Token (69–71); task_result_service.py _correction_operator_device_id (880–905) JOIN task_result_operators/devices: d.token_hash=?, d.status='active', o.can_request_correction=1; DB-Fehler→None statt 500 (900–902); fehlt→ResultPermissionDenied „Korrekturfreigabe fehlt oder wurde widerrufen“ (1108–1110). Flag global, nicht taskgebunden.
+Negativtest: aktives Gerät mit can_request_correction=0 → Ablehnung, kein 500.
+
+B2 XOR+Scopes: request_result_correction (1083–1085) verlangt XOR Operator/Service, sonst „Genau eine Ergebnisanmeldung erforderlich“ code=ambiguous_credentials; service_revision int>0 (1095–1096) sonst service_revision_required; _result_service_context (380–423): invalid→service_credential_invalid, revoked→service_revoked, Rev-Abweichung→service_revision_conflict; Scopes aus task_result_service_scopes je (service_id, revision), Wildcards '*','all' unzulässig (416–423); accept_result gleich (1911–1912).
+Negativtest: gültiger Service ohne passenden Scope → Verweigerung.
+
+B3 Abnahme: gui/server.py POST /api/tasks/{task_id}/result/accept (2840); accept_result (1895ff): result_id int>0; digest/task_version Regex [a-f0-9]{64}, sonst ResultConflict „Ungültige Ergebnisabnahme“ (1904–1907); Transaktion Pflicht (1913–1914); getrennte Abnahme nur zum aktuellen Result (1890–1892); policy_version=1 erzwingt Operator-Prüfung, Service→403 completion_policy_operator_review_required (1933–1939); 503 result_service_unavailable (2875–2876); Reconcile ohne Approval (2889).
+Negativtest: Service-Abnahme eines policy=1-Ergebnisses → 403 completion_policy_operator_review_required.
