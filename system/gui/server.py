@@ -454,6 +454,7 @@ class TaskUpdate(BaseModel):
     changed_by: Optional[str] = None
     # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
     allow_reopen: Optional[bool] = False
+    provenance: Optional[dict] = None
 
 
 
@@ -3303,6 +3304,24 @@ async def update_task(task_id: int, update: TaskUpdate):
                 # Business-rule conflicts (for example the missing-PR completion guard)
                 # are client-resolvable conflicts, not internal server errors.
                 raise HTTPException(status_code=409, detail=str(exc))
+
+            if update.provenance is not None and isinstance(update.provenance, dict):
+                from hub.task_audit import _iso_now
+                conn.execute(
+                    """INSERT INTO task_history
+                       (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        task_id,
+                        "provenance",
+                        "provenance",
+                        None,
+                        json.dumps(update.provenance, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+                        changed_by,
+                        _iso_now(),
+                    ),
+                )
+                did_update = True
 
             if did_update:
                 conn.commit()

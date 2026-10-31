@@ -1367,6 +1367,35 @@ def _acquire_worker_task(control, slot, physical_worker_id):
         raise
 
 
+_TASK_SCOPE_DIAGNOSTICS = frozenset({
+    "scope_unavailable",
+    "Private Taskbindung fehlt",
+    "Task-Codefähigkeit ist nicht privat gebunden",
+    "Öffentliche Taskkennung ist nicht gültig",
+    "Repositoryquelle ist nicht der kanonische öffentliche BACH-Quellstand",
+    "Öffentliche Git-Leseoperation ist nicht zulässig",
+    "Öffentliche Quellbindung konnte nicht bestätigt werden",
+    "Lokale BACH-Basis entspricht nicht dem verifizierten öffentlichen main",
+    "Task-Quellregistrierung konnte nicht bestätigt werden",
+    "Öffentliche Task-Quellregistrierung fehlt oder ist ungültig",
+    "Task-Arbeitsbaum weicht von der gepinnten öffentlichen Basis ab",
+    "Gebundener Worker darf nur von main oder origin/main starten",
+    "Worktree-Zielverzeichnis ist ein Link",
+    "Task-Basisbranch ist lokal nicht verfügbar; kein Fetch wurde gestartet",
+    "Task-Branch existiert bereits, ist aber nicht an diesen Worktree gebunden",
+    "Task-Worktree konnte nicht sicher registriert werden",
+})
+
+
+def _task_scope_failure_reason(exc):
+    """Expose only reviewed literals; an exception class is not a text boundary."""
+    if type(exc) is RuntimeError and len(exc.args) == 1:
+        reason = exc.args[0]
+        if type(reason) is str and reason in _TASK_SCOPE_DIAGNOSTICS:
+            return reason
+    return type(exc).__name__
+
+
 def _prepare_bound_task_scope(binding, slot):
     """Provision a bound task's Git scope before its first model request.
 

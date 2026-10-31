@@ -1,10 +1,10 @@
 ---
 name: bach
-version: 3.7.0
+version: 3.10.0
 type: skill
 author: BACH Team
 created: 2025-12-01
-updated: 2026-03-06
+updated: 2026-10-25
 anthropic_compatible: true
 
 description: >

@@ -373,7 +373,7 @@ def task_content_version(row: Mapping[str, Any]) -> str:
     content = {
         key: {"__bytes_sha256__": hashlib.sha256(value).hexdigest()} if isinstance(value, bytes) else value
         for key, value in row.items()
-        if not key.startswith("claim_") and key not in volatile and value is not None
+        if not key.startswith("claim_") and key not in volatile and value is not None and not (key == "needs_split" and value == 0)
     }
     return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False,
                                      separators=(",", ":")).encode("utf-8")).hexdigest()
@@ -961,6 +961,12 @@ def reclaim_unresolved_lease(conn: sqlite3.Connection, task_id: int, *, operator
     if (not isinstance(operator, str) or not _WORKER_RE.fullmatch(operator)
             or _NATIVE_WORKER_RE.match(operator)):
         raise LeaseValidationError("operator muss <agent>@<host> sein und darf kein nativer Worker sein")
+    # Review #562: the operator string is self-attested. When the caller carries an
+    # authenticated device identity, the operator's host part must match it exactly
+    # (case-sensitive); a device=None caller (service layer, no device context) stays allowed.
+    if device:
+        if not isinstance(device, str) or operator.rsplit("@", 1)[-1] != device:
+            raise LeaseValidationError("operator passt nicht zur authentifizierten Geräteidentität")
     if type(fence) is not int or fence <= 0:
         raise LeaseValidationError("fence muss eine positive Ganzzahl sein")
     reason = reason.strip() if isinstance(reason, str) else ""

@@ -279,6 +279,7 @@ token.json
 /check_db.py
 /check_lang*.py
 /check_translations.py
+/_check_phone.py
 /merge_db.py
 /quality_check.py
 /scratch_dump.json
