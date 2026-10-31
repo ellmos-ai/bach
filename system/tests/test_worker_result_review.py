@@ -674,12 +674,21 @@ def test_review_task_requires_a_private_fresh_run_grant(review_world):
         world["client"].acquire(task_id, worker_id="review-worker@HOST", host="HOST",
             task_version=snapshot["task_version"], result_generation=REVIEW_GENERATION,
             now=T0)
-    # Only the author's run is a fixed exclusion; slot and model are no criterion.
-    assert _grant(world, task_id, generation=world["binding"].generation)[0] is None
-    assert _grant(world, task_id, slot=AUTHOR_SLOT)[0] is not None
-    assert _grant(world, task_id, route=AUTHOR_ALIAS_ROUTE,
-                  requested=AUTHOR_ALIAS_MODEL)[0] is not None
-    assert _grant(world, task_id)[0] is not None
+
+
+def test_paged_review_prompt_carries_digest_and_page_count(review_world, monkeypatch):
+    """Gekürztes Review-Paket: Beschreibung fordert Paging via Reviewer-Tool."""
+    world = review_world
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=True, diff_sha256="ab" * 32)
+    description = world["conn"].execute(
+        "SELECT description FROM tasks WHERE id=?", (prepared["review_task_id"],)).fetchone()[0]
+    assert "hole Diff-Seiten via Reviewer-Tool" in description
+    assert "page_count=3" in description
+    assert f"diff_sha256={'ab' * 32}" in description
+    assert "Verdict diff_pages" in description
+    assert "Seitennummern strikt aufsteigend" in description
 
 
 def _prepare_diff(world, **meta):

@@ -519,14 +519,28 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None,
                 return result
             now = _utcnow()
             stamp = now.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
+            max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
+            paging_required = bool(diff_truncated
+                                   or diff_chars > max(0, max_diff_chars - chunk))
+            page_count = max(1, (int(diff_chars) + chunk - 1) // chunk)
+            if paging_required:
+                description = ("Controllergebundenes Ergebnisreview; Ziel nur aus privatem Intent lesen. "
+                               f"Diff zu lang für ein Slot-Fenster: hole Diff-Seiten via Reviewer-Tool "
+                               f"(page_count={page_count}, diff_sha256={diff_sha256}) und fordere im "
+                               "Verdict diff_pages: je Seite {\"page\": i, \"sha256\": HEX64}, "
+                               "Seitennummern strikt aufsteigend, jedes sha256 HEX64, einmalig.")
+            else:
+                description = ("Controllergebundenes Ergebnisreview; Ziel nur aus privatem Intent lesen. "
+                               f"Voller Diff ({int(diff_chars)} Zeichen) liegt im Slot-Fenster; "
+                               "kein Seitenabruf nötig.")
             title = f"Ergebnisreview Task #{target['task_id']} / Result #{target['result_id']}"
             source = _SOURCE + "pending:" + uuid.uuid4().hex
             cursor = conn.execute("""INSERT INTO tasks
                 (title,description,priority,category,status,created_by,assigned_to,
                  depends_on,source,required_model,assigned_slot,created_at,updated_at)
                 VALUES (?,?,'P2','worker-review','pending',?,'bach','',?,NULL,NULL,?,?)""",
-                (title, "Controllergebundenes Ergebnisreview; Ziel nur aus privatem Intent lesen.",
-                 _ACTOR, source, stamp, stamp))
+                (title, description, _ACTOR, source, stamp, stamp))
             review_task_id = cursor.lastrowid
             conn.execute("UPDATE tasks SET source=? WHERE id=?", (_SOURCE + str(review_task_id),
                                                                     review_task_id))
