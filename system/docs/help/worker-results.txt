@@ -2,9 +2,14 @@ Worker-Ergebnisse und persönliche Abnahme
 =========================================
 
 Native Worker speichern ein konkretes fachliches Ergebnis mit task_manage,
-action=submit_result. Ihre Abschluss-Aliase führen ebenfalls zur Ergebnisabgabe.
-Eine reine Erledigungsbestätigung genügt nicht. Die Aufgabe wartet anschließend
-in Review; die Task-Lease wird freigegeben. Eine Abgabe erledigt die Aufgabe nicht.
+action=submit_result und dem Pflichtflag complete=true/false (bzw.
+--complete=true/false bei CLI-Abschlussbefehlen). Ihre Abschluss-Aliase führen
+ebenfalls zur Ergebnisabgabe. Eine reine Erledigungsbestätigung genügt nicht.
+Bei complete=true wird das Ergebnis als Abgabe gespeichert, die Task-Lease
+freigegeben und der Abschlussstatus nach konfigurierter Policy ermittelt
+(Review oder direkter Abschluss). Bei complete=false wird der bisherige
+Teilstand versiegelt in der Taskbeschreibung vermerkt und die Aufgabe offen
+als pending zurückgegeben (z. B. nach einer Zerlegung in Teilaufgaben).
 
 Eine ausdrücklich einem Systemslot zugewiesene Aufgabe wird unabhängig von dessen
 allgemeiner Kategorie- und Prioritätsauswahl übernommen. Tagfilter, insbesondere

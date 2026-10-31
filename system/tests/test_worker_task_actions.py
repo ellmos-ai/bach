@@ -283,11 +283,10 @@ def test_real_runtime_boundary_and_tool_ack(runtime_binding, monkeypatch, tool_a
             if tool_action == "text":
                 return {"content": "FERTIG"}
             if tool_action == "decompose" and len(calls) == 2:
-                description = binding.task_snapshot()["description"] + "\n[Stand: Teilaufgaben angelegt; Umsetzung offen.]"
                 tools = [{"function": {"name": "task_manage", "arguments": {
-                    "action": "update", "task_id": binding.task_id, "description": description}}},
-                    {"function": {"name": "task_manage", "arguments": {
-                    "action": "update", "task_id": binding.task_id, "status": "pending"}}}]
+                    "action": "submit_result", "task_id": binding.task_id,
+                    "result": "Stand: Teilaufgaben angelegt; Umsetzung offen.",
+                    "complete": False}}}]
                 return _runtime_tool_reply(tools, serialized=serialized)
             args = {"action": "decompose" if tool_action == "update-then-decompose" else tool_action,
                     "task_id": binding.task_id}

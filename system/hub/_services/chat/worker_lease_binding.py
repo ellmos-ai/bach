@@ -103,7 +103,8 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "update_status": 'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.',
         "update_completion": 'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.',
         "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder. ' + TASK_CUT_RULE_SHORT,
-        "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
+        "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit submit_result(..., complete=false) zurückgeben.',
+        "decomposed_parent_completion": 'Zerlegung ist kein Abschluss: Gib für einen zerlegten Eltern-Task complete=false mit dem Teilstand an.',
         "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
         "mutation_scope": 'Änderungen nur an der gebundenen Task: task_id ist die eigene ID als Zahl, nicht als Text.',
@@ -1450,6 +1451,8 @@ class WorkerLeaseBinding:
                                     or args["task_id"] != self.task_id):
                 raise WorkerTaskManageArgumentError("mutation_scope")
             if action in {"done", "submit_result"}:
+                if self._decomposition_receipt is not None:
+                    raise WorkerTaskManageArgumentError("decomposed_parent_completion")
                 if set(args) - {"action", "task_id", "result"}:
                     raise LeaseProtocolError("Unbekannte Abschlussfelder")
                 from hub._services.task_result_service import validate_submission
