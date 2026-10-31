@@ -906,7 +906,8 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
         try:
             apply_task_field_changes(conn, task_id, row, {"status": new_status},
                                      changed_by=worker, allow_reopen=True,
-                                     lease_authorized=True)
+                                     lease_authorized=True,
+                                     block_reason=f"lease_release: {note or outcome}")
         except (ValueError, GateReopenBlocked) as exc:  # z. B. Abschluss-Guard "Codeänderungen ohne PR"
             conn.rollback()
             return _deny(task_id, "completion_guard", now, detail=str(exc))
@@ -997,7 +998,8 @@ def reclaim_unresolved_lease(conn: sqlite3.Connection, task_id: int, *, operator
             conn.rollback()
             return _deny(task_id, "no_unresolved_trace", now)
         apply_task_field_changes(conn, task_id, row, {"status": "blocked"},
-                                 changed_by=operator, lease_authorized=True)
+                                 changed_by=operator, lease_authorized=True,
+                                 block_reason=f"reclaim-unresolved (unklärbarer Werkzeug-Trace): {reason}")
         assignments = ", ".join(f"{name} = NULL" for name in _CLEARED_ON_RELEASE)
         cursor = conn.execute(
             f"UPDATE tasks SET {assignments} WHERE id = ? AND claim_id = ? AND claim_fence = ?",
