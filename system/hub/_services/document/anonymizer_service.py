@@ -444,7 +444,7 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
 PHONE_PATTERN = re.compile(
     r'(?<!\w)(?:'
-    r'(?:\+49|0049)(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){1,3}|'
+    r'(?:\+49|0049)(?:[ \t]*/[ \t]*|[ \t\-/]{1,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){1,3}|'
     r'0\d{2,4}(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}'
     r')(?!\w)',
     re.IGNORECASE
@@ -688,6 +688,10 @@ def _detect_titled_names(text: str, wl_lower: set) -> set:
         start = m.start("title")
         spans = [text[start:m.end("n1")]]
         norm = [f"{title} {n1}"]
+        # Nach einer Anrede steht der Nachname auch einzeln in der Liste ("Frau Beispiel
+        # kommt." -> "Beispiel"), damit Kurzformen nicht lecken. Echte Gattungsbegriffe
+        # ("Frau Alltag", "Frau Hilfeplanzeitraum") bleiben aussen vor: der Titel-Kontext
+        # allein ist kein Beleg, `_is_common_german_word` entscheidet.
         if not n2 and not _is_common_german_word(n1, text):
             norm.append(n1)
         if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2, text):
