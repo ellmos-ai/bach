@@ -1,0 +1,50 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+# Portability: SYSTEM
+# Last validated: 2026-09-08
+# Next review: 2027-03-08
+
+TORCH - Two Chat Modes & Resource Allocation
+============================================
+
+DESCRIPTION
+The TORCH concept governs the allocation of model memory (torches)
+on Apple Silicon and defines the two fundamental work modes
+for the dialogue between user and Buddha.
+
+THE TWO CHAT MODES
+------------------
+1. Chat Mode (default)
+     - Purpose: Quick questions, memos, thinking-journal notes, offloading
+     larger topics to the BACH task queue.
+     - Context: 8k tokens (fast, lightweight, minimizes VRAM demand).
+     - Cooldown: Frees torches / VRAM after 10 minutes of inactivity.
+
+2. Interactive Working Mode (Live Building & Pair Programming)
+     - Purpose: Building together, interactive programming, debugging
+     and direct project support with Lukas in the chat.
+     - No forced offloading: Buddha runs tools (read_file,
+     edit_file, execute_command, safe_shell) LIVE in the dialogue.
+     - No premature delegation: The chat itself is the executing
+     instance and does not break off prematurely.
+     - Context: 32k tokens (full window for deep code and documentation context).
+     - Cooldown: Up to 1 hour without a message and without an activity signal.
+     Prevents model flapping (the 35-second reloading of 17 GiB VRAM).
+     - Activity signal: Ongoing tool calls and token flow count as
+     activity (even while the user is just reading and not typing).
+
+BASIC RULES & PRIORITIES
+------------------------
+1. The user outranks everything: Direct instructions in the chat have
+   the highest priority over all background processes.
+2. Immediate background quiet: As soon as a chat message arrives,
+   the idle worker stops after the current step in order to
+   free the GPU for the user interaction.
+3. Torch distribution: Ten torches per system (one torch = 2.50 GiB).
+   Chat 8k = 8.4 torches; Working 32k = 11.2 torches (overbooking within
+   the comfort zone of Metal).
+
+SEE ALSO
+--------
+  docs/TORCH-KONZEPT.md           Full architectural derivation
+  bach --help roles               Role model, bosses & experts
+  bach --help daemon              Scheduler and background maintenance

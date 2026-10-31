@@ -1,0 +1,120 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+# Next review: 2027-03-17
+# Resources: [hub/subscription_agents.py, hub/_services/subscription_agents_composer.py]
+
+================================================================================
+subscription_agents - Versioned onboarding prompt preview
+================================================================================
+
+DESCRIPTION
+--------------------------------------------------------------------------------
+The `subscription_agents` handler generates a versioned onboarding prompt preview
+from the current BACH sources (subscription-agents compose). To do this, the
+handler reads a request file in JSON format, passes the content to the composer
+(`hub/_services/subscription_agents_composer.py`) and outputs the result as
+ canonically sorted JSON to stdout.
+
+The handler is read-only with respect to the request file: it modifies neither
+the request file nor configuration or system files. The output is suitable as a
+basis for versioned prompt/onboarding states and for passing on to downstream
+tools.
+
+The handler provides exactly one operation: `compose`.
+
+Registration name:       subscription_agents
+Module:                  system/hub/subscription_agents.py
+Associated service:     system/hub/_services/subscription_agents_composer.py
+Operation(s):            compose
+
+OPERATIONS
+--------------------------------------------------------------------------------
+compose <request-json-file>
+    Creates a versioned onboarding prompt preview from the current BACH
+    sources.
+
+    Arguments:
+      <request-json-file>    Path to a JSON file containing a JSON object.
+                             A leading `~` is expanded to the home directory
+                             of the executing user.
+
+    Rules for argument passing:
+      - Exactly one argument is required.
+      - The argument must be a non-empty string.
+      - The argument must not start with `-` (no option parsing).
+
+    Error handling for the request file:
+      - File not readable (OSError/PermissionError)
+        -> "Request file is not readable"
+      - File larger than MAX_REQUEST_BYTES (256 KB)
+        -> "Request file exceeds 256 KB"
+      - Content is not valid UTF-8 JSON, not a JSON object, or contains
+        duplicate field names
+        -> "Request file must contain valid UTF-8 JSON with unique fields"
+        -> "Request file must contain a JSON object"
+
+    If the operation or argument is not accepted, the handler returns the
+    following usage line:
+
+      bach subscription_agents compose <request-json-file>
+
+EXAMPLES
+--------------------------------------------------------------------------------
+1) Standard call using the handler's short name:
+
+     python bach.py subscription_agents compose ./request.json
+
+2) Call using the option form (binding to the handler):
+
+     python bach.py --subscription_agents compose ./request.json
+
+3) Request file in the home directory (tilde expansion):
+
+     python bach.py subscription_agents compose ~/requests/onboarding.json
+
+4) Redirect output to a file (sorting/keys are preserved):
+
+     python bach.py subscription_agents compose ./request.json > preview.json
+
+5) Minimal request file (JSON object, UTF-8, no duplicate fields):
+
+     {"topic": "onboarding", "audience": "new_agent"}
+
+OUTPUT FORMAT
+--------------------------------------------------------------------------------
+- Success case: exactly one JSON object on stdout, serialized with
+  `json.dumps(result, ensure_ascii=False, sort_keys=True)`. Keys are sorted
+  alphabetically, non-ASCII characters remain unmasked (UTF-8).
+- Error case: return of a text (error message or usage line) via the regular
+  handler return; exit status depends on the calling CLI.
+- The output contains no trailing newline added by the handler itself.
+
+FILES
+--------------------------------------------------------------------------------
+system/hub/subscription_agents.py
+    Handler: argument validation, request reading, composer invocation,
+    output.
+
+system/hub/_services/subscription_agents_composer.py
+    Composer service with `SubscriptionAgentsComposer` and the constant
+    `MAX_REQUEST_BYTES` (256 KB upper limit for the request file).
+
+<request-json-file>
+    Input file provided by the caller (JSON object, UTF-8, max. 256 KB,
+    no duplicate field names). Is read only.
+
+system/docs/help/subscription_agents.txt
+    This help file. It is resolved via `--help subscription_agents`
+    (help lookup uses `docs/help/<topic>.txt`; registration name and
+    module name are identical) and appears automatically in `--help list`.
+
+SEE ALSO
+--------------------------------------------------------------------------------
+- `--help prompt` (system/docs/help/prompt.txt): Prompt construction and
+  prompt conventions in the repository.
+- `--help abo`: Subscription/abonnement context of the system.
+- `--help list`: Overview of all available help topics.
+- ARCHITECTURE.md: CLI calling conventions (`python bach.py <command>` or
+  `python bach.py --<handler>`) and help resolution via
+  `docs/help/<topic>.txt`.

@@ -77,6 +77,7 @@ except ImportError as exc:
 
 # BACH imports
 from hub._services.chat.worker_lease_supervisor import WorkerLeaseSupervisor
+from hub._services.chat.worker_scope_deferrals import ScopePreparationDeferrals
 try:
     import bach_api
     _memory = bach_api.memory
@@ -245,6 +246,7 @@ class _WorkerControl:
     requested_at: Optional[str] = None
     receipt: Optional[Dict[str, Any]] = None
     task_binding: Any = None
+    queue_profile_unbound: bool = False
     _review_backend: Any = None
     _review_requested_model: str | None = None
     sequence_creator_authority: Any = None
@@ -263,9 +265,9 @@ class _WorkerControl:
     persistent_core_capacity_exhausted: bool = False
     persistent_core_capacity_receipt: dict[str, Any] | None = None
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
+    return_note: str = ""
+    scope_preparation_deferrals: ScopePreparationDeferrals = field(default_factory=ScopePreparationDeferrals)
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
-    completion_poll_index: int = 0
-    completion_poll_at: dict[int, float] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
     lease_supervisor: Any = None
@@ -534,107 +536,143 @@ def _retain_worker_task_receipts(control: _WorkerControl) -> None:
             control.task_result_bindings[binding.task_id] = binding
 
 
-def _poll_worker_completion(control: _WorkerControl) -> bool:
-    """Reconcile retained submissions and honor the current policy's claim gate.
+def _current_submission_readback(binding):
+    """Confirm the submitted result is still current without waiting for review."""
+    submitted = binding.submitted_result
+    if not isinstance(submitted, dict):
+        return False
+    try:
+        observed = binding._client.task_result_snapshot(binding.task_id)
+    except Exception:
+        return False
+    record = observed.get("result") if isinstance(observed, dict) else None
+    submission = record.get("submission") if isinstance(record, dict) else None
+    result_revision = record.get("result_revision") if isinstance(record, dict) else None
+    if (not isinstance(observed, dict)
+            or observed.get("schema") != "bach.task-result-readback.v1"
+            or observed.get("verified") is not True
+            or type(observed.get("task_id")) is not int
+            or observed.get("task_id") != binding.task_id
+            or type(observed.get("status_revision")) is not int
+            or observed["status_revision"] <= 0
+            or observed.get("status") not in {"review", "pending", "done", "completed"}
+            or not isinstance(record, dict)
+            or record.get("schema") != "bach.worker-result.v1"
+            or type(record.get("task_id")) is not int
+            or type(record.get("fence")) is not int
+            or not isinstance(record.get("generation"), str)
+            or not isinstance(record.get("task_version"), str)
+            or type(record.get("result_id")) is not int
+            or record.get("task_id") != binding.task_id
+            or not isinstance(submission, dict)
+            or record.get("result_id") != submitted.get("result_id")
+            or record.get("result_sha256") != submitted.get("result_sha256")
+            or record.get("generation") != submitted.get("generation")
+            or record.get("fence") != submitted.get("fence")
+            or record.get("task_version") != submitted.get("task_version")
+            or record.get("reason") not in {
+                "awaiting_review", "accepted", "acceptance_not_current"}
+            or submission.get("availability") != "available"
+            or (record.get("reason") == "accepted"
+                and (record.get("accepted") is not True
+                     or observed.get("status") not in {"done", "completed"}))
+            or (record.get("reason") == "awaiting_review"
+                and (record.get("accepted") is not False
+                     or observed.get("status") not in {"review", "pending"}))
+            or (record.get("reason") == "acceptance_not_current"
+                and (record.get("accepted") is not False
+                     or observed.get("status") != "pending"))
+            or (submitted.get("result_revision") is not None
+                and (not isinstance(submitted["result_revision"], str)
+                     or re.fullmatch(r"[a-f0-9]{64}", submitted["result_revision"]) is None
+                     or submitted["result_revision"] != result_revision))):
+        return False
+    if result_revision is None:
+        # Scope/model review evidence may not exist yet. The immutable native
+        # submission receipt confirms release independently of that evidence;
+        # it authorizes another queue claim, never acceptance of this result.
+        if (observed.get("status") != "review"
+                or record.get("reason") != "awaiting_review"
+                or observed["status_revision"] != record.get("submitted_status_event_id")
+                or not _same_native_submission_receipt(record, submitted)):
+            return False
+    elif (not isinstance(result_revision, str)
+            or re.fullmatch(r"[a-f0-9]{64}", result_revision) is None):
+        return False
+    evaluation = observed.get("completion_evaluation")
+    if isinstance(evaluation, dict) and evaluation.get("availability") == "available":
+        if (evaluation.get("task_id") != binding.task_id
+                or evaluation.get("result_id") != record.get("result_id")
+                or evaluation.get("result_revision") != result_revision
+                or evaluation.get("task_version") != observed.get("task_version")
+                or evaluation.get("status_revision") != observed.get("status_revision")):
+            return False
+    return True
 
-    All Git, HTTP, and SQLite work runs outside the controller lock. Older
-    balanced results are revisited in bounded round-robin batches so expiry
-    and later external approvals can advance without another queue.
+
+def _same_native_submission_receipt(record, submitted):
+    """Require the same complete native submission proof in ACK and readback."""
+    from hub._services.task_result_service import _submission_revision
+
+    if (record.get("accepted") is not False
+            or type(record.get("completion_policy_version")) is not int
+            or record["completion_policy_version"] != 1
+            or type(submitted.get("completion_policy_version")) is not int
+            or submitted["completion_policy_version"] != 1
+            or type(record.get("submission_receipt_version")) is not int
+            or record["submission_receipt_version"] != 1
+            or type(submitted.get("submission_receipt_version")) is not int
+            or submitted["submission_receipt_version"] != 1
+            or submitted.get("result_revision") is not None):
+        return False
+    revisions = []
+    for candidate in (record, submitted):
+        submission = candidate.get("submission")
+        digest = candidate.get("submission_receipt_sha256")
+        event = candidate.get("submission_event_id")
+        status_event = candidate.get("submitted_status_event_id")
+        revision = candidate.get("submission_revision")
+        if (not isinstance(submission, dict)
+                or type(candidate.get("task_id")) is not int
+                or candidate["task_id"] != record["task_id"]
+                or type(candidate.get("result_id")) is not int
+                or candidate["result_id"] <= 0
+                or submission.get("schema") != "bach.worker-submission-readback.v1"
+                or submission.get("availability") != "available"
+                or not isinstance(digest, str)
+                or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or submission.get("receipt_sha256") != digest
+                or type(event) is not int or type(status_event) is not int
+                or not 0 < status_event < event
+                or type(submission.get("submitted_status_event_id")) is not int
+                or submission["submitted_status_event_id"] != status_event
+                or not isinstance(revision, str)
+                or re.fullmatch(r"sha256:[a-f0-9]{64}", revision) is None
+                or revision != _submission_revision(candidate, digest)):
+            return False
+        revisions.append((revision, digest, event, status_event))
+    return revisions[0] == revisions[1]
+
+
+def _poll_worker_completion(control: _WorkerControl) -> bool:
+    """Check only this worker's current receipt before its next queue claim.
+
+    Older retained results belong to separate review/completion routes;
+    reconciling them here would put review work back on the claim path.
     """
-    now = time.monotonic()
     with _WORKER_CONTROL_LOCK:
         current = control.task_binding
-        bindings = list(control.task_result_bindings.values())
-        if not bindings:
-            return True
-        index = control.completion_poll_index % len(bindings)
-        selected = [bindings[(index + offset) % len(bindings)]
-                    for offset in range(min(4, len(bindings)))]
-        control.completion_poll_index = (index + len(selected)) % len(bindings)
-        next_at = dict(control.completion_poll_at)
-        blocked = dict(control.completion_poll_blocked)
-    if current is not None and current not in selected:
-        selected.insert(0, current)
-    may_claim = True
-    for binding in selected:
-        if control.stop_event.is_set():
-            return False
-        if binding.submitted_result is None:
-            continue  # An old release-only review is not a managed submission.
-        if now < next_at.get(binding.task_id, 0) and (
-                binding is not current or blocked.get(binding.task_id) is True):
-            if binding is current:
-                may_claim = False
-            continue
-        client = binding._client
-        reconcile = getattr(client, "_reconcile_task_completion", None)
-        outcome = None
-        try:
-            if callable(reconcile):
-                outcome = reconcile(binding.task_id)
-        except Exception:
-            log.warning("Abschlussneubewertung für Task #%s nicht bestätigt", binding.task_id)
-        with _WORKER_CONTROL_LOCK:
-            # A held claim gate is retried within a minute; archived balanced
-            # results need at most five-minute checks. This avoids unbounded
-            # GitHub API requests on the normal ten-second queue poll.
-            control.completion_poll_at[binding.task_id] = now + (
-                60 if binding is current else 300)
-        if binding is not current:
-            continue
-        decision = outcome.get("decision") if isinstance(outcome, dict) else None
-        if isinstance(decision, dict) and type(decision.get("worker_may_claim_next")) is bool:
-            may_claim = decision["worker_may_claim_next"]
-            with _WORKER_CONTROL_LOCK:
-                control.completion_poll_blocked[binding.task_id] = not may_claim
-            continue
-        # A correction has already reopened the parent, or Done has been
-        # accepted. The review-only wait no longer applies in either state.
-        try:
-            observed = client.task_result_snapshot(binding.task_id)
-            record = observed.get("result") or {}
-            if getattr(client, "mode", None) == "remote" and record.get("completion_policy_version") == 1:
-                lead = observed.get("completion_evaluation") or {}
-                lead_decision = lead.get("decision") or {}
-                submitted = binding.submitted_result or {}
-                exact = (observed.get("task_id") == binding.task_id
-                    and type(record.get("result_id")) is int
-                    and record["result_id"] == submitted.get("result_id")
-                    and record.get("result_sha256") == submitted.get("result_sha256")
-                    and record.get("generation") == submitted.get("generation")
-                    and record.get("fence") == submitted.get("fence")
-                    and record.get("task_version") == submitted.get("task_version")
-                    and type(record.get("result_revision")) is str
-                    and re.fullmatch(r"[a-f0-9]{64}", record["result_revision"]) is not None
-                    and record["result_revision"] == lead.get("result_revision")
-                    and record.get("submission", {}).get("availability") == "available"
-                    and record.get("reason") in {"awaiting_review", "accepted"}
-                    and observed.get("status") in {"review", "done", "completed"}
-                    and observed.get("task_version") == lead.get("task_version")
-                    and observed.get("status_revision") == lead.get("status_revision")
-                    and lead.get("task_id") == binding.task_id
-                    and lead.get("result_id") == record["result_id"]
-                    and lead.get("availability") == "available")
-                if (exact and type(lead_decision.get("worker_may_claim_next")) is bool
-                        and lead_decision["worker_may_claim_next"] is True):
-                    with _WORKER_CONTROL_LOCK:
-                        control.completion_poll_blocked[binding.task_id] = False
-                    continue
-                may_claim = False
-                with _WORKER_CONTROL_LOCK:
-                    control.completion_poll_blocked[binding.task_id] = True
-                continue
-            if (record.get("completion_policy_version") == 0
-                    or observed.get("status") in {"pending", "done", "completed"}):
-                with _WORKER_CONTROL_LOCK:
-                    control.completion_poll_blocked[binding.task_id] = False
-                continue
-        except Exception:
-            pass
-        may_claim = False  # Unknown current V1 policy never authorizes a claim.
-        with _WORKER_CONTROL_LOCK:
-            control.completion_poll_blocked[binding.task_id] = True
-    return may_claim
+    if control.stop_event.is_set():
+        return False
+    if current is None or current.submitted_result is None:
+        return True
+
+    exact = _current_submission_readback(current)
+    with _WORKER_CONTROL_LOCK:
+        control.completion_poll_blocked[current.task_id] = not exact
+    # The exact current receipt releases this worker even while review or
+    # completion evaluation is pending. A stale/unavailable receipt retries.
+    return exact
 
 
 def _finish_worker_result_review(control: _WorkerControl) -> None:
@@ -707,7 +745,8 @@ def _execution_worker_slot(worker_id: str) -> dict:
         return get_always_on_execution_slot()
     worker = get_worker_slot(worker_id)
     if worker:
-        return worker
+        # Registry membership defines a dynamic profile, never a payload flag.
+        return {**worker, "system": False}
     # Dynamic IDs are already resolved by their strict canonical registry.
     # Only an actual system-slot ID needs a second system-slot lookup.
     if worker_id not in load_slots_config().get("slots", {}):
@@ -822,13 +861,50 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                     if clear_recovered_always_on_task(task_id):
                         _record_worker_activity(control, "Vorherige Taskbindung ist kanonisch terminal; suche neue Aufgabe", "ok")
             return None
+    fresh_queue_records = []
+    scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
+    if not isinstance(scope_deferrals, ScopePreparationDeferrals):
+        scope_deferrals = None
+
     def observe_queue(record):
         with _WORKER_CONTROL_LOCK:
             if is_current() and not control.stop_event.is_set():
                 control.queue_status = record
+                fresh_queue_records.append(record)
+
+    def release_rejected_fixed_task(task_id, reason, task_version):
+        labels = {
+            "held": "fremde Lease", "not_claimable": "nicht claimbar",
+            "creator_priority": "Creator-Schonfrist", "stale_task_version": "veraltete Taskversion",
+            "already_held_by_caller": "bereits gehalten", "completion_guard": "Abschlussprüfung",
+        }
+        activity = (f"Feste Task #{task_id} abgelehnt ({labels.get(reason, 'Übernahme abgelehnt')}); "
+                    "Zuordnung gelöst, nächste claimbare Aufgabe folgt")
+        with _WORKER_CONTROL_LOCK:
+            if not is_current() or control.stop_event.is_set():
+                raise RuntimeError("Workerlauf vor Freigabe der festen Task beendet")
+            current_slot = control.slot_policy_reader()
+            pinned = current_slot.get("task_id") if isinstance(current_slot, dict) else None
+            try:
+                pinned_id = int(pinned) if pinned not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                pinned_id = None
+            if (not isinstance(current_slot, dict) or current_slot.get("id") != control.worker_id
+                    or pinned_id != task_id):
+                raise RuntimeError("Feste Taskzuordnung hat sich während der Ablehnung geändert")
+            if isinstance(task_version, str):
+                control.deferred_task_versions[task_id] = task_version
+            updated = _update_worker_slot(control, {
+                "task_id": None, "status": "running", "current_activity": activity,
+            })
+            if updated is None:
+                raise RuntimeError("Feste Taskzuordnung konnte nicht gelöst werden")
+        if not _record_worker_activity(control, activity, "pending", {
+                "task_id": task_id, "reason": reason}):
+            raise RuntimeError("Ablehnung der festen Task konnte nicht protokolliert werden")
 
     try:
-        return WorkerLeaseBinding.acquire_next(
+        selected = WorkerLeaseBinding.acquire_next(
             client, slot, worker_id=lease_worker_id, host=host,
             review_route=review_route,
             review_requested_model=getattr(control, "_review_requested_model", None),
@@ -840,9 +916,18 @@ def _acquire_worker_task(control, slot, physical_worker_id):
                       if slot.get("id") == "buddha_always_on" or slot.get("system") else None)
             ),
             _creator_delegation=control.creator_delegation,
-            deferred_versions=control.deferred_task_versions,
+            deferred_versions=(scope_deferrals.combined(control.deferred_task_versions)
+                               if scope_deferrals is not None else control.deferred_task_versions),
             observe_queue=observe_queue,
+            on_fixed_task_rejected=release_rejected_fixed_task,
         )
+        if (selected is None and scope_deferrals is not None and fresh_queue_records
+                and is_current() and not control.stop_event.is_set()):
+            # Only this call's completed native scan may release preparation
+            # skips. The next loop still rechecks policy/stop and acquires a new
+            # native lease before any work; no model or tool call is replayed.
+            scope_deferrals.after_exhausted_scan(fresh_queue_records[-1])
+        return selected
     except LeaseDeniedError as exc:
         if startup_recovery and exc.reason in {"held", "creator_priority", "stale_task_version", "already_held_by_caller", "not_claimable"}:
             return None
@@ -862,21 +947,25 @@ def _prepare_bound_task_scope(binding, slot):
             or getattr(binding, "_review_grant", None) is not None):
         return
     from hub import worker_git
-    from hub._services.chat.worker_write_guard import _WRITE_TOOLS, snapshot_task_scope
+    from hub._services.chat.worker_write_guard import _WRITE_TOOLS, snapshot_task_start_scope
     code_capability = any(tool in _WRITE_TOOLS for tool in allowed)
     try:
         binding.assert_active()
-        worker_git.start_task_worktree(binding.task_id, base_branch="main",
+        task_root = worker_git.start_task_worktree(binding.task_id, base_branch="main",
             worker_task_binding=binding, require_task_binding=True,
             task_code_capability=code_capability)
-        scope = snapshot_task_scope(binding.task_id)
+        scope = snapshot_task_start_scope(
+            binding, task_root=task_root, source_pin_required=code_capability)
         binding.assert_active()
         if (scope.get("availability") != "available"
                 or scope.get("task_id") != binding.task_id
                 or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
-                or (scope.get("source_pin") is not None) != code_capability):
+                or (code_capability and scope.get("source_pin") is None)):
             raise RuntimeError("scope_unavailable")
-    except Exception:
+    except Exception as exc:
+        # Fixed-text RuntimeErrors name the failed check; other types may carry paths.
+        reason = str(exc)[:120] if type(exc) is RuntimeError else type(exc).__name__
+        logger.warning("Task #%s: Arbeitsbaum nicht bestätigt (%s)", binding.task_id, reason)
         raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
 
 
@@ -1012,6 +1101,7 @@ def _without_private_model_request_runs(worker):
         return worker
     public = dict(worker)
     public.pop("_model_request_runs", None)
+    public.pop("_controller_run", None)
     return public
 
 
@@ -1020,6 +1110,7 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     budget_execution = (_budget_execution_projection(worker.get("id"))
                         if worker.get("max_model_requests") is not None else None)
     worker.pop("_model_request_runs", None)
+    worker.pop("_controller_run", None)
     if budget_execution is not None:
         worker["model_requests"] = budget_execution["model_requests"]
     worker.pop("generation", None)
@@ -1280,6 +1371,19 @@ def _record_worker_activity(
         return True
 
 
+_WORKER_TASK_FAILURE_LIMIT = 3
+
+
+def _worker_return_note(detail, reason_code):
+    """Fixed-vocabulary return reason; provider text never reaches task history."""
+    if reason_code:
+        return f"model_failure:{reason_code}"
+    if detail:
+        status = detail.get("status_code")
+        return f"backend_error:{detail['provider']}:{detail['kind']}" + (f":{status}" if status else "")
+    return "model_failure:unclassified"
+
+
 _WORKER_BACKEND_RETRY_LIMIT = 3
 _WORKER_BACKEND_RETRY_BASE_SECONDS = 60
 _WORKER_BACKEND_RETRY_BUDGET_SECONDS = 900
@@ -1378,10 +1482,46 @@ def _worker_backend_retry_delay(
     slot, detail, *, model, retries, waited_seconds, reason_code=None,
     pre_effect_verified=False,
 ):
-    """Bound recovery of Cloud rate limits and explicitly opted-in local reserve waits."""
-    if type(retries) is not int or retries < 0 or retries >= _WORKER_BACKEND_RETRY_LIMIT:
+    """Cloud retry waits are lease-free; local retries keep their hard budget."""
+    if type(retries) is not int or retries < 0:
         return None
     if type(waited_seconds) not in {int, float} or waited_seconds < 0:
+        return None
+    from hub._services.llm.backend_errors import normalize_backend_error
+    error = normalize_backend_error(detail)
+    cloud = (
+        isinstance(slot, dict)
+        and (slot.get("backend") in {"openrouter", "ollama-cloud"}
+             or (slot.get("backend") == "ollama"
+                 and isinstance(model, str) and model.lower().endswith(":cloud")))
+    )
+    if (reason_code in {None, "cloud_call_retry_exhausted"} and cloud
+            and slot.get("type") in {"continuous", "persistent"}
+            and error and (error["kind"] == "rate_limited"
+                           or error.get("status_code") == 429
+                           or (error["provider"] == "openrouter"
+                               and error["kind"] == "http_error"
+                               and error.get("status_code") == 504)
+                           # The free router picks a provider per request; a 404 there means
+                           # no endpoint matched this call right now. Bounded to the router
+                           # alias so a permanently wrong fixed model id still ends the worker.
+                           or (error["provider"] == "openrouter"
+                               and error["kind"] == "http_error"
+                               and error.get("status_code") == 404
+                               and slot.get("backend") == "openrouter"
+                               and slot.get("model") == "openrouter/free"
+                               and slot.get("max_model_requests") is None)
+                           or (error["provider"] == "openrouter"
+                               and error["kind"] == "connection_error"
+                               and slot.get("backend") == "openrouter"
+                               and slot.get("max_model_requests") is None))):
+        # Respect provider Retry-After, with bounded exponential request frequency.
+        # A configured worker's stop/TTL, not three retries, ends this wait loop.
+        return max(
+            min(900, _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** min(retries, 4))),
+            error.get("retry_after_seconds", 0),
+        )
+    if retries >= _WORKER_BACKEND_RETRY_LIMIT:
         return None
     if reason_code is not None:
         local_retry_reason = (
@@ -1396,18 +1536,42 @@ def _worker_backend_retry_delay(
             return None
         delay = _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries)
         return delay if waited_seconds + delay <= _WORKER_BACKEND_RETRY_BUDGET_SECONDS else None
+    return None
 
-    from hub._services.llm.backend_errors import normalize_backend_error
-    error = normalize_backend_error(detail)
-    if (not isinstance(slot, dict) or slot.get("type") not in {"continuous", "persistent"}
-            or not str(model).lower().endswith(":cloud")
-            or not error or error["kind"] != "rate_limited"):
+
+def _quarantined_timeout_delay(slot, answer, *, model, retries, waited_seconds):
+    """Bound a new-task attempt after a real local HTTPX read timeout."""
+    if (not isinstance(answer, FailedAnswer)
+            or getattr(answer, "transient_failure", None) != "httpx_read_timeout"
+            or not isinstance(slot, dict)
+            or slot.get("type") not in {"continuous", "persistent"}
+            or slot.get("enabled") is not True or slot.get("backend") != "ollama"
+            or not isinstance(model, str) or not model.strip()
+            or model != slot.get("model") or model.lower().endswith(":cloud")
+            or type(retries) is not int or not 0 <= retries < _WORKER_BACKEND_RETRY_LIMIT
+            or type(waited_seconds) not in {int, float} or waited_seconds < 0):
         return None
-    delay = max(_WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries),
-                error.get("retry_after_seconds", 0))
-    if waited_seconds + delay > _WORKER_BACKEND_RETRY_BUDGET_SECONDS:
-        return None
-    return delay
+    delay = _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries)
+    return delay if waited_seconds + delay <= _WORKER_BACKEND_RETRY_BUDGET_SECONDS else None
+
+
+def _quarantine_assignment_recorded(control, assignment, task_id):
+    """Require the existing assignment-end recorder's durable matching receipt."""
+    try:
+        history = load_slots_config(strict=True).get("activity_history", [])
+    except Exception:  # noqa: BLE001 -- unreadable closure is not permission to continue
+        return False
+    return any(
+        isinstance(entry, dict)
+        and entry.get("source") == control.worker_id
+        and entry.get("assignment_id") == assignment.assignment_id
+        and entry.get("event") == "assignment_ended"
+        and str(entry.get("task_id")) == str(task_id)
+        and entry.get("status") == "error"
+        and entry.get("result") == "task_quarantined"
+        and entry.get("reason") == "backend_error_after_tool_dispatch"
+        for entry in history
+    )
 
 
 def _wait_worker_backend_retry(
@@ -1573,6 +1737,10 @@ def _persist_worker_metadata(control: _WorkerControl, updates: Dict[str, Any]):
                 or (retained is not None and retained is not control)
                 or not _worker_metadata_available(control.worker_id)):
             return None
+        # A task acquired by a queue run is execution state, never a user pin.
+        # Active task projections already come from the generation-bound binding.
+        if control.queue_profile_unbound and "task_id" in updates:
+            updates = {**updates, "task_id": None}
         return update_slot(control.worker_id, updates)
 
 
@@ -1651,6 +1819,126 @@ def _validate_worker_execution_fence(expected_execution):
                    or any(char not in "0123456789abcdef" for char in value)
                    for value in expected_execution.values())):
         raise ValueError("Ungültige Ausführungsbindung für Stop")
+
+
+def _assert_worker_profile_inactive(worker, *, allow_legacy_start=False):
+    """Require exact local end evidence or a dead prior process and free leases.
+
+    Called with controller lock, then configuration OS lock held, matching
+    admission order. Displayed status and the last displayed task are not proof.
+    """
+    from hub._services.chat.slots_config import _validated_controller_run, _model_request_runs
+    from hub.agent_process_provider import capture_process_create_time, inspect_process_identity
+    worker_id = worker["id"]
+    control = _WORKER_EXECUTIONS.get(worker_id)
+    current, active_thread = _active_worker_control(worker_id)
+    if (_thread_is_alive(active_thread) or current is not None and current.admission_pending
+            or control is not None and (control.admission_pending
+                or not control.done_event.is_set() or _thread_is_alive(control.thread))):
+        raise RuntimeError("worker_delete_active")
+    if current is not None and current is not control:
+        raise RuntimeError("worker_delete_execution_unconfirmed")
+    record = worker.get("_controller_run")
+    if record is not None:
+        _validated_controller_run(record)
+        if record["worker_id"] != worker_id:
+            raise RuntimeError("worker_controller_run_invalid")
+        if record["host"] != socket.gethostname():
+            # Local PID observations cannot establish death on another host.
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if record["prior_runs_unconfirmed"] and not allow_legacy_start:
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if record["phase"] == "never_admitted":
+            if control is not None:
+                raise RuntimeError("worker_delete_execution_unconfirmed")
+            if record["durable"] or (record["pid"] == os.getpid()
+                    and record["process_create_time"] == capture_process_create_time(os.getpid())):
+                return
+            if allow_legacy_start:
+                # Non-durable Windows markers may survive a service restart.
+                # Preserve starts, carrying that uncertainty into the new run.
+                return
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if control is not None and (
+                record["service_instance"] == _WORKER_SERVICE_INSTANCE
+                and record["start_request_id"] == control.start_request_id
+                and record["generation"] == control.generation
+                and record["physical_worker_id"] == control.physical_worker_id
+                and record["lease_worker_id"] == control.lease_worker_id
+                and record["pid"] == os.getpid()
+                and record["process_create_time"] == capture_process_create_time(os.getpid())):
+            if (not control.launch_attempted and not control.worker_thread_started
+                    and control.task_binding is None and not control.task_result_bindings
+                    and control.lease_supervisor is None):
+                # No task acquire is reachable before the worker thread launch.
+                # A synchronously rejected admission can be retried offline.
+                return
+            lease_worker_id = control.lease_worker_id
+        elif (control is None and record["durable"] and record["service_instance"] != _WORKER_SERVICE_INSTANCE
+                and inspect_process_identity(record)[0] in {"gone", "mismatch"}):
+            lease_worker_id = record["lease_worker_id"]
+        else:
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+    elif control is not None and control.lease_worker_id:
+        lease_worker_id = control.lease_worker_id
+    elif allow_legacy_start:
+        # Preserve established admission for pre-fence profiles. Once admitted,
+        # every dynamic generation has an exact physical identity on disk.
+        return
+    else:
+        runs = _model_request_runs(worker)
+        budget = runs["current"]
+        if (worker.get("max_model_requests") is None or worker.get("type") != "once"
+                or budget is None or budget["phase"] != "terminal"
+                or budget["task_id"] != worker.get("task_id")):
+            raise RuntimeError("worker_delete_execution_unconfirmed")
+        if _native_task_client().read(budget["task_id"]).leased is not False:
+            raise RuntimeError("worker_delete_leased")
+        return
+    if _native_task_client().worker_leases(lease_worker_id)["leases"]:
+        raise RuntimeError("worker_delete_leased")
+
+
+def delete_worker_profile(worker_id):
+    """One fenced delete operation shared by both POST aliases and DELETE.
+
+    Removal is re-read afterwards (fail-closed): if the survivor list still
+    contains the worker entry or the configuration is unreadable, the request
+    answers 503 instead of reporting success.
+    """
+    if not isinstance(worker_id, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", worker_id) is None:
+        return {"error": "Worker-ID ist ungültig"}, 400
+    with _WORKER_CONTROL_LOCK:
+        try:
+            worker = _execution_worker_slot(worker_id)
+            if not worker or worker.get("system") or worker_id in DEFAULT_CORE_SLOTS:
+                return {"error": "Workerprofil nicht gefunden"}, 404
+            if worker.get("max_model_requests") is not None and not _recover_model_request_run(worker_id):
+                return {"error": "Vorheriger Lauf ist noch nicht beendet oder leasefrei bestätigt",
+                        "error_code": "worker_delete_execution_unconfirmed"}, 409
+            ok = remove_worker(worker_id, _runtime_guard=_assert_worker_profile_inactive)
+        except RuntimeError as exc:
+            code = str(exc)
+            if code in {"worker_delete_active", "worker_delete_execution_unconfirmed",
+                        "worker_delete_leased", "worker_delete_budget_unconfirmed"}:
+                return {"error": "Worker zuerst beenden; Laufende und freie Leases müssen bestätigt sein",
+                        "error_code": code}, 409
+            log.warning("Worker-Löschung nicht bestätigt (%s)", type(exc).__name__)
+            return {"error": "Worker-Löschung oder Belegarchiv nicht verifizierbar"}, 503
+        except Exception as exc:
+            log.warning("Worker-Löschung nicht bestätigt (%s)", type(exc).__name__)
+            return {"error": "Worker-Löschung oder Belegarchiv nicht verifizierbar"}, 503
+        if not ok:
+            return {"error": "Workerprofil nicht gefunden"}, 404
+        try:
+            survivors = load_slots_config(None, strict=True).get("dynamic_workers")
+            if not isinstance(survivors, list) or any(
+                isinstance(entry, dict) and entry.get("id") == worker_id for entry in survivors):
+                raise RuntimeError("worker_delete_unverified")
+        except Exception as exc:
+            log.warning("Worker-Löschung nicht verifizierbar (%s)", type(exc).__name__)
+            return {"error": "Worker-Löschung oder Belegarchiv nicht verifizierbar"}, 503
+        return {"ok": True, "id": worker_id}, 200
 
 
 def _revoke_persistent_worker_intent(worker_id: str) -> bool:
@@ -4253,6 +4541,9 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     slot = _execution_worker_slot(worker_id)
                 if not slot or slot.get("id") != worker_id:
                     return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+                dynamic_profile = bool(get_worker_slot(worker_id))
+                if dynamic_profile:
+                    slot = {**slot, "system": False}
                 if (_startup_profile_version and worker_id != "buddha_always_on"
                         and not slot.get("system") and cloud_binding is None):
                     return rejected({
@@ -4270,8 +4561,16 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                             "error_code": "persistent_admission_unavailable",
                         }, 409)
                     slot = cloud_snapshot
+                    if dynamic_profile:
+                        slot = {**slot, "system": False}
                 if slot.get("enabled", True) is not True:
                     return rejected({"error": "Worker ist deaktiviert"}, 403)
+                if not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS:
+                    try:
+                        _assert_worker_profile_inactive(slot, allow_legacy_start=True)
+                    except Exception:
+                        return rejected({"error": "Vorherige Worker-Generation nicht beendet oder leasefrei bestätigt",
+                                         "error_code": "worker_previous_run_unconfirmed"}, 409)
                 budget_record = None
                 if slot.get("max_model_requests") is not None:
                     from hub._services.chat.slots_config import (
@@ -4310,7 +4609,7 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 control = _WorkerControl(
                     worker_id,
                     generation=_startup_generation or uuid.uuid4().hex,
-                    physical_worker_id=_startup_physical_worker_id,
+                    physical_worker_id=_startup_physical_worker_id or f"worker-{uuid.uuid4().hex}",
                     lease_worker_id=_startup_lease_worker_id,
                     start_request_id=request_id,
                     admitted_worker={"id": worker_id, "type": slot.get("type")},
@@ -4336,9 +4635,37 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 control.admission_handle = _WorkerAdmission()
                 control.admission_pending = True
                 control.thread = control.admission_handle
+                control.lease_worker_id = control.lease_worker_id or f"{control.physical_worker_id}@{socket.gethostname()}"
+                controller_run = None
+                if not slot.get("system") and worker_id not in DEFAULT_CORE_SLOTS:
+                    from hub.agent_process_provider import capture_process_create_time
+                    from hub._services.chat.slots_config import _model_request_runs
+                    prior_record = slot.get("_controller_run")
+                    prior_budget = _model_request_runs(slot)["current"]
+                    prior_runs_unconfirmed = (prior_record["prior_runs_unconfirmed"]
+                        if prior_record is not None else not (
+                            slot.get("max_model_requests") is not None and slot.get("type") == "once"
+                            and prior_budget is not None and prior_budget["phase"] == "terminal"))
+                    if (prior_record is not None and prior_record["phase"] == "never_admitted"
+                            and not prior_record["durable"] and (
+                                prior_record["pid"] != os.getpid()
+                                or prior_record["process_create_time"] != capture_process_create_time(os.getpid()))):
+                        prior_runs_unconfirmed = True
+                    controller_run = {
+                        "schema": "bach.worker-controller-run.v1", "phase": "admitted",
+                        "worker_id": worker_id, "service_instance": _WORKER_SERVICE_INSTANCE,
+                        "pid": os.getpid(), "process_create_time": capture_process_create_time(os.getpid()),
+                        "host": socket.gethostname(),
+                        "start_request_id": request_id, "generation": control.generation,
+                        "physical_worker_id": control.physical_worker_id,
+                        "lease_worker_id": control.lease_worker_id, "durable": os.name == "posix",
+                        "prior_runs_unconfirmed": prior_runs_unconfirmed,
+                    }
                 # No RAM admission is published unless the durable revision
                 # write succeeds. Keep the file lock until all registries agree.
-                if budget_record is None:
+                if controller_run is not None:
+                    advance_revision(model_request_run=budget_record, controller_run=controller_run)
+                elif budget_record is None:
                     advance_revision()
                 else:
                     advance_revision(model_request_run=budget_record)
@@ -4600,6 +4927,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
 
     def _run_worker_job():
         control.worker_thread_started = True
+        control.queue_profile_unbound = (
+            w.get("task_id") in (None, "", 0, "0")
+            and control.model_request_budget is None
+        )
         control.admission_pending = False
         worker_error = None
         worker_session = None
@@ -4638,9 +4969,18 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             _snapshot_chat_backend(worker_id, worker_slot=w)
             if control.stop_event.is_set():
                 return
+            # A task ID present at startup can be an explicit user pin.
+            # Only an initially unbound queue run may later clear its own
+            # controller-written task pointer and move to another task.
+            core_queue_task_pointer = (
+                worker_id == "buddha_always_on" and w.get("type") == "continuous"
+                and w.get("task_id") in (None, "", 0, "0")
+                and control.model_request_budget is None
+                and custom_prompt in (None, "") and w.get("task_prompt") in (None, "")
+            )
             if custom_prompt:
                 initial_prompt = custom_prompt
-            elif w.get("task_id"):
+            elif w.get("task_id") and not core_queue_task_pointer:
                 initial_prompt = (
                     f"Führe Task #{w.get('task_id')} aus. Markiere ihn erst nach tatsächlicher "
                     f"Ergebnisabgabe mit task_manage(action='submit_result', task_id={w.get('task_id')}, result='<konkretes Ergebnis>', complete=true). "
@@ -4662,7 +5002,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             elif w.get("sub_mode") == "expert_role":
                 role = w.get("role_id") or "Experte"
                 if role == "task-divider":
-                    initial_prompt = "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben via task_manage action='decompose'."
+                    initial_prompt = (
+                        "Analysiere komplexe offene Aufgaben im Backlog und zerlege sie in strukturierte Teilaufgaben "
+                        "via task_manage action='decompose'. Schneide jede Teilaufgabe nach der Zuschnittregel deiner Rolle."
+                    )
                 elif role == "ticket-master":
                     initial_prompt = (
                         "Triagiere Aufgaben anhand der TaskDB. Nutze nur task_manage-Aktionen "
@@ -4681,6 +5024,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
 
             prompt_to_run = initial_prompt
             run_count = 0
+            task_failures = 0
+            buddha_warmup_complete = False
             initial_recovery = control.persistent_core_recovery_state
             backend_retries = (
                 initial_recovery.get("retry_count", 0)
@@ -4731,18 +5076,66 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 with _WORKER_CONTROL_LOCK:
                     control.supports_step_actions = not getattr(target_backend, "manages_own_tools", False)
 
+                if worker_id == "buddha_always_on" and not buddha_warmup_complete:
+                    if ((control.task_binding is not None and not control.task_binding.closed)
+                            or run_count > 0):
+                        # A resumed task owns its model call; only a fresh idle
+                        # Always-On generation gets a pre-queue warmup.
+                        buddha_warmup_complete = True
+                    else:
+                        warmup_loop = asyncio.new_event_loop()
+                        try:
+                            warmup = warmup_loop.run_until_complete(
+                                runtime.warm_buddha_ollama_model(
+                                    target_backend,
+                                    model,
+                                    slot_reader=control.slot_policy_reader,
+                                    stop_event=control.stop_event,
+                                )
+                            )
+                        except Exception:
+                            log.warning("Buddha-Modellstart konnte nicht bestätigt werden")
+                            warmup = {"state": "model_wait"}
+                        finally:
+                            try:
+                                warmup_loop.run_until_complete(warmup_loop.shutdown_asyncgens())
+                            except Exception:
+                                pass
+                            warmup_loop.close()
+
+                        warmup_state = warmup.get("state") if isinstance(warmup, dict) else None
+                        if warmup_state in {
+                                "loaded", "resident", "not_applicable", "not_local", "task_bound"}:
+                            buddha_warmup_complete = True
+                        elif warmup_state == "stopped":
+                            break
+                        else:
+                            warmup_activity = {
+                                "fackel_compute": "Buddha wartet: Fackel priorisiert Compute",
+                                "fackel_unverified": "Buddha wartet auf verifizierbare Fackel-Präferenz",
+                                "capacity_wait": "Buddha wartet auf lokale Ressourcenreserve zum Modellstart",
+                                "model_wait": "Buddha wartet auf antwortenden Ollama-Server oder Modellstart",
+                                "slot_changed": "Buddha-Modellbindung hat sich geändert; Modellstart pausiert",
+                                "slot_unverified": "Buddha wartet auf verifizierbare Modellbindung",
+                                "stop_unverified": "Buddha-Modellstart wartet auf bestätigten Laufzustand",
+                                "cold_start_aborted": "Buddha-Kaltstart wegen Druck-, Swap- oder Zeitgrenze abgebrochen; Modell wird bereinigt",
+                            }.get(warmup_state, "Buddha-Modellstart wartet auf sichere Zulassung")
+                            if _update_worker_slot(control, {
+                                    "status": "running", "current_activity": warmup_activity,
+                            }) is None:
+                                break
+                            if control.stop_event.wait(10):
+                                break
+                            continue
+
                 if control.task_binding is None or control.task_binding.closed:
                     _retain_worker_task_receipts(control)
                     if control.lease_supervisor is not None:
                         control.lease_supervisor.close()
                         control.lease_supervisor = None
-                    if not _poll_worker_completion(control):
-                        if _update_worker_slot(control, {"status": "running", "task_id": None,
-                                "current_activity": "Ergebnis wartet auf kanonische Abschlussprüfung"}) is None:
-                            break
-                        if control.stop_event.wait(10):
-                            break
-                        continue
+                    # Record canonical result observations without making separate
+                    # acceptance a prerequisite for the next queue acquisition.
+                    _poll_worker_completion(control)
                     control.task_binding = _acquire_worker_task(control, current_slot, worker_instance_id)
                     if control.task_binding is None:
                         from hub._services.chat.worker_queue_status import (
@@ -4835,12 +5228,17 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         returned = control.task_binding.task_snapshot()
                         control.lease_supervisor.close()
                         control.lease_supervisor = None
-                        if not control.task_binding.return_lease():
+                        if not control.task_binding.return_lease(note="task_scope_unavailable"):
                             raise
                         finish_assignment(current_assignment, status="released",
                                           result="task_returned", reason="task_scope_unavailable")
                         assignment_open = False
-                        control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
+                        scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
+                        if (not isinstance(scope_deferrals, ScopePreparationDeferrals)
+                                or not scope_deferrals.defer(control.task_binding.task_id,
+                                    returned["task_version"], tool_dispatch_count=getattr(
+                                        control.task_binding, "tool_dispatch_count", None))):
+                            control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
                         _record_worker_activity(control,
                             f"Task #{control.task_binding.task_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
                             "pending")
@@ -4851,6 +5249,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
                             break
                         continue
+                    control.scope_preparation_deferrals.resolved(control.task_binding.task_id)
                     newly_acquired_binding = None
                 loop = asyncio.new_event_loop()
                 ans = ""
@@ -4902,6 +5301,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     from hub._services.llm.backend_errors import normalize_backend_error
                     detail = normalize_backend_error(getattr(ans, "backend_error", None))
                     failure_reason = getattr(ans, "reason_code", None)
+                    control.return_note = _worker_return_note(detail, failure_reason)
                     if failure_reason == "local_reserve_reserve_wait_expired":
                         error_activity = "Lokale Ressourcenreserve wurde nicht rechtzeitig frei"
                     elif failure_reason == "local_reserve_reserve_wait_lease_return_required":
@@ -4970,31 +5370,35 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         if (retry_delay is None and backend_retries >= _WORKER_BACKEND_RETRY_LIMIT
                                 and retry_before_tools):
                             control.persistent_core_capacity_exhausted = True
-                    if not control.task_binding.closed and not retry_before_tools:
-                        # No persisted tool transcript or idempotency contract
-                        # can prove that re-running initial_prompt is safe.
-                        # Block the task canonically so a different worker also
-                        # cannot replay it through a fresh binding/counter.
-                        control.lease_supervisor.close()
-                        control.lease_supervisor = None
-                        if not control.task_binding.quarantine_lease():
-                            control.task_binding.invalidate()
-                            raise RuntimeError("Task-Quarantäne nicht bestätigt; kanonischen Zustand prüfen")
-                        activity = (f"{error_activity} Automatische Wiederaufnahme unterdrückt: "
-                                    "Toolwirkung bereits begonnen oder nicht verifizierbar; Task zur Prüfung blockiert.")
-                        _update_worker_slot(control, {"current_activity": activity})
-                        _record_worker_activity(control, activity, "error")
-                        return
+                    # A backend error leaves unfinished work open. The next ordinary
+                    # lease holder resumes from the existing task and filesystem.
+                    # Prior completed tool calls do not create a review quarantine.
                     if retry_delay is not None and not control.task_binding.closed:
                         # Settle Renew physically and obtain the canonical Return
                         # ACK before any wait. A cleanup error stays terminal.
-                        control.lease_supervisor.close()
+                        supervisor = control.lease_supervisor
+                        if supervisor is None:
+                            raise RuntimeError("Task-Rückgabe ohne Lease-Supervisor")
+                        supervisor.close()
+                        if supervisor.is_alive or supervisor.failure is not None:
+                            raise RuntimeError("Lease-Supervisor vor Rückgabe nicht beendet")
                         control.lease_supervisor = None
-                        if not control.task_binding.return_lease():
+                        if not control.task_binding.return_lease(note=control.return_note):
                             raise RuntimeError("Task-Lease vor Wiederaufnahme nicht bestätigt zurückgegeben")
+                        control.return_note = ""
                         if assignment_open:
                             finish_assignment(current_assignment, status="error",
-                                              result="backend_error", reason="temporary_rate_limit")
+                                              result="backend_error",
+                                              reason=("temporary_gateway_timeout"
+                                                      if detail and detail.get("provider") == "openrouter"
+                                                      and detail.get("status_code") == 504
+                                                      else "temporary_connection_error"
+                                                      if detail and detail.get("provider") == "openrouter"
+                                                      and detail.get("kind") == "connection_error"
+                                                      else "temporary_no_endpoint"
+                                                      if detail and detail.get("provider") == "openrouter"
+                                                      and detail.get("status_code") == 404
+                                                      else "temporary_rate_limit"))
                             assignment_open = False
                         worker_session.worker_task_binding = None
                         if persistent_retry_binding is not None:
@@ -5053,8 +5457,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             control.task_binding = None
                             backend_retries += 1
                             backend_waited_seconds += retry_delay
-                        waiting = (f"{error_activity} Warte {retry_delay:g} Sekunden; "
-                                   f"Wiederaufnahme {backend_retries}/{_WORKER_BACKEND_RETRY_LIMIT}.")
+                        waiting = (f"{error_activity} Aufgabe bleibt offen. "
+                                   f"Warte {retry_delay:g} Sekunden; danach neue Übernahme.")
                         if _update_worker_slot(control, {
                             "status": "running", "task_id": None, "current_activity": waiting,
                         }) is None:
@@ -5110,10 +5514,57 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         # creator/dependency gates and acquires a fresh fence.
                         prompt_to_run = initial_prompt
                         continue
+                    # A failure confined to this run (no provider error, e.g. a full
+                    # completion reserve) is logged above; the task goes back with its
+                    # reason and the worker takes the next one. Repeats still stop it.
+                    task_local = (
+                        not control.task_binding.closed
+                        and (detail is None or detail["kind"] == "tool_parse_error")
+                        and current_slot.get("type") in {"continuous", "persistent"}
+                        and control.persistent_core_intent_id is None
+                        and control.model_request_budget is None)
+                    if task_local:
+                        task_failures += 1
+                    if task_local and task_failures < _WORKER_TASK_FAILURE_LIMIT:
+                        returned = control.task_binding.task_snapshot()
+                        supervisor = control.lease_supervisor
+                        if supervisor is None:
+                            raise RuntimeError("Task-Rückgabe ohne Lease-Supervisor")
+                        supervisor.close()
+                        if supervisor.is_alive or supervisor.failure is not None:
+                            raise RuntimeError("Lease-Supervisor vor Rückgabe nicht beendet")
+                        control.lease_supervisor = None
+                        if not control.task_binding.return_lease(note=control.return_note):
+                            raise RuntimeError("Task-Lease vor Weiterarbeit nicht bestätigt zurückgegeben")
+                        if assignment_open:
+                            finish_assignment(current_assignment, status="error",
+                                              result="task_failed", reason=control.return_note)
+                            assignment_open = False
+                        returned_id = control.task_binding.task_id
+                        control.deferred_task_versions[returned_id] = returned["task_version"]
+                        worker_session.worker_task_binding = None
+                        control.task_binding = None
+                        worker_error = None
+                        control.start_error = None
+                        _record_worker_activity(control,
+                            f"Task #{returned_id} zurückgegeben ({control.return_note}); Worker arbeitet weiter",
+                            "pending")
+                        control.return_note = ""
+                        if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                "current_activity": f"Task #{returned_id} zurückgegeben; suche nächste passende Aufgabe"}) is None:
+                            break
+                        if not _wait_worker_cooldown(control, event_type="runs"):
+                            break
+                        prompt_to_run = initial_prompt
+                        continue
+                    if task_local:
+                        _update_worker_slot(control, {"current_activity":
+                            f"{error_activity} {task_failures} Tasks in Folge fehlgeschlagen; Worker angehalten."})
                     if detail and detail["kind"] == "rate_limited" and backend_retries:
                         _update_worker_slot(control, {"current_activity":
                             f"{error_activity} Wiederaufnahme begrenzt beendet; erneut ausdrücklich starten."})
                     return
+                task_failures = 0
                 resolved = getattr(worker_session, "resolved_model", None)
                 if isinstance(resolved, str) and resolved.strip():
                     _update_worker_slot(control, {"resolved_model": resolved})
@@ -5341,7 +5792,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 log.warning("Worker-Ergebnisbindung konnte nicht behalten werden", exc_info=True)
             if control.task_binding is not None and not control.task_binding.closed:
                 try:
-                    if not control.task_binding.return_lease():
+                    if not control.task_binding.return_lease(note=control.return_note or (
+                            "worker_stopped" if control.stop_event.is_set() else "worker_ended")):
                         cleanup_error = True
                     else:
                         persistent_lease_returned = True
@@ -6090,6 +6542,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 for w in workers:
                     w["pause_info"] = get_slot_pause_info(w)
                     w.pop("_model_request_runs", None)
+                    w.pop("_controller_run", None)
                     w.pop("persistent_opt_in_id", None)
                     w.pop("persistent_opt_in_profile_version", None)
                     w.pop("_persistent_execution_checkpoint", None)
@@ -6487,7 +6940,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 worker = add_worker(body)
                 record_activity("system", f"Neuer Worker erstellt: {worker.get('name', worker.get('id'))}", "ok")
-                self._json({"ok": True, "worker": worker})
+                self._json({"ok": True, "worker": _without_private_model_request_runs(worker)})
             except ValueError as e:
                 self._json({"error": str(e)}, 400)
             except Exception as e:
@@ -6498,19 +6951,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             if not worker_id:
                 self._json({"error": "id erforderlich"}, 400)
                 return
-            try:
-                ok = remove_worker(worker_id)
-            except RuntimeError as exc:
-                if str(exc) != "Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden":
-                    self._json({"error": "Worker-Löschung nicht verifizierbar"}, 503)
-                else:
-                    self._json({"error": str(exc)}, 409)
-                return
-            if ok:
-                record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
-                self._json({"ok": True, "id": worker_id})
-            else:
-                self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+            response, status = delete_worker_profile(worker_id)
+            self._json(response, status)
 
         elif path == "/api/workers/toggle":
             worker_id = body.get("id") or body.get("worker_id")
@@ -6738,19 +7180,8 @@ class ControlHandler(BaseHTTPRequestHandler):
             if not worker_id:
                 self._json({"error": "id erforderlich"}, 400)
                 return
-            try:
-                ok = remove_worker(worker_id)
-            except RuntimeError as exc:
-                if str(exc) != "Budgetierte Run-Belege dürfen nicht ohne Archivpfad gelöscht werden":
-                    self._json({"error": "Worker-Löschung nicht verifizierbar"}, 503)
-                else:
-                    self._json({"error": str(exc)}, 409)
-                return
-            if ok:
-                record_activity("system", f"Worker gelöscht: {worker_id}", "ok")
-                self._json({"ok": True, "id": worker_id})
-            else:
-                self._json({"error": f"Worker {worker_id} nicht gefunden"}, 404)
+            response, status = delete_worker_profile(worker_id)
+            self._json(response, status)
         else:
             self._json({"error": "Method not allowed"}, 405)
 
@@ -7023,6 +7454,14 @@ def _reconcile_persistent_cloud_worker(profile, trace_contract, *, client=None, 
     slot = get_worker_slot(worker_id, path=path)
     if not isinstance(slot, dict):
         return {"state": "blocked", "reason": "profile_unavailable"}
+    if "_controller_run" not in slot:
+        return {"state": "blocked", "reason": "prior_controller_unconfirmed"}
+    if "_controller_run" in slot:
+        try:
+            with _WORKER_CONTROL_LOCK:
+                _assert_worker_profile_inactive(slot, allow_legacy_start=True)
+        except Exception:
+            return {"state": "blocked", "reason": "prior_controller_unconfirmed"}
     checkpoint = slot.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
     if (not _valid_persistent_worker_controller_checkpoint(checkpoint)
             or checkpoint.get("worker_id") != worker_id
@@ -7080,9 +7519,11 @@ def _reconcile_persistent_cloud_worker(profile, trace_contract, *, client=None, 
             "active_old_lease": False,
             "old_generation_trace": False,
         }
-        settled = settle_persistent_worker_controller_checkpoint(
-            worker_id, config_version, profile_version, profile["intent_id"],
-            checkpoint, status, proof, path=path)
+        with _WORKER_CONTROL_LOCK:
+            settled = settle_persistent_worker_controller_checkpoint(
+                worker_id, config_version, profile_version, profile["intent_id"],
+                checkpoint, status, proof, path=path,
+                _runtime_guard=lambda worker: _assert_worker_profile_inactive(worker, allow_legacy_start=True))
         return {"state": "settled", "reason": "stable_no_old_generation_effects",
                 "candidate_count": second["candidate_count"],
                 "generation": settled["settled_generation"]}
@@ -7176,9 +7617,11 @@ def _resume_persistent_cloud_workers_at_startup(stop_event):
         }
         expected_checkpoint = slot.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD)
         try:
-            set_persistent_worker_controller_checkpoint(
-                worker_id, profile["configuration_version"], profile["profile_version"],
-                profile["intent_id"], expected_checkpoint, pending)
+            with _WORKER_CONTROL_LOCK:
+                set_persistent_worker_controller_checkpoint(
+                    worker_id, profile["configuration_version"], profile["profile_version"],
+                    profile["intent_id"], expected_checkpoint, pending,
+                    _runtime_guard=lambda worker: _assert_worker_profile_inactive(worker, allow_legacy_start=True))
         except Exception as exc:
             outcomes.append({"worker_id": worker_id, "state": "not_started",
                              "reason": type(exc).__name__})
@@ -7278,7 +7721,11 @@ def _persistent_core_capacity_probe(slot):
         )
         if (model != slot.get("model") or not verified_local_agent_model(selected, model)):
             return {"state": "local_model_unverified"}, None
-        receipt = asyncio.run(local_resource_reserve.probe(selected, model))
+        receipt = asyncio.run(local_resource_reserve.probe(
+            selected, model,
+            reuse_running_server=(slot.get("id") == "buddha_always_on"
+                                  and slot.get("backend") == "ollama"),
+        ))
         state = receipt.get("state") if isinstance(receipt, dict) else None
         if state not in {"ready", "waiting_memory_reserve", "waiting_disk_reserve"}:
             return {"state": "capacity_unavailable"}, None

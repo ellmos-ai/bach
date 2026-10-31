@@ -687,10 +687,17 @@ def test_local_deadline_starts_at_send_time_and_slow_answers_fail_closed(db_path
 
 def test_real_migration_runner_with_unbooked_052(tmp_path):
     from core.db import Database
-    root = SYSTEM_ROOT / "data" / "schema"
-    mig = sorted(f.name for f in (root / "migrations").glob("*")
-                 if f.suffix in (".sql", ".py") and not f.name.startswith("_"))
-    assert "052_blueprint_template_provider.py" in mig and "053_resource_leases.py" in mig
+    source_migrations = SYSTEM_ROOT / "data" / "schema" / "migrations"
+    root = tmp_path / "schema"
+    migrations_dir = root / "migrations"
+    migrations_dir.mkdir(parents=True)
+    mig = [
+        "051_task_model_binding.sql",
+        "052_blueprint_template_provider.py",
+        "053_resource_leases.py",
+    ]
+    for name in mig:
+        (migrations_dir / name).write_bytes((source_migrations / name).read_bytes())
 
     def prepared(path, booked):
         c = sqlite3.connect(path)

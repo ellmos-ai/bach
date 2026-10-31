@@ -1,0 +1,81 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+Native Execution Evidence for Workers
+===================================
+
+An execution evidence links a model backend that was actually invoked
+with the subsequently confirmed result submission of the same task binding.
+It neither replaces a domain review nor a separate acceptance.
+
+Capture
+-------
+The native controller captures each attempt directly at the existing
+call boundary of backend.chat or backend.chat_bound. Resource
+and task checks remain in front. A fallback receives its own
+attempt. A failed first route is therefore not successful.
+
+Stored are the backend identifier, the requested model, optionally the model
+identifier actually reported back by the provider, slot, generation, fence, timestamps
+as well as SHA-256 of the request and response. Prompt, response, tool arguments,
+endpoint URL, and private lease identifier are not stored. A model
+without a reported model identifier remains unknown in this field.
+
+provider_reported_model is kept separate from model and last_resolved_model. The
+two existing display fields can fall back to the requested model
+and are therefore not a source for observed_model. Only a valid identifier from
+the current provider response results in model_provenance=provider_reported. Missing
+or invalid entries result in observed_model=null and model_provenance=unknown.
+A fully completed Ollama stream requires at least one valid,
+consistent model declaration; contradictory or invalid existing entries
+remain unknown. CLI output text provides no such model metadata source.
+A valid response remains an execution evidence even without a known model identifier.
+
+The private process handle remains exclusively in the controller and is bound
+to the concrete binding object. There is no public endpoint
+with which a worker itself can claim a model identity or successful execution.
+Remote task clients currently do not provide such evidence;
+they also do not switch to a different local database for that purpose.
+
+Submission and Process Termination
+----------------------------------
+The linkage requires both an actually returned valid
+response and the confirmed submit-ACK with the current canonical evidence.
+If the ACK is lost, a fresh canonical result retrieval can confirm the
+own, precisely correlated submission; a guess is not sufficient.
+For CLI agents, the submission can occur before process termination. In this case,
+linkage happens only after a confirmed return from chat_bound. Abort, error,
+stop, superseded generation, or changing binding do not yield a positive
+execution evidence. A new model round invalidates the previous candidate.
+
+Own confirmed task modifications may change the content version between request
+and submission. Therefore input_task_version and
+submission_task_version are reported separately. This correlation confirms
+neither that a response has taken into account all changes in the domain.
+
+Retrieval
+---------
+The existing result retrieval augments result.execution with the schema
+bach.worker-execution-evidence.v2. availability is available or unavailable.
+If available, the evidence contains an execution_revision and the correlated
+execution metadata. If unavailable, reason states the missing or invalid
+basis. The retrieval does not create tables and does not migrate any database.
+
+Newly stored receipts use bach.worker-model-execution.v2 with
+explicit model provenance. Old v1 receipts and their history remain
+unchanged. Their execution evidence can still be valid; their previous
+model declaration is displayed in the retrieval as observed_model=null with
+model_provenance=legacy_unknown. It is not retroactively confirmed as
+a provider-reported value. execution_revision remains bound to the unchanged
+stored evidence.
+
+The additive table worker_model_executions uses the same task database.
+Start, terminal return, and result linkage have correlated
+task_history entries. Modified content, fence, or submission evidence invalidate
+the current positive linkage; no second task queue is created.
+
+Limitations
+-----------
+The evidence confers neither reviewer roles nor model levels, independence,
+user approval, nor an automatically completed task status. A missing
+optional capture does not prevent the previous personal operator acceptance.
+Scope, task contract, worktree, and the complete closure policy
+must be reviewed separately. This component does not enable auto-done.

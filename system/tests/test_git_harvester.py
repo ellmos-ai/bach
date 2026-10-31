@@ -43,8 +43,19 @@ sys.exit(int(os.environ.get("FAKE_LOCK_RC", "0")))
     fake_git.write_text(
         '''#!/usr/bin/env bash
 set -e
-printf 'git %s\\n' "$*" >> "$FAKE_CALLS"
+printf 'git %s%s\\n' "$*" "${GIT_INDEX_FILE:+ [tmp-index]}" >> "$FAKE_CALLS"
 case "$1 $2" in
+  "read-tree "*|"add -A") ;;
+  "write-tree ") echo "${FAKE_TREE:-cccccccccccccccccccccccccccccccccccccccc}" ;;
+  "diff --name-only") printf '%b' "${FAKE_SNAPSHOT_PATHS:-}"; exit "${FAKE_NAMES_RC:-0}" ;;
+  "add --pathspec-from-file="*)
+    tr '\\0' '\\n' < "${2#--pathspec-from-file=}" | sed 's/^/staged /' >> "$FAKE_CALLS"
+    printf 'literal-pathspecs=%s\\n' "${GIT_LITERAL_PATHSPECS:-}" >> "$FAKE_CALLS" ;;
+  "diff --cached")
+    if [[ "$3" == "--name-only" ]]; then printf '%s' "${FAKE_SNAPSHOT_PATHS:-}";
+    else printf '%s' "${FAKE_SNAPSHOT_DIFF:-}"; exit "${FAKE_DIFF_RC:-0}"; fi ;;
+  "show -s") echo "2026-09-21T10:00:00+02:00" ;;
+  "commit-tree "*) echo "${FAKE_SNAPSHOT_COMMIT:-dddddddddddddddddddddddddddddddddddddddd}" ;;
   "symbolic-ref --quiet") echo "${FAKE_BRANCH:-main}" ;;
   "rev-parse --git-path") echo ".git/MERGE_HEAD" ;;
   "remote get-url") echo "${FAKE_REMOTE:-https://github.com/ellmos-ai/bach.git}" ;;
@@ -82,6 +93,9 @@ exit 91
 ''',
         encoding="utf-8",
     )
+
+    for tool in (fake_git, fake_gh):
+        tool.chmod(0o755)  # POSIX runs need the fakes executable; Git Bash on Windows does not check.
 
     env = os.environ.copy()
     env.update(
@@ -141,10 +155,157 @@ def test_run_pushes_exact_commit_only_to_stable_review_branch(fake_tools):
     assert "gh pr view 91" in calls
 
 
-def test_dirty_tree_fails_before_push(fake_tools):
-    result, calls = run_harvester(fake_tools, "--run", FAKE_DIRTY="?? rescued.py")
+SNAPSHOT_COMMIT = "d" * 40
+SNAPSHOT_BRANCH = "mac/test-host-live-" + "c" * 12
+RESCUED = "system/hub/rescued.py"
+# Snapshot switched on, one tracked modified file, no committed work ahead.
+SNAP = {"BACH_HARVEST_SNAPSHOT": "1", "FAKE_AHEAD": "0", "FAKE_DIRTY": " M " + RESCUED,
+        "FAKE_SNAPSHOT_PATHS": RESCUED + "\\0"}
+
+
+def live_file(fake_tools, relative, data=b"print('rescued')\n"):
+    path = Path(fake_tools[1]["BACH_HARVEST_ROOT"]) / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def staged(calls):
+    return [line.removeprefix("staged ") for line in calls.splitlines() if line.startswith("staged ")]
+
+
+def test_dirty_tree_is_pushed_as_snapshot_without_touching_live_tree(fake_tools):
+    live_file(fake_tools, RESCUED)
+    result, calls = run_harvester(
+        fake_tools, "--run", **SNAP, FAKE_PR_HEAD=SNAPSHOT_BRANCH, FAKE_PR_OID=SNAPSHOT_COMMIT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "[DIRTY] 1 uncommittete Pfade" in result.stdout
+    for step in ("git read-tree", "git add --pathspec-from-file", "git write-tree"):
+        line = next(line for line in calls.splitlines() if line.startswith(step))
+        assert line.endswith("[tmp-index]"), line
+    assert f"git commit-tree {'c' * 40} -p {DEFAULT_HEAD}" in calls
+    assert f"git push --porcelain origin {SNAPSHOT_COMMIT}:refs/heads/{SNAPSHOT_BRANCH}" in calls
+    for forbidden in ("git commit ", "git stash", "git checkout", "git reset", "refs/heads/main"):
+        assert forbidden not in calls
+    assert f"--head {SNAPSHOT_BRANCH}" in calls
+
+
+def test_dirty_status_reports_without_push(fake_tools):
+    result, calls = run_harvester(fake_tools, "--status", FAKE_DIRTY="?? rescued.py",
+                                  FAKE_AHEAD="0")
+    assert result.returncode == 0, result.stderr
+    assert "[DIRTY] 1 uncommittete Pfade" in result.stdout
+    assert "git push" not in calls
+    assert "gh pr" not in calls
+
+
+def test_snapshot_diff_failure_blocks_before_push(fake_tools):
+    live_file(fake_tools, RESCUED)
+    result, calls = run_harvester(fake_tools, "--run", **SNAP, FAKE_DIFF_RC="7")
     assert result.returncode == 1
-    assert "nicht sauber" in result.stderr
+    assert "Snapshot-Diff konnte nicht" in result.stderr
+    assert "git commit-tree" not in calls
+    assert "git push" not in calls
+
+
+# Synthetic credential shapes, assembled at runtime so no real-looking token sits in the source.
+SYNTHETIC_SECRETS = {
+    "telegram-bot": "123456789:" + "A" * 35,
+    "anthropic": "sk-ant-" + "api03-" + "x" * 24,
+    "openrouter": "sk-or-v1-" + "0" * 64,
+    "google": "AIza" + "B" * 35,
+    "github-classic": "ghp_" + "c" * 36,
+    "github-fine-grained": "github_pat_" + "d" * 30,
+    "private-key": "-----BEGIN RSA " + "PRIVATE KEY-----",
+    "aws": "AKIA" + "E" * 16,
+    "bearer": "Authorization: Bearer " + "f" * 32,
+    "slack": "xoxb-" + "1" * 12,
+}
+
+
+@pytest.mark.parametrize("kind", sorted(SYNTHETIC_SECRETS))
+def test_snapshot_with_credential_pattern_blocks_before_push_without_echo(fake_tools, kind):
+    secret = SYNTHETIC_SECRETS[kind]
+    live_file(fake_tools, RESCUED)
+    result, calls = run_harvester(fake_tools, "--run", **SNAP, FAKE_SNAPSHOT_DIFF=f"+VALUE = '{secret}'\n")
+    assert result.returncode == 1
+    assert "Zugangsdaten" in result.stderr
+    assert "git commit-tree" not in calls
+    assert "git push" not in calls
+    receipt = Path(fake_tools[1]["BACH_HARVEST_RECEIPT"]).read_text(encoding="utf-8")
+    for output in (result.stdout, result.stderr, receipt):
+        assert secret not in output
+
+
+@pytest.mark.parametrize("line", ["+name = 'sk-ant'  # docs\n", "+ratio = 12345678:short\n", "+header = 'Bearer'\n"])
+def test_benign_lines_near_credential_shapes_do_not_block(fake_tools, line):
+    live_file(fake_tools, RESCUED)
+    result, calls = run_harvester(fake_tools, "--run", **SNAP, FAKE_SNAPSHOT_DIFF=line,
+                                  FAKE_PR_HEAD=SNAPSHOT_BRANCH, FAKE_PR_OID=SNAPSHOT_COMMIT)
+    assert result.returncode == 0, result.stderr
+    assert f"{SNAPSHOT_COMMIT}:refs/heads/{SNAPSHOT_BRANCH}" in calls
+
+
+def test_snapshot_is_off_by_default(fake_tools):
+    live_file(fake_tools, RESCUED)
+    overrides = {key: value for key, value in SNAP.items() if key != "BACH_HARVEST_SNAPSHOT"}
+    result, calls = run_harvester(fake_tools, "--run", **overrides)
+    assert result.returncode == 0, result.stderr
+    assert "Snapshot aus" in result.stdout
+    for forbidden in ("git diff --name-only", "git read-tree", "git add", "git push", "gh pr"):
+        assert forbidden not in calls
+
+
+def test_snapshot_off_still_harvests_committed_work(fake_tools):
+    live_file(fake_tools, RESCUED)
+    result, calls = run_harvester(fake_tools, "--run", FAKE_DIRTY=" M " + RESCUED)
+    assert result.returncode == 0, result.stderr
+    assert f"{DEFAULT_HEAD}:refs/heads/{DEFAULT_BRANCH}" in calls
+    assert "git read-tree" not in calls
+    assert "git commit-tree" not in calls
+
+
+def test_snapshot_stages_only_tracked_modified_allowlisted_files(fake_tools):
+    names = ["system/hub/a.py", "docs/notes.md", "system/data/state.json", "system/gui/data/cache.py",
+             "bach.db", "system/logs/run.py", "system/hub/settings.json"]
+    for name in names:
+        live_file(fake_tools, name)
+    result, calls = run_harvester(fake_tools, "--run", **{**SNAP, "FAKE_SNAPSHOT_PATHS": "".join(n + "\\0" for n in names)},
+                                  FAKE_PR_HEAD=SNAPSHOT_BRANCH, FAKE_PR_OID=SNAPSHOT_COMMIT)
+    assert result.returncode == 0, result.stderr
+    assert staged(calls) == ["system/hub/a.py", "docs/notes.md"]
+    assert "literal-pathspecs=1" in calls
+    assert "git diff --name-only -z --diff-filter=M" in calls
+    assert "git add -A" not in calls
+    assert "[SNAPSHOT] 2 getrackte Allowlist-Dateien, 5 ausgelassen" in result.stdout
+
+
+def test_snapshot_without_allowlisted_files_pushes_nothing(fake_tools):
+    live_file(fake_tools, "system/data/state.json")
+    result, calls = run_harvester(fake_tools, "--run", **{**SNAP, "FAKE_SNAPSHOT_PATHS": "system/data/state.json\\0"})
+    assert result.returncode == 0, result.stderr
+    for forbidden in ("git read-tree", "git push", "gh pr create"):
+        assert forbidden not in calls
+
+
+@pytest.mark.parametrize(("size", "returncode"), [(5 * 1024 * 1024, 0), (5 * 1024 * 1024 + 1, 1)])
+def test_size_limit_is_byte_exact_for_non_ascii_paths(fake_tools, size, returncode):
+    name = "system/hub/größe_über.py"
+    live_file(fake_tools, name, b"#" * size)
+    result, calls = run_harvester(fake_tools, "--run", **{**SNAP, "FAKE_SNAPSHOT_PATHS": name + "\\0"},
+                                  FAKE_PR_HEAD=SNAPSHOT_BRANCH, FAKE_PR_OID=SNAPSHOT_COMMIT)
+    assert result.returncode == returncode, result.stderr
+    if returncode:
+        assert "über 5 MB" in result.stderr
+        assert "git push" not in calls
+    else:
+        assert staged(calls) == [name]
+
+
+def test_listed_but_missing_snapshot_path_fails_closed(fake_tools):
+    result, calls = run_harvester(fake_tools, "--run", **SNAP)
+    assert result.returncode == 1
+    assert "keine reguläre Datei" in result.stderr
     assert "git push" not in calls
 
 

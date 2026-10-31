@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
 from hub._services.chat.slots_config import ModelRequestBudgetError
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
@@ -63,7 +64,8 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
     "bestätigte Kind-IDs, offene Arbeit>', complete=false) den gesicherten Teilstand zurück. "
     "Der Eltern-Task bleibt pending; die Zerlegung ist kein Abschluss und kein Anlass zur Abnahme. "
-    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten."
+    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten. "
+    + TASK_CUT_RULE_SHORT
 )
 
 
@@ -329,6 +331,9 @@ class _SnapshotStoreAdapter:
 
 
 _SAFE_FAILURE_REASON_CODES = frozenset({
+    "cloud_call_retry_exhausted",
+    "completion_reserve_context_exhausted",
+    "handoff_context_too_large",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -394,12 +399,16 @@ class FailedAnswer(str):
     STATUS_SUCCESS = "success"
     STATUS_FAILED = "failed"
 
-    def __new__(cls, value, *, backend_error=None, reason_code=None):
+    def __new__(cls, value, *, backend_error=None, reason_code=None, transient_failure=None):
         from hub._services.llm.backend_errors import normalize_backend_error
         answer = super().__new__(cls, value)
         answer.backend_error = normalize_backend_error(backend_error)
         answer.reason_code = (
             reason_code if isinstance(reason_code, str) and reason_code in _SAFE_FAILURE_REASON_CODES else None
+        )
+        # Live typed metadata only: never infer retry authority from answer text.
+        answer.transient_failure = (
+            "httpx_read_timeout" if transient_failure == "httpx_read_timeout" else None
         )
         return answer
 
@@ -464,7 +473,18 @@ class FailedAnswer(str):
         from hub._services.chat.local_resource_reserve import LocalReserveError
         if isinstance(exc, LocalReserveError):
             return cls(f"{cls.PREFIX}{safe_message}")
-        return cls(f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "))
+        try:
+            import httpx
+        except ImportError:
+            transient_failure = None
+        else:
+            transient_failure = (
+                "httpx_read_timeout" if isinstance(exc, httpx.ReadTimeout) else None
+            )
+        return cls(
+            f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "),
+            transient_failure=transient_failure,
+        )
 
 
 class SuccessfulAnswer(str):
@@ -832,6 +852,111 @@ class ChatRuntime(_ModuleChatRuntime):
             and detail.get("status_code") in {429, 502, 503, 504, 529}
         )
 
+    @staticmethod
+    def _rejected_cloud_call_error(*, result=None, error=None):
+        """A typed failure must prove this request emitted no answer or tools."""
+        from hub._services.llm.backend_errors import BackendRequestFailure, normalize_backend_error
+        if error is not None:
+            if not isinstance(error, BackendRequestFailure):
+                return None
+            return normalize_backend_error(error.backend_error)
+        if not isinstance(result, dict) or not result.get("error"):
+            return None
+        if any(result.get(key) for key in ("content", "thinking", "tool_calls")):
+            return None
+        raw = result.get("raw_message")
+        if raw and (not isinstance(raw, dict)
+                    or any(value for key, value in raw.items() if key != "role")):
+            return None
+        return normalize_backend_error(result.get("backend_error"))
+
+    async def _wait_model_call_retry(self, seconds, *, check_active):
+        """Keep the same lease/history and react to stop or policy loss within a second."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + seconds
+        while True:
+            check_active()
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(1.0, remaining))
+
+    async def _chat_with_cloud_call_retry(self, session, backend, model, *args, **kwargs):
+        """Repeat only a failed model call; never replay a tool loop or task prompt."""
+        from hub._services.llm.backend_errors import (
+            BackendRequestFailure, cloud_call_retry_delay, cloud_call_retry_eligible,
+        )
+        from hub._services.llm.model_backend import backend_identifier
+        provider = backend_identifier(backend)
+        binding = getattr(session, "worker_task_binding", None)
+        reader = getattr(session, "worker_slot_reader", None)
+        cloud = provider == "openrouter" or (
+            provider == "ollama" and isinstance(model, str) and model.lower().endswith(":cloud"))
+        if (not cloud or binding is None or not callable(reader)
+                or getattr(backend, "manages_own_tools", False)):
+            return await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
+
+        def profile_identity():
+            from hub._services.chat.slots_config import _worker_configuration
+            profile = reader()
+            if (not isinstance(profile, dict) or profile.get("id") != session.chat_id
+                    or profile.get("enabled", True) is not True
+                    or profile.get("type") not in {"continuous", "persistent"}
+                    or profile.get("status") != "running"):
+                return None
+            # This is the pure version of this worker's own configuration,
+            # including tool grants/mode/budgets. It contains no global catalog
+            # version and no mutable nested references to the reader's objects.
+            return (profile["id"], profile["type"],
+                    _worker_configuration(profile)["configuration_version"])
+
+        original_profile = profile_identity()
+        if original_profile is None:
+            return await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
+        if provider == "openrouter":
+            # OpenRouter inherits Hermes' internal retry loop. The bound worker
+            # must account for each actual HTTP request at this outer boundary.
+            kwargs = {**kwargs, "retry_transient": False}
+
+        def check_active():
+            if (self.get_session(session.chat_id) is not session
+                    or session.worker_task_binding is not binding
+                    or profile_identity() != original_profile):
+                raise RuntimeError("Cloud-Wiederholung: Workerbindung hat sich geändert")
+            problem = self._worker_backend_gate(session, backend, model)
+            if problem is not None:
+                raise RuntimeError(str(problem))
+
+        retries, waited = 0, 0
+        while True:
+            check_active()
+            error = None
+            try:
+                result = await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
+                detail = self._rejected_cloud_call_error(result=result)
+            except BackendRequestFailure as exc:
+                error = exc
+                detail = self._rejected_cloud_call_error(error=exc)
+            delay = cloud_call_retry_delay(detail, retries=retries, waited_seconds=waited)
+            if delay is None:
+                if cloud_call_retry_eligible(detail):
+                    # Do not compound this bounded call retry with a controller
+                    # restart of the task, even when no tool has run yet.
+                    return {"error": detail["message"], "backend_error": detail,
+                            "reason_code": "cloud_call_retry_exhausted"}
+                if error is not None:
+                    raise error
+                return result
+            if detail.get("status_code") == 429:
+                log.info("Cloud-Anfragelimit: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)",
+                         delay, retries + 1)
+            else:
+                log.info("Cloud-Transportfehler: derselbe Modellaufruf wartet %s Sekunden (Versuch %s/3)",
+                         delay, retries + 1)
+            await self._wait_model_call_retry(delay, check_active=check_active)
+            retries += 1
+            waited += delay
+
     async def _chat_with_configured_fallbacks(self, session, backend, model, *args, **kwargs):
         """Advance one explicit native chain only after a typed pre-answer failure."""
         try:
@@ -839,8 +964,8 @@ class ChatRuntime(_ModuleChatRuntime):
         except Exception:  # noqa: BLE001 - redact native profile reader details at the runtime boundary.
             raise RuntimeError("Native Modellfallbackkette ist nicht verifizierbar") from None
         if route is None:
-            result = await self._chat_with_compute_turn(
-                backend, *args, **{**kwargs, "model": model}
+            result = await self._chat_with_cloud_call_retry(
+                session, backend, model, *args, **kwargs
             )
             return result, backend, model
 
@@ -869,8 +994,9 @@ class ChatRuntime(_ModuleChatRuntime):
             call_kwargs = dict(kwargs)
             call_kwargs["model"] = target["model"]
             try:
-                result = await self._chat_with_compute_turn(
-                    active_backend, *args, **call_kwargs
+                result = await self._chat_with_cloud_call_retry(
+                    session, active_backend, target["model"], *args,
+                    **{key: value for key, value in call_kwargs.items() if key != "model"}
                 )
             except Exception as exc:
                 from hub._services.chat.slots_config import ModelRequestBudgetError
@@ -948,6 +1074,14 @@ class ChatRuntime(_ModuleChatRuntime):
                 f"{FailedAnswer.PREFIX}Backend mit eigenen Tools ist für "
                 "einen tool-freien Lauf nicht verifizierbar"
             )
+        warmup_guard = getattr(session, "_buddha_warmup_guard", None)
+        if callable(warmup_guard):
+            try:
+                problem = warmup_guard()
+            except Exception:
+                return FailedAnswer("Buddha-Modellstart ist nicht mehr verifizierbar")
+            if problem:
+                return FailedAnswer(f"Buddha-Modellstart gestoppt: {problem}")
         return None
 
     def _load_messages(self, chat_id: str) -> list[dict]:
@@ -1426,7 +1560,32 @@ class ChatRuntime(_ModuleChatRuntime):
         check_caller()
         if not self._uses_local_compute(backend) or str(model).lower().endswith(":cloud"):
             return None, None
-        receipt = await probe(backend, model)
+        reuse_running_server = False
+        from hub._services.llm.model_backend import backend_identifier
+        if session is not None and backend_identifier(backend) == "ollama":
+            reader = (getattr(session, "worker_slot_reader", None)
+                      or getattr(session, "system_slot_reader", None))
+            if callable(reader):
+                try:
+                    slot = reader()
+                except Exception:
+                    slot = None
+                # A previous runtime error is exactly when this start retry is
+                # needed. persistent_opt_in gates auto-start after Control
+                # restart, not reuse by this enabled worker of an Ollama
+                # server that is already responding.
+                reuse_running_server = bool(
+                    isinstance(slot, dict)
+                    and slot.get("id") == "buddha_always_on"
+                    and slot.get("backend") == "ollama"
+                    and slot.get("model") == model
+                    and slot.get("type") == "continuous"
+                    and slot.get("enabled") is True)
+        # Only the pre-queue Buddha warmup may request the monitored cold start.
+        extra = ({"cold_start": True}
+                 if session is not None and getattr(session, "_buddha_cold_start", False) else {})
+        receipt = (await probe(backend, model, reuse_running_server=True, **extra)
+                   if reuse_running_server else await probe(backend, model, **extra))
         try:
             _, version = read_policy()
         except (OSError, ValueError, TypeError, UnicodeError):
@@ -1444,6 +1603,204 @@ class ChatRuntime(_ModuleChatRuntime):
             receipt, binding=binding, require_model_socket=require_socket)
         require_retryable(receipt)
         return receipt, binding
+
+    async def warm_buddha_ollama_model(self, backend, model, *, slot_reader, stop_event=None):
+        """Load Buddha's exact local model before its first queue claim.
+
+        The empty Ollama chat request has no task prompt or transcript effect.
+        It uses the same task-slot, reserve, model-socket, Fackel, and host
+        inference gates as a normal worker call.
+        """
+        from hub._services.llm.model_backend import OllamaBackend, backend_identifier
+
+        worker_id = "buddha_always_on"
+        if (not isinstance(backend, OllamaBackend)
+                or backend_identifier(backend) != "ollama"
+                or not isinstance(model, str) or not model.strip()
+                or model.lower().endswith(":cloud")):
+            return {"state": "not_applicable"}
+        if not callable(slot_reader):
+            return {"state": "slot_unverified"}
+
+        chat_gate = self._chat_turn_gate(worker_id)
+        await self._enter_chat_turn(chat_gate)
+        session = None
+        context_token = None
+        missing = object()
+        previous_reader = previous_guard = previous_no_wait = previous_cold = missing
+        try:
+            session = self.get_session(worker_id)
+            previous_reader = getattr(session, "worker_slot_reader", missing)
+            previous_guard = getattr(session, "_buddha_warmup_guard", missing)
+            previous_no_wait = getattr(session, "_buddha_warmup_no_wait", missing)
+            previous_cold = getattr(session, "_buddha_cold_start", missing)
+            if (getattr(session, "worker_task_binding", None) is not None
+                    or getattr(session, "require_task_binding", False) is not False):
+                return {"state": "task_bound"}
+
+            session.worker_slot_reader = slot_reader
+
+            def check_warmup_binding():
+                if stop_event is not None:
+                    try:
+                        if stop_event.is_set():
+                            return "stopped"
+                    except Exception:
+                        return "stop_unverified"
+                try:
+                    slot = slot_reader()
+                except Exception:
+                    return "slot_unverified"
+                if (not isinstance(slot, dict)
+                        or slot.get("id") != worker_id
+                        or slot.get("backend") != "ollama"
+                        or slot.get("model") != model
+                        or slot.get("type") != "continuous"
+                        or slot.get("enabled") is not True
+                        or slot.get("status") != "running"):
+                    return "slot_changed"
+                if (getattr(session, "worker_task_binding", None) is not None
+                        or getattr(session, "require_task_binding", False) is not False):
+                    return "task_bound"
+                try:
+                    from hub.compute_lock import get_fackel_preference
+                    preference = get_fackel_preference(migrate=False)
+                except Exception:
+                    return "fackel_unverified"
+                return None if preference == "ollama" else "fackel_compute"
+
+            problem = check_warmup_binding()
+            if problem:
+                return {"state": problem}
+
+            session._buddha_warmup_guard = check_warmup_binding
+            session._buddha_warmup_no_wait = True
+            session._buddha_cold_start = True
+            context_token = self._compute_turn_context.set((worker_id, "background"))
+
+            try:
+                receipt, _binding = await self.prepare_inference_call(
+                    backend, model, chat_id=worker_id)
+            except Exception as exc:
+                problem = check_warmup_binding()
+                fallback = "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait"
+                return {"state": problem or fallback}
+
+            problem = check_warmup_binding()
+            if problem:
+                return {"state": problem}
+            if not isinstance(receipt, dict) or receipt.get("state") == "external_target":
+                return {"state": "not_local"}
+            if receipt.get("admitted") is not True:
+                return {"state": "capacity_wait"}
+            if receipt.get("capacity_basis") == "resident_model":
+                return {"state": "resident"}
+
+            load_started = asyncio.Event()
+            session._buddha_load_started = load_started
+            warmup = asyncio.create_task(self._chat_with_compute_turn(
+                backend, [], model=model, think=False))
+            gate = receipt.get("cold_start")
+            if not isinstance(gate, dict):
+                # No gate on the outer receipt: inner re-probes must not open one,
+                # otherwise a later gate would load without monitoring.
+                session._buddha_cold_start = False
+            if isinstance(gate, dict):
+                from hub._services.chat.buddha_cold_start import (
+                    monitor_load, record_observation, resident_footprint, start_cooldown,
+                    unload_exact_model)
+
+                load_stats = {}
+                try:
+                    _, reason = await monitor_load(
+                        warmup, gate, hard_floor_bytes=gate["hard_floor_bytes"],
+                        check=check_warmup_binding, stats=load_stats, load_started=load_started)
+                except asyncio.CancelledError:
+                    await asyncio.shield(unload_exact_model(
+                        getattr(backend, "base_url", ""), model, gate["digest"]))
+                    raise
+                if reason is not None:
+                    # Cleanup is only claimed once /api/ps no longer lists the model;
+                    # nothing is unloaded when the model call was never dispatched.
+                    cleaned = (await asyncio.shield(unload_exact_model(
+                        getattr(backend, "base_url", ""), model, gate["digest"]))
+                        if load_started.is_set() else None)
+                    if reason.startswith("load_error:") or reason not in {
+                            "stopped", "stop_unverified", "slot_unverified", "slot_changed",
+                            "task_bound", "fackel_unverified", "fackel_compute"}:
+                        start_cooldown()
+                    if reason.startswith("load_error:"):
+                        return {"state": reason.split(":", 1)[1], "cleanup_verified": cleaned}
+                    if reason in {"stopped", "stop_unverified", "slot_unverified", "slot_changed",
+                                  "task_bound", "fackel_unverified", "fackel_compute"}:
+                        return {"state": reason, "cleanup_verified": cleaned}
+                    return {"state": "cold_start_aborted", "reason": reason,
+                            "cleanup_verified": cleaned, "baseline": gate["baseline"]}
+            else:
+                while not warmup.done():
+                    await asyncio.wait({warmup}, timeout=0.1)
+                    problem = check_warmup_binding()
+                    if problem:
+                        warmup.cancel()
+                        try:
+                            await warmup
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception:
+                            pass
+                        return {"state": problem}
+            try:
+                result = warmup.result()
+            except Exception as exc:
+                problem = check_warmup_binding()
+                fallback = "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait"
+                return {"state": problem or fallback}
+            problem = check_warmup_binding()
+            if problem:
+                if isinstance(gate, dict):
+                    # A stop or binding change right after a monitored load: unload it too.
+                    return {"state": problem, "cleanup_verified": await asyncio.shield(
+                        unload_exact_model(getattr(backend, "base_url", ""), model, gate["digest"]))}
+                return {"state": problem}
+            if (isinstance(result, dict) and result.get("error")) or FailedAnswer.looks_like(result):
+                if isinstance(gate, dict):
+                    start_cooldown()
+                    return {"state": "model_wait", "cleanup_verified": await asyncio.shield(
+                        unload_exact_model(getattr(backend, "base_url", ""), model, gate["digest"]))}
+                return {"state": "model_wait"}
+            if isinstance(gate, dict):
+                # Measured, not credited: a later start still needs its own admission.
+                try:
+                    footprint = await resident_footprint(
+                        getattr(backend, "base_url", ""), model, gate["digest"])
+                    return {"state": "loaded", "observation": record_observation(
+                        model, gate["digest"], getattr(backend, "num_ctx", None),
+                        load_stats, gate["baseline"], footprint)}
+                except Exception:
+                    log.warning("Buddha-Ladebeobachtung konnte nicht gespeichert werden")
+            return {"state": "loaded"}
+        finally:
+            if context_token is not None:
+                self._compute_turn_context.reset(context_token)
+            if session is not None:
+                if previous_reader is missing:
+                    session.__dict__.pop("worker_slot_reader", None)
+                else:
+                    session.worker_slot_reader = previous_reader
+                if previous_guard is missing:
+                    session.__dict__.pop("_buddha_warmup_guard", None)
+                else:
+                    session._buddha_warmup_guard = previous_guard
+                session.__dict__.pop("_buddha_load_started", None)
+                if previous_cold is missing:
+                    session.__dict__.pop("_buddha_cold_start", None)
+                else:
+                    session._buddha_cold_start = previous_cold
+                if previous_no_wait is missing:
+                    session.__dict__.pop("_buddha_warmup_no_wait", None)
+                else:
+                    session._buddha_warmup_no_wait = previous_no_wait
+            self._leave_chat_turn(chat_gate)
 
     def _persistent_core_pre_effect_reserve_receipt(
         self, *, session, binding, backend, model, priority, receipt,
@@ -1512,14 +1869,9 @@ class ChatRuntime(_ModuleChatRuntime):
         except Exception:  # noqa: BLE001 -- malformed persisted proof fails closed
             return None
 
-        capacity_fields = {
-            "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-            "policy_version", "model", "wait_seconds", "poll_seconds",
-            "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
-            "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-            "resident_weight_credit",
-        }
-        if set(receipt) != capacity_fields | {"local_admission"}:
+        from hub._services.chat import local_resource_reserve
+
+        if not local_resource_reserve.valid_capacity_receipt_shape(receipt, extra={"local_admission"}):
             return None
         admission = receipt.get("local_admission")
         if (not isinstance(admission, dict)
@@ -1544,7 +1896,7 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         if admission.get("capacity") != {"status": "unknown", "certification": "not_provided"}:
             return None
-        capacity_receipt = {key: receipt[key] for key in capacity_fields}
+        capacity_receipt = {key: receipt[key] for key in local_resource_reserve.CAPACITY_RECEIPT_FIELDS}
         try:
             observation = slots_config._persistent_core_capacity_observation(
                 capacity_receipt, worker=worker, expected_state=receipt["state"],
@@ -1799,6 +2151,14 @@ class ChatRuntime(_ModuleChatRuntime):
         def check_model_binding():
             return self._model_binding_for_session(chat_id, backend, selected_model, session)
 
+        def binding_identity(value):
+            # The catalog CAS version also changes when an unrelated worker is
+            # edited. Revalidate the current binding on every read, but bind
+            # this inference turn to its own identity and admission settings.
+            return ({key: item for key, item in value.items()
+                     if key != "configuration_version"}
+                    if value is not None else None)
+
         def check_local_ready():
             check_binding()
             check_model_binding()
@@ -1869,16 +2229,19 @@ class ChatRuntime(_ModuleChatRuntime):
                         require_retryable(receipt)
                         if receipt["admitted"] and receipt["state"] != "external_target":
                             current_binding = check_model_binding()
-                            if current_binding != model_binding:
+                            if binding_identity(current_binding) != binding_identity(model_binding):
                                 raise RuntimeError("model_socket_binding_changed")
                             await self._enter_compute_turn(self._compute_turn_gate, chat_id, priority, **guard)
                             try:
                                 check_binding()
-                                if check_model_binding() != model_binding:
+                                if binding_identity(check_model_binding()) != binding_identity(model_binding):
                                     raise RuntimeError("model_socket_binding_changed")
                                 check_reserve_policy(receipt)
                                 with self._local_resource_waiters_lock:
                                     self._local_resource_waiters.pop(chat_id, None)
+                                load_signal = getattr(session, "_buddha_load_started", None) if session is not None else None
+                                if load_signal is not None:
+                                    load_signal.set()
                                 return await dispatch_model_call()
                             finally:
                                 self._leave_compute_turn(self._compute_turn_gate)
@@ -1893,6 +2256,8 @@ class ChatRuntime(_ModuleChatRuntime):
                 # The host owner has been returned before reserve polling.
                 # We stay at this model-call boundary: previous tools and the
                 # task/session context are not replayed or reset.
+                if session is not None and getattr(session, "_buddha_warmup_no_wait", False):
+                    raise RuntimeError("buddha_warmup_capacity_wait")
                 with self._local_resource_waiters_lock:
                     self._local_resource_waiters[chat_id] = dict(receipt)
                 if deadline is None:
@@ -1903,9 +2268,10 @@ class ChatRuntime(_ModuleChatRuntime):
                             or getattr(session, "worker_slot_reader", None) is not None):
                         fields = (
                             "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-                            "policy_version", "model", "memory_total_bytes", "memory_available_bytes",
+                            "policy_version", "model", "wait_seconds", "poll_seconds",
+                            "memory_total_bytes", "memory_available_bytes",
                             "memory_required_bytes", "disk_free_bytes", "disk_reserve_bytes",
-                            "weight_request_bytes", "resident_weight_credit",
+                            "weight_request_bytes", "resident_weight_credit", "capacity_basis",
                         )
                         session._local_reserve_failure_receipt = {
                             key: receipt[key] for key in fields if key in receipt
@@ -2477,6 +2843,24 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
         max_rounds = session.max_tool_rounds if getattr(session, "max_tool_rounds", None) is not None else self.max_tool_rounds
+        configured_max_rounds = max_rounds
+        from hub._services.llm.model_backend import backend_identifier
+        cloud_worker = (
+            getattr(session, "worker_task_binding", None) is not None
+            and (backend_identifier(selected_backend) == "openrouter"
+                 or (backend_identifier(selected_backend) == "ollama"
+                     and isinstance(selected_model, str)
+                     and selected_model.lower().endswith(":cloud")))
+        )
+        if cloud_worker and max_rounds > 0:
+            max_rounds = max(max_rounds, min(1000, max_rounds * 4))
+        session.effective_max_tool_rounds = max_rounds
+        if cloud_worker and max_rounds != configured_max_rounds:
+            msgs.append({"role": "user", "content": (
+                f"Cloud-Rundenreserve: {configured_max_rounds} reguläre Runden, "
+                f"bis {max_rounds} Runden einschließlich Abschlussreserve. "
+                "Modellanfragenbudget, Nutzerstopp und Anbieterlimits gelten weiterhin."
+            )})
         round_num = 0
         auto_used = 0
         goal_checked = False
@@ -2660,6 +3044,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     f"{FailedAnswer.PREFIX}{result['error']}"
                     + (f"\n[Teilantwort vor dem Abbruch]\n{teil}" if teil else ""),
                     backend_error=result.get("backend_error"),
+                    reason_code=result.get("reason_code"),
+                    transient_failure=result.get("transient_failure"),
                 )
 
             resolved_model = result.get("model") if isinstance(result, dict) else None
@@ -2678,14 +3064,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             ):
                 if completion_reserve:
                     session.current_tool = ""
-                    return FailedAnswer.from_exception(RuntimeError(
-                        "Kontextfenster in der Abschlussreserve erschöpft"
-                    ))
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}RuntimeError: Kontextfenster in der Abschlussreserve erschöpft",
+                        reason_code="completion_reserve_context_exhausted")
                 if handoffs >= 2:
                     session.current_tool = ""
-                    return FailedAnswer.from_exception(RuntimeError(
-                        "Kontext-Übergabe bleibt nach zwei Versuchen zu groß"
-                    ))
+                    return FailedAnswer(
+                        f"{FailedAnswer.PREFIX}RuntimeError: Kontext-Übergabe bleibt nach zwei Versuchen zu groß",
+                        reason_code="handoff_context_too_large")
                 handoffs += 1
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))

@@ -203,6 +203,8 @@ def test_full_context_in_reserve_fails_without_handoff_or_tool_effect(monkeypatc
         max_rounds=1, context_full=True)
     assert isinstance(answer, FailedAnswer)
     assert "Kontextfenster in der Abschlussreserve erschöpft" in str(answer)
+    # The worker returns the task with this code and keeps working.
+    assert answer.reason_code == "completion_reserve_context_exhausted"
     assert len(calls) == 1
     assert effects == []
     assert binding.phases == []

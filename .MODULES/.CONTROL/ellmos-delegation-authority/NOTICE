@@ -1,0 +1,13 @@
+NOTICE — ellmos-delegation-authority
+====================================
+
+Grundidee und Matrixstruktur (permission_matrix: Handlung × Akteur →
+erlaubt/Rückfrage/nie mit Rangfolge aus Zellenwerten und Standardwerten)
+wurden aus dem Projekt SentinelFleet (lizenziert unter AGPL-3.0)
+übernommen.
+
+Lukas ist alleiniger Rechteinhaber von SentinelFleet. Die übernommenen
+Teile wurden mit Zustimmung des Rechteinhabers für dieses Modul neu
+lizenziert und stehen hier unter der MIT-Lizenz (siehe MANIFEST.json).
+
+Alle übrigen Teile dieses Moduls sind Eigenentwicklung unter MIT.

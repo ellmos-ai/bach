@@ -1,0 +1,125 @@
+# Portabilidad: UNIVERSAL
+# Version: 1.0.0
+# Ultima validación: 2026-09-17
+# Próxima revisión: 2027-03-17
+# Recursos: [hub/subscription_agents.py, hub/_services/subscription_agents_composer.py]
+
+================================================================================
+subscription_agents - Vista previa versionada del prompt de onboarding
+================================================================================
+
+DESCRIPCIÓN
+--------------------------------------------------------------------------------
+El handler `subscription_agents` genera una vista previa versionada del prompt
+de onboarding a partir de las fuentes BACH actuales (Subscription-Agents-Compose).
+Para ello, el handler lee un archivo de solicitud en formato JSON, pasa el
+contenido al composer (`hub/_services/subscription_agents_composer.py`) y emite
+el resultado como JSON canónicamente ordenado por stdout.
+
+El handler es de solo lectura respecto al archivo de solicitud: no modifica ni
+el archivo de solicitud ni archivos de configuración o del sistema. La salida
+es apta como base para estados versionados de prompts/onboarding y para su
+paso a herramientas posteriores.
+
+El handler proporciona exactamente una operación: `compose`.
+
+Nombre de registro:      subscription_agents
+Módulo:                  system/hub/subscription_agents.py
+Servicio asociado:       system/hub/_services/subscription_agents_composer.py
+Operación(es):           compose
+
+OPERACIONES
+--------------------------------------------------------------------------------
+compose <archivo-json-de-solicitud>
+    Crea una vista previa versionada del prompt de onboarding a partir de
+    las fuentes BACH actuales.
+
+    Argumentos:
+      <archivo-json-de-solicitud>   Ruta a un archivo JSON que contenga un
+                                    objeto JSON. Una `~` inicial se expande
+                                    al directorio personal del usuario que
+                                    ejecuta el comando.
+
+    Reglas para el paso de argumentos:
+      - Se requiere exactamente un argumento.
+      - El argumento debe ser una cadena no vacía.
+      - El argumento no debe empezar por `-` (sin análisis de opciones).
+
+    Manejo de errores del archivo de solicitud:
+      - Archivo no legible (OSError/PermissionError)
+        -> "El archivo de solicitud no es legible"
+      - Archivo mayor que MAX_REQUEST_BYTES (256 KB)
+        -> "El archivo de solicitud supera los 256 KB"
+      - Contenido no es JSON UTF-8 válido, no es un objeto JSON o contiene
+        nombres de campo duplicados
+        -> "El archivo de solicitud debe contener JSON UTF-8 válido con campos únicos"
+        -> "El archivo de solicitud debe contener un objeto JSON"
+
+    Si la operación o el argumento no se aceptan, el handler devuelve la
+    siguiente línea de uso:
+
+      bach subscription_agents compose <archivo-json-de-solicitud>
+
+EJEMPLOS
+--------------------------------------------------------------------------------
+1) Llamada estándar usando el nombre corto del handler:
+
+     python bach.py subscription_agents compose ./request.json
+
+2) Llamada usando la forma de opción (vinculación al handler):
+
+     python bach.py --subscription_agents compose ./request.json
+
+3) Archivo de solicitud en el directorio personal (expansión de tilde):
+
+     python bach.py subscription_agents compose ~/requests/onboarding.json
+
+4) Redirigir la salida a un archivo (la ordenación/claves se conservan):
+
+     python bach.py subscription_agents compose ./request.json > preview.json
+
+5) Archivo de solicitud mínimo (objeto JSON, UTF-8, sin campos duplicados):
+
+     {"topic": "onboarding", "audience": "new_agent"}
+
+FORMATO DE SALIDA
+--------------------------------------------------------------------------------
+- Caso de éxito: exactamente un objeto JSON en stdout, serializado con
+  `json.dumps(result, ensure_ascii=False, sort_keys=True)`. Las claves se
+  ordenan alfabéticamente, los caracteres no ASCII permanecen sin enmascarar
+  (UTF-8).
+- Caso de error: devolución de un texto (mensaje de error o línea de uso) a
+  través del retorno regular del handler; el estado de salida depende de la
+  CLI invocadora.
+- La salida no contiene un salto de línea final añadido por el propio handler.
+
+ARCHIVOS
+--------------------------------------------------------------------------------
+system/hub/subscription_agents.py
+    Handler: validación de argumentos, lectura de solicitud, invocación del
+    composer, salida.
+
+system/hub/_services/subscription_agents_composer.py
+    Servicio composer con `SubscriptionAgentsComposer` y la constante
+    `MAX_REQUEST_BYTES` (límite superior de 256 KB para el archivo de
+    solicitud).
+
+<archivo-json-de-solicitud>
+    Archivo de entrada proporcionado por el invocador (objeto JSON, UTF-8,
+    máx. 256 KB, sin campos duplicados). Se lee únicamente.
+
+system/docs/help/subscription_agents.txt
+    Este archivo de ayuda. Se resuelve mediante `--help subscription_agents`
+    (la búsqueda de ayuda usa `docs/help/<tema>.txt`; el nombre de registro
+    y el nombre del módulo son idénticos) y aparece automáticamente en
+    `--help list`.
+
+VER TAMBIÉN
+--------------------------------------------------------------------------------
+- `--help prompt` (system/docs/help/prompt.txt): Construcción de prompts y
+  convenciones de prompts en el repositorio.
+- `--help abo`: Contexto de suscripción/abono del sistema.
+- `--help list`: Visión general de todos los temas de ayuda disponibles.
+- ARCHITECTURE.md: Convenciones de llamada de la CLI
+  (`python bach.py <comando>` o `python bach.py --<handler>`) y resolución
+  de ayuda mediante `docs/help/<tema>.txt`.

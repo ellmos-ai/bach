@@ -21,7 +21,7 @@ BINDING = {
 
 
 def receipt(state, *, admitted=False, enforced=True, retryable=False, **extra):
-    return {
+    result = {
         "schema": reserve.SCHEMA,
         "state": state,
         "admitted": admitted,
@@ -29,6 +29,9 @@ def receipt(state, *, admitted=False, enforced=True, retryable=False, **extra):
         "retryable": retryable,
         **extra,
     }
+    if state == "ready" and "capacity_basis" not in result:
+        result["capacity_basis"] = "host_budget"
+    return result
 
 
 def runtime(monkeypatch, *, strict):
@@ -117,6 +120,22 @@ def test_ready_budget_and_socket_binding_do_not_certify_capacity(monkeypatch):
         "certification": "not_provided",
     }
     assert "capacity_verified" not in evidence["capacity"]
+
+
+@pytest.mark.parametrize("basis,status", [
+    ("resident_model", "resident_model_reused"),
+    ("running_server", "running_server_reused"),
+])
+def test_reused_local_target_is_not_reported_as_a_host_budget_pass(basis, status):
+    evidence = compose_admission_receipt(
+        receipt("ready", admitted=True, enforced=True, policy_version="f" * 64,
+                capacity_basis=basis),
+        binding=BINDING,
+    )
+    assert evidence["local_admission"]["capacity"] == {
+        "status": status,
+        "certification": "not_provided",
+    }
 
 
 def test_strict_ready_receipt_without_stable_binding_is_unknown():

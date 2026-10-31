@@ -78,7 +78,7 @@ def native_voyage(ctx, tmp_path):
 
 def isolated_learning_cli(ctx, tmp_path, monkeypatch):
     import sys
-    import bach_api
+    from system import bach_api
     from core.app import App
     from core.registry import HandlerRegistry
     from hub.learning import LearningHandler

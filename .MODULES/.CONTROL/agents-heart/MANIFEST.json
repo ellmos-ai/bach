@@ -1,6 +1,6 @@
 {
   "name": "agents-heart",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider- und produktneutrale Besetzungs-/Autorisierungsgrenze mit stabilen, versionierten Rollenverträgen, Assignment-ID sowie korrelierten Start-/Ende-/Unterbrechungsbelegen.",
   "author": "BACH/Ocean Shared Modules",
   "license": "MIT",
@@ -12,7 +12,8 @@
     "AssignmentDenied",
     "authorize_role",
     "begin_assignment",
-    "finish_assignment"
+    "finish_assignment",
+    "effective_autonomy_levels"
   ],
   "dependencies": [],
   "consumers": [

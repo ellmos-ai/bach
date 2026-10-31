@@ -107,6 +107,19 @@ def _return_partial_state(binding, args):
     return f"Task #{task_id}: Teilstand gespeichert und offen zurückgegeben (pending); kein Abschluss."
 
 
+# Fixed texts from validate_submission that a model needs to correct its result.
+_PUBLIC_RESULT_ERRORS = ("Konkretes Ergebnis mit höchstens ",
+                         "Eine Erledigungsbestätigung ist kein fachliches Ergebnis")
+
+
+def _invalid_result_text(exc):
+    """Neutral typed text (#379); only a known public check reason is added."""
+    reason = str(exc)
+    if reason.startswith(_PUBLIC_RESULT_ERRORS):
+        return ToolErrorText(f"Taskergebnis ist ungültig: {reason}.", code="invalid_task_result")
+    return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
+
+
 def _log_bound_task_manage_denial(stage, binding, args, exc=None):
     """Finite operator diagnosis; never log tool arguments, result or ACK text."""
     action = args.get("action", "list") if type(args) is dict else None
@@ -1592,6 +1605,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if worker_task_binding is not None and args.get("handler") == "task":
                 try:
                     return worker_task_binding.execute_task_command(args.get("operation", ""), args.get("args", []))
+                except ValueError:
+                    return _tool_policy_denial("worker_context_denied", "BLOCKIERT: Taskbefehl für gebundene Task nicht freigegeben.")
                 except Exception:
                     return _tool_effect_unconfirmed()
             if not bach_app:
@@ -1802,7 +1817,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         )
                     except ValueError as exc:
                         _log_bound_task_manage_denial("submission_validation", worker_task_binding, args, exc)
-                        return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
+                        return _invalid_result_text(exc)
                     except Exception as exc:
                         _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
                         return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")
@@ -1822,7 +1837,7 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                                                 max_chars=worker_task_binding.task_snapshot().get("result_max_chars"))
                         except ValueError as exc:
                             _log_bound_task_manage_denial("submission_validation", worker_task_binding, args, exc)
-                            return ToolErrorText("Taskergebnis ist ungültig.", code="invalid_task_result")
+                            return _invalid_result_text(exc)
                         except Exception as exc:
                             _log_bound_task_manage_denial("submission_exception", worker_task_binding, args, exc)
                             return ToolErrorText("Taskoperation nicht bestätigt; Taskbindung prüfen.", code="task_preflight_unavailable")

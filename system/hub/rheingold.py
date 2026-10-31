@@ -385,3 +385,73 @@ def pull_tasks_from_rheingold(
         conn.commit()
 
     return inserted, updated
+
+
+def task_row_is_remote_managed(source, creation_origin) -> bool:
+    """True, wenn die Task-Zeile vom Rheingold-Lead (Remote) verwaltet wird."""
+    if isinstance(source, str) and source.startswith(("rheingold:", "promoted:draft:")):
+        return True
+    return creation_origin == "remote"
+
+
+def mutate_task_on_rheingold(
+    base_url: str,
+    task_id: int,
+    payload: dict,
+    timeout: float = 5.0,
+) -> Tuple[bool, dict]:
+    """Sendet eine Task-Änderung als PUT an den Rheingold-Lead."""
+    endpoint = f"{base_url.rstrip('/')}/api/tasks/{task_id}"
+    data_bytes = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        endpoint,
+        data=data_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "BACH-RheingoldClient/1.0",
+        },
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+            if resp.status in (200, 201) and body.get("success"):
+                return True, body
+            return False, body
+    except Exception as e:
+        return False, {"error": str(e)}
+
+
+def readback_task_from_rheingold(
+    base_url: str,
+    task_id: int,
+    timeout: float = 3.0,
+) -> Optional[dict]:
+    """Liest einen Task nach der Mutation vom Lead zurück (Kollisionscheck).
+
+    Erwartet wahlweise {"task": {...}}, {"tasks": [...]} oder ein flaches
+    Task-Dict mit passender id. Rückgabe None bei Fehler, 404 oder unklarer Form.
+    """
+    endpoint = f"{base_url.rstrip('/')}/api/tasks/{task_id}"
+    req = urllib.request.Request(
+        endpoint,
+        headers={"User-Agent": "BACH-RheingoldClient/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            body = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    if isinstance(body, dict):
+        if isinstance(body.get("task"), dict):
+            return body["task"]
+        if isinstance(body.get("tasks"), list):
+            for item in body["tasks"]:
+                if isinstance(item, dict) and item.get("id") == task_id:
+                    return item
+            return None
+        if body.get("id") == task_id:
+            return body
+    return None

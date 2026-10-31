@@ -30,6 +30,8 @@ import json
 import re
 import threading
 import httpx
+import asyncio
+import hashlib
 
 import sqlite3
 
@@ -91,6 +93,7 @@ try:
     from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse, Response
 
     from fastapi.middleware.cors import CORSMiddleware
+    from starlette.websockets import WebSocketState
 
     from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr
 
@@ -649,20 +652,72 @@ class ConnectionManager:
     def __init__(self):
 
         self.active_connections: list[WebSocket] = []
+        # Bind only the credential actually selected from a browser cookie.
+        # Values are hashes; explicit bearer/subprotocol clients stay independent.
+        self._cookie_hashes: dict[WebSocket, str] = {}
 
     
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, *, cookie_token: str = ""):
 
         """Neue Verbindung akzeptieren."""
 
         offered = websocket.scope.get("subprotocols") or []
 
-        await websocket.accept(subprotocol=WS_PROTOCOL if WS_PROTOCOL in offered else None)
+        cookie_hash = self._cookie_hash(cookie_token) if cookie_token else None
+        if cookie_hash is not None:
+            # Register before accept can yield: revocation must also find an
+            # authenticated connection whose handshake is still settling.
+            self._cookie_hashes[websocket] = cookie_hash
+        try:
+            await websocket.accept(subprotocol=WS_PROTOCOL if WS_PROTOCOL in offered else None)
+            if cookie_hash is not None:
+                current = self._cookie_hashes.get(websocket) == cookie_hash
+                try:
+                    current = current and bool(validate_token(cookie_token))
+                except Exception:
+                    current = False
+                if not current:
+                    if websocket.application_state == WebSocketState.CONNECTED:
+                        await websocket.close(code=1008, reason="Browsersitzung beendet")
+                    self.disconnect(websocket)
+                    return False
+            self.active_connections.append(websocket)
+            print(f"[WEBSOCKET] Client verbunden. Aktive: {len(self.active_connections)}")
+            return True
+        except BaseException:
+            self.disconnect(websocket)
+            raise
 
-        self.active_connections.append(websocket)
+    @staticmethod
+    def _cookie_hash(token: str) -> str:
+        return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
 
-        print(f"[WEBSOCKET] Client verbunden. Aktive: {len(self.active_connections)}")
+    async def close_cookie_session(self, cookie_token: Optional[str]) -> bool:
+        """Stop future broadcasts, then confirm every matching transport close."""
+        if not cookie_token:
+            return True
+        cookie_hash = self._cookie_hash(cookie_token)
+        targets = [connection for connection, digest in list(self._cookie_hashes.items())
+                   if digest == cookie_hash]
+        for connection in targets:
+            if connection in self.active_connections:
+                self.active_connections.remove(connection)
+
+        async def close_transport(connection):
+            try:
+                if connection.client_state != WebSocketState.DISCONNECTED:
+                    await asyncio.wait_for(connection.close(
+                        code=1008, reason="Browsersitzung beendet"), timeout=2.0)
+            except Exception:
+                if connection.client_state != WebSocketState.DISCONNECTED:
+                    # Keep the hash association for an explicit retry; the
+                    # connection is already excluded from future broadcasts.
+                    return False
+            self.disconnect(connection)
+            return True
+
+        return all(await asyncio.gather(*(close_transport(connection) for connection in targets)))
 
     
 
@@ -673,6 +728,7 @@ class ConnectionManager:
         if websocket in self.active_connections:
 
             self.active_connections.remove(websocket)
+        self._cookie_hashes.pop(websocket, None)
 
         print(f"[WEBSOCKET] Client getrennt. Aktive: {len(self.active_connections)}")
 
@@ -684,7 +740,10 @@ class ConnectionManager:
 
         disconnected = []
 
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
+
+            if connection not in self.active_connections:
+                continue
 
             try:
 
@@ -1505,6 +1564,13 @@ def websocket_device_token(websocket) -> str:
     return ""
 
 
+def websocket_cookie_token(websocket) -> str:
+    """Return the cookie only when header precedence actually selected it."""
+    if websocket.headers.get("authorization", "").strip().startswith("Bearer "):
+        return ""
+    return websocket.cookies.get("bach_device_token", "").strip()
+
+
 async def authorize_websocket(websocket) -> bool:
     """Handshake check; on failure the socket is closed BEFORE it is accepted."""
     try:
@@ -1727,6 +1793,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
                 or path == "/api/system/task-lease-settings"
+                or path == "/api/tasks/leases/by-worker"
                 or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")
@@ -2576,6 +2643,13 @@ class LeaseReleaseRequest(LeaseRefRequest):
     worker_result: Optional[dict] = None
 
 
+class LeaseReclaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operator: StrictStr
+    fence: StrictInt
+    reason: StrictStr
+
+
 class LeaseUpdateRequest(LeaseRefRequest):
     model_config = ConfigDict(extra="forbid")
     task_version: StrictStr
@@ -2873,6 +2947,13 @@ async def read_task_lease(task_id: int, request: Request):
     return _run_lease_op(read_lease, task_id, lease_id=request.headers.get("X-Lease-Id") or None)
 
 
+@app.get("/api/tasks/leases/by-worker")
+async def read_physical_worker_leases(worker_id: str):
+    """Complete, capability-free holder readback for deletion/recovery guards."""
+    from hub._services.task_lease import read_worker_leases
+    return _run_lease_op(read_worker_leases, worker_id)
+
+
 @app.get("/api/tasks/{task_id}/lease/correction-context")
 async def read_task_correction_context(task_id: int, request: Request, fence: int,
                                        task_version: str, generation: str):
@@ -2909,6 +2990,15 @@ async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
                          task_version=body.task_version,
                          outcome=body.outcome, result_ref=body.result_ref or "",
                          note=body.note or "", worker_result=body.worker_result)
+
+
+@app.post("/api/tasks/{task_id}/lease/reclaim-unresolved")
+async def reclaim_unresolved_task_lease(task_id: int, body: LeaseReclaimRequest, request: Request):
+    """Operator: genau eine abgelaufene Task mit unklärbarem Tool-Trace auf blocked setzen."""
+    from hub._services.task_lease import reclaim_unresolved_lease
+    return _run_lease_op(reclaim_unresolved_lease, task_id, operator=body.operator,
+                         fence=body.fence, reason=body.reason,
+                         device=_lease_device_label(request))
 
 
 @app.post("/api/tasks/{task_id}/lease/update")
@@ -6605,6 +6695,18 @@ async def api_revoke_device(name: str):
     return {"ok": True, "name": name, "status": "revoked"}
 
 
+async def _revoke_browser_cookie_session(cookie_token: Optional[str]) -> bool:
+    revoke_browser_session(cookie_token)
+    return await ws_manager.close_cookie_session(cookie_token)
+
+
+def _browser_session_close_unconfirmed() -> JSONResponse:
+    return JSONResponse(status_code=503, content={
+        "ok": False, "authenticated": False, "valid": None,
+        "reason": "Browsersitzung konnte nicht bestätigt beendet werden. Bitte erneut versuchen.",
+    })
+
+
 @app.post("/api/devices/verify")
 async def api_verify_device(request: Request, payload: dict = Body(None)):
     """Verify a browser token and bind it to an HttpOnly session cookie.
@@ -6620,8 +6722,9 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
     elif payload and isinstance(payload, dict):
         token = payload.get("token")
 
-    def session_response(content: dict) -> JSONResponse:
-        revoke_browser_session(request.cookies.get("bach_device_token"))
+    async def session_response(content: dict) -> JSONResponse:
+        if not await _revoke_browser_cookie_session(request.cookies.get("bach_device_token")):
+            return _browser_session_close_unconfirmed()
         response = JSONResponse(content)
         response.delete_cookie(
             key="bach_device_token",
@@ -6633,16 +6736,19 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
         return response
 
     if not token:
-        return session_response({"valid": False, "reason": "No token provided"})
+        return await session_response({"valid": False, "reason": "No token provided"})
 
     # Device tokens come from secrets.token_urlsafe(32); accept only their cookie-safe form.
     if not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None:
-        return session_response({"valid": False, "reason": "Invalid or revoked token"})
+        return await session_response({"valid": False, "reason": "Invalid or revoked token"})
 
     browser_session = create_browser_session(token)
     if browser_session:
         session_token, device = browser_session
-        revoke_browser_session(request.cookies.get("bach_device_token"))
+        if not await _revoke_browser_cookie_session(request.cookies.get("bach_device_token")):
+            # This new secret has not been issued to the browser.
+            revoke_browser_session(session_token)
+            return _browser_session_close_unconfirmed()
         response = JSONResponse({
             "valid": True,
             "device": device,
@@ -6658,13 +6764,14 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
             samesite="strict",
         )
         return response
-    return session_response({"valid": False, "reason": "Invalid or revoked token"})
+    return await session_response({"valid": False, "reason": "Invalid or revoked token"})
 
 
 @app.post("/api/devices/session/logout")
 async def api_logout_device(request: Request):
     """Clear and revoke the browser's server-issued session."""
-    revoke_browser_session(request.cookies.get("bach_device_token"))
+    if not await _revoke_browser_cookie_session(request.cookies.get("bach_device_token")):
+        return _browser_session_close_unconfirmed()
     response = JSONResponse({"ok": True, "authenticated": False})
     response.delete_cookie(
         key="bach_device_token",
@@ -11246,6 +11353,18 @@ async def prompt_library_page():
     return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
 
 
+@app.get("/governance", response_class=HTMLResponse)
+async def governance_page():
+    """Governance & Control als GUI-Seite: Erlaubnisse für Außenwirkung, Policy-Registry, Sperren, Hooks & Guards, Logs & Audit."""
+    astro_page = ASTRO_DIST_DIR / "governance.html"
+    if astro_page.is_file():
+        return FileResponse(astro_page)
+    template = TEMPLATES_DIR / "governance.html"
+    if template.exists():
+        return HTMLResponse(content=template.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Template governance.html fehlt</h1>", status_code=404)
+
+
 @app.get("/api/prompt-library")
 async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
     """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
@@ -14181,7 +14300,10 @@ async def export_contacts():
 
 @app.get("/routinen", response_class=HTMLResponse)
 async def routinen_page():
-    """Routinen Dashboard."""
+    """Routinen Dashboard: shared GUI page first; the BACH template only without a shared release page."""
+    astro_routinen = ASTRO_DIST_DIR / "routinen.html"
+    if astro_routinen.exists():
+        return FileResponse(astro_routinen)
     routinen_file = TEMPLATES_DIR / "routinen.html"
     if routinen_file.exists():
         return FileResponse(routinen_file)
@@ -14218,6 +14340,7 @@ async def get_routines(category: str = None, interval: str = None):
 
         for row in rows:
             r = dict(row)
+            r['is_active'] = bool(r['is_active'])  # SQLite INTEGER -> JSON boolean for the shared /routinen page
             r['is_due_today'] = False
             r['is_overdue'] = False
 
@@ -15427,7 +15550,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
         return
 
-    await ws_manager.connect(websocket)
+    if not await ws_manager.connect(websocket, cookie_token=websocket_cookie_token(websocket)):
+        return
 
     try:
 
@@ -15436,6 +15560,9 @@ async def websocket_endpoint(websocket: WebSocket):
             # Auf Nachrichten vom Client warten (Keep-alive)
 
             data = await websocket.receive_text()
+
+            if websocket.application_state != WebSocketState.CONNECTED:
+                break
 
             # Optional: Client-Befehle verarbeiten
 

@@ -38,7 +38,8 @@ def test_explicit_once_scope_precedes_model_dispatch(
     def start(task_id, **kwargs):
         observed.append(("start", task_id, kwargs))
         return object()
-    def scope(task_id):
+    def scope(binding, **_kwargs):
+        task_id = binding.task_id
         observed.append(("scope", task_id))
         return {"availability": "available", "task_id": task_id,
             "branch": f"refs/heads/bach-task/{task_id}",
@@ -47,7 +48,7 @@ def test_explicit_once_scope_precedes_model_dispatch(
         observed.append(("model",))
         return "Teilstand ohne Ergebnisabgabe"
     monkeypatch.setattr(worker_git, "start_task_worktree", start)
-    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", scope)
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope", scope)
     monkeypatch.setattr(control.runtime, "process", process)
     monkeypatch.setattr(control, "_snapshot_chat_backend",
         lambda *_args, **_kwargs: (object(), backend))
@@ -87,8 +88,8 @@ def test_explicit_once_scope_failure_stops_before_model(
             raise RuntimeError("private path and token must stay hidden")
         return object()
     monkeypatch.setattr(worker_git, "start_task_worktree", start)
-    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope",
-        lambda task_id: {"availability": "unavailable", "reason": "registration_unavailable"})
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope",
+        lambda *_args, **_kwargs: {"availability": "unavailable", "reason": "registration_unavailable"})
     async def forbidden(*_args, **_kwargs):
         pytest.fail("No model dispatch after missing task scope")
     monkeypatch.setattr(control.runtime, "process", forbidden)
@@ -126,12 +127,38 @@ def test_bound_task_scope_precedes_model_for_every_worker_type(
     started = []
     monkeypatch.setattr(worker_git, "start_task_worktree",
         lambda task_id, **kwargs: started.append((task_id, kwargs["task_code_capability"])))
-    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", lambda task_id: {
-        "availability": "available", "task_id": task_id,
-        "branch": f"refs/heads/bach-task/{task_id}", "source_pin": None})
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope", lambda binding, **_kwargs: {
+        "availability": "available", "task_id": binding.task_id,
+        "branch": f"refs/heads/bach-task/{binding.task_id}", "source_pin": None})
     control._prepare_bound_task_scope(leased_binding,
         {"type": worker_type, "allowed_tools": ["task_manage"]})
     assert started == [(leased_binding.task_id, False)]
+
+
+def test_scope_failure_logs_the_failed_check_without_leaking_details(
+    leased_binding, monkeypatch, caplog,
+):
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("Task-Branch existiert bereits, ist aber nicht an diesen Worktree gebunden")
+    monkeypatch.setattr(worker_git, "start_task_worktree", refuse)
+    with caplog.at_level("WARNING", logger="bach.telegram_chat"):
+        with pytest.raises(RuntimeError, match="nicht bestätigt"):
+            control._prepare_bound_task_scope(leased_binding,
+                {"type": "continuous", "allowed_tools": ["task_manage"]})
+    assert "Task-Branch existiert bereits" in caplog.text
+
+    def leak(*_args, **_kwargs):
+        raise OSError("/Users/geheim/pfad")
+    monkeypatch.setattr(worker_git, "start_task_worktree", leak)
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="bach.telegram_chat"):
+        with pytest.raises(RuntimeError):
+            control._prepare_bound_task_scope(leased_binding,
+                {"type": "continuous", "allowed_tools": ["task_manage"]})
+    assert "OSError" in caplog.text and "geheim" not in caplog.text
 
 
 @pytest.mark.parametrize("failure", [False, True])
@@ -163,9 +190,9 @@ def test_continuous_scope_precedes_model_in_worker_loop(
             # e.g. an orphaned bach-task/<id> branch without its tree
             raise RuntimeError("Task-Branch existiert bereits")
     monkeypatch.setattr(worker_git, "start_task_worktree", start)
-    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", lambda task_id: {
-        "availability": "available", "task_id": task_id,
-        "branch": f"refs/heads/bach-task/{task_id}", "source_pin": None})
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope", lambda binding, **_kwargs: {
+        "availability": "available", "task_id": binding.task_id,
+        "branch": f"refs/heads/bach-task/{binding.task_id}", "source_pin": None})
     async def process(*_args, **_kwargs):
         observed.append(("model",))
         control._WORKER_CONTROLS[worker["id"]].stop_event.set()
@@ -188,7 +215,9 @@ def test_continuous_scope_precedes_model_in_worker_loop(
     # The background worker returns the task and stays available instead of erroring.
     assert observed[1:] == [("finish", "task_returned", "task_scope_unavailable")]
     assert leased_binding.closed
-    assert leased_binding.task_id in worker_controls[0].deferred_task_versions
+    actual = worker_controls[0]
+    assert leased_binding.task_id not in actual.deferred_task_versions
+    assert leased_binding.task_id in actual.scope_preparation_deferrals.combined(actual.deferred_task_versions)
     assert worker_controls[0].start_error != "runtime_error"
 
 
@@ -703,6 +732,33 @@ def test_startup_resumes_one_physical_always_on_and_preserves_empty_queue(startu
     assert slots.get_always_on_execution_slot()["status"] == "running"
 
 
+def test_buddha_start_warms_model_before_first_queue_claim(startup, monkeypatch):
+    control, _slots = startup
+    observed = []
+    claim_seen = threading.Event()
+
+    async def warmup(backend, model, *, slot_reader, stop_event):
+        observed.append(("warmup", backend, model, slot_reader()["id"], stop_event.is_set()))
+        return {"state": "loaded"}
+
+    def claim(*_args):
+        observed.append(("claim",))
+        control._WORKER_CONTROLS["buddha_always_on"].stop_event.set()
+        claim_seen.set()
+        return None
+
+    monkeypatch.setattr(control.runtime, "warm_buddha_ollama_model", warmup)
+    monkeypatch.setattr(control, "_acquire_worker_task", claim)
+    result = control._resume_always_on_at_startup(threading.Event())
+    assert result["state"] == "admitted" and result["retry"] is False
+    assert claim_seen.wait(5), "Buddha did not reach its first queue claim"
+    execution = control._WORKER_EXECUTIONS["buddha_always_on"]
+    execution.thread.join(3)
+    assert not execution.thread.is_alive()
+    assert observed[0][0] == "warmup" and observed[1] == ("claim",)
+    assert observed[0][3] == "buddha_always_on" and observed[0][4] is False
+
+
 @pytest.mark.parametrize("changes", [
     {"enabled": False}, {"status": "paused", "auto_paused": False},
     {"status": "stopping"}, {"status": "completed"}, {"status": "expired"},
@@ -1000,22 +1056,28 @@ def recovery(real_acquire_before_fixture, startup, monkeypatch, mem_db):
     return control, slots, client, execution, real_acquire_before_fixture, mem_db
 
 
-def test_crash_recovery_waits_for_real_held_lease_then_acquires_fresh_fence(recovery):
+def test_crash_recovery_releases_held_pin_and_claims_next_task(recovery):
     control, slots, client, execution, acquire, db = recovery
     db.execute("INSERT INTO tasks(id,title,status,category,priority) VALUES(42,'Crash recovery','pending','INBOX','P1')")
+    db.execute("INSERT INTO tasks(id,title,status,category,priority) VALUES(43,'Next claim','pending','INBOX','P1')")
     db.commit()
     old = client.acquire(42, worker_id="old-process@fixture", host="fixture")
-    assert acquire(execution, slots.get_always_on_execution_slot(), "new-process") is None
-    assert db.execute("SELECT claim_fence FROM tasks WHERE id=42").fetchone()[0] == old.fence
-    client.release(42, lease_id=old.lease_id, fence=old.fence, outcome="return", task_version=old.task_version)
     fresh = acquire(execution, slots.get_always_on_execution_slot(), "new-process")
     try:
-        assert fresh.task_id == 42
-        assert fresh._ack.fence > old.fence
+        assert fresh.task_id == 43
+        assert fresh._ack.fence > 0
         fresh.assert_active()
+        cleared = slots.get_always_on_execution_slot()
+        assert cleared["task_id"] is None
+        assert "Task #42 abgelehnt (fremde Lease)" in cleared["current_activity"]
         assert control._control_execution_receipt(execution)["completed_task_ids"] == []
+        held = db.execute("SELECT status,claim_fence FROM tasks WHERE id=42").fetchone()
+        assert held["status"] == "in_progress" and held["claim_fence"] == old.fence
     finally:
-        fresh.return_lease()
+        if fresh is not None:
+            fresh.return_lease()
+    assert db.execute("SELECT claim_fence FROM tasks WHERE id=42").fetchone()[0] == old.fence
+    client.release(42, lease_id=old.lease_id, fence=old.fence, outcome="return", task_version=old.task_version)
 
 
 def test_crash_recovery_preserves_real_creator_priority_window(recovery):
@@ -1137,3 +1199,115 @@ def test_other_slot_admission_errors_remain_redacted_http_503(admission, monkeyp
     assert result["admission"]["admitted"] is False
     assert "secret_path" not in json.dumps(result)
     assert control._WORKER_EXECUTIONS == {}
+
+
+@pytest.mark.parametrize("code_capability, has_pin, failure", [
+    (False, False, None),
+    (True, True, None),
+    (False, True, None),
+    (False, True, "invalid_pin"),
+    (True, False, "missing_pin"),
+    (True, True, "released_lease"),
+])
+def test_bound_task_scope_resumes_dirty_registered_tree_without_accepting_it(
+    leased_binding, monkeypatch, tmp_path, code_capability, has_pin, failure,
+):
+    from hub import worker_git
+    from hub._services.chat import telegram_chat as control
+    from hub._services.chat import worker_write_guard
+
+    repo = tmp_path / "repo"
+    worktrees = tmp_path / "worktrees"
+    git_home = tmp_path / "git-home"
+    repo.mkdir()
+    git_home.mkdir()
+    monkeypatch.setenv("HOME", str(git_home))
+    monkeypatch.setenv("USERPROFILE", str(git_home))
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "BACH Test"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "bach-test@example.com"], cwd=repo, check=True)
+    source_root = Path(worker_write_guard.__file__).resolve().parents[4]
+    (repo / ".gitignore").write_text(
+        (source_root / ".gitignore").read_text(encoding="utf-8"), encoding="utf-8")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore", "README.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", "https://github.com/ellmos-ai/bach"],
+                   cwd=repo, check=True)
+
+    worktrees.mkdir()
+    task_id = leased_binding.task_id
+    task_root = worktrees / f"task-{task_id}"
+    subprocess.run(["git", "worktree", "add", str(task_root), "-b",
+                    f"bach-task/{task_id}", "main"], cwd=repo, check=True, capture_output=True)
+    if has_pin:
+        source_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True,
+            text=True, encoding="utf-8").stdout.strip()
+        worker_git._store_public_source_registration(repo, task_root, task_id, {
+            "schema": "bach.task-public-source.v1",
+            "repository": "ellmos-ai/bach",
+            "origin": "https://github.com/ellmos-ai/bach",
+            "source_ref": "refs/heads/main",
+            "source_sha": source_sha,
+            "visibility": "public",
+            "private": False,
+            "metadata_verified": True,
+            "ref_verified": True,
+            "verified_at": worker_git._utc_now(),
+        })
+
+    (task_root / "README.md").write_text("saved partial work\n", encoding="utf-8")
+    (task_root / "partial.py").write_text("PARTIAL = True\n", encoding="utf-8")
+    check_temp = task_root / ".cache" / ".worker-check" / "pytest-temp"
+    check_temp.mkdir(parents=True)
+    (check_temp / "marker").write_text("runtime cache", encoding="utf-8")
+
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: repo)
+    monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: worktrees)
+    monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *_args, **_kwargs: None)
+    original_scope_git = worker_write_guard._scope_git
+    def scope_git_without_host_filters(argv, cwd, **kwargs):
+        if (argv[:2] == ["config", "--get-regexp"] and len(argv) > 2
+                and argv[2] == r"^filter\..*\.(process|clean|smudge)$"):
+            return 1, b""
+        return original_scope_git(argv, cwd, **kwargs)
+    monkeypatch.setattr(worker_write_guard, "_scope_git", scope_git_without_host_filters)
+    final_snapshot = worker_write_guard.snapshot_task_scope
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope",
+                        lambda *_args, **_kwargs: pytest.fail(
+                            "Clean completion evidence must not gate worker startup"))
+    if failure == "invalid_pin":
+        subprocess.run(["git", "config", "--local",
+                        worker_git._public_source_config_key(task_id), "{}"],
+                       cwd=task_root, check=True)
+    elif failure == "released_lease":
+        assert leased_binding.return_lease() is True
+    start_scope = worker_write_guard.snapshot_task_start_scope(
+        leased_binding, task_root=task_root, source_pin_required=code_capability,
+        repo_root=repo, worktrees_dir=worktrees)
+    if failure:
+        assert start_scope["availability"] == "unavailable", start_scope
+        if failure in {"invalid_pin", "missing_pin"}:
+            with pytest.raises(RuntimeError, match="Task-Arbeitsbaum vor Modellstart nicht bestätigt"):
+                control._prepare_bound_task_scope(leased_binding,
+                    {"type": "continuous", "allowed_tools": ["write_file"] if code_capability else ["task_manage"]})
+        assert (task_root / "README.md").read_text(encoding="utf-8") == "saved partial work\n"
+        assert (task_root / "partial.py").read_text(encoding="utf-8") == "PARTIAL = True\n"
+        return
+    assert start_scope["availability"] == "available", start_scope
+
+    allowed_tools = ["write_file"] if code_capability else ["task_manage"]
+    control._prepare_bound_task_scope(leased_binding,
+        {"type": "continuous", "allowed_tools": allowed_tools})
+
+    status = subprocess.run(["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                            cwd=task_root, check=True, capture_output=True,
+                            text=True, encoding="utf-8").stdout
+    assert "README.md" in status and "partial.py" in status
+    assert ".cache" not in status
+
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_scope", final_snapshot)
+    result_scope = final_snapshot(task_id, repo_root=repo, worktrees_dir=worktrees)
+    assert result_scope["availability"] == "unavailable"
+    assert result_scope["reason"] == "git_dirty"

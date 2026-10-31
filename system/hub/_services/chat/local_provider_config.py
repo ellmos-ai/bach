@@ -29,7 +29,9 @@ def local_backend_configs(config=None):
     """Resolve native provider presets; no credentials, sessions or DB initialized.
 
     A matching chat provider supplies its explicit settings. Provider-specific
-    environment variables retain precedence; legacy defaults are fallback only.
+    URL/model environment variables retain precedence; legacy defaults are
+    fallback only. Ollama context/timeout follow create_backend's contract:
+    explicit non-null settings win, otherwise the backend reads its environment.
     No URL can be supplied by a catalog request or model configuration write.
     """
     if config is None:
@@ -54,6 +56,12 @@ def local_backend_configs(config=None):
             "base_url": os.environ.get(url_env) or selected.get("base_url") or default_url,
             "default_model": os.environ.get(model_env) or selected.get("default_model") or default_model,
         }
+        if provider == "ollama":
+            for key in ("num_ctx", "timeout_seconds"):
+                if key in selected:
+                    if type(selected[key]) is bool:
+                        raise ValueError("Ollama-Kontext und Timeout dürfen keine Wahrheitswerte sein")
+                    result[provider][key] = selected[key]
         if provider == "lmstudio" and selected.get("api_key"):
             result[provider]["api_key"] = selected["api_key"]
     return result

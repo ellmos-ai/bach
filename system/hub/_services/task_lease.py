@@ -494,7 +494,7 @@ def _native_creator_grant(conn, binding, row, version):
 
 
 def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
-                                 task_version, config=None, now=None):
+                                 task_version, ttl_profile=None, config=None, now=None):
     """Internal local entry; a persisted grant is required even outside the creator window."""
     if (not isinstance(delegation, _NativeCreatorBinding)
             or (task_id, worker_id, host, task_version) !=
@@ -506,7 +506,8 @@ def _acquire_native_creator_lease(conn, task_id, *, delegation, worker_id, host,
         raise LeaseValidationError("Private Creator-Delegation stimmt nicht mit dem Workerlauf überein")
     return _acquire_lease(conn, task_id, worker_id=worker_id, host=host,
         request_id=delegation.acquire_request_id, task_version=task_version,
-        config=config, now=now, creator_delegation=delegation, result_generation=delegation.generation)
+        ttl_profile=ttl_profile, config=config, now=now,
+        creator_delegation=delegation, result_generation=delegation.generation)
 
 
 def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, host: str,
@@ -711,6 +712,31 @@ def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None =
     return LeaseResult(payload)
 
 
+def read_worker_leases(conn: sqlite3.Connection, worker_id: str, *,
+                       config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+    """Complete holder-only view for one physical worker, across all task statuses."""
+    if not isinstance(worker_id, str) or not _WORKER_RE.fullmatch(worker_id):
+        raise LeaseValidationError("worker_id muss das Format <agent>@<host> haben")
+    ensure_task_lease_schema(conn)
+    cfg = config or LeaseConfig.from_env()
+    observed = now or _utcnow()
+    cursor = conn.execute("SELECT * FROM tasks WHERE claimed_by=? ORDER BY id", (worker_id,))
+    names = [column[0] for column in cursor.description]
+    leases = []
+    for value in cursor.fetchall():
+        row = dict(value) if isinstance(value, sqlite3.Row) else dict(zip(names, value))
+        if (row.get("status") == "in_progress" and row.get("claim_id")
+                and parse_ts(row.get("claim_expires_at")) is None):
+            raise LeaseValidationError("Worker-Lease-Lebensdauer ist nicht verifizierbar")
+        state = _lease_state(row, observed, cfg)
+        if state["live"]:
+            leases.append({"task_id": row["id"], "fence": int(row.get("claim_fence") or 0),
+                           "expires_at": _fmt(state["expires_at"]) if state["expires_at"] else None,
+                           "legacy": state["kind"] == "legacy"})
+    return LeaseResult({"schema": "bach.worker-leases.v1", "worker_id": worker_id,
+                        "server_now": _fmt(observed), "complete": True, "leases": leases})
+
+
 def _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version=None):
     """Gemeinsame Prüfung für renew/release unter Schreibsperre."""
     row = _row(conn, task_id)
@@ -907,6 +933,83 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
             conn.rollback()
         raise
     return LeaseResult(ack)
+
+
+#: Native worker identities never act as operators for their own stuck tasks.
+_NATIVE_WORKER_RE = re.compile(r"^worker-[0-9a-f]{32}@", re.IGNORECASE)
+
+
+def reclaim_unresolved_lease(conn: sqlite3.Connection, task_id: int, *, operator: str, fence: int,
+                             reason: str, device: str | None = None,
+                             config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+    """Operator reclaim of exactly one task whose expired holder left an unresolvable tool trace.
+
+    Only an expired lease with exactly this fence and an ``unresolved`` trace qualifies.
+    The task becomes ``blocked`` for human review; the append-only trace and the
+    holder's possible effects stay untouched. Every other case is denied, never reaped.
+    """
+    cfg = config or LeaseConfig.from_env()
+    task_id = _validate_task_id(task_id)
+    if (not isinstance(operator, str) or not _WORKER_RE.fullmatch(operator)
+            or _NATIVE_WORKER_RE.match(operator)):
+        raise LeaseValidationError("operator muss <agent>@<host> sein und darf kein nativer Worker sein")
+    if type(fence) is not int or fence <= 0:
+        raise LeaseValidationError("fence muss eine positive Ganzzahl sein")
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if not reason or len(reason) > 500 or any(ord(char) < 32 for char in reason):
+        raise LeaseValidationError("reason muss 1 bis 500 Zeichen ohne Steuerzeichen haben")
+    ensure_task_lease_schema(conn)
+    try:
+        from hub.task_audit import apply_task_field_changes
+    except ImportError:  # pragma: no cover
+        from ..task_audit import apply_task_field_changes  # type: ignore
+
+    _begin(conn)
+    try:
+        now = now if now is not None else _utcnow()
+        row = _row(conn, task_id)
+        if row is None:
+            raise TaskNotFound(task_id)
+        if row.get("status") != "in_progress" or not row.get("claim_id"):
+            conn.rollback()
+            return _deny(task_id, "not_claimable", now, status=row.get("status"))
+        if int(row.get("claim_fence") or 0) != fence:
+            conn.rollback()
+            return _deny(task_id, "stale_fence", now)
+        if _lease_state(row, now, cfg)["live"]:
+            conn.rollback()
+            return _deny(task_id, "held", now)
+        try:
+            from hub._services.chat.worker_tool_trace import task_trace_recovery_state
+            trace_state = task_trace_recovery_state(conn, task_id)
+        except Exception:  # noqa: BLE001 -- Fail closed; raw trace errors stay private.
+            conn.rollback()
+            return _deny(task_id, "tool_trace_unavailable", now)
+        if trace_state != "unresolved":
+            conn.rollback()
+            return _deny(task_id, "no_unresolved_trace", now)
+        apply_task_field_changes(conn, task_id, row, {"status": "blocked"},
+                                 changed_by=operator, lease_authorized=True)
+        assignments = ", ".join(f"{name} = NULL" for name in _CLEARED_ON_RELEASE)
+        cursor = conn.execute(
+            f"UPDATE tasks SET {assignments} WHERE id = ? AND claim_id = ? AND claim_fence = ?",
+            (task_id, row["claim_id"], fence),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return _deny(task_id, "stale_fence", now)
+        _history(conn, task_id, "lease_reclaim", operator, now,
+                 {"fence": fence, "outcome": "blocked", "reason": reason,
+                  "trace_state": "unresolved", "previous_holder": row.get("claimed_by"),
+                  "device": device},
+                 old_value="in_progress")
+        conn.commit()
+    except BaseException:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    return LeaseResult({"reclaimed": True, "task_id": task_id, "status": "blocked",
+                        "fence": fence, "server_now": _fmt(now)})
 
 
 def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
