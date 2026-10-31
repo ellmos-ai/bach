@@ -30,6 +30,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE
 from hub._services.user_config_store import _exclusive_lock
 
 log = logging.getLogger("bach.slots_config")
@@ -184,7 +185,8 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Deine Kernaufgabe ist die methodische Analyse komplexer, umfangreicher Großaufgaben im Backlog.\n"
         "Sobald eine Aufgabe mehr als 2-3 Teilschritte oder Fachbereiche betrifft: Zerlege sie vorab in handhabbare,\n"
         "atomare Teilpakete (nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder erstelle Teil-Tasks).\n"
-        "Formuliere präzise Akzeptanzkriterien für jeden Teilschritt und weise sie passenden Rollen zu."
+        "Formuliere präzise Akzeptanzkriterien für jeden Teilschritt und weise sie passenden Rollen zu.\n"
+        + TASK_CUT_RULE
     ),
     "ticket-master": (
         "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\n"
@@ -314,6 +316,25 @@ def validate_agent_avatar(value: Any) -> str:
     if len(raw) > 180_000 or not valid[match[1]]:
         raise ValueError("Agentenbild hat kein gültiges Bildformat")
     return value
+
+
+def validate_agent_color(value: Any) -> str | None:
+    """Accept only a nullable opaque RGB color, never arbitrary CSS."""
+    if value is None:
+        return None
+    if type(value) is not str or re.fullmatch(r"#[0-9a-fA-F]{6}", value) is None:
+        raise ValueError("Farbe muss null oder ein RGB-Hexwert wie #12abef sein")
+    return value.lower()
+
+
+def agent_color_fields(slot: dict[str, Any]) -> dict[str, Any]:
+    """Project presentation fields without persisting defaults on legacy reads."""
+    inherited = validate_agent_color(slot.get("blueprint_color"))
+    override = validate_agent_color(slot.get("color_override"))
+    return {"blueprint_color": inherited, "color_override": override,
+            "color": override if override is not None else inherited,
+            "color_source": "instance" if override is not None else
+                            "blueprint" if inherited is not None else "default"}
 
 
 def get_system_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:
@@ -797,6 +818,8 @@ def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, A
 @_serialized_mutation
 def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) -> dict[str, Any]:
     """Update properties of a core slot or dynamic worker."""
+    if {"color", "color_source", "color_override"} & set(updates):
+        raise ValueError("Farbe wird ausschließlich über Konfigurations-CAS geändert")
     if "memory_hook_opt_in" in updates:
         raise ValueError("memory_hook_opt_in darf nur über versioniertes Konfigurations-CAS geändert werden")
     if {"persistent_opt_in", "persistent_opt_in_id", "persistent_opt_in_profile_version",
@@ -866,7 +889,7 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
 
 
 # Set only by materialize_system_blueprint (P05 3b); no slot editor or API may change them.
-MATERIALIZE_OWNED_FIELDS = frozenset({"governance_binding", "blueprint_id", "blueprint_version"})
+MATERIALIZE_OWNED_FIELDS = frozenset({"governance_binding", "blueprint_id", "blueprint_version", "blueprint_color"})
 CORE_SYSTEM_AGENT_IDS = tuple(DEFAULT_CORE_SLOTS)
 REQUIRED_CORE_SYSTEM_AGENT_IDS = ("buddha_chat", "buddha_always_on", "buddha_connector")
 CORE_SYSTEM_AGENT_ICONS = {
@@ -879,7 +902,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
-    "memory_hook_opt_in", "model_fallbacks",
+    "memory_hook_opt_in", "model_fallbacks", "color_override",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -1026,6 +1049,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "name": slot.get("name", defaults["name"]),
             "icon": slot.get("icon", CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")),
             "avatar": slot.get("avatar", ""),
+            **agent_color_fields(slot),
             "symbol": slot.get("symbol", ""),
             "description": slot.get("description", defaults["description"]),
             "execution_kind": ("worker" if slot_id == "buddha_always_on" else
@@ -1067,6 +1091,7 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
         })
     return {
         "schema": "bach.core-system-agents.v1",
+        "color_contract": "bach.agent-colors.v1",
         "configuration_version": version,
         "updated_at": config.get("updated_at"),
         "agents": public_slots,
@@ -1191,7 +1216,9 @@ def _validated_core_edits(
         raise ValueError("memory_hook_opt_in ist nur über das explizite Konfigurations-CAS erlaubt")
     result: dict[str, Any] = {}
     for field, value in changes.items():
-        if field == "model_fallbacks":
+        if field == "color_override":
+            value = validate_agent_color(value)
+        elif field == "model_fallbacks":
             value = _validated_model_fallbacks(value)
         elif field == "skill_refs":
             from hub._services.skill_source_service import load_skill_instructions
@@ -1269,6 +1296,7 @@ def change_core_system_agent(
         defaults = DEFAULT_CORE_SLOTS.get(slot_id, DEFAULT_CORE_SLOTS["buddha_chat"])
         updates = {field: defaults[field] for field in CORE_EDITABLE_FIELDS if field in defaults}
         updates["icon"] = CORE_SYSTEM_AGENT_ICONS.get(slot_id, "🤖")
+        updates["color_override"] = None
     else:
         updates = _validated_core_edits(changes, allow_memory_hook_opt_in=True)
     model_fields_changed = bool(set(updates) & {"backend", "model", "model_fallbacks"})
@@ -1356,6 +1384,9 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
     if any(worker.get("id") == slot_id for worker in config.get("dynamic_workers", [])):
         raise ValueError("Blueprint-Steckplatz kollidiert mit einem Worker")
     fields = dict(changes)
+    blueprint_color = validate_agent_color(fields.pop("blueprint_color", None))
+    if "color_override" in fields:
+        raise ValueError("Instanzfarbe wird nur über Konfigurations-CAS geändert")
     worker_type = fields.pop("worker_type", None)
     if worker_type not in {"once", "continuous"}:
         raise ValueError("Worker-Laufbegrenzung muss ausdrücklich festgelegt werden")
@@ -1369,6 +1400,7 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
             "id": slot_id, "system": True, "execution_kind": "worker",
             "type": worker_type, "require_assigned_slot": True,
             "blueprint_id": blueprint_id, "blueprint_version": blueprint_version,
+            "blueprint_color": blueprint_color,
             "enabled": True, "status": "idle", "current_activity": "",
             "chat_id": "", "task_id": None, "category": "all", **edits}
     core.pop("governance_binding", None)
@@ -1561,7 +1593,7 @@ def list_workers(
     result = []
     for w in workers:
         if include_expired or w.get("status") != "expired":
-            result.append(w)
+            result.append({**w, **agent_color_fields(w)})
     return result
 
 
@@ -1835,7 +1867,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
 
 @_serialized_mutation
 def remove_worker(worker_id: str, path: str | None = None, *, _runtime_guard=None) -> bool:
-    """Delete only under a fresh controller proof, retaining terminal budget receipts."""
+    """Delegate fenced receipt archival and profile removal to agent-library."""
     cfg = load_slots_config(path, strict=True)
     workers = cfg.get("dynamic_workers", [])
     matches = [w for w in workers if w.get("id") == worker_id]
@@ -1851,23 +1883,37 @@ def remove_worker(worker_id: str, path: str | None = None, *, _runtime_guard=Non
         if _MODEL_REQUEST_RUNS_FIELD in worker:
             raise RuntimeError("Budgetierte Run-Belege benötigen die gefencete Controller-Löschung mit Archiv")
         raise RuntimeError("worker_delete_execution_unconfirmed")
-    # The caller holds the controller admission lock; this OS lock excludes
-    # configuration edits and admissions in other processes until removal.
-    _runtime_guard(worker)
-    runs = _model_request_runs(worker)
-    records = list(runs["terminal"])
-    if runs["current"] is not None:
-        records.append(runs["current"])
-    if any(record["phase"] != "terminal" for record in records):
-        raise RuntimeError("worker_delete_budget_unconfirmed")
-    from .worker_run_archive import archive_terminal_records
-    archive_terminal_records(worker_id, records, _resolve_path(path).parent / "worker-run-archive")
-    cfg["dynamic_workers"] = new_workers
-    # Removing the profile also atomically revokes its persistent opt-in.
-    save_slots_config(cfg, path, durable=os.name == "posix")
-    log.info("Removed dynamic worker %s", worker_id)
-    return True
 
+    from hub._services.agent_library import archive_then_remove_profile
+
+    def terminal_records(profile):
+        runs = _model_request_runs(profile)
+        records = list(runs["terminal"])
+        if runs["current"] is not None:
+            records.append(runs["current"])
+        return records
+
+    def archive(profile_id, records):
+        from .worker_run_archive import archive_terminal_records
+        return archive_terminal_records(
+            profile_id, list(records), _resolve_path(path).parent / "worker-run-archive"
+        )
+
+    def persist_removal():
+        cfg["dynamic_workers"] = new_workers
+        # Removing the profile also atomically revokes its persistent opt-in.
+        save_slots_config(cfg, path, durable=os.name == "posix")
+        log.info("Removed dynamic worker %s", worker_id)
+        return True
+
+    return archive_then_remove_profile(
+        worker_id,
+        worker,
+        assert_inactive=_runtime_guard,
+        terminal_records=terminal_records,
+        archive=archive,
+        remove=persist_removal,
+    )
 
 def _validated_controller_run(record: Any) -> dict[str, Any]:
     base = {"schema", "phase", "worker_id", "host", "pid", "process_create_time", "durable", "prior_runs_unconfirmed"}
@@ -2327,14 +2373,9 @@ def _persistent_core_capacity_observation(
     receipt: Any, *, worker: dict[str, Any], expected_state: str,
 ) -> dict[str, str] | None:
     """Validate a fresh local-reserve probe receipt under the current policy."""
-    fields = {
-        "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-        "policy_version", "model", "wait_seconds", "poll_seconds",
-        "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
-        "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-        "resident_weight_credit", "capacity_basis",
-    }
-    if not isinstance(receipt, dict) or set(receipt) != fields:
+    from hub._services.chat import local_resource_reserve
+
+    if not local_resource_reserve.valid_capacity_receipt_shape(receipt):
         return None
     if (receipt.get("schema") != "bach.local-resource-reserve.v1"
             or receipt.get("state") != expected_state

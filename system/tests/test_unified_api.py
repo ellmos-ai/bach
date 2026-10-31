@@ -94,6 +94,33 @@ def test_skill_editor_reads_current_source_and_saves_with_revision(client, monke
     assert unauthenticated.put(route, json=payload).status_code in {401, 403}
 
 
+def test_skill_library_and_reader_keep_locale_resolution_metadata(client, monkeypatch, tmp_path):
+    from hub._services import skill_source_service as source
+    root = tmp_path / "skills"
+    for suffix, locale, text in (("de", "de", "Deutsche Quelle"), ("en", "en", "English source")):
+        path = root / "guides" / ("locale-" + suffix) / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"---\nid: locale-skill\nname: Locale Skill\nlanguage: {locale}\nversion: 2.0\n---\n{text}\n",
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(source, "skill_roots", lambda: [root])
+
+    library = client.get("/api/capabilities/skills/library?locale=de-DE")
+    assert library.status_code == 200
+    item = next(row for row in library.json()["skills"] if row["id"] == "locale-skill")
+    assert item["requested_locale"] == "de-de"
+    assert item["resolved_locale"] == "de"
+    assert item["fallback_used"] is True
+    assert item["canonical_skill_id"] == "locale-skill"
+    assert item["content_sha256"] == item["source_version"]
+
+    current = client.get("/api/capabilities/skills/locale-skill/source?locale=en")
+    assert current.status_code == 200
+    assert current.json()["resolved_locale"] == "en"
+    assert current.json()["content"].splitlines()[-1] == "English source"
+
+
 def test_agent_studio_blueprints(client):
     # 1. List blueprints (should contain seeded templates)
     resp = client.get("/api/agent-studio/blueprints")

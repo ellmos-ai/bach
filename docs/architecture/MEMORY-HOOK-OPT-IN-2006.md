@@ -12,10 +12,14 @@ Die Konfigurationsversionen binden das Feld ein. CAS-Konflikte, Status- und Abla
 
 Der bestehende MemoryHook bleibt die einzige Kontextquelle. Bei einem ausdrücklich aktivierten nativen Core- oder dynamischen Workerprofil fügt `chat_runtime.py` den Hook-Kontext genau einmal nach Persona und Systemprompt ein. Die Laufzeit liest dafür ausschließlich das verifizierte Slotprofil; Werte aus Usernachrichten, Persona, Tasktext, Toolausgaben oder beliebigen Requestfeldern können das Opt-in nicht setzen.
 
-Für Profile und benutzerdefinierte Prompts ist das Opt-in standardmäßig aus. Ein fehlendes oder ungültig typisiertes natives Feld stoppt den Turn fail-closed, bevor Hook oder Modell aufgerufen werden. Chats ohne Profilbindung und ohne benutzerdefinierten Prompt behalten das bisherige Legacy-Verhalten des MemoryHooks.
+Für Profile und benutzerdefinierte Prompts ist das Opt-in standardmäßig aus. Fehlt das Opt-in-Feld in einem gültigen nativen Slotprofil, wird es aus Gründen der Rückwärtskompatibilität als `false` gelesen. Ein vorhandener Wert ohne Boolean-Typ sowie ein fehlender, nicht lesbarer, deaktivierter oder nicht zur Bindung passender nativer Slot stoppen den Turn fail-closed vor Hook und Modell. Chats ohne Profilbindung und ohne benutzerdefinierten Prompt behalten das bisherige Legacy-Verhalten des MemoryHooks.
 
 Die Konfiguration gibt keine zusätzlichen Werkzeugrechte frei und ändert weder Taskbindung noch Rundenbudget. Sie führt keinen neuen Provider und keine zweite Memory- oder Taskdatenbank ein.
 
 ## Prüfgrenze
 
-Die Regressionen verwenden isolierte Konfigurationsdateien, Chatstores und Backend-Transporte. Die Laufzeitprüfung ersetzt nur den bestehenden Hook-Kontext-Seam durch einen Zähler, um Aufrufzahl und Position im Prompt zu prüfen; sie startet keinen MemoryHook-Provider und kein Modell. Es gibt damit weder eine Produktionsaktivierung noch einen gemessenen Modell- oder Qualitätsgewinn.
+Die Konfigurations- und Laufzeitregressionen verwenden isolierte Konfigurationsdateien, Chatstores und Backend-Transporte. `test_memory_hook_runtime_opt_in.py` ersetzt den bestehenden Hook-Kontext-Seam durch einen Zähler, um Aufrufzahl und Position im Prompt zu prüfen; dabei starten weder MemoryHook-Provider noch Modell.
+
+Der zusätzliche Testpfad in `test_learning_reuse_empirical.py` verwendet dagegen den echten `ExternalMemoryHook` mit einer synthetischen isolierten Datenbank und einem Recording-Backend. Er prüft den Transport einer synthetischen Erinnerung bis in den Prompt und ruft kein Modell auf. Der vorhandene Testaufbau allein belegt keinen erfolgreichen Lauf. Auch ein erfolgreicher isolierter Lauf wäre weder eine Produktionsaktivierung noch ein gemessener Modell- oder Qualitätsgewinn.
+
+Schreibende Konfigurations- und Promotion-Fixtures benötigen einen konfigurierten kanonischen Lock-Scanner und einen bestätigten vollständigen Lock-Status. Fehlt dieser Nachweis, wird der Schreibzugriff verweigert; ein solcher Testabbruch ist kein erfolgreicher Anschlussnachweis.

@@ -271,6 +271,7 @@ class _TaskProxy(_DBBackedProxy):
         required_model: str | None = None,
         assigned_slot: str | None = None,
         assigned_to: str | None = None,
+        creation_origin: str | None = None,
     ) -> dict[str, Any]:
         cli_priority = priority
         cli_description = description
@@ -279,6 +280,7 @@ class _TaskProxy(_DBBackedProxy):
         cli_required_model = required_model
         cli_assigned_slot = assigned_slot
         cli_assigned_to = assigned_to
+        cli_creation_origin = creation_origin
 
         i = 0
         while i < len(args):
@@ -326,6 +328,12 @@ class _TaskProxy(_DBBackedProxy):
             elif arg.startswith("--assigned-slot="):
                 cli_assigned_slot = arg.split("=", 1)[1]
                 i += 1
+            elif arg == "--creation-origin" and i + 1 < len(args):
+                cli_creation_origin = str(args[i + 1])
+                i += 2
+            elif arg.startswith("--creation-origin="):
+                cli_creation_origin = arg.split("=", 1)[1]
+                i += 1
             else:
                 i += 1
 
@@ -342,6 +350,8 @@ class _TaskProxy(_DBBackedProxy):
             raw_args.extend(["--assigned-slot", cli_assigned_slot])
         if cli_assigned_to is not None:
             raw_args.extend(["--assigned", cli_assigned_to])
+        if cli_creation_origin is not None:
+            raw_args.extend(["--creation-origin", cli_creation_origin])
 
         success, message = self.raw("add", *raw_args)
         if not success:

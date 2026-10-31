@@ -1,0 +1,70 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+WORKER-SCOPE-EVIDENCE — Project and Worktree Evidence for Results
+================================================================
+
+A submitted result can receive an immutable scope evidence record.
+The first adapter uses the existing registration of a clean
+BACH task worktree on bach-task/<Task-ID>. Other projects require
+their own connection to their actual repository/scope authority.
+Missing evidence does not prevent the previous personal acceptance
+or correction.
+
+The private controller captures the canonical result, its task
+version, generation, fence and submission revision as well as
+repository, branch, head and git tree. Resolved local paths are
+stored only as SHA-256. An existing public source pin is verified;
+its absence is not output as publicly confirmed provenance. Prompts,
+responses, private lease IDs and credentials do not belong in this
+evidence record.
+
+The defined git scope covers the index, tracked files and non-ignored
+new files. Staged/unstaged/untracked changes as well as
+assume-unchanged and skip-worktree prevent a positive evidence record.
+Submodules and configured git file filters remain unavailable for the
+first adapter; this scope check does not execute filter programs.
+Ignored files are explicitly outside this git scope. A clean commit
+does not prove the professional fulfillment of the task.
+
+Git and SQLite have no common transaction. Git and current locks are
+captured outside the SQLite write block; within the write block the
+canonical result binding is re-verified. The evidence record describes
+an observed state. It does not prove persistent exclusivity or
+immutability between two queries.
+
+read_result() checks exclusively stored evidence records and history
+within a single SQLite read snapshot. result.scope.availability=recorded
+means: historical evidence record valid, current worktree not yet
+re-confirmed. result.result_revision remains null at that point. The
+local SDK call and the API GET then re-check git/registration/locks.
+The API performs this check after closing the connection, outside its
+event loop. A SQLite snapshot already opened by the caller is not
+closed by the SDK; within this snapshot the additional git projection
+is omitted.
+
+Only when the confirmed scope is unchanged does availability=available
+appear. A changed head, a dirty tree, or an unavailable git/lock
+service yields unavailable and no complete result revision. An existing
+result evidence record is never overwritten by a newer worktree state.
+A new submission requires a new result generation.
+
+The complete result_revision binds the submission revision, the
+actually confirmed execution revision and the scope evidence digest/
+history event. With a missing execution evidence record it remains null.
+In CLI runs the scope may already be present after submit; the revision
+is nevertheless only created after actual model return and confirmed
+execution linkage. Lost submit ACKs may only be reconstructed through
+the exact canonical readback of one's own private expected submission.
+
+The private local capture uses TaskLeaseClient._capture_task_scope and
+WorkerLeaseBinding.capture_confirmed_scope. The dispatcher calls them after
+the confirmed task operation, outside the binding lock. Direct local
+callers can invoke them explicitly; result_state reconstructs the actual
+submit first if needed. Repeated successful capture of the same result ID
+is avoided in the binding. Current public retrievals continue to re-check
+their scope. Remote clients receive no self-service endpoint and no local
+DB fallback.
+
+A valid revision grants no review rights and no done. Author and
+reviewer identity, model tier, independence, professional task contract,
+user obligation and GitHub gates must each provide their own authorized
+evidence. A later release must re-check the then-current state.

@@ -1,0 +1,119 @@
+# 移植性: UNIVERSAL
+# バージョン: 1.0.0
+# 最終検証日: 2026-09-17
+# 次回レビュー: 2027-03-17
+# リソース: [hub/subscription_agents.py, hub/_services/subscription_agents_composer.py]
+
+================================================================================
+subscription_agents - バージョン管理されたオンボーディングプロンプトのプレビュー
+================================================================================
+
+説明
+--------------------------------------------------------------------------------
+`subscription_agents` ハンドラは、現在の BACH ソースからバージョン管理された
+オンボーディングプロンプトのプレビューを生成します（Subscription-Agents-Compose）。
+そのため、ハンドラは JSON 形式のリクエストファイルを読み込み、内容を
+Composer (`hub/_services/subscription_agents_composer.py`) に渡し、結果を
+正規化された順序でソートされた JSON として stdout に出力します。
+
+このハンドラはリクエストファイルに対して読み取り専用です。リクエストファイル、
+設定ファイル、システムファイルのいずれも変更しません。出力は、バージョン管理された
+プロンプト/オンボーディング状態の基礎として、また下流のツールへの引き渡しとして
+適しています。
+
+このハンドラが提供する操作は `compose` のみです。
+
+登録名:      subscription_agents
+モジュール:  system/hub/subscription_agents.py
+関連サービス: system/hub/_services/subscription_agents_composer.py
+操作:        compose
+
+操作
+--------------------------------------------------------------------------------
+compose <リクエストJSONファイル>
+    現在の BACH ソースからバージョン管理されたオンボーディングプロンプトの
+    プレビューを作成します。
+
+    引数:
+      <リクエストJSONファイル>   JSON オブジェクトを含む JSON ファイルへのパス。
+                                先頭の `~` は、実行ユーザーのホームディレクトリに
+                                展開されます。
+
+    引数渡しのルール:
+      - 引数は必ず 1 つ必要です。
+      - 引数は空でない文字列である必要があります。
+      - 引数は `-` で始まってはいけません（オプション解析は行われません）。
+
+    リクエストファイルのエラー処理:
+      - ファイルが読み取れない場合 (OSError/PermissionError)
+        -> "リクエストファイルが読み取れません"
+      - ファイルが MAX_REQUEST_BYTES (256 KB) を超える場合
+        -> "リクエストファイルが 256 KB を超えています"
+      - 内容が有効な UTF-8 JSON でない、JSON オブジェクトでない、または重複した
+        フィールド名を含む場合
+        -> "リクエストファイルには一意なフィールドを含む有効な UTF-8 JSON が必要です"
+        -> "リクエストファイルには JSON オブジェクトが必要です"
+
+    操作または引数が受け入れられない場合、ハンドラは次の使用法の行を返します:
+
+      bach subscription_agents compose <リクエストJSONファイル>
+
+例
+--------------------------------------------------------------------------------
+1) ハンドラの短縮名を使った標準呼び出し:
+
+     python bach.py subscription_agents compose ./request.json
+
+2) オプション形式を使った呼び出し（ハンドラへのバインディング）:
+
+     python bach.py --subscription_agents compose ./request.json
+
+3) ホームディレクトリ内のリクエストファイル（チルダ展開）:
+
+     python bach.py subscription_agents compose ~/requests/onboarding.json
+
+4) 出力をファイルにリダイレクト（ソート順/キーは保持される）:
+
+     python bach.py subscription_agents compose ./request.json > preview.json
+
+5) 最小限のリクエストファイル（JSON オブジェクト、UTF-8、重複フィールドなし）:
+
+     {"topic": "onboarding", "audience": "new_agent"}
+
+出力形式
+--------------------------------------------------------------------------------
+- 成功時: stdout に正確に 1 つの JSON オブジェクトを、`json.dumps(result,
+  ensure_ascii=False, sort_keys=True)` でシリアライズして出力します。キーは
+  アルファベット順にソートされ、非 ASCII 文字はマスクされずに UTF-8 のまま
+  出力されます。
+- エラー時: 通常のハンドラ戻り値を通じてテキスト（エラーメッセージまたは
+  使用法の行）を返します。終了ステータスは呼び出し元の CLI に依存します。
+- 出力には、ハンドラ自体が追加する末尾の改行は含まれません。
+
+ファイル
+--------------------------------------------------------------------------------
+system/hub/subscription_agents.py
+    ハンドラ: 引数の検証、リクエストの読み込み、Composer の呼び出し、出力。
+
+system/hub/_services/subscription_agents_composer.py
+    `SubscriptionAgentsComposer` と定数 `MAX_REQUEST_BYTES`（リクエストファイルの
+    上限 256 KB）を持つ Composer サービス。
+
+<リクエストJSONファイル>
+    呼び出し元が提供する入力ファイル（JSON オブジェクト、UTF-8、最大 256 KB、
+    重複フィールドなし）。読み取り専用です。
+
+system/docs/help/subscription_agents.txt
+    このヘルプファイル。`--help subscription_agents` で解決されます
+    （ヘルプ検索は `docs/help/<トピック>.txt` を使用します。登録名と
+    モジュール名は同一です）.`--help list` にも自動的に表示されます。
+
+関連項目
+--------------------------------------------------------------------------------
+- `--help prompt` (system/docs/help/prompt.txt): リポジトリ内のプロンプト構築と
+  プロンプト規約。
+- `--help abo`: システムのサブスクリプション/購読コンテキスト。
+- `--help list`: 利用可能なすべてのヘルプトピックの概要。
+- ARCHITECTURE.md: CLI の呼び出し規約（`python bach.py <コマンド>` または
+  `python bach.py --<ハンドラ>`）および `docs/help/<トピック>.txt` による
+  ヘルプ解決。

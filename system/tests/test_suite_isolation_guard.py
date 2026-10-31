@@ -11,8 +11,21 @@ from system.tests import conftest
 
 def test_session_bootstraps_slots_config_on_private_disk():
     slots_path = Path(os.environ["BACH_SLOTS_CONFIG_PATH"]).resolve()
-    assert slots_path == (conftest._TEST_DB_DIR / "slots_config.json").resolve()
-    assert conftest._source_runtime_path(slots_path) is None
+    # conftest can be executed under more than one module name
+    # (system.tests.conftest vs. the name pytest loaded it under); each run
+    # creates its own private directory, so accept any loaded instance.
+    loaded = [
+        module
+        for name, module in list(sys.modules.items())
+        if (name == "conftest" or name.endswith(".conftest"))
+        and getattr(module, "_TEST_DB_DIR", None) is not None
+    ]
+    owner = next(
+        (m for m in loaded if (m._TEST_DB_DIR / "slots_config.json").resolve() == slots_path),
+        None,
+    )
+    assert owner is not None, f"{slots_path} gehoert zu keinem geladenen conftest"
+    assert owner._source_runtime_path(slots_path) is None
     assert slots_path.is_file()
     config = json.loads(slots_path.read_text(encoding="utf-8"))
     assert "buddha_chat" in config["slots"]

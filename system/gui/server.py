@@ -2567,6 +2567,13 @@ class LeaseReleaseRequest(LeaseRefRequest):
     worker_result: Optional[dict] = None
 
 
+class LeaseReclaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operator: StrictStr
+    fence: StrictInt
+    reason: StrictStr
+
+
 class LeaseUpdateRequest(LeaseRefRequest):
     model_config = ConfigDict(extra="forbid")
     task_version: StrictStr
@@ -2907,6 +2914,15 @@ async def release_task_lease(task_id: int, body: LeaseReleaseRequest):
                          task_version=body.task_version,
                          outcome=body.outcome, result_ref=body.result_ref or "",
                          note=body.note or "", worker_result=body.worker_result)
+
+
+@app.post("/api/tasks/{task_id}/lease/reclaim-unresolved")
+async def reclaim_unresolved_task_lease(task_id: int, body: LeaseReclaimRequest, request: Request):
+    """Operator: genau eine abgelaufene Task mit unklärbarem Tool-Trace auf blocked setzen."""
+    from hub._services.task_lease import reclaim_unresolved_lease
+    return _run_lease_op(reclaim_unresolved_lease, task_id, operator=body.operator,
+                         fence=body.fence, reason=body.reason,
+                         device=_lease_device_label(request))
 
 
 @app.post("/api/tasks/{task_id}/lease/update")
@@ -11192,6 +11208,18 @@ async def prompt_library_page():
     return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
 
 
+@app.get("/governance", response_class=HTMLResponse)
+async def governance_page():
+    """Governance & Control als GUI-Seite: Erlaubnisse für Außenwirkung, Policy-Registry, Sperren, Hooks & Guards, Logs & Audit."""
+    astro_page = ASTRO_DIST_DIR / "governance.html"
+    if astro_page.is_file():
+        return FileResponse(astro_page)
+    template = TEMPLATES_DIR / "governance.html"
+    if template.exists():
+        return HTMLResponse(content=template.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Template governance.html fehlt</h1>", status_code=404)
+
+
 @app.get("/api/prompt-library")
 async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
     """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
@@ -14127,7 +14155,10 @@ async def export_contacts():
 
 @app.get("/routinen", response_class=HTMLResponse)
 async def routinen_page():
-    """Routinen Dashboard."""
+    """Routinen Dashboard: shared GUI page first; the BACH template only without a shared release page."""
+    astro_routinen = ASTRO_DIST_DIR / "routinen.html"
+    if astro_routinen.exists():
+        return FileResponse(astro_routinen)
     routinen_file = TEMPLATES_DIR / "routinen.html"
     if routinen_file.exists():
         return FileResponse(routinen_file)
@@ -14164,6 +14195,7 @@ async def get_routines(category: str = None, interval: str = None):
 
         for row in rows:
             r = dict(row)
+            r['is_active'] = bool(r['is_active'])  # SQLite INTEGER -> JSON boolean for the shared /routinen page
             r['is_due_today'] = False
             r['is_overdue'] = False
 

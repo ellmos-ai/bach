@@ -267,8 +267,10 @@ class BerichtHandler(BaseHandler):
         client_name = None
         geburtsdatum = None
         zeitraum = "01.01.2025 - 31.12.2025"
-        backend = "claude_code"
-        model = "claude-sonnet-4-6"
+        backend = None  # None -> Default je Modus (cloud: claude_code, lokal: ollama)
+        model = None
+        modus = "cloud"
+        begriffe = []
         eltern = []
         adresse = None
         cleanup = True
@@ -286,6 +288,12 @@ class BerichtHandler(BaseHandler):
                     i += 2
                 elif args[i] == "--model" and i + 1 < len(args):
                     model = args[i + 1]
+                    i += 2
+                elif args[i] == "--modus" and i + 1 < len(args):
+                    modus = args[i + 1]
+                    i += 2
+                elif args[i] == "--begriffe" and i + 1 < len(args):
+                    begriffe = [t.strip() for t in args[i + 1].split(",") if t.strip()]
                     i += 2
                 elif args[i] == "--eltern":
                     i += 1
@@ -324,13 +332,16 @@ class BerichtHandler(BaseHandler):
                 llm_backend=backend,
                 model=model,
                 auto_cleanup=cleanup,
+                modus=modus,
+                additional_terms=begriffe or None,
             )
 
             if result.success:
                 lines = [
                     f"Pipeline erfolgreich!",
                     f"  Bericht: erstellt",
-                    f"  Tarnname: {result.tarnname}",
+                    f"  Modus: {modus}",
+                    f"  Tarnname: {result.tarnname or '-'}",
                     f"  Dauer: {result.duration_s:.1f}s",
                     "",
                     "  Schritte:",
@@ -418,6 +429,8 @@ class BerichtHandler(BaseHandler):
             "Beispiele:",
             "  bach bericht pipeline                              # Auto-Detect (empfohlen)",
             "  bach bericht pipeline --zeitraum \"01.07.2025 - 30.06.2026\"",
+            "  bach bericht pipeline --begriffe \"Nachtigall, Beispielweg 7\"   # manuelle Schwaerzliste (nur Modus cloud)",
+            "  bach bericht pipeline --modus lokal                 # ohne Anonymisierung, nur lokales Modell (ollama)",
             "  bach bericht pipeline \"Max Mustermann\" \"15.03.2016\"  # Explizit",
             "  bach bericht list",
             "  bach bericht status",

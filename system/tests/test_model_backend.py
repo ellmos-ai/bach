@@ -958,6 +958,10 @@ def test_openrouter_catalog_retry_recovers_then_runs_exactly_one_inference(monke
     [
         ({"data": [{"id": "vendor/model:free", "pricing": {"prompt": "0", "completion": "0.2"}}]},
          "vendor/model:free", "model_price_nonzero"),
+        ({"data": [{"id": "vendor/model:free", "pricing": {"prompt": "0", "completion": "0", "input_cache_read": "0.01"}}]},
+         "vendor/model:free", "model_price_nonzero"),
+        ({"data": [{"id": "vendor/model:free", "pricing": {"prompt": "0", "completion": "0", "input_cache_read": "NaN"}}]},
+         "vendor/model:free", "model_price_invalid"),
         ({"data": [{"id": "vendor/model:free", "pricing": {"prompt": "0"}}]},
          "vendor/model:free", "model_price_missing"),
         ({"data": [{"id": "vendor/other:free", "pricing": {"prompt": "0", "completion": "0"}}]},
