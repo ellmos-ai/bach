@@ -39,30 +39,12 @@ def _external_profile_backend(slot):
     return None
 
 
-def _external_profile_backend(slot):
-    """Return the canonical cloud profile backend, including Ollama's :cloud alias."""
-    if not isinstance(slot, dict):
-        return None
-    backend = str(slot.get("backend") or "").strip().casefold()
-    model = str(slot.get("model") or "").strip().casefold()
-    if backend in _EXTERNAL_PROFILE_BACKENDS:
-        return backend
-    if backend == "ollama" and model.endswith(":cloud"):
-        return "ollama-cloud"
-    return None
-
-
 class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
 
     def __init__(self, message, *, reason="changed_selection"):
         self.reason = reason
         super().__init__(message)
-
-
-class WorkerSubmissionScopeError(LeaseProtocolError):
-    """Raised when a worker attempts to submit a result with uncommitted worktree changes."""
-    user_message = "Task-Arbeitsbaum enthält ungecommittete Änderungen; zuerst finish_task ausführen."
 
 
 class WorkerResultLimitLockedError(LeaseProtocolError):
@@ -780,7 +762,14 @@ class WorkerLeaseBinding:
     def matches_execution_slot(self, slot):
         """Actual dispatch uses the same private canonical policy, not preferences."""
         self.assert_active()
-        if self._selection_profile is None or slot.get('id') != self._selection_profile.get('id'):
+        if self._selection_profile is None:
+            return False
+        if not self._selection_profile:
+            from hub._services.worker_policy_settings import _selection_kernel
+            policy = _selection_kernel().SelectionPolicy(**{
+                key: self._selection_policy_pin['policy'][key] for key in ('require_assigned_slot', 'enforce_model_binding')})
+            return policy.rejection(self._snapshot, slot if isinstance(slot, dict) else {}) is None
+        if slot.get('id') != self._selection_profile.get('id'):
             return False
         actual = {**self._selection_profile, 'id':slot['id'], 'model':slot.get('model')}
         if self._review_grant is not None:
@@ -1323,8 +1312,7 @@ class WorkerLeaseBinding:
             # Explicitly valid registry absence and a non-Git contract preserve
             # the existing non-repository result path. Unknown is never absence.
             return None
-        from hub._services.chat.worker_write_guard import snapshot_task_scope
-        from hub._services.worker_scope_evidence import _snapshot_valid
+        from hub._services.worker_scope_evidence import _snapshot_valid, snapshot_task_scope
         try:
             scope = snapshot_task_scope(self.task_id)
         except Exception:
