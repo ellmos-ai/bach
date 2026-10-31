@@ -1137,10 +1137,15 @@ def _finish_task(
     ein WIP-Stand überhaupt committet wird (`wip_commit_on_abort`).
     Übersprungene Schritte liefern einen Erfolg mit
     `status="wip_skipped_by_policy"`, `"commit_skipped_by_policy"` oder
-    `"push_skipped_by_policy"`; Merge, Release und Deploy bleiben als
-    `allow_merge`/`allow_release`/`allow_deploy` im Rückgabewert sichtbar
-    und werden hier nie ausgeführt. Ist die Policy nicht lesbar, wird
-    nichts geschrieben; es gibt keinen automatischen Commit-Fallback.
+    `"push_skipped_by_policy"` und melden `commit_skipped`/`push_skipped`;
+    nur in diesen Skip-Rückgaben bleiben Merge, Release und Deploy als
+    `allow_merge`/`allow_release`/`allow_deploy` sichtbar. Im regulären
+    PR-Erfolgsfall liefert dagegen der bestätigte Submit-Owner die Antwort
+    (`success`, `submission_confirmed`, `scope_confirmed`, `lease_released`,
+    `status="review"`, `accepted`, `result_id`, `result_revision`, `pr_url`)
+    ohne `allow_*`-Flags. Merge, Release und Deploy werden hier nie
+    ausgeführt. Ist die Policy nicht lesbar, wird nichts geschrieben; es
+    gibt keinen automatischen Commit-Fallback.
     """
     if worker_task_binding is None:
         return {"success": False, "error": "Private Taskbindung fehlt"}
