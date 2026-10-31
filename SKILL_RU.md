@@ -343,4 +343,702 @@ from bach_api import (
     app,         # app().execute("handler", "operation", ["args"])
 )
 ```
-<!-- T2619-CONT -->
+    # Plugin-API (Dynamische Erweiterung)
+    plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
+
+    # Raw-Zugriff (beliebiger Handler)
+    app,         # app().execute("handler", "operation", ["args"])
+)
+```
+
+##### Когда что использовать
+
+| Ситуация | Рекомендация |
+|-----------|------------|
+| LLM-сессия (рекомендуется) | Смешанный режим: `session.startup()` + API |
+| Быстрый одиночный запрос | Режим библиотеки: напрямую `task.list()` |
+| Человек за терминалом | Режим сессии: `python bach.py --startup` |
+| Чтение файлов, поиск по коду | Напрямую (Glob/Grep/Read) |
+| Обработчик отсутствует в bach_api | `app().execute("handler", "op", ["args"])` |
+
+**Архитектура:** `core/registry.py` автоматически распознаёт 113+ обработчиков (Auto-Discovery). Новым обработчикам нужен только `.py`-файл в `hub/` -- никакого ручного маппинга. Горячая перезагрузка: `app().reload_registry()`
+
+#### Типы компонентов
+
+| Тип | Папка | Характеристика |
+|-----|--------|----------------|
+| **Agent** | `agents/<name>/` | Оркестрирует экспертов, собственная папка |
+| **Expert** | `agents/_experts/<name>/` | Глубокие предметные знания, собственная папка |
+| **Service** | `hub/_services/<name>/` | Общего назначения, рядом с обработчиками, собственная папка |
+| **Protocol** | `skills/workflows/` | 1 файл = 1 протокол (ранее Workflow), подпапки по категориям разрешены |
+| **Connector** | `connectors/` | Внешние подключения (MCP, APIs) |
+| **Tool (allg.)** | `tools/` | Многоразовый |
+| **Tool (spez.)** | В папке навыка | Только для этого навыка |
+
+#### Источники навыков и безопасность
+
+| Класс | Источники | Порядок действий |
+|--------|---------|----------|
+| **Золотой стандарт** | Написано самостоятельно | Лучшая интеграция |
+| **Надёжные** | anthropics/skills, anthropics/claude-cookbooks | После проверки переносимы 1:1 |
+| **Ненадёжные** | Прочие GitHub-репозитории | ТОЛЬКО писать заново |
+| **Чёрный список** | `data/skill_blacklist.json` | ЗАПРЕЩЕНО |
+
+---
+
+## ПРОЦЕДУРА ЗАПУСКА [B/C]: (1) → (2) → (3) → (4) → (5) → (6)
+
+*Только в режимах B (смешанный) и C (сессия). Режим A пропускает этот раздел.*
+
+---
+
+### (1) Запусти Bach сейчас [B/C]
+
+**Режим C (сессия/CLI):**
+
+```bash
+cd system
+python bach.py --startup --partner=claude --mode=silent --watch
+```
+
+**Режим B (смешанный/API -- рекомендуется):**
+
+```python
+from bach_api import session
+session.startup(partner="claude", mode="silent")
+```
+
+**Для Gemini:**
+
+```python
+# Modus B (API)
+session.startup(partner="gemini", mode="silent")
+# Modus C (CLI)
+# python bach.py --startup --partner=gemini --mode=silent --watch
+```
+
+---
+
+### (2) СИСТЕМА: Загрузи свои системные знания [B/C]
+
+```bash
+bach help cli
+bach help bach_info
+bach help features
+bach help naming
+bach help guidelines
+bach help architecture
+# --> bach help injectors
+```
+
+Или через API: `help.run("cli")`, `help.run("features")` и т.д.
+
+#### Обнаружение обработчиков и поиск
+
+У BACH 113+ обработчиков в `hub/`. **Каждый обработчик — это CLI-команда.** Чтобы найти обработчики, инструменты, навыки или темы справки:
+
+```bash
+# Fuzzy-Suche in Help-Themen (187+ Themen, Fuzzy-Match!)
+bach help <suchbegriff>           # z.B. bach help web → schlaegt web_scrape, web_parse vor
+
+# Handler auflisten
+bach help list                    # Alle 187+ Help-Themen
+bach help cli                     # CLI-Befehlsuebersicht
+
+# Tools durchsuchen
+bach tools list                   # Alle Python-Tools
+bach tools search <keyword>       # Volltextsuche in Tool-Namen und -Inhalten
+
+# Skills & Agents durchsuchen
+bach skills list                  # Alle Skills in der DB
+bach skills search <keyword>      # Skills nach Keyword filtern
+bach agent list                   # Alle Agenten
+
+# Beliebigen Handler direkt aufrufen
+bach <handler-name> <operation>   # z.B. bach web-scrape get <url>
+```
+
+**Важно:** Если ты не знаешь, какой обработчик существует, используй `bach help <suchbegriff>` -- нечёткий поиск предложит подходящие темы даже при неточных терминах.
+
+#### Файлы для ознакомления
+
+- `system/CHANGELOG.md` - история версий
+- `system/ROADMAP.md` - запланированные функции и обзор архитектуры
+
+#### Корневые документы (генерируются из БД, обновляются при `bach --shutdown`)
+
+- `AGENTS.md` - все босс-агенты и эксперты со статусом и путями
+- `PARTNERS.md` - LLM-партнёры и делегирование
+- `SKILLS.md` - индекс навыков
+- `WORKFLOWS.md` - индекс протоколов
+- `CHAINS.md` - цепочки инструментов
+- `USECASES.md` - сценарии применения
+- `USER.md` - профиль пользователя
+- `MEMORY.md` - снимок памяти
+- `BACH_HELP_REFERENCE.md` - полный справочник Help
+
+#### Основные принципы
+
+- **BACH как организм**: Connectors/Bridge — это **чувства и голос** (восприятие + коммуникация с внешним миром). LLM — это **разум** (мышление, понимание, решение). База данных и текстовые файлы — это **память**. GUI — это **лицо**. API, CLI, инструменты, агенты, навыки и рабочие процессы — это **руки** (потенциал действия).
+- **Handler First**: Каждая функция как обработчик в `hub/` -- автоматически доступна через CLI **и** API
+- **API в приоритете**: LLM используют `bach_api` вместо CLI. Люди используют CLI или GUI.
+- **Системно**: Переиспользуемо для любого пользователя
+- **dist_type**: 0=USER (персонально), 1=TEMPLATE (настраиваемо), 2=CORE (система)
+- **Идемпотентно**: Импорты повторяемы без дубликатов
+- **Проверка версии**: Всегда использовать новейшую версию
+
+> **КЛЮЧЕВОЙ ПРИНЦИП:** BACH разрабатывается НЕ в первую очередь для отдельного пользователя, а как переиспользуемая система.
+
+#### Принципы работы
+
+Шесть базовых правил для всех партнёров BACH (LLM, агенты, эксперты):
+
+1. **Собственные ресурсы в первую очередь** — Проверь память, Wiki, инструменты и БД, прежде чем спрашивать пользователя
+2. **Результаты важнее процесса** — Значение имеет результат, а не метод
+3. **Действовать, а не анонсировать** — Не объясняй, что ты собираешься сделать, просто сделай это
+4. **Иметь мнение** — Ты можешь возражать и вносить собственные предложения
+5. **Оставаться компактным** — Системные промпты менее 1000 токенов, инъекции держать краткими
+6. **Сохранять знания** — Записывай выводы в память, прежде чем контекст будет потерян
+
+**Партнёр-специфичные инструкции:**
+- **Claude**: Прочитай `CLAUDE.md` в корневом каталоге (правило Knowledge Capture, интеграция)
+- **Gemini**: Прочитай `GEMINI.md` в корневом каталоге (правило Knowledge Capture, интеграция)
+- **Ollama**: Прочитай `OLLAMA.md` в корневом каталоге (правило Knowledge Capture, интеграция)
+
+Эти файлы содержат детальные правила Knowledge Capture и партнёр-специфичные настройки.
+
+#### Схема базы данных (138 таблиц в bach.db)
+
+| # | Область | Важнейшие таблицы |
+|---|---------|---------------------|
+| 1 | System | `system_identity`, `system_config`, `instance_identity` |
+| 2 | Tasks | `tasks` |
+| 3 | Memory | `memory_working`, `memory_facts`, `memory_lessons`, `memory_sessions` |
+| 4 | Tools | `tools` (550+ записей) |
+| 5 | Skills | `skills` (1870+ записей) |
+| 6 | Agents | `bach_agents`, `bach_experts`, `agent_synergies` |
+| 7 | Files | `files_truth`, `files_trash`, `dist_files` |
+| 8 | Automation | `automation_triggers`, `automation_routines`, `automation_injectors` |
+| 9 | Monitoring | `monitor_tokens`, `monitor_success`, `monitor_processes`, `monitor_pricing` |
+| 10 | Connections | `connections`, `connector_messages`, `partner_presence` |
+| 11 | Languages | `languages_config`, `languages_translations` |
+| 12 | Distribution | `distribution_manifest`, `dist_type_defaults`, `releases`, `snapshots` |
+| 13 | Wiki | `wiki` (87 статей) |
+| 14 | Usecases | `usecases`, `toolchains` |
+
+Полная схема: `system/data/schema/schema.sql` (138 таблиц + Views + FTS)
+
+---
+
+### ОБЩАЯ АРХИТЕКТУРА BACH v2.6
+
+```text
+  +=====================================================================+
+  |                             USER-INTERFACES                         |
+  |  +-----------+  +-----------+  +-----------+  +-------------------+ |
+  |  |    CLI    |  | Lib-API   |  |    GUI    |  |  MCP v2.2 (IDE)   | |
+  |  |  bach.py  |  | bach_api  |  | server.py |  |  mcp_server.py   | |
+  |  +-----+-----+  +-----+-----+  +-----+-----+  +--------+--------+ |
+  +========|==============|==============|==================|===========+
+           |              |              |                  |
+  +========v==============v==============v==================v===========+
+  |                    CORE LAYER (core/*.py)                           |
+  |  app.py → registry.py → Auto-Discovery von 75+ Handlern            |
+  |  base.py (BaseHandler) | db.py (Schema-First) | hooks.py (Events)  |
+  +=========|==============|=======================================+====+
+            |              |                                       |
+  +==========v==============v=======================================v===+
+  |                          HUB LAYER (hub/*.py)                       |
+  |  System: startup, shutdown, status, backup, tokens, inject, hooks   |
+  |  Domain: steuer, abo, haushalt, gesundheit, contact, calendar, email|
+  |  Data: task, memory, db, session, logs, wiki, docs, inbox           |
+  |  Multi-AI: agents, partner, daemon, ollama, ati                     |
+  |  Extension: skills (create/reload), hooks (status/events/log/test)  |
+  +====|======================|======================|=================+
+       |                      |                      |
+  +----v------------------+   |   +------------------v-----------------+
+  |   AGENTS LAYER        |   |   |   CONNECTORS & PARTNERS           |
+  |                       |   |   |                                    |
+  | agents/ (Ordner)      |   |   | connectors/ (MCP, APIs)           |
+  | agents/_experts/      |   |   | partners/ (Multi-LLM-Konfig)      |
+  +-----------------------+   |   +------------------------------------+
+                              |
+  +---------------------------v----------------------------------------+
+  |   SKILLS & TOOLS LAYER                     |    DATA LAYER         |
+  |                                            |                       |
+  | skills/workflows/ (ehem. _workflows)      | bach.db (Unified)     |
+  | skills/_templates/ (Standard-Templates)    | Dateisystem            |
+  | hub/_services/ (Ordner)                    | inbox/outbox/          |
+  | tools/*.py | c_*.py | injectors.py         |                       |
+  +--------------------------------------------+-----------------------+
+              |
+  +-----------v-----------+
+  | SELF-EXTENSION LAYER  |
+  |                       |
+  | skills create (6 Typ) |
+  | skills reload (Hot)   |
+  | hooks.on/emit (14 Ev) |
+  | Plugin-API (geplant)  |
+  +-----------------------+
+```
+
+---
+
+### (3) ПАМЯТЬ: Загрузи свой эпизодический контекст [B/C]
+
+```bash
+bach help memory
+bach help lessons
+bach help consolidation
+```
+
+#### Когнитивная модель памяти (5 типов)
+
+| Тип | Соответствие | Функция | Команда |
+|-----|--------------|----------|--------|
+| **Working** | Кратковременная | Текущая сессия | `bach mem write` |
+| **Episodic** | Дневник | Завершённые сессии | `bach --memory session` |
+| **Semantic** | Знания о мире | Факты, Wiki, Help | `bach --memory fact "key:value"` |
+| **Procedural** | Умение | Tools, Skills, Workflows | `bach help tools` |
+| **Associative** | Связывание | Консолидация, триггеры | `bach consolidate` |
+
+---
+
+### (4) ВОЗМОЖНОСТИ: Загрузи знания о своих возможностях [B/C]
+
+```bash
+bach help skills
+bach help tools
+```
+
+**Иерархия:**
+
+- **Агенты**: оркестрируют несколько областей, собственная папка
+- **Эксперты**: глубокое знание домена, собственная папка
+- **Сервисы**: общие службы, близки к обработчикам
+
+**Важные каталоги:**
+
+- `system/agents/` - агенты (каждый в своей папке)
+- `system/agents/_experts/` - эксперты (каждый в своей папке)
+- `system/hub/_services/` - сервисы (каждый в своей папке)
+
+- `system/skills/workflows/` - Протоколы (отдельные файлы, бывш. _workflows)
+- `system/skills/_templates/` - Стандартные шаблоны
+- `system/connectors/` - Внешние подключения (MCP, APIs)
+- `system/partners/` - Конфигурации мульти-LLM
+
+---
+
+### (5) ПЛАНИРОВАНИЕ ЗАДАЧ [B/C]
+
+#### (5.1) Распознавание пожеланий пользователя
+
+- Распознавай конкретные пожелания пользователя, названные в промпте, как задачи
+- Фиксируй задачи и планируй свои действия
+- Если конкретных пожеланий нет, переходи к 5.2
+
+#### (5.2) Загрузка контекста задач
+
+```python
+# API (предпочтительно)
+from bach_api import task
+task.list()
+```
+
+```bash
+# CLI
+bach help tasks
+bach task list
+```
+
+- Выбирай задачи самостоятельно. **С 2026-10-25: приём и сдача идут через Lease, см. раздел «КАК АГЕНТ ОБРАБАТЫВАЕТ ОТКРЫТЫЕ ЗАДАЧИ» в самом начале.** `bach task claim` устарел (Claim без Fence/Lease-ID).
+
+---
+
+### (6) ПРОЦЕДУРНЫЕ ЗНАНИЯ И ПРОТОКОЛЫ [C]
+
+*В режиме B опционально -- протоколы это документация, не код.*
+
+```bash
+bach help protocol
+bach help between-tasks
+bach help practices
+```
+
+**Путь:** `system/skills/workflows/`
+
+---
+
+## ТЕМАТИЧЕСКИЕ ПАКЕТЫ (читать по необходимости -- все режимы)
+
+### ТЕМА: Сотрудничество (ПАКЕТ: КОМАНДНАЯ РАБОТА)
+
+*Когда читать:* Ты работаешь с партнёрами в системе.
+
+```bash
+bach help partners
+bach help multi_llm
+bach help delegate
+```
+
+**Чат-система:**
+
+```python
+# API
+from bach_api import msg, partner
+msg.send("gemini", "Bitte recherchiere...")
+msg.unread()
+partner.delegate("Recherche", "--to=gemini")
+```
+
+```bash
+# CLI
+bach msg send claude "Text"
+bach msg unread
+```
+
+**Система блокировок:**
+
+```bash
+bach llm lock <datei>           # Lock ДО записи
+bach llm unlock [datei]         # Снять Lock
+bach llm status                 # У кого какие Locks?
+```
+
+---
+
+### ТЕМА: Решение проблем (ПАКЕТ: РЕШЕНИЕ ПРОБЛЕМ)
+
+*Когда читать:* Ты сталкиваешься с проблемами или блокировками.
+
+```bash
+bach help operatoren
+bach help planning
+bach help problemloesung
+```
+
+bach help strategien
+```
+
+---
+
+### ТЕМА: Задачи по кодингу (ПАКЕТ: CODING)
+
+*Когда читать:* Ты работаешь над кодом или исправляешь баги.
+
+```bash
+bach help ati
+bach help coding
+bach help bugfix
+```
+
+---
+
+### ТЕМА: Обслуживание (ПАКЕТ: ОБСЛУЖИВАНИЕ)
+
+*Когда читать:* Ты выполняешь задачи по обслуживанию.
+
+```bash
+bach help maintain
+bach help wartung
+bach help recurring
+bach daemon status
+```
+
+---
+
+### ТЕМА: Управление файлами (ПАКЕТ: УПРАВЛЕНИЕ ФАЙЛАМИ)
+
+*Когда читать:* Ты выполняешь файловые операции.
+
+```bash
+bach help trash
+bach help migrate
+bach help distribution
+```
+
+---
+
+### ТЕМА: Чтение веб-страниц (ПАКЕТ: WEB)
+
+*Когда читать:* Тебе нужно запросить веб-страницы, извлечь содержимое или выполнить веб-анализ.
+
+```bash
+bach help web_parse
+bach help web_scrape
+```
+
+**Два обработчика для разных целей:**
+
+| Обработчик | Команда | Назначение | Техника |
+|---------|--------|-------|---------|
+| `web_parse` | `bach web-parse url/clean <url>` | **Извлечение содержимого** (основной контент как Markdown) | trafilatura/html2text |
+| `web_scrape` | `bach web-scrape get/links/forms/headers <url>` | **Анализ структуры** (ссылки, формы, headers) | requests + Regex |
+
+**Рекомендация:** Для текстового содержимого `web-parse clean <url>` (удаляет Nav/Header/Footer). Для сырых данных или списков ссылок `web-scrape`. Оба используют HTTP-запросы -- страницы, рендерящиеся через JS, отдают только серверную часть HTML.
+
+**Навык:** `skills/workflows/webseiten-lesen.md` -- Подробный порядок действий с деревом решений.
+
+---
+
+### ТЕМА: Саморасширение (ПАКЕТ: SELF-EXTENSION) [B/C]
+
+*Когда читать:* Тебе не хватает какой-то способности или ты хочешь расширить BACH.
+
+```bash
+bach help self-extension
+bach help hooks
+bach help skills
+```
+
+**Создание новых способностей (5 типов):**
+
+```bash
+bach skills create voice-processor --type tool       # Scaffold нового инструмента
+bach skills create email-agent --type agent           # Scaffold нового агента
+bach skills create tax-expert --type expert            # Scaffold нового эксперта
+bach skills create api-gateway --type handler          # Scaffold новой CLI-команды
+bach skills create data-sync --type service            # Scaffold нового сервиса
+```
+
+**После создания: Hot-Reload (без перезапуска!)**
+
+```bash
+bach skills reload
+```
+
+**Hook-фреймворк (14 событий):**
+
+```python
+from core.hooks import hooks
+
+# Eigene Logik an System-Events haengen
+hooks.on('after_task_create', meine_funktion, name='mein_plugin')
+hooks.on('after_startup', startup_check, name='mein_plugin')
+
+# Events anzeigen
+# bach hooks events
+```
+
+**Plugin-API (динамическое расширение во время выполнения):**
+
+```python
+from bach_api import plugins
+
+# Tool registrieren (sofort nutzbar)
+plugins.register_tool("mein_tool", meine_funktion, "Beschreibung")
+
+# Hook registrieren (Event abonnieren)
+plugins.register_hook("after_task_done", callback, plugin="mein-plugin")
+
+# Handler registrieren (neuer CLI-Befehl!)
+plugins.register_handler("mein_cmd", MeinHandler)
+
+# Plugin aus Manifest laden
+plugins.load_plugin("plugins/mein-plugin/plugin.json")
+```
+
+```bash
+# CLI: Plugin-Verwaltung
+bach plugins list          # Geladene Plugins
+bach plugins create name   # Plugin scaffolden
+bach plugins load pfad     # Plugin laden
+bach plugins unload name   # Plugin entladen
+```
+
+**Цикл саморасширения (Self-Extension Loop):**
+1. ОБНАРУЖИТЬ → определить недостающую возможность
+2. СОЗДАТЬ → `bach skills create <name> --type <typ>` или `plugins.register_tool()`
+3. РЕАЛИЗОВАТЬ → написать код
+4. ЗАРЕГИСТРИРОВАТЬ → `bach skills reload` или `plugins.load_plugin()`
+5. ИСПОЛЬЗОВАТЬ → доступно сразу
+6. ОТРЕФЛЕКСИРОВАТЬ → `bach lesson add "Was gelernt"`
+
+---
+
+### ТЕМА: Shutdown (ПАКЕТ: SHUTDOWN) [B/C]
+
+*Когда читать:* сессия завершается. Актуально только в режимах B и C.
+
+**Режим B (API — рекомендуется):**
+```python
+from bach_api import session, memory
+memory.session("THEMA: Was gemacht. NAECHSTE: Was kommt.", session_id="SESSION_ID", partner="claude")
+session.shutdown("Zusammenfassung", partner="claude", session_id="SESSION_ID")
+# Oder schnell:
+session.shutdown_quick("Kurze Notiz", partner="claude", session_id="SESSION_ID")
+```
+
+`SESSION_ID` — это собственный ID из отчёта о запуске. При нескольких открытых
+сессиях всегда указывайте ID и партнёра; неоднозначный выбор отклоняется.
+
+**Режим C (CLI):**
+```bash
+bach help shutdown
+bach --memory session "THEMA: Was gemacht. NAECHSTE: Was kommt."
+bach --shutdown
+```
+
+---
+
+## ХУКИ И ИНЪЕКТОРЫ
+
+### Hook-фреймворк (техническая система событий)
+
+Хуки позволяют привязать собственную логику к 14 событиям жизненного цикла — без изменения существующего кода.
+
+```python
+from core.hooks import hooks
+
+# Listener registrieren
+hooks.on('after_task_done', auto_backup, name='backup_plugin')
+hooks.on('after_startup', health_check, priority=10, name='health')
+
+# CLI
+# bach hooks status    → Zeigt alle Hooks
+# bach hooks events    → Listet alle 14 Events
+# bach hooks log       → Letzte Ausfuehrungen
+```
+
+**События:** `before_startup`, `after_startup`, `before_shutdown`, `after_shutdown`, `before_command`, `after_command`, `after_task_create`, `after_task_done`, `after_task_delete`, `after_memory_write`, `after_lesson_add`, `after_skill_create`, `after_skill_reload`, `after_email_send`
+
+> Хуки — это **технический фреймворк**. Инъекторы — это **когнитивная подсистема**. Они работают независимо друг от друга.
+
+---
+
+### Инъекторы (когнитивная оркестрация)
+
+6 инъекторов имитируют **мышление и ассоциации** как **центральная исполнительная функция**. Доступны через CLI и API.
+
+| Инъектор | Подфункции | Совместим с API |
+|----------|----------------|:---:|
+| **strategy_injector** | Метакогниция, помощь в решениях, анализ ошибок | Да |
+| **context_injector** | Рекомендация инструментов, обращение к памяти, анализ требований | Частично* |
+| **between_injector** | Контроль качества, переход между задачами, валидация результата | Да |
+| **time_injector** | Чувство времени (Timebeat), проверка сообщений | Да |
+| **tool_injector** | Напоминание об инструментах, предупреждение о дубликатах | Да |
+| **task_assigner** | Автоназначение, декомпозиция задач | Да |
+
+*\*context_injector содержит CLI-команды как подсказки. В режиме API фильтруется.*
+
+**CLI:**
+```bash
+bach --inject status            # Status aller Injektoren
+bach --inject toggle <name>     # An/Aus schalten
+```
+
+**API:**
+```python
+from bach_api import injector
+
+injector.process("text")              # Alle Injektoren auf Text anwenden
+injector.check_between("task done")   # Quality-Check nach Task-Abschluss
+injector.tool_reminder()              # Verfuegbare Tools (einmalig)
+injector.assign_task()                # Naechste Aufgabe automatisch zuweisen
+injector.time_check()                 # Uhrzeit + Nachrichten
+injector.status()                     # Status aller Injektoren
+injector.toggle("strategy_injector")  # Einzeln an/aus
+injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
+```
+
+---
+
+## CHANGELOG
+
+### v3.10.0 (2026-10-25)
+
+- **Вход для агентов**: новый раздел в самом начале «КАК АГЕНТ ОБРАБАТЫВАЕТ ОТКРЫТЫЕ ЗАДАЧИ» (запуск, выбор задачи, получение lease, worktree, тесты, PR, сдача результата, следующая задача; границы; известные пробелы). Цель: агент (Claude, Codex, Kimi, Gemini) запускается самостоятельно по одному этому файлу.
+- **Помечено как устаревшее**: `bach task claim` и (5.2) «назначьте её себе»; цифры и обзор архитектуры ниже нового раздела относятся к состоянию 2026-03-12 и не пересчитывались.
+- Ничего не удалено. Режимы A, B, C без изменений.
+
+### v3.8.0 (2026-03-12)
+
+- **Обнаружение обработчиков**: новый раздел в секции (2) — `bach help <suchbegriff>` документирован как основной механизм обнаружения для 109+ обработчиков
+- **Поисковая справка**: `bach help list`, `bach tools search`, `bach skills search` как точки входа для поиска
+- **Тематический пакет WEB**: новый пакет со ссылкой на обработчики `web_parse` и `web_scrape`
+- **Навык `webseiten-lesen`**: новый workflow-навык с деревом решений для извлечения веб-контента
+- **Документация**: обработчики теперь находятся в SKILL.md, а не только через CLI
+
+### v3.2.0-butternut (2026-02-28)
+
+- **Agent-CLI**: `AgentLauncherHandler` — `bach agent start/stop/list` для прямого управления агентами
+- **Prompt-система**: `PromptHandler` — `bach prompt list/add/edit/show/board-create` для централизованного управления промптами
+- **Расширения SharedMemory**: `current-task`, `generate-context`, `conflict-resolution`, `decay`, `changes-since`
+- **USMC Bridge**: United Shared Memory Client (`hub/_services/usmc_bridge.py`)
+- **Цепочки llmauto**: промпты Claude как шаги цепочки + разрешение `bach://`-URL
+- **Планировщик**: `job_type='chain'` + переименование `daemon_jobs` → `scheduler_jobs`
+- **Новые API-модули**: `agent`, `prompt` в `bach_api`
+- **Портирования**: SharedMemoryHandler, ApiProberHandler, N8nManagerHandler, UserSyncHandler, Stigmergy-Service
+- **Таблицы**: 4 новые таблицы БД: `prompt_templates`, `prompt_versions`, `prompt_boards`, `prompt_board_items`
+- **109+ обработчиков** (ранее: 75+)
+
+### v2.6.0 (2026-02-13)
+
+- **Реструктуризация каталогов**: чёткое разделение Agents, Skills, Connectors и Partners
+  - `skills/_agents/` → `agents/` (верхний уровень внутри system/)
+  - `skills/_experts/` → `agents/_experts/` (эксперты принадлежат агентам)
+  - `skills/_workflows/` → `skills/workflows/` (workflows теперь называются protocols)
+  - `skills/_connectors/` → `connectors/` (верхний уровень внутри system/)
+  - `skills/_partners/` → `partners/` (верхний уровень внутри system/)
+- **PathHealer**: автоматическая коррекция путей во всех затронутых файлах
+- **Тип компонента `protocol`**: заменяет `workflow` в иерархии типов
+- **Тип компонента `connector`**: новый для внешних подключений (MCP, APIs)
+- **Схема архитектуры**: AGENTS LAYER и CONNECTORS & PARTNERS как отдельные секции
+- **SKILL.md v2.6**: все ссылки, таблицы и схемы приведены к новой структуре
+
+### v2.5.0 (2026-02-13)
+
+- **Система саморасширения**: AI-партнёры могут добавлять себе новые способности
+  - `bach skills create <name> --type <typ>` (5 типов: tool, agent, expert, handler, service)
+  - `bach skills reload` (hot-reload: реестр + инструменты + БД навыков)
+  - Цикл саморасширения: ОБНАРУЖИТЬ → СОЗДАТЬ → ЗАРЕГИСТРИРОВАТЬ → ИСПОЛЬЗОВАТЬ → ОТРЕФЛЕКСИРОВАТЬ
+- **Hook-фреймворк**: расширяемая система событий с 14 событиями жизненного цикла
+  - `core/hooks.py` — синглтон HookRegistry, приоритеты, журнал событий
+  - `hub/hooks.py` — CLI: `bach hooks status/events/log/test`
+  - Интеграция в: Startup, Shutdown, Task, Memory, Lesson, Skills, App
+
+  - Хуки != инъекторы: технический фреймворк vs. когнитивная подсистема
+- **Обработчик Email**: Gmail API с Draft-Safety (send, draft, confirm, cancel)
+- **Горячая перезагрузка реестра**: `app().reload_registry()` без перезапуска
+- **Правило (f) Self-Extension**: «Не хватает возможности — создай её себе сам!»
+- **Документация**: hooks.txt, self-extension.txt, cli.txt, skills.txt, ROADMAP.md
+
+### v2.4.0 (2026-02-08)
+
+- **MCP Server v2.2**: 23 инструмента, 8 ресурсов, 3 промпта — все три примитива MCP
+- **Email-адаптер**: SMTP_SSL в notify.py (перенесено из BachForelle)
+- **BachFliege + BachForelle**: проанализированы и заархивированы (`docs/_archive/con5_BACHFLIEGE_BACHFORELLE_ARCHIV.md`)
+
+### v2.3.0 (2026-02-06)
+
+- **Свод правил полностью переработан**: ВСЕГДА → вид доступа → специфично для режима
+- **Три режима**: A (Библиотека), B (Смешанный), C (Сессия) с тегами [B], [C], [B/C]
+- **Принцип соразработки**: «Использование BACH — это соразработка» как ключевое правило
+- **bach_api.py расширен**: session, partner, logs, msg, tools, help, injector
+- **14 API-модулей**: полный программный доступ ко всем обработчикам
+- **Инъекторы через API**: все 6 инъекторов доступны через библиотеку + фильтр CLI
+- **Жизненный цикл сессии через API**: `session.startup()` / `session.shutdown()`
+- Схема архитектуры обновлена (Core Layer + bach_api)
+- Все разделы снабжены маркировкой режима
+
+### v2.2.0 (2026-02-06)
+
+- Задокументированы два пути доступа (CLI + Library-API)
+- Базовые модули bach_api.py: task, memory, backup, steuer, lesson, status
+
+### v2.1.0 (2026-02-04)
+
+- Интегрирована архитектура навыков v2.0
+- Введён принцип проверки версии
+- Задокументирован стандартный заголовок
+- Добавлена классификация источников навыков
+- Задокументированы частичные функции инъекторов
+
+### v2.0.2 (2026-01-01)
+
+- Начальная версия
+
+---
+
+**BACH Skill-Architektur v2.0**

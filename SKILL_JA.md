@@ -343,4 +343,697 @@ from bach_api import (
     app,         # app().execute("handler", "operation", ["args"])
 )
 ```
-<!-- T2619-CONT -->
+
+    # Plugin-API (動的拡張)
+    plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
+
+    # Raw-Zugriff (任意のハンドラ)
+    app,         # app().execute("handler", "operation", ["args"])
+)
+```
+
+##### どれをいつ使うか
+
+| 状況 | 推奨 |
+|-----------|------------|
+| LLM セッション (推奨) | 混合モード: `session.startup()` + API |
+| 高速な単発照会 | ライブラリモード: 直接 `task.list()` |
+| ターミナルの人間 | セッションモード: `python bach.py --startup` |
+| ファイル読取・コード検索 | 直接 (Glob/Grep/Read) |
+| ハンドラが bach_api にない | `app().execute("handler", "op", ["args"])` |
+
+**アーキテクチャ:** `core/registry.py` は 113+ のハンドラを自動認識する (Auto-Discovery)。新しいハンドラは `hub/` に `.py` ファイルを 1 つ置くだけでよい -- 手動マッピングは不要。ホットリロード: `app().reload_registry()`
+
+#### コンポーネントの種類
+
+| 種別 | フォルダ | 特徴 |
+|-----|--------|----------------|
+| **Agent** | `agents/<name>/` | エキスパートを編成、専用フォルダ |
+| **Expert** | `agents/_experts/<name>/` | 深いドメイン知識、専用フォルダ |
+| **Service** | `hub/_services/<name>/` | 汎用、ハンドラ寄り、専用フォルダ |
+| **Protocol** | `skills/workflows/` | 1 ファイル = 1 プロトコル (旧 Workflow)、カテゴリ別サブフォルダ可 |
+| **Connector** | `connectors/` | 外部接続 (MCP, API) |
+| **Tool (汎用)** | `tools/` | 再利用可能 |
+| **Tool (専用)** | スキルフォルダ内 | このスキル専用 |
+
+#### スキルソースと安全性
+
+| クラス | ソース | 対応 |
+|--------|---------|----------|
+| **ゴールドスタンダード** | 自作 | 最良の統合 |
+| **信頼できる** | anthropics/skills, anthropics/claude-cookbooks | 審査後 1:1 で採用可能 |
+| **不確実** | その他の GitHub リポジトリ | 新規に書き直すことのみ |
+| **ブラックリスト** | `data/skill_blacklist.json` | 禁止 |
+
+---
+
+## 起動手順 [B/C]: (1) → (2) → (3) → (4) → (5) → (6)
+
+*モード B (混合) と C (セッション) のみ。モード A はこのセクションを省略する。*
+
+---
+
+### (1) 今すぐ Bach を起動する [B/C]
+
+**モード C (セッション/CLI):**
+
+```bash
+cd system
+python bach.py --startup --partner=claude --mode=silent --watch
+```
+
+**モード B (混合/API -- 推奨):**
+
+```python
+from bach_api import session
+session.startup(partner="claude", mode="silent")
+```
+
+**Gemini の場合:**
+
+```python
+# モード B (API)
+session.startup(partner="gemini", mode="silent")
+# モード C (CLI)
+# python bach.py --startup --partner=gemini --mode=silent --watch
+```
+
+---
+
+### (2) SYSTEM: システム知識を読み込む [B/C]
+
+```bash
+bach help cli
+bach help bach_info
+bach help features
+bach help naming
+bach help guidelines
+bach help architecture
+# --> bach help injectors
+```
+
+または API 経由: `help.run("cli")`, `help.run("features")` など。
+
+#### ハンドラの検出と検索
+
+BACH には `hub/` に 113+ のハンドラがある。**すべてのハンドラは CLI コマンドである。** ハンドラ、ツール、スキル、ヘルプトピックを見つけるには:
+
+```bash
+# ヘルプトピックのファジー検索 (187+ トピック、ファジーマッチ!)
+bach help <検索語>                # 例: bach help web → web_scrape, web_parse を提案
+
+# ハンドラを一覧表示
+bach help list                    # すべての 187+ ヘルプトピック
+bach help cli                     # CLI コマンド一覧
+
+# ツールを検索
+bach tools list                   # すべての Python ツール
+bach tools search <keyword>       # ツール名と内容の全文検索
+
+# スキルとエージェントを検索
+bach skills list                  # DB 内のすべてのスキル
+bach skills search <keyword>      # スキルをキーワードで絞り込み
+bach agent list                   # すべてのエージェント
+
+# 任意のハンドラを直接呼び出す
+bach <handler-name> <operation>   # 例: bach web-scrape get <url>
+```
+
+**重要:** どのハンドラが存在するか分からない場合は `bach help <検索語>` を使う -- ファジー検索が適切なトピックを提案する。不正確な語でも機能する。
+
+#### 参照すべきファイル
+
+- `system/CHANGELOG.md` - バージョン履歴
+- `system/ROADMAP.md` - 計画中の機能とアーキテクチャ概要
+
+#### ルート文書 (DB から生成、`bach --shutdown` 時に更新)
+
+- `AGENTS.md` - すべてのボスエージェントとエキスパート (状態とパス付き)
+- `PARTNERS.md` - LLM パートナーと委任
+- `SKILLS.md` - スキルインデックス
+- `WORKFLOWS.md` - プロトコルインデックス
+- `CHAINS.md` - ツールチェーン
+- `USECASES.md` - ユースケース
+- `USER.md` - ユーザープロフィール
+- `MEMORY.md` - メモリースナップショット
+- `BACH_HELP_REFERENCE.md` - ヘルプリファレンス全体
+
+#### 中核原則
+
+- **BACH は有機体**: Connectors/Bridge は**感覚と声** (外界の知覚とコミュニケーション)。LLM は**理性** (思考、理解、決定)。データベースとテキストファイルは**記憶**。GUI は**顔**。API、CLI、ツール、エージェント、スキル、ワークフローは**手** (行動の可能性)。
+- **ハンドラファースト**: すべての機能は `hub/` 内のハンドラとして実装 -- CLI **と** API の両方から自動的に到達可能
+- **API 優先**: LLM は CLI ではなく `bach_api` を使う。人間は CLI または GUI を使う。
+- **システム的**: すべてのユーザーにとって再利用可能
+- **dist_type**: 0=USER (個人)、1=TEMPLATE (適応可能)、2=CORE (システム)
+- **冪等**: インポートは重複なく繰り返し可能
+- **バージョンチェック**: 常に最新バージョンを使用する
+
+> **中核原則:** BACH は主として単一のユーザーのために開発されるのではなく、再利用可能なシステムとして開発される。
+
+#### 作業原則
+
+すべての BACH パートナー (LLM、エージェント、エキスパート) のための 6 つの基本ルール:
+
+1. **まず自身のリソース** — ユーザーに尋ねる前に、メモリー、Wiki、ツール、DB を確認する
+2. **プロセスより結果** — 評価されるのは手法ではなく結果である
+3. **告知ではなく行動** — 何をするかを説明せず、ただ実行する
+4. **意見を持つ** — 反論し、独自の提案をしてよい
+5. **コンパクトに保つ** — システムプロンプトは 1000 トークン未満、インジェクションは簡潔に
+6. **知識を保存する** — 文脈が失われる前に気づきを記憶に書き込む
+
+**パートナー固有の指示:**
+- **Claude**: ルートディレクトリの `CLAUDE.md` を読む (Knowledge Capture ルール、統合)
+- **Gemini**: ルートディレクトリの `GEMINI.md` を読む (Knowledge Capture ルール、統合)
+- **Ollama**: ルートディレクトリの `OLLAMA.md` を読む (Knowledge Capture ルール、統合)
+
+これらのファイルには詳細な Knowledge-Capture ルールとパートナー固有の設定が含まれている。
+
+#### データベーススキーマ (bach.db 内の 138 テーブル)
+
+| # | 領域 | 主要テーブル |
+|---|---------|---------------------|
+| 1 | システム | `system_identity`, `system_config`, `instance_identity` |
+| 2 | タスク | `tasks` |
+| 3 | メモリー | `memory_working`, `memory_facts`, `memory_lessons`, `memory_sessions` |
+| 4 | ツール | `tools` (550+ エントリ) |
+| 5 | スキル | `skills` (1870+ エントリ) |
+| 6 | エージェント | `bach_agents`, `bach_experts`, `agent_synergies` |
+| 7 | ファイル | `files_truth`, `files_trash`, `dist_files` |
+| 8 | 自動化 | `automation_triggers`, `automation_routines`, `automation_injectors` |
+| 9 | 監視 | `monitor_tokens`, `monitor_success`, `monitor_processes`, `monitor_pricing` |
+| 10 | 接続 | `connections`, `connector_messages`, `partner_presence` |
+| 11 | 言語 | `languages_config`, `languages_translations` |
+| 12 | 配布 | `distribution_manifest`, `dist_type_defaults`, `releases`, `snapshots` |
+| 13 | Wiki | `wiki` (87 記事) |
+| 14 | ユースケース | `usecases`, `toolchains` |
+
+完全なスキーマ: `system/data/schema/schema.sql` (138 テーブル + ビュー + FTS)
+
+---
+
+### BACH v2.6 全体アーキテクチャ
+
+```text
+  +=====================================================================+
+  |                             USER-INTERFACES                         |
+  |  +-----------+  +-----------+  +-----------+  +-------------------+ |
+  |  |    CLI    |  | Lib-API   |  |    GUI    |  |  MCP v2.2 (IDE)   | |
+  |  |  bach.py  |  | bach_api  |  | server.py |  |  mcp_server.py   | |
+  |  +-----+-----+  +-----+-----+  +-----+-----+  +--------+--------+ |
+  +========|==============|==============|==================|===========+
+           |              |              |                  |
+  +========v==============v==============v==================v===========+
+  |                    CORE LAYER (core/*.py)                           |
+  |  app.py → registry.py → Auto-Discovery von 75+ Handlern            |
+  |  base.py (BaseHandler) | db.py (Schema-First) | hooks.py (Events)  |
+  +=========|==============|=======================================+====+
+            |              |                                       |
+  +==========v==============v=======================================v===+
+  |                          HUB LAYER (hub/*.py)                       |
+  |  System: startup, shutdown, status, backup, tokens, inject, hooks   |
+  |  Domain: steuer, abo, haushalt, gesundheit, contact, calendar, email|
+  |  Data: task, memory, db, session, logs, wiki, docs, inbox           |
+  |  Multi-AI: agents, partner, daemon, ollama, ati                     |
+  |  Extension: skills (create/reload), hooks (status/events/log/test)  |
+  +====|======================|======================|=================+
+       |                      |                      |
+  +----v------------------+   |   +------------------v-----------------+
+  |   AGENTS LAYER        |   |   |   CONNECTORS & PARTNERS           |
+  |                       |   |   |                                    |
+  | agents/ (Ordner)      |   |   | connectors/ (MCP, APIs)           |
+  | agents/_experts/      |   |   | partners/ (Multi-LLM-Konfig)      |
+  +-----------------------+   |   +------------------------------------+
+                              |
+  +---------------------------v----------------------------------------+
+  |   SKILLS & TOOLS LAYER                     |    DATA LAYER         |
+  |                                            |                       |
+  | skills/workflows/ (ehem. _workflows)      | bach.db (Unified)     |
+  | skills/_templates/ (Standard-Templates)    | Dateisystem            |
+  | hub/_services/ (Ordner)                    | inbox/outbox/          |
+  | tools/*.py | c_*.py | injectors.py         |                       |
+  +--------------------------------------------+-----------------------+
+              |
+  +-----------v-----------+
+  | SELF-EXTENSION LAYER  |
+  |                       |
+  | skills create (6 Typ) |
+  | skills reload (Hot)   |
+  | hooks.on/emit (14 Ev) |
+  | Plugin-API (geplant)  |
+  +-----------------------+
+```
+
+### (3) MEMORY: エピソード記憶のコンテキストをロードする [B/C]
+
+```bash
+bach help memory
+bach help lessons
+bach help consolidation
+```
+
+#### 認知メモリーモデル (5 つのタイプ)
+
+| タイプ | 対応 | 機能 | コマンド |
+|-----|--------------|----------|--------|
+| **Working** | 短期 | 現在のセッション | `bach mem write` |
+| **Episodic** | 日記 | 完了したセッション | `bach --memory session` |
+| **Semantic** | 世界知識 | 事実、Wiki、ヘルプ | `bach --memory fact "key:value"` |
+| **Procedural** | 技能 | ツール、スキル、ワークフロー | `bach help tools` |
+| **Associative** | 連結 | 統合、トリガー | `bach consolidate` |
+
+---
+
+### (4) 能力: 自分の能力に関する知識をロードする [B/C]
+
+```bash
+bach help skills
+bach help tools
+```
+
+**階層:**
+
+- **エージェント**: 複数の領域をオーケストレートする。専用フォルダを持つ
+- **エキスパート**: 深いドメイン知識。専用フォルダを持つ
+- **サービス**: 汎用サービス。ハンドラーに近い
+
+**重要なディレクトリ:**
+
+- `system/agents/` - エージェント (各専用フォルダ)
+- `system/agents/_experts/` - エキスパート (各専用フォルダ)
+- `system/hub/_services/` - サービス (各専用フォルダ)
+- `system/skills/workflows/` - プロトコル (単一ファイル、旧 _workflows)
+- `system/skills/_templates/` - 標準テンプレート
+- `system/connectors/` - 外部接続 (MCP、API)
+- `system/partners/` - マルチ LLM 構成
+
+---
+
+### (5) タスク計画 [B/C]
+
+#### (5.1) ユーザーの要望を認識する
+
+- プロンプトで明示された具体的なユーザー要望をタスクとして認識する
+- タスクを確定し、自分の進め方を計画する
+- 具体的な要望がない場合は 5.2 に進む
+
+#### (5.2) タスクコンテキストをロードする
+
+```python
+# API (優先)
+from bach_api import task
+task.list()
+```
+
+```bash
+# CLI
+bach help tasks
+bach task list
+```
+
+- タスクは自分で選ぶ。**2026-10-25 以降: 引き受けと引き渡しはリース経由で行う。冒頭の「エージェントとして未処理タスクを処理する」セクションを参照。** `bach task claim` は非推奨 (フェンス/リース ID なしのクレーム)。
+
+---
+
+### (6) 手続き的知識とプロトコル [C]
+
+*モード B では任意 -- プロトコルはドキュメントであり、コードではない。*
+
+```bash
+bach help protocol
+bach help between-tasks
+bach help practices
+```
+
+**パス:** `system/skills/workflows/`
+
+---
+
+## トピックパッケージ (必要に応じて読む -- すべてのモード)
+
+### トピック: 協働 (パッケージ: チームワーク)
+
+*いつ読むか:* システム内のパートナーと協働するとき。
+
+```bash
+bach help partners
+bach help multi_llm
+bach help delegate
+```
+
+**チャットシステム:**
+
+```python
+# API
+from bach_api import msg, partner
+msg.send("gemini", "Bitte recherchiere...")
+msg.unread()
+partner.delegate("Recherche", "--to=gemini")
+```
+
+```bash
+# CLI
+bach msg send claude "Text"
+bach msg unread
+```
+
+**ロックシステム:**
+
+```bash
+bach llm lock <datei>           # 書き込み前にロック
+bach llm unlock [datei]         # ロックを解除
+bach llm status                 # 誰がどのロックを保持しているか
+```
+
+---
+
+### トピック: 問題解決 (パッケージ: PROBLEMLÖSUNG)
+
+*いつ読むか:* 問題や行き詰まりに遭遇したとき。
+
+```bash
+bach help operatoren
+bach help planning
+bach help problemloesung
+bach help strategien
+```
+
+---
+
+### トピック: コーディング作業 (パッケージ: CODING)
+
+*いつ読むか:* コードを扱う、またはバグを修正するとき。
+
+```bash
+bach help ati
+bach help coding
+bach help bugfix
+```
+
+---
+
+### トピック: 保守 (パッケージ: WARTUNG)
+
+*いつ読むか:* 保守タスクを処理するとき。
+
+```bash
+bach help maintain
+bach help wartung
+bach help recurring
+bach daemon status
+```
+
+---
+
+### トピック: ファイル管理 (パッケージ: DATEIVERWALTUNG)
+
+*いつ読むか:* ファイル操作を実行するとき。
+
+```bash
+bach help trash
+bach help migrate
+bach help distribution
+```
+
+---
+
+### トピック: Web ページを読む (パッケージ: WEB)
+
+*いつ読むか:* Web ページを取得し、内容を抽出する、または Web 分析を行う必要があるとき。
+
+```bash
+bach help web_parse
+bach help web_scrape
+```
+
+**異なる目的を持つ 2 つのハンドラー:**
+
+| ハンドラー | コマンド | 目的 | 技術 |
+|---------|--------|-------|---------|
+| `web_parse` | `bach web-parse url/clean <url>` | **コンテンツ抽出** (本文を Markdown として) | trafilatura/html2text |
+| `web_scrape` | `bach web-scrape get/links/forms/headers <url>` | **構造分析** (リンク、フォーム、ヘッダー) | requests + Regex |
+
+**推奨:** テキスト内容には `web-parse clean <url>` (ナビ/ヘッダー/フッターを除去)。生データやリンク一覧には `web-scrape`。どちらも HTTP リクエストを使用する -- JS レンダリングされたページはサーバー側の HTML 部分のみを返す。
+
+**スキル:** `skills/workflows/webseiten-lesen.md` -- 意思決定ツリー付きの詳細な手順。
+
+---
+
+### テーマ: 自己拡張 (パッケージ: SELF-EXTENSION) [B/C]
+
+*いつ読むか:* 機能が欠けている場合、または BACH を拡張したい場合。
+
+```bash
+bach help self-extension
+bach help hooks
+bach help skills
+```
+
+**新しい機能を作成する (5 タイプ):**
+
+```bash
+bach skills create voice-processor --type tool       # 新しいツールをスキャフォールド
+bach skills create email-agent --type agent           # 新しいエージェントをスキャフォールド
+bach skills create tax-expert --type expert            # 新しいエキスパートをスキャフォールド
+bach skills create api-gateway --type handler          # 新しい CLI コマンドをスキャフォールド
+bach skills create data-sync --type service            # 新しいサービスをスキャフォールド
+```
+
+**作成後: ホットリロード (再起動不要!)**
+
+```bash
+bach skills reload
+```
+
+**フックフレームワーク (14 イベント):**
+
+```python
+from core.hooks import hooks
+
+# 独自のロジックをシステムイベントに接続する
+hooks.on('after_task_create', meine_funktion, name='mein_plugin')
+hooks.on('after_startup', startup_check, name='mein_plugin')
+
+# イベントを表示する
+# bach hooks events
+```
+
+**プラグイン API (実行時の動的拡張):**
+
+```python
+from bach_api import plugins
+
+# ツールを登録する (即座に使用可能)
+plugins.register_tool("mein_tool", meine_funktion, "Beschreibung")
+
+# フックを登録する (イベントを購読する)
+plugins.register_hook("after_task_done", callback, plugin="mein-plugin")
+
+# ハンドラを登録する (新しい CLI コマンド!)
+plugins.register_handler("mein_cmd", MeinHandler)
+
+# マニフェストからプラグインを読み込む
+plugins.load_plugin("plugins/mein-plugin/plugin.json")
+```
+
+```bash
+# CLI: プラグイン管理
+bach plugins list          # 読み込み済みプラグイン
+bach plugins create name   # プラグインをスキャフォールド
+bach plugins load pfad     # プラグインを読み込む
+bach plugins unload name   # プラグインをアンロード
+```
+
+**自己拡張ループ:**
+1. 認識 → 不足している機能を特定する
+2. 作成 → `bach skills create <name> --type <typ>` または `plugins.register_tool()`
+3. 実装 → コードを書く
+4. 登録 → `bach skills reload` または `plugins.load_plugin()`
+5. 使用 → 即座に利用可能
+6. 省察 → `bach lesson add "何を学んだか"`
+
+---
+
+### テーマ: シャットダウン (パッケージ: SHUTDOWN) [B/C]
+
+*いつ読むか:* セッションが終了するとき。モード B と C でのみ関連する。
+
+**モード B (API -- 推奨):**
+```python
+from bach_api import session, memory
+memory.session("THEMA: 何をしたか。NAECHSTE: 次に何が来るか。", session_id="SESSION_ID", partner="claude")
+session.shutdown("要約", partner="claude", session_id="SESSION_ID")
+# または手早く:
+session.shutdown_quick("短いメモ", partner="claude", session_id="SESSION_ID")
+```
+
+`SESSION_ID` はスタートアップレポートにある自身の ID。複数のセッションが開いている
+場合は常に ID とパートナーを指定すること。不明確な選択は拒否される。
+
+**モード C (CLI):**
+```bash
+bach help shutdown
+bach --memory session "THEMA: 何をしたか。NAECHSTE: 次に何が来るか。"
+bach --shutdown
+```
+
+---
+
+## フックとインジェクター
+
+### フックフレームワーク (技術的イベントシステム)
+
+フックを使うと、既存のコードを変更せずに、独自のロジックを 14 のライフサイクルイベントに接続できる。
+
+```python
+from core.hooks import hooks
+
+# リスナーを登録する
+hooks.on('after_task_done', auto_backup, name='backup_plugin')
+hooks.on('after_startup', health_check, priority=10, name='health')
+
+# CLI
+# bach hooks status    → すべてのフックを表示
+# bach hooks events    → 14 のイベントをすべて一覧表示
+# bach hooks log       → 直近の実行
+```
+
+**イベント:** `before_startup`, `after_startup`, `before_shutdown`, `after_shutdown`, `before_command`, `after_command`, `after_task_create`, `after_task_done`, `after_task_delete`, `after_memory_write`, `after_lesson_add`, `after_skill_create`, `after_skill_reload`, `after_email_send`
+
+> フックは**技術的なフレームワーク**である。インジェクターは**認知サブシステム**である。両者は互いに独立して動作する。
+
+---
+
+### インジェクター (認知的オーケストレーション)
+
+6 つのインジェクターは**思考と連想**を**中央実行系**としてシミュレートする。CLI と API の両方から利用可能。
+
+| インジェクター | 部分機能 | API 対応 |
+|----------|----------------|:---:|
+| **strategy_injector** | メタ認知、意思決定支援、エラー分析 | はい |
+| **context_injector** | ツール推薦、メモリー取得、要件分析 | 一部* |
+| **between_injector** | 品質管理、タスク移行、結果検証 | はい |
+| **time_injector** | 時間感覚 (タイムビート)、メッセージチェック | はい |
+| **tool_injector** | ツールリマインダー、重複警告 | はい |
+| **task_assigner** | 自動割り当て、タスク分解 | はい |
+
+*\*context_injector は CLI コマンドをヒントとして含む。API モードではフィルタ可能。*
+
+**CLI:**
+```bash
+bach --inject status            # すべてのインジェクターの状態
+bach --inject toggle <name>     # オン/オフを切り替える
+```
+
+**API:**
+```python
+from bach_api import injector
+
+injector.process("text")              # すべてのインジェクターをテキストに適用
+injector.check_between("task done")   # タスク完了後の品質チェック
+injector.tool_reminder()              # 利用可能なツール (1 回のみ)
+injector.assign_task()                # 次のタスクを自動的に割り当てる
+injector.time_check()                 # 時刻 + メッセージ
+injector.status()                     # すべてのインジェクターの状態
+injector.toggle("strategy_injector")  # 個別にオン/オフ
+injector.set_mode("api")              # コンテキストから CLI ヒントをフィルタする
+```
+
+---
+
+## CHANGELOG
+
+### v3.10.0 (2026-10-25)
+
+- **エージェントの入口**: 冒頭に新しいセクション「ALS AGENT OFFENE TASKS ABARBEITEN」を追加 (ブート、タスク選択、リース取得、Worktree、テスト、PR、結果提出、次のタスク。限界。既知のギャップ)。目的: エージェント (Claude、Codex、Kimi、Gemini) がこのファイルだけで自律的にブートできるようにすること。
+- **非推奨の表示**: `bach task claim` および (5.2) の „weise sie dir zu“; 新しいセクションより下の数値とアーキテクチャ概要は 2026-03-12 時点のものであり、再計測されていない。
+- 内容は削除していない。モード A、B、C は変更なし。
+
+### v3.8.0 (2026-03-12)
+
+- **ハンドラのディスカバリー**: セクション (2) に新しい段落 -- `bach help <検索語>` を 109+ ハンドラの主要なディスカバリー機構として文書化
+- **検索リファレンス**: `bach help list`、`bach tools search`、`bach skills search` を検索の入口として提示
+- **テーマパッケージ WEB**: `web_parse` と `web_scrape` ハンドラを参照する新しいパッケージ
+- **スキル `webseiten-lesen`**: Web コンテンツ抽出のための決定木を備えた新しいワークフロースキル
+- **ドキュメント**: ハンドラは CLI 経由だけでなく SKILL.md 内でも見つけられるようになった
+
+### v3.2.0-butternut (2026-02-28)
+
+- **エージェント CLI**: `AgentLauncherHandler` -- `bach agent start/stop/list` によるエージェントの直接制御
+- **プロンプトシステム**: `PromptHandler` -- `bach prompt list/add/edit/show/board-create` による集中プロンプト管理
+- **SharedMemory の拡張**: `current-task`、`generate-context`、`conflict-resolution`、`decay`、`changes-since`
+- **USMC ブリッジ**: United Shared Memory Client (`hub/_services/usmc_bridge.py`)
+- **llmauto チェーン**: Claude プロンプトを Chain ステップとして使用 + `bach://` URL 解決
+- **スケジューラ**: `job_type='chain'` + `daemon_jobs` → `scheduler_jobs` への改名
+- **新 API モジュール**: `bach_api` の `agent`、`prompt`
+- **移植**: SharedMemoryHandler、ApiProberHandler、N8nManagerHandler、UserSyncHandler、Stigmergy サービス
+- **テーブル**: 4 つの新規 DB テーブル: `prompt_templates`、`prompt_versions`、`prompt_boards`、`prompt_board_items`
+- **109+ ハンドラ** (従来: 75+)
+
+### v2.6.0 (2026-02-13)
+
+- **ディレクトリ再構成**: エージェント、スキル、コネクター、パートナーの明確な分離
+  - `skills/_agents/` → `agents/` (system/ 直下のトップレベル)
+  - `skills/_experts/` → `agents/_experts/` (エキスパートはエージェントに属する)
+  - `skills/_workflows/` → `skills/workflows/` (ワークフローは現在プロトコルと呼ばれる)
+  - `skills/_connectors/` → `connectors/` (system/ 直下のトップレベル)
+  - `skills/_partners/` → `partners/` (system/ 直下のトップレベル)
+- **PathHealer**: 影響を受けるすべてのファイルでパスを自動修正
+- **コンポーネント型 `protocol`**: 型階層で `workflow` を置き換え
+- **コンポーネント型 `connector`**: 外部接続 (MCP、API) 用の新設
+- **アーキテクチャ図**: AGENTS LAYER と CONNECTORS & PARTNERS を独立セクションとして追加
+- **SKILL.md v2.6**: すべての参照、テーブル、図を新構造に適合
+
+### v2.5.0 (2026-02-13)
+
+- **自己拡張システム**: AI パートナーが自ら新しい能力を獲得できる
+  - `bach skills create <name> --type <typ>` (5 つの型: tool、agent、expert、handler、service)
+  - `bach skills reload` (ホットリロード: レジストリ + ツール + スキル DB)
+  - 自己拡張ループ: 認識 → 作成 → 登録 → 使用 → 振り返り
+- **フックフレームワーク**: 14 のライフサイクルイベントを持つ拡張可能なイベントシステム
+  - `core/hooks.py` - HookRegistry シングルトン、優先度、イベントログ
+  - `hub/hooks.py` - CLI: `bach hooks status/events/log/test`
+  - 統合先: 起動、終了、タスク、メモリー、レッスン、スキル、アプリ
+  - フック ≠ インジェクター: 技術的フレームワーク 対 認知サブシステム
+- **メールハンドラ**: ドラフト安全機構付き Gmail API (send、draft、confirm、cancel)
+- **レジストリのホットリロード**: `app().reload_registry()` を再起動なしで実行
+- **ルール (f) 自己拡張**: 「能力が足りなければ、自分に与えよ!」
+- **ドキュメント**: hooks.txt、self-extension.txt、cli.txt、skills.txt、ROADMAP.md
+
+### v2.4.0 (2026-02-08)
+
+- **MCP サーバー v2.2**: 23 ツール、8 リソース、3 プロンプト - MCP の 3 プリミティブすべて
+- **メールアダプター**: notify.py 内の SMTP_SSL (BachForelle から移植)
+- **BachFliege + BachForelle**: 分析してアーカイブ済み (`docs/_archive/con5_BACHFLIEGE_BACHFORELLE_ARCHIV.md`)
+
+### v2.3.0 (2026-02-06)
+
+- **ルール体系を全面的に改訂**: IMMER → アクセス種別 → モード別
+- **3 つのモード**: A (ライブラリ)、B (混在)、C (セッション) に [B]、[C]、[B/C] タグを付与
+- **共同開発の原則**: 「BACH の利用は共同開発である」を中核ルールとして明記
+- **bach_api.py の拡張**: session、partner、logs、msg、tools、help、injector
+- **14 の API モジュール**: すべてのハンドラへの完全なプログラム的アクセス
+- **API 経由のインジェクター**: 6 つのインジェクターすべてをライブラリから利用可能 + CLI フィルタ
+- **API によるセッションライフサイクル**: `session.startup()` / `session.shutdown()`
+- アーキテクチャ図を更新 (Core Layer + bach_api)
+- すべてのセクションにモード表示を付与
+
+### v2.2.0 (2026-02-06)
+
+- 2 つのアクセス経路 (CLI + ライブラリ API) を文書化
+- bach_api.py の基本モジュール: task、memory、backup、steuer、lesson、status
+
+### v2.1.0 (2026-02-04)
+
+- スキルアーキテクチャ v2.0 を統合
+- バージョンチェックの原則を導入
+- 標準ヘッダーを文書化
+- スキルソースの分類を追加
+- インジェクターの部分機能を文書化
+
+### v2.0.2 (2026-01-01)
+
+- 初版
+
+---
+
+**BACH スキルアーキテクチャ v2.0**

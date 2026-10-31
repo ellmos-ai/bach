@@ -343,4 +343,694 @@ from bach_api import (
     app,         # app().execute("handler", "operation", ["args"])
 )
 ```
-<!-- T2619-CONT -->
+    # Plugin-API (Dynamische Erweiterung)
+    plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
+
+    # Raw-Zugriff (beliebiger Handler)
+    app,         # app().execute("handler", "operation", ["args"])
+)
+```
+
+##### 何时使用哪种方式
+
+| 场景 | 建议 |
+|-----------|------------|
+| LLM 会话（推荐） | 混合模式：`session.startup()` + API |
+| 快速单次查询 | 库模式：直接 `task.list()` |
+| 终端前的人类 | 会话模式：`python bach.py --startup` |
+| 读取文件、搜索代码 | 直接（Glob/Grep/Read） |
+| 处理器不在 bach_api 中 | `app().execute("handler", "op", ["args"])` |
+
+**架构：** `core/registry.py` 自动识别 113+ 个处理器（自动发现）。新处理器只需在 `hub/` 里放一个 `.py` 文件 —— 无需手动映射。热重载：`app().reload_registry()`
+
+#### 组件类型
+
+| 类型 | 文件夹 | 特性 |
+|-----|--------|----------------|
+| **Agent** | `agents/<name>/` | 编排专家，独立文件夹 |
+| **Expert** | `agents/_experts/<name>/` | 深厚的领域知识，独立文件夹 |
+| **Service** | `hub/_services/<name>/` | 通用，贴近处理器，独立文件夹 |
+| **Protocol** | `skills/workflows/` | 1 个文件 = 1 个协议（原 workflow），允许分类子文件夹 |
+| **Connector** | `connectors/` | 外部接入（MCP、API） |
+| **Tool（通用）** | `tools/` | 可复用 |
+| **Tool（专用）** | 技能文件夹内 | 仅用于该技能 |
+
+#### 技能来源与安全
+
+| 类别 | 来源 | 处理方式 |
+|--------|---------|----------|
+| **黄金标准** | 自行编写 | 最佳集成 |
+| **可靠** | anthropics/skills、anthropics/claude-cookbooks | 审查后可原样采用 |
+| **不可靠** | 其他 GitHub 仓库 | 只能重写 |
+| **黑名单** | `data/skill_blacklist.json` | 禁止使用 |
+
+---
+
+## 启动流程 [B/C]：(1) → (2) → (3) → (4) → (5) → (6)
+
+*仅在模式 B（混合）和 C（会话）中。模式 A 跳过本节。*
+
+---
+
+```bash
+# Fuzzy-Suche in Help-Themen (187+ Themen, Fuzzy-Match!)
+bach help <suchbegriff>           # z.B. bach help web → schlaegt web_scrape, web_parse vor
+
+# Handler auflisten
+bach help list                    # Alle 187+ Help-Themen
+bach help cli                     # CLI-Befehlsuebersicht
+
+# Tools durchsuchen
+bach tools list                   # Alle Python-Tools
+bach tools search <keyword>       # Volltextsuche in Tool-Namen und -Inhalten
+
+# Skills & Agents durchsuchen
+bach skills list                  # Alle Skills in der DB
+bach skills search <keyword>      # Skills nach Keyword filtern
+bach agent list                   # Alle Agenten
+
+# Beliebigen Handler direkt aufrufen
+bach <handler-name> <operation>   # z.B. bach web-scrape get <url>
+```
+
+**重要：** 如果你不知道存在哪个 Handler，请使用 `bach help <suchbegriff>` —— 模糊搜索会推荐合适的主题，即使术语不精确也能找到。
+
+#### 用于查阅的文件
+
+- `system/CHANGELOG.md` - 版本历史
+- `system/ROADMAP.md` - 计划中的功能与架构概览
+
+#### 根文档（从数据库生成，在 `bach --shutdown` 时更新）
+
+- `AGENTS.md` - 所有 Boss-Agent 与专家及其状态和路径
+- `PARTNERS.md` - LLM 伙伴与委派
+- `SKILLS.md` - Skill 索引
+- `WORKFLOWS.md` - 协议索引
+- `CHAINS.md` - 工具链
+- `USECASES.md` - 应用场景
+- `USER.md` - 用户画像
+- `MEMORY.md` - 记忆快照
+- `BACH_HELP_REFERENCE.md` - 完整帮助参考
+
+#### 核心原则
+
+- **BACH 作为有机体**：Connector/Bridge 是**感官与声音**（对外界的感知与沟通）。LLM 是**理智**（思考、理解、决策）。数据库和文本文件是**记忆**。GUI 是**面孔**。API、CLI、工具、Agent、Skill 和工作流是**双手**（行动潜力）。
+- **Handler First**：每项功能都作为 `hub/` 中的 Handler 实现——自动可经 CLI **和** API 访问
+- **优先使用 API**：LLM 使用 `bach_api` 而非 CLI。人类使用 CLI 或 GUI。
+- **系统性**：可复用于任何用户
+- **dist_type**：0=USER（个人），1=TEMPLATE（可定制），2=CORE（系统）
+- **幂等**：导入可重复执行而不产生重复项
+- **版本检查**：始终使用最新版本
+
+> **核心原则：** BACH 并非主要为单个用户开发，而是作为一个可复用的系统。
+
+#### 工作原则
+
+面向所有 BACH 伙伴（LLM、Agent、专家）的六条基本规则：
+
+1. **自有资源优先** —— 在询问用户之前，先检查记忆、Wiki、工具和数据库
+2. **结果优先于过程** —— 重要的是结果，而非方法
+3. **行动而非宣告** —— 不要解释你将要做什么，直接去做
+4. **拥有观点** —— 你可以反驳并提出自己的建议
+5. **保持精简** —— 系统提示保持在 1000 token 以下，注入内容保持轻量
+6. **沉淀知识** —— 在上下文丢失之前把认识写入记忆
+
+**伙伴专属说明：**
+- **Claude**：阅读根目录中的 `CLAUDE.md`（知识捕获规则、集成）
+- **Gemini**：阅读根目录中的 `GEMINI.md`（知识捕获规则、集成）
+- **Ollama**：阅读根目录中的 `OLLAMA.md`（知识捕获规则、集成）
+
+这些文件包含详细的知识捕获规则和伙伴专属设置。
+
+#### 数据库模式（bach.db 中 138 张表）
+
+| # | 领域 | 最重要的表 |
+|---|---------|---------------------|
+| 1 | 系统 | `system_identity`, `system_config`, `instance_identity` |
+| 2 | 任务 | `tasks` |
+| 3 | 记忆 | `memory_working`, `memory_facts`, `memory_lessons`, `memory_sessions` |
+| 4 | 工具 | `tools`（550+ 条记录） |
+| 5 | Skill | `skills`（1870+ 条记录） |
+| 6 | Agent | `bach_agents`, `bach_experts`, `agent_synergies` |
+| 7 | 文件 | `files_truth`, `files_trash`, `dist_files` |
+| 8 | 自动化 | `automation_triggers`, `automation_routines`, `automation_injectors` |
+| 9 | 监控 | `monitor_tokens`, `monitor_success`, `monitor_processes`, `monitor_pricing` |
+| 10 | 连接 | `connections`, `connector_messages`, `partner_presence` |
+| 11 | 语言 | `languages_config`, `languages_translations` |
+| 12 | 分发 | `distribution_manifest`, `dist_type_defaults`, `releases`, `snapshots` |
+| 13 | Wiki | `wiki`（87 篇文章） |
+| 14 | 使用场景 | `usecases`, `toolchains` |
+
+完整模式：`system/data/schema/schema.sql`（138 张表 + 视图 + FTS）
+
+---
+
+### BACH v2.6 总体架构
+
+```text
+  +=====================================================================+
+  |                             USER-INTERFACES                         |
+  |  +-----------+  +-----------+  +-----------+  +-------------------+ |
+  |  |    CLI    |  | Lib-API   |  |    GUI    |  |  MCP v2.2 (IDE)   | |
+  |  |  bach.py  |  | bach_api  |  | server.py |  |  mcp_server.py   | |
+  |  +-----+-----+  +-----+-----+  +-----+-----+  +--------+--------+ |
+  +========|==============|==============|==================|===========+
+           |              |              |                  |
+  +========v==============v==============v==================v===========+
+  |                    CORE LAYER (core/*.py)                           |
+  |  app.py → registry.py → Auto-Discovery von 75+ Handlern            |
+  |  base.py (BaseHandler) | db.py (Schema-First) | hooks.py (Events)  |
+  +=========|==============|=======================================+====+
+            |              |                                       |
+  +==========v==============v=======================================v===+
+  |                          HUB LAYER (hub/*.py)                       |
+  |  System: startup, shutdown, status, backup, tokens, inject, hooks   |
+  |  Domain: steuer, abo, haushalt, gesundheit, contact, calendar, email|
+  |  Data: task, memory, db, session, logs, wiki, docs, inbox           |
+  |  Multi-AI: agents, partner, daemon, ollama, ati                     |
+  |  Extension: skills (create/reload), hooks (status/events/log/test)  |
+  +====|======================|======================|=================+
+       |                      |                      |
+  +----v------------------+   |   +------------------v-----------------+
+  |   AGENTS LAYER        |   |   |   CONNECTORS & PARTNERS           |
+  |                       |   |   |                                    |
+  | agents/ (Ordner)      |   |   | connectors/ (MCP, APIs)           |
+  | agents/_experts/      |   |   | partners/ (Multi-LLM-Konfig)      |
+  +-----------------------+   |   +------------------------------------+
+                              |
+  +---------------------------v----------------------------------------+
+  |   SKILLS & TOOLS LAYER                     |    DATA LAYER         |
+  |                                            |                       |
+  | skills/workflows/ (ehem. _workflows)      | bach.db (Unified)     |
+  | skills/_templates/ (Standard-Templates)    | Dateisystem            |
+  | hub/_services/ (Ordner)                    | inbox/outbox/          |
+  | tools/*.py | c_*.py | injectors.py         |                       |
+  +--------------------------------------------+-----------------------+
+              |
+  +-----------v-----------+
+  | SELF-EXTENSION LAYER  |
+  |                       |
+  | skills create (6 Typ) |
+  | skills reload (Hot)   |
+  | hooks.on/emit (14 Ev) |
+  | Plugin-API (geplant)  |
+  +-----------------------+
+```
+
+---
+
+### (3) MEMORY：加载你的情景上下文 [B/C]
+
+```bash
+bach help memory
+bach help lessons
+bach help consolidation
+```
+
+#### 认知记忆模型（5 种类型）
+
+| 类型 | 对应 | 功能 | 命令 |
+|-----|--------------|----------|--------|
+| **Working** | 短期 | 当前会话 | `bach mem write` |
+| **Episodic** | 日记 | 已结束的会话 | `bach --memory session` |
+| **Semantic** | 世界知识 | 事实、Wiki、Help | `bach --memory fact "key:value"` |
+| **Procedural** | 能力 | 工具、Skill、工作流 | `bach help tools` |
+| **Associative** | 关联 | 巩固、触发器 | `bach consolidate` |
+
+---
+
+### (4) FÄHIGKEITEN：加载关于你能力的知识 [B/C]
+
+```bash
+bach help skills
+bach help tools
+```
+
+**层级：**
+
+- **Agent**：编排多个领域，拥有自己的文件夹
+- **专家**：深厚的领域知识，拥有自己的文件夹
+- **Services**：通用服务，贴近处理器
+
+**重要目录：**
+
+- `system/agents/` - Agent（各自独立文件夹）
+- `system/agents/_experts/` - 专家（各自独立文件夹）
+- `system/hub/_services/` - 服务（各自独立文件夹）
+- `system/skills/workflows/` - 协议（单文件，原 _workflows）
+- `system/skills/_templates/` - 标准模板
+- `system/connectors/` - 外部接入（MCP、API）
+- `system/partners/` - 多 LLM 配置
+
+---
+
+### (5) 任务规划 [B/C]
+
+#### (5.1) 识别用户需求
+
+- 把提示中明确提出的用户需求识别为任务
+- 确定任务并规划你的做法
+- 如果没有具体需求，继续到 5.2
+
+#### (5.2) 加载任务上下文
+
+```python
+# API（优先）
+from bach_api import task
+task.list()
+```
+
+```bash
+# CLI
+bach help tasks
+bach task list
+```
+
+- 自行挑选任务。**自 2026-10-25 起：接管与提交均通过 Lease 进行，参见最上方章节「作为代理处理开放任务」。** `bach task claim` 已过时（无 Fence/Lease-ID 的 Claim）。
+
+---
+
+### (6) 过程性知识与协议 [C]
+
+*在模式 B 中为可选项 —— 协议是文档，不是代码。*
+
+```bash
+bach help protocol
+bach help between-tasks
+bach help practices
+```
+
+**路径：** `system/skills/workflows/`
+
+## 主题包（按需阅读 —— 所有模式）
+
+### 主题：协作（包：TEAMARBEIT）
+
+*何时阅读：* 你与系统中的伙伴一起工作。
+
+```bash
+bach help partners
+bach help multi_llm
+bach help delegate
+```
+
+**聊天系统：**
+
+```python
+# API
+from bach_api import msg, partner
+msg.send("gemini", "Bitte recherchiere...")
+msg.unread()
+partner.delegate("Recherche", "--to=gemini")
+```
+
+```bash
+# CLI
+bach msg send claude "Text"
+bach msg unread
+```
+
+**锁系统：**
+
+```bash
+bach llm lock <datei>           # Lock VOR Schreiben
+bach llm unlock [datei]         # Lock freigeben
+bach llm status                 # Wer hat welche Locks?
+```
+
+---
+
+### 主题：问题解决（包：PROBLEMLÖSUNG）
+
+*何时阅读：* 你遇到问题或阻塞。
+
+```bash
+bach help operatoren
+bach help planning
+bach help problemloesung
+bach help strategien
+```
+
+---
+
+### 主题：编码任务（包：CODING）
+
+*何时阅读：* 你在处理代码或修复 Bug。
+
+```bash
+bach help ati
+bach help coding
+bach help bugfix
+```
+
+---
+
+### 主题：维护（包：WARTUNG）
+
+*何时阅读：* 你在处理维护任务。
+
+```bash
+bach help maintain
+bach help wartung
+bach help recurring
+bach daemon status
+```
+
+---
+
+### 主题：文件管理（包：DATEIVERWALTUNG）
+
+*何时阅读：* 你执行文件操作。
+
+```bash
+bach help trash
+bach help migrate
+bach help distribution
+```
+
+---
+
+### 主题：读取网页（包：WEB）
+
+*何时阅读：* 你需要抓取网页、提取内容或执行 Web 分析。
+
+```bash
+bach help web_parse
+bach help web_scrape
+```
+
+**两个用于不同目的的处理器：**
+
+| 处理器 | 命令 | 用途 | 技术 |
+|---------|--------|-------|---------|
+| `web_parse` | `bach web-parse url/clean <url>` | **内容提取**（主内容为 Markdown） | trafilatura/html2text |
+| `web_scrape` | `bach web-scrape get/links/forms/headers <url>` | **结构分析**（链接、表单、Headers） | requests + Regex |
+
+**建议：** 文本内容用 `web-parse clean <url>`（移除导航/页眉/页脚）。原始数据或链接列表用 `web-scrape`。两者都使用 HTTP 请求 —— 由 JS 渲染的页面只提供服务器端生成的 HTML 部分。
+
+**技能：** `skills/workflows/webseiten-lesen.md` —— 带有决策树的详细流程。
+
+---
+
+### 主题：自我扩展（包：SELF-EXTENSION）[B/C]
+
+*何时阅读：* 你缺少某项能力，或想扩展 BACH。
+
+```bash
+bach help self-extension
+bach help hooks
+bach help skills
+```
+
+**创建新能力（5 种类型）：**
+
+```bash
+bach help trash
+bach help migrate
+bach help distribution
+```
+
+---
+
+### 主题：读取网页（包：WEB）
+
+*何时阅读：* 你需要抓取网页、提取内容或执行网页分析。
+
+```bash
+bach help web_parse
+bach help web_scrape
+```
+
+**两个 Handler，用于不同目的：**
+
+| Handler | 命令 | 目的 | 技术 |
+|---------|--------|-------|---------|
+| `web_parse` | `bach web-parse url/clean <url>` | **内容提取**（正文作为 Markdown） | trafilatura/html2text |
+| `web_scrape` | `bach web-scrape get/links/forms/headers <url>` | **结构分析**（链接、表单、Headers） | requests + Regex |
+
+**建议：** 文本内容用 `web-parse clean <url>`（移除 Nav/Header/Footer）。原始数据或链接列表用 `web-scrape`。两者都使用 HTTP 请求 —— JS 渲染的页面只会返回服务端 HTML 部分。
+
+**技能：** `skills/workflows/webseiten-lesen.md` —— 带决策树的详细流程。
+
+---
+
+### 主题：自我扩展（包：SELF-EXTENSION）[B/C]
+
+*何时阅读：* 你缺少某项能力，或者想扩展 BACH。
+
+```bash
+bach help self-extension
+bach help hooks
+bach help skills
+```
+
+**创建新能力（5 种类型）：**
+
+```bash
+bach skills create voice-processor --type tool       # Neues Tool scaffolden
+bach skills create email-agent --type agent           # Neuen Agent scaffolden
+bach skills create tax-expert --type expert            # Neuen Experten scaffolden
+bach skills create api-gateway --type handler          # Neuen CLI-Befehl scaffolden
+bach skills create data-sync --type service            # Neuen Service scaffolden
+```
+
+**创建之后：热重载（无需重启！）**
+
+```bash
+bach skills reload
+```
+
+**Hook 框架（14 个 Events）：**
+
+```python
+from core.hooks import hooks
+
+# Eigene Logik an System-Events haengen
+hooks.on('after_task_create', meine_funktion, name='mein_plugin')
+hooks.on('after_startup', startup_check, name='mein_plugin')
+
+# Events anzeigen
+# bach hooks events
+```
+
+**Plugin-API（运行时动态扩展）：**
+
+```python
+from bach_api import plugins
+
+# Tool registrieren (sofort nutzbar)
+plugins.register_tool("mein_tool", meine_funktion, "Beschreibung")
+
+# Hook registrieren (Event abonnieren)
+plugins.register_hook("after_task_done", callback, plugin="mein-plugin")
+
+# Handler registrieren (neuer CLI-Befehl!)
+plugins.register_handler("mein_cmd", MeinHandler)
+
+# Plugin aus Manifest laden
+plugins.load_plugin("plugins/mein-plugin/plugin.json")
+```
+
+```bash
+# CLI: Plugin-Verwaltung
+bach plugins list          # Geladene Plugins
+```
+bach plugins create name   # Plugin scaffolden
+bach plugins load pfad     # Plugin laden
+bach plugins unload name   # Plugin entladen
+```
+
+**Self-Extension 循环：**
+1. 识别 → 找出缺失的能力
+2. 创建 → `bach skills create <name> --type <typ>` 或 `plugins.register_tool()`
+3. 实现 → 编写代码
+4. 注册 → `bach skills reload` 或 `plugins.load_plugin()`
+5. 使用 → 立即可用
+6. 反思 → `bach lesson add "Was gelernt"`
+
+---
+
+### 主题：Shutdown（包：SHUTDOWN）[B/C]
+
+*何时阅读：* 会话即将结束。仅在模式 B 和 C 下相关。
+
+**模式 B（API —— 推荐）：**
+```python
+from bach_api import session, memory
+memory.session("THEMA: Was gemacht. NAECHSTE: Was kommt.", session_id="SESSION_ID", partner="claude")
+session.shutdown("Zusammenfassung", partner="claude", session_id="SESSION_ID")
+# Oder schnell:
+session.shutdown_quick("Kurze Notiz", partner="claude", session_id="SESSION_ID")
+```
+
+`SESSION_ID` 是启动报告中你自己的 ID。在有多个打开的会话时，
+始终给出 ID 和 Partner；不明确的选择会被拒绝。
+
+**模式 C（CLI）：**
+```bash
+bach help shutdown
+bach --memory session "THEMA: Was gemacht. NAECHSTE: Was kommt."
+bach --shutdown
+```
+
+---
+
+## HOOKS 与 INJEKTOREN
+
+### Hook 框架（技术事件系统）
+
+Hooks 允许把自有逻辑挂接到 14 个 Lifecycle-Events —— 而无需修改现有代码。
+
+```python
+from core.hooks import hooks
+
+# Listener registrieren
+hooks.on('after_task_done', auto_backup, name='backup_plugin')
+hooks.on('after_startup', health_check, priority=10, name='health')
+
+# CLI
+# bach hooks status    → Zeigt alle Hooks
+# bach hooks events    → Listet alle 14 Events
+# bach hooks log       → Letzte Ausfuehrungen
+```
+
+**Events：** `before_startup`, `after_startup`, `before_shutdown`, `after_shutdown`, `before_command`, `after_command`, `after_task_create`, `after_task_done`, `after_task_delete`, `after_memory_write`, `after_lesson_add`, `after_skill_create`, `after_skill_reload`, `after_email_send`
+
+> Hooks 是**技术框架**。Injektoren 是**认知子系统**。两者彼此独立工作。
+
+---
+
+### Injektoren（认知编排）
+
+6 个 Injektoren 作为**中央执行机构**模拟**思考与联想**。可通过 CLI 和 API 使用。
+
+| Injektor | 子功能 | 适合 API |
+|----------|----------------|:---:|
+| **strategy_injector** | 元认知、决策辅助、错误分析 | 是 |
+| **context_injector** | Tool 推荐、Memory 调取、需求分析 | 部分* |
+| **between_injector** | 质量控制、Task 过渡、结果校验 | 是 |
+| **time_injector** | 时间感（Timebeat）、消息检查 | 是 |
+| **tool_injector** | Tool 提醒、重复警告 | 是 |
+| **task_assigner** | 自动分配、Task 拆分 | 是 |
+
+*\*context_injector 包含 CLI 命令作为提示。在 API 模式下可过滤。*
+
+**CLI：**
+```bash
+bach --inject status            # Status aller Injektoren
+bach --inject toggle <name>     # An/Aus schalten
+```
+
+**API：**
+```python
+from bach_api import injector
+
+injector.process("text")              # Alle Injektoren auf Text anwenden
+injector.check_between("task done")   # Quality-Check nach Task-Abschluss
+injector.tool_reminder()              # Verfuegbare Tools (einmalig)
+injector.assign_task()                # Naechste Aufgabe automatisch zuweisen
+injector.time_check()                 # Uhrzeit + Nachrichten
+injector.status()                     # Status aller Injektoren
+injector.toggle("strategy_injector")  # Einzeln an/aus
+injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
+```
+
+---
+
+## CHANGELOG
+
+### v3.10.0 (2026-10-25)
+
+- **Agent 入口**：最上方新增章节“以 Agent 身份处理待办任务”（启动、选择 Task、接管 Lease、Worktree、测试、PR、提交结果、下一个 Task；边界；已知缺口）。目标：一个 Agent（Claude、Codex、Kimi、Gemini）仅凭此文件即可启动。
+- **标记为过时**：`bach task claim` 以及（5.2）“将其分配给你自己”；新章节之下的数字与架构概览处于 2026-03-12 的状态且未重新测量。
+- 未删除任何内容。模式 A、B、C 保持不变。
+
+### v3.8.0 (2026-03-12)
+
+- **Handler-Discovery**：第 (2) 节新增段落 —— 将 `bach help <suchbegriff>` 记录为 109+ Handler 的主要发现机制
+- **搜索参考**：`bach help list`、`bach tools search`、`bach skills search` 作为搜索入口
+- **主题包 WEB**：新增包，引用 `web_parse` 与 `web_scrape` Handler
+- **技能 `webseiten-lesen`**：新增工作流技能，为 Web 内容提取提供决策树
+- **文档**：Handler 现在可在 SKILL.md 中找到，而不再仅能通过 CLI
+
+### v3.2.0-butternut (2026-02-28)
+
+- **Agent-CLI**：`AgentLauncherHandler` —— `bach agent start/stop/list` 用于直接控制 Agent
+- **Prompt 系统**：`PromptHandler` —— `bach prompt list/add/edit/show/board-create` 用于集中管理 Prompt
+- **SharedMemory 扩展**：`current-task`、`generate-context`、`conflict-resolution`、`decay`、`changes-since`
+- **USMC Bridge**：United Shared Memory Client (`hub/_services/usmc_bridge.py`)
+- **llmauto 链**：Claude-Prompts 作为 Chain-Steps + `bach://`-URL-Resolution
+- **Scheduler**：`job_type='chain'` + 重命名 `daemon_jobs` → `scheduler_jobs`
+- **新增 API 模块**：`bach_api` 中的 `agent`、`prompt`
+- **移植**：SharedMemoryHandler、ApiProberHandler、N8nManagerHandler、UserSyncHandler、Stigmergy-Service
+- **数据表**：4 张新数据库表：`prompt_templates`、`prompt_versions`、`prompt_boards`、`prompt_board_items`
+- **109+ Handler**（此前：75+）
+
+### v2.6.0 (2026-02-13)
+
+- **目录重构**：清晰分离 Agents、Skills、Connectors 与 Partners
+  - `skills/_agents/` → `agents/`（system/ 下的顶层）
+  - `skills/_experts/` → `agents/_experts/`（专家属于 Agents）
+  - `skills/_workflows/` → `skills/workflows/`（Workflows 现在称为 Protocols）
+  - `skills/_connectors/` → `connectors/`（system/ 下的顶层）
+  - `skills/_partners/` → `partners/`（system/ 下的顶层）
+- **PathHealer**：在所有受影响的文件中自动修正路径
+- **组件类型 `protocol`**：在类型层级中取代 `workflow`
+- **组件类型 `connector`**：新增，用于外部接入（MCP、APIs）
+- **架构图**：AGENTS LAYER 与 CONNECTORS & PARTNERS 作为独立章节
+- **SKILL.md v2.6**：所有引用、表格与图示均已适配新结构
+
+### v2.5.0 (2026-02-13)
+
+- **自扩展系统（Self-Extension System）**：AI 伙伴可以为自己创造新能力
+  - `bach skills create <name> --type <typ>`（5 种类型：tool、agent、expert、handler、service）
+  - `bach skills reload`（热重载：Registry + Tools + Skills-DB）
+  - Self-Extension Loop：识别 → 创建 → 注册 → 使用 → 反思
+- **Hook 框架**：可扩展的事件系统，包含 14 个生命周期事件
+  - `core/hooks.py` - HookRegistry 单例、优先级、事件日志
+  - `hub/hooks.py` - CLI：`bach hooks status/events/log/test`
+  - 集成于：Startup、Shutdown、Task、Memory、Lesson、Skills、App
+  - Hooks != 注入器：技术框架 vs. 认知子系统
+- **Email-Handler**：Gmail API 带草稿保护（send、draft、confirm、cancel）
+- **Registry 热重载**：`app().reload_registry()` 无需重启
+- **规则 (f) 自扩展**：“缺少某项能力时，就自己给自己！”
+- **文档**：hooks.txt、self-extension.txt、cli.txt、skills.txt、ROADMAP.md
+
+### v2.4.0 (2026-02-08)
+
+- **MCP Server v2.2**：23 个 Tools、8 个 Resources、3 个 Prompts —— 全部三种 MCP 原语
+- **Email 适配器**：notify.py 中的 SMTP_SSL（从 BachForelle 移植）
+- **BachFliege + BachForelle**：已分析并归档（`docs/_archive/con5_BACHFLIEGE_BACHFORELLE_ARCHIV.md`）
+
+### v2.3.0 (2026-02-06)
+
+- **规则体系彻底重做**：IMMER → 访问方式 → 模式专属
+- **三种模式**：A（库）、B（混合）、C（会话），带 [B]、[C]、[B/C] 标记
+- **共同开发原则**：“使用 BACH 即是共同开发”作为核心规则
+- **bach_api.py 扩展**：session、partner、logs、msg、tools、help、injector
+- **14 个 API 模块**：对所有 Handler 的完整程序化访问
+- **通过 API 使用注入器**：全部 6 个注入器可在 Library 中使用 + CLI 过滤
+- **通过 API 的会话生命周期**：`session.startup()` / `session.shutdown()`
+- 架构图已更新（Core Layer + bach_api）
+- 所有章节均附加模式标记
+
+### v2.2.0 (2026-02-06)
+
+- 记录了两种访问途径（CLI + Library-API）
+- bach_api.py 基础模块：task、memory、backup、steuer、lesson、status
+
+### v2.1.0 (2026-02-04)
+
+- 整合技能架构 v2.0
+- 引入版本检查原则
+- 记录标准 Header
+- 新增技能来源分类
+- 记录注入器子功能
+
+### v2.0.2 (2026-01-01)
+
+- 初始版本
+
+---
+
+**BACH Skill-Architektur v2.0**
