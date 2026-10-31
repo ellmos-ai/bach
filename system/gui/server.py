@@ -13941,9 +13941,72 @@ async def usecases_page():
 
 
 
+_USECASE_COLUMNS = (
+    "id", "title", "description", "workflow_path", "workflow_name", "test_input", "expected_output",
+    "last_tested", "test_result", "test_score", "tuev_valid_until", "created_by", "created_at", "updated_at",
+)
+
+
+def _load_ellmos_tests_usecases(usecase_id: int | None = None) -> dict | None:
+    """Read canonical usecases from ellmos-tests/usecases.json (#2122, #2487) when present."""
+    if os.environ.get("BACH_USECASES_DB_ONLY") == "1":
+        return None
+    env_file = os.environ.get("BACH_ELLMOS_TESTS_USECASES")
+    candidates = [Path(env_file)] if env_file else [
+        Path("C:/_Local_DEV/repos/ellmos-tests/usecases.json"),
+        Path.home() / "services" / "ellmos-tests" / "usecases.json",
+        Path.home() / "_Local_DEV" / "repos" / "ellmos-tests" / "usecases.json",
+    ]
+    target = next((p for p in candidates if p.is_file()), None)
+    if target is None:
+        return None
+    try:
+        document = json.loads(target.read_bytes().decode("utf-8-sig"))
+        items = document.get("usecases") if isinstance(document, dict) else None
+        meta = document.get("_meta") if isinstance(document, dict) else {}
+        if not isinstance(items, list):
+            return None
+        rows = []
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("id"), int):
+                continue
+            row = dict.fromkeys(_USECASE_COLUMNS)
+            row.update({k: item.get(k) for k in ("id", "title", "description", "last_tested", "test_score")})
+            score = item.get("test_score")
+            if isinstance(score, int) and not isinstance(score, bool):
+                row["test_result"] = "pass" if score >= 75 else ("fail" if score > 0 else "pending")
+            row.update({k: item.get(k) for k in ("module", "covering_skill", "coverage_status")})
+            rows.append(row)
+        if usecase_id is not None:
+            found = next((r for r in rows if r["id"] == usecase_id), None)
+            return {"success": True, "usecase": found} if found else {"success": False, "error": "Nicht gefunden"}
+        rows.sort(key=lambda r: ((r.get("title") or "").encode("utf-8"), r["id"]))
+        passed = sum(1 for r in rows if r["test_result"] == "pass")
+        failed = sum(1 for r in rows if r["test_result"] == "fail")
+        meta = meta if isinstance(meta, dict) else {}
+        return {
+            "success": True,
+            "usecases": rows,
+            "stats": {"total": len(rows), "pass": passed, "fail": failed, "pending": len(rows) - passed - failed},
+            "source": {
+                "id": "ellmos-tests",
+                "file": "usecases.json",
+                "read_only": True,
+                "generated_at": meta.get("generated_at"),
+                "source_db": meta.get("source_db"),
+                "derived": ["test_result", "stats"],
+            },
+        }
+    except Exception:
+        return None
+
+
 @app.get("/api/usecases")
 async def get_usecases():
-    """Alle Usecases laden mit Stats."""
+    """Alle Usecases laden mit Stats (vorrangig aus ellmos-tests/usecases.json · #2122, #2487)."""
+    adapter_result = _load_ellmos_tests_usecases()
+    if adapter_result is not None:
+        return adapter_result
     try:
         conn = get_user_db()
         conn.row_factory = sqlite3.Row
@@ -13976,7 +14039,10 @@ async def get_usecases():
 
 @app.get("/api/usecases/{usecase_id}")
 async def get_usecase(usecase_id: int):
-    """Einzelnen Usecase laden."""
+    """Einzelnen Usecase laden (vorrangig aus ellmos-tests/usecases.json · #2122, #2487)."""
+    adapter_result = _load_ellmos_tests_usecases(usecase_id=usecase_id)
+    if adapter_result is not None:
+        return adapter_result
     try:
         conn = get_user_db()
         conn.row_factory = sqlite3.Row

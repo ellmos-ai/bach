@@ -1236,6 +1236,37 @@ async def list_governance_locks():
             "error": snapshot["error"]}
 
 
+@router.post("/governance/locks/prune")
+async def prune_stale_governance_locks(request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Prüft oder bereinigt abgelaufene Locks via prune_stale_locks.py (TEILPLAN-GUI-ANBINDUNG §3.1)."""
+    _require_memory_device(request)
+    apply_changes = bool(payload.get("apply", False))
+    scripts_dir = _find_existing_path([
+        Path("C:/Users/User/OneDrive/_scripts"),
+        Path(os.path.expanduser("~/OneDrive/_scripts")),
+    ])
+    if not scripts_dir or not (scripts_dir / "prune_stale_locks.py").is_file():
+        raise HTTPException(503, "prune_stale_locks.py auf diesem Host nicht gefunden")
+    import subprocess
+    import sys
+    cmd = [sys.executable, str(scripts_dir / "prune_stale_locks.py"), "--json"]
+    if not apply_changes:
+        cmd.append("--dry-run")
+    done = await asyncio.to_thread(
+        subprocess.run, cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30
+    )
+    try:
+        report = json.loads(done.stdout) if done.stdout.strip() else {}
+    except ValueError:
+        report = {"raw_output": done.stdout[:2000]}
+    return {
+        "ok": done.returncode == 0,
+        "dry_run": not apply_changes,
+        "exit_code": done.returncode,
+        "report": report,
+    }
+
+
 @router.get("/governance/decisions")
 async def list_governance_decisions():
     """Canonical decision pointers. DecisionClicker adoption remains a separate action."""
