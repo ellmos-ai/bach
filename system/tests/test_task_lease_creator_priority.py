@@ -31,7 +31,7 @@ def _iso_now() -> str:
 @pytest.fixture()
 def prepared(tmp_path, monkeypatch):
     """Liefert (pfad, verbindung, dienst) mit leerer Authority-DB."""
-    from hub._services import SequenceStore
+    from hub._services.chat.sequence_store import SequenceStore
 
     monkeypatch.delenv("BACH_TASK_LEASE_CREATOR_WINDOW", raising=False)
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
@@ -40,10 +40,15 @@ def prepared(tmp_path, monkeypatch):
     db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
     _init_db(db)
+    # Kanonischer Konfigurationsspeicher (vgl. hub/_services/worker_policy_settings.py);
+    # die Einstellung liegt in system_config, nicht im Authority-Schema.
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)"
+    )
     db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     db.commit()
 
-    service = task_lease.TaskLeaseService(db)
+    service = "a" * 32
     store = SequenceStore(path)
     try:
         yield path, db, service, store
@@ -101,6 +106,14 @@ def test_einstellung_aktiv_verweigert_fremden(prepared):
         intent="task:202",
     )
     assert lease.worker_id == "buddha@host-a"
+    # Ersteller gibt die Lease wieder frei (Status zurueck auf pending), damit der
+    # Fremde nicht am Lebend-Lease-Check, sondern am Creator-Priority-Gate scheitert.
+    client.release(
+        task_id=202,
+        lease_id=lease.lease_id,
+        fence=lease.fence,
+        outcome="return",
+    )
 
     with pytest.raises(LeaseDeniedError) as excinfo:
         client.acquire(
@@ -118,7 +131,7 @@ def test_sequenz_delegation_haelt_600_sekunden(prepared):
 
     chain = store.save_chain(
         {
-            "name": "Creator-Priority-Kette",
+            "name": "creator-priority-kette",
             "mode": "agents",
             "steps": [
                 {
@@ -129,12 +142,12 @@ def test_sequenz_delegation_haelt_600_sekunden(prepared):
             ],
         }
     )
-    run_id = "run-creator-600"
-    store.create_run(run_id, chain["id"], chain["version"], "e" * 64, service, "test", {"steps": [{}]})
+    run_id = "c" * 32
+    store.create_run(run_id, chain["id"], chain["version"], "e" * 32, service, "test", {"steps": [{}]})
     step = store.prepare_step(
         run_id,
         0,
-        {"input": "x"},
+        "d" * 32,
         f"system-sequence-{run_id}-0",
         "Analyse",
         "Analysiere den Bestand.",
