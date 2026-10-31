@@ -115,8 +115,17 @@ def _git_text(
     return (result.stdout or "").strip()
 
 
+class _GitHubRateLimitError(RuntimeError):
+    """Raised when the anonymous GitHub REST API returns 403/429."""
+
+
+_PUBLIC_METADATA_CACHE: dict[tuple[int, str, str], tuple[float, dict[str, str | bool]]] = {}
+_PUBLIC_METADATA_TTL_SEC = 60.0
+
+
 def _github_json(url: str) -> dict:
     """Read anonymous GitHub metadata; credentials and response bodies stay private."""
+    from urllib.error import HTTPError
     from urllib.request import Request, urlopen
     request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "BACH-task-reader"})
     try:
@@ -130,6 +139,10 @@ def _github_json(url: str) -> dict:
         if len(payload) > 65536:
             raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
         value = json.loads(payload.decode("utf-8"))
+    except HTTPError as exc:
+        if getattr(exc, "code", None) in (403, 429):
+            raise _GitHubRateLimitError("Öffentliche Quellbindung konnte nicht bestätigt werden") from None
+        raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden") from None
     except Exception:  # noqa: BLE001 - Netzwerk-/JSONfehler liefern keine Quellfreigabe.
         raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden") from None
     if not isinstance(value, dict):
@@ -137,33 +150,44 @@ def _github_json(url: str) -> dict:
     return value
 
 
-def _public_default_branch_metadata(repository: str, default_branch: str) -> dict[str, str | bool]:
-    """Read the configured public default branch and exact commit without Git writes."""
-    from urllib.parse import quote
-    from hub._services.chat.worker_repo_registry import canonical_default_branch, canonical_repository_id
-    repository = canonical_repository_id(repository)
-    default_branch = canonical_default_branch(default_branch)
-    base_url = f"https://api.github.com/repos/{repository}"
-    metadata = _github_json(base_url)
-    full_name = metadata.get("full_name")
-    if not (
-        isinstance(full_name, str) and full_name.lower() == repository
-        and metadata.get("private") is False
-        and metadata.get("visibility") == "public"
-        and metadata.get("default_branch") == default_branch
-    ):
+def _public_ls_remote_metadata(repository: str, default_branch: str) -> dict[str, str | bool]:
+    """Verify anonymous public visibility, default branch HEAD symref, and commit SHA via git ls-remote."""
+    import tempfile
+    expected_ref = f"refs/heads/{default_branch}"
+    remote_url = f"https://github.com/{repository}.git"
+    with tempfile.TemporaryDirectory(prefix="bach-ls-remote-") as temp_dir:
+        empty_cfg = Path(temp_dir) / "empty.gitconfig"
+        empty_cfg.write_text("", encoding="utf-8")
+        env = _isolated_git_environment(empty_cfg)
+        try:
+            res = subprocess.run(
+                ["git", "ls-remote", "--symref", remote_url, "HEAD", expected_ref],
+                cwd=temp_dir, shell=False, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+                timeout=10, check=False, env=env,
+            )
+        except Exception:  # noqa: BLE001
+            raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden") from None
+    if res.returncode != 0:
         raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
-    branch = _github_json(f"{base_url}/branches/{quote(default_branch, safe='')}")
-    commit = branch.get("commit") if branch.get("name") == default_branch else None
-    sha = commit.get("sha") if isinstance(commit, dict) else None
-    if not isinstance(sha, str) or not _PUBLIC_SHA.fullmatch(sha):
+    symref_ok = False
+    sha: str | None = None
+    for raw_line in (res.stdout or "").splitlines():
+        line = raw_line.strip()
+        if line == f"ref: {expected_ref}\tHEAD":
+            symref_ok = True
+        elif line.endswith(f"\t{expected_ref}"):
+            candidate = line.split("\t", 1)[0].strip()
+            if _PUBLIC_SHA.fullmatch(candidate):
+                sha = candidate
+    if not symref_ok or not sha:
         raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
     return {
         "schema": _PUBLIC_SOURCE_SCHEMA,
-        "task_id": "",  # set by the caller before persistence
+        "task_id": "",
         "repository": repository,
         "origin": f"https://github.com/{repository}",
-        "source_ref": f"refs/heads/{default_branch}",
+        "source_ref": expected_ref,
         "source_sha": sha,
         "visibility": "public",
         "private": False,
@@ -171,6 +195,53 @@ def _public_default_branch_metadata(repository: str, default_branch: str) -> dic
         "ref_verified": True,
         "verified_at": _utc_now(),
     }
+
+
+def _public_default_branch_metadata(repository: str, default_branch: str) -> dict[str, str | bool]:
+    """Read the configured public default branch and exact commit without Git writes."""
+    import time
+    from urllib.parse import quote
+    from hub._services.chat.worker_repo_registry import canonical_default_branch, canonical_repository_id
+    repository = canonical_repository_id(repository)
+    default_branch = canonical_default_branch(default_branch)
+    cache_key = (id(_github_json), repository, default_branch)
+    now_mono = time.monotonic()
+    cached = _PUBLIC_METADATA_CACHE.get(cache_key)
+    if cached is not None and (now_mono - cached[0]) < _PUBLIC_METADATA_TTL_SEC:
+        return {**cached[1], "verified_at": _utc_now()}
+    base_url = f"https://api.github.com/repos/{repository}"
+    try:
+        metadata = _github_json(base_url)
+        full_name = metadata.get("full_name")
+        if not (
+            isinstance(full_name, str) and full_name.lower() == repository
+            and metadata.get("private") is False
+            and metadata.get("visibility") == "public"
+            and metadata.get("default_branch") == default_branch
+        ):
+            raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
+        branch = _github_json(f"{base_url}/branches/{quote(default_branch, safe='')}")
+        commit = branch.get("commit") if branch.get("name") == default_branch else None
+        sha = commit.get("sha") if isinstance(commit, dict) else None
+        if not isinstance(sha, str) or not _PUBLIC_SHA.fullmatch(sha):
+            raise RuntimeError("Öffentliche Quellbindung konnte nicht bestätigt werden")
+        record: dict[str, str | bool] = {
+            "schema": _PUBLIC_SOURCE_SCHEMA,
+            "task_id": "",  # set by the caller before persistence
+            "repository": repository,
+            "origin": f"https://github.com/{repository}",
+            "source_ref": f"refs/heads/{default_branch}",
+            "source_sha": sha,
+            "visibility": "public",
+            "private": False,
+            "metadata_verified": True,
+            "ref_verified": True,
+            "verified_at": _utc_now(),
+        }
+    except _GitHubRateLimitError:
+        record = _public_ls_remote_metadata(repository, default_branch)
+    _PUBLIC_METADATA_CACHE[cache_key] = (now_mono, dict(record))
+    return record
 
 
 def _public_main_metadata(repository: str = _PUBLIC_REPO) -> dict[str, str | bool]:
