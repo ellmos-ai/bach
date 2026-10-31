@@ -21,6 +21,9 @@ from hub._services.document.foerderbericht_pipeline import FoerderberichtPipelin
 
 @pytest.fixture
 def pipe(tmp_path, monkeypatch):
+    for env_key in ("FOERDERBERICHT_SSH_TUNNEL", "FOERDERBERICHT_SSH_KEY", "FOERDERBERICHT_SSH_REMOTE_PORT",
+                    "FOERDERBERICHT_ALLOWED_HOSTS", "FOERDERBERICHT_NUM_CTX", "OLLAMA_HOST"):
+        monkeypatch.delenv(env_key, raising=False)
     monkeypatch.setattr(FoerderberichtPipeline, "_find_onedrive_exe", staticmethod(lambda: None))
     return FoerderberichtPipeline(base_path=tmp_path)
 
