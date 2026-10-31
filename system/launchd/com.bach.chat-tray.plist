@@ -14,6 +14,8 @@
   <dict>
     <key>BACH_IDLE_WORKER</key>
     <string>1</string>
+    <key>BACH_CONTEXT_TRIGGERS_DB</key>
+    <string>1</string>
     <key>PYTHONIOENCODING</key>
     <string>utf-8</string>
     <key>OLLAMA_NUM_CTX</key>

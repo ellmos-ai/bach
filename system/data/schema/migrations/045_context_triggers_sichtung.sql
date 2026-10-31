@@ -68,6 +68,9 @@ WHERE source = 'manual' AND hint_text LIKE '%skills/_agents/%';
 UPDATE context_triggers SET hint_text = REPLACE(hint_text, 'docs/ARCHITECTURE_DIAGRAMS.md', 'ARCHITECTURE.md'),
        updated_at = CURRENT_TIMESTAMP
 WHERE source = 'manual' AND hint_text LIKE '%docs/ARCHITECTURE_DIAGRAMS.md%';
+UPDATE context_triggers SET hint_text = REPLACE(hint_text, 'bach restore backup latest', 'python system/tools/backup_manager.py restore backup latest'),
+       updated_at = CURRENT_TIMESTAMP
+WHERE source = 'manual' AND hint_text LIKE '%bach restore backup latest%';
 UPDATE context_triggers SET hint_text = REPLACE(REPLACE(hint_text, 'tools/cv_generator.py', 'agents/_experts/bewerbungsexperte/cv_generator.py'),
                                         'user/bewerbungsexperte/', 'agents/_experts/bewerbungsexperte/'),
        updated_at = CURRENT_TIMESTAMP
