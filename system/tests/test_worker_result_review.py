@@ -792,6 +792,65 @@ def test_paged_review_approved_needs_all_pages_findings_do_not(review_world, mon
     assert evidence is not None and evidence["availability"] == "recorded"
 
 
+def test_paged_review_approved_rejects_incomplete_page_set(review_world, monkeypatch):
+    """Teilweise geprüfte Diffs sind nicht abnehmbar (kein 'approved' mit Lücke)."""
+    world = review_world
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=True, diff_sha256="ab" * 32)
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert _guard(world, child) is True
+    partial = json.dumps({"status": "approved", "summary": "Nur zwei von drei Seiten belegt.",
+                          "task_contract_met": True,
+                          "diff_pages": [{"page": 1, "sha256": "ab" * 32},
+                                         {"page": 2, "sha256": "bc" * 32}]}, ensure_ascii=False)
+    assert _record_child(world, child, partial) is None
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM worker_result_review_pages").fetchone()[0] == 0
+
+
+def test_paged_review_approved_rejects_page_number_gap(review_world, monkeypatch):
+    """Seitenbelege muessen luecklos bei 1 beginnen; eine Luecke ist keine Vollpruefung."""
+    world = review_world
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=True, diff_sha256="ab" * 32)
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert _guard(world, child) is True
+    gapped = json.dumps({"status": "approved", "summary": "Seite 2 uebersprungen.",
+                         "task_contract_met": True,
+                         "diff_pages": [{"page": 1, "sha256": "ab" * 32},
+                                        {"page": 3, "sha256": "bc" * 32},
+                                        {"page": 4, "sha256": "cd" * 32}]}, ensure_ascii=False)
+    assert _record_child(world, child, gapped) is None
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM worker_result_review_pages").fetchone()[0] == 0
+
+
+def test_paged_review_approved_rejects_malformed_page_digest(review_world, monkeypatch):
+    """Ein Seitenbeleg ohne 64-Hex-Digest ist kein Beleg."""
+    world = review_world
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=True, diff_sha256="ab" * 32)
+    grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert grant is not None
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert _guard(world, child) is True
+    malformed = json.dumps({"status": "approved", "summary": "Unbrauchbarer Seiten-Digest.",
+                            "task_contract_met": True,
+                            "diff_pages": [{"page": 1, "sha256": "ab" * 32},
+                                           {"page": 2, "sha256": "bc" * 32},
+                                           {"page": 3, "sha256": "zu-kurz"}]}, ensure_ascii=False)
+    assert _record_child(world, child, malformed) is None
+    assert world["conn"].execute(
+        "SELECT COUNT(*) FROM worker_result_review_pages").fetchone()[0] == 0
+
+
 def test_git_scope_change_after_grant_blocks_dispatch(review_world):
     world = review_world
     task_id = _prepare(world)["review_task_id"]
