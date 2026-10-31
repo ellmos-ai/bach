@@ -565,6 +565,16 @@ def task_has_file_changes(
             )
             if res.stdout and res.stdout.strip():
                 return True
+            res_diff = subprocess.run(
+                ["git", "diff", "--name-only", "refs/heads/main...HEAD"],
+                cwd=str(worktree),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            if res_diff.stdout and res_diff.stdout.strip():
+                return True
         except Exception:
             pass
 
