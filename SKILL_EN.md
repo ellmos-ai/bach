@@ -24,7 +24,7 @@ description: >
 ### 1. Booting and mode
 - Access to the Mac Studio via the provided SSH access; do not set up your own access credentials. Project under `$BACH_ROOT` (on the Mac Studio `~/services/bach`), Python from its venv. Read `AGENTS.md` and instructions from the part project you are working in.
 - **Mode B (Mixed)** is for agents actively collaborating; the normal case. **Mode A (Library)** suffices if you are only working on tasks and not using BACH as a session: the lease method below runs via the lead service and requires no session start. Mode C (Session) only on explicit request.
-- Before the first task, read the current plan `Desktop\OCEAN\AKTUELLER-PLAN.md` and `MODULE-ALLOCATION.md` (construction sites).
+- Before the first task, read the current plan `Desktop\OCEAN\AKTUELLER-PLAN.md` and `MODUL-ZUORDNUNG.md` (construction sites).
 
 ### 2. Find free tasks
 - **Native:** `TaskLeaseClient.task_candidates(limit=100, offset=…)` (read all pages, not just the first), then `task_snapshot(task_id)` for the full description. `bach task list` shows the same tasks for view only.

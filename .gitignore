@@ -383,3 +383,8 @@ LOCK*.guard
 # Task #1694: fremde Übergabe-Artefakte im Task-Worktree aus Commit halten
 /task_result.md
 /tests_tmp_gardener/
+
+# Task #2619: Ad-hoc-Generator- und Spiegeldateien im Task-Worktree aus Commit halten
+/parity2619.py
+/parity2619_helpers.py
+/test_parity.py
