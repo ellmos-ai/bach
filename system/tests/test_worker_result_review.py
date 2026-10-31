@@ -703,6 +703,19 @@ def test_full_review_prompt_needs_no_paging(review_world, monkeypatch):
     assert "hole Diff-Seiten via Reviewer-Tool" not in description
 
 
+def test_untruncated_oversized_diff_still_requires_paging(review_world, monkeypatch):
+    """Kontextfenster-Gate: passt der Diff nicht ins Restfenster, ist Paging Pflicht."""
+    world = review_world
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "100")
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
+    prepared = _prepare_diff(world, diff_chars=250, diff_truncated=False, diff_sha256="cd" * 32)
+    description = world["conn"].execute(
+        "SELECT description FROM tasks WHERE id=?", (prepared["review_task_id"],)).fetchone()[0]
+    assert "hole Diff-Seiten via Reviewer-Tool" in description
+    assert "page_count=3" in description
+    assert "kein Seitenabruf nötig" not in description
+
+
 def _prepare_diff(world, **meta):
     prepared = review.prepare_review_task(world["conn"], world["binding"], **_paths(world), **meta)
     assert prepared is not None
