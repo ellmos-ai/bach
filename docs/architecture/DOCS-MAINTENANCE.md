@@ -101,3 +101,23 @@ Dokurepair → persönliche Ergebnisfreigabe sind getrennte Nachweise.
 Akzeptierte Analyse ist kein Repair; `last_repair_success` bleibt ohne gesonderten
 Reparaturnachweis leer. `last_success` bei einem Schedulerjob bestätigt nur dessen
 Dispatchlauf, keine abgeschlossene fachliche Dokumentprüfung.
+
+## Gemeinsame Methode und BACH-Adapter
+
+Neue Delta- und Routineaufgaben verweisen zuerst auf
+[doc-reality-loop-bach](../../system/skills/workflows/doc-reality-loop-bach.md).
+Der zugehörige [Quellpin](../../system/skills/workflows/doc-reality-loop-source.v1.json)
+bindet den gemeinsamen Ocean-Vertrag, Prüfer und beide Workflowsprachen an
+unveränderte Git-Blobs eines festen Commits. Eine spätere Quelländerung erfordert
+einen neuen geprüften Pin; der Adapter lädt oder startet keinen Fremdcode.
+
+Die bisherigen vier Workflowtexte liefern Herkunft und Fachkontext. Der Adapter
+ordnet ihre Varianten zu und verlangt Aussagen-/Leseraufnahme, getrennte
+Quell- und Laufzeitbelege, erhaltene Sollanforderungen und eine vollständig
+belegte Zustandskette. Er beauftragt weiterhin ausschließlich Analyse.
+
+Bekannte exakte Altbeschreibungen bleiben bei der ACK-Recovery zulässig.
+Tasktitel, Bindung, Kategorie und offene Arbeit werden weiter geprüft;
+alte Tasks und Resultate werden nicht migriert. Neue Aufgaben erhalten die
+Adapteranweisung. Dieser Quellenstand ist kein Nachweis für Aktivierung,
+tatsächlichen Prüflauf, Registerintegration oder erfolgreichen Dokurepair.

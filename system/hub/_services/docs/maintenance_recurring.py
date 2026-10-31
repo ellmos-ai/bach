@@ -106,15 +106,18 @@ def dispatch_routine(dispatcher, definition, *, scheduled_for):
     epoch_id = hashlib.sha256(str(epoch).encode()).hexdigest()[:12]
     root_id = hashlib.sha256(str(dispatcher.root.resolve()).encode()).hexdigest()[:8]
     task_title = f"Doku-Routine {name} {root_id} {epoch_id}"
-    description = dispatcher._description(
-        name, revision, ["system/hub/_services/recurring/config.json"]
-    )
-    description += (
+    sources = ["system/hub/_services/recurring/config.json"]
+    description = dispatcher._analysis_description(name, revision, sources)
+    previous_description = dispatcher._description(name, revision, sources)
+    occurrence = (
         f"\nAuslöser: native Routine {name}; native Fälligkeit: {epoch!r}; "
         f"bisheriger Dispatchmarker: {definition['dispatch_marker']!r}."
     )
     task_id, action = dispatcher._ensure_task(
-        task_title, description, priority=definition["priority"]
+        task_title,
+        description + occurrence,
+        priority=definition["priority"],
+        previous_description=previous_description + occurrence,
     )
     item = {
         "revision": revision,
