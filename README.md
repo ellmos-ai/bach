@@ -1,427 +1,47 @@
-<img src="assets/banner_v2.png" width="100%" alt="BACH Banner">
+# Gemini-Login auf dem Mac für die Um:bruch-Pipeline
 
-# ellmos BACH — Text-Based Operating System for LLMs
-
-> The stream that unites everything.
-
-[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-v3.15.0-orange)](CHANGELOG.md)
-[![Status](https://img.shields.io/badge/Status-Production--Ready-brightgreen)](ROADMAP.md)
-[![Tests](https://img.shields.io/badge/Tests-4436%20collected-blue)](system/tests/)
-[![Last Checked](https://img.shields.io/badge/Last_Checked-2026--10--18-brightgreen)](CHANGELOG.md)
-[![Haftung](https://img.shields.io/badge/Haftung-%C2%A7_521_BGB-blue)](https://www.gesetze-im-internet.de/bgb/__521.html)
-[![Security SLA](https://img.shields.io/badge/Security_Response-48h_dual_SLA-blue)](SECURITY.md)
-
-**Version:** v3.15.0
-
-## 🎬 Demo video
-
-See BACH working live — dashboard, Codex backend, operator steering — in 2:22:
-
-[![BACH demo — local-first LLM operating system (2:22)](assets/bach-demo-preview.png)](https://youtu.be/Gv5nxF8HssU)
-
-### Screenshots
-
-Geplante Screenshots der BACH-GUI 0.2.29 (Namensschema und Belegzusammenhang siehe [assets/gui/README.md](assets/gui/README.md)):
-
-![BACH-GUI 0.2.29 — Unified Dashboard](assets/gui/v0.2.29-unified_dashboard.png)
-![BACH-GUI 0.2.29 — KI-Center](assets/gui/v0.2.29-ki-center.png)
-![BACH-GUI 0.2.29 — Token Dashboard](assets/gui/v0.2.29-token-dashboard.png)
-
-Die PNG-Dateien werden außerhalb BACH erzeugt und liegen noch nicht im Repository.
-
-## Built with OpenAI Codex & GPT-5.6
-
-BACH uses Codex both as a first-class runtime backend and as a repository-development partner. For the exact automation schedules, model routes, and auditable session IDs, see the [verified Build Week attribution](#openai-build-week--codex-and-gpt-56) below.
-
-## Languages
-
-README documentation is available in eleven languages. Runtime translation coverage is separate and currently includes de, en, es, ru, ja, and zh in the release snapshot.
-
-**English** | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
-
-The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `system/exports/translations/languages_config.release.json` and exports matching locale files in `system/exports/translations/locales/`. For crawlers and direct language entry points, each language also has its own `README.md` under `docs/i18n/<lang>/`.
-
-<p align="center">
-  <img src="overview.jpg" alt="BACH Overview" width="700">
-</p>
-
-## Overview
-
-**BACH** is a text-based operating system that empowers Large Language Models (LLMs) to work autonomously, learn, and self-organize. Part of the **ellmos** family (Extra Large Language Model Operating Systems), BACH provides comprehensive infrastructure for task management, knowledge management, automation, and LLM orchestration.
-
-## Discovery Context
-
-BACH is best described as a **local-first LLM operating system**: a persistent Python/SQLite workbench for autonomous agents, structured memory, scheduler-driven automation, prompt chains, MCP server integration, and multilingual operator surfaces. It is not a chatbot wrapper, hosted agent SaaS, Bash unit-test framework, music project, or LangChain-style pipeline library.
-
-Canonical GitHub repository: `ellmos-ai/bach`. Machine-readable project context for LLM crawlers is available in [`llms.txt`](llms.txt).
-
-> [!NOTE]
-> **For AI Assistants & LLM Crawlers:** Machine-readable project context, architectural details, and disambiguation indices are available in [`llms.txt`](llms.txt).
-
-Useful search phrases include `ellmos-ai/bach`, `local-first LLM operating system`, `text-based OS for LLM agents`, `SQLite memory for AI agents`, `BACH ellmos agent OS`, `personal agentic OS Python SQLite`, and `multi-agent orchestration with MCP servers`.
-
-## System Architecture & Workflow Topology
-
-### 1. Component Topology
-
-```mermaid
-graph TB
-    subgraph Interfaces["User & Agent Interfaces"]
-        CLI["BACH CLI (bach.py / 113+ Handlers)"]
-        GUI["PySide6 Desktop GUI & Web Dashboard"]
-        TG["Chat Service & Telegram Bot"]
-        MCP["MCP Servers (FileCommander & CodeCommander)"]
-    end
-
-    subgraph CoreOS["BACH Core Operating System"]
-        Orch["Agent Orchestration (11 Boss & 22 Experts)"]
-        Sched["Scheduler & Automation Engine"]
-        Chains["llmauto Prompt Chains & Workflows"]
-        Skills["Skill Registry (1870+ Skills & 550+ Tools)"]
-    end
-
-    subgraph Persistence["Local-First SQLite & Memory Bus"]
-        SQL["SQLite Database (210+ Tables)"]
-        Mem["6-Type Structured Memory (Facts, Lessons, Working)"]
-        Bus["SharedMemory Bus & USMC Bridge"]
-    end
-
-    CLI -->|"Command Dispatch"| Orch
-    GUI -->|"HTTP & WebSockets"| Orch
-    TG -->|"Bridge Connector"| Orch
-    MCP -->|"stdio / JSON-RPC"| Orch
-
-    Orch -->|"Executes"| Chains
-    Orch -->|"Triggers"| Sched
-    Orch -->|"Loads"| Skills
-
-    Orch -->|"Reads / Writes"| Bus
-    Bus -->|"Consolidates"| Mem
-    Mem -->|"Atomic Storage"| SQL
-```
-
-### 2. Local-First Agent Execution Sequence
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Operator / Agent
-    participant CLI as BACH CLI / API Interface
-    participant Hub as Core Orchestrator & Session Scope
-    participant Mem as SQLite Memory & SharedMemory Bus
-    participant LLM as Pluggable Backend (Local Ollama / CLI)
-    participant Tool as Tool & Skill Execution Engine
-
-    User->>CLI: Issue task or workflow command
-    CLI->>Hub: Dispatch request with session token
-    Hub->>Mem: Query context, lessons, and working memory
-    Mem-->>Hub: Return relevant facts and active constraints
-    Hub->>LLM: Formulate prompt with local context (zero egress)
-    LLM-->>Hub: Stream plan and requested tool invocations
-    Hub->>Tool: Execute vetted tool / handler locally
-    Tool-->>Hub: Return tool execution output
-    Hub->>Mem: Record new facts, lesson feedback, and audit log
-    Hub-->>CLI: Format structured response (JSON / text)
-    CLI-->>User: Present completed result to operator
-```
-
-## OpenAI Build Week — Codex and GPT-5.6
-
-BACH uses Codex in two distinct roles:
-
-- **Runtime backend:** `codex-cli` is one of five pluggable chat backends, and BACH agents can delegate coding tasks through `codex exec`.
-- **Repository development:** three active Codex automations maintain the project: `bach-daily-care-and-dev-check`, `bach-start-and-health-checks`, and `bach-github-release-service`. Since July 21, 2026, all three have been configured for GPT-5.6 (`gpt-5.6-terra`); the first two run daily, while the release service runs weekly.
-- **Verified model routing:** in Codex Session `019f85c6-4339-7f13-b8e5-bf1823fd8432`, GPT-5.6 Sol with high reasoning audited all 78 automation definitions and routed BACH's development and release jobs to Terra/high and health checks to Terra/medium.
-- **Final submission audit:** GPT-5.6 Sol in Codex Session `019f8674-fe9a-7d91-a80f-7ee799e8ced0` reviewed and certified the pending BACH changes, corrected the competition attribution, and completed the web-scrape hardening and regression tests.
-
-For auditability, the GPT-5.6 automation attribution applies from that configuration change forward; earlier automation runs used earlier Codex models.
-
-### Key Features
-
-- **113+ Handlers** - Full CLI and API coverage of all system functions
-- **550+ Tools** - Extensive tool library for file processing, analysis, and automation
-- **1870+ Skills** - Reusable workflows and templates
-- **Skill Source Registry** - `bach skills version bach` resolves the canonical repo-root skill via `system/data/skill_sources.json` and can compare optional Codex/Claude user copies without fuzzy filename drift
-- **71 Workflow Templates** - Pre-built process workflows
-- **4400+ Tests** - Comprehensive automated coverage across handlers, services, GUI, and MCP servers
-- **Knowledge Store** - Lessons, Facts, and Multi-Level Memory System (6 memory types), with additive per-entry BACH-session provenance for new records; legacy authors remain explicitly unknown
-- **Agent CLI** - `bach agent start/stop/list` for direct agent control
-- **Agent Doctor** - `bach agent doctor [name] [--json]` validates Claude CLI availability, runtime dirs, skill files, and stale PID state before a launch
-- **Agent Operator Controls** - `bach agent pause/resume/checkpoint/steer/clear-steer [name] [--json]` lets operators stage cooperative pause requests and guidance before or during a run, record explicit safe-checkpoint acknowledgements, mirror that state into `OPERATOR_NOTES.md`, preserve queued hints across the next `bach agent start`, inject them into the generated session `CLAUDE.md`, and expose nested `operator_control` snapshots plus `queued_for_next_start` for automation-safe polling
-- **Agent Runtime Policy Defaults** - `bach agent start` now accepts `--permission-mode`, `--allowed-tools`, and `--max-turns`, and can preload the same defaults from agent SKILL frontmatter for per-agent guardrails
-- **Scheduler Doctor** - `bach scheduler doctor [--json]` plus `bach scheduler session doctor [--json]` validate automation scripts, PID state, DB/config/profile surfaces, and suggest recovery steps before background services are started
-- **Session Steering Controls** - `bach scheduler session pause/resume/steer/clear-steer [--json]` lets operators gate or retarget the next profile-specific auto-session without editing daemon config by hand
-- **Scheduler Run Controls** - `bach scheduler pause/resume/steer/clear-steer [--json]` now exposes the same operator control plane for due scheduler jobs, including global pause and queued run guidance without hand-editing control files; queued scheduler hints now also hydrate llmauto chains into their next safe-checkpoint prompt path
-- **Machine-readable Control & Status Surfaces** - `bach agent list/start/stop/pause/resume/checkpoint/steer/clear-steer/status --json`, `bach scheduler status/jobs/session status --json`, and `bach scheduler session pause/resume/steer/clear-steer --json`, including queue state, `queued_for_next_start`, timestamps, checkpoint acknowledgements, and operator-note metadata for automation-safe polling
-- **Worker Queue Diagnostics** - [Selection observations](docs/worker-queue.md) expose dated candidate counts and binding, category, priority, tag, ownership and native claim rejections through the existing worker APIs; idle polls do not count as model blocks. The authenticated configuration response includes a separate read-only selection policy, and existing GUI cards receive a readable waiting summary. These observations grant no task or result acceptance authority.
-- **Upgrade Drift & Repair** - `bach upgrade list <path> --json`, `bach upgrade status/check --json`, and `bach upgrade repair [--dry-run] [--version <tag>]` expose automation-safe version, status, drift, repair hints, and recovery for broken distribution metadata
-- **Path Surface** - `bach path` exposes canonical system/workspace/DB paths, validation, resolve helpers, and DB overrides in text or JSON
-- **Prompt System** - Central prompt management with board system and versioning
-- **Install Security Gate** - Static pre-load scans block obvious code-injection patterns during `skills install`/`plugins load`; MCP setup validates allowlisted packages/configs fail-closed, plugin setup contracts now require explicit shell/desktop/MCP checks, and blocked local imports are quarantined
-- **Manifest-first Plugins** - `bach plugins inspect` previews activation, provider/model, setup, and capability metadata without importing plugin runtime code
-- **Structured `bach_api` Core** - `task` and `memory` now expose discoverable methods via `dir(...)`, return Python objects for common reads/writes, and still keep `raw(...)` for legacy handler-style calls
-- **SharedMemory Bus** - Multi-agent coordination with conflict detection and decay
-- **USMC Bridge** - United Shared Memory Communication for cross-agent communication
-- **llmauto Chains** - Claude prompts as chain steps with `bach://` URL resolution
-- **Chat Service** - Multi-backend Telegram bot (5 backends), Control API, Web Dashboard, cross-platform System Tray
-
-## Installation
-
+## Ziel
+Die `gemini`-CLI ist in der Pipeline als Schreib- und Gegenlese-Agent verfügbar.
+Abnahmekriterium:
 ```bash
-# Clone the repository
-git clone https://github.com/ellmos-ai/bach.git
-cd bach
-
-# Install dependencies and make `bach` CLI available
-pip install -e .
-
-# Pre-flight check
-bach setup preflight
-
-# Full install (MCP servers, hooks, secrets, user profile)
-bach setup full-install
+gemini -p "Antworte nur mit OK"
+# Ausgabe enthält: OK
 ```
 
-### Optional operator console
+## Voraussetzung
+`@google/gemini-cli` Version 0.63.0 ist bereits installiert (siehe Task-Beschreibung).
 
-The existing `ellmos-unified-gui` operator console can be mounted into the
-BACH dashboard without a second process or a second Unified GUI configuration:
+## Schritte
 
+### 1. Direkt am Mac (mit GUI-Browser)
+Öffne ein Terminal auf dem Mac und führe aus:
 ```bash
-pip install -e ".[console]"
-BACH_GUI_CONSOLE_ENABLED=1 python system/gui/server.py
+gemini
 ```
-
-The mount is disabled by default and uses `/control`. Set
-`BACH_GUI_CONSOLE_PREFIX` to choose another absolute URL path. If the optional
-package is absent or cannot be mounted, the BACH dashboard continues without
-the console. BACH does not introduce a separate login; Unified GUI keeps its
-existing capability-based behavior for a BACH host. Because the BACH dashboard
-does not currently provide an `AUTH_ROLE` host session, keep this mount on the
-default loopback address or behind an existing trusted access boundary.
-
-## MCP Servers (Claude Code Integration)
-
-BACH provides a built-in Python MCP server plus two companion servers for integration with Claude Code, Cursor, and other IDEs:
-
+Folge den Anweisungen, um dich mit deinem Google-Konto anzumelden.
+Sobald die Anmeldung abgeschlossen ist, beende die Sitzung wieder:
 ```bash
-# Start the built-in BACH server (stdio)
-bach mcp serve
-
-# Install and configure MCP servers (recommended)
-python system/bach.py setup mcp
-
-# Or manually via npm:
-npm install -g ellmos-codecommander-mcp ellmos-filecommander-mcp
+exit
 ```
 
-- **BACH MCP Server** - BACH resources, tools, and prompts via the handler API (`bach mcp serve`)
-- **[ellmos-codecommander-mcp](https://www.npmjs.com/package/ellmos-codecommander-mcp)** v1.3.14 - Code analysis and refactoring tools (21 tools)
-- **[ellmos-filecommander-mcp](https://www.npmjs.com/package/ellmos-filecommander-mcp)** v1.9.1 - File management and batch operations (46 tools)
-
-## Quick Start
-
+### 2. Remote per SSH (kein GUI-Browser verfügbar)
+Falls du nur per SSH auf dem Mac arbeitest:
 ```bash
-# Fast, side-effect-free metadata
-python bach.py --version
-python bach.py --help
-
-# Start BACH
-python bach.py --startup
-
-# Create a task
-python bach.py task add "Analyze project structure"
-
-# Manage agents
-python bach.py agent list
-python bach.py agent start bueroassistent
-
-# Manage prompts
-python bach.py prompt list
-python bach.py prompt add "My Prompt" --content "..."
-
-# Check scheduler status
-python bach.py scheduler status
-
-# Import versioned everyday-data exports (idempotent)
-python bach.py abo import PATH/abotracker-export-v1.json
-python bach.py versicherung import PATH/bach-fin-insurances-v1.json
-
-# Register recurring imports only after a valid export file exists
-python bach.py abo schedule-import PATH/abotracker-export-v1.json --interval 24h
-python bach.py versicherung schedule-import PATH/bach-fin-insurances-v1.json --interval 24h
-
-# Preview and refresh the current monthly/year-to-date finance summary
-python bach.py haushalt financial-summary refresh --dry-run
-python bach.py haushalt financial-summary refresh
-
-# Shut down BACH
-python bach.py --shutdown
+NO_BROWSER=true gemini
+```
+Es wird ein Gerätecode oder Link ausgegeben. Öffne diesen Link oder gib den Code in einem Browser auf einem anderen Gerät ein, um die Anmeldung zu autorisieren. Danach beenden:
+```bash
+exit
 ```
 
-### Programmatic Python Quickstart
-
-```python
-from bach_api import get_api
-
-# Initialize the lightweight, side-effect-free BACH API client
-api = get_api()
-
-# Create a tracked task
-task = api.task.add("Explore local agent environment")
-print(f"Task created: {task.id} - {task.title}")
-
-# Query system status
-status = api.system.status()
-print(f"BACH status: {status.state} (Active handlers: {status.handlers_count})")
+## 3. Prüfung
+Führe danach aus:
+```bash
+gemini -p "Antworte nur mit OK"
 ```
+Die Ausgabe muss `OK` enthalten.
 
-`--version`, `--help`, command-specific help, and global `--dry-run` startup
-paths bypass AutoLogger, ProSync, and activity tracking. Normal commands announce
-the ProSync pull before it starts and enforce a 15-second startup budget. Set
-`BACH_PROSYNC_STARTUP_TIMEOUT_SECONDS` to a value from 1 to 300 when a slower
-transit needs an explicit local budget. If the pull fails or times out, BACH
-continues without registering an exit push for that process.
-
-The import commands require the exact schemas `abotracker-export-v1` and
-`bach.fin_insurances.v1`. AboTracker billing cycles are not treated as confirmed
-next-payment dates. Scheduled jobs are active, idempotent file imports and are
-created only after the current source file passes validation.
-
-The finance summary keeps observed mail-derived expenditure separate from the
-current recurring subscription run rate. Legacy subscription duplicates are
-deduplicated by provider for calculations and dashboard reads; conflicting
-duplicates fail closed instead of being guessed or deleted.
-
-## Core Components
-
-Local inference can enforce an explicit host reserve policy at the existing
-model-call boundary. It checks native model identity, configured context and
-memory headroom, plus free space for task, slot and runtime persistence. Waiting
-returns the inference owner and preserves the current session without replaying
-tools. This is an optional reserve barrier; it does not replace the model-slot
-controller or certify model capacity. See [Local model reserves](docs/architecture/LOCAL-MODEL-RESERVE.md)
-for configuration, verification and the separate installation/runtime gates.
-The [model socket contract](docs/architecture/MODEL-SOCKETS.md) keeps native
-dialog and connector calls bound to stable agent identities, projects configured
-connector targets during explicit migration, and preserves existing dialog
-context. Source verification does not imply native migration or model capacity.
-
-
-### 1. Task Management
-Full GTD system with prioritization, deadlines, tags, and context tracking.
-
-### 2. Knowledge System
-Structured memory system with Facts, Lessons, and automatic consolidation (6 memory types, 210+ DB tables).
-
-### 3. Agent Framework
-11 Boss agents orchestrate 22 experts for complex tasks. The Agent CLI allows direct starting, stopping, and listing of agents via `bach agent`, and now also supports prelaunch steering queues, cooperative pause requests, and explicit safe-checkpoint acknowledgements via `bach agent checkpoint`. Queued hints are injected into the generated session `CLAUDE.md` at launch, `OPERATOR_NOTES.md` mirrors steering, pause, and checkpoint state, and live JSON status surfaces expose the nested `operator_control` snapshot for dashboards.
-
-<p align="center">
-  <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>Illustration shows BACH's five original boss agents: ati, officeassistant, finance-assistant, health-assistant, personal-assistant. The current system ships 11 boss agents and 22 experts.</i>
-</p>
-
-### 4. Prompt System
-Central management of prompt templates with board collections and full versioning (`bach prompt`).
-
-### 5. Chat Service & Bridge System
-Multi-backend Telegram bot with pluggable LLM backends (Ollama, Claude CLI, Codex CLI, Claude API, OpenAI API), HTTP Control API with web dashboard, and cross-platform system tray. Connector framework for additional services (Email, WhatsApp, etc.) and USMC Bridge for cross-agent communication.
-
-### 6. Automation
-SchedulerService for time-based jobs (chains, tasks, scripts) and event-driven workflows via the hook framework.
-
-### 7. SharedMemory
-Multi-agent coordination with context generation, conflict detection, decay, and delta queries.
-
-### 8. llmauto Integration
-Chain steps as LLM prompts with `bach://` URL resolution for dynamic context embedding.
-
-## The ellmos Family
-
-All ellmos projects follow a water metaphor -- from a spring to a full stream:
-
-| Tier | Project | Description | Repository |
-|------|---------|-------------|------------|
-| 1 | **USMC** | United Shared Memory Client -- the spring (shared memory only) | [github.com/ellmos-ai/usmc](https://github.com/ellmos-ai/usmc) |
-| 2 | **Rinnsal** | The trickle -- USMC + llmauto (LLM orchestration), extremely compact | [github.com/ellmos-ai/rinnsal](https://github.com/ellmos-ai/rinnsal) |
-| 3 | **BACH** | The stream that unites everything -- 113+ handlers, 1870+ skills, agents, GUI, bridge | [github.com/ellmos-ai/bach](https://github.com/ellmos-ai/bach) |
-
-## Documentation
-
-Native documentation maintenance, activation and evidence boundaries:
-[DOCS-MAINTENANCE.md](docs/architecture/DOCS-MAINTENANCE.md).
-
-- **[Shared GUI and agent controls](system/docs/help/gui-integration.txt)** - Consumer release pins and adapter checks
-- **[Learning sources and review candidates](docs/architecture/LEARNING-SOURCE-CONTRACT.md)** - Bounded source previews and inactive drafts; [command help](system/docs/help/learning_en.txt). Publication and independent reuse require separate acceptance.
-- **[Ocean-BACH transfer plan](OCEAN-TRANSFER-PLAN.md)** - Installer boundaries and incremental module transfer
-- **[Deprecation register](DEPRICATED.md)** - Replacements, acceptance and rollback
-
-**English** | [Deutsch](README.de.md) | [Español](README.es.md) | [简体中文](README.zh.md) | [日本語](README.ja.md) | [Русский](README.ru.md) | [Français](README.fr.md) | [हिन्दी](README.hi.md) | [العربية](README.ar.md) | [বাংলা](README.bn.md) | [Português](README.pt.md)
-- **[Quickstart Guide](QUICKSTART.md)** - Get your first workflow running in 5 minutes
-- **[User Manual](BACH_USER_MANUAL.md)** - Complete handbook
-- **[Skills Catalog](SKILLS.template.md)** - Template and public entry point for available skills
-- **[Agents Catalog](AGENTS.template.md)** - Template and public entry point for agents and experts
-- **[Workflows](WORKFLOWS.template.md)** - 42 workflow templates ship with this repository
-- **[SKILL template](SKILL.template.md)** - LLM operating instructions template for Claude, Gemini, Ollama, and Codex-style agents
-
-## See Also: OpenClaw
-
-How does BACH compare to [OpenClaw](https://github.com/openclaw/openclaw), a popular open-source AI assistant?
-
-| | **BACH** | **OpenClaw** |
-|---|---|---|
-| **Focus** | LLM Operating System -- deep autonomy, structured memory, multi-agent orchestration | Personal AI Assistant -- broad messaging gateway, voice, companion apps |
-| **Tools/Skills** | 550+ tools, 1870+ skills, 42 workflows (local, curated) | Community-driven skill/plugin ecosystem; recent releases emphasize manifest-first plugin metadata and install safety |
-| **Memory** | 6 memory types with decay, conflict detection, consolidation (210+ DB tables) | Session/runtime workspace with bootstrap files such as `AGENTS.md`, `TOOLS.md`, `USER.md`, and related context files |
-| **Agents** | Boss-Expert orchestration (11 boss agents + 22 experts), SharedMemory Bus | Agent runtime with multi-session/channel operation |
-| **Messaging** | Telegram, Email, WhatsApp (Bridge System) | 20+ platforms (WhatsApp, Telegram, Slack, Discord, Signal, Teams, Matrix...) |
-| **Interfaces** | CLI, Python API, PySide6 GUI, Web GUI, Telegram Bot, Web Chat, System Tray | CLI, WebChat, macOS/iOS/Android apps, Voice |
-| **MCP** | Own MCP servers (FileCommander, CodeCommander) | Native MCP Registry |
-| **Stack** | Python 3.10+, SQLite | TypeScript, Node.js 22+ |
-| **License** | MIT | MIT |
-
-**In short:** BACH goes deep (structured memory, autonomous agents, scheduler, 210+ DB tables). OpenClaw goes wide (20+ messengers, native apps, voice, large community). Different philosophies, complementary strengths.
-
-### Competitive Watch
-
-As of October 8, 2026, OpenClaw stands at `v2026.9.8` (released October 8, 2026, following `v2026.9.7`). Recent developments emphasize multi-agent reply stability, inter-agent session assignment integrity, reduced memory footprint across multiple Codex/worker processes, Windows startup and update retry robustness, and 20-language silence settings. Relevant architectural impulses for BACH continue to be atomic recovery and update boundaries (`bach update apply` / `rollback` / `upgrade repair`, `distribution_releases` v3.14.0), supervised restart handoffs and session-continuation context (OPS-RUN-001 / Task #1118), safe execution without shell (`safe_exec.py` / PR #137), and local low-cardinality telemetry counters (`system/core/telemetry.py` / Task #1315); broad mobile/messaging gateway parity remains outside BACH's core design.
-
-On the BACH side, the October 8 care and dev check verified the repository state on main (fast-forwarded from origin/main with PRs #190–#253: native sequences & marblerun worker fencing, shared GUI v0.1.4, Astro static assets allowlist, Agenten-Werkstatt & blueprints, life routines & calendar, domain catalog manifests, salt lease contract v1 for lead task DB, and CodeQL security remediation). Session lifecycle management initialized a fresh session for partner Gemini (`session_20261008_162204`) with complete continuation snapshots. Test verification suite (`test_setup_handler.py`, `test_maintain_handler.py`, `test_db_guard_hook.py`, `test_explorer_provider_wiring.py`) passed 100% green (138/138 passed in 46.29s). Agent doctor diagnostics (`ati`, `entwickler` 7/7 checks passed, `ready: true`, `can_start: true`), startup dry-runs, scheduler doctor (7/7 checks passed, 4/5 jobs active), 50/50 usecase dry-runs (100% linked to workflows), documentation freshness (2,101 documents checked in `Doc_Update_Report_2026-10-08_16-25.md`, 30-day report `2026-10_docs_report.md`), registry health (0 actionable issues), task-DB audit (29 tasks consistent), skill health (30/30 skills, 10/10 agents), and working memory audit (189 entries, 0 expired) were fully confirmed. Fresh backup `userdata_2026-10-08_162846.zip` was created.
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
-## Support
-
-- **Issues:** [GitHub Issues](https://github.com/ellmos-ai/bach/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/ellmos-ai/bach/discussions)
-
----
-
-## Deutsche Version
-
-BACH ist ein textbasiertes Betriebssystem, das Large Language Models (LLMs) befähigt, eigenständig zu arbeiten, zu lernen und sich zu organisieren.
-
-Die vollständige deutsche Dokumentation findest du hier: **[README.de.md](README.de.md)**
-
----
-
-*ellmos BACH v3.15.0 - Text-Based Operating System for LLMs*
-
----
-
-## Haftung / Liability
-
-Dieses Projekt ist eine **unentgeltliche Open-Source-Schenkung** im Sinne der §§ 516 ff. BGB. Die Haftung des Urhebers ist gemäß **§ 521 BGB** auf **Vorsatz und grobe Fahrlässigkeit** beschränkt. Ergänzend gelten die Haftungsausschlüsse aus GPL-3.0 / MIT / Apache-2.0 §§ 15–16 (je nach gewählter Lizenz).
-
-Nutzung auf eigenes Risiko. Keine Wartungszusage, keine Verfügbarkeitsgarantie, keine Gewähr für Fehlerfreiheit oder Eignung für einen bestimmten Zweck.
-
-This project is an unpaid open-source donation. Liability is limited to intent and gross negligence (§ 521 German Civil Code). Use at your own risk. No warranty, no maintenance guarantee, no fitness-for-purpose assumed.
-
-## Portable agent starter files
-
-`start/agents/windows/` ships START, SYSTEM-AUDITOR, TICKET-MASTER, PINGPONG and MULTI-BOT `.bat` files; `start/agents/posix/` ships their shell equivalents. The wheel includes them in `share/ellmos-bach/starters/`. They delegate to the existing TASKPLAN Startcenter and module role contracts. Install the reviewed TASKPLAN version with Startcenter and the optional role modules first. These files set no personal paths, accounts, models or trusted automation. They do not register or start background jobs during installation. Run START to choose a role. PingPong requires an explicit sync root/own slot and supports its verified Codex/Claude adapters; MULTI-BOT uses the public githubbot-core package. For previews pass `--dry-run --provider codex`; missing modules produce an installation hint.
+## Automatisierte Prüfung
+Das beigefügte Skript `check_gemini.py` kann mit `python -m pytest check_gemini.py -q` gestartet werden. Es prüft:
+1. `gemini` ist im `PATH` installiert.
+2. `gemini -p "Antworte nur mit OK"` gibt `OK` zurück.
