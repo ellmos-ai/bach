@@ -108,3 +108,27 @@ unbekannte Toolwirkung wird nicht automatisch wiederholt.
 Für den historischen Versuch #2169 ist die tatsächliche Transportfehlerklasse
 nicht belegt. Der neue Vertrag klassifiziert nur künftig tatsächlich gefangene
 Ausnahmen; er schreibt alten Fehlern weder ConnectTimeout noch Providerquota zu.
+
+
+OpenRouter-Free-Katalogprüfung
+-----------------------------
+Vor der Auswahl einer konkreten OpenRouter-Free-Variante prüft der Worker den
+aktuellen Modellkatalog. Der Katalogcache gilt 300 Sekunden. Ein Katalog-GET
+erfolgt höchstens zweimal: Ein einzelner Retry ist nur bei einem Netzwerkfehler,
+Timeout oder HTTP 408, 425, 429, 500, 502, 503 oder 504 erlaubt. Pro HTTPX-Aufruf
+ist ein Request-Timeout von 6 Sekunden gesetzt; das ist keine garantierte
+Gesamtzeitgrenze für beide Aufrufe. Authentifizierungsfehler 401/403 und andere
+HTTP-Fehler werden nicht erneut angefragt. Diese Katalogregel wiederholt weder
+Inference-Aufrufe noch Toolwirkungen.
+
+Eine konkrete `:free`-Variante wird nur zugelassen, wenn sie eindeutig gelistet
+ist und alle veröffentlichten Preisfelder vorhanden, endlich und numerisch null
+sind. Fehlende, ungültige oder von null abweichende Preise sowie nicht gelistete
+oder mehrdeutige Modelle behalten getrennte Auswahlursachen: `model_price_missing`,
+`model_price_invalid`, `model_price_nonzero`, `model_not_listed` und
+`model_ambiguous` sind getrennte Modellgründe; `model_not_free_variant` bleibt
+ebenfalls eigenständig. Katalogfehler behalten Codes wie `catalog_timeout`,
+`catalog_transport_error`, `catalog_http_transient`, `catalog_http_error`,
+`catalog_auth_rejected` und `catalog_invalid_schema`. Bei Katalogfehlern werden
+nur feste Fehlercodes und sichere Statusangaben ausgegeben; Providertexte,
+URLs, Bodies, Schlüssel und Header werden nicht übernommen.

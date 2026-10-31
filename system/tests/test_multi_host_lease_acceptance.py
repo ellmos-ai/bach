@@ -770,7 +770,7 @@ class TestE2ELeaseStackReadback:
         """Prüft die offiziellen Python-Schnittstellen in bach_api.task."""
         import hub.bach_paths
 
-        import bach_api
+        from system import bach_api
 
         # Monkeypatch DB auf test_db
         monkeypatch.setattr(hub.bach_paths, "BACH_DB", test_db)

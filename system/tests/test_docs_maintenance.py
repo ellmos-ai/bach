@@ -101,7 +101,7 @@ def native_task_environment(tmp_path, monkeypatch):
     from core.hooks import hooks
     from hub.task import TaskHandler
 
-    import bach_api
+    from system import bach_api
 
     db = tmp_path / "isolated-task.db"
     schema = Path(__file__).parents[1] / "data/schema/schema.sql"

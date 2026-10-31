@@ -28,6 +28,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from .taskmaster_roles import role_specs
+
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 ALLOWED_KINDS = {"agent", "role", "skill", "workflow", "service", "contractus"}
 VALID_BLUEPRINT_KINDS = ALLOWED_KINDS
@@ -318,6 +320,9 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
         ("template_sha256", "TEXT"),
         ("template_status", "TEXT"),
         ("template_status_reason", "TEXT"),
+        ("stable_id", "TEXT"),
+        ("origin", "TEXT"),
+        ("revision", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE agent_blueprints ADD COLUMN {col} {col_type}")
@@ -545,6 +550,19 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
             1, 0, json.dumps({"profile": "fail_closed_standard"}),
             "agent", "", 1, now, now))
 
+    # Native Taskmaster roles are versioned system blueprints. Their stable
+    # identity is separate from the SQLite row ID, which may differ across
+    # hosts and fresh databases.
+    for role in role_specs():
+        seeds.append((
+            role["blueprint_name"], role["title"], role["description"],
+            role["persona_role"], role["persona_prompt"],
+            json.dumps(role["skills"], ensure_ascii=False), role["animus_type"],
+            json.dumps(role["contractus"], ensure_ascii=False), role["modus"],
+            1, 0, json.dumps(role["governance"], ensure_ascii=False),
+            "agent", "", 1, now, now,
+        ))
+
     conn.executemany("""
         INSERT OR IGNORE INTO agent_blueprints (
             name, title, description, persona_role, persona_prompt,
@@ -553,6 +571,17 @@ def seed_default_blueprints(conn: sqlite3.Connection) -> None:
             kind, start_prompt, version, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, seeds)
+    conn.executemany(
+        "UPDATE agent_blueprints SET stable_id = ?, origin = ?, revision = ? "
+        "WHERE name = ? AND (stable_id IS NULL OR stable_id = '' "
+        "OR origin IS NULL OR origin = '' OR revision IS NULL OR revision = '')",
+        [(role["stable_id"], role["origin"], role["revision"], role["blueprint_name"])
+         for role in role_specs()],
+    )
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_blueprints_stable_id
+        ON agent_blueprints(stable_id) WHERE stable_id IS NOT NULL
+    """)
     conn.commit()
 
 
@@ -645,17 +674,24 @@ def migrate_taskmaster_skill_bindings(conn: sqlite3.Connection, payload: dict[st
 def get_available_skills(
     skills_root: Path | None = None,
     category: str | None = None,
-    search: str | None = None
+    search: str | None = None,
+    requested_locale: str | None = None,
 ) -> list[dict[str, Any]]:
     """Liest echte Skills aus dem Dateisystem oder liefert Core-Skills (GUX-022)."""
-    from .skill_source_service import source_catalog, skill_roots, user_skills_root
+    from .skill_source_service import resolve_requested_locale, source_catalog, skill_roots, user_skills_root
+    requested = resolve_requested_locale(requested_locale)
     roots = [user_skills_root(), skills_root] if skills_root else skill_roots()
-    catalog = source_catalog(roots)
+    catalog = source_catalog(roots, requested_locale=requested)
     skills_map = {key: {k: v for k, v in item.items() if k not in {"path", "root"}}
                   for key, item in catalog.items()}
     for item in FALLBACK_CORE_SKILLS:
         if item["id"] not in skills_map:
-            skills_map[item["id"]] = {**item, "evidence_type": "core_declared", "source_version": None}
+            skills_map[item["id"]] = {
+                **item, "canonical_skill_id": item["id"], "locale": "en",
+                "requested_locale": requested, "resolved_locale": "en",
+                "fallback_used": requested != "en",
+                "evidence_type": "core_declared", "source_version": None,
+            }
     result = list(skills_map.values())
     if category:
         result = [s for s in result if s.get("category") == category]

@@ -1,6 +1,6 @@
 # Portability: UNIVERSAL
-# Last validated: 2026-05-17
-# Next review: 2027-05-17
+# Last validated: 2026-05-30 (registry sync hub/*.py + core/aliases.py)
+# Next review: 2026-11-30
 
 CLI 規約 (v2.0 レジストリ ベース)
 =======================================
@@ -138,18 +138,47 @@ DID-YOU-MEAN (あいまい一致):
   bach skill_export  → tools/skill_export.py からツールを試行します
   bach backup_manager → tools/backup_manager.py
 
-登録されたハンドラー (2026 年 3 月 4 日現在):
+登録されたハンドラー (2026 年 5 月 30 日現在):
 ----------------------------------------
-自動検出 (hub/*.py) 経由で 109 個以上のハンドラー:
-abo、エージェント、ati、バックアップ、ビート、レポート、間、カレンダー、チェーン、時計、
-接続、コネクタ、統合、連絡先、コンテキスト、カウントダウン、CV、
-デーモン (= スケジューラー)、データ、db、dist、doc、docs、電子メール、拡張機能、fs、ヘルス、gui、
-家庭、健康チェック、ヘルプ、フック、注入、ロング、レッスン、ログ、メンテナンス、
-mem、メモリ、マウント、メッセージ、通知、黒曜石、オラマ、パートナー、パス、プロファイル、
-プロファイラー、繰り返し、リフレクション、ルーチン、スキャン、セッション、シャットダウン、スキル、
-スキル、スマートホーム、スナップショット、ソース、スタートアップ、ステータス、税金、同期、タスク、
-テスト、タイマー、トークン、ツール、ツール、ゴミ箱、tuev、更新、ユースケース、
-保険、Wiki
+ハンドラーは実行時に hub/*.py から自動検出されて登録されます
+(system/core/registry.py、クラススキャン。ローカルで定義され、
+profile_name を持つクラスのみ)。以下の profile_name を確認済みです (アルファベット順):
+abo, agent, agents, api, apiprober, ati, backup, beat, bericht, between,
+calendar, chain, claude-bridge, clock, cloud, clutch, connections, connector,
+consolidation, contact, context, cookbook, countdown, cv, daily-agent, data,
+db, denkarium, dist, doc, docs, email, extensions, fs, gesundheit, gui,
+haushalt, healthcheck, help, hooks, inject, integration, lang, learning,
+lesson, literatur, logs, maintain, mcp, media, mediplaner, mem, memory,
+mount, msg, news, newspaper, notespace, notify, obsidian, ollama, partner,
+path, pipeline, press, profile, profiler, prompt, recurring, reflection,
+restore, routine, sandbox, scan, search, security, session, settings, setup,
+shared-mem, shutdown, skill, skills, smarthome, snapshot, sources, startup,
+status, steuer, sync, task, telemetry, test, theme, timer, tokens, tool, tools,
+trash, tuev, update, upgrade, usecase, versicherung, watcher, web-parse,
+web-scrape, wiki, worker-policy
++ さらに自動検出されるハンドラー (hub/*.py。上記のリストが検証済みの状態です)。
+マルチハンドラー: time (clock, timer, countdown, between, beat), tuev (tuev, usecase)。
+
+エイリアス表 (core/aliases.py, COMMAND_ALIASES):
+----------------------------------------
+エイリアスはハンドラーへのディスパッチ前に解決されます。
+  エイリアス        対象ハンドラー
+  mem           memory
+  cv            curriculum
+  msg           messages
+  tool          tools
+  skill         skills
+  data          data_analysis
+  mail          email
+  hook          hooks
+  plugin        plugins
+  daemon        scheduler
+  health        healthcheck
+  swarm         schwarm
+  consolidate   consolidation
+
+注: `bach daemon` は独立したハンドラーではなく、scheduler のエイリアスです。
+ハンドラーごとのデフォルト操作: aliases.py, DEFAULT_OPERATIONS。
 
 関連項目:
 ----------------------------------------

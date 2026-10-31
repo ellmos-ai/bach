@@ -133,3 +133,70 @@ ausgewählt werden. Eine historische Root-SKILL.md oder ein fehlender
 BACH-Skill wird nicht als aktuell geprüfte Bootquelle vorausgesetzt. Die
 vollständige Bootquellen-Abnahme bleibt offen, bis passende Quellen
 empirisch geprüft und eingebunden sind.
+
+## Bootquellen mit gebundener Revision (Vertrag v2)
+
+`bach.subscription-agent-onboarding.request.v2` erweitert denselben Composer
+um zwei ausdrücklich zugeordnete Bootrollen: `system` und `bach`.
+Beide verweisen mit Skill-ID und `source_version` auf die vorhandene
+Skillbibliothek. Die Quellenversion ist der SHA-256 der vollständigen UTF-8-Datei
+aus der Bibliotheksantwort, keine frei gewählte Versionsbezeichnung.
+
+Zusätzlich zu den Feldern des v1-Beispiels enthält der Request:
+
+```json
+{
+  "schema": "bach.subscription-agent-onboarding.request.v2",
+  "boot_sources": {
+    "system": {"id": "system-onboarding", "source_version": "<64 lowercase hex characters>"},
+    "bach": {"id": "bach", "source_version": "<64 lowercase hex characters>"}
+  }
+}
+```
+
+Dies ist ein Feldbeispiel, keine vollständige ausführbare Anfrage. Die IDs
+müssen in der tatsächlich konfigurierten Skillbibliothek vorhanden sein und
+die Platzhalter durch deren aktuelle Hashes ersetzt werden. Der Composer
+wählt keine Anleitung allein aufgrund eines Dateinamens und liest keine
+beliebigen vom Request vorgegebenen Root- oder Workspace-Dateien.
+
+Beide Rollen sind erforderlich; unbekannte Rollen und zusätzliche
+Referenzfelder werden abgewiesen. Dieselbe Quelle darf beide Rollen tragen,
+muss dabei aber denselben Hash haben. Bootquellen, Blueprint-Skills und
+zusätzlich gewählte Skills werden gemeinsam nach Skill-ID dedupliziert.
+Alle zusammen unterliegen der vorhandenen Grenze von 30 Quellen und dem
+unveränderten Textbudget. Ein ausdrücklich gebundener Bootpin, der nicht
+mehr zur gelesenen Datei passt, stoppt die Vorschau vor Task- und
+Governance-Lesungen. Die Skilltexte werden zusätzlich durch den vorhandenen
+Pinvalidator erneut gelesen. Die erste gelesene UTF-8-Fassung wird ebenfalls
+gegen ihren angegebenen Hash geprüft.
+
+Fehlende oder ungültige Bootquellen bleiben im Quellenbeleg sichtbar und
+führen zu `needs_sources`. Eine solche Vorschau ist unvollständig.
+Die verfügbaren Skilltexte werden vollständig eingebettet; keine Kürzung,
+kein zweiter Bootspeicher und keine zusätzliche Dateisuche.
+Die Rollen `system` und `bach` sind vom Aufrufer vergebene Zuordnungen,
+keine maschinell bestätigte fachliche Eignung oder Policyautorität.
+
+Die Antwort verwendet `bach.subscription-agent-onboarding.preview.v2`.
+Sie enthält zusätzlich die gebundenen `boot_sources` sowie
+`boot_delivery` mit `mode=text`, `source=current_skill_library`,
+`target_readability_verified=false` und
+`role_suitability_verified=false`.
+Die vorhandenen `skill:<id>`-Quellenbelege erhalten `boot_roles`;
+dieselben Texte und Belege werden bei Mehrfachauswahl nicht dupliziert.
+Der erzeugte Prompt benennt Bootrollen, erwartete Hashes und fehlende Quellen.
+
+CLI, Library-API und vorhandener BACH-HTTP-Transport verwenden denselben
+Composer. Der HTTP-Adapter gibt keine internen Fehlermeldungen oder
+Requestinhalte aus. v1 bleibt separat erhalten und enthält diese zusätzlichen
+Antwortfelder nicht; vorhandene v1-Clients werden nicht automatisch auf v2
+umgestellt und belegen keine Bootquellen-Abnahme.
+
+Noch offen sind die v2-Auswahl und Antwortprüfung im gemeinsamen GUI-Client,
+die tatsächliche Ocean-Anbindung und der Pfadmodus mit einem echten
+Lesbarkeitsnachweis auf dem Zielhost. Ein auf dem Composerhost vorhandener
+Pfad beweist keinen Zugriff des Zielclients. Daher erzeugt diese Erweiterung
+ausschließlich vollständige Texte und behauptet keinen bestätigten
+Zielzugriff. Produktiver Geräte-/Browsernachweis, fachliche Quellenprüfung
+und vollständige Task2029-Abnahme bleiben eigene erforderliche Schritte.

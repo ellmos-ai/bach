@@ -76,6 +76,26 @@ msg('unread')
 bach skills create mein_handler --type handler
 ```
 
+## Ausnahmen-Register: Hub-Services ohne SKILL.md
+
+Ordner unter `system/hub/_services/` ohne agenten-/nutzerrelevante
+Oberflaeche erhalten bewusst keine SKILL.md (skill_health_monitor erzeugt
+fuer fehlende SKILL.md in _services keine Issues).
+
+| Ordner | Grund |
+| --- | --- |
+| chat | Chat-Engine-Bibliothek (compatibility seam `ellmos-chat`, BACH injiziert Tools/Transcripts/System-Prompt); Erreichbarkeit via telegram_chat und GUI/chat ueber Control-API :8081 |
+| cloud | Internes Sync-Schreibschutz-Utility (providerneutraler Cloud-Manager, `get_cloud_manager()`, `cloud_pause(timeout=180)`) |
+| connector | Internes Nachrichten-Routing (smart_router: Command-Parsing + Launcher-Ausfuehrung + Response-Routing, queue_processor) |
+| daemon | DEPRECATED 2026-05-17 (pyautogui-Zombie-Prompts, config enabled=false); Ersatz: GUI-Daemon-Tab :8000, Buddha Control API :8081/api/chat, Claude /loop//schedule |
+| docs | 7 interne maintenance_*-Skripte, kein Agenten-/Nutzer-Interface |
+| literatur | Zitat-Formatter-Bibliothek INT01 (APA 7, MLA 9, Chicago, DIN 1505-2, Harvard + BibTeX, portiert aus LitZentrum) |
+| profile | Profil-Layer-Bibliothek (user/profile.json + DB-Overrides assistant_user_profile -> Prompt-Kontext) |
+| prompt_generator | Eigene Doku im README.md des Ordners (Status 'In Entwicklung', PROMPT_GEN_001-007) – keine Parallel-Doku |
+| trithon | Trithon Phase 4/5 Multiagent-Infrastruktur (fencing.py: Leader-Fencing fail-closed; muschelgrund.py: Receipt->Facts-Projektion, Task #1448) |
+
+Mit SKILL.md: `claude_bridge`, `newspaper`, `watcher`, `recurring`.
+
 ---
 *73 Handler, registriert in bach.db (tools-Tabelle)*
-*Letzte Aktualisierung: 2026-02-15*
+*Letzte Aktualisierung: 2026-10-30*
