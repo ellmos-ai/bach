@@ -5,6 +5,11 @@
 The bridge is intentionally additive: it can mirror selected BACH tasks into a
 taskplan database without changing or deleting rows in BACH's own ``tasks``
 table. This keeps the GUI/API surfaces stable while taskplan adoption is gated.
+
+Module mapping: the canonical ``taskplan`` task kernel lives in the separate
+``task-master`` repo (decision PLANABGLEICH-20261024N-TASKKERN, task #2216).
+This bridge is only the thin BACH-side adapter — it does not implement the
+task kernel (see ``MODUL-ZUORDNUNG.md``, section 0.5).
 """
 
 from __future__ import annotations
