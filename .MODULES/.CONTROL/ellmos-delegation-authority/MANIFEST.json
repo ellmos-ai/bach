@@ -1,6 +1,6 @@
 {
   "name": "ellmos-delegation-authority",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Außenwirkungs-Erlaubnisse für Ocean/BACH: pro Handlung (Bildschirmsteuerung, LinkedIn, YouTube, Mail) und Akteur (Buddha, Claude-Konsole, Codex, Hintergrundworker) wird eine Entscheidung erlaubt / Rückfrage / nie getroffen. Rangfolge: explizite Zelle > Zeilen-Standard > Spalten-Standard > Fallback. Standard ist Rückfrage, Hintergrundworker nie. Rückfragen laufen als Freigabekarte über ticket-master.",
   "author": "BACH/Ocean Shared Modules",
   "license": "MIT",
@@ -10,6 +10,8 @@
     "ACTIONS",
     "ACTORS",
     "DECISIONS",
+    "AUTONOMY_LEVELS",
+    "EXTERNAL_ACTIONS",
     "DEFAULT_MATRIX",
     "OPERATOR_RANK",
     "ESCALATION_LADDER",

@@ -129,8 +129,6 @@ class OllamaBackend(ModelBackend):
         self.default_model = default_model
         self.keep_alive = keep_alive
         configured_num_ctx = num_ctx if num_ctx is not None else os.environ.get("OLLAMA_NUM_CTX", "4096")
-        if isinstance(configured_num_ctx, bool):
-            raise ValueError("Ollama num_ctx muss eine ganze Zahl sein")
         try:
             self.num_ctx = int(configured_num_ctx)
         except (TypeError, ValueError) as exc:
@@ -142,8 +140,6 @@ class OllamaBackend(ModelBackend):
             if request_timeout is not None
             else os.environ.get("OLLAMA_TIMEOUT_SECONDS", "600")
         )
-        if isinstance(configured_timeout, bool):
-            raise ValueError("Ollama request_timeout muss eine Zahl sein")
         try:
             self.request_timeout = float(configured_timeout)
         except (TypeError, ValueError) as exc:

@@ -264,35 +264,6 @@ def _decision(state, *, admitted=False, enforced=True, retryable=False, **fields
             "retryable": retryable, "checked_at": datetime.now(timezone.utc).isoformat(), **fields}
 
 
-def _ollama_num_ctx_config():
-    """Modelle-Eintraege aus data/ollama_config.json; bei Fehlern leer."""
-    try:
-        import json
-
-        from hub.bach_paths import DATA_DIR
-
-        with open(DATA_DIR / "ollama_config.json", "r", encoding="utf-8") as file:
-            config = json.load(file)
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(config, dict):
-        return {}
-    models = config.get("models")
-    return models if isinstance(models, dict) else {}
-
-
-def effective_num_ctx(backend, model):
-    """Effektives num_ctx: Modell-Config vor Backend-Attribut."""
-    entry = _ollama_num_ctx_config().get(model)
-    if isinstance(entry, dict):
-        for key in ("num_ctx", "num_ctx_recommended"):
-            value = entry.get(key)
-            if type(value) is int and value > 0:
-                return value
-    value = getattr(backend, "num_ctx", None)
-    return value if type(value) is int and value > 0 else None
-
-
 async def probe(backend, model, *, reuse_running_server=False, cold_start=False):
     """A budget/observation receipt, never a model capacity certification."""
     try:
@@ -315,9 +286,9 @@ async def probe(backend, model, *, reuse_running_server=False, cold_start=False)
     except (OSError, ValueError, TypeError, httpx.HTTPError, TimeoutError):
         return _decision("unknown_model_observation", retryable=True, **common)
     if observed["external"]:
-        effective = effective_num_ctx(backend, model)
-        threshold = (int(effective * EXTERNAL_CONTEXT_FACTOR)
-                     if type(effective) is int and effective > 0 else None)
+        backend_num_ctx = getattr(backend, "num_ctx", None)
+        threshold = (int(backend_num_ctx * EXTERNAL_CONTEXT_FACTOR)
+                     if type(backend_num_ctx) is int and backend_num_ctx > 0 else None)
         return _decision("external_target", admitted=True, enforced=False,
                          handoff_context_threshold=threshold, **common)
     budget = policy["models"].get(model)
@@ -325,8 +296,7 @@ async def probe(backend, model, *, reuse_running_server=False, cold_start=False)
         return _decision("missing_model_budget", **common)
     if (budget["digest"] != observed["digest"]
             or budget["weight_budget_bytes"] < observed["weight_floor_bytes"]
-            or (effective_num_ctx(backend, model) is not None
-                and budget["num_ctx"] != effective_num_ctx(backend, model))):
+            or budget["num_ctx"] != getattr(backend, "num_ctx", None)):
         return _decision("model_budget_conflict", **common)
     resident = (observed["resident_context"] is not None
                 and observed["resident_context"] >= budget["num_ctx"])

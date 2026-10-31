@@ -30,10 +30,8 @@ def local_backend_configs(config=None):
 
     A matching chat provider supplies its explicit settings. Provider-specific
     URL/model environment variables retain precedence; legacy defaults are
-    fallback only. Ollama timeout follows create_backend's contract: explicit
-    non-null settings win, otherwise the backend reads its environment. Ollama
-    num_ctx is configured per model via data/ollama_config.json and is not
-    accepted here anymore.
+    fallback only. Ollama context/timeout follow create_backend's contract:
+    explicit non-null settings win, otherwise the backend reads its environment.
     No URL can be supplied by a catalog request or model configuration write.
     """
     if config is None:
@@ -59,18 +57,11 @@ def local_backend_configs(config=None):
             "default_model": os.environ.get(model_env) or selected.get("default_model") or default_model,
         }
         if provider == "ollama":
-            # num_ctx ist je Modell via data/ollama_config.json einstellbar
-            # (ollama set_num_ctx / recommend_num_ctx) und wird hier stillgelegt.
-            key = "timeout_seconds"
-            if key in selected and selected[key] is not None:
-                value = selected[key]
-                if type(value) is bool:
-                    raise ValueError("Ollama-Timeout darf keinen Wahrheitswert sein")
-                if not isinstance(value, (int, float)) or not 1 <= value <= 3600:
-                    raise ValueError(
-                        "Ollama timeout_seconds muss eine Zahl zwischen 1 und 3600 sein"
-                    )
-                result[provider][key] = value
+            for key in ("num_ctx", "timeout_seconds"):
+                if key in selected:
+                    if type(selected[key]) is bool:
+                        raise ValueError("Ollama-Kontext und Timeout dürfen keine Wahrheitswerte sein")
+                    result[provider][key] = selected[key]
         if provider == "lmstudio" and selected.get("api_key"):
             result[provider]["api_key"] = selected["api_key"]
     return result
