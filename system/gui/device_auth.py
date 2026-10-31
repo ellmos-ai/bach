@@ -396,6 +396,120 @@ def create_browser_session(
             connection.close()
 
 
+def create_browser_session_for_device_id(
+    device_identifier: str | int | None = None,
+    connection: sqlite3.Connection | None = None,
+) -> tuple[str, dict[str, Any]] | None:
+    """Issue a browser session for an active device ID/name on trusted local loopback.
+
+    Follows the 25.10.2026 identity model (account ownership + device ID without
+    manual user token entry). If no active device exists yet, provisions a local
+    host device automatically.
+    """
+    import secrets
+    import socket
+    from datetime import datetime, timedelta, timezone
+
+    owned = connection is None
+    connection = connection or GET_CONNECTION()
+    try:
+        init_devices_db(connection)
+        row = None
+        clean_ident = str(device_identifier or "").strip()
+        if clean_ident:
+            if clean_ident.isdigit():
+                row = connection.execute(
+                    "SELECT id, name, status, created_at, revoked_at, last_seen_at "
+                    "FROM devices WHERE id = ? AND status = 'active'",
+                    (int(clean_ident),),
+                ).fetchone()
+            if row is None:
+                row = connection.execute(
+                    "SELECT id, name, status, created_at, revoked_at, last_seen_at "
+                    "FROM devices WHERE LOWER(name) = LOWER(?) AND status = 'active'",
+                    (clean_ident,),
+                ).fetchone()
+
+        if row is None:
+            for preferred in ("ASUS-GEI", "mac-studio", "WORKSTATION-LG", "IDEAPAD-GEI", "tray"):
+                row = connection.execute(
+                    "SELECT id, name, status, created_at, revoked_at, last_seen_at "
+                    "FROM devices WHERE LOWER(name) = LOWER(?) AND status = 'active'",
+                    (preferred,),
+                ).fetchone()
+                if row is not None:
+                    break
+
+        if row is None:
+            row = connection.execute(
+                "SELECT id, name, status, created_at, revoked_at, last_seen_at "
+                "FROM devices WHERE status = 'active' ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+
+        if row is None:
+            host_name = clean_ident or (socket.gethostname() or "local-host").strip()
+            raw_token = secrets.token_urlsafe(32)
+            connection.execute(
+                "INSERT INTO devices (name, token_hash, status, created_at) "
+                "VALUES (?, ?, 'active', CURRENT_TIMESTAMP)",
+                (host_name, _hash_token(raw_token)),
+            )
+            connection.commit()
+            try:
+                store_device_token(host_name, raw_token)
+            except Exception:
+                pass
+            row = connection.execute(
+                "SELECT id, name, status, created_at, revoked_at, last_seen_at "
+                "FROM devices WHERE LOWER(name) = LOWER(?) AND status = 'active'",
+                (host_name,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        if isinstance(row, sqlite3.Row) or hasattr(row, "keys"):
+            device = dict(row)
+        else:
+            device = {
+                "id": row[0],
+                "name": row[1],
+                "status": row[2],
+                "created_at": row[3],
+                "revoked_at": row[4],
+                "last_seen_at": row[5],
+            }
+
+        now_dt = datetime.now(timezone.utc)
+        now_ts = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+        expires_at = (now_dt + timedelta(seconds=BROWSER_SESSION_TTL_SECONDS)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        session_token = secrets.token_urlsafe(32)
+        connection.execute(
+            "DELETE FROM browser_sessions WHERE expires_at <= CURRENT_TIMESTAMP"
+        )
+        connection.execute(
+            "INSERT INTO browser_sessions (session_hash, device_id, expires_at) "
+            "VALUES (?, ?, ?)",
+            (_hash_token(session_token), device["id"], expires_at),
+        )
+        connection.execute(
+            "UPDATE devices SET last_seen_at = ? WHERE id = ?",
+            (now_ts, device["id"]),
+        )
+        connection.commit()
+        device["last_seen_at"] = now_ts
+        return session_token, device
+    except BaseException:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        if owned:
+            connection.close()
+
+
 def revoke_browser_session(
     token: str | None, connection: sqlite3.Connection | None = None
 ) -> bool:

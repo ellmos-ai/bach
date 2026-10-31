@@ -454,7 +454,6 @@ class TaskUpdate(BaseModel):
     changed_by: Optional[str] = None
     # T-20260916-1330: bewusster Operator-Reopen eines terminal-geparkten Tasks
     allow_reopen: Optional[bool] = False
-    provenance: Optional[dict] = None
 
 
 
@@ -1374,6 +1373,7 @@ app.add_middleware(NoCacheMiddleware)
 try:
     from gui.device_auth import (
         create_browser_session,
+        create_browser_session_for_device_id,
         create_device,
         has_active_devices,
         list_devices,
@@ -1386,6 +1386,7 @@ except ImportError:
     try:
         from device_auth import (  # type: ignore
             create_browser_session,
+            create_browser_session_for_device_id,
             create_device,
             has_active_devices,
             list_devices,
@@ -1401,6 +1402,7 @@ except ImportError:
         _mod = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(_mod)
         create_browser_session = _mod.create_browser_session
+        create_browser_session_for_device_id = _mod.create_browser_session_for_device_id
         create_device = _mod.create_device
         has_active_devices = _mod.has_active_devices
         list_devices = _mod.list_devices
@@ -1632,7 +1634,6 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/chat",
         "/settings",
         "/system",
-        "/system/ocean",
         "/wiki",
         "/agents",
         "/agents/ati",
@@ -1680,6 +1681,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
     EXEMPT_API_PATHS = {
         "/api/health",
         "/api/devices/verify",
+        "/api/devices/auto-session",
         "/api/devices/session/logout",
         "/api/gui/backend-origin",
         "/api/gui/brand",
@@ -1722,7 +1724,31 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             if ((request.method in ("GET", "HEAD")
                     and (path in self.PUBLIC_PAGE_PATHS
                          or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
-                return await call_next(request)
+                response = await call_next(request)
+                if (request.method == "GET"
+                        and path in ("/device-fetch.js", "/static/js/device-fetch.js")
+                        and _hostname(request.headers.get("host", "")) in LOOPBACK_HOSTS
+                        and request.cookies.get("bach_manual_logout") != "1"):
+                    existing_cookie = request.cookies.get("bach_device_token", "").strip()
+                    if not (existing_cookie and validate_token(existing_cookie)):
+                        preferred_id = (
+                            request.headers.get("X-BACH-Device-ID", "").strip()
+                            or os.environ.get("BACH_DEVICE_ID", "").strip()
+                            or "ASUS-GEI"
+                        )
+                        browser_session = create_browser_session_for_device_id(preferred_id)
+                        if browser_session:
+                            session_token, _ = browser_session
+                            response.set_cookie(
+                                key="bach_device_token",
+                                value=session_token,
+                                max_age=BROWSER_SESSION_TTL_SECONDS,
+                                path="/",
+                                secure=request.url.scheme == "https",
+                                httponly=True,
+                                samesite="strict",
+                            )
+                return response
             return await self._require_device(request, call_next)
 
         # A browser talking to localhost is still a loopback client. Reject
@@ -3225,24 +3251,6 @@ async def update_task(task_id: int, update: TaskUpdate):
                 # Business-rule conflicts (for example the missing-PR completion guard)
                 # are client-resolvable conflicts, not internal server errors.
                 raise HTTPException(status_code=409, detail=str(exc))
-
-            if update.provenance is not None and isinstance(update.provenance, dict):
-                from hub.task_audit import _iso_now
-                conn.execute(
-                    """INSERT INTO task_history
-                       (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        task_id,
-                        "provenance",
-                        "provenance",
-                        None,
-                        json.dumps(update.provenance, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
-                        changed_by,
-                        _iso_now(),
-                    ),
-                )
-                did_update = True
 
             if did_update:
                 conn.commit()
@@ -6244,14 +6252,6 @@ async def settings_page():
     raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
 
 
-@app.get("/system/ocean", response_class=HTMLResponse)
-async def system_ocean_page():
-    ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
-    if ocean_page.is_file():
-        return FileResponse(ocean_page)
-    raise HTTPException(status_code=404, detail="Ocean-Systemseite nicht gefunden")
-
-
 @app.get("/system", response_class=HTMLResponse)
 async def system_page(request: Request):
     """System-Route leitet auf Einstellungen/Setup weiter; ?tab=ocean liefert die gebaute Ocean-Seite."""
@@ -6793,6 +6793,58 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
         )
         return response
     return await session_response({"valid": False, "reason": "Invalid or revoked token"})
+
+
+@app.post("/api/devices/auto-session")
+async def api_auto_session_device(request: Request):
+    """Issue a browser HttpOnly session cookie automatically via Device-ID on loopback."""
+    host_name = _hostname(request.headers.get("host", ""))
+    client_host = (request.client.host if request.client else "").strip().lower()
+    if host_name not in LOOPBACK_HOSTS or (client_host and client_host not in ("127.0.0.1", "::1", "localhost", "testclient")):
+        return JSONResponse(status_code=403, content={"ok": False, "valid": False, "reason": "Automatic Device-ID session is restricted to loopback."})
+
+    preferred_id = None
+    try:
+        payload = await request.json()
+        if isinstance(payload, dict):
+            raw_id = payload.get("device_id") or payload.get("name")
+            if isinstance(raw_id, str) and raw_id.strip():
+                preferred_id = raw_id.strip()
+    except Exception:
+        pass
+    if not preferred_id:
+        preferred_id = (
+            request.headers.get("X-BACH-Device-ID", "").strip()
+            or os.environ.get("BACH_DEVICE_ID", "").strip()
+            or "ASUS-GEI"
+        )
+
+    browser_session = create_browser_session_for_device_id(preferred_id)
+    if not browser_session:
+        return JSONResponse(status_code=403, content={"ok": False, "valid": False, "reason": "Device-ID rejected or revoked."})
+
+    session_token, device = browser_session
+    if not await _revoke_browser_cookie_session(request.cookies.get("bach_device_token")):
+        revoke_browser_session(session_token)
+        return _browser_session_close_unconfirmed()
+
+    response = JSONResponse({
+        "ok": True,
+        "valid": True,
+        "device": device,
+        "session": "http-only-cookie",
+        "mode": "device-id",
+    })
+    response.set_cookie(
+        key="bach_device_token",
+        value=session_token,
+        max_age=BROWSER_SESSION_TTL_SECONDS,
+        path="/",
+        secure=request.url.scheme == "https",
+        httponly=True,
+        samesite="strict",
+    )
+    return response
 
 
 @app.post("/api/devices/session/logout")
