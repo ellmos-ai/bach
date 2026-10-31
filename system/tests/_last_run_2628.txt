@@ -1,0 +1,44 @@
+Task 2628 – Testlauf-Belegstatus (TEILSTAND, kein grüner Lauf belegt)
+
+SITUATION
+ Ziel dieses Laufs war der belegte pytest-Lauf von system/tests/test_foerderbericht_modus.py.
+ NICHT geschafft: execute_command wurde in dieser Umgebung 7x abgewiesen mit
+ "Werkzeugausfuehrung nicht bestätigt; Wirkung unbekannt". Die Wirkungsprüfung
+ (file_info auf Zielartefakte) bewies jeweils: Befehl lief nicht.
+
+VERSUCHTE BEFEHLE (7, je einzeln, cwd=/Users/lukas/services/bach-worktrees/task-2628)
+ 1. python3 -m pytest -q system/tests/test_foerderbericht_modus.py
+ 2. Wiederholung von (1)
+ 3. python3 -m pytest -q --junitxml=system/tests/_last_run_2628.xml system/tests/test_foerderbericht_modus.py
+ 4. Wiederholung von (3) (RESUME-Lauffortsetzung)
+ 5. python3 -m compileall -q system/hub/_services/document/foerderbericht_pipeline.py
+ 6. python3 -m unittest discover -s system/tests -p test_foerderbericht_modus.py -v
+ 7. python3 -m pytest -q --junitxml=system/tests/_last_run_2628_run2.xml system/tests/test_foerderbericht_modus.py
+ (Zusätzlich 1 frueherer Versuch mit Shell-Umleitung wurde inhaltlich abgewiesen:
+  "Nur taskgebundene Pruefbefehle, keine Shellverkettung".)
+
+WIRKUNGSPRUEFUNG NACH JEDER UNBESTAETIGTEN MELDUNG (file_info)
+ - system/tests/_last_run_2628.xml: NICHT vorhanden
+ - system/tests/_last_run_2628_run2.xml: NICHT vorhanden
+ - .pytest_cache (Worktree-Root): mtime/ctime 2026-10-31 05:01:54 UNVERAENDERT
+   (stammt aus frueherem, fremden Lauf; kein neuer Cache-Schrieb)
+ - system/hub/_services/document/__pycache__: NICHT vorhanden -> compileall lief nie
+ - pytest.ini (Root, 4 Z.): testpaths=system/tests, pythonpath=system, kein cache_dir-Override
+
+CODE-VERIFIKATION DER 3 FIXES (Leselauf, foerderbericht_pipeline.py in system/hub/_services/document/)
+ 1) _prepare_plain (ca. Z.650-668): flacher data_roh-Ordner unterstuetzt,
+    client_dir=data_roh; leerer Ordner -> PipelineError
+    "data_roh enthaelt weder Klienten-Ordner noch Dateien".
+ 2) _is_own_device_host (ca. Z.73-83): Allowlist via env FOERDERBERICHT_ALLOWED_HOSTS,
+    Default "localhost,127.0.0.1,::1"; angewandt in _validate_tunnel_target (ca. Z.100-113).
+ 3) Truncation-Erkennung: ca. Z.749 num_predict=6000; ca. Z.766-776
+    done_reason=="length" -> Fehler, used>=num_ctx -> Fehler; ca. Z.777-784
+    JSON-Vollstaendigkeit.
+ Tests: system/tests/test_foerderbericht_modus.py, 436 Zeilen, 16.9 KB,
+ mtime 2026-10-31 08:27:33; Host-Gegenprobe, flacher Ordner, Fehlerfaelle,
+ length/stop-Faelle abgedeckt.
+
+OFFEN FUER DEN NAECHSTEN ARBEITSSCHRITT
+ - Ein bestätigter pytest-Lauf (junitxml + Konsole) und der Beleg hier.
+ - Danach finish_task und Abgabe complete=true.
+ Diese Datei ist der Beweisstand bis dahin.
