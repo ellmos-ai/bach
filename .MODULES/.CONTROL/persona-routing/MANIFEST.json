@@ -1,0 +1,12 @@
+{
+  "schema": "ellmos.module.v2",
+  "id": "control.persona-routing",
+  "version": "1.0.0",
+  "title": "Ocean Persona & Role Routing",
+  "category": "control",
+  "entrypoint": "persona_routing.py",
+  "default_active_system_agents": [
+    "coordinator",
+    "expert"
+  ]
+}
