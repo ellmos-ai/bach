@@ -30,6 +30,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE
 from hub._services.user_config_store import _exclusive_lock
 
 log = logging.getLogger("bach.slots_config")
@@ -184,7 +185,8 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Deine Kernaufgabe ist die methodische Analyse komplexer, umfangreicher Großaufgaben im Backlog.\n"
         "Sobald eine Aufgabe mehr als 2-3 Teilschritte oder Fachbereiche betrifft: Zerlege sie vorab in handhabbare,\n"
         "atomare Teilpakete (nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder erstelle Teil-Tasks).\n"
-        "Formuliere präzise Akzeptanzkriterien für jeden Teilschritt und weise sie passenden Rollen zu."
+        "Formuliere präzise Akzeptanzkriterien für jeden Teilschritt und weise sie passenden Rollen zu.\n"
+        + TASK_CUT_RULE
     ),
     "ticket-master": (
         "Du agierst als Ticket-Master und Triage-Experte für offene Aufgaben im BACH-System.\n"

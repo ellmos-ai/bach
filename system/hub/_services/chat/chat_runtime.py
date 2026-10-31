@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
 from hub._services.chat.slots_config import ModelRequestBudgetError
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
@@ -63,7 +64,8 @@ SELF_DECOMPOSE_INSTRUCTION = (
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
     "bestätigte Kind-IDs, offene Arbeit>', complete=false) den gesicherten Teilstand zurück. "
     "Der Eltern-Task bleibt pending; die Zerlegung ist kein Abschluss und kein Anlass zur Abnahme. "
-    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten."
+    "Ohne bestätigten Werkzeugbeleg keinen Taskabschluss behaupten. "
+    + TASK_CUT_RULE_SHORT
 )
 
 

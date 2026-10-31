@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import threading
 import uuid
 
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
+
 
 class WorkerTaskActions:
     def __init__(self, worker_id, generation):
@@ -87,7 +89,8 @@ class WorkerTaskActions:
                     "task_manage(action='update', task_id=<ID>, description='<ursprüngliche Beschreibung "
                     "+ kurzer Stand und offene Arbeit>') den Teilstand, ohne den Auftrag zu ersetzen. "
                     "Gib den Parent danach mit task_manage(action='update', task_id=<ID>, status='pending') "
-                    "zur weiteren Arbeit zurück. Zerlegung ist noch kein fertiges Ergebnis und keine Review-Abgabe.")
+                    "zur weiteren Arbeit zurück. Zerlegung ist noch kein fertiges Ergebnis und keine Review-Abgabe. "
+                    + TASK_CUT_RULE_SHORT)
 
     def confirm(self, binding):
         with self._lock:
