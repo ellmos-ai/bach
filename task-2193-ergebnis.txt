@@ -1,0 +1,9 @@
+Lesende Quellenanalyse (3 Befunde + je eine Negativprüfung für #2192); nichts ausgeführt oder geändert.
+
+B1 Ergebnisautor = Aufruferparameter: system/hub/_services/task_result_service.py:556 insert_submission(..., worker, ...); Z575-579 INSERT worker_task_results (... submitted_by ...) VALUES (... worker ...) - submitted_by ist Argument, nicht aus der Lease verifizierte Identität. Negativprüfung: fremder worker-String bei gültiger Lease darf nicht als Autor gelten (producer_binding_missing).
+
+B2 Bindung nur bei voller Spaltenlage, sonst stiller Verzicht: Z586-593 bindet nur bei worker==claimed_by, nichtleerer claim_id, claim_result_generation==generation, claim_fence>0 und claim_task_version==version; sonst kein else/raise und Z490-493 meldet code=producer_binding_missing ("Ergebnisherkunft ist nicht bestätigt"). Z594-599: producer_principal=claimed_by, issuer=_RESULT_PRODUCER_ISSUER (Z332 bach.native-task-lease.v1); Schema-Gate Z357-358 verlangt dieselben Claim-Felder. Negativprüfung: claim_fence=0 oder fremde Generation -> kein Binding, accept endet mit producer_binding_missing.
+
+B3 Selbstreview-/Historien-Grenze: chat/worker_lease_binding.py:180-187 _review_grant verlangt task_id, generation, worker_id, host, slot_id, sonst "Reviewtask passt nicht zur gebundenen Reviewerroute"; Z703 "Kanonische Ergebnisbindung nicht mehr bestätigt"; Z662: alter ACK belegt keinen aktuellen accept. self_review ist Reason-Code (task_result_service.py:82); Z503-507: bei completion_policy_version==1 ist die Operator-Prüfung nötig. Negativprüfung: Reviewer mit fremder slot_id/host scheitert.
+
+Randbeleg: gui/device_auth.py:136-137 create_task_result_operator liefert kein Worker-Lease-Credential (nicht in Worker-Grants speicherbar), can_request_correction INTEGER NOT NULL DEFAULT 0.
