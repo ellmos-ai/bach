@@ -146,7 +146,7 @@ class WorkerToolBridge:
             except Exception:  # noqa: BLE001, S110 -- Canonical quarantine failures stay unknown and are not exposed.
                 pass
         try:
-            self.binding.invalidate()
+            self.binding.invalidate("bridge_tool_unconfirmed")
         except Exception:  # noqa: BLE001, S110 -- Binding invalidation details are deliberately suppressed during quarantine.
             pass
         raise _Rejected(503, {
@@ -269,7 +269,7 @@ class WorkerToolBridge:
                 self._server.server_close()
             with self._calls:
                 if self._pending is not None:
-                    self.binding.invalidate()
+                    self.binding.invalidate("bridge_closed_pending")
 
     def __exit__(self, *_):
         self.close()

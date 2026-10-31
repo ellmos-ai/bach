@@ -1,0 +1,5 @@
+version=0.2.29
+commit=a42adda6a9fe8d892578db3f7a09f7c1bef653ef
+archive_sha256=037516b1af6e658e06eee8aa57adaf81309bc430219198deeb6492ab816f29e1
+archive=ellmos-system-gui-0.2.29-a42adda6a9fe.zip
+expected_page_count=39

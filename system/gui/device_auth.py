@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Device-Authentication Backend for BACH.
 
-Provides persistent, non-expiring authentication tokens scoped to specific devices
-(Laptop, Workstation, Mobile, Browser).
-Tokens are stored securely:
-- On the server (bach.db): Only SHA-256 hashes in table `devices`.
-- On client devices: In the OS Keyring (macOS Keychain, Windows Credential Manager)
-  using hub.secrets_handler.
-- In browsers: In localStorage.
+Provides persistent device credentials and bounded browser sessions.
+- Server storage contains only SHA-256 hashes in `devices` and `browser_sessions`.
+- Native client credentials use the OS Keyring through hub.secrets_handler.
+- Browser sessions use HttpOnly cookies and expire after 30 days.
 
-Tokens do not expire automatically; they can be revoked individually.
+Device credentials do not expire automatically; both device credentials and browser
+sessions can be revoked.
 """
 from __future__ import annotations
 
@@ -56,6 +54,17 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 """
 
+BROWSER_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+
+BROWSER_SESSIONS_TABLE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS browser_sessions (
+    session_hash TEXT PRIMARY KEY,
+    device_id INTEGER NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT NOT NULL
+);
+"""
+
 
 def _hash_token(token: str) -> str:
     """Compute SHA-256 hexadecimal hash of a token string."""
@@ -71,6 +80,7 @@ def init_devices_db(connection: sqlite3.Connection | None = None) -> None:
 
     try:
         connection.execute(DEVICES_TABLE_SCHEMA)
+        connection.execute(BROWSER_SESSIONS_TABLE_SCHEMA)
         connection.commit()
     finally:
         if close_after:
@@ -299,6 +309,19 @@ def validate_token(token: str, connection: sqlite3.Connection | None = None) -> 
         )
         row = cursor.fetchone()
         if not row:
+            cursor = connection.execute(
+                """
+                SELECT d.id, d.name, d.status, d.created_at, d.revoked_at, d.last_seen_at
+                FROM browser_sessions AS s
+                JOIN devices AS d ON d.id = s.device_id
+                WHERE s.session_hash = ?
+                  AND s.expires_at > CURRENT_TIMESTAMP
+                  AND d.status = 'active'
+                """,
+                (token_hash,),
+            )
+            row = cursor.fetchone()
+        if not row:
             return None
 
         device_id = row["id"] if hasattr(row, "keys") else row[0]
@@ -326,6 +349,72 @@ def validate_token(token: str, connection: sqlite3.Connection | None = None) -> 
         return res
     finally:
         if close_after:
+            connection.close()
+
+
+def create_browser_session(
+    token: str, connection: sqlite3.Connection | None = None
+) -> tuple[str, dict[str, Any]] | None:
+    """Validate a device token and issue a separate server-generated browser session."""
+    device = validate_token(token, connection=connection)
+    if not device:
+        return None
+
+    import secrets
+    from datetime import datetime, timedelta, timezone
+
+    session_token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now(timezone.utc) + timedelta(
+        seconds=BROWSER_SESSION_TTL_SECONDS
+    )).strftime("%Y-%m-%d %H:%M:%S")
+    owned = connection is None
+    connection = connection or GET_CONNECTION()
+    try:
+        init_devices_db(connection)
+        active = connection.execute(
+            "SELECT id FROM devices WHERE id = ? AND status = 'active'",
+            (device["id"],),
+        ).fetchone()
+        if not active:
+            return None
+        connection.execute(
+            "DELETE FROM browser_sessions WHERE expires_at <= CURRENT_TIMESTAMP"
+        )
+        connection.execute(
+            "INSERT INTO browser_sessions (session_hash, device_id, expires_at) "
+            "VALUES (?, ?, ?)",
+            (_hash_token(session_token), device["id"], expires_at),
+        )
+        connection.commit()
+        return session_token, device
+    except BaseException:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        if owned:
+            connection.close()
+
+
+def revoke_browser_session(
+    token: str | None, connection: sqlite3.Connection | None = None
+) -> bool:
+    """Revoke a browser session token without affecting the device credential."""
+    if not token or not isinstance(token, str):
+        return False
+
+    owned = connection is None
+    connection = connection or GET_CONNECTION()
+    try:
+        init_devices_db(connection)
+        cursor = connection.execute(
+            "DELETE FROM browser_sessions WHERE session_hash = ?",
+            (_hash_token(token),),
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        if owned:
             connection.close()
 
 

@@ -561,7 +561,9 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
       status.textContent = data.configured
         ? 'Gespeichertes Theme: ' + data.theme
         : 'Backend-Standard: ' + data.theme + ' · noch keine eigene Auswahl';
-      save.disabled = !localStorage.getItem('bach_device_token');
+      // The authenticated readback already proves that the HttpOnly device
+      // cookie is available for the subsequent write.
+      save.disabled = false;
     } catch (error) {
       status.textContent = 'Theme nicht verfügbar: ' + error.message;
     }
@@ -571,17 +573,12 @@ import SystemClusterStatus from "../components/SystemClusterStatus.astro";
     const status = document.getElementById('theme-status');
     const save = document.getElementById('theme-save');
     const theme = document.getElementById('theme-select').value;
-    const token = localStorage.getItem('bach_device_token');
-    if (!token) {
-      status.textContent = 'Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.';
-      return;
-    }
     save.disabled = true;
     status.textContent = 'Speichere Theme…';
     try {
       const response = await fetch('/api/settings/theme', {
         method: 'PUT', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ theme })
       });
       if (!response.ok) throw new Error('HTTP ' + response.status);

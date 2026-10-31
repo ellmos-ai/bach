@@ -65,7 +65,7 @@ class _Binding:
         self.quarantine_events.append("canonical_quarantine")
         return True
 
-    def invalidate(self):
+    def invalidate(self, _reason=None):
         self.quarantine_events.append("local_invalidate")
         self.active = False
 

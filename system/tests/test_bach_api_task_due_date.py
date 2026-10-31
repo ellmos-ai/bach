@@ -357,7 +357,7 @@ def test_structured_task_add_forwards_creation_origin_forms(
 
 
 def test_structured_task_add_persists_creation_origin_with_countercheck(tmp_path, monkeypatch):
-    import bach_api
+    from system import bach_api
     from hub.task import TaskHandler
 
     data_dir = tmp_path / "data"

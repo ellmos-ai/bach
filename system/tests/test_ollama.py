@@ -56,7 +56,7 @@ class TestProperties:
 
     def test_get_operations_keys(self, ollama_env):
         ops = ollama_env.get_operations()
-        expected = {"status", "ask", "models", "embed"}
+        expected = {"status", "ask", "models", "embed", "set_num_ctx"}
         assert set(ops.keys()) == expected
 
 
@@ -163,7 +163,7 @@ class TestHandleAsk:
         ollama_env._client = mock_client
         ok, text = ollama_env.handle("ask", ["Hallo", "--model=qwen3"])
         assert ok is True
-        mock_client.generate.assert_called_once_with("Hallo", model="qwen3")
+        mock_client.generate.assert_called_once_with("Hallo", model="qwen3", num_ctx=None)
 
     def test_ask_no_prompt(self, ollama_env, mock_client):
         ollama_env._client = mock_client

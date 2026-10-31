@@ -392,3 +392,25 @@ def test_controller_uses_current_generation_observation(mem_db, monkeypatch):
     monkeypatch.setattr(controller, "_WORKER_CONTROLS", {"our-slot": newer})
     raw = controller._worker_handoff_snapshot({"id": "our-slot", "queue_status": control.queue_status})
     assert "queue_status" not in raw  # No stale configuration/generation fallback.
+
+
+def test_unresolved_prior_trace_skips_only_that_task(mem_db):
+    """26.10. #2592: a restart mid-tool left a started trace; the selector must not crash on it."""
+    from datetime import datetime, timedelta, timezone
+    from hub._services.chat.worker_tool_trace import digest_json
+
+    client = TaskLeaseClient(conn=mem_db)
+    tasks = {_insert_task(mem_db), _insert_task(mem_db)}
+    now = datetime.now(timezone.utc)  # The trace sink checks the holder at wall-clock time.
+    crashed = select(client, [], clock=lambda: now)
+    crashed.trace_tool_started(source="normal-loop", request_id="a" * 32,
+                               tool_name="start_task_worktree", arguments_sha256=digest_json({}))
+    # The holder process ends before any terminal phase; its lease expires later.
+    later = now + timedelta(days=2)
+    reports = []
+    taken = select(client, reports, worker_id="next-worker@HOST", generation="generation-2",
+                   clock=lambda: later)
+    assert taken is not None and taken.task_id == (tasks - {crashed.task_id}).pop()
+    report, = reports
+    assert report["rejected_counts"] == {"unresolved_tool_trace": 1}
+    assert project_queue_status(report)["rejected_counts"] == {"unresolved_tool_trace": 1}

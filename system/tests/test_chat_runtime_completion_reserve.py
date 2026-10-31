@@ -34,7 +34,7 @@ class _Binding:
         self.phases.append((phase, identity.tool_name))
         return {"accepted": True}
 
-    def invalidate(self):
+    def invalidate(self, _reason=None):
         raise AssertionError("A deliberately blocked tool must not invalidate the binding")
 
 

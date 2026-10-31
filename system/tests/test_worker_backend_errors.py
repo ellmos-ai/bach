@@ -197,7 +197,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         return _managed_backend_answer(await backend.chat([{"role": "user", "content": "fixture"}]))
     monkeypatch.setattr(runtime, "process", process)
     def wait_quota(worker, seconds):
-        assert core and seconds == 60
+        assert core and seconds == 86400  # no credit: daily recheck
         quota_waits.append(seconds)
         assert worker.task_binding is None and worker.lease_supervisor is None
         assert session.worker_task_binding is None
@@ -226,7 +226,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         assert not thread.is_alive() and len(calls) == 1
         current = slots.get_slot(ident, path)
         if core:
-            assert quota_waits == [60] and current["status"] == "paused"
+            assert quota_waits == [86400] and current["status"] == "paused"
             receipt = control._WORKER_EXECUTIONS[ident].receipt
             assert receipt["confirmed"] and receipt["status_persisted"]
             assert control.worker_execution_receipt(ident)["terminal"]
@@ -264,7 +264,9 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
     ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, 901, 901),
     ("glm-5.3:cloud", "rate_limited", "continuous", 2, 661, 240, 240),
     ("glm-5.3:cloud", "rate_limited", "continuous", 3, 420, None, 480),
-    ("glm-5.3:cloud", "quota_exceeded", "continuous", 0, 0, 60, 60),
+    ("glm-5.3:cloud", "quota_exceeded", "continuous", 0, 0, 60, 86400),
+    ("glm-5.3:cloud", "quota_exceeded", "continuous", 5, 400000, None, 86400),
+    ("glm-5.3:cloud", "quota_exceeded", "once", 0, 0, 60, None),
     ("glm-5.3:cloud", "http_error", "continuous", 0, 0, 60, None),
     ("glm-5.3:cloud", "rate_limited", "once", 0, 0, 60, None),
     ("qwen3.5:4b", "rate_limited", "persistent", 0, 0, 60, None),
@@ -457,7 +459,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
             assert execution.start_error is None
             assert task["status"] == "pending" and task["claim_salt_ref"] is None
         elif scenario == "quota_after_retry":
-            assert len(calls) == 2 and waits == [60, 120]
+            assert len(calls) == 2 and waits == [60, 86400]
             assert execution.stop_event.is_set() and execution.start_error is None
             assert current["backend_error"]["quota_period"] == "month"
             assert task["status"] == "pending" and task["claim_salt_ref"] is None
@@ -571,11 +573,14 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         real_client(transport=httpx.MockTransport(reply), **kw))
     def wait(worker, seconds):
         waits.append(seconds)
-        assert seconds == 60 and backend_failure in {"rate_limit", "monthly_quota"}
+        assert seconds == (86400 if backend_failure == "monthly_quota" else 60) and backend_failure in {"rate_limit", "monthly_quota"}
         assert worker.task_binding is None and worker.lease_supervisor is None
         assert bindings[-1].closed and bindings[-1].tool_dispatch_count == 1
         assert client.worker_leases(worker.lease_worker_id)["leases"] == []
         assert client.task_snapshot(42)["status"] == "pending"
+        # #2633: a service restart keeps the credit pause until this check time.
+        recheck = slots.get_slot(ident, path).get("no_credit_recheck_at")
+        assert (recheck is not None) is (backend_failure == "monthly_quota")
         worker.stop_event.set()
         return False
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
@@ -594,7 +599,7 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         assert not thread.is_alive()
         expected_calls = (2 if dispatch_path == "runtime" else 1) + int(previous_block)
         assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0)
-        assert waits == ([60] if backend_failure != "server_error" else [])
+        assert waits == {"monthly_quota": [86400], "server_error": []}.get(backend_failure, [60])
         assert call_waits == ([60, 120, 240] if backend_failure == "rate_limit" else [])
         if backend_failure == "rate_limit":
             # Only the exact rejected model request is repeated. The earlier
@@ -1494,6 +1499,11 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         return FailedAnswer(f"{FailedAnswer.PREFIX}RuntimeError: Kontextfenster in der Abschlussreserve erschöpft",
                             reason_code="completion_reserve_context_exhausted")
     monkeypatch.setattr(runtime, "process", process)
+    wip_calls = []
+    def secure_wip(control_arg, session_arg, reason):
+        wip_calls.append((control_arg.task_binding.task_id, reason))
+        return {"success": True}
+    monkeypatch.setattr(control, "_secure_context_wip", secure_wip)
     thread = None
     try:
         response, code = control.start_worker_execution(ident)
@@ -1504,6 +1514,7 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         assert not thread.is_alive()
         # Two failures let the worker continue; the third in a row stops it.
         assert sorted(taken) == [42, 43, 44] and len(taken) == 3
+        assert wip_calls == [(task_id, "completion_reserve_context_exhausted") for task_id in taken]
         for task_id in taken:
             task = dict(conn.execute("SELECT status, claim_salt_ref FROM tasks WHERE id=?", (task_id,)).fetchone())
             assert task["status"] == "pending" and task["claim_salt_ref"] is None
@@ -1514,6 +1525,124 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         assert sum("Abschlussreserve" in a for a in activities) == 3
         assert sum("Worker arbeitet weiter" in a for a in activities) == 2
         assert "3 Tasks in Folge fehlgeschlagen" in (slots.get_slot(ident, path).get("current_activity") or "")
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()
+
+
+@pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60)])
+def test_openrouter_without_credit_rechecks_daily(status, expected):
+    """User rule 25.10.2026: no credit pauses the worker and checks once a day, it does not end it."""
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    detail = {"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
+              "status_code": status, "quota_exceeded": False}
+    slot = {"backend": "openrouter", "model": "openrouter/free", "type": "continuous"}
+    assert control._worker_backend_retry_delay(slot, detail, model="openrouter/free",
+        retries=0, waited_seconds=0) == expected
+    assert control._worker_backend_retry_delay({**slot, "type": "once"}, detail, model="openrouter/free",
+        retries=0, waited_seconds=0) is None
+
+
+@pytest.mark.parametrize("scenario", ["malformed_arguments", "trace_start_failure"])
+def test_rejected_tool_call_returns_task_or_shows_reason(tmp_path, monkeypatch, scenario):
+    """25.10. #2496: a malformed cloud tool call must not strand the lease."""
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import LeaseProtocolError, TaskLeaseClient
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from system.tests.test_task_lease_client import _init_db
+    model = "glm-5.3:cloud"
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = slots.add_worker({"name": "Rejected tool call fixture", "type": "continuous"}, path)["id"]
+    slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
+        "mode": "safe", "pause_after": 0, "max_tool_rounds": 5}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    for task_id in (42, 43):
+        conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+                     "VALUES (?,?,'pending','P1','INBOX','BACH',?)", (task_id, f"Rejected call {task_id}", ident))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    bindings = []
+    acquire = control._acquire_worker_task
+    def acquire_record(*args, **kwargs):
+        binding = acquire(*args, **kwargs)
+        if binding is not None:
+            bindings.append(binding)
+        return binding
+    monkeypatch.setattr(control, "_acquire_worker_task", acquire_record)
+    if scenario == "trace_start_failure":
+        def fail_start(self, **_kwargs):
+            raise LeaseProtocolError("synthetic trace sink outage")
+        monkeypatch.setattr(WorkerLeaseBinding, "trace_tool_started", fail_start)
+    backend = OllamaBackend(default_model=model)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
+    monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *a: "")
+    monkeypatch.setattr(control, "runtime", runtime)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
+    monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *a, **kw: True)
+    calls = []
+    real_client = httpx.AsyncClient
+    def reply(request):
+        calls.append(request)
+        if len(calls) == 1:
+            # OpenRouter/Hermes keep an unparseable arguments string as-is (truncated JSON).
+            arguments = ('{"path": "' + str(tmp_path) if scenario == "malformed_arguments"
+                         else {"path": str(tmp_path)})
+            return httpx.Response(200, text=json.dumps({"message": {"role": "assistant", "content": "",
+                "tool_calls": [{"function": {"name": "list_directory", "arguments": arguments}}]},
+                "done": True}) + "\n")
+        control._WORKER_EXECUTIONS[ident].stop_event.set()
+        return httpx.Response(200, text=json.dumps({"message": {
+            "role": "assistant", "content": "Zwischenstand; Task bleibt offen"}, "done": True}) + "\n")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+        real_client(transport=httpx.MockTransport(reply), **kw))
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        execution = control._WORKER_EXECUTIONS[ident]
+        thread = execution.thread
+        thread.join(8)
+        assert not thread.is_alive()
+        first = bindings[0].task_id
+        assert client.tool_trace_events(first)["events"] == []
+        assert bindings[0].tool_dispatch_count == 0
+        def notes(task_id):
+            return [json.loads(row["new_value"])["note"] for row in conn.execute(
+                "SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'", (task_id,))]
+        if scenario == "malformed_arguments":
+            # Nothing ran: the lease goes back with its reason and the worker takes the next task.
+            assert len(calls) == 2
+            assert notes(first) == ["model_failure:invalid_tool_call"]
+            assert not client.read(first).leased and client.task_snapshot(first)["status"] == "pending"
+            assert [b.task_id for b in bindings] == [first, ({42, 43} - {first}).pop()]
+            assert notes(bindings[1].task_id) == ["worker_stopped"]
+            assert execution.start_error is None
+            activities = [e.get("activity") or "" for e in slots.get_activity_history(path=path)]
+            assert any(f"Task #{first} zurückgegeben (model_failure:invalid_tool_call)" in a for a in activities)
+            receipts = [json.loads(row[0]) for row in conn.execute(
+                "SELECT receipt FROM worker_model_executions WHERE task_id=?", (first,))]
+            assert [(r["phase"], r.get("failure_code")) for r in receipts] == [("failed", "invalid_tool_call")]
+        else:
+            # Unknown trace state stays fail-closed, but the status names the fixed reason.
+            assert len(calls) == 1 and notes(first) == [] and client.read(first).leased
+            assert bindings[0].deactivation_reason == "trace_start_unavailable"
+            current = slots.get_slot(ident, path)
+            assert execution.start_error == "cleanup_error" and current["status"] == "error"
+            assert "trace_start_unavailable" in current["current_activity"]
+            assert "synthetic trace sink outage" not in json.dumps(slots.get_activity_history(path=path))
     finally:
         if thread is not None and thread.is_alive():
             control._WORKER_EXECUTIONS[ident].stop_event.set()
