@@ -14,15 +14,15 @@ Dieses Dokument definiert den Meilenstein und seine Abnahmekriterien. Versionsme
 
 | Nachweis | Wert |
 |---|---|
-| Version | `0.2.29` |
-| Quellcommit / Tag | `a42adda6a9fe8d892578db3f7a09f7c1bef653ef` (belegt: `system/gui/gui-consumer.v1.json`, `commit`; `system/gui/kit_manifest.json`, `pinned_source_commit`) / Tag-Beleg offen |
-| Archiv | `ellmos-system-gui-0.2.29-a42adda6a9fe.zip` (belegt: `system/gui/kit_manifest.json`, `release_archive`) |
-| Archivgröße | Beleg offen (im BACH-Repo nicht verankert) |
-| Archiv-SHA-256 | `037516b1af6e658e06eee8aa57adaf81309bc430219198deeb6492ab816f29e1` (belegt: `system/gui/gui-consumer.v1.json`, `archive_sha256`; `system/gui/kit_manifest.json`, `release_archive_sha256`) |
-| Distmanifest-SHA-256 | Beleg offen (im BACH-Repo nicht verankert) |
-| Seiteninventar-SHA-256 | Beleg offen (im BACH-Repo nicht verankert) |
-| Buildinventar | 39 HTML-Seiten laut `expected_page_count` in `system/gui/kit_manifest.json` (Erwartungswert des Pins, kein Byte-Inventarbeleg); Distdateienzahl offen |
-| Pin-Status | `pinned_release` (belegt: `system/gui/gui-consumer.v1.json`, `status`), gepinnt am 2026-10-26T05:41:35Z (belegt: `system/gui/kit_manifest.json`, `pinned_at`) |
+| Version | `0.2.30` |
+| Quellcommit / Tag | `eb0251ac4b85574087ad934611d19dc3df1f9c4c` / `v0.2.30` |
+| Archiv | `ellmos-system-gui-0.2.30-eb0251ac4b85.zip` |
+| Archivgröße | 8.323.951 Bytes |
+| Archiv-SHA-256 | `ff07b55656349da60cb18b5ead867da3f03d43d81e6964bc6448212d7412b188` |
+| Distmanifest-SHA-256 | `d64c9edf8a56fac80ec4bd7c39afae956834d9b046407436a1bfe5404556e7ba` |
+| Seiteninventar-SHA-256 | `d1ba46fe31da64fdf94c3f8db7656b80688ae829d3e83b0fe246dda53f253890` |
+| Buildinventar | 39 HTML-Seiten; 375 Distdateien einschließlich Distmanifest |
+| Pin-Status | `pinned_release` (belegt: `system/gui/gui-consumer.v1.json`, `status`), gepinnt am 2026-10-31T12:52:00Z (belegt: `system/gui/kit_manifest.json`, `pinned_at`) |
 
 Scope-Entscheid: Der in der Planung vorgesehene Zwischenpin 0.2.27 war überholt, da das BACH-Repo bereits auf 0.2.29 steht und die Integritätstests 0.2.29 verriegeln; ein Downgrade wird nicht durchgeführt. Diese Doku ist auf 0.2.29 nachgezogen. Die Mac-Aktivierung des Deployments bleibt eine eigene offene Arbeit.
 

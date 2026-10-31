@@ -345,9 +345,114 @@ async function loadNavStatus() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    initNavigation();
-    loadNavigationConfig();
+
+async function mountSharedAstroShell() {
+    if (typeof window === "undefined" || typeof document === "undefined" || typeof DOMParser === "undefined") return false;
+    if (document.getElementById("app-sidebar")) return true;
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("embedded") === "1") return false;
+    const oldHeader = document.getElementById("main-header");
+    try {
+        const res = await fetch("/settings", { credentials: "same-origin" });
+        if (!res.ok) return false;
+        const html = await res.text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const sidebar = doc.getElementById("app-sidebar");
+        const astroHeader = doc.getElementById("main-header");
+        const backdrop = doc.getElementById("sidebar-backdrop");
+        if (!sidebar || !astroHeader) return false;
+
+        doc.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+            const href = link.getAttribute("href");
+            if (href && href.startsWith("/_astro/") && !document.querySelector('link[href="' + href + '"]')) {
+                const clone = document.createElement("link");
+                clone.rel = "stylesheet";
+                clone.href = href;
+                document.head.appendChild(clone);
+            }
+        });
+
+        const preset = localStorage.getItem("bach-ui-preset") === "classic" ? "classic" : "standard";
+        const iconStyle = (localStorage.getItem("bach-ui-icon-style") || localStorage.getItem("bach-icon-set")) === "emoji" ? "emoji" : "line";
+        document.documentElement.setAttribute("data-ui-preset", preset);
+        document.documentElement.setAttribute("data-ui-icon-style", iconStyle);
+        document.documentElement.setAttribute("data-icon-set", iconStyle);
+
+        const importedHeader = document.importNode(astroHeader, true);
+        const importedSidebar = document.importNode(sidebar, true);
+        if (oldHeader && oldHeader.parentNode) {
+            oldHeader.parentNode.replaceChild(importedHeader, oldHeader);
+        } else {
+            document.body.insertBefore(importedHeader, document.body.firstChild);
+        }
+        if (backdrop && !document.getElementById("sidebar-backdrop")) {
+            const importedBackdrop = document.importNode(backdrop, true);
+            importedHeader.insertAdjacentElement("afterend", importedBackdrop);
+            importedBackdrop.insertAdjacentElement("afterend", importedSidebar);
+        } else {
+            importedHeader.insertAdjacentElement("afterend", importedSidebar);
+        }
+
+        const applyPresetAndIcons = (nextPreset, nextIcons) => {
+            const pVal = nextPreset === "classic" ? "classic" : "standard";
+            const iVal = nextIcons === "emoji" ? "emoji" : "line";
+            document.documentElement.setAttribute("data-ui-preset", pVal);
+            document.documentElement.setAttribute("data-ui-icon-style", iVal);
+            document.documentElement.setAttribute("data-icon-set", iVal);
+            importedSidebar.querySelectorAll(".nav-preset[data-ui-preset]").forEach(n => {
+                const activePreset = n.getAttribute("data-ui-preset") === pVal;
+                n.hidden = !activePreset;
+                n.setAttribute("aria-hidden", activePreset ? "false" : "true");
+            });
+            const labelEl = importedSidebar.querySelector("[data-nav-preset-label]");
+            const activeNode = importedSidebar.querySelector('.nav-preset[data-ui-preset="' + pVal + '"]');
+            if (labelEl && activeNode) {
+                labelEl.textContent = activeNode.getAttribute("data-nav-preset-label-value") || (pVal === "classic" ? "Klassisch" : "Standard bewährt");
+            }
+        };
+        applyPresetAndIcons(preset, iconStyle);
+
+        const curPath = window.location.pathname.replace(/\/+$/, "") || "/";
+        importedSidebar.querySelectorAll("a[href]").forEach(a => {
+            const hrefPath = (a.getAttribute("href") || "").split("?")[0].replace(/\/+$/, "") || "/";
+            const active = hrefPath === curPath;
+            a.classList.toggle("active", active);
+            if (active) {
+                a.setAttribute("aria-current", "page");
+                const grp = a.closest("details[data-nav-group]");
+                if (grp) { grp.open = true; grp.classList.add("active"); }
+            }
+        });
+
+        const toggleBtn = importedHeader.querySelector("#nav-toggle");
+        const closeBtn = importedSidebar.querySelector("#sidebar-close");
+        const bd = document.getElementById("sidebar-backdrop");
+        const setSidebarOpen = (open) => {
+            document.body.classList.toggle("sidebar-open", Boolean(open));
+            if (toggleBtn) toggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+            if (bd) bd.hidden = !open;
+        };
+        if (toggleBtn) toggleBtn.addEventListener("click", () => setSidebarOpen(!document.body.classList.contains("sidebar-open")));
+        if (closeBtn) closeBtn.addEventListener("click", () => setSidebarOpen(false));
+        if (bd) bd.addEventListener("click", () => setSidebarOpen(false));
+
+        importedHeader.querySelectorAll(".theme-switcher .theme-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                if (btn.dataset.theme) await persistThemePreference(btn.dataset.theme);
+            });
+        });
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    const mounted = await mountSharedAstroShell();
+    if (!mounted) {
+        initNavigation();
+        loadNavigationConfig();
+    }
     loadThemePreference();
     loadNavStatus();
 });

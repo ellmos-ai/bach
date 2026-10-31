@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import Any
 
 # Importiere die Singleton-Instanz aus dem Policy-Modul (der Fachlogik)
-from system.policy.governance import capability_manager as _policy_capability_manager
+try:
+    from policy.governance import CAPABILITIES, TRUST_PROFILES, CapabilityManager, capability_manager as _policy_capability_manager
+except ImportError:
+    from system.policy.governance import CAPABILITIES, TRUST_PROFILES, CapabilityManager, capability_manager as _policy_capability_manager
+capability_manager = _policy_capability_manager
 
 # Alias zur gleichen Instanz – gleiche API, nahtloser Übergang
 
@@ -45,7 +49,7 @@ status = _policy_capability_manager.status
 get_audit_log = _policy_capability_manager.get_audit_log
 get_profiles = _policy_capability_manager.get_profiles
 
-CAPABILITIES = _policy_capability_manager.CAPABILITIES
+# CAPABILITIES imported from policy.governance
 SETUP_GUARD_SURFACES = _policy_capability_manager.SETUP_GUARD_SURFACES
 SETUP_CHECK_TYPES = _policy_capability_manager.SETUP_CHECK_TYPES
 SETUP_SURFACE_CHECKS = _policy_capability_manager.SETUP_SURFACE_CHECKS

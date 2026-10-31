@@ -1632,6 +1632,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/chat",
         "/settings",
         "/system",
+        "/system/ocean",
         "/wiki",
         "/agents",
         "/agents/ati",
@@ -6241,6 +6242,14 @@ async def settings_page():
     if settings_file.exists():
         return FileResponse(settings_file)
     raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
+
+
+@app.get("/system/ocean", response_class=HTMLResponse)
+async def system_ocean_page():
+    ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
+    if ocean_page.is_file():
+        return FileResponse(ocean_page)
+    raise HTTPException(status_code=404, detail="Ocean-Systemseite nicht gefunden")
 
 
 @app.get("/system", response_class=HTMLResponse)
