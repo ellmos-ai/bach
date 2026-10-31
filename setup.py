@@ -92,7 +92,7 @@ def _run_packaging_setup() -> None:
             "console": [_CONSOLE_REQUIREMENT],
             "worker-policy": [
                 "taskplan @ git+https://github.com/ellmos-ai/task-master.git@"
-                "5924b71b2a93e59e625b5c9afaa6e84966bf49d3"
+                "aeac1f3ef5f29bbf239faccae6a1061ed0cc046c"
             ],
         },
         entry_points={

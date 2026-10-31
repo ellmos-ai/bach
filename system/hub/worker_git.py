@@ -150,6 +150,9 @@ def _github_json(url: str) -> dict:
     return value
 
 
+_DEFAULT_GITHUB_JSON = _github_json
+
+
 def _public_ls_remote_metadata(repository: str, default_branch: str) -> dict[str, str | bool]:
     """Verify anonymous public visibility, default branch HEAD symref, and commit SHA via git ls-remote."""
     import tempfile
@@ -204,11 +207,13 @@ def _public_default_branch_metadata(repository: str, default_branch: str) -> dic
     from hub._services.chat.worker_repo_registry import canonical_default_branch, canonical_repository_id
     repository = canonical_repository_id(repository)
     default_branch = canonical_default_branch(default_branch)
+    use_cache = _github_json is _DEFAULT_GITHUB_JSON
     cache_key = (id(_github_json), repository, default_branch)
     now_mono = time.monotonic()
-    cached = _PUBLIC_METADATA_CACHE.get(cache_key)
-    if cached is not None and (now_mono - cached[0]) < _PUBLIC_METADATA_TTL_SEC:
-        return {**cached[1], "verified_at": _utc_now()}
+    if use_cache:
+        cached = _PUBLIC_METADATA_CACHE.get(cache_key)
+        if cached is not None and (now_mono - cached[0]) < _PUBLIC_METADATA_TTL_SEC:
+            return {**cached[1], "verified_at": _utc_now()}
     base_url = f"https://api.github.com/repos/{repository}"
     try:
         metadata = _github_json(base_url)
@@ -240,7 +245,8 @@ def _public_default_branch_metadata(repository: str, default_branch: str) -> dic
         }
     except _GitHubRateLimitError:
         record = _public_ls_remote_metadata(repository, default_branch)
-    _PUBLIC_METADATA_CACHE[cache_key] = (now_mono, dict(record))
+    if use_cache:
+        _PUBLIC_METADATA_CACHE[cache_key] = (now_mono, dict(record))
     return record
 
 
