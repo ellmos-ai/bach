@@ -83,13 +83,13 @@ d) codex login status mit explizitem HOME
     Rueckgabecode:
   0
     Ausgabe:
-  
+
   [stderr] Logged in using ChatGPT
   HOME=/Users/buddha
     Rueckgabecode:
   1
     Ausgabe:
-  
+
   [stderr] WARNING: proceeding, even though we could not create PATH aliases: Permission denied (os error 13)
 Not logged in
 e) codex-Binaer

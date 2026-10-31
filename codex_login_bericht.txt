@@ -27,7 +27,7 @@ e) codex login status
   Rueckgabecode:
   1
   Ausgabe:
-  
+
   [stderr] Not logged in
 e2) codex --version
   Rueckgabecode:
