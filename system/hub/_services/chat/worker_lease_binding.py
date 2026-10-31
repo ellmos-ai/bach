@@ -364,6 +364,9 @@ class WorkerLeaseBinding:
             repositories = worker_selection_policy(slot)["allowed_repositories"]
         except Exception:  # noqa: BLE001 -- malformed worker policy fails closed.
             return "repository_capability_missing"
+        if not repositories:
+            # No repo restriction configured: repository is preference only.
+            return None
         try:
             from .worker_repo_registry import resolve_task_repository
             binding = resolve_task_repository(snapshot.get("id"))

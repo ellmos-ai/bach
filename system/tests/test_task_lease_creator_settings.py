@@ -96,3 +96,39 @@ def test_unreadable_or_missing_setting_means_off(config_db):
     config_db.execute("UPDATE system_config SET value=? WHERE key=?",
                       (json.dumps({"revision": 1, "values": {"enabled": True, "window_seconds": 60}}), settings.KEY))
     assert settings.stored_window(config_db) == 60
+
+
+def test_window_upper_bound_is_rejected_and_max_window_is_writable(config_db, db_path):
+    current = settings.read_setting(db_path)
+    with pytest.raises(ValueError):
+        settings.write_setting({"configuration_version": current["configuration_version"],
+                                "enabled": True, "window_seconds": settings.MAX_WINDOW_SECONDS + 1},
+                               actor="device:test", db_path=db_path)
+    written = settings.write_setting({"configuration_version": current["configuration_version"],
+                                     "enabled": True, "window_seconds": settings.MAX_WINDOW_SECONDS},
+                                    actor="device:test", db_path=db_path)
+    assert written["window_seconds"] == settings.MAX_WINDOW_SECONDS
+    assert settings.read_setting(db_path)["window_seconds"] == settings.MAX_WINDOW_SECONDS
+    assert settings.stored_window(config_db) == settings.MAX_WINDOW_SECONDS
+
+
+def test_unknown_field_and_missing_version_are_rejected(config_db, db_path):
+    current = settings.read_setting(db_path)
+    with pytest.raises(ValueError):
+        settings.write_setting({"configuration_version": current["configuration_version"],
+                                "enabled": True, "window_seconds": 120, "foo": 1},
+                               actor="device:test", db_path=db_path)
+    with pytest.raises(ValueError):
+        settings.write_setting({"enabled": True, "window_seconds": 120},
+                               actor="device:test", db_path=db_path)
+
+
+def test_environment_value_activates_the_gate_despite_a_disabled_setting(config_db, monkeypatch):
+    assert settings.stored_window(config_db) == 0  # the stored setting stays off
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "600")
+    assert LeaseConfig.from_env().creator_window_seconds == 600
+    tid = _insert(config_db, created_by="claude", created_at=CREATED)
+    denied = _acq(config_db, tid, worker=FOREIGN, config=LeaseConfig.from_env())
+    assert denied.payload["reason"] == "creator_priority"
+    assert _acq(config_db, tid, worker=FOREIGN, config=LeaseConfig.from_env(),
+                now=T0 + timedelta(seconds=601)).granted
