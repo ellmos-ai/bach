@@ -105,3 +105,13 @@
 **Enforcement:** Alle PRs müssen mindestens ein `bauort:`-Tag in ihrem Commit- oder PR-Titel enthalten. PRs ohne ein identifiziertes Bauort werden von GitHubBot als HOLD eingestuft und können nicht von den 24-stündigen Draft-Freigabe-Regeln ausgenommen werden.
 
 **Configuration:** Die genaueste Karte der gültigen <modul-id>-Werte und ihrer erlaubten Verwendungen wird in dieser Datei gepflegt.
+
+---
+
+## 9. BACH als gebrandeter Teil-OS-Stack von Ocean (`@deprecated_legacy_bach`)
+
+Seit Meilenstein `v3.15.0-ocean-stack-m1` (2026-10-31) gilt für jeden Anschluss eines Ocean-Moduls an BACH das verbindliche 3-Stufen-Verfahren:
+
+1. **Ocean-Modul über `system/hub/_services/ocean_stack_bridge.py` bzw. dünnen Adapter einbinden** (`adapter:<modul-id>`).
+2. **Ersetzte BACH-interne Klasse/Funktion mit `@deprecated_legacy_bach("<kanonisches-ocean-modul>")` dekorieren** und in `DEPRICATED.md` eintragen. Der Altcode bleibt nur als deprecated Rückfallpfad bestehen.
+3. **Nach Paritäts- und Caller-Abnahme den deprecated Altcode in einem eigenen Aufräum-Schritt entfernen.**

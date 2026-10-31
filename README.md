@@ -51,6 +51,26 @@ The current release snapshot enables `de`, `en`, `es`, `ru`, `ja`, and `zh` in `
 
 **BACH** is a text-based operating system that empowers Large Language Models (LLMs) to work autonomously, learn, and self-organize. Part of the **ellmos** family (Extra Large Language Model Operating Systems), BACH provides comprehensive infrastructure for task management, knowledge management, automation, and LLM orchestration.
 
+## 📦 Download, Guided Installation & Ocean Edition Branding
+
+Whether you discover **BACH** or **[open-ocean](https://github.com/ellmos-ai/open-ocean)** via search, both lead you to the same modular **Ocean** platform with the shared GUI (`ellmos-system-gui`):
+
+1. **OS-Native Installers (Primary Path) & App Stores (Additional Service):**
+   - **Windows:** Native `.exe` / `.msi` installer (plus **Microsoft Store** as an additional convenience service)
+   - **macOS:** Native `.dmg` / `.pkg` installer
+   - **Linux:** Native `.AppImage` / `.deb` / `.rpm` installer
+   - Powered by [`ellmos-installer`](https://github.com/ellmos-ai/ellmos-installer) and the transactional [`open-ocean`](https://github.com/ellmos-ai/open-ocean) engine.
+2. **Guided Setup & Anytime Component Management (`Rinnsal ↔ BACH ↔ Meer`):**
+   - Starting the installer guides you step by step through configuring your system — ready out of the box for both **local models (Ollama)** and **non-local models (Cloud APIs & Subscriptions)**.
+   - Public Ocean ships with a **Standard Extent** of modules. By deselecting or adding modules and bundles during setup — or **installing / uninstalling components at any time later** via the installer or System GUI — you shape your own custom Ocean: minimal like a **Rinnsal** (streamlet), curated like **BACH**, or broadly expanded like a **Meer** (sea/ocean).
+3. **Entry-Point Branding (`bach` vs. `open-ocean`):**
+   - **Entering via `bach` (this repository):** You receive the **BACH Branding**, where **Ocean still stands at the forefront of the GUI**, and BACH is presented as a curated version/form of Ocean (*"BACH — a curated edition of Ocean"*).
+   - **Entering via [`open-ocean`](https://github.com/ellmos-ai/open-ocean):** Installs the system with pure **Ocean branding** (without BACH branding).
+4. **Access & System Tiers (`full-ocean` · `ocean-dev` · `ocean-admin`):**
+   - **`full-ocean`:** Bound to `ellmos-installer` — grants access to the full Ocean catalog to the extent the user is authorized (all public modules for standard users, plus additional non-public/licensed modules for authorized users).
+   - **`ocean-dev`:** Developer, diagnostic, and build modules (`system-explorer`, `system-auditor`, `system-gap-master`, `ellmos-tests`, `module-gate`), which may be public but are optional for everyday users.
+   - **`ocean-admin`:** The full operator/maintainer multi-host system (Mac Studio 24/7 leader, workstations, private research/domain modules, and `.SYNC` federation).
+
 ## Discovery Context
 
 BACH is best described as a **local-first LLM operating system**: a persistent Python/SQLite workbench for autonomous agents, structured memory, scheduler-driven automation, prompt chains, MCP server integration, and multilingual operator surfaces. It is not a chatbot wrapper, hosted agent SaaS, Bash unit-test framework, music project, or LangChain-style pipeline library.

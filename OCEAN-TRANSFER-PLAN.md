@@ -1,6 +1,27 @@
 # Ocean–BACH-Transferplan
 
-Stand: 13. Oktober 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+Stand: 31. Oktober 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+
+## Meilenstein `v3.15.0-ocean-stack-m1` – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31)
+
+Ab Commit `0dab1a8fa1` (Tag `v3.15.0-ocean-stack-m1`) ist das verbindliche Architekturmuster für die schrittweise Umwandlung von BACH in einen gebrandeten Teil-OS-Stack von Ocean produktiv im Code verankert:
+
+1. **Zentrale Ocean-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):**
+   - Lädt die kanonischen Ocean-Module (`ocean-resources`, `task-master/taskplan`, `open-ocean/tools/*`) konfliktfrei neben `bach/system/tools` und stellt den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings` (`stack_role: "branded_partial_os_stack_of_ocean"`) bereit.
+   - Aktuell 10 produktiv angebundene Modul-Seams (Tasks `#1858, #1859, #1860, #1862, #1869, #1896, #1898, #1906, #1914, #1917` auf `done`):
+     1. `ocean_resources`: `ocean_resources.ram_distributor.RAMDistributor` & `WatchdogHysteresisPolicy` (über `ocean_resources_adapter.evaluate_ocean_ram_admission`)
+     2. `taskplan_lease`: `taskplan.lease.TaskLeaseManager` (über `taskplan_bridge.execute_taskplan_lease`)
+     3. `worker_worktree_policy`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag (`open-ocean/tools/worker_worktree_policy.py`)
+     4. `task_result_review_policy`: Konfigurierbare Modell-Review-Regeln & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`)
+     5. `escalation_ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`)
+     6. `persona_routing`: Rollen- und Wartungsmanifest-Prüfung (`open-ocean/tools/persona_routing.py`)
+     7. `learning_loop`: Skill-Gärtner-Kandidatenvertrag (`open-ocean/tools/learning_loop.py`)
+     8. `agent_library`: Einheitliche Agenten-Bibliothek (`open-ocean/tools/agent_library.py`)
+     9. `capability_views`: Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`)
+     10. `governance_bridge`: Governance-Audit, Assignees & Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`)
+2. **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach("<canonical-ocean-module>")`):**
+   - Jede durch ein Ocean-Modul abgelöste BACH-Altklasse oder -Altfunktion wird mit `@deprecated_legacy_bach(...)` dekoriert (`__bach_deprecated__ = True`, `__ocean_replacement__ = "<modul>"`, `DeprecationWarning` beim Aufruf) und in [`DEPRICATED.md`](DEPRICATED.md) registriert.
+   - Die verbleibenden 54 `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`) werden Modul für Modul nach genau diesem 3-Stufen-Verfahren abgearbeitet: **(1) Ocean-Modul über Seam/Adapter anbinden → (2) BACH-Altcode mit `@deprecated_legacy_bach` markieren → (3) Altcode nach Paritätsabnahme entfernen.**
 
 ## Rückmodularisierung: Start und Entwicklungsregel
 
@@ -44,7 +65,18 @@ Fehlendes Paket, falsche Provenienz oder fehlende Registry ergeben einen Fehler;
 
 Beim ersten Mac-Readback am 8. Oktober wurden fünf vorhandene Entscheidungsquellen mit dem nativen Adapter registriert: vier bestätigte Dateihashes und ein vorhandener Verzeichniszeiger. Am 9. Oktober scheiterte ein erneuter Readback am Betriebssystemfehler EAGAIN einer Quelldatei. Der native Provider 0.2.4 weist solche Quellen einzeln als `unreadable` aus und prüft die übrigen Zeiger weiter. Dieser Stand ist ein Quellenprüfzustand; er bestätigt keine Durchsetzung der Policy. Das produktive Readback nach Installation des neuen Pins bleibt eine getrennte Abnahme. Die vollständige Policy-Adoption des Macs und der menschliche DecisionClicker-Schreibpfad sind ebenfalls noch nicht abgenommen.
 
-## Installer und Paketgrenzen
+## Installer, Nutzer-Einstieg, Editions-Branding und Paketgrenzen
+
+1. **Nutzer-Einstieg & Betriebssystem-Installer:**
+   - Normale Nutzer landen bei der Suche auf `open-ocean` oder `bach` und werden von der jeweiligen README direkt zum **Installer für ihr Betriebssystem** geleitet (**Windows `.exe`/`.msi`**, **macOS `.dmg`/`.pkg`**, **Linux `.AppImage`/`.deb`**; die App-Stores wie der Windows Store sind ein zusätzlicher Komfort-Service).
+   - Der Installer führt durch die Erstinstallation (Standard-Ocean-Ausdehnung mit lokaler Ollama- und nicht-lokaler Cloud-/Abo-Modellunterstützung oder individuelle Modulwahl **Rinnsal ↔ BACH ↔ Meer**). Bestandteile können **später jederzeit nachinstalliert oder deinstalliert** werden.
+2. **Eintrittsweg bestimmt das Branding (`open-ocean` vs. `bach`):**
+   - **Einstieg über `bach`:** Aktiviert das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
+   - **Einstieg über `open-ocean`:** Reines **Ocean-Branding** (das BACH-Branding entfällt).
+3. **Berechtigungs- & Systemstufen (`full-ocean` · `ocean-dev` · `ocean-admin`):**
+   - **`full-ocean`:** An den `ellmos-installer` gebundenes Zugangskonzept — erfüllt das Versprechen des Zugangs zum vollen Ocean-Katalog, soweit der Nutzer dazu berechtigt ist.
+   - **`ocean-dev`:** Entwickler-, Diagnose- und Prüfmodule (teilweise öffentlich, aber für normale Endnutzer optional).
+   - **`ocean-admin`:** Das Betreiber-/Maintainer-Gesamtsystem von Lukas mit dem Mac Studio als Leader und allen privaten/unveröffentlichten Fach- und Forschungsmodulen.
 
 Ein Installer verwendet Produktprofile und versionierte Komponentenmanifeste. BACH und Ocean erhalten dasselbe GUI-Paket, aber eigene Backend-Adapter und Betriebszustände. Nutzerdaten, Zugangsdaten, TaskDB, lokale Rollen und OneDrive-Steuerdokumente bleiben außerhalb der Codearchive.
 

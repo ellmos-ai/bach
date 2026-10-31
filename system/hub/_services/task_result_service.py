@@ -57,7 +57,6 @@ class ResultCorrectionConflict(ResultCorrectionError):
 
 class CorrectionContextDenied(Exception):
     """A task-bound worker cannot prove the current correction context."""
-    pass
 
 
 class ResultServiceUnavailable(RuntimeError):
@@ -542,8 +541,10 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
             frozen = _submission_policy(conn, row["id"])
             if (frozen["availability"] == "available" and
                     (frozen["override"].get("mode") or frozen["policy"]["default_mode"]) == "simple_task"):
-                from .worker_completion_contract import (evaluate_worker_self_check,
-                    evaluate_worker_completion_assertion)
+                from .worker_completion_contract import (
+                    evaluate_worker_completion_assertion,
+                    evaluate_worker_self_check,
+                )
                 self_check_met = evaluate_worker_self_check(text)["met"] is True
                 if not self_check_met:
                     completion_asserted = evaluate_worker_completion_assertion(text)["met"] is True
@@ -1086,8 +1087,9 @@ def request_result_correction(conn, task_id, payload, *, operator_token=None,
         raise ResultServicePermissionDenied("Genau eine Ergebnisanmeldung erforderlich", code="ambiguous_credentials")
     if conn.in_transaction:
         raise ResultCorrectionConflict("task_not_revisable", "Korrektur braucht eine eigene kanonische Transaktion")
-    from .task_lease import task_content_version, _history, _utcnow, _local_naive
     from hub.task_audit import apply_task_field_changes
+
+    from .task_lease import _history, _local_naive, _utcnow, task_content_version
 
     prechecked_device_id = None
     prechecked_service = None
@@ -1365,8 +1367,8 @@ def _correction_audit_matches(conn, row, detail):
     device_id = row.get("requested_by_device_id")
     policy_sha = row.get("policy_decision_sha256")
     if policy_sha is not None:
-        from .worker_result_review import review_invalid_correction_matches
         from .machine_false_acceptance_recovery import repair_correction_matches
+        from .worker_result_review import review_invalid_correction_matches
         review_correction = (device_id == 0
             and row.get("event_changed_by") == "native-result-review-controller"
             and review_invalid_correction_matches(conn, row))
@@ -1656,7 +1658,13 @@ def read_result_history(conn, task_id, *, before_event_id=None, limit=20, servic
 
 def read_correction_context(conn, task_id, *, lease_id, fence, task_version, generation):
     """Read a correction only for the exact live task lease and result generation."""
-    from .task_lease import LeaseConfig, _lease_state, _row, _utcnow, task_content_version
+    from .task_lease import (
+        LeaseConfig,
+        _lease_state,
+        _row,
+        _utcnow,
+        task_content_version,
+    )
     if (type(task_id) is not int or task_id <= 0 or not isinstance(lease_id, str) or not lease_id
             or type(fence) is not int or fence <= 0 or not isinstance(task_version, str)
             or re.fullmatch(r"[a-f0-9]{64}", task_version) is None
@@ -1938,7 +1946,10 @@ def accept_result(conn, task_id, result_id, *, digest, task_version, status_revi
             raise ResultServicePermissionDenied(
                 "Policyverwalteter Abschluss benötigt die Operator-Prüfung",
                 code="completion_policy_operator_review_required")
-        from .worker_completion_policy import record_operator_review, evaluate_current_result
+        from .worker_completion_policy import (
+            evaluate_current_result,
+            record_operator_review,
+        )
         from .worker_scope_evidence import project_scope_evidence
         record_operator_review(conn, task_id, result_id, digest=digest,
             task_version=task_version, status_revision=status_revision,
@@ -1980,8 +1991,9 @@ def accept_result(conn, task_id, result_id, *, digest, task_version, status_revi
             principal_id = principal[0]
             actor = f"operator-device:{principal_id}"
 
-        from .task_lease import _history, _utcnow, _local_naive
         from hub.task_audit import apply_task_field_changes
+
+        from .task_lease import _history, _local_naive, _utcnow
         observed = read_result(conn, task_id)
         record = observed["result"]
         row = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
@@ -2039,3 +2051,34 @@ def accept_result(conn, task_id, result_id, *, digest, task_version, status_revi
         if conn.in_transaction:
             conn.rollback()
         raise
+
+
+
+def evaluate_configurable_result_review(
+    *,
+    policy_mode: str = "any_fresh_run",
+    producer_model: str,
+    producer_provider: str,
+    producer_generation: str,
+    reviewer_model: str,
+    reviewer_provider: str,
+    reviewer_generation: str,
+    allowed_models: list[str] | tuple[str, ...] = (),
+    has_code_scope: bool = True,
+    result_text_present: bool = True,
+) -> dict[str, object]:
+    """Delegate configurable review model rules (#2210) and `scope_not_recorded` to Open Ocean."""
+    from hub._services.ocean_stack_bridge import evaluate_ocean_configurable_review
+
+    return evaluate_ocean_configurable_review(
+        policy_mode=policy_mode,
+        producer_model=producer_model,
+        producer_provider=producer_provider,
+        producer_generation=producer_generation,
+        reviewer_model=reviewer_model,
+        reviewer_provider=reviewer_provider,
+        reviewer_generation=reviewer_generation,
+        allowed_models=allowed_models,
+        has_code_scope=has_code_scope,
+        result_text_present=result_text_present,
+    )

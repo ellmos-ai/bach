@@ -1,6 +1,58 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-10-08 | **Version:** 4.3.70 | **Review:** 2026-10-08 (Daily Care & Dev Check)
+**Stand:** 2026-10-31 | **Version:** 4.4.0 (`v3.15.0-ocean-stack-m1`) | **Review:** 2026-10-31 (Ocean-Stack Meilenstein 1)
+
+## Meilenstein 2026-10-31: BACH als gebrandeter Teil-OS-Stack von Ocean (`v3.15.0-ocean-stack-m1`)
+
+Mit dem GUI-Meilenstein `v3.15.0` (*„BACH fließt ins Meer – gemeinsame GUI“*, Pin `ellmos-system-gui 0.2.30`) und dem Architektur-Meilenstein **`v3.15.0-ocean-stack-m1`** (Commit `0dab1a8fa1` / `d0b2059e4f`, korrespondierend mit `open-ocean` **`v0.4.0-ocean-stack-m1`**) ist die in Abschnitt *„Aktueller Transformationsrahmen: OCEAN als Nachfolgerlinie“* beschriebene Konvergenz produktiv im Code verankert:
+
+1. **Zentrale Ocean-Stack-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):**
+   - BACH konsumiert die herausgelösten und neuen Ocean-Module direkt als gebrandeter Teil-OS-Stack (`stack_role: "branded_partial_os_stack_of_ocean"`, Live-Status über `GET /api/ocean/stack-bindings`).
+   - **10 aktiv gebundene Ocean-Seams (`done` in TaskDB):**
+     1. `ocean-resources`: `RAMDistributor` & `WatchdogHysteresisPolicy` über `ocean_resources_adapter.evaluate_ocean_ram_admission()` (#2441 — löst das frühere Fackel-/Compute-Lock-Problem aus dem Programm *„Modell-Backend = das Herz von BACH“*).
+     2. `task-master` (`taskplan`): `TaskLeaseManager` (`claim`, `heartbeat`, `release`, `sweep_expired`) über `taskplan_bridge.execute_taskplan_lease()` sowie gemeinsames CLI `bach.py task` / `ocean.py task` (#2096, #2124 — führt den *TASKPLAN-Cutover* fort; ATI-Datenbank wird stillgelegt).
+     3. `worker_worktree_policy`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag für alle Ocean-Modulrepos (`open-ocean/tools/worker_worktree_policy.py`, #2577).
+     4. `task_result_review_policy`: Konfigurierbare Modellregeln (*„Default: jedes Modell in frischem Lauf“*) & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`, #2210).
+     5. `escalation_ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`, #1958).
+     6. `persona_routing`: Rollen- und Wartungsmanifest-Prüfung `roles[]` & `maintenance[]` (`open-ocean/tools/persona_routing.py`, #2447, #2448).
+     7. `learning_loop`: Skill-Gärtner-Pipeline (vormals Hermes) und Kandidatenvertrag (`open-ocean/tools/learning_loop.py`, #1999–#2003, #2455).
+     8. `agent_library`: Einheitliche Agenten-Bibliothek für Vorlagen, Prompt-Agenten und Systemprofile (`open-ocean/tools/agent_library.py`, #2478).
+     9. `capability_views`: Kanonisches Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`, #2075).
+     10. `governance_bridge`: Governance-Audit, Task-Assignees und Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`, #2094, #2097, #2098).
+2. **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach("<canonical-ocean-module>")`):**
+   - Abgelöste BACH-interne Klassen (`OceanRamDistributor`, `BundledTaskPlanClient`) sind mit `@deprecated_legacy_bach(...)` dekoriert (`__bach_deprecated__ = True`, `DeprecationWarning`) und in [`DEPRICATED.md`](DEPRICATED.md) dokumentiert.
+   - Die verbleibenden **54 `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`)** werden schrittweise nach demselben 3-Stufen-Muster (*Ocean-Seam aktivieren → BACH-Altcode `@deprecated_legacy_bach` → nach Paritätsabnahme entfernen*) umgesetzt.
+3. **Aktualisierung älterer Roadmap-Stränge in diesem Dokument:**
+   - **Programm „Modell-Backend = das Herz von BACH“ (unten ab Z. 860):** Die offenen Punkte vom 13.09.2026 sind entschieden und modular aufgeteilt: Besetzung/Autorisierung in `agents-heart` + `persona-routing`, Vorlagen in `agent-library`, Ressourcen/RAM-Distributor in `ocean-resources`, atomarer Task-Claim in SALT (`task_lease.py` / `taskplan.lease`) und Single-Writer-Schutz in Polarstern (`resource_lease.py`).
+   - **Trithon / Muschelgrund / Polarstern:** Polarstern (`resource_lease.py`) und SALT-Taskleases laufen produktiv; Muschelgrund (`trithon/muschelgrund.py`) ist als idempotente, datenschutzgefilterte Fact/Lesson-Projektion abgeschlossener Receipts (`status == "done"`) nach USMC definiert; die Herauslösung von `trithon` in ein eigenes Ocean-Modul folgt für den Multi-Host-Verbundmodus.
+   - **SentinelFleet-/Schwester-Repo-Übernahmen (unten ab Z. 2040):** Durch Nutzerentscheidung vom 25.10.2026 (MIT-Neulizenzierung durch Lukas Geiger) wandern die Fähigkeiten aus der isolierten Kopie `system/imported_capabilities/` in echte Ocean-Module (`content-guard` in `ellmos-development-system`, DNS-Pinning in `web-scraper`, Außenwirkungs-Raster in Governance).
+   - **Quellenübergreifender Wissensindex (unten ab Z. 2019):** **ERLEDIGT durch `gardener`** (`ellmos-ai/GARDENER`, FTS5-Tabelle `everything` über Dual-DB `~/.gardener/gardener.db` + `~/.gardener/user.db`).
+
+## Verbindliche Produkt- & Meilenstein-Roadmap (Nutzerentscheidung 2026-10-31)
+
+### 1. Die Meilenstein-Linie & Nutzer-Reise: Vom Monolithen zu Ocean
+1. **`BACH meets Ocean` (`v3.15.0`) — ERREICHT:** Gemeinsame GUI (`ellmos-system-gui`) für BACH und Ocean.
+2. **`BACH flows into Ocean` (`v3.15.0-ocean-stack-m1` bis `v3.x`) — AKTIV:**
+   - Schrittweise Weiter-Modularisierung und Modifikation von BACH zu Ocean: Modul für Modul über `ocean_stack_bridge.py` / Adapter anschließen, BACH-Altcode mit `@deprecated_legacy_bach` kennzeichnen und nach Parität abbauen.
+   - **Nutzer-Einstieg & Betriebssystem-Installer (Windows `.exe` · macOS `.dmg`/`.pkg` · Linux `.AppImage`/`.deb` + App-Stores als Zusatzservice):**
+     - Normale Nutzer, die nach Ocean oder BACH suchen, landen auf `open-ocean` oder `bach` und werden von der jeweiligen README direkt zum aktuellen **Installer für ihr Betriebssystem** geleitet (ergänzt um die jeweiligen App-Stores wie den Windows Store als Zusatzservice).
+     - Nach dem Start führt der Installer Schritt für Schritt durch die Installation (sofort einsatzbereit für **lokale Modelle** wie Ollama und **nicht-lokale Modelle** wie Cloud/API/Abos). Bestandteile (Module, Bundles, Skills) können **später jederzeit nachinstalliert oder deinstalliert** werden.
+   - **Eintrittsweg bestimmt das Branding (`open-ocean` vs. `bach`):**
+     - **Eintritt über `bach`:** Der Nutzer erhält das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als eine kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
+     - **Eintritt über `open-ocean`:** Das BACH-Branding entfällt; es erscheint reines **Ocean-Branding**.
+3. **`BACH becomes Ocean` / `BACH is Ocean` (`v4.0.0`) — ZIELBILD:** Sobald die Modularisierung abgeschlossen ist, bestehen BACH und Ocean vollständig aus denselben Ocean-Modulen.
+
+### 2. Kanonische Definition der Ocean-Ausdehnungen und Berechtigungsstufen (2026-10-31)
+
+Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individueller Ausdehnung** (was man installiert) und **Berechtigungs-/Zugangsstufe** (worauf der Installer Zugriff hat):
+
+| Achse | Stufe / Begriff | Verbindliche Definition |
+| :--- | :--- | :--- |
+| **1. Individuelle Ausdehnung**<br/>*(Konfiguration durch An-/Abwählen von Modulen & Bundles)* | **Standard-Ocean / BACH (OS-Installer & Stores)** | Die öffentliche Standard-Ausdehnung mit GUI (`ellmos-system-gui` + Desktop-App via Windows `.exe`, macOS, Linux und Stores), die man sich direkt holen kann und die sofort lokale + nicht-lokale Modelle, Memory, Tasks und Alltags-Workflows beherrscht. |
+| | **Rinnsal ↔ BACH ↔ Meer (Individuelles Ocean)** | Über `ellmos-installer` und die System-GUI lassen sich Module und Bundles bei der Installation und jederzeit nachträglich abwählen oder hinzunehmen — das eigene Ocean kann schlank wie ein **Rinnsal**, kuratiert wie ein **BACH** oder breit ausgebaut wie ein **Meer** sein. |
+| **2. Berechtigungs- & Systemstufen**<br/>*(Zugangskonzept am Installer & Host)* | **`full-ocean`** *(Installer-Zugangsversprechen)* | An den **`ellmos-installer`** gebundenes Berechtigungskonzept: Der Installer erfüllt das Versprechen des Zugangs zum **vollen Ocean-Katalog, soweit der jeweilige Nutzer dazu berechtigt ist** (für normale Nutzer alle öffentlichen Module; für berechtigte Personen zusätzlich nicht-öffentliche/lizenzierte Fachmodule gemäß Systemkonfiguration/Grants). |
+| | **`ocean-dev`** | Entwickler-, Diagnose- und Bau-Module (`system-explorer`, `system-auditor`, `system-gap-master`, `ellmos-tests`, `module-gate` u. a.), die durchaus öffentlich sein können, die ein normaler Endnutzer in der Standardversion aber nicht zwingend mitinstalliert. |
+| | **`ocean-admin`** | Das vollständige Betreiber-/Maintainer-System von Lukas (mit **Mac Studio als 24/7-Leader**, `ASUS-GEI`, `WORKSTATION-LG`, `IDEAPAD-GEI`, allen unveröffentlichten privaten Fach- und Forschungsmodulen, `.SYNC` und voller Systemkonfiguration). |
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -1938,7 +1990,7 @@ Sollen bestimmte Hooks als Teil der BACH-Installation mitgeliefert werden?
 
 ## BACH als anbietbarer MCP-Server: Bundle-Split & Control-Plane (2026-06-03)
 
-> Status: VISION / LANGFRISTIG — OFFEN. Die Analyse ist in dieser ROADMAP-Sektion zusammengefasst.
+> **Status-Einordnung (Nutzerentscheidung 2026-10-31):** Nachrangig gegenüber dem primären Endnutzer-Produkt (**installierbares BACH/Ocean mit GUI über den Windows Store**, das direkt mit lokalen und nicht-lokalen Modellen umgehen kann). Die MCP-Bündelung läuft bereits über `ellmos-controlcenter-mcp`; ein separater öffentlicher Monolith-MCP-Server hat keine Priorität.
 
 ### Ausgangslage
 
@@ -1991,7 +2043,9 @@ BACH **ist** bereits ein MCP-Server: `system/tools/mcp_server.py` v2.2.0 (FastMC
 
 ---
 
-## Cross-Source-Wissensindex (Notiz 2026-07-06)
+## Cross-Source-Wissensindex (Notiz 2026-07-06) — ERLEDIGT durch `gardener`
+
+> **Status (2026-10-31): KOMPLETT / ERLEDIGT durch `gardener` (`ellmos-ai/GARDENER`).** Gardener stellt über seine FTS5-Tabelle `everything` und die Dual-DB-Architektur (`~/.gardener/gardener.db` für Systemwissen + `~/.gardener/user.db` für Nutzerdaten, `find()` via `ATTACH`) genau diesen passiven, quellenübergreifenden Wissensindex für BACH, Rinnsal und Ocean bereit (siehe `SYSTEM-MANIFEST.md` §3.1).
 
 Erkenntnis aus dem ctx-/n8n-manager-Strang (Luca King / ctxrs).
 

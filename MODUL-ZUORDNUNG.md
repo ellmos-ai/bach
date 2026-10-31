@@ -36,14 +36,19 @@ Zusammenfassung:
 - Fachmodul wird das einzige System der Fachlogik; Kern ruft nur ueber Adapter.
 - Nicht mehr genutzte Stubs/Altteile -> `DEPRICATED.md`, nicht still im Kern.
 
-### 0.3 Bindungen
+### 0.3 Bindungen (Stand 2026-10-31, Meilenstein `v3.15.0-ocean-stack-m1`)
 
 - **module-gate #2445:** Jede Extraktion wird gegen die Kern-Grenze (README A 2)
   geprueft: Fachlogik verlaesst core, Adapter bleibt duenn.
-- **ocean.py:** Code-Bindung an `ocean.py` (Root) ist in diesem Lauf NICHT
-  durchführbar (Datei ausserhalb Read-Scope / blockiert). Sie ist extern
-  (OneDrive `open-ocean/`). Folgetask E dokumentiert die ocea n.py-Bindung
-  als offen/extern; sie wird im OCEAN-Rueckmodularisierungslauf erledigt.
+- **Zentrale Ocean-Stack-Brücke (`system/hub/_services/ocean_stack_bridge.py`):**
+  Bindet BACH als gebrandeten Teil-OS-Stack direkt an `ocean-resources` (`RAMDistributor`),
+  `task-master` (`taskplan.lease.TaskLeaseManager`) und `open-ocean/tools/*`
+  (`worker_worktree_policy`, `task_result_review_policy`, `escalation_ladder`,
+  `persona_routing`, `learning_loop`, `agent_library`, `capability_views`,
+  `governance_bridge`). Abgelöste BACH-Klassen (`OceanRamDistributor`,
+  `BundledTaskPlanClient`) tragen `@deprecated_legacy_bach(...)`.
+- **`ocean.py`:** Der Taskkern `taskplan` ist sowohl in `bach.py task` als auch
+  in `open-ocean/ocean.py task` (`list|show|add|claim|done|next`) angebunden.
 
 ### 0.4 Folgetasks (per task_manage angelegt, Eltern #2451 bleibt offen / pending)
 
