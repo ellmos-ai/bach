@@ -122,7 +122,7 @@ def _build_patterns() -> List[InjectionPattern]:
         ("en-inj-003", "Jailbreak via DAN", r"(?i)\b(?:act\s+as|pretend\s+to\s+be|you\s+are)\s+(?:DAN|do\s+anything\s+now|an\s+unrestricted)\b", "en", "high", "jailbreak"),
         ("en-inj-004", "Exfiltration attempt", r"(?i)\b(send|post|upload|transmit|leak)\s+(the|all|your|these)\s+(secret|private|confidential|internal|system|prompt|data|tokens?|keys?|credentials?)\b", "en", "high", "exfiltration"),
         ("en-inj-005", "Code execution injection", r"(?i)\bexecute|run|eval\s*\(|system\s*\(|os\.system|subprocess\.(?:run|call|Popen)\b", "en", "medium", "code_execution"),
-        ("en-inj-006", "Markdown injection", r"(?i)^(?:#{1,6}\s*(?:system|internal|admin|private))|(?i)\[!\[(?:system|internal|admin)\]", "en", "medium", "markdown_injection"),
+        ("en-inj-006", "Markdown injection", r"(?i)^(?:#{1,6}\s*(?:system|internal|admin|private))|\[!\[(?:system|internal|admin)\]", "en", "medium", "markdown_injection"),
         ("en-inj-007", "Delimiter abuse", r"(?i)(?:<\|(?:SYSTEM|INST|USER)\|>|<<\|(?:SYSTEM|INST)\|>>|<\s*/?\s*system\s*/?\s*>|===\s*(?:system|instruction)\s*===)", "en", "high", "delimiter_abuse"),
         # German
         ("de-inj-001", "Systemanweisung ignorieren (DE)", r"(?i)\b(ignorier(e|en|e\+st)|vergiss(e|en)|überschreib(e|en)|setze|leer(e|en)\s+den?)\s+(alle\s+)?(vorherigen?|bisherigen?|früheren?|obenstehenden?)\s+(Anweisungen?|Prompts?|Regeln?)\b", "de", "high", "prompt_injection"),

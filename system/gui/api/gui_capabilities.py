@@ -94,7 +94,13 @@ def declaration(routes, kit, brand, modules, *, public_paths=(), module_sources=
                 for method, _, path in [item.partition(" ")]}
     endpoints = []
     registered = set()
-    for route in routes:
+    flat_routes = []
+    for _r in routes:
+        if hasattr(_r, "effective_route_contexts"):
+            flat_routes.extend(_r.effective_route_contexts())
+        else:
+            flat_routes.append(_r)
+    for route in flat_routes:
         path = getattr(route, "path", "")
         by_prefix = path.startswith(PREFIXES)
         for method in sorted(getattr(route, "methods", ()) or ()):

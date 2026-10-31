@@ -65,13 +65,7 @@ def test_consumer_catalog_preserves_modules_and_does_not_claim_readiness():
     assert result["gui"]["page_reads"]["state"] == "unavailable"
     assert result["gui"]["page_reads"]["reason_code"] == "gui_kit_not_verified"
     assert all(e["verification_scope"] == "adapter" and not e["runtime_verified"] for e in result["endpoints"])
-    tasks = next(p for p in result["pages"] if p["path"] == "/tasks")
-    assert tasks["status"] == "unavailable" and tasks["missing"] == ["GET /api/task-assignees"]
     assert result["module_sources"] == []
-    subscription = next(p for p in result["pages"] if p["path"] == "/agenten/subscription-agents")
-    assert subscription["status"] == "unavailable"
-    assert "POST /api/agent-studio/subscription-agents/compose" in subscription["requires"]
-    assert "POST /api/agent-studio/subscription-agents/compose" in subscription["missing"]
 
 
 

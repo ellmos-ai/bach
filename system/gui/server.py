@@ -1298,7 +1298,21 @@ async def lifespan(app: FastAPI):
 
 
 
-app = FastAPI(
+class _BachFastAPI(FastAPI):
+    @property
+    def routes(self):
+        flat = []
+        for r in self.router.routes:
+            if hasattr(r, "effective_route_contexts"):
+                for ctx in r.effective_route_contexts():
+                    orig = getattr(ctx, "original_route", ctx)
+                    flat.append(orig if getattr(orig, "path", None) == getattr(ctx, "path", None) else ctx)
+            else:
+                flat.append(r)
+        return flat
+
+
+app = _BachFastAPI(
 
     title="BACH Dashboard API",
 
