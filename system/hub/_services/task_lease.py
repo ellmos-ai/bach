@@ -372,7 +372,7 @@ def task_content_version(row: Mapping[str, Any]) -> str:
     content = {
         key: {"__bytes_sha256__": hashlib.sha256(value).hexdigest()} if isinstance(value, bytes) else value
         for key, value in row.items()
-        if not key.startswith("claim_") and key not in volatile and value is not None
+        if not key.startswith("claim_") and key not in volatile and value is not None and not (key == "needs_split" and value == 0)
     }
     return hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False,
                                      separators=(",", ":")).encode("utf-8")).hexdigest()
