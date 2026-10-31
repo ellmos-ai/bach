@@ -21,6 +21,9 @@ BACH live im Einsatz erleben — Dashboard, Codex-Backend, Operator-Steuerung �
 
 [![BACH Demo — lokales LLM-Betriebssystem (2:22)](assets/bach-demo-preview.png)](https://youtu.be/Gv5nxF8HssU)
 
+### Screenshots (folgt)
+Echte Screenshots der BACH-GUI 0.2.29 folgen. Namensschema und Mindestumfang stehen im Bildvertrag: [assets/gui/README.md](assets/gui/README.md).
+
 ## Sprachen
 
 Die README-Dokumentation ist in elf Sprachen verfügbar. Die Übersetzungsabdeckung für die Laufzeit ist davon getrennt und umfasst im aktuellen Release-Snapshot de, en, es, ru, ja und zh.

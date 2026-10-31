@@ -1048,9 +1048,12 @@ class TestLeaseAPI:
         later = datetime.now(timezone.utc) + timedelta(days=2)
         monkeypatch.setattr(task_lease, "_utcnow", lambda: later)
         path = f"/api/tasks/{tid}/lease/reclaim-unresolved"
-        body = {"operator": "claude-code@ASUS-GEI", "fence": fence, "reason": "Neustart mitten im Werkzeuglauf"}
+        body = {"operator": "claude-code@test-device", "fence": fence, "reason": "Neustart mitten im Werkzeuglauf"}
         bad = client.post(path, json={**body, "operator": "worker-" + "b" * 32 + "@mac-studio"})
         assert bad.status_code == 422
+        # Review #562: Der Hostteil des operator muss zur authentifizierten Geräteidentität passen.
+        wrong_host = client.post(path, json={**body, "operator": "claude-code@ASUS-GEI"})
+        assert wrong_host.status_code == 422
         r = client.post(path, json=body)
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "blocked"
@@ -1123,6 +1126,23 @@ class TestReclaimUnresolved:
             denied = acquire_lease(c, tid, worker_id="next@HOST", host="HOST", request_id=_rid(),
                                    config=CFG, now=later)
             assert denied.payload["granted"] is False
+
+    def test_operator_must_match_authenticated_device(self, db_path, monkeypatch):
+        from hub._services.task_lease import LeaseValidationError
+        tid, fence = _stuck_task(db_path, monkeypatch)
+        later = datetime.now(timezone.utc) + timedelta(days=2)
+        with _connect(db_path) as c:
+            before = _get(c, tid)["status"]
+            # Gegenprobe: operator-Host passt nicht zur authentifizierten Geräteidentität.
+            with pytest.raises(LeaseValidationError, match="Geräteidentität"):
+                self._reclaim(c, tid, fence, now=later, device="test-device")
+            assert _get(c, tid)["status"] == before  # Validierung greift vor jeder Änderung
+            ok = self._reclaim(c, tid, fence, now=later, device="test-device",
+                               operator="claude-code@test-device")
+            assert ok.http_status == 200 and ok.payload["reclaimed"] is True
+            detail = json.loads(c.execute("SELECT new_value FROM task_history WHERE task_id=? "
+                                          "AND action='lease_reclaim'", (tid,)).fetchone()[0])
+            assert detail["device"] == "test-device"
 
     def test_denies_live_lease_other_fence_and_resolved_trace(self, db_path, monkeypatch):
         tid, fence = _stuck_task(db_path, monkeypatch)

@@ -21,13 +21,16 @@ from hub._services.document.foerderbericht_pipeline import FoerderberichtPipelin
 
 @pytest.fixture
 def pipe(tmp_path, monkeypatch):
+    for env_key in ("FOERDERBERICHT_SSH_TUNNEL", "FOERDERBERICHT_SSH_KEY", "FOERDERBERICHT_SSH_REMOTE_PORT",
+                    "FOERDERBERICHT_ALLOWED_HOSTS", "FOERDERBERICHT_NUM_CTX", "OLLAMA_HOST"):
+        monkeypatch.delenv(env_key, raising=False)
     monkeypatch.setattr(FoerderberichtPipeline, "_find_onedrive_exe", staticmethod(lambda: None))
     return FoerderberichtPipeline(base_path=tmp_path)
 
 
 def _akte(base):
     d = base / "data_roh" / "Muster, Max"
-    d.mkdir(parents=True)
+    d.mkdir(parents=True, exist_ok=True)
     (d / "Aktendeckblatt.txt").write_text(
         "Name: Max Muster\nGeboren am 15.03.2016\nEltern: Erika Muster, Hans Muster\n"
         "Einzeltherapeutin: Frau Hoffmann\n", encoding="utf-8")
@@ -86,7 +89,8 @@ def test_run_full_pipeline_cloud_still_anonymizes(pipe, monkeypatch):
     pipe.run_full_pipeline()  # Default: cloud
     assert seen["backend"] == "claude_code"
     seg = seen["prompt"][seen["prompt"].index("=== DOKUMENTEN-BUNDLE"):seen["prompt"].index("=== AUFGABE")]
-    assert "Muster" not in seg and "Max" not in seg
+    import re as _re
+    assert "Muster" not in seg and _re.search(r"\bMax\b", seg) is None
 
 
 class _FakeResp(io.BytesIO):
@@ -123,13 +127,17 @@ def test_ollama_posts_to_loopback_without_think_and_with_context(pipe, monkeypat
                                   "http://8.8.8.8:11434", "http://100.128.0.1:11434"])
 def test_ollama_refuses_hosts_that_are_not_own_devices(pipe, monkeypatch, host):
     monkeypatch.setenv("OLLAMA_HOST", host)
-    with pytest.raises(PipelineError, match="Tailscale"):
+    with pytest.raises(PipelineError, match="FOERDERBERICHT_ALLOWED_HOSTS"):
         pipe._call_llm("p", "ollama", "qwen3:4b")
 
 
 @pytest.mark.parametrize("host", ["http://127.0.0.1:11434", "localhost:11434", "http://100.119.69.90:11434",
                                   "http://mac-studio.tail1234.ts.net:11434"])
 def test_ollama_accepts_loopback_and_tailscale_hosts(pipe, monkeypatch, host):
+    monkeypatch.setenv(
+        "FOERDERBERICHT_ALLOWED_HOSTS",
+        "localhost,127.0.0.1,100.119.69.90,mac-studio.tail1234.ts.net",
+    )
     monkeypatch.setenv("OLLAMA_HOST", host)
     calls = []
     _fake_opener(monkeypatch, {"message": {"content": "{}"}, "done_reason": "stop",
@@ -161,7 +169,7 @@ def test_ollama_detects_truncated_context_and_errors(pipe, monkeypatch):
     calls = []
     _fake_opener(monkeypatch, {"message": {"content": "x"}, "done_reason": "stop",
                                "prompt_eval_count": 8000, "eval_count": 400}, calls)
-    with pytest.raises(PipelineError, match="Kontext erschoepft"):
+    with pytest.raises(PipelineError, match="Kontextfenster voll"):
         pipe._call_llm("p", "ollama", "qwen3:4b")
     _fake_opener(monkeypatch, {"error": "model not found"}, calls)
     with pytest.raises(PipelineError, match="model not found"):
@@ -200,6 +208,8 @@ class _FakeProc:
 def tunnel_env(monkeypatch):
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
     monkeypatch.setenv("FOERDERBERICHT_SSH_TUNNEL", "tester@100.64.0.9")
+    monkeypatch.setenv("FOERDERBERICHT_ALLOWED_HOSTS", "100.64.0.9")
+    monkeypatch.setenv("FOERDERBERICHT_ALLOWED_HOSTS", "localhost,127.0.0.1,100.64.0.9")
     monkeypatch.delenv("FOERDERBERICHT_SSH_KEY", raising=False)
     monkeypatch.setattr(fp, "_free_port", lambda: 54321)
     monkeypatch.setattr(fp, "_tunnel_ready", lambda port, proc, timeout_s=45.0: None)
@@ -281,6 +291,7 @@ def test_no_tunnel_when_ollama_host_is_set_or_no_target(pipe, monkeypatch, tunne
 def test_tunnel_start_failure_reports_ssh_error(pipe, monkeypatch):
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
     monkeypatch.setenv("FOERDERBERICHT_SSH_TUNNEL", "tester@100.64.0.9")
+    monkeypatch.setenv("FOERDERBERICHT_ALLOWED_HOSTS", "100.64.0.9")
     monkeypatch.setattr(fp, "_free_port", lambda: 54321)
     monkeypatch.setattr(fp.subprocess, "Popen", lambda cmd, **kw: _FakeProc(exit_code=255, stderr=b"Permission denied"))
     with pytest.raises(PipelineError, match="Permission denied"):
@@ -320,5 +331,112 @@ def test_invalid_tunnel_targets_are_rejected(pipe, monkeypatch, target):
 
 
 @pytest.mark.parametrize("target", ["tester@100.119.69.90", "mac-studio", "u@mac.tail1234.ts.net", "u@127.0.0.1", "u@localhost"])
-def test_valid_tunnel_targets_are_accepted(target):
+def test_valid_tunnel_targets_are_accepted(target, monkeypatch):
+    monkeypatch.setenv(
+        "FOERDERBERICHT_ALLOWED_HOSTS",
+        "localhost,127.0.0.1,100.119.69.90,mac.tail1234.ts.net",
+    )
     assert fp._validate_tunnel_target(target) == target
+
+
+# --- P2-Belege Zweitpruefung PR #553 ---
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "http://100.128.0.1:11434",
+        "http://100.64.0.9:11434",
+        "http://100.119.69.91:11434",
+        "http://other.tail1234.ts.net:11434",
+    ],
+)
+def test_ollama_rejects_unlisted_tailscale_neighbors_when_own_devices_allowed(
+    pipe, monkeypatch, host
+):
+    monkeypatch.setenv(
+        "FOERDERBERICHT_ALLOWED_HOSTS",
+        "localhost,127.0.0.1,100.119.69.90,mac-studio.tail1234.ts.net",
+    )
+    monkeypatch.setenv("OLLAMA_HOST", host)
+    with pytest.raises(PipelineError, match="FOERDERBERICHT_ALLOWED_HOSTS"):
+        pipe._call_llm("p", "ollama", "qwen3:4b")
+
+
+def test_prepare_prompt_accepts_flat_data_roh_without_client_folder(pipe):
+    data_roh = pipe.base_path / "data_roh"
+    data_roh.mkdir(parents=True, exist_ok=True)
+    (data_roh / "Aktendeckblatt.txt").write_text(
+        "Name: Max Muster\n"
+        "Geboren am 15.03.2016\n"
+        "Eltern: Erika Muster, Hans Muster\n"
+        "Einzeltherapeutin: Frau Hoffmann\n",
+        encoding="utf-8",
+    )
+    result = pipe.prepare_prompt(anonymize=False, client_name="Max Muster")
+    assert result.success, result.error
+    prompt = (pipe.base_path / "data_bundled" / "prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "Max Muster" in prompt
+
+
+def test_prepare_prompt_errors_when_data_roh_is_empty(pipe):
+    (pipe.base_path / "data_roh").mkdir(parents=True, exist_ok=True)
+    try:
+        result = pipe.prepare_prompt(anonymize=False)
+    except PipelineError as exc:
+        assert "data_roh enthaelt" in str(exc)
+    else:
+        assert not result.success
+        assert "data_roh enthaelt" in (result.error or "")
+
+
+def test_prepare_prompt_requires_client_name_when_data_roh_is_flat(pipe):
+    data_roh = pipe.base_path / "data_roh"
+    data_roh.mkdir(parents=True, exist_ok=True)
+    (data_roh / "Aktendeckblatt.txt").write_text(
+        "Name: Max Muster\nGeboren am 15.03.2016\n", encoding="utf-8",
+    )
+    result = pipe.prepare_prompt(anonymize=False)
+    assert not result.success
+    assert "Klienten-Ordner" in (result.error or "")
+
+
+def test_ollama_detects_num_predict_truncation(pipe, monkeypatch):
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.delenv("FOERDERBERICHT_SSH_TUNNEL", raising=False)
+    monkeypatch.delenv("FOERDERBERICHT_NUM_CTX", raising=False)
+    calls = []
+    _fake_opener(
+        monkeypatch,
+        {
+            "message": {"content": '{"a": 1}'},
+            "done_reason": "length",
+            "prompt_eval_count": 100,
+            "eval_count": 6000,
+        },
+        calls,
+    )
+    with pytest.raises(PipelineError, match="abgeschnitten"):
+        pipe._call_llm("p", "ollama", "qwen3:4b")
+    assert calls[0][1]["options"]["num_predict"] == 6000
+
+
+def test_ollama_returns_answer_when_done_reason_is_stop(pipe, monkeypatch):
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.delenv("FOERDERBERICHT_SSH_TUNNEL", raising=False)
+    monkeypatch.delenv("FOERDERBERICHT_NUM_CTX", raising=False)
+    calls = []
+    _fake_opener(
+        monkeypatch,
+        {
+            "message": {"content": '{"a": 1}'},
+            "done_reason": "stop",
+            "prompt_eval_count": 100,
+            "eval_count": 50,
+        },
+        calls,
+    )
+    assert pipe._call_llm("p", "ollama", "qwen3:4b") == '{"a": 1}'
+    assert calls[0][1]["options"]["num_predict"] == 6000
