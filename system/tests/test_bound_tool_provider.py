@@ -124,10 +124,23 @@ def test_private_provider_policy_guard_is_checked_before_every_operation(binding
 
 
 @pytest.mark.parametrize("serialized", [False, True])
-def test_real_native_process_accepts_only_actual_cli_completion_ack(binding, serialized):
+def test_real_native_process_accepts_only_actual_cli_completion_ack(mem_db, serialized):
     import asyncio
     import json
+    import threading
+    from system.tests.test_task_lease_client import _insert_task
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from hub._services.chat.chat_runtime import ChatRuntime
+    mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.commit()
+    tid = _insert_task(mem_db)
+    client = TaskLeaseClient(conn=mem_db)
+    binding = WorkerLeaseBinding.acquire(
+        client, tid, worker_id="physical-worker@HOST", host="HOST",
+        generation="generation-1", is_current=lambda: True,
+        stop_event=threading.Event(),
+    )
     calls = []
     class Backend:
         def get_default_model(self): return "isolated-model"
@@ -138,15 +151,25 @@ def test_real_native_process_accepts_only_actual_cli_completion_ack(binding, ser
             tools = [{"function": {"name": "bach_command", "arguments": json.dumps(args) if serialized else args}}]
             return {"content": "", "tool_calls": tools,
                     "raw_message": {"role": "assistant", "content": "", "tool_calls": tools}}
+        def tool_response_message(self, content, tool_call_id=""):
+            return {"role": "tool", "content": content}
     runtime = ChatRuntime(Backend(), bach_app=NoLegacyTaskApp())
     session = runtime.get_session("worker-bound")
     session.worker_task_binding = binding
     session.require_task_binding = True
     answer = asyncio.run(runtime.process("Auftrag", "worker-bound", work_priority="background"))
-    assert str(answer) == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
-    assert not runtime.get_last_task_completion_receipts("worker-bound")
-    assert not binding.completed_task_ids
-    assert binding.reviewed_task_ids == (binding.task_id,)
+    if serialized:
+        assert getattr(answer, "reason_code", None) == "invalid_tool_call"
+        assert "Werkzeugaufruf ungültig: Argumente sind kein JSON-Objekt" in str(answer)
+        assert not runtime.get_last_task_completion_receipts("worker-bound")
+        assert not binding.completed_task_ids
+        assert not binding.reviewed_task_ids
+        assert not binding.closed
+    else:
+        assert str(answer) == f"Task #{binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
+        assert not runtime.get_last_task_completion_receipts("worker-bound")
+        assert not binding.completed_task_ids
+        assert binding.reviewed_task_ids == (binding.task_id,)
     assert len(calls) == 1
 
 

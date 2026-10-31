@@ -188,6 +188,10 @@ def test_bound_worker_can_correct_rejected_mixed_update_in_two_steps(binding):
     assert binding._client.task_result_snapshot(binding.task_id)["result"] is None
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Dauerhafte Modellanfragen benötigen POSIX-Verzeichnissync (slots_config._fsync_directory)",
+)
 def test_last_tool_round_with_zero_requests_preserves_ack_and_skips_ninth(
     tmp_path, monkeypatch,
 ):
