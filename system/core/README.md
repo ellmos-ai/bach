@@ -48,7 +48,7 @@ Folgende Dateien enthalten heute noch Fachlogik im Kern und sind
 
 | Datei (heute in core) | Enthaltene Fachlogik | Ziel-Fachmodul | Folgetask |
 |------------------------|----------------------|----------------|-----------|
-| `capabilities.py` | Zugriffskontrolle / Trust-Level / Capability-System | policy / governance | Folgetask: `capabilities` -> `policy/governance` (module-gate #2445) |
+| `capabilities.py` | **Deprecated-Adapter/Forwarder** – Fachlogik lebt in `system/policy/governance.py` (Ocean policy-registry) | policy / governance | Erledigt in Task #2611 (module-gate #2445) |
 | `agent_runtime.py` | instanziierbare Agenten / Agent-Laufzeitumgebung | agents | Folgetask: `agent_runtime` -> `agents` (module-gate #2445) |
 | `instance_registry.py` | Instanz-Discovery / Registry | coordination / messaging | Folgetask: `instance_registry`+`instance_messaging` -> `coordination/messaging` (module-gate #2445) |
 | `instance_messaging.py` | Instanz-Kommunikation / Messaging | coordination / messaging | Folgetask: `instance_registry`+`instance_messaging` -> `coordination/messaging` (module-gate #2445) |
