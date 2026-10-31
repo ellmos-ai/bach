@@ -367,7 +367,7 @@ def test_prepare_prompt_accepts_flat_data_roh_without_client_folder(pipe):
         "Einzeltherapeutin: Frau Hoffmann\n",
         encoding="utf-8",
     )
-    result = pipe.prepare_prompt(anonymize=False)
+    result = pipe.prepare_prompt(anonymize=False, client_name="Max Muster")
     assert result.success, result.error
     prompt = (pipe.base_path / "data_bundled" / "prompt.txt").read_text(
         encoding="utf-8"
@@ -384,6 +384,17 @@ def test_prepare_prompt_errors_when_data_roh_is_empty(pipe):
     else:
         assert not result.success
         assert "data_roh enthaelt" in (result.error or "")
+
+
+def test_prepare_prompt_requires_client_name_when_data_roh_is_flat(pipe):
+    data_roh = pipe.base_path / "data_roh"
+    data_roh.mkdir(parents=True)
+    (data_roh / "Aktendeckblatt.txt").write_text(
+        "Name: Max Muster\nGeboren am 15.03.2016\n", encoding="utf-8",
+    )
+    result = pipe.prepare_prompt(anonymize=False)
+    assert not result.success
+    assert "Klienten-Ordner" in (result.error or "")
 
 
 def test_ollama_detects_num_predict_truncation(pipe, monkeypatch):
