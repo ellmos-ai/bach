@@ -1178,3 +1178,90 @@ class TestReclaimUnresolved:
                 self._reclaim(c, tid, changes.pop("fence", fence),
                               now=datetime.now(timezone.utc) + timedelta(days=2), **changes)
             assert _get(c, tid)["status"] == "in_progress"
+
+
+class TestBlockResolver:
+    """Nutzerregel 26.10.2026 (#2661): jede Sperre bekommt genau eine offene Auflöse-Task."""
+
+    @staticmethod
+    def _resolvers(c, key):
+        return [dict(row) for row in c.execute(
+            "SELECT * FROM tasks WHERE source = ? ORDER BY id", (f"resolver:{key}",))]
+
+    @staticmethod
+    def _set(c, tid, status, **kwargs):
+        apply_task_field_changes(c, tid, _get(c, tid), {"status": status},
+                                 changed_by="cli-task", allow_reopen=True, **kwargs)
+        c.commit()
+
+    def test_block_creates_one_open_resolver_and_never_a_duplicate(self, conn):
+        tid = _insert(conn, title="Gesperrte Arbeit", assigned_to="OLLAMA", priority="P1")
+        other = _insert(conn)
+        self._set(conn, other, "open")
+        self._set(conn, tid, "blocked", block_reason="bach task block: Test-Sperre")
+        resolver, = self._resolvers(conn, f"task:{tid}")
+        assert (resolver["status"], resolver["assigned_to"], resolver["category"], resolver["priority"]) == (
+            "pending", "CLAUDE", "Wartung", "P1")
+        assert f"#{tid}" in resolver["title"] and "Gesperrte Arbeit" in resolver["description"]
+        assert "bach task block: Test-Sperre" in resolver["description"]
+        assert "Ursprung wieder bearbeitbar oder sauber ersetzt und geschlossen" in resolver["description"]
+        audit = conn.execute("SELECT new_value FROM task_history WHERE task_id=? AND action='resolver_task'",
+                             (tid,)).fetchall()
+        assert [json.loads(row[0]) for row in audit] == [{"resolver_task_id": resolver["id"]}]
+        self._set(conn, tid, "pending")
+        self._set(conn, tid, "blocked")
+        assert len(self._resolvers(conn, f"task:{tid}")) == 1  # the open one covers the new block
+        self._set(conn, resolver["id"], "cancelled")
+        self._set(conn, tid, "pending")
+        self._set(conn, tid, "blocked")
+        assert len(self._resolvers(conn, f"task:{tid}")) == 2
+        assert self._resolvers(conn, f"task:{other}") == []
+
+    def test_reclaim_unresolved_is_the_first_case_with_reason_and_holder(self, db_path, monkeypatch):
+        from hub._services.task_lease import reclaim_unresolved_lease
+        tid, fence = _stuck_task(db_path, monkeypatch)
+        later = datetime.now(timezone.utc) + timedelta(days=2)
+        with _connect(db_path) as c:
+            result = reclaim_unresolved_lease(c, tid, operator="claude-code@ASUS-GEI", fence=fence,
+                                              reason="Neustart mitten im Werkzeuglauf", config=CFG, now=later)
+            assert result.http_status == 200
+            resolver, = self._resolvers(c, f"task:{tid}")
+        assert "reclaim-unresolved" in resolver["description"]
+        assert "Neustart mitten im Werkzeuglauf" in resolver["description"]
+        assert "trace-worker@HOST" in resolver["description"] and f"Fence {fence}" in resolver["description"]
+
+    def test_quarantine_release_blocked_records_its_note(self, conn):
+        tid = _insert(conn)
+        ack = acquire_lease(conn, tid, worker_id="w@HOST", host="HOST", request_id=_rid(),
+                            config=CFG, now=T0).payload
+        result = release_lease(conn, tid, lease_id=ack["lease_id"], fence=ack["fence"], outcome="blocked",
+                               note="backend_error_after_tool_dispatch: Toolwirkungen prüfen",
+                               config=CFG, now=T0 + timedelta(minutes=1))
+        assert result.payload["status"] == "blocked"
+        resolver, = self._resolvers(conn, f"task:{tid}")
+        assert "lease_release: backend_error_after_tool_dispatch" in resolver["description"]
+        assert "w@HOST" in resolver["description"]
+
+    def test_resolver_failure_never_undoes_the_block(self, conn, monkeypatch, caplog):
+        import hub.task_audit as audit
+
+        def broken(*_args, **_kwargs):
+            raise sqlite3.OperationalError("synthetic resolver failure")
+
+        monkeypatch.setattr(audit, "ensure_resolver_task", broken)
+        tid = _insert(conn)
+        self._set(conn, tid, "blocked")
+        assert _get(conn, tid)["status"] == "blocked"
+        assert f"resolver_task_unconfirmed origin=task:{tid} reason=OperationalError" in caplog.text
+        assert "synthetic resolver failure" not in caplog.text
+
+    def test_worker_error_resolver_is_single_and_takes_only_fixed_codes(self, conn):
+        from hub.task_audit import ensure_worker_error_resolver
+        first = ensure_worker_error_resolver(conn, "worker-fdb98a89", "cleanup_error")
+        assert first is not None
+        assert ensure_worker_error_resolver(conn, "worker-fdb98a89", "runtime_error") is None
+        resolver, = self._resolvers(conn, "worker:worker-fdb98a89")
+        assert "cleanup_error" in resolver["title"] and resolver["assigned_to"] == "CLAUDE"
+        for worker_id, code in (("worker-x", "Anbieter sagt: nein"), ("bad id with spaces", "runtime_error")):
+            with pytest.raises(ValueError):
+                ensure_worker_error_resolver(conn, worker_id, code)

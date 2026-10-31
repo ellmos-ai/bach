@@ -2121,7 +2121,8 @@ class TaskHandler(BaseHandler):
 
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
                 apply_task_field_changes(conn, task_id, existing_row, {"status": "blocked"},
-                                          changed_by="cli-task", now=now)
+                                          changed_by="cli-task", now=now,
+                                          block_reason=f"bach task block: {reason or 'ohne Grund'}")
 
                 if reason:
                     conn.execute("""
