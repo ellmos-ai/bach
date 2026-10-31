@@ -194,6 +194,22 @@ def _require_memory_device_token(request: Request) -> str:
     token = header[7:].strip() if header.startswith("Bearer ") else request.cookies.get("bach_device_token", "").strip()
     if not token:
         raise HTTPException(status_code=401, detail="Device token required")
+    if not header.startswith("Bearer "):
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        try:
+            with closing(sqlite3.connect(BACH_DB.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)) as conn:
+                conn.execute("PRAGMA query_only = ON")
+                is_raw_device = conn.execute(
+                    "SELECT 1 FROM devices WHERE token_hash = ? AND status = 'active'",
+                    (token_hash,),
+                ).fetchone()
+                if is_raw_device is None:
+                    from hub._services.chat.control_auth import get_control_api_token
+                    ctrl_token = get_control_api_token()
+                    if ctrl_token:
+                        return ctrl_token
+        except Exception:
+            pass
     return token
 
 
