@@ -33,6 +33,9 @@ def prepared(tmp_path, monkeypatch):
     db.row_factory = sqlite3.Row
     _init_db(db)
     db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    db.execute("""CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL,
+        type TEXT DEFAULT 'string', category TEXT, description TEXT, updated_at TEXT,
+        dist_type INTEGER DEFAULT 2)""")
     db.commit()
     store = SequenceStore(path)
     chain = store.save_chain({"name": "private-grant", "mode": "agents", "steps": [

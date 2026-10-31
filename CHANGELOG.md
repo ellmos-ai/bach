@@ -7,6 +7,7 @@
 - Sequenzschritte behalten ihren Schutz von 600 Sekunden unverändert: für Tasks aus der Sequenzplanung (`created_by == "user"`) greift kein Ersteller-Fenster, es gilt weiterhin der Sequenzschritt.
 - Die Umgebungsvariable `BACH_TASK_LEASE_CREATOR_WINDOW` bleibt als Override erhalten und wird von `LeaseConfig.from_env()` nur bei expliziter Angabe gelesen; ohne Env bleibt `creator_window_seconds` `None`.
 - Verweigerungen im Ersteller-Vorrang werden als `creator_priority` mit HTTP 409 gemeldet; Ersteller selbst, `grant`-Delegationen und `review_authorized` sind ausgenommen.
+- Testabdeckung in `system/tests/test_task_lease_creator_settings.py` erweitert: Fenster über der Obergrenze (86401) wird abgewiesen, das Maximum (86400) ist schreibbar; unbekannte Extrafelder und eine fehlende `configuration_version` führen zu `ValueError`; der Env-Override (`BACH_TASK_LEASE_CREATOR_WINDOW`) aktiviert das Ersteller-Gate auch, wenn die Einstellung auf `aus` steht.
 
 ## [3.15.0] – BACH fließt ins Meer – gemeinsame GUI (2026-10-31)
 
