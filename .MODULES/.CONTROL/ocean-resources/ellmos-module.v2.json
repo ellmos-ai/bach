@@ -1,0 +1,48 @@
+{
+  "schema": "ellmos.module.v2",
+  "id": "ocean-resources",
+  "display_name": "ocean-resources",
+  "version": "0.1.0",
+  "category": "control",
+  "kind": "library",
+  "status": "staging",
+  "visibility": "private",
+  "description": "Optionale On-Demand-RAM-Verbraucher (Colima, n8n) mit Start-bei-Bedarf, Leerlauf-Stopp und Admission-Anrechnung für den RAM-Distributor.",
+  "provides": [
+    "control.ocean-resources.optional-consumers",
+    "control.ocean-resources.on-demand-lifecycle"
+  ],
+  "requires": [],
+  "optional": [],
+  "conflicts": [],
+  "surfaces": [
+    "library",
+    "cli"
+  ],
+  "entrypoints": {
+    "library": "optional_consumers",
+    "cli": "optional_consumers:main"
+  },
+  "state": {
+    "ownership": "module",
+    "location": "user-local"
+  },
+  "boundaries": {
+    "network": "local-loopback-only",
+    "data": "user-local",
+    "platforms": [
+      "macos",
+      "linux",
+      "windows"
+    ]
+  },
+  "source_of_truth": {
+    "type": "git-repository",
+    "path": ".",
+    "repository": "https://github.com/ellmos-ai/bach"
+  },
+  "provenance": {
+    "source": "Ticket T-20261024-740784441 / BACH Task 2330 & 2441",
+    "origin_path": "system/hub/_services/chat/local_resource_reserve.py"
+  }
+}

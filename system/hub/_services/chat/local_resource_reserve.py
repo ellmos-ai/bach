@@ -101,10 +101,35 @@ def _cold_start_gate(policy, requested, resident, host_resources, available, dig
                 "compressor_physical_bytes", "compressor_logical_bytes")}}
 
 
+def _load_optional_consumers_module():
+    import importlib.util
+    import sys
+    name = "ocean_resources_optional_consumers"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    mod_path = Path(__file__).resolve().parents[4] / ".MODULES/.CONTROL/ocean-resources/optional_consumers.py"
+    spec = importlib.util.spec_from_file_location(name, mod_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("optional_consumers module unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def validate_optional_consumers(raw):
+    return _load_optional_consumers_module().validate_optional_consumers(raw)
+
+
+def evaluate_optional_consumers(consumers, *, detector=None):
+    return _load_optional_consumers_module().evaluate_optional_consumers(consumers, detector=detector)
+
+
 def validate_policy(raw):
     fields = {"schema", "enabled", "memory_reserve_bytes", "disk_reserve_bytes",
               "wait_seconds", "poll_seconds", "models"}
-    if (not isinstance(raw, dict) or not fields <= set(raw) <= fields | {"cold_start"}
+    if (not isinstance(raw, dict) or not fields <= set(raw) <= fields | {"cold_start", "optional_consumers"}
             or raw["schema"] != SCHEMA
             or type(raw["enabled"]) is not bool):
         raise ValueError("invalid reserve policy")
@@ -114,6 +139,8 @@ def validate_policy(raw):
     _integer(raw["poll_seconds"], 1, 60)
     if "cold_start" in raw:
         _validate_cold_start(raw["cold_start"], raw["memory_reserve_bytes"])
+    if "optional_consumers" in raw:
+        validate_optional_consumers(raw["optional_consumers"])
     models = raw["models"]
     if not isinstance(models, dict) or len(models) > 32:
         raise ValueError("invalid model budgets")
