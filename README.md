@@ -21,6 +21,10 @@ See BACH working live — dashboard, Codex backend, operator steering — in 2:2
 
 [![BACH demo — local-first LLM operating system (2:22)](assets/bach-demo-preview.png)](https://youtu.be/Gv5nxF8HssU)
 
+### Screenshots (folgt)
+
+Echte Screenshots der BACH-GUI 0.2.29 folgen. Namensschema und Mindestumfang stehen im Bildvertrag: [assets/gui/README.md](assets/gui/README.md).
+
 ## Built with OpenAI Codex & GPT-5.6
 
 BACH uses Codex both as a first-class runtime backend and as a repository-development partner. For the exact automation schedules, model routes, and auditable session IDs, see the [verified Build Week attribution](#openai-build-week--codex-and-gpt-56) below.
