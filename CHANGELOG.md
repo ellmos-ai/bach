@@ -1,5 +1,13 @@
 # BACH Changelog
 
+## Unreleased — Task-Leases: Ersteller-Vorrang konfigurierbar
+
+- Neue Einstellung `task_lease_creator_priority.v1` (Schema `bach.task-lease-creator-priority.v1`) steuert einen befristeten Ersteller-Vorrang auf Task-Leases. Der Vorrang ist standardmäßig **aus**; ist er aktiv, gilt ein Fenster von 120 Sekunden (`DEFAULT_WINDOW_SECONDS`, Obergrenze 86400).
+- Bedienung über den Handler `task-lease` mit den Operationen `task-lease.status` und `task-lease.set` (mit `dry_run`); Schreibvorgänge laufen als CAS über `configuration_version` und verlangen einen `actor`.
+- Sequenzschritte behalten ihren Schutz von 600 Sekunden unverändert: für Tasks aus der Sequenzplanung (`created_by == "user"`) greift kein Ersteller-Fenster, es gilt weiterhin der Sequenzschritt.
+- Die Umgebungsvariable `BACH_TASK_LEASE_CREATOR_WINDOW` bleibt als Override erhalten und wird von `LeaseConfig.from_env()` nur bei expliziter Angabe gelesen; ohne Env bleibt `creator_window_seconds` `None`.
+- Verweigerungen im Ersteller-Vorrang werden als `creator_priority` mit HTTP 409 gemeldet; Ersteller selbst, `grant`-Delegationen und `review_authorized` sind ausgenommen.
+
 ## [3.15.0] – BACH fließt ins Meer – gemeinsame GUI (2026-10-31)
 
 - Gemeinsame Frontendquelle: ellmos-system-gui; BACH behält seine nativen APIs und privaten Daten. GUI-Pin 0.2.29/a42adda6 ist über den Verbraucher-PR angebunden (`pinned_release`, gepinnt am 2026-10-26).
