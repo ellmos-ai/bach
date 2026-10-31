@@ -25,6 +25,14 @@ def test_projection_contains_no_full_text_or_private_location():
         assert not adapter.pointer(entry(), {"rule-1": {"state": state}})["source_verified"]
 
 
+def test_projection_preserves_consumer_metadata_without_source_content():
+    result = adapter.pointer(entry(consumers=["codex-cli", "*", "codex-cli"]),
+                             {"rule-1": {"state": "ok"}})
+    assert result["consumers"] == ["*", "codex-cli"]
+    serialized = json.dumps(result)
+    assert "NEVER_COPY" not in serialized and "/private/location" not in serialized
+
+
 def test_disabled_provider_does_not_import_or_initialize(monkeypatch):
     monkeypatch.delenv("BACH_POLICY_REGISTRY_ENABLED", raising=False)
     monkeypatch.setattr(adapter.metadata, "distribution", lambda *_: pytest.fail("must not import"))
