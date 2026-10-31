@@ -1,5 +1,11 @@
 # BACH Changelog
 
+## [3.15.0-ocean-stack-m1] – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31)
+
+- **Zentrale Ocean-Stack-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):** Verbindet BACH direkt mit den herausgelösten und neuen Ocean-Modulen (`ocean-resources` `RAMDistributor`, `task-master` `TaskLeaseManager`, `open-ocean` `worker_worktree_policy`, `task_result_review_policy`, `escalation_ladder`, `persona_routing`, `learning_loop`, `agent_library`, `capability_views`, `governance_bridge`) und exponiert den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings`.
+- **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach`):** BACH-interne Alt-Implementierungen (`OceanRamDistributor` in `ocean_resources_adapter.py`, `BundledTaskPlanClient` in `taskplan_bridge.py`) sind mit `@deprecated_legacy_bach("<canonical-ocean-module>")` dekoriert (`__bach_deprecated__ = True`, `DeprecationWarning`) und in `DEPRICATED.md` dokumentiert.
+- **Vertragstests (`system/tests/test_ocean_stack_consumption.py`):** 8/8 Tests prüfen alle 10 produktiven Ocean-Seams, Lease-Lifecycle, RAM-Admission, konfigurierbare Review-Regeln, Eskalationsleiter und Deprecation-Signale.
+
 ## Unreleased — Task-Leases: Ersteller-Vorrang konfigurierbar
 
 - Neue Einstellung `task_lease_creator_priority.v1` (Schema `bach.task-lease-creator-priority.v1`) steuert einen befristeten Ersteller-Vorrang auf Task-Leases. Der Vorrang ist standardmäßig **aus**; ist er aktiv, gilt ein Fenster von 120 Sekunden (`DEFAULT_WINDOW_SECONDS`, Obergrenze 86400).

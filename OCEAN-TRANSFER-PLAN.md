@@ -1,6 +1,27 @@
 # Ocean–BACH-Transferplan
 
-Stand: 13. Oktober 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+Stand: 31. Oktober 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+
+## Meilenstein `v3.15.0-ocean-stack-m1` – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31)
+
+Ab Commit `0dab1a8fa1` (Tag `v3.15.0-ocean-stack-m1`) ist das verbindliche Architekturmuster für die schrittweise Umwandlung von BACH in einen gebrandeten Teil-OS-Stack von Ocean produktiv im Code verankert:
+
+1. **Zentrale Ocean-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):**
+   - Lädt die kanonischen Ocean-Module (`ocean-resources`, `task-master/taskplan`, `open-ocean/tools/*`) konfliktfrei neben `bach/system/tools` und stellt den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings` (`stack_role: "branded_partial_os_stack_of_ocean"`) bereit.
+   - Aktuell 10 produktiv angebundene Modul-Seams (Tasks `#1858, #1859, #1860, #1862, #1869, #1896, #1898, #1906, #1914, #1917` auf `done`):
+     1. `ocean_resources`: `ocean_resources.ram_distributor.RAMDistributor` & `WatchdogHysteresisPolicy` (über `ocean_resources_adapter.evaluate_ocean_ram_admission`)
+     2. `taskplan_lease`: `taskplan.lease.TaskLeaseManager` (über `taskplan_bridge.execute_taskplan_lease`)
+     3. `worker_worktree_policy`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag (`open-ocean/tools/worker_worktree_policy.py`)
+     4. `task_result_review_policy`: Konfigurierbare Modell-Review-Regeln & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`)
+     5. `escalation_ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`)
+     6. `persona_routing`: Rollen- und Wartungsmanifest-Prüfung (`open-ocean/tools/persona_routing.py`)
+     7. `learning_loop`: Skill-Gärtner-Kandidatenvertrag (`open-ocean/tools/learning_loop.py`)
+     8. `agent_library`: Einheitliche Agenten-Bibliothek (`open-ocean/tools/agent_library.py`)
+     9. `capability_views`: Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`)
+     10. `governance_bridge`: Governance-Audit, Assignees & Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`)
+2. **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach("<canonical-ocean-module>")`):**
+   - Jede durch ein Ocean-Modul abgelöste BACH-Altklasse oder -Altfunktion wird mit `@deprecated_legacy_bach(...)` dekoriert (`__bach_deprecated__ = True`, `__ocean_replacement__ = "<modul>"`, `DeprecationWarning` beim Aufruf) und in [`DEPRICATED.md`](DEPRICATED.md) registriert.
+   - Die verbleibenden 54 `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`) werden Modul für Modul nach genau diesem 3-Stufen-Verfahren abgearbeitet: **(1) Ocean-Modul über Seam/Adapter anbinden → (2) BACH-Altcode mit `@deprecated_legacy_bach` markieren → (3) Altcode nach Paritätsabnahme entfernen.**
 
 ## Rückmodularisierung: Start und Entwicklungsregel
 

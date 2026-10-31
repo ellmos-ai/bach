@@ -40,6 +40,10 @@ Dieses Dokument definiert die Bauort-Klassen und die Modulgrenzen von BACH:
 
 **Regel:** Jeder PR benötigt mindestens ein `bauort:`-Tag im Titel oder der Beschreibung. PRs ohne Bauort-Tag werden von GitHubBot als HOLD eingestuft.
 
+**BACH als gebrandeter Teil-OS-Stack von Ocean (`v3.15.0-ocean-stack-m1`):**
+- Zentrale Consumer-Brücke: `system/hub/_services/ocean_stack_bridge.py` (`GET /api/ocean/stack-bindings`).
+- Abgelöste BACH-Altimplementierungen werden mit `@deprecated_legacy_bach("<ocean-modul>")` markiert und in `DEPRICATED.md` dokumentiert, bevor sie nach Paritätsabnahme endgültig entfernt werden.
+
 ## Entwicklungs-Workflow (Single Installation Model, ab v3.3.0)
 
 ### Code aendern
