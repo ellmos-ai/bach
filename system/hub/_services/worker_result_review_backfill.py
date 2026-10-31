@@ -14,11 +14,12 @@ from hub._services.worker_result_review import _digest, _json
 _PREFIX_RE = re.compile(r"sha256:[a-f0-9]{64}\Z")
 
 
-def backfill(conn) -> int:
+def backfill(conn, limit=10) -> int:
     """Strippt den Legacy-Prefix aus target_revision, aktualisiert Receipt+Digest.
 
     Gibt die Anzahl der aktualisierten Zeilen zurueck. Committed nicht; die
-    Transaktion liegt beim Aufrufer.
+    Transaktion liegt beim Aufrufer. ``limit`` begrenzt die Zahl der je Lauf
+    aktualisierten Zeilen (Paketgroesse, Vorgabe 10; ``None`` = ohne Grenze).
     """
     cursor = conn.execute(
         "SELECT review_task_id, target_revision, child_result_id, receipt "
@@ -26,6 +27,8 @@ def backfill(conn) -> int:
     )
     count = 0
     for row in cursor.fetchall():
+        if limit is not None and count >= limit:
+            break
         review_task_id = row[0]
         target_revision = row[1]
         child_result_id = row[2]
