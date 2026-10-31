@@ -230,6 +230,20 @@ def ensure_result_schema(conn):
         completion_decision_sha256 TEXT,
         UNIQUE(task_id, fence)
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS task_result_service_producer_bindings (
+        result_id INTEGER PRIMARY KEY,
+        task_id INTEGER NOT NULL,
+        result_sha256 TEXT NOT NULL,
+        generation TEXT NOT NULL,
+        fence INTEGER NOT NULL,
+        task_version TEXT NOT NULL,
+        producer_principal TEXT NOT NULL,
+        issuer_id TEXT NOT NULL,
+        submission_event_id INTEGER,
+        bound_at TEXT NOT NULL,
+        submitted_by TEXT,
+        submitted_at TEXT
+    )""")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(worker_task_results)")}
     for name, declaration in (("submission_receipt_version", "INTEGER NOT NULL DEFAULT 0"),
                               ("completion_policy_version", "INTEGER NOT NULL DEFAULT 0"),
@@ -243,6 +257,11 @@ def ensure_result_schema(conn):
                               ("completion_decision_sha256", "TEXT")):
         if name not in columns:
             conn.execute(f"ALTER TABLE worker_task_results ADD COLUMN {name} {declaration}")
+    binding_columns = {row[1] for row in conn.execute("PRAGMA table_info(task_result_service_producer_bindings)")}
+    for name, declaration in (("submitted_by", "TEXT"),
+                              ("submitted_at", "TEXT")):
+        if name not in binding_columns:
+            conn.execute(f"ALTER TABLE task_result_service_producer_bindings ADD COLUMN {name} {declaration}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_submission_event "
                  "ON worker_task_results(task_id, submission_event_id DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_task_results_task_acceptance_event "
@@ -301,7 +320,7 @@ _RESULT_SERVICE_REQUIRED_COLUMNS = {
                              "credential_verifier", "issuer_id", "principal_id",
                              "generation", "revision", "status", "created_at", "revoked_at"},
     "task_result_service_scopes": {"scope_id", "service_id", "revision", "action", "task_id", "category"},
-    "task_result_service_producer_bindings": {"result_id", "task_id", "result_sha256", "generation", "fence", "task_version", "producer_principal", "issuer_id", "submission_event_id"},
+    "task_result_service_producer_bindings": {"result_id", "task_id", "result_sha256", "generation", "fence", "task_version", "producer_principal", "issuer_id", "submission_event_id", "submitted_by", "submitted_at"},
     "task_result_service_audit": {"service_id", "service_revision", "action", "task_id", "result_id", "result_sha256", "task_version", "status_revision", "decision_schema", "decision_reason", "policy_distribution", "policy_version", "policy_sha256", "event_id", "occurred_at"},
     "task_result_corrections": {"id", "task_id", "request_id", "correction_round", "source_result_id", "source_result_sha256", "source_generation", "source_fence", "source_task_version", "source_status_revision", "correction_note", "requested_by_device_id", "requested_by_service_id", "requested_at", "event_id", "next_task_version"},
 }
@@ -440,7 +459,8 @@ def _result_service_producer_binding(conn, record):
         return None
     row = _dict_row(conn.execute(
         "SELECT result_id,task_id,result_sha256,generation,fence,task_version,"
-        "producer_principal,issuer_id FROM task_result_service_producer_bindings WHERE result_id=?",
+        "producer_principal,issuer_id,submitted_by,submitted_at "
+        "FROM task_result_service_producer_bindings WHERE result_id=?",
         (result_id,)))
     if row is None:
         return None
@@ -450,6 +470,7 @@ def _result_service_producer_binding(conn, record):
         "result_sha256": row["result_sha256"], "generation": row["generation"],
         "fence": row["fence"], "task_version": row["task_version"],
         "producer_principal": row["producer_principal"],
+        "submitted_by": row["submitted_by"], "submitted_at": row["submitted_at"],
     }
 
 
@@ -563,7 +584,8 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
     claim_generation = row.get("claim_result_generation")
     claim_id = row.get("claim_id")
     if ({"result_id", "task_id", "result_sha256", "generation", "fence", "task_version",
-         "producer_principal", "issuer_id", "submission_event_id", "bound_at"} <= binding_columns
+         "producer_principal", "issuer_id", "submission_event_id", "bound_at",
+         "submitted_by", "submitted_at"} <= binding_columns
             and isinstance(claimed_by, str) and claimed_by and worker == claimed_by
             and isinstance(claim_id, str) and claim_id
             and isinstance(claim_generation, str) and claim_generation == generation
@@ -571,9 +593,10 @@ def insert_submission(conn, row, payload, *, worker, now, max_chars=None):
             and row.get("claim_task_version") == version):
         conn.execute("""INSERT INTO task_result_service_producer_bindings
             (result_id,task_id,result_sha256,generation,fence,task_version,producer_principal,
-             issuer_id,submission_event_id,bound_at) VALUES (?,?,?,?,?,?,?,?,NULL,?)""",
+             issuer_id,submission_event_id,bound_at,submitted_by,submitted_at)
+             VALUES (?,?,?,?,?,?,?,?,NULL,?,?,?)""",
             (result_id, row["id"], digest, generation, row["claim_fence"], version,
-             claimed_by, _RESULT_PRODUCER_ISSUER, now))
+             claimed_by, _RESULT_PRODUCER_ISSUER, now, worker, now))
     if completion_asserted:
         from .task_lease import _history, parse_ts
         marker_now = now if isinstance(now, datetime) else parse_ts(now)
