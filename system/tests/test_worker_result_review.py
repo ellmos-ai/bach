@@ -64,7 +64,7 @@ def _request_hash(value):
 
 
 def _review_settings(conn, monkeypatch):
-    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     values = settings._defaults()
     values["policy"]["reviewers"] = [
         {"reviewer_id": AUTHOR, "tier": "standard"},

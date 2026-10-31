@@ -65,6 +65,7 @@ class ModelRequestBudgetError(RuntimeError):
 DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     "buddha_chat": {
         "id": "buddha_chat",
+        "allowed_repositories": [],
         "name": "Buddha Chat",
         "description": "Interaktiver Chat (GUI & WebChat)",
         "backend": "ollama",
@@ -84,6 +85,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     },
     "buddha_always_on": {
         "id": "buddha_always_on",
+        "allowed_repositories": [],
         "name": "Buddha Always-On",
         "description": "Hintergrundworker für offene Aufgaben; lokale Inferenz teilt die Fackel mit dem Vordergrund",
         "enabled": True,
@@ -112,6 +114,7 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
     },
     "buddha_connector": {
         "id": "buddha_connector",
+        "allowed_repositories": [],
         "name": "Buddha Connector",
         "description": "Messaging-Konnektoren (Telegram, WhatsApp, Signal)",
         "backend": "ollama",
@@ -165,8 +168,10 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Du agierst als autonomer Hintergrundworker für das BACH-System.\n"
         "Deine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\n"
         "Arbeite nach dem 4-Stufen-Protokoll: 1. Direkt lösen bei klaren, überschaubaren Aufgaben.\n"
-        "2. Wenn eine Anforderung komplex oder vielschichtig ist: Zerlege sie eigenständig in 3-5 handhabbare Teilaufgaben\n"
-        "(nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder lege konkrete Sub-Tasks an).\n"
+        "2. Bei Teilerfolg (z. B. 50 % erledigt): Lege nur für den noch offenen Rest eine neue Folgetask an\n"
+        "(`task_manage(action='add', title='Rest: ...', description='...')`), begrenze die aktuelle Task per\n"
+        "`task_manage(action='update', task_id=<ID>, description='...')` auf das Geschaffte und schließe sie mit\n"
+        "`submit_result(complete=true)` ab. Bei Blockern/Unmachbarkeit direkt ohne Zerlegung mit `submit_result(complete=false)` zurückgeben.\n"
         "3. Bei Mehrdeutigkeit präzise Auswahlfrage als TO-DECIDE Task einstellen. 4. Bei Modellgrenzen an Claude/Codex übergeben.\n"
         "Lies nur Dateien, die zwingend nötig sind, führe Änderungen präzise aus, teste sorgfältig und schließe mit FERTIG ab."
     ),
@@ -464,7 +469,7 @@ def worker_admission_transaction(path: str | None = None):
                 _admit_model_request_run(config, model_request_run)
             if controller_run is not None:
                 _validated_controller_run(controller_run)
-                worker = _model_request_worker(config, controller_run["worker_id"])
+                worker = _controller_run_worker(config, controller_run["worker_id"])
                 worker[_CONTROLLER_RUN_FIELD] = dict(controller_run)
             config["admission_revision"] = uuid.uuid4().hex
             if model_request_run is None and (controller_run is None or not controller_run["durable"]):
@@ -583,9 +588,18 @@ def is_slot_paused(slot: dict[str, Any]) -> bool:
         return False
 
 
-def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None) -> bool:
-    """Enforce task model and slot binding even when pickup filtering is off."""
+def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None, *, selection_policy=None) -> bool:
+    """A canonical policy makes routing preferences non-exclusive."""
     slot = slot or {}
+    if selection_policy is not None:
+        try:
+            from hub._services.worker_policy_settings import _selection_kernel
+            policy = _selection_kernel().SelectionPolicy(
+                require_assigned_slot=selection_policy['require_assigned_slot'],
+                enforce_model_binding=selection_policy['enforce_model_binding'])
+            return policy.rejection(task,slot) is None
+        except (KeyError,ValueError,TypeError,RuntimeError):
+            return False
     if slot.get("require_assigned_slot") is True and task.get("assigned_slot") != slot.get("id"):
         return False
     for task_key, slot_key in (("required_model", "model"), ("assigned_slot", "id")):
@@ -595,21 +609,21 @@ def task_matches_slot_binding(task: dict[str, Any], slot: dict[str, Any] | None)
     return True
 
 
-def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any]) -> bool:
+def match_task_to_pickup_filter(task: dict[str, Any], slot: dict[str, Any], *, selection_policy=None) -> bool:
     """Return True if *task* satisfies the slot's pickup_filter rules.
 
     A missing or disabled filter rejects every task when checking against a
     slot's pickup_filter, so callers like chat_tray can fall back to standard
     assignee matching.
     """
-    return pickup_filter_rejection(task, slot) is None
+    return pickup_filter_rejection(task, slot, selection_policy=selection_policy) is None
 
 
-def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any]) -> str | None:
+def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any], *, selection_policy=None) -> str | None:
     """Explain the same filter decision used by the selector; grant no authority."""
     if not isinstance(slot, dict):
         return "pickup_filter"
-    if not task_matches_slot_binding(task, slot):
+    if not task_matches_slot_binding(task, slot, selection_policy=selection_policy):
         return "pickup_filter"
     # Slot activation and pickup-filter activation are separate flags.
     pickup_filter = slot.get("pickup_filter") if "pickup_filter" in slot else slot
@@ -841,7 +855,7 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     if MATERIALIZE_OWNED_FIELDS & set(updates):
         raise ValueError("Blueprint-Bindung wird nur beim Materialisieren gesetzt")
-    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs") if key in updates}
+    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs", "allowed_repositories") if key in updates}
     if capability_edits:
         updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
@@ -907,7 +921,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
-    "memory_hook_opt_in", "model_fallbacks", "color_override",
+    "memory_hook_opt_in", "model_fallbacks", "allowed_repositories",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -1076,6 +1090,8 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "backend": slot.get("backend"),
             "model": slot.get("model"),
             "model_fallbacks": model_fallbacks,
+            "allowed_repositories": _validated_worker_repository_allowlist(
+                slot.get("allowed_repositories", defaults.get("allowed_repositories", []))),
             "resolved_model": slot.get("resolved_model") or "",
             "mode": slot.get("mode"),
             "think": slot.get("think"),
@@ -1225,6 +1241,8 @@ def _validated_core_edits(
             value = validate_agent_color(value)
         elif field == "model_fallbacks":
             value = _validated_model_fallbacks(value)
+        elif field == "allowed_repositories":
+            value = _validated_worker_repository_allowlist(value)
         elif field == "skill_refs":
             from hub._services.skill_source_service import load_skill_instructions
             load_skill_instructions(value)
@@ -1785,7 +1803,8 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     allow_tools = worker_data.get("allow_tools", True)
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
-    capability_edits = {key: worker_data[key] for key in ("allowed_tools", "skill_refs") if key in worker_data}
+    capability_edits = {key: worker_data[key] for key in
+                        ("allowed_tools", "skill_refs", "allowed_repositories") if key in worker_data}
     capabilities = _validated_core_edits(capability_edits) if capability_edits else {}
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
@@ -1836,6 +1855,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "memory_hook_opt_in": False,
         "allowed_tools": capabilities.get("allowed_tools"),
         "skill_refs": capabilities.get("skill_refs", []),
+        "allowed_repositories": capabilities.get("allowed_repositories", []),
         "system_prompt": composed_prompt,
         "custom_system_prompt": custom_system_prompt,
         "task_prompt": task_prompt,
@@ -2027,6 +2047,7 @@ WORKER_EDITABLE_FIELDS = frozenset({
     "allowed_tools", "skill_refs", "persistent_opt_in",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
+    "allowed_repositories",
 }) | WORKER_EDITABLE_POLICY_FIELDS
 
 
@@ -2056,11 +2077,28 @@ def _validated_worker_pickup_filter(value: Any) -> dict[str, Any]:
     return projected["pickup_filter"]
 
 
+def _validated_worker_repository_allowlist(value: Any) -> list[str]:
+    """Validate bounded canonical repo IDs; capability does not bind source."""
+    if type(value) is not list or len(value) > 32 or any(type(item) is not str for item in value):
+        raise ValueError("Worker-Repo-Freigaben müssen eine begrenzte Liste sein")
+    from .worker_repo_registry import RepositoryBindingError, canonical_repository_id
+    result = []
+    for item in value:
+        try:
+            canonical = canonical_repository_id(item)
+        except RepositoryBindingError as exc:
+            raise ValueError("Worker-Repo-Freigabe muss eine kanonische Repository-ID sein") from exc
+        if canonical != item or canonical in result:
+            raise ValueError("Worker-Repo-Freigabe muss kanonisch und duplikatfrei sein")
+        result.append(canonical)
+    return result
+
+
 def _worker_profile_version(worker: dict[str, Any]) -> str:
     from .worker_queue_status import worker_selection_policy
     configuration = {
         field: worker.get(field, False if field == "memory_hook_opt_in" else
-                          [] if field == "model_fallbacks" else None)
+                          [] if field in {"model_fallbacks", "allowed_repositories"} else None)
         for field in sorted(WORKER_EDITABLE_FIELDS)
     }
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
@@ -2084,6 +2122,14 @@ def _model_request_worker(config: dict[str, Any], worker_id: str) -> dict[str, A
     if len(matches) != 1:
         raise RuntimeError("budget_worker_not_unique")
     return matches[0]
+
+
+def _controller_run_worker(config: dict[str, Any], worker_id: str) -> dict[str, Any]:
+    """Resolve the sole core Always-On or dynamic controller record owner."""
+    if worker_id == "buddha_always_on":
+        _always_on_execution_slot_from_config(config)
+        return config["slots"][worker_id]
+    return _model_request_worker(config, worker_id)
 
 
 def _validated_model_request_record(record: Any) -> dict[str, Any]:
@@ -2312,7 +2358,7 @@ def _worker_configuration(worker: dict[str, Any]) -> dict[str, Any]:
     )
     configuration = {
         field: worker.get(field, False if field == "memory_hook_opt_in" else
-                          [] if field == "model_fallbacks" else None)
+                          [] if field in {"model_fallbacks", "allowed_repositories"} else None)
         for field in sorted(scalar_configuration_fields)
     }
     configuration["model_fallbacks"] = _validated_model_fallback_profile(worker)
@@ -2386,9 +2432,14 @@ def _persistent_core_capacity_observation(
     receipt: Any, *, worker: dict[str, Any], expected_state: str,
 ) -> dict[str, str] | None:
     """Validate a fresh local-reserve probe receipt under the current policy."""
-    from hub._services.chat import local_resource_reserve
-
-    if not local_resource_reserve.valid_capacity_receipt_shape(receipt):
+    fields = {
+        "schema", "state", "admitted", "enforced", "retryable", "checked_at",
+        "policy_version", "model", "wait_seconds", "poll_seconds",
+        "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
+        "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
+        "resident_weight_credit", "capacity_basis",
+    }
+    if not isinstance(receipt, dict) or set(receipt) != fields:
         return None
     if (receipt.get("schema") != "bach.local-resource-reserve.v1"
             or receipt.get("state") != expected_state
@@ -3279,6 +3330,8 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
     for field, value in edits.items():
         if field == "pickup_filter":
             edits[field] = _validated_worker_pickup_filter(value)
+        if field == "allowed_repositories":
+            edits[field] = _validated_worker_repository_allowlist(value)
         if field == "persistent_opt_in":
             continue
         if field in {"allowed_tools", "skill_refs", "avatar", "symbol"}:

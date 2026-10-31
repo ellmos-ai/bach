@@ -422,7 +422,12 @@ def test_subscription_shell_is_static_public_and_has_no_legacy_fallback(mounted_
     target.unlink()
     outside = dist.parent / "foreign.html"
     outside.write_text("must-not-render", encoding="utf-8")
-    target.symlink_to(outside)
+    try:
+        target.symlink_to(outside)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege unavailable")
+        raise
     denied = client.get(page)
     assert denied.status_code == 503 and "must-not-render" not in denied.text
 

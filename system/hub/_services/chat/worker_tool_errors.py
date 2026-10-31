@@ -49,6 +49,7 @@ _POLICY_REASONS = {
     "task_binding_required": frozenset({"not_started"}),
     "worker_context_denied": frozenset({"not_applied"}),
     "write_grant_denied": frozenset({"not_applied"}),
+    "bound_check_denied": frozenset({"not_applied"}),
     "mode_not_authorized": frozenset({"not_applied"}),
     "mode_unavailable": frozenset({"not_applied"}),
     "provider_unavailable": frozenset({"not_applied"}),

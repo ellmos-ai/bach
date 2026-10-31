@@ -346,6 +346,12 @@ def _project_configuration(result: dict[str, Any], worker_id: str) -> dict[str, 
                 projected[key] = _validated_model_fallbacks(value)
             except ValueError as exc:
                 raise WorkerStatusUnavailable("Worker-Modellfallbacks sind ungültig") from exc
+        elif key == "allowed_repositories":
+            try:
+                from hub._services.chat.slots_config import _validated_worker_repository_allowlist
+                projected[key] = _validated_worker_repository_allowlist(value)
+            except (ImportError, ValueError) as exc:
+                raise WorkerStatusUnavailable("Worker-Repo-Freigaben sind ungültig") from exc
         elif key in {"avatar", "symbol", "allowed_tools"}:
             try:
                 projected[key] = _validated_core_edits({key: value})[key]

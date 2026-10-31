@@ -31,17 +31,17 @@ _cached_admission: dict[str, str | None] = {}
 
 _SAFE_MESSAGES = {
     "catalog_timeout": "OpenRouter-Katalog: Zeitlimit beim Abruf.",
-    "catalog_transport_error": "OpenRouter-Katalog: Verbindung nicht verfügbar.",
-    "catalog_http_transient": "OpenRouter-Katalog: Dienst vorübergehend nicht verfügbar.",
+    "catalog_transport_error": "OpenRouter-Katalog: Verbindung nicht verfÃ¼gbar.",
+    "catalog_http_transient": "OpenRouter-Katalog: Dienst vorÃ¼bergehend nicht verfÃ¼gbar.",
     "catalog_http_error": "OpenRouter-Katalog: Anfrage abgelehnt.",
     "catalog_auth_rejected": "OpenRouter-Katalog: Authentifizierung abgelehnt.",
-    "catalog_invalid_schema": "OpenRouter-Katalog: Antwortformat ungültig.",
-    "model_not_listed": "OpenRouter-Modell ist im bestätigten Katalog nicht aufgeführt.",
-    "model_price_missing": "OpenRouter-Katalog enthält keinen vollständigen Preisnachweis.",
-    "model_price_invalid": "OpenRouter-Katalog enthält einen ungültigen Preisnachweis.",
+    "catalog_invalid_schema": "OpenRouter-Katalog: Antwortformat ungÃ¼ltig.",
+    "model_not_listed": "OpenRouter-Modell ist im bestÃ¤tigten Katalog nicht aufgefÃ¼hrt.",
+    "model_price_missing": "OpenRouter-Katalog enthÃ¤lt keinen vollstÃ¤ndigen Preisnachweis.",
+    "model_price_invalid": "OpenRouter-Katalog enthÃ¤lt einen ungÃ¼ltigen Preisnachweis.",
     "model_price_nonzero": "OpenRouter-Katalog weist mindestens einen nicht kostenlosen Preis aus.",
-    "model_not_free_variant": "OpenRouter-Modell ist keine ausdrücklich ausgewiesene :free-Variante.",
-    "model_ambiguous": "OpenRouter-Katalog enthält mehrere Einträge für dieses Modell.",
+    "model_not_free_variant": "OpenRouter-Modell ist keine ausdrÃ¼cklich ausgewiesene :free-Variante.",
+    "model_ambiguous": "OpenRouter-Katalog enthÃ¤lt mehrere EintrÃ¤ge fÃ¼r dieses Modell.",
 }
 
 
@@ -86,22 +86,41 @@ def _read_key_from_env_file(path: Path) -> str:
     return ""
 
 
-def _read_openrouter_credential() -> tuple[str, str]:
+def _read_legacy_openrouter_key() -> str:
+    key_file = Path.home() / ".credentials" / "openrouter_api_key"
+    try:
+        return key_file.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _read_openrouter_credential(*, prefer_legacy: bool = False) -> tuple[str, str]:
     configured = str(os.environ.get("OPENROUTER_API_KEY") or "").strip()
     if configured:
         return configured, "environment"
 
-    configured = _read_key_from_env_file(_credentials_env_path())
-    if configured:
-        return configured, "credentials_dir"
+    readers = [
+        (lambda: _read_key_from_env_file(_credentials_env_path()), "credentials_dir"),
+        (_read_legacy_openrouter_key, "legacy_credentials_file"),
+    ]
+    if prefer_legacy:
+        readers.reverse()
+    for read, source in readers:
+        configured = read()
+        if configured:
+            return configured, source
+    return "", "none"
 
-    # Keep the old per-user file as a migration fallback for existing installs.
-    key_file = Path.home() / ".credentials" / "openrouter_api_key"
-    try:
-        configured = key_file.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
-        configured = ""
-    return configured, "legacy_credentials_file" if configured else "none"
+
+def read_openrouter_api_key_with_ref(*, prefer_legacy: bool = False) -> tuple[str, str | None]:
+    """Return the selected owner key and its non-secret source reference."""
+    key, source = _read_openrouter_credential(prefer_legacy=prefer_legacy)
+    refs = {
+        "environment": "env:OPENROUTER_API_KEY",
+        "credentials_dir": "credentials_dir:openrouter.env:OPENROUTER_API_KEY",
+        "legacy_credentials_file": "file:openrouter_api_key",
+    }
+    return key, refs.get(source)
 
 
 def read_openrouter_api_key() -> str:

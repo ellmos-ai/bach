@@ -44,7 +44,7 @@ except ImportError:
         return Mode(str(getattr(v, "value", v)).strip().lower())
 
 from hub import safe_exec
-from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError
+from hub._services.chat.worker_lease_binding import WorkerResultLimitLockedError, WorkerSubmissionScopeError
 from hub._services.chat.worker_tool_errors import ToolErrorText
 from hub._services.chat.worker_lease_binding import (
     WorkerLeaseBinding,
@@ -665,6 +665,8 @@ def check_safe_shell_args(tokens: list) -> Optional[str]:
     return None
 
 CMD_TIMEOUT = limit("BACH_CMD_TIMEOUT")
+SEARCH_TIMEOUT = limit("BACH_SEARCH_TIMEOUT", 15)
+SEARCH_MAX_BYTES = limit("BACH_SEARCH_MAX_BYTES", 8_388_608)
 
 
 def is_blocked(cmd: str) -> bool:
@@ -1230,9 +1232,17 @@ def tools_for_mode(mode: str, *, bound_worker: bool = False) -> list:
     if bound_worker:
         # Native tasks may use their selected provider, never the legacy
         # paid delegation fallback or destructive post-merge cleanup.
-        return [tool for tool in tools if tool["function"]["name"] not in {
+        bound_tools = [copy.deepcopy(tool) for tool in tools if tool["function"]["name"] not in {
             "delegate", "cleanup_task_worktree",
         }]
+        for tool in bound_tools:
+            function = tool["function"]
+            if function["name"] == "execute_command":
+                function["description"] = "Taskgebundene Prüfungen ausführen: python -m pytest, unittest oder compileall; keine Shellverkettung und keine Git-Schreibbefehle."
+                function["parameters"]["properties"]["command"]["description"] = "Ein einzelner Prüfbefehl, zum Beispiel python -m pytest -q -- system/tests/test_datei.py."
+                function["parameters"]["properties"]["cwd"]["description"] = "Bestätigter Task-Arbeitsbaum aus start_task_worktree; erforderlich."
+                function["parameters"]["required"] = ["command", "cwd"]
+        return bound_tools
     return tools
 
 
@@ -1346,6 +1356,37 @@ def _tool_effect_unconfirmed() -> ToolErrorText:
         "Werkzeugausführung nicht bestätigt; Wirkung unbekannt.",
         code="bach_tool_effect_unconfirmed",
     )
+
+
+def _bound_check_text(result, timeout):
+    """Keep the legacy display; expose an exit only from confirmed clean owner data."""
+    from core.sandbox import SandboxResult
+    from hub._services.chat.worker_tool_trace import DiagnosticToolText
+    if type(result) is not SandboxResult:
+        return _tool_effect_unconfirmed()
+    output = result.stdout or ""
+    if result.stderr:
+        output += "\n[stderr] " + result.stderr
+    timeout = min(max(int(timeout), 1), 120)
+    if result.timed_out:
+        status = f"Prüfung fehlgeschlagen; Timeout nach {timeout}s; Exitcode {result.returncode}"
+    elif result.memory_exceeded:
+        status = f"Prüfung fehlgeschlagen; Speichergrenze; Exitcode {result.returncode}"
+    elif result.returncode == 0:
+        status = f"Prüfung erfolgreich; Exitcode {result.returncode}"
+    else:
+        status = f"Prüfung fehlgeschlagen; Exitcode {result.returncode}"
+    text = (status + "\n" + (output or "(keine Ausgabe)"))[:4000]
+    clean = (type(result.returncode) is int and -(2 ** 31) <= result.returncode < 2 ** 32
+             and result.timed_out is False and result.memory_exceeded is False
+             and result.cleanup_confirmed is True and result.watchdog_joined is True
+             and result.cleanup_scope == "owned_posix_process_group"
+             and type(result.cleanup_errors) is tuple and result.cleanup_errors == ())
+    if not clean:
+        return text
+    return DiagnosticToolText(text, {"outcome_class": "sandbox_terminal",
+        "stage": "sandbox_execution", "code": "sandbox_exit",
+        "sandbox_returncode": result.returncode})
 
 
 def exec_tool(name: str, args: Any, mode: str, bach_app=None,
@@ -1626,11 +1667,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     resolved.glob("*") if resolved.is_dir() else [resolved]
                 )
             hits = []
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + SEARCH_TIMEOUT
             bytes_read = 0
+            truncated = False
             for n, f in enumerate(files):
                 if time.monotonic() >= deadline:
-                    return _tool_effect_unconfirmed()
+                    truncated = True
+                    break
                 if n >= 5000:
                     break
                 fr = f if task_scope is not None else _resolve(f)
@@ -1656,18 +1699,30 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         while line := fh.readline(65536):
                             i += 1
                             bytes_read += len(line.encode("utf-8"))
+                            if bytes_read > SEARCH_MAX_BYTES:
+                                truncated = True
+                                break
                             remaining = deadline - time.monotonic()
-                            if bytes_read > 8_388_608 or remaining <= 0:
-                                return _tool_effect_unconfirmed()
+                            if remaining <= 0:
+                                truncated = True
+                                break
                             if rx.search(line, timeout=min(.05, remaining), concurrent=True):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")
                                 if len(hits) >= 200:
                                     break
+                        if truncated:
+                            break
                 except TimeoutError:
-                    return _tool_effect_unconfirmed()
+                    continue
                 except OSError:
                     continue
-            return ("\n".join(hits) or "(keine Treffer)")[:4000]
+            result = "\n".join(hits) or "(keine Treffer)"
+            if truncated:
+                result += (
+                    f"\n… Teilabbruch nach {SEARCH_TIMEOUT}s bzw. "
+                    f"{SEARCH_MAX_BYTES} Bytes – bisherige Treffer sind gültig."
+                )
+            return result[:4000]
 
         if name == "system_status":
             values = [
@@ -1770,9 +1825,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if is_blocked(cmd):
                 return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             if worker_task_binding is not None:
-                from hub._services.chat.worker_write_guard import run_bound_check
+                from hub._services.chat.worker_write_guard import (
+                    run_bound_check, WorkerCheckPolicyRejected, WorkerWriteGuardError,
+                )
                 try:
-                    return run_bound_check(worker_task_binding, cmd, args.get("cwd"), t)
+                    result = run_bound_check(worker_task_binding, cmd, args.get("cwd"), t, return_result=True)
+                    return _bound_check_text(result, t)
+                except WorkerCheckPolicyRejected as exc:
+                    return _tool_policy_denial(exc.policy_reason, str(exc))
+                except WorkerWriteGuardError as e:
+                    # run_bound_check ist fail-closed: jede Exception entsteht VOR
+                    # sandbox.run_isolated(...) — der Prozess wurde nie gestartet.
+                    # Also keine unbekannte Wirkung, sondern eine saubere Ablehnung.
+                    return _tool_policy_denial("bound_check_denied", f"BLOCKIERT: {e}")
                 except Exception as e:
                     return _tool_effect_unconfirmed()
             from hub.worker_git import is_live_path_blocked
@@ -1965,6 +2030,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         # Optional evidence must never hide a confirmed ACK.
                         pass
                     return response
+                except WorkerSubmissionScopeError as exc:
+                    _log_bound_task_manage_denial("submission_scope", worker_task_binding, args, exc)
+                    return ToolErrorText(exc.user_message, code="task_preflight_unavailable")
                 except WorkerResultLimitLockedError as exc:
                     _log_bound_task_manage_denial("dispatch", worker_task_binding, args, exc)
                     # This bounded policy denial is safe to explain and leaves the lease active.

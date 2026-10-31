@@ -34,7 +34,7 @@ log = logging.getLogger("bach.task_audit")
 
 # Nutzerregel 26.10.2026 (#2661): Jede Sperre bekommt genau eine offene
 # Auflöse-Task, damit niemand sie per Hand aus der Quarantäne holen muss.
-RESOLVER_ASSIGNEE = "CLAUDE"
+# Die Zuweisung ist die Systemeinstellung task_resolver_settings (Standard BACH).
 RESOLVER_CATEGORY = "Wartung"
 RESOLVER_CRITERION = ("Abnahmekriterium: Ursprung wieder bearbeitbar oder sauber ersetzt "
                       "und geschlossen.")
@@ -54,9 +54,10 @@ def ensure_resolver_task(conn: sqlite3.Connection, key: str, *, title: str, evid
             "SELECT 1 FROM tasks WHERE source = ? AND status NOT IN ('done', 'completed', 'cancelled')",
             (source,)).fetchone():
         return None
+    from hub._services.task_resolver_settings import stored_assignee
     values = {"title": title[:200], "description": f"{evidence}\n\n{RESOLVER_CRITERION}",
               "priority": priority or "P2", "category": RESOLVER_CATEGORY,
-              "assigned_to": RESOLVER_ASSIGNEE, "created_by": "auto-resolver", "source": source,
+              "assigned_to": stored_assignee(conn), "created_by": "auto-resolver", "source": source,
               "status": "pending", "created_at": now, "updated_at": now}
     values = {name: value for name, value in values.items() if name in columns}
     cursor = conn.execute(
@@ -130,7 +131,7 @@ IN_PROGRESS_STATUSES = frozenset({"in_progress"})
 # Schluessel aus freierem Input gebildet wird. Deshalb Allowlist statt Vertrauen.
 ALLOWED_COLUMNS = frozenset({
     "title", "description", "priority", "status", "category",
-    "assigned_to", "delegated_to", "created_by", "depends_on", "required_model", "assigned_slot",
+    "assigned_to", "created_by", "depends_on", "required_model", "assigned_slot",
     "due_date", "result_max_chars", "tags", "needs_split",
     "completion_contract_json", "require_user_review",
     "github_pr_review_required", "github_review_contract_json",

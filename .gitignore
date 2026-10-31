@@ -260,7 +260,7 @@ AUFGABEN.txt
 /TEST.txt
 TESTERGEBNISSE.txt
 PRIVAT.txt
-# PUBLIC.txt and PRIVATE.txt are versioned publication gates, not private notes.
+PRIVATE.txt
 desktop.ini
 npm_recovery_codes.txt
 token.json

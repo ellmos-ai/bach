@@ -5,6 +5,7 @@ import asyncio
 from fastapi import APIRouter, Body, HTTPException, Request, Query
 
 from hub._services import task_lease_settings as lease_settings
+from hub._services import task_resolver_settings as resolver_settings
 from hub._services import worker_policy_settings as service
 from hub._services import worker_review_identity as identities
 from .worker_external_results import router as external_results_router
@@ -95,6 +96,18 @@ async def get_task_lease_settings(request: Request):
 async def put_task_lease_settings(request: Request, payload: dict = Body(...)):
     actor = _actor(request)
     return await _call(lease_settings.write_setting, payload, actor=actor)
+
+
+@router.get("/system/task-resolver-settings")
+async def get_task_resolver_settings(request: Request):
+    _actor(request)
+    return await _call(resolver_settings.read_setting)
+
+
+@router.put("/system/task-resolver-settings")
+async def put_task_resolver_settings(request: Request, payload: dict = Body(...)):
+    actor = _actor(request)
+    return await _call(resolver_settings.write_setting, payload, actor=actor)
 
 
 @router.get("/tasks/{task_id}/worker-policy")

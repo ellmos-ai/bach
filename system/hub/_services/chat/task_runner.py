@@ -67,9 +67,9 @@ def offene_tasks(
 
         if project == "all":
             rows = con.execute(
-                f"SELECT {cols_str} FROM tasks "
+                "SELECT * FROM tasks "
                 "WHERE status NOT IN ('done','cancelled','completed','in_progress','blocked') "
-                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
+                "ORDER BY CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
                 "WHEN 'P3' THEN 3 ELSE 4 END, id"
             ).fetchall()
             erledigt = {
@@ -79,10 +79,10 @@ def offene_tasks(
             }
         else:
             rows = con.execute(
-                f"SELECT {cols_str} FROM tasks "
+                "SELECT * FROM tasks "
                 "WHERE (project = ? OR category = ?) "
                 "AND status NOT IN ('done','cancelled','completed','in_progress','blocked') "
-                "ORDER BY CASE priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
+                "ORDER BY CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 "
                 "WHEN 'P3' THEN 3 ELSE 4 END, id",
                 (project, project),
             ).fetchall()
@@ -102,7 +102,17 @@ def offene_tasks(
     # Modell auf etwas auf, das es noch gar nicht gibt.
     bereit = []
     for t in tasks:
-        if not task_matches_slot_binding(t, effective_slot):
+        from hub._services.worker_policy_settings import read_task_policy, _selection_kernel
+        from hub._services.task_lease import task_content_version
+        try:
+            stored = read_task_policy(t['id'],db_path=db)
+            if stored['task_version'] != task_content_version(t):
+                continue
+            policy = _selection_kernel().SelectionPolicy.merge(stored['effective'],profile={
+                key:effective_slot.get(key,False) for key in ('require_assigned_slot','enforce_model_binding')}).snapshot()
+        except (KeyError,ValueError,TypeError,RuntimeError):
+            continue
+        if not task_matches_slot_binding(t, effective_slot,selection_policy=policy):
             continue
         if effective_slot:
             p_filter = (
@@ -111,19 +121,19 @@ def offene_tasks(
                 else effective_slot
             )
             if isinstance(p_filter, dict) and p_filter.get("enabled"):
-                if not match_task_to_pickup_filter(t, effective_slot):
+                if not match_task_to_pickup_filter(t, effective_slot,selection_policy=policy):
                     continue
 
         dep = (t.get("depends_on") or "").strip()
         if not dep:
-            bereit.append(t)
+            bereit.append({key:t[key] for key in cols if key in t})
             continue
         dep_ids, invalid = parse_task_dependency_ids(dep)
         if invalid:
             continue
         ids = set(dep_ids)
         if ids <= erledigt:
-            bereit.append(t)
+            bereit.append({key:t[key] for key in cols if key in t})
     return bereit
 
 

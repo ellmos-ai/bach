@@ -27,6 +27,27 @@ def binding(tmp_path, monkeypatch):
     from hub._services import task_lease_client
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
+    home = tmp_path / "home"
+    local_bach = home / ".bach"
+    local_bach.mkdir(parents=True, exist_ok=True)
+    local_bach.chmod(0o700)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("BACH_LOCAL_DIR", str(local_bach))
+    reg_file = local_bach / "worker_repo_registry.v1.json"
+    reg_file.write_text(json.dumps({
+        "schema": "bach.worker-repo-registry.v1",
+        "repositories": {
+            "ellmos-ai/bach": {
+                "origin": "https://github.com/ellmos-ai/bach",
+                "default_branch": "main",
+                "visibility": "public",
+            }
+        },
+        "tasks": {},
+    }), encoding="utf-8")
+    reg_file.chmod(0o600)
+
     database = tmp_path / "canonical.db"
     _create_db(database)
     conn = _connect(database)
@@ -584,7 +605,7 @@ def test_different_subtask_title_creates_a_new_sibling(binding, tmp_path):
     assert _tasks_titled(tmp_path, "Kind D") == _tasks_titled(tmp_path, "Kind E") == 1
 
 
-@pytest.mark.parametrize("status", ["done", "cancelled", "blocked"])
+@pytest.mark.parametrize("status", ["done", "cancelled"])
 def test_closed_sibling_is_not_reused(binding, tmp_path, status):
     first, _ = _add(binding, "Kind F")
     with closing(sqlite3.connect(tmp_path / "canonical.db")) as conn:

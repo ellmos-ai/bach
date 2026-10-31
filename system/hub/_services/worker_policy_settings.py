@@ -25,6 +25,8 @@ POLICY_KEYS = {"policy_version", "default_mode", "reviewers", "allow_review_task
 OVERRIDE_KEYS = {"mode", "require_user_review", "github_external_review", "allow_review_task_pickup"}
 SELECTION_KEYS = {"resume_bound_task_first", "decompose_when_idle", "normal_task_order"}
 INDEPENDENCE_KEY = "worker_review_independence.v1"
+WORKER_SELECTION_KEYS = {"require_assigned_slot", "enforce_model_binding"}
+WORKER_OVERRIDE_KEYS = WORKER_SELECTION_KEYS
 
 
 class PolicyUnavailable(RuntimeError):
@@ -98,12 +100,19 @@ def validate_policy(value):
 
 
 def validate_override(value):
-    _object(value, OVERRIDE_KEYS)
+    # The original four fields remain required; the two selection overrides
+    # are additive and may be omitted by existing v1 clients.
+    if (not isinstance(value, dict) or not OVERRIDE_KEYS <= set(value)
+            or set(value) - OVERRIDE_KEYS - WORKER_OVERRIDE_KEYS):
+        raise ValueError("Unvollständige oder unbekannte Policyfelder")
     kernel = _kernel()
     mode = value["mode"]
     _boolean(value["require_user_review"])
     for name in ("github_external_review", "allow_review_task_pickup"):
         if value[name] is not None:
+            _boolean(value[name])
+    for name in WORKER_OVERRIDE_KEYS:
+        if value.get(name) is not None:
             _boolean(value[name])
     return kernel.TaskPolicyOverride(
         mode=None if mode is None else kernel.CompletionMode(mode),
@@ -122,6 +131,20 @@ def _selection(value):
     return value
 
 
+
+def _selection_kernel():
+    try:
+        module = importlib.import_module('taskplan.worker_selection')
+    except ImportError as exc:
+        raise PolicyUnavailable('Gemeinsamer Auswahlvertrag fehlt') from exc
+    if getattr(module,'CONTRACT_VERSION',None) != 'worker-selection.v1':
+        raise PolicyUnavailable('Gemeinsamer Auswahlvertrag hat eine unbekannte Version')
+    return module
+
+def _worker_selection(value):
+    _object(value, WORKER_SELECTION_KEYS)
+    return _selection_kernel().SelectionPolicy(**value).snapshot()
+
 def _defaults():
     # Preserve the current review-first deployment until result integration is
     # explicitly enabled. No reviewer identity is inferred from a model name.
@@ -129,12 +152,14 @@ def _defaults():
         "reviewers": [], "allow_review_task_pickup": False,
         "review_expiry_seconds": None, "github_external_review": True},
         "selection": {"resume_bound_task_first": True, "decompose_when_idle": True,
-                      "normal_task_order": "priority_then_created"}}
+                      "normal_task_order": "priority_then_created"},
+        "worker_selection": _selection_kernel().SelectionPolicy().snapshot()}
 
 
 def _default_override():
     return {"mode": None, "require_user_review": False,
-            "github_external_review": None, "allow_review_task_pickup": None}
+            "github_external_review": None, "allow_review_task_pickup": None,
+            "require_assigned_slot": None, "enforce_model_binding": None}
 
 
 @contextmanager
@@ -203,15 +228,21 @@ def _global(conn):
     stored = _stored(conn, GLOBAL_KEY)
     values = stored["values"] if stored["values"] is not None else _defaults()
     try:
-        _object(values, {"policy", "selection"})
-        validate_policy(values["policy"])
-        _selection(values["selection"])
+        unknown = set(values) - {"policy", "selection", "worker_selection"}
+        if unknown:
+            raise ValueError("Unvollständige oder unbekannte Policyfelder")
+        # Older revisions lack worker_selection; fill from defaults on read.
+        merged = {**_defaults(), **values}
+        _object(merged, {"policy", "selection", "worker_selection"})
+        validate_policy(merged["policy"])
+        _selection(merged["selection"])
+        _worker_selection(merged["worker_selection"])
     except (ValueError, TypeError) as exc:
         raise PolicyUnavailable("Gespeicherte globale Worker-Regeln sind ungültig") from exc
     return {"schema": GLOBAL_SCHEMA, "availability": "available", "contract_version": CONTRACT,
         "configuration_version": _digest(stored),
         "policy_source": "system_default" if stored["values"] is None else "user_override",
-        **values}
+        **merged}
 
 
 def read_global_policy(db_path=None):
@@ -239,13 +270,18 @@ def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
     if not isinstance(payload, dict):
         raise ValueError("Policyobjekt erforderlich")
     reset = payload.get("reset_to_default") is True
-    _object(payload, {"configuration_version", "reset_to_default"} if reset
-            else {"configuration_version", "policy", "selection"})
     if reset:
+        _object(payload, {"configuration_version", "reset_to_default"})
         _boolean(payload["reset_to_default"])
-    if not reset:
+    else:
+        # worker_selection is optional so older clients keep working.
+        required = {"configuration_version", "policy", "selection"}
+        if not required <= set(payload) or set(payload) - required - {"worker_selection"}:
+            raise ValueError("Unvollständige oder unbekannte Policyfelder")
         validate_policy(payload["policy"])
         _selection(payload["selection"])
+        if "worker_selection" in payload:
+            _worker_selection(payload["worker_selection"])
     with _connection(db_path, write=True) as conn:
         before = _global(conn)
         if payload["configuration_version"] != before["configuration_version"]:
@@ -256,7 +292,11 @@ def write_global_policy(payload, *, actor, operator_token=None, db_path=None):
             # principals or Top-review rights. Reuse the explicit operator.
             from .worker_review_identity import require_operator
             actor = require_operator(conn, operator_token)
-        values = None if reset else {key: payload[key] for key in ("policy", "selection")}
+        # A legacy client cannot erase a newer selection guard by omitting it.
+        values = None if reset else {
+            "policy": payload["policy"], "selection": payload["selection"],
+            "worker_selection": payload.get("worker_selection", before["worker_selection"]),
+        }
         _persist(conn, GLOBAL_KEY, values, actor=actor)
         return {"schema": GLOBAL_SCHEMA, "updated": True, "worker_started": False,
                 "configuration_version": _global(conn)["configuration_version"]}
@@ -276,7 +316,9 @@ def _task_snapshot(conn, task_id):
     row = _task(conn, task_id)
     global_snapshot = _global(conn)
     stored = _stored(conn, TASK_KEY + str(task_id))
-    override = stored["values"] if stored["values"] is not None else _default_override()
+    override = dict(stored["values"]) if stored["values"] is not None else _default_override()
+    for _key in WORKER_OVERRIDE_KEYS:
+        override.setdefault(_key, None)
     try:
         typed = validate_override(override)
     except (ValueError, TypeError) as exc:
@@ -289,6 +331,9 @@ def _task_snapshot(conn, task_id):
         raise PolicyUnavailable("Geerbte Nutzerabnahme ist nicht bestätigt")
     def flag(name):
         return getattr(policy, name) if override[name] is None else override[name]
+    worker_defaults = global_snapshot.get("worker_selection", _defaults()["worker_selection"])
+    def wflag(name):
+        return worker_defaults[name] if override[name] is None else override[name]
     # This is a configuration projection, not a fabricated completion verdict.
     # Only the result service may supply verified integrity and review evidence.
     effective = {"contract_version": CONTRACT, "policy_version": policy.policy_version,
@@ -297,7 +342,9 @@ def _task_snapshot(conn, task_id):
         "state": "not_evaluated", "reason": "completion_integrity_not_evaluated",
         "user_review_required": bool(inherited_review) or typed.require_user_review,
         "github_external_review": flag("github_external_review"),
-        "allow_review_task_pickup": flag("allow_review_task_pickup")}
+        "allow_review_task_pickup": flag("allow_review_task_pickup"),
+        "require_assigned_slot": wflag("require_assigned_slot"),
+        "enforce_model_binding": wflag("enforce_model_binding")}
     return {"schema": TASK_SCHEMA, "availability": "available", "task_id": task_id,
         "task_version": task_content_version(row),
         "configuration_version": _digest({"global": global_snapshot["configuration_version"], "task": stored}),
@@ -305,9 +352,27 @@ def _task_snapshot(conn, task_id):
         "override": override, "effective": effective}
 
 
-def read_task_policy(task_id, db_path=None):
-    with _connection(db_path) as conn:
-        return _task_snapshot(conn, task_id)
+def read_task_policy(task_id, db_path=None, *, conn=None):
+    """Read the same authority as the native task client, including injected DBs.
+
+    A borrowed connection is never closed, committed, configured, or migrated.
+    Join its existing snapshot; otherwise bound our SELECTs to a read transaction.
+    """
+    if conn is not None:
+        if db_path is not None:
+            raise ValueError("Nur eine Konfigurationsquelle ist zulässig")
+        own_snapshot = not conn.in_transaction
+        try:
+            if own_snapshot:
+                conn.execute("BEGIN")
+            return _task_snapshot(conn, task_id)
+        except sqlite3.Error as exc:
+            raise PolicyUnavailable("Kanonischer Konfigurationsspeicher nicht verfügbar") from exc
+        finally:
+            if own_snapshot and conn.in_transaction:
+                conn.rollback()
+    with _connection(db_path) as connection:
+        return _task_snapshot(connection, task_id)
 
 
 def write_task_policy(task_id, payload, *, actor, db_path=None):
@@ -330,7 +395,7 @@ def write_task_policy(task_id, payload, *, actor, db_path=None):
         if (before["override"]["require_user_review"]
                 and (reset or not payload["override"]["require_user_review"])):
             raise ValueError("Eine gesetzte Nutzerabnahme darf nicht entfernt werden")
-        _persist(conn, TASK_KEY + str(task_id), None if reset else payload["override"], actor=actor)
+        _persist(conn, TASK_KEY + str(task_id), None if reset else {**before["override"], **payload["override"]}, actor=actor)
         return {"schema": TASK_SCHEMA, "updated": True, "worker_started": False,
                 "task_id": task_id, "configuration_version": _task_snapshot(conn, task_id)["configuration_version"]}
 

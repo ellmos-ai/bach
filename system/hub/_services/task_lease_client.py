@@ -471,6 +471,22 @@ class TaskLeaseClient:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _task_policy_snapshot(self, task_id):
+        """Canonical persisted policy at the same task authority, no ensure_schema."""
+        _identity(task_id)
+        if self.mode == "remote":
+            status, data = self._http_request("GET", f"/api/tasks/{task_id}/worker-policy")
+            if status != 200:
+                self._raise_denied(task_id, data)
+            return data
+        from .worker_policy_settings import read_task_policy
+        conn = self._get_local_connection()
+        try:
+            return read_task_policy(task_id, conn=conn)
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def ensure_worker_resolver(self, worker_id, error_code):
         """Local controller only: one open resolver task for a worker that ended in error."""
         if self.mode != "local":
@@ -1011,6 +1027,149 @@ class TaskLeaseClient:
             raise LeaseProtocolError("Unerwarteter Result-Historiencursor")
         return data
 
+    def legacy_review_reopen_eligibility(self, task_id, *, operator_token):
+        """Observe the existing personal reopen guards; this never reopens a task."""
+        _identity(task_id)
+        if type(operator_token) is not str or not operator_token.strip():
+            raise LeaseProtocolError("Result-Operator-Token ist ungültig")
+        if self.mode == "remote":
+            status, data = self._http_request(
+                "GET", f"/api/tasks/{task_id}/legacy-review/eligibility",
+                headers={"X-BACH-Result-Operator": operator_token})
+            if status != 200:
+                detail = data.get("detail") if isinstance(data, dict) else None
+                raise TaskResultOperationError(
+                    status, detail.get("code", "denied") if isinstance(detail, dict) else "denied",
+                    detail.get("message", "Eignungsprüfung abgelehnt") if isinstance(detail, dict)
+                    else "Eignungsprüfung abgelehnt")
+        else:
+            from .legacy_review_reopen import legacy_review_reopen_eligibility
+            conn = self._get_local_connection()
+            try:
+                data = legacy_review_reopen_eligibility(conn, task_id, operator_token=operator_token)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        checks = data.get("checks") if isinstance(data, dict) else None
+        blockers = {
+            "correction_request_reference", "inline_result", "review_task_source", "worker_result",
+            "result_correction", "review_intent", "model_review", "legacy_result",
+            "malformed_release_audit", "release_result_or_note", "result_history",
+        }
+        if (not isinstance(data, dict)
+                or data.get("schema") != "bach.legacy-review-reopen-eligibility.v1"
+                or data.get("availability") != "available"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or type(data.get("eligible")) is not bool
+                or type(data.get("status")) is not str or not data["status"]
+                or not isinstance(checks, dict)
+                or set(checks) != {"status_review", "lease_claim_free", "result_intent_history_clear"}
+                or any(type(value) is not bool for value in checks.values())
+                or data["eligible"] != all(checks.values())
+                or checks["status_review"] != (data["status"] == "review")
+                or "result_intent_history_blocker" not in data
+                or checks["result_intent_history_clear"] != (data.get("result_intent_history_blocker") is None)
+                or (data.get("result_intent_history_blocker") is not None
+                    and (type(data["result_intent_history_blocker"]) is not str
+                         or data["result_intent_history_blocker"] not in blockers))
+                or any(type(data.get(key)) is not int or data[key] < 0
+                       for key in ["status_revision", "history_revision", "lease_fence"])
+                or data.get("write_rechecks_required") is not True):
+            raise LeaseProtocolError("Kanonische Wiederaufnahme-Eignung nicht bestätigt")
+        _version(data.get("task_version"), required=True)
+        return data
+
+    @staticmethod
+    def _review_requeue_preconditions(value):
+        names = {"task_version", "status_revision", "history_revision", "history_sha256",
+                 "lease_fence", "lease_sha256", "results_sha256", "intent_sha256",
+                 "release_audit_sha256", "result_id", "result_preimage_sha256"}
+        if type(value) is not dict or set(value) != names:
+            raise LeaseProtocolError("Vollständige Requeue-Preimages fehlen")
+        for name, item in value.items():
+            if name.endswith("sha256") or name == "task_version":
+                _version(item, required=True)
+            elif name == "result_id" and item is None:
+                continue
+            elif type(item) is not int or item < 0 or (name == "result_id" and item == 0):
+                raise LeaseProtocolError("Requeue-Preimage ist nicht bestätigt")
+
+    def review_requeue_eligibility(self, task_id, *, operator_token):
+        """Personal RO observation; the single-task writer rechecks every preimage."""
+        _identity(task_id)
+        if type(operator_token) is not str or not operator_token.strip():
+            raise LeaseProtocolError("Result-Operator-Token ist ungültig")
+        if self.mode == "remote":
+            status, data = self._http_request("GET", f"/api/tasks/{task_id}/review-requeue/eligibility",
+                                            headers={"X-BACH-Result-Operator": operator_token})
+            if status != 200:
+                self._raise_denied(task_id, data)
+        else:
+            from .review_task_requeue import review_requeue_eligibility
+            conn = self._get_local_connection()
+            try:
+                data = review_requeue_eligibility(conn, task_id, operator_token=operator_token)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        blockers = data.get("blockers") if type(data) is dict else None
+        if (type(data) is not dict or data.get("schema") != "bach.review-task-requeue-eligibility.v1"
+                or data.get("availability") != "available" or type(data.get("task_id")) is not int
+                or data["task_id"] != task_id or type(data.get("status")) is not str
+                or (data.get("case") is not None and (type(data["case"]) is not str
+                    or data["case"] not in {"stale_result", "release_note_without_result"}))
+                or type(data.get("eligible")) is not bool or type(blockers) is not list
+                or any(type(item) is not str or not item for item in blockers)
+                or data.get("write_rechecks_required") is not True
+                or any(type(data.get(key)) is not dict for key in ("release_provenance", "intent_provenance"))
+                or (data.get("result_provenance") is not None and type(data["result_provenance"]) is not dict)
+                or (data["eligible"] and (data["status"] != "review" or blockers or data.get("case") is None))):
+            raise LeaseProtocolError("Review-Requeue-Eignung ist nicht kanonisch bestätigt")
+        self._review_requeue_preconditions(data.get("preconditions"))
+        return data
+
+    def requeue_review_task(self, task_id, payload, *, operator_token):
+        """One idempotent request; an ACK requires separate current task/result/lease reads."""
+        _identity(task_id)
+        if type(operator_token) is not str or not operator_token.strip():
+            raise LeaseProtocolError("Result-Operator-Token ist ungültig")
+        from .review_task_requeue import _request
+        try:
+            _request(payload)
+        except ValueError as exc:
+            raise LeaseProtocolError(str(exc)) from None
+        if self.mode == "remote":
+            status, data = self._http_request("POST", f"/api/tasks/{task_id}/review-requeue", payload,
+                                            headers={"X-BACH-Result-Operator": operator_token})
+            if status != 200:
+                self._raise_denied(task_id, data)
+        else:
+            from .review_task_requeue import requeue_review_task
+            conn = self._get_local_connection()
+            try:
+                data = requeue_review_task(conn, task_id, payload, operator_token=operator_token)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        pre = payload["preconditions"]
+        if (type(data) is not dict or data.get("schema") != "bach.review-task-requeue.v1"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or data.get("request_id") != payload["request_id"] or data.get("case") != payload["case"]
+                or data.get("applied") is not True or data.get("status_at_event") != "pending"
+                or data.get("current_readback_required") is not True or type(data.get("replayed")) is not bool
+                or data.get("previous_task_version") != pre["task_version"] or data.get("task_version") != pre["task_version"]
+                or type(data.get("previous_status_revision")) is not int
+                or data["previous_status_revision"] != pre["status_revision"]
+                or type(data.get("status_revision")) is not int or data["status_revision"] <= pre["status_revision"]
+                or type(data.get("status_event_id")) is not int or data["status_event_id"] != data["status_revision"]
+                or type(data.get("event_id")) is not int or data["event_id"] <= data["status_revision"]
+                or data.get("preserved_results_sha256") != pre["results_sha256"]
+                or data.get("preserved_release_audit_sha256") != pre["release_audit_sha256"]
+                or data.get("preserved_result_id") != pre["result_id"]
+                or type(data.get("preserved_result_id")) is not type(pre["result_id"])):
+            raise LeaseProtocolError("Review-Requeue-ACK ist nicht bestätigt; gleiche Request-ID per Owner lesen")
+        return data
+
     def request_result_correction(self, task_id, payload, *, operator_token):
         _identity(task_id)
         if not isinstance(payload, dict) or not isinstance(operator_token, str) or not operator_token.strip():
@@ -1074,12 +1233,12 @@ class TaskLeaseClient:
                     where += " AND NOT EXISTS (SELECT 1 FROM worker_result_review_intents r " \
                              "WHERE r.review_task_id=tasks.id)"
                 total = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}").fetchone()[0]
-                order = ("COALESCE(needs_split, 0) DESC, " + ("CASE UPPER(TRIM(priority)) "
-                         "WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
+                order = ("CASE UPPER(TRIM(priority)) "
+                         "WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
                          "WHEN 'P2' THEN 2 WHEN '2' THEN 2 WHEN 'MEDIUM' THEN 2 WHEN 'MITTEL' THEN 2 WHEN 'WICHTIG' THEN 2 "
                          "WHEN 'P3' THEN 3 WHEN '3' THEN 3 WHEN 'LOW' THEN 3 WHEN 'NIEDRIG' THEN 3 WHEN 'NORMAL' THEN 3 "
                          "WHEN 'P4' THEN 4 WHEN '4' THEN 4 WHEN 'MINIMAL' THEN 4 ELSE 5 END, "
-                         if "priority" in columns else ""))
+                         if "priority" in columns else "")
                 order += "created_at DESC, id DESC" if "created_at" in columns else "id DESC"
                 cursor = conn.execute(f"SELECT * FROM tasks WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
                                       (limit + 1, offset))
@@ -1280,13 +1439,17 @@ class TaskLeaseClient:
                 conn.close()
 
     def tool_trace_phase(self, identity, phase, *, receipt_id=None, result_sha256=None,
-                         completion_token=None):
+                         completion_token=None, diagnostic=None):
         """Append a phase correlated to a privately bound durable start."""
         from hub._services.chat.worker_tool_trace import (
-            TraceIdentity, append_phase, _COMPLETION_TOKEN,
+            TraceIdentity, append_phase, _COMPLETION_TOKEN, validate_diagnostic,
         )
         if not isinstance(identity, TraceIdentity):
             raise LeaseProtocolError("Werkzeug-Trace-Identität fehlt")
+        try:
+            diagnostic = validate_diagnostic(diagnostic)
+        except Exception:
+            raise LeaseProtocolError("Werkzeugdiagnose ist ungültig") from None
         if (not isinstance(completion_token, str)
                 or not _COMPLETION_TOKEN.fullmatch(completion_token)):
             raise LeaseProtocolError("Werkzeug-Trace-Abschluss fehlt")
@@ -1295,6 +1458,8 @@ class TaskLeaseClient:
                    "task_version": identity.task_version, "request_id": identity.request_id,
                    "source": identity.source, "tool_name": identity.tool_name,
                    "phase": phase, "receipt_id": receipt_id, "result_sha256": result_sha256}
+        if diagnostic is not None:
+            payload["diagnostic"] = diagnostic
         if self.mode == "remote":
             status, data = self._http_request(
                 "POST", f"/api/tasks/{identity.task_id}/tool-trace/events", payload,
@@ -1307,7 +1472,7 @@ class TaskLeaseClient:
         try:
             data = append_phase(conn, identity, phase, receipt_id=receipt_id,
                                 result_sha256=result_sha256,
-                                completion_token=completion_token)
+                                completion_token=completion_token, diagnostic=diagnostic)
             return _trace_ack(data, task_id=identity.task_id,
                               request_id=identity.request_id, phase=phase)
         except Exception:
@@ -1316,23 +1481,26 @@ class TaskLeaseClient:
             if self._conn is None:
                 conn.close()
 
-    def tool_trace_events(self, task_id, *, limit=100, offset=0):
+    def tool_trace_events(self, task_id, *, limit=100, offset=0, include_diagnostics=False):
         """Read a bounded safe page from the canonical task database or lead."""
         from hub._services.chat.worker_tool_trace import (
             SCHEMA, SOURCES, PHASES, _GENERATION, _HASH, _ID, _TOOL, _WORKER, list_events,
+            validate_diagnostic,
         )
         _identity(task_id)
-        if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 100_000:
+        if type(include_diagnostics) is not bool or type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 100_000:
             raise LeaseProtocolError("Ungültige Werkzeug-Trace-Seite")
         if self.mode == "remote":
             status, data = self._http_request(
-                "GET", f"/api/tasks/{task_id}/tool-trace/events?limit={limit}&offset={offset}")
+                "GET", f"/api/tasks/{task_id}/tool-trace/events?limit={limit}&offset={offset}"
+                + ("&include_diagnostics=true" if include_diagnostics else ""))
             if status != 200:
                 self._raise_denied(task_id, data)
         else:
             conn = self._get_local_connection()
             try:
-                data = list_events(conn, task_id, limit=limit, offset=offset)
+                data = list_events(conn, task_id, limit=limit, offset=offset,
+                                   include_diagnostics=include_diagnostics)
             except Exception:
                 raise LeaseProtocolError("Kanonischer Werkzeug-Trace ist nicht verfügbar") from None
             finally:
@@ -1342,6 +1510,8 @@ class TaskLeaseClient:
                            "generation", "task_version", "request_id", "receipt_id",
                            "source", "tool_name", "phase", "occurred_at",
                            "arguments_sha256", "result_sha256", "effect_status"}
+        if include_diagnostics:
+            expected_fields.add("diagnostic")
         if not isinstance(data, dict):
             raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Readback ist ungültig")
         events = data.get("events")
@@ -1353,6 +1523,11 @@ class TaskLeaseClient:
                 or data["count"] != len(events)):
             raise LeaseProtocolError("Kanonischer Werkzeug-Trace-Readback ist ungültig")
         for event in events:
+            if include_diagnostics:
+                try:
+                    validate_diagnostic(event.get("diagnostic"))
+                except Exception:
+                    raise LeaseProtocolError("Werkzeugdiagnose ist nicht bestätigt") from None
             if (not isinstance(event, dict) or set(event) != expected_fields
                     or event.get("schema") != SCHEMA
                     or type(event.get("event_id")) is not int or event["event_id"] <= 0
@@ -1557,6 +1732,8 @@ class TaskResultServiceClient(TaskLeaseClient):
     tool_trace_start = _deny_general_task_api
     tool_trace_phase = _deny_general_task_api
     tool_trace_events = _deny_general_task_api
+    review_requeue_eligibility = _deny_general_task_api
+    requeue_review_task = _deny_general_task_api
 
     def _allows_result_service_server_error(self, status, payload, method, path):
         if status != 503:

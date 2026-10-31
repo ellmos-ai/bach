@@ -80,7 +80,7 @@ XL_MIN_ESTIMATED_MINUTES = 480
 CLAIMABLE_STATUSES = frozenset({"pending", "open"})
 TERMINAL_STATUSES = frozenset({"done", "completed", "cancelled", "blocked"})
 # Subtask idempotency (#2660): only open siblings are reused; done or cancelled ones never count.
-_CLOSED_CHILD_STATUSES = frozenset({"done", "completed", "cancelled", "blocked"})
+_CLOSED_CHILD_STATUSES = frozenset({"done", "completed", "cancelled"})
 _DECOMPOSE_NOTE = re.compile(
     r"\[(?:In \d+ Teilaufgaben zerlegt|Teilaufgabe bereits offen, nicht erneut angelegt): \[([0-9, ]*)\]\]")
 
@@ -1087,7 +1087,6 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
             raise LeaseValidationError(str(exc)) from exc
     if any(
         not (name in {"result_max_chars", "needs_split"} and (value is None or type(value) is int))
-        and not (name in {"required_model", "assigned_slot"} and value is None)
         and name != "tags"
         and not isinstance(value, str)
         for name, value in changes.items()
@@ -1223,7 +1222,7 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
         if reused:
             notes += f"\n[Teilaufgabe bereits offen, nicht erneut angelegt: {reused}]"
         changes = {"description": (parent.get("description") or "") + notes}
-        if parent.get("needs_split"):
+        if parent.get("needs_split") and new_ids:
             changes["needs_split"] = 0
         if close_parent:
             changes["status"] = "done"

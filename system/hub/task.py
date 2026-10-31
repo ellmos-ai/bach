@@ -105,6 +105,7 @@ class TaskHandler(BaseHandler):
             "reopen": t("task_reopen_desc", default="Task(s) wieder oeffnen (Multi-ID)"),
             "show": t("task_show_desc", default="Task-Details anzeigen"),
             "delete": t("task_delete_desc", default="Task(s) loeschen (Multi-ID)"),
+            "purge-cancelled": "Abgebrochene Worker-Mülltasks löschen und echte Alt-Tasks archivieren (oder --all für Komplettlöschung)",
             "priority": t("task_priority_desc", default="Prioritaet aendern"),
             "assign": t("task_assign_desc", default="Task(s) zuweisen (Multi-ID)"),
             "depends": t("task_depends_desc", default="Abhaengigkeit setzen/anzeigen"),
@@ -247,6 +248,10 @@ class TaskHandler(BaseHandler):
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
             return self._delete(args)
+        elif operation == "purge-cancelled":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._purge_cancelled(args)
         elif operation == "priority":
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
@@ -2228,12 +2233,52 @@ class TaskHandler(BaseHandler):
                 if not row:
                     results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
                     continue
+                conn.execute("DELETE FROM task_history WHERE task_id = ?", (task_id,))
+                try:
+                    conn.execute("DELETE FROM worker_task_results WHERE task_id = ?", (task_id,))
+                except Exception:
+                    pass
                 conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
                 results.append(f"[OK] Task {task_id} geloescht: {row['title'][:40]}")
             
             conn.commit()
         
         return True, "\n".join(results)
+
+    def _purge_cancelled(self, args: List[str]) -> Tuple[bool, str]:
+        """Bereinigt abgebrochene (cancelled) Tasks: Worker-Duplikate hart loeschen, Historie archivieren."""
+        delete_all = "--all" in args
+        now = datetime.now().isoformat()
+        with self._get_db() as conn:
+            if delete_all:
+                rows = conn.execute("SELECT id FROM tasks WHERE status = 'cancelled'").fetchall()
+                del_ids = [r["id"] for r in rows]
+                arch_ids = []
+            else:
+                rows_del = conn.execute(
+                    "SELECT id FROM tasks WHERE status = 'cancelled' AND created_by LIKE 'worker-%'"
+                ).fetchall()
+                del_ids = [r["id"] for r in rows_del]
+                rows_arch = conn.execute(
+                    "SELECT id FROM tasks WHERE status = 'cancelled' AND (created_by IS NULL OR created_by NOT LIKE 'worker-%')"
+                ).fetchall()
+                arch_ids = [r["id"] for r in rows_arch]
+
+            if del_ids:
+                placeholders = ",".join(["?"] * len(del_ids))
+                conn.execute(f"DELETE FROM task_history WHERE task_id IN ({placeholders})", del_ids)
+                try:
+                    conn.execute(f"DELETE FROM worker_task_results WHERE task_id IN ({placeholders})", del_ids)
+                except Exception:
+                    pass
+                conn.execute(f"DELETE FROM tasks WHERE id IN ({placeholders})", del_ids)
+
+            for tid in arch_ids:
+                conn.execute("UPDATE tasks SET status = 'archived', updated_at = ? WHERE id = ?", (now, tid))
+                self._log_task_history(conn, tid, "archive", "status", "cancelled", "archived", changed_by="system")
+
+            conn.commit()
+        return True, f"[OK] purge-cancelled: {len(del_ids)} geloescht, {len(arch_ids)} archiviert." 
     
     def _show(self, args: List[str]) -> Tuple[bool, str]:
         """Task-Details anzeigen"""
@@ -2672,3 +2717,7 @@ Beispiele:
   bach task list pending --assigned COPILOT
   bach task list all --unassigned
 """
+
+
+# Alias for backwards/test compatibility (#1694/#2879)
+TaskManager = TaskHandler

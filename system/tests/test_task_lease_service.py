@@ -92,6 +92,15 @@ def _create_db(path: Path) -> None:
             changed_by TEXT DEFAULT 'user',
             changed_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            type TEXT DEFAULT 'string',
+            category TEXT,
+            description TEXT,
+            updated_at TEXT,
+            dist_type INTEGER DEFAULT 2
+        );
     """)
     conn.commit()
     conn.close()
@@ -1201,7 +1210,7 @@ class TestBlockResolver:
         self._set(conn, tid, "blocked", block_reason="bach task block: Test-Sperre")
         resolver, = self._resolvers(conn, f"task:{tid}")
         assert (resolver["status"], resolver["assigned_to"], resolver["category"], resolver["priority"]) == (
-            "pending", "CLAUDE", "Wartung", "P1")
+            "pending", "BACH", "Wartung", "P1")
         assert f"#{tid}" in resolver["title"] and "Gesperrte Arbeit" in resolver["description"]
         assert "bach task block: Test-Sperre" in resolver["description"]
         assert "Ursprung wieder bearbeitbar oder sauber ersetzt und geschlossen" in resolver["description"]
@@ -1261,7 +1270,7 @@ class TestBlockResolver:
         assert first is not None
         assert ensure_worker_error_resolver(conn, "worker-fdb98a89", "runtime_error") is None
         resolver, = self._resolvers(conn, "worker:worker-fdb98a89")
-        assert "cleanup_error" in resolver["title"] and resolver["assigned_to"] == "CLAUDE"
+        assert "cleanup_error" in resolver["title"] and resolver["assigned_to"] == "BACH"
         for worker_id, code in (("worker-x", "Anbieter sagt: nein"), ("bad id with spaces", "runtime_error")):
             with pytest.raises(ValueError):
                 ensure_worker_error_resolver(conn, worker_id, code)

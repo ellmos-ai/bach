@@ -45,8 +45,8 @@ from pathlib import Path
 from typing import Any, Callable, FrozenSet, Optional
 
 from hub._services.chat.slots_config import ModelRequestBudgetError
-from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
 from hub._services.chat.worker_tool_errors import ToolErrorText
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
 
 #: Exakte Erfolgsantwort von ``task_manage(action='decompose')`` in bach_tools.
 _DECOMPOSE_RECEIPT_RE = re.compile(
@@ -57,9 +57,18 @@ _DECOMPOSE_RECEIPT_RE = re.compile(
 #: fertigstellen kann, zerlegt sie selbst und stellt die Teilaufgaben ein.
 #: Das Zerlegen ist ein Erfolg, kein Abbruch.
 SELF_DECOMPOSE_INSTRUCTION = (
-    "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen (zu groß, Werkzeugrunden "
-    "werden knapp, Teilschritte fehlen), dann zerlege sie selbst in kleinere, einzeln erledigbare "
-    "Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
+    "Kannst du die Aufgabe in diesem Lauf nicht vollständig erledigen, unterscheide strikt: "
+    "1. TEILERFOLG GESCHAFFT (z. B. 50 % erledigt, Rest offen): Lege mit task_manage(action='add', "
+    "title='Rest: ...', description='<nur der noch ungeschaffte Teil>') eine neue Folgetask nur für den "
+    "offenen Rest an, begrenze die aktuelle Task mit task_manage(action='update', task_id=<ID>, "
+    "description='<auf den geschafften Teil begrenzt; Rest in #<Neu-ID>>') auf das Erreichte und schließe "
+    "die aktuelle Task danach regulär für das Geschaffte ab. "
+    "2. NICHT MACHBAR / BLOCKER (kein abschließbarer Teil): Wenn ein Werkzeug oder Recht fehlt oder ein "
+    "technischer Blocker vorliegt, zerlege die Aufgabe NICHT, sondern gib sie direkt ohne Zerlegung mit "
+    "task_manage(action='submit_result', task_id=<ID>, result='<konkreter Grund der Unmachbarkeit>', "
+    "complete=false) offen zurück. "
+    "3. NUR BEI ECHTEM GROSSUMFANG (noch nicht begonnen und noch nicht zerlegt): Zerlege sie einmalig in "
+    "kleinere Teilaufgaben: task_manage(action='decompose', task_id=<ID>, subtasks=[{\"title\": \"...\", "
     "\"description\": \"Datei, Stelle, was genau zu tun ist\"}, ...], sequential=true, close_parent=false). "
     "Die bestätigte Teilaufgabenanlage ist ein Fortschritt; sie erledigt den Eltern-Task nicht. "
     "Gib anschließend mit task_manage(action='submit_result', task_id=<ID>, result='<Zerlegungsplan, "
@@ -1179,9 +1188,13 @@ class ChatRuntime(_ModuleChatRuntime):
                     actions.validate(binding)
                 except Exception:
                     return FailedAnswer("Angeforderte Taskaktion oder Inhaltsversion ist nicht mehr aktuell")
-            from .slots_config import task_matches_slot_binding
-            if not task_matches_slot_binding(binding.task_snapshot(), {
-                    "id": getattr(session, "chat_id", ""), "model": model}):
+            try:
+                matches = getattr(binding, "matches_execution_slot", None)
+                allowed = callable(matches) and matches({
+                    "id": getattr(session, "chat_id", ""), "model": model})
+            except Exception:
+                allowed = False
+            if not allowed:
                 return FailedAnswer("Task passt nicht zur aktuellen Slot- oder Modellauswahl")
             if getattr(backend, "manages_own_tools", False):
                 from hub._services.llm.model_backend import CLIBackend
@@ -1996,9 +2009,14 @@ class ChatRuntime(_ModuleChatRuntime):
         except Exception:  # noqa: BLE001 -- malformed persisted proof fails closed
             return None
 
-        from hub._services.chat import local_resource_reserve
-
-        if not local_resource_reserve.valid_capacity_receipt_shape(receipt, extra={"local_admission"}):
+        capacity_fields = {
+            "schema", "state", "admitted", "enforced", "retryable", "checked_at",
+            "policy_version", "model", "wait_seconds", "poll_seconds",
+            "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
+            "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
+            "resident_weight_credit", "capacity_basis",
+        }
+        if set(receipt) != capacity_fields | {"local_admission"}:
             return None
         admission = receipt.get("local_admission")
         if (not isinstance(admission, dict)
@@ -2211,8 +2229,8 @@ class ChatRuntime(_ModuleChatRuntime):
                         handle = None
                         # Even retiring an obsolete receipt can wait on SQLite.
                         check_dispatch_binding(call_binding)
-                mark_model_dispatch()
                 if bound:
+                    mark_model_dispatch()
                     result = await backend.chat_bound(
                         *args, **kwargs, binding=call_binding, mode=session.mode,
                         guard=check_binding, bach_app=self.bach_app,
@@ -2220,7 +2238,80 @@ class ChatRuntime(_ModuleChatRuntime):
                         **(agent_kwargs or {}),
                     )
                 else:
-                    result = await backend.chat(*args, **kwargs)
+                    request_control = (getattr(session, "worker_model_request_control", None)
+                                       if session is not None else None)
+                    from hub._services.llm.model_backend import OllamaBackend
+                    if call_binding is not None and request_control is not None:
+                        import asyncio
+                        instrumented_transport = type(backend) is OllamaBackend
+                        cancel_event = asyncio.Event()
+                        request_handle = request_control.register_provider_request(
+                            call_binding, asyncio.get_running_loop(), cancel_event,
+                            transport="ollama_httpx" if instrumented_transport else "unavailable",
+                        )
+                        if request_handle is None:
+                            result = {
+                                "content": "", "tool_calls": None,
+                                "raw_message": {"role": "assistant", "content": ""},
+                                "error": "Worker-Request vor Providerstart beendet",
+                                "provider_reported_model": None,
+                                "worker_cancelled": True,
+                            }
+                        else:
+                            request_result = None
+                            request_error = None
+
+                            def report_lifecycle(phase, *, reason=None):
+                                try:
+                                    request_control.observe_provider_request(
+                                        request_handle, phase, reason=reason,
+                                    )
+                                except BaseException:
+                                    try:
+                                        request_control.mark_provider_request_observer_error(request_handle)
+                                    except BaseException:
+                                        pass
+
+                            try:
+                                mark_model_dispatch()
+                                try:
+                                    request_started = request_control.observe_provider_request(
+                                        request_handle, "request_starting",
+                                    )
+                                except BaseException:
+                                    request_started = True
+                                    try:
+                                        request_control.mark_provider_request_observer_error(request_handle)
+                                    except BaseException:
+                                        pass
+                                if not request_started:
+                                    result = {
+                                        "content": "", "tool_calls": None,
+                                        "raw_message": {"role": "assistant", "content": ""},
+                                        "error": "Worker-Request vor Providerstart beendet",
+                                        "provider_reported_model": None,
+                                        "worker_cancelled": True,
+                                    }
+                                else:
+                                    call_kwargs = dict(kwargs)
+                                    if instrumented_transport:
+                                        call_kwargs["cancel_event"] = cancel_event
+                                        call_kwargs["lifecycle_observer"] = report_lifecycle
+                                    result = await backend.chat(*args, **call_kwargs)
+                                request_result = result
+                            except BaseException as exc:
+                                request_error = exc
+                                raise
+                            finally:
+                                try:
+                                    request_control.finish_provider_request(
+                                        request_handle, result=request_result, error=request_error,
+                                    )
+                                except BaseException:
+                                    pass
+                    else:
+                        mark_model_dispatch()
+                        result = await backend.chat(*args, **kwargs)
             except BaseException as exc:
                 if handle is not None:
                     try:
@@ -2686,7 +2777,7 @@ REGELN:
 TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
 - Du hast pro Bearbeitungssitzung ein begrenztes Werkzeug-Rundenbudget. Große oder unklare Aufgaben NICHT endlos durchsuchen!
 - 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
-- 2. ZERLEGEN: Wenn umfangreich aber verstanden, mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true) in konkrete Einzelschritte zerlegen. Erst die Werkzeugbestätigung belegt einen Abschluss.
+- 2. TEILERFOLG ODER ZERLEGEN: Hast du einen sauberen Teil (z. B. 50 %) fertig, lege für den offenen Rest mit task_manage(action='add', title='Rest: ...', description='...') eine Folgetask an, begrenze die aktuelle Task per task_manage(action='update', task_id=<ID>, description='...') auf das Geschaffte und schließe sie mit submit_result(complete=true) ab. Ist die Aufgabe unmachbar/blockiert, gib sie ohne Zerlegung mit submit_result(complete=false) zurück. Nur bei noch unbegonnenem Großumfang einmalig mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true, close_parent=false) gliedern.
 - 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
 - 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
 
@@ -2998,21 +3089,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         configured_max_rounds = max_rounds
         from hub._services.llm.model_backend import backend_identifier
         cloud_worker = (
-            backend_identifier(selected_backend) in {"openrouter", "ollama-cloud"}
-            or (backend_identifier(selected_backend) == "ollama"
-                and isinstance(selected_model, str)
-                and selected_model.lower().endswith(":cloud"))
+            getattr(session, "worker_task_binding", None) is not None
+            and (backend_identifier(selected_backend) == "openrouter"
+                 or (backend_identifier(selected_backend) == "ollama"
+                     and isinstance(selected_model, str)
+                     and selected_model.lower().endswith(":cloud")))
         )
-        if cloud_worker:
-            if getattr(session, "max_tool_rounds", None) is None:
-                max_rounds = limit("BACH_CLOUD_MAX_TOOL_ROUNDS")
-            else:
-                max_rounds = min(max_rounds, limit("BACH_CLOUD_MAX_TOOL_ROUNDS_CAP"))
+        if cloud_worker and max_rounds > 0:
+            max_rounds = max(max_rounds, min(1000, max_rounds * 4))
         session.effective_max_tool_rounds = max_rounds
         if cloud_worker and max_rounds != configured_max_rounds:
             msgs.append({"role": "user", "content": (
-                f"Cloud-Turnbudget: {max_rounds} Modellrunden für diesen Turn "
-                f"(Konfiguration: {configured_max_rounds}). "
+                f"Cloud-Rundenreserve: {configured_max_rounds} reguläre Runden, "
+                f"bis {max_rounds} Runden einschließlich Abschlussreserve. "
                 "Modellanfragenbudget, Nutzerstopp und Anbieterlimits gelten weiterhin."
             )})
         round_num = 0
@@ -3191,6 +3280,28 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session.current_tool = ""
                 return FailedAnswer.from_exception(e)
             last_prompt_tokens = result.get("prompt_tokens")
+
+            from hub._services.llm.model_backend import OllamaBackend
+            if (
+                type(selected_backend) is OllamaBackend
+                and getattr(session, "worker_model_request_control", None) is not None
+                and result.get("provider_request_aborted") in {"worker_stop", "total_deadline"}
+            ):
+                # Interrupted output is never parsed as a text fallback or sent
+                # through the normal tool-dispatch path.
+                session.current_tool = ""
+                reason = (
+                    "Worker-Providerrequest generationsgebunden gestoppt"
+                    if result["provider_request_aborted"] == "worker_stop"
+                    else "Zeitdeckel für den Ollama-Providerrequest erreicht"
+                )
+                partial = result.get("content") or ""
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}{reason}"
+                    + (f"\n[Teilantwort vor dem Abbruch]\n{partial}" if partial else ""),
+                    backend_error=result.get("backend_error"),
+                    transient_failure=result.get("transient_failure"),
+                )
 
             if result.get("error"):
                 # Ein abgebrochener Lauf ist genauso wenig eine Antwort wie eine

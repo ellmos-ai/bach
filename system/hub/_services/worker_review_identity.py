@@ -168,8 +168,16 @@ def write_model_principal_catalog(payload, *, operator_token, db_path=None):
 
 
 def write_model_bindings(payload, *, operator_token, db_path=None):
-    settings._object(payload, {"configuration_version", "bindings"})
+    registration_fields = {"expected_catalog_version", "new_principal_id"}
+    registration = isinstance(payload, dict) and bool(set(payload) & registration_fields)
+    fields = {"configuration_version", "bindings"}
+    settings._object(payload, fields | registration_fields if registration else fields)
     bindings = validate_bindings(payload["bindings"])
+    if registration:
+        expected_catalog = payload["expected_catalog_version"]
+        if type(expected_catalog) is not str or not _HEX.fullmatch(expected_catalog):
+            raise ValueError("Bestätigte Katalogversion erforderlich")
+        new_principal = _principal(payload["new_principal_id"])
     with settings._connection(db_path, write=True) as conn:
         actor = require_operator(conn, operator_token)
         before = identity_snapshot(conn)
@@ -177,6 +185,15 @@ def write_model_bindings(payload, *, operator_token, db_path=None):
             raise settings.PolicyConflict("Modellzuordnungen wurden parallel geändert")
         catalog = model_principal_catalog(conn)
         retired = set(catalog["retired_principal_ids"])
+        if registration:
+            if expected_catalog != catalog["configuration_version"]:
+                raise settings.PolicyConflict("Modellprincipal-Katalog wurde parallel geändert")
+            if new_principal in set(catalog["principal_ids"]) | retired:
+                raise settings.PolicyConflict("Neue Modellprincipal-ID ist bereits belegt")
+            if (len(bindings) != len(before["bindings"]) + 1
+                    or bindings[:-1] != before["bindings"]
+                    or bindings[-1]["principal_id"] != new_principal):
+                raise ValueError("Registrierung muss bestehende Bindungen erhalten und genau eine neue anfügen")
         if any(binding["principal_id"] in retired for binding in bindings):
             raise ValueError("Stillgelegte globale Modellprincipal-ID darf nicht neu gebunden werden")
         remaining = set(catalog["explicit_principal_ids"]) | {binding["principal_id"] for binding in bindings}
@@ -188,8 +205,12 @@ def write_model_bindings(payload, *, operator_token, db_path=None):
             settings._persist(conn, CATALOG_KEY,
                               {"principal_ids": catalog["explicit_principal_ids"],
                                "retired_principal_ids": sorted(new_retired)}, actor=actor)
-        return {"schema": SCHEMA, "updated": True, "worker_started": False,
-                "configuration_version": identity_snapshot(conn)["configuration_version"]}
+        result = {"schema": SCHEMA, "updated": True, "worker_started": False,
+                  "configuration_version": identity_snapshot(conn)["configuration_version"]}
+        if registration:
+            result.update({"catalog_configuration_version": model_principal_catalog(conn)["configuration_version"],
+                           "new_principal_id": new_principal})
+        return result
 
 
 def principal_for_route(snapshot, *, backend_id, route_sha256, requested_model):

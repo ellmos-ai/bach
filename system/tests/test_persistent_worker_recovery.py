@@ -1383,7 +1383,6 @@ def _capacity_receipt(model, *, state="ready", checked_at=None, policy_version="
         "weight_request_bytes": GIB,
         "resident_weight_credit": False,
         "capacity_basis": "host_budget",
-        "host_resources": {"schema": "bach.host-resource-observation.v1", "errors": ["host_observation_failed"]},
     }
 
 
