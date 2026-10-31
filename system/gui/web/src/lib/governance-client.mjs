@@ -46,8 +46,14 @@ function validateRegistryView(data) {
       'Die Richtlinien-Sicht konnte nicht bestätigt werden: die erwarteten Einträge fehlen.');
   if (data.count !== undefined && typeof data.count !== 'number')
     throw governanceError('PolicyRegistryUnreadable', 'Die Anzahl der Richtlinien-Einträge ist unlesbar.');
-  if (data.provider !== undefined && typeof data.provider !== 'string')
-    throw governanceError('PolicyRegistryUnreadable', 'Der Richtlinien-Anbieter ist in der Antwort unlesbar.');
+  if (data.provider !== undefined) {
+    const validString = typeof data.provider === 'string' && data.provider.trim() !== '';
+    const validObject = typeof data.provider === 'object' && data.provider !== null
+      && !Array.isArray(data.provider)
+      && typeof data.provider.id === 'string' && data.provider.id.trim() !== '';
+    if (!validString && !validObject)
+      throw governanceError('PolicyRegistryUnreadable', 'Der Richtlinien-Anbieter ist in der Antwort unlesbar.');
+  }
   if (data.registry_version !== undefined && typeof data.registry_version !== 'string')
     throw governanceError('PolicyRegistryUnreadable', 'Die Version der Richtlinien-Sicht ist unlesbar.');
   return data;

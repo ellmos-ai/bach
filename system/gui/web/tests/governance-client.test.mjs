@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {getPolicyRegistry, getEffectivePolicy, describePolicyRegistryModule} from '../src/lib/governance-client.mjs';
 
+const providerObj = {id:'policy-registry', version:'0.2.4', source_commit:'2c4896b70cb3',
+  repository:'ellmos-ai/policy-registry', verified:true};
 const view = {entries:[{kind:'policy', name:'device-auth', version:'1'}], count:1,
-  provider:'policy-registry', registry_version:'a1b2c3d4', extra_note:'unbekanntes Zusatzfeld'};
+  provider:providerObj, registry_version:'a1b2c3d4', extra_note:'unbekanntes Zusatzfeld'};
 const response = (data, status=200) => ({ok:status<400, status, json:async()=>data});
 const rejectingFetcher = async()=>{throw new Error('Es wurde ein Request ausgelöst.');};
 
@@ -13,7 +15,7 @@ test('successful reads return entries, count, provider and registry_version with
   const result = await getEffectivePolicy('device:gui', {}, async()=>response(effective));
   assert.deepEqual(result.entries, effective.entries);
   assert.equal(result.count, 1);
-  assert.equal(result.provider, 'policy-registry');
+  assert.deepEqual(result.provider, providerObj);
   assert.equal(result.registry_version, 'a1b2c3d4');
   assert.equal(result.scope, 'device:gui');
   assert.equal(result.extra_note, 'unbekanntes Zusatzfeld');
