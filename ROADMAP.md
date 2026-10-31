@@ -26,6 +26,28 @@ Mit dem GUI-Meilenstein `v3.15.0` (*„BACH fließt ins Meer – gemeinsame GUI�
    - **Programm „Modell-Backend = das Herz von BACH“ (unten ab Z. 860):** Die offenen Punkte vom 13.09.2026 sind entschieden und modular aufgeteilt: Besetzung/Autorisierung in `agents-heart` + `persona-routing`, Vorlagen in `agent-library`, Ressourcen/RAM-Distributor in `ocean-resources`, atomarer Task-Claim in SALT (`task_lease.py` / `taskplan.lease`) und Single-Writer-Schutz in Polarstern (`resource_lease.py`).
    - **Trithon / Muschelgrund / Polarstern:** Polarstern (`resource_lease.py`) und SALT-Taskleases laufen produktiv; Muschelgrund (`trithon/muschelgrund.py`) ist als idempotente, datenschutzgefilterte Fact/Lesson-Projektion abgeschlossener Receipts (`status == "done"`) nach USMC definiert; die Herauslösung von `trithon` in ein eigenes Ocean-Modul folgt für den Multi-Host-Verbundmodus.
    - **SentinelFleet-/Schwester-Repo-Übernahmen (unten ab Z. 2040):** Durch Nutzerentscheidung vom 25.10.2026 (MIT-Neulizenzierung durch Lukas Geiger) wandern die Fähigkeiten aus der isolierten Kopie `system/imported_capabilities/` in echte Ocean-Module (`content-guard` in `ellmos-development-system`, DNS-Pinning in `web-scraper`, Außenwirkungs-Raster in Governance).
+   - **Quellenübergreifender Wissensindex (unten ab Z. 2019):** **ERLEDIGT durch `gardener`** (`ellmos-ai/GARDENER`, FTS5-Tabelle `everything` über Dual-DB `~/.gardener/gardener.db` + `~/.gardener/user.db`).
+
+## Verbindliche Produkt- & Meilenstein-Roadmap (Nutzerentscheidung 2026-10-31)
+
+### 1. Die Meilenstein-Linie: Vom Monolithen zu Ocean
+1. **`BACH meets Ocean` (`v3.15.0`) — ERREICHT:** Gemeinsame GUI (`ellmos-system-gui`) für BACH und Ocean.
+2. **`BACH flows into Ocean` (`v3.15.0-ocean-stack-m1` bis `v3.x`) — AKTIV:**
+   - Schrittweise Weiter-Modularisierung und Modifikation von BACH zu Ocean: Modul für Modul über `ocean_stack_bridge.py` / Adapter anschließen, BACH-Altcode mit `@deprecated_legacy_bach` kennzeichnen und nach Parität abbauen.
+   - **Primäres Endnutzer-Produkt:** Ein **einfach installierbares BACH/Ocean mit GUI über den Windows Store** (Tauri-Desktop-App, Standardversion zum direkten Holen, die out-of-the-box sowohl mit **lokalen Modellen** wie Ollama als auch mit **nicht-lokalen Modellen** wie Cloud/API/Abos umgehen kann).
+3. **`BACH becomes Ocean` / `BACH is Ocean` (`v4.0.0`) — ZIELBILD:** Sobald die Modularisierung abgeschlossen ist, bestehen BACH und Ocean vollständig aus denselben Ocean-Modulen.
+
+### 2. Kanonische Definition der Ocean-Ausdehnungen und Berechtigungsstufen (2026-10-31)
+
+Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individueller Ausdehnung** (was man installiert) und **Berechtigungs-/Zugangsstufe** (worauf der Installer Zugriff hat):
+
+| Achse | Stufe / Begriff | Verbindliche Definition |
+| :--- | :--- | :--- |
+| **1. Individuelle Ausdehnung**<br/>*(Konfiguration durch An-/Abwählen von Modulen & Bundles)* | **Standard-Ocean / BACH (Windows Store)** | Die öffentliche Standard-Ausdehnung mit GUI (`ellmos-system-gui` + Tauri-App), die man sich direkt holen kann und die sofort lokale + nicht-lokale Modelle, Memory, Tasks und Alltags-Workflows beherrscht. |
+| | **Rinnsal ↔ BACH ↔ Meer (Individuelles Ocean)** | Über `ellmos-installer` und die System-GUI lassen sich Module und Bundles beliebig abwählen oder hinzunehmen — das eigene Ocean kann schlank wie ein **Rinnsal**, kuratiert wie ein **BACH** oder breit ausgebaut wie ein **Meer** sein. |
+| **2. Berechtigungs- & Systemstufen**<br/>*(Zugangskonzept am Installer & Host)* | **`full-ocean`** *(Installer-Zugangsversprechen)* | An den **`ellmos-installer`** gebundenes Berechtigungskonzept: Der Installer erfüllt das Versprechen des Zugangs zum **vollen Ocean-Katalog, soweit der jeweilige Nutzer dazu berechtigt ist** (für normale Nutzer alle öffentlichen Module; für berechtigte Personen zusätzlich nicht-öffentliche/lizenzierte Fachmodule gemäß Systemkonfiguration/Grants). |
+| | **`ocean-dev`** | Entwickler-, Diagnose- und Bau-Module (`system-explorer`, `system-auditor`, `system-gap-master`, `ellmos-tests`, `module-gate` u. a.), die durchaus öffentlich sein können, die ein normaler Endnutzer in der Standardversion aber nicht zwingend mitinstalliert. |
+| | **`ocean-admin`** | Das vollständige Betreiber-/Maintainer-System von Lukas (mit **Mac Studio als 24/7-Leader**, `ASUS-GEI`, `WORKSTATION-LG`, `IDEAPAD-GEI`, allen unveröffentlichten privaten Fach- und Forschungsmodulen, `.SYNC` und voller Systemkonfiguration). |
 
 ## ARCHIV (veraltet) — Navigations-Index
 
@@ -1963,7 +1985,7 @@ Sollen bestimmte Hooks als Teil der BACH-Installation mitgeliefert werden?
 
 ## BACH als anbietbarer MCP-Server: Bundle-Split & Control-Plane (2026-06-03)
 
-> Status: VISION / LANGFRISTIG — OFFEN. Die Analyse ist in dieser ROADMAP-Sektion zusammengefasst.
+> **Status-Einordnung (Nutzerentscheidung 2026-10-31):** Nachrangig gegenüber dem primären Endnutzer-Produkt (**installierbares BACH/Ocean mit GUI über den Windows Store**, das direkt mit lokalen und nicht-lokalen Modellen umgehen kann). Die MCP-Bündelung läuft bereits über `ellmos-controlcenter-mcp`; ein separater öffentlicher Monolith-MCP-Server hat keine Priorität.
 
 ### Ausgangslage
 
@@ -2016,7 +2038,9 @@ BACH **ist** bereits ein MCP-Server: `system/tools/mcp_server.py` v2.2.0 (FastMC
 
 ---
 
-## Cross-Source-Wissensindex (Notiz 2026-07-06)
+## Cross-Source-Wissensindex (Notiz 2026-07-06) — ERLEDIGT durch `gardener`
+
+> **Status (2026-10-31): KOMPLETT / ERLEDIGT durch `gardener` (`ellmos-ai/GARDENER`).** Gardener stellt über seine FTS5-Tabelle `everything` und die Dual-DB-Architektur (`~/.gardener/gardener.db` für Systemwissen + `~/.gardener/user.db` für Nutzerdaten, `find()` via `ATTACH`) genau diesen passiven, quellenübergreifenden Wissensindex für BACH, Rinnsal und Ocean bereit (siehe `SYSTEM-MANIFEST.md` §3.1).
 
 Erkenntnis aus dem ctx-/n8n-manager-Strang (Luca King / ctxrs).
 
