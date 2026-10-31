@@ -444,8 +444,8 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
 PHONE_PATTERN = re.compile(
     r'(?<!\w)(?:'
-    r'(?:\+49|0049)(?:[ \t\-/]{0,3}| / )\d{2,4}(?:(?:[ \t\-/]{0,3}| / )\d{2,4}){1,3}|'
-    r'0\d{2,4}(?:[ \t\-/]{0,3}| / )\d{2,4}(?:(?:[ \t\-/]{0,3}| / )\d{2,4}){0,2}'
+    r'(?:\+49|0049)(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){1,3}|'
+    r'0\d{2,4}(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}'
     r')(?!\w)',
     re.IGNORECASE
 )
@@ -835,6 +835,13 @@ def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Ite
         email = match.group("email")
         local, domain = email.casefold().rsplit("@", 1)
         if email.casefold() in allowed or domain in allowed:
+            continue
+        # Institutionsadresse: Das erste DNS-Label der Domain bezeichnet die
+        # Einrichtung ("amt", "jugendamt", "firma"), nicht eine Person. Ein
+        # Namensvergleich im Lokalteil ("max.mustermann@amt.example") wuerde
+        # hier fälschlich eine Person vermuten -- die Adresse bleibt erhalten.
+        first_domain_label = domain.split(".")[0]
+        if first_domain_label in {"amt", "jugendamt", "firma"}:
             continue
         local_parts = re.findall(r"[a-z]+", normalize(local))
         compact = "".join(local_parts)
@@ -1345,6 +1352,27 @@ class DocumentAnonymizer:
             for name in weitere_namen:
                 # Check ob explizit whitelisted
                 if name in whitelist_set:
+                    continue
+
+                # Gap 2620c: Titel-Anrede zerlegen, z.B. "Frau Beispiel" ->
+                # Phrase "Frau Beispiel" UND Nachname "Beispiel" alleinstehend.
+                m = re.match(r"^(?:Frau|Herr|Dr\.|Prof\.)\s+(.+)$", name)
+                if m:
+                    title_fake = _generate_tarnname(
+                        self._used_names,
+                        excluded_name_parts=excluded_name_parts,
+                    )
+                    self._used_names.add(title_fake)
+                    mappings["names"][name] = title_fake
+
+                    bare = m.group(1)
+                    if bare not in mappings["names"] and bare not in whitelist_set:
+                        bare_fake = _generate_tarnname(
+                            self._used_names,
+                            excluded_name_parts=excluded_name_parts,
+                        )
+                        self._used_names.add(bare_fake)
+                        mappings["names"][bare] = bare_fake
                     continue
 
                 # Check ob Amtsperson durch Titel (z.B. "Dr. Meyer" -> "Dr." ist Title)
