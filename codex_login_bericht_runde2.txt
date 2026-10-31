@@ -1,0 +1,97 @@
+Codex-Login-Diagnose Task #2178 Runde 2 - 2026-10-31T19:16:00.055745
+a) Referenzpfade (Sichtbarkeit ausserhalb der Sandbox)
+  /Users/lukas/services/bach-worktrees/task-2178 sichtbar/existiert:
+  ja
+  /Users/lukas/services/bach-worktrees sichtbar/existiert:
+  ja
+  /Users/lukas sichtbar/existiert:
+  ja
+  /Users sichtbar/existiert:
+  ja
+  /Users/buddha sichtbar/existiert:
+  NEIN
+b) .codex-Ordner in echten Homes
+  /Users/lukas/.codex EXISTIERT, Eintraege (31):
+    -
+  .sandbox_migration
+    -
+  .sqlite-maintenance.lock
+    -
+  .tmp
+    -
+  AGENTS.md
+    -
+  GPT.md
+    -
+  app-server-control
+    -
+  app-server-daemon
+    -
+  auth.json
+    -
+  automations
+    -
+  cache
+    -
+  config.toml
+    -
+  goals_1.sqlite
+    -
+  installation_id
+    -
+  logs_2.sqlite
+    -
+  logs_2.sqlite-shm
+    -
+  logs_2.sqlite-wal
+    -
+  memories
+    -
+  memories_1.sqlite
+    -
+  models_cache.json
+    -
+  packages
+    -
+  plugins
+    -
+  queue_1.sqlite
+    -
+  sessions
+    -
+  shell_snapshots
+    -
+  skills
+    -
+  state_5.sqlite
+    -
+  thread-writer-locks
+    -
+  thread_history_1.sqlite
+    -
+  tmp
+    -
+  tui-thread-reference-capabilities
+    -
+  version.json
+  /Users/buddha/.codex existiert NICHT
+c) auth.json-Metadaten (Inhalt wird bewusst nie gelesen)
+  /Users/lukas/.codex/auth.json: EXISTIERT, Groesse=3947 Bytes, mtime=2026-10-13T19:12:12.041948
+  /Users/buddha/.codex/auth.json: existiert NICHT
+d) codex login status mit explizitem HOME
+  HOME=/Users/lukas
+    Rueckgabecode:
+  0
+    Ausgabe:
+  
+  [stderr] Logged in using ChatGPT
+  HOME=/Users/buddha
+    Rueckgabecode:
+  1
+    Ausgabe:
+  
+  [stderr] WARNING: proceeding, even though we could not create PATH aliases: Permission denied (os error 13)
+Not logged in
+e) codex-Binaer
+  shutil.which('codex') =
+  /opt/homebrew/bin/codex

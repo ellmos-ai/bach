@@ -1,0 +1,36 @@
+Codex-Login-Diagnose Task #2178 - 2026-10-31T19:15:59.865464
+a) HOME
+  HOME =
+  /Users/lukas/services/bach-worktrees/task-2178/.cache/.worker-check/home
+  os.environ['HOME'] =
+  /Users/lukas/services/bach-worktrees/task-2178/.cache/.worker-check/home
+  Aktueller Benutzer =
+  lukas
+b) .codex-Verzeichnisse
+  /Users/lukas/services/bach-worktrees/task-2178/.cache/.worker-check/home/.codex EXISTIERT, Eintraege (1):
+    -
+  tmp
+  /Users/buddha/.codex existiert NICHT
+c) auth.json-Metadaten (keine Inhaltsausgabe)
+  /Users/lukas/services/bach-worktrees/task-2178/.cache/.worker-check/home/.codex/auth.json: existiert NICHT
+  /Users/buddha/.codex/auth.json: existiert NICHT
+d) codex-Binaerdatei
+  shutil.which('codex') =
+  /opt/homebrew/bin/codex
+  Vorhanden: /usr/local/bin/codex ->
+  nein
+  Vorhanden: /opt/homebrew/bin/codex ->
+  ja
+  Vorhanden: /Users/lukas/services/bach-worktrees/task-2178/.cache/.worker-check/home/.local/bin/codex ->
+  nein
+e) codex login status
+  Rueckgabecode:
+  1
+  Ausgabe:
+  
+  [stderr] Not logged in
+e2) codex --version
+  Rueckgabecode:
+  0
+  Ausgabe:
+  codex-cli 0.162.1
