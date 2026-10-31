@@ -310,6 +310,7 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
     for col, col_type in [
         ("color", "TEXT"),
         ("governance_json", "TEXT DEFAULT '{}'"),
+        ("derived_from_json", "TEXT"),
         ("kind", "TEXT DEFAULT 'agent'"),
         ("start_prompt", "TEXT DEFAULT ''"),
         ("version", "INTEGER DEFAULT 1"),
@@ -333,6 +334,9 @@ def ensure_blueprint_schema(conn: sqlite3.Connection) -> None:
         ON agent_blueprints(provider, provider_template_id, provider_version)
         WHERE provider IS NOT NULL
     """)
+
+    from .blueprint_revisions import ensure_revision_schema
+    ensure_revision_schema(conn)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS partner_presence (
@@ -681,14 +685,17 @@ def get_available_skills(
     from .skill_source_service import resolve_requested_locale, source_catalog, skill_roots, user_skills_root
     requested = resolve_requested_locale(requested_locale)
     roots = [user_skills_root(), skills_root] if skills_root else skill_roots()
-    catalog = source_catalog(roots)
-    skills_map = {key: {**{k: v for k, v in item.items() if k not in {"path", "root"}},
-                        "executable": True, "selectable": True}
+    catalog = source_catalog(roots, requested_locale=requested)
+    skills_map = {key: {k: v for k, v in item.items() if k not in {"path", "root"}}
                   for key, item in catalog.items()}
     for item in FALLBACK_CORE_SKILLS:
         if item["id"] not in skills_map:
-            skills_map[item["id"]] = {**item, "evidence_type": "core_declared", "source_version": None,
-                                       "executable": False, "selectable": False}
+            skills_map[item["id"]] = {
+                **item, "canonical_skill_id": item["id"], "locale": "en",
+                "requested_locale": requested, "resolved_locale": "en",
+                "fallback_used": requested != "en",
+                "evidence_type": "core_declared", "source_version": None,
+            }
     result = list(skills_map.values())
     if category:
         result = [s for s in result if s.get("category") == category]
@@ -722,6 +729,31 @@ def synthesize_start_prompt(blueprint: dict[str, Any], task_override: str | None
     gov_profile = governance.get("profile", "fail_closed_standard")
     tool_whitelist = ", ".join(governance.get("tool_whitelist", ["read_files", "search_content", "directory_list"]))
 
+    governance_lines = ["## [Boot:Governance]"]
+    scope = governance.get("scope") if isinstance(governance, dict) else None
+    if not isinstance(scope, str) or not scope or any(ord(char) < 32 for char in scope):
+        scope = "nicht angegeben"
+    governance_lines.append(f"- Geltungsbereich: {scope[:256]}")
+    try:
+        from .governance_binding import GovernanceRejected, declared
+        refs, _ = declared(governance if isinstance(governance, dict) else {})
+    except GovernanceRejected:
+        refs = []
+        governance_lines.append("- Policy-/Regel-Pins: ungültig; Aktivierung bleibt serverseitig gesperrt.")
+    if refs:
+        governance_lines.append("- Gepinnte Policy-/Rule-/Decision-Referenzen:")
+        for ref in sorted(refs, key=lambda item: (item["role"], item["id"])):
+            governance_lines.append(
+                f"  - {ref['id']} · Version {ref['version']} · Rolle {ref['role']} · SHA-256 {ref['sha256']}"
+            )
+    elif not any("ungültig" in line for line in governance_lines):
+        governance_lines.append("- Gepinnte Policy-/Rule-/Decision-Referenzen: keine expliziten Pins.")
+    governance_lines.extend([
+        "- Der kanonische Normtext bleibt am policy-registry-Fundort; dieser Startprompt ist kein Laufzeitguard.",
+        "- Die technische Werkzeug- und Leaseprüfung erfolgt separat bei der Laufzeitaufnahme; normative Durchsetzung ist nicht bestätigt.",
+    ])
+    governance_prompt = "\n".join(governance_lines)
+
     task_desc = task_override or f"Arbeite im Modus '{modus}'. Bearbeite anstehende Tasks aus der Lead-TaskDB gemaess Rollenspezifikation."
 
     prompt = f"""# STARTPROMPT: {title} ({name})
@@ -739,6 +771,8 @@ def synthesize_start_prompt(blueprint: dict[str, Any], task_override: str | None
 - Tool-Whitelist: {tool_whitelist}
 - Kommunikationsregel: Vor Änderungen die aktuellen Repository-Regeln und Locks prüfen.
 - Ausführungsnachweis: Ein Workerstart zählt erst mit dem korrelierten Beleg des Controllers. Hooker-Audits werden hier nicht bestätigt.
+
+{governance_prompt}
 
 ## [Boot:Aufgabe]
 {task_desc}
@@ -839,7 +873,9 @@ def validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus,
         raise ValueError("Blueprint-Konfiguration ist ungültig")
 
 
-def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
+def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any], *,
+                   _restored_from_version: int | None = None,
+                   _expected_id: int | None = None) -> dict[str, Any]:
     """Erstellt oder aktualisiert einen Blueprint mit Validierung (GUX-025, GUX-029)."""
     ensure_blueprint_schema(conn)
 
@@ -890,105 +926,123 @@ def save_blueprint(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
         own = conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()
         resolve(conn, governance, blueprint_id=own[0] if own else None)
 
-    # Validate selected prompt skills against the same executable source used by materialization.
-    # Existing saved IDs are preserved; a user must explicitly remove an unavailable selection.
-    if skills:
-        from .skill_source_service import pin_skills
-        pin_skills(skills)
-
     # Serialize the revision check with its write across SQLite writers.
-    conn.execute("BEGIN IMMEDIATE")
-    existing = conn.execute("SELECT id, is_template, version, governance_json, color FROM agent_blueprints WHERE name = ?",
-                            (name,)).fetchone()
-    if existing:
-        is_tmpl = existing[1] if isinstance(existing, tuple) else existing["is_template"]
-        if is_tmpl == 1:
-            conn.rollback()
-            raise PermissionError(f"Vorlage '{name}' ist schreibgeschützt (GUX-026). Bitte wähle einen eigenen Namen.")
-
-    if is_template:
-        conn.rollback()
-        raise PermissionError("Systemvorlagen werden ausschließlich bei der Initialisierung angelegt")
-    curr_version = (existing[2] if isinstance(existing, tuple) else existing["version"]) if existing else 0
-    if type(payload.get("expected_version", 0)) is not int or payload.get("expected_version", 0) != curr_version:
-        conn.rollback()
-        raise RuntimeError("blueprint_version_conflict")
     try:
-        validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus, modus,
-                                  skills, contractus, governance)
-    except ValueError:
+        conn.execute("BEGIN IMMEDIATE")
+        from .blueprint_revisions import resolve_lineage, record_revision, read_blueprint
+        cursor = conn.execute("SELECT * FROM agent_blueprints WHERE name = ?", (name,))
+        found = cursor.fetchone()
+        existing = dict(zip([col[0] for col in cursor.description], found)) if found is not None else None
+        if _expected_id is not None and (not existing or existing["id"] != _expected_id):
+            raise RuntimeError("blueprint_identity_conflict")
+        if existing:
+            is_tmpl = existing["is_template"]
+            if is_tmpl == 1:
+                conn.rollback()
+                raise PermissionError(f"Vorlage '{name}' ist schreibgeschützt (GUX-026). Bitte wähle einen eigenen Namen.")
+
+        if is_template:
+            conn.rollback()
+            raise PermissionError("Systemvorlagen werden ausschließlich bei der Initialisierung angelegt")
+        curr_version = existing["version"] if existing else 0
+        if type(payload.get("expected_version", 0)) is not int or payload.get("expected_version", 0) != curr_version:
+            conn.rollback()
+            raise RuntimeError("blueprint_version_conflict")
+        try:
+            validate_blueprint_fields(title, desc, persona_role, persona_prompt, animus, modus,
+                                      skills, contractus, governance)
+        except ValueError:
+            conn.rollback()
+            raise
+        derived = json.loads(existing.get("derived_from_json") or "null") if existing else None
+        if "derived_from" in payload:
+            if existing and payload["derived_from"] != derived:
+                raise ValueError("blueprint_lineage_immutable")
+            if not existing and payload["derived_from"] is not None:
+                derived = resolve_lineage(conn, payload["derived_from"])
+        if existing:
+            record_revision(conn, existing)
+        color = supplied_color if "color" in payload else (existing.get("color") if existing else None)
+        version = (curr_version + 1) if curr_version else 1
+        now = datetime.now(timezone.utc).isoformat()
+        from .governance_binding import with_pin_log
+        previous = {}
+        if existing:
+            try:
+                previous = json.loads(existing["governance_json"] or "{}")
+            except ValueError:
+                pass
+        governance = with_pin_log(previous if isinstance(previous, dict) else {}, governance,
+                                  blueprint_version=version)
+
+        # Startprompt erzeugen
+        item_for_prompt = {
+            "name": name,
+            "title": title,
+            "persona_role": persona_role,
+            "persona_prompt": persona_prompt,
+            "skills": skills,
+            "contractus": contractus,
+            "governance": governance,
+            "modus": modus,
+            "animus_type": animus,
+        }
+        try:
+            start_prompt = synthesize_start_prompt(item_for_prompt)
+        except (ValueError, KeyError):
+            start_prompt = payload.get("start_prompt", "")
+
+        conn.execute("""
+            INSERT INTO agent_blueprints (
+                name, title, description, persona_role, persona_prompt,
+                skills_json, animus_type, contractus_json, modus, is_template,
+                governance_json, kind, start_prompt, version, updated_at, color
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                persona_role = excluded.persona_role,
+                persona_prompt = excluded.persona_prompt,
+                skills_json = excluded.skills_json,
+                animus_type = excluded.animus_type,
+                contractus_json = excluded.contractus_json,
+                modus = excluded.modus,
+                governance_json = excluded.governance_json,
+                kind = excluded.kind,
+                start_prompt = excluded.start_prompt,
+                version = excluded.version,
+                updated_at = excluded.updated_at,
+                color = excluded.color
+        """, (
+            name, title, desc, persona_role, persona_prompt,
+            json.dumps(skills), animus, json.dumps(contractus), modus, is_template,
+            json.dumps(governance), kind, start_prompt, version, now, color
+        ))
+        blueprint_id = conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()[0]
+        conn.execute("UPDATE agent_blueprints SET derived_from_json=? WHERE id=?",
+                     (json.dumps(derived, sort_keys=True), blueprint_id))
+        revision_sha = record_revision(conn, read_blueprint(conn, blueprint_id),
+                                       restored_from_version=_restored_from_version)
+        conn.commit()
+
+        return {
+            "success": True,
+            "id": blueprint_id,
+            "derived_from": derived,
+            "snapshot_sha256": revision_sha,
+            "restored_from_version": _restored_from_version,
+            "name": name,
+            "title": title,
+            "kind": kind,
+            "version": version,
+            "start_prompt": start_prompt,
+            "start_prompt_length": len(start_prompt),
+            "color": color,
+            "status": "saved"
+        }
+    except Exception:
         conn.rollback()
         raise
-    color = supplied_color if "color" in payload else (existing[4] if existing else None)
-    version = (curr_version + 1) if curr_version else 1
-    now = datetime.now(timezone.utc).isoformat()
-    from .governance_binding import with_pin_log
-    previous = {}
-    if existing:
-        try:
-            previous = json.loads((existing[3] if isinstance(existing, tuple) else existing["governance_json"]) or "{}")
-        except ValueError:
-            pass
-    governance = with_pin_log(previous if isinstance(previous, dict) else {}, governance,
-                              blueprint_version=version)
-
-    # Startprompt erzeugen
-    item_for_prompt = {
-        "name": name,
-        "title": title,
-        "persona_role": persona_role,
-        "persona_prompt": persona_prompt,
-        "skills": skills,
-        "contractus": contractus,
-        "governance": governance,
-        "modus": modus,
-        "animus_type": animus,
-    }
-    try:
-        start_prompt = synthesize_start_prompt(item_for_prompt)
-    except (ValueError, KeyError):
-        start_prompt = payload.get("start_prompt", "")
-
-    conn.execute("""
-        INSERT INTO agent_blueprints (
-            name, title, description, persona_role, persona_prompt,
-            skills_json, animus_type, contractus_json, modus, is_template,
-            governance_json, kind, start_prompt, version, updated_at, color
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-            title = excluded.title,
-            description = excluded.description,
-            persona_role = excluded.persona_role,
-            persona_prompt = excluded.persona_prompt,
-            skills_json = excluded.skills_json,
-            animus_type = excluded.animus_type,
-            contractus_json = excluded.contractus_json,
-            modus = excluded.modus,
-            governance_json = excluded.governance_json,
-            kind = excluded.kind,
-            start_prompt = excluded.start_prompt,
-            version = excluded.version,
-            updated_at = excluded.updated_at,
-            color = excluded.color
-    """, (
-        name, title, desc, persona_role, persona_prompt,
-        json.dumps(skills), animus, json.dumps(contractus), modus, is_template,
-        json.dumps(governance), kind, start_prompt, version, now, color
-    ))
-    conn.commit()
-
-    return {
-        "success": True,
-        "id": conn.execute("SELECT id FROM agent_blueprints WHERE name = ?", (name,)).fetchone()[0],
-        "name": name,
-        "title": title,
-        "kind": kind,
-        "version": version,
-        "start_prompt": start_prompt,
-        "start_prompt_length": len(start_prompt),
-        "color": color,
-        "status": "saved"
-    }
 
 
 def _execution_blueprint(conn, blueprint_id, expected_version):

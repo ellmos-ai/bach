@@ -1305,7 +1305,21 @@ async def lifespan(app: FastAPI):
 
 
 
-app = FastAPI(
+class _BachFastAPI(FastAPI):
+    @property
+    def routes(self):
+        flat = []
+        for r in self.router.routes:
+            if hasattr(r, "effective_route_contexts"):
+                for ctx in r.effective_route_contexts():
+                    orig = getattr(ctx, "original_route", ctx)
+                    flat.append(orig if getattr(orig, "path", None) == getattr(ctx, "path", None) else ctx)
+            else:
+                flat.append(r)
+        return flat
+
+
+app = _BachFastAPI(
 
     title="BACH Dashboard API",
 
@@ -1892,14 +1906,35 @@ class SharedGUIReleaseMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if os.environ.get("ELLMOS_SYSTEM_GUI_DIST") and request.method in {"GET", "HEAD"}:
-            from gui.api.gui_capabilities import PAGE_READS
             page = request.url.path.rstrip("/") or "/"
-            if page in PAGE_READS:
-                filename = "index.html" if page == "/" else page.lstrip("/") + ".html"
-                target = ASTRO_DIST_DIR / filename
-                if not target.is_file() or target.is_symlink():
+            from starlette.routing import Match
+
+            # Route metadata survives a missing manifest. Redirect aliases and
+            # separately mounted applications retain their own routing.
+            matched = next((route for route in request.app.routes
+                            if route.matches(request.scope)[0] is Match.FULL), None)
+            if "shared-gui" in (getattr(matched, "tags", None) or []):
+                from hub._services.gui_contract_service import (
+                    get_pinned_kit_manifest,
+                    verify_installed_dist,
+                )
+                kit = get_pinned_kit_manifest()
+                dist = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=kit.get("pinned_source_commit"),
+                                             requested_page=page)
+                trusted = (kit.get("verified") is True and dist.get("verified") is True
+                           and type(kit.get("expected_page_count")) is int
+                           and dist.get("page_count") == kit["expected_page_count"])
+                info = dist.get("page_reads", {})
+                if (not trusted or info.get("state") != "available"
+                        or page not in info.get("pages", {}) or page not in dist.get("page_paths", [])
+                        or not isinstance(dist.get("page_payload"), bytes)):
                     return JSONResponse({"detail": "Configured shared GUI page is unavailable",
                                          "reason_code": "shared_gui_page_missing"}, status_code=503)
+                # Serve exactly the bytes hashed above, never a handler's legacy
+                # fallback or a second, mutable filesystem read.
+                headers = {"Cache-Control": "no-cache, no-store, must-revalidate",
+                           "Pragma": "no-cache", "Expires": "0"} if page == "/" else None
+                return Response(content=dist["page_payload"], media_type="text/html", headers=headers)
         return await call_next(request)
 
 
@@ -2084,7 +2119,8 @@ async def get_gui_capabilities():
     modules.update(provider_modules)
     return declaration(app.routes, kit_status, read_gui_brand(), modules,
                        public_paths=DeviceAuthMiddleware.EXEMPT_API_PATHS,
-                       module_sources=[policy, *provider_sources])
+                       module_sources=[policy, *provider_sources],
+                       page_reads=dist_info.get("page_reads"))
 
 
 @app.get("/api/gui/kit-manifest")
@@ -5829,7 +5865,7 @@ async def unified_ocean_dashboard():
     raise HTTPException(status_code=404, detail="unified_dashboard.html nicht gefunden")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse, tags=["shared-gui"])
 async def index():
     """Startseite (Astro v5 Modular GUI mit Legacy-Fallback)."""
     astro_index = ASTRO_DIST_DIR / "index.html"
@@ -5849,7 +5885,7 @@ async def favicon():
     raise HTTPException(status_code=404, detail="favicon.ico nicht gefunden")
 
 
-@app.get("/agenten/fabrika", response_class=HTMLResponse)
+@app.get("/agenten/fabrika", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_fabrika_page():
     p = ASTRO_DIST_DIR / "agenten" / "fabrika.html"
     if p.exists():
@@ -5860,7 +5896,7 @@ async def agenten_fabrika_page():
     raise HTTPException(status_code=404, detail="Fabrika-Seite nicht gefunden")
 
 
-@app.get("/agenten/blueprints", response_class=HTMLResponse)
+@app.get("/agenten/blueprints", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_blueprints_page():
     p = ASTRO_DIST_DIR / "agenten" / "blueprints.html"
     if p.exists():
@@ -5871,7 +5907,7 @@ async def agenten_blueprints_page():
     raise HTTPException(status_code=404, detail="Blueprints-Seite nicht gefunden")
 
 
-@app.get("/agenten/subscription-agents", response_class=HTMLResponse)
+@app.get("/agenten/subscription-agents", response_class=HTMLResponse, tags=["shared-gui"])
 async def subscription_agents_page():
     page = ASTRO_DIST_DIR / "agenten" / "subscription-agents.html"
     if not page.is_file() or page.is_symlink():
@@ -5879,7 +5915,7 @@ async def subscription_agents_page():
     return FileResponse(page)
 
 
-@app.get("/agenten/running", response_class=HTMLResponse)
+@app.get("/agenten/running", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_running_page():
     p = ASTRO_DIST_DIR / "agenten" / "running.html"
     if p.exists():
@@ -5887,7 +5923,7 @@ async def agenten_running_page():
     raise HTTPException(status_code=404, detail="Living & Running Seite nicht gefunden")
 
 
-@app.get("/agenten/marblerun", response_class=HTMLResponse)
+@app.get("/agenten/marblerun", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_marblerun_page():
     p = ASTRO_DIST_DIR / "agenten" / "marblerun.html"
     if p.exists():
@@ -5895,7 +5931,7 @@ async def agenten_marblerun_page():
     raise HTTPException(status_code=404, detail="MarbleRun Seite nicht gefunden")
 
 
-@app.get("/governance", response_class=HTMLResponse)
+@app.get("/governance", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_page():
     for candidate in [ASTRO_DIST_DIR / "governance.html", ASTRO_DIST_DIR / "governance" / "index.html"]:
         if candidate.exists():
@@ -5903,7 +5939,7 @@ async def governance_page():
     raise HTTPException(status_code=404, detail="Governance Seite nicht gefunden")
 
 
-@app.get("/governance/funk", response_class=HTMLResponse)
+@app.get("/governance/funk", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_funk_page():
     p = ASTRO_DIST_DIR / "governance" / "funk.html"
     if p.exists():
@@ -5911,7 +5947,7 @@ async def governance_funk_page():
     return await governance_page()
 
 
-@app.get("/governance/usecases", response_class=HTMLResponse)
+@app.get("/governance/usecases", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_usecases_page():
     p = ASTRO_DIST_DIR / "governance" / "usecases.html"
     if p.exists():
@@ -5922,7 +5958,7 @@ async def governance_usecases_page():
     raise HTTPException(status_code=404, detail="Governance Use Cases nicht gefunden")
 
 
-@app.get("/governance/logs", response_class=HTMLResponse)
+@app.get("/governance/logs", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_logs_page():
     p = ASTRO_DIST_DIR / "governance" / "logs.html"
     if p.exists():
@@ -5934,7 +5970,7 @@ async def governance_logs_page():
 
 
 
-@app.get("/life", response_class=HTMLResponse)
+@app.get("/life", response_class=HTMLResponse, tags=["shared-gui"])
 async def life_page():
     p = ASTRO_DIST_DIR / "life.html"
     if p.exists():
@@ -5980,7 +6016,7 @@ async def get_life_providers():
     }
 
 
-@app.get("/domains", response_class=HTMLResponse)
+@app.get("/domains", response_class=HTMLResponse, tags=["shared-gui"])
 async def domains_page():
     p = ASTRO_DIST_DIR / "domains.html"
     if p.exists():
@@ -6024,7 +6060,7 @@ async def anonymizer_fachseite_page():
     return RedirectResponse("/domains")
 
 
-@app.get("/artefakte", response_class=HTMLResponse)
+@app.get("/artefakte", response_class=HTMLResponse, tags=["shared-gui"])
 async def artefakte_page():
     p = ASTRO_DIST_DIR / "artefakte.html"
     if p.exists():
@@ -6035,7 +6071,7 @@ async def artefakte_page():
     raise HTTPException(status_code=404, detail="Artefakte-Seite nicht gefunden")
 
 
-@app.get("/agenten/sessions", response_class=HTMLResponse)
+@app.get("/agenten/sessions", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_sessions_page():
     p = ASTRO_DIST_DIR / "agenten" / "sessions.html"
     if p.exists():
@@ -6092,7 +6128,7 @@ async def inbox_page():
 
 
 
-@app.get("/daemon", response_class=HTMLResponse)
+@app.get("/daemon", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def daemon_page(request: Request):
 
@@ -6112,7 +6148,7 @@ async def daemon_page(request: Request):
 
 
 
-@app.get("/tasks", response_class=HTMLResponse)
+@app.get("/tasks", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def tasks_page():
 
@@ -6133,7 +6169,7 @@ async def tasks_page():
 
 
 
-@app.get("/user-inbox", response_class=HTMLResponse)
+@app.get("/user-inbox", response_class=HTMLResponse, tags=["shared-gui"])
 async def user_inbox_page():
     """Nachrichten an den Nutzer; Chats und Läufe haben eigene Ansichten."""
     page = ASTRO_DIST_DIR / "user-inbox.html"
@@ -6213,6 +6249,8 @@ async def maintenance_page():
 @app.get("/logs", response_class=HTMLResponse)
 async def logs_page():
     """Logs Anzeige Seite."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/governance/logs")
     astro_log = ASTRO_DIST_DIR / "governance" / "logs.html"
     if astro_log.exists():
         return FileResponse(astro_log)
@@ -6297,7 +6335,7 @@ async def chat_control_proxy(control_path: str, request: Request):
     )
 
 
-@app.get("/settings", response_class=HTMLResponse)
+@app.get("/settings", response_class=HTMLResponse, tags=["shared-gui"])
 async def settings_page():
     """Zentrale GUI-Einstellungen."""
     astro_settings = ASTRO_DIST_DIR / "settings.html"
@@ -6309,9 +6347,20 @@ async def settings_page():
     raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
 
 
+@app.get("/system/ocean", response_class=HTMLResponse, tags=["shared-gui"])
+async def system_ocean_page():
+    """Serve the shared static Ocean page; API data retains device protection."""
+    page = ASTRO_DIST_DIR / "system" / "ocean.html"
+    if not page.is_file() or page.is_symlink():
+        raise HTTPException(status_code=503, detail="Gemeinsame Ocean-Seite nicht verfügbar")
+    return FileResponse(page)
+
+
 @app.get("/system", response_class=HTMLResponse)
 async def system_page(request: Request):
     """System-Route leitet auf Einstellungen/Setup weiter; ?tab=ocean liefert die gebaute Ocean-Seite."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/system/ocean" if request.query_params.get("tab") == "ocean" else "/settings")
     if request.query_params.get("tab") == "ocean":
         ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
         if ocean_page.is_file():
@@ -6445,7 +6494,7 @@ async def skills_board_page(request: Request):
     return RedirectResponse(target, status_code=307)
 
 
-@app.get("/skills")
+@app.get("/skills", tags=["shared-gui"])
 async def skills_page():
     """Current Skill-Zentrale with the actual SKILL.md editor."""
     p = ASTRO_DIST_DIR / "skills.html"
@@ -6457,10 +6506,10 @@ async def skills_page():
     return RedirectResponse("/agents-board")
 
 
-@app.get("/skills/plugins")
-@app.get("/skills/mcp")
-@app.get("/skills/software")
-@app.get("/skills/ocean")
+@app.get("/skills/plugins", tags=["shared-gui"])
+@app.get("/skills/mcp", tags=["shared-gui"])
+@app.get("/skills/software", tags=["shared-gui"])
+@app.get("/skills/ocean", tags=["shared-gui"])
 async def capability_board_page(request: Request):
     """Separate static boards; all host inventories require device authentication."""
     name = request.url.path.rsplit("/", 1)[-1]
@@ -6942,6 +6991,8 @@ async def api_logout_device(request: Request):
 @app.get("/tasks-board", response_class=HTMLResponse)
 async def tasks_board_api():
     """Tasks Board Seite."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/tasks")
 
     astro_tasks = ASTRO_DIST_DIR / "tasks.html"
     if astro_tasks.exists():
@@ -10385,7 +10436,7 @@ async def trigger_recurring(task_id: str):
 
 
 
-@app.get("/memory", response_class=HTMLResponse)
+@app.get("/memory", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def memory_page():
 
@@ -11496,7 +11547,7 @@ def _promptboard_library_paths():
     return promptboard_library_paths()
 
 
-@app.get("/prompt-library", response_class=HTMLResponse)
+@app.get("/prompt-library", response_class=HTMLResponse, tags=["shared-gui"])
 async def prompt_library_page():
     """Prompt-Bibliothek (BACH-DB) als GUI-Seite; gebaute Dist-Seite zuerst, Legacy-Template als Rückweg."""
     astro_page = ASTRO_DIST_DIR / "prompt-library.html"
@@ -13931,6 +13982,8 @@ async def delete_insurance(ins_id: int):
 @app.get("/usecases", response_class=HTMLResponse)
 async def usecases_page():
     """Usecase Verwaltung."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/governance/usecases")
     astro_uc = ASTRO_DIST_DIR / "governance" / "usecases.html"
     if astro_uc.exists():
         return FileResponse(astro_uc)

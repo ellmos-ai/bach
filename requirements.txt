@@ -99,11 +99,6 @@ doc-services @ git+https://github.com/ellmos-ai/doc-services.git@cdd2f6a7fffdef7
 session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@a0b89ad135f723c825f64cba8e8fb4d9f8d529b5
 # Chat-Runtime (Welle 2, D-20260830-002): neutraler Fachkern fuer hub/_services/chat/chat_runtime.py
 ellmos-chat @ git+https://github.com/ellmos-ai/ellmos-chat.git@1a12f79aa2bb81487758458f9f94a524afc84906
-# Abschlussvertrag worker_policy (Task #2456): taskplan.worker_policy liefert den kanonischen
-# Worker-Review-Vertrag (CONTRACT_VERSION worker-review-policy.v1alpha1, Commit 4a45575) für
-# system/hub/_services/worker_policy_settings.py; Pin auf Tag v0.7.2 analog accounts-core,
-# Voraussetzung ist Merge des PR-Stapels #17/#19/#20/#21 + Tag im task-master-Repo.
-taskplan @ git+https://github.com/ellmos-ai/task-master.git@v0.7.2
 
 python-telegram-bot
 # Native agent/skill sequences: reviewed API v1 from the canonical MarbleRun module.

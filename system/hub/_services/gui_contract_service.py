@@ -76,7 +76,8 @@ def get_pinned_kit_manifest(manifest_path: Path = KIT_MANIFEST_PATH) -> dict[str
         }
 
 
-def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) -> dict[str, Any]:
+def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None, *,
+                          requested_page: str | None = None) -> dict[str, Any]:
     """Verify that an installed or referenced dist/ directory matches its dist-manifest."""
     if not dist_dir.exists() or not dist_dir.is_dir():
         return {
@@ -133,6 +134,10 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
                 return {"installed": True, "verified": False, "reason_code": "dist_symlink", "page_count": 0}
             if item.is_file() and item != manifest_file:
                 actual_files.add(item.relative_to(dist_dir).as_posix())
+        page_reads_raw = None
+        page_payload = None
+        requested_html = ("index.html" if requested_page == "/" else
+                          requested_page.lstrip("/") + ".html") if requested_page is not None else None
         mismatches: list[str] = []
         for rel_path, expected_digest in files_map.items():
             if (not isinstance(rel_path, str) or not rel_path or "\\" in rel_path
@@ -146,7 +151,12 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
             if not fpath.is_file():
                 mismatches.append(f"missing: {rel_path}")
                 continue
-            actual_digest = hashlib.sha256(fpath.read_bytes()).hexdigest()
+            raw = fpath.read_bytes()
+            actual_digest = hashlib.sha256(raw).hexdigest()
+            if rel_path == "page-reads.v1.json":
+                page_reads_raw = raw
+            if rel_path == requested_html:
+                page_payload = raw
             if actual_digest != expected_digest:
                 mismatches.append(f"digest_mismatch: {rel_path}")
 
@@ -162,7 +172,9 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
                 "page_count": len([k for k in files_map if k.endswith(".html")]),
             }
 
+        from hub._services.gui_page_reads import parse
         html_pages = [k for k in files_map if k.endswith(".html")]
+        page_paths = ["/" if k == "index.html" else "/" + k[:-5] for k in html_pages]
         return {
             "installed": True,
             "verified": True,
@@ -170,6 +182,9 @@ def verify_installed_dist(dist_dir: Path, expected_commit: str | None = None) ->
             "reason_code": "verified",
             "page_count": len(html_pages),
             "files_count": len(files_map),
+            "page_paths": page_paths,
+            "page_reads": parse(page_reads_raw),
+            **({"page_payload": page_payload} if requested_page is not None else {}),
         }
     except (OSError, ValueError, KeyError, json.JSONDecodeError):
         return {

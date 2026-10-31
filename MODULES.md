@@ -257,3 +257,25 @@ rm -rf .MODULES/.CONTROL/skill-registry
 Alle Aufrufer sind danach wieder gegen die ursprünglichen
 Implementierungen gebunden; der Modulordner ist rein additiv und wird
 ohne Adapter nicht geladen.
+
+---
+
+## 12. Moduldefinition: content-guard
+
+**Pfad:** `.MODULES/.CONTROL/content-guard/` · **Version:** v0.1.0
+
+Mehrsprachige Injection-Erkennung und Content-Markierung mit fail-closed Prüfweg für Worker-Toolcalls und Kettenübergaben. Erkennt injektionsverdächtige Muster (mehrsprachige Pattern-Library), markiert unvertraute Inhalte (≥ `untrusted_threshold` Funde → `mark_untrusted`) und blockiert bei schweren Befunden (`ContentBlockedError` ab Schwere `high` bei `fail_closed=True`).
+
+| Symbol | Rolle |
+|--------|-------|
+| `ContentBlockedError` | Exception bei blockiertem Inhalt (`fail_closed=True`, Schwere ≥ `high`). |
+| `GuardConfigurationError` | Fehlerhafte Guard-Konfiguration. |
+| `InjectionPattern` | Frozen Dataclass: injektionsverdächtiges Muster (id, Sprache, Schwere, Kategorie). |
+| `Finding` | Frozen Dataclass: einzelner Treffer (pattern_id, matched_text, position, confidence). |
+| `GuardVerdict` | Frozen Prüfergebnis: action (`allow`/`block`/`mark_untrusted`), findings, content_hash (SHA-256), adapter_used, blocked, untrusted_mark. |
+| `GuardConfig` | Frozen Konfiguration: `ollama_enabled=False`, `model_armor_enabled=False`, `fail_closed=True`, `max_findings=10`, `untrusted_threshold=2`. |
+| `ContentGuard` | Kernklasse: Prüfung von Toolcalls und Kettenübergaben, Event-Recorder-Integration. |
+| `pruefe_toolcall` | Modulfunktion: Prüfweg für Worker-Toolcalls. |
+| `pruefe_kettenuebergabe` | Modulfunktion: Prüfung von Kettenübergaben. |
+
+Tests: `test_content_guard.py` (10 Tests; Defaults, Fail-closed HIGH→`ContentBlockedError`, Ollama-Fehler→Finding `ollama_error` (high), medium-single→allow, medium-double→mark_untrusted, Toolcall/Kettenübergabe/Wrapper, content_hash 64 hex). Integration: Geplante Anbindung über einen BACH-Adapter analog zum agents-heart-Muster.
