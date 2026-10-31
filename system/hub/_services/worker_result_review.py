@@ -583,6 +583,20 @@ def _intent_target(conn, found, *, repo_root=None, worktrees_dir=None):
     return target, authority
 
 
+def _paging_plan(receipt):
+    """Diff-Paging-Plan: Paging notwendig, Seitenzahl und Diff-Digest."""
+    max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
+    chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
+    diff_chars = receipt.get("diff_chars", 0)
+    diff_truncated = receipt.get("diff_truncated", False)
+    diff_sha256 = receipt.get("diff_sha256", "")
+    # Restfenster: selbst ohne truncation ist der Diff nur dann vollstaendig
+    # pruefbar, wenn er in das verfuegbare Slot-Kontextfenster passt.
+    paging_required = diff_truncated or diff_chars > max(0, max_diff_chars - chunk)
+    page_count = max(1, (diff_chars + chunk - 1) // chunk)
+    return paging_required, page_count, diff_sha256
+
+
 def _grant_valid(grant):
     try:
         return (isinstance(grant, ReviewGrant) and grant._seal is _SEAL
@@ -614,11 +628,7 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
         if target_pair is None:
             return None
         target, authority = target_pair
-        max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
-        diff_chars = found["receipt"].get("diff_chars", 0)
-        diff_truncated = found["receipt"].get("diff_truncated", False)
-        diff_sha256 = found["receipt"].get("diff_sha256", "")
-        paging_required = diff_truncated or diff_chars > max_diff_chars
+        paging_required, _page_count, diff_sha256 = _paging_plan(found["receipt"])
         if paging_required and not diff_sha256:
             return None
         principal = identity.principal_for_route(authority["identity"],
@@ -1362,14 +1372,8 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                 or authority["identity_version"] != grant.identity_version
                 or target["result_revision"] != grant.target_revision):
             return None
-        max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
-        diff_chars = found["receipt"].get("diff_chars", 0)
-        diff_truncated = found["receipt"].get("diff_truncated", False)
-        diff_sha256 = found["receipt"].get("diff_sha256", "")
-        paging_required = diff_truncated or diff_chars > max_diff_chars
+        paging_required, page_count, diff_sha256 = _paging_plan(found["receipt"])
         if paging_required:
-            chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
-            page_count = max(1, (diff_chars + chunk - 1) // chunk)
             if verdict["status"] == "approved":
                 pages = verdict.get("diff_pages", [])
                 if (diff_sha256 == "" or len(pages) != page_count

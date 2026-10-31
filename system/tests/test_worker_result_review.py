@@ -734,6 +734,26 @@ def test_paged_review_grant_with_diff_sha256_succeeds(review_world, monkeypatch)
     assert _grant(review_world, prepared["review_task_id"])[0] is not None
 
 
+def test_truncated_diff_without_sha256_is_rejected_at_persist(review_world, monkeypatch):
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "1024")
+    with pytest.raises(ValueError):
+        _prepare_diff(review_world, diff_chars=5000, diff_truncated=True, diff_sha256="")
+
+
+def test_truncated_diff_with_sha256_still_gets_grant(review_world, monkeypatch):
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "1024")
+    prepared = _prepare_diff(review_world, diff_chars=5000, diff_truncated=True, diff_sha256="ab" * 32)
+    assert _grant(review_world, prepared["review_task_id"])[0] is not None
+
+
+def test_grant_rejected_when_slot_context_window_too_small(review_world, monkeypatch):
+    world = review_world
+    monkeypatch.setenv("BACH_CONTEXT_LIMIT", "1024")
+    monkeypatch.setenv("BACH_MAX_CONTEXT_CHARS", "2500")
+    prepared = _prepare_diff(world, diff_chars=1000, diff_truncated=False, diff_sha256="")
+    assert _grant(world, prepared["review_task_id"])[0] is None
+
+
 def test_paged_review_approved_with_full_diff_pages_records_evidence(review_world, monkeypatch):
     world = review_world
     monkeypatch.setenv("BACH_CONTEXT_LIMIT", "64")
