@@ -51,6 +51,8 @@ UI_ALIASES = {
         "standard-bewaehrt": "standard",
         "ocean-bach-classic": "ocean-bach-classic",
         "ocean_bach_classic": "ocean-bach-classic",
+        "ocean-bach-klassik": "ocean-bach-classic",
+        "ocean_bach_klassik": "ocean-bach-classic",
         "classic": "ocean-bach-classic",
         "klassik": "ocean-bach-classic",
         "compact": "compact",
@@ -70,9 +72,11 @@ UI_ALIASES = {
     "icon_style": {
         "classic": "classic",
         "klassisch": "classic",
+        "line": "classic",
         "solid": "classic",
         "outline": "classic",
         "emoji": "emoji",
+        "farbig": "emoji",
         "none": "classic",
     },
     "density": {
@@ -238,6 +242,7 @@ class ThemeHandler(BaseHandler):
                 "icon_style": list(UI_CANONICAL_OPTIONS["icon_style"]),
                 "density": list(UI_CANONICAL_OPTIONS["density"]),
             },
+            "defaults": dict(UI_DEFAULTS),
             "configured": configured,
         }
 
@@ -297,6 +302,7 @@ class ThemeHandler(BaseHandler):
                 "icon_style": list(UI_CANONICAL_OPTIONS["icon_style"]),
                 "density": list(UI_CANONICAL_OPTIONS["density"]),
             },
+            "defaults": dict(UI_DEFAULTS),
             "configured": True,
             "dry_run": bool(dry_run),
         }

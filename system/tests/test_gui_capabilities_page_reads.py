@@ -50,9 +50,10 @@ MANIFEST_PAGES = {
     "/settings": [
         ("GET", "/api/gui/backend-origin", True), ("GET", "/api/system/worker-policy", False),
         ("PUT", "/api/system/worker-policy", False), ("GET", "/api/system/cluster-cockpit", False),
-        ("GET", "/api/setup/ocean-map", True), ("GET", "/api/settings/theme", True),
+        ("GET", "/api/setup/ocean-map", True), ("GET", "/api/settings/theme", True), ("GET", "/api/settings/ui", True),
         ("GET", "/api/learning/nemofold/stats", True), ("GET", "/api/learning/nemofold/candidates", True),
         ("GET", "/api/system/external-artifacts", True), ("PUT", "/api/settings/theme", False),
+        ("PUT", "/api/settings/ui", False),
         ("POST", "/api/learning/nemofold/candidates/{id}/approve", False),
         ("POST", "/api/learning/nemofold/candidates/{id}/reject", False),
         ("POST", "/api/learning/nemofold/synthesize", False), ("POST", "/api/system/external-artifacts/import", False),
@@ -139,6 +140,18 @@ def test_worker_policy_reads_and_writes_are_optional_but_cataloged():
     assert "GET /api/tasks/{task_id}/worker-policy" not in pages["/tasks"]["requires"]
     assert "/api/system/worker-policy" in caps.PAGE_OPTIONAL_READS["/settings"]
     assert "/api/tasks/{task_id}/worker-policy" in caps.PAGE_OPTIONAL_READS["/tasks"]
+
+
+def test_ui_settings_get_and_put_are_both_cataloged_and_registered():
+    ui_routes = {"GET /api/settings/ui", "PUT /api/settings/ui"}
+    actual = _get_route_methods()
+    assert {tuple(item.split(" ", 1)) for item in ui_routes} <= actual
+    routes = [_Route("/api/settings/ui", {"GET", "PUT"})]
+    cataloged, out = _cataloged(routes)
+    assert ui_routes <= cataloged
+    endpoints = {f"{e['method']} {e['path']}": e for e in out["endpoints"]}
+    assert endpoints["GET /api/settings/ui"]["kind"] == "read"
+    assert endpoints["PUT /api/settings/ui"]["kind"] == "write"
 
 
 class _Route:

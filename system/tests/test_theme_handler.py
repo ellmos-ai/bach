@@ -234,3 +234,106 @@ def test_mobile_navigation_has_full_row_without_recoloring_underlined_tabs():
     assert ".main-nav { flex: 1 1 100%; width: 100%; overflow-x: auto; }" in css
     assert ".nav-item.active { color: var(--on-accent); }" in css
     assert ".nav-item.active, .tab-btn.active { color: var(--on-accent); }" not in css
+
+
+def test_ui_settings_defaults_roundtrip_and_aliases(tmp_path):
+    config_path = tmp_path / "data" / "user_config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        json.dumps({"session_duration_minutes": 45, "ui": {"custom_flag": True}}),
+        encoding="utf-8",
+    )
+    handler = ThemeHandler(tmp_path)
+
+    initial = handler.get_ui()
+    assert initial["preset"] == "standard"
+    assert initial["nav_scope"] == "compact"
+    assert initial["icon_style"] == "classic"
+    assert initial["density"] == "standard"
+    assert initial["configured"] is False
+    assert initial["defaults"] == {
+        "preset": "standard",
+        "nav_scope": "compact",
+        "icon_style": "classic",
+        "density": "standard",
+    }
+
+    updated = handler.set_ui(
+        preset="classic",
+        nav_scope="all",
+        icon_style="emoji",
+        density="spacious",
+    )
+    assert updated["preset"] == "ocean-bach-classic"
+    assert updated["nav_scope"] == "all"
+    assert updated["icon_style"] == "emoji"
+    assert updated["density"] == "spacious"
+    assert updated["configured"] is True
+
+    readback = handler.get_ui()
+    assert readback["preset"] == "ocean-bach-classic"
+    assert readback["nav_scope"] == "all"
+    assert readback["icon_style"] == "emoji"
+    assert readback["density"] == "spacious"
+    assert readback["configured"] is True
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["session_duration_minutes"] == 45
+    assert saved["ui"]["custom_flag"] is True
+    assert saved["ui"]["preset"] == "ocean-bach-classic"
+
+    reset = handler.set_ui(
+        preset="standard",
+        nav_scope="compact",
+        icon_style="line",
+        density="standard",
+    )
+    assert reset["preset"] == "standard"
+    assert reset["nav_scope"] == "compact"
+    assert reset["icon_style"] == "classic"
+    assert reset["density"] == "standard"
+
+    with pytest.raises(ValueError, match="Ungueltiger preset-Wert"):
+        handler.set_ui(preset="unknown-preset")
+
+
+@pytest.mark.asyncio
+async def test_gui_ui_endpoints_isolated_without_lifespan(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    from gui import server
+
+    monkeypatch.setattr(server, "BACH_DIR", tmp_path)
+    monkeypatch.setenv("BACH_USER_CONFIG", str(tmp_path / "data" / "user_config.json"))
+
+    initial = await server.get_gui_ui()
+    assert initial["success"] is True
+    assert initial["preset"] == "standard"
+    assert initial["nav_scope"] == "compact"
+    assert initial["icon_style"] == "classic"
+    assert initial["density"] == "standard"
+    assert initial["configured"] is False
+
+    updated = await server.update_gui_ui(
+        server.UIUpdate(
+            preset="ocean-bach-classic",
+            nav_scope="all",
+            icon_style="emoji",
+            density="spacious",
+        )
+    )
+    assert updated["success"] is True
+    assert updated["preset"] == "ocean-bach-classic"
+    assert updated["nav_scope"] == "all"
+    assert updated["icon_style"] == "emoji"
+    assert updated["density"] == "spacious"
+    assert updated["configured"] is True
+
+    readback = await server.get_gui_ui()
+    assert readback["preset"] == "ocean-bach-classic"
+    assert readback["configured"] is True
+
+    with pytest.raises(HTTPException) as exc_info:
+        await server.update_gui_ui(server.UIUpdate(preset="invalid-preset"))
+    assert exc_info.value.status_code == 400
+
+
