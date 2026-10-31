@@ -1,4 +1,4 @@
-/* Device credentials are forwarded only to this GUI's own API. */
+/* Browser device credentials stay in the server-managed HttpOnly cookie. */
 (() => {
     if (window.bachDeviceFetchInstalled) return;
     window.bachDeviceFetchInstalled = true;
@@ -9,12 +9,6 @@
             return originalFetch(input, options);
         }
         const headers = new Headers(options.headers ?? (input instanceof Request ? input.headers : undefined));
-        if (!headers.has('Authorization')) {
-            try {
-                const token = localStorage.getItem('bach_device_token');
-                if (token) headers.set('Authorization', `Bearer ${token}`);
-            } catch (_) { /* Storage may be disabled; the API still fails closed. */ }
-        }
         const response = await originalFetch(input, {...options, headers});
         if ((response.status === 401 || response.status === 403) &&
                 document.body && !document.getElementById('bach-device-login-needed')) {

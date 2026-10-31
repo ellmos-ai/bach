@@ -1,0 +1,42 @@
+{
+  "name": "automation-master",
+  "version": "0.1.0",
+  "description": "Autonomiestufen je Bereich (manuell/teilautomatisch/vollautomatisch; voll=handeln und informieren, teil=Außenwirkung nur bei direktem Auftrag) mit Testmodus, Budget-/Override-Governance und Messung. EINE Setting-Quelle; die Entscheidung bleibt bei ellmos-delegation-authority, Besetzungen laufen über agents-heart.",
+  "author": "BACH/Ocean Shared Modules",
+  "license": "MIT",
+  "entry_point": "automation_master.py",
+  "exports": [
+    "AutomationMaster",
+    "AutonomySettings",
+    "BudgetGovernance",
+    "MetricsRecorder",
+    "AutomationSettingsError",
+    "decide",
+    "load_delegation_authority",
+    "AREAS",
+    "AUTONOMY_LEVELS",
+    "SPENDING_AREAS"
+  ],
+  "dependencies": [
+    "ellmos-delegation-authority"
+  ],
+  "consumers": [
+    {
+      "name": "BACH",
+      "version": ">=1.0",
+      "integration": "adapter"
+    },
+    {
+      "name": "Ocean",
+      "version": ">=1.0",
+      "integration": "adapter"
+    }
+  ],
+  "separation_of_concerns": {
+    "decision": "ellmos-delegation-authority (evaluate_permission entscheidet)",
+    "settings": "dieses Modul automation-master (Autonomiestufen, Testmodus, Budget)",
+    "evaluation": "controlcenter_evaluate_permission (gemeinsame Prüfschnittstelle)",
+    "tickets": "ticket-master (Freigabekarten für Rückfragen)",
+    "assignment": "agents-heart (Besetzung mit autonomy_levels)"
+  }
+}

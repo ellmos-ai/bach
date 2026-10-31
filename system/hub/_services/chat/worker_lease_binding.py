@@ -10,6 +10,7 @@ from dataclasses import replace
 import threading
 from datetime import datetime, timezone
 
+from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
 from hub._services.task_lease_client import (
     LeaseError, LeaseDeniedError, LeaseMaxTotalReachedError, LeaseProtocolError,
     LeaseSelfCheckRequiredError,
@@ -51,7 +52,7 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "update_result": 'Ergebnis getrennt mit task_manage(action="submit_result", task_id=<ID>, result=<Text>, complete=true) abgeben.',
         "update_status": 'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.',
         "update_completion": 'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.',
-        "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder.',
+        "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder. ' + TASK_CUT_RULE_SHORT,
         "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
     }
 
@@ -261,6 +262,7 @@ class WorkerLeaseBinding:
                                review_requested_model=None, **kwargs):
         from .worker_queue_status import ACQUIRE_DENIALS
         on_fixed_task_rejected = kwargs.pop("on_fixed_task_rejected", None)
+        review_first = kwargs.pop("review_first", False) is True
         explicit = slot.get("task_id")
         released_fixed_task_id = None
         if explicit not in (None, "", 0, "0"):
@@ -324,6 +326,13 @@ class WorkerLeaseBinding:
                 return binding
         if kwargs.get("_creator_delegation") is not None:
             raise LeaseProtocolError("Creator-Delegation braucht die explizit gebundene Sequenz-Task")
+        if review_first:
+            # Reviews are ordinary work (user decision 25.10.2026): the caller alternates turns.
+            reviewed = cls._acquire_review_next(client, slot, observation,
+                review_route=review_route, review_requested_model=review_requested_model,
+                **kwargs)
+            if reviewed is not None:
+                return reviewed
         offset = 0
         while True:
             if not kwargs["is_current"]() or kwargs["stop_event"].is_set():

@@ -49,6 +49,16 @@ DECISIONS: Tuple[str, ...] = (
     "nie",
 )
 
+AUTONOMY_LEVELS: Tuple[str, ...] = (
+    "manuell",
+    "teilautomatisch",
+    "vollautomatisch",
+)
+DEFAULT_AUTONOMY_LEVEL = "manuell"
+
+# Außenwirkende Handlungen; bildschirmsteuerung gilt als intern.
+EXTERNAL_ACTIONS = frozenset({"linkedin", "youtube", "mail"})
+
 # Hintergrundworker ist kein Operator; die Operatoren tragen Ränge.
 OPERATOR_RANK: Dict[str, int] = {
     "buddha": 3,
@@ -104,10 +114,47 @@ class PermissionDecision:
     needs_ticket: bool
     escalation_hint: str
     revision: str
+    inform: bool = False
 
 
 class PermissionDenied(RuntimeError):
     """Fail-closed: ungültige oder unbekannte Werte verweigern die Prüfung."""
+
+
+def _normalize_autonomy_level(autonomy_level: Optional[str]) -> str:
+    """Normalisiert die Autonomiestufe; None gilt als „manuell“."""
+    if autonomy_level is None:
+        return DEFAULT_AUTONOMY_LEVEL
+    if not isinstance(autonomy_level, str) or autonomy_level not in AUTONOMY_LEVELS:
+        raise ValueError(
+            f"Unbekannte Autonomiestufe {autonomy_level!r}; "
+            "erlaubt: manuell, teilautomatisch, vollautomatisch"
+        )
+    return autonomy_level
+
+
+def _apply_autonomy(
+    decision_value: str,
+    action: str,
+    autonomy_level: str,
+    direct_order: bool,
+) -> Tuple[str, bool]:
+    """Wendet die Autonomiestufe auf eine „rueckfrage“-Entscheidung an.
+
+    Gibt (decision, inform) zurück: „vollautomatisch“ überführt
+    „rueckfrage“ in „erlaubt“ mit inform=True (handeln und informieren);
+    „teilautomatisch“ erlaubt interne Handlungen sowie außenwirkende nur
+    bei direct_order. „nie“ bleibt immer „nie“; „manuell“ behält
+    „rueckfrage“.
+    """
+    if decision_value != "rueckfrage":
+        return decision_value, False
+    if autonomy_level == "vollautomatisch":
+        return "erlaubt", True
+    if autonomy_level == "teilautomatisch":
+        if action not in EXTERNAL_ACTIONS or direct_order:
+            return "erlaubt", False
+    return decision_value, False
 
 
 def _utc_now() -> str:
@@ -175,6 +222,8 @@ def evaluate_permission(
     actor: str,
     matrix: Optional[Dict[str, Any]] = None,
     event_recorder: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    autonomy_level: Optional[str] = None,
+    direct_order: bool = False,
 ) -> PermissionDecision:
     """Entscheidung für eine Handlung-×-Akteur-Kombination bestimmen.
 
@@ -194,6 +243,8 @@ def evaluate_permission(
     Eskalations-Hinweis für die Freigabekarte über ticket-master
     mitgegeben. Wenn event_recorder gegeben ist, wird ein Audit-Event
     (dict mit ISO-UTC-Zeitstempel) ausgeliefert.
+
+    Autonomiestufe (Default „manuell“, keine Überführung): „vollautomatisch“ überführt „rueckfrage“ in „erlaubt“ und setzt inform=True (handeln und informieren); „teilautomatisch“ erlaubt interne Handlungen, außenwirkende (linkedin, youtube, mail) nur bei direct_order=True. „nie“ bleibt immer „nie“. Ungültige Stufen lösen ValueError aus.
     """
     if action not in ACTIONS:
         raise PermissionDenied(f"Unbekannte Handlung: {action!r}")
@@ -242,6 +293,17 @@ def evaluate_permission(
             f"{action!r}/{actor!r}"
         )
 
+    applied_autonomy = _normalize_autonomy_level(autonomy_level)
+    original_decision = decision_value
+    decision_value, inform = _apply_autonomy(
+        decision_value, action, applied_autonomy, bool(direct_order)
+    )
+    if decision_value != original_decision:
+        reason += (
+            f" – Autonomiestufe {applied_autonomy!r} hat 'rueckfrage' "
+            "automatisch in 'erlaubt' überführt."
+        )
+
     needs_ticket = decision_value == "rueckfrage"
     escalation_hint = ESCALATION_HINT if needs_ticket else ""
 
@@ -254,6 +316,7 @@ def evaluate_permission(
         needs_ticket=needs_ticket,
         escalation_hint=escalation_hint,
         revision=resolved["revision"],
+        inform=inform,
     )
 
     if event_recorder is not None:
@@ -268,6 +331,9 @@ def evaluate_permission(
                 "source": source,
                 "timestamp": _utc_now(),
                 "revision": resolved["revision"],
+                "autonomy_level": applied_autonomy,
+                "direct_order": bool(direct_order),
+                "inform": inform,
             }
         )
 

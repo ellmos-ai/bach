@@ -91,7 +91,7 @@ def test_explicit_dry_run_validates_without_writing(sessions):
 
 
 def test_typed_api_preserves_summary_and_forwards_scope():
-    import bach_api
+    from system import bach_api
     fake = type("App", (), {"execute": lambda self, *args: (True, args)})()
     with patch.object(bach_api, "get_app", return_value=fake):
         result = bach_api.memory.session("literal --partner=claude", session_id="own", partner="codex")

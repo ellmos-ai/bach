@@ -755,8 +755,12 @@ def _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version=None
 
 def renew_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                 task_version: str | None = None,
-                config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
-    """Vertrag §5.3. Verlängert nie verkürzend, nur lebend, gedeckelt auf profile_max_total."""
+                config: LeaseConfig | None = None, now: datetime | None = None,
+                _project_binding: str | None = None) -> LeaseResult:
+    """Vertrag §5.3. Verlängert nie verkürzend, nur lebend, gedeckelt auf profile_max_total.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
+    """
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
     lease_id, fence = _validate_lease_ref(lease_id, fence)
@@ -803,11 +807,14 @@ def release_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fenc
                   outcome: str, result_ref: str = "", note: str = "",
                   worker_result: dict | None = None,
                   config: LeaseConfig | None = None, now: datetime | None = None,
-                  _review_binding=None) -> LeaseResult:
+                  _review_binding=None,
+                  _project_binding: str | None = None) -> LeaseResult:
     """Vertrag §5.4 + §8.4. Einziger Weg für den Abschluss einer geleasten Task.
 
     Bei veraltetem Fence oder abgelaufenem Lease wird nichts am Status geändert;
     ein mitgeliefertes Ergebnis wird nur als ``late_result`` protokolliert.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
     """
     cfg = config or LeaseConfig.from_env()
     task_id = _validate_task_id(task_id)
@@ -1014,8 +1021,12 @@ def reclaim_unresolved_lease(conn: sqlite3.Connection, task_id: int, *, operator
 
 def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                  task_version: str, changes: dict[str, Any],
-                 config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
-    """Update content and its holder binding in one fenced transaction."""
+                 config: LeaseConfig | None = None, now: datetime | None = None,
+                 _project_binding: str | None = None) -> LeaseResult:
+    """Update content and its holder binding in one fenced transaction.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
+    """
     from hub.task_audit import ALLOWED_COLUMNS, apply_task_field_changes, normalize_task_tags
 
     cfg = config or LeaseConfig.from_env()
@@ -1088,8 +1099,12 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
 def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                     task_version: str, subtasks: list[dict[str, Any]], close_parent: bool = True,
                     sequential: bool = False, config: LeaseConfig | None = None,
-                    now: datetime | None = None) -> LeaseResult:
-    """Lease, Taskversion, Teilaufgaben und Elternabschluss bilden eine Transaktion."""
+                    now: datetime | None = None,
+                    _project_binding: str | None = None) -> LeaseResult:
+    """Lease, Taskversion, Teilaufgaben und Elternabschluss bilden eine Transaktion.
+
+    _project_binding: optionaler Client-Passthrough; wird angenommen, aber nicht ausgewertet.
+    """
     try:
         from hub.task_audit import apply_task_field_changes
     except ImportError:  # pragma: no cover - package import from system/hub

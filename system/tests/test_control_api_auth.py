@@ -68,6 +68,39 @@ def test_delete_without_token_is_rejected_before_sink():
     remove_worker.assert_not_called()
 
 
+@pytest.mark.parametrize("authorization", [None, "", "Bearer wrong-secret", "Basic control-secret"])
+def test_workers_snapshot_rejects_invalid_auth_before_reconciliation(
+    monkeypatch, authorization,
+):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "control-secret")
+    headers = {"Authorization": authorization} if authorization is not None else {}
+    handler = _handler(headers, "/api/workers")
+    with patch.object(handler, "_json") as response, \
+         patch("hub._services.chat.telegram_chat._worker_execution_snapshots") as snapshot:
+        handler.do_GET()
+
+    response.assert_called_once_with(
+        {"error": "Control-API-Token erforderlich oder ungültig"}, 401
+    )
+    snapshot.assert_not_called()
+
+
+def test_workers_snapshot_with_valid_auth_preserves_runtime_readback(monkeypatch):
+    monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "control-secret")
+    handler = _handler(
+        {"Authorization": "Bearer control-secret"},
+        "/api/workers",
+    )
+    workers = [{"id": "worker-1", "runtime_verified": True}]
+    with patch.object(handler, "_json") as response, \
+         patch("hub._services.chat.telegram_chat._worker_execution_snapshots",
+               return_value=workers) as snapshot:
+        handler.do_GET()
+
+    response.assert_called_once_with({"ok": True, "workers": workers})
+    snapshot.assert_called_once_with()
+
+
 def test_valid_token_allows_json_post_guard(monkeypatch):
     monkeypatch.setattr(control_auth, "get_control_api_token", lambda: "control-secret")
     handler = _handler(
