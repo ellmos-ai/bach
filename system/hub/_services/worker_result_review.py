@@ -600,11 +600,14 @@ def _intent_target(conn, found, *, repo_root=None, worktrees_dir=None):
 def _paging_plan(receipt):
     """Diff-Paging-Plan: Paging notwendig, Seitenzahl und Diff-Digest.
 
-    Kontextfenster-Gate (Review-Anforderung 1): Ein Grant ist nur dann ohne
-    Seitenabruf zulaessig, wenn der Diff das Restfenster des Slots nicht
-    ueberschreitet. Genau das prueft die Restfensterformel unten; ein zu
-    kleiner Slot-Kontext erzwingt Paging und damit einen diff_sha256 im Grant.
-    Eine separate Slot-Fensterabfrage ist deshalb nicht noetig.
+    Restfenster-Gate (Review-Anforderung 1): Ein Grant ist nur dann ohne
+    Seitenabruf zulaessig, wenn der Diff in das hier modellierte Restfenster
+    passt. Das Restfenster wird konservativ aus BACH_CONTEXT_LIMIT * 3 minus
+    BACH_MAX_CONTEXT_CHARS gebildet und NICHT aus dem realen Kontextfenster
+    des anfragenden Slots gelesen; die Formel ist damit bewusst strenger als
+    noetig (kein Approval-Pfad, der sich auf ein grosszuegigeres Slot-Fenster
+    beruft). Bleibt Paging erforderlich, verlangt issue_review_grant fail-closed
+    einen diff_sha256; ohne Digest gibt es keinen Grant.
     """
     max_diff_chars = limit("BACH_CONTEXT_LIMIT") * 3
     chunk = max(1, limit("BACH_MAX_CONTEXT_CHARS"))
@@ -612,7 +615,7 @@ def _paging_plan(receipt):
     diff_truncated = receipt.get("diff_truncated", False)
     diff_sha256 = receipt.get("diff_sha256", "")
     # Restfenster: selbst ohne truncation ist der Diff nur dann vollstaendig
-    # pruefbar, wenn er in das verfuegbare Slot-Kontextfenster passt.
+    # pruefbar, wenn er in das modellierte Restfenster passt.
     paging_required = diff_truncated or diff_chars > max(0, max_diff_chars - chunk)
     page_count = max(1, (diff_chars + chunk - 1) // chunk)
     return paging_required, page_count, diff_sha256
@@ -650,6 +653,8 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
             return None
         target, authority = target_pair
         paging_required, _page_count, diff_sha256 = _paging_plan(found["receipt"])
+        # Fail-closed: gekuerzter (oder nicht ins Restfenster passender) Diff
+        # ohne diff_sha256 ist nicht seitenpruefbar und damit nicht reviewbar.
         if paging_required and not diff_sha256:
             return None
         principal = identity.principal_for_route(authority["identity"],
