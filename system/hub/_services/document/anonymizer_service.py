@@ -444,8 +444,8 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
 PHONE_PATTERN = re.compile(
     r'(?<!\w)(?:'
-    r'(?:\+49|0049)[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){1,3}|'
-    r'0\d{2,4}[ \t\-/]{0,3}\d{2,4}(?:[ \t\-/]{0,3}\d{2,4}){0,2}'
+    r'(?:\+49|0049)(?:[ \t\-/]{0,3}| / )\d{2,4}(?:(?:[ \t\-/]{0,3}| / )\d{2,4}){1,3}|'
+    r'0\d{2,4}(?:[ \t\-/]{0,3}| / )\d{2,4}(?:(?:[ \t\-/]{0,3}| / )\d{2,4}){0,2}'
     r')(?!\w)',
     re.IGNORECASE
 )
@@ -503,7 +503,15 @@ _PRIVATE_EMAIL_DOMAINS = {
     "icloud.com", "me.com", "mail.de", "email.de", "posteo.de",
     "kabelbw.de", "kabelmail.de", "vodafone.de", "o2online.de",
     "unitymedia.de", "1und1.de", "ionos.de",
+    "example.org", "example.com", "invalid", "test",
 }
+
+
+def _is_private_email_domain(domain: str) -> bool:
+    """True if the domain itself or any of its subdomains is a known private domain."""
+    return domain in _PRIVATE_EMAIL_DOMAINS or any(
+        domain.endswith("." + d) for d in _PRIVATE_EMAIL_DOMAINS
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -682,7 +690,7 @@ def _detect_titled_names(text: str, wl_lower: set) -> set:
         norm = [f"{title} {n1}"]
         if not n2 and not _is_common_german_word(n1, text):
             norm.append(n1)
-        if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2):
+        if n2 and n2.lower() not in _NER_GENERIC_ROLE_NOUNS and not _is_common_german_word(n2, text):
             spans.append(text[start:m.end("n2")])
             norm.append(f"{title} {n1} {n2}")
             if n1.lower() in DEUTSCHE_VORNAMEN_M or n1.lower() in DEUTSCHE_VORNAMEN_W:
@@ -833,7 +841,7 @@ def _find_sensitive_emails(text: str, known_names: Iterable[str], whitelist: Ite
         # A terminal domain label is not evidence of a profile identity.
         domain_identity = domain.rpartition(".")[0]
         address_parts = set(re.findall(r"[a-z]+", normalize(local + " " + domain_identity)))
-        if (email not in found and (domain in _PRIVATE_EMAIL_DOMAINS or name_parts.intersection(local_parts)
+        if (email not in found and (_is_private_email_domain(domain) or name_parts.intersection(local_parts)
                 or trusted_parts.intersection(address_parts)
                 or trusted_compounds.intersection(address_parts)
                 or any(name in compact for name in full_names)
