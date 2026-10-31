@@ -191,12 +191,20 @@ def record_intent(root, name, digest):
     return path
 
 
+def canonical_inference_root() -> Path:
+    runtime = Path(os.environ.get("BACH_RUNTIME_DIR") or Path.home() / ".bach" / "runtime")
+    return (runtime / "local-inference").expanduser().resolve()
+
+
 def unload(args):
     root = args.inference_root.expanduser()
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
         raise Denied("inference_root_unavailable")
-    if any(part.lower().startswith("onedrive") for part in root.resolve().parts):
+    resolved_root = root.resolve()
+    if any(part.lower().startswith("onedrive") for part in resolved_root.parts):
         raise Denied("inference_root_not_local")
+    if resolved_root != canonical_inference_root():
+        raise Denied("inference_root_mismatch")
     # Same inode and same flock family as user_config_store._exclusive_lock.
     # Never unlink, replace, or create an alternative inference lock.
     path = root / "inference.lock"

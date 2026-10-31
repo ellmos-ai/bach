@@ -131,3 +131,14 @@ For rollback, first stop new watchdog unload attempts and resolve every pending
 operation. Keep the updated gate while intent remains unresolved. Restore source
 and restart processes only within the authorized host procedure; never roll back
 to a gate that ignores an outstanding intent.
+
+## Ocean-resources transition boundary (Task #2419)
+
+Under the OCEAN architecture (`MODUL-ZUORDNUNG.md`), resource and scheduler policy
+belongs to `ocean-resources`, which BACH consumes through a versioned adapter.
+`memory_pressure_unload_guard.py` is an intentional host-local actuator and
+transition guard for Task #2419: it enforces canonical `HostInferenceGate` root
+identity (`BACH_RUNTIME_DIR/local-inference` or `~/.bach/runtime/local-inference`)
+and durable `unload-pending.json` coordination so the existing Mac Studio
+watchdog cannot race active BACH inference turns while `ocean-resources` takes
+over upstream unload policy selection.
