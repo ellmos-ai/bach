@@ -22,6 +22,9 @@
 
 [![BACH 演示：本地优先的 LLM 操作系统（2:22）](assets/bach-demo-preview.png)](https://youtu.be/Gv5nxF8HssU)
 
+### 截图（即将推出）
+BACH GUI 0.2.29 的真实截图即将推出。命名规范和最低范围见图片契约：[assets/gui/README.md](assets/gui/README.md)。
+
 ## 使用 OpenAI Codex 和 GPT-5.6 构建
 
 BACH 将 Codex 同时用作一流的运行时后端和仓库开发伙伴。有关精确的自动化计划、模型路由和可审计的会话 ID，请参阅下方[经验证的 Build Week 归属说明](#openai-build-week--codex-and-gpt-56)。

@@ -32,12 +32,13 @@ verify_installed_dist() prüft das konfigurierte Dist-Verzeichnis anhand von Com
 vollständiger Dateiliste und Datei-Hashes. Ein Quellpin allein belegt keine Installation
 oder Live-Auslieferung.
 
-## Aktueller Source-Pin: GUI 0.2.23
+## Aktueller Source-Pin: GUI 0.2.29
 
-Der veröffentlichte Release v0.2.23 bindet Commit 99cde50dfaa0f0306b6c5b70aebc4161db0fc71c,
-das ZIP ellmos-system-gui-0.2.23-99cde50dfaa0.zip und die SHA-256-Prüfsumme
-18cd12c95157e05098a3105ff5ea446238d4ac6642f8aa89e38344878f85f893.
-Das Release-Manifest führt 197 Dateien, darunter 26 HTML-Seiten.
+Der veröffentlichte Release v0.2.29 bindet Commit a42adda6a9fe8d892578db3f7a09f7c1bef653ef,
+das ZIP ellmos-system-gui-0.2.29-a42adda6a9fe.zip und die SHA-256-Prüfsumme
+037516b1af6e658e06eee8aa57adaf81309bc430219198deeb6492ab816f29e1
+(pinned_at 2026-10-26T05:41:35Z, Manifest-Schema ellmos-system-gui.dist.v1).
+Das Release-Manifest erwartet 39 HTML-Seiten; eine Gesamtdateizahl ist für diesen Pin nicht belegt.
 
 Die Konfidenzanzeige unterscheidet ungemessene Werte, gespeicherte unverifizierte Fakten
 und unverifizierte Hermes-Heuristiken. Sie ersetzt keine Messung oder native Lernabnahme.
@@ -47,6 +48,13 @@ Insbesondere müssen null, ungültige sowie übergroße Werte ohne erfundene Pro
 oder Fehler projiziert werden. Ein Pin oder Katalogeintrag belegt weder Installation
 noch produktive Aktivierung. Vorherige Dist, Pin und LaunchAgent-Konfiguration bleiben
 für einen koordinierten Rollback erhalten.
+
+## Historischer Source-Pin: GUI 0.2.23
+
+Der veröffentlichte Release v0.2.23 bindet Commit 99cde50dfaa0f0306b6c5b70aebc4161db0fc71c,
+das ZIP ellmos-system-gui-0.2.23-99cde50dfaa0.zip und die SHA-256-Prüfsumme
+18cd12c95157e05098a3105ff5ea446238d4ac6642f8aa89e38344878f85f893.
+Das Release-Manifest führt 197 Dateien, darunter 26 HTML-Seiten.
 
 ## Historischer Source-Pin: GUI 0.2.22
 

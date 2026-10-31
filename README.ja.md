@@ -22,6 +22,9 @@
 
 [![BACHのデモ — ローカルファーストのLLMオペレーティングシステム（2:22）](assets/bach-demo-preview.png)](https://youtu.be/Gv5nxF8HssU)
 
+### スクリーンショット（近日公開）
+BACH GUI 0.2.29の実際のスクリーンショットは近日公開。命名規則と最小範囲は画像規約を参照：[assets/gui/README.md](assets/gui/README.md)。
+
 ## OpenAI CodexとGPT-5.6で構築
 
 BACHは、Codexを第一級のランタイムバックエンドとして、またリポジトリ開発のパートナーとして使用する。正確な自動化スケジュール、モデルルート、監査可能なセッションIDについては、以下の[検証済みBuild Week帰属情報](#openai-build-week--codex-and-gpt-56)を参照。
