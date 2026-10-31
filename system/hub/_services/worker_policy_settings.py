@@ -27,6 +27,17 @@ SELECTION_KEYS = {"resume_bound_task_first", "decompose_when_idle", "normal_task
 INDEPENDENCE_KEY = "worker_review_independence.v1"
 WORKER_SELECTION_KEYS = {"require_assigned_slot", "enforce_model_binding"}
 WORKER_OVERRIDE_KEYS = WORKER_SELECTION_KEYS
+COMMIT_KEY = "worker_commit_policy.v1"
+COMMIT_SCHEMA = "bach.worker-commit-policy-settings.v1"
+COMMIT_KEYS = {"allow_local_commit", "require_system_standard", "require_result_contract",
+               "allow_push", "allow_merge", "allow_release", "allow_deploy",
+               "wip_commit_on_abort"}
+# Separate configuration block: local commit and push keep the established
+# deployment behaviour, irreversible remote actions stay off by default.
+COMMIT_DEFAULTS = {"allow_local_commit": True, "require_system_standard": False,
+                   "require_result_contract": False, "allow_push": True,
+                   "allow_merge": False, "allow_release": False, "allow_deploy": False,
+                   "wip_commit_on_abort": True}
 
 
 class PolicyUnavailable(RuntimeError):
@@ -398,6 +409,64 @@ def write_task_policy(task_id, payload, *, actor, db_path=None):
         _persist(conn, TASK_KEY + str(task_id), None if reset else {**before["override"], **payload["override"]}, actor=actor)
         return {"schema": TASK_SCHEMA, "updated": True, "worker_started": False,
                 "task_id": task_id, "configuration_version": _task_snapshot(conn, task_id)["configuration_version"]}
+
+
+def validate_commit_policy(value):
+    _object(value, COMMIT_KEYS)
+    for name in sorted(COMMIT_KEYS):
+        _boolean(value[name])
+
+
+def _commit(conn):
+    stored = _stored(conn, COMMIT_KEY)
+    values = stored["values"]
+    if values is None:
+        merged = dict(COMMIT_DEFAULTS)
+    else:
+        try:
+            unknown = set(values) - COMMIT_KEYS
+            if unknown:
+                raise ValueError("Unvollständige oder unbekannte Policyfelder")
+            merged = {**COMMIT_DEFAULTS, **values}
+            validate_commit_policy(merged)
+        except (ValueError, TypeError) as exc:
+            raise PolicyUnavailable("Gespeicherte Commit-Regeln sind ungültig") from exc
+    return {"schema": COMMIT_SCHEMA, "availability": "available", "contract_version": CONTRACT,
+        "configuration_version": _digest(stored),
+        "policy_source": "system_default" if values is None else "user_override",
+        **merged}
+
+
+def read_commit_policy(db_path=None):
+    with _connection(db_path) as conn:
+        return _commit(conn)
+
+
+def write_commit_policy(payload, *, actor, operator_token=None, db_path=None):
+    if not isinstance(payload, dict):
+        raise ValueError("Policyobjekt erforderlich")
+    reset = payload.get("reset_to_default") is True
+    if reset:
+        _object(payload, {"configuration_version", "reset_to_default"})
+        _boolean(payload["reset_to_default"])
+    else:
+        # Every field is optional: a partial payload keeps the current value.
+        if "configuration_version" not in payload or set(payload) - {"configuration_version"} - COMMIT_KEYS:
+            raise ValueError("Unvollständige oder unbekannte Policyfelder")
+        for name in sorted(set(payload) & COMMIT_KEYS):
+            _boolean(payload[name])
+    with _connection(db_path, write=True) as conn:
+        before = _commit(conn)
+        if payload["configuration_version"] != before["configuration_version"]:
+            raise PolicyConflict("Konfiguration wurde parallel geändert")
+        values = None
+        if not reset:
+            values = {name: before[name] for name in COMMIT_KEYS}
+            values.update({name: payload[name] for name in set(payload) & COMMIT_KEYS})
+            validate_commit_policy(values)
+        _persist(conn, COMMIT_KEY, values, actor=actor)
+        return {"schema": COMMIT_SCHEMA, "updated": True, "worker_started": False,
+                "configuration_version": _commit(conn)["configuration_version"]}
 
 
 def attach_active_task_leases(items, *, db_path=None, now=None):

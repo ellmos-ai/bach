@@ -1203,6 +1203,24 @@ def _finish_task(
     2. git add -A && commit [WIP] [task <id>] message
     3. git push -u origin bach-task/<id> (ohne PR)
     4. Vermerk in Task
+
+    Commit-Policy (`worker_commit_policy.v1`):
+    Commit, Push und PR sind von Review und Taskabschluss entkoppelt und
+    werden über `read_commit_policy(db_path=...)` gesteuert. Die Policy
+    entscheidet vorab und ohne Seiteneffekt, ob lokal committet
+    (`allow_local_commit`), gepusht und ein PR erstellt (`allow_push`) oder
+    ein WIP-Stand überhaupt committet wird (`wip_commit_on_abort`).
+    Übersprungene Schritte liefern einen Erfolg mit
+    `status="wip_skipped_by_policy"`, `"commit_skipped_by_policy"` oder
+    `"push_skipped_by_policy"` und melden `commit_skipped`/`push_skipped`;
+    nur in diesen Skip-Rückgaben bleiben Merge, Release und Deploy als
+    `allow_merge`/`allow_release`/`allow_deploy` sichtbar. Im regulären
+    PR-Erfolgsfall liefert dagegen der bestätigte Submit-Owner die Antwort
+    (`success`, `submission_confirmed`, `scope_confirmed`, `lease_released`,
+    `status="review"`, `accepted`, `result_id`, `result_revision`, `pr_url`)
+    ohne `allow_*`-Flags. Merge, Release und Deploy werden hier nie
+    ausgeführt. Ist die Policy nicht lesbar, wird nichts geschrieben; es
+    gibt keinen automatischen Commit-Fallback.
     """
     if worker_task_binding is None:
         return {"success": False, "error": "Private Taskbindung fehlt"}
@@ -1210,6 +1228,15 @@ def _finish_task(
         return {"success": False, "error": "needs_split muss boolesch sein"}
     if result_annotation is not None and (not isinstance(result_annotation, str) or not result_annotation.strip()):
         return {"success": False, "error": "WIP-Notiz darf nicht leer sein"}
+
+    # Die Commit-Policy wird vor jedem schreibenden Schritt gelesen. Ist sie
+    # nicht verfügbar, wird nichts geschrieben; es gibt keinen Fallback, der
+    # stillschweigend committet oder pusht.
+    from hub._services.worker_policy_settings import read_commit_policy
+    try:
+        commit_policy = read_commit_policy(db_path=db_path)
+    except Exception:
+        return {"success": False, "error": "Commit-Policy nicht verfügbar"}
 
     def run_checked(cmd, **kwargs):
         if worker_task_binding is not None:
@@ -1273,6 +1300,17 @@ def _finish_task(
         }
 
     if is_wip:
+        if not commit_policy["wip_commit_on_abort"]:
+            # Policy verbietet den WIP-Commit: Stand bleibt unversioniert, der
+            # Task erhält aber dennoch einen bestätigten Vermerk.
+            worker_task_binding.record_worktree_result(
+                int(task_id_str), result_annotation or "WIP ohne Commit gesichert",
+                needs_split=needs_split)
+            return {"success": True, "wip": True, "branch": branch_name,
+                    "status": "wip_skipped_by_policy", "needs_split": needs_split,
+                    "allow_merge": commit_policy["allow_merge"],
+                    "allow_release": commit_policy["allow_release"],
+                    "allow_deploy": commit_policy["allow_deploy"]}
         # WIP-Commit
         commit_msg = f"[WIP] [task {task_id_str}] {message}"
         run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
@@ -1358,78 +1396,102 @@ def _finish_task(
 
             test_evidence = f"Gebundener pytest-Lauf: Exitcode 0; {len(test_files)} Testdateien"
 
-    # Stage & Commit
-    run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+    commit_skipped = False
+    push_skipped = False
     commit_msg = f"[task {task_id_str}] {message}"
-    res_commit = run_checked(
-        ["git", "commit", "-m", commit_msg],
-        cwd=str(target_dir),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=15,
-    )
-    if res_commit.returncode != 0 and "nothing to commit" not in res_commit.stdout:
-        return {
-            "success": False,
-            "error": f"git commit fehlgeschlagen: {res_commit.stderr or res_commit.stdout}",
-        }
 
-    # Push
-    res_push = run_checked(
-        ["git", "push", "-u", "origin", branch_name],
-        cwd=str(target_dir),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
-    if res_push.returncode != 0:
-        return {
-            "success": False,
-            "error": f"git push fehlgeschlagen: {res_push.stderr}",
-        }
-
-    # PR erstellen
-    cmd_pr = [
-        "gh", "pr", "create",
-        "--head", branch_name,
-        "--base", repo_binding.default_branch,
-        "--title", commit_msg,
-        "--body", f"Automatisierter PR für Task #{task_id_str}: {message}",
-    ]
-    res_pr = run_checked(
-        cmd_pr,
-        cwd=str(target_dir),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
-    pr_url = ""
-    if res_pr.returncode == 0:
-        for line in res_pr.stdout.splitlines():
-            clean = line.strip()
-            if clean.startswith("https://github.com/") and "/pull/" in clean:
-                pr_url = clean
-                break
-    else:
-        # Vielleicht existiert der PR schon
-        if "already exists" in (res_pr.stderr or ""):
-            pr_view = run_checked(
-                ["gh", "pr", "view", branch_name, "--json", "url", "-q", ".url"],
-                cwd=str(target_dir),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=15,
-            )
-            pr_url = pr_view.stdout.strip()
-        else:
+    # Stage & Commit
+    if commit_policy["allow_local_commit"]:
+        run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+        res_commit = run_checked(
+            ["git", "commit", "-m", commit_msg],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        if res_commit.returncode != 0 and "nothing to commit" not in res_commit.stdout:
             return {
                 "success": False,
-                "error": f"gh pr create fehlgeschlagen: {res_pr.stderr}",
+                "error": f"git commit fehlgeschlagen: {res_commit.stderr or res_commit.stdout}",
             }
+    else:
+        commit_skipped = True
+
+    pr_url = ""
+
+    # Push und PR nur bei lokalem Commit und freigegebenem Push
+    if commit_policy["allow_push"] and not commit_skipped:
+        res_push = run_checked(
+            ["git", "push", "-u", "origin", branch_name],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        if res_push.returncode != 0:
+            return {
+                "success": False,
+                "error": f"git push fehlgeschlagen: {res_push.stderr}",
+            }
+
+        # PR erstellen
+        cmd_pr = [
+            "gh", "pr", "create",
+            "--head", branch_name,
+            "--base", repo_binding.default_branch,
+            "--title", commit_msg,
+            "--body", f"Automatisierter PR für Task #{task_id_str}: {message}",
+        ]
+        res_pr = run_checked(
+            cmd_pr,
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        if res_pr.returncode == 0:
+            for line in res_pr.stdout.splitlines():
+                clean = line.strip()
+                if clean.startswith("https://github.com/") and "/pull/" in clean:
+                    pr_url = clean
+                    break
+        else:
+            # Vielleicht existiert der PR schon
+            if "already exists" in (res_pr.stderr or ""):
+                pr_view = run_checked(
+                    ["gh", "pr", "view", branch_name, "--json", "url", "-q", ".url"],
+                    cwd=str(target_dir),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=15,
+                )
+                pr_url = pr_view.stdout.strip()
+            else:
+                return {
+                    "success": False,
+                    "error": f"gh pr create fehlgeschlagen: {res_pr.stderr}",
+                }
+    else:
+        push_skipped = True
+
+    # Commit-/Push-Policy hat den Git-Vorgang bewusst übersprungen: kein PR,
+    # keine Ergebnisabgabe. Der Task bleibt offen, der Stand liegt im Worktree.
+    if not pr_url and (commit_skipped or push_skipped):
+        return {
+            "success": True,
+            "status": "commit_skipped_by_policy" if commit_skipped else "push_skipped_by_policy",
+            "branch": branch_name,
+            "commit_skipped": commit_skipped,
+            "push_skipped": push_skipped,
+            "allow_merge": commit_policy["allow_merge"],
+            "allow_release": commit_policy["allow_release"],
+            "allow_deploy": commit_policy["allow_deploy"],
+        }
 
     # The PR seam is not a result submission. Keep ownership until the
     # existing canonical submit_result owner confirms the inserted result.

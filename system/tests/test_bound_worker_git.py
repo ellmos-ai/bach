@@ -774,3 +774,113 @@ def test_bound_public_start_rejects_noncanonical_id_before_git_or_directory_crea
         cwd=repo, capture_output=True,
     )
     assert branch.returncode == 1
+
+
+# --- Commit-, Push- und WIP-Gates der Commit-Policy -----------------------
+
+
+def _policy(**overrides):
+    """Vollstaendige Policy mit den Defaults aus worker_policy_settings."""
+    policy = {
+        "allow_local_commit": True,
+        "require_system_standard": False,
+        "require_result_contract": False,
+        "allow_push": True,
+        "allow_merge": False,
+        "allow_release": False,
+        "allow_deploy": False,
+        "wip_commit_on_abort": True,
+    }
+    policy.update(overrides)
+    return policy
+
+
+def _patch_policy(monkeypatch, **overrides):
+    """Ersetzt den lokalen Policy-Read in worker_git.finish_task."""
+    from hub._services import worker_policy_settings
+
+    policy = _policy(**overrides)
+    monkeypatch.setattr(
+        worker_policy_settings,
+        "read_commit_policy",
+        lambda *args, **kwargs: dict(policy),
+    )
+    return policy
+
+
+def test_bound_finish_commit_skip_by_policy(bridge, git_run, monkeypatch):
+    """allow_local_commit=False sperrt Commit und damit auch Push und PR."""
+    _patch_policy(monkeypatch, allow_local_commit=False)
+    task_id = bridge.binding.task_id
+
+    result = worker_git.finish_task(
+        task_id, "Commit policy skip", run_tests=False,
+        worker_task_binding=bridge.binding, require_task_binding=True,
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "commit_skipped_by_policy"
+    assert result["branch"] == f"bach-task/{task_id}"
+    assert result["commit_skipped"] is True
+    assert result["push_skipped"] is True
+    assert result["allow_merge"] is False
+    assert result["allow_release"] is False
+    assert result["allow_deploy"] is False
+    assert not any(
+        cmd[:2] in (["git", "commit"], ["git", "push"]) or cmd[:3] == ["gh", "pr", "create"]
+        for cmd in git_run
+    )
+
+
+def test_bound_finish_push_skip_by_policy(bridge, git_run, monkeypatch):
+    """Lokaler Commit erlaubt, Push gesperrt: Commit ohne Push und ohne PR."""
+    _patch_policy(monkeypatch, allow_local_commit=True, allow_push=False)
+    task_id = bridge.binding.task_id
+    target = Path(os.environ["BACH_WORKTREES_DIR"]) / f"task-{task_id}"
+    (target / "policy_note.txt").write_text("change", encoding="utf-8")
+
+    result = worker_git.finish_task(
+        task_id, "Push policy skip", run_tests=False,
+        worker_task_binding=bridge.binding, require_task_binding=True,
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "push_skipped_by_policy"
+    assert result["branch"] == f"bach-task/{task_id}"
+    assert result["commit_skipped"] is False
+    assert result["push_skipped"] is True
+    assert any(cmd[:2] == ["git", "commit"] for cmd in git_run)
+    assert not any(
+        cmd[:2] == ["git", "push"] or cmd[:3] == ["gh", "pr", "create"] for cmd in git_run
+    )
+
+
+def test_bound_finish_wip_skip_by_policy(bridge, git_run, monkeypatch):
+    """wip_commit_on_abort=False sichert den Abbruch ohne Commit."""
+    _patch_policy(monkeypatch, wip_commit_on_abort=False)
+    recorded = []
+    monkeypatch.setattr(
+        type(bridge.binding),
+        "record_worktree_result",
+        lambda self, *args, **kwargs: recorded.append((args, kwargs)),
+    )
+    task_id = bridge.binding.task_id
+
+    result = worker_git.finish_task(
+        task_id, "WIP policy skip", run_tests=False, is_wip=True,
+        worker_task_binding=bridge.binding, require_task_binding=True,
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "wip_skipped_by_policy"
+    assert result["wip"] is True
+    assert result["branch"] == f"bach-task/{task_id}"
+    assert result["allow_merge"] is False
+    assert result["allow_release"] is False
+    assert result["allow_deploy"] is False
+    assert "commit_skipped" not in result and "push_skipped" not in result
+    assert recorded, "WIP-Skip muss das Arbeitsergebnis protokollieren"
+    assert not any(
+        cmd[:2] in (["git", "commit"], ["git", "push"]) or cmd[:3] == ["gh", "pr", "create"]
+        for cmd in git_run
+    )
