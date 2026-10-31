@@ -94,6 +94,7 @@ LEASE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("claim_request_id", "TEXT"),
     ("claim_task_version", "TEXT"),
     ("claim_result_generation", "TEXT"),
+    ("needs_split", "INTEGER NOT NULL DEFAULT 0"),
 )
 #: Spalten, die Release/Invalidierung leert; claim_fence bleibt als Hochwassermarke.
 _CLEARED_ON_RELEASE = (
@@ -1043,6 +1044,8 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
         for name, value in changes.items()
     ):
         raise LeaseValidationError("result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein")
+    if "needs_split" in changes and (type(changes["needs_split"]) is not int or changes["needs_split"] < 0):
+        raise LeaseValidationError("needs_split muss eine nichtnegative Ganzzahl sein")
     if "tags" in changes:
         # Task #2065: Tags dürfen Liste/Text/null sein; Form prüft der gemeinsame Normalisierer.
         try:
@@ -1050,7 +1053,7 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
         except ValueError as exc:
             raise LeaseValidationError(str(exc)) from exc
     if any(
-        not (name == "result_max_chars" and (value is None or type(value) is int))
+        not (name in {"result_max_chars", "needs_split"} and (value is None or type(value) is int))
         and name != "tags"
         and not isinstance(value, str)
         for name, value in changes.items()
@@ -1176,6 +1179,8 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
             created.append(cursor.lastrowid)
         changes = {"description": (parent.get("description") or "") +
                    f"\n[In {len(created)} Teilaufgaben zerlegt: {created}]"}
+        if parent.get("needs_split"):
+            changes["needs_split"] = 0
         if close_parent:
             changes["status"] = "done"
         try:

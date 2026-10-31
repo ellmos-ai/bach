@@ -521,3 +521,48 @@ def test_remote_task_client_does_not_start_execution_or_fallback_to_local_db(
     assert handle is None
     assert requests == []
     assert _schema_objects(context["conn"]) == before
+
+
+@pytest.mark.parametrize("response,failed,failure,expected", [
+    (_response(content=""), False, None, "empty_answer"),
+    (_response(content="", tool_calls=[{"function": {"name": "write_file", "arguments": '{"path": "x'}}]),
+     False, None, "invalid_tool_call"),
+    (None, True, "backend_error:openrouter:http_error:400", "backend_error:openrouter:http_error:400"),
+    (None, True, "Anbieter sagt: PRIVATE_PROVIDER_TEXT", "call_failed"),
+])
+def test_failed_model_execution_records_fixed_failure_code(worker_context, caplog, response, failed,
+                                                           failure, expected):
+    caplog.set_level("INFO", logger="bach.chat")
+    context = worker_context
+    binding = context["binding"]
+    handle = _begin(binding)
+    assert binding.finish_model_execution(handle, result=response, failed=failed, failure=failure) is False
+    phase, receipt = context["conn"].execute(
+        "SELECT phase, receipt FROM worker_model_executions WHERE task_id=?", (context["task_id"],)).fetchone()
+    assert phase == "failed" and json.loads(receipt)["failure_code"] == expected
+    terminal = context["conn"].execute(
+        "SELECT new_value FROM task_history WHERE task_id=? AND action='worker_model_execution_terminal'",
+        (context["task_id"],)).fetchone()[0]
+    assert json.loads(terminal)["failure_code"] == expected
+    assert (f"model_execution_failed code={expected} task_id={context['task_id']} "
+            f"generation={GENERATION}") in caplog.text
+    assert "PRIVATE_PROVIDER_TEXT" not in caplog.text + receipt + terminal
+
+
+def test_failure_code_uses_only_the_normalized_backend_error():
+    from hub._services.llm.backend_errors import BackendRequestFailure
+    from hub._services.worker_execution_evidence import failure_code
+
+    error = BackendRequestFailure({"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
+                                   "quota_exceeded": False, "status_code": 400})
+    assert failure_code(error=error) == "backend_error:openrouter:http_error:400"
+    assert failure_code(error=RuntimeError("PRIVATE_PROVIDER_TEXT")) == "call_exception"
+    assert failure_code({"error": "PRIVATE_PROVIDER_TEXT"}) == "backend_error:unclassified"
+
+
+def test_returned_model_execution_has_no_failure_code(worker_context):
+    context = worker_context
+    handle = _begin(context["binding"])
+    assert context["binding"].finish_model_execution(handle, result=_response()) is True
+    receipt = context["conn"].execute("SELECT receipt FROM worker_model_executions").fetchone()[0]
+    assert "failure_code" not in json.loads(receipt)

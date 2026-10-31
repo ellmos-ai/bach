@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS tasks (
         started_at TEXT,
         completed_at TEXT,
         updated_at TEXT
-    , dist_type INTEGER DEFAULT 0, modified_by TEXT DEFAULT NULL, depends_on TEXT DEFAULT NULL, created_by TEXT DEFAULT 'user', assigned_to TEXT DEFAULT 'OLLAMA', project TEXT, source TEXT, image_data TEXT, result_correction_request_id INTEGER);
+    , dist_type INTEGER DEFAULT 0, modified_by TEXT DEFAULT NULL, depends_on TEXT DEFAULT NULL, created_by TEXT DEFAULT 'user', assigned_to TEXT DEFAULT 'OLLAMA', project TEXT, source TEXT, image_data TEXT, needs_split INTEGER NOT NULL DEFAULT 0, result_correction_request_id INTEGER);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 import uuid
@@ -22,6 +23,8 @@ _LEGACY_SCHEMA = "bach.worker-model-execution.v1"
 _SCHEMA = "bach.worker-model-execution.v2"
 _READ_SCHEMA = "bach.worker-execution-evidence.v2"
 _HEX = re.compile(r"[a-f0-9]{64}\Z")
+_FAILURE_CODE = re.compile(r"[a-z_]{1,32}(?::[a-z0-9_]{1,32}){0,3}\Z")
+log = logging.getLogger("bach.chat")
 
 
 class ExecutionHandle:
@@ -213,7 +216,26 @@ def _answer(result):
     return _digest(result), observed
 
 
-def finish_execution(conn, binding, handle, *, result=None, failed=False, route_sha256=None):
+def failure_code(result=None, *, error=None):
+    """Fixed-vocabulary cause of a failed model call; never provider text."""
+    from .llm.backend_errors import normalize_backend_error
+    raw = (getattr(error, "backend_error", None) if error is not None
+           else result.get("backend_error") if isinstance(result, dict) else None)
+    detail = normalize_backend_error(raw)
+    if detail is not None:
+        status = detail.get("status_code")
+        return f"backend_error:{detail['provider']}:{detail['kind']}" + (f":{status}" if status else "")
+    if error is not None:
+        return "call_exception"
+    if not isinstance(result, dict):
+        return "invalid_answer"
+    if result.get("error"):
+        return "backend_error:unclassified"
+    return "invalid_tool_call" if result.get("tool_calls") else "empty_answer"
+
+
+def finish_execution(conn, binding, handle, *, result=None, failed=False, route_sha256=None,
+                     failure=None):
     """Positive terminal evidence requires a returned answer and live correlation."""
     if conn.in_transaction:
         return False
@@ -240,6 +262,13 @@ def finish_execution(conn, binding, handle, *, result=None, failed=False, route_
         receipt.update(phase=phase, returned_at=_fmt(now),
                        response_sha256=answer[0] if valid else None,
                        observed_model=answer[1] if valid else None)
+        code = None
+        if not valid:
+            # Callers pass codes from failure_code(); anything else is not trusted text.
+            code = (failure if isinstance(failure, str) and _FAILURE_CODE.fullmatch(failure)
+                    else "call_failed" if failed
+                    else failure_code(result) if answer is None else "binding_inactive")
+            receipt["failure_code"] = code
         if receipt.get("schema") == _SCHEMA:
             receipt["model_provenance"] = "provider_reported" if valid and answer[1] is not None else "unknown"
         if "route_sha256" in receipt:
@@ -257,11 +286,16 @@ def finish_execution(conn, binding, handle, *, result=None, failed=False, route_
             receipt["model_principal_id"] = bound["principal_id"] if bound else None
             receipt["identity_binding_sha256"] = _digest(bound) if bound else None
         digest = _digest(receipt)
-        event = _history(conn, binding.task_id, "worker_model_execution_terminal", _ACTOR, now,
-                         {"execution_id": row["id"], "phase": phase, "receipt_sha256": digest})
+        terminal = {"execution_id": row["id"], "phase": phase, "receipt_sha256": digest}
+        if code is not None:
+            terminal["failure_code"] = code
+        event = _history(conn, binding.task_id, "worker_model_execution_terminal", _ACTOR, now, terminal)
         conn.execute("UPDATE worker_model_executions SET phase=?,receipt=?,receipt_sha256=?,terminal_event_id=? WHERE id=?",
                      (phase, _json(receipt), digest, event, row["id"]))
         conn.commit()
+        if code is not None:
+            log.warning("model_execution_failed code=%s task_id=%s generation=%s",
+                        code, binding.task_id, binding.generation)
         return bool(valid)
     except BaseException:
         conn.rollback()

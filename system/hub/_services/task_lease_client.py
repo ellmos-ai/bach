@@ -102,6 +102,14 @@ class LeaseSelfCheckRequiredError(LeaseProtocolError):
                     "einen echten Selbstcheck abgeben; Teilstand mit update(status='pending') zurückgeben.")
 
 
+class LeaseRequestRejectedError(LeaseProtocolError):
+    """The lease service validated the request and rejected it before applying anything."""
+
+    user_message = ("Taskoperation abgelehnt, nichts geändert: Argumente ungültig. Teilaufgaben brauchen title; "
+                    "description, priority, category, assigned_to und depends_on sind Text, depends_on nennt "
+                    "bestehende Task-IDs. Argumente korrigieren und erneut aufrufen.")
+
+
 class LeaseDeniedError(LeaseError):
     """Lease wurde von der Authority abgelehnt (HTTP 409)."""
 
@@ -482,10 +490,13 @@ class TaskLeaseClient:
             kwargs["route_sha256"] = route_sha256
         return self._model_execution_call("start_execution", binding, **kwargs)
 
-    def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None):
+    def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None,
+                                failure=None):
         kwargs = {"result": result, "failed": failed}
         if route_sha256 is not None:
             kwargs["route_sha256"] = route_sha256
+        if failure is not None:
+            kwargs["failure"] = failure
         return self._model_execution_call("finish_execution", binding, handle, **kwargs)
 
     def _link_model_execution(self, binding, handle):
@@ -740,7 +751,10 @@ class TaskLeaseClient:
                 status, data = result.http_status, result.payload
             except LeaseSelfCheckRequired:
                 raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message) from None
-            except (LeaseValidationError, TaskNotFound):
+            except LeaseValidationError:
+                # Validation runs before the transaction or inside one that is rolled back: nothing was applied.
+                raise LeaseRequestRejectedError(LeaseRequestRejectedError.user_message) from None
+            except TaskNotFound:
                 raise LeaseProtocolError("Ungültige Lease-Anfrage oder Task fehlt") from None
             finally:
                 if self._conn is None:
@@ -1032,12 +1046,12 @@ class TaskLeaseClient:
                     where += " AND NOT EXISTS (SELECT 1 FROM worker_result_review_intents r " \
                              "WHERE r.review_task_id=tasks.id)"
                 total = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}").fetchone()[0]
-                order = ("CASE UPPER(TRIM(priority)) "
+                order = ("COALESCE(needs_split, 0) DESC, " + ("CASE UPPER(TRIM(priority)) "
                          "WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
                          "WHEN 'P2' THEN 2 WHEN '2' THEN 2 WHEN 'MEDIUM' THEN 2 WHEN 'MITTEL' THEN 2 WHEN 'WICHTIG' THEN 2 "
                          "WHEN 'P3' THEN 3 WHEN '3' THEN 3 WHEN 'LOW' THEN 3 WHEN 'NIEDRIG' THEN 3 WHEN 'NORMAL' THEN 3 "
                          "WHEN 'P4' THEN 4 WHEN '4' THEN 4 WHEN 'MINIMAL' THEN 4 ELSE 5 END, "
-                         if "priority" in columns else "")
+                         if "priority" in columns else ""))
                 order += "created_at DESC, id DESC" if "created_at" in columns else "id DESC"
                 cursor = conn.execute(f"SELECT * FROM tasks WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
                                       (limit + 1, offset))

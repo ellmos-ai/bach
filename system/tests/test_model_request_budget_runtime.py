@@ -92,7 +92,7 @@ class _Binding:
         self.tool_phases.append((identity, phase, fields))
         return {"accepted": True}
 
-    def invalidate(self):
+    def invalidate(self, _reason=None):
         self.invalidated = True
         self.closed = True
 
