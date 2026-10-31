@@ -1012,6 +1012,81 @@ def task_has_file_changes(
     return False
 
 
+def auto_commit_task_worktree(
+    task_id: int | str,
+    worker_task_binding=None,
+    db_path: Path | None = None,
+) -> dict:
+    """Sichert ungecommittete Änderungen im Task-Arbeitsbaum als Commit auf dem
+    Task-Zweig (ohne push/PR). Nutzerentscheid 25.10.2026: submit_result soll
+    ungecommittete Änderungen nicht abweisen, sondern automatisch sichern.
+
+    Rückgabe:
+      {"committed": True, "commit": <hash>, "message": <msg>}
+      {"committed": False, "reason": "ungültige-task-id"|"kein-worktree"|"keine-änderungen"}
+      {"committed": False, "error": <Meldung>} bei Secrets-/Diff-/Commit-Fehlern
+    """
+    task_id_str = str(task_id).strip()
+    try:
+        task_id_int = int(task_id_str)
+    except (TypeError, ValueError):
+        return {"committed": False, "reason": "ungültige-task-id"}
+    target_dir = get_worktrees_dir() / f"task-{task_id_int}"
+    if not (target_dir.exists() and (target_dir / ".git").exists()):
+        return {"committed": False, "reason": "kein-worktree"}
+
+    def run_checked(cmd, **kwargs):
+        if worker_task_binding is not None:
+            from hub._services.chat.worker_write_guard import authorize_mutation
+            bound_cwd = kwargs.get("cwd", target_dir)
+            registered, _ = authorize_mutation(
+                worker_task_binding, task_id_int, paths=(bound_cwd,))
+            kwargs["cwd"] = str(registered)
+        return subprocess.run(cmd, **kwargs)
+
+    if not task_has_file_changes(task_id_int, db_path):
+        return {"committed": False, "reason": "keine-änderungen"}
+
+    if worker_task_binding is not None:
+        from hub._services.chat.worker_write_guard import authorize_mutation
+        authorize_mutation(worker_task_binding, task_id_int, paths=(target_dir,))
+
+    secrets = scan_for_secrets(target_dir)
+    if secrets:
+        return {"committed": False, "error": f"Secrets-Scan fehlgeschlagen: {secrets}"}
+
+    diff_errs = check_git_diff(target_dir)
+    if diff_errs:
+        return {"committed": False, "error": f"git diff --check fehlgeschlagen: {diff_errs}"}
+
+    commit_msg = f"[task {task_id_str}] Auto-Commit ungecommitteter Änderungen vor submit_result"
+    run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+    res_commit = run_checked(
+        ["git", "commit", "-m", commit_msg],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if res_commit.returncode != 0:
+        out = f"{res_commit.stdout or ''}\n{res_commit.stderr or ''}"
+        if "nothing to commit" in out:
+            return {"committed": False, "reason": "keine-änderungen"}
+        return {"committed": False, "error": f"Auto-Commit fehlgeschlagen: {out.strip()}"}
+
+    res_rev = run_checked(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    commit_hash = (res_rev.stdout or "").strip() if res_rev.returncode == 0 else ""
+    return {"committed": True, "commit": commit_hash, "message": commit_msg}
+
+
 def _confirmed_finish_submission(binding, task_id):
     """Read/reconstruct the existing submission owner; never replay a mutation."""
     state = binding.result_state()
