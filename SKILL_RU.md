@@ -70,7 +70,7 @@ client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, a
 - Чужие активные аренды, текущая работа других агентов и заблокированные пути остаются защищёнными. Токены и учётные данные никогда не выводить и не коммитить.
 
 ### 7. Известные пробелы (на 25.10.2026)
-- **Нативного короткого ярлыка пока нет** `bach task take|renew|submit|return|block`; он запланирован (`ANFORDERUNGEN-DETAIL.md`, раздел „Tasksystem, Leases und Locks“). Постоянный нативный путь сегодня — Python-SDK `TaskLeaseClient` (выше); `bach_api.task` даёт только `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose`, без списка кандидатов и без `submit_result`.
+- **Нативного короткого ярлыка пока нет** `bach task take|renew|submit|return|block`; он запланирован (`TASKDB-SALT-LEASE-VERTRAG-v1.md`, раздел „Tasksystem, Leases und Locks“). Постоянный нативный путь сегодня — Python-SDK `TaskLeaseClient` (выше); `bach_api.task` даёт только `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose`, без списка кандидатов и без `submit_result`.
 - `task_tool.py` лежит вне репозитория (`~/compute/luna-gui/`); его `list` читает `bach.db` напрямую (только чтение), а его `claim` — не аренда.
 - Вводный инструктаж, план и `MODUL-ZUORDNUNG.md` лежат на рабочем столе OneDrive у Lukas, а не в репозитории; агент, работающий на Mac, не доберётся до них без копии.
 - Договор о происхождении внешних результатов: #2339 нативно принят, мерж в Main и релиз ещё впереди (PR #507). До тех пор результаты честно трактовать как сданные либо как частичный результат.

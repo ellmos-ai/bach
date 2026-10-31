@@ -68,7 +68,7 @@ bach task block <id> --lease-id --by <user> --fence <int> [--note "<text>"]  # o
 - Foreign active leases, ongoing work of other agents, and locked paths remain protected. Tokens and access credentials never output or commit.
 
 ### 7. Known gaps (as of 25.10.2026)
-- **There is still no native short command** `bach task take|renew|submit|return|block`; it is planned (`ANFORDERUNGEN-DETAIL.md`, section "Task system, leases and locks"). The permanent native way today is Python SDK `TaskLeaseClient` (above); `bach_api.task` offers only `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose` without candidate list and without `submit_result`.
+- **There is still no native short command** `bach task take|renew|submit|return|block`; it is planned (`TASKDB-SALT-LEASE-VERTRAG-v1.md`, section "Task system, leases and locks"). The permanent native way today is Python SDK `TaskLeaseClient` (above); `bach_api.task` offers only `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose` without candidate list and without `submit_result`.
 - `task_tool.py` is outside the repo (`~/compute/luna-gui/`); its `list` reads `bach.db` directly (read-only) and its `claim` is no lease.
 - Instruction, plan, and `MODUL-ZUORDNUNG.md` are on Lukas' OneDrive Desktop, not in the repo; an agent running on the Mac reaches them not without copy.
 - Origin contract for external results: #2339 is natively accepted, Main-merge and release pending (PR #507). Results until then honestly as submitted or partial.
@@ -819,11 +819,7 @@ hooks.on('after_startup', startup_check, name='mein_plugin')
 
 ---
 
-### TOPIC: Shutdown (PACKAGE: SHUTDOWN) [B/C]
 
-*When to read:* The session is ending. Only in Mode B and C relevant.
-
-**Mode B (API -- recommended):**
 ```python
 from bach_api import plugins
 
@@ -840,16 +836,34 @@ plugins.register_handler("mein_cmd", MeinHandler)
 plugins.load_plugin("plugins/mein-plugin/plugin.json")
 ```
 
-`SESSION_ID` is the own ID from the startup report. For multiple open
- sessions always specify ID and partner; an unclear selection is rejected.
-
-**Mode C (CLI):**
 ```bash
 # CLI: Plugin-Verwaltung
 bach plugins list          # Geladene Plugins
 bach plugins create name   # Plugin scaffolden
 bach plugins load pfad     # Plugin laden
 bach plugins unload name   # Plugin entladen
+```
+### TOPIC: Shutdown (PACKAGE: SHUTDOWN) [B/C]
+
+*When to read:* The session is ending. Only in Mode B and C relevant.
+
+**Mode B (API -- recommended):**
+```python
+from bach_api import session, memory
+memory.session("THEMA: Was gemacht. NAECHSTE: Was kommt.", session_id="SESSION_ID", partner="claude")
+session.shutdown("Zusammenfassung", partner="claude", session_id="SESSION_ID")
+# Oder schnell:
+session.shutdown_quick("Kurze Notiz", partner="claude", session_id="SESSION_ID")
+```
+
+`SESSION_ID` is the own ID from the startup report. For multiple open
+ sessions always specify ID and partner; an unclear selection is rejected.
+
+**Mode C (CLI):**
+```bash
+bach help shutdown
+bach --memory session "THEMA: Was gemacht. NAECHSTE: Was kommt."
+bach --shutdown
 ```
 
 ---
@@ -861,11 +875,16 @@ bach plugins unload name   # Plugin entladen
 Hooks allow to attach own logic to 14 lifecycle events -- without changing existing code.
 
 ```python
-from bach_api import session, memory
-memory.session("THEMA: Was gemacht. NAECHSTE: Was kommt.", session_id="SESSION_ID", partner="claude")
-session.shutdown("Zusammenfassung", partner="claude", session_id="SESSION_ID")
-# Oder schnell:
-session.shutdown_quick("Kurze Notiz", partner="claude", session_id="SESSION_ID")
+from core.hooks import hooks
+
+# Listener registrieren
+hooks.on('after_task_done', auto_backup, name='backup_plugin')
+hooks.on('after_startup', health_check, priority=10, name='health')
+
+# CLI
+# bach hooks status    → Zeigt alle Hooks
+# bach hooks events    → Listet alle 14 Events
+# bach hooks log       → Letzte Ausfuehrungen
 ```
 
 **Events:** `before_startup`, `after_startup`, `before_shutdown`, `after_shutdown`, `before_command`, `after_command`, `after_task_create`, `after_task_done`, `after_task_delete`, `after_memory_write`, `after_lesson_add`, `after_skill_create`, `after_skill_reload`, `after_email_send`
@@ -892,30 +911,11 @@ The 6 injectors simulate **thinking and associations** as **Central Executive**.
 
 **CLI:**
 ```bash
-bach help shutdown
-bach --memory session "THEMA: Was gemacht. NAECHSTE: Was kommt."
-bach --shutdown
-```
-
-**API:**
-```python
-from core.hooks import hooks
-
-# Listener registrieren
-hooks.on('after_task_done', auto_backup, name='backup_plugin')
-hooks.on('after_startup', health_check, priority=10, name='health')
-
-# CLI
-# bach hooks status    → Zeigt alle Hooks
-# bach hooks events    → Listet alle 14 Events
-# bach hooks log       → Letzte Ausfuehrungen
-```
-
-```bash
 bach --inject status            # Status aller Injektoren
 bach --inject toggle <name>     # An/Aus schalten
 ```
 
+**API:**
 ```python
 from bach_api import injector
 
@@ -928,9 +928,6 @@ injector.status()                     # Status aller Injektoren
 injector.toggle("strategy_injector")  # Einzeln an/aus
 injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
 ```
-
----
-
 ## CHANGELOG
 
 ### v3.10.0 (2026-10-25)
@@ -994,7 +991,7 @@ injector.set_mode("api")              # CLI-Hinweise aus Kontext filtern
 
 - **MCP Server v2.2:** 23 tools, 8 resources, 3 prompts - all three MCP primitives
 - **Email adapter:** SMTP_SSL in notify.py (ported from BachForelle)
-- **BachFliege + BachForelle:** Analyzes and archives (`docs/_archive/con5_BACHFLIEGE_BACHFORELLE_ARCHIVE.md`)
+- **BachFliege + BachForelle:** Analyzes and archives (`docs/_archive/con5_BACHFLIEGE_BACHFORELLE_ARCHIV.md`)
 
 ### v2.3.0 (2026-02-06)
 

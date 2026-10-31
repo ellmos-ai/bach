@@ -70,7 +70,7 @@ client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, a
 - 他人的活动租约、其他代理的进行中工作以及已锁定路径始终受保护。绝不输出或提交令牌和访问凭证。
 
 ### 7. 已知缺口（截至 2026-10-25）
-- **尚无原生短命令** `bach task take|renew|submit|return|block`；已在计划中（`ANFORDERUNGEN-DETAIL.md` 的 „Tasksystem, Leases und Locks“ 章节）。目前持久的原生途径是 Python-SDK `TaskLeaseClient`（见上文）；`bach_api.task` 仅提供 `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose`，没有候选列表，也没有 `submit_result`。
+- **尚无原生短命令** `bach task take|renew|submit|return|block`；已在计划中（`TASKDB-SALT-LEASE-VERTRAG-v1.md` 的 „Tasksystem, Leases und Locks“ 章节）。目前持久的原生途径是 Python-SDK `TaskLeaseClient`（见上文）；`bach_api.task` 仅提供 `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose`，没有候选列表，也没有 `submit_result`。
 - `task_tool.py` 位于仓库之外（`~/compute/luna-gui/`）；其 `list` 直接读取 `bach.db`（仅只读），其 `claim` 不是租约。
 - 入职说明、计划及 `MODUL-ZUORDNUNG.md` 位于 Lukas 的 OneDrive 桌面，而非仓库中；在 Mac 上运行的代理若无副本便无法访问它们。
 - 外部成果的来源契约：#2339 已被原生验收，Main 合并与发布尚未进行（PR #507）。在此之前，成果须如实按已提交或部分状态处理。

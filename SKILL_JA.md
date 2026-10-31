@@ -70,7 +70,7 @@ client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, a
 - 他者のアクティブなリース、他のエージェントの実行中の作業、ロックされたパスは保護されたままにする。トークンとアクセス情報は決して出力またはコミットしない。
 
 ### 7. 既知の欠落（2026-10-25時点）
-- **ネイティブの短縮コマンドはまだ存在しない** `bach task take|renew|submit|return|block`；これは計画されている（`ANFORDERUNGEN-DETAIL.md` のセクション „Tasksystem, Leases und Locks“）。現時点で恒久的なネイティブ経路は Python-SDK `TaskLeaseClient`（上記）。`bach_api.task` は `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose` のみを提供し、候補リストも `submit_result` もない。
+- **ネイティブの短縮コマンドはまだ存在しない** `bach task take|renew|submit|return|block`；これは計画されている（`TASKDB-SALT-LEASE-VERTRAG-v1.md` のセクション „Tasksystem, Leases und Locks“）。現時点で恒久的なネイティブ経路は Python-SDK `TaskLeaseClient`（上記）。`bach_api.task` は `lease_acquire`/`lease_read`/`lease_renew`/`lease_release`/`lease_decompose` のみを提供し、候補リストも `submit_result` もない。
 - `task_tool.py` はリポジトリの外にある（`~/compute/luna-gui/`）。その `list` は `bach.db` を直接（読み取り専用）読み、その `claim` はリースではない。
 - 引き継ぎ指示、計画、`MODUL-ZUORDNUNG.md` は Lukas の OneDrive デスクトップにあり、リポジトリにはない。Mac 上で稼働するエージェントは、コピーがなければそれらに到達できない。
 - 外部成果物の由来契約：#2339 はネイティブに受領済み、Main へのマージとリリースは未実施（PR #507）。それまでは成果物を誠実に提出済みまたは部分状態として扱うこと。
