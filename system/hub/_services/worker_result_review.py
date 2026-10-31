@@ -501,6 +501,14 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None,
     Accept-Gate spaeter genau diese Hashes gegen die Verdict-Seiten binden
     kann. Fehlt diff_pages bei paging_required, bleibt die Anlage zulaessig
     (kein Crash), aber es kann kein approved-Grant entstehen.
+
+    Grenze der Seitenpruefung: der Reviewer erhaelt je Seite ausschliesslich
+    den sha256 des Seitentexts, keinen Seitentext selbst. Es gibt kein Tool,
+    das einem Reviewer Diff-Seiten nachliefert; diff_pages bindet damit die
+    Hashes, nicht den Inhalt. Das Gate belegt also, dass das Verdict genau die
+    angekuendigten Seiten nennt, nicht dass der Reviewer sie im Wortlaut
+    gelesen hat. Bei paging_required ist deshalb zusaetzlich der volle Diff im
+    Slot-Fenster bzw. der Slot-Kontext des Reviewers die Inhaltsgrundlage.
     """
     if conn.in_transaction:
         raise ValueError("Reviewanlage benötigt eine freie DB-Verbindung")
