@@ -416,7 +416,7 @@ class FoerderberichtPipeline:
             files = [f for f in data_roh.rglob("*") if f.is_file() and not f.name.startswith(".")]
             if not files:
                 raise PipelineError(
-                    "Keine Akte vorhanden. Bitte Aktenordner in data_roh/ einlegen."
+                    "Keine Akte: data_roh enthaelt keine Dateien. Bitte Aktenordner in data_roh/ einlegen."
                 )
             result.steps_completed.append(f"validierung: {len(files)} Dateien gefunden")
 
