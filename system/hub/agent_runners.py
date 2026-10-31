@@ -1,4 +1,3 @@
-import sys
 # -*- coding: utf-8 -*-
 """Anbieterneutrale Startbefehle fuer BACH-Agenten.
 
@@ -27,6 +26,8 @@ Argumente mit unbelegtem Platzhalter fallen weg - so braucht nicht jeder
 Runner jedes Feld zu kennen.
 """
 from __future__ import annotations
+
+import sys
 
 import fnmatch
 import json
