@@ -6,11 +6,30 @@ from hub._services.chat.worker_task_actions import WorkerTaskActions
 from hub._services.task_lease_client import LeaseProtocolError
 
 from system.tests.test_worker_lease_binding import (
-    binding as binding,  # noqa: PLC0414 - explicit pytest fixture export
-)
-from system.tests.test_worker_lease_binding import (
     mem_db as mem_db,  # noqa: PLC0414 - explicit pytest fixture export
 )
+
+
+@pytest.fixture
+def binding(mem_db):
+    """Frozen-clock lease binding on "generation-1"; the trace fixture uses another generation."""
+    import threading
+
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from hub._services.task_lease_client import TaskLeaseClient
+
+    from system.tests.test_task_lease_client import _insert_task
+    from system.tests.test_task_lease_client_review import T0
+
+    mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.commit()
+    task_id = _insert_task(mem_db)
+    return WorkerLeaseBinding.acquire(
+        TaskLeaseClient(conn=mem_db), task_id,
+        worker_id="physical-worker@HOST", host="HOST",
+        generation="generation-1", is_current=lambda: True,
+        stop_event=threading.Event(), clock=lambda: T0,
+    )
 
 
 @pytest.fixture
@@ -370,3 +389,10 @@ def test_control_decomposition_route_validates_before_queueing(monkeypatch, inva
         assert not calls and not replies
     else:
         assert replies[0][1] == 400 and not calls
+
+
+def test_decompose_request_carries_the_cut_rule(binding):
+    from hub._services.chat.task_cut_rule import TASK_CUT_RULE_SHORT
+    actions, _ = requested(binding)
+    text = actions.consume(binding, backend="isolated", model="test-model")
+    assert TASK_CUT_RULE_SHORT in text

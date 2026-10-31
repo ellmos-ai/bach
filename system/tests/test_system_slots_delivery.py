@@ -517,7 +517,8 @@ def test_dynamic_worker_uses_its_authority_without_an_unrelated_system_slot_read
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", str(absent))
     worker = {"id":"arbitrary-worker", "backend":"ollama", "model":"fixture-model"}
     monkeypatch.setattr(control, "get_worker_slot", lambda ident: worker)
-    assert control._execution_worker_slot("arbitrary-worker") is worker
+    assert control._execution_worker_slot("arbitrary-worker") == {**worker, "system": False}
+    assert "system" not in worker
     assert not absent.exists()
 
 

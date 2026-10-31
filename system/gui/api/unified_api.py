@@ -332,6 +332,7 @@ async def list_agent_blueprints(
         templates = []
         for r in rows:
             item = dict(r)
+            item.setdefault("color", None)
             item["kind"] = item.get("kind") or "agent"
             item["version"] = item.get("version") or "1.0.0"
             item["start_prompt"] = item.get("start_prompt") or ""
@@ -386,6 +387,7 @@ async def list_agent_blueprints(
         return {
             "templates": templates,
             "blueprints": blueprints,
+            "color_contract": "bach.agent-colors.v1",
             "total_templates": len(templates),
             "total_blueprints": len(blueprints),
             "total": len(templates) + len(blueprints),
@@ -403,6 +405,28 @@ async def get_contractus_presets():
                     for preset in CONTRACTUS_PRESETS],
         "count": len(CONTRACTUS_PRESETS),
     }
+
+
+@router.get("/taskmaster/roles")
+async def get_taskmaster_roles():
+    """Return the versioned native Taskmaster role contract.
+
+    This is a read-only projection.  Role descriptors do not acquire tasks,
+    create a second queue, or start a provider; execution remains bound to the
+    existing blueprint, controller and Lead-Lease paths.
+    """
+    from hub._services.taskmaster_roles import role_catalog
+    return role_catalog()
+
+
+@router.get("/taskmaster/policy")
+async def get_taskmaster_policy():
+    """Expose the versioned operating policy without enabling execution."""
+    from hub._services.taskmaster_policy import read_policy
+    try:
+        return await asyncio.to_thread(read_policy)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/agent-studio/synthesize-prompt")
@@ -449,6 +473,22 @@ async def bootstrap_agent_templates():
     try:
         seed_default_blueprints(conn)
         return {"success": True, "source": "BACH role templates"}
+    finally:
+        conn.close()
+
+
+
+@router.post("/agent-studio/bootstrap/taskmaster-skills")
+async def migrate_taskmaster_template_skills(payload: Dict[str, Any] = Body(...)):
+    """Explicit, revision-pinned migration of the two legacy system seeds."""
+    from hub._services.blueprint_service import migrate_taskmaster_skill_bindings
+    conn = _get_conn()
+    try:
+        return migrate_taskmaster_skill_bindings(conn, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except RuntimeError:
+        raise HTTPException(status_code=409, detail="Taskmaster-Vorlagen wurden inzwischen geändert") from None
     finally:
         conn.close()
 
@@ -768,26 +808,33 @@ async def get_capabilities():
 async def get_capabilities_skills(
     category: Optional[str] = None,
     search: Optional[str] = None,
+    locale: Optional[str] = Query(None, max_length=32),
 ):
     """Dynamische Fähigkeiten/Skills aus dem zentralen Skills-Repository (GUX-022)."""
     cat = category if isinstance(category, str) else None
     query = search if isinstance(search, str) else None
-    skills = get_available_skills(skills_root=SKILLS_ROOT, category=cat, search=query)
+    skills = get_available_skills(
+        skills_root=SKILLS_ROOT, category=cat, search=query, requested_locale=locale
+    )
     categories = sorted(list({s["category"] for s in skills}))
     return {
         "skills": skills,
         "total": len(skills),
         "categories": categories,
         "source": str(SKILLS_ROOT) if SKILLS_ROOT else "fallback_catalog",
+        "requested_locale": skills[0].get("requested_locale") if skills else locale,
     }
 
 
 @router.get("/capabilities/skills/{skill_id}/source")
-async def get_current_skill_source(skill_id: str):
+async def get_current_skill_source(
+    skill_id: str,
+    locale: Optional[str] = Query(None, max_length=32),
+):
     """Current source bytes and CAS revision; declarations have no fake content."""
     from hub._services.skill_source_service import read_skill
     try:
-        return await asyncio.to_thread(read_skill, skill_id)
+        return await asyncio.to_thread(read_skill, skill_id, requested_locale=locale)
     except KeyError as exc:
         raise HTTPException(404, str(exc))
     except ValueError as exc:
@@ -795,28 +842,35 @@ async def get_current_skill_source(skill_id: str):
 
 
 @router.get("/capabilities/skills/library")
-async def get_current_skill_library():
+async def get_current_skill_library(locale: Optional[str] = Query(None, max_length=32)):
     from hub._services.skill_source_service import skill_library
     try:
-        return await asyncio.to_thread(skill_library)
+        return await asyncio.to_thread(skill_library, requested_locale=locale)
     except (OSError, ValueError, RuntimeError) as exc:
         raise HTTPException(503, "Aktuelle Skill-Bibliothek nicht lesbar") from exc
 
 
 @router.get("/capabilities/skills/{skill_id}/history")
-async def get_current_skill_history(skill_id: str):
+async def get_current_skill_history(
+    skill_id: str,
+    locale: Optional[str] = Query(None, max_length=32),
+):
     from hub._services.skill_source_service import list_skill_history
     try:
-        return await asyncio.to_thread(list_skill_history, skill_id)
+        return await asyncio.to_thread(list_skill_history, skill_id, locale)
     except (ValueError, OSError) as exc:
         raise HTTPException(400, str(exc))
 
 
 @router.get("/capabilities/skills/{skill_id}/history/{revision}")
-async def get_historical_skill_source(skill_id: str, revision: str):
+async def get_historical_skill_source(
+    skill_id: str,
+    revision: str,
+    locale: Optional[str] = Query(None, max_length=32),
+):
     from hub._services.skill_source_service import read_skill_history
     try:
-        return await asyncio.to_thread(read_skill_history, skill_id, revision)
+        return await asyncio.to_thread(read_skill_history, skill_id, revision, requested_locale=locale)
     except KeyError as exc:
         raise HTTPException(404, str(exc))
     except (ValueError, OSError) as exc:
@@ -862,10 +916,14 @@ async def get_actual_software_inventory():
 @router.put("/capabilities/skills/{skill_id}/source")
 async def save_current_skill_source(skill_id: str, payload: Dict[str, Any] = Body(...)):
     from hub._services.skill_source_service import save_skill
-    if set(payload) != {"content", "source_version"}:
+    if (set(payload) - {"content", "source_version", "requested_locale"}
+            or "content" not in payload or "source_version" not in payload):
         raise HTTPException(400, "Inhalt und aktuelle Quellenversion erforderlich")
     try:
-        return await asyncio.to_thread(save_skill, skill_id, payload["content"], payload["source_version"])
+        return await asyncio.to_thread(
+            save_skill, skill_id, payload["content"], payload["source_version"],
+            requested_locale=payload.get("requested_locale")
+        )
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
     except PermissionError as exc:
@@ -3635,8 +3693,19 @@ async def stop_system_worker(worker_id: str, request: Request):
 
 
 @router.post("/system/workers/{worker_id}/delete")
-async def delete_system_worker(worker_id: str, request: Request):
+async def delete_system_worker_post(worker_id: str, request: Request):
     """Delete a dynamic profile through the existing Control API after user action."""
+    return await _delete_system_worker(worker_id, request)
+
+
+@router.delete("/system/workers/{worker_id}")
+async def delete_system_worker(worker_id: str, request: Request):
+    """Delete a dynamic profile via DELETE, mirroring the POST delete path."""
+    return await _delete_system_worker(worker_id, request)
+
+
+async def _delete_system_worker(worker_id: str, request: Request):
+    """Shared implementation for POST and DELETE worker deletion."""
     device_token = _require_memory_device_token(request)
     from .worker_status_adapter import WorkerActionRejected, WorkerStatusUnavailable, worker_action
 

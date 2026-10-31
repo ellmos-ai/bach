@@ -1,0 +1,62 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+
+Independent result review by models
+===================================
+
+A submitted worker result initially remains in status review. A model
+review is an additional task in the same task database and queue.
+Matching regular tasks are taken over first. There is no additional
+scheduler and no automatic model provisioning.
+
+Prerequisites
+-------------
+The local controller requires a confirmed HTTP backend route, an actual
+model return, a valid result submission, and a current git working-copy
+evidence. A separately authorized person assigns model aliases to a model
+identity and determines the permitted reviewers and their level in the
+existing worker settings. General device registration is not sufficient
+for these rights. Changes use the existing configuration version and are
+rejected in case of parallel changes.
+
+A planned model designation or slot label proves no identity. The actual
+route and the alias assignment valid during the call are recorded on the
+execution evidence. Old evidence does not retroactively receive a model
+identity. A missing or altered evidence does not allow an independent
+review. API keys remain in the process and appear neither as text nor as
+a key hash in this evidence.
+
+Process
+-------
+After a valid submission, when review takeover is enabled, exactly one
+review task is created for the specific complete result revision. The
+target task remains review. The review task does not depend on the Done
+of the target task. The controller grants a private, non-transferable
+grant for a different model identity, a different slot, and a different
+run generation. Public or external claims do not gain additional rights
+through this.
+
+The review runs through the existing model, resource, lease, and stop
+checks. It may read the target task and result and submit only its own
+review result. The controller binds the actual last model return to
+exactly this submit call. Model statements about identity or independence
+are not adopted as authorization.
+
+The structured verdict contains status (approved, findings, or rejected),
+summary, and task_contract_met. An approved requires task_contract_met=true.
+A missing review proof must remain visible as a finding. The recorded
+review closes only the executed review task. The original task remains
+review and can be personally accepted or returned for correction. A
+personal approval is not replaced by this review.
+
+Currency and limits
+-------------------
+The read view confirms a recorded review only after a renewed comparison
+of the current complete git/result revision. Changes to task, result,
+route, model assignment, policy, or working copy prevent unreviewed reuse.
+Review tasks do not create further review tasks. Reading calls create no
+tables and start no model.
+
+This component connects the second model call with a traceable review
+evidence. The complete automatic completion decision including all user,
+GitHub, contract, and correction rules remains a separate open integration
+step. A source change alone does not activate a native installation.

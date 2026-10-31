@@ -28,6 +28,23 @@ TOPIC_ALIASES = {
     "healthcheck": "health",       # HealthCheckHandler (hub/health.py)
     "msg": "messages",             # MessagesHandler (hub/messages.py)
     "shared_mem": "shared_memory", # SharedMemoryHandler (hub/shared_memory.py)
+    # Worker help files retain their declared hyphenated filenames. Topic
+    # normalization above the lookup uses underscores, including explicit EN
+    # variants exposed by the existing topic listing.
+    "worker_policy": "worker-policy",
+    "worker_policy_en": "worker-policy_en",
+    "worker_execution_evidence": "worker-execution-evidence",
+    "worker_execution_evidence_en": "worker-execution-evidence_en",
+    "worker_errors": "worker-errors",
+    "worker_errors_en": "worker-errors_en",
+    "worker_scope_evidence": "worker-scope-evidence",
+    "worker_scope_evidence_en": "worker-scope-evidence_en",
+    "worker_results": "worker-results",
+    "worker_results_en": "worker-results_en",
+    "worker_result_submission_receipt": "worker-result-submission-receipt",
+    "worker_result_submission_receipt_en": "worker-result-submission-receipt_en",
+    "worker_result_review": "worker-result-review",
+    "worker_result_review_en": "worker-result-review_en",
 }
 
 

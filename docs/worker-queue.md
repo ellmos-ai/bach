@@ -10,7 +10,7 @@ Gründe der Auswahl:
 
 - `explicit_slot_required`: Der Worker übernimmt nur ausdrücklich seinem Slot zugewiesene Aufgaben.
 - `slot_binding` oder `model_binding`: Aufgabe und tatsächliche Workerbesetzung passen nicht zusammen.
-- `pickup_category`, `pickup_priority`, `pickup_tags`, `excluded_tag`: Die jeweilige Filtergruppe schließt die Aufgabe aus. Alle konfigurierten Gruppen müssen passen; Kategoriequellen und positive Tags sind innerhalb ihrer Gruppe Alternativen. Bei einer ausdrücklichen Slotzuordnung werden nur Kategorie und Priorität übergangen; Tagfilter gelten weiter.
+- `pickup_category`, `pickup_priority`, `pickup_tags`, `excluded_tag`: Die jeweilige Filtergruppe schließt die Aufgabe aus. Alle konfigurierten Gruppen müssen passen; Kategoriequellen und positive Tags sind innerhalb ihrer Gruppe Alternativen. OpenRouter- und Ollama-Cloud-Worker wenden keinen Kategorieausschluss an, können aber weiter nach Priorität und Tags filtern. Bei einer ausdrücklichen Slotzuordnung werden zusätzlich Kategorie und Priorität übergangen; Tagfilter gelten weiter.
 - `pickup_filter` bleibt als allgemeiner Filtergrund für ältere Beobachtungen beziehungsweise nicht genauer auflösbare Filter bestehen.
 - `ownership`: Ein Pickupfilter ist ein Auswahlkriterium, keine Berechtigung. Er hebt eine fremde, nichtleere `assigned_to`-Zuweisung nicht auf. Eine persönliche Aufgabe mit `assigned_to=user` erreicht die automatische Queue dieses Workers nur über eine ausdrückliche `assigned_slot`-Zuweisung an genau dessen Worker-ID. Ohne Filter gilt für ungeroutete Aufgaben die in `selection_policy` ausgewiesene BACH-/Buddha-/Ollama-/eigene-Workerrolle-Regel.
 - `deferred_version`: Dieser Workerlauf hat dieselbe Taskversion bereits ohne Ergebnis zurückgegeben. Erst eine Inhaltsänderung lässt einen neuen Versuch zu.
@@ -102,3 +102,88 @@ Der getestete Basisstand `main` (`615d817…`) enthält die #2079-Normal-Loop-Tr
 ### Öffentliche Git-Quellprüfung: begrenzte Leseoperationen
 
 Der Provenance-Reader akzeptiert ausschließlich die fest definierten Leseoperationen für Origin, Main-Commit, Head-Commit und die Task-Quellregistrierung. Ausführbare Datei und Git-Unterbefehle werden intern festgelegt; eine freie Argumentliste gehört nicht zu dieser Schnittstelle. Die Registrierungskennung wird aus einer kanonischen positiven numerischen Task-ID erzeugt. Unbekannte Operationen und ungültige IDs werden vor dem Prozessstart abgewiesen. Dieser Vertrag verleiht keine Schreib-, Deploy- oder Taskfreigabe.
+
+### Freigabe der Worker-Queue und lokale Ollama-Wiederverwendung
+
+Nach der Übermittlung prüft der Worker den verifizierten kanonischen Ergebnis-Readback anhand von Task, Ergebnis-ID und Hash, Generation, Fence, Taskversion, Übermittlungsbeleg und Ergebnisrevision. Ein exakt aktuelles Ergebnis gibt denselben Worker sofort für den nächsten Queue-Claim frei, auch wenn die verknüpfte Prüfung oder Abschlussbewertung noch aussteht. Das Ergebnis bleibt prüfungs- und abschlussrichtlinienpflichtig; externe Schutzgates für geschützte Repository-Änderungen, Veröffentlichung, Löschung und Ausgaben bleiben bestehen. Fehlende oder veraltete Readbacks halten den Worker an.
+
+Die Prüfung ist eine separate verknüpfte Task. Eine frische Generation darf sie übernehmen, auch wenn sie vom ursprünglichen Autor stammt. Ein Review desselben Autors oder Slots wird als nicht unabhängig erfasst und kann die Annahme nicht erfüllen. Cloud-Worker dürfen Review-Tasks übernehmen, wenn eine gültige Route vorliegt; die Richtlinienberechtigung entscheidet weiterhin, ob das Review für den Abschluss zählt.
+
+Wird eine fest zugeordnete Task aus einem sicheren Claim-Grund abgelehnt, entfernt der zugehörige Worker nur seine eigene gespeicherte Zuordnung, protokolliert die Ablehnung und versucht den normalen Selector erneut. Die abgelehnte ID wird in dieser Generation übersprungen. Ein Lease-Konflikt bleibt fail-closed.
+
+Buddha Always-On verwendet ein verifiziert geladenes Ollama-Modell mit ausreichendem konfiguriertem Kontext wieder. Nur dessen Gewichte werden beim zusätzlichen RAM-Bedarf angerechnet; KV-Headroom, Prozess-Overhead, Systemreserve und die freien Persistenzdateisysteme werden weiter geprüft. Ein antwortender Ollama-Server ohne residenten Modellbeleg durchläuft das volle Hostbudget. Der Readback nennt Grundlage und gemessene Budgets; der Wiederaufnahmevertrag akzeptiert keine älteren Nullbudget-Belege.
+
+Vor und nach dem Warten auf Inferenzzugang liest die Runtime ihre aktuelle Modellbindung erneut. Agent, Modellziel, Priorität und Kontextbindung müssen unverändert und aktiviert bleiben. Eine Änderung an einem anderen Worker darf die eigene Inferenz nicht abbrechen: Die globale Katalogversion bleibt für Konfigurations-CAS erhalten, gehört aber nicht zum Identitätsvergleich eines laufenden Modellaufrufs.
+
+Beim frischen Start prüft Buddha Always-On vor dem ersten Queue-Claim seine exakte lokale Ollama-Bindung und die Fackel-Präferenz. Ist das Modell bereits resident, verwendet es den vorhandenen Modellbeleg. Antwortet der Ollama-Server, ohne dass das Modell resident ist, lädt BACH es mit einer leeren Chat-Nachrichtenliste; dadurch entstehen weder ein Taskprompt noch ein Transkript- oder Run-Zähler-Eintrag. Der Aufruf läuft mit Hintergrundpriorität durch das gemeinsame Host-Inferenz-Gate. Bei Compute-Vorrang, nicht bestätigter Kapazität oder nicht erreichbarem Server wartet Buddha und prüft erneut.
+
+Der Controller prüft vor dem nächsten Claim nur den aktuellen Ergebnisbeleg des Workerlaufs. Ist dieser Readback exakt, wird der nächste Claim sofort freigegeben; fehlt ein aktueller Ergebnisbeleg, blockieren auch keine älteren gespeicherten Ergebnisreviews den Claim. Review und Abschlussbewertung laufen über ihre getrennten Aufgaben-/Prüfungswege. Der Controller-Poll reconciled alte Bindings nicht und markiert Ergebnisse nach Ablauf nicht automatisch als `completed_unreviewed`; ungeprüfte Ergebnisse bleiben sichtbar, ohne die normale Queue zu blockieren.
+
+Cloud-Worker mit OpenRouter- oder Ollama-Cloud-Route können alle Aufgabenkategorien übernehmen. Dazu zählt auch eine Ollama-Route, deren Modellname auf `:cloud` endet. Ihre Kategorieauswahl schließt daher keine Taskart aus; konfigurierte Prioritäts- und Tagfilter sowie fremde Zuständigkeiten, Modellbindungen, Slotzuweisungen, Abhängigkeiten und aktive Leases bleiben wirksam. Ihre Claims verwenden auch bei nativer Sequenzdelegation das kürzere Lease-Profil `S` (15 Minuten je Claim/Erneuerung, höchstens zwei Stunden für denselben Lauf), damit ein abgebrochener Cloud-Worker früher wieder freigibt.
+
+Ein gebundener kontinuierlicher Cloud-Worker wiederholt eine verifizierte HTTP-429-Ablehnung direkt am einzelnen Modellaufruf. Der vorhandene Nachrichtenverlauf einschließlich bestätigter Werkzeugergebnisse, dieselbe Taskbindung, Generation und Lease bleiben erhalten. Bereits ausgeführte Werkzeuge werden dabei nicht erneut aufgerufen. Vor jedem Versuch und während des Wartens werden die aktuelle Session, Bindung, Profilroute, Stoppsignale und Leaseberechtigung erneut geprüft. Jeder tatsächliche Modellversuch durchläuft weiterhin die normalen Anfragebudgets und Ausführungsbelege.
+
+Es gibt höchstens drei Wiederholungen mit 60, 120 und 240 Sekunden Grundwartezeit; ein gültiges `Retry-After` verlängert den jeweiligen Abstand. Insgesamt dürfen diese Wartezeiten 900 Sekunden nicht überschreiten. Monatskontingente, andere HTTP-Fehler, Transportfehler, Teilantworten und Backends mit selbst verwalteten Werkzeugen lösen diese Wiederholung nicht aus. Nach Ausschöpfung wird die begrenzte Wiederholung nicht durch einen zusätzlichen Controller-Neustart derselben Task vervielfacht. Die bisherige Sperre gegen einen vollständigen Task-Neustart nach begonnener Werkzeugwirkung bleibt bestehen.
+
+### Inaktive Workerprofile löschen
+
+Beide POST-Aliase `/api/workers/delete` und `/api/worker/delete` sowie
+`DELETE /api/workers?id=…` verwenden dieselbe Löschprüfung. Sie hält zuerst
+den Controllerlock, danach den Konfigurationslock wie die Startzulassung.
+Ein laufender Thread, eine noch offene Admission oder ein unbestätigtes
+Laufende verhindern die Löschung mit HTTP409. Der angezeigte Status allein
+reicht nicht. Die Löschoperation stoppt keinen Worker nebenbei.
+
+Neue dynamische Zulassungen speichern vor der Veröffentlichung im Speicher
+eine private `_controller_run`-Bindung an Service, Start, Generation,
+Prozessgeburt und physische Lease-Worker-ID. Auf POSIX wird diese Bindung
+mit Datei- und Verzeichnissync bestätigt. Nach einem Servicewechsel müssen
+der alte Prozess nachweislich beendet und alle Leases dieser exakten
+physischen ID frei sein. Der native Reader und sein HTTP-Pendant
+`GET /api/tasks/leases/by-worker?worker_id=…` prüfen dafür alle zugehörigen
+Tasks ohne Seitenlimit. Sie geben keine Lease-ID oder Taskinhalte aus.
+Unlesbare Fristen gelten als unbestätigt.
+
+Terminale Modellanfragebelege werden vor der Profilentfernung unter
+`worker-run-archive` neben der Slotkonfiguration privat archiviert. Pro
+Worker und Start-ID bleibt ein unveränderlicher Beleg mit Schema und
+SHA-256 erhalten. Wiederholungen bestätigen identische Belege erneut;
+Konflikte und Archivfehler lassen das Profil bestehen. Nichtterminale
+Budgetläufe benötigen zunächst den bestehenden Recovery-Nachweis.
+Mit dem Profil verschwindet auch dessen Dauerbetriebsfreigabe atomar.
+
+Alte Profile ohne verifizierbare Laufbindung bleiben HTTP409, bis ein
+exakter Laufnachweis vorliegt. Budgetierte Einmalläufe können ihre bereits
+vorhandenen Terminal- und Task-Leasebelege verwenden. Windows unterstützt
+den bestehenden POSIX-Archivvertrag nicht: Nichtleere Budgetarchive werden
+dort vor jeder Dateimutation abgewiesen; gewöhnliche Profile lassen sich
+mit aktueller Controllerbestätigung löschen. Private Prozess- und
+Archivdaten erscheinen nicht in der öffentlichen Workerprojektion.
+
+Die bestehende Startmöglichkeit alter Profile bleibt erhalten. Fehlt ihnen
+ein Nachweis der früheren Generationen, trägt jede neue Run-Bindung diesen
+offenen Zustand als `prior_runs_unconfirmed` weiter. Ein später beendeter
+Neustart hebt diese Löschsperre nicht auf. Für Profile mit neuer Run-Bindung
+prüft auch die automatische Cloud-Wiederaufnahme das Prozessende vor einer
+Änderung ihres Checkpoints; eine noch lebende Vorinstanz bleibt unangetastet.
+Der Prozesshost wird ausdrücklich gespeichert; ein anderer Host darf dessen
+Prozessende nicht anhand seiner eigenen PID-Tabelle bestätigen. Nichtdauerhafte
+Windows-Marker erlauben nach einem Service-Neustart weiterhin einen Start,
+tragen die ungeklärte Vorgeschichte aber in die neue Bindung weiter.
+
+
+### OpenRouter-Verbindungsfehler im Dauerbetrieb (#1943)
+
+Der vorhandene innere Retry behandelt einen typisierten ConnectError innerhalb
+desselben Modellaufrufs weiterhin höchstens dreimal (5/10/20 Sekunden). Ist er
+ausgeschöpft, darf ein OpenRouter-Dauerworker ohne festes Modellaufrufbudget
+über den vorhandenen äußeren Rückgabeweg fortsetzen: Lease-Supervisor beenden,
+native Rückgabe bestätigen, Zuweisung beenden, ohne Lease 60/120/240/480 und
+höchstens 900 Sekunden warten und anschließend eine neue reguläre Übernahme
+versuchen. Die alte Toolschleife wird nicht wiederholt; erledigte Werkzeugausgaben
+und der aktuelle Taskstand bleiben erhalten. Stop, Profilwechsel, TTL,
+Budgetgrenzen, konkurrierende Leases und fehlgeschlagene Rückgaben bleiben
+maßgeblich. Andere Transportfehler erhalten dadurch keine neue äußere Wiederholung.
+
+Dieser Quellstand erweitert vorhandene Tests; eine tatsächliche produktive
+Aufgabenbearbeitung und deren native Ergebnisannahme sind getrennt nachzuweisen.

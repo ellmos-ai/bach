@@ -348,6 +348,66 @@ def test_runtime_admits_actual_bound_target_and_publishes_host_owner(
     assert not HostInferenceGate().status()["active"]
 
 
+@pytest.mark.parametrize("change", ["unrelated", "priority", "context", "disable"])
+def test_waiting_call_tracks_own_binding_instead_of_global_catalog_version(
+        registry, ready_local_reserve, monkeypatch, change):
+    migrated()
+    worker = slots.add_worker({"name": "Other", "backend": "openrouter", "model": "free"},
+                              path=registry)
+    backend = OllamaBackend()
+    backend.chat = AsyncMock(return_value="answer")
+    runtime = ChatRuntime(backend=backend)
+    runtime.require_model_socket_config = True
+    first_binding = asyncio.Event()
+    real_binding = runtime._model_binding_for_session
+
+    def observe_binding(*args):
+        result = real_binding(*args)
+        first_binding.set()
+        return result
+
+    monkeypatch.setattr(runtime, "_model_binding_for_session", observe_binding)
+
+    async def run():
+        async with HostInferenceGate().turn("other", "foreground"):
+            token = runtime._compute_turn_context.set(("gui-web", "foreground"))
+            try:
+                pending = asyncio.create_task(runtime._chat_with_compute_turn(
+                    backend, [], model="qwen3.8:27b-mlx"))
+            finally:
+                runtime._compute_turn_context.reset(token)
+            await asyncio.wait_for(first_binding.wait(), 2)
+            before = models.model_binding_for_call("gui-web", "ollama", "qwen3.8:27b-mlx")
+            if change == "unrelated":
+                config = slots.load_slots_config(strict=True)
+                other = next(item for item in config["dynamic_workers"] if item["id"] == worker["id"])
+                other["pickup_filter"] = {
+                    "enabled": True, "categories": [], "priorities": ["P1"],
+                    "tags": [], "exclude_tags": [],
+                }
+                slots.save_slots_config(config)
+                after = models.model_binding_for_call("gui-web", "ollama", "qwen3.8:27b-mlx")
+                assert before["configuration_version"] != after["configuration_version"]
+                assert {k: v for k, v in before.items() if k != "configuration_version"} == {
+                    k: v for k, v in after.items() if k != "configuration_version"}
+            else:
+                settings = {"priority": "background"} if change == "priority" else (
+                    {"context_tokens": 4096} if change == "context" else {"enabled": False})
+                models.bind_model_agent(version(), "buddha_chat", before["socket_id"], settings)
+        if change == "unrelated":
+            assert await asyncio.wait_for(pending, 3) == "answer"
+        else:
+            with pytest.raises(RuntimeError, match="binding_(changed|unavailable)"):
+                await asyncio.wait_for(pending, 3)
+
+    asyncio.run(run())
+    if change == "unrelated":
+        backend.chat.assert_awaited_once()
+    else:
+        backend.chat.assert_not_awaited()
+    assert not HostInferenceGate().status()["active"]
+
+
 def test_runtime_revocation_while_waiting_prevents_backend_dispatch(registry):
     view = migrated()
     backend = OllamaBackend()

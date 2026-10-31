@@ -309,8 +309,13 @@ class TestSlotsConfigCRUD:
         workers = list_workers(path=str(cfg_file))
         assert any(w["id"] == worker["id"] for w in workers)
 
-        # Remove worker
-        ok = remove_worker(worker["id"], path=str(cfg_file))
+        # Low-level callers must hold the controller lock and prove no run is active.
+        from hub._services.chat import telegram_chat as control
+        with pytest.raises(RuntimeError, match="worker_delete_execution_unconfirmed"):
+            remove_worker(worker["id"], path=str(cfg_file))
+        with control._WORKER_CONTROL_LOCK:
+            ok = remove_worker(worker["id"], path=str(cfg_file),
+                               _runtime_guard=control._assert_worker_profile_inactive)
         assert ok is True
         workers_after = list_workers(path=str(cfg_file))
         assert not any(w["id"] == worker["id"] for w in workers_after)
@@ -1027,6 +1032,16 @@ class TestDynamicContextScaling:
         assert rt._context_voll({"prompt_tokens": 110000}, session_cloud) is True
 
 
+def _stage_controller_worker_fixture(monkeypatch, path, worker):
+    """Controller admission persists its run identity in the same native registry."""
+    from hub._services.chat import slots_config
+    initialize_slots_config(str(path))
+    config = load_slots_config(str(path), strict=True)
+    config["dynamic_workers"] = [worker]
+    slots_config.save_slots_config(config, str(path))
+    monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(path))
+
+
 class TestControlHandlerEndpoints:
     @pytest.fixture(autouse=True)
     def isolated_native_task_authority(self, tmp_path, monkeypatch):
@@ -1152,7 +1167,7 @@ class TestControlHandlerEndpoints:
         (0, "idle"), ("ungültig", "error"),
     ])
     def test_api_worker_custom_id_binds_no_tools_fail_closed(
-        self, monkeypatch, rounds, expected_status, persistent_worker_runtime,
+        self, monkeypatch, rounds, expected_status, persistent_worker_runtime, tmp_path,
     ):
         control = importlib.import_module("hub._services.chat.telegram_chat")
 
@@ -1161,6 +1176,7 @@ class TestControlHandlerEndpoints:
                   "backend": "ollama-cloud", "model": "kimi-k3:cloud",
                   "allow_tools": False, "max_tool_rounds": rounds,
                   "sub_mode": "task_worker", "task_prompt": "Nur CLOUD_OK"}
+        _stage_controller_worker_fixture(monkeypatch, tmp_path / "slots.json", worker)
         monkeypatch.setattr(control, "runtime", persistent_worker_runtime)
         session = persistent_worker_runtime.get_session("alpha")
         session.messages = [{"role": "user", "content": "persistierter Verlauf"}]
@@ -1259,7 +1275,7 @@ class TestControlHandlerEndpoints:
 
     @pytest.mark.parametrize("answer_kind", ["ok", "failed-type", "failed-text"])
     def test_once_worker_marks_failed_answer_as_error(
-        self, monkeypatch, answer_kind, persistent_worker_runtime,
+        self, monkeypatch, answer_kind, persistent_worker_runtime, tmp_path,
     ):
         control = importlib.import_module("hub._services.chat.telegram_chat")
         monkeypatch.setattr(control, "runtime", persistent_worker_runtime)
@@ -1268,6 +1284,7 @@ class TestControlHandlerEndpoints:
         worker = {"id": worker_id, "name": "Probe", "status": "running",
                   "type": "once", "expires_at": None,
                   "sub_mode": "task_worker", "task_prompt": "Probe"}
+        _stage_controller_worker_fixture(monkeypatch, tmp_path / "slots.json", worker)
         updates = []
         activities = []
         monkeypatch.setattr(control, "get_worker_slot", lambda _id: worker)
@@ -1637,6 +1654,9 @@ class TestControlHandlerEndpoints:
         def slot_get(wid):
             return get_worker_slot(wid, path=str(cfg_file))
 
+        from hub._services.chat import slots_config
+        monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(cfg_file))
+
         def slot_update(wid, updates):
             return update_slot(wid, updates, path=str(cfg_file))
 
@@ -1756,6 +1776,8 @@ class TestControlHandlerEndpoints:
         update_slot(worker_id, {"status": "running"}, path=str(cfg_file))
 
         session = persistent_worker_runtime.get_session(worker_id)
+        from hub._services.chat import slots_config
+        monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(cfg_file))
         responses = []
         monkeypatch.setattr(control, "get_worker_slot",
                             lambda _id: get_worker_slot(_id, path=str(cfg_file)))
@@ -1826,11 +1848,12 @@ class TestControlHandlerEndpoints:
         assert final[0]["details"]["status"] == "released"
         assert final[0]["details"]["result"] == "not_finished"
 
-    def test_api_worker_run_denies_unknown_role_fail_closed(self, monkeypatch):
+    def test_api_worker_run_denies_unknown_role_fail_closed(self, monkeypatch, tmp_path):
         control = importlib.import_module("hub._services.chat.telegram_chat")
         worker = {"id": "hacker", "name": "Hacker", "status": "running",
                   "type": "once", "expires_at": None,
                   "sub_mode": "hacker", "task_prompt": "Nur CLOUD_OK"}
+        _stage_controller_worker_fixture(monkeypatch, tmp_path / "slots.json", worker)
         session = ChatSession()
         session.chat_id = "hacker"
         session.messages = []

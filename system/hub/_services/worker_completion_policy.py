@@ -16,6 +16,8 @@ import uuid
 from . import worker_policy_settings as settings
 from .task_result_service import read_result
 from .worker_scope_evidence import project_scope_evidence
+from .worker_result_provenance import (author_principal, current_result_revision,
+                                       source_kind, source_pin)
 from .worker_completion_contract import (evaluate_contract, evaluate_worker_self_check,
     evaluate_worker_completion_assertion)
 from .worker_github_review import observe_github_review
@@ -38,7 +40,9 @@ def _digest(value):
 def _db_fingerprint(record):
     execution, scope, review = (record.get("execution") or {},
                                 record.get("scope") or {}, record.get("model_review") or {})
-    return _digest({"schema": "bach.worker-completion-db-inputs.v1",
+    source = ({"source_kind": "external_attested", "external_source": source_pin(record)}
+              if source_kind(record) == "external_attested" else {})
+    return _digest({"schema": "bach.worker-completion-db-inputs.v1", **source,
         **{key: record.get(key) for key in ("task_id", "result_id", "fence", "generation",
             "task_version", "result_sha256", "submission_revision", "submission_event_id",
             "completion_policy_version", "user_review_revision", "user_review_event_id",
@@ -156,7 +160,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         revision = record.get("result_revision")
         if (type(revision) is not str or not _HEX.fullmatch(revision)
                 or record.get("scope", {}).get("availability") != "available"
-                or record.get("execution", {}).get("availability") != "available"):
+                or source_pin(record) is None):
             return _unavailable(task_id, "full_result_revision_unavailable", record=record)
         task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
         if task is None or task.get("claim_id"):
@@ -173,7 +177,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         policy = settings.validate_policy(frozen["policy"])
         override = settings.validate_override(frozen["override"])
         identity = identity_snapshot(conn)
-        author_id = principal_for_execution(identity, record["execution"])
+        author_id = author_principal(identity, record)
         if author_id is None:
             return _unavailable(task_id, "author_identity_unavailable", record=record)
         if type(task.get("require_user_review")) not in {type(None), int} or task.get("require_user_review") not in {None, 0, 1}:
@@ -216,6 +220,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             and type(review.get("status")) is str
             and review.get("status") in {"approved", "findings", "rejected"}
             and review.get("independent") is True
+            and review.get("policy_eligible") is True
             and type(review.get("task_id")) is int
             and review.get("task_id") == task_id
             and type(review.get("result_id")) is int
@@ -293,13 +298,22 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
                    else kernel.ExternalReviewStatus.NOT_APPLICABLE,
             task_id=str(task_id) if github.get("status") in {"verified", "rejected"} else None,
             result_revision=revision if github.get("status") in {"verified", "rejected"} else None)
-        context = kernel.WorkerReviewContext(task_id=str(task_id), author_id=author_id,
+        # The shared kernel excludes reviewer == author. Unless the operator
+        # banned the author's model, the author is its run, so the same model
+        # in a fresh run counts as a reviewer (user decision 2026-10-24).
+        kernel_author_id = (author_id if settings.exclude_author_model(conn)
+                            else f"{author_id}@run:{record['generation']}")
+        context = kernel.WorkerReviewContext(task_id=str(task_id), author_id=kernel_author_id,
             result_revision=revision, lease_valid=True, fence_valid=True,
             locks_clear=True, task_contract_met=task_contract_met,
             result_evidence_valid=True, user_review_required=bool(user_required),
             github_pr_review_required=github_required, result_age_seconds=_age_seconds(record.get("submitted_at")),
             review=review_record, user_review=user_record, external_review=external_record)
         decision = kernel.evaluate_worker_policy(policy, context, override).as_dict()
+        # Internal review can affect whether this result is accepted, but it
+        # never holds the worker's next queue claim. External-effect gates
+        # remain represented by completion_allowed and the result status.
+        decision["worker_may_claim_next"] = True
         return {"schema": SCHEMA, "availability": "available", "task_id": task_id,
             "result_id": record["result_id"], "result_revision": revision,
             "status": observed["status"],
@@ -320,22 +334,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
 
 def _current_revision_from_db(record):
     """Rebuild only the immutable revision inputs inside an SQLite writer."""
-    from .worker_scope_evidence import _REVISION_SCHEMA
-    scope, execution = record.get("scope", {}), record.get("execution", {})
-    if (scope.get("availability") != "recorded"
-            or execution.get("availability") != "available"):
-        return None
-    revision = execution.get("execution_revision")
-    receipt = scope.get("scope_receipt_sha256")
-    event_id = scope.get("scope_event_id")
-    if (type(revision) is not str or not _HEX.fullmatch(revision)
-            or type(receipt) is not str or not _HEX.fullmatch(receipt)
-            or type(event_id) is not int or event_id <= 0):
-        return None
-    return _digest({"schema": _REVISION_SCHEMA,
-        "submission_revision": record.get("submission_revision"),
-        "execution_revision": revision,
-        "scope_receipt_sha256": receipt, "scope_event_id": event_id})
+    return current_result_revision(record)
 
 
 def _same_db_result(conn, evaluation):
@@ -362,7 +361,7 @@ def _same_db_result(conn, evaluation):
             or view["override"] != frozen.get("override")
             or (current_identity := identity_snapshot(conn))["configuration_version"]
                 != evaluation["identity_configuration_version"]
-            or principal_for_execution(current_identity, record["execution"]) != evaluation["author_id"]):
+            or author_principal(current_identity, record) != evaluation["author_id"]):
         return None, None, None
     return task, record, observed
 
@@ -676,7 +675,7 @@ def reconcile_current_result(conn, task_id, *, repo_root=None, worktrees_dir=Non
                              expected=None) -> dict:
     """Re-evaluate a current result, then CAS one policy status transition."""
     from .task_result_service import ResultConflict, _PolicyAcceptance, _status_revision
-    from .task_lease import _history, _utcnow, _local_naive, task_content_version
+    from .task_lease import _history, _utcnow, _local_naive
     from hub.task_audit import apply_task_field_changes
     if conn.in_transaction:
         return _unavailable(task_id, "active_database_transaction")

@@ -155,6 +155,10 @@ class WordTemplateService:
         Returns:
             Anzahl der durchgefuehrten Ersetzungen
         """
+        # None (z.B. "null" in der LLM-Antwort) wie leeren Text behandeln, sonst
+        # bricht str.replace() mit TypeError ab
+        data = {k: ("" if v is None else str(v)) for k, v in data.items()}
+
         count = 0
 
         # Paragraphen (alle, auch in Textboxen)

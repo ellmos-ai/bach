@@ -1,0 +1,122 @@
+# Portabilität: UNIVERSAL
+# Version: 1.0.0
+# Zuletzt validiert: 2026-09-17
+# Nächste Prüfung: 2027-03-17
+# Ressourcen: [hub/subscription_agents.py, hub/_services/subscription_agents_composer.py]
+
+================================================================================
+subscription_agents - Versionierte Onboarding-Promptvorschau
+================================================================================
+
+BESCHREIBUNG
+--------------------------------------------------------------------------------
+Der Handler `subscription_agents` erzeugt aus den aktuellen BACH-Quellen eine
+versionierte Onboarding-Promptvorschau (Subscription-Agents-Compose). Der
+Handler liest dazu eine Request-Datei im JSON-Format ein, übergibt den Inhalt
+an den Composer (`hub/_services/subscription_agents_composer.py`) und gibt das
+Ergebnis als kanonisch sortiertes JSON auf stdout aus.
+
+Der Handler ist rein lesend auf die Request-Datei bezogen: Er verändert weder
+die Request-Datei noch Konfigurations- oder Systemdateien. Die Ausgabe eignet
+sich als Grundlage für versionierte Prompt-/Onboarding-Stände und für die
+Weitergabe an nachgelagerte Werkzeuge.
+
+Der Handler stellt genau eine Operation bereit: `compose`.
+
+Registrierungsname:      subscription_agents
+Modul:                   system/hub/subscription_agents.py
+Zugehöriger Service:     system/hub/_services/subscription_agents_composer.py
+Operation(en):           compose
+
+OPERATIONEN
+--------------------------------------------------------------------------------
+compose <Request-JSON-Datei>
+    Erstellt eine versionierte Onboarding-Promptvorschau aus den aktuellen
+    BACH-Quellen.
+
+    Argumente:
+      <Request-JSON-Datei>   Pfad zu einer JSON-Datei mit einem JSON-Objekt.
+                             Ein führendes `~` wird zu dem Heimatverzeichnis
+                             des ausführenden Benutzers expandiert.
+
+    Regeln für die Argumentübergabe:
+      - Genau ein Argument ist erforderlich.
+      - Das Argument muss ein nicht-leerer String sein.
+      - Das Argument darf nicht mit `-` beginnen (kein Options-Parsing).
+
+    Fehlerbehandlung der Request-Datei:
+      - Datei nicht lesbar (OSError/PermissionError)
+        -> "Request-Datei ist nicht lesbar"
+      - Datei größer als MAX_REQUEST_BYTES (256 KB)
+        -> "Request-Datei überschreitet 256 KB"
+      - Inhalt kein gültiges UTF-8-JSON, kein JSON-Objekt oder doppelte
+        Feldnamen
+        -> "Request-Datei muss gültiges UTF-8-JSON mit eindeutigen Feldern
+           enthalten"
+        -> "Request-Datei muss ein JSON-Objekt enthalten"
+
+    Wird die Operation oder das Argument nicht akzeptiert, gibt der Handler
+    folgende Nutzungszeile zurück:
+
+      bach subscription_agents compose <Request-JSON-Datei>
+
+BEISPIELE
+--------------------------------------------------------------------------------
+1) Standardaufruf über den Kurznamen des Handlers:
+
+     python bach.py subscription_agents compose ./request.json
+
+2) Aufruf über die Optionsform (Binding an den Handler):
+
+     python bach.py --subscription_agents compose ./request.json
+
+3) Request-Datei im Heimatverzeichnis (Tilde-Expansion):
+
+     python bach.py subscription_agents compose ~/requests/onboarding.json
+
+4) Ergebnis in eine Datei umleiten (Sortierung/Schlüssel bleiben erhalten):
+
+     python bach.py subscription_agents compose ./request.json > preview.json
+
+5) Minimale Request-Datei (JSON-Objekt, UTF-8, keine doppelten Felder):
+
+     {"topic": "onboarding", "audience": "new_agent"}
+
+AUSGABE-FORMAT
+--------------------------------------------------------------------------------
+- Erfolgsfall: genau ein JSON-Objekt auf stdout, serialisiert mit
+  `json.dumps(result, ensure_ascii=False, sort_keys=True)`. Die Schlüssel sind
+  alphabetisch sortiert, Nicht-ASCII-Zeichen bleiben unmaskiert (UTF-8).
+- Fehlerfall: Rückgabe eines Textes (Fehlermeldung oder Nutzungszeile) über
+  die reguläre Handler-Rückgabe; Exit-Status richtet sich nach der
+  aufrufenden CLI.
+- Die Ausgabe enthält keine Zeitstempel-Formatierung durch den Handler; alle
+  inhaltlichen Felder stammen aus dem Composer-Ergebnis.
+
+DATEIEN
+--------------------------------------------------------------------------------
+system/hub/subscription_agents.py
+    Handler: Argumentprüfung, Request-Lesen, Aufruf des Composers, Ausgabe.
+
+system/hub/_services/subscription_agents_composer.py
+    Composer-Service mit `SubscriptionAgentsComposer` und der Konstante
+    `MAX_REQUEST_BYTES` (256 KB Obergrenze für die Request-Datei).
+
+<Request-JSON-Datei>
+    Vom Aufrufer bereitgestellte Eingabedatei (JSON-Objekt, UTF-8,
+    max. 256 KB, keine doppelten Feldnamen). Wird ausschließlich gelesen.
+
+system/docs/help/subscription_agents.txt
+    Diese Help-Datei. Sie wird über `--help subscription_agents` aufgelöst
+    (Help-Lookup nutzt `docs/help/<thema>.txt`, Registrierungsname und
+    Modulname sind identisch) und erscheint automatisch in `--help list`.
+
+SIEHE AUCH
+--------------------------------------------------------------------------------
+- `--help prompt` (system/docs/help/prompt.txt): Prompt-Aufbau und
+  Prompt-Konventionen im Bestand.
+- `--help abo`: Subscription-/Abo-Kontext des Systems.
+- `--help list`: Übersicht aller verfügbaren Help-Themen.
+- ARCHITECTURE.md: Aufrufkonventionen der CLI (`python bach.py <befehl>` bzw.
+  `python bach.py --<handler>`) und Help-Auflösung über
+  `docs/help/<thema>.txt`.

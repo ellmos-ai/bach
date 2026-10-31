@@ -108,7 +108,7 @@ def _process_with_memory_hook(
     monkeypatch: pytest.MonkeyPatch,
     database: Path,
     *,
-    opt_in: bool,
+    opt_in: bool | None,
     worker_label: str,
     prompt: str,
 ) -> str:
@@ -130,11 +130,14 @@ def _process_with_memory_hook(
         path=str(slots_path),
     )
     worker_id = worker["id"]
-    snapshot = slots.worker_configuration_snapshot(worker_id, path=str(slots_path))
-    slots.change_worker_configuration(
-        worker_id, snapshot["configuration_version"],
-        {"memory_hook_opt_in": opt_in}, path=str(slots_path),
-    )
+    if opt_in is not None:
+        # Only set the opt-in key when the caller passes an explicit value;
+        # opt_in=None keeps the add_worker default untouched (default-off).
+        snapshot = slots.worker_configuration_snapshot(worker_id, path=str(slots_path))
+        slots.change_worker_configuration(
+            worker_id, snapshot["configuration_version"],
+            {"memory_hook_opt_in": opt_in}, path=str(slots_path),
+        )
 
     backend = _RecordingBackend()
     runtime = ChatRuntime(backend)
@@ -241,7 +244,7 @@ def test_reviewed_hermes_lesson_is_retrievable_in_a_fresh_session(
     candidate_id = candidate["id"]
     revision = candidate["candidate_revision"]
     digest = candidate["candidate_digest"]
-    promotion = LearningPromotionService(db_path=database)
+    promotion = LearningPromotionService(db_path=database, write_guard=lambda _path: None)
 
     # A pending proposal is not reusable until its exact revision is reviewed.
     with pytest.raises(LearningPromotionUnavailable):
@@ -391,3 +394,69 @@ def test_pending_and_rejected_lessons_never_reach_backend_prompt(
     assert "synthetic-rejected-source-v1" not in rejected_prompt
     with sqlite3.connect(database) as conn:
         assert conn.execute("SELECT COUNT(*) FROM memory_lessons").fetchone()[0] == 0
+
+
+def test_default_off_worker_never_receives_lessons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Default-off means the worker slot never had "memory_hook_opt_in" set via
+    # CAS after add_worker; the slot keeps its creation default and no hook
+    # context may reach the backend prompt.
+    source = _read_json("source-session-v1.json")
+    database = _new_isolated_bach_db(tmp_path)
+    hermes = HermesDistillationService(database)
+    query = "Wie halte ich Änderungen klein und überprüfbar und prüfe freigegebene Dateien?"
+
+    candidate = hermes.run_pipeline(
+        source["messages"],
+        session_id=source["source_session_id"],
+        skill_name_hint="synthetic-default-off-learning-reuse",
+        persist=True,
+    ).candidate
+    assert candidate["status"] == "pending"
+    candidate_id = candidate["id"]
+    revision = candidate["candidate_revision"]
+    digest = candidate["candidate_digest"]
+    draft = candidate["lessons_draft"][0]
+    assert draft["title"] == "Änderungen klein und überprüfbar halten"
+
+    review = hermes.review_candidate(
+        candidate_id,
+        expected_revision=revision,
+        expected_digest=digest,
+        request_id="review-defaultoff-source-v1",
+        actor="reviewer:synthetic-panel",
+        notes="Inhaltsreview der synthetischen Quelle; keine Ergebnisqualitätsbewertung.",
+    )
+    assert review["status"] == "reviewed"
+
+    receipt = LearningPromotionService(db_path=database, write_guard=lambda _path: None).promote(
+        "hermes",
+        candidate_id,
+        target_kind="lessons",
+        expected_revision=revision,
+        expected_digest=digest,
+        request_id="promote-defaultoff-lesson-v1",
+        expected_target_version="absent",
+        actor="test:synthetic-harness",
+    )
+    assert receipt["status"] == "published"
+
+    # Control: the published lesson does surface for an explicit opt-in, so the
+    # default-off case below is not vacuously green.
+    delivered_prompt = _process_with_memory_hook(
+        tmp_path, monkeypatch, database, opt_in=True, worker_label="default-off-on",
+        prompt=query,
+    )
+    assert draft["title"] in delivered_prompt
+    assert "freigegebenen Dateien" in delivered_prompt
+
+    # The worker below never gets the opt-in key set on its slot.
+    default_off_prompt = _process_with_memory_hook(
+        tmp_path, monkeypatch, database, opt_in=None, worker_label="default-off",
+        prompt=query,
+    )
+    assert draft["title"] not in default_off_prompt
+    assert "freigegebenen Dateien" not in default_off_prompt
+    assert "--- MEMORY-HOOK ---" not in default_off_prompt
+    assert source["source_session_id"] not in default_off_prompt

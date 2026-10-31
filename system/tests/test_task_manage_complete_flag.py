@@ -170,3 +170,12 @@ def test_bach_command_done_needs_the_same_flag(tail, expected):
 def test_schema_offers_the_complete_flag():
     schema = next(tool for tool in bach_tools.TOOLS_SAFE if tool["function"]["name"] == "task_manage")
     assert schema["function"]["parameters"]["properties"]["complete"]["type"] == "boolean"
+
+
+def test_invalid_result_names_only_the_fixed_public_reason():
+    # Buddha #2496 (25.10.2026): a rejected submit_result gave no reason, so the model gave up.
+    reply, calls = _run({"action": "submit_result", "task_id": 7, "result": "x" * 3001, "complete": True})
+    assert "Taskergebnis ist ungültig: Konkretes Ergebnis mit höchstens 3000 Zeichen" in reply and calls == []
+    reply, calls = _run({"action": "submit_result", "task_id": 7, "result": "erledigt", "complete": True})
+    assert "Erledigungsbestätigung ist kein fachliches Ergebnis" in reply and calls == []
+    assert str(bach_tools._invalid_result_text(ValueError("private /Users/x path"))) == "Taskergebnis ist ungültig."

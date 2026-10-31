@@ -1,0 +1,50 @@
+[maschinell übersetzt aus dem Deutschen, ungeprüft]
+# Native Always-On Resumption
+
+After successfully binding its configured port, the Control-API starts its own
+startup check. Only the stored slot
+buddha_always_on is considered on a canonical lead. Other
+slots and dynamic workers receive no automatic start.
+
+The check neither adopts defaults as user approval nor Creator rights.
+Enabled must be explicitly true. Manually paused, stopped, deactivated,
+expired, and completed states are preserved. A normal stop
+of this fixed worker now stores paused; an explicitly requested
+target state remains effective. A previous automatic cooldown pause may
+be continued; the startup check waits for the
+existing countdown before granting admission. An unreadable pause start permits no start.
+
+Ollama and LM Studio are only considered after an actual local model check
+is passed. Cloud providers and :cloud models are excluded; a
+loopback endpoint alone proves no local model. If the local
+model server is not yet ready, the startup check waits 30 seconds and reads
+the current configuration again. The check ends on confirmed admission
+or an existing native admission and is terminated when the server is closed.
+Its abort signal is atomically bound to its own reserved generation.
+This ensures that a role admission still pending during shutdown cannot start a worker
+subsequently; a later foreign generation receives no stop.
+
+The local model check and the start use a common, unchanged
+configuration version. The existing native admission re-checks this version,
+the current control instance, and the stored Enabled state.
+Parallel attempts reserve at most one generation per controller.
+An unconfirmed physical start is not repeated as a CAS conflict.
+
+The normal task lease, content version, Creator grace period of 600 seconds,
+torch, and local inference control are used unchanged. Only the
+actually confirmed task takeover permits a model round. An empty queue
+keeps the admitted continuous worker available.
+After a crash, its own resumption waits for held-, creator-, and
+content conflicts without bypassing the confirmed lease. A canonically
+terminal old task state permits only the conditional deletion of the unchanged
+task pointer; it is never output as its own completed task or its own result.
+Task pointers assigned in the interim are preserved.
+
+## Acceptance
+
+This document describes the source contract. Productive acceptance requires
+a new control process, a new service instance, exactly one physical
+always-on generation, and a real leased task with a confirmed result.
+A mere source update or a green test selection does not prove this acceptance.
+Cloud workers are still not automatically
+restarted after a control restart.
