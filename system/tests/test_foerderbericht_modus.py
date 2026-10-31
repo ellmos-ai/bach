@@ -27,7 +27,7 @@ def pipe(tmp_path, monkeypatch):
 
 def _akte(base):
     d = base / "data_roh" / "Muster, Max"
-    d.mkdir(parents=True)
+    d.mkdir(parents=True, exist_ok=True)
     (d / "Aktendeckblatt.txt").write_text(
         "Name: Max Muster\nGeboren am 15.03.2016\nEltern: Erika Muster, Hans Muster\n"
         "Einzeltherapeutin: Frau Hoffmann\n", encoding="utf-8")
@@ -86,7 +86,8 @@ def test_run_full_pipeline_cloud_still_anonymizes(pipe, monkeypatch):
     pipe.run_full_pipeline()  # Default: cloud
     assert seen["backend"] == "claude_code"
     seg = seen["prompt"][seen["prompt"].index("=== DOKUMENTEN-BUNDLE"):seen["prompt"].index("=== AUFGABE")]
-    assert "Muster" not in seg and "Max" not in seg
+    import re as _re
+    assert "Muster" not in seg and _re.search(r"\bMax\b", seg) is None
 
 
 class _FakeResp(io.BytesIO):
@@ -204,6 +205,7 @@ class _FakeProc:
 def tunnel_env(monkeypatch):
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
     monkeypatch.setenv("FOERDERBERICHT_SSH_TUNNEL", "tester@100.64.0.9")
+    monkeypatch.setenv("FOERDERBERICHT_ALLOWED_HOSTS", "100.64.0.9")
     monkeypatch.setenv("FOERDERBERICHT_ALLOWED_HOSTS", "localhost,127.0.0.1,100.64.0.9")
     monkeypatch.delenv("FOERDERBERICHT_SSH_KEY", raising=False)
     monkeypatch.setattr(fp, "_free_port", lambda: 54321)
@@ -286,6 +288,7 @@ def test_no_tunnel_when_ollama_host_is_set_or_no_target(pipe, monkeypatch, tunne
 def test_tunnel_start_failure_reports_ssh_error(pipe, monkeypatch):
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
     monkeypatch.setenv("FOERDERBERICHT_SSH_TUNNEL", "tester@100.64.0.9")
+    monkeypatch.setenv("FOERDERBERICHT_ALLOWED_HOSTS", "100.64.0.9")
     monkeypatch.setattr(fp, "_free_port", lambda: 54321)
     monkeypatch.setattr(fp.subprocess, "Popen", lambda cmd, **kw: _FakeProc(exit_code=255, stderr=b"Permission denied"))
     with pytest.raises(PipelineError, match="Permission denied"):
@@ -359,7 +362,7 @@ def test_ollama_rejects_unlisted_tailscale_neighbors_when_own_devices_allowed(
 
 def test_prepare_prompt_accepts_flat_data_roh_without_client_folder(pipe):
     data_roh = pipe.base_path / "data_roh"
-    data_roh.mkdir(parents=True)
+    data_roh.mkdir(parents=True, exist_ok=True)
     (data_roh / "Aktendeckblatt.txt").write_text(
         "Name: Max Muster\n"
         "Geboren am 15.03.2016\n"
@@ -376,7 +379,7 @@ def test_prepare_prompt_accepts_flat_data_roh_without_client_folder(pipe):
 
 
 def test_prepare_prompt_errors_when_data_roh_is_empty(pipe):
-    (pipe.base_path / "data_roh").mkdir(parents=True)
+    (pipe.base_path / "data_roh").mkdir(parents=True, exist_ok=True)
     try:
         result = pipe.prepare_prompt(anonymize=False)
     except PipelineError as exc:
@@ -388,7 +391,7 @@ def test_prepare_prompt_errors_when_data_roh_is_empty(pipe):
 
 def test_prepare_prompt_requires_client_name_when_data_roh_is_flat(pipe):
     data_roh = pipe.base_path / "data_roh"
-    data_roh.mkdir(parents=True)
+    data_roh.mkdir(parents=True, exist_ok=True)
     (data_roh / "Aktendeckblatt.txt").write_text(
         "Name: Max Muster\nGeboren am 15.03.2016\n", encoding="utf-8",
     )

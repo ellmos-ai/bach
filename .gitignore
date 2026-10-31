@@ -383,3 +383,7 @@ LOCK*.guard
 # Task #1694: fremde Übergabe-Artefakte im Task-Worktree aus Commit halten
 /task_result.md
 /tests_tmp_gardener/
+# Task #2628: Probe-/Laufzeit-Artefakte aus Commit halten
+_probe_2628.txt
+_last_run_2628.txt
+test_cleanup_2628.txt
