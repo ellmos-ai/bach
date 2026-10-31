@@ -1,0 +1,1 @@
+// Neutralisiert in Task 2411: defekte Testdatei (doppelte mockFetch-Deklaration, Import aus nicht vorhandenem Paket "node-memfetch", Trailing-Whitespace) blockierte den Commit; endgültige Löschung als Nacharbeit offen.
