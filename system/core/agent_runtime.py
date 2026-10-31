@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Copyright (c) 2026 BACH Contributors
 
@@ -46,19 +45,19 @@ Autor: Claude Worker-Agent
 Datum: 2026-02-14
 """
 
-import os
-import sys
-import json
-import sqlite3
 import hashlib
 import importlib
 import importlib.util
+import json
+import os
 import re
-from pathlib import Path
-from datetime import datetime
-from typing import Optional, List, Tuple, Dict, Any
+import sqlite3
+import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
+from pathlib import Path
+from typing import Any
 
 # Den DB-Pfad zentral erfragen, nicht selbst bauen: ein repo-relativer Pfad zeigt auf die
 # veraltete Kopie im OneDrive-Ordner (bzw. auf ein Verzeichnis, das es gar nicht gibt —
@@ -97,9 +96,9 @@ class AgentConfig:
     """Agent-Konfiguration (analog zu ConnectorConfig)."""
     name: str
     agent_type: str  # 'expert', 'worker', 'boss', 'specialist'
-    capabilities: List[str] = field(default_factory=list)
-    config: Dict[str, Any] = field(default_factory=dict)
-    base_path: Optional[Path] = None
+    capabilities: list[str] = field(default_factory=list)
+    config: dict[str, Any] = field(default_factory=dict)
+    base_path: Path | None = None
     is_active: bool = True
 
 
@@ -141,7 +140,7 @@ class BaseAgent:
         self.status = AgentStatus.DISCONNECTED
         return True
 
-    def execute(self, operation: str, args: List[str]) -> Tuple[bool, str]:
+    def execute(self, operation: str, args: list[str]) -> tuple[bool, str]:
         """
         Führt eine Agent-Operation aus.
 
@@ -154,7 +153,7 @@ class BaseAgent:
         """
         raise NotImplementedError("Subclass must implement execute()")
 
-    def get_operations(self) -> Dict[str, str]:
+    def get_operations(self) -> dict[str, str]:
         """
         Gibt verfügbare Operationen zurück.
 
@@ -195,10 +194,10 @@ class AgentRegistry:
             self.db_path = _injected_db
         else:
             self.db_path = BACH_DB
-        self._cache: Dict[str, BaseAgent] = {}
-        self._cache_signatures: Dict[str, str] = {}
+        self._cache: dict[str, BaseAgent] = {}
+        self._cache_signatures: dict[str, str] = {}
 
-    def get(self, name: str) -> Optional[BaseAgent]:
+    def get(self, name: str) -> BaseAgent | None:
         """
         Holt oder erstellt eine Agent-Instanz.
 
@@ -231,7 +230,7 @@ class AgentRegistry:
 
         return None
 
-    def clear_cache(self, name: Optional[str] = None) -> None:
+    def clear_cache(self, name: str | None = None) -> None:
         """Entfernt gecachte Agent-Instanzen fuer einen Namen oder komplett."""
         keys = [name] if name else list(self._cache.keys())
         for key in keys:
@@ -243,7 +242,7 @@ class AgentRegistry:
                 except Exception:
                     pass
 
-    def list_agents(self, active_only: bool = False) -> List[Dict[str, Any]]:
+    def list_agents(self, active_only: bool = False) -> list[dict[str, Any]]:
         """
         Listet alle registrierten Agenten auf.
 
@@ -314,7 +313,7 @@ class AgentRegistry:
         finally:
             conn.close()
 
-    def _load_config(self, name: str) -> Optional[AgentConfig]:
+    def _load_config(self, name: str) -> AgentConfig | None:
         """Lädt Agent-Config aus DB."""
         if not self.db_path.exists():
             return None
@@ -346,7 +345,7 @@ class AgentRegistry:
         finally:
             conn.close()
 
-    def _instantiate(self, config: AgentConfig) -> Optional[BaseAgent]:
+    def _instantiate(self, config: AgentConfig) -> BaseAgent | None:
         """
         Erstellt Agent-Instanz basierend auf agent_type.
 
@@ -387,17 +386,17 @@ class AgentRegistry:
         """Normalisiert technische Agentennamen fuer Modul-/Klassensuche."""
         return name.replace("-agent", "").replace("_agent", "")
 
-    def _module_stems(self, name_base: str) -> List[str]:
+    def _module_stems(self, name_base: str) -> list[str]:
         """Ermittelt gueltige Python-Modul-Stems fuer einen Agentennamen."""
-        stems: List[str] = []
+        stems: list[str] = []
         for stem in (name_base, name_base.replace("-", "_")):
             if stem and stem not in stems:
                 stems.append(stem)
         return stems
 
-    def _candidate_module_specs(self, name_base: str) -> List[Tuple[Path, str]]:
+    def _candidate_module_specs(self, name_base: str) -> list[tuple[Path, str]]:
         """Liefert moegliche Modulpfade und zugehoerige Klassennamen."""
-        specs: List[Tuple[Path, str]] = []
+        specs: list[tuple[Path, str]] = []
         agents_dir = self.base_path / "agents"
         experts_dir = agents_dir / "_experts"
 
@@ -418,7 +417,7 @@ class AgentRegistry:
         importlib.invalidate_caches()
         resolved_path = module_path.resolve()
         digest = hashlib.sha1(
-            f"{self.base_path}:{resolved_path}".encode("utf-8")
+            f"{self.base_path}:{resolved_path}".encode()
         ).hexdigest()[:12]
         module_name = f"_bach_agent_{resolved_path.stem}_{digest}"
         sys.modules.pop(module_name, None)
@@ -470,7 +469,7 @@ class DummyAgent(BaseAgent):
         self.status = AgentStatus.READY
         return True
 
-    def execute(self, operation: str, args: List[str]) -> Tuple[bool, str]:
+    def execute(self, operation: str, args: list[str]) -> tuple[bool, str]:
         if operation == "status":
             return True, f"[DUMMY] Agent '{self.name}' ist bereit (keine echte Implementierung)."
         elif operation == "help":
@@ -483,13 +482,13 @@ class DummyAgent(BaseAgent):
 # Public API
 # ═══════════════════════════════════════════════════════════════
 
-_registries: Dict[str, AgentRegistry] = {}
+_registries: dict[str, AgentRegistry] = {}
 
 
 def _registry_key(base_path: Path) -> str:
     return str(base_path.resolve())
 
-def get_registry(base_path: Optional[Path] = None) -> AgentRegistry:
+def get_registry(base_path: Path | None = None) -> AgentRegistry:
     """Holt oder erstellt die globale Agent-Registry."""
     if base_path is None:
         # Auto-detect: Dieses Modul liegt in system/core/agent_runtime.py
@@ -502,7 +501,7 @@ def get_registry(base_path: Optional[Path] = None) -> AgentRegistry:
     return _registries[key]
 
 
-def clear_registry_cache(base_path: Optional[Path] = None, name: Optional[str] = None) -> None:
+def clear_registry_cache(base_path: Path | None = None, name: str | None = None) -> None:
     """Leert Agent-Caches fuer einen Root oder global ueber alle Roots."""
     if base_path is None:
         registries = list(_registries.values())
@@ -515,7 +514,7 @@ def clear_registry_cache(base_path: Optional[Path] = None, name: Optional[str] =
             registry.clear_cache(name)
 
 
-def get_agent(name: str, base_path: Optional[Path] = None) -> Optional[BaseAgent]:
+def get_agent(name: str, base_path: Path | None = None) -> BaseAgent | None:
     """
     Haupteinstiegspunkt: Holt Agent-Instanz.
 
@@ -535,7 +534,7 @@ def get_agent(name: str, base_path: Optional[Path] = None) -> Optional[BaseAgent
     return registry.get(name)
 
 
-def list_agents(active_only: bool = False, base_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+def list_agents(active_only: bool = False, base_path: Path | None = None) -> list[dict[str, Any]]:
     """
     Listet alle Agenten auf.
 
@@ -550,7 +549,7 @@ def list_agents(active_only: bool = False, base_path: Optional[Path] = None) -> 
     return registry.list_agents(active_only)
 
 
-def register_agent(config: AgentConfig, base_path: Optional[Path] = None) -> bool:
+def register_agent(config: AgentConfig, base_path: Path | None = None) -> bool:
     """
     Registriert einen Agent.
 
@@ -563,3 +562,59 @@ def register_agent(config: AgentConfig, base_path: Optional[Path] = None) -> boo
     """
     registry = get_registry(base_path)
     return registry.register(config)
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# Ocean-Stack Bindings (Escalation Ladder, Persona-Routing & Worker Worktree Policy)
+# ═══════════════════════════════════════════════════════════════
+
+def check_agent_escalation(
+    actor_level: str,
+    action_class: str,
+    *,
+    target_locked: bool = False,
+    has_user_gate: bool = False,
+) -> dict[str, Any]:
+    """Delegate authority & escalation ladder checks (#1958) to Open Ocean."""
+    from hub._services.ocean_stack_bridge import check_authority_escalation
+
+    return check_authority_escalation(
+        actor_level,
+        action_class,
+        target_locked=target_locked,
+        has_user_gate=has_user_gate,
+    )
+
+
+def validate_agent_persona_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Delegate persona-routing manifest v2 validation (`roles[]`, `maintenance[]`, #2447) to Open Ocean."""
+    from hub._services.ocean_stack_bridge import validate_module_persona_routing
+
+    return validate_module_persona_routing(manifest)
+
+
+def check_agent_worktree_policy(
+    *,
+    worker_id: str,
+    repo_name: str,
+    branch: str,
+    write_scope: str = "ocean",
+    in_isolated_worktree: bool = True,
+    repo_locked: bool = False,
+    has_active_lease: bool = True,
+    allowed_repos: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Delegate multi-repo worker worktree policy (#2577) to Open Ocean."""
+    from hub._services.ocean_stack_bridge import check_worker_worktree_access
+
+    return check_worker_worktree_access(
+        worker_id=worker_id,
+        repo_name=repo_name,
+        branch=branch,
+        write_scope=write_scope,
+        in_isolated_worktree=in_isolated_worktree,
+        repo_locked=repo_locked,
+        has_active_lease=has_active_lease,
+        allowed_repos=allowed_repos,
+    )

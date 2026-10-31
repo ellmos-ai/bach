@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """Bridge between BACH's legacy task table and the taskplan module.
 
@@ -17,10 +16,10 @@ from __future__ import annotations
 import importlib
 import os
 import sqlite3
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any
 
 TASKPLAN_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS rinnsal_tasks (
@@ -306,8 +305,8 @@ def load_taskplan_backend() -> dict[str, Any]:
             "engine": "taskplan",
             "external_available": True,
             "module_file": getattr(client_module, "__file__", ""),
-            "client_cls": getattr(client_module, "TaskClient"),
-            "default_db_path": getattr(client_module, "get_default_db_path"),
+            "client_cls": client_module.TaskClient,
+            "default_db_path": client_module.get_default_db_path,
             "count_tasks_in": getattr(client_module, "count_tasks_in", _count_tasks_in),
         }
     except Exception:
@@ -542,3 +541,75 @@ def mirror_bach_tasks(
         )
         for task in bach_tasks
     ]
+
+
+# ---------------------------------------------------------------------------
+# Canonical task-master Lease Kernel Seam (`taskplan.lease.TaskLeaseManager`)
+# ---------------------------------------------------------------------------
+from hub._services.ocean_stack_bridge import (
+    deprecated_legacy_bach,
+    get_ocean_task_lease_manager,
+)
+
+BundledTaskPlanClient = deprecated_legacy_bach(
+    "taskplan.client.TaskClient & taskplan.lease.TaskLeaseManager"
+)(BundledTaskPlanClient)
+
+
+def get_taskplan_lease_manager(db_path: str | Path | None = None) -> Any:
+    """Return canonical `taskplan.lease.TaskLeaseManager` bound to the resolved DB."""
+    return get_ocean_task_lease_manager(db_path=db_path)
+
+
+def execute_taskplan_lease(
+    action: str,
+    *,
+    db_path: str | Path | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Execute a canonical task lease lifecycle action (`take`, `renew`, `submit`, `return`, `block`, `reclaim`)."""
+    mgr = get_taskplan_lease_manager(db_path=db_path)
+    if action == "take":
+        rec = mgr.take(
+            kwargs.get("task_id"),
+            holder=str(kwargs["holder_id"]),
+            create_new=bool(kwargs.get("create_new", False)),
+            title=str(kwargs.get("title") or ""),
+            task_kind=str(kwargs.get("task_kind") or "commissioned"),
+            ttl_profile=str(kwargs.get("ttl_profile") or "M"),
+        )
+        return rec.as_dict()
+    if action == "renew":
+        rec = mgr.renew(
+            int(kwargs["task_id"]),
+            lease_id=str(kwargs["lease_id"]),
+            fence=int(kwargs["fence"]),
+        )
+        return rec.as_dict()
+    if action == "submit":
+        rec = mgr.submit(
+            int(kwargs["task_id"]),
+            lease_id=str(kwargs["lease_id"]),
+            fence=int(kwargs["fence"]),
+            result=str(kwargs.get("result_summary") or kwargs.get("result") or ""),
+        )
+        return rec.as_dict()
+    if action in ("return", "return_lease"):
+        rec = mgr.return_lease(
+            int(kwargs["task_id"]),
+            lease_id=str(kwargs["lease_id"]),
+            fence=int(kwargs["fence"]),
+            reason=str(kwargs.get("reason") or ""),
+        )
+        return rec.as_dict()
+    if action == "block":
+        return mgr.block(
+            int(kwargs["task_id"]),
+            reason=str(kwargs["reason"]),
+            lease_id=kwargs.get("lease_id"),
+            fence=kwargs.get("fence"),
+        )
+    if action in ("reclaim", "reclaim_expired"):
+        reclaimed = mgr.reclaim_expired()
+        return {"reclaimed_task_ids": reclaimed, "count": len(reclaimed)}
+    raise ValueError(f"Unsupported taskplan lease action: {action!r}")

@@ -3857,3 +3857,12 @@ async def beseelen_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body
         return {"ok": True, "chain_id": chain_id, "steps": steps}
     finally:
         conn.close()
+
+
+
+@router.get("/ocean/stack-bindings")
+async def get_ocean_stack_bindings():
+    """Return live status of all Ocean modules consumed by BACH (`bach.ocean-stack-bindings.v1`)."""
+    from hub._services.ocean_stack_bridge import ocean_stack_status
+
+    return await asyncio.to_thread(ocean_stack_status)
