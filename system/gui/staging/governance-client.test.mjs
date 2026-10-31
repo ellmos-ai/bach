@@ -108,7 +108,7 @@ test('getCapabilities wertet Kit-Status und Registry offen aus', async () => {
       'policy-registry': {
         adapter_registered: true,
         runtime_verified: false,
-        available: true,
+        available: null,
         reason_code: null,
         observed_at: '2026-01-02T03:04:05Z'
       }
@@ -123,18 +123,20 @@ test('getCapabilities wertet Kit-Status und Registry offen aus', async () => {
   };
   const result = await getCapabilities(fetcher);
   assert.equal(result.data, payload);
-  assert.equal(result.kit_status.version, '0.2.24');
+  assert.equal(result.kit_status.version, '0.2.29');
   assert.equal(result.policyRegistry.adapter_registered, true);
   assert.equal(result.registrySource.version, '0.2.4');
   assert.ok(result.registrySource.source_commit.startsWith(EXPECTED_REGISTRY_COMMIT_PREFIX));
   assert.equal(result.matches.dist_commit_ok, true);
   assert.equal(result.matches.dist_version_ok, true);
   assert.equal(result.matches.registry_registered, true);
-  assert.equal(result.matches.registry_available, true);
+  assert.equal(result.matches.registry_available, false);
+  assert.equal(result.summary.available_state, null);
+  assert.equal(result.summary.runtime_verified, false);
   assert.equal(result.matches.registry_version_ok, true);
   assert.equal(result.matches.registry_commit_ok, true);
   assert.equal(result.summary.ok, true);
-  assert.equal(result.summary.passed, 6);
+  assert.equal(result.summary.passed, 5);
   assert.equal(result.summary.total, 6);
 });
 

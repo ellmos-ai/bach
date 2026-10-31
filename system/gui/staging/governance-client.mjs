@@ -12,8 +12,8 @@
 //     Netz laufen.
 //   - typeof-Checks für window/localStorage, damit node --test ohne DOM läuft.
 
-export const EXPECTED_DIST_COMMIT = 'ff13cccde77a997ab4d0a0173db43ff88ee3c2be';
-export const EXPECTED_DIST_VERSION = '0.2.24';
+export const EXPECTED_DIST_COMMIT = 'a42adda6a9fe8d892578db3f7a09f7c1bef653ef';
+export const EXPECTED_DIST_VERSION = '0.2.29';
 export const EXPECTED_REGISTRY_VERSION = '0.2.4';
 export const EXPECTED_REGISTRY_COMMIT_PREFIX = '2c4896b70cb3';
 
@@ -167,19 +167,31 @@ export async function getCapabilities(fetcher = globalThis.fetch) {
   const modules = body ? _objectOrNull(body.modules) : null;
   const policyRegistry = modules ? _objectOrNull(modules['policy-registry']) : null;
   const registrySource = body ? _registrySource(body.module_sources) : null;
+  const runtimeVerified = policyRegistry != null && policyRegistry.runtime_verified === true;
+  const availableState = policyRegistry != null && (policyRegistry.available === true || policyRegistry.available === false)
+    ? policyRegistry.available
+    : null;
   const matches = {
     dist_commit_ok: kitStatus != null && kitStatus.revision === EXPECTED_DIST_COMMIT,
     dist_version_ok: kitStatus != null && kitStatus.version === EXPECTED_DIST_VERSION,
     registry_registered: policyRegistry != null && policyRegistry.adapter_registered === true,
-    registry_available: policyRegistry != null && policyRegistry.available === true,
+    registry_available: availableState === true,
     registry_version_ok: registrySource != null && registrySource.version === EXPECTED_REGISTRY_VERSION,
     registry_commit_ok: registrySource != null && typeof registrySource.source_commit === 'string' && registrySource.source_commit.startsWith(EXPECTED_REGISTRY_COMMIT_PREFIX)
   };
-  const keys = Object.keys(matches);
+  const requiredKeys = [
+    'dist_commit_ok',
+    'dist_version_ok',
+    'registry_registered',
+    'registry_version_ok',
+    'registry_commit_ok'
+  ];
   const summary = {
-    ok: keys.every((key) => matches[key] === true),
-    passed: keys.filter((key) => matches[key] === true).length,
-    total: keys.length
+    ok: requiredKeys.every((key) => matches[key] === true) && availableState !== false,
+    runtime_verified: runtimeVerified,
+    available_state: availableState,
+    passed: Object.keys(matches).filter((key) => matches[key] === true).length,
+    total: Object.keys(matches).length
   };
   return { data, kit_status: kitStatus, policyRegistry, registrySource, matches, summary };
 }
