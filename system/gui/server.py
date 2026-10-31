@@ -6034,7 +6034,7 @@ async def inbox_page():
     """Inbox Seite (Artefakte & Datenschutz Hub in Astro)."""
 
     astro_inbox = ASTRO_DIST_DIR / "inbox.html"
-    if astro_inbox.is_file():
+    if astro_inbox.is_file() and b"Quarant" in astro_inbox.read_bytes():
         return FileResponse(astro_inbox)
 
     inbox_file = TEMPLATES_DIR / "inbox.html"
