@@ -24,7 +24,6 @@ Abhaengigkeiten (alle BACH-intern):
 
 import atexit
 import contextlib
-import ipaddress
 import json
 import os
 import re
@@ -72,21 +71,23 @@ DEFAULT_LOCAL_MODEL = "qwen3.8:27b-mlx"  # Mac Studio, Dauer-Worker-Modell
 
 
 def _is_own_device_host(hostname: str) -> bool:
-    """Loopback oder Tailscale-Adresse eigener Geraete (100.64.0.0/10, *.ts.net) - nie ein Cloud-Ziel."""
-    hostname = (hostname or "").lower()
-    if hostname == "localhost" or hostname.endswith(".ts.net"):
-        return True
-    try:
-        ip = ipaddress.ip_address(hostname)
-    except ValueError:
+    """Exakte Allowlist FOERDERBERICHT_ALLOWED_HOSTS (Default: nur localhost) - nie ein Cloud-Ziel."""
+    hostname = (hostname or "").strip().lower()
+    if hostname.startswith("[") and hostname.endswith("]"):
+        hostname = hostname[1:-1]
+    if not hostname:
         return False
-    return ip.is_loopback or ip in ipaddress.ip_network("100.64.0.0/10")
+    for entry in os.environ.get("FOERDERBERICHT_ALLOWED_HOSTS", "localhost,127.0.0.1,::1").split(","):
+        if hostname == entry.strip().lower():
+            return True
+    return False
 
 
 # --- SSH-Tunnel zum Ollama auf einem eigenen Geraet (z. B. Mac Studio) -----------------------------
 # Konfiguration nur ueber Umgebungsvariablen, kein fest eingetragener Host/Benutzer:
-#   FOERDERBERICHT_SSH_TUNNEL   Ziel "benutzer@host" (host: Tailscale-IP, *.ts.net, localhost oder ein
-#                               einteiliger Name aus der eigenen ssh-config); ohne Wert kein Tunnel
+#   FOERDERBERICHT_SSH_TUNNEL   Ziel "benutzer@host" (host: exakter Host/IP aus
+#                               FOERDERBERICHT_ALLOWED_HOSTS oder ein einteiliger Name aus der
+#                               eigenen ssh-config; Default-Hosts: localhost); ohne Wert kein Tunnel
 #   FOERDERBERICHT_SSH_KEY      optional: Pfad zum privaten Schluessel
 #   FOERDERBERICHT_SSH_REMOTE_PORT  optional, Default 11434
 # Der Tunnel wird nur geoeffnet, wenn OLLAMA_HOST nicht gesetzt ist, und nach dem Modellaufruf
@@ -106,8 +107,8 @@ def _validate_tunnel_target(target: str) -> str:
     if "." in host or host.replace(".", "").isdigit():
         if not _is_own_device_host(host):
             raise PipelineError(
-                f"Tunnelziel {host!r} ist kein eigenes Geraet (erlaubt: Tailscale-Adresse, *.ts.net, "
-                "localhost oder ein Name aus der eigenen ssh-config)."
+                f"Tunnelziel {host!r} nicht freigegeben; eigene Geraete in FOERDERBERICHT_ALLOWED_HOSTS "
+                "eintragen (exakte Hosts/IPs, kommagetrennt; Default: localhost)."
             )
     return target
 
@@ -658,7 +659,13 @@ class FoerderberichtPipeline:
         from hub._services.document.document_pipeline import DocumentPipeline
 
         result.step = "prompt"
-        client_dir = next(d for d in data_roh.iterdir() if d.is_dir() and not d.name.startswith("."))
+        subdirs = [d for d in sorted(data_roh.iterdir()) if d.is_dir() and not d.name.startswith(".")]
+        if subdirs:
+            client_dir = subdirs[0]
+        elif any(p.is_file() and not p.name.startswith(".") for p in data_roh.iterdir()):
+            client_dir = data_roh  # Dateien direkt in data_roh (flacher Fall, wie validate() erlaubt)
+        else:
+            raise PipelineError("data_roh enthaelt weder Klienten-Ordner noch Dateien")
         workflow = ReportWorkflowService(base_path=self.base_path)
         session = workflow.start_session()
         session.profile = TempAnonymProfile(
@@ -717,13 +724,13 @@ class FoerderberichtPipeline:
         return self._call_ollama_at(os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"), prompt, model)
 
     def _call_ollama_at(self, host: str, prompt: str, model: str) -> str:
-        """Ollama-Aufruf gegen `host`. Nur eigene Geraete, nie ein Cloud-Modell, nie ein Proxy."""
+        """Ollama-Aufruf gegen `host`. Nur Hosts aus FOERDERBERICHT_ALLOWED_HOSTS, nie ein Cloud-Modell/Proxy."""
         if "://" not in host:
             host = "http://" + host
         if not _is_own_device_host(urllib.parse.urlparse(host).hostname):
             raise PipelineError(
-                "Backend 'ollama' (Modus lokal) erlaubt nur localhost oder Tailscale-Adressen eigener "
-                "Geraete, nicht: " + str(urllib.parse.urlparse(host).hostname)
+                "Backend 'ollama' (Modus lokal) erlaubt nur Hosts aus FOERDERBERICHT_ALLOWED_HOSTS "
+                "(Default: localhost), nicht: " + str(urllib.parse.urlparse(host).hostname)
             )
         low = model.lower()
         if low.endswith(":cloud") or low.endswith("-cloud") or low.startswith("claude"):
@@ -757,12 +764,25 @@ class FoerderberichtPipeline:
         if data.get("error"):
             raise PipelineError(f"Ollama-Fehler: {data['error']}")
         used = int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0)
-        if data.get("done_reason") == "length" or used >= num_ctx:
+        if data.get("done_reason") == "length":
             raise PipelineError(
-                f"Kontext erschoepft ({used} von {num_ctx} Tokens): Prompt oder Antwort abgeschnitten. "
+                "Antwort unvollstaendig: Ollama hat bei num_predict=6000 abgeschnitten (done_reason=length). "
                 "FOERDERBERICHT_NUM_CTX erhoehen oder groesseres Modell/Host waehlen."
             )
-        return (data.get("message") or {}).get("content", "").strip()
+        if used >= num_ctx:
+            raise PipelineError(
+                f"Kontextfenster voll ({used} von {num_ctx} Tokens): Prompt moeglicherweise still gekuerzt "
+                "oder Antwort abgeschnitten. FOERDERBERICHT_NUM_CTX erhoehen oder groesseres Modell/Host waehlen."
+            )
+        content = (data.get("message") or {}).get("content", "").strip()
+        try:
+            json.loads(content)
+        except (ValueError, TypeError):
+            raise PipelineError(
+                "Antwort ist kein vollstaendiges JSON (vermutlich abgeschnitten oder ungueltig): "
+                "FOERDERBERICHT_NUM_CTX erhoehen oder groesseres Modell/Host waehlen."
+            )
+        return content
 
     def _call_llm(self, prompt: str, backend: str, model: str) -> str:
         """
