@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import json
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping, Optional
@@ -270,7 +269,7 @@ def _is_terminal_parked(existing_row: Mapping[str, Any], now: Optional[str] = No
     Unfinish-Reopens.
     """
     if not isinstance(existing_row, Mapping):
-        return False
+        return True
     if existing_row.get("status") == "blocked":
         return True
     if existing_row.get("claimed_by") and existing_row.get("status") in ("in_progress", "blocked"):

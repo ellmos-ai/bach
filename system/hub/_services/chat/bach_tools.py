@@ -73,6 +73,52 @@ _COMPLETE_FLAG_HINT = (
     "complete fehlt: complete=true nur, wenn die Pflichtarbeit vollständig erledigt ist; "
     "sonst complete=false mit dem bisherigen Teilstand als result (die Task geht offen zurück)."
 )
+_INCOMPLETE_RESULT_HINT = (
+    "Ergebnis nennt offene Pflichtarbeit; complete=true wurde abgewiesen. "
+    "Melde complete=false und den Teilstand, solange Pflichtarbeit offen ist."
+)
+_INCOMPLETE_RESULT_PATTERNS = (
+    re.compile(
+        r"\b(?:(?:die\s+)?pflichtarbeit|(?:die\s+)?aufgabe)\s+(?:ist|bleibt)\s+(?:noch\s+)?"
+        r"(?:unvollständig|unfertig|unerledigt|offen|nicht\s+(?:vollständig\s+)?"
+        r"(?:erledigt|abgeschlossen|fertig))(?:\s+erfüllt)?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?:required|mandatory|requested)\s+work\s+"
+        r"(?:is|was|remains?|remain)\s+(?:(?:still|not\s+yet)\s+)?"
+        r"(?:incomplete|unfinished|open|outstanding|not\s+(?:yet\s+)?"
+        r"(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:task|tasks|deliverable|deliverables)\s+"
+        r"(?:is|are|remains?|remain)\s+(?:still\s+)?"
+        r"(?:incomplete|unfinished|not\s+(?:yet\s+)?(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[\n{,])\s*[\"']?(?:completion[_ -]?status|status)[\"']?\s*[:=]\s*"
+        r"[\"']?(?:incomplete|unfinished|partial|blocked|in_progress)[\"']?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[{,])\s*[\"']?(?:complete|completed|finished|done)[\"']?\s*:\s*false\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _result_explicitly_incomplete(result: str) -> bool:
+    """Detect direct, structured self-reports that required work remains open."""
+    text = result.casefold()
+    for pattern in _INCOMPLETE_RESULT_PATTERNS:
+        for match in pattern.finditer(text):
+            prefix = text[max(0, match.start() - 24):match.start()]
+            if re.search(r"\b(?:no|not|never|kein(?:e|en|er)?|nicht)\s*$", prefix):
+                continue
+            return True
+    return False
 
 
 _PARTIAL_STATE_MARK = "\n\nTeilstand (Worker, "
@@ -1656,7 +1702,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if worker_task_binding is not None and args.get("handler") == "task":
                 try:
                     return worker_task_binding.execute_task_command(args.get("operation", ""), args.get("args", []))
-                except ValueError:
+                except LeaseSelfCheckRequiredError:
+                    return ToolErrorText(LeaseSelfCheckRequiredError.user_message, code="invalid_task_result")
+                except ValueError as exc:
+                    if str(exc).startswith("--complete="):
+                        return ToolErrorText(f"BLOCKIERT: {exc}", code="invalid_task_arguments")
                     return _tool_policy_denial("worker_context_denied", "BLOCKIERT: Taskbefehl für gebundene Task nicht freigegeben.")
                 except Exception:
                     return _tool_effect_unconfirmed()
@@ -1879,6 +1929,15 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     if type(complete) is not bool:
                         _log_bound_task_manage_denial("completion_flag", worker_task_binding, args)
                         return ToolErrorText(_COMPLETE_FLAG_HINT, code="invalid_task_arguments")
+                    if complete and getattr(worker_task_binding, "decomposition_receipt", None) is not None:
+                        _log_bound_task_manage_denial("completion_flag", worker_task_binding, args)
+                        return ToolErrorText(
+                            "Zerlegung ist kein Abschluss: Gib für einen zerlegten Eltern-Task complete=false mit dem Teilstand an.",
+                            code="invalid_task_arguments",
+                        )
+                    if complete and _result_explicitly_incomplete(str(args.get("result") or "")):
+                        _log_bound_task_manage_denial("submission_validation", worker_task_binding, args)
+                        return ToolErrorText(_INCOMPLETE_RESULT_HINT, code="invalid_task_result")
                     partial = complete is False
                     if partial and action == "update":
                         # The done alias skipped the public result check above.

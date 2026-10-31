@@ -764,6 +764,12 @@ class TaskLeaseClient:
             suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose", "update": "/update"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
                                              f"/api/tasks/{task_id}/lease{suffix}", payload, headers)
+            if status == 422:
+                detail = data.get("detail") if isinstance(data, dict) else None
+                if detail == "Vollständiger Selbstcheck erforderlich" or (
+                        isinstance(detail, dict) and detail.get("code") == "self_check_required"):
+                    raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message) from None
+                raise LeaseRequestRejectedError(LeaseRequestRejectedError.user_message) from None
         else:
             conn = self._get_local_connection()
             try:

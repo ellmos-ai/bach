@@ -333,3 +333,8 @@ class TestTerminalParkGuard:
         changed = apply_task_field_changes(c, 1, self._row(status="open"),
             {"status": "pending"}, now=NOW)
         assert changed is True
+
+    @pytest.mark.parametrize("bad_row", [None, [], "not-a-mapping", 42])
+    def test_non_mapping_existing_row_fails_closed(self, bad_row):
+        from hub.task_audit import _is_terminal_parked
+        assert _is_terminal_parked(bad_row, now=NOW) is True

@@ -2982,12 +2982,14 @@ async def reopen_legacy_review_task(
 
 
 def _run_lease_op(op, *args, **kwargs):
-    from hub._services.task_lease import LeaseValidationError, TaskNotFound
+    from hub._services.task_lease import LeaseSelfCheckRequired, LeaseValidationError, TaskNotFound
     conn = get_bach_db()
     try:
         result = op(conn, *args, **kwargs)
     except TaskNotFound:
         raise HTTPException(status_code=404, detail="Task nicht gefunden")
+    except LeaseSelfCheckRequired as exc:
+        raise HTTPException(status_code=422, detail={"code": "self_check_required", "message": str(exc)})
     except LeaseValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     finally:
