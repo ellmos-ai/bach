@@ -1,4 +1,5 @@
 """Native agent tools use actual blueprint/config state and owned callbacks."""
+import hashlib
 import importlib
 import json
 import sqlite3
@@ -293,19 +294,65 @@ def test_startup_adds_fixed_slots_once_without_changing_user_configuration(state
     assert open(state.path, "rb").read() == before
 
 
+def _accepted_result_receipt_binding_fixture(task_id):
+    result_text = f"Accepted worker result for task {task_id}"
+    result = {
+        "schema": "bach.worker-result.v1",
+        "task_id": task_id,
+        "result_id": task_id + 10000,
+        "result": result_text,
+        "fence": 1,
+        "generation": f"test-generation-{task_id}",
+        "task_version": hashlib.sha256(f"task-version-{task_id}".encode("utf-8")).hexdigest(),
+        "result_sha256": hashlib.sha256(result_text.encode("utf-8")).hexdigest(),
+        "accepted": True,
+        "accepted_by": "test-reviewer",
+        "acceptance_event_id": 1,
+        "accepted_status_event_id": 1,
+        "status_revision": 1,
+        "reason": "accepted",
+    }
+    state = {"completed_task_ids": (task_id,), "reviewed_task_ids": (), "result": result}
+    return SimpleNamespace(
+        task_id=task_id,
+        has_result_receipt=True,
+        submitted_result=result,
+        result_state=lambda: dict(state),
+    )
+
+
+def _review_ack_binding_fixture(task_id):
+    # Mirrors WorkerLeaseBinding for a plain Review release ACK: no worker result
+    # was submitted (_completion_result is None), so submitted_result stays None and
+    # result_state() reports only the reviewed task id without a result record.
+    state = {"completed_task_ids": (), "reviewed_task_ids": (task_id,), "result": None}
+    return SimpleNamespace(
+        task_id=task_id,
+        has_result_receipt=True,
+        submitted_result=None,
+        result_state=lambda: dict(state),
+    )
+
+
 def test_continuous_worker_keeps_actual_task_release_receipts_when_waiting(monkeypatch):
     control_module = importlib.import_module("hub._services.chat.telegram_chat")
     control = control_module._WorkerControl("slot", start_request_id="a" * 32)
-    control.task_binding = SimpleNamespace(completed_task_ids=(1834,), reviewed_task_ids=(90,))
+    control.task_binding = _accepted_result_receipt_binding_fixture(1834)
+    control_module._retain_worker_task_receipts(control)
+    control.task_binding = _review_ack_binding_fixture(90)
     control_module._retain_worker_task_receipts(control)
     control.task_binding = None
     monkeypatch.setattr(control_module, "_execution_worker_slot", lambda ident: {"status": "idle"})
     receipt = control_module._control_execution_receipt(control)
     assert receipt["completed_task_ids"] == [1834] and receipt["reviewed_task_ids"] == [90]
-    control.task_binding = SimpleNamespace(completed_task_ids=(1835,), reviewed_task_ids=())
+    assert receipt["submitted_task_ids"] == [1834] and receipt["results_verified"] is True
+    control.task_binding = _accepted_result_receipt_binding_fixture(1835)
     control_module._retain_worker_task_receipts(control)
     control.task_binding = None
-    assert control_module._control_execution_receipt(control)["completed_task_ids"] == [1834, 1835]
+    receipt = control_module._control_execution_receipt(control)
+    assert receipt["completed_task_ids"] == [1834, 1835]
+    assert receipt["reviewed_task_ids"] == [90] and receipt["submitted_task_ids"] == [1834, 1835]
+    assert receipt["results_verified"] is True
 
 
 def test_chat_task_creation_update_and_decomposition_persist_slot_binding(tmp_path, monkeypatch):

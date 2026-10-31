@@ -812,6 +812,14 @@ def scan_for_secrets(worktree_path: Path) -> list[str]:
     return findings
 
 
+def changed_worktree_files(worktree_path: Path) -> list[str]:
+    """Return tracked and untracked relative paths without reading their contents."""
+    root = Path(worktree_path).resolve(strict=True)
+    raw = _git_read_bytes(root, ["git", "diff", "--name-only", "--no-renames", "-z", "HEAD"])
+    tracked = [os.fsdecode(item) for item in raw.split(b"\x00") if item]
+    return sorted(set(tracked + _untracked_names(root)))
+
+
 def check_git_diff(worktree_path: Path) -> list[str]:
     """Check tracked diffs and untracked text for whitespace errors, failing closed."""
     try:
@@ -917,6 +925,16 @@ def task_has_file_changes(
             )
             if res.stdout and res.stdout.strip():
                 return True
+            res_diff = subprocess.run(
+                ["git", "diff", "--name-only", "refs/heads/main...HEAD"],
+                cwd=str(worktree),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            if res_diff.stdout and res_diff.stdout.strip():
+                return True
         except Exception:
             pass
 
@@ -960,7 +978,8 @@ def _confirmed_finish_submission(binding, task_id):
 
 
 def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=None, db_path=None,
-                worker_task_binding=None, require_task_binding=False):
+                worker_task_binding=None, require_task_binding=False,
+                result_annotation=None, needs_split=False):
     """Preserve private ownership through every Git mutation and task receipt."""
     if require_task_binding and worker_task_binding is None:
         return {"success": False, "error": "Taskbindung fehlt"}
@@ -985,7 +1004,8 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
                 is_current=lambda: True, stop_event=threading.Event())
             with WorkerLeaseSupervisor(binding):
                 result = finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests, repo_root=repo_root,
-                                     worker_task_binding=binding, require_task_binding=True)
+                                     worker_task_binding=binding, require_task_binding=True,
+                                     result_annotation=result_annotation, needs_split=needs_split)
         except Exception:
             result = {"success": False, "error": "Kanonische Worktree-Taskbindung nicht bestätigt"}
         finally:
@@ -1004,7 +1024,8 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
                     return confirmed
             worker_task_binding.assert_active()
             return _finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests,
-                                repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding)
+                                repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding,
+                                result_annotation=result_annotation, needs_split=needs_split)
         except Exception:
             return {"success": False, "error": "Worktree-Ergebnis oder Taskänderung nicht bestätigt"}
 
@@ -1018,6 +1039,8 @@ def _finish_task(
     repo_root: Path | None = None,
     db_path: Path | None = None,
     worker_task_binding=None,
+    result_annotation: str | None = None,
+    needs_split: bool = False,
 ) -> dict[str, Any]:
     """Schließt einen Task im Worktree ab oder sichert den WIP-Stand.
 
@@ -1037,6 +1060,10 @@ def _finish_task(
     """
     if worker_task_binding is None:
         return {"success": False, "error": "Private Taskbindung fehlt"}
+    if type(needs_split) is not bool:
+        return {"success": False, "error": "needs_split muss boolesch sein"}
+    if result_annotation is not None and (not isinstance(result_annotation, str) or not result_annotation.strip()):
+        return {"success": False, "error": "WIP-Notiz darf nicht leer sein"}
 
     def run_checked(cmd, **kwargs):
         if worker_task_binding is not None:
@@ -1124,8 +1151,11 @@ def _finish_task(
 
         if res_push.returncode != 0:
             return {"success": False, "error": "WIP-Push nicht bestätigt"}
-        worker_task_binding.record_worktree_result(int(task_id_str), f"[WIP] Stand auf {branch_name} gesichert")
-        return {"success": True, "wip": True, "branch": branch_name, "status": "wip_pushed"}
+        annotation = result_annotation or f"[WIP] Stand auf {branch_name} gesichert"
+        worker_task_binding.record_worktree_result(
+            int(task_id_str), annotation, needs_split=needs_split)
+        return {"success": True, "wip": True, "branch": branch_name,
+                "status": "wip_pushed", "needs_split": needs_split}
 
     # Normaler Abschluss: Tests aller geänderten getrackten und neuen Dateien.
     test_evidence = "Kein Testlauf angefordert" if not run_tests else "Keine geänderten Testdateien gefunden; kein Testlauf"
@@ -1290,43 +1320,499 @@ def _finish_task(
     return confirmed
 
 
+from contextlib import contextmanager
+import hashlib
+
+
+@contextmanager
+def _db_context(conn_or_db_path: sqlite3.Connection | Path | str | None = None):
+    if isinstance(conn_or_db_path, sqlite3.Connection):
+        old_factory = conn_or_db_path.row_factory
+        conn_or_db_path.row_factory = sqlite3.Row
+        try:
+            yield conn_or_db_path
+        finally:
+            conn_or_db_path.row_factory = old_factory
+    else:
+        db_file = Path(conn_or_db_path) if conn_or_db_path is not None else None
+        conn = _get_db(db_file)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+
+def _verify_accepted_result_and_scope(
+    conn: sqlite3.Connection,
+    tid: int,
+    row_dict: Mapping[str, Any],
+) -> tuple[bool, str, str, dict[str, Any]]:
+    """Prüft Ergebnisabnahme und Scope-Evidenz über read_result sowie unveränderte historische Abnahme-Receipts."""
+    from hub._services.task_result_service import read_result
+    from hub._services.worker_scope_evidence import _digest as _scope_digest, _snapshot_valid
+
+    readback = read_result(conn, tid)
+    res_record = readback.get("result") if isinstance(readback, dict) else None
+    if isinstance(res_record, dict) and res_record.get("accepted") is True and res_record.get("reason") == "accepted":
+        scope_record = res_record.get("scope")
+        if isinstance(scope_record, dict) and scope_record.get("availability") in {"recorded", "available"}:
+            snap = scope_record.get("snapshot")
+            return True, "eligible", "accepted", snap if isinstance(snap, dict) else {}
+        scope_reason = (scope_record or {}).get("reason", "no_scope") if isinstance(scope_record, dict) else "no_scope"
+        return (
+            False,
+            "missing_scope_evidence",
+            f"Scope-Evidenz im DB-Vertrag fehlt oder ist ungültig ({scope_reason})",
+            {},
+        )
+
+    # Falls task_content_version durch ein späteres Schema-Upgrade (z.B. Backfill-Spalten) abweicht,
+    # prüfen wir, ob ein kryptographisch vollständiges, nach Abnahme unverändertes Receipt vorliegt.
+    reason_detail = (res_record or {}).get("reason", "no_result") if isinstance(res_record, dict) else "no_result"
+    if reason_detail == "task_content_changed":
+        try:
+            wtr_row = conn.execute(
+                "SELECT * FROM worker_task_results WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+                (tid,),
+            ).fetchone()
+            if wtr_row is not None:
+                wtr = dict(wtr_row)
+                status_rev_row = conn.execute(
+                    "SELECT MAX(id) FROM task_history WHERE task_id = ? AND field_changed = 'status' AND action = 'status_change'",
+                    (tid,),
+                ).fetchone()
+                status_rev = int((status_rev_row[0] if status_rev_row else 0) or 0)
+                max_hist_row = conn.execute(
+                    "SELECT MAX(id) FROM task_history WHERE task_id = ?",
+                    (tid,),
+                ).fetchone()
+                max_hist = int((max_hist_row[0] if max_hist_row else 0) or 0)
+                acc_event_id = wtr.get("acceptance_event_id")
+                acc_status_id = wtr.get("accepted_status_event_id")
+                same_fence = int(row_dict.get("claim_fence") or 0) == int(wtr.get("fence") or -1)
+                same_digest = (
+                    hashlib.sha256(str(wtr.get("result") or "").encode("utf-8")).hexdigest()
+                    == wtr.get("result_sha256")
+                )
+                if (
+                    same_fence
+                    and same_digest
+                    and bool(wtr.get("accepted_by"))
+                    and type(acc_event_id) is int
+                    and type(acc_status_id) is int
+                    and acc_status_id == status_rev
+                    and max_hist == acc_event_id
+                ):
+                    acc_ev = conn.execute(
+                        "SELECT changed_by, new_value FROM task_history WHERE id = ? AND task_id = ? AND action = 'result_acceptance'",
+                        (acc_event_id, tid),
+                    ).fetchone()
+                    if acc_ev is not None and acc_ev[0] == wtr["accepted_by"]:
+                        acc_payload = json.loads(acc_ev[1])
+                        if acc_payload == {
+                            "result_id": wtr["id"],
+                            "result_sha256": wtr["result_sha256"],
+                            "task_version": wtr["task_version"],
+                            "status_revision": acc_status_id,
+                        }:
+                            wse_table = conn.execute(
+                                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'worker_scope_evidence'"
+                            ).fetchone()
+                            wse_row = (
+                                conn.execute(
+                                    "SELECT * FROM worker_scope_evidence WHERE result_id = ?",
+                                    (wtr["id"],),
+                                ).fetchone()
+                                if wse_table is not None
+                                else None
+                            )
+                            if wse_row is None:
+                                return (
+                                    False,
+                                    "missing_scope_evidence",
+                                    "Scope-Evidenz im DB-Vertrag fehlt (scope_not_recorded)",
+                                    {},
+                                )
+                            wse = dict(wse_row)
+                            receipt = json.loads(wse["receipt"])
+                            if (
+                                wse.get("task_id") == tid
+                                and wse.get("fence") == wtr["fence"]
+                                and wse.get("generation") == wtr["generation"]
+                                and wse.get("task_version") == wtr["task_version"]
+                                and isinstance(receipt, dict)
+                                and _scope_digest(receipt) == wse.get("receipt_sha256")
+                                and _snapshot_valid(receipt.get("snapshot"), tid)
+                            ):
+                                return True, "eligible", "accepted_historical_receipt", receipt["snapshot"]
+                            return (
+                                False,
+                                "missing_scope_evidence",
+                                "Scope-Evidenz im DB-Vertrag ist ungültig (scope_evidence_invalid)",
+                                {},
+                            )
+        except Exception:
+            pass
+
+    return (
+        False,
+        "missing_result_acceptance",
+        f"Keine bestätigte Ergebnisabnahme im DB-Vertrag ({reason_detail})",
+        {},
+    )
+
+
+def _has_unpushed_commits(
+    repo: Path,
+    worktree_path: Path,
+    task_id: int,
+    head_oid: str | None = None,
+) -> tuple[bool, str]:
+    """Prüft fail-closed, ob im Task-Worktree Commits liegen, die noch nicht gepusht/gemergt sind."""
+    try:
+        if not head_oid:
+            head_res = subprocess.run(
+                ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+                cwd=str(worktree_path), capture_output=True, text=True, check=False, timeout=10,
+            )
+            if head_res.returncode != 0:
+                return True, "head_unverified"
+            head_oid = (head_res.stdout or "").strip()
+        if not _PUBLIC_SHA.fullmatch(head_oid):
+            return True, "head_unverified"
+
+        remote_refs = (
+            f"refs/remotes/origin/bach-task/{task_id}",
+            "refs/remotes/origin/main",
+        )
+        has_remote_refs = False
+        for ref in remote_refs:
+            rev = subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+                cwd=str(repo), capture_output=True, text=True, check=False, timeout=10,
+            )
+            if rev.returncode == 0 and _PUBLIC_SHA.fullmatch((rev.stdout or "").strip()):
+                has_remote_refs = True
+                ref_oid = (rev.stdout or "").strip()
+                anc = subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", head_oid, ref_oid],
+                    cwd=str(repo), capture_output=True, text=True, check=False, timeout=10,
+                )
+                if anc.returncode == 0:
+                    return False, f"ancestor_of:{ref}"
+
+        if not has_remote_refs:
+            main_rev = subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet", "refs/heads/main^{commit}"],
+                cwd=str(repo), capture_output=True, text=True, check=False, timeout=10,
+            )
+            if main_rev.returncode == 0 and _PUBLIC_SHA.fullmatch((main_rev.stdout or "").strip()):
+                main_oid = (main_rev.stdout or "").strip()
+                anc = subprocess.run(
+                    ["git", "merge-base", "--is-ancestor", head_oid, main_oid],
+                    cwd=str(repo), capture_output=True, text=True, check=False, timeout=10,
+                )
+                if anc.returncode == 0:
+                    return False, "ancestor_of:refs/heads/main"
+
+        return True, "unpushed_commits"
+    except Exception:
+        return True, "git_push_check_failed"
+
+
+def inspect_task_worktree_cleanup(
+    task_id: int | str,
+    *,
+    db_path: sqlite3.Connection | Path | str | None = None,
+    repo_root: Path | None = None,
+    worktrees_dir: Path | None = None,
+    whitelist_task_ids: set[int] | list[int] | tuple[int, ...] | None = None,
+) -> dict[str, Any]:
+    """Prüft alle Vertrags- und Git-Vorbedingungen für das sichere Aufräumen eines Task-Worktrees."""
+    task_id_str = str(task_id).strip()
+    if isinstance(task_id, bool) or not task_id_str.isdecimal() or int(task_id_str) <= 0:
+        return {
+            "task_id": task_id,
+            "worktree_path": None,
+            "branch": None,
+            "eligible": False,
+            "reason": "invalid_task_id",
+            "detail": "Task-ID ist ungültig",
+            "task_status": None,
+            "head_oid": None,
+        }
+    tid = int(task_id_str)
+    repo = (repo_root or get_live_repo_root()).resolve()
+    wt_root = _resolve(worktrees_dir) if worktrees_dir is not None else get_worktrees_dir()
+    target_guess = wt_root / f"task-{tid}"
+    branch_name = f"bach-task/{tid}"
+
+    whitelist = {
+        int(str(x).strip())
+        for x in (whitelist_task_ids or ())
+        if not isinstance(x, bool) and str(x).strip().isdecimal()
+    }
+    if tid in whitelist:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target_guess),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "whitelisted",
+            "detail": "Task steht auf der Lease-/Schutz-Whitelist",
+            "task_status": None,
+            "head_oid": None,
+        }
+
+    try:
+        with _db_context(db_path) as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (tid,)).fetchone()
+            if row is None:
+                return {
+                    "task_id": tid,
+                    "worktree_path": str(target_guess),
+                    "branch": branch_name,
+                    "eligible": False,
+                    "reason": "task_not_found",
+                    "detail": "Task existiert nicht in der TaskDB",
+                    "task_status": None,
+                    "head_oid": None,
+                }
+            row_dict = dict(row)
+            task_status = str(row_dict.get("status") or "").strip().lower()
+            if row_dict.get("claim_id") or row_dict.get("claimed_by"):
+                return {
+                    "task_id": tid,
+                    "worktree_path": str(target_guess),
+                    "branch": branch_name,
+                    "eligible": False,
+                    "reason": "active_lease",
+                    "detail": "Task besitzt eine aktive Lease oder Claim-Bindung",
+                    "task_status": task_status,
+                    "head_oid": None,
+                }
+            if task_status == "review":
+                return {
+                    "task_id": tid,
+                    "worktree_path": str(target_guess),
+                    "branch": branch_name,
+                    "eligible": False,
+                    "reason": "status_review",
+                    "detail": "Offenes Review darf nicht aufgeräumt werden",
+                    "task_status": task_status,
+                    "head_oid": None,
+                }
+            if task_status == "in_progress":
+                return {
+                    "task_id": tid,
+                    "worktree_path": str(target_guess),
+                    "branch": branch_name,
+                    "eligible": False,
+                    "reason": "status_in_progress",
+                    "detail": "Aktiver Lauf darf nicht aufgeräumt werden",
+                    "task_status": task_status,
+                    "head_oid": None,
+                }
+            if task_status != "done":
+                return {
+                    "task_id": tid,
+                    "worktree_path": str(target_guess),
+                    "branch": branch_name,
+                    "eligible": False,
+                    "reason": f"status_{task_status or 'unknown'}",
+                    "detail": f"Task-Status ist '{task_status}', erforderlich ist 'done'",
+                    "task_status": task_status,
+                    "head_oid": None,
+                }
+
+            contract_ok, contract_reason, contract_detail, scope_snapshot = (
+                _verify_accepted_result_and_scope(conn, tid, row_dict)
+            )
+    except Exception as exc:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target_guess),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "db_check_failed",
+            "detail": f"DB-Vertragsprüfung fehlgeschlagen: {exc}",
+            "task_status": None,
+            "head_oid": None,
+        }
+
+    if not contract_ok:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target_guess),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": contract_reason,
+            "detail": contract_detail,
+            "task_status": task_status,
+            "head_oid": None,
+        }
+
+    try:
+        from hub._services.chat import worker_write_guard as guard
+        _, resolved_wt_root = guard._paths(repo, wt_root)
+        target = guard._registered_tree(repo, resolved_wt_root, tid)
+        guard._fresh_locks(repo, resolved_wt_root, target)
+    except Exception as exc:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target_guess),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "worktree_not_registered_or_locked",
+            "detail": str(exc),
+            "task_status": task_status,
+            "head_oid": None,
+        }
+
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=str(target), capture_output=True, text=True, check=False, timeout=15,
+        )
+    except Exception as exc:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "git_status_failed",
+            "detail": str(exc),
+            "task_status": task_status,
+            "head_oid": None,
+        }
+
+    if status.returncode != 0:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "git_status_failed",
+            "detail": (status.stderr or "").strip() or "git status fehlgeschlagen",
+            "task_status": task_status,
+            "head_oid": None,
+        }
+    if status.stdout.strip():
+        return {
+            "task_id": tid,
+            "worktree_path": str(target),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "dirty_worktree",
+            "detail": "Arbeitsbaum enthält uncommittete oder ungetrackte Dateien",
+            "task_status": task_status,
+            "head_oid": None,
+        }
+
+    head_res = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+        cwd=str(target), capture_output=True, text=True, check=False, timeout=10,
+    )
+    head_oid = (head_res.stdout or "").strip() if head_res.returncode == 0 else ""
+    if not _PUBLIC_SHA.fullmatch(head_oid):
+        return {
+            "task_id": tid,
+            "worktree_path": str(target),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "head_unverified",
+            "detail": "HEAD-Commit im Worktree konnte nicht verifiziert werden",
+            "task_status": task_status,
+            "head_oid": None,
+        }
+
+    recorded_head = scope_snapshot.get("head_oid")
+    if isinstance(recorded_head, str) and recorded_head and recorded_head != head_oid:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "scope_head_mismatch",
+            "detail": f"Worktree-HEAD ({head_oid[:12]}) weicht vom Scope-Beleg ({recorded_head[:12]}) ab",
+            "task_status": task_status,
+            "head_oid": head_oid,
+        }
+
+    unpushed, push_detail = _has_unpushed_commits(repo, target, tid, head_oid)
+    if unpushed:
+        return {
+            "task_id": tid,
+            "worktree_path": str(target),
+            "branch": branch_name,
+            "eligible": False,
+            "reason": "unpushed_commits",
+            "detail": f"Task-Branch enthält ungepushte Commits ({push_detail})",
+            "task_status": task_status,
+            "head_oid": head_oid,
+        }
+
+    return {
+        "task_id": tid,
+        "worktree_path": str(target),
+        "branch": branch_name,
+        "eligible": True,
+        "reason": "eligible",
+        "detail": f"Worktree erfüllt alle Abschluss-, Scope- und Git-Gates ({push_detail})",
+        "task_status": task_status,
+        "head_oid": head_oid,
+    }
+
+
 def cleanup_task_worktree(
     task_id: int | str,
     *,
     delete_branch: bool = False,
     repo_root: Path | None = None,
+    worktrees_dir: Path | None = None,
+    db_path: sqlite3.Connection | Path | str | None = None,
+    enforce_completion_contract: bool = False,
     worker_task_binding=None,
     require_task_binding: bool = False,
 ) -> bool:
-    """Remove only a registered, clean task worktree; never force-delete files."""
+    """Remove only a registered, clean task worktree without unpushed commits; never force-delete files."""
     if require_task_binding and worker_task_binding is None:
         return False
     if worker_task_binding is not None:
         # A live worker must leave its registered tree for independent review.
         return False
     repo = (repo_root or get_live_repo_root()).resolve()
+    wt_root = _resolve(worktrees_dir) if worktrees_dir is not None else get_worktrees_dir()
     task_id_str = str(task_id).strip()
     try:
         tid = int(task_id_str)
         if isinstance(task_id, bool) or tid <= 0 or str(tid) != task_id_str:
             return False
+        if enforce_completion_contract or db_path is not None:
+            diag = inspect_task_worktree_cleanup(
+                tid, db_path=db_path, repo_root=repo, worktrees_dir=wt_root,
+            )
+            if not diag.get("eligible"):
+                return False
         from hub._services.chat import worker_write_guard as guard
-        if worker_task_binding is not None:
-            target, _ = guard.authorize_mutation(worker_task_binding, tid, repo_root=repo)
-        else:
-            _, worktrees_dir = guard._paths(repo, get_worktrees_dir())
-            target = guard._registered_tree(repo, worktrees_dir, tid)
-            guard._fresh_locks(repo, worktrees_dir, target)
+        _, resolved_wt_root = guard._paths(repo, wt_root)
+        target = guard._registered_tree(repo, resolved_wt_root, tid)
+        guard._fresh_locks(repo, resolved_wt_root, target)
         status = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=all"],
             cwd=str(target), capture_output=True, text=True, check=False, timeout=15,
         )
         if status.returncode != 0 or status.stdout.strip():
             return False
-        if worker_task_binding is not None:
-            guard.authorize_mutation(worker_task_binding, tid, repo_root=repo)
-        else:
-            guard._fresh_locks(repo, get_worktrees_dir(), target)
+        head_res = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+            cwd=str(target), capture_output=True, text=True, check=False, timeout=10,
+        )
+        head_oid = (head_res.stdout or "").strip() if head_res.returncode == 0 else ""
+        unpushed, _ = _has_unpushed_commits(repo, target, tid, head_oid)
+        if unpushed:
+            return False
+        guard._fresh_locks(repo, resolved_wt_root, target)
         removed = subprocess.run(
             ["git", "worktree", "remove", str(target)],
             cwd=str(repo), capture_output=True, text=True, check=False, timeout=30,
@@ -1334,13 +1820,18 @@ def cleanup_task_worktree(
         if removed.returncode != 0:
             return False
         if delete_branch:
-            guard._fresh_locks(repo, get_worktrees_dir(), None)
+            guard._fresh_locks(repo, resolved_wt_root, None)
             deleted = subprocess.run(
                 ["git", "branch", "-d", f"bach-task/{task_id_str}"],
                 cwd=str(repo), capture_output=True, text=True, check=False, timeout=15,
             )
             if deleted.returncode != 0:
-                return False
+                cas_del = subprocess.run(
+                    ["git", "update-ref", "-d", f"refs/heads/bach-task/{task_id_str}", head_oid],
+                    cwd=str(repo), capture_output=True, text=True, check=False, timeout=15,
+                )
+                if cas_del.returncode != 0:
+                    return False
         return True
     except Exception:
         return False

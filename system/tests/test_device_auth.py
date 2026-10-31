@@ -230,3 +230,55 @@ def test_fastapi_endpoints_and_middleware(monkeypatch, tmp_path):
     assert res.status_code == 401
 
     conn.close()
+
+
+def test_browser_reauth_uses_http_only_cookie_and_logout(monkeypatch, tmp_path):
+    """Browser re-authentication never persists the plaintext token in JS storage."""
+    test_db = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(test_db))
+    conn.row_factory = sqlite3.Row
+    init_devices_db(conn)
+    token = create_device("Browser-Reauth", connection=conn)
+
+    import gui.device_auth as da
+    monkeypatch.setattr(da, "GET_CONNECTION", lambda: sqlite3.connect(str(test_db)))
+
+    client = TestClient(app)
+    verified = client.post("/api/devices/verify", json={"token": token})
+    assert verified.status_code == 200
+    assert verified.json()["valid"] is True
+    assert verified.json()["session"] == "http-only-cookie"
+    set_cookie = verified.headers["set-cookie"]
+    assert "bach_device_token=" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "SameSite=strict" in set_cookie
+    assert client.get("/api/devices").status_code == 200
+
+    logged_out = client.post("/api/devices/session/logout")
+    assert logged_out.status_code == 200
+    assert logged_out.json() == {"ok": True, "authenticated": False}
+    assert "bach_device_token=" in logged_out.headers["set-cookie"]
+    assert "Max-Age=0" in logged_out.headers["set-cookie"]
+    assert client.get("/api/devices").status_code == 401
+    conn.close()
+
+
+def test_invalid_browser_reauth_clears_previous_cookie(monkeypatch, tmp_path):
+    """A failed re-authentication cannot leave an older browser session active."""
+    test_db = tmp_path / "bach.db"
+    conn = sqlite3.connect(str(test_db))
+    conn.row_factory = sqlite3.Row
+    init_devices_db(conn)
+    token = create_device("Browser-Reauth-Invalid", connection=conn)
+
+    import gui.device_auth as da
+    monkeypatch.setattr(da, "GET_CONNECTION", lambda: sqlite3.connect(str(test_db)))
+
+    client = TestClient(app)
+    assert client.post("/api/devices/verify", json={"token": token}).json()["valid"] is True
+    invalid = client.post("/api/devices/verify", json={"token": "revoked-or-wrong"})
+    assert invalid.status_code == 200
+    assert invalid.json()["valid"] is False
+    assert "Max-Age=0" in invalid.headers["set-cookie"]
+    assert client.get("/api/devices").status_code == 401
+    conn.close()

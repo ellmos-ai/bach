@@ -39,6 +39,19 @@ def _external_profile_backend(slot):
     return None
 
 
+def _external_profile_backend(slot):
+    """Return the canonical cloud profile backend, including Ollama's :cloud alias."""
+    if not isinstance(slot, dict):
+        return None
+    backend = str(slot.get("backend") or "").strip().casefold()
+    model = str(slot.get("model") or "").strip().casefold()
+    if backend in _EXTERNAL_PROFILE_BACKENDS:
+        return backend
+    if backend == "ollama" and model.endswith(":cloud"):
+        return "ollama-cloud"
+    return None
+
+
 class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
 
@@ -1262,9 +1275,17 @@ class WorkerLeaseBinding:
                     raise LeaseProtocolError("Bestätigte PR-Referenz fehlt")
             previous = self._snapshot.get("description") or ""
             description = str(previous) + ("\n\n" if previous else "") + annotation
-            ack = self._operation(self._client.update, changes={"description": description})
+            changes = {"description": description}
+            if needs_split:
+                current = self._snapshot.get("needs_split", 0)
+                if current is None:
+                    current = 0
+                if type(current) is not int or current < 0:
+                    raise LeaseProtocolError("needs_split-Zähler ist ungültig")
+                changes["needs_split"] = current + 1
+            ack = self._operation(self._client.update, changes=changes)
             self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
-            self._snapshot["description"] = description
+            self._snapshot.update(changes)
             if review:
                 release = self._operation(self._client.release, outcome="review", result_ref=result_ref)
                 if (not isinstance(release, LeaseReleaseAck) or release.released is not True

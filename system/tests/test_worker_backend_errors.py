@@ -182,7 +182,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
     session = ChatSession()
     session.chat_id = ident
     monkeypatch.setattr(runtime, "get_session", lambda _: session)
-    calls = []
+    calls, quota_waits = [], []
     monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
     real_client = httpx.AsyncClient
     def reply(request):
@@ -196,6 +196,27 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         assert slots.get_slot(ident, path).get("backend_error") is None
         return _managed_backend_answer(await backend.chat([{"role": "user", "content": "fixture"}]))
     monkeypatch.setattr(runtime, "process", process)
+    def wait_quota(worker, seconds):
+        assert core and seconds == 86400  # no credit: daily recheck
+        quota_waits.append(seconds)
+        assert worker.task_binding is None and worker.lease_supervisor is None
+        assert session.worker_task_binding is None
+        native = control._native_task_client()
+        assert not native.read(42).leased
+        assert native.worker_leases(worker.lease_worker_id)["leases"] == []
+        current = slots.get_slot(ident, path)
+        assert current["backend_error"]["quota_period"] == "month"
+        public = _project_worker(control._worker_handoff_snapshot(current))
+        assert public["worker_active"] and not public["running"]
+        assert public["backend_error"]["quota_period"] == "month"
+        _, _, receipt, status = control._request_worker_revocation(
+            ident, current, expected_execution={
+                "service_instance": control._WORKER_SERVICE_INSTANCE,
+                "start_request_id": worker.start_request_id,
+                "generation": worker.generation})
+        assert status == 409 and receipt["outcome"] == "revocation-pending"
+        return False
+    monkeypatch.setattr(control, "_wait_worker_backend_retry", wait_quota)
     thread = None
     try:
         response, code = control.start_worker_execution(ident)
@@ -204,7 +225,14 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
         thread.join(5)
         assert not thread.is_alive() and len(calls) == 1
         current = slots.get_slot(ident, path)
-        assert current["status"] == "error" and "Monatskontingent" in current["current_activity"]
+        if core:
+            assert quota_waits == [86400] and current["status"] == "paused"
+            receipt = control._WORKER_EXECUTIONS[ident].receipt
+            assert receipt["confirmed"] and receipt["status_persisted"]
+            assert control.worker_execution_receipt(ident)["terminal"]
+        else:
+            assert quota_waits == []
+            assert current["status"] == "error" and "Monatskontingent" in current["current_activity"]
         assert current["backend_error"]["status_code"] == 429
         task = dict(conn.execute("SELECT * FROM tasks WHERE id=42").fetchone())
         assert task["status"] == "pending" and task["claim_salt_ref"] is None
@@ -219,7 +247,7 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
             agent = next(a for a in control._system_slots_snapshot()["agents"] if a["id"] == ident)
             assert agent["backend_error"]["quota_period"] == "month"
             assert agent["backend_error"]["status_code"] == 429
-            assert agent["status"] == "error" and agent["worker_active"] is False
+            assert agent["status"] == "paused" and agent["worker_active"] is False
             assert "PRIVATE_PROVIDER_BODY" not in json.dumps(agent)
     finally:
         if thread is not None and thread.is_alive():
@@ -233,23 +261,27 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
     ("glm-5.3:cloud", "rate_limited", "persistent", 1, 60, 0, 120),
     ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, 180, 180),
     ("glm-5.3:cloud", "rate_limited", "continuous", 2, 660, 240, 240),
-    ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, 901, None),
-    ("glm-5.3:cloud", "rate_limited", "continuous", 2, 661, 240, None),
-    ("glm-5.3:cloud", "rate_limited", "continuous", 3, 420, None, None),
-    ("glm-5.3:cloud", "quota_exceeded", "continuous", 0, 0, 60, None),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 0, 0, 901, 901),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 2, 661, 240, 240),
+    ("glm-5.3:cloud", "rate_limited", "continuous", 3, 420, None, 480),
+    ("glm-5.3:cloud", "quota_exceeded", "continuous", 0, 0, 60, 86400),
+    ("glm-5.3:cloud", "quota_exceeded", "continuous", 5, 400000, None, 86400),
+    ("glm-5.3:cloud", "quota_exceeded", "once", 0, 0, 60, None),
     ("glm-5.3:cloud", "http_error", "continuous", 0, 0, 60, None),
     ("glm-5.3:cloud", "rate_limited", "once", 0, 0, 60, None),
     ("qwen3.5:4b", "rate_limited", "persistent", 0, 0, 60, None),
 ])
-def test_cloud_retry_policy_is_bounded_and_preserves_observed_header(
+def test_cloud_retry_policy_limits_frequency_and_preserves_observed_header(
         model, kind, worker_type, retries, waited, header, expected):
     control = importlib.import_module("hub._services.chat.telegram_chat")
     detail = {"provider": "ollama", "kind": kind, "status_code": 429 if kind != "http_error" else 401,
               "quota_exceeded": kind == "quota_exceeded"}
     if header is not None:
         detail["retry_after_seconds"] = header
-    assert control._worker_backend_retry_delay({"type": worker_type}, detail, model=model,
+    assert control._worker_backend_retry_delay({"backend": "ollama", "type": worker_type}, detail, model=model,
         retries=retries, waited_seconds=waited) == expected
+    assert control._worker_backend_retry_delay({"type": worker_type}, detail, model=model,
+        retries=retries, waited_seconds=waited) is None
 
 
 @pytest.mark.parametrize("interruption", ["stop", "disabled", "paused", "missing", "expired", "replaced"])
@@ -279,7 +311,7 @@ def test_retry_wait_observes_stop_policy_ttl_and_generation(monkeypatch, interru
         assert writes[-1]["status"] == ("idle" if interruption == "disabled" else "expired")
 
 
-@pytest.mark.parametrize("scenario", ["recover", "exhausted", "stop", "return_denied", "foreign_claim", "quota_after_retry",
+@pytest.mark.parametrize("scenario", ["recover", "connection_recover", "sustained_rate_limit", "stop", "return_denied", "foreign_claim", "quota_after_retry",
     "unknown_none", "unknown_false", "unknown_true", "unknown_negative", "unknown_string", "unknown_float"])
 def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_path, monkeypatch, scenario):
     import sqlite3
@@ -288,12 +320,15 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     from hub._services.chat.chat_runtime import ChatSession, _managed_backend_answer
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from system.tests.test_task_lease_client import _init_db
+    from hub._services.llm.model_backend import OpenRouterBackend
+    connection = scenario == "connection_recover"
+    model = "openrouter/free" if connection else "glm-5.3:cloud"
     control = importlib.import_module("hub._services.chat.telegram_chat")
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     ident = slots.add_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)["id"]
-    slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "enabled": True,
+    slots.update_slot(ident, {"backend": "openrouter" if connection else "ollama", "model": model, "enabled": True,
         "mode": "safe", "task_id": 42, "pause_after": 0}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
         monkeypatch.setattr(control, registry, {})
@@ -307,17 +342,29 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     conn.commit()
     client = TaskLeaseClient(conn=conn)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
-    backend = OllamaBackend(default_model="glm-5.3:cloud")
+    backend = (OpenRouterBackend(api_key="fixture", default_model=model)
+               if connection else OllamaBackend(default_model=model))
     runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
     monkeypatch.setattr(control, "runtime", runtime)
     session = ChatSession()
     session.chat_id = ident
     monkeypatch.setattr(runtime, "get_session", lambda _: session)
-    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, "glm-5.3:cloud"))
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
     real_client = httpx.AsyncClient
-    calls, fences, waits = [], [], []
+    calls, fences, waits, inner_waits = [], [], [], []
+    async def inner_wait(seconds, *, check_active):
+        check_active()
+        assert client.read(42).leased
+        inner_waits.append(seconds)
+    if connection:
+        monkeypatch.setattr(runtime, "_wait_model_call_retry", inner_wait)
     def reply(request):
         calls.append(request)
+        if connection:
+            if len(calls) <= 4:
+                raise httpx.ConnectError("PRIVATE_PROVIDER_BODY", request=request)
+            return httpx.Response(200, json={"choices": [{
+                "message": {"role": "assistant", "content": "Healthy fixture"}}]})
         if len(calls) > 1 and scenario == "recover":
             return httpx.Response(200, text=json.dumps({"message": {"content": "Healthy fixture"}, "done": True}) + "\n")
         payload = "monthly usage limit reached" if scenario == "quota_after_retry" and len(calls) > 1 else "rate limit"
@@ -328,7 +375,14 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         binding = session.worker_task_binding
         assert binding.task_id == 42 and not binding.closed
         fences.append(binding._ack.fence)
-        answer = _managed_backend_answer(await backend.chat([{"role": "user", "content": "fixture"}]))
+        messages = [{"role": "user", "content": "fixture"}]
+        if connection:
+            result = await runtime._chat_with_cloud_call_retry(session, backend, model, messages)
+            answer = (FailedAnswer(result["error"], backend_error=result["backend_error"],
+                                   reason_code=result["reason_code"])
+                      if result.get("error") else _managed_backend_answer(result))
+        else:
+            answer = _managed_backend_answer(await backend.chat(messages))
         if not FailedAnswer.looks_like(answer):
             binding.execute_task_manage({"action": "submit_result", "task_id": 42, "result": str(answer)})
         return answer
@@ -354,8 +408,16 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         assert snapshot["active_task_id"] is None
         public = _project_worker(snapshot)
         assert public["worker_active"] is True and public["running"] is False
-        assert public.get("active_task_id") is None and public["backend_error"]["status_code"] == 429
-        if scenario == "stop":
+        assert public.get("active_task_id") is None
+        if connection:
+            assert public["backend_error"]["kind"] == "connection_error"
+            assert fences == [1] and inner_waits == [5, 10, 20]
+            assert len(calls) == 4
+        else:
+            assert public["backend_error"]["status_code"] == 429
+        if (scenario == "stop" or scenario.startswith("unknown_")
+                or (scenario == "sustained_rate_limit" and len(waits) == 5)
+                or (scenario == "quota_after_retry" and len(waits) == 2)):
             worker.stop_event.set()
             return False
         if scenario == "foreign_claim":
@@ -364,7 +426,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         return True
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
     if scenario == "return_denied":
-        monkeypatch.setattr(WorkerLeaseBinding, "return_lease", lambda _: False)
+        monkeypatch.setattr(WorkerLeaseBinding, "return_lease", lambda _self, note="": False)
     if scenario.startswith("unknown_"):
         invalid = {"unknown_none": None, "unknown_false": False, "unknown_true": True,
                    "unknown_negative": -1, "unknown_string": "0", "unknown_float": 0.0}[scenario]
@@ -377,20 +439,28 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         thread = execution.thread
         thread.join(5)
         assert not thread.is_alive()
-        assert all(json.loads(request.content)["model"] == "glm-5.3:cloud" for request in calls)
+        assert all(json.loads(request.content)["model"] == model for request in calls)
         task = dict(conn.execute("SELECT * FROM tasks WHERE id=42").fetchone())
         current = slots.get_slot(ident, path)
-        if scenario == "recover":
-            assert len(calls) == 2 and waits == [60] and fences == [1, 2]
+        if scenario in {"recover", "connection_recover"}:
+            assert len(calls) == (5 if connection else 2)
+            assert waits == [60] and fences == [1, 2]
+            if connection:
+                assert inner_waits == [5, 10, 20]
+                events = slots.get_activity_history(path=path)
+                assert any(e.get("event") == "assignment_ended"
+                           and e.get("reason") == "temporary_connection_error" for e in events)
             assert task["status"] == "review" and task["claim_salt_ref"] is None
             assert current.get("backend_error") is None
             assert execution.task_result_bindings[42].submitted_result["accepted"] is False
-        elif scenario == "exhausted":
-            assert len(calls) == 4 and waits == [60, 120, 240] and fences == [1, 2, 3, 4]
-            assert current["status"] == "error" and "begrenzt beendet" in current["current_activity"]
+        elif scenario == "sustained_rate_limit":
+            assert len(calls) == 5 and waits == [60, 120, 240, 480, 900]
+            assert fences == [1, 2, 3, 4, 5] and execution.stop_event.is_set()
+            assert execution.start_error is None
             assert task["status"] == "pending" and task["claim_salt_ref"] is None
         elif scenario == "quota_after_retry":
-            assert len(calls) == 2 and waits == [60]
+            assert len(calls) == 2 and waits == [60, 86400]
+            assert execution.stop_event.is_set() and execution.start_error is None
             assert current["backend_error"]["quota_period"] == "month"
             assert task["status"] == "pending" and task["claim_salt_ref"] is None
         elif scenario == "return_denied":
@@ -401,9 +471,11 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
             assert client.read(42, lease_id=foreign[0].lease_id).own is True
             assert acquire_calls == [True, False]
         elif scenario.startswith("unknown_"):
-            assert len(calls) == 1 and waits == []
-            assert task["status"] == "blocked" and task["claim_salt_ref"] is None
-            assert "nicht verifizierbar" in current["current_activity"]
+            # Dispatch telemetry does not turn an open return into quarantine.
+            # The supervisor/Return ACK still has to settle before this wait.
+            assert len(calls) == 1 and waits == [60]
+            assert task["status"] == "pending" and task["claim_salt_ref"] is None
+            assert execution.stop_event.is_set() and execution.start_error is None
         else:
             assert len(calls) == 1 and waits == [60] and task["status"] == "pending"
             assert task["claim_salt_ref"] is None
@@ -420,7 +492,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
 @pytest.mark.parametrize("previous_block", [False, True])
 @pytest.mark.parametrize("dispatch_path", ["runtime", "bridge"])
 @pytest.mark.parametrize("backend_failure", ["rate_limit", "monthly_quota", "server_error"])
-def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatch, action, previous_block, dispatch_path, backend_failure):
+def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, monkeypatch, action, previous_block, dispatch_path, backend_failure):
     """Use real process/dispatcher/TaskDB, not a simulated runtime.process."""
     import sqlite3
     from hub._services import task_lease_client as client_module
@@ -501,7 +573,16 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
         real_client(transport=httpx.MockTransport(reply), **kw))
     def wait(worker, seconds):
         waits.append(seconds)
-        pytest.fail("Tools have run; automatic retry must be suppressed")
+        assert seconds == (86400 if backend_failure == "monthly_quota" else 60) and backend_failure in {"rate_limit", "monthly_quota"}
+        assert worker.task_binding is None and worker.lease_supervisor is None
+        assert bindings[-1].closed and bindings[-1].tool_dispatch_count == 1
+        assert client.worker_leases(worker.lease_worker_id)["leases"] == []
+        assert client.task_snapshot(42)["status"] == "pending"
+        # #2633: a service restart keeps the credit pause until this check time.
+        recheck = slots.get_slot(ident, path).get("no_credit_recheck_at")
+        assert (recheck is not None) is (backend_failure == "monthly_quota")
+        worker.stop_event.set()
+        return False
     monkeypatch.setattr(control, "_wait_worker_backend_retry", wait)
     call_waits = []
     async def wait_call(seconds, *, check_active):
@@ -524,33 +605,33 @@ def test_real_tool_loop_prevents_cloud_retry_after_dispatch(tmp_path, monkeypatc
             # tool dispatch, including a write, remains a single execution.
             assert len({request.content for request in calls[expected_calls - 1:]}) == 1
         snapshot = client.task_snapshot(42)
-        assert snapshot["claim_fence"] == 1 and snapshot["status"] == "blocked"
+        assert snapshot["claim_fence"] == 1 and snapshot["status"] == "pending"
         assert not client.read(42).leased
         children = conn.execute("SELECT COUNT(*) FROM tasks WHERE id != 42").fetchone()[0]
         assert children == (1 if action == "add" else 0)
         current = slots.get_slot(ident, path)
-        assert current["status"] == "error"
-        assert "Toolwirkung" in current["current_activity"]
+        if backend_failure == "server_error":
+            assert current["status"] == "error"
+        else:
+            assert execution.stop_event.is_set()
         expected_kind = {"server_error": "http_error", "monthly_quota": "quota_exceeded", "rate_limit": "rate_limited"}[backend_failure]
         assert current["backend_error"]["kind"] == expected_kind
-        assert execution.task_binding.tool_dispatch_count == 1
-        assert execution.start_error == "backend_error"
-        # A compatible second worker must not silently replay the initial
-        # prompt with a fresh zero counter after the first worker exits.
+        assert bindings[-1].tool_dispatch_count == 1 and bindings[-1].closed
+        assert execution.start_error == ("backend_error" if backend_failure == "server_error" else None)
+        # A fresh holder may resume the open task. Acquiring it must preserve
+        # the earlier child/files and must not execute any provider/tool call.
         import threading
         from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
-        from hub._services.task_lease_client import LeaseDeniedError
-        second = WorkerLeaseBinding.acquire_next(client, {"id": ident, "model": "glm-5.3:cloud"},
-            worker_id="second@fixture", host="fixture", generation="b" * 32,
-            is_current=lambda: True, stop_event=threading.Event())
-        if second is not None:
-            assert second.task_id != 42
-            assert second.return_lease()
-        with pytest.raises(LeaseDeniedError, match="not_claimable"):
-            WorkerLeaseBinding.acquire(client, 42, worker_id="second@fixture", host="fixture",
-                generation="b" * 32, is_current=lambda: True, stop_event=threading.Event())
+        second = WorkerLeaseBinding.acquire(client, 42, worker_id="second@fixture", host="fixture",
+            generation="b" * 32, is_current=lambda: True, stop_event=threading.Event())
+        assert second.task_id == 42 and second._ack.fence == 2
+        assert second.task_snapshot()["title"] == snapshot["title"]
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE id != 42").fetchone()[0] == children
+        assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0)
+        assert second.return_lease()
         history = conn.execute("SELECT new_value FROM task_history WHERE task_id=42 AND action='lease_release'").fetchall()
-        assert any("backend_error_after_tool_dispatch" in row[0] for row in history)
+        assert len(history) == 2
+        assert all(json.loads(row[0])["outcome"] == "return" for row in history)
     finally:
         if thread is not None and thread.is_alive():
             control._WORKER_EXECUTIONS[ident].stop_event.set()
@@ -1348,3 +1429,219 @@ def test_malformed_carrier_does_not_fall_back_to_raw_exception_text(metadata_cas
     answer = FailedAnswer.from_exception(carrier)
     assert answer.backend_error is None and "PRIVATE" not in str(answer)
     assert "nicht verifiziert" in str(answer)
+
+
+def test_ollama_cloud_monthly_limit_wording_is_quota():
+    from hub._services.llm.backend_errors import classify_ollama_error
+    # Wording returned by Ollama Cloud on 2026-10-25 (account name replaced).
+    detail = classify_ollama_error({"error": "you (PRIVATE_ACCOUNT) have reached your monthly usage limit, "
+                                             "add usage credits: https://ollama.com/settings (ref: x)"},
+                                   status_code=429)
+    assert detail["kind"] == "quota_exceeded" and detail["quota_period"] == "month"
+    assert "Monatskontingent" in detail["message"] and "PRIVATE_ACCOUNT" not in json.dumps(detail)
+    assert classify_ollama_error({"error": "rate limit"}, status_code=429)["kind"] == "rate_limited"
+
+
+def test_worker_return_note_uses_fixed_codes_only():
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    assert (control._worker_return_note(None, "completion_reserve_context_exhausted")
+            == "model_failure:completion_reserve_context_exhausted")
+    assert (control._worker_return_note({"provider": "ollama", "kind": "quota_exceeded", "status_code": 429}, None)
+            == "backend_error:ollama:quota_exceeded:429")
+    assert (control._worker_return_note({"provider": "openrouter", "kind": "connection_error"}, None)
+            == "backend_error:openrouter:connection_error")
+    assert control._worker_return_note(None, None) == "model_failure:unclassified"
+
+
+def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_path, monkeypatch):
+    """A full completion reserve is logged, the task goes back, the next task follows."""
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services.chat.chat_runtime import ChatSession
+    from system.tests.test_task_lease_client import _init_db
+    model = "glm-5.3:cloud"
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = slots.add_worker({"name": "Task failure fixture", "type": "continuous"}, path)["id"]
+    slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
+        "mode": "safe", "pause_after": 0}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    for task_id in (42, 43, 44):
+        conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+                     "VALUES (?,?,'pending','P1','INBOX','BACH',?)", (task_id, f"Failure fixture {task_id}", ident))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    backend = OllamaBackend(default_model=model)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(control, "runtime", runtime)
+    session = ChatSession()
+    session.chat_id = ident
+    monkeypatch.setattr(runtime, "get_session", lambda _: session)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
+    taken = []
+
+    async def process(*a, **kw):
+        binding = session.worker_task_binding
+        assert binding is not None and not binding.closed
+        taken.append(binding.task_id)
+        return FailedAnswer(f"{FailedAnswer.PREFIX}RuntimeError: Kontextfenster in der Abschlussreserve erschöpft",
+                            reason_code="completion_reserve_context_exhausted")
+    monkeypatch.setattr(runtime, "process", process)
+    wip_calls = []
+    def secure_wip(control_arg, session_arg, reason):
+        wip_calls.append((control_arg.task_binding.task_id, reason))
+        return {"success": True}
+    monkeypatch.setattr(control, "_secure_context_wip", secure_wip)
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        execution = control._WORKER_EXECUTIONS[ident]
+        thread = execution.thread
+        thread.join(8)
+        assert not thread.is_alive()
+        # Two failures let the worker continue; the third in a row stops it.
+        assert sorted(taken) == [42, 43, 44] and len(taken) == 3
+        assert wip_calls == [(task_id, "completion_reserve_context_exhausted") for task_id in taken]
+        for task_id in taken:
+            task = dict(conn.execute("SELECT status, claim_salt_ref FROM tasks WHERE id=?", (task_id,)).fetchone())
+            assert task["status"] == "pending" and task["claim_salt_ref"] is None
+            notes = [json.loads(row["new_value"])["note"] for row in conn.execute(
+                "SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'", (task_id,))]
+            assert notes == ["model_failure:completion_reserve_context_exhausted"]
+        activities = [e.get("activity") or "" for e in slots.get_activity_history(path=path)]
+        assert sum("Abschlussreserve" in a for a in activities) == 3
+        assert sum("Worker arbeitet weiter" in a for a in activities) == 2
+        assert "3 Tasks in Folge fehlgeschlagen" in (slots.get_slot(ident, path).get("current_activity") or "")
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()
+
+
+@pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60)])
+def test_openrouter_without_credit_rechecks_daily(status, expected):
+    """User rule 25.10.2026: no credit pauses the worker and checks once a day, it does not end it."""
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    detail = {"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
+              "status_code": status, "quota_exceeded": False}
+    slot = {"backend": "openrouter", "model": "openrouter/free", "type": "continuous"}
+    assert control._worker_backend_retry_delay(slot, detail, model="openrouter/free",
+        retries=0, waited_seconds=0) == expected
+    assert control._worker_backend_retry_delay({**slot, "type": "once"}, detail, model="openrouter/free",
+        retries=0, waited_seconds=0) is None
+
+
+@pytest.mark.parametrize("scenario", ["malformed_arguments", "trace_start_failure"])
+def test_rejected_tool_call_returns_task_or_shows_reason(tmp_path, monkeypatch, scenario):
+    """25.10. #2496: a malformed cloud tool call must not strand the lease."""
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import LeaseProtocolError, TaskLeaseClient
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    from system.tests.test_task_lease_client import _init_db
+    model = "glm-5.3:cloud"
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = slots.add_worker({"name": "Rejected tool call fixture", "type": "continuous"}, path)["id"]
+    slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
+        "mode": "safe", "pause_after": 0, "max_tool_rounds": 5}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    for task_id in (42, 43):
+        conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+                     "VALUES (?,?,'pending','P1','INBOX','BACH',?)", (task_id, f"Rejected call {task_id}", ident))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    bindings = []
+    acquire = control._acquire_worker_task
+    def acquire_record(*args, **kwargs):
+        binding = acquire(*args, **kwargs)
+        if binding is not None:
+            bindings.append(binding)
+        return binding
+    monkeypatch.setattr(control, "_acquire_worker_task", acquire_record)
+    if scenario == "trace_start_failure":
+        def fail_start(self, **_kwargs):
+            raise LeaseProtocolError("synthetic trace sink outage")
+        monkeypatch.setattr(WorkerLeaseBinding, "trace_tool_started", fail_start)
+    backend = OllamaBackend(default_model=model)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
+    monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *a: "")
+    monkeypatch.setattr(control, "runtime", runtime)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
+    monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *a, **kw: True)
+    calls = []
+    real_client = httpx.AsyncClient
+    def reply(request):
+        calls.append(request)
+        if len(calls) == 1:
+            # OpenRouter/Hermes keep an unparseable arguments string as-is (truncated JSON).
+            arguments = ('{"path": "' + str(tmp_path) if scenario == "malformed_arguments"
+                         else {"path": str(tmp_path)})
+            return httpx.Response(200, text=json.dumps({"message": {"role": "assistant", "content": "",
+                "tool_calls": [{"function": {"name": "list_directory", "arguments": arguments}}]},
+                "done": True}) + "\n")
+        control._WORKER_EXECUTIONS[ident].stop_event.set()
+        return httpx.Response(200, text=json.dumps({"message": {
+            "role": "assistant", "content": "Zwischenstand; Task bleibt offen"}, "done": True}) + "\n")
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+        real_client(transport=httpx.MockTransport(reply), **kw))
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        execution = control._WORKER_EXECUTIONS[ident]
+        thread = execution.thread
+        thread.join(8)
+        assert not thread.is_alive()
+        first = bindings[0].task_id
+        assert client.tool_trace_events(first)["events"] == []
+        assert bindings[0].tool_dispatch_count == 0
+        def notes(task_id):
+            return [json.loads(row["new_value"])["note"] for row in conn.execute(
+                "SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'", (task_id,))]
+        if scenario == "malformed_arguments":
+            # Nothing ran: the lease goes back with its reason and the worker takes the next task.
+            assert len(calls) == 2
+            assert notes(first) == ["model_failure:invalid_tool_call"]
+            assert not client.read(first).leased and client.task_snapshot(first)["status"] == "pending"
+            assert [b.task_id for b in bindings] == [first, ({42, 43} - {first}).pop()]
+            assert notes(bindings[1].task_id) == ["worker_stopped"]
+            assert execution.start_error is None
+            activities = [e.get("activity") or "" for e in slots.get_activity_history(path=path)]
+            assert any(f"Task #{first} zurückgegeben (model_failure:invalid_tool_call)" in a for a in activities)
+            receipts = [json.loads(row[0]) for row in conn.execute(
+                "SELECT receipt FROM worker_model_executions WHERE task_id=?", (first,))]
+            assert [(r["phase"], r.get("failure_code")) for r in receipts] == [("failed", "invalid_tool_call")]
+        else:
+            # Unknown trace state stays fail-closed, but the status names the fixed reason.
+            assert len(calls) == 1 and notes(first) == [] and client.read(first).leased
+            assert bindings[0].deactivation_reason == "trace_start_unavailable"
+            current = slots.get_slot(ident, path)
+            assert execution.start_error == "cleanup_error" and current["status"] == "error"
+            assert "trace_start_unavailable" in current["current_activity"]
+            assert "synthetic trace sink outage" not in json.dumps(slots.get_activity_history(path=path))
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()

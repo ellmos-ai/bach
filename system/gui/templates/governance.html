@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <script src="/static/js/device-fetch.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BACH - Governance & Control</title>
+    <link rel="icon" href="data:,">
+    <script>!function(){var t=localStorage.getItem("bach-theme");t=t==="colorful"?"custom":t;t&&t!=="dark"&&document.documentElement.setAttribute("data-theme",t)}()</script>
+    <link rel="stylesheet" href="/static/css/main.css?v=3">
+    <style>
+        .custom-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .gov-table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+        .gov-table th, .gov-table td { border: 1px solid var(--border); padding: 0.4rem 0.5rem; text-align: left; vertical-align: top; }
+        .gov-table th { background: var(--bg-card); }
+        .gov-table code { font-size: 0.8rem; word-break: break-all; }
+        .table-scroll { overflow-x: auto; }
+        .dec-badge, .badge {
+            display: inline-block;
+            padding: 0.15rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .dec-erlaubt { background: rgba(63,185,80,.22); color: #2f9e44; border: 1px solid rgba(63,185,80,.45); }
+        .dec-rueckfrage { background: rgba(240,173,78,.25); color: #b7791f; border: 1px solid rgba(240,173,78,.5); }
+        .dec-nie { background: rgba(248,81,73,.2); color: #c9372c; border: 1px solid rgba(248,81,73,.45); }
+        .dec-unbekannt { background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border); }
+        .badge-ok { background: rgba(63,185,80,.22); color: #2f9e44; border: 1px solid rgba(63,185,80,.45); }
+        .badge-off { background: rgba(248,81,73,.2); color: #c9372c; border: 1px solid rgba(248,81,73,.45); }
+        .gov-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
+        .gov-field { display: flex; flex-direction: column; gap: 0.25rem; }
+        .gov-hint { color: var(--text-muted); font-size: 0.78rem; }
+        .gov-input, .gov-select {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.45rem 0.6rem;
+            width: 100%;
+        }
+        .gov-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin: 0.6rem 0; }
+        .status-line { color: var(--text-muted); font-size: 0.85rem; font-weight: 400; margin-left: 0.5rem; }
+        .status-error { color: #d76a6a; font-weight: 600; }
+        .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 0.9rem; margin: 0.6rem 0; padding: 0; color: var(--text-muted); font-size: 0.85rem; }
+        .legend li { display: flex; align-items: center; gap: 0.35rem; }
+        .decision-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 0.9rem; margin-top: 0.6rem; }
+        .decision-card p { margin: 0.35rem 0; }
+        .ticket-hint { background: rgba(240,173,78,.14); border: 1px solid rgba(240,173,78,.45); border-radius: 8px; padding: 0.6rem 0.75rem; margin-top: 0.6rem; }
+        .meta-lines p { margin: 0.3rem 0; }
+        .matrix-table td { text-align: center; }
+        #audit-limit { max-width: 6.5rem; }
+        .gov-panel h2 { margin-bottom: 0.4rem; }
+        .gov-panel h3 { margin: 0.6rem 0 0.3rem; }
+    </style>
+</head>
+<body>
+    <header class="main-header" id="main-header"></header>
+    <main class="main-content">
+        <h1>Governance &amp; Control</h1>
+        <p class="text-muted">Erlaubnisse für Außenwirkung, Policy-Registry, Sperren, Hooks &amp; Guards sowie Logs &amp; Audit des Delegations- und Erlaubnissystems.</p>
+
+        <section class="custom-panel gov-panel" id="panel-matrix">
+            <h2>Erlaubnisse für Außenwirkung <span id="matrix-status" class="status-line" role="status" aria-live="polite">Lade Raster …</span></h2>
+            <p class="gov-rules text-muted" id="matrix-rules">Auswertungsreihenfolge je Zelle: Zellwert → Akteur-Standard → Handlungs-Standard → Fallback.</p>
+            <ul class="legend" id="matrix-legend">
+                <li><span class="dec-badge dec-erlaubt">erlaubt</span> Außenwirkung erlaubt</li>
+                <li><span class="dec-badge dec-rueckfrage">Rückfrage</span> Rückfrage und ggf. Ticket erforderlich</li>
+                <li><span class="dec-badge dec-nie">nie</span> Außenwirkung verboten</li>
+            </ul>
+            <div class="table-scroll" id="matrix-wrap"><p class="text-muted">Raster wird geladen …</p></div>
+            <h3>Operatoren-Rang</h3>
+            <ul id="matrix-operators" class="meta-lines"><li>Lade …</li></ul>
+            <h3>Eskalationsleiter</h3>
+            <p id="matrix-escalation" class="meta-lines">Lade …</p>
+            <p id="matrix-revision" class="text-muted"></p>
+            <p id="matrix-notice" class="text-muted"></p>
+        </section>
+
+        <section class="custom-panel gov-panel" id="panel-simulate">
+            <h2>Prüfung simulieren <span id="sim-status" class="status-line" role="status" aria-live="polite"></span></h2>
+            <p class="text-muted">Eine konkrete Kombination aus Handlung und Akteur gegen die geltenden Erlaubnisse prüfen.</p>
+            <div class="gov-fields">
+                <label class="gov-field" for="sim-action">Handlung
+                    <select id="sim-action" class="gov-select"></select>
+                </label>
+                <label class="gov-field" for="sim-actor">Akteur
+                    <select id="sim-actor" class="gov-select"></select>
+                </label>
+            </div>
+            <div class="gov-actions">
+                <button type="button" id="sim-button" class="btn btn-primary">Prüfen</button>
+            </div>
+            <div id="sim-result"></div>
+        </section>
+
+        <section class="custom-panel gov-panel" id="panel-registry">
+            <h2>Policy-Registry <span id="registry-status" class="status-line" role="status" aria-live="polite"></span></h2>
+            <p class="text-muted">Beobachtung der Policy-Registry (schreibgeschützt). Für die effektive Policy ist ein Scope erforderlich.</p>
+            <div class="gov-fields">
+                <label class="gov-field" for="registry-scope">Scope
+                    <input type="text" id="registry-scope" class="gov-input" placeholder="z. B. ellmos-system">
+                    <span class="gov-hint">Pflichtfeld für die effektive Policy.</span>
+                </label>
+                <label class="gov-field" for="registry-consumer">Consumer
+                    <input type="text" id="registry-consumer" class="gov-input" placeholder="z. B. ocean-gui">
+                </label>
+                <label class="gov-field" for="registry-query">Suche (query)
+                    <input type="text" id="registry-query" class="gov-input" placeholder="Freitext">
+                </label>
+                <label class="gov-field" for="registry-kind">Art (kind)
+                    <select id="registry-kind" class="gov-select">
+                        <option value="">alle</option>
+                        <option value="policy">policy</option>
+                        <option value="rule">rule</option>
+                        <option value="decision">decision</option>
+                        <option value="evidence">evidence</option>
+                        <option value="decision-candidate">decision-candidate</option>
+                    </select>
+                </label>
+            </div>
+            <div class="gov-actions">
+                <button type="button" id="registry-button" class="btn btn-primary">Registry beobachten</button>
+                <button type="button" id="effective-button" class="btn">Effektive Policy prüfen</button>
+            </div>
+            <div id="registry-meta" class="meta-lines"></div>
+            <div id="registry-entries"></div>
+            <div id="effective-result" class="meta-lines"></div>
+        </section>
+
+        <section class="custom-panel gov-panel" id="panel-locks">
+            <h2>Sperren (Locks) <span id="locks-status" class="status-line" role="status" aria-live="polite">Prüfe …</span></h2>
+            <p class="text-muted">Ehrlicher Status zu Sperren und lock-master; keine Sperrinformationen werden vorgetäuscht.</p>
+            <div id="locks-detail" class="meta-lines"><p class="text-muted">Prüfung läuft …</p></div>
+            <div class="gov-actions">
+                <button type="button" id="locks-button" class="btn">Erneut prüfen</button>
+            </div>
+        </section>
+
+        <section class="custom-panel gov-panel" id="panel-hooks">
+            <h2>Hooks &amp; Guards <span id="hooks-status" class="status-line" role="status" aria-live="polite">Prüfe …</span></h2>
+            <p class="text-muted">hook-master-Konzept, DB-Guard und vorhandene Hooks im Ordner system/hooks/.</p>
+            <div id="hooks-detail" class="meta-lines"><p class="text-muted">Prüfung läuft …</p></div>
+            <div class="gov-actions">
+                <button type="button" id="hooks-button" class="btn">Erneut prüfen</button>
+            </div>
+        </section>
+
+        <section class="custom-panel gov-panel" id="panel-audit">
+            <h2>Logs &amp; Audit <span id="audit-status" class="status-line" role="status" aria-live="polite">Lade …</span></h2>
+            <p class="text-muted">Gepufferte Governance-Entscheidungen und Erlaubnis-Ereignisse (neueste zuerst).</p>
+            <div class="gov-actions">
+                <label for="audit-limit">Limit (1–200)</label>
+                <input type="number" id="audit-limit" class="gov-input" min="1" max="200" value="50">
+                <button type="button" id="audit-button" class="btn btn-primary">Laden</button>
+            </div>
+            <p id="audit-info" class="text-muted"></p>
+            <div id="audit-events"><p class="text-muted">Lade Ereignisse …</p></div>
+        </section>
+    </main>
+    <script src="/static/js/nav.js?v=5"></script>
+    <script>
+    (function () {
+        'use strict';
+
+        function esc(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function display(value) {
+            if (value == null) return '—';
+            if (Array.isArray(value)) {
+                if (!value.length) return '—';
+                return value.map(function (item) {
+                    return (item != null && typeof item === 'object') ? JSON.stringify(item) : String(item);
+                }).join(' · ');
+            }
+            if (typeof value === 'object') return JSON.stringify(value);
+            return String(value);
+        }
+        function jaNein(flag) { return flag ? 'ja' : 'nein'; }
+        function decClass(dec) {
+            return ['erlaubt', 'rueckfrage', 'nie'].indexOf(dec) >= 0 ? 'dec-' + dec : 'dec-unbekannt';
+        }
+        function decLabel(dec) {
+            if (dec === 'rueckfrage') return 'Rückfrage';
+            return dec == null ? '—' : String(dec);
+        }
+        function setStatus(el, text, isError) {
+            el.textContent = text;
+            el.classList.toggle('status-error', !!isError);
+        }
+        function fillSelect(select, values, selected) {
+            select.innerHTML = '';
+            (values || []).forEach(function (value) {
+                var option = document.createElement('option');
+                option.value = value;
+                option.textContent = value;
+                if (selected != null && value === selected) option.selected = true;
+                select.appendChild(option);
+            });
+        }
+
+        async function loadMatrix() {
+            var status = document.getElementById('matrix-status');
+            var wrap = document.getElementById('matrix-wrap');
+            try {
+                setStatus(status, 'Lade Erlaubnis-Raster …');
+                var response = await fetch('/api/governance/permission-matrix');
+                var data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.detail || 'Erlaubnis-Raster konnte nicht geladen werden');
+                var actions = data.actions || [];
+                var actors = data.actors || [];
+                var cells = data.effective_cells || {};
+                var rowDefaults = data.row_defaults || {};
+                var columnDefaults = data.column_defaults || {};
+                var head = '<tr><th scope="col">Handlung / Akteur</th>';
+                actors.forEach(function (actor) { head += '<th scope="col">' + esc(actor) + '</th>'; });
+                head += '</tr>';
+                var body = '';
+                actions.forEach(function (action) {
+                    body += '<tr><th scope="row">' + esc(action) + '</th>';
+                    actors.forEach(function (actor) {
+                        var cell = cells[action + '|' + actor];
+                        var dec = cell ? cell.decision
+                            : (columnDefaults[actor] || rowDefaults[action] || data.fallback);
+                        var tip = cell
+                            ? ('Grund: ' + display(cell.reason) + ' · Quelle: ' + display(cell.source) + (cell.needs_ticket ? ' · Ticket erforderlich' : ''))
+                            : 'Kein Zellwert; Entscheidung über Akteur-Standard, Handlungs-Standard oder Fallback.';
+                        body += '<td><span class="dec-badge ' + decClass(dec) + '" title="' + esc(tip) + '">' + esc(decLabel(dec)) + '</span></td>';
+                    });
+                    body += '</tr>';
+                });
+                wrap.innerHTML = '<table class="gov-table matrix-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
+                document.getElementById('matrix-rules').textContent =
+                    'Auswertungsreihenfolge je Zelle: Zellwert → Akteur-Standard → Handlungs-Standard → Fallback (' + display(data.fallback) + ').';
+                var operators = (data.operators || []).slice().sort(function (a, b) {
+                    return (a.rank || 0) - (b.rank || 0);
+                });
+                document.getElementById('matrix-operators').innerHTML = operators.length
+                    ? operators.map(function (op) {
+                        return '<li>Rang ' + esc(display(op.rank)) + ': <strong>' + esc(op.actor) + '</strong></li>';
+                    }).join('')
+                    : '<li>Keine Operatoren hinterlegt.</li>';
+                document.getElementById('matrix-escalation').textContent = 'Eskalationsleiter: ' + display(data.escalation_ladder);
+                document.getElementById('matrix-revision').textContent = 'Revision: ' + display(data.revision);
+                document.getElementById('matrix-notice').textContent = data.notice || '';
+                fillSelect(document.getElementById('sim-action'), actions, actions[0]);
+                fillSelect(document.getElementById('sim-actor'), actors, actors[0]);
+                setStatus(status, 'Raster geladen (' + actions.length + ' Handlungen × ' + actors.length + ' Akteure).');
+            } catch (error) {
+                wrap.innerHTML = '';
+                setStatus(status, 'Raster-Fehler: ' + error.message, true);
+            }
+        }
+
+        async function simulatePermission() {
+            var status = document.getElementById('sim-status');
+            var result = document.getElementById('sim-result');
+            var action = document.getElementById('sim-action').value;
+            var actor = document.getElementById('sim-actor').value;
+            if (!action || !actor) {
+                setStatus(status, 'Bitte Handlung und Akteur wählen.', true);
+                return;
+            }
+            try {
+                setStatus(status, 'Prüfe …');
+                result.innerHTML = '';
+                var response = await fetch('/api/governance/evaluate-permission', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: action, actor: actor })
+                });
+                var data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.detail || 'Prüfung abgelehnt');
+                var html = '<div class="decision-card">';
+                html += '<p><strong>Entscheidung:</strong> <span class="dec-badge ' + decClass(data.decision) + '">' + esc(decLabel(data.decision)) + '</span>';
+                html += ' <strong>Handlung:</strong> ' + esc(data.action) + ' · <strong>Akteur:</strong> ' + esc(data.actor) + '</p>';
+                html += '<p><strong>Grund:</strong> ' + esc(display(data.reason)) + '</p>';
+                html += '<p><strong>Quelle:</strong> ' + esc(display(data.source)) + '</p>';
+                html += '<p><strong>Ticket erforderlich:</strong> ' + jaNein(data.needs_ticket) + '</p>';
+                if (data.escalation_hint) html += '<p><strong>Eskalationshinweis:</strong> ' + esc(data.escalation_hint) + '</p>';
+                html += '<p><strong>Revision:</strong> ' + esc(display(data.revision)) + '</p>';
+                if (data.decision === 'rueckfrage') {
+                    html += '<div class="ticket-hint"><strong>Rückfrage erforderlich:</strong> Vor einer Außenwirkung muss ein Ticket beim ticket-master angelegt und die Rückfrage geklärt werden.';
+                    if (data.escalation_hint) html += ' (Hinweis: ' + esc(data.escalation_hint) + ')';
+                    html += '</div>';
+                }
+                html += '</div>';
+                result.innerHTML = html;
+                setStatus(status, 'Prüfung abgeschlossen.');
+            } catch (error) {
+                setStatus(status, 'Prüfung abgelehnt: ' + error.message, true);
+            }
+        }
+
+        function registryErrorText(data) {
+            var detail = data && data.detail ? String(data.detail) : '';
+            if (detail === 'policy_provider_not_configured') return 'Policy-Provider ist nicht konfiguriert (503).';
+            if (detail === 'policy_registry_changed_during_read') return 'Registry hat sich während des Lesens geändert (409) – bitte erneut versuchen.';
+            return detail || 'Policy-Registry konnte nicht geladen werden';
+        }
+        function buildRegistryMeta(data) {
+            var provider = data.provider || {};
+            var writer = data.decision_writer || {};
+            var html = '';
+            html += '<p><strong>Verfügbarkeit:</strong> ' + esc(display(data.availability))
+                + ' · <strong>Registry-Version:</strong> ' + esc(display(data.registry_version))
+                + ' · <strong>Schreibschutz (read_only):</strong> ' + jaNein(data.read_only) + '</p>';
+            html += '<p><strong>Enforcement verifiziert:</strong> ' + jaNein(data.enforcement_verified)
+                + ' · <strong>Quell-Verifizierung vollständig:</strong> ' + jaNein(data.source_verification_complete) + '</p>';
+            html += '<p><strong>Provider:</strong> ' + esc(display(provider.id))
+                + ' (Version ' + esc(display(provider.version))
+                + ', Commit ' + esc(display(provider.source_commit))
+                + ', verifiziert: ' + jaNein(provider.verified)
+                + ', Repository: ' + esc(display(provider.repository)) + ')</p>';
+            html += '<p><strong>Decision-Writer:</strong> ' + esc(display(writer.id))
+                + ' · verfügbar: ' + jaNein(writer.available)
+                + (writer.reason ? ' · Grund: ' + esc(writer.reason) : '') + '</p>';
+            html += '<p><strong>Beobachtet am:</strong> ' + esc(display(data.observed_at))
+                + ' · <strong>Schema:</strong> <code>' + esc(display(data.schema)) + '</code></p>';
+            return html;
+        }
+        function buildEntriesTable(entries) {
+            if (!entries || !entries.length) return '<p class="text-muted">Keine Einträge für die gewählten Filter.</p>';
+            var html = '<div class="table-scroll"><table class="gov-table"><thead><tr>'
+                + '<th>ID</th><th>Art</th><th>Titel</th><th>Scope</th><th>Status</th><th>Quellzustand</th>'
+                + '</tr></thead><tbody>';
+            entries.forEach(function (entry) {
+                var tip = 'Version: ' + display(entry.version)
+                    + ' · Priorität: ' + display(entry.priority)
+                    + ' · Übernahme: ' + display(entry.adoption)
+                    + ' · Quelle verifiziert: ' + jaNein(entry.source_verified)
+                    + ' · Enforcement verifiziert: ' + jaNein(entry.enforcement_verified);
+                html += '<tr title="' + esc(tip) + '">'
+                    + '<td><code>' + esc(display(entry.id)) + '</code></td>'
+                    + '<td>' + esc(display(entry.kind)) + '</td>'
+                    + '<td>' + esc(display(entry.title)) + '</td>'
+                    + '<td>' + esc(display(entry.scope)) + '</td>'
+                    + '<td>' + esc(display(entry.status)) + '</td>'
+                    + '<td>' + esc(display(entry.source_state)) + '</td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table></div>';
+            return html;
+        }
+        function buildEffectiveView(data) {
+            var eff = data.effective || {};
+            var html = '<h3>Effektive Policy</h3>';
+            html += '<p><strong>Status:</strong> ' + esc(display(eff.status)) + '</p>';
+            if (eff.reason) html += '<p><strong>Begründung:</strong> ' + esc(eff.reason) + '</p>';
+            var selected = eff.selected;
+            if (selected && typeof selected === 'object') {
+                html += '<div class="decision-card">';
+                html += '<p><strong>Ausgewählte Policy:</strong> ' + esc(display(selected.title))
+                    + ' <code>' + esc(display(selected.id)) + '</code></p>';
+                html += '<p><strong>Art / Scope / Version:</strong> ' + esc(display(selected.kind))
+                    + ' · ' + esc(display(selected.scope))
+                    + ' · ' + esc(display(selected.version)) + '</p>';
+                html += '<p><strong>Status / Quellzustand:</strong> ' + esc(display(selected.status))
+                    + ' · ' + esc(display(selected.source_state)) + '</p>';
+                html += '<p><strong>Übernahme / Priorität:</strong> ' + esc(display(selected.adoption))
+                    + ' · ' + esc(display(selected.priority)) + '</p>';
+                html += '<p><strong>Quelle:</strong> '
+                    + esc(selected.source && selected.source.label ? selected.source.label : display(selected.source)) + '</p>';
+                html += '<p><strong>Enforcement verifiziert:</strong> ' + jaNein(selected.enforcement_verified) + '</p>';
+                html += '</div>';
+            } else {
+                html += '<p class="text-muted">Keine Policy ausgewählt (selected = null).</p>';
+            }
+            html += '<p><strong>Kandidaten (candidate_ids):</strong> ' + esc(display(eff.candidate_ids)) + '</p>';
+            html += '<p><strong>Interaktion:</strong> Modus ' + esc(display(eff.interaction_mode))
+                + ' · Quelle ' + esc(display(eff.interaction_source)) + '</p>';
+            html += '<p><strong>Governance-Bindung:</strong> ' + esc(display(eff.governance_binding)) + '</p>';
+            html += '<p><strong>Außenwirkungs-Schranken (external_effect_gates):</strong> '
+                + esc(display(eff.external_effect_gates)) + '</p>';
+            return html;
+        }
+        function registryParams(requireScope) {
+            var scope = document.getElementById('registry-scope').value.trim();
+            var consumer = document.getElementById('registry-consumer').value.trim();
+            var query = document.getElementById('registry-query').value.trim();
+            var kind = document.getElementById('registry-kind').value;
+            if (requireScope && !scope) return null;
+            var params = new URLSearchParams();
+            if (scope) params.set('scope', scope);
+            if (consumer) params.set('consumer', consumer);
+            if (query) params.set('query', query);
+            if (kind) params.set('kind', kind);
+            return params;
+        }
+        async function loadRegistry() {
+            var status = document.getElementById('registry-status');
+            var meta = document.getElementById('registry-meta');
+            var entriesWrap = document.getElementById('registry-entries');
+            try {
+                setStatus(status, 'Beobachte Policy-Registry …');
+                var params = registryParams(false);
+                var qs = params.toString();
+                var response = await fetch('/api/governance/policy-registry' + (qs ? '?' + qs : ''));
+                var data = await response.json();
+                if (!response.ok) throw new Error(registryErrorText(data));
+                meta.innerHTML = buildRegistryMeta(data);
+                entriesWrap.innerHTML = buildEntriesTable(data.entries || []);
+                var count = data.count != null ? data.count : (data.entries || []).length;
+                setStatus(status, 'Registry beobachtet: ' + count + ' Eintrag/Einträge.');
+            } catch (error) {
+                meta.innerHTML = '';
+                entriesWrap.innerHTML = '';
+                setStatus(status, 'Registry-Fehler: ' + error.message, true);
+            }
+        }
+        async function loadEffectivePolicy() {
+            var status = document.getElementById('registry-status');
+            var out = document.getElementById('effective-result');
+            var params = registryParams(true);
+            if (!params) {
+                setStatus(status, 'Für die effektive Policy ist ein Scope erforderlich.', true);
+                return;
+            }
+            try {
+                setStatus(status, 'Bestimme effektive Policy …');
+                var response = await fetch('/api/governance/effective-policy?' + params.toString());
+                var data = await response.json();
+                if (!response.ok) throw new Error(registryErrorText(data));
+                out.innerHTML = buildEffectiveView(data);
+                setStatus(status, 'Effektive Policy bestimmt.');
+            } catch (error) {
+                out.innerHTML = '';
+                setStatus(status, 'Effektive Policy: ' + error.message, true);
+            }
+        }
+
+        async function loadLocks() {
+            var status = document.getElementById('locks-status');
+            var out = document.getElementById('locks-detail');
+            try {
+                setStatus(status, 'Prüfe Sperren …');
+                var response = await fetch('/api/governance/locks');
+                var data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.detail || 'Sperren konnten nicht geprüft werden');
+                var html = '<p><strong>Status:</strong> ' + (data.available
+                    ? '<span class="badge badge-ok">Aktiv</span>'
+                    : '<span class="badge badge-off">Nicht aktiv</span>') + '</p>';
+                html += '<p><strong>Konzept:</strong> ' + esc(display(data.concept)) + '</p>';
+                html += '<p><strong>Detail:</strong> ' + esc(display(data.detail)) + '</p>';
+                html += '<p><strong>Geprüft am:</strong> ' + esc(display(data.checked_at)) + '</p>';
+                if (!data.available) {
+                    html += '<p class="text-muted">Ehrlicher Status: Derzeit ist keine Sperre hinterlegt; die Außenwirkung wird über die Erlaubnis-Matrix und deren Eskalation begrenzt.</p>';
+                }
+                out.innerHTML = html;
+                setStatus(status, 'Sperren geprüft.');
+            } catch (error) {
+                out.innerHTML = '';
+                setStatus(status, 'Sperren-Fehler: ' + error.message, true);
+            }
+        }
+
+        async function loadHooks() {
+            var status = document.getElementById('hooks-status');
+            var out = document.getElementById('hooks-detail');
+            try {
+                setStatus(status, 'Prüfe Hooks &amp; Guards …');
+                var response = await fetch('/api/governance/hooks');
+                var data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.detail || 'Hooks konnten nicht geprüft werden');
+                var html = '<p><strong>Status:</strong> '
+                    + (data.available ? '<span class="badge badge-ok">Hook-Master aktiv</span>' : '<span class="badge badge-off">Hook-Master nicht aktiv</span>')
+                    + ' '
+                    + (data.db_guard_present ? '<span class="badge badge-ok">DB-Guard vorhanden</span>' : '<span class="badge badge-off">DB-Guard fehlt</span>')
+                    + '</p>';
+                html += '<p><strong>Konzept:</strong> ' + esc(display(data.concept)) + '</p>';
+                var hooks = data.hooks || [];
+                html += '<div class="table-scroll"><table class="gov-table"><thead><tr>'
+                    + '<th>Hook</th><th>Pfad</th><th>Vorhanden</th>'
+                    + '</tr></thead><tbody>';
+                if (hooks.length) {
+                    hooks.forEach(function (hook) {
+                        html += '<tr><td>' + esc(display(hook.name)) + '</td>'
+                            + '<td><code>' + esc(display(hook.path)) + '</code></td>'
+                            + '<td>' + (hook.present ? 'vorhanden' : 'fehlt') + '</td></tr>';
+                    });
+                } else {
+                    html += '<tr><td colspan="3">Keine Hooks hinterlegt.</td></tr>';
+                }
+                html += '</tbody></table></div>';
+                html += '<p><strong>Detail:</strong> ' + esc(display(data.detail)) + '</p>';
+                html += '<p><strong>Geprüft am:</strong> ' + esc(display(data.checked_at)) + '</p>';
+                out.innerHTML = html;
+                setStatus(status, 'Hooks geprüft.');
+            } catch (error) {
+                out.innerHTML = '';
+                setStatus(status, 'Hooks-Fehler: ' + error.message, true);
+            }
+        }
+
+        async function loadAudit() {
+            var status = document.getElementById('audit-status');
+            var info = document.getElementById('audit-info');
+            var out = document.getElementById('audit-events');
+            try {
+                var limitInput = document.getElementById('audit-limit');
+                var limit = parseInt(limitInput.value, 10);
+                if (!Number.isFinite(limit)) limit = 50;
+                limit = Math.max(1, Math.min(200, limit));
+                setStatus(status, 'Lade Audit-Log (Limit ' + limit + ') …');
+                var response = await fetch('/api/governance/audit?limit=' + limit);
+                var data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.detail || 'Audit-Log konnte nicht geladen werden');
+                info.textContent = data.count + ' von ' + data.total_buffered
+                    + ' gepufferten Ereignissen angezeigt (Puffer-Kapazität: ' + data.capacity + ').';
+                var events = data.events || [];
+                if (!events.length) {
+                    out.innerHTML = '<p class="text-muted">Keine Ereignisse im Puffer.</p>';
+                    setStatus(status, 'Audit-Log geladen (leer).');
+                    return;
+                }
+                var html = '<div class="table-scroll"><table class="gov-table"><thead><tr>'
+                    + '<th>Empfangen</th><th>Modul</th><th>Ereignis</th><th>Handlung</th><th>Akteur</th>'
+                    + '<th>Entscheidung</th><th>Grund</th><th>Quelle</th><th>Revision</th>'
+                    + '</tr></thead><tbody>';
+                events.forEach(function (ev) {
+                    html += '<tr title="Ereigniszeit: ' + esc(display(ev.timestamp)) + '">'
+                        + '<td>' + esc(display(ev.received_at)) + '</td>'
+                        + '<td>' + esc(display(ev.module)) + '</td>'
+                        + '<td>' + esc(display(ev.event)) + '</td>'
+                        + '<td>' + esc(display(ev.action)) + '</td>'
+                        + '<td>' + esc(display(ev.actor)) + '</td>'
+                        + '<td><span class="dec-badge ' + decClass(ev.decision) + '">' + esc(decLabel(ev.decision)) + '</span></td>'
+                        + '<td>' + esc(display(ev.reason)) + '</td>'
+                        + '<td>' + esc(display(ev.source)) + '</td>'
+                        + '<td>' + esc(display(ev.revision)) + '</td>'
+                        + '</tr>';
+                });
+                html += '</tbody></table></div>';
+                out.innerHTML = html;
+                setStatus(status, 'Audit-Log geladen.');
+            } catch (error) {
+                info.textContent = '';
+                out.innerHTML = '';
+                setStatus(status, 'Audit-Fehler: ' + error.message, true);
+            }
+        }
+
+        document.getElementById('sim-button').addEventListener('click', simulatePermission);
+        document.getElementById('registry-button').addEventListener('click', loadRegistry);
+        document.getElementById('effective-button').addEventListener('click', loadEffectivePolicy);
+        document.getElementById('locks-button').addEventListener('click', loadLocks);
+        document.getElementById('hooks-button').addEventListener('click', loadHooks);
+        document.getElementById('audit-button').addEventListener('click', loadAudit);
+
+        loadMatrix();
+        loadLocks();
+        loadHooks();
+        loadAudit();
+    })();
+    </script>
+</body>
+</html>

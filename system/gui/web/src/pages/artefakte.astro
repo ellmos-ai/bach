@@ -143,16 +143,12 @@ import BachLayout from "../layouts/BachLayout.astro";
   let activeFilter = 'all';
 
   function artifactToken() {
-    const token = localStorage.getItem('bach_device_token');
-    if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
-    return token;
+    // Same-origin requests carry the server-managed HttpOnly device cookie.
+    return null;
   }
 
   async function artifactFetch(url) {
-    const response = await fetch(url, {
-      headers: { Authorization: 'Bearer ' + artifactToken() },
-      cache: 'no-store'
-    });
+    const response = await fetch(url, { cache: 'no-store' });
     if (response.status === 401 || response.status === 403) {
       throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
     }

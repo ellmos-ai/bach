@@ -158,6 +158,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
                                            worktrees_dir=worktrees_dir)
         record = projected["result"]
         revision = record.get("result_revision")
+        bound_tree = None
         if (type(revision) is not str or not _HEX.fullmatch(revision)
                 or record.get("scope", {}).get("availability") != "available"
                 or source_pin(record) is None):
@@ -185,13 +186,21 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         if type(task.get("github_pr_review_required")) not in {type(None), int} or task.get("github_pr_review_required") not in {None, 0, 1}:
             return _unavailable(task_id, "github_gate_invalid", record=record)
         # This column is fixed before submission by task_content_version.
+        if bound_tree is not None and task.get("github_pr_review_required") not in (None, 0):
+            return _unavailable(task_id, "github_gate_needs_scope", record=record)
         contract = evaluate_contract(task.get("completion_contract_json"), result=record["result"],
-                                     snapshot=record["scope"]["snapshot"],
+                                     snapshot=record["scope"].get("snapshot"),
                                      repo_root=repo_root, worktrees_dir=worktrees_dir)
-        from .chat.worker_write_guard import snapshot_task_scope
-        if snapshot_task_scope(task_id, repo_root=repo_root,
-                               worktrees_dir=worktrees_dir) != record["scope"]["snapshot"]:
-            return _unavailable(task_id, "current_git_changed", record=record)
+        if bound_tree is not None:
+            from .worker_result_review import submission_bound_tree_current
+            if not submission_bound_tree_current(conn, record, repo_root=repo_root,
+                                                 worktrees_dir=worktrees_dir):
+                return _unavailable(task_id, "current_git_changed", record=record)
+        else:
+            from .chat.worker_write_guard import snapshot_task_scope
+            if snapshot_task_scope(task_id, repo_root=repo_root,
+                                   worktrees_dir=worktrees_dir) != record["scope"]["snapshot"]:
+                return _unavailable(task_id, "current_git_changed", record=record)
         contract_attested = (_history_matches(conn, record,
             revision_field="contract_attestation_revision", event_field="contract_attestation_event_id",
             action="worker_contract_attestation", status="approved")
@@ -231,6 +240,10 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             and review.get("review_task_id") > 0
             and type(review.get("reviewer_id")) is str
             and bool(review.get("reviewer_id")))
+        if bound_tree is not None and bound_tree.get("truncated") is True and review.get("status") == "approved":
+            # A cut package cannot carry an approval until a large-context or
+            # paged review exists (#2582); the result keeps waiting, no correction.
+            review_is_current = False
         review_status = review.get("status") if review_is_current else None
         # A configured independent reviewer can make the semantic finding for
         # an unstructured task. This is a reviewer judgment, never a machine
@@ -326,13 +339,14 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             "worker_completion_assertion": worker_completion_assertion,
             "contract_finding": contract_finding,
             "user_review_required": bool(user_required), "user_approved": user_approved,
-            "github_pr_review_required": github_required, "github": github}
+            "github_pr_review_required": github_required, "github": github,
+            "result_binding": "scope" if bound_tree is None else "submission"}
     except (sqlite3.Error, KeyError, TypeError, ValueError, AttributeError,
             settings.PolicyUnavailable) as exc:
         return _unavailable(task_id, "completion_source_unavailable")
 
 
-def _current_revision_from_db(record):
+def _current_revision_from_db(conn, record):
     """Rebuild only the immutable revision inputs inside an SQLite writer."""
     return current_result_revision(record)
 
@@ -347,7 +361,7 @@ def _same_db_result(conn, evaluation):
             or observed.get("status_revision") != evaluation["status_revision"]
             or record.get("reason") != "awaiting_review"
             or record.get("completion_policy_version") != 1
-            or _current_revision_from_db(record) != evaluation["result_revision"]
+            or _current_revision_from_db(conn, record) != evaluation["result_revision"]
             or _db_fingerprint(record) != evaluation["db_evidence_sha256"]):
         return None, None, None
     task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (evaluation["task_id"],)))
@@ -720,7 +734,7 @@ def reconcile_current_result(conn, task_id, *, repo_root=None, worktrees_dir=Non
                 or record["result_sha256"] != expected["result_sha256"]
                 or observed["task_version"] != expected["task_version"]
                 or observed["status_revision"] != expected["status_revision"]
-                or _current_revision_from_db(record) != expected["result_revision"]):
+                or _current_revision_from_db(conn, record) != expected["result_revision"]):
             raise ResultConflict("Ergebnis seit der Operatoransicht verändert; neu laden")
         now = _utcnow()
         actor = "native-worker-completion-policy"
@@ -754,12 +768,18 @@ def reconcile_current_result(conn, task_id, *, repo_root=None, worktrees_dir=Non
         # short SQLite writer window. It closes the ordinary gap between the
         # outside evaluation and committing Done/correction; it is not an
         # atomic transaction with arbitrary external Git writers.
-        from .chat.worker_write_guard import snapshot_task_scope
-        current_scope = snapshot_task_scope(task_id, repo_root=repo_root,
-                                            worktrees_dir=worktrees_dir)
-        if (current_scope.get("availability") != "available"
-                or current_scope != record.get("scope", {}).get("snapshot")):
-            raise ResultConflict("Git-/Sperrstand vor Abschlusscommit verändert")
+        if evaluation.get("result_binding") == "submission":
+            from .worker_result_review import submission_bound_tree_current
+            if not submission_bound_tree_current(conn, record, repo_root=repo_root,
+                                                 worktrees_dir=worktrees_dir):
+                raise ResultConflict("Task-Arbeitsbaum weicht vom geprüften Paket ab")
+        else:
+            from .chat.worker_write_guard import snapshot_task_scope
+            current_scope = snapshot_task_scope(task_id, repo_root=repo_root,
+                                                worktrees_dir=worktrees_dir)
+            if (current_scope.get("availability") != "available"
+                    or current_scope != record.get("scope", {}).get("snapshot")):
+                raise ResultConflict("Git-/Sperrstand vor Abschlusscommit verändert")
         conn.commit()
     except BaseException:
         if conn.in_transaction:

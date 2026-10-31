@@ -145,7 +145,7 @@ def test_bound_finish_uses_real_bound_python_pytest_parser(bridge, git_run, monk
     argv, limits, cwd, shell, env = isolated[0]
     assert argv[0] == safe_exec.resolve_executable("python", worker_write_guard._CHECK_BASES)[0]
     assert argv[1:4] == ["-m", "pytest", "-q"]
-    state = target / ".worker-check"
+    state = target / ".cache" / ".worker-check"
     separator = argv.index("--")
     assert argv[4:separator] == [
         "--basetemp", str(state / "pytest-temp"),
@@ -503,7 +503,10 @@ def test_bound_task_manage_hides_native_task_authority_failure(bridge):
         allowed_tools={"task_manage"},
     )
 
-    assert result == "Taskoperation nicht bestätigt; Taskbindung prüfen."
+    # A foreign task id is a local argument error: fixed guidance, no internal authority text, no state change.
+    # Unknown native ACKs stay redacted as "nicht bestätigt" (next test).
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    assert result == WorkerTaskManageArgumentError("mutation_scope").user_message
     assert "Mutation gehört" not in result
     assert bridge.binding._client.task_snapshot(binding.task_id)["status"] == "in_progress"
 

@@ -56,9 +56,8 @@ import BachLayout from "../../layouts/BachLayout.astro";
   let auditEvents = [];
 
   function auditToken() {
-    const token = localStorage.getItem('bach_device_token');
-    if (!token) throw new Error('Geräteanmeldung erforderlich. Bitte /token-dashboard öffnen.');
-    return token;
+    // Same-origin requests carry the server-managed HttpOnly device cookie.
+    return null;
   }
 
   function renderAudit() {
@@ -90,9 +89,7 @@ import BachLayout from "../../layouts/BachLayout.astro";
     const status = document.getElementById('audit-status');
     status.textContent = 'Prüfe Aufgaben-Audit…';
     try {
-      const response = await fetch('/api/governance/audit?limit=100', {
-        headers: { Authorization: 'Bearer ' + auditToken() }, cache: 'no-store'
-      });
+      const response = await fetch('/api/governance/audit?limit=100', { cache: 'no-store' });
       if (response.status === 401 || response.status === 403)
         throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
       if (!response.ok) throw new Error('HTTP ' + response.status);

@@ -48,6 +48,7 @@ _ALLOWED_CONTROL = {
     ("POST", "workers/handoff"),
     ("POST", "workers/decompose"),
     ("GET", "workers/configuration"), ("POST", "workers/configuration"),
+    ("GET", "workers/selection-preview"),
     ("GET", "workers/execution"),
 }
 _ACTIONS = {
@@ -397,6 +398,21 @@ def read_worker_configuration(worker_id: str, *, device_token: str, timeout: flo
     return _project_configuration(result, worker_id)
 
 
+def read_worker_selection_preview(worker_id: str, *, device_token: str,
+                                  limit: int = 50, offset: int = 0, timeout: float = 8.0):
+    if (not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id)
+            or type(limit) is not int or not 1 <= limit <= 100
+            or type(offset) is not int or not 0 <= offset <= 100_000):
+        raise WorkerActionRejected("Ungültige Vorschauanfrage", 400)
+    result = _request_control_api("GET", "workers/selection-preview", device_token=device_token,
+        params={"id": worker_id, "limit": limit, "offset": offset}, timeout=timeout)
+    from hub._services.chat.worker_selection_preview import project_selection_preview
+    projected = project_selection_preview(result, worker_id)
+    if result.get("ok") is not True or projected is None:
+        raise WorkerStatusUnavailable("Auswahlvorschau nicht bestätigt")
+    return projected
+
+
 def _configuration_value_for_change(snapshot: dict[str, Any], key: str):
     if key == "pickup_filter":
         selection_policy = snapshot.get("selection_policy")
@@ -675,7 +691,13 @@ def worker_action(
         method, endpoint, device_token=device_token, body=payload, timeout=timeout,
     )
     if result.get("ok") is not True:
-        raise WorkerActionRejected("Control-API hat die Workeraktion nicht bestätigt", 409)
+        error_message = result.get("error")
+        if not isinstance(error_message, str) or not error_message.strip():
+            error_message = "Control-API hat die Workeraktion nicht bestätigt"
+        error_code = result.get("error_code")
+        if not isinstance(error_code, int):
+            error_code = 409
+        raise WorkerActionRejected(error_message, error_code)
 
     response: dict[str, Any] = {"ok": True, "action": action}
     if isinstance(result.get("worker"), dict):

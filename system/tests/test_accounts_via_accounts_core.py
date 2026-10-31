@@ -53,9 +53,10 @@ def bach_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     from fastapi.testclient import TestClient
-    return TestClient(server.app, raise_server_exceptions=False)
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "gui-fixture" else None)
+    return TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer gui-fixture"})
 
 
 # ═══════════════════════════════════════════════════════════════

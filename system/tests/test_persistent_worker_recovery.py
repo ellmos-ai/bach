@@ -270,7 +270,7 @@ def test_private_startup_admission_uses_profile_version_scope(tmp_path, monkeypa
 
     @contextmanager
     def isolated_admission(path=None):
-        yield lambda: None
+        yield lambda **_identity: None
 
     monkeypatch.setattr(slots, "system_worker_at_version", read_isolated_worker)
     monkeypatch.setattr(slots, "worker_admission_transaction", isolated_admission)
@@ -1105,7 +1105,7 @@ def test_manual_buddha_stop_isolated_from_cloud_profiles_and_monitor(monkeypatch
 
     @contextmanager
     def no_revision_write():
-        yield lambda: None
+        yield lambda **_identity: None
 
     monkeypatch.setattr(slots, "worker_admission_transaction", no_revision_write)
     def system_worker_at_version(worker_id, version, *, version_scope, persistent_intent_id=None):

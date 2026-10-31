@@ -332,7 +332,8 @@ def test_balanced_policy_waits_for_an_independent_current_review(
     assert pending["decision"]["completion_allowed"] is False
     assert pending["decision"]["worker_may_claim_next"] is True
     assert STANDARD_REVIEWER in pending["decision"]["eligible_reviewer_ids"]
-    assert AUTHOR not in pending["decision"]["eligible_reviewer_ids"]
+    # Default: the author's model may review in its own fresh run.
+    assert AUTHOR in pending["decision"]["eligible_reviewer_ids"]
     reconcile_current_result(conn, task_id, **_paths(world))
     assert read_result(conn, task_id)["status"] == "review"
 
@@ -344,6 +345,18 @@ def test_balanced_policy_waits_for_an_independent_current_review(
     assert ready["decision"]["reason"] == decision_reason
     assert reconcile_current_result(conn, task_id, **_paths(world))["status"] == "done"
     assert read_result(conn, task_id)["result"]["accepted"] is True
+
+
+def test_author_model_ban_removes_author_from_eligible_reviewers(completion_world):
+    world = completion_world(mode="balanced")
+    conn, task_id = world["conn"], world["task_id"]
+    settings._persist(conn, settings.INDEPENDENCE_KEY, {"exclude_author_model": True},
+                      actor="completion-fixture")
+    conn.commit()
+    pending = evaluate_current_result(conn, task_id, **_paths(world))
+    assert pending["decision"]["state"] == "awaiting_review"
+    assert STANDARD_REVIEWER in pending["decision"]["eligible_reviewer_ids"]
+    assert AUTHOR not in pending["decision"]["eligible_reviewer_ids"]
 
 
 @pytest.mark.parametrize("hard_gate", ["none", "user", "github"])
@@ -1614,7 +1627,7 @@ def test_noncurrent_negative_review_cannot_veto_a_green_contract(
             review_evidence = {
                 "schema": "bach.worker-result-review-evidence.v1",
                 "availability": "available", "status": "findings",
-                "independent": True, "task_id": task_id,
+                "independent": True, "policy_eligible": True, "task_id": task_id,
                 "reviewer_id": TOP_REVIEWER,
                 "review_task_id": task_id + 100,
                 "result_id": record["result_id"],
@@ -1666,7 +1679,7 @@ def test_external_github_approval_does_not_override_negative_contract_finding(
             record["model_review"] = {
                 "schema": "bach.worker-result-review-evidence.v1",
                 "availability": "available", "status": review_status,
-                "independent": True, "task_id": task_id,
+                "independent": True, "policy_eligible": True, "task_id": task_id,
                 "reviewer_id": TOP_REVIEWER,
                 "policy_eligible": True,
                 "result_id": record["result_id"],

@@ -30,6 +30,8 @@ import json
 import re
 import threading
 import httpx
+import asyncio
+import hashlib
 
 import sqlite3
 
@@ -91,6 +93,7 @@ try:
     from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse, Response
 
     from fastapi.middleware.cors import CORSMiddleware
+    from starlette.websockets import WebSocketState
 
     from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr
 
@@ -649,20 +652,72 @@ class ConnectionManager:
     def __init__(self):
 
         self.active_connections: list[WebSocket] = []
+        # Bind only the credential actually selected from a browser cookie.
+        # Values are hashes; explicit bearer/subprotocol clients stay independent.
+        self._cookie_hashes: dict[WebSocket, str] = {}
 
     
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, *, cookie_token: str = ""):
 
         """Neue Verbindung akzeptieren."""
 
         offered = websocket.scope.get("subprotocols") or []
 
-        await websocket.accept(subprotocol=WS_PROTOCOL if WS_PROTOCOL in offered else None)
+        cookie_hash = self._cookie_hash(cookie_token) if cookie_token else None
+        if cookie_hash is not None:
+            # Register before accept can yield: revocation must also find an
+            # authenticated connection whose handshake is still settling.
+            self._cookie_hashes[websocket] = cookie_hash
+        try:
+            await websocket.accept(subprotocol=WS_PROTOCOL if WS_PROTOCOL in offered else None)
+            if cookie_hash is not None:
+                current = self._cookie_hashes.get(websocket) == cookie_hash
+                try:
+                    current = current and bool(validate_token(cookie_token))
+                except Exception:
+                    current = False
+                if not current:
+                    if websocket.application_state == WebSocketState.CONNECTED:
+                        await websocket.close(code=1008, reason="Browsersitzung beendet")
+                    self.disconnect(websocket)
+                    return False
+            self.active_connections.append(websocket)
+            print(f"[WEBSOCKET] Client verbunden. Aktive: {len(self.active_connections)}")
+            return True
+        except BaseException:
+            self.disconnect(websocket)
+            raise
 
-        self.active_connections.append(websocket)
+    @staticmethod
+    def _cookie_hash(token: str) -> str:
+        return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
 
-        print(f"[WEBSOCKET] Client verbunden. Aktive: {len(self.active_connections)}")
+    async def close_cookie_session(self, cookie_token: Optional[str]) -> bool:
+        """Stop future broadcasts, then confirm every matching transport close."""
+        if not cookie_token:
+            return True
+        cookie_hash = self._cookie_hash(cookie_token)
+        targets = [connection for connection, digest in list(self._cookie_hashes.items())
+                   if digest == cookie_hash]
+        for connection in targets:
+            if connection in self.active_connections:
+                self.active_connections.remove(connection)
+
+        async def close_transport(connection):
+            try:
+                if connection.client_state != WebSocketState.DISCONNECTED:
+                    await asyncio.wait_for(connection.close(
+                        code=1008, reason="Browsersitzung beendet"), timeout=2.0)
+            except Exception:
+                if connection.client_state != WebSocketState.DISCONNECTED:
+                    # Keep the hash association for an explicit retry; the
+                    # connection is already excluded from future broadcasts.
+                    return False
+            self.disconnect(connection)
+            return True
+
+        return all(await asyncio.gather(*(close_transport(connection) for connection in targets)))
 
     
 
@@ -673,6 +728,7 @@ class ConnectionManager:
         if websocket in self.active_connections:
 
             self.active_connections.remove(websocket)
+        self._cookie_hashes.pop(websocket, None)
 
         print(f"[WEBSOCKET] Client getrennt. Aktive: {len(self.active_connections)}")
 
@@ -684,7 +740,10 @@ class ConnectionManager:
 
         disconnected = []
 
-        for connection in self.active_connections:
+        for connection in list(self.active_connections):
+
+            if connection not in self.active_connections:
+                continue
 
             try:
 
@@ -1313,20 +1372,26 @@ app.add_middleware(NoCacheMiddleware)
 # ── Device-Token Authentication Middleware (Task #1499) ─────────
 try:
     from gui.device_auth import (
+        create_browser_session,
         create_device,
         has_active_devices,
         list_devices,
+        revoke_browser_session,
         revoke_device,
         validate_token,
+        BROWSER_SESSION_TTL_SECONDS,
     )
 except ImportError:
     try:
         from device_auth import (  # type: ignore
+            create_browser_session,
             create_device,
             has_active_devices,
             list_devices,
+            revoke_browser_session,
             revoke_device,
             validate_token,
+            BROWSER_SESSION_TTL_SECONDS,
         )
     except ImportError:
         import importlib.util
@@ -1334,11 +1399,14 @@ except ImportError:
         _spec = importlib.util.spec_from_file_location("device_auth", _devauth_path)
         _mod = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(_mod)
+        create_browser_session = _mod.create_browser_session
         create_device = _mod.create_device
         has_active_devices = _mod.has_active_devices
         list_devices = _mod.list_devices
+        revoke_browser_session = _mod.revoke_browser_session
         revoke_device = _mod.revoke_device
         validate_token = _mod.validate_token
+        BROWSER_SESSION_TTL_SECONDS = _mod.BROWSER_SESSION_TTL_SECONDS
 
 
 # ── Perimeter helpers shared by HTTP middleware and the WebSocket handshake ──
@@ -1496,6 +1564,13 @@ def websocket_device_token(websocket) -> str:
     return ""
 
 
+def websocket_cookie_token(websocket) -> str:
+    """Return the cookie only when header precedence actually selected it."""
+    if websocket.headers.get("authorization", "").strip().startswith("Bearer "):
+        return ""
+    return websocket.cookies.get("bach_device_token", "").strip()
+
+
 async def authorize_websocket(websocket) -> bool:
     """Handshake check; on failure the socket is closed BEFORE it is accepted."""
     try:
@@ -1603,6 +1678,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
     EXEMPT_API_PATHS = {
         "/api/health",
         "/api/devices/verify",
+        "/api/devices/session/logout",
         "/api/gui/backend-origin",
         "/api/gui/brand",
         "/api/gui/kit-manifest",
@@ -6699,9 +6775,26 @@ async def api_revoke_device(name: str):
     return {"ok": True, "name": name, "status": "revoked"}
 
 
+async def _revoke_browser_cookie_session(cookie_token: Optional[str]) -> bool:
+    revoke_browser_session(cookie_token)
+    return await ws_manager.close_cookie_session(cookie_token)
+
+
+def _browser_session_close_unconfirmed() -> JSONResponse:
+    return JSONResponse(status_code=503, content={
+        "ok": False, "authenticated": False, "valid": None,
+        "reason": "Browsersitzung konnte nicht bestätigt beendet werden. Bitte erneut versuchen.",
+    })
+
+
 @app.post("/api/devices/verify")
 async def api_verify_device(request: Request, payload: dict = Body(None)):
-    """Verify whether a token is valid and active."""
+    """Verify a browser token and bind it to an HttpOnly session cookie.
+
+    The plaintext token is accepted only for this explicit re-authentication
+    request.  It is never written to browser storage or returned by this
+    endpoint.  Native clients may continue using their Authorization header.
+    """
     token = None
     auth_header = request.headers.get("Authorization", "").strip()
     if auth_header.startswith("Bearer "):
@@ -6709,13 +6802,65 @@ async def api_verify_device(request: Request, payload: dict = Body(None)):
     elif payload and isinstance(payload, dict):
         token = payload.get("token")
 
-    if not token:
-        return {"valid": False, "reason": "No token provided"}
+    async def session_response(content: dict) -> JSONResponse:
+        if not await _revoke_browser_cookie_session(request.cookies.get("bach_device_token")):
+            return _browser_session_close_unconfirmed()
+        response = JSONResponse(content)
+        response.delete_cookie(
+            key="bach_device_token",
+            path="/",
+            secure=request.url.scheme == "https",
+            httponly=True,
+            samesite="strict",
+        )
+        return response
 
-    device = validate_token(token)
-    if device:
-        return {"valid": True, "device": device}
-    return {"valid": False, "reason": "Invalid or revoked token"}
+    if not token:
+        return await session_response({"valid": False, "reason": "No token provided"})
+
+    # Device tokens come from secrets.token_urlsafe(32); accept only their cookie-safe form.
+    if not isinstance(token, str) or re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None:
+        return await session_response({"valid": False, "reason": "Invalid or revoked token"})
+
+    browser_session = create_browser_session(token)
+    if browser_session:
+        session_token, device = browser_session
+        if not await _revoke_browser_cookie_session(request.cookies.get("bach_device_token")):
+            # This new secret has not been issued to the browser.
+            revoke_browser_session(session_token)
+            return _browser_session_close_unconfirmed()
+        response = JSONResponse({
+            "valid": True,
+            "device": device,
+            "session": "http-only-cookie",
+        })
+        response.set_cookie(
+            key="bach_device_token",
+            value=session_token,
+            max_age=BROWSER_SESSION_TTL_SECONDS,
+            path="/",
+            secure=request.url.scheme == "https",
+            httponly=True,
+            samesite="strict",
+        )
+        return response
+    return await session_response({"valid": False, "reason": "Invalid or revoked token"})
+
+
+@app.post("/api/devices/session/logout")
+async def api_logout_device(request: Request):
+    """Clear and revoke the browser's server-issued session."""
+    if not await _revoke_browser_cookie_session(request.cookies.get("bach_device_token")):
+        return _browser_session_close_unconfirmed()
+    response = JSONResponse({"ok": True, "authenticated": False})
+    response.delete_cookie(
+        key="bach_device_token",
+        path="/",
+        secure=request.url.scheme == "https",
+        httponly=True,
+        samesite="strict",
+    )
+    return response
 
 
 
@@ -11288,6 +11433,18 @@ async def prompt_library_page():
     return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
 
 
+@app.get("/governance", response_class=HTMLResponse)
+async def governance_page():
+    """Governance & Control als GUI-Seite: Erlaubnisse für Außenwirkung, Policy-Registry, Sperren, Hooks & Guards, Logs & Audit."""
+    astro_page = ASTRO_DIST_DIR / "governance.html"
+    if astro_page.is_file():
+        return FileResponse(astro_page)
+    template = TEMPLATES_DIR / "governance.html"
+    if template.exists():
+        return HTMLResponse(content=template.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Template governance.html fehlt</h1>", status_code=404)
+
+
 @app.get("/api/prompt-library")
 async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
     """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
@@ -15473,7 +15630,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
         return
 
-    await ws_manager.connect(websocket)
+    if not await ws_manager.connect(websocket, cookie_token=websocket_cookie_token(websocket)):
+        return
 
     try:
 
@@ -15482,6 +15640,9 @@ async def websocket_endpoint(websocket: WebSocket):
             # Auf Nachrichten vom Client warten (Keep-alive)
 
             data = await websocket.receive_text()
+
+            if websocket.application_state != WebSocketState.CONNECTED:
+                break
 
             # Optional: Client-Befehle verarbeiten
 

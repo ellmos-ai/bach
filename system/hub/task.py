@@ -126,6 +126,7 @@ class TaskHandler(BaseHandler):
             "reap": "Abgelaufene in_progress-Claims zuruecksetzen (bach task reap [--lease SECONDS])",
             "result-history": "Verifizierte Ergebnis-, Abnahme- und Korrekturhistorie anzeigen",
             "result-policy": "Aktuelle Abschlussentscheidung lesend prüfen (kein Taskabschluss)",
+            "review-backfill": "Review-Aufgaben für wartende Ergebnisse in kleinen Paketen anlegen",
             "result-correct": "Aktuelles Review-Ergebnis mit dedizierter Korrekturberechtigung zurückgeben",
             "sweep": "Alias fuer reap",
             "taskplan": "TASKPLAN-Bridge status/list/import",
@@ -205,6 +206,10 @@ class TaskHandler(BaseHandler):
             return self._result_history(args)
         elif operation == "result-policy":
             return self._result_policy(args)
+        elif operation == "review-backfill":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Review-Aufgabe angelegt"
+            return self._review_backfill(args)
         elif operation == "result-correct":
             if dry_run:
                 return True, "[DRY-RUN] Keine Korrekturanfrage gespeichert"
@@ -588,6 +593,35 @@ class TaskHandler(BaseHandler):
 
         due_text = f" (fällig: {due_date})" if due_date else ""
         return True, f"[OK] Task {task_id} erstellt: {title}{due_text}"
+
+    def _review_backfill(self, args: List[str]) -> Tuple[bool, str]:
+        """Local controller backfill: at most --limit new review tasks per run."""
+        usage = "Usage: bach task review-backfill [--limit 1..100] [--first <id,id,...>]"
+        limit, first, index = 10, (), 0
+        try:
+            while index < len(args):
+                if args[index] == "--limit" and index + 1 < len(args):
+                    limit = int(args[index + 1])
+                elif args[index] == "--first" and index + 1 < len(args):
+                    first = tuple(int(value) for value in args[index + 1].split(",") if value)
+                else:
+                    return False, usage
+                index += 2
+        except ValueError:
+            return False, usage
+        from ._services.worker_result_review import prepare_pending_review_tasks
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        try:
+            conn.row_factory = sqlite3.Row
+            prepared = prepare_pending_review_tasks(conn, limit=limit, first=first)
+        except ValueError:
+            return False, usage
+        finally:
+            conn.close()
+        if not prepared:
+            return True, "Keine neue Review-Aufgabe angelegt"
+        return True, "\n".join(f"Task #{item['target_task_id']}: Review-Aufgabe #{item['review_task_id']} angelegt"
+                               for item in prepared)
 
     def _result_policy(self, args: List[str]) -> Tuple[bool, str]:
         """Read the canonical completion decision without creating or changing a DB."""
@@ -2647,6 +2681,7 @@ Befehle:
   bach task taskplan import <id...>   BACH-Tasks idempotent spiegeln
   bach task show <id>                Task-Details
   bach task result-policy <id>       Abschlussentscheidung nur lesen [--json]
+  bach task review-backfill          Review-Aufgaben für wartende Ergebnisse [--limit N] [--first ID,ID]
   bach task delete <id> [id2...]     Task(s) loeschen
   bach task priority <id> <P1-P4>    Prioritaet aendern
   bach task claim <id> --by <name>   Task exklusiv beanspruchen [--lease SECONDS]

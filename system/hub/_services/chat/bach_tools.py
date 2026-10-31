@@ -1695,6 +1695,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if worker_task_binding is not None and args.get("handler") == "task":
                 try:
                     return worker_task_binding.execute_task_command(args.get("operation", ""), args.get("args", []))
+                except ValueError:
+                    return _tool_policy_denial("worker_context_denied", "BLOCKIERT: Taskbefehl für gebundene Task nicht freigegeben.")
                 except Exception:
                     return _tool_effect_unconfirmed()
             if not bach_app:

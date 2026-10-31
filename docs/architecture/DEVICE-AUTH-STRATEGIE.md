@@ -11,7 +11,18 @@ Dokumentation der Implementierung für individuelle, permanente Geräte-Tokens i
 - **Sichere Clientablage**:
   - Native Clients (macOS/Windows): Ablage im OS-Schlüsselbund (macOS Keychain bzw. Windows Credential Manager) über `hub.secrets_handler`.
   - Tray: Liest den Token automatisch aus dem Schlüsselbund (`bach_device_token_tray`) und authentifiziert API-Calls ohne Benutzereingabe.
-  - Browser: Speichert den Token dauerhaft in `localStorage` mit UI zum Anmelden und Abmelden ("Gerät abmelden").
+  - Browser: Eine ausdrückliche Tokenprüfung über `POST /api/devices/verify` setzt ein
+    `HttpOnly`-/`SameSite=Strict`-Cookie für die aktuelle Browsersitzung. Der Token
+    bleibt im Eingabefeld nur bis zur Prüfung und wird weder in `localStorage` noch
+    in einem JavaScript-Bundle abgelegt. `POST /api/devices/session/logout` löscht
+    das Cookie.
+
+  Browser können das OS-Schlüsselbund eines anderen Hosts nicht sicher selbst lesen.
+  Eine automatische Keyring→Browser-Brücke ist deshalb kein impliziter Fallback:
+  Hosttokens werden über einen ausdrücklich privaten Übergabekanal eingegeben und
+  anschließend nur als HttpOnly-Cookie verwendet. Ein Hostempfänger gilt erst nach
+  individueller CredentialStore-Provisionierung und unabhängigem API-Readback als
+  verifiziert; ein `.SYNC`- oder Direct-Beam-Eintrag ist kein Empfangsbeleg.
 
 ## 2. Datenbank-Schema
 
@@ -48,7 +59,10 @@ CREATE TABLE IF NOT EXISTS devices (
      - `GET /api/devices`: Liste registrierter Geräte.
      - `POST /api/devices`: Registrierung eines neuen Geräts.
      - `POST /api/devices/{name}/revoke`: Widerruf eines Geräts.
-     - `POST /api/devices/verify`: Validierung eines Tokens.
+     - `POST /api/devices/verify`: Validierung eines Tokens und Setzen der
+       Browser-Session als HttpOnly-Cookie; bei ungültigem Token wird ein altes
+       Browser-Cookie gelöscht.
+     - `POST /api/devices/session/logout`: Löschen der Browser-Session.
      - `GET /token-dashboard`: HTML-Oberfläche für Geräteverwaltung.
 
 3. **`system/hub/_services/chat/chat_tray.py` (Task #1500)**:
@@ -57,10 +71,11 @@ CREATE TABLE IF NOT EXISTS devices (
 
 4. **`system/gui/templates/token-dashboard.html` (Task #1501)**:
    - Statusanzeige für aktuellen Browser ("Angemeldet" / "Nicht angemeldet").
-   - "Gerät abmelden"-Funktion (löscht `localStorage`).
+   - "Gerät abmelden"-Funktion (löscht die serverseitige Browser-Session).
    - Einmalige Anzeige neu generierter Tokens mit Zwischenablage-Kopierfunktion.
    - Übersicht aller aktiven/gesperrten Geräte mit Sperren-Button.
-   - Globaler `window.fetch`-Wrapper, der den gespeicherten Token an alle API-Calls anhängt.
+   - Die Browseroberfläche liest keinen Gerätetoken aus `localStorage`; same-origin
+     API-Aufrufe senden das HttpOnly-Cookie automatisch.
 
 5. **`system/tests/test_device_auth.py` (Task #1502)**:
    - Vollständige Suite von 8 Unit- und Integrationstests (Isolation mit `MemoryKeyring` und temporärer SQLite-DB, FastAPI TestClient).

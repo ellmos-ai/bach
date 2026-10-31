@@ -261,6 +261,14 @@ def _resume_handoff_context(original, summary, *, background_task, has_tools,
     messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
     return messages, history
 
+
+def _resume_with_handoff_state(session, original, summary, **kwargs):
+    resumed, history = _resume_handoff_context(original, summary, **kwargs)
+    session.last_handoff_summary = summary
+    session.last_handoff_read_trail = kwargs.get("read_trail") or ""
+    return resumed, history
+
+
 try:
     from ellmos_chat import (
         ChatRuntime as _ModuleChatRuntime,
@@ -2024,7 +2032,7 @@ class ChatRuntime(_ModuleChatRuntime):
             return None
         if admission.get("capacity") != {"status": "unknown", "certification": "not_provided"}:
             return None
-        capacity_receipt = {key: receipt[key] for key in capacity_fields}
+        capacity_receipt = {key: receipt[key] for key in local_resource_reserve.CAPACITY_RECEIPT_FIELDS}
         try:
             observation = slots_config._persistent_core_capacity_observation(
                 capacity_receipt, worker=worker, expected_state=receipt["state"],
@@ -3161,7 +3169,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     summary = await self._handoff(
                         msgs, session, backend=selected_backend, model=selected_model, strict=True,
                     )
-                    resumed, history = _resume_handoff_context(
+                    resumed, history = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,
@@ -3218,7 +3226,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         summary = await self._handoff(
                             msgs, session, backend=selected_backend, model=selected_model,
                             strict=selected_model == "glm-5.3:cloud")
-                        msgs, session.messages = _resume_handoff_context(
+                        msgs, session.messages = _resume_with_handoff_state(session,
                             msgs, summary, background_task=background_task,
                             has_tools=session.allow_tools is True and bool(offered_tools),
                             round_num=round_num, max_rounds=max_rounds,
@@ -3335,7 +3343,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
                     )
-                    msgs, session.messages = _resume_handoff_context(
+                    msgs, session.messages = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
                         has_tools=session.allow_tools is True and bool(offered_tools),
                         round_num=round_num, max_rounds=max_rounds,
