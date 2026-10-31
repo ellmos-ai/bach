@@ -1634,6 +1634,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/chat",
         "/settings",
         "/system",
+        "/system/ocean",
         "/wiki",
         "/agents",
         "/agents/ati",
@@ -1656,6 +1657,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/persoenlich",
         "/routines",
         "/denkarium",
+        "/notizen",
         "/tokens",
         "/token-dashboard",
         "/tasks-board",
@@ -6029,7 +6031,11 @@ async def agenten_sessions_page():
 
 async def inbox_page():
 
-    """Inbox Seite."""
+    """Inbox Seite (Artefakte & Datenschutz Hub in Astro)."""
+
+    astro_inbox = ASTRO_DIST_DIR / "inbox.html"
+    if astro_inbox.is_file():
+        return FileResponse(astro_inbox)
 
     inbox_file = TEMPLATES_DIR / "inbox.html"
 
@@ -6045,13 +6051,11 @@ async def inbox_page():
 
 async def daemon_page(request: Request):
 
-    """Daemon Manager Seite; ?tab=chains liefert die gebaute Ketten-Seite, sonst das klassische Template."""
+    """Daemon & Dienste Seite; liefert die gemeinsame Astro-Ansicht (inkl. ?tab=chains)."""
 
-    tabs = request.query_params.getlist("tab")
-    if len(tabs) == 1 and tabs[0].lower() == "chains":
-        astro_page = ASTRO_DIST_DIR / "daemon.html"
-        if astro_page.is_file():
-            return FileResponse(astro_page)
+    astro_page = ASTRO_DIST_DIR / "daemon.html"
+    if astro_page.is_file():
+        return FileResponse(astro_page)
 
     daemon_file = TEMPLATES_DIR / "daemon.html"
 
@@ -6113,7 +6117,11 @@ async def reports_page():
 
 async def help_page():
 
-    """Help/Dokumentation Seite."""
+    """Help/Dokumentation & Architektur Seite."""
+
+    astro_help = ASTRO_DIST_DIR / "help.html"
+    if astro_help.is_file():
+        return FileResponse(astro_help)
 
     help_file = TEMPLATES_DIR / "help.html"
 
@@ -6132,6 +6140,10 @@ async def help_page():
 async def maintenance_page():
 
     """Wartungs-Board Seite."""
+
+    astro_maint = ASTRO_DIST_DIR / "maintenance.html"
+    if astro_maint.is_file():
+        return FileResponse(astro_maint)
 
     maintenance_file = TEMPLATES_DIR / "maintenance.html"
 
@@ -6259,6 +6271,15 @@ async def system_page(request: Request):
         ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
         if ocean_page.is_file():
             return FileResponse(ocean_page)
+    return await settings_page()
+
+
+@app.get("/system/ocean", response_class=HTMLResponse)
+async def system_ocean_page():
+    """Betrieb › Systeme (Ocean-Systemkarten & Sync-Netzbild)."""
+    ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
+    if ocean_page.is_file():
+        return FileResponse(ocean_page)
     return await settings_page()
 
 
@@ -6428,10 +6449,15 @@ async def routines_redirect():
 
 
 @app.get("/denkarium", response_class=HTMLResponse)
+@app.get("/notizen", response_class=HTMLResponse)
 
 async def denkarium_page():
 
-    """Denkarium — Logbuch und Gedanken-Sammler."""
+    """Notizen (Gedanken & Logbuch, vormals Denkarium)."""
+
+    astro_notes = ASTRO_DIST_DIR / "denkarium.html"
+    if astro_notes.is_file():
+        return FileResponse(astro_notes)
 
     f = TEMPLATES_DIR / "denkarium.html"
 
@@ -11065,7 +11091,11 @@ TOOLS_DIR = BACH_DIR / "tools"
 
 async def tools_page():
 
-    """Tools Dashboard (Task 100)."""
+    """Tools Dashboard / Werkzeuge an Modulen."""
+
+    astro_tools = ASTRO_DIST_DIR / "tools.html"
+    if astro_tools.is_file():
+        return FileResponse(astro_tools)
 
     template = TEMPLATES_DIR / "tools.html"
 
