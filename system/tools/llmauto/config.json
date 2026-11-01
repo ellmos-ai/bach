@@ -7,5 +7,27 @@
         "enabled": false,
         "bot_token_env": "LLMAUTO_TELEGRAM_BOT_TOKEN",
         "chat_id": ""
+    },
+    "doc_machine": {
+        "enabled": true,
+        "default_repair_dispatch": "local_taskplan",
+        "supported_dispatch_modes": [
+            "local_taskplan",
+            "local_marblerun_wishes",
+            "wishes_come_true_redirect"
+        ],
+        "wishes_redirect": {
+            "enabled": false,
+            "dev_feature_only": true,
+            "required_tier": "ocean-dev",
+            "target_mode": "local_marblerun_wishes",
+            "target_chain": "wishes-come-true-local",
+            "local_genie_repo_path": "C:\\_Local_DEV\\repos\\local-genie",
+            "wishes_come_true_repo_path": "C:\\_Local_DEV\\repos\\wishes-come-true",
+            "redirect_on_causes": [
+                "unintended_erosion",
+                "planned_terraforming_pending"
+            ]
+        }
     }
 }
