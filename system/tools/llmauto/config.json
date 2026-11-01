@@ -10,24 +10,87 @@
     },
     "doc_machine": {
         "enabled": true,
+        "execution_locality": "local_ocean_bach_only",
         "default_repair_dispatch": "local_taskplan",
-        "supported_dispatch_modes": [
+        "available_repair_dispatches": [
             "local_taskplan",
             "local_marblerun_wishes",
-            "wishes_come_true_redirect"
+            "local_genie_marblerun",
+            "gitlab_wishes_come_true",
+            "user_notification",
+            "wishes_redirect"
         ],
+        "decision_processing_rules": {
+            "transparent": true,
+            "configurable_per_trigger_and_cause": true,
+            "allow_branch_combinations": true,
+            "available_branches": [
+                "local_taskplan",
+                "local_genie_marblerun",
+                "gitlab_wishes_come_true",
+                "user_notification",
+                "local_doc_update"
+            ],
+            "cause_routing": {
+                "aligned": {
+                    "branches": [],
+                    "reason": "Doku-Claim und gemessene Realitaet stimmen ueberein (Beleg-Hash erneuern)."
+                },
+                "completed_terraforming_doc_lag": {
+                    "branches": ["local_doc_update"],
+                    "reason": "Ursache 3 (Erfolgtes Terraforming): Code wurde gewollt weiterentwickelt -> Doku & i18n lokal nachziehen."
+                },
+                "planned_terraforming_pending": {
+                    "branches": ["local_taskplan"],
+                    "reason": "Ursache 2 (Geplantes Terraforming): Vorauseilende Doku (SOLL) -> Taskstatus pruefen/Task anlegen und SOLL vs. IST trennen."
+                },
+                "unintended_erosion": {
+                    "branches": ["local_taskplan", "user_notification"],
+                    "reason": "Ursache 1 (Ungewollte Erosion/Drift): Code/Dienst ungewollt abgedriftet -> SOLL in Doku bewahren, P1-Reparatur-Task einstellen + Nutzer informieren."
+                }
+            },
+            "trigger_overrides": {
+                "manual_developer_wish": {
+                    "branches": ["local_genie_marblerun", "user_notification"],
+                    "reason": "Manueller Entwickler-Trigger startet lokale Genie/MarbleRun-Kette mit Rueckmeldung."
+                },
+                "ci_or_gitlab_issue": {
+                    "branches": ["gitlab_wishes_come_true", "local_taskplan"],
+                    "reason": "GitLab/CI-Trigger kombiniert Wishes-Come-True-Branch mit lokalem Task-Tracking."
+                }
+            }
+        },
+        "local_taskplan": {
+            "enabled": true,
+            "db_target": "bach_or_ocean_taskplan",
+            "assigned_worker": "background_worker",
+            "priority_unintended_erosion": "P1",
+            "priority_planned_terraforming": "P2"
+        },
+        "local_marblerun_wishes": {
+            "enabled": false,
+            "chain_name": "wishes-come-true-local",
+            "max_rounds": 3
+        },
+        "user_notification": {
+            "enabled": true,
+            "channels": ["gui_user_inbox", "telegram_optional"],
+            "notify_on_causes": ["unintended_erosion"]
+        },
         "wishes_redirect": {
             "enabled": false,
-            "dev_feature_only": true,
+            "feature_tier": "developer_only",
             "required_tier": "ocean-dev",
-            "target_mode": "local_marblerun_wishes",
+            "owner": "lukas",
+            "target_mode": "local_marblerun_chain",
             "target_chain": "wishes-come-true-local",
             "local_genie_repo_path": "C:\\_Local_DEV\\repos\\local-genie",
             "wishes_come_true_repo_path": "C:\\_Local_DEV\\repos\\wishes-come-true",
             "redirect_on_causes": [
                 "unintended_erosion",
                 "planned_terraforming_pending"
-            ]
+            ],
+            "allow_auto_fix_branch": true
         }
     }
 }

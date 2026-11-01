@@ -74,6 +74,110 @@ Whether you discover **BACH** or **[open-ocean](https://github.com/ellmos-ai/ope
    - **`ocean-dev`:** Developer, diagnostic, and build modules (`system-explorer`, `system-auditor`, `system-gap-master`, `ellmos-tests`, `module-gate`), which may be public but are optional for everyday users.
    - **`ocean-admin`:** The full operator/maintainer multi-host system (Mac Studio 24/7 leader, workstations, private research/domain modules, and `.SYNC` federation).
 
+## 🧭 Core Governance: Identity & Authority Flow, 3-Cause Documentation Model & Transparent Decision Processing Rules
+
+BACH and Ocean govern their autonomous behavior through **transparent, inspectable, and user-configurable Decision Processing Rules (`decision_processing_rules`)**. Every authority check, documentation diff classification, and action branch emits a deterministic audit receipt (`decision_rule_trace`).
+
+### 1. Identity, 3-Tier Authority Tunneling & Protection Against the "Authority Desert"
+
+- **Identity vs. Authority:** **Identity** is anchored to your OS account and registered device/channel (secrets stay invisible in your local keyring). **Authority** flows from the user through **Operator Channels** (Console, Telegram, System GUI Chat) down to dispatched subagents and background workers.
+- **Nature (Automatic Erosion & Drift) vs. Terraforming (Intentional Change):** Erosion and drift happen naturally through system usage (context compaction, session boundaries, code evolution) — no artificial decay cronjob expires valid decisions. Intentional edits to `DECISIONS.md`, `AKTUELLER-PLAN.md`, `USER.md`, or code are **Terraforming**: old entries are marked `superseded` directly in the source.
+- **3-Tier Authority Tunneling & Inward-First Cascade (`open-ocean/tools/escalation_ladder.py`):**
+  1. **Tier 1 — Semantic Authority Tunneling (~80% everyday reversible work):** Fast execution within an active Goal/Plan (`authority_ref`, `active_goal_or_plan_id`), preventing unnecessary user prompts (**`error_authority_desert` / Autoritätswüste**).
+  2. **Tier 2 — Deterministic Quote-Evidence Tunnel (~15% threshold transitions, `ellmos-authority-evidence`):** Derived from NemoFold's `evidence.py`; verifies in `< 1 ms` (`validate_quote_tunnel_evidence`) whether the `literal_quote` exists **verbatim** and non-`superseded` in the source (`DECISIONS.md`, `transcript.jsonl`, `AKTUELLER-PLAN.md`).
+  3. **Tier 3 — Hard Cryptographic & Lock Gates (~5% irreversible/high-risk actions):** Enforced via `lock_status.py` (`LOCK.user.*`), salted security question (`ellmos-installer`), and Ed25519 `capability-grant.v1` grants.
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. Origin: Nature (Drift) vs. Terraforming (Intentional)"]
+        U["User in Operator Channel\n(Console, Telegram, GUI Chat)"]:::userLayer
+        TF["Terraforming (Intentional Shaping)\nDECISIONS.md, Plan, USER.md, policy-registry"]:::userLayer
+        NAT["Nature & Tectonics (Automatic Drift)\nContext compaction, session shifts, time"]
+        U -->|"Shapes"| TF
+    end
+
+    subgraph L1["2. Cognitive System & 3-Tier Authority Tunneling"]
+        COG["Cognitive System + WorkflowHookers\n(Metacognition, Goals, Plans, Skills -> Want to Act)"]:::cogLayer
+        T1["Tier 1 (~80% Reversible)\nSemantic Authority Tunneling"]:::tunnelLayer
+        T2["Tier 2 (~15% Thresholds)\nDeterministic Quote Tunnel (<1ms Verbatim Check)"]:::tunnelLayer
+        T3["Tier 3 (~5% Irreversible)\nHard Gate (LOCK.user / Security Hash / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"Verbatim Match"| T2
+        NAT -.->|"Eroded Quote Fails"| T2
+    end
+
+    subgraph L2["3. Authority Checker, Inward-First Cascade & Reflection"]
+        CHK{"Authority Checker:\nAllowed to Act?"}:::tunnelLayer
+        ACT["YES: Do It Immediately"]:::cogLayer
+        ASK["NO: Inward-First Cascade\n1. Goal/Context -> 2. DECISIONS/USER.md\n-> 3. Parent Orchestrator -> 4. User Gate"]:::tunnelLayer
+        REF["After-Action Reflection & Learning\nPrevents Authority Desert (error_authority_desert)"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"Yes"| ACT
+        CHK -->|"No"| ASK
+        ASK -->|"Resolved"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. The 3-Cause Documentation Model & Configurable Decision Processing Rules (`system/tools/llmauto/config.json`)
+
+When automated documentation verification (`ellmos-doc-keeper` + NemoFold claim verification) detects a discrepancy between documentation (`system/docs/help/*.txt`, `README.md`, `SKILL.md`, GUI `/help`) and measured code reality, it **never blindly overwrites desired architecture**. Instead, `classify_doc_reality_diff()` classifies the diff into **3 deterministic causes**, and `resolve_doc_machine_dispatch()` routes it according to transparent, combinable **Decision Processing Rules**:
+
+| Cause (`classify_doc_reality_diff`) | Meaning | Transparent Action Branches (`selected_branches` — single or combined) |
+|---|---|---|
+| **1. `unintended_erosion`** *(Unintended Erosion / Drift)* | Documentation states the intended behavior, but code/runtime broke or drifted unintentionally. | **Keep SOLL in doc** + set IST warning + dispatch **`["local_taskplan", "user_notification"]`** (creates P1 repair task for background worker + notifies user; optionally combinable with `local_genie_marblerun` or `gitlab_wishes_come_true`). |
+| **2. `planned_terraforming_pending`** *(Planned Terraforming Pending)* | Documentation describes planned target architecture (SOLL) from Roadmap/`DECISIONS.md` not yet finished in code. | Check/adjust existing task or create P2 implementation task via **`["local_taskplan"]`** + cleanly separate **SOLL (with Task ID)** vs. **IST** in documentation. |
+| **3. `completed_terraforming_doc_lag`** *(Completed Terraforming, Doc Lag)* | Code was intentionally advanced (verified by commit/PR/`task_status=done`), documentation lags behind. | Execute **`["local_doc_update"]`**: automatically update `.txt` CLI help, `.md` docs, CLI/API references, and translations (`de/en/es/ja/ru/zh`). |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. Claim Verification & 3-Cause Classification"]
+        CLAIM["Extract Doc Claims (docs/help/*.txt, README, SKILL.md, GUI /help)\n& Probe Code/CLI/Test Reality"]:::probe
+        CLS{"3-Cause Classifier\n(classify_doc_reality_diff)"}:::probe
+        U1["Cause 1: Unintended Erosion\n(Code broke / drifted unintentionally)"]:::c1
+        U2["Cause 2: Planned Terraforming Pending\n(Doc is SOLL, code not finished yet)"]:::c2
+        U3["Cause 3: Completed Terraforming\n(Code intentionally updated, doc lags)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. Transparent & Combinable Decision Processing Rules (config.json)"]
+        RULE{"Decision Rule Engine\n(resolve_doc_machine_dispatch)\nBy Cause, Trigger, or Explicit Override"}:::probe
+        B1["Branch A: local_taskplan (Default)\nCreate P1/P2 repair or build task in local taskplan\nfor Background Worker (Buddha / Cloud)"]:::c3
+        B2["Branch B: local_genie_marblerun\nRun local MarbleRun chain\n(chains/wishes-come-true-local.json)"]:::c2
+        B3["Branch C: gitlab_wishes_come_true\nDeveloper feature (wishes_redirect in config.json)\nto local-genie / wishes-come-true"]:::probe
+        B4["Branch D: user_notification\nNotify operator via GUI Inbox / Telegram"]:::c1
+        B5["Branch E: local_doc_update\nUpdate .txt/.md docs, CLI/API refs & i18n"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"Combinable"| B1
+        RULE -->|"Combinable"| B2
+        RULE -->|"Combinable (ocean-dev)"| B3
+        RULE -->|"Combinable"| B4
+    end
+```
+
 ## Discovery Context
 
 BACH is best described as a **local-first LLM operating system**: a persistent Python/SQLite workbench for autonomous agents, structured memory, scheduler-driven automation, prompt chains, MCP server integration, and multilingual operator surfaces. It is not a chatbot wrapper, hosted agent SaaS, Bash unit-test framework, music project, or LangChain-style pipeline library.

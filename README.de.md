@@ -63,6 +63,110 @@ Egal ob du über eine Suche auf **BACH** oder auf **[open-ocean](https://github.
    - **`ocean-dev`:** Entwickler-, Diagnose- und Bau-Module (`system-explorer`, `system-auditor`, `system-gap-master`, `ellmos-tests`, `module-gate`), die durchaus öffentlich sein können, aber von normalen Nutzern nicht zwingend mitinstalliert werden.
    - **`ocean-admin`:** Das vollständige Betreiber-/Maintainer-Gesamtsystem (mit Mac Studio als 24/7-Leader, Workstations, unveröffentlichten privaten Fach-/Forschungsmodulen und `.SYNC`).
 
+## 🧭 Kern-Governance: Identität & Autoritätsfluss, 3-Ursachen-Dokumentationsmodell & Transparente Entscheidungsverarbeitungsregeln
+
+Das Verhalten von **BACH** und **Ocean** wird durch **transparente, einsehbare und vom Nutzer einstellbare Entscheidungsverarbeitungsregeln (`decision_processing_rules`)** bestimmt. Nichts geschieht als Blackbox: Jede Autoritätsprüfung, jede Klassifikation einer Doku-Abweichung und jeder ausgelöste Aktionszweig erzeugt eine nachvollziehbare Regelspur (`decision_rule_trace`).
+
+### 1. Identität, 3-Stufen-Autoritäts-Tunneling & Schutz vor der „Autoritätswüste“
+
+- **Identität vs. Autorität:** **Identität** entsteht durch Kontobesitz auf dem Gerät und die einmalige Registrierung von Gerät/Kanal (Geheimnisse liegen unsichtbar im lokalen Keyring). **Autorität** fließt vom Nutzer über **Operator-Kanäle** (Konsole, Telegram, System-GUI-Chat) zweckgebunden an beauftragte Subagenten und Hintergrund-Worker.
+- **Natur (Automatische Erosion & Drift) vs. Terraforming (Gewollte Formung):** Erosion und Drift entstehen von selbst durch die reale Systemnutzung (Kontext-Kompaktierung, Sitzungswechsel, Zeitverlauf) — es gibt keinen künstlichen Verfalls-Cronjob, der gültige Entscheidungen entwertet. Wenn wir `DECISIONS.md`, `AKTUELLER-PLAN.md`, `USER.md` oder Code bewusst ändern, ist das **Terraforming**: überholte Einträge werden direkt an der Quelle als `superseded` markiert.
+- **3-Stufen-Tunneling & Inward-First-Kaskade (`open-ocean/tools/escalation_ladder.py`):**
+  1. **Stufe 1 — Semantisches Authority-Tunneling (~80 % reversibler Alltag):** Schnelle Ausführung innerhalb eines aktiven Goals/Plans (`authority_ref`, `active_goal_or_plan_id`), verhindert unnötige Rückfragen trotz kontextgesichertem Userwillen (**Fehlerklasse `error_authority_desert` / Autoritätswüste**).
+  2. **Stufe 2 — Deterministischer Zitate-Tunnel (~15 % Schwellen-Übergänge, `ellmos-authority-evidence`):** Extrahiert aus NemoFold (`evidence.py`); prüft in `< 1 ms` (`validate_quote_tunnel_evidence`), ob das mitgelieferte `literal_quote` **wortwörtlich** und nicht-`superseded` in der Originalquelle (`DECISIONS.md`, `transcript.jsonl`, `AKTUELLER-PLAN.md`) steht.
+  3. **Stufe 3 — Harte Kryptografie- & Lock-Gates (~5 % irreversibel / Hochrisiko):** Durchgesetzt über `lock_status.py` (`LOCK.user.*`), gehashte Sicherheitsfrage (`ellmos-installer`) und Ed25519-`capability-grant.v1`-Zertifikate.
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. Ursprung: Natur (Erosion/Drift) vs. Terraforming (Gewollt)"]
+        U["Nutzer im Operator-Kanal\n(Konsole, Telegram, GUI-Chat)"]:::userLayer
+        TF["Terraforming (Gewollte Formung)\nDECISIONS.md, Plan, USER.md, policy-registry"]:::userLayer
+        NAT["Natur & Tektonik (Automatische Erosion)\nKontext-Kompaktierung, Sitzungswechsel, Zeit"]
+        U -->|"Formt aktiv"| TF
+    end
+
+    subgraph L1["2. Kognitives System & 3-Stufen-Autoritäts-Tunneling"]
+        COG["Kognitives System + WorkflowHookers\n(Metakognition, Goals, Pläne, Skills -> Want to Act)"]:::cogLayer
+        T1["Stufe 1 (~80% Reversibel)\nSemantic Authority Tunneling"]:::tunnelLayer
+        T2["Stufe 2 (~15% Schwellen)\nDeterministischer Zitate-Tunnel (<1ms Wörtlich-Check)"]:::tunnelLayer
+        T3["Stufe 3 (~5% Irreversibel)\nHartes Gate (LOCK.user / Sicherheits-Hash / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"Wörtlicher Abgleich"| T2
+        NAT -.->|"Erodiertes Zitat fällt durch"| T2
+    end
+
+    subgraph L2["3. Authority Checker, Inward-First-Kaskade & Reflexion"]
+        CHK{"Authority Checker:\nAre you allowed to act?"}:::tunnelLayer
+        ACT["JA: Sofort ausführen (Do It)"]:::cogLayer
+        ASK["NEIN: Inward-First-Kaskade (Ask There To Get)\n1. Goal/Kontext -> 2. DECISIONS/USER.md\n-> 3. Parent-Orchestrator -> 4. User-Gate"]:::tunnelLayer
+        REF["After-Action Reflection & Learning\nVerhindert Autoritätswüste (error_authority_desert)"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"Ja"| ACT
+        CHK -->|"Nein"| ASK
+        ASK -->|"Aufgelöst"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. Das 3-Ursachen-Dokumentationsmodell & Einstellbare Entscheidungsverarbeitungsregeln (`system/tools/llmauto/config.json`)
+
+Stellt die automatisierte Dokumentationsprüfung (`ellmos-doc-keeper` + NemoFold-Claim-Nachbelegung) eine Abweichung zwischen Doku (`system/docs/help/*.txt`, `README.md`, `SKILL.md`, GUI `/help`) und gemessener Realität fest, überschreibt sie **niemals blind gewollte SOLL-Architektur**. Stattdessen klassifiziert `classify_doc_reality_diff()` den Diff deterministisch in **3 Ursachen**, und `resolve_doc_machine_dispatch()` wählt anhand transparenter, frei kombinierbarer **Entscheidungsverarbeitungsregeln** die Aktionszweige (`selected_branches`):
+
+| Ursache (`classify_doc_reality_diff`) | Bedeutung | Transparente Aktionszweige (`selected_branches` — einzeln oder kombiniert einstellbar) |
+|---|---|---|
+| **1. `unintended_erosion`** *(Ungewollte Erosion / Drift)* | Doku beschreibt das richtige Verhalten, aber Code/Dienst ist ungewollt kaputtgegangen oder abgedriftet. | **SOLL in Doku bewahren** + IST-Warnhinweis setzen + Standard-Kombination **`["local_taskplan", "user_notification"]`** (stellt P1-Reparatur-Task für Hintergrund-Worker ein und benachrichtigt Nutzer; optional kombinierbar mit `local_genie_marblerun` oder `gitlab_wishes_come_true`). |
+| **2. `planned_terraforming_pending`** *(Fehlendes / geplantes Terraforming)* | Vorauseilende Doku: beschreibt gewolltes SOLL aus Plan/`DECISIONS.md`, das im Code noch nicht fertig ist. | Taskstatus in `taskplan` prüfen/anpassen bzw. P2-Umsetzungs-Task über **`["local_taskplan"]`** anlegen + in der Doku sauber als **SOLL (mit Task-ID)** vs. **IST** trennen. |
+| **3. `completed_terraforming_doc_lag`** *(Erfolgtes Terraforming mit lückenhafter Doku)* | Vorauseilender Code: wurde gewollt weiterentwickelt (Commit/PR/`task_status=done`), Doku hinkt hinterher. | Zweig **`["local_doc_update"]`**: zieht `.txt`-CLI-Help, `.md`-Doku, CLI/API-Referenzen und Übersetzungen (`de/en/es/ja/ru/zh`) automatisch lokal nach. |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. Stück-für-Stück-Claim-Prüfung & 3-Ursachen-Klassifikation"]
+        CLAIM["Doku-Claims extrahieren (docs/help/*.txt, README, SKILL.md, GUI /help)\n& gegen Code/CLI/Tests prüfen"]:::probe
+        CLS{"3-Ursachen-Klassifikator\n(classify_doc_reality_diff)"}:::probe
+        U1["Ursache 1: Ungewollte Erosion\n(Code/Dienst ungewollt kaputt/abgedriftet)"]:::c1
+        U2["Ursache 2: Geplantes Terraforming fehlt noch\n(Vorauseilende Doku = SOLL, Code noch offen)"]:::c2
+        U3["Ursache 3: Erfolgtes Terraforming\n(Code gewollt fertig, Doku hinkt hinterher)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. Transparente & Kombinierbare Entscheidungsverarbeitungsregeln (config.json)"]
+        RULE{"Entscheidungs-Regelwerk\n(resolve_doc_machine_dispatch)\nJe nach Ursache, Trigger oder Override"}:::probe
+        B1["Zweig A: local_taskplan (Standard)\nEinfache P1/P2-Reparatur-/Bau-Task im lokalen taskplan\nfür Hintergrund-Worker (Buddha / Cloud) einstellen"]:::c3
+        B2["Zweig B: local_genie_marblerun\nLokale MarbleRun-Staffette starten\n(chains/wishes-come-true-local.json)"]:::c2
+        B3["Zweig C: gitlab_wishes_come_true\nEntwickler-Feature (wishes_redirect in config.json)\nzu local-genie / wishes-come-true"]:::probe
+        B4["Zweig D: user_notification\nNutzerbenachrichtigung (GUI-Inbox / Telegram)"]:::c1
+        B5["Zweig E: local_doc_update\n.txt/.md-Doku, CLI/API-Referenz & i18n nachziehen"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"Einzeln / Kombination"| B1
+        RULE -->|"Einzeln / Kombination"| B2
+        RULE -->|"Einzeln / Kombination (ocean-dev)"| B3
+        RULE -->|"Einzeln / Kombination"| B4
+    end
+```
+
 ## Discovery-Kontext & Auffindbarkeit
 
 BACH wird am treffendsten als **Local-First LLM-Betriebssystem** beschrieben: eine persistente Python/SQLite-Werkbank für autonome Agenten, strukturiertes Gedächtnis, Scheduler-gesteuerte Automationen, Prompt-Ketten, MCP-Server-Integration und mehrsprachige Operator-Oberflächen. Es ist weder ein einfacher Chatbot-Wrapper noch ein gehostetes SaaS-Tool, Bash-Testframework, Musikprojekt oder eine reine LangChain-Pipeline-Bibliothek.
