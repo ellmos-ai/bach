@@ -1465,7 +1465,7 @@ def _prepare_bound_task_scope(binding, slot):
 
 
 _PRIOR_EFFECT_LIMIT = 20
-_PRIOR_EFFECT_PAGES = 50
+_PRIOR_EFFECT_PAGES = 250
 
 
 def _prior_effect_log(binding):
