@@ -25,6 +25,7 @@ description: >
 - 通过提供的 SSH 访问连接 Mac Studio；不要自行设置访问凭据。项目位于 `$BACH_ROOT`（Mac Studio 上为 `~/services/bach`），Python 使用其 venv。阅读 `AGENTS.md` 以及你所工作的子项目的指示。
 - **模式B（混合）** 是主动协作代理的常态。如果你只处理任务、不将 BACH 作为会话使用，**模式A（库）** 就已足够：下面的租约路径通过 lead 服务运行，无需启动会话。模式C（会话）仅在明确要求时使用。
 - 在第一个任务之前阅读当前计划 `Desktop\OCEAN\AKTUELLER-PLAN.md` 和 `MODUL-ZUORDNUNG.md`（构建位置）。
+
 ### 2. 查找空闲任务
 - **原生方式：** `TaskLeaseClient.task_candidates(limit=100, offset=…)`（读取所有页面，而不只第一页），随后用 `task_snapshot(task_id)` 获取完整描述。`bach task list` 仅用于查看同样的任务。
 - **选择规则：**
@@ -34,7 +35,7 @@ description: >
   4. 其他作者的评审与检验任务明确适合认领。
   5. 若任务依赖未决的用户决定或不符合你的能力：记下问题或原因（任务备注）并选下一个。绝不要为了能认领任务而更改规则或防护门。
 ### 3. 开始工作前先认领
-```python
+```
 import os, sys
 os.environ["BACH_NO_AUTO_MIGRATE"] = "1"
 sys.path.insert(0, os.path.join(os.environ["BACH_ROOT"], "system"))
@@ -343,13 +344,6 @@ from bach_api import (
     app,         # app().execute("handler", "operation", ["args"])
 )
 ```
-    # Plugin-API (Dynamische Erweiterung)
-    plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
-
-    # Raw-Zugriff (beliebiger Handler)
-    app,         # app().execute("handler", "operation", ["args"])
-)
-```
 
 ##### 何时使用哪种方式
 
@@ -391,6 +385,51 @@ from bach_api import (
 *仅在模式 B（混合）和 C（会话）中。模式 A 跳过本节。*
 
 ---
+
+### (1) 现在启动 BACH [B/C]
+
+**模式 C（会话/CLI）：**
+
+```bash
+cd system
+python bach.py --startup --partner=claude --mode=silent --watch
+```
+
+**模式 B（混合/API —— 推荐）：**
+
+```python
+from bach_api import session
+session.startup(partner="claude", mode="silent")
+```
+
+**适用于 Gemini：**
+
+```python
+# Modus B (API)
+session.startup(partner="gemini", mode="silent")
+# Modus C (CLI)
+# python bach.py --startup --partner=gemini --mode=silent --watch
+```
+
+---
+
+### (2) 系统：加载你的系统知识 [B/C]
+
+```bash
+bach help cli
+bach help bach_info
+bach help features
+bach help naming
+bach help guidelines
+bach help architecture
+# --> bach help injectors
+```
+
+或 API：`help.run("cli")`、`help.run("features")` 等。
+
+#### Handler 发现与搜索
+
+BACH 在 `hub/` 中有 113+ 个 Handler。**每个 Handler 都是一条 CLI 命令。** 要查找 Handler、工具、Skill 或帮助主题：
 
 ```bash
 # Fuzzy-Suche in Help-Themen (187+ Themen, Fuzzy-Match!)
@@ -734,48 +773,6 @@ bach help web_scrape
 
 ### 主题：自我扩展（包：SELF-EXTENSION）[B/C]
 
-*何时阅读：* 你缺少某项能力，或想扩展 BACH。
-
-```bash
-bach help self-extension
-bach help hooks
-bach help skills
-```
-
-**创建新能力（5 种类型）：**
-
-```bash
-bach help trash
-bach help migrate
-bach help distribution
-```
-
----
-
-### 主题：读取网页（包：WEB）
-
-*何时阅读：* 你需要抓取网页、提取内容或执行网页分析。
-
-```bash
-bach help web_parse
-bach help web_scrape
-```
-
-**两个 Handler，用于不同目的：**
-
-| Handler | 命令 | 目的 | 技术 |
-|---------|--------|-------|---------|
-| `web_parse` | `bach web-parse url/clean <url>` | **内容提取**（正文作为 Markdown） | trafilatura/html2text |
-| `web_scrape` | `bach web-scrape get/links/forms/headers <url>` | **结构分析**（链接、表单、Headers） | requests + Regex |
-
-**建议：** 文本内容用 `web-parse clean <url>`（移除 Nav/Header/Footer）。原始数据或链接列表用 `web-scrape`。两者都使用 HTTP 请求 —— JS 渲染的页面只会返回服务端 HTML 部分。
-
-**技能：** `skills/workflows/webseiten-lesen.md` —— 带决策树的详细流程。
-
----
-
-### 主题：自我扩展（包：SELF-EXTENSION）[B/C]
-
 *何时阅读：* 你缺少某项能力，或者想扩展 BACH。
 
 ```bash
@@ -834,7 +831,6 @@ plugins.load_plugin("plugins/mein-plugin/plugin.json")
 ```bash
 # CLI: Plugin-Verwaltung
 bach plugins list          # Geladene Plugins
-```
 bach plugins create name   # Plugin scaffolden
 bach plugins load pfad     # Plugin laden
 bach plugins unload name   # Plugin entladen
