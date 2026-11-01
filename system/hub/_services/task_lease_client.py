@@ -467,8 +467,9 @@ class TaskLeaseClient:
         if self._conn is not None:
             return self._conn
         path = self._db_path or Path.home() / ".bach" / "bach.db"
-        conn = sqlite3.connect(str(path), timeout=10.0)
+        conn = sqlite3.connect(str(path), timeout=30.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 30000")
         return conn
 
     def _task_policy_snapshot(self, task_id):

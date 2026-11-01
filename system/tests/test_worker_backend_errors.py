@@ -1537,9 +1537,10 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         conn.close()
 
 
-@pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60)])
+@pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60), (502, 60), (503, 60), (504, 60)])
 def test_openrouter_without_credit_rechecks_daily(status, expected):
     """User rule 25.10.2026: no credit pauses the worker and checks once a day, it does not end it."""
+    from hub._services.llm.backend_errors import cloud_call_retry_eligible
     control = importlib.import_module("hub._services.chat.telegram_chat")
     detail = {"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
               "status_code": status, "quota_exceeded": False}
@@ -1548,6 +1549,13 @@ def test_openrouter_without_credit_rechecks_daily(status, expected):
         retries=0, waited_seconds=0) == expected
     assert control._worker_backend_retry_delay({**slot, "type": "once"}, detail, model="openrouter/free",
         retries=0, waited_seconds=0) is None
+    if status in {502, 503, 504}:
+        assert cloud_call_retry_eligible(detail) is True
+    ollama_502 = {"provider": "ollama", "kind": "http_error", "status_code": 502, "quota_exceeded": False}
+    ollama_slot = {"backend": "ollama", "model": "glm-5.3:cloud", "type": "continuous"}
+    assert cloud_call_retry_eligible(ollama_502) is True
+    assert control._worker_backend_retry_delay(ollama_slot, ollama_502, model="glm-5.3:cloud",
+        retries=0, waited_seconds=0) == 60
 
 
 @pytest.mark.parametrize("scenario", ["malformed_arguments", "trace_start_failure"])

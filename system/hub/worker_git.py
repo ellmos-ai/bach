@@ -767,7 +767,7 @@ def start_task_worktree(
         has_registry = registry_path().exists()
         if repo_root is None and has_registry:
             binding, repo, public_record = _resolve_task_source(
-                task_id, require_current=not target_dir.exists())
+                task_id, require_current=False)
         elif repo_root is not None and has_registry:
             try:
                 binding = resolve_task_repository(task_id)
@@ -778,7 +778,7 @@ def start_task_worktree(
             if repo != _safe_source_clone_path(binding):
                 raise RuntimeError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
             public_record = _validate_pinned_source_clone(
-                repo, binding, require_current=not target_dir.exists())
+                repo, binding, require_current=False)
         else:
             repo = Path(repo_root or get_live_repo_root()).resolve(strict=True)
             public_record = _public_main_source(repo) if (task_code_capability and not target_dir.exists()) else None

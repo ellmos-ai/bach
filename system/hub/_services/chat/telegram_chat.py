@@ -2247,9 +2247,16 @@ def _worker_backend_retry_delay(
             and slot.get("type") in {"continuous", "persistent"}
             and error and (error["kind"] == "rate_limited"
                            or error.get("status_code") == 429
+                           or (error["provider"] == "ollama"
+                               and error["kind"] == "http_error"
+                               and error.get("status_code") in {502, 504})
+                           or (error["provider"] == "ollama"
+                               and error["kind"] == "http_error"
+                               and error.get("status_code") == 503
+                               and slot.get("backend") == "ollama-cloud")
                            or (error["provider"] == "openrouter"
                                and error["kind"] == "http_error"
-                               and error.get("status_code") == 504)
+                               and error.get("status_code") in {502, 503, 504})
                            # The free router picks a provider per request; a 404 there means
                            # no endpoint matched this call right now. Bounded to the router
                            # alias so a permanently wrong fixed model id still ends the worker.
@@ -2260,7 +2267,10 @@ def _worker_backend_retry_delay(
                                and slot.get("model") == "openrouter/free"
                                and slot.get("max_model_requests") is None)
                            or (error["provider"] == "openrouter"
-                               and error["kind"] == "connection_error"
+                               and error["kind"] in {
+                                   "connect_timeout", "read_timeout", "write_timeout",
+                                   "pool_timeout", "transport_timeout",
+                                   "connection_error", "transport_error"}
                                and slot.get("backend") == "openrouter"
                                and slot.get("max_model_requests") is None))):
         # Respect provider Retry-After, with bounded exponential request frequency.

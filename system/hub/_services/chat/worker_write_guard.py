@@ -118,7 +118,7 @@ def _paths(repo_root=None, worktrees_dir=None, *, task_id=None):
         target = root / f"task-{tid}"
         try:
             _, trusted_repo, _ = worker_git._resolve_task_source(
-                tid, require_current=(not target.exists() and repo_root is None))
+                tid, require_current=False)
             if repo_root is not None and _NATIVE_PATH(repo_root).expanduser().resolve(strict=True) != trusted_repo:
                 raise WorkerWriteGuardError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
             repo_path = trusted_repo
