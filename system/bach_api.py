@@ -86,11 +86,25 @@ if str(_SYSTEM_DIR) not in sys.path:
 
 # Lazy App-Singleton
 _app = None
+_IN_FACADE_GET_APP = False
 
 
 def get_app():
     """Gibt die App-Singleton-Instanz zurueck."""
-    global _app
+    global _app, _IN_FACADE_GET_APP
+    facade = sys.modules.get("bach_api")
+    if (
+        not _IN_FACADE_GET_APP
+        and facade is not None
+        and facade is not sys.modules.get(__name__)
+    ):
+        facade_get_app = getattr(facade, "get_app", None)
+        if callable(facade_get_app) and facade_get_app is not get_app:
+            _IN_FACADE_GET_APP = True
+            try:
+                return facade_get_app()
+            finally:
+                _IN_FACADE_GET_APP = False
     if _app is None:
         from core.app import App
         _app = App(_SYSTEM_DIR)
