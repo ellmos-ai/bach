@@ -101,7 +101,7 @@ session-checkpoint @ git+https://github.com/ellmos-ai/session-checkpoint.git@a0b
 ellmos-chat @ git+https://github.com/ellmos-ai/ellmos-chat.git@1a12f79aa2bb81487758458f9f94a524afc84906
 # Abschlussvertrag worker_policy + worker_selection (Task #2456): taskplan 0.7.3 liefert
 # taskplan.worker_policy (worker-review-policy.v1alpha1) und taskplan.worker_selection (worker-selection.v1).
-taskplan @ git+https://github.com/ellmos-ai/task-master.git@aeac1f3ef5f29bbf239faccae6a1061ed0cc046c
+taskplan @ git+https://github.com/ellmos-ai/task-master.git@450920023206cc2e1a2cee0cd93e225126e82cfd
 
 python-telegram-bot
 # Native agent/skill sequences: reviewed API v1 from the canonical MarbleRun module.

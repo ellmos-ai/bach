@@ -402,11 +402,11 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     except (WorkerWriteGuardError, TypeError, ValueError):
         return _scope_unavailable("invalid_task_id")
     try:
-        from hub._services.chat.worker_repo_registry import RepositoryBinding, resolve_task_repository
+        from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
         try:
             task_repo = resolve_task_repository(tid)
         except Exception:
-            if repo_root is None:
+            if repo_root is None and registry_path().exists():
                 raise
             task_repo = RepositoryBinding(
                 task_id=tid,

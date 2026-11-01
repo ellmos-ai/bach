@@ -1256,7 +1256,7 @@ class WorkerLeaseBinding:
                     and not self._trace_completion_tokens
                     and self._model_execution_pending is None)
 
-    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref=""):
+    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref="", needs_split=False):
         """Fence a Git result's content; review releases ownership without Done."""
         with self._lock:
             self.assert_active()
