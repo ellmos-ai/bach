@@ -981,19 +981,36 @@ class OpenRouterBackend(HermesBackend):
         return pinned_model
 
     async def chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
-        target_model = str(model or self.default_model).strip()
+        requested_model = str(model or self.default_model).strip()
+        target_model = requested_model
         if target_model == "openrouter/free":
             target_model = self._pin_free_router_model()
         if target_model != "openrouter/free":
             self._require_catalog_selection(target_model)
         self.last_resolved_model = target_model
-        return await super().chat(
+        result = await super().chat(
             messages=messages,
             tools=tools,
             think=think,
             model=target_model,
             retry_transient=retry_transient,
         )
+        if (
+            requested_model == "openrouter/free"
+            and target_model != "openrouter/free"
+            and isinstance(result, dict)
+            and result.get("error")
+        ):
+            self._free_pin_model = "openrouter/free"
+            self.last_resolved_model = "openrouter/free"
+            result = await super().chat(
+                messages=messages,
+                tools=tools,
+                think=think,
+                model="openrouter/free",
+                retry_transient=retry_transient,
+            )
+        return result
 
     def availability(
         self,

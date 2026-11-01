@@ -2262,7 +2262,7 @@ def _worker_backend_retry_delay(
                            # alias so a permanently wrong fixed model id still ends the worker.
                            or (error["provider"] == "openrouter"
                                and error["kind"] == "http_error"
-                               and error.get("status_code") == 404
+                               and error.get("status_code") in {403, 404}
                                and slot.get("backend") == "openrouter"
                                and slot.get("model") == "openrouter/free"
                                and slot.get("max_model_requests") is None)
