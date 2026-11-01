@@ -7,6 +7,7 @@ greifen muessen:
 (b) fehlender bzw. falsch signierter Capability-Grant
 (c) unvollstaendige Protokollierung beim Rollback (kein Loeschplan)
 (d) Gegenprobe: gueltiges Manifest + Profil + Grant ergibt ``verify() == True``
+(e) doppelte Komponentennamen in Manifest bzw. Profil
 """
 
 from __future__ import annotations
@@ -214,3 +215,36 @@ def test_gueltige_konfiguration_ergibt_verify_true(tmp_path: Path) -> None:
     with pytest.raises(InstallerVerificationError):
         plan_rollback(journal_path)
     assert component_names(load_manifest(installer.manifest_path)["components"]) == components
+
+
+def test_doppelte_manifestkomponente_bricht_ab(tmp_path: Path) -> None:
+    """(e) Ein doppelter Manifestname ist ein Manifestfehler, keine Mengengleichheit."""
+    installer = _setup(
+        tmp_path,
+        manifest_components=["alpha", "alpha", "beta"],
+        profile_components=["alpha", "beta"],
+    )
+
+    with pytest.raises(InstallerVerificationError) as excinfo:
+        installer.verify()
+
+    assert "doppelt im Manifest" in str(excinfo.value)
+    assert "alpha" in str(excinfo.value)
+    # Fail-closed: die Pruefung bricht vor jeder Mutation ab.
+    assert not installer.journal_path.exists()
+
+
+def test_doppelte_profilkomponente_bricht_ab(tmp_path: Path) -> None:
+    """(e) Eine doppelte Sollkomponente im Profil darf die Mengenpruefung nicht verwaessern."""
+    installer = _setup(
+        tmp_path,
+        manifest_components=["alpha", "beta"],
+        profile_components=["alpha", "beta", "beta"],
+    )
+
+    with pytest.raises(InstallerVerificationError) as excinfo:
+        installer.verify()
+
+    assert "Soll-Menge enthaelt Duplikate" in str(excinfo.value)
+    assert "beta" in str(excinfo.value)
+    assert not installer.journal_path.exists()
