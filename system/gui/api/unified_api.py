@@ -3946,3 +3946,88 @@ async def beseelen_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body
         return {"ok": True, "chain_id": chain_id, "steps": steps}
     finally:
         conn.close()
+
+
+@router.get("/ocean/stack-bindings")
+async def get_ocean_stack_bindings():
+    """Return live status of all Ocean modules consumed by BACH (`bach.ocean-stack-bindings.v1`)."""
+    from hub._services.ocean_stack_bridge import ocean_stack_status
+
+    return await asyncio.to_thread(ocean_stack_status)
+
+
+@router.get("/agenten/library")
+async def get_ocean_agent_library():
+    """Return the 3-tab Agent-Library catalog (`ellmos.agent-library.v1`) and flexible provider sockets (`ellmos.role-socket-catalog.v1`)."""
+    from hub._services.ocean_stack_bridge import (
+        discover_ocean_agent_library_templates,
+        get_ocean_role_routing_catalog,
+    )
+
+    def _load() -> Dict[str, Any]:
+        catalog = discover_ocean_agent_library_templates()
+        sockets = get_ocean_role_routing_catalog()
+        return {
+            **catalog,
+            "role_socket_catalog": sockets,
+        }
+
+    return await asyncio.to_thread(_load)
+
+
+@router.get("/governance/decision-rules")
+async def get_governance_decision_rules():
+    """Return transparent Decision Processing Rules (`doc_machine.config.json`) and 3-Tier Authority Tunnel metadata."""
+    from hub._services.ocean_stack_bridge import (
+        _load_module_from_repo,
+        load_escalation_ladder_module,
+    )
+
+    def _load() -> Dict[str, Any]:
+        hp_mod = _load_module_from_repo(
+            "ocean_help_projection",
+            "tools.help_projection",
+            "open-ocean",
+            "tools/help_projection.py",
+        )
+        esc_mod = load_escalation_ladder_module()
+        cfg = hp_mod.load_doc_machine_config()
+        return {
+            "schema": "ellmos.governance.decision-rules-and-tunneling.v1",
+            "authority_tunnel_tiers": list(getattr(esc_mod, "AUTHORITY_TUNNEL_TIERS", ())),
+            "inward_first_cascade": list(getattr(esc_mod, "INWARD_FIRST_AUTHORITY_CASCADE", ())),
+            "available_decision_branches": list(getattr(hp_mod, "AVAILABLE_DECISION_BRANCHES", ())),
+            "doc_machine_config": cfg,
+        }
+
+    return await asyncio.to_thread(_load)
+
+
+@router.get("/help/doc-audit")
+async def get_help_doc_audit():
+    """Return the latest 3-Cause Documentation Audit report (`ellmos.doc-keeper-audit-report.v1`) and CLI/API parity check."""
+    from hub._services.ocean_stack_bridge import _load_module_from_repo
+
+    def _load() -> Dict[str, Any]:
+        hp_mod = _load_module_from_repo(
+            "ocean_help_projection",
+            "tools.help_projection",
+            "open-ocean",
+            "tools/help_projection.py",
+        )
+        ocean_root = Path(hp_mod.__file__).resolve().parents[1]
+        report_path = ocean_root / "config" / "doc_audit_report.json"
+        if report_path.is_file():
+            try:
+                return json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+        parity = hp_mod.verify_cli_api_reference_parity(ocean_root)
+        return {
+            "schema": "ellmos.doc-keeper-audit-report.v1",
+            "chain_id": "doc-keeper-machine",
+            "parity_check": parity,
+            "findings": [],
+        }
+
+    return await asyncio.to_thread(_load)

@@ -90,7 +90,7 @@ def _load_module_from_repo(cache_key: str, import_name: str, repo_name: str, rel
         repo_dir = root / repo_name
         target = repo_dir / rel_file
         if target.is_file():
-            for p_str in (str(target.parent), str(repo_dir)):
+            for p_str in (str(target.parent), str(repo_dir / "src"), str(repo_dir)):
                 if p_str not in sys.path:
                     sys.path.insert(0, p_str)
             spec = importlib.util.spec_from_file_location(cache_key, target)
@@ -314,6 +314,29 @@ def discover_ocean_agent_library_templates(repos_root: str | Path | None = None)
 # 6. Ocean GUI API Adapter Delegation (#2075, #2094, #2097, #2098)
 # ---------------------------------------------------------------------------
 
+def load_doc_keeper_module() -> Any:
+    """Load the standalone `doc-keeper` module (`doc_keeper.extractor` / `doc_keeper.classifier`)."""
+    return _load_module_from_repo(
+        "ellmos_doc_keeper_extractor",
+        "doc_keeper.extractor",
+        "doc-keeper",
+        "src/doc_keeper/extractor.py",
+    )
+
+
+def audit_repository_with_doc_keeper(
+    repo_root: str | Path,
+    *,
+    config_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run the reusable 3-Cause Documentation Audit (`doc-keeper`) against any repository."""
+    mod = load_doc_keeper_module()
+    return mod.audit_repository(
+        Path(repo_root),
+        config_override=config_override,
+    )
+
+
 def ocean_software_inventory(releases_path: Path) -> dict[str, Any]:
     cap_mod = _load_module_from_repo(
         "ocean_capability_views",
@@ -362,6 +385,7 @@ def ocean_stack_status() -> dict[str, Any]:
         "ellmos-worker": ("tools.worker_worktree_policy", load_worker_worktree_policy_module),
         "review-policy": ("tools.task_result_review_policy", load_task_result_review_policy_module),
         "escalation-ladder": ("tools.escalation_ladder", load_escalation_ladder_module),
+        "doc-keeper": ("doc_keeper", load_doc_keeper_module),
     }
     bound: dict[str, Any] = {}
     for name, (mod_id, loader) in modules.items():
