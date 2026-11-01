@@ -102,6 +102,14 @@ class LeaseSelfCheckRequiredError(LeaseProtocolError):
                     "einen echten Selbstcheck abgeben; Teilstand mit update(status='pending') zurückgeben.")
 
 
+class LeaseRequestRejectedError(LeaseProtocolError):
+    """The lease service validated the request and rejected it before applying anything."""
+
+    user_message = ("Taskoperation abgelehnt, nichts geändert: Argumente ungültig. Teilaufgaben brauchen title; "
+                    "description, priority, category, assigned_to und depends_on sind Text, depends_on nennt "
+                    "bestehende Task-IDs. Argumente korrigieren und erneut aufrufen.")
+
+
 class LeaseDeniedError(LeaseError):
     """Lease wurde von der Authority abgelehnt (HTTP 409)."""
 
@@ -462,6 +470,22 @@ class TaskLeaseClient:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _task_policy_snapshot(self, task_id):
+        """Canonical persisted policy at the same task authority, no ensure_schema."""
+        _identity(task_id)
+        if self.mode == "remote":
+            status, data = self._http_request("GET", f"/api/tasks/{task_id}/worker-policy")
+            if status != 200:
+                self._raise_denied(task_id, data)
+            return data
+        from .worker_policy_settings import read_task_policy
+        conn = self._get_local_connection()
+        try:
+            return read_task_policy(task_id, conn=conn)
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _model_execution_call(self, operation, binding, *args, **kwargs):
         """Private controller path; HTTP workers cannot self-attest model calls."""
         if self.mode != "local" or getattr(binding, "_client", None) is not self:
@@ -482,10 +506,13 @@ class TaskLeaseClient:
             kwargs["route_sha256"] = route_sha256
         return self._model_execution_call("start_execution", binding, **kwargs)
 
-    def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None):
+    def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None,
+                                failure=None):
         kwargs = {"result": result, "failed": failed}
         if route_sha256 is not None:
             kwargs["route_sha256"] = route_sha256
+        if failure is not None:
+            kwargs["failure"] = failure
         return self._model_execution_call("finish_execution", binding, handle, **kwargs)
 
     def _link_model_execution(self, binding, handle):
@@ -740,7 +767,10 @@ class TaskLeaseClient:
                 status, data = result.http_status, result.payload
             except LeaseSelfCheckRequired:
                 raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message) from None
-            except (LeaseValidationError, TaskNotFound):
+            except LeaseValidationError:
+                # Validation runs before the transaction or inside one that is rolled back: nothing was applied.
+                raise LeaseRequestRejectedError(LeaseRequestRejectedError.user_message) from None
+            except TaskNotFound:
                 raise LeaseProtocolError("Ungültige Lease-Anfrage oder Task fehlt") from None
             finally:
                 if self._conn is None:
@@ -969,6 +999,58 @@ class TaskLeaseClient:
             raise LeaseProtocolError("Unerwarteter Result-Historiencursor")
         return data
 
+    def legacy_review_reopen_eligibility(self, task_id, *, operator_token):
+        """Observe the existing personal reopen guards; this never reopens a task."""
+        _identity(task_id)
+        if type(operator_token) is not str or not operator_token.strip():
+            raise LeaseProtocolError("Result-Operator-Token ist ungültig")
+        if self.mode == "remote":
+            status, data = self._http_request(
+                "GET", f"/api/tasks/{task_id}/legacy-review/eligibility",
+                headers={"X-BACH-Result-Operator": operator_token})
+            if status != 200:
+                detail = data.get("detail") if isinstance(data, dict) else None
+                raise TaskResultOperationError(
+                    status, detail.get("code", "denied") if isinstance(detail, dict) else "denied",
+                    detail.get("message", "Eignungsprüfung abgelehnt") if isinstance(detail, dict)
+                    else "Eignungsprüfung abgelehnt")
+        else:
+            from .legacy_review_reopen import legacy_review_reopen_eligibility
+            conn = self._get_local_connection()
+            try:
+                data = legacy_review_reopen_eligibility(conn, task_id, operator_token=operator_token)
+            finally:
+                if self._conn is None:
+                    conn.close()
+        checks = data.get("checks") if isinstance(data, dict) else None
+        blockers = {
+            "correction_request_reference", "inline_result", "review_task_source", "worker_result",
+            "result_correction", "review_intent", "model_review", "legacy_result",
+            "malformed_release_audit", "release_result_or_note", "result_history",
+        }
+        if (not isinstance(data, dict)
+                or data.get("schema") != "bach.legacy-review-reopen-eligibility.v1"
+                or data.get("availability") != "available"
+                or type(data.get("task_id")) is not int or data["task_id"] != task_id
+                or type(data.get("eligible")) is not bool
+                or type(data.get("status")) is not str or not data["status"]
+                or not isinstance(checks, dict)
+                or set(checks) != {"status_review", "lease_claim_free", "result_intent_history_clear"}
+                or any(type(value) is not bool for value in checks.values())
+                or data["eligible"] != all(checks.values())
+                or checks["status_review"] != (data["status"] == "review")
+                or "result_intent_history_blocker" not in data
+                or checks["result_intent_history_clear"] != (data.get("result_intent_history_blocker") is None)
+                or (data.get("result_intent_history_blocker") is not None
+                    and (type(data["result_intent_history_blocker"]) is not str
+                         or data["result_intent_history_blocker"] not in blockers))
+                or any(type(data.get(key)) is not int or data[key] < 0
+                       for key in ["status_revision", "history_revision", "lease_fence"])
+                or data.get("write_rechecks_required") is not True):
+            raise LeaseProtocolError("Kanonische Wiederaufnahme-Eignung nicht bestätigt")
+        _version(data.get("task_version"), required=True)
+        return data
+
     def request_result_correction(self, task_id, payload, *, operator_token):
         _identity(task_id)
         if not isinstance(payload, dict) or not isinstance(operator_token, str) or not operator_token.strip():
@@ -1033,7 +1115,7 @@ class TaskLeaseClient:
                              "WHERE r.review_task_id=tasks.id)"
                 total = conn.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}").fetchone()[0]
                 order = ("CASE UPPER(TRIM(priority)) "
-                         "WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
+                         "WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN '1' THEN 1 WHEN 'HIGH' THEN 1 WHEN 'HOCH' THEN 1 WHEN 'KRITISCH' THEN 1 "
                          "WHEN 'P2' THEN 2 WHEN '2' THEN 2 WHEN 'MEDIUM' THEN 2 WHEN 'MITTEL' THEN 2 WHEN 'WICHTIG' THEN 2 "
                          "WHEN 'P3' THEN 3 WHEN '3' THEN 3 WHEN 'LOW' THEN 3 WHEN 'NIEDRIG' THEN 3 WHEN 'NORMAL' THEN 3 "
                          "WHEN 'P4' THEN 4 WHEN '4' THEN 4 WHEN 'MINIMAL' THEN 4 ELSE 5 END, "

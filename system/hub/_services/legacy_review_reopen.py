@@ -32,27 +32,27 @@ def _has_row(conn: sqlite3.Connection, table: str, where: str, params: tuple) ->
             is not None)
 
 
-def _no_result_or_intent(conn: sqlite3.Connection, task_id: int, task: dict) -> bool:
+def _result_or_intent_blocker(conn: sqlite3.Connection, task_id: int, task: dict) -> str | None:
     # Never reinterpret a lost result row, an inline legacy result, or an old
     # correction as a fresh task. All reads occur in the same writer snapshot.
     if task.get("result_correction_request_id") is not None:
-        return False
+        return "correction_request_reference"
     if "result" in task and task["result"] is not None:
-        return False
+        return "inline_result"
     if str(task.get("source") or "").startswith(_REVIEW_SOURCE):
-        return False
+        return "review_task_source"
     if _has_row(conn, "worker_task_results", "task_id=?", (task_id,)):
-        return False
+        return "worker_result"
     if _has_row(conn, "task_result_corrections", "task_id=?", (task_id,)):
-        return False
+        return "result_correction"
     if _has_row(conn, "worker_result_review_intents",
                 "review_task_id=? OR target_task_id=?", (task_id, task_id)):
-        return False
+        return "review_intent"
     if _has_row(conn, "worker_result_model_reviews",
                 "review_task_id=? OR target_task_id=?", (task_id, task_id)):
-        return False
+        return "model_review"
     if _legacy_result(conn, task_id) is not None:
-        return False
+        return "legacy_result"
     # A deleted result row, an external result reference, an old release note,
     # or a rejected late submission must not downgrade to "no result".
     # Malformed audit data also denies.
@@ -62,17 +62,77 @@ def _no_result_or_intent(conn: sqlite3.Connection, task_id: int, task: dict) -> 
         try:
             detail = json.loads(raw)
         except (TypeError, ValueError):
-            return False
+            return "malformed_release_audit"
         if not isinstance(detail, dict):
-            return False
+            return "malformed_release_audit"
         if detail.get("result_ref") or detail.get("note"):
-            return False
-    return not _has_row(
+            return "release_result_or_note"
+    if _has_row(
         conn, "task_history",
         "task_id=? AND (action LIKE 'result_%' OR action LIKE 'worker_result_%' "
         "OR action='worker_completion_decision' OR action='late_result')",
         (task_id,),
-    )
+    ):
+        return "result_history"
+    return None
+
+
+def _no_result_or_intent(conn: sqlite3.Connection, task_id: int, task: dict) -> bool:
+    return _result_or_intent_blocker(conn, task_id, task) is None
+
+
+def legacy_review_reopen_eligibility(conn: sqlite3.Connection, task_id: int, *,
+                                     operator_token: str) -> dict:
+    """Read the existing reopen predicates in one consistent, non-writing snapshot.
+
+    This is an observation, never an authorization for a later write. The
+    existing reopen owner still rechecks permissions, task CAS and every guard.
+    Blocker codes disclose classes only, never result or intent contents.
+    """
+    if type(task_id) is not int or task_id <= 0:
+        raise ValueError("Ungültige Task-ID")
+    if conn.in_transaction:
+        raise ResultConflict("Eignungsprüfung benötigt eine eigene Lesetransaktion")
+    device_id = _correction_operator_device_id(conn, operator_token)
+    if device_id is None:
+        raise ResultPermissionDenied("Persönliche Korrekturberechtigung fehlt oder wurde widerrufen")
+    conn.execute("BEGIN")
+    try:
+        if _correction_operator_device_id(conn, operator_token) != device_id:
+            raise ResultPermissionDenied("Persönliche Korrekturberechtigung wurde widerrufen")
+        if not (_table_exists(conn, "tasks") and _table_exists(conn, "task_history")):
+            raise ResultConflict("Kanonischer Task- oder Auditstore fehlt")
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        if not {"id", "status", *_CLEARED_ON_RELEASE} <= columns:
+            raise ResultConflict("Task-Lease-Schema ist unvollständig")
+        task = _dict_row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        if task is None:
+            raise ResultConflict("Aufgabe nicht vorhanden; neu laden")
+        blocker = _result_or_intent_blocker(conn, task_id, task)
+        checks = {
+            "status_review": task["status"] == "review",
+            "lease_claim_free": all(task.get(name) in (None, "") for name in _CLEARED_ON_RELEASE),
+            "result_intent_history_clear": blocker is None,
+        }
+        history_revision = conn.execute(
+            "SELECT COALESCE(MAX(id),0) FROM task_history WHERE task_id=?", (task_id,),
+        ).fetchone()[0]
+        lease_fence = task.get("claim_fence")
+        if type(lease_fence) is not int or lease_fence < 0 or type(history_revision) is not int:
+            raise ResultConflict("Lease- oder Auditrevision ist nicht bestätigt")
+        return {
+            "schema": "bach.legacy-review-reopen-eligibility.v1",
+            "availability": "available", "task_id": task_id,
+            "task_version": task_content_version(task),
+            "status_revision": _status_revision(conn, task_id),
+            "history_revision": history_revision, "lease_fence": lease_fence,
+            "status": task["status"], "eligible": all(checks.values()),
+            "checks": checks, "result_intent_history_blocker": blocker,
+            "write_rechecks_required": True,
+        }
+    finally:
+        if conn.in_transaction:
+            conn.rollback()
 
 
 def reopen_legacy_review(conn: sqlite3.Connection, task_id: int, *,
