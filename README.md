@@ -443,13 +443,54 @@ Full GTD system with prioritization, deadlines, tags, and context tracking.
 ### 2. Knowledge System
 Structured memory system with Facts, Lessons, and automatic consolidation (6 memory types, 210+ DB tables).
 
-### 3. Agent Framework
-11 Boss agents orchestrate 22 experts for complex tasks. The Agent CLI allows direct starting, stopping, and listing of agents via `bach agent`, and now also supports prelaunch steering queues, cooperative pause requests, and explicit safe-checkpoint acknowledgements via `bach agent checkpoint`. Queued hints are injected into the generated session `CLAUDE.md` at launch, `OPERATOR_NOTES.md` mirrors steering, pause, and checkpoint state, and live JSON status surfaces expose the nested `operator_control` snapshot for dashboards.
+### 3. Agent Framework — Ocean Roles, Dual Routing & Flexible Provider Sockets (`ellmos.role-socket-catalog.v1`)
+In the Ocean/BACH architecture, the proven BACH **Boss Agents (Coordinators)** and **Domain Experts** remain fully preserved while operating as **provider-independent Ocean Roles (`roles[]`)** bound to **flexible provider sockets (`model_sockets` via `clutch` + `agents-heart`)**:
+
+- **Dual Routing (Semantic + Deterministic):**
+  - **Semantic Routing:** Umbrella Skills (`projekt-pipeline-umbrella`, `therapie-umbrella`, `selbstmanagement`, etc.) and `semantic-persona-routing` (`persona_router.py`) dynamically route tasks and activate the matching skill bundle and persona context.
+  - **Deterministic Routing:** `ellmos-controlcenter-mcp` (`controlcenter_resolve_semantic_route`, `controlcenter_switch_profile`, `controlcenter_find_skill`) provides zero-hallucination, rule-bound routing and profile switching.
+- **Flexible Provider Sockets (`reasoning_coordinator`, `domain_specialist`, `fast_worker`):** Roles are never hardcoded to a single vendor. Each role plugs into a standardized socket that resolves at runtime to **Claude (`claude`)**, **OpenAI/Codex (`codex`)**, **Gemini/Antigravity (`agy`)**, **Kimi (`kimi`)**, **local Ollama (`ollama`)**, or **OpenRouter (`openrouter`)**.
+- **3-Tab Agent Library (`/agenten/bibliothek`, `ellmos.agent-library.v1`):** `discover_ocean_agent_library_templates()` automatically populates the GUI & CLI Agent Library from both the BACH Coordinator/Expert catalog (`ati`, `bueroassistent`, `finanz-assistent`, `gesundheitsassistent`, `persoenlicher-assistent`, `produktivitaet` + 22 experts) and the **17 explicit module roles (`roles[]`)** declared across 9 Ocean module repositories (`task-master`, `ticket-master`, `MarbleRun`, `system-auditor`, `compare-race`, `ellmos-installer`, `foerderplaner`, `ai-media-editor`, `clip-storyboard-director`).
+- **Operator Controls:** `bach agent start/stop/list/pause/resume/checkpoint/steer` manages live runs, prelaunch steering (`OPERATOR_NOTES.md`), and safe-checkpoint acknowledgements.
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>Illustration shows BACH's five original boss agents: ati, officeassistant, finance-assistant, health-assistant, personal-assistant. The current system ships 11 boss agents and 22 experts.</i>
+  <i>Illustration shows BACH's original coordinator roles (ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent), now operating on flexible Ocean provider sockets alongside 17 module-manifest roles.</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. Dual Routing Layer (Semantic vs. Deterministic)"]
+        SEM["Semantic Routing
+Umbrella Skills (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["Deterministic Routing
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. Ocean Role & 3-Tab Agent Library (ellmos.agent-library.v1)"]
+        COORD["6 Coordinator Roles (formerly BACH Bosses)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["22+ Domain Experts & 17 Module Roles (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. Flexible Provider Sockets (model_sockets + clutch + agents-heart)"]
+        SOCK["Standardized Model Sockets
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["Pluggable LLM Providers
+Claude | Codex/GPT | Gemini/AGY | Kimi | Local Ollama | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. Prompt System
 Central management of prompt templates with board collections and full versioning (`bach prompt`).

@@ -407,13 +407,54 @@ Vollständiges GTD-System mit Priorisierung, Fristen, Tags und Kontextverfolgung
 ### 2. Wissenssystem
 Strukturiertes Gedächtnis mit Facts, Lessons und automatischer Konsolidierung (sechs Gedächtnistypen, mehr als 210 Datenbanktabellen).
 
-### 3. Agenten-Framework
-Elf Boss-Agenten koordinieren 22 Experten für komplexe Aufgaben. Über die Agenten-CLI lassen sich Agenten mit `bach agent` direkt starten, stoppen und auflisten. Zusätzlich unterstützt sie jetzt Steuerungshinweise vor dem Start, kooperative Pausenanforderungen und ausdrückliche Bestätigungen sicherer Checkpoints über `bach agent checkpoint`. Vorgemerkte Hinweise werden beim Start in die erzeugte Session-`CLAUDE.md` übernommen; `OPERATOR_NOTES.md` spiegelt Steuerungs-, Pausen- und Checkpoint-Zustand. Live-JSON-Statusoberflächen stellen den verschachtelten `operator_control`-Snapshot für Dashboards bereit.
+### 3. Agenten-Framework — Ocean-Rollen, Dual-Routing & Flexible Anbieter-Sockel (`ellmos.role-socket-catalog.v1`)
+In der gemeinsamen Ocean/BACH-Architektur bleiben die bewährten BACH-**Boss-Agenten (Koordinatoren)** und **Domänen-Experten** vollständig erhalten, arbeiten jedoch als **anbieterunabhängige Ocean-Rollen (`roles[]`)** auf einem **flexiblen Anbieter-Sockel (`model_sockets` über `clutch` + `agents-heart`)**:
+
+- **Duales Routing (Semantisch + Deterministisch):**
+  - **Semantisches Routing:** Umbrella-Skills (`projekt-pipeline-umbrella`, `therapie-umbrella`, `selbstmanagement` usw.) und `semantic-persona-routing` (`persona_router.py`) routen Anfragen kontextsensitiv und aktivieren das passende Skill-Set samt Rollen-Persona.
+  - **Deterministisches Routing:** `ellmos-controlcenter-mcp` (`controlcenter_resolve_semantic_route`, `controlcenter_switch_profile`, `controlcenter_find_skill`) übernimmt das regelgebundene, halluzinationsfreie Routing und Umschalten von Werkzeugprofilen.
+- **Flexibler Anbieter-Sockel (`reasoning_coordinator`, `domain_specialist`, `fast_worker`):** Keine Rolle ist mehr starr an einen einzelnen LLM-Anbieter gekoppelt. Jede Rolle sitzt auf einem standardisierten Sockel, der zur Laufzeit wahlweise mit **Claude (`claude`)**, **OpenAI/Codex (`codex`)**, **Gemini/Antigravity (`agy`)**, **Kimi (`kimi`)**, **lokalem Ollama (`ollama`)** oder **OpenRouter (`openrouter`)** bestückt wird.
+- **3-Tab-Agenten-Bibliothek (`/agenten/bibliothek`, `ellmos.agent-library.v1`):** `discover_ocean_agent_library_templates()` speist sowohl die BACH-Koordinatoren (`ati`, `bueroassistent`, `finanz-assistent`, `gesundheitsassistent`, `persoenlicher-assistent`, `produktivitaet`) und 22+ Domänen-Experten als auch die **17 expliziten Modul-Rollen (`roles[]`)** aus 9 Ocean-Modul-Repositories (`task-master`, `ticket-master`, `MarbleRun`, `system-auditor`, `compare-race`, `ellmos-installer`, `foerderplaner`, `ai-media-editor`, `clip-storyboard-director`) direkt als Vorlagen in die Bibliothek ein.
+- **Operator-Steuerung:** Über `bach agent start/stop/list/pause/resume/checkpoint/steer` lassen sich Agenten direkt steuern, vor dem Start mit Hinweisen (`OPERATOR_NOTES.md`) versorgen und an sicheren Checkpoints bestätigen.
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>Illustration zeigt die fünf ursprünglichen Boss-Agenten: ati, officeassistant, finance-assistant, health-assistant und personal-assistant. Das aktuelle System enthält 11 Boss-Agenten und 22 Experten.</i>
+  <i>Illustration zeigt die ursprünglichen BACH-Koordinatoren (ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent), die im Ocean-System auf flexiblen Anbieter-Sockeln gemeinsam mit 17 Modul-Manifest-Rollen laufen.</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. Duales Routing (Semantisch vs. Deterministisch)"]
+        SEM["Semantisches Routing
+Umbrella-Skills (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["Deterministisches Routing
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. Ocean-Rollen & 3-Tab-Agenten-Bibliothek (ellmos.agent-library.v1)"]
+        COORD["6 Koordinatoren-Rollen (ehem. BACH-Bosse)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["22+ Domänen-Experten & 17 Modul-Rollen (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. Flexibler Anbieter-Sockel (model_sockets + clutch + agents-heart)"]
+        SOCK["Standardisierte Modell-Sockel
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["Austauschbare LLM-Anbieter
+Claude | Codex/GPT | Gemini/AGY | Kimi | Lokales Ollama | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. Prompt-System
 Zentrale Verwaltung von Prompt-Vorlagen mit Boardsammlungen und vollständiger Versionierung (`bach prompt`).
