@@ -3,7 +3,9 @@
 # Minimal dependencies needed for the BACH CLI to run.
 # Install with: pip install -r requirements.txt
 #
-# System: Python 3.11+ recommended (tested on 3.12)
+# System: Python 3.12+ recommended and CI-tested (3.12 + 3.13);
+#         requires-python >=3.10 is kept as a compatibility floor only
+#         (3.10 hosts pull the conditional tomli backport below).
 # Note:   Many features load lazily - only install what you use.
 #         See requirements-optional.txt for feature-specific packages.
 # ============================================================
