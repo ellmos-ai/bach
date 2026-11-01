@@ -850,8 +850,17 @@ INLINE_COMMANDS = {
 }
 
 
+def _ellmos_worker_module():
+    """Laedt das ellmos-worker-Modul optional; None, falls nicht verfuegbar."""
+    try:
+        from hub._services import ellmos_worker as ew
+        return ew
+    except Exception:
+        return None
+
+
 def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]:
-    """Versucht ein Tool aus tools/ auszufuehren."""
+    """Versucht ein Tool aus tools/ auszufuehren (mit ellmos-worker-Pruefkette)."""
     import subprocess
 
     tool_file = None
@@ -869,16 +878,51 @@ def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]
     if not tool_file:
         return None
 
-    if dry_run:
-        print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
-        return 0
-    log(f"[TOOL] {tool_file.stem} {' '.join(args)}")
+    # ── ellmos-worker: Pruefkette Quarantaene → Scope → content-guard → Erlaubnis ──
+    ew = _ellmos_worker_module()
+    if ew is None:
+        print("[ERROR] Pruefkette: ellmos-worker-Modul nicht verfuegbar (fail-closed)")
+        return 1
+
     try:
-        cmd_line = [sys.executable, str(tool_file)] + args
-        result = subprocess.run(cmd_line, cwd=str(BACH_DIR))
-        return result.returncode
+        from pathlib import Path
+        try:
+            from hub.claude_permissions import controlcenter_evaluate_permission
+        except Exception:
+            controlcenter_evaluate_permission = None
+
+        def _execute(tool_name, norm_args):
+            log(f"[TOOL] {tool_file.stem} {' '.join(norm_args)}")
+            cmd_line = [sys.executable, str(tool_file)] + list(norm_args)
+            result = subprocess.run(cmd_line, cwd=str(BACH_DIR))
+            return result.returncode
+
+        quarantined = {
+            t.strip().lower()
+            for t in os.environ.get("BACH_QUARANTINE_TOOLS", "").split(",")
+            if t.strip()
+        }
+        allowed = {
+            f.stem.strip().lower()
+            for f in TOOLS_DIR.glob("*.py")
+            if not f.stem.startswith("_") and f.stem.strip().lower() not in quarantined
+        }
+        scope_map = {name_key: "tools" for name_key in allowed}
+        ledger_dir = Path(os.environ.get("BACH_RUNTIME_DIR") or str(RUNTIME_ROOT))
+        chain = ew.VerificationChain(
+            ew.Ledger(ledger_dir / "ellmos-worker-ledger.jsonl"),
+            ew.QuarantineChecker(allowed),
+            ew.ScopeChecker(scope_map, {"tools"}),
+            ew.ContentGuardChecker(),
+            ew.PermissionAdapter(controlcenter_evaluate_permission),
+            _execute,
+        )
+        rc = chain.execute(tool_file.stem, args, dry_run=dry_run)
+        if dry_run and rc == 0:
+            print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
+        return rc
     except Exception as e:
-        print(f"[ERROR] Tool-Ausfuehrung: {e}")
+        print(f"[ERROR] Pruefkette: {e}")
         return 1
 
 

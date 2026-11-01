@@ -22,6 +22,7 @@ Start:
 """
 import asyncio
 import functools
+import hashlib
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -1715,6 +1716,46 @@ def _without_private_model_request_runs(worker):
     return public
 
 
+def _live_resolved_execution(chat_id: str, *, generation=None, task_id=None) -> dict:
+    """Project the target last selected at an actually active inference boundary."""
+    key = str(chat_id)
+    with _runtime_state_lock:
+        session = runtime.sessions.get(key)
+    with runtime._chat_turn_gates_lock:
+        gate = runtime._chat_turn_gates.get(key)
+    if session is None or gate is None:
+        return {}
+    with gate.condition:
+        if gate.active_turns <= 0:
+            return {}
+    if task_id is not None:
+        binding = getattr(session, "worker_task_binding", None)
+        if (binding is None or getattr(binding, "closed", True)
+                or getattr(binding, "task_id", None) != task_id):
+            return {}
+    session_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    if getattr(session, "resolved_execution_session_hash", None) != session_hash:
+        return {}
+    target = getattr(session, "resolved_execution_target", "")
+    host = getattr(session, "resolved_execution_host", "")
+    locality = getattr(session, "resolved_execution_locality", "unknown")
+    observed_at = getattr(session, "resolved_execution_observed_at", "")
+    if not isinstance(target, str) or not target or not isinstance(observed_at, str) or not observed_at:
+        return {}
+    if locality not in {"local", "external", "unknown"}:
+        locality = "unknown"
+    evidence = {"schema": "bach.resolved-execution.v1", "state": "active",
+                "session_hash": session_hash, "observed_at": observed_at}
+    if isinstance(generation, str) and re.fullmatch(r"[0-9a-f]{32}", generation):
+        evidence["generation"] = generation
+    if isinstance(task_id, int) and not isinstance(task_id, bool) and task_id > 0:
+        evidence["task_id"] = task_id
+    return {"resolved_execution_target": target,
+            "resolved_execution_host": host if isinstance(host, str) else "unknown",
+            "resolved_execution_locality": locality,
+            "resolved_execution_evidence": evidence}
+
+
 def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker = dict(worker)
     budget_execution = (_budget_execution_projection(worker.get("id"))
@@ -1729,6 +1770,7 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
     worker.pop("persistent_opt_in_profile_version", None)
     worker.pop("_persistent_execution_checkpoint", None)
     worker["persistent_opt_in"] = worker.get("persistent_opt_in") is True
+    resolved_execution_args = None
     with _WORKER_CONTROL_LOCK:
         retained = _WORKER_EXECUTIONS.get(worker.get("id"))
         control = _WORKER_CONTROLS.get(worker.get("id"))
@@ -1799,6 +1841,16 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
                     }
                 except Exception:
                     pass
+        if task_active and live_control is not None:
+            resolved_execution_args = (
+                str(worker.get("id") or ""), live_control.generation,
+                binding.task_id if binding is not None else None,
+            )
+    if resolved_execution_args is not None:
+        worker.update(_live_resolved_execution(
+            resolved_execution_args[0], generation=resolved_execution_args[1],
+            task_id=resolved_execution_args[2],
+        ))
     return worker
 
 
@@ -1861,9 +1913,9 @@ def _system_slots_snapshot() -> dict:
             if mapped == slot_id and gate is not None:
                 with gate.condition:
                     if gate.active_turns > 0:
-                        running_sessions.append(session)
+                        running_sessions.append((chat_id, session))
         execution, thread_alive, task_id = worker_states[slot_id]
-        active_session = running_sessions[0] if running_sessions else None
+        active_chat_id, active_session = running_sessions[0] if running_sessions else (None, None)
         execution_state = execution["state"] if execution else None
         manual_paused = agent["status"] == "paused" and not agent["pause_info"].get("auto_paused", False)
         paused = not agent["enabled"] or agent["status"] == "paused" or agent["pause_info"]["is_paused"]
@@ -1881,6 +1933,8 @@ def _system_slots_snapshot() -> dict:
                 worker_active = None
             if not running:
                 running = None
+        resolved_execution = (_live_resolved_execution(str(active_chat_id))
+                              if active_chat_id is not None and active_session is not None else {})
         agent.update({"runtime_verified": True,
                       "living": (agent["enabled"] and not paused and not failed) or worker_active is True or running is True,
                       "pause_info": {**agent["pause_info"], "is_paused": paused, "manual": manual_paused},
@@ -1888,6 +1942,7 @@ def _system_slots_snapshot() -> dict:
                       "task_id": task_id, "execution": execution,
                       "current_tool": getattr(active_session, "current_tool", ""),
                       "tool_round": getattr(active_session, "tool_round", 0),
+                      **resolved_execution,
                       "runtime_reason_code": "live_controller",
                       "status": (execution_state if execution_state in {
                           "starting", "stopping", "finishing", "unconfirmed"} else
@@ -2972,7 +3027,19 @@ if not OWNER_ID:
         "bedeutete vorher 'jeder darf')."
     )
 
+# Lauf-ID für das OpenRouter-Free-Pinning: innerhalb eines Laufs stabil,
+# ein Neustart/eine neue Session erzeugt eine neue ID und rotiert das Modell.
+_CHAT_RUN_ID = uuid.uuid4().hex
+
+
+def _current_chat_run_id() -> str:
+    """Run-ID des aktuellen Chat-Laufs (OpenRouter-Free-Rotation pro Lauf)."""
+    return _CHAT_RUN_ID
+
+
 # Backend + Runtime initialisieren
+if isinstance(CONFIG.get("backend"), dict):
+    CONFIG["backend"].setdefault("run_id", _current_chat_run_id())
 backend = create_backend(CONFIG["backend"])
 
 try:
@@ -3414,6 +3481,8 @@ def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
                 config["default_model"] = model
 
         try:
+            # Free-Modell pro Telegram-Lauf pinnen (Rotation nur zwischen Laeufen)
+            config["run_id"] = _current_chat_run_id()
             b = create_backend(config)
             from hub._services.llm.controller_route import bind_controller_backend
             bind_controller_backend(b, credential_ref=credential_ref)
@@ -3594,6 +3663,7 @@ async def cmd_backend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         config_for_backend = {k: v for k, v in preset.items()
                               if k not in ("method", "description")}
+        config_for_backend["run_id"] = _current_chat_run_id()
         new_backend = create_backend(config_for_backend)
         available, availability_status = await asyncio.to_thread(
             _checked_backend_availability,
@@ -4596,7 +4666,7 @@ async function refresh() {
   if (s.error) return;
   document.getElementById('conn-dot').className = 'dot green';
   document.getElementById('s-backend').textContent = s.backend + (s.backend_cli ? ' (' + s.backend_cli + ')' : '');
-  document.getElementById('s-model').textContent = s.model;
+  document.getElementById('s-model').textContent = s.resolved_model || s.model;
   document.getElementById('s-mode').textContent = s.mode;
   document.getElementById('s-think').textContent = s.think ? 'AN' : 'AUS';
   document.getElementById('s-bach').textContent = s.bach ? 'Ja' : 'Nein';
@@ -4934,6 +5004,7 @@ def _probe_backend_inventory_entry(
                 return False, "Key fehlt"
             candidate_config["api_key"] = api_key
 
+        candidate_config["run_id"] = _current_chat_run_id()
         candidate = create_backend(candidate_config)
         return _checked_backend_availability(
             candidate,
@@ -7221,6 +7292,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "backend_id": backend_identifier(runtime.backend),
                     "backend_cli": cli_name,
                     "model": model,
+                    "resolved_model": getattr(runtime.backend, "last_resolved_model", "") or model,
+                    "free_pin": getattr(runtime.backend, "last_free_pin_decision", None),
                     "mode": mode,
                     "think": think,
                     "manages_own_tools": owns_tools,
@@ -7243,6 +7316,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "backend_id": backend_identifier(runtime.backend),
                     "backend_cli": getattr(runtime.backend, "cli_name", ""),
                     "model": _global_defaults.get("model") or getattr(runtime.backend, "get_default_model", lambda: "?")(),
+                    "resolved_model": getattr(runtime.backend, "last_resolved_model", "")
+                    or _global_defaults.get("model")
+                    or getattr(runtime.backend, "get_default_model", lambda: "?")(),
+                    "free_pin": getattr(runtime.backend, "last_free_pin_decision", None),
                     "mode": _global_defaults.get("mode", "safe"),
                     "think": _global_defaults.get("think", True),
                     "manages_own_tools": getattr(runtime.backend, "manages_own_tools", False),
@@ -7320,6 +7397,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                         configured = bool(api_key)
                         if api_key:
                             config["api_key"] = api_key
+                    config["run_id"] = _current_chat_run_id()
                     selected_backend = create_backend(config)
                     models = selected_backend.list_models()
                     self._json({
@@ -7624,6 +7702,7 @@ class ControlHandler(BaseHTTPRequestHandler):
             try:
                 config = {k: v for k, v in preset.items()
                           if k not in ("method", "description")}
+                config["run_id"] = _current_chat_run_id()
                 new_backend = create_backend(config)
                 selected_model = preset["default_model"]
                 available, availability_status = _checked_backend_availability(

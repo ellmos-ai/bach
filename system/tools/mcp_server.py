@@ -456,13 +456,19 @@ def notify_send(channel: str, text: str) -> str:
 # ------------------------------------------------------------------
 
 @mcp.tool()
-def session_startup() -> str:
+def session_startup(partner: str = "user", mode: str | None = None,
+                    structured: bool = False, quick: bool = False) -> str:
     """Fuehrt das BACH-Startprotokoll aus.
 
     Initialisiert die Session: Directory-Scan, Memory-Check,
     Partner-Status, ungelesene Nachrichten, Briefing.
     """
-    return _execute("startup", "run")
+    args = [f"--partner={partner}"]
+    if mode is not None:
+        args.append(f"--mode={mode}")
+    if structured:
+        args.append("--json")
+    return _execute("startup", "quick" if quick else "run", args)
 
 
 @mcp.tool()

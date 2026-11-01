@@ -1,10 +1,14 @@
 import asyncio
+import hashlib
 import json
+from datetime import datetime
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
 
 from gui.api import worker_status_adapter as adapter
+from hub._services.chat.chat_runtime import ChatRuntime
 
 
 def decomposition_receipt(state="pending"):
@@ -12,6 +16,67 @@ def decomposition_receipt(state="pending"):
             "request_id": "b" * 32, "task_id": 42, "task_version": "c" * 64,
             "state": state, "requested_at": "now", "confirmed_at": "later" if state == "confirmed" else None,
             "created_ids": [43], "parent_closed": True, "backend": "isolated", "model": "test-model"}
+
+
+@pytest.mark.parametrize("base_url", [
+    "http://localhost:8000/v1",
+    "http://127.0.0.1:8000/v1",
+    "http://127.0.0.2:8000/v1",
+    "http://[::1]:8000/v1",
+])
+def test_resolved_execution_classifies_openai_compatible_loopback_as_local(monkeypatch, base_url):
+    import hub._services.chat.chat_runtime as runtime_module
+
+    monkeypatch.setattr(runtime_module.platform, "node", lambda: "mac-studio")
+    session = SimpleNamespace()
+    backend = SimpleNamespace(backend_id="openai", base_url=base_url)
+
+    ChatRuntime._record_resolved_execution(session, backend, "qwen3.5:27b", "chat-123")
+
+    assert session.resolved_execution_target == "openai:qwen3.5:27b"
+    assert session.resolved_execution_host == "mac-studio"
+    assert session.resolved_execution_locality == "local"
+    assert session.resolved_execution_session_hash == hashlib.sha256(b"chat-123").hexdigest()
+    datetime.fromisoformat(session.resolved_execution_observed_at.replace("Z", "+00:00"))
+
+
+def test_resolved_execution_keeps_cloud_model_external_even_on_loopback():
+    session = SimpleNamespace()
+    backend = SimpleNamespace(backend_id="openai", base_url="http://localhost:8000/v1")
+
+    ChatRuntime._record_resolved_execution(session, backend, "qwen3.5:27b:cloud", "chat-123")
+
+    assert session.resolved_execution_locality == "external"
+    assert session.resolved_execution_host == "openai-cloud"
+
+
+def test_resolved_execution_projection_requires_exact_live_task_correlation():
+    raw = {
+        "runtime_verified": True,
+        "running": True,
+        "resolved_execution_target": "openai:qwen3.5:27b",
+        "resolved_execution_host": "mac-studio",
+        "resolved_execution_locality": "local",
+        "resolved_execution_evidence": {
+            "schema": "bach.resolved-execution.v1",
+            "state": "active",
+            "session_hash": "a" * 64,
+            "observed_at": "2026-10-19T05:00:00+00:00",
+            "generation": "b" * 32,
+            "task_id": 42,
+        },
+    }
+    active = {"state": "running", "generation": "b" * 32, "active_task_id": 42}
+
+    projected = adapter._project_resolved_execution(raw, active, require_active_execution=True)
+
+    assert projected["resolved_execution_target"] == "openai:qwen3.5:27b"
+    assert projected["resolved_execution_evidence"]["generation"] == "b" * 32
+    assert projected["resolved_execution_evidence"]["task_id"] == 42
+    datetime.fromisoformat(projected["resolved_execution_evidence"]["observed_at"].replace("Z", "+00:00"))
+    assert adapter._project_resolved_execution(raw, None, require_active_execution=True) == {}
+    assert adapter._project_resolved_execution(raw, active | {"generation": "c" * 32}) == {}
+    assert adapter._project_resolved_execution(raw, active | {"active_task_id": 43}) == {}
 
 
 def test_decomposition_status_projects_binding_and_ack_without_secrets():

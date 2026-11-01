@@ -571,3 +571,102 @@ def deactivate_remote_control() -> tuple:
         sys.path.insert(0, str(base))
     handler = ClaudePermissionsHandler(base)
     return handler._deactivate(dry_run=False)
+
+
+# ------------------------------------------------------------------
+# Einheitliche Permission-Bewertung (fuer Control Center / ellmos-worker)
+# ------------------------------------------------------------------
+
+def _permission_rule_matches(rule, tool: str, target: str) -> bool:
+    """Prueft, ob eine Permission-Regel (fnmatch-Muster) auf ein Werkzeug passt.
+
+    Regeln haben das Format der Claude-Permissions, z.B. "Bash(*)", "Read",
+    "mcp__ellmos-codecommander-mcp__*". Gross-/Kleinschreibung wird ignoriert.
+    """
+    import fnmatch
+
+    if not isinstance(rule, str):
+        return False
+    pattern = rule.strip()
+    if not pattern:
+        return False
+    pattern_lower = pattern.lower()
+    tool_lower = tool.lower()
+    target_lower = target.lower()
+
+    # Exakter Tool-Name ("Read" passt auf "Read", nicht auf "ReadFile")
+    if fnmatch.fnmatchcase(tool_lower, pattern_lower):
+        return True
+    # Komplettes Ziel inkl. Argumente ("Bash(*)" passt auf "Bash(ls -la)")
+    if fnmatch.fnmatchcase(target_lower, pattern_lower):
+        return True
+    # Argument-Muster ohne uebergebene Argumente ("Bash(*)" passt auf "Bash")
+    if pattern_lower.endswith("(*)"):
+        base_pattern = pattern_lower[:-3].strip()
+        if tool_lower == base_pattern:
+            return True
+    return False
+
+
+def controlcenter_evaluate_permission(tool_name, args=None) -> str:
+    """Bewertet einen Werkzeugaufruf gegen das aktive Permission-Profil.
+
+    Diese Funktion ist der einheitliche Erlaubnis-Punkt im BACH-Kern und wird
+    von der ellmos-worker-Verifikationskette (Permission-Adapter) aufgerufen.
+
+    Rueckgabe: "allow" oder "deny".
+    Fail-closed: Bei ungueltiger Eingabe, fehlendem Profil oder jedem anderen
+    Fehler wird "deny" geliefert - niemals eine unbestaetigte Erlaubnis.
+    """
+    import sys
+
+    try:
+        # Eingabepruefung: nur nicht-leere Strings koennen erlaubt werden
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return "deny"
+        tool = tool_name.strip()
+
+        # Argumente fuer Muster wie "Bash(*)" normalisieren
+        if isinstance(args, str):
+            arg_text = args
+        elif isinstance(args, (list, tuple)):
+            try:
+                arg_text = " ".join(str(a) for a in args)
+            except Exception:
+                arg_text = ""
+        else:
+            arg_text = ""
+        target = f"{tool}({arg_text})"
+
+        # Aktives Permission-Profil laden
+        base = Path(__file__).parent.parent
+        if str(base) not in sys.path:
+            sys.path.insert(0, str(base))
+        handler = ClaudePermissionsHandler(base)
+
+        active = handler._db_get(KEY_ACTIVE_PROFILE)
+        if not isinstance(active, str) or not active.strip():
+            return "deny"
+        profile = handler._get_profile(active.strip())
+        if not isinstance(profile, dict):
+            return "deny"
+
+        deny_rules = profile.get("deny")
+        allow_rules = profile.get("allow")
+        if not isinstance(deny_rules, list):
+            deny_rules = []
+        if not isinstance(allow_rules, list):
+            allow_rules = []
+
+        # Deny-Regeln haben Vorrang vor Allow-Regeln
+        for rule in deny_rules:
+            if _permission_rule_matches(rule, tool, target):
+                return "deny"
+        for rule in allow_rules:
+            if _permission_rule_matches(rule, tool, target):
+                return "allow"
+
+        return "deny"
+    except Exception:
+        # Fail-closed: Ein Fehler ist niemals eine Erlaubnis
+        return "deny"

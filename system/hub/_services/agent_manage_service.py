@@ -171,6 +171,12 @@ class AgentManager:
             if slot.get("mode", "safe") not in {"safe", mode}:
                 raise PermissionError("Worker-Modus überschreitet die Rechte des Erstellers")
             grants = slot.get("allowed_tools")
+            profile = slot.get("tool_profile")
+            if profile is not None:
+                from hub._services.chat.bach_tools import resolve_tool_profile
+                profile_grants = resolve_tool_profile(profile, bound_worker=True)
+                if profile_grants is not None:
+                    grants = list(profile_grants)
             if grants is None:
                 from hub._services.chat.bach_tools import tools_for_mode
                 grants = [tool["function"]["name"] for tool in tools_for_mode(slot.get("mode", "safe"), bound_worker=True)]

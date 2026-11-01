@@ -330,7 +330,7 @@ class TestHelp:
 
 class TestStartDelegation:
     def test_start_already_active(self, active_handler):
-        ok, output = active_handler.handle("start", [])
+        ok, output = active_handler.handle("start", ["--partner=claude"])
         assert ok is True
         assert "bereits aktiv" in output
         assert "sess-active" in output

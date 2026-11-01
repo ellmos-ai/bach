@@ -28,7 +28,7 @@ def _snapshot() -> dict[str, Any]:
     except (OSError, ValueError, TypeError):
         raise HTTPException(status_code=503, detail="System-Agentenkonfiguration nicht lesbar")
     try:
-        from .worker_status_adapter import _request_control_api
+        from .worker_status_adapter import _project_resolved_execution, _request_control_api
         live = _request_control_api("GET", "system-slots", device_token="", timeout=3)
         if (live.get("configuration_version") == result["configuration_version"]
                 and isinstance(live.get("agents"), list)):
@@ -38,6 +38,7 @@ def _snapshot() -> dict[str, Any]:
             for agent in result["agents"]:
                 current = by_id.get(agent["id"], {})
                 agent.update({key: current[key] for key in fields if key in current})
+                agent.update(_project_resolved_execution(current))
     except Exception:
         # Missing runtime evidence must remain unknown, never a Ready badge.
         pass
