@@ -36,7 +36,12 @@ Mit dem GUI-Meilenstein `v3.15.0` (*„BACH fließt ins Meer – gemeinsame GUI�
    - Schrittweise Weiter-Modularisierung und Modifikation von BACH zu Ocean: Modul für Modul über `ocean_stack_bridge.py` / Adapter anschließen, BACH-Altcode mit `@deprecated_legacy_bach` kennzeichnen und nach Parität abbauen.
    - **Nutzer-Einstieg & Betriebssystem-Installer (Windows `.exe` · macOS `.dmg`/`.pkg` · Linux `.AppImage`/`.deb` + App-Stores als Zusatzservice):**
      - Normale Nutzer, die nach Ocean oder BACH suchen, landen auf `open-ocean` oder `bach` und werden von der jeweiligen README direkt zum aktuellen **Installer für ihr Betriebssystem** geleitet (ergänzt um die jeweiligen App-Stores wie den Windows Store als Zusatzservice).
-     - Nach dem Start führt der Installer Schritt für Schritt durch die Installation (sofort einsatzbereit für **lokale Modelle** wie Ollama und **nicht-lokale Modelle** wie Cloud/API/Abos). Bestandteile (Module, Bundles, Skills) können **später jederzeit nachinstalliert oder deinstalliert** werden.
+     - **Hermes-inspirierte 4-stufige Out-of-the-Box-Menüführung (von wichtig zu unwichtiger):**
+       1. **Stufe 1 — Modelle, Subscriptions & API-Keys:** Lokale Modelle (Ollama) + Subscriptions & Cloud-APIs (Claude, Codex/OpenAI, Gemini, OpenRouter, Ollama Cloud, Kimi) verbinden.
+       2. **Stufe 2 — Wichtige System-MCPs, Berechtigungs- & Autoritätseinstellungen:** `ellmos-filecommander` und `ellmos-controlcenter-mcp` (sowie `codecommander`/`homebase`) konfigurieren und Berechtigungs-/Autoritätsstufen (`write_scope`, Review-Modus, 5-stufige Eskalationsleiter) festlegen.
+       3. **Stufe 3 — Connectoren:** Telegram, WhatsApp, Discord und E-Mail-Bridge einrichten.
+       4. **Stufe 4 — Ausdehnung (`Rinnsal ↔ BACH ↔ Meer`), Plugins, weitere MCPs & Skills:** Optionale Plugins, Fach-MCPs, Skills und Bundles auswählen (jederzeit später einzeln nachinstallierbar oder deinstallierbar).
+   - **Verbindliche SOLL/IST-Dokumentationsregel:** Jede Dokumentation führt explizit den **SOLL-Stand** (Zielbild) und den **IST-Stand** (aktuell verifizierter Stand) getrennt auf.
    - **Eintrittsweg bestimmt das Branding (`open-ocean` vs. `bach`):**
      - **Eintritt über `bach`:** Der Nutzer erhält das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als eine kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
      - **Eintritt über `open-ocean`:** Das BACH-Branding entfällt; es erscheint reines **Ocean-Branding**.

@@ -67,9 +67,14 @@ Beim ersten Mac-Readback am 8. Oktober wurden fünf vorhandene Entscheidungsquel
 
 ## Installer, Nutzer-Einstieg, Editions-Branding und Paketgrenzen
 
-1. **Nutzer-Einstieg & Betriebssystem-Installer:**
+1. **Nutzer-Einstieg, Betriebssystem-Installer & Hermes-inspirierte 4-Stufen-Menüführung:**
    - Normale Nutzer landen bei der Suche auf `open-ocean` oder `bach` und werden von der jeweiligen README direkt zum **Installer für ihr Betriebssystem** geleitet (**Windows `.exe`/`.msi`**, **macOS `.dmg`/`.pkg`**, **Linux `.AppImage`/`.deb`**; die App-Stores wie der Windows Store sind ein zusätzlicher Komfort-Service).
-   - Der Installer führt durch die Erstinstallation (Standard-Ocean-Ausdehnung mit lokaler Ollama- und nicht-lokaler Cloud-/Abo-Modellunterstützung oder individuelle Modulwahl **Rinnsal ↔ BACH ↔ Meer**). Bestandteile können **später jederzeit nachinstalliert oder deinstalliert** werden.
+   - **Menüführung im Installer (streng geordnet von wichtig zu unwichtiger, `ellmos-installer onboarding`):**
+     1. **Modelle, Subscriptions & API-Keys:** Lokale Modelle (Ollama) sowie Subscriptions und API-Keys (Claude, Codex/OpenAI, Gemini, OpenRouter, Ollama Cloud, Kimi) hinterlegen.
+     2. **Wichtige System-MCPs, Berechtigungs- & Autoritätseinstellungen:** `ellmos-filecommander` und `ellmos-controlcenter-mcp` konfigurieren; Zugriffsbereich (`sandbox | ocean | free`), Review-Modus und 5-stufige Eskalationsleiter einstellen.
+     3. **Connectoren:** Telegram, WhatsApp, Discord, E-Mail-Bridge verbinden.
+     4. **Ausdehnung (`Rinnsal ↔ BACH ↔ Meer`), Plugins, weitere MCPs & Skills:** Optionale Erweiterungen auswählen; jede Stufe und jedes Modul kann **später jederzeit einzeln nachinstalliert, umkonfiguriert oder deinstalliert** werden.
+   - **SOLL/IST-Dokumentationspflicht:** Alle Transfer- und Architekturdokumente weisen SOLL-Zielbild und belegten IST-Stand explizit getrennt aus.
 2. **Eintrittsweg bestimmt das Branding (`open-ocean` vs. `bach`):**
    - **Einstieg über `bach`:** Aktiviert das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
    - **Einstieg über `open-ocean`:** Reines **Ocean-Branding** (das BACH-Branding entfällt).

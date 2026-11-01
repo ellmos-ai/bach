@@ -298,6 +298,18 @@ def project_agent_library(
     )
 
 
+def get_ocean_role_routing_catalog() -> dict[str, Any]:
+    """Return the canonical BACH-to-Ocean Coordinator & Expert role catalog with flexible provider sockets."""
+    mod = load_escalation_ladder_module()
+    return mod.get_ocean_role_routing_catalog()
+
+
+def discover_ocean_agent_library_templates(repos_root: str | Path | None = None) -> dict[str, Any]:
+    """Build the full 3-tab Agent-Library catalog combining BACH Coordinator/Expert roles and module `roles[]`."""
+    mod = load_escalation_ladder_module()
+    return mod.build_full_agent_library_catalog(repos_root=repos_root)
+
+
 # ---------------------------------------------------------------------------
 # 6. Ocean GUI API Adapter Delegation (#2075, #2094, #2097, #2098)
 # ---------------------------------------------------------------------------
