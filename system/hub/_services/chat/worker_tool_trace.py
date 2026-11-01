@@ -26,6 +26,43 @@ _COMPLETION_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _GENERATION = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 _TOOL = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 _WORKER = re.compile(r"[A-Za-z0-9_.@-]{1,255}\Z")
+_DIAGNOSTIC_KEYS = frozenset({"outcome_class", "stage", "code", "sandbox_returncode"})
+_POLICY_CODES = frozenset({"invalid_arguments", "command_not_authorized", "mode_not_authorized"})
+
+
+def validate_diagnostic(value):
+    """A closed observation, never authority or proof of external effects."""
+    if value is None:
+        return None
+    if type(value) is not dict or set(value) != _DIAGNOSTIC_KEYS:
+        raise WorkerToolTraceError("Ungültige Werkzeugdiagnose")
+    outcome, stage, code, exit_code = (value[k] for k in
+        ("outcome_class", "stage", "code", "sandbox_returncode"))
+    if any(type(v) is not str for v in (outcome, stage, code)):
+        raise WorkerToolTraceError("Ungültige Werkzeugdiagnose")
+    policy = (outcome == "policy_rejected" and stage == "pre_dispatch_validation"
+              and code in _POLICY_CODES and exit_code is None)
+    unknown = (outcome == "unconfirmed" and stage == "unknown"
+               and code in {"execution_unconfirmed", "tool_exception"} and exit_code is None)
+    terminal = (outcome == "sandbox_terminal" and stage == "sandbox_execution"
+                and code == "sandbox_exit" and type(exit_code) is int
+                and -(2 ** 31) <= exit_code < 2 ** 32)
+    if not (policy or unknown or terminal):
+        raise WorkerToolTraceError("Inkonsistente Werkzeugdiagnose")
+    return dict(value)
+
+
+class DiagnosticToolText(str):
+    """Existing display text with private typed observations, omitted from JSON."""
+    def __new__(cls, text, diagnostic):
+        if type(text) is not str:
+            raise WorkerToolTraceError("Ungültiger Werkzeugtext")
+        obj = super().__new__(cls, text)
+        object.__setattr__(obj, "_trace_diagnostic", validate_diagnostic(diagnostic))
+        return obj
+
+    def __setattr__(self, _name, _value):
+        raise AttributeError("Werkzeugdiagnose ist unveränderlich")
 
 
 class WorkerToolTraceError(Exception):
@@ -140,6 +177,8 @@ def ensure_worker_tool_trace_schema(conn: sqlite3.Connection) -> None:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(worker_tool_trace_events)")}
     if "completion_sha256" not in columns:
         conn.execute("ALTER TABLE worker_tool_trace_events ADD COLUMN completion_sha256 TEXT")
+    if "diagnostic_json" not in columns:
+        conn.execute("ALTER TABLE worker_tool_trace_events ADD COLUMN diagnostic_json TEXT")
     conn.commit()
 
 
@@ -324,17 +363,18 @@ def task_trace_recovery_state(conn: sqlite3.Connection, task_id: int) -> str:
 
 
 def _insert(conn, identity, phase, *, receipt_id=None, arguments_sha256=None,
-            result_sha256=None, completion_sha256=None):
+            result_sha256=None, completion_sha256=None, diagnostic=None):
+    diagnostic = validate_diagnostic(diagnostic)
     cursor = conn.execute(
         """INSERT INTO worker_tool_trace_events
            (schema, task_id, fence, worker_id, generation, task_version, request_id,
             receipt_id, source, tool_name, phase, occurred_at, arguments_sha256,
-            result_sha256, completion_sha256, effect_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown')""",
+            result_sha256, completion_sha256, diagnostic_json, effect_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown')""",
         (SCHEMA, identity.task_id, identity.fence, identity.worker_id, identity.generation,
          identity.task_version, identity.request_id, receipt_id, identity.source,
          identity.tool_name, phase, _timestamp(), arguments_sha256, result_sha256,
-         completion_sha256),
+         completion_sha256, json.dumps(diagnostic, sort_keys=True) if diagnostic is not None else None),
     )
     return cursor.lastrowid
 
@@ -394,9 +434,12 @@ def append_started(conn: sqlite3.Connection, identity: TraceIdentity, *,
 
 def append_phase(conn: sqlite3.Connection, identity: TraceIdentity, phase: str, *,
                  receipt_id: str | None = None, result_sha256: str | None = None,
-                 completion_token: str | None = None) -> dict:
+                 completion_token: str | None = None, diagnostic=None) -> dict:
     """Append a return/failure/relay ACK only when its durable start exists."""
     _validate_identity(identity)
+    diagnostic = validate_diagnostic(diagnostic)
+    if diagnostic is not None and (type(phase) is not str or phase not in {"returned", "failed"}):
+        raise WorkerToolTraceError("Werkzeugdiagnose gehört nur zum Endereignis")
     if not isinstance(phase, str) or phase not in {"returned", "failed", "acknowledged"}:
         raise WorkerToolTraceError("Ungültige Werkzeug-Trace-Phase")
     if receipt_id is not None and (not isinstance(receipt_id, str) or not _ID.fullmatch(receipt_id)):
@@ -444,7 +487,8 @@ def append_phase(conn: sqlite3.Connection, identity: TraceIdentity, phase: str, 
                     and prior["task_version"] == identity.task_version
                     and prior["tool_name"] == identity.tool_name
                     and prior["receipt_id"] == receipt_id
-                    and prior["result_sha256"] == result_sha256):
+                    and prior["result_sha256"] == result_sha256
+                    and json.loads(prior.get("diagnostic_json") or "null") == diagnostic):
                 conn.commit()
                 return _ack(prior["event_id"], identity, phase)
             raise TraceReplayError("Widersprüchliches Werkzeug-Trace-Ereignis")
@@ -466,7 +510,7 @@ def append_phase(conn: sqlite3.Connection, identity: TraceIdentity, phase: str, 
         elif returned is not None or failed is not None:
             raise TraceReplayError("Werkzeug-Trace hat bereits einen Endzustand")
         event_id = _insert(conn, identity, phase, receipt_id=receipt_id,
-                           result_sha256=result_sha256)
+                           result_sha256=result_sha256, diagnostic=diagnostic)
         conn.commit()
         return _ack(event_id, identity, phase)
     except Exception:
@@ -474,9 +518,10 @@ def append_phase(conn: sqlite3.Connection, identity: TraceIdentity, phase: str, 
         raise
 
 
-def list_events(conn: sqlite3.Connection, task_id: int, *, limit=100, offset=0) -> dict:
+def list_events(conn: sqlite3.Connection, task_id: int, *, limit=100, offset=0,
+                include_diagnostics=False) -> dict:
     """Read a bounded event page without changing the database."""
-    if (type(task_id) is not int or task_id <= 0 or type(limit) is not int
+    if (type(include_diagnostics) is not bool or type(task_id) is not int or task_id <= 0 or type(limit) is not int
             or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 100_000):
         raise WorkerToolTraceError("Ungültige Werkzeug-Trace-Abfrage")
     present = conn.execute(
@@ -485,14 +530,22 @@ def list_events(conn: sqlite3.Connection, task_id: int, *, limit=100, offset=0) 
     if not present:
         return {"schema": SCHEMA, "task_id": task_id, "events": [], "count": 0,
                 "limit": limit, "offset": offset}
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(worker_tool_trace_events)")}
+    diagnostic_select = ", diagnostic_json" if include_diagnostics and "diagnostic_json" in columns else ""
     rows = conn.execute(
         """SELECT event_id, schema, task_id, fence, worker_id, generation, task_version,
                   request_id, receipt_id, source, tool_name, phase, occurred_at,
-                  arguments_sha256, result_sha256, effect_status
+                  arguments_sha256, result_sha256, effect_status""" + diagnostic_select + """
            FROM worker_tool_trace_events WHERE task_id=?
            ORDER BY event_id LIMIT ? OFFSET ?""",
         (task_id, limit, offset),
     ).fetchall()
     events = [_row_dict(row) for row in rows]
+    if include_diagnostics:
+        for event in events:
+            try:
+                event["diagnostic"] = validate_diagnostic(json.loads(event.pop("diagnostic_json", None) or "null"))
+            except (TypeError, ValueError):
+                raise TraceUnavailableError("Werkzeugdiagnose ist nicht bestätigt") from None
     return {"schema": SCHEMA, "task_id": task_id, "events": events,
             "count": len(events), "limit": limit, "offset": offset}

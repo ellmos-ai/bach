@@ -122,7 +122,7 @@ def append_tool_trace_phase(
     required = {"schema", "fence", "worker_id", "generation", "task_version",
                 "request_id", "source", "tool_name", "phase", "receipt_id",
                 "result_sha256"}
-    if set(payload) != required or payload.get("schema") != SCHEMA:
+    if set(payload) not in (required, required | {"diagnostic"}) or payload.get("schema") != SCHEMA:
         raise HTTPException(422, "Trace-Auftrag ist ungültig")
     try:
         identity = _identity(task_id, payload)
@@ -130,7 +130,8 @@ def append_tool_trace_phase(
             return append_phase(conn, identity, payload["phase"],
                                 receipt_id=payload["receipt_id"],
                                 result_sha256=payload["result_sha256"],
-                                completion_token=x_trace_completion)
+                                completion_token=x_trace_completion,
+                                diagnostic=payload.get("diagnostic"))
     except Exception as exc:
         raise _status(exc) from None
 
@@ -141,10 +142,12 @@ def read_tool_trace_events(
     task_id: int,
     limit: int = Query(100, ge=1, le=100),
     offset: int = Query(0, ge=0, le=100_000),
+    include_diagnostics: bool = Query(False),
 ):
     _authorize(request)
     try:
         with closing(_connection(read_only=True)) as conn:
-            return list_events(conn, task_id, limit=limit, offset=offset)
+            return list_events(conn, task_id, limit=limit, offset=offset,
+                               include_diagnostics=include_diagnostics)
     except Exception as exc:
         raise _status(exc) from None

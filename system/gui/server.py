@@ -1864,6 +1864,8 @@ try:
     app.include_router(governance_registry_router)
     from gui.api.catalog_projection import router as catalog_projection_router
     app.include_router(catalog_projection_router)
+    from gui.api.worker_tool_trace import router as worker_tool_trace_router
+    app.include_router(worker_tool_trace_router)
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)
@@ -2804,6 +2806,38 @@ async def reconcile_task_result(task_id: int, body: TaskResultReconcileRequest, 
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
+@app.get("/api/tasks/{task_id}/legacy-review/eligibility")
+async def legacy_review_reopen_eligibility_read(task_id: int, request: Request):
+    """Correction-owner-only observation; the reopen writer still rechecks all gates."""
+    from hub._services.legacy_review_reopen import legacy_review_reopen_eligibility
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return legacy_review_reopen_eligibility(conn, task_id, operator_token=operator_token)
+        finally:
+            conn.close()
+
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={
+            "code": "result_operator_correction_scope_required", "message": str(exc),
+        }) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "legacy_review_eligibility_unavailable", "message": str(exc),
+        }) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "legacy_review_request_invalid", "message": str(exc),
+        }) from None
+
+
 @app.post("/api/tasks/{task_id}/legacy-review/reopen")
 async def reopen_legacy_review_task(
         task_id: int, body: LegacyReviewReopenRequest, request: Request):
@@ -2837,6 +2871,54 @@ async def reopen_legacy_review_task(
         raise HTTPException(status_code=422, detail={
             "code": "legacy_review_request_invalid", "message": str(exc),
         }) from None
+
+
+@app.get("/api/tasks/{task_id}/review-requeue/eligibility")
+async def review_task_requeue_eligibility_read(task_id: int, request: Request):
+    """Personal correction-owner observation, without exposing note/intent contents."""
+    from hub._services.review_task_requeue import review_requeue_eligibility
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return review_requeue_eligibility(conn, task_id, operator_token=operator_token)
+        finally:
+            conn.close()
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": "result_operator_correction_scope_required", "message": str(exc)}) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": "review_requeue_eligibility_unavailable", "message": str(exc)}) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "review_requeue_request_invalid", "message": str(exc)}) from None
+
+
+@app.post("/api/tasks/{task_id}/review-requeue")
+async def review_task_requeue_write(task_id: int, body: dict, request: Request):
+    """Single-task atomic CAS; preserve prior result, note, intent and history rows."""
+    from hub._services.review_task_requeue import requeue_review_task
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return requeue_review_task(conn, task_id, body, operator_token=operator_token)
+        finally:
+            conn.close()
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={"code": "result_operator_correction_scope_required", "message": str(exc)}) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={"code": "review_requeue_changed_reload", "message": str(exc)}) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "review_requeue_request_invalid", "message": str(exc)}) from None
 
 
 def _run_lease_op(op, *args, **kwargs):
@@ -11206,18 +11288,6 @@ async def prompt_library_page():
     if template.exists():
         return HTMLResponse(content=template.read_text(encoding="utf-8"))
     return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
-
-
-@app.get("/governance", response_class=HTMLResponse)
-async def governance_page():
-    """Governance & Control als GUI-Seite: Erlaubnisse für Außenwirkung, Policy-Registry, Sperren, Hooks & Guards, Logs & Audit."""
-    astro_page = ASTRO_DIST_DIR / "governance.html"
-    if astro_page.is_file():
-        return FileResponse(astro_page)
-    template = TEMPLATES_DIR / "governance.html"
-    if template.exists():
-        return HTMLResponse(content=template.read_text(encoding="utf-8"))
-    return HTMLResponse(content="<h1>Template governance.html fehlt</h1>", status_code=404)
 
 
 @app.get("/api/prompt-library")
