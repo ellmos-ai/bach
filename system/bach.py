@@ -878,6 +878,10 @@ def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]
     if not tool_file:
         return None
 
+    if dry_run:
+        print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
+        return 0
+
     # ── ellmos-worker: Pruefkette Quarantaene → Scope → content-guard → Erlaubnis ──
     ew = _ellmos_worker_module()
     if ew is None:
@@ -917,10 +921,7 @@ def _try_run_tool(name: str, args: list, dry_run: bool = False) -> Optional[int]
             ew.PermissionAdapter(controlcenter_evaluate_permission),
             _execute,
         )
-        rc = chain.execute(tool_file.stem, args, dry_run=dry_run)
-        if dry_run and rc == 0:
-            print(f"[DRY-RUN] Wuerde ausfuehren: {tool_file.stem} {' '.join(args)}")
-        return rc
+        return chain.execute(tool_file.stem, args, dry_run=dry_run)
     except Exception as e:
         print(f"[ERROR] Pruefkette: {e}")
         return 1
