@@ -13,6 +13,7 @@ import multiprocessing
 import re
 import sqlite3
 import sys
+import unicodedata
 import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -180,6 +181,21 @@ def test_manifest_version_covers_paths_missing_and_content(tmp_path):
     again = core.manifest_version(tmp_path, paths)
     (tmp_path / "chain" / "a.txt").write_text("zwei", encoding="utf-8")
     assert core.manifest_version(tmp_path, paths) != again
+
+
+def test_manifest_version_unicode_nfc_nfd(tmp_path):
+    # T-20261024-533036158: NFC- und NFD-Schreibweise desselben Namens bilden denselben Hash
+    nfc = "Café.txt"
+    nfd = "Cafe\u0301.txt"
+    assert unicodedata.normalize("NFC", nfc) == nfc
+    assert unicodedata.normalize("NFD", nfc) == nfd
+    # Fehlende Datei: beide Schreibweisen muessen denselben MISSING-Hash liefern
+    assert core.manifest_version(tmp_path, [nfc]) == core.manifest_version(tmp_path, [nfd])
+    # Vorhandene Datei (NFC angelegt): Ordner-Resolve passt zur Pfadangabe ...
+    (tmp_path / nfc).write_text("inhalt", encoding="utf-8")
+    assert core.manifest_version(tmp_path, [nfc]) == core.manifest_version(tmp_path, ["."])
+    # ... und die angefragte Unicode-Form aendert den Hash nicht
+    assert core.manifest_version(tmp_path, [nfd]) == core.manifest_version(tmp_path, [nfc])
 
 
 # ---------------------------------------------------------------------------
