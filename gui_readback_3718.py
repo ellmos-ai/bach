@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Kalibrierung 2026-11-01 (Task #3718): EXPECTED_DIST_FILE_COUNT=375,
 # Legacy-12-Routen (routes_plan.count=38), Deploy-Abweichung dokumentiert (Rest via #3720).
+# Beleg: PR #623 (gui_readback_3718 final kalibriert, Unittest 4/4 OK).
 """Real-Server-Readback der GUI fuer BACH-Task #3718 (Meilenstein 3.15.0).
 
 Sammelt Belege vom real laufenden BACH-GUI-Server auf http://127.0.0.1:8000
