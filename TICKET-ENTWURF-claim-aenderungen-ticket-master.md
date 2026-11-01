@@ -36,6 +36,7 @@ Claim-Änderungen werden bislang als Datei auf den Desktop gelegt, statt als Tic
 - `ROADMAP.md:894-921`: Ticket-Routing-Vertrag „Routing v2", Tickets in `_control-center/_TICKETS/`, ID-Beispiel T-20260920-829000873.
 - `system/hub/_services/taskplan_bridge.py:335-357`: BACH-Bridge nur lesend/spiegelnd (`legacy_only`, `automatic_write_mirror` False, `taskplan_role manual_mirror_import_only`); Ticket-Schreiben über die Bridge wäre ein Vertragsbruch.
 - Recherche im BACH-Repo (`ticket_writer`, `systems_registry`, Desktop-/Schreibtisch-Muster): keine Desktop-Ablage-Quelle gefunden – Ursache liegt extern.
+- `system/hub/_services/trithon_dispatch.py:226-231`: einziger BACH-Code mit ticket_master-Bezug; `dispatch_to_ticket_master` persistiert nur das Receipt im BACH-Ticket-Ledger (`record_receipt`) – kein Meldeweg nach außen.
 - Nachprüfungen (2. Lauf, rekursiv in start/ und system/hub/_services/, Muster: Desktop|desktop|DESKTOP, notify|notification|benachrichtig, expanduser|expandvars|Downloads, persönlich|persoenlich|personal.?assistant|avatar|USER-MIND): einziger funktionaler Desktop-Treffer start/_internal/claude_remote_control.py:109-110 — nur Launcher (--desktop setzt lediglich cwd=~/OneDrive/Desktop, schreibt keine Dateien); Desktop-Kopien nur in newspaper/newspaper_generator.py:174-184 (Zeitungs-Zustellung, nicht Claim-bezogen); mail/account_manager.py:581,619 durchsucht Desktop nur lesend; Quelle extern bestätigt.
 
 ## Referenzen
