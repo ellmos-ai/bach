@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -171,21 +172,30 @@ def env_seconds(environ: Mapping[str, str], name: str, default: int, *, minimum:
 # Kanonisches Manifest (Sync-Schranke, Festlegung 6)
 # ---------------------------------------------------------------------------
 
+def _nfc(text: str) -> str:
+    """Normalform NFC (T-20261024-533036158): macOS meldet Pfade NFD, Clients senden
+    oft NFC; ohne Normalisierung wuerden sonst identische Pfade unterschiedliche
+    Manifest-Schluessel und damit abweichende Hashes bekommen. NFC vor Sortierung/Hash."""
+    return unicodedata.normalize("NFC", text)
+
+
 def manifest_version(root: Path | str, paths: Iterable[str]) -> str:
     """SHA-256 ueber ein kanonisches Manifest: sortierte relative Pfade (``/``),
     Groesse und SHA-256 jeder Datei; fehlende Dateien gehen als ``MISSING`` ein.
     Ordner in ``paths`` werden rekursiv in ihre Dateien aufgeloest; ein fehlender
     oder leerer Ordner zaehlt als fehlend (Hosts duerfen sich nicht darin unterscheiden,
-    ob sie einen leeren Ordner angelegt haben). Die Pfadliste ist Teil des Vertrags der Ressource."""
+    ob sie einen leeren Ordner angelegt haben). Die Pfadliste ist Teil des Vertrags
+    der Ressource. Pfadangaben werden zur Sicherheit NFC-normalisiert, damit Hosts
+    mit NFD-Normalisierung (macOS) denselben Manifest-Hash bilden."""
     base = Path(root)
     entries: dict[str, str] = {}
     for rel in paths:
         target = base / rel
-        key = Path(rel).as_posix()
+        key = _nfc(Path(rel).as_posix())
         files = sorted(p for p in target.rglob("*") if p.is_file()) if target.is_dir() else []
         if files:
             for sub in files:
-                entries[sub.relative_to(base).as_posix()] = _file_line(sub)
+                entries[_nfc(sub.relative_to(base).as_posix())] = _file_line(sub)
         elif target.is_file():
             entries[key] = _file_line(target)
         else:
