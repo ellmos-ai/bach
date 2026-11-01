@@ -33,7 +33,6 @@ def store(tmp_path, monkeypatch):
     path = tmp_path / "authority.db"
     db = sqlite3.connect(path)
     _init_db(db)
-    db.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     # Independence gate: the author never reviews itself, so the policy needs a
     # second reviewer before the controller may create review tasks.
