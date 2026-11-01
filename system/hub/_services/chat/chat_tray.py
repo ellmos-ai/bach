@@ -723,19 +723,34 @@ class BACHTray:
 
     # --- PromptBoard ---
 
-    def _promptboard_project_dir(self):
+    def _promptboard_project_dirs(self):
+        dirs = []
+        # 1. Plan D canonical local dev repos
+        local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
+        for repo_name in ("REL-PUB_PromptBoard-tasksolver-1136-1137", "REL-PUB_PromptBoard"):
+            p = local_dev / repo_name
+            if p.exists() and p not in dirs:
+                dirs.append(p)
+
+        # 2. OneDrive software directories
         user_profile = os.environ.get("USERPROFILE")
-        if not user_profile:
-            return None
-        project_dir = (
-            Path(user_profile)
-            / "OneDrive"
-            / ".TOPICS"
-            / ".SOFTWARE"
-            / "LLM"
-            / "REL-PUB_PromptBoard"
-        )
-        return project_dir if project_dir.exists() else None
+        if user_profile:
+            for sub in ("DATA", "LLM"):
+                p = (
+                    Path(user_profile)
+                    / "OneDrive"
+                    / ".TOPICS"
+                    / ".SOFTWARE"
+                    / sub
+                    / "REL-PUB_PromptBoard"
+                )
+                if p.exists() and p not in dirs:
+                    dirs.append(p)
+        return dirs
+
+    def _promptboard_project_dir(self):
+        dirs = self._promptboard_project_dirs()
+        return dirs[0] if dirs else None
 
     def _promptboard_library_candidates(self):
         candidates = []
@@ -749,12 +764,14 @@ class BACHTray:
         if appdata:
             candidates.append(Path(appdata) / "PromptBoard" / "library.json")
 
-        project_dir = self._promptboard_project_dir()
-        if project_dir:
-            candidates.extend([
+        for project_dir in self._promptboard_project_dirs():
+            for sub in (
                 project_dir / "library.json",
                 project_dir / "data" / "library.json",
-            ])
+                project_dir / "_tmp_accessibility_check" / "library.json",
+            ):
+                if sub not in candidates:
+                    candidates.append(sub)
 
         return candidates
 
@@ -764,13 +781,30 @@ class BACHTray:
         if env_path:
             candidates.append(Path(env_path).expanduser())
 
-        project_dir = self._promptboard_project_dir()
-        if project_dir:
+        for project_dir in self._promptboard_project_dirs():
             dist_dir = project_dir / "dist"
             if dist_dir.exists():
                 candidates.extend(
                     sorted(
                         dist_dir.glob("PromptBoard-*-win64.exe"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                )
+            releases_dir = project_dir / "releases"
+            if releases_dir.exists():
+                candidates.extend(
+                    sorted(
+                        releases_dir.glob("**/PromptBoard-*-win64.exe"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                )
+            store_dir = project_dir / "store_package"
+            if store_dir.exists():
+                candidates.extend(
+                    sorted(
+                        store_dir.glob("**/PromptBoard-*-win64.exe"),
                         key=lambda p: p.stat().st_mtime,
                         reverse=True,
                     )

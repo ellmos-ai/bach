@@ -75,10 +75,22 @@ def promptboard_library_paths():
     candidates.append(Path.home() / ".promptboard" / "library.json")
     if os.environ.get("APPDATA"):
         candidates.append(Path(os.environ["APPDATA"]) / "PromptBoard" / "library.json")
+
+    # Plan D local dev repos
+    local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
+    for repo_name in ("REL-PUB_PromptBoard-tasksolver-1136-1137", "REL-PUB_PromptBoard"):
+        repo_dir = local_dev / repo_name
+        candidates.extend([repo_dir / "library.json", repo_dir / "data" / "library.json"])
+
     if os.environ.get("USERPROFILE"):
-        project = (Path(os.environ["USERPROFILE"]) / "OneDrive" / ".TOPICS" /
-                   ".SOFTWARE" / "LLM" / "REL-PUB_PromptBoard")
-        candidates.extend([project / "library.json", project / "data" / "library.json"])
+        for sub in ("DATA", "LLM"):
+            project = (Path(os.environ["USERPROFILE"]) / "OneDrive" / ".TOPICS" /
+                       ".SOFTWARE" / sub / "REL-PUB_PromptBoard")
+            candidates.extend([
+                project / "library.json",
+                project / "data" / "library.json",
+                project / "_tmp_accessibility_check" / "library.json",
+            ])
     return candidates
 
 
@@ -172,8 +184,25 @@ class PromptHandler(BaseHandler):
         entire library instead of silently converting JSON objects to prompts.
         The dry run counts additions and duplicates without changing the DB.
         """
-        path = (Path(library_path).expanduser() if library_path is not None else
-                next((p for p in promptboard_library_paths() if p.exists()), None))
+        if library_path is not None:
+            path = Path(library_path).expanduser()
+        else:
+            candidates = [p for p in promptboard_library_paths() if p.exists()]
+            path = None
+            for cand in candidates:
+                try:
+                    data = json.loads(cand.read_text(encoding="utf-8-sig"))
+                    items = data.get("items") if isinstance(data, dict) else None
+                    if isinstance(items, list) and any(
+                        isinstance(it, dict) and bool((it.get("content") or "").strip())
+                        for it in items
+                    ):
+                        path = cand
+                        break
+                except Exception:
+                    continue
+            if path is None and candidates:
+                path = candidates[0]
         if path is None:
             raise FileNotFoundError(promptboard_library_not_found(promptboard_library_paths()))
         payload = json.loads(path.read_text(encoding="utf-8-sig"))

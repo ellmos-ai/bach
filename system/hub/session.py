@@ -328,22 +328,32 @@ class SessionHandler(BaseHandler):
         show_duration = "--duration" in args or "-d" in args
 
         # Geplante Sitzungsdauer holen/setzen
-        duration_minutes = 120  # Default: 2 Stunden
-        for i, arg in enumerate(args):
+        for arg in args:
             if arg.startswith("--set-duration="):
+                raw_val = arg.split("=", 1)[1].strip()
                 try:
-                    duration_minutes = int(arg.split("=")[1])
-                    if not dry_run:
-                        self._save_user_config({"session_duration_minutes": duration_minutes})
-                    results.append(f"[OK] Sitzungsdauer auf {duration_minutes} Minuten gesetzt")
-                except (ValueError, IndexError, OSError):
-                    pass
+                    parsed_val = int(raw_val)
+                    if parsed_val <= 0:
+                        return False, f"[FEHLER] Ungueltige Sitzungsdauer '{raw_val}'. Bitte eine positive Minutenzahl angeben (z. B. --set-duration=120)."
+                except (ValueError, TypeError):
+                    return False, f"[FEHLER] Ungueltige Sitzungsdauer '{raw_val}'. Bitte eine positive ganzzahlige Minutenzahl angeben (z. B. --set-duration=120)."
+
+                if dry_run:
+                    results.append(f"[DRY-RUN] Wuerde Sitzungsdauer auf {parsed_val} Minuten setzen")
+                else:
+                    self._save_user_config({"session_duration_minutes": parsed_val})
+                    results.append(f"[OK] Sitzungsdauer auf {parsed_val} Minuten gesetzt")
 
         config = self._load_user_config()
         duration_minutes = config.get("session_duration_minutes", 120)
+        if not isinstance(duration_minutes, int) or duration_minutes <= 0:
+            duration_minutes = 120
 
         if not current:
-            return True, "[INFO] Keine aktive Session\n--> bach session start zum Starten"
+            msg = "[INFO] Keine aktive Session\n--> bach session start zum Starten"
+            if results:
+                return True, "\n".join(results) + "\n\n" + msg
+            return True, msg
 
         # Zeitberechnungen
         try:

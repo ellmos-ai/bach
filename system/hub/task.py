@@ -1564,7 +1564,7 @@ class TaskHandler(BaseHandler):
         task_id = None
         rest = []
         for arg in args:
-            if task_id is None and not arg.startswith("-"):
+            if task_id is None:
                 try:
                     task_id = int(arg)
                     continue

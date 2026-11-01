@@ -76,6 +76,33 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## Review 2026-11-01 (Daily Care & Dev Check - Gemini 3.8 Flash)
+
+Automatisierter Daily Care & Dev Check (BACH TASKS UND DEV). Befund und Status:
+
+- **Session-Dauer-Validierung & Task #-4 (Erledigt):**
+  - Bug behoben: `bach session check --set-duration=MIN` validiert positive ganze Minuten vor dem Schreiben in `user_config.json`.
+  - Null, negative Werte und ungültige Strings werden abgewiesen (`[FEHLER]`), vorheriger Wert bleibt unberührt, `[DRY-RUN]` führt keine Schreibaktionen aus.
+  - Regressionstests in `system/tests/test_session_handler.py` (5 neue isolierte Tests) vollständig grün.
+  - Task #-4 erledigt gemeldet.
+
+- **PromptBoard-Integration, System-Tray & Prompt-Import (Erledigt & Verifiziert):**
+  - Dynamische Pfad-Erkennung in `system/hub/_services/chat/chat_tray.py` und `system/hub/prompt.py` erweitert:
+    - Erkennt Plan D Repositories (`C:\_Local_DEV\repos\REL-PUB_PromptBoard-tasksolver-1136-1137`, `REL-PUB_PromptBoard`).
+    - Erkennt OneDrive Software-Ordner (`OneDrive\.TOPICS\.SOFTWARE\DATA\REL-PUB_PromptBoard`).
+    - Erkennt Windows-Executables in `dist/` und `releases/**/PromptBoard-*-win64.exe` (`v1.1.1`).
+  - System Tray Smoke Snapshot: `app_found: true`, `menu_has_open_app: true`, `library_found: true`, `prompt_source: ...\library.json`.
+  - Atomarer Prompt-Import durchgeführt: PromptBoard-Templates erfolgreich in BACH `prompt_templates` importiert; Handoff an Web-Chat (`/chat`) und GUI-Prompt-Manager verifiziert.
+  - Task #-1 erledigt gemeldet.
+
+- **Session-Lifecycle & Partner-Scope (Tasks #-2 & #-3 Verifiziert):**
+  - Eigene Session-IDs, atomare Partner-Scopes und Shutdown-Begrenzung aus PR #441 und #445 (konsolidiert in commit `4f40f0d0`) geprüft und Tasks #-2 und #-3 als erledigt markiert.
+
+- **Roadmap-Fortschritt & Neue Aufgaben (Erstellt):**
+  - Task ID `-5`: `Modularisierung: Modul- und Skill-Export als selfcontained Pakete und Re-Import verdrahten` (P2, core).
+  - Task ID `-6`: `PromptBoard und Tray: App-Start und Prompts-in-Chat Handoff end-to-end testen` (P2, gui).
+  - Task ID `-7`: `Update-Engine: bach update fuer regelmaessige Modul- und Skill-Synchronisation erweitern` (P2, infrastructure).
+
 ## Review 2026-10-08 (Daily Care & Dev Check)
 
 Automatisierter Daily Care & Dev Check. Befund und Status:

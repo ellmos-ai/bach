@@ -305,6 +305,48 @@ class TestUserConfig:
         assert config["gui"]["theme"] == "warm"
         assert "last_updated" in config
 
+    def test_check_set_duration_zero_rejected_and_preserves_config(self, handler, empty_env):
+        base, _ = empty_env
+        config_path = base / "data" / "user_config.json"
+        config_path.write_text(json.dumps({"session_duration_minutes": 120}), encoding="utf-8")
+        ok, msg = handler._check(["--set-duration=0"])
+        assert ok is False
+        assert "Ungueltige Sitzungsdauer '0'" in msg
+        config = handler._load_user_config()
+        assert config["session_duration_minutes"] == 120
+
+    def test_check_set_duration_negative_rejected(self, handler, empty_env):
+        base, _ = empty_env
+        config_path = base / "data" / "user_config.json"
+        config_path.write_text(json.dumps({"session_duration_minutes": 90}), encoding="utf-8")
+        ok, msg = handler._check(["--set-duration=-15"])
+        assert ok is False
+        assert "Ungueltige Sitzungsdauer '-15'" in msg
+        config = handler._load_user_config()
+        assert config["session_duration_minutes"] == 90
+
+    def test_check_set_duration_invalid_string_rejected(self, handler, empty_env):
+        base, _ = empty_env
+        ok, msg = handler._check(["--set-duration=invalid"])
+        assert ok is False
+        assert "Ungueltige Sitzungsdauer 'invalid'" in msg
+
+    def test_check_set_duration_dry_run_does_not_write(self, handler, empty_env):
+        base, _ = empty_env
+        config_path = base / "data" / "user_config.json"
+        config_path.write_text(json.dumps({"session_duration_minutes": 120}), encoding="utf-8")
+        ok, msg = handler._check(["--set-duration=180"], dry_run=True)
+        assert "[DRY-RUN] Wuerde Sitzungsdauer auf 180 Minuten setzen" in msg
+        config = handler._load_user_config()
+        assert config["session_duration_minutes"] == 120
+
+    def test_check_set_duration_valid_persists(self, handler, empty_env):
+        base, _ = empty_env
+        ok, msg = handler._check(["--set-duration=150"], dry_run=False)
+        assert "[OK] Sitzungsdauer auf 150 Minuten gesetzt" in msg
+        config = handler._load_user_config()
+        assert config["session_duration_minutes"] == 150
+
 
 # ═══════════════════════════════════════════════════════════════
 # HELP
