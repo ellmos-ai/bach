@@ -113,38 +113,6 @@ WIND_DIRECTIONS = {
 }
 
 
-def get_weather(lat: float, lon: float, lang: str = "de") -> Optional[dict]:
-    """
-    Ruft Wetterdaten von wttr.in ab.
-
-    Returns:
-        dict mit: temp_c, feels_like_c, humidity, windspeed_kmph, winddir,
-                  description, description_de, icon, location_name, country
-        oder None bei Fehler.
-    """
-    url = f"https://wttr.in/{lat:.4f},{lon:.4f}?format=j1&lang={lang}"
-
-    last_err = None
-    for attempt in range(2):  # max 2 Versuche (SSL-Kaltstart)
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "BACH-Weather-Service/1.0 (github.com/ellmos-ai/bach)"},
-            )
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            last_err = None
-            break
-        except urllib.error.URLError as e:
-            last_err = {"error": f"Netzwerkfehler: {e}"}
-        except Exception as e:
-            last_err = {"error": f"Fehler: {e}"}
-    if last_err:
-        return last_err
-
-    return _fetch_json(url, lang)
-
-
 def _parse_daily_day(day: dict) -> dict:
     """
     Wandelt einen wttr.in "weather"-Tag in ein normiertes Dict um.
@@ -217,6 +185,41 @@ def _parse_daily_day(day: dict) -> dict:
 
 def get_weather(lat: float, lon: float, lang: str = "de",
                 include_forecast: bool = False) -> Optional[dict]:
+    """
+    Ruft aktuelle Wetterdaten von wttr.in ab.
+
+    Returns:
+        dict mit: temp_c, feels_like_c, humidity, windspeed_kmph, winddir,
+                  description, description_de, icon, location_name, country,
+                  uv_index, visibility_km
+        oder None bei Fehler.
+    """
+    url = f"https://wttr.in/{lat:.4f},{lon:.4f}?format=j1&lang={lang}"
+
+    last_err = None
+    data = None
+    for attempt in range(2):  # max 2 Versuche (SSL-Kaltstart)
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "BACH-Weather-Service/1.0 (github.com/ellmos-ai/bach)"},
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            last_err = None
+            break
+        except urllib.error.URLError as e:
+            last_err = {"error": f"Netzwerkfehler: {e}"}
+        except Exception as e:
+            last_err = {"error": f"Fehler: {e}"}
+    if last_err:
+        return last_err
+
+    if not data:
+        return {"error": "Keine Daten erhalten"}
+
+    try:
+        cc = data.get("current_condition", [{}])[0]
         area = data.get("nearest_area", [{}])[0]
 
         area_name = area.get("areaName", [{}])[0].get("value", "?")
