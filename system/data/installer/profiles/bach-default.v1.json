@@ -1,0 +1,25 @@
+{
+  "schema": "bach.product-profile.v1",
+  "profile_id": "bach-default",
+  "profile_version": 1,
+  "product": {
+    "name": "BACH",
+    "version": "3.15.0"
+  },
+  "description": "Standard-Produktprofil: erwartet exakt die Kernkomponenten aus bach-core.v1.",
+  "components": [
+    "assistant-core",
+    "accounts-core",
+    "ellmos-scheduler",
+    "system-explorer",
+    "memoryhooker",
+    "workflowhooker",
+    "sqlite-transit-sync",
+    "web-scraper",
+    "doc-services",
+    "session-checkpoint",
+    "ellmos-chat",
+    "taskplan",
+    "llmauto"
+  ]
+}

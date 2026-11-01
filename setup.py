@@ -35,6 +35,34 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+try:  # pragma: no cover - Importpfad haengt vom Aufrufkontext ab
+    from system.tools.installer_manifest import (
+        InstallerVerificationError,
+        MutationJournal,
+        file_digest,
+        load_manifest,
+        load_product_profile,
+        payload_digest,
+        plan_rollback,
+        resolve_components,
+        verify_component_set,
+        verify_grant,
+    )
+except ImportError:  # direkter Aufruf: setup.py als Skript neben system/
+    sys.path.insert(0, str(Path(__file__).parent))
+    from system.tools.installer_manifest import (
+        InstallerVerificationError,
+        MutationJournal,
+        file_digest,
+        load_manifest,
+        load_product_profile,
+        payload_digest,
+        plan_rollback,
+        resolve_components,
+        verify_component_set,
+        verify_grant,
+    )
+
 _PACKAGING_COMMANDS = {
     "egg_info",
     "dist_info",
@@ -112,10 +140,21 @@ if any(arg in _PACKAGING_COMMANDS for arg in sys.argv[1:]):
 class BACHSetup:
     """BACH Installation Manager."""
 
-    def __init__(self, bach_root: Path = None):
+    def __init__(
+        self,
+        bach_root: Path = None,
+        manifest_path=None,
+        grant_path=None,
+        product_profile_path=None,
+        grant_key=None,
+    ):
         """
         Args:
             bach_root: BACH Root-Verzeichnis (default: Script-Parent)
+            manifest_path: Komponentenmanifest (default: bach-core.v1.json)
+            grant_path: Signatur-Grant-Datei (default: keine)
+            product_profile_path: Produktprofil (default: bach-default.v1.json)
+            grant_key: HMAC-Verifikationsschluessel (default: ENV BACH_INSTALLER_GRANT_KEY)
         """
         if bach_root is None:
             # Script liegt im BACH-Root
@@ -128,6 +167,54 @@ class BACHSetup:
         self.schema_dir = self.data / "schema"
         self.sql_dir = self.data / "sql"
         self.user_dir = self.root / "user"
+
+        self.manifest_path = (
+            Path(manifest_path)
+            if manifest_path
+            else self.data / "installer" / "manifests" / "bach-core.v1.json"
+        )
+        self.product_profile_path = (
+            Path(product_profile_path)
+            if product_profile_path
+            else self.data / "installer" / "profiles" / "bach-default.v1.json"
+        )
+        self.grant_path = Path(grant_path) if grant_path else None
+        self.grant_key = (
+            grant_key
+            if grant_key is not None
+            else os.environ.get("BACH_INSTALLER_GRANT_KEY")
+        )
+        self.journal_path = self.data / "installer" / "mutation-journal.jsonl"
+        # Lazy: MutationJournal erst bei Bedarf anlegen, damit verify() keine
+        # Verzeichnisse erzeugt (Fail-closed: keine Mutation vor der Pruefung).
+        self._journal = None
+
+    @property
+    def journal(self):
+        """Mutationsjournal (lazy initialisiert)."""
+        if self._journal is None:
+            self._journal = MutationJournal(self.journal_path)
+        return self._journal
+
+    def verify(self) -> bool:
+        """Fail-closed Vorabpruefung von Manifest, Komponentenmenge und Grant."""
+        if not self.manifest_path or not Path(self.manifest_path).exists():
+            raise InstallerVerificationError(
+                f"Komponentenmanifest fehlt: {self.manifest_path}"
+            )
+        if not self.grant_path or not Path(self.grant_path).exists():
+            raise InstallerVerificationError(
+                f"Signatur-Grant fehlt: {self.grant_path}"
+            )
+
+        manifest = load_manifest(self.manifest_path)
+        profile = load_product_profile(self.product_profile_path)
+        resolved = resolve_components(manifest)
+        verify_component_set(resolved, profile["components"])
+        digest = payload_digest(manifest)
+        verify_grant(self.grant_path, digest, profile, self.grant_key)
+        self.journal.record("verify", self.manifest_path, digest=digest)
+        return True
 
     def check(self) -> bool:
         """Prueft ob BACH korrekt installiert ist. Exit-Code 0=OK, 2=Probleme."""
@@ -162,6 +249,12 @@ class BACHSetup:
 
     def run(self, skip_pip: bool = False, extras: list = None, quiet: bool = False):
         """Führt komplettes Setup aus."""
+        try:
+            self.verify()
+        except InstallerVerificationError as e:
+            print(f"[ABBRUCH] Verifikation fehlgeschlagen: {e}")
+            return False
+
         if not quiet:
             print("=" * 70)
             print("  BACH Setup — Drei-Säulen-Modell")
@@ -193,6 +286,7 @@ class BACHSetup:
                 step_func(extras if step_id == "S1" else None)
                 print(f"     ✓ OK")
                 success_count += 1
+                self._journal_step(step_id)
             except Exception as e:
                 print(f"     ✗ FEHLER: {e}")
                 return False
@@ -208,6 +302,65 @@ class BACHSetup:
         print("  3. Optional: API-Keys eintragen, Connectors einrichten (Säule 3)")
         print()
 
+        return True
+
+    def _journal_step(self, step_id: str):
+        """Protokolliert die von einem Schritt mutierten Ziele im Mutationsjournal."""
+        if step_id == "S2":
+            if self.db_path.exists():
+                self.journal.record(
+                    "create", self.db_path, digest=file_digest(self.db_path), component="S2"
+                )
+            return
+
+        targets = []
+        if step_id == "S4":
+            targets = [
+                self.data / "logs",
+                self.data / "_backups",
+                self.data / "messages",
+                self.data / "sessions",
+                self.data / "dist",
+                self.user_dir / "secrets",
+            ]
+        elif step_id == "S5":
+            targets = [self.user_dir / "secrets" / "secrets.json"]
+        elif step_id == "S7":
+            targets = [self.system / "config" / "user_config.json"]
+
+        for target in targets:
+            if target.exists():
+                self.journal.record("create", target, component=step_id)
+
+    def rollback(self) -> bool:
+        """Setzt die im Mutationsjournal protokollierten Mutationen zurueck.
+
+        Fail-closed: Der Loeschplan wird vollstaendig geprueft, bevor irgendein
+        Ziel entfernt wird. Schlaegt die Pruefung fehl, bleibt das System unberuehrt.
+        """
+        try:
+            expected = load_product_profile(self.product_profile_path)["components"]
+            plan = plan_rollback(self.journal_path, expected_components=expected)
+        except InstallerVerificationError as e:
+            print(f"[ABBRUCH] Rollback verweigert: {e}")
+            return False
+
+        for raw_target in plan:
+            target = Path(raw_target)
+            try:
+                if target.is_dir():
+                    target.rmdir()
+                else:
+                    target.unlink()
+            except FileNotFoundError:
+                print(f"     [SKIP] bereits entfernt: {target}")
+                continue
+            except OSError as e:
+                print(f"[ABBRUCH] Rollback unvollstaendig bei {target}: {e}")
+                return False
+            self.journal.record("rollback", target)
+
+        print(f"Rollback abgeschlossen: {len(plan)} Ziel(e) zurueckgesetzt")
         return True
 
     def _step_s1_pip_install(self, extras: list = None):
@@ -290,7 +443,10 @@ class BACHSetup:
                         mod.migrate(conn)
                 print(f"     Migration angewendet: {migration_file.name}")
             except Exception as e:
-                print(f"     [WARN] Migration {migration_file.name} fehlgeschlagen: {e}")
+                conn.close()
+                raise RuntimeError(
+                    f"Migration {migration_file.name} fehlgeschlagen: {e}"
+                ) from e
 
         conn.commit()
         conn.close()
@@ -417,20 +573,51 @@ def main():
         help="Minimale Ausgabe (nur Fehler)"
     )
     parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Pfad zum Komponentenmanifest (Default: data/installer/manifests/bach-core.v1.json)"
+    )
+    parser.add_argument(
+        "--grant",
+        type=Path,
+        default=None,
+        help="Pfad zum Signatur-Grant (HMAC-gesicherte Freigabe)"
+    )
+    parser.add_argument(
+        "--product-profile",
+        type=Path,
+        default=None,
+        help="Pfad zum Produktprofil (Default: data/installer/profiles/bach-default.v1.json)"
+    )
+    parser.add_argument(
+        "--rollback",
+        action="store_true",
+        help="Letzte Mutationen aus dem Journal zuruecksetzen (fail-closed)"
+    )
+    parser.add_argument(
         "command",
         nargs="?",
         default="install",
-        choices=["install", "check"],
-        help="Setup-Befehl (default: install). 'check' prueft ob alles installiert ist."
+        choices=["install", "check", "verify", "rollback"],
+        help="Setup-Befehl (default: install). 'verify' prueft Manifest/Profil/Grant ohne Mutation."
     )
 
     args = parser.parse_args()
 
-    setup = BACHSetup()
+    setup = BACHSetup(
+        manifest_path=args.manifest,
+        grant_path=args.grant,
+        product_profile_path=args.product_profile,
+    )
 
     if args.command == "check":
         ok = setup.check()
         sys.exit(0 if ok else 2)
+    elif args.command == "verify":
+        sys.exit(0 if setup.verify() else 2)
+    elif args.command == "rollback":
+        sys.exit(0 if setup.rollback() else 1)
     elif args.command == "install":
         success = setup.run(
             skip_pip=args.skip_pip,
