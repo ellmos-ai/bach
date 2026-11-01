@@ -47,6 +47,136 @@ README নথিপত্র এগারোটি ভাষায় উপল�
 
 **BACH** একটি টেক্সট-ভিত্তিক অপারেটিং সিস্টেম, যা বৃহৎ ভাষা মডেলকে (LLM) স্বয়ংক্রিয়ভাবে কাজ করতে, শিখতে এবং নিজেদের সংগঠিত করতে সক্ষম করে। **ellmos** পরিবারের (অতিবৃহৎ ভাষা মডেলের অপারেটিং সিস্টেম) অংশ হিসেবে BACH কাজ ও জ্ঞান ব্যবস্থাপনা, অটোমেশন এবং LLM অর্কেস্ট্রেশনের জন্য পূর্ণাঙ্গ অবকাঠামো দেয়।
 
+## 🧭 মূল গভর্ন্যান্স: পরিচয় ও কর্তৃত্বের প্রবাহ, ৩-কারণ ডকুমেন্টেশন মডেল এবং স্বচ্ছ সিদ্ধান্ত প্রক্রিয়াকরণ নিয়ম
+
+BACH এবং Ocean **স্বচ্ছ, নিরীক্ষণযোগ্য এবং ব্যবহারকারী-কনফিগারযোগ্য সিদ্ধান্ত প্রক্রিয়াকরণ নিয়মের (`decision_processing_rules`)** মাধ্যমে তাদের স্বায়ত্তশাসিত আচরণ পরিচালনা করে। প্রতিটি কর্তৃত্ব পরীক্ষা, ডকুমেন্টেশন পার্থক্যের শ্রেণিবিন্যাস এবং অ্যাকশন শাখা একটি নির্ধারক অডিট রসিদ (`decision_rule_trace`) নির্গত করে।
+
+### 1. পরিচয়, ৩-স্তরের কর্তৃত্ব টানেলিং এবং "কর্তৃত্ব মরুভূমি" থেকে সুরক্ষা
+
+- **পরিচয় বনাম কর্তৃত্ব:** **পরিচয়** ওএস অ্যাকাউন্ট এবং নিবন্ধিত ডিভাইস/চ্যানেলের সাথে নোঙর করা থাকে (গোপন তথ্য স্থানীয় কীরিংয়ে অদৃশ্য থাকে)। **কর্তৃত্ব** ব্যবহারকারীর কাছ থেকে **অপারেটর চ্যানেল** (কনসোল, টেলিগ্রাম, সিস্টেম জিইউআই চ্যাট) হয়ে প্রেরিত সাব-এজেন্ট এবং ব্যাকগ্রাউন্ড কর্মীদের কাছে প্রবাহিত হয়।
+- **প্রকৃতি (স্বয়ংক্রিয় ক্ষয় ও পরিবর্তন) বনাম রূপান্তরকরণ/টেরাফর্মিং (উদ্দেশ্যমূলক পরিবর্তন):** ক্ষয় এবং বিচ্যুতি স্বাভাবিকভাবে সিস্টেম ব্যবহারের মাধ্যমে ঘটে (প্রসঙ্গ সংকোচন, সেশন পরিবর্তন, সময়ের প্রবাহ) — কোনো কৃত্রিম মেয়াদোত্তীর্ণ ক্রনজব বৈধ সিদ্ধান্ত বাতিল করে না। `DECISIONS.md`, `AKTUELLER-PLAN.md`, `USER.md` বা কোডের উদ্দেশ্যমূলক সম্পাদনা হলো **টেরাফর্মিং (Terraforming)**: পুরানো এন্ট্রিগুলি মূল উৎসেই সরাসরি `superseded` হিসেবে চিহ্নিত হয়।
+- **৩-স্তরের কর্তৃত্ব টানেলিং এবং অভ্যন্তরীণ-প্রথম ক্যাসকেড (Inward-First) (`open-ocean/tools/escalation_ladder.py`):**
+  1. **স্তর ১ — শব্দার্থিক কর্তৃত্ব টানেলিং (~৮০% দৈনন্দিন বিপরীতমুখী কাজ):** একটি সক্রিয় লক্ষ্য/পরিকল্পনার (`authority_ref`, `active_goal_or_plan_id`) মধ্যে দ্রুত সম্পাদন, যা ব্যবহারকারীর কাছে অপ্রয়োজনীয় প্রশ্ন এড়ায় (**`error_authority_desert` / কর্তৃত্ব মরুভূমি**)।
+  2. **স্তর ২ — নির্ধারক উদ্ধৃতি-প্রমাণ টানেল (~১৫% থ্রেশহোল্ড ট্রানজিশন, `ellmos-authority-evidence`):** NemoFold-এর `evidence.py` থেকে প্রাপ্ত; ১ মিলিসেকেন্ডেরও কম সময়ে (`validate_quote_tunnel_evidence`) যাচাই করে যে প্রদত্ত উদ্ধৃতি (`literal_quote`) মূল উৎসে (`DECISIONS.md`, `transcript.jsonl`, `AKTUELLER-PLAN.md`) **হুবহু শব্দে শব্দে** এবং `superseded` ছাড়া বিদ্যমান কি না।
+  3. **স্তর ৩ — কঠোর ক্রিপ্টোগ্রাফিক এবং লক গেট (~৫% অপরিবর্তনীয় বা উচ্চ-ঝুঁকিপূর্ণ কাজ):** `lock_status.py` (`LOCK.user.*`), সল্টযুক্ত নিরাপত্তা প্রশ্ন (`ellmos-installer`), এবং Ed25519 `capability-grant.v1` সনদের মাধ্যমে কার্যকর।
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. উৎস: প্রকৃতি (বিচ্যুতি) বনাম টেরাফর্মিং (উদ্দেশ্যমূলক)"]
+        U["অপারেটর চ্যানেলে ব্যবহারকারী
+(কনসোল, টেলিগ্রাম, জিইউআই চ্যাট)"]:::userLayer
+        TF["টেরাফর্মিং (উদ্দেশ্যমূলক রূপদান)
+DECISIONS.md, পরিকল্পনা, USER.md, policy-registry"]:::userLayer
+        NAT["প্রকৃতি ও ভূত্বক (স্বয়ংক্রিয় বিচ্যুতি)
+প্রসঙ্গ সংকোচন, সেশন বদল, সময়"]
+        U -->|"রূপ দেয়"| TF
+    end
+
+    subgraph L1["2. জ্ঞানীয় সিস্টেম ও ৩-স্তরের কর্তৃত্ব টানেলিং"]
+        COG["জ্ঞানীয় সিস্টেম + WorkflowHookers
+(মেটাকগনিশন, লক্ষ্য, পরিকল্পনা, দক্ষতা -> কাজের ইচ্ছা)"]:::cogLayer
+        T1["স্তর ১ (~৮০% বিপরীতমুখী)
+শব্দার্থিক কর্তৃত্ব টানেলিং"]:::tunnelLayer
+        T2["স্তর ২ (~১৫% থ্রেশহোল্ড)
+নির্ধারক উদ্ধৃতি টানেল (<1ms হুবহু যাচাই)"]:::tunnelLayer
+        T3["স্তর ৩ (~৫% অপরিবর্তনীয়)
+কঠোর গেট (LOCK.user / নিরাপত্তা হ্যাশ / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"হুবহু মিল"| T2
+        NAT -.->|"ক্ষয়প্রাপ্ত উদ্ধৃতি ব্যর্থ"| T2
+    end
+
+    subgraph L2["3. কর্তৃত্ব পরীক্ষক, অভ্যন্তরীণ-প্রথম ক্যাসকেড ও প্রতিফলন"]
+        CHK{"কর্তৃত্ব পরীক্ষক:
+কাজ করার অনুমতি আছে?"}:::tunnelLayer
+        ACT["হ্যাঁ: অবিলম্বে সম্পাদন করুন"]:::cogLayer
+        ASK["না: অভ্যন্তরীণ-প্রথম ক্যাসকেড (Inward-First)
+1. লক্ষ্য/প্রসঙ্গ -> 2. DECISIONS/USER.md
+-> 3. মূল অর্কেস্ট্রেটর -> 4. ব্যবহারকারী গেট"]:::tunnelLayer
+        REF["কাজ-পরবর্তী প্রতিফলন ও শিক্ষা
+কর্তৃত্ব মরুভূমি (error_authority_desert) প্রতিরোধ করে"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"হ্যাঁ"| ACT
+        CHK -->|"না"| ASK
+        ASK -->|"সমাধান হয়েছে"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. ৩-কারণ ডকুমেন্টেশন মডেল এবং কনফিগারযোগ্য সিদ্ধান্ত প্রক্রিয়াকরণ নিয়ম (`system/tools/llmauto/config.json`)
+
+যখন স্বয়ংক্রিয় ডকুমেন্টেশন যাচাইকরণ (`ellmos-doc-keeper` + NemoFold দাবি যাচাইকরণ) ডকুমেন্টেশন (`system/docs/help/*.txt`, `README.md`, `SKILL.md`, GUI `/help`) এবং পরিমাপ করা কোড বাস্তবতার মধ্যে অমিল শনাক্ত করে, তখন এটি **কখনোই কাঙ্ক্ষিত আর্কিটেকচার অন্ধভাবে ওভাররাইট করে না**। পরিবর্তে, `classify_doc_reality_diff()` অমিলকে **৩টি নির্ধারক কারণে** শ্রেণিবদ্ধ করে, এবং `resolve_doc_machine_dispatch()` স্বচ্ছ ও সমন্বয়যোগ্য **সিদ্ধান্ত প্রক্রিয়াকরণ নিয়ম** অনুযায়ী এটি পরিচালনা করে:
+
+| কারণ (`classify_doc_reality_diff`) | অর্থ | স্বচ্ছ কর্ম শাখা (`selected_branches` — একক বা যৌথ) |
+|---|---|---|
+| **1. `unintended_erosion`** *(অনিচ্ছাকৃত ক্ষয় / বিচ্যুতি)* | ডকুমেন্টেশন প্রত্যাশিত আচরণ বর্ণনা করে, কিন্তু কোড বা পরিষেবা অনিচ্ছাকৃতভাবে ভেঙে গেছে বা বিচ্যুত হয়েছে। | **ডকুমেন্টে SOLL (কাঙ্ক্ষিত লক্ষ্য) বজায় রাখুন** + IST (বর্তমান অবস্থা) সতর্কতা দিন + **`["local_taskplan", "user_notification"]`** প্রেরণ করুন (ব্যাকগ্রাউন্ড কর্মীর জন্য P1 মেরামত টাস্ক তৈরি করে এবং ব্যবহারকারীকে অবহিত করে; ঐচ্ছিকভাবে `local_genie_marblerun` বা `gitlab_wishes_come_true` এর সাথে সমন্বয়যোগ্য)। |
+| **2. `planned_terraforming_pending`** *(পরিকল্পিত টেরাফর্মিং বাকি)* | ডকুমেন্টেশন রোডম্যাপ/`DECISIONS.md` থেকে পরিকল্পিত লক্ষ্য আর্কিটেকচার (SOLL) বর্ণনা করে যা এখনও কোডে সম্পন্ন হয়নি। | বিদ্যমান টাস্ক পরীক্ষা/সমন্বয় করুন বা **`["local_taskplan"]`** এর মাধ্যমে P2 বাস্তবায়ন টাস্ক তৈরি করুন + ডকুমেন্টে **SOLL (টাস্ক আইডি সহ)** বনাম **IST** পরিষ্কারভাবে আলাদা রাখুন। |
+| **3. `completed_terraforming_doc_lag`** *(টেরাফর্মিং সম্পন্ন, কিন্তু ডকুমেন্টেশন পিছিয়ে)* | কোড ইচ্ছাকৃতভাবে উন্নত করা হয়েছে (commit/PR/`task_status=done` দ্বারা যাচাইকৃত), কিন্তু ডকুমেন্টেশন পিছিয়ে রয়েছে। | **`["local_doc_update"]`** সম্পাদন করুন: `.txt` সিএলআই সাহায্য, `.md` ডকুমেন্ট, সিএলআই/এপিআই রেফারেন্স এবং অনুবাদ (`de/en/es/ja/ru/zh`) স্থানীয়ভাবে স্বয়ংক্রিয়ভাবে আপডেট করে। |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. দাবি যাচাইকরণ ও ৩-কারণ শ্রেণিবিন্যাস"]
+        CLAIM["ডকুমেন্টের দাবি সংগ্রহ (docs/help/*.txt, README, SKILL.md, GUI /help)
+এবং কোড/সিএলআই/টেস্ট বাস্তবতা পরীক্ষা"]:::probe
+        CLS{"৩-কারণ ক্লাসিফায়ার
+(classify_doc_reality_diff)"}:::probe
+        U1["কারণ ১: অনিচ্ছাকৃত ক্ষয়
+(কোড/পরিষেবা অনিচ্ছাকৃতভাবে ক্ষতিগ্রস্ত বা বিচ্যুত)"]:::c1
+        U2["কারণ ২: পরিকল্পিত টেরাফর্মিং বাকি
+(ডকুমেন্ট SOLL, কোড এখনও অসম্পূর্ণ)"]:::c2
+        U3["কারণ ৩: টেরাফর্মিং সম্পন্ন
+(কোড সচেতনভাবে হালনাগাদ, ডকুমেন্ট পিছিয়ে)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. স্বচ্ছ ও সমন্বয়যোগ্য সিদ্ধান্ত প্রক্রিয়াকরণ নিয়ম (config.json)"]
+        RULE{"সিদ্ধান্ত নিয়ম ইঞ্জিন
+(resolve_doc_machine_dispatch)
+কারণ, ট্রিগার বা স্পষ্ট ওভাররাইড দ্বারা"}:::probe
+        B1["শাখা A: local_taskplan (ডিফল্ট)
+ব্যাকগ্রাউন্ড কর্মীর (Buddha / Cloud) জন্য স্থানীয় টাস্কপ্ল্যানে
+P1/P2 মেরামত বা নির্মাণ টাস্ক তৈরি করুন"]:::c3
+        B2["শাখা B: local_genie_marblerun
+স্থানীয় MarbleRun চেইন চালান
+(chains/wishes-come-true-local.json)"]:::c2
+        B3["শাখা C: gitlab_wishes_come_true
+ডেভেলপার সুবিধা (config.json-এ wishes_redirect)
+local-genie / wishes-come-true এর দিকে"]:::probe
+        B4["শাখা D: user_notification
+জিইউআই ইনবক্স / টেলিগ্রামের মাধ্যমে অপারেটরকে জানান"]:::c1
+        B5["শাখা E: local_doc_update
+.txt/.md ডকুমেন্ট, সিএলআই/এপিআই রেফারেন্স এবং i18n হালনাগাদ করুন"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"সমন্বয়যোগ্য"| B1
+        RULE -->|"সমন্বয়যোগ্য"| B2
+        RULE -->|"সমন্বয়যোগ্য (ocean-dev)"| B3
+        RULE -->|"সমন্বয়যোগ্য"| B4
+    end
+```
+
 ## প্রকল্প শনাক্তকরণ প্রসঙ্গ
 
 BACH-কে সবচেয়ে ভালোভাবে বলা যায় একটি **স্থানীয়-প্রথম LLM অপারেটিং সিস্টেম**: স্বয়ংক্রিয় এজেন্ট, কাঠামোবদ্ধ মেমরি, শিডিউলার-চালিত অটোমেশন, প্রম্পট চেইন, MCP সার্ভার সংযোগ এবং বহুভাষিক অপারেটর ইন্টারফেসের জন্য স্থায়ী Python/SQLite কর্মক্ষেত্র। এটি চ্যাটবট র‍্যাপার, হোস্টেড এজেন্ট SaaS, Bash ইউনিট-টেস্ট ফ্রেমওয়ার্ক, সঙ্গীত প্রকল্প বা LangChain-ধাঁচের পাইপলাইন লাইব্রেরি নয়।
@@ -286,13 +416,54 @@ print(f"BACH status: {status.state} (Active handlers: {status.handlers_count})")
 ### 2. জ্ঞান ব্যবস্থা
 তথ্য, শিক্ষা ও স্বয়ংক্রিয় সমন্বয়সহ কাঠামোবদ্ধ মেমরি সিস্টেম (৬ ধরনের মেমরি, 210+ DB টেবিল)।
 
-### 3. এজেন্ট ফ্রেমওয়ার্ক
-জটিল কাজের জন্য ১১ জন বস এজেন্ট ২২ জন বিশেষজ্ঞকে সমন্বয় করে। এজেন্ট CLI `bach agent` দিয়ে এজেন্টকে সরাসরি চালু, বন্ধ ও তালিকাভুক্ত করে; `bach agent checkpoint` দিয়ে প্রি-লঞ্চ দিকনির্দেশ কিউ, সহযোগিতামূলক বিরতির অনুরোধ ও নিরাপদ চেকপয়েন্টের স্পষ্ট স্বীকৃতিও সমর্থন করে। অপেক্ষমাণ সংকেত চালুর সময় তৈরি সেশনের `CLAUDE.md`-এ ঢোকানো হয়; `OPERATOR_NOTES.md` নির্দেশনা, বিরতি ও চেকপয়েন্ট অবস্থা প্রতিফলিত করে; লাইভ JSON অবস্থা সারফেস ড্যাশবোর্ডের জন্য নেস্টেড `operator_control` স্ন্যাপশট দেয়।
+### 3. এজেন্ট ফ্রেমওয়ার্ক — Ocean ভূমিকা, দ্বৈত রাউটিং এবং নমনীয় প্রোভাইডার সকেট (`ellmos.role-socket-catalog.v1`)
+যৌথ Ocean/BACH আর্কিটেকচারে, পরীক্ষিত BACH **বস এজেন্ট (সমন্বয়কারী)** এবং **ডোমেন বিশেষজ্ঞরা** সম্পূর্ণ সংরক্ষিত থেকে **নমনীয় প্রোভাইডার সকেট (`clutch` + `agents-heart` এর মাধ্যমে `model_sockets`)** এর সাথে যুক্ত **প্রোভাইডার-স্বাধীন Ocean ভূমিকা (`roles[]`)** হিসেবে কাজ করে:
+
+- **দ্বৈত রাউটিং (শব্দার্থিক + নির্ধারক):**
+  - **শব্দার্থিক রাউটিং:** আমব্রেলা দক্ষতা (`projekt-pipeline-umbrella`, `therapie-umbrella`, `selbstmanagement` ইত্যাদি) এবং `semantic-persona-routing` (`persona_router.py`) গতিশীলভাবে কাজ রাউট করে এবং উপযুক্ত দক্ষতা বান্ডিল ও ব্যক্তিত্ব প্রসঙ্গ সক্রিয় করে।
+  - **নির্ধারক রাউটিং:** `ellmos-controlcenter-mcp` (`controlcenter_resolve_semantic_route`, `controlcenter_switch_profile`, `controlcenter_find_skill`) বিভ্রমমুক্ত এবং কঠোর নিয়ম-ভিত্তিক রাউটিং ও প্রোফাইল পরিবর্তন প্রদান করে।
+- **নমনীয় প্রোভাইডার সকেট (`reasoning_coordinator`, `domain_specialist`, `fast_worker`):** ভূমিকাগুলি কখনোই কোনো একক বিক্রেতার সাথে কঠোরভাবে আবদ্ধ নয়। প্রতিটি ভূমিকা একটি প্রমিত সকেটে প্লাগ হয় যা রানটাইমে **Claude (`claude`)**, **OpenAI/Codex (`codex`)**, **Gemini/Antigravity (`agy`)**, **Kimi (`kimi`)**, **স্থানীয় Ollama (`ollama`)**, বা **OpenRouter (`openrouter`)** এ সমাধান হয়।
+- **৩-ট্যাব এজেন্ট লাইব্রেরি (`/agenten/bibliothek`, `ellmos.agent-library.v1`):** `discover_ocean_agent_library_templates()` স্বয়ংক্রিয়ভাবে BACH সমন্বয়কারী/বিশেষজ্ঞ ক্যাটালগ (`ati`, `bueroassistent`, `finanz-assistent`, `gesundheitsassistent`, `persoenlicher-assistent`, `produktivitaet` + ২২ জন বিশেষজ্ঞ) এবং ৯টি Ocean মডিউল রিপোজিটরিতে (`task-master`, `ticket-master`, `MarbleRun`, `system-auditor`, `compare-race`, `ellmos-installer`, `foerderplaner`, `ai-media-editor`, `clip-storyboard-director`) ঘোষিত **১৭টি সুস্পষ্ট মডিউল ভূমিকা (`roles[]`)** থেকে জিইউআই ও সিএলআই এজেন্ট লাইব্রেরি পূর্ণ করে।
+- **অপারেটর নিয়ন্ত্রণ:** `bach agent start/stop/list/pause/resume/checkpoint/steer` চলমান কাজ পরিচালনা, লঞ্চ-পূর্ব নির্দেশনা (`OPERATOR_NOTES.md`), এবং নিরাপদ চেকপয়েন্ট স্বীকৃতি নিয়ন্ত্রণ করে।
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>চিত্রে BACH-এর পাঁচটি মূল বস এজেন্ট দেখানো হয়েছে: ati, officeassistant, finance-assistant, health-assistant ও personal-assistant। বর্তমান সিস্টেমে ১১ জন বস এজেন্ট ও ২২ জন বিশেষজ্ঞ রয়েছে।</i>
+  <i>চিত্রে BACH-এর মূল সমন্বয়কারী ভূমিকাগুলি (ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent) দেখানো হয়েছে, যা এখন ১৭টি মডিউল-ম্যানিফেস্ট ভূমিকার সাথে Ocean-এর নমনীয় প্রোভাইডার সকেটে কাজ করছে।</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. দ্বৈত রাউটিং স্তর (শব্দার্থিক বনাম নির্ধারক)"]
+        SEM["শব্দার্থিক রাউটিং
+আমব্রেলা দক্ষতা (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["নির্ধারক রাউটিং
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. Ocean ভূমিকা ও ৩-ট্যাব এজেন্ট লাইব্রেরি (ellmos.agent-library.v1)"]
+        COORD["6 সমন্বয়কারী ভূমিকা (পূর্বে BACH বস)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["২২+ ডোমেন বিশেষজ্ঞ এবং ১৭টি মডিউল ভূমিকা (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. নমনীয় প্রোভাইডার সকেট (model_sockets + clutch + agents-heart)"]
+        SOCK["প্রমিত মডেল সকেট
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["প্লাগযোগ্য LLM প্রোভাইডার
+Claude | Codex/GPT | Gemini/AGY | Kimi | স্থানীয় Ollama | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. প্রম্পট সিস্টেম
 বোর্ড সংগ্রহ ও পূর্ণ সংস্করণ নিয়ন্ত্রণসহ প্রম্পট টেমপ্লেটের কেন্দ্রীয় ব্যবস্থাপনা (`bach prompt`)।

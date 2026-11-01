@@ -47,6 +47,136 @@ La liste ci-dessus décrit les traductions de la documentation disponibles. La p
 
 **BACH** est un système d’exploitation textuel qui permet aux grands modèles de langage (LLM) de travailler de façon autonome, d’apprendre et de s’organiser. Membre de la famille **ellmos** (systèmes d’exploitation pour très grands modèles de langage), BACH fournit une infrastructure complète de gestion des tâches et des connaissances, d’automatisation et d’orchestration des LLM.
 
+## 🧭 Gouvernance centrale : identité et flux d’autorité, modèle documentaire à 3 causes et règles transparentes de traitement des décisions
+
+BACH et Ocean régissent leur comportement autonome via des **règles de traitement des décisions transparentes, inspectables et configurables par l’utilisateur (`decision_processing_rules`)**. Chaque vérification d’autorité, classification d’écart documentaire et branche d’action génère un reçu d’audit déterministe (`decision_rule_trace`).
+
+### 1. Identité, tunnelisation d’autorité à 3 niveaux et protection contre le « désert d’autorité »
+
+- **Identité vs autorité :** L’**identité** est ancrée au compte de système d’exploitation et à l’appareil/canal enregistré (les secrets restent invisibles dans le trousseau local). L’**autorité** découle de l’utilisateur à travers les **canaux d’opérateur** (console, Telegram, chat de l’interface graphique système) vers les sous-agents et workers d’arrière-plan mandatés.
+- **Nature (érosion automatique et dérive) vs terraformation (changement intentionnel) :** L’érosion et la dérive surviennent naturellement par l’utilisation du système (compaction de contexte, limites de session, évolution du code) — aucun cronjob d’expiration artificielle n’invalide les décisions valides. Les modifications intentionnelles de `DECISIONS.md`, `AKTUELLER-PLAN.md`, `USER.md` ou du code relèvent de la **terraformation** : les entrées obsolètes sont marquées `superseded` directement à la source.
+- **Tunnelisation d’autorité à 3 niveaux et cascade vers l’intérieur (Inward-First) (`open-ocean/tools/escalation_ladder.py`) :**
+  1. **Niveau 1 — Tunnelisation sémantique d’autorité (~80 % du travail réversible quotidien) :** Exécution rapide au sein d’un objectif ou plan actif (`authority_ref`, `active_goal_or_plan_id`), évitant les demandes superflues à l’utilisateur (**`error_authority_desert` / désert d’autorité**).
+  2. **Niveau 2 — Tunnel de preuve par citation déterministe (~15 % de transitions de seuil, `ellmos-authority-evidence`) :** Issu d’`evidence.py` de NemoFold ; vérifie en `< 1 ms` (`validate_quote_tunnel_evidence`) si la citation textuelle (`literal_quote`) existe **mot à mot** et non-`superseded` dans la source originale (`DECISIONS.md`, `transcript.jsonl`, `AKTUELLER-PLAN.md`).
+  3. **Niveau 3 — Portes dures cryptographiques et de verrouillage (~5 % d’actions irréversibles ou à haut risque) :** Appliqué via `lock_status.py` (`LOCK.user.*`), question de sécurité salée (`ellmos-installer`) et certificats Ed25519 `capability-grant.v1`.
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. Origine : Nature (dérive) vs Terraformation (intentionnelle)"]
+        U["Utilisateur dans le canal opérateur
+(Console, Telegram, chat GUI)"]:::userLayer
+        TF["Terraformation (façonnement intentionnel)
+DECISIONS.md, Plan, USER.md, policy-registry"]:::userLayer
+        NAT["Nature et tectonique (dérive automatique)
+Compaction de contexte, changements de session, temps"]
+        U -->|"Façonne"| TF
+    end
+
+    subgraph L1["2. Système cognitif et tunnelisation d'autorité à 3 niveaux"]
+        COG["Système cognitif + WorkflowHookers
+(Métacognition, objectifs, plans, compétences -> Volonté d'agir)"]:::cogLayer
+        T1["Niveau 1 (~80% Réversible)
+Tunnelisation sémantique d'autorité"]:::tunnelLayer
+        T2["Niveau 2 (~15% Seuils)
+Tunnel de citations déterministe (<1ms vérification mot à mot)"]:::tunnelLayer
+        T3["Niveau 3 (~5% Irréversible)
+Porte dure (LOCK.user / Hash de sécurité / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"Correspondance mot à mot"| T2
+        NAT -.->|"Citation érodée échoue"| T2
+    end
+
+    subgraph L2["3. Vérificateur d'autorité, cascade vers l'intérieur et réflexion"]
+        CHK{"Vérificateur d'autorité :
+Autorisé à agir ?"}:::tunnelLayer
+        ACT["OUI : Exécuter immédiatement"]:::cogLayer
+        ASK["NON : Cascade vers l'intérieur (Inward-First)
+1. Objectif/Contexte -> 2. DECISIONS/USER.md
+-> 3. Orchestrateur parent -> 4. Porte utilisateur"]:::tunnelLayer
+        REF["Réflexion et apprentissage post-action
+Prévient le désert d'autorité (error_authority_desert)"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"Oui"| ACT
+        CHK -->|"Non"| ASK
+        ASK -->|"Résolu"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. Le modèle documentaire à 3 causes et règles configurables de traitement des décisions (`system/tools/llmauto/config.json`)
+
+Lorsque la vérification automatisée de documentation (`ellmos-doc-keeper` + vérification des affirmations de NemoFold) détecte un écart entre la documentation (`system/docs/help/*.txt`, `README.md`, `SKILL.md`, GUI `/help`) et la réalité mesurée du code, elle **n’écrase jamais aveuglément l’architecture cible**. À la place, `classify_doc_reality_diff()` classe l’écart selon **3 causes déterministes**, et `resolve_doc_machine_dispatch()` l’achemine selon des **règles de traitement des décisions** transparentes et combinables :
+
+| Cause (`classify_doc_reality_diff`) | Signification | Branches d’action transparentes (`selected_branches` — individuelles ou combinables) |
+|---|---|---|
+| **1. `unintended_erosion`** *(Érosion / dérive involontaire)* | La documentation décrit le comportement attendu, mais le code/service est tombé en panne ou a dérivé involontairement. | **Conserver SOLL dans la doc** + placer un avertissement IST + déclencher **`["local_taskplan", "user_notification"]`** (crée une tâche de réparation P1 pour le worker d’arrière-plan + notifie l’utilisateur ; combinable en option avec `local_genie_marblerun` ou `gitlab_wishes_come_true`). |
+| **2. `planned_terraforming_pending`** *(Terraformation planifiée en attente)* | La documentation décrit l’architecture cible planifiée (SOLL) issue de la Roadmap/`DECISIONS.md` pas encore achevée dans le code. | Vérifier/ajuster la tâche existante ou créer une tâche d’implémentation P2 via **`["local_taskplan"]`** + distinguer nettement **SOLL (avec ID de tâche)** vs **IST** dans la documentation. |
+| **3. `completed_terraforming_doc_lag`** *(Terraformation achevée avec retard documentaire)* | Le code a été délibérément développé (vérifié par commit/PR/`task_status=done`), la documentation est en retard. | Exécuter **`["local_doc_update"]`** : met automatiquement à jour l’aide CLI `.txt`, la doc `.md`, les références CLI/API et les traductions (`de/en/es/ja/ru/zh`). |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. Vérification des affirmations et classification à 3 causes"]
+        CLAIM["Extraire les affirmations doc (docs/help/*.txt, README, SKILL.md, GUI /help)
+et sonder la réalité code/CLI/tests"]:::probe
+        CLS{"Classificateur à 3 causes
+(classify_doc_reality_diff)"}:::probe
+        U1["Cause 1 : Érosion involontaire
+(Code/service défaillant ou dérivé involontairement)"]:::c1
+        U2["Cause 2 : Terraformation planifiée en attente
+(Doc est SOLL, code pas encore terminé)"]:::c2
+        U3["Cause 3 : Terraformation achevée
+(Code mis à jour intentionnellement, doc en retard)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. Règles transparentes et combinables de traitement des décisions (config.json)"]
+        RULE{"Moteur de règles de décision
+(resolve_doc_machine_dispatch)
+Par cause, déclencheur ou surcharge explicite"}:::probe
+        B1["Branche A : local_taskplan (Défaut)
+Créer tâche P1/P2 de réparation ou construction dans taskplan local
+pour worker d'arrière-plan (Buddha / Cloud)"]:::c3
+        B2["Branche B : local_genie_marblerun
+Lancer chaîne locale MarbleRun
+(chains/wishes-come-true-local.json)"]:::c2
+        B3["Branche C : gitlab_wishes_come_true
+Fonctionnalité développeur (wishes_redirect dans config.json)
+vers local-genie / wishes-come-true"]:::probe
+        B4["Branche D : user_notification
+Notifier l'opérateur via boîte de réception GUI / Telegram"]:::c1
+        B5["Branche E : local_doc_update
+Actualiser docs .txt/.md, références CLI/API et i18n"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"Combinable"| B1
+        RULE -->|"Combinable"| B2
+        RULE -->|"Combinable (ocean-dev)"| B3
+        RULE -->|"Combinable"| B4
+    end
+```
+
 ## Contexte d’identification du projet
 
 BACH se décrit le mieux comme un **système d’exploitation LLM local en priorité** : un environnement de travail persistant Python/SQLite pour les agents autonomes, la mémoire structurée, l’automatisation pilotée par un ordonnanceur, les chaînes de prompts, l’intégration de serveurs MCP et les interfaces opérateur multilingues. Ce n’est ni une surcouche de chatbot, ni un SaaS d’agents hébergé, ni un framework de tests unitaires Bash, ni un projet musical, ni une bibliothèque de pipelines de type LangChain.
@@ -286,13 +416,54 @@ Système GTD complet avec priorités, échéances, tags et suivi du contexte.
 ### 2. Système de connaissances
 Système de mémoire structuré avec faits, leçons et consolidation automatique (6 types de mémoire, 210+ tables de base de données).
 
-### 3. Framework d’agents
-11 agents responsables coordonnent 22 experts pour les tâches complexes. La CLI des agents permet de démarrer, arrêter et lister directement les agents via `bach agent`, et prend désormais aussi en charge les files de consignes avant lancement, les demandes de pause coopérative et les confirmations explicites de points de contrôle sûrs via `bach agent checkpoint`. Les consignes en attente sont injectées au lancement dans le `CLAUDE.md` de session généré ; `OPERATOR_NOTES.md` reflète l’état de pilotage, de pause et de point de contrôle ; les surfaces JSON en temps réel exposent l’instantané imbriqué `operator_control` pour les tableaux de bord.
+### 3. Framework d’agents — Rôles Ocean, double routage et sockets flexibles de fournisseurs (`ellmos.role-socket-catalog.v1`)
+Dans l’architecture conjointe Ocean/BACH, les **agents chefs (coordinateurs)** et les **experts de domaine** éprouvés de BACH sont pleinement préservés tout en opérant comme des **rôles Ocean indépendants des fournisseurs (`roles[]`)** raccordés à des **sockets de fournisseurs flexibles (`model_sockets` via `clutch` + `agents-heart`)** :
+
+- **Double routage (sémantique + déterministe) :**
+  - **Routage sémantique :** Les compétences ombrelles (`projekt-pipeline-umbrella`, `therapie-umbrella`, `selbstmanagement`, etc.) et `semantic-persona-routing` (`persona_router.py`) acheminent les requêtes de manière dynamique et activent le pack de compétences et le contexte de rôle appropriés.
+  - **Routage déterministe :** `ellmos-controlcenter-mcp` (`controlcenter_resolve_semantic_route`, `controlcenter_switch_profile`, `controlcenter_find_skill`) assure un routage et un basculement de profils déterministes, sans hallucinations et strictement basés sur des règles.
+- **Sockets flexibles de fournisseurs (`reasoning_coordinator`, `domain_specialist`, `fast_worker`) :** Les rôles ne sont jamais couplés de manière rigide à un seul fournisseur. Chaque rôle se branche sur un socket standardisé qui se résout au moment de l’exécution avec **Claude (`claude`)**, **OpenAI/Codex (`codex`)**, **Gemini/Antigravity (`agy`)**, **Kimi (`kimi`)**, **Ollama local (`ollama`)** ou **OpenRouter (`openrouter`)**.
+- **Bibliothèque d’agents à 3 onglets (`/agenten/bibliothek`, `ellmos.agent-library.v1`) :** `discover_ocean_agent_library_templates()` alimente automatiquement la bibliothèque d’agents de l’interface graphique et du CLI à partir du catalogue de coordinateurs et d’experts de BACH (`ati`, `bueroassistent`, `finanz-assistent`, `gesundheitsassistent`, `persoenlicher-assistent`, `produktivitaet` + 22 experts) et des **17 rôles de module explicites (`roles[]`)** déclarés dans 9 dépôts de modules Ocean (`task-master`, `ticket-master`, `MarbleRun`, `system-auditor`, `compare-race`, `ellmos-installer`, `foerderplaner`, `ai-media-editor`, `clip-storyboard-director`).
+- **Contrôles d’opérateur :** `bach agent start/stop/list/pause/resume/checkpoint/steer` gère les exécutions en direct, les consignes préalables au lancement (`OPERATOR_NOTES.md`) et les validations explicites de points de contrôle sûrs.
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>L’illustration présente les cinq agents responsables initiaux de BACH : ati, officeassistant, finance-assistant, health-assistant et personal-assistant. Le système actuel comprend 11 agents responsables et 22 experts.</i>
+  <i>L’illustration montre les rôles coordinateurs originaux de BACH (ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent), opérant désormais sur les sockets flexibles de fournisseurs d’Ocean aux côtés de 17 rôles de manifestes de modules.</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. Couche de double routage (Sémantique vs Déterministe)"]
+        SEM["Routage sémantique
+Compétences ombrelles (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["Routage déterministe
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. Rôles Ocean et bibliothèque d'agents à 3 onglets (ellmos.agent-library.v1)"]
+        COORD["6 rôles coordinateurs (anciens chefs BACH)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["22+ experts de domaine et 17 rôles de module (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. Sockets flexibles de fournisseurs (model_sockets + clutch + agents-heart)"]
+        SOCK["Sockets de modèles standardisés
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["Fournisseurs LLM enfichables
+Claude | Codex/GPT | Gemini/AGY | Kimi | Ollama local | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. Système de prompts
 Gestion centralisée des modèles de prompts avec collections de tableaux et versionnage complet (`bach prompt`).

@@ -47,6 +47,136 @@ README 文档提供 11 种语言版本。运行时翻译覆盖范围单独说明
 
 **BACH** 是一款文本操作系统，使大型语言模型（LLM）能够自主工作、学习和自我组织。BACH 属于 **ellmos** 家族（超大型语言模型操作系统），为任务管理、知识管理、自动化和 LLM 编排提供完整基础设施。
 
+## 🧭 核心治理：身份与权威流、3-原因文档模型及透明的决策处理规则
+
+BACH 与 Ocean 通过**透明、可审查且用户可配置的决策处理规则（`decision_processing_rules`）**来规范其自主行为。每一次权威检查、文档差异分类和操作分支都会输出确定性的审计凭证（`decision_rule_trace`）。
+
+### 1. 身份、3 级权威隧道化与防止“权威荒漠”
+
+- **身份 vs. 权威：** **身份**锚定于您的操作系统账户和已注册的设备/通道（机密安全隐蔽于本地密钥环中）。**权威**则通过**操作员通道**（控制台、Telegram、系统 GUI 聊天）从用户流向被分派的子代理和后台工作进程。
+- **自然演化（自动侵蚀与漂移）vs. 地形改造（意图性变更）：** 侵蚀与漂移是系统日常使用中自然发生的（上下文压缩、会话交替、时间推移）——没有任何人为过期的定时任务会作废有效决策。对 `DECISIONS.md`、`AKTUELLER-PLAN.md`、`USER.md` 或代码的意向性修改属于**地形改造（Terraforming）**：旧条目直接在源头被标记为 `superseded`（已被取代）。
+- **3 级权威隧道化与对内优先级联（`open-ocean/tools/escalation_ladder.py`）：**
+  1. **第 1 级 — 语义权威隧道化（约 80% 的日常可逆工作）：** 在活动的目标/计划（`authority_ref`、`active_goal_or_plan_id`）范围内快速执行，避免不必要的用户打扰（**`error_authority_desert` / 权威荒漠**）。
+  2. **第 2 级 — 确定性引用证据隧道（约 15% 的阈值跃迁，`ellmos-authority-evidence`）：** 源自 NemoFold 的 `evidence.py`；可在 1 毫秒以内（`validate_quote_tunnel_evidence`）验证所提供的 `literal_quote` 是否在原始源（`DECISIONS.md`、`transcript.jsonl`、`AKTUELLER-PLAN.md`）中**逐字完全一致**且未被标记为 `superseded`。
+  3. **第 3 级 — 硬性密码学与锁定门禁（约 5% 的不可逆/高风险操作）：** 通过 `lock_status.py`（`LOCK.user.*`）、加盐安全问题（`ellmos-installer`）和 Ed25519 `capability-grant.v1` 凭证强制执行。
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. 起源：自然演化（漂移）vs 地形改造（意图性）"]
+        U["操作员通道中的用户
+(控制台、Telegram、GUI 聊天)"]:::userLayer
+        TF["地形改造（意图性塑造）
+DECISIONS.md, 计划, USER.md, policy-registry"]:::userLayer
+        NAT["自然演化与地质板块（自动漂移）
+上下文压缩、会话交替、时间推移"]
+        U -->|"塑造"| TF
+    end
+
+    subgraph L1["2. 认知系统与 3 级权威隧道化"]
+        COG["认知系统 + WorkflowHookers
+(元认知、目标、计划、技能 -> 行动意愿)"]:::cogLayer
+        T1["第 1 级 (~80% 可逆)
+语义权威隧道化"]:::tunnelLayer
+        T2["第 2 级 (~15% 阈值)
+确定性引用隧道 (<1ms 逐字比对)"]:::tunnelLayer
+        T3["第 3 级 (~5% 不可逆)
+硬门禁 (LOCK.user / 安全哈希 / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"逐字匹配"| T2
+        NAT -.->|"被侵蚀的引用校验失败"| T2
+    end
+
+    subgraph L2["3. 权威检查器、对内优先级联与反思"]
+        CHK{"权威检查器:
+是否允许执行操作？"}:::tunnelLayer
+        ACT["是: 立即执行"]:::cogLayer
+        ASK["否: 对内优先级联 (Inward-First)
+1. 目标/上下文 -> 2. DECISIONS/USER.md
+-> 3. 父协调器 -> 4. 用户门禁"]:::tunnelLayer
+        REF["事后反思与学习
+防止权威荒漠 (error_authority_desert)"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"是"| ACT
+        CHK -->|"否"| ASK
+        ASK -->|"已解决"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. 3-原因文档模型与可配置的决策处理规则（`system/tools/llmauto/config.json`）
+
+当自动化文档验证（`ellmos-doc-keeper` + NemoFold 断言验证）检测到文档（`system/docs/help/*.txt`、`README.md`、`SKILL.md`、GUI `/help`）与测得的代码实际情况存在差异时，它**绝不会盲目覆盖预期的架构目标**。相反，`classify_doc_reality_diff()` 会将差异确定性地归类为 **3 种原因**，并通过 `resolve_doc_machine_dispatch()` 按照透明、可组合的**决策处理规则**进行路由：
+
+| 原因 (`classify_doc_reality_diff`) | 含义 | 透明的操作分支（`selected_branches` — 单选或组合） |
+|---|---|---|
+| **1. `unintended_erosion`** *(非意图侵蚀 / 漂移)* | 文档记录了预期行为，但代码或运行状态意外损坏或发生偏离。 | **在文档中保留 SOLL（目标状态）** + 标注 IST（现状）警告 + 分发 **`["local_taskplan", "user_notification"]`**（为后台工作进程创建 P1 修复任务并通知用户；可与 `local_genie_marblerun` 或 `gitlab_wishes_come_true` 组合）。 |
+| **2. `planned_terraforming_pending`** *(计划之地形改造待推进)* | 文档描述了来自路线图/`DECISIONS.md` 的计划目标架构（SOLL），但代码尚未完成。 | 检查/调整现有任务，或通过 **`["local_taskplan"]`** 创建 P2 实现任务 + 在文档中明确区分 **SOLL（附带任务 ID）** 与 **IST**。 |
+| **3. `completed_terraforming_doc_lag`** *(已完成地形改造，文档滞后)* | 代码已按计划推进（经 commit/PR/`task_status=done` 验证），文档更新滞后。 | 执行 **`["local_doc_update"]`**：自动在本地更新 `.txt` CLI 帮助、`.md` 文档、CLI/API 参考手册及多语言翻译（`de/en/es/ja/ru/zh`）。 |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. 断言验证与 3-原因分类"]
+        CLAIM["提取文档断言 (docs/help/*.txt, README, SKILL.md, GUI /help)
+并探测代码/CLI/测试实际情况"]:::probe
+        CLS{"3-原因分类器
+(classify_doc_reality_diff)"}:::probe
+        U1["原因 1: 非意图侵蚀
+(代码/服务意外损坏或漂移)"]:::c1
+        U2["原因 2: 计划之地形改造待推进
+(文档为 SOLL，代码尚未完成)"]:::c2
+        U3["原因 3: 已完成地形改造
+(代码有意更新，文档更新滞后)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. 透明且可组合的决策处理规则 (config.json)"]
+        RULE{"决策规则引擎
+(resolve_doc_machine_dispatch)
+基于原因、触发器或显式覆盖"}:::probe
+        B1["分支 A: local_taskplan (默认)
+在本地任务计划中创建 P1/P2 修复或构建任务
+供后台工作进程 (Buddha / Cloud) 处理"]:::c3
+        B2["分支 B: local_genie_marblerun
+运行本地 MarbleRun 链路
+(chains/wishes-come-true-local.json)"]:::c2
+        B3["分支 C: gitlab_wishes_come_true
+开发者功能 (config.json 中的 wishes_redirect)
+指向 local-genie / wishes-come-true"]:::probe
+        B4["分支 D: user_notification
+通过 GUI 收件箱 / Telegram 通知操作员"]:::c1
+        B5["分支 E: local_doc_update
+更新 .txt/.md 文档、CLI/API 参考手册及 i18n"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"可组合"| B1
+        RULE -->|"可组合"| B2
+        RULE -->|"可组合 (ocean-dev)"| B3
+        RULE -->|"可组合"| B4
+    end
+```
+
 ## 项目识别背景
 
 BACH 最适合被描述为**本地优先的 LLM 操作系统**：这是一个持久化的 Python/SQLite 工作台，服务于自主代理、结构化记忆、由调度器驱动的自动化、提示词链、MCP 服务器集成以及多语言操作界面。它不是聊天机器人封装、托管式代理 SaaS、Bash 单元测试框架、音乐项目，也不是 LangChain 式的流水线库。
@@ -286,13 +416,54 @@ print(f"BACH status: {status.state} (Active handlers: {status.handlers_count})")
 ### 2. 知识系统
 结构化记忆系统，包含事实、经验教训和自动整合功能（6 种记忆类型，210 多张数据库表）。
 
-### 3. 代理框架
-11 个总负责人代理会为复杂任务协调 22 位专家。代理 CLI 可通过 `bach agent` 直接启动、停止和列出代理，也支持通过 `bach agent checkpoint` 预启动指引队列、协作暂停请求和明确的安全检查点确认。启动时，排队提示会注入生成会话的 `CLAUDE.md`；`OPERATOR_NOTES.md` 会同步指引、暂停和检查点状态；实时 JSON 状态界面会公开嵌套的 `operator_control` 快照，供仪表板使用。
+### 3. 代理框架 — Ocean 角色、双重路由与灵活的提供商插槽 (`ellmos.role-socket-catalog.v1`)
+在 Ocean/BACH 架构中，经受住实战检验的 BACH **主管代理（协调器）**与**领域专家**被完整保留，同时作为**独立于具体提供商的 Ocean 角色（`roles[]`）**运行，接入基于 `clutch` + `agents-heart` 的**灵活提供商插槽（`model_sockets`）**：
+
+- **双重路由（语义路由 + 确定性路由）：**
+  - **语义路由：** 伞形技能（`projekt-pipeline-umbrella`、`therapie-umbrella`、`selbstmanagement` 等）与 `semantic-persona-routing`（`persona_router.py`）动态分发任务，激活相符的技能组合包与角色人设上下文。
+  - **确定性路由：** `ellmos-controlcenter-mcp`（`controlcenter_resolve_semantic_route`、`controlcenter_switch_profile`、`controlcenter_find_skill`）提供零幻觉、严格受规则约束的路由选择与配置文件切换。
+- **灵活的提供商插槽（`reasoning_coordinator`、`domain_specialist`、`fast_worker`）：** 角色绝不与单一厂商硬编码绑定。每个角色均接入标准化插槽，在运行时动态解析为 **Claude (`claude`)**、**OpenAI/Codex (`codex`)**、**Gemini/Antigravity (`agy`)**、**Kimi (`kimi`)**、**本地 Ollama (`ollama`)** 或 **OpenRouter (`openrouter`)**。
+- **3-标签页代理库（`/agenten/bibliothek`, `ellmos.agent-library.v1`）：** `discover_ocean_agent_library_templates()` 自动从 BACH 协调器/专家目录（`ati`、`bueroassistent`、`finanz-assistent`、`gesundheitsassistent`、`persoenlicher-assistent`、`produktivitaet` + 22 位专家）以及在 9 个 Ocean 模块代码仓库（`task-master`、`ticket-master`、`MarbleRun`、`system-auditor`、`compare-race`、`ellmos-installer`、`foerderplaner`、`ai-media-editor`、`clip-storyboard-director`）中声明的 **17 个显式模块角色（`roles[]`）** 填充 GUI 和 CLI 代理库模板。
+- **操作员控制：** `bach agent start/stop/list/pause/resume/checkpoint/steer` 支持管理正在运行的任务、启动前提示注入（`OPERATOR_NOTES.md`）及显式安全检查点确认。
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>这幅插图展示了 BACH 最初的五个总负责人代理：ati、officeassistant、finance-assistant、health-assistant 和 personal-assistant。当前系统包含 11 个总负责人代理和 22 位专家。</i>
+  <i>图示展示了 BACH 的原始协调器角色（ati、bueroassistent、finanz-assistent、gesundheitsassistent、persoenlicher-assistent），现与 17 个模块清单角色一同运行在 Ocean 的灵活提供商插槽之上。</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. 双重路由层 (语义路由 vs 确定性路由)"]
+        SEM["语义路由
+伞形技能 (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["确定性路由
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. Ocean 角色与 3-标签页代理库 (ellmos.agent-library.v1)"]
+        COORD["6 个协调器角色 (原 BACH 主管)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["22+ 领域专家与 17 个模块角色 (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. 灵活提供商插槽 (model_sockets + clutch + agents-heart)"]
+        SOCK["标准化模型插槽
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["可拔插 LLM 提供商
+Claude | Codex/GPT | Gemini/AGY | Kimi | 本地 Ollama | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. 提示词系统
 集中管理提示词模板、看板集合和完整版本记录（`bach prompt`）。

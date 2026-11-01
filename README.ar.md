@@ -47,6 +47,136 @@
 
 **BACH** نظام تشغيل نصي يمكّن النماذج اللغوية الكبيرة (LLM) من العمل والتعلم والتنظيم الذاتي بصورة مستقلة. وبصفته جزءاً من عائلة **ellmos** (أنظمة تشغيل النماذج اللغوية الكبيرة جداً)، يوفر BACH بنية تحتية شاملة لإدارة المهام والمعرفة والأتمتة وتنسيق نماذج LLM.
 
+## 🧭 الحوكمة الأساسية: تدفق الهوية والصلاحيات، نموذج التوثيق ثلاثي الأسباب وقواعد معالجة القرارات الشفافة
+
+يتحكم BACH وOcean في سلوكهما المستقل من خلال **قواعد معالجة القرارات الشفافة والقابلة للفحص والتكوين من قبل المستخدم (`decision_processing_rules`)**. يُصدر كل تحقق من الصلاحيات وتصنيف للاختلافات التوثيقية وتفرع للإجراءات إيصال تدقيق حتمي (`decision_rule_trace`).
+
+### 1. الهوية، ونفق الصلاحيات ثلاثي المستويات والحماية من "صحراء الصلاحيات"
+
+- **الهوية مقابل الصلاحية:** ترتكز **الهوية** على حساب نظام التشغيل والجهاز/القناة المسجلة (تظل الأسرار غير مرئية في حلقة المفاتيح المحلية). تتدفق **الصلاحية** من المستخدم عبر **قنوات المشغل** (وحدة التحكم، تليجرام، دردشة الواجهة الرسومية للنظام) إلى الوكلاء الفرعيين وعمال الخلفية المكلفين.
+- **الطبيعة (التآكل التلقائي والانجراف) مقابل الاستصلاح/التهيئة (التغيير المتعمد):** يحدث التآكل والانجراف بشكل طبيعي من خلال الاستخدام الفعلي للنظام (ضغط السياق، تعاقب الجلسات، مرور الوقت) — لا توجد مهمة cron اصطناعية تلغي القرارات الصالحة. التعديلات المتعمدة على `DECISIONS.md` أو `AKTUELLER-PLAN.md` أو `USER.md` أو التعليمات البرمجية هي **استصلاح (Terraforming)**: يتم تمييز الإدخالات القديمة بأنها `superseded` مباشرة في المصدر.
+- **نفق الصلاحيات ثلاثي المستويات والتتابع نحو الداخل (Inward-First) (`open-ocean/tools/escalation_ladder.py`):**
+  1. **المستوى 1 — نفق الصلاحيات الدلالي (~80% من العمل اليومي القابل للعكس):** تنفيذ سريع ضمن هدف/خطة نشطة (`authority_ref`, `active_goal_or_plan_id`)، مما يمنع الأسئلة غير الضرورية للمستخدم (**`error_authority_desert` / صحراء الصلاحيات**).
+  2. **المستوى 2 — نفق أدلة الاقتباس الحتمي (~15% من تحولات العتبة، `ellmos-authority-evidence`):** مشتق من `evidence.py` في NemoFold؛ يتحقق في أقل من مللي ثانية واحدة (`validate_quote_tunnel_evidence`) مما إذا كان الاقتباس الحرفي (`literal_quote`) موجوداً **حرفياً** وبدون حالة `superseded` في المصدر الأصلي (`DECISIONS.md`, `transcript.jsonl`, `AKTUELLER-PLAN.md`).
+  3. **المستوى 3 — البوابات التشفيرية وبوابات القفل الصارمة (~5% من الإجراءات غير القابلة للإلغاء أو عالية المخاطر):** يتم فرضها عبر `lock_status.py` (`LOCK.user.*`)، وسؤال الأمان المتبل (`ellmos-installer`)، وشهادات Ed25519 `capability-grant.v1`.
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. الأصل: الطبيعة (الانجراف) مقابل الاستصلاح (المتعمد)"]
+        U["المستخدم في قناة المشغل
+(وحدة التحكم، تليجرام، دردشة الواجهة)"]:::userLayer
+        TF["الاستصلاح (التشكيل المتعمد)
+DECISIONS.md, الخطة, USER.md, policy-registry"]:::userLayer
+        NAT["الطبيعة والتحركات التكتونية (الانجراف التلقائي)
+ضغط السياق، تغير الجلسات، مرور الوقت"]
+        U -->|"يشكل"| TF
+    end
+
+    subgraph L1["2. النظام المعرفي ونفق الصلاحيات ثلاثي المستويات"]
+        COG["النظام المعرفي + WorkflowHookers
+(ما وراء المعرفة، الأهداف، الخطط، المهارات -> الرغبة في العمل)"]:::cogLayer
+        T1["المستوى 1 (~80% قابل للعكس)
+نفق الصلاحيات الدلالي"]:::tunnelLayer
+        T2["المستوى 2 (~15% عتبات)
+نفق الاقتباس الحتمي (<1 مللي ثانية فحص حرفي)"]:::tunnelLayer
+        T3["المستوى 3 (~5% غير قابل للعكس)
+بوابة صارمة (LOCK.user / تجزئة الأمان / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"تطابق حرفي"| T2
+        NAT -.->|"فشل الاقتباس المتآكل"| T2
+    end
+
+    subgraph L2["3. فاحص الصلاحيات، التتابع نحو الداخل والتأمل"]
+        CHK{"فاحص الصلاحيات:
+هل مسموح باتخاذ الإجراء؟"}:::tunnelLayer
+        ACT["نعم: التنفيذ فوراً"]:::cogLayer
+        ASK["لا: التتابع نحو الداخل (Inward-First)
+1. الهدف/السياق -> 2. DECISIONS/USER.md
+-> 3. المنسق الأصلي -> 4. بوابة المستخدم"]:::tunnelLayer
+        REF["التأمل والتعلم بعد الإجراء
+يمنع صحراء الصلاحيات (error_authority_desert)"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"نعم"| ACT
+        CHK -->|"لا"| ASK
+        ASK -->|"تم الحل"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. نموذج التوثيق ثلاثي الأسباب وقواعد معالجة القرارات القابلة للتكوين (`system/tools/llmauto/config.json`)
+
+عندما يكتشف التحقق الآلي من الوثائق (`ellmos-doc-keeper` + التحقق من ادعاءات NemoFold) تعارضاً بين التوثيق (`system/docs/help/*.txt`, `README.md`, `SKILL.md`, GUI `/help`) وواقع التعليمات البرمجية الفعلي، فإنه **لا يستبدل أبداً البنية المستهدفة بشكل أعمى**. بدلاً من ذلك، يصنف `classify_doc_reality_diff()` الفرق إلى **3 أسباب حتمية**، ويوجهه `resolve_doc_machine_dispatch()` وفقاً **لقواعد معالجة القرارات** الشفافة والقابلة للدمج:
+
+| السبب (`classify_doc_reality_diff`) | المعنى | فروع الإجراءات الشفافة (`selected_branches` — فردية أو مدمجة) |
+|---|---|---|
+| **1. `unintended_erosion`** *(تآكل / انجراف غير مقصود)* | تصف الوثائق السلوك المقصود، لكن التعليمات البرمجية أو الخدمة تعطلت أو انحرفت عن غير قصد. | **الحفاظ على الهدف (SOLL) في الوثائق** + وضع تحذير للواقع (IST) + إرسال **`["local_taskplan", "user_notification"]`** (إنشاء مهمة إصلاح P1 لعامل الخلفية وإخطار المستخدم؛ قابلة للدمج اختيارياً مع `local_genie_marblerun` أو `gitlab_wishes_come_true`). |
+| **2. `planned_terraforming_pending`** *(استصلاح مخطط له قيد الانتظار)* | تصف الوثائق البنية المستهدفة المخططة (SOLL) من خارطة الطريق/`DECISIONS.md` والتي لم تكتمل بعد في الكود. | فحص/تعديل المهمة الحالية أو إنشاء مهمة تنفيذ P2 عبر **`["local_taskplan"]`** + الفصل الواضح في التوثيق بين **SOLL (مع معرف المهمة)** مقابل **IST**. |
+| **3. `completed_terraforming_doc_lag`** *(استصلاح مكتمل مع تأخر التوثيق)* | تم تطوير التعليمات البرمجية عمداً (تم التحقق عبر commit/PR/`task_status=done`)، لكن التوثيق متأخر. | تنفيذ **`["local_doc_update"]`**: تحديث تعليمات CLI بصيغة `.txt` تلقائياً ومستندات `.md` ومراجع CLI/API والترجمات (`de/en/es/ja/ru/zh`) محلياً. |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. التحقق من الادعاءات والتصنيف ثلاثي الأسباب"]
+        CLAIM["استخراج ادعاءات التوثيق (docs/help/*.txt, README, SKILL.md, GUI /help)
+وفحص واقع الكود/CLI/الاختبارات"]:::probe
+        CLS{"مصنف الأسباب الثلاثة
+(classify_doc_reality_diff)"}:::probe
+        U1["السبب 1: تآكل غير مقصود
+(تعطل أو انحراف الكود/الخدمة عن غير قصد)"]:::c1
+        U2["السبب 2: استصلاح مخطط له قيد الانتظار
+(الوثائق SOLL، الكود غير مكتمل بعد)"]:::c2
+        U3["السبب 3: استصلاح مكتمل
+(تم تحديث الكود عمداً، التوثيق متأخر)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. قواعد معالجة القرارات الشفافة والقابلة للدمج (config.json)"]
+        RULE{"محرك قواعد القرار
+(resolve_doc_machine_dispatch)
+حسب السبب، المحفز أو التجاوز الصريح"}:::probe
+        B1["الفرع A: local_taskplan (افتراضي)
+إنشاء مهمة إصلاح أو بناء P1/P2 في taskplan المحلي
+لعامل الخلفية (Buddha / Cloud)"]:::c3
+        B2["الفرع B: local_genie_marblerun
+تشغيل سلسلة MarbleRun المحلية
+(chains/wishes-come-true-local.json)"]:::c2
+        B3["الفرع C: gitlab_wishes_come_true
+ميزة المطور (wishes_redirect في config.json)
+إلى local-genie / wishes-come-true"]:::probe
+        B4["الفرع D: user_notification
+إخطار المشغل عبر صندوق وارد الواجهة / تليجرام"]:::c1
+        B5["الفرع E: local_doc_update
+تحديث وثائق .txt/.md ومراجع CLI/API والترجمات"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"قابل للدمج"| B1
+        RULE -->|"قابل للدمج"| B2
+        RULE -->|"قابل للدمج (ocean-dev)"| B3
+        RULE -->|"قابل للدمج"| B4
+    end
+```
+
 ## سياق التعرف على المشروع
 
 أفضل وصف لـ BACH هو **نظام تشغيل LLM محلي أولاً**: بيئة عمل دائمة مبنية على Python/SQLite للوكلاء المستقلين والذاكرة المنظمة والأتمتة التي يديرها المجدول وسلاسل المطالبات وتكامل خوادم MCP وواجهات المشغّل متعددة اللغات. وهو ليس غلافاً لروبوت محادثة، ولا خدمة SaaS مستضافة للوكلاء، ولا إطاراً لاختبارات Bash الوحدوية، ولا مشروعاً موسيقياً، ولا مكتبة خطوط معالجة على نمط LangChain.
@@ -286,13 +416,54 @@ print(f"BACH status: {status.state} (Active handlers: {status.handlers_count})")
 ### 2. نظام المعرفة
 نظام ذاكرة منظم للحقائق والدروس والدمج التلقائي (6 أنواع للذاكرة وأكثر من 210 جداول قاعدة بيانات).
 
-### 3. إطار الوكلاء
-ينسق 11 وكيلاً رئيسياً 22 خبيراً للمهام المعقدة. تتيح واجهة CLI للوكلاء بدء الوكلاء وإيقافهم وعرض قائمتهم مباشرة عبر `bach agent`، كما تدعم الآن قوائم توجيه قبل الإطلاق وطلبات إيقاف تعاوني وتأكيدات صريحة لنقاط تحقق آمنة عبر `bach agent checkpoint`. وتُحقن التلميحات المنتظرة عند الإطلاق في `CLAUDE.md` الخاص بالجلسة المنشأة؛ ويعكس `OPERATOR_NOTES.md` حالة التوجيه والإيقاف ونقطة التحقق؛ وتعرض واجهات حالة JSON المباشرة اللقطة المتداخلة `operator_control` للوحات المعلومات.
+### 3. إطار الوكلاء — أدوار Ocean والتوجيه المزدوج ومآخذ المزودين المرنة (`ellmos.role-socket-catalog.v1`)
+في بنية Ocean/BACH المشتركة، تظل **وكلاء الرؤساء (المنسقون)** و**خبراء المجالات** المعتمدون في BACH محفوظين بالكامل أثناء عملهم كـ **أدوار Ocean مستقلة عن المزودين (`roles[]`)** متصلة بـ **مآخذ مزودين مرنة (`model_sockets` عبر `clutch` + `agents-heart`)**:
+
+- **التوجيه المزدوج (دلالي + حتمي):**
+  - **التوجيه الدلالي:** تقوم المهارات المظلية (`projekt-pipeline-umbrella`, `therapie-umbrella`, `selbstmanagement` إلخ) و`semantic-persona-routing` (`persona_router.py`) بتوجيه المهام ديناميكياً وتفعيل حزمة المهارات وسياق الشخصية المناسبين.
+  - **التوجيه الحتمي:** يوفر `ellmos-controlcenter-mcp` (`controlcenter_resolve_semantic_route`, `controlcenter_switch_profile`, `controlcenter_find_skill`) توجيهاً وتبديلاً للملفات الشخصية قائماً على قواعد صارمة وخالياً من الهلوسة.
+- **مآخذ المزودين المرنة (`reasoning_coordinator`, `domain_specialist`, `fast_worker`):** لا يتم ربط الأدوار بمزود واحد بشكل ثابت أبداً. يتصل كل دور بمأخذ موحد يتم تحليله أثناء التشغيل إلى **Claude (`claude`)** أو **OpenAI/Codex (`codex`)** أو **Gemini/Antigravity (`agy`)** أو **Kimi (`kimi`)** أو **Ollama المحلي (`ollama`)** أو **OpenRouter (`openrouter`)**.
+- **مكتبة الوكلاء ثلاثية التبويبات (`/agenten/bibliothek`, `ellmos.agent-library.v1`):** يقوم `discover_ocean_agent_library_templates()` تلقائياً بملء مكتبة الوكلاء في الواجهة الرسومية وCLI من كل من كتالوج منسقي/خبراء BACH (`ati`, `bueroassistent`, `finanz-assistent`, `gesundheitsassistent`, `persoenlicher-assistent`, `produktivitaet` + 22 خبيراً) و**17 دوراً معلناً للوحدات (`roles[]`)** عبر 9 مستودعات لوحدات Ocean (`task-master`, `ticket-master`, `MarbleRun`, `system-auditor`, `compare-race`, `ellmos-installer`, `foerderplaner`, `ai-media-editor`, `clip-storyboard-director`).
+- **عناصر تحكم المشغل:** يدير `bach agent start/stop/list/pause/resume/checkpoint/steer` عمليات التشغيل النشطة، والتوجيهات السابقة للإطلاق (`OPERATOR_NOTES.md`)، وتأكيدات نقاط الفحص الآمنة.
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>يوضح الرسم الوكلاء الرئيسيين الخمسة الأصليين في BACH: ati وofficeassistant وfinance-assistant وhealth-assistant وpersonal-assistant. ويضم النظام الحالي 11 وكيلاً رئيسياً و22 خبيراً.</i>
+  <i>يوضح الرسم التوضيحي أدوار المنسقين الأصلية في BACH (ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent)، والتي تعمل الآن على مآخذ مزودي Ocean المرنة جنباً إلى جنب مع 17 دوراً من أدوار بيان الوحدات.</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. طبقة التوجيه المزدوج (دلالي مقابل حتمي)"]
+        SEM["توجيه دلالي
+المهارات المظلية (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["توجيه حتمي
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. أدوار Ocean ومكتبة الوكلاء ثلاثية التبويبات (ellmos.agent-library.v1)"]
+        COORD["6 أدوار منسقين (رؤساء BACH سابقاً)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["22+ خبير مجالات و17 دور وحدة (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. مآخذ المزودين المرنة (model_sockets + clutch + agents-heart)"]
+        SOCK["مآخذ نماذج موحدة
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["مزودو LLM قابلون للتوصيل
+Claude | Codex/GPT | Gemini/AGY | Kimi | Ollama المحلي | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. نظام المطالبات
 إدارة مركزية لقوالب المطالبات مع مجموعات اللوحات وإصدارات كاملة (`bach prompt`).
