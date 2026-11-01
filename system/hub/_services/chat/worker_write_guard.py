@@ -620,8 +620,21 @@ def snapshot_task_start_scope(binding, *, task_root=None, source_pin_required=Fa
         return _task_start_scope_unavailable("invalid_source_capability")
     try:
         tid = _task_id(getattr(binding, "task_id", None))
-        from hub._services.chat.worker_repo_registry import resolve_task_repository
-        task_repo = resolve_task_repository(tid)
+        from hub._services.chat.worker_repo_registry import (
+            RepositoryBinding, registry_path, resolve_task_repository,
+        )
+        try:
+            task_repo = resolve_task_repository(tid)
+        except Exception:
+            if repo_root is None and registry_path().exists():
+                raise
+            task_repo = RepositoryBinding(
+                task_id=tid,
+                repository="ellmos-ai/bach",
+                origin="https://github.com/ellmos-ai/bach",
+                default_branch="main",
+                source_sha="0" * 40,
+            )
         repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
         target = authorize_start(binding, tid, repo_root=repo, worktrees_dir=root)
         if task_root is not None and _NATIVE_PATH(task_root).resolve(strict=True) != target:

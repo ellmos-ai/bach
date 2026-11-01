@@ -13,6 +13,19 @@ from datetime import datetime, timezone
 
 import psutil
 
+OBSERVATION_SCHEMA = "bach.host-resource-observation.v1"
+_ERRORS = frozenset({
+    "swap_observation_unavailable", "darwin_pressure_observation_unsupported",
+    "pressure_observation_unavailable", "compression_observation_unavailable",
+    "compression_page_size_unverified",
+})
+_OBSERVED = frozenset({
+    "schema", "checked_at", "platform", "memory_total_bytes", "memory_available_bytes",
+    "compression_added_to_capacity", "swap_added_to_capacity", "pressure_level",
+    "compressor_physical_bytes", "compressor_logical_bytes", "swap_total_bytes",
+    "swap_used_bytes", "errors",
+})
+_MAX_BYTES = 4096 * 1024**3
 _PAGE = re.compile(r"page size of (\d+) bytes")
 _COUNTER = re.compile(r'^([^:]+):\s*(\d+)\.?\s*$', re.MULTILINE)
 
@@ -27,6 +40,41 @@ def _darwin_counter_command(command):
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout if result.returncode == 0 else None
+
+
+def valid_host_resources(value):
+    """True only for what observe_host_resources (or probe's failure stub) produces:
+    exact fields, typed and bounded counters, and never compression or swap as capacity."""
+    if not isinstance(value, dict) or value.get("schema") != OBSERVATION_SCHEMA:
+        return False
+    if set(value) == {"schema", "errors"}:
+        return value["errors"] == ["host_observation_failed"]
+    if not _OBSERVED <= set(value) <= _OBSERVED | {"page_size_bytes"}:
+        return False
+    errors = value["errors"]
+    if (not isinstance(errors, list) or len(errors) > len(_ERRORS)
+            or any(not isinstance(error, str) or error not in _ERRORS for error in errors)):
+        return False
+
+    def counter(raw, low=0):
+        return type(raw) is int and low <= raw <= _MAX_BYTES
+
+    checked_at = value["checked_at"]
+    try:
+        parsed = datetime.fromisoformat(checked_at) if isinstance(checked_at, str) and len(checked_at) <= 40 else None
+    except ValueError:
+        parsed = None
+    page_size = value.get("page_size_bytes", 4096)
+    return (parsed is not None and parsed.tzinfo is not None
+            and isinstance(value["platform"], str) and re.fullmatch(r"[a-z0-9]{1,32}", value["platform"]) is not None
+            and counter(value["memory_total_bytes"], 1) and counter(value["memory_available_bytes"])
+            and value["memory_available_bytes"] <= value["memory_total_bytes"]
+            and value["compression_added_to_capacity"] is False and value["swap_added_to_capacity"] is False
+            and (value["pressure_level"] is None
+                 or (type(value["pressure_level"]) is int and value["pressure_level"] in {1, 2, 4}))
+            and all(value[name] is None or counter(value[name]) for name in (
+                "compressor_physical_bytes", "compressor_logical_bytes", "swap_total_bytes", "swap_used_bytes"))
+            and type(page_size) is int and page_size in {4096, 16384, 65536})
 
 
 def observe_host_resources(memory):

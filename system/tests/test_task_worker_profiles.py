@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from gui.api import task_assignment as api
 from hub._services.chat import slots_config as slots
+from system.tests.test_worker_lease_binding import selection_registry
 
 
 @pytest.fixture
@@ -362,22 +363,17 @@ def test_verified_profile_assignment_roundtrips_to_worker_picker(
             stop_event=threading.Event(), clock=lambda: T0,
         )
         assert binding.task_id == task_id
+        current = client.task_snapshot(task_id)
+        pin = WorkerLeaseBinding._effective_selection_policy_snapshot(client, current, profile_slot)
+        assert pin is not None
+        assert WorkerLeaseBinding._selection_rejection_reason(current, profile_slot, selection_policy=pin["policy"]) is None
+        # Saved assignment/model preferences remain open unless ONLY is effective.
+        for changed in ({"assigned_slot": "different-worker"}, {"required_model": "different-model"}, {"assigned_to": "codex"}):
+            assert WorkerLeaseBinding._selection_rejection_reason({**current, **changed}, profile_slot, selection_policy=pin["policy"]) is None
         assert client.read(task_id, lease_id=binding._ack.lease_id, now=T0).own is True
         assert binding.return_lease() is True
     finally:
         conn.close()
-
-    task = {"id": 42002, **target["binding"], "category": "GUI", "priority": "P3"}
-    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
-    assert WorkerLeaseBinding._selection_rejection_reason(task, profile_slot) is None
-    assert WorkerLeaseBinding._selection_rejection_reason(cli_task, profile_slot) is None
-
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_slot": "different-worker"}, profile_slot) == "slot_binding"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "required_model": "different-model"}, profile_slot) == "model_binding"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_to": "codex"}, profile_slot) == "ownership"
 
 
 def test_external_profile_without_verified_runtime_is_not_assignable(configured_profiles):

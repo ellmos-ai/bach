@@ -210,9 +210,10 @@ class WorkerLeaseBinding:
 
     @staticmethod
     def _selection_profile_snapshot(slot):
+        model = slot.get("model") if isinstance(slot, dict) else None
         if (not isinstance(slot, dict) or type(slot.get("id")) is not str
-                or not slot["id"] or type(slot.get("model")) is not str
-                or not slot["model"].strip()):
+                or not slot["id"]
+                or (model is not None and (type(model) is not str or not model.strip()))):
             return None
         fields = ("id", "model", "backend", "role_id", "sub_mode",
                   "require_assigned_slot", "enforce_model_binding", "pickup_filter", "allowed_repositories")
@@ -283,6 +284,12 @@ class WorkerLeaseBinding:
 
     @staticmethod
     def _matches_slot(snapshot, slot, *, selection_policy=None):
+        if selection_policy is None and isinstance(slot, dict):
+            try:
+                from .worker_queue_status import worker_selection_policy
+                selection_policy = worker_selection_policy(slot)
+            except Exception:
+                return False
         if selection_policy is None:
             return False
         from .slots_config import task_matches_slot_binding, pickup_filter_rejection
@@ -338,6 +345,12 @@ class WorkerLeaseBinding:
 
     @classmethod
     def _selection_rejection_reason(cls, snapshot, slot, *, selection_policy=None):
+        if selection_policy is None and isinstance(slot, dict):
+            try:
+                from .worker_queue_status import worker_selection_policy
+                selection_policy = worker_selection_policy(slot)
+            except Exception:
+                return 'selection_policy_unavailable'
         if not isinstance(slot,dict) or not isinstance(selection_policy,dict):
             return 'selection_policy_unavailable'
         try:
@@ -437,9 +450,11 @@ class WorkerLeaseBinding:
                     acquire_kwargs["_review_grant"] = review_grant
                 binding = cls.acquire(client, explicit, slot=slot, **acquire_kwargs)
             except _TaskDoesNotMatch as exc:
-                observation.reject(exc.reason if exc.reason in _REPOSITORY_REJECTIONS else "changed_selection")
-                observation.waiting()
-                return None
+                if exc.reason in _REPOSITORY_REJECTIONS:
+                    observation.reject(exc.reason)
+                    observation.waiting()
+                    return None
+                raise
             except LeaseDeniedError as exc:
                 if exc.reason not in ACQUIRE_DENIALS:
                     raise
@@ -746,8 +761,17 @@ class WorkerLeaseBinding:
         if self._selection_profile is None:
             return
         pin = self._effective_selection_policy_snapshot(self._client,self._snapshot,self._selection_profile)
+        if pin is None:
+            try:
+                reader = getattr(self._client, "_task_policy_snapshot", None)
+                stored = reader(self._snapshot["id"]) if callable(reader) else None
+                if (isinstance(stored, dict) and stored.get("task_id") == self._snapshot.get("id")
+                        and isinstance(stored.get("task_version"), str)
+                        and stored["task_version"] != self._snapshot.get("task_version")):
+                    self._deactivate("task_version_mismatch")
+            except Exception:
+                pass
         if (pin is None or self._selection_policy_pin is None or
-                (bool(self._selection_profile) and pin['configuration_version'] != self._selection_policy_pin['configuration_version']) or
                 pin['policy'] != self._selection_policy_pin['policy'] or
                 self._selection_constraints_changed(pin)):
             raise LeaseProtocolError('Gespeicherte Task-Auswahlpolicy ist nicht mehr zugelassen')
@@ -769,10 +793,8 @@ class WorkerLeaseBinding:
         if self._selection_profile is None:
             return False
         if not self._selection_profile:
-            from hub._services.worker_policy_settings import _selection_kernel
-            policy = _selection_kernel().SelectionPolicy(**{
-                key: self._selection_policy_pin['policy'][key] for key in ('require_assigned_slot', 'enforce_model_binding')})
-            return policy.rejection(self._snapshot, slot if isinstance(slot, dict) else {}) is None
+            from .slots_config import task_matches_slot_binding
+            return task_matches_slot_binding(self._snapshot, slot if isinstance(slot, dict) else {})
         if slot.get('id') != self._selection_profile.get('id'):
             return False
         actual = {**self._selection_profile, 'id':slot['id'], 'model':slot.get('model')}

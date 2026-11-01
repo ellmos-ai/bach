@@ -1414,31 +1414,51 @@ def _prepare_bound_task_scope(binding, slot):
     try:
         binding.assert_active()
         from hub._services.chat.worker_queue_status import worker_selection_policy
-        from hub._services.chat.worker_repo_registry import canonical_repository_id, resolve_task_repository
+        from hub._services.chat.worker_repo_registry import (
+            canonical_repository_id, registry_path, resolve_task_repository,
+        )
         allowed_repositories = worker_selection_policy(slot)["allowed_repositories"]
-        pinned_repository = resolve_task_repository(binding.task_id).repository
+        has_registry = bool(allowed_repositories) or registry_path().exists()
+        try:
+            pinned_repository = resolve_task_repository(binding.task_id).repository
+        except Exception:
+            if has_registry:
+                raise
+            pinned_repository = "ellmos-ai/bach"
         if allowed_repositories and pinned_repository not in allowed_repositories:
             raise RuntimeError("repository_capability_changed")
-        task_root = worker_git.start_task_worktree(binding.task_id, base_branch="main",
-            worker_task_binding=binding, require_task_binding=True,
-            task_code_capability=code_capability, expected_repository=pinned_repository)
+        start_kwargs = dict(
+            base_branch="main",
+            worker_task_binding=binding,
+            require_task_binding=True,
+            task_code_capability=code_capability,
+        )
+        if has_registry:
+            start_kwargs["expected_repository"] = pinned_repository
+        task_root = worker_git.start_task_worktree(binding.task_id, **start_kwargs)
         scope = snapshot_task_start_scope(
             binding, task_root=task_root, source_pin_required=code_capability)
         binding.assert_active()
         if scope.get("availability") != "available":
             raise RuntimeError("scope_unavailable")
-        scoped_repository = canonical_repository_id(scope.get("repository"))
-        current_repository = resolve_task_repository(binding.task_id).repository
-        if ((allowed_repositories and scoped_repository not in allowed_repositories)
-                or scoped_repository != pinned_repository or current_repository != scoped_repository):
-            raise RuntimeError("repository_scope_changed")
+        if has_registry or "repository" in scope:
+            scoped_repository = canonical_repository_id(scope.get("repository") or pinned_repository)
+            try:
+                current_repository = resolve_task_repository(binding.task_id).repository
+            except Exception:
+                if has_registry:
+                    raise
+                current_repository = pinned_repository
+            if ((allowed_repositories and scoped_repository not in allowed_repositories)
+                    or scoped_repository != pinned_repository or current_repository != scoped_repository):
+                raise RuntimeError("repository_scope_changed")
         if (scope.get("task_id") != binding.task_id
                 or scope.get("branch") != f"refs/heads/bach-task/{binding.task_id}"
                 or (code_capability and scope.get("source_pin") is None)):
             raise RuntimeError("scope_unavailable")
     except Exception as exc:
         # Fixed-text RuntimeErrors name the failed check; other types may carry paths.
-        reason = str(exc)[:120] if type(exc) is RuntimeError else type(exc).__name__
+        reason = _task_scope_failure_reason(exc)
         logger.warning("Task #%s: Arbeitsbaum nicht bestätigt (%s)", binding.task_id, reason)
         raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
 
@@ -1962,6 +1982,72 @@ def _record_worker_activity(
 
 
 _WORKER_TASK_FAILURE_LIMIT = 3
+
+
+_CONTEXT_WIP_REASONS = frozenset({
+    "completion_reserve_context_exhausted", "handoff_context_too_large",
+})
+
+
+def _bounded_wip_text(value, limit):
+    text = str(value or "")
+    if "PRIVATE KEY-----" in text:
+        return "[Inhalt wegen möglichem privaten Schlüssel weggelassen]"
+    text = re.sub(r"(?i)\b(Bearer\s+)[A-Za-z0-9._~+/-]{8,}", r"\1[redacted]", text)
+    text = re.sub(r"(?i)\b((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+",
+                  r"\1[redacted]", text)
+    text = re.sub(r"\b(?:sk|ghp)_[A-Za-z0-9_]{12,}", "[redacted]", text)
+    text = re.sub(r"github_pat_[A-Za-z0-9_]{12,}", "[redacted]", text)
+    return text[:limit] + (" …[gekürzt]" if len(text) > limit else "")
+
+
+def _handoff_summary_text(summary):
+    if isinstance(summary, str):
+        return summary
+    if not isinstance(summary, list):
+        return ""
+    lines = []
+    for message in summary:
+        if not isinstance(message, dict):
+            continue
+        content = str(message.get("content") or "")
+        if content:
+            lines.append(f"{message.get('role', 'user')}: {content}")
+    return "\n".join(lines)
+
+
+def _secure_context_wip(control, worker_session, reason):
+    """Secure work and context before a context-limited task is returned."""
+    if reason not in _CONTEXT_WIP_REASONS:
+        raise ValueError("Kein Kontext-WIP-Grund")
+    binding = control.task_binding
+    if binding is None or binding.closed:
+        raise RuntimeError("Kontext-WIP-Sicherung ohne aktive Taskbindung")
+    binding.assert_active()
+    from hub import worker_git
+    target = worker_git.get_worktrees_dir() / f"task-{binding.task_id}"
+    changed = worker_git.changed_worktree_files(target) if target.exists() else []
+    files = ", ".join(changed[:40]) + (f" … (+{len(changed) - 40} weitere)" if len(changed) > 40 else "")
+    files = files or "kein Task-Arbeitsbaum vorhanden"
+    summary = _handoff_summary_text(getattr(worker_session, "last_handoff_summary", []))
+    trail = getattr(worker_session, "last_handoff_read_trail", "") or ""
+    annotation = (
+        f"[WIP Kontextsicherung Task #{binding.task_id}]\n"
+        f"Grund: {reason}\n"
+        f"Geänderte Dateien: {_bounded_wip_text(files, 2000)}\n"
+        f"Übergabezettel:\n{_bounded_wip_text(summary or 'Keine abgeschlossene Übergabe in diesem Lauf.', 5000)}\n"
+        f"Lesespur:\n{_bounded_wip_text(trail or 'Keine Lesespur in diesem Lauf.', 3000)}"
+    )
+    if target.exists():
+        result = worker_git.finish_task(
+            binding.task_id, f"Kontextgrenze: {reason}", is_wip=True, run_tests=False,
+            worker_task_binding=binding, result_annotation=annotation, needs_split=True)
+    else:
+        binding.record_worktree_result(binding.task_id, annotation, needs_split=True)
+        result = {"success": True, "wip": False, "needs_split": True, "status": "needs_split"}
+    if not isinstance(result, dict) or result.get("success") is not True:
+        raise RuntimeError("Kontext-WIP-Sicherung nicht bestätigt")
+    return result
 
 
 def _worker_return_note(detail, reason_code):
@@ -6310,6 +6396,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         and control.model_request_budget is None)
                     if task_local:
                         task_failures += 1
+                    if task_local and failure_reason in _CONTEXT_WIP_REASONS:
+                        _secure_context_wip(control, worker_session, failure_reason)
                     if task_local and task_failures < _WORKER_TASK_FAILURE_LIMIT:
                         returned = control.task_binding.task_snapshot()
                         supervisor = control.lease_supervisor

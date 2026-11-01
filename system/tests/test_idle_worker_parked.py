@@ -345,7 +345,7 @@ def _idle_tray(mod, fake_api):
 
 
 def test_idle_worker_skips_dependency_blocked_task_and_picks_next(mem_db):
-    predecessor = _insert_task(mem_db, "Predecessor")
+    predecessor = _insert_task(mem_db, "Predecessor", status="blocked")
     waiting = _insert_task(mem_db, "Waiting", status="pending")
     ready = _insert_task(mem_db, "Ready", status="pending")
     mem_db.execute("UPDATE tasks SET assigned_to='codex' WHERE id=?", (predecessor,))
@@ -358,7 +358,7 @@ def test_idle_worker_skips_dependency_blocked_task_and_picks_next(mem_db):
 
 
 def test_idle_worker_never_claims_when_only_blocked_tasks_exist(mem_db):
-    predecessor = _insert_task(mem_db, "Predecessor")
+    predecessor = _insert_task(mem_db, "Predecessor", status="blocked")
     waiting = _insert_task(mem_db, "Waiting")
     mem_db.execute("UPDATE tasks SET assigned_to='codex' WHERE id=?", (predecessor,))
     mem_db.execute("UPDATE tasks SET assigned_to='BACH',depends_on=? WHERE id=?", (str(predecessor), waiting))
