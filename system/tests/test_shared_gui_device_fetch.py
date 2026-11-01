@@ -48,6 +48,18 @@ def test_explicit_release_serves_its_present_page_and_keeps_auth(tmp_path, monke
     (tmp_path / "index.html").write_text("<h1>Verified release</h1>", encoding="utf-8")
     monkeypatch.setattr(server, "ASTRO_DIST_DIR", tmp_path)
     monkeypatch.setenv("ELLMOS_SYSTEM_GUI_DIST", str(tmp_path))
+    import hashlib
+    import json
+
+    from hub._services import gui_contract_service
+    raw = json.dumps({"schema": "ellmos.gui.page-reads.v1", "pages": {"/": []}}).encode()
+    (tmp_path / "page-reads.v1.json").write_bytes(raw)
+    manifest = {"schema": "ellmos-system-gui.dist.v1", "source_commit": "a" * 40,
+                "files": {"index.html": hashlib.sha256((tmp_path / "index.html").read_bytes()).hexdigest(),
+                          "page-reads.v1.json": hashlib.sha256(raw).hexdigest()}}
+    (tmp_path / "dist-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(gui_contract_service, "get_pinned_kit_manifest",
+                        lambda: {"verified": True, "pinned_source_commit": "a" * 40, "expected_page_count": 1})
     with TestClient(server.app, base_url="http://testserver") as client:
         response = client.get("/")
         assert response.status_code == 200 and response.text == "<h1>Verified release</h1>"

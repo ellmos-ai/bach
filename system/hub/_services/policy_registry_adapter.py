@@ -69,8 +69,19 @@ def _provider():
 def pointer(entry, checks):
     """Project allowlisted metadata; local locations and policy text stay private."""
     fields = ("id", "kind", "title", "scope", "version", "privacy", "status", "adoption",
-              "priority", "precedence", "valid_from", "valid_until", "supersedes", "superseded_by")
+              "priority", "precedence", "valid_from", "valid_until", "supersedes", "superseded_by",
+              "consumers")
     item = {key: entry[key] for key in fields if key in entry}
+    if "consumers" in item:
+        consumers = item["consumers"]
+        if (isinstance(consumers, list)
+                and all(isinstance(value, str) and value and "\x00" not in value
+                        and len(value) <= 256 for value in consumers)):
+            item["consumers"] = sorted(set(consumers))
+        else:
+            # The registry schema requires this metadata. Keep malformed provider data
+            # visible as unknown instead of presenting an unverifiable assignment.
+            item["consumers"] = None
     check = checks.get(entry["id"], {"state": "unchecked"})
     uri = str(entry.get("source", {}).get("uri", ""))
     # No arbitrary source fields, full texts, credentials, or absolute local paths.

@@ -44,7 +44,7 @@ def _legacy_db():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     _init_db(conn)
-    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     conn.commit()
     return conn
 

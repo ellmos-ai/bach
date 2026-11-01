@@ -1,8 +1,5 @@
 name: module-gate
 
-# Modul-Gate: Prüfung der Modularisierungskonformität
-# Dieser Workflow wird als einziger Required Check auf main betrieben.
-
 on:
   pull_request:
     branches: [main]
@@ -12,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   module-gate:
@@ -24,19 +20,4 @@ jobs:
           fetch-depth: 0
 
       - name: Modul-Gate-Prüfung
-        id: gate
-        run: |
-          python3 .github/workflows/module_gate_check.py
-
-      - name: Gate-Ergebnis prüfen
-        if: steps.gate.outputs.gate_status == 'FAIL'
-        run: |
-          echo "Module-Gate-Prüfung fehlgeschlagen!"
-          echo "${{ steps.gate.outputs.gate_report }}"
-          exit 1
-
-      - name: Gate-Erfolg melden
-        if: steps.gate.outputs.gate_status == 'PASS'
-        run: |
-          echo "Module-Gate-Prüfung bestanden!"
-          echo "${{ steps.gate.outputs.gate_report }}"
+        run: python3 .github/workflows/module_gate_check.py

@@ -159,6 +159,25 @@ def test_compose_uses_versioned_sources_and_task_snapshot_without_claiming(tmp_p
                for item in result["sources"] if item["kind"] in {"policy", "decision"})
 
 
+def test_compose_preserves_native_blueprint_policy_pins(tmp_path):
+    pinned = {
+        "registry": "policy-registry", "id": "P-001", "version": "1",
+        "sha256": "a" * 64, "role": "agent",
+    }
+    saved = _saved_blueprint(
+        governance_json=json.dumps({"scope": "BACH", "policy_refs": [pinned]}),
+    )
+    result = SubscriptionAgentsComposer(
+        skill_roots=[tmp_path], blueprint_snapshot_reader=_blueprint_reader(saved),
+        policy_observer=_policy_observer, host="ASUS-GEI",
+    ).compose(_request(task_refs=[], selected_skill_ids=[]))
+
+    assert result["status"] == "ready_for_review"
+    assert "P-001" in result["prompt"]
+    assert "Version 1" in result["prompt"]
+    assert "Normtext bleibt am policy-registry-Fundort" in result["prompt"]
+
+
 def test_missing_skill_and_governance_are_explicit_and_fail_closed(tmp_path):
     def unavailable(**_):
         raise policy_registry_adapter.PolicyProviderUnavailable("provider not configured")

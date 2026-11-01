@@ -139,6 +139,15 @@ def test_pinned_refs_bind_with_recomputable_effective_sha256(state, registry):
     assert start(state, saved, configured)[0]["is_running"] is True
 
 
+def test_start_prompt_exposes_pinned_governance_without_norm_text(state, registry):
+    saved = save(state, governance={"scope": "BACH", "policy_refs": [ref()]})
+    assert "Geltungsbereich: BACH" in saved["start_prompt"]
+    assert "P-001" in saved["start_prompt"]
+    assert "Version 1" in saved["start_prompt"]
+    assert "Normtext bleibt am policy-registry-Fundort" in saved["start_prompt"]
+    assert "Prüfregel" not in saved["start_prompt"]
+
+
 def test_hash_rule_is_canonical_utf8_json():
     value = {"b": "Ä", "a": [1, {"z": None}]}
     assert gb.canonical_sha256(value) == hashlib.sha256(

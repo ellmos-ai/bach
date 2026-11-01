@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
-"""PAGE_READS names what ellmos-system-gui pages really read (checked against ellmos-system-gui origin/main, 2026-10-11).
-
-Each pinned entry carries its GUI source line in gui_capabilities.py; this test holds the entries, proves that the BACH route
-exists for every one of them and that the declaration prefixes cover them (otherwise the page would be reported unavailable
-only because the route is not declared)."""
+"""Existing GUI consumer checks use an explicit isolated manifest fixture, never production hand tables."""
+import json
 import re
 import sys
 from pathlib import Path
@@ -20,6 +17,7 @@ from gui.api.task_assignment import router as task_assignment_router
 from gui.api.unified_api import router as unified_router
 from gui.api.user_inbox import build_router as build_user_inbox_router  # noqa: E402
 from gui.api.worker_policy import router as worker_policy_router  # noqa: E402
+from hub._services.gui_page_reads import parse
 
 # Frozen excerpt of ellmos-system-gui public/page-reads.v1.json at GUI51 commit 77d42f93c85eb66d1e74361535c13f6e18e4e288:
 # (method, path, required).
@@ -75,8 +73,8 @@ def _derived(page):
     return required, optional
 
 
-PINNED = {page: caps.PAGE_READS[page] for page in MANIFEST_PAGES}
-PINNED_OPTIONAL = {page: caps.PAGE_OPTIONAL_READS[page] for page in MANIFEST_PAGES}
+PINNED = {page: _derived(page)[0] for page in MANIFEST_PAGES}
+PINNED_OPTIONAL = {page: _derived(page)[1] for page in MANIFEST_PAGES}
 
 
 def _get_routes():
@@ -102,28 +100,34 @@ def _get_route_methods():
 
 
 def test_pinned_pages_equal_the_gui_manifest_required_and_optional_reads():
+    _, out = _cataloged([])
+    projected = {item["path"]: item for item in out["pages"]}
     for page in MANIFEST_PAGES:
         required, optional = _derived(page)
-        assert sorted(map(_n, caps.PAGE_READS[page])) == sorted(map(_n, required)), (page, "required", MANIFEST_SOURCE)
-        assert sorted(map(_n, caps.PAGE_OPTIONAL_READS[page])) == sorted(map(_n, optional)), (page, "optional", MANIFEST_SOURCE)
+        actual = projected[page]
+        assert sorted(map(_n, actual["requires"])) == sorted(_n("GET " + p) for p in required), (page, "required", MANIFEST_SOURCE)
+        assert sorted(map(_n, actual["optional_unserved"])) == sorted(_n("GET " + p) for p in optional), (page, "optional", MANIFEST_SOURCE)
 
 
 def test_optional_reads_never_decide_the_page_status():
-    required_all = [r for page in MANIFEST_PAGES for r in caps.PAGE_READS[page]]
+    required_all = [r for page in MANIFEST_PAGES for r in PINNED[page]]
     routes = [_Route(read, {"GET"}) for read in required_all]  # every optional route missing
     _, out = _cataloged(routes)
     pages = {p["path"]: p for p in out["pages"]}
     for page in MANIFEST_PAGES:
         assert pages[page]["status"] == "configured", page
-        assert not set(caps.PAGE_OPTIONAL_READS[page]) & {r.removeprefix("GET ") for r in pages[page]["requires"]}, page
+        assert not set(PINNED_OPTIONAL[page]) & {r.removeprefix("GET ") for r in pages[page]["requires"]}, page
 
 
 def test_every_pinned_read_has_a_bach_route_and_a_declared_prefix():
     routes = _get_routes()
+    normalized = {_n(route) for route in routes}
+    cataloged, _ = _cataloged([_Route(route, {"GET"}) for route in routes])
+    declared = {_n(item) for item in cataloged}
     for page, reads in [(p, PINNED[p] + PINNED_OPTIONAL[p]) for p in PINNED]:
         for read in reads:
-            assert read in routes, f"{page}: no GET route {read}"
-            assert read.startswith(caps.PREFIXES) or f"GET {read}" in caps.EXACT_READS, f"{page}: {read} is not declared"
+            assert _n(read) in normalized, f"{page}: no GET route {read}"
+            assert _n(f"GET {read}") in declared, f"{page}: {read} is not declared"
 
 
 def test_worker_policy_reads_and_writes_are_optional_but_cataloged():
@@ -138,8 +142,8 @@ def test_worker_policy_reads_and_writes_are_optional_but_cataloged():
     pages = {p["path"]: p for p in out["pages"]}
     assert "GET /api/system/worker-policy" not in pages["/settings"]["requires"]
     assert "GET /api/tasks/{task_id}/worker-policy" not in pages["/tasks"]["requires"]
-    assert "/api/system/worker-policy" in caps.PAGE_OPTIONAL_READS["/settings"]
-    assert "/api/tasks/{task_id}/worker-policy" in caps.PAGE_OPTIONAL_READS["/tasks"]
+    assert "/api/system/worker-policy" in PINNED_OPTIONAL["/settings"]
+    assert _n("/api/tasks/{task_id}/worker-policy") in {_n(read) for read in PINNED_OPTIONAL["/tasks"]}
 
 
 def test_ui_settings_get_and_put_are_both_cataloged_and_registered():
@@ -160,7 +164,12 @@ class _Route:
 
 
 def _cataloged(routes):
-    out = caps.declaration(routes, {}, {}, {})
+    document = {"schema": "ellmos.gui.page-reads.v1",
+                "layout": [{"method": m, "path": p, "required": r} for m, p, r in MANIFEST_LAYOUT],
+                "pages": {page: [{"method": m, "path": p, "required": r} for m, p, r in entries]
+                          for page, entries in MANIFEST_PAGES.items()}}
+    out = caps.declaration(routes, {"verified": True}, {}, {},
+                           page_reads=parse(json.dumps(document).encode()))
     return {f"{e['method']} {e['path']}" for e in out["endpoints"]}, out
 
 
@@ -172,15 +181,15 @@ def test_exact_paths_do_not_catalog_sibling_routes():
               _Route("/api/learning/nemofold/candidates", {"GET"}),
               _Route("/api/learning/nemofold/candidates/{candidate_id}/approve", {"POST"})]
     cataloged, _ = _cataloged(routes)
-    # GET and PUT/POST on the same exact path: only the GET read is cataloged
+    # A registered write explicitly named by the manifest is cataloged; unrelated siblings remain excluded
     assert cataloged == {"GET /api/agents", "GET /api/system/external-artifacts", "GET /api/learning/nemofold/candidates",
-                         "GET /api/settings/theme", "GET /api/assignees"}
+                         "GET /api/settings/theme", "PUT /api/settings/theme", "GET /api/assignees",
+                         "POST /api/system/external-artifacts/import",
+                         "POST /api/learning/nemofold/candidates/{candidate_id}/approve"}
 
 
 def test_new_page_reads_make_pages_configured_and_missing_route_makes_them_unavailable():
-    routes = [_Route(read, {"GET"}) for reads in caps.PAGE_READS.values() for read in reads]
-    routes += [_Route(action.split(" ", 1)[1], {action.split(" ", 1)[0]})
-               for actions in caps.PAGE_ACTIONS.values() for action in actions]
+    routes = [_Route(read, {"GET"}) for reads in PINNED.values() for read in reads]
     _, out = _cataloged(routes)
     assert all(p["status"] == "configured" for p in out["pages"])
     _, out = _cataloged([r for r in routes if r.path != "/api/setup/ocean-map"])

@@ -1713,6 +1713,8 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         if truncated:
                             break
                 except TimeoutError:
+                    if task_scope is not None:
+                        return _tool_effect_unconfirmed()
                     continue
                 except OSError:
                     continue

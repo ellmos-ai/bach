@@ -31,17 +31,17 @@ _cached_admission: dict[str, str | None] = {}
 
 _SAFE_MESSAGES = {
     "catalog_timeout": "OpenRouter-Katalog: Zeitlimit beim Abruf.",
-    "catalog_transport_error": "OpenRouter-Katalog: Verbindung nicht verfÃ¼gbar.",
-    "catalog_http_transient": "OpenRouter-Katalog: Dienst vorÃ¼bergehend nicht verfÃ¼gbar.",
+    "catalog_transport_error": "OpenRouter-Katalog: Verbindung nicht verfügbar.",
+    "catalog_http_transient": "OpenRouter-Katalog: Dienst vorübergehend nicht verfügbar.",
     "catalog_http_error": "OpenRouter-Katalog: Anfrage abgelehnt.",
     "catalog_auth_rejected": "OpenRouter-Katalog: Authentifizierung abgelehnt.",
-    "catalog_invalid_schema": "OpenRouter-Katalog: Antwortformat ungÃ¼ltig.",
-    "model_not_listed": "OpenRouter-Modell ist im bestÃ¤tigten Katalog nicht aufgefÃ¼hrt.",
-    "model_price_missing": "OpenRouter-Katalog enthÃ¤lt keinen vollstÃ¤ndigen Preisnachweis.",
-    "model_price_invalid": "OpenRouter-Katalog enthÃ¤lt einen ungÃ¼ltigen Preisnachweis.",
+    "catalog_invalid_schema": "OpenRouter-Katalog: Antwortformat ungültig.",
+    "model_not_listed": "OpenRouter-Modell ist im bestätigten Katalog nicht aufgeführt.",
+    "model_price_missing": "OpenRouter-Katalog enthält keinen vollständigen Preisnachweis.",
+    "model_price_invalid": "OpenRouter-Katalog enthält einen ungültigen Preisnachweis.",
     "model_price_nonzero": "OpenRouter-Katalog weist mindestens einen nicht kostenlosen Preis aus.",
-    "model_not_free_variant": "OpenRouter-Modell ist keine ausdrÃ¼cklich ausgewiesene :free-Variante.",
-    "model_ambiguous": "OpenRouter-Katalog enthÃ¤lt mehrere EintrÃ¤ge fÃ¼r dieses Modell.",
+    "model_not_free_variant": "OpenRouter-Modell ist keine ausdrücklich ausgewiesene :free-Variante.",
+    "model_ambiguous": "OpenRouter-Katalog enthält mehrere Einträge für dieses Modell.",
 }
 
 

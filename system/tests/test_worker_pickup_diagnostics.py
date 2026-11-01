@@ -12,6 +12,7 @@ from hub._services.chat.slots_config import (
     pickup_filter_rejection,
 )
 from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+from system.tests.test_worker_queue_status import mem_db, _insert_task, _register
 from hub._services.chat.worker_queue_status import (
     project_selection_policy,
     queue_waiting_activity,
@@ -26,15 +27,33 @@ def _slot():
     }}
 
 
+def decision(conn,task,slot):
+    """Read the canonical private fixture policy; do not invent caller authority."""
+    from hub._services.task_lease_client import TaskLeaseClient
+    tid=_insert_task(conn)
+    for key,value in task.items():
+        assert key in {'category','categories','project','priority','tags','assigned_slot','assigned_to','required_model'}
+        if key not in {row[1] for row in conn.execute('PRAGMA table_info(tasks)')}:
+            conn.execute('ALTER TABLE tasks ADD COLUMN '+key+' TEXT')
+        if isinstance(value,(list,tuple)):value=','.join(value)
+        conn.execute('UPDATE tasks SET '+key+'=? WHERE id=?',(value,tid))
+    conn.commit();_register(conn)
+    client=TaskLeaseClient(conn=conn);snapshot=client.task_snapshot(tid)
+    slot={'model':'test-model',**slot}
+    pin=WorkerLeaseBinding._effective_selection_policy_snapshot(client,snapshot,slot)
+    assert pin is not None
+    return WorkerLeaseBinding._selection_rejection_reason(snapshot,slot,selection_policy=pin['policy'])
+
+
 @pytest.mark.parametrize("categories", [
     {"category": " worker "}, {"project": "WORKER"}, {"categories": "GUI,WORKER"},
     {"categories": ["GUI", "WORKER"]},
 ])
-def test_category_sources_and_positive_tags_are_alternatives(categories):
+def test_category_sources_and_positive_tags_are_alternatives(mem_db,categories):
     task = {**categories, "priority": "p2", "tags": ["SAFE", "other"]}
     assert pickup_filter_rejection(task, _slot()) is None
     assert match_task_to_pickup_filter(task, _slot())
-    assert WorkerLeaseBinding._selection_rejection_reason(task, _slot()) is None
+    assert decision(mem_db,task,_slot()) is None
 
 
 @pytest.mark.parametrize("changes,reason", [
@@ -43,44 +62,44 @@ def test_category_sources_and_positive_tags_are_alternatives(categories):
     ({"tags": "other"}, "pickup_tags"),
     ({"tags": "safe,waiting"}, "excluded_tag"),
 ])
-def test_one_decision_produces_the_same_boolean_and_reason(changes, reason):
+def test_one_decision_produces_the_same_boolean_and_reason(mem_db,changes, reason):
     task = {"category": "WORKER", "priority": "P2", "tags": "safe", **changes}
     assert pickup_filter_rejection(task, _slot()) == reason
     assert not match_task_to_pickup_filter(task, _slot())
-    assert WorkerLeaseBinding._selection_rejection_reason(task, _slot()) == reason
+    assert decision(mem_db,task,_slot()) == reason
 
 
-def test_explicit_routing_still_obeys_tags_and_model():
+def test_explicit_routing_still_obeys_tags_and_model(mem_db):
     task = {"assigned_slot": "our-slot", "category": "GUI", "priority": "P3", "tags": "safe"}
-    assert WorkerLeaseBinding._selection_rejection_reason(task, _slot()) is None
-    assert WorkerLeaseBinding._selection_rejection_reason({**task, "tags": "safe,waiting"}, _slot()) == "excluded_tag"
-    assert WorkerLeaseBinding._selection_rejection_reason({**task, "tags": ""}, _slot()) == "pickup_tags"
-    assert WorkerLeaseBinding._selection_rejection_reason({**task, "required_model": "paid-model"}, _slot()) == "model_binding"
+    slot={**_slot(),'require_assigned_slot':True,'enforce_model_binding':True}
+    assert decision(mem_db,task,slot) is None
+    assert decision(mem_db,{**task, "tags": "safe,waiting"},slot) == "excluded_tag"
+    assert decision(mem_db,{**task, "tags": ""},slot) == "pickup_tags"
+    assert decision(mem_db,{**task, "required_model": "paid-model"},slot) == "model_binding"
 
 
-def test_disabled_filter_preserves_ownership_and_never_implies_permission():
+def test_disabled_filter_keeps_preferences_separate_from_authority(mem_db):
     slot = {"id": "our-slot", "pickup_filter": {"enabled": False}}
     assert not match_task_to_pickup_filter({"assigned_to": "user"}, slot)
-    assert WorkerLeaseBinding._selection_rejection_reason({"assigned_to": "user"}, slot) == "ownership"
-    assert WorkerLeaseBinding._selection_rejection_reason({"assigned_to": "bach"}, slot) is None
-    assert worker_selection_policy(slot)["unrouted_ownership"] == "bach_or_own_worker_role"
+    assert decision(mem_db,{"assigned_to": "user"},slot) is None
+    assert decision(mem_db,{"assigned_to": "bach"},slot) is None
+    assert worker_selection_policy(slot)["unrouted_ownership"] == "preference_only"
 
 
 @pytest.mark.parametrize("assigned_to", ["user", "claude", "gemini", "codex", "other-agent"])
-def test_generic_pickup_filter_does_not_override_foreign_ownership(assigned_to):
+def test_generic_pickup_filter_treats_normal_assignee_as_preference(mem_db,assigned_to):
     task = {"assigned_to": assigned_to, "category": "WORKER", "priority": "P1", "tags": ["ready"]}
     assert pickup_filter_rejection(task, _slot()) is None
-    assert WorkerLeaseBinding._selection_rejection_reason(task, _slot()) == "ownership"
+    assert decision(mem_db,task,_slot()) is None
 
 
-def test_only_an_explicit_route_to_this_slot_overrides_personal_owner():
+def test_explicit_settings_bind_slot_without_assignee_exclusivity(mem_db):
     task = {"assigned_to": "user", "assigned_slot": "our-slot", "category": "GUI",
             "priority": "P3", "tags": ["safe"]}
-    assert WorkerLeaseBinding._selection_rejection_reason(task, _slot()) is None
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_to": "other-agent"}, _slot()) == "ownership"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_slot": "another-slot"}, _slot()) == "slot_binding"
+    slot={**_slot(),'require_assigned_slot':True}
+    assert decision(mem_db,task,slot) is None
+    assert decision(mem_db,{**task,"assigned_to":"other-agent"},slot) is None
+    assert decision(mem_db,{**task,"assigned_slot":"another-slot"},slot) == "slot_binding"
 
 
 def test_public_policy_is_read_only_bounded_and_has_no_private_fields():
@@ -172,38 +191,33 @@ def test_control_configuration_requires_actual_token_and_same_origin(monkeypatch
     ("openrouter", "openrouter/free", "OPENROUTER"),
     ("ollama-cloud", "glm-5.3:cloud", "OLLAMA-CLOUD"),
 ])
-def test_external_profile_owner_accepts_canonical_cli_alias(backend, model, owner):
-    slot = {"id": "worker-profile-1", "backend": backend, "model": model}
+def test_external_profile_bindings_require_explicit_settings(mem_db,backend, model, owner):
+    slot = {"id": "worker-profile-1", "backend": backend, "model": model,
+            'require_assigned_slot':True,'enforce_model_binding':True}
     task = {"assigned_to": owner, "assigned_slot": slot["id"],
             "required_model": model, "category": "GUI", "priority": "P3"}
 
-    assert WorkerLeaseBinding._selection_rejection_reason(task, slot) is None
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_slot": "another-profile"}, slot) == "slot_binding"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "required_model": "other-model"}, slot) == "model_binding"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_to": "other-agent"}, slot) == "ownership"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {key: value for key, value in task.items() if key != "assigned_slot"}, slot) == "ownership"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {key: value for key, value in task.items() if key != "required_model"}, slot) == "ownership"
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_to": owner.lower()}, slot) is None
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_to": f" {owner.lower()} "}, slot) is None
+    assert decision(mem_db,task,slot) is None
+    assert decision(mem_db,{**task,'assigned_slot':'another-profile'},slot)=='slot_binding'
+    assert decision(mem_db,{**task,'required_model':'other-model'},slot)=='model_binding'
+    assert decision(mem_db,{**task,'assigned_to':'other-agent'},slot) is None
+    assert decision(mem_db,{k:v for k,v in task.items() if k!='assigned_slot'},slot)=='explicit_slot_required'
+    assert decision(mem_db,{k:v for k,v in task.items() if k!='required_model'},slot) is None
+    assert decision(mem_db,{**task,'assigned_to':owner.lower()},slot) is None
+    assert decision(mem_db,{**task,'assigned_to':f' {owner.lower()} '},slot) is None
 
 
-def test_external_backend_alias_cannot_be_a_general_slot_role():
+def test_external_backend_alias_is_a_preference_not_ownership_authority(mem_db):
     slot = {"id": "openrouter", "backend": "openrouter", "model": "openrouter/free"}
     task = {"assigned_to": "OPENROUTER", "category": "WORKER", "priority": "P1"}
-    assert WorkerLeaseBinding._selection_rejection_reason(task, slot) == "ownership"
+    assert decision(mem_db,task,slot) is None
 
 
-def test_user_owned_task_still_requires_this_explicit_profile_route():
+def test_user_assignment_needs_explicit_only_to_restrict_profile_route(mem_db):
     slot = {"id": "worker-profile-1", "backend": "openrouter", "model": "openrouter/free"}
     task = {"assigned_to": "user", "assigned_slot": slot["id"],
             "required_model": slot["model"], "category": "GUI"}
-    assert WorkerLeaseBinding._selection_rejection_reason(task, slot) is None
-    assert WorkerLeaseBinding._selection_rejection_reason(
-        {**task, "assigned_slot": "another-profile"}, slot) == "slot_binding"
+    assert decision(mem_db,task,slot) is None
+    assert decision(mem_db,{**task,'assigned_slot':'another-profile'},slot) is None
+    assert decision(mem_db,{**task,'assigned_slot':'another-profile'},
+        {**slot,'require_assigned_slot':True})=='slot_binding'

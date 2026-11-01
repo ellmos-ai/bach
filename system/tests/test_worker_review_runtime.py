@@ -142,6 +142,17 @@ class _ReviewExecutionClient:
         self.recorded_review_answers = []
         self.result_record = None
 
+    def _task_policy_snapshot(self, task_id):
+        from hub._services.worker_policy_settings import CONTRACT, TASK_SCHEMA
+
+        task = self.task_snapshot(task_id)
+        return {
+            "schema": TASK_SCHEMA, "availability": "available", "task_id": task_id,
+            "task_version": task["task_version"], "configuration_version": "a" * 64,
+            "effective": {"contract_version": CONTRACT, "require_assigned_slot": False,
+                          "enforce_model_binding": False},
+        }
+
     def task_snapshot(self, task_id):
         if task_id == TARGET_TASK_ID:
             return copy.deepcopy(self.target_task)
@@ -564,6 +575,21 @@ class _QueueProbeClient:
         self.grant_available = grant_available
         self.events = []
 
+    def _task_policy_snapshot(self, task_id):
+        from hub._services.worker_policy_settings import CONTRACT, TASK_SCHEMA
+
+        task = self.task_snapshot(task_id)
+        return {
+            "schema": TASK_SCHEMA, "availability": "available", "task_id": task_id,
+            "task_version": task["task_version"], "configuration_version": "a" * 64,
+            "effective": {"contract_version": CONTRACT, "require_assigned_slot": False,
+                          "enforce_model_binding": False},
+        }
+
+    def task_snapshot(self, task_id):
+        return copy.deepcopy(next(task for task in self.ordinary + self.review
+                                  if task["id"] == task_id))
+
     def task_candidates(self, *, limit, offset):
         assert limit == 100 and offset == 0
         self.events.append("ordinary_candidates")
@@ -643,7 +669,7 @@ def test_review_queue_is_considered_only_after_no_normal_match_and_needs_grant(
     binding, acquired = _probe_acquire(
         monkeypatch,
         client,
-        {"id": CHAT_ID, "model": MODEL, "pickup_filter": {"enabled": False}},
+        {"id": CHAT_ID, "model": MODEL, "require_assigned_slot": True, "pickup_filter": {"enabled": False}},
     )
 
     assert client.events[:2] == ["ordinary_candidates", "review_candidates"]

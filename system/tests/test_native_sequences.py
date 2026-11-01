@@ -18,7 +18,8 @@ from hub._services import skill_source_service
 
 # The focused Mac run starts in system/, whereas CI starts at repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from system.tests.test_task_lease_client import _init_db, mem_db
+from system.tests.test_task_lease_client import _init_db
+from system.tests.test_worker_lease_binding import mem_db, lease_mem_db
 from system.tests.test_worker_lease_binding import (
     binding, completion_binding, approve_result, _self_check, _require_personal_review,
 )

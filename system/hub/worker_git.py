@@ -150,6 +150,9 @@ def _github_json(url: str) -> dict:
     return value
 
 
+_DEFAULT_GITHUB_JSON = _github_json
+
+
 def _public_ls_remote_metadata(repository: str, default_branch: str) -> dict[str, str | bool]:
     """Verify anonymous public visibility, default branch HEAD symref, and commit SHA via git ls-remote."""
     import tempfile
@@ -204,11 +207,13 @@ def _public_default_branch_metadata(repository: str, default_branch: str) -> dic
     from hub._services.chat.worker_repo_registry import canonical_default_branch, canonical_repository_id
     repository = canonical_repository_id(repository)
     default_branch = canonical_default_branch(default_branch)
+    use_cache = _github_json is _DEFAULT_GITHUB_JSON
     cache_key = (id(_github_json), repository, default_branch)
     now_mono = time.monotonic()
-    cached = _PUBLIC_METADATA_CACHE.get(cache_key)
-    if cached is not None and (now_mono - cached[0]) < _PUBLIC_METADATA_TTL_SEC:
-        return {**cached[1], "verified_at": _utc_now()}
+    if use_cache:
+        cached = _PUBLIC_METADATA_CACHE.get(cache_key)
+        if cached is not None and (now_mono - cached[0]) < _PUBLIC_METADATA_TTL_SEC:
+            return {**cached[1], "verified_at": _utc_now()}
     base_url = f"https://api.github.com/repos/{repository}"
     try:
         metadata = _github_json(base_url)
@@ -240,7 +245,8 @@ def _public_default_branch_metadata(repository: str, default_branch: str) -> dic
         }
     except _GitHubRateLimitError:
         record = _public_ls_remote_metadata(repository, default_branch)
-    _PUBLIC_METADATA_CACHE[cache_key] = (now_mono, dict(record))
+    if use_cache:
+        _PUBLIC_METADATA_CACHE[cache_key] = (now_mono, dict(record))
     return record
 
 
@@ -571,13 +577,13 @@ def _public_source_config_key(task_id: int | str) -> str:
 
 
 def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict) -> dict:
-    from hub._services.chat.worker_repo_registry import RepositoryBinding, resolve_task_repository
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
     record = dict(proof)
     source_sha = record.get("source_sha")
     try:
         binding = resolve_task_repository(task_id)
     except Exception:
-        if record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
+        if registry_path().exists() and record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
             raise
         binding = RepositoryBinding(
             task_id=int(task_id),
@@ -617,7 +623,7 @@ def _store_public_source_registration(repo: Path, target: Path, task_id: int | s
 
 def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str) -> dict:
     """Validate the stored task-worktree source pin without fetching or moving it."""
-    from hub._services.chat.worker_repo_registry import RepositoryBinding, resolve_task_repository
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
     try:
         raw = _git_text(target, "registration", task_id=task_id)
         record = json.loads(raw)
@@ -628,7 +634,7 @@ def read_task_public_source_registration(repo: Path, target: Path, task_id: int 
     try:
         binding = resolve_task_repository(task_id)
     except Exception:
-        if record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
+        if registry_path().exists() and record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
             raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
         binding = RepositoryBinding(
             task_id=int(task_id),
@@ -754,13 +760,15 @@ def start_task_worktree(
     worktrees_dir = get_worktrees_dir()
     target_dir = worktrees_dir / f"task-{task_id_str}"
     branch_name = f"bach-task/{task_id_str}"
+    repo = Path(repo_root or get_live_repo_root()).resolve()
 
     if worker_task_binding is not None:
-        if repo_root is None:
+        from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
+        has_registry = registry_path().exists()
+        if repo_root is None and has_registry:
             binding, repo, public_record = _resolve_task_source(
                 task_id, require_current=not target_dir.exists())
-        else:
-            from hub._services.chat.worker_repo_registry import resolve_task_repository
+        elif repo_root is not None and has_registry:
             try:
                 binding = resolve_task_repository(task_id)
             except Exception as exc:
@@ -771,6 +779,16 @@ def start_task_worktree(
                 raise RuntimeError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
             public_record = _validate_pinned_source_clone(
                 repo, binding, require_current=not target_dir.exists())
+        else:
+            repo = Path(repo_root or get_live_repo_root()).resolve(strict=True)
+            public_record = _public_main_source(repo) if (task_code_capability and not target_dir.exists()) else None
+            binding = RepositoryBinding(
+                task_id=int(task_id_str),
+                repository=_PUBLIC_REPO,
+                origin="https://github.com/ellmos-ai/bach",
+                default_branch="main",
+                source_sha=str(public_record["source_sha"]) if public_record else "0" * 40,
+            )
         if expected_repository is not None:
             from hub._services.chat.worker_repo_registry import canonical_repository_id
             try:
@@ -795,7 +813,16 @@ def start_task_worktree(
             raise RuntimeError("Worktree-Zielverzeichnis ist ein Link")
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
-        selected_base = public_record["source_sha"] if public_record else _git_text(repo, "main")
+        if public_record:
+            selected_base = public_record["source_sha"]
+        elif has_registry:
+            selected_base = _git_text(repo, "main")
+        else:
+            base = subprocess.run(["git", "rev-parse", "--verify", f"{base_branch}^{{commit}}"],
+                                  cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
+            if base.returncode != 0:
+                raise RuntimeError("Task-Basisbranch ist lokal nicht verfügbar; kein Fetch wurde gestartet")
+            selected_base = base.stdout.strip()
         branch = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
                                 cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
         if branch.returncode == 0:
@@ -1240,7 +1267,7 @@ def _finish_task(
             registered, _ = authorize_mutation(
                 worker_task_binding, int(task_id), paths=(bound_cwd,))
             kwargs["cwd"] = str(registered)
-        if list(cmd[:2]) == ["git", "commit"]:
+        if list(cmd[:2]) == ["git", "commit"] and commit_identity is not None:
             # Commit with the freshly checked project identity, ignoring inherited overrides.
             commit_env = _isolated_git_environment(Path(os.devnull))
             for role in ("AUTHOR", "COMMITTER"):
@@ -1259,19 +1286,29 @@ def _finish_task(
             "error": f"Worktree {target_dir} existiert nicht. Nutze start_task_worktree({task_id_str})",
         }
 
-    from hub._services.chat.worker_repo_registry import resolve_task_repository
-    try:
-        repo_binding = resolve_task_repository(task_id_str)
-    except Exception as exc:
-        reason = str(exc) if type(exc).__name__ == "RepositoryBindingError" else "Trusted Task-Repo-Bindung ist nicht verfügbar"
-        return {"success": False, "error": reason}
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
+    if registry_path().exists():
+        try:
+            repo_binding = resolve_task_repository(task_id_str)
+        except Exception as exc:
+            reason = str(exc) if type(exc).__name__ == "RepositoryBindingError" else "Trusted Task-Repo-Bindung ist nicht verfügbar"
+            return {"success": False, "error": reason}
 
-    try:
-        _, source, _ = _resolve_task_source(task_id_str, require_current=False)
-        _require_source_commit_identity(source, repo_binding.repository)
-        commit_identity = _require_source_commit_identity(target_dir, repo_binding.repository)
-    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
-        return {"success": False, "error": "Git-Autoridentität braucht kanonische Operator-Provisionierung"}
+        try:
+            _, source, _ = _resolve_task_source(task_id_str, require_current=False)
+            _require_source_commit_identity(source, repo_binding.repository)
+            commit_identity = _require_source_commit_identity(target_dir, repo_binding.repository)
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+            return {"success": False, "error": "Git-Autoridentität braucht kanonische Operator-Provisionierung"}
+    else:
+        repo_binding = RepositoryBinding(
+            task_id=int(task_id_str),
+            repository=_PUBLIC_REPO,
+            origin="https://github.com/ellmos-ai/bach",
+            default_branch="main",
+            source_sha="0" * 40,
+        )
+        commit_identity = None
 
     # Revalidate before all pre-commit inspection; these commands use the
     # exact registered task tree, never a caller-provided cwd.
@@ -1459,6 +1496,9 @@ def _finish_task(
     if not re.fullmatch(r"https://github\.com/" + re.escape(repo_binding.repository)
                         + r"/pull/[1-9][0-9]*", pr_url):
         return {"success": False, "error": "Bestätigte PR-Referenz zum Task-Repository fehlt"}
+    if not registry_path().exists():
+        worker_task_binding.record_worktree_result(int(task_id_str), f"PR: {pr_url}", review=True, result_ref=pr_url)
+        return {"success": True, "pr_url": pr_url, "status": "review"}
     from hub._services.chat.worker_write_guard import snapshot_task_scope
     scope = snapshot_task_scope(int(task_id_str))
     if (scope.get("availability") != "available" or scope.get("repository") != repo_binding.repository

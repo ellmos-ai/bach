@@ -399,7 +399,7 @@ def test_actual_consumer_denies_before_stream_or_composer(mounted_server, monkey
     assert calls == []
 
 
-def test_subscription_shell_is_static_public_and_has_no_legacy_fallback(mounted_server):
+def test_subscription_shell_is_static_public_and_has_no_legacy_fallback(mounted_server, monkeypatch):
     client, _, dist, server = mounted_server
     page = "/agenten/subscription-agents"
     assert page in server.DeviceAuthMiddleware.PUBLIC_PAGE_PATHS
@@ -408,32 +408,53 @@ def test_subscription_shell_is_static_public_and_has_no_legacy_fallback(mounted_
     target = dist / "agenten" / "subscription-agents.html"
     target.parent.mkdir()
     target.write_text("<!doctype html><title>Subscription-Agents</title>", encoding="utf-8")
+    from hub._services import gui_contract_service
+    reads = json.dumps({"schema": "ellmos.gui.page-reads.v1", "pages": {page: []}}).encode()
+    (dist / "page-reads.v1.json").write_bytes(reads)
+    manifest = {"schema": "ellmos-system-gui.dist.v1", "source_commit": "a" * 40,
+                "files": {"agenten/subscription-agents.html": hashlib.sha256(target.read_bytes()).hexdigest(),
+                          "page-reads.v1.json": hashlib.sha256(reads).hexdigest()}}
+    (dist / "dist-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(gui_contract_service, "get_pinned_kit_manifest",
+                        lambda: {"verified": True, "pinned_source_commit": "a" * 40, "expected_page_count": 1})
     shown = client.get(page)
     assert shown.status_code == 200 and "Subscription-Agents" in shown.text
     target.unlink()
     outside = dist.parent / "foreign.html"
     outside.write_text("must-not-render", encoding="utf-8")
-    target.symlink_to(outside)
+    try:
+        target.symlink_to(outside)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege unavailable")
+        raise
     denied = client.get(page)
     assert denied.status_code == 503 and "must-not-render" not in denied.text
 
 
-def test_subscription_page_requires_post_compose_and_never_claims_runtime_readiness(mounted_server):
+def test_subscription_page_keeps_compose_optional_and_never_claims_runtime_readiness(mounted_server):
     _, _, _, server = mounted_server
+    from hub._services.gui_page_reads import parse
+    info = parse(json.dumps({"schema": "ellmos.gui.page-reads.v1", "pages": {
+        "/agenten/subscription-agents": [
+            {"method": "GET", "path": "/api/agent-studio/blueprints", "required": True},
+            {"method": "GET", "path": "/api/capabilities/skills/library", "required": True},
+            {"method": "POST", "path": API_PATH, "required": False},
+        ]}}).encode())
     declaration = gui_capabilities.declaration(
-        server.app.routes, kit={}, brand={}, modules={},
+        server.app.routes, kit={"verified": True}, brand={}, modules={}, page_reads=info,
     )
     page = next(item for item in declaration["pages"]
                 if item["path"] == "/agenten/subscription-agents")
-    assert "POST " + API_PATH in page["requires"]
+    assert "POST " + API_PATH not in page["requires"]
     assert "GET " + API_PATH not in page["requires"]
     compose = next(item for item in declaration["endpoints"]
                    if item["path"] == API_PATH and item["method"] == "POST")
     assert compose["auth"] == "device-token"
     assert compose["runtime_verified"] is False
     without = [route for route in server.app.routes if getattr(route, "path", "") != API_PATH]
-    absent = gui_capabilities.declaration(without, kit={}, brand={}, modules={})
+    absent = gui_capabilities.declaration(without, kit={"verified": True}, brand={}, modules={}, page_reads=info)
     projection = next(item for item in absent["pages"]
                       if item["path"] == "/agenten/subscription-agents")
-    assert projection["status"] == "unavailable"
-    assert "POST " + API_PATH in projection["missing"]
+    assert projection["status"] == page["status"]
+    assert "POST " + API_PATH not in projection["missing"]

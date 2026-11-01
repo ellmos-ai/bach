@@ -921,7 +921,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
-    "memory_hook_opt_in", "model_fallbacks", "allowed_repositories",
+    "memory_hook_opt_in", "model_fallbacks", "allowed_repositories", "color_override",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -2432,14 +2432,9 @@ def _persistent_core_capacity_observation(
     receipt: Any, *, worker: dict[str, Any], expected_state: str,
 ) -> dict[str, str] | None:
     """Validate a fresh local-reserve probe receipt under the current policy."""
-    fields = {
-        "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-        "policy_version", "model", "wait_seconds", "poll_seconds",
-        "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
-        "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-        "resident_weight_credit", "capacity_basis",
-    }
-    if not isinstance(receipt, dict) or set(receipt) != fields:
+    from hub._services.chat import local_resource_reserve
+
+    if not local_resource_reserve.valid_capacity_receipt_shape(receipt):
         return None
     if (receipt.get("schema") != "bach.local-resource-reserve.v1"
             or receipt.get("state") != expected_state

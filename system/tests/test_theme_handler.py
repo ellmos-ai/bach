@@ -297,43 +297,46 @@ def test_ui_settings_defaults_roundtrip_and_aliases(tmp_path):
         handler.set_ui(preset="unknown-preset")
 
 
-@pytest.mark.asyncio
-async def test_gui_ui_endpoints_isolated_without_lifespan(tmp_path, monkeypatch):
+def test_gui_ui_endpoints_isolated_without_lifespan(tmp_path, monkeypatch):
+    import asyncio
     from fastapi import HTTPException
     from gui import server
 
     monkeypatch.setattr(server, "BACH_DIR", tmp_path)
     monkeypatch.setenv("BACH_USER_CONFIG", str(tmp_path / "data" / "user_config.json"))
 
-    initial = await server.get_gui_ui()
-    assert initial["success"] is True
-    assert initial["preset"] == "standard"
-    assert initial["nav_scope"] == "compact"
-    assert initial["icon_style"] == "classic"
-    assert initial["density"] == "standard"
-    assert initial["configured"] is False
+    async def _run():
+        initial = await server.get_gui_ui()
+        assert initial["success"] is True
+        assert initial["preset"] == "standard"
+        assert initial["nav_scope"] == "compact"
+        assert initial["icon_style"] == "classic"
+        assert initial["density"] == "standard"
+        assert initial["configured"] is False
 
-    updated = await server.update_gui_ui(
-        server.UIUpdate(
-            preset="ocean-bach-classic",
-            nav_scope="all",
-            icon_style="emoji",
-            density="spacious",
+        updated = await server.update_gui_ui(
+            server.UIUpdate(
+                preset="ocean-bach-classic",
+                nav_scope="all",
+                icon_style="emoji",
+                density="spacious",
+            )
         )
-    )
-    assert updated["success"] is True
-    assert updated["preset"] == "ocean-bach-classic"
-    assert updated["nav_scope"] == "all"
-    assert updated["icon_style"] == "emoji"
-    assert updated["density"] == "spacious"
-    assert updated["configured"] is True
+        assert updated["success"] is True
+        assert updated["preset"] == "ocean-bach-classic"
+        assert updated["nav_scope"] == "all"
+        assert updated["icon_style"] == "emoji"
+        assert updated["density"] == "spacious"
+        assert updated["configured"] is True
 
-    readback = await server.get_gui_ui()
-    assert readback["preset"] == "ocean-bach-classic"
-    assert readback["configured"] is True
+        readback = await server.get_gui_ui()
+        assert readback["preset"] == "ocean-bach-classic"
+        assert readback["configured"] is True
 
-    with pytest.raises(HTTPException) as exc_info:
-        await server.update_gui_ui(server.UIUpdate(preset="invalid-preset"))
-    assert exc_info.value.status_code == 400
+        with pytest.raises(HTTPException) as exc_info:
+            await server.update_gui_ui(server.UIUpdate(preset="invalid-preset"))
+        assert exc_info.value.status_code == 400
+
+    asyncio.run(_run())
 
 

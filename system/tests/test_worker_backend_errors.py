@@ -598,7 +598,8 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         thread.join(8)
         assert not thread.is_alive()
         expected_calls = (2 if dispatch_path == "runtime" else 1) + int(previous_block)
-        assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0) and waits == []
+        assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0)
+        assert waits == {"monthly_quota": [86400], "server_error": []}.get(backend_failure, [60])
         assert call_waits == ([60, 120, 240] if backend_failure == "rate_limit" else [])
         if backend_failure == "rate_limit":
             # Only the exact rejected model request is repeated. The earlier
@@ -999,6 +1000,7 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
             "weight_request_bytes": gib,
             "resident_weight_credit": False,
             "capacity_basis": "host_budget",
+            "host_resources": {"schema": "bach.host-resource-observation.v1", "errors": ["host_observation_failed"]},
         }
 
     blocked_receipt = capacity_receipt("waiting_memory_reserve", 3 * gib)
@@ -1279,6 +1281,7 @@ def test_persistent_core_pre_effect_reserve_returns_typed_failure_without_model_
         "disk_reserve_bytes": gib, "weight_request_bytes": gib,
         "resident_weight_credit": False,
         "capacity_basis": "host_budget",
+        "host_resources": {"schema": "bach.host-resource-observation.v1", "errors": ["host_observation_failed"]},
     }
     composed = local_model_admission.compose_admission_receipt(
         blocked, binding=None, require_model_socket=False,

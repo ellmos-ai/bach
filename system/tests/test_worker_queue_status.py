@@ -1,6 +1,8 @@
 """Selector observations use the isolated real authority, never a second queue."""
 import sqlite3
+import json
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -18,10 +20,14 @@ from system.tests.test_task_lease_client_review import T0
 
 
 @pytest.fixture
-def mem_db():
+def mem_db(tmp_path,monkeypatch):
+    # The selector now reads the canonical settings and physical registry.
+    # Both are real, test-owned stores; no product fallback or mocked authority.
+    monkeypatch.setenv('HOME',str(tmp_path));monkeypatch.setenv('USERPROFILE',str(tmp_path))
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     _init_db(conn)
+    conn.execute('CREATE TABLE IF NOT EXISTS system_config(key TEXT PRIMARY KEY,value TEXT)')
     yield conn
     conn.close()
 
@@ -34,11 +40,22 @@ def _insert_task(conn):
 
 
 def select(client, reports, slot=None, **changes):
+    _register(client._conn)
     args = {"worker_id": "physical-worker@HOST", "host": "HOST", "generation": "generation-1",
             "is_current": lambda: True, "stop_event": threading.Event(), "clock": lambda: T0}
     args.update(changes)
-    return WorkerLeaseBinding.acquire_next(client, slot or {"id": "our-slot"},
+    return WorkerLeaseBinding.acquire_next(client, {'model':'test-model',**(slot or {"id": "our-slot"})},
                                           observe_queue=reports.append, **args)
+
+
+def _register(conn):
+    from hub._services.chat import worker_repo_registry as registry
+    path=registry.registry_path();path.parent.mkdir(mode=0o700,exist_ok=True)
+    value={'schema':registry.REGISTRY_SCHEMA,'repositories':{'ellmos-ai/bach':{
+        'origin':'https://github.com/ellmos-ai/bach','default_branch':'main','visibility':'public'}},
+        'tasks':{str(row[0]):{'repository':'ellmos-ai/bach','source_sha':'1'*40}
+            for row in conn.execute('SELECT id FROM tasks')}}
+    path.write_text(json.dumps(value),encoding='utf-8');path.chmod(0o600)
 
 
 def test_empty_queue_is_observed_without_acquisition(mem_db):
@@ -52,10 +69,10 @@ def test_empty_queue_is_observed_without_acquisition(mem_db):
 
 
 @pytest.mark.parametrize("fields,slot,reason", [
-    ({"assigned_slot": "elsewhere"}, {"id": "our-slot"}, "slot_binding"),
-    ({"required_model": "paid-model"}, {"id": "our-slot", "model": "openrouter/free"}, "model_binding"),
+    ({"assigned_slot": "elsewhere"}, {"id": "our-slot", "require_assigned_slot": True}, "slot_binding"),
+    ({"required_model": "paid-model"}, {"id": "our-slot", "model": "openrouter/free", "enforce_model_binding": True}, "model_binding"),
     ({}, {"id": "our-slot", "require_assigned_slot": True}, "explicit_slot_required"),
-    ({"assigned_to": "user"}, {"id": "our-slot"}, "ownership"),
+    ({"assigned_to": "user"}, {"id": "our-slot", "allowed_repositories": ["other/repo"]}, "repository_not_allowed"),
     ({"category": "GUI"}, {"id": "our-slot", "pickup_filter": {"enabled": True, "categories": ["WORKER"]}}, "pickup_category"),
     ({"priority": "P3"}, {"id": "our-slot", "pickup_filter": {"enabled": True, "priorities": ["P1"]}}, "pickup_priority"),
     ({"tags": ""}, {"id": "our-slot", "pickup_filter": {"enabled": True, "tags": ["ready"]}}, "pickup_tags"),
@@ -130,7 +147,7 @@ def test_explicit_assignment_and_real_ack_are_separate_from_generic_filters(mem_
                    ("our-slot", "openrouter/free", tid))
     mem_db.commit()
     reports = []
-    binding = select(client, reports, {"id": "our-slot", "model": "openrouter/free",
+    binding = select(client, reports, {"id": "our-slot", "model": "openrouter/free", "require_assigned_slot": True,
         "pickup_filter": {"enabled": True, "categories": ["WORKER"], "priorities": ["P1"]}})
     assert binding.task_id == tid
     report, = reports
@@ -237,15 +254,15 @@ def test_native_no_grant_conflict_is_diagnosed_but_still_stops_selection(mem_db,
     assert not reports[0]["scan_complete"] and not client.read(tid).leased
 
 
-def test_all_candidate_pages_are_counted_without_claiming_foreign_scope(mem_db):
+def test_all_candidate_pages_are_counted_when_explicit_only_excludes_all(mem_db):
     mem_db.executemany("INSERT INTO tasks(title,status,assigned_to) VALUES (?,'pending','user')",
                       [(f"Private task {i}",) for i in range(205)])
     mem_db.commit()
     reports = []
-    assert select(TaskLeaseClient(conn=mem_db), reports) is None
+    assert select(TaskLeaseClient(conn=mem_db), reports,{'id':'our-slot','require_assigned_slot':True}) is None
     report, = reports
     assert report["candidate_count"] == 205 and report["scanned_pages"] == 3
-    assert report["rejected_counts"] == {"ownership": 205}
+    assert report["rejected_counts"] == {"explicit_slot_required": 205}
     assert report["scan_complete"] and report["attempted_count"] == 0
     assert "Private task" not in str(report)
 
@@ -256,23 +273,26 @@ def test_open_dependency_is_not_reported_as_a_successful_claim(mem_db):
     mem_db.execute("UPDATE tasks SET depends_on=? WHERE id=?", (str(dependency), child))
     mem_db.commit()
     reports = []
-    assert select(TaskLeaseClient(conn=mem_db), reports) is None
-    assert reports[0]["rejected_counts"] == {"not_claimable": 1, "ownership": 1}
-    assert reports[0]["matched_count"] == reports[0]["attempted_count"] == 1
+    client=TaskLeaseClient(conn=mem_db)
+    client.acquire(dependency,worker_id='foreign@HOST',host='HOST',now=T0)
+    assert select(client, reports) is None
+    assert reports[0]["rejected_counts"] == {"not_claimable": 1, "held": 1}
+    assert reports[0]["matched_count"] == reports[0]["attempted_count"] == 2
     assert reports[0]["reason"] == "acquire_denied"
 
 
 def test_fresh_content_change_is_rechecked_before_acquire(mem_db, monkeypatch):
     tid = _insert_task(mem_db)
+    mem_db.execute("UPDATE tasks SET assigned_slot='our-slot' WHERE id=?",(tid,));mem_db.commit()
     client = TaskLeaseClient(conn=mem_db)
     original_snapshot = client.task_snapshot
     def fresh_snapshot(task_id):
-        mem_db.execute("UPDATE tasks SET assigned_to='user' WHERE id=?", (task_id,))
+        mem_db.execute("UPDATE tasks SET assigned_slot='other-slot' WHERE id=?", (task_id,))
         mem_db.commit()
         return original_snapshot(task_id)
     monkeypatch.setattr(client, "task_snapshot", fresh_snapshot)
     reports = []
-    assert select(client, reports) is None
+    assert select(client, reports,{'id':'our-slot','require_assigned_slot':True}) is None
     assert reports[0]["rejected_counts"] == {"changed_selection": 1}
     assert not client.read(tid).leased
 
@@ -282,7 +302,8 @@ def test_observation_failure_cannot_lose_acquired_lease(mem_db):
     client = TaskLeaseClient(conn=mem_db)
     def bad_observer(_):
         raise RuntimeError("observer failure")
-    binding = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot"}, observe_queue=bad_observer,
+    _register(mem_db)
+    binding = WorkerLeaseBinding.acquire_next(client, {"id": "our-slot", "model":"test-model"}, observe_queue=bad_observer,
         worker_id="worker@HOST", host="HOST", generation="generation-1", is_current=lambda: True,
         stop_event=threading.Event(), clock=lambda: T0)
     assert binding.task_id == tid and client.read(tid, lease_id=binding._ack.lease_id, now=T0).own
