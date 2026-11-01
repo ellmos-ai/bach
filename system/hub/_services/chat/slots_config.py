@@ -855,7 +855,7 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     if MATERIALIZE_OWNED_FIELDS & set(updates):
         raise ValueError("Blueprint-Bindung wird nur beim Materialisieren gesetzt")
-    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs", "allowed_repositories") if key in updates}
+    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs", "allowed_repositories", "tool_profile") if key in updates}
     if capability_edits:
         updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
@@ -920,7 +920,7 @@ CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "symbol", "backend", "model", "mode", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
-    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
+    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs", "tool_profile",
     "memory_hook_opt_in", "model_fallbacks", "allowed_repositories", "color_override",
 })
 CORE_KNOWN_BACKENDS = frozenset({
@@ -1254,6 +1254,13 @@ def _validated_core_edits(
                     or any(not isinstance(name, str) or name not in known for name in value)
                     or len(set(value)) != len(value))):
                 raise ValueError("Toolfreigabe enthält unbekannte oder doppelte Werkzeuge")
+        elif field == "tool_profile":
+            # Gueltige Namen: Schluessel von TOOL_PROFILES
+            # (standard/readonly/files/code_delivery/all);
+            # None = keine Toolset-Einschraenkung.
+            from .bach_tools import TOOL_PROFILES
+            if value is not None and (not isinstance(value, str) or value not in TOOL_PROFILES):
+                raise ValueError(f"Unbekanntes Toolset-Profil: {value}")
         elif field == "avatar":
             value = validate_agent_avatar(value)
         elif field == "symbol":
@@ -1804,7 +1811,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     capability_edits = {key: worker_data[key] for key in
-                        ("allowed_tools", "skill_refs", "allowed_repositories") if key in worker_data}
+                        ("allowed_tools", "skill_refs", "allowed_repositories", "tool_profile") if key in worker_data}
     capabilities = _validated_core_edits(capability_edits) if capability_edits else {}
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
@@ -2132,8 +2139,19 @@ def _controller_run_worker(config: dict[str, Any], worker_id: str) -> dict[str, 
     return _model_request_worker(config, worker_id)
 
 
+def _validated_model_name(model: Any) -> Any:
+    if (type(model) is not str
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}", model) is None):
+        raise ModelRequestBudgetError("budget_model_invalid")
+    return model
+
+
 def _validated_model_request_record(record: Any) -> dict[str, Any]:
-    if (type(record) is not dict or set(record) != _MODEL_REQUEST_RUN_FIELDS
+    if (type(record) is not dict
+            or set(record) - _MODEL_REQUEST_RUN_FIELDS not in (set(), {"model"})
+            or _MODEL_REQUEST_RUN_FIELDS - set(record)
+            or record.get("model") is not None
+            and _validated_model_name(record["model"]) != record["model"]
             or record.get("schema") != _MODEL_REQUEST_RUN_SCHEMA
             or any(type(record.get(key)) is not str or
                    re.fullmatch(r"[0-9a-f]{32}", record[key]) is None
@@ -2241,6 +2259,7 @@ def reserve_model_request(worker_id: str, *, service_instance: str,
                           start_request_id: str, generation: str, task_id: int,
                           task_version: str, configuration_version: str,
                           confirmed_version_transitions: tuple = (),
+                          model: str | None = None,
                           path: str | None = None) -> dict[str, Any]:
     """Persist one non-refundable backend attempt before provider dispatch."""
     config = load_slots_config(path, strict=True)
@@ -2273,6 +2292,8 @@ def reserve_model_request(worker_id: str, *, service_instance: str,
         raise ModelRequestBudgetError(
             f"Modellanfragenbudget ausgeschöpft: Run {start_request_id}, "
             f"{record['reserved_count']}/{record['limit']}, verbleibend 0")
+    if model is not None:
+        record["model"] = _validated_model_name(model)
     record["task_version"] = task_version
     record["reserved_count"] += 1
     record["sequence"] += 1

@@ -190,6 +190,28 @@ def test_catalog_api_uses_shared_reader_without_write(monkeypatch):
     assert any(route.path.endswith("/catalog") and "GET" in route.methods for route in api.router.routes)
 
 
+def test_model_socket_resource_share_scopes_remain_distinct_and_unmeasured():
+    source = {"configuration_version": "v1", "sockets": [{
+        "id": "model-1", "resource_share": None,
+        "slots": [{"id": "binding-1", "resource_share": None}],
+    }]}
+    projected = api._with_share_availability(source)
+
+    model_share = projected["sockets"][0]["resource_share"]
+    slot_share = projected["sockets"][0]["slots"][0]["resource_share"]
+    assert model_share == {
+        "schema": "bach.resource-share.v1", "scope": "model_memory", "state": "unavailable",
+        "reason_code": "per_model_measurement_unavailable",
+    }
+    assert slot_share == {
+        "schema": "bach.resource-share.v1", "scope": "context", "state": "unavailable",
+        "reason_code": "slot_context_measurement_unavailable",
+    }
+    assert "percent" not in model_share and "percent" not in slot_share
+    assert source["sockets"][0]["resource_share"] is None
+    assert source["sockets"][0]["slots"][0]["resource_share"] is None
+
+
 @pytest.fixture
 def native_config(tmp_path, monkeypatch):
     path = str(tmp_path / "slots.json")

@@ -176,7 +176,8 @@ def test_app_starts_normally_when_backup_fails(tmp_path, monkeypatch, capsys):
     db = core_app.App(SYSTEM_DIR).db
     assert db is not None and db.table_exists("tasks")
     assert newest not in {r["filename"] for r in db.execute("SELECT filename FROM _migrations")}
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out + captured.err  # Warnungen laufen seit der Partner-Scope-Aenderung ueber stderr
     assert "Sicherung vor Migration fehlgeschlagen" in out and "Migrationslauf unvollstaendig" in out
 
 
@@ -375,9 +376,10 @@ def test_recreated_empty_wal_identity_never_reuses_backup(tmp_path):
     original_state = core_db._migration_source_state(db_path)
     assert original_state["wal"]["present"] and original_state["wal"]["size"] == 0
 
-    held_fd = os.open(wal_path, os.O_RDONLY)
+    held_wal = tmp_path / "held-wal-identity"
+    os.replace(wal_path, held_wal)
+    held_fd = os.open(held_wal, os.O_RDONLY)
     try:
-        wal_path.unlink()
         replacement = tmp_path / "replacement-wal"
         replacement.write_bytes(b"")
         os.utime(replacement, ns=(original.st_atime_ns, original.st_mtime_ns))

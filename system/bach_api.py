@@ -70,6 +70,7 @@ Verfuegbare Module:
 """
 
 import re
+import json
 import sqlite3
 import sys
 from datetime import datetime
@@ -85,11 +86,25 @@ if str(_SYSTEM_DIR) not in sys.path:
 
 # Lazy App-Singleton
 _app = None
+_IN_FACADE_GET_APP = False
 
 
 def get_app():
     """Gibt die App-Singleton-Instanz zurueck."""
-    global _app
+    global _app, _IN_FACADE_GET_APP
+    facade = sys.modules.get("bach_api")
+    if (
+        not _IN_FACADE_GET_APP
+        and facade is not None
+        and facade is not sys.modules.get(__name__)
+    ):
+        facade_get_app = getattr(facade, "get_app", None)
+        if callable(facade_get_app) and facade_get_app is not get_app:
+            _IN_FACADE_GET_APP = True
+            try:
+                return facade_get_app()
+            finally:
+                _IN_FACADE_GET_APP = False
     if _app is None:
         from core.app import App
         _app = App(_SYSTEM_DIR)
@@ -825,7 +840,7 @@ class _SessionProxy:
     """
 
     def startup(self, partner: str = "claude", mode: str = "silent",
-                quick: bool = False) -> str:
+                quick: bool = False, *, structured: bool = False) -> str | dict:
         """Startet eine BACH-Session.
 
         Fuehrt das komplette Startprotokoll aus:
@@ -838,15 +853,31 @@ class _SessionProxy:
             partner: Partner-ID (claude, gemini, user, ...)
             mode: Startup-Modus (silent, gui, text, dual)
             quick: True = ohne Directory-Scan (schneller)
+            structured: True = exact session_id, partner_id, created and report
 
         Returns:
-            Startup-Report als String
+            Startup-Report als String; bei structured=True ein Dictionary mit eigener ID
         """
         a = get_app()
         operation = "quick" if quick else "run"
         args = [f"--partner={partner}", f"--mode={mode}"]
+        if structured:
+            args.append("--json")
         success, message = a.execute("startup", operation, args)
-        return message
+        if not success:
+            raise BachAPIError(message)
+        return json.loads(message) if structured else message
+
+    def current(self, partner: str, *, session_id: str | None = None) -> dict | None:
+        """Read one partner's open session; reject ambiguous or foreign IDs."""
+        args = [f"--partner={partner}"]
+        if session_id is not None:
+            args.append(f"--session={session_id}")
+        args.append("--json")
+        success, message = get_app().execute("session", "status", args)
+        if not success:
+            raise BachAPIError(message)
+        return json.loads(message)["session"]
 
     def shutdown(self, summary: str = None, partner: str = "claude",
                  mode: str = "complete", *, session_id: str | None = None) -> str:

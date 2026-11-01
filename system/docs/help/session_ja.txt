@@ -88,3 +88,18 @@ hub/startup.py スタートアップ ハンドラー (セッションの初期�
 Hub/shutdown.py シャットダウン ハンドラー (セッション終了)
 Hub/task.py タスク ハンドラー (タスク管理)
 data/bach.db データベース スキーマ
+
+パートナーと構造化されたセッションID
+=====================================
+  bach session start --partner=codex --mode=silent --json
+  bach session status --partner=codex --session=ID --json
+  bach session check --partner=codex --session=ID
+start の既定パートナーは user です。他のパートナーのセッションは再利用しません。
+start は自分の未終了セッションを再利用し、--startup は同じパートナーのセッションを置き換えます。
+候補が複数ある場合は拒否します。--session には --partner が必要です。
+存在しないID、終了済みID、他のパートナーのIDは拒否します。
+--startup --json は実際に登録した session_id と partner_id を返します。
+セッション、在席情報、活動参照は同一トランザクションで登録します。
+API: info = session.startup(partner="codex", structured=True)
+     session.current("codex", session_id=info["session_id"])
+既定の出力はテキストです。警告は stderr に出力します。
