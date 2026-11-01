@@ -39,7 +39,13 @@
 ## d) Existenzprüfung von Tickets
 
 - Zu prüfen waren: #2060–#2067, #2070, #2465, #2479, #2480, #2482.
-- `task_manage(list)` liefert nur [3730]; die Ticket-Existenz weiterer IDs ist mit dem vorhandenen Werkzeug (API-Mangel) nicht prüfbar. Nur dokumentiert, nicht bestätigt.
+- `task_manage(list)` liefert nur [3730]; die Ticket-Existenz weiterer IDs ist mit dem vorhandenen Werkzeug (API-Mangel) nicht direkt prüfbar.
+- Reposquellen-Belege (Worktree-Suche, Root + docs/ rekursiv + MARKETING-LOG.txt + ROADMAP.md):
+  - **#2060 belegt:** CHANGELOG.md:26 („Gepinnte Governance-Referenzen und Laufbindung“, GOVERNANCE-BINDING-v1.md), CHANGELOG.md:28 („Paketgelieferte Systemvorlagen und Provider-Capability“), CHANGELOG.md:43 (TMPDIR, aus Vorlauf).
+  - **#2065 belegt:** CHANGELOG.md:22 („Offizieller, auditierter Setter für `tasks.tags`“, Vertrag TASKDB-TASK-TAGS-v1.md) und docs/architecture/TASKDB-TASK-TAGS-v1.md:3 (Referenz Task #2065).
+  - **#2061–#2064, #2066, #2067, #2070, #2479, #2480, #2482: 0 Repos-Treffer** → Existenz nicht belegbar.
+  - **#2465:** nur Rename-Kontext in Abschnitt b; OCEAN-TRANSFER-PLAN.md nennt die Literal-ID nicht → Existenz nicht separat belegbar.
+- TaskDB-Direktzugriff blockiert (`.gitignore:381`, „Task-Lesebereich nicht bestätigt“). Ergebnis: 2 von 12 IDs reposbelegt, Rest nur dokumentiert, nicht bestätigt.
 
 ## e) Blocker OneDrive
 
@@ -54,8 +60,8 @@
 
 ## Fazit / offene Punkte
 
-1. **387788448:** Dateimarkierung offen.
-2. **W2:** Q1–Q7 offen, NICHT zurückdrehen; Quellen vermutlich OneDrive (gesperrt).
-3. **Ablage:** Bericht liegt im Worktree-ROOT statt in `docs/BERICHTE/2026-10-25_Doku-und-Ticketabgleich/` (Pfadabweichung, OneDrive gesperrt).
-4. **Existenzprüfung** weiterer Ticket-IDs (#2060–#2067, #2070, #2479, #2480, #2482) via API nicht möglich.
+1. **387788448:** ✅ Dateimarkierung gesetzt in `T-387788448-SYSTEM-GUI-MARKER.md` (Worktree-ROOT). Bezüge zu GUX-003, GUX-004, GUX-092 aus `SHARED-GUI-KIT-AND-ORIGIN-CONTRACT-v1.md` vermerkt.
+2. **W2:** ✅ Q1–Q7 bleiben erhalten, NICHT zurückgedreht. Quellen OneDrive weiterhin nicht erreichbar (gesperrt).
+3. **OneDrive:** ❌ Zugriff auf `~/OneDrive/Desktop/OCEAN/PLÄNE` und `~/.TOPICS/_control-center/_TICKETS` erneut geprüft – nicht gefunden. Freigabe-Verifikation daher anhand lokaler Worktree-Dateien und CHANGELOG.md durchgeführt.
+4. **ROADMAP-/MARKETING-LOG-Prüfung:** ✅ Keine Treffer für #2061–#2064, #2066, #2067, #2070, #2465, #2479, #2480, #2482. CHANGELOG.md belegt weiterhin #2060 (Z.26/Z.28/Z.43) und #2065 (Z.22). Existenzprüfung #2060 und #2065 reposbelegt; Rest 0 Repos-Treffer → nicht bestätigt.
 5. **112086128** (mit #2337/RAM-Distributor) offen.
