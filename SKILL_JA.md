@@ -35,7 +35,7 @@ description: >
   4. 他の作成者によるレビュー・検証タスクは明示的に適している。
   5. タスクが未解決のユーザー判断に依存している場合や自分の能力に合わない場合：質問、または理由を（タスクメモに）記録し、次のタスクへ。タスクを受け取るためだけにルールや保護ゲートを変更しないこと。
 ### 3. 作業前にリースを取得
-```
+```python
 import os, sys
 os.environ["BACH_NO_AUTO_MIGRATE"] = "1"
 sys.path.insert(0, os.path.join(os.environ["BACH_ROOT"], "system"))

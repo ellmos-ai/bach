@@ -35,7 +35,7 @@ description: >
   4. 其他作者的评审与检验任务明确适合认领。
   5. 若任务依赖未决的用户决定或不符合你的能力：记下问题或原因（任务备注）并选下一个。绝不要为了能认领任务而更改规则或防护门。
 ### 3. 开始工作前先认领
-```
+```python
 import os, sys
 os.environ["BACH_NO_AUTO_MIGRATE"] = "1"
 sys.path.insert(0, os.path.join(os.environ["BACH_ROOT"], "system"))
@@ -52,6 +52,7 @@ client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, a
 - 如果 `renew` 被拒绝、租约已过期或fence已变更：**立即停止对该任务的所有写入操作。** 在内容变更得到确认后，更新已保存的任务版本。
 - **不要使用：** `bach task claim`（无fence/租约ID的旧式claim）和 `~/compute/luna-gui/task_tool.py claim`（仅设置 `assigned_to`，无租约）。两者都不是原生认领，无法防止重复处理。`task_tool.py note`（向描述追加文本）和 `list` 可作为临时手段使用，直到出现原生替代方案。
 - 签名必须从 `system/hub/_services/task_lease_client.py` 读取，而不是以本示例为准。
+
 ### 4. 工作
 - **每个任务使用独立工作树**，基于 `origin/main`：`git worktree add ~/services/bach-worktrees/<zweig> -b <zweig> origin/main`。分支名 `<agent>/<task>-<kurz>-<datum>`。主检出 `~/services/bach` 已被占用（他人的未提交更改）：不在那里工作、测量或构建。
 - **构建位置：** 新的业务逻辑应按照 `MODUL-ZUORDNUNG.md` 放入对应的 Ocean 模块仓库，而不是 BACH 核心。
@@ -660,6 +661,8 @@ bach help practices
 ```
 
 **路径：** `system/skills/workflows/`
+
+---
 
 ## 主题包（按需阅读 —— 所有模式）
 
