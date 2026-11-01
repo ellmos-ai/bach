@@ -5903,6 +5903,12 @@ async def life_page():
     raise HTTPException(status_code=404, detail="Life-Seite nicht gefunden")
 
 
+@app.get("/api/health")
+async def api_health_probe():
+    """Minimaler Liveness-Probe-Endpunkt (Operateur-Diagnose; keine sensiblen Daten)."""
+    return {"status": "ok"}
+
+
 @app.get("/api/life/providers")
 async def get_life_providers():
     """Prüft die Verfügbarkeit von externen Life-Providern (Routinika, UpToDay, Health, Balance)."""
@@ -5933,6 +5939,16 @@ async def get_life_providers():
             "message": "In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt."
         }
     }
+
+
+@app.get("/dist-manifest.json")
+async def dist_manifest_endpoint():
+    """Serviert dist-manifest.json der installierten GUI-Dist (kein PAGE_READ), sonst 404."""
+    if ASTRO_DIST_DIR:
+        manifest_path = ASTRO_DIST_DIR / "dist-manifest.json"
+        if manifest_path.is_file():
+            return FileResponse(manifest_path, media_type="application/json")
+    raise HTTPException(status_code=404, detail="Gui dist manifest unavailable")
 
 
 @app.get("/domains", response_class=HTMLResponse)
