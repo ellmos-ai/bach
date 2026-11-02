@@ -70,11 +70,21 @@ class CatalogConfig:
     sync_root: Path | None = None
 
 
+def _is_macos_cloudstorage(p: Path) -> bool:
+    import sys
+    if sys.platform != "darwin":
+        return False
+    try:
+        return "/Library/CloudStorage/" in os.path.realpath(p)
+    except OSError:
+        return True
+
+
 def _env_or_existing(variable: str, candidates: list[Path]) -> Path | None:
     configured = os.environ.get(variable, "").strip()
     if configured:
         return Path(os.path.expandvars(configured)).expanduser()
-    return next((p for p in candidates if p.exists()), None)
+    return next((p for p in candidates if not _is_macos_cloudstorage(p) and p.exists()), None)
 
 
 def config_from_environment() -> CatalogConfig:

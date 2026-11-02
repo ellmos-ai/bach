@@ -25,9 +25,19 @@ def _text(value, limit=300):
     return value[:limit] if isinstance(value, str) and "\x00" not in value else ""
 
 
+def _is_macos_cloudstorage(p: Path) -> bool:
+    import sys
+    if sys.platform != "darwin":
+        return False
+    try:
+        return "/Library/CloudStorage/" in os.path.realpath(p)
+    except OSError:
+        return True
+
+
 def _roots(variable: str, defaults: list[Path]) -> list[Path]:
     if variable not in os.environ:
-        return defaults
+        return [p for p in defaults if not _is_macos_cloudstorage(p)]
     values = json.loads(os.environ[variable])
     if (not isinstance(values, list) or len(values) > 20
             or any(not isinstance(p, str) or not p for p in values)):

@@ -1392,8 +1392,8 @@ async def list_governance_policies():
 async def get_knowledge_digest():
     """List configured knowledge roots; indexing requires a separate feed."""
     watched_paths = [
-        ("Research", Path(os.path.expanduser("~/OneDrive/.TOPICS/.RESEARCH"))),
-        ("Umbruch", Path(os.path.expanduser("~/OneDrive/.TOPICS/.UMBRUCH"))),
+        ("Research", _find_existing_path([Path(os.path.expanduser("~/OneDrive/.TOPICS/.RESEARCH"))])),
+        ("Umbruch", _find_existing_path([Path(os.path.expanduser("~/OneDrive/.TOPICS/.UMBRUCH"))])),
         ("Domains", DOMAINS_ROOT),
         ("Tools", TOOLS_ROOT),
         ("Bach Docs", Path(_SYSTEM_ROOT / "docs")),
@@ -4041,3 +4041,54 @@ async def get_help_doc_audit():
         }
 
     return await asyncio.to_thread(_load)
+
+
+@router.get("/domains/modules")
+async def get_domains_modules():
+    """Return canonical Ocean & BACH modules with documentation metadata for /help and /skills/ocean."""
+    from hub._services.ocean_stack_bridge import ocean_stack_status
+
+    def _load() -> Dict[str, Any]:
+        status = ocean_stack_status()
+        modules_list = []
+        for mod_id, info in status.get("modules", {}).items():
+            modules_list.append({
+                "id": mod_id,
+                "name": mod_id,
+                "version": "1.0.0",
+                "bound": bool(info.get("bound")),
+                "module": info.get("module"),
+                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
+            })
+        for ext_id, info in status.get("capability_extensions", {}).items():
+            modules_list.append({
+                "id": ext_id,
+                "name": ext_id,
+                "version": "0.1.0",
+                "bound": bool(info.get("bound")),
+                "module": info.get("module"),
+                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
+            })
+        return {
+            "schema": "bach.domains.modules.v1",
+            "count": len(modules_list),
+            "modules": modules_list,
+        }
+
+    return await asyncio.to_thread(_load)
+
+
+@router.get("/ocean/transfer-contracts")
+async def get_ocean_transfer_contracts():
+    """Return the machine-verifiable 7-step module transfer contracts (#3716, #1854-#1916)."""
+    from tools.module_transfer_contract import list_all_transfer_contracts
+
+    return await asyncio.to_thread(list_all_transfer_contracts)
+
+
+@router.get("/ocean/deploy-preflight")
+async def get_ocean_deploy_preflight():
+    """Run the deployment and rollback boundary preflight check (#3717)."""
+    from tools.deploy_rollback_preflight import run_deploy_preflight
+
+    return await asyncio.to_thread(run_deploy_preflight, require_clean_git=False)

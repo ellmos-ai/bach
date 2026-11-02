@@ -81,18 +81,18 @@ SKILLS_SEARCH_PATHS = _filter_macos_cloudstorage([
 
 # Suchpfade fuer externe Artefakte (GUX-066)
 ARTIFACT_SEARCH_PATHS = {
-    "profiprompt": [
+    "profiprompt": _filter_macos_cloudstorage([
         Path("C:/Users/User/OneDrive/.TOPICS/.SOFTWARE/DATA/REL_ProfiPrompt"),
         Path(os.path.expanduser("~/OneDrive/.TOPICS/.SOFTWARE/DATA/REL_ProfiPrompt")),
-    ],
-    "promptboard": [
+    ]),
+    "promptboard": _filter_macos_cloudstorage([
         Path("C:/Users/User/OneDrive/.TOPICS/.SOFTWARE/DATA/REL-PUB_PromptBoard"),
         Path(os.path.expanduser("~/OneDrive/.TOPICS/.SOFTWARE/DATA/REL-PUB_PromptBoard")),
-    ],
-    "explorerpro": [
+    ]),
+    "explorerpro": _filter_macos_cloudstorage([
         Path("C:/Users/User/OneDrive/.TOPICS/.SOFTWARE/DATA/REL-PUB_ExplorerPro_SUITE"),
         Path(os.path.expanduser("~/OneDrive/.TOPICS/.SOFTWARE/DATA/REL-PUB_ExplorerPro_SUITE")),
-    ]
+    ]),
 }
 
 # Standard-Plugins als Basis / Fallback

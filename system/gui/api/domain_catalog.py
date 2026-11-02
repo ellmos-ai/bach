@@ -109,20 +109,32 @@ DEFAULT_PINNED_IDS: list[str] = [
 ]
 
 
+def _is_macos_cloudstorage(p: Path) -> bool:
+    import sys
+    if sys.platform != "darwin":
+        return False
+    try:
+        return "/Library/CloudStorage/" in os.path.realpath(p)
+    except OSError:
+        return True
+
+
 def module_root() -> Path:
     configured = os.environ.get("ELLMOS_MODULES_ROOT")
     if configured:
         return Path(configured).expanduser()
+    local_modules = Path(__file__).resolve().parents[3] / ".MODULES"
     candidates = [
         Path(value).expanduser() / ".TOPICS" / ".AI" / ".MODULES"
         for key in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial")
         if (value := os.environ.get(key))
     ]
     candidates.append(Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES")
+    candidates.append(local_modules)
     for candidate in candidates:
-        if candidate.exists():
+        if not _is_macos_cloudstorage(candidate) and candidate.exists():
             return candidate
-    return Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES"
+    return local_modules if local_modules.exists() else Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES"
 
 
 def repos_root() -> Path:
