@@ -64,39 +64,50 @@ def _now():
 
 
 def compute_verdict():
-    """Readback-Verdict: OK nur bei Pin (kit-manifest) + page_count 375
-    (Distdateien inkl. Distmanifest) + alle HTML-GETs (kinds
-    page/page_root/tab_alias) mit Status 200."""
+    """OK erfordert positive Installationsbelege und vollständige HTML-GETs."""
     reasons = []
-    ok = True
+    if KIT_SUMMARY.get("http_status") != 200:
+        reasons.append("kit-manifest ohne HTTP 200")
+    if KIT_SUMMARY.get("schema") != "ellmos-system-gui.kit-manifest.v1":
+        reasons.append("kit-manifest mit unbekanntem Schema")
     pin = KIT_SUMMARY.get("pinned_source_commit")
     if pin != PINNED_SOURCE_COMMIT:
-        ok = False
         reasons.append("kit-manifest pinned_source_commit != Pin (Ist=%r)" % pin)
-    inst = KIT_SUMMARY.get("installed_dist") or {}
-    pc = inst.get("page_count")
-    if pc is not None and pc != EXPECTED_DIST_FILE_COUNT:
-        ok = False
-        reasons.append("installed_dist.page_count != 375 Distdateien (Ist=%r)" % pc)
-    if (inst.get("source_commit") is None) or (inst.get("verified") is False) or (inst.get("reason_code") == "commit_mismatch"):
-        ok = False
-        reasons.append("installed_dist abweichend (verified=%r, reason_code=%r, source_commit=%r) — dokumentierte Deploy-Abweichung: Mac-Deploy/Tag v3.15.0 ausstehend (Rest via #3720)" % (inst.get("verified"), inst.get("reason_code"), inst.get("source_commit")))
-    reasons.append("INFO: Routenziel 39 lt. MILESTONE; ohne Auth pruefbar: 38 dokumentierte Routen (24 PAGE_READS + 12 Legacy + 2 Tab-Aliase); autoritative 39er-Liste nicht lesbar (dist-manifest 401, page-reads.v1.json nicht im Repo) → Differenz dokumentiert")
-    if not inst:
-        ok = False
-        reasons.append("installed_dist mit page_count nicht belegt (%r)" % KIT_SUMMARY.get("installed_dist"))
+    inst = KIT_SUMMARY.get("installed_dist")
+    if not isinstance(inst, dict):
+        reasons.append("installed_dist nicht als Objekt belegt")
+    else:
+        if inst.get("installed") is not True:
+            reasons.append("installed_dist.installed ist nicht true")
+        if inst.get("verified") is not True:
+            reasons.append("installed_dist.verified ist nicht true")
+        if inst.get("source_commit") != PINNED_SOURCE_COMMIT:
+            reasons.append("installed_dist.source_commit entspricht nicht dem Pin")
+        if inst.get("page_count") != EXPECTED_DIST_FILE_COUNT:
+            reasons.append("installed_dist.page_count != %d Distdateien (Ist=%r)"
+                           % (EXPECTED_DIST_FILE_COUNT, inst.get("page_count")))
+        if inst.get("reason_code") == "commit_mismatch":
+            reasons.append("installed_dist meldet commit_mismatch")
+
+    planned = {route for route, kind in ROUTE_LIST
+               if kind in ("page", "page_root", "tab_alias")}
+    if len(planned) != EXPECTED_PAGE_COUNT:
+        reasons.append("Routenplan belegt %d statt %d eindeutige HTML-Routen"
+                       % (len(planned), EXPECTED_PAGE_COUNT))
     html = [e for e in ENTRIES if e["kind"] in ("page", "page_root", "tab_alias")]
     if not html:
-        ok = False
         reasons.append("keine HTML-Routen-GETs belegt")
     else:
+        observed = {e["route"] for e in html}
+        missing = planned - observed
+        if missing:
+            reasons.append("HTML-GETs fehlen für: %s" % ",".join(sorted(missing)))
         bad = [e for e in html if e["status"] != 200]
         if bad:
-            ok = False
             reasons.append("%d/%d HTML-Routen ohne Status 200: %s"
                            % (len(bad), len(html),
                               ",".join("%s:%s" % (e["route"], e["status"]) for e in bad)[:400]))
-    return ("OK" if ok else "NOT-OK"), reasons
+    return ("NOT-OK" if reasons else "OK"), reasons
 
 
 def write_result_file():
@@ -286,8 +297,7 @@ class GuiReadback3718(unittest.TestCase):
         else:
             # Design-Vorgabe: page_count nur hard-asserten, wenn present; sonst
             # dokumentieren (compute_verdict markiert das als NOT-OK-Baustein).
-            add_result("api", "/api/gui/kit-manifest.page_count", "/api/gui/kit-manifest",
-                       status, body,
+            add_result("api", "/api/gui/kit-manifest.page_count", status, body,
                        note="installed_dist nicht present — page_count dokumentiert statt hard-assert; Ist: %r" % installed)
 
     # (c) /dist-manifest.json — 404 ist erwartet-soft; 200 => serverseitige
