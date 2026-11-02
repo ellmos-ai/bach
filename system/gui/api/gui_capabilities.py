@@ -19,7 +19,7 @@ EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme
 EXACT_WRITES = ("PUT /api/settings/ui", "POST /api/permissions", "POST /api/chat/send")
 # Reads of src/layouts/BachLayout.astro -> src/components/Header.astro:242,280 and src/lib/domain-pins.mjs:46 (domain menu): every
 # page makes them. Only the pages checked so far list them; completeness for all pages is a task of the GUI manifest (#2087).
-LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]
+LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins", "/api/talk/config"]
 # Page -> endpoints the ellmos-system-gui page actually reads (pinned to the GUI51 page-reads manifest in tests):
 # "/" src/pages/index.astro:227 (SystemClusterStatus is only included by settings.astro:4,253); "/agenten/sessions" src/lib/agent-history.mjs:77,89,92
 # (loaded by src/pages/agenten/sessions.astro:90), inbox tab src/scripts/user-inbox-tab.mjs:28, TaskCreateForm.astro:118,183 and

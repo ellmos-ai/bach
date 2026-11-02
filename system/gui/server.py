@@ -1733,6 +1733,11 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/voice/status",
         "/api/talk/status",
         "/api/talk/state",
+        "/api/talk/config",
+        "/api/talk/summon",
+        "/api/talk/summon/ack",
+        "/api/talk/turn",
+        "/api/talk/directive",
         "/api/sensation/status",
         "/api/homecontrol/devices",
         "/api/homecontrol/energy",
@@ -16601,14 +16606,58 @@ def _save_capability_permissions(perms: dict[str, bool]) -> dict[str, bool]:
         return current
 
 
+_TALK_CONFIG_FILE = Path.home() / ".bach" / "talk_config.json"
+
+
 def _get_talk_session():
     global _TALK_SESSION_SINGLETON
     if _TALK_SESSION_SINGLETON is None:
         from hub._services.ocean_stack_bridge import load_talk_module
 
         talk_mod = load_talk_module()
-        _TALK_SESSION_SINGLETON = talk_mod.TalkEngine()
+        engine = talk_mod.TalkEngine()
+        if _TALK_CONFIG_FILE.is_file():
+            try:
+                persisted = json.loads(_TALK_CONFIG_FILE.read_text(encoding="utf-8"))
+                if isinstance(persisted, dict):
+                    engine.update_visual_state(persisted)
+            except Exception:
+                pass
+        _TALK_SESSION_SINGLETON = engine
     return _TALK_SESSION_SINGLETON
+
+
+def _save_talk_config(updates: dict) -> dict:
+    engine = _get_talk_session()
+    state = engine.update_visual_state(updates)
+    snapshot = state.as_dict()
+    persistable = {
+        k: snapshot.get(k)
+        for k in (
+            "persona",
+            "language",
+            "operating_mode",
+            "bound_slot",
+            "primary_model",
+            "fast_relay_model",
+            "summon_policy",
+            "wake_word",
+            "wake_word_enabled",
+            "pattern",
+            "emotion",
+            "input_device_id",
+            "output_device_id",
+            "camera_device_id",
+            "client_runtime",
+        )
+        if k in snapshot
+    }
+    try:
+        _TALK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _TALK_CONFIG_FILE.write_text(json.dumps(persistable, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return snapshot
 
 
 @app.get("/api/permissions")
@@ -16718,6 +16767,113 @@ async def api_talk_status():
     return engine.state.as_dict()
 
 
+@app.get("/api/talk/config")
+async def api_get_talk_config():
+    """Return the unified `ellmos-talk` operating mode, model binding, and summon configuration."""
+    engine = _get_talk_session()
+    perms = _load_capability_permissions()
+    return {
+        "schema": "ellmos.talk.config.v1",
+        "config": engine.state.as_dict(),
+        "permissions": {
+            "voice_tts": bool(perms.get("voice_tts", True)),
+            "speech_to_text": bool(perms.get("speech_to_text", True)),
+            "microphone": bool(perms.get("microphone", False)),
+            "camera": bool(perms.get("camera", False)),
+        },
+        "available_operating_modes": [
+            {"id": "ptt", "label_de": "📻 Funkgerät (Push-to-Talk)", "label_en": "📻 Walkie-Talkie (Push-to-Talk)"},
+            {"id": "duplex", "label_de": "🎙️ Live-Duplex (Freisprechen)", "label_en": "🎙️ Live Duplex (Hands-Free)"},
+            {"id": "wake_word", "label_de": "👂 Wake-Word („Hey Buddha“ / „Hey Ocean“)", "label_en": "👂 Wake-Word ('Hey Buddha' / 'Hey Ocean')"},
+            {"id": "off", "label_de": "⏸️ Aus", "label_en": "⏸️ Off"},
+        ],
+        "available_summon_policies": [
+            {"id": "knock", "label_de": "🔔 Funkgerät-Anklopfen (Banner & Signal im Header)", "label_en": "🔔 Walkie-Talkie Knock (Header Alert)"},
+            {"id": "auto_popup", "label_de": "⚡ Auto-Popup (Sofort sprechen, wenn anwesend via Sensation)", "label_en": "⚡ Auto-Popup (Speak when present via Sensation)"},
+            {"id": "muted", "label_de": "🔕 Stumm (Kein eigenständiger Modell-Start)", "label_en": "🔕 Muted (No model-initiated summon)"},
+        ],
+        "supported_runtimes": ["browser", "tauri", "mobile", "companion"],
+        "required_models": {
+            "fast_relay_default": "smollm2:360m",
+            "fast_relay_alternatives": ["smollm2:360m", "qwen3-0.6b-voice", "gemma4-e2b"],
+            "stt_default": "faster-whisper-base",
+            "tts_default": ["piper-de_DE-thorsten-high", "piper-en_US-lessac-medium", "kokoro-82m-v1.0"],
+            "vad_wake_default": ["silero-vad-v5", "openwakeword-hey-buddha"],
+        },
+    }
+
+
+@app.post("/api/talk/config")
+async def api_update_talk_config(payload: dict = Body(...)):
+    """Update `ellmos-talk` operating mode, primary/fast model bindings, wake-word, or summon policy."""
+    allowed_keys = {
+        "persona",
+        "language",
+        "operating_mode",
+        "bound_slot",
+        "primary_model",
+        "fast_relay_model",
+        "summon_policy",
+        "wake_word",
+        "wake_word_enabled",
+        "pattern",
+        "emotion",
+        "mode",
+        "emoji_overlay",
+        "input_device_id",
+        "output_device_id",
+        "camera_device_id",
+        "client_runtime",
+    }
+    updates = {k: v for k, v in payload.items() if k in allowed_keys}
+    try:
+        snapshot = _save_talk_config(updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "schema": "ellmos.talk.config.v1",
+        "updated": list(updates.keys()),
+        "config": snapshot,
+    }
+
+
+@app.post("/api/talk/summon")
+async def api_talk_summon(payload: dict = Body(...)):
+    """Allow a model (Buddha, Claude, Gemini, Codex) to summon the user via Funkgerät / Talk window."""
+    engine = _get_talk_session()
+    perms = _load_capability_permissions()
+    caller = str(payload.get("caller") or payload.get("persona") or engine.state.persona or "buddha").strip()
+    message = str(payload.get("message") or payload.get("text") or "Ich habe ein kurzes Update für dich.").strip()
+    emotion = str(payload.get("emotion") or "focused").strip()
+    pattern = str(payload.get("pattern") or "pulse").strip()
+    emoji_overlay = str(payload.get("emoji_overlay") or "📻").strip()
+    presence_verified = bool(payload.get("presence_verified", True))
+    voice_allowed = bool(perms.get("voice_tts", True))
+    if hasattr(engine, "summon_by_model"):
+        return engine.summon_by_model(
+            caller,
+            message,
+            emotion=emotion,
+            pattern=pattern,
+            emoji_overlay=emoji_overlay,
+            presence_verified=presence_verified,
+            voice_allowed=voice_allowed,
+        )
+    state = engine.update_visual_state({"persona": caller, "emotion": emotion, "pattern": pattern, "emoji_overlay": emoji_overlay})
+    return {"schema": "ellmos.talk.summon.v1", "accepted": True, "delivery": "knock", "visual_state": state.as_dict()}
+
+
+@app.post("/api/talk/summon/ack")
+async def api_talk_summon_ack(payload: dict = Body(default={})):
+    """Acknowledge or dismiss a model-initiated Funkgerät summon."""
+    engine = _get_talk_session()
+    start_listening = bool(payload.get("start_listening", True))
+    if hasattr(engine, "acknowledge_summon"):
+        return engine.acknowledge_summon(start_listening=start_listening)
+    state = engine.update_visual_state({"mode": "listening" if start_listening else "idle"})
+    return {"schema": "ellmos.talk.summon-ack.v1", "visual_state": state.as_dict()}
+
+
 @app.post("/api/talk/turn")
 async def api_talk_turn(payload: dict = Body(...)):
     """Process a live conversational turn through `ellmos-talk` (FastReflexLoop + DeepCortexLoop, #3764)."""
@@ -16728,10 +16884,10 @@ async def api_talk_turn(payload: dict = Body(...)):
     model_response = payload.get("model_response")
     persona = str(payload.get("persona") or "").strip().lower()
     language = str(payload.get("language") or "").strip().lower()
-    directive: dict[str, Any] = {}
+    directive: dict = {}
     if persona in {"buddha", "gemini", "claude", "codex"}:
         directive["persona"] = persona
-    if language in {"de", "en"}:
+    if language in {"de", "en", "es", "fr", "zh", "ja", "ru", "ar", "pt", "hi", "it"}:
         directive["language"] = language
     if directive:
         engine.update_visual_state(directive)

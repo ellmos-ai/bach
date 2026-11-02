@@ -306,6 +306,13 @@ class BACHTray:
             "smarthome_robotics": False,
             "ollama": True,
         }
+        self.talk_config = {
+            "persona": "buddha",
+            "operating_mode": "ptt",
+            "primary_model": "qwen3.8:27b-mlx",
+            "fast_relay_model": "smollm2:360m",
+            "summon_policy": "knock",
+        }
 
         # Idle-Worker ist per Default aktiv (deaktivierbar via BACH_IDLE_WORKER=0)
         self.idle_enabled = not remote and os.environ.get("BACH_IDLE_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")
@@ -1198,6 +1205,101 @@ class BACHTray:
             conn_subitems.append(pystray.MenuItem("Telegram öffnen", self._open_telegram))
             items.append(pystray.MenuItem(f"📱 Buddha Connector: {conn_model}", pystray.Menu(*conn_subitems)))
 
+            # Slot 4: Buddha Talk / Funkgerät (ellmos-talk Live-Stimme & Modell-Summon)
+            tcfg = getattr(self, "talk_config", {}) or {}
+            talk_persona = tcfg.get("persona", "buddha")
+            talk_op_mode = tcfg.get("operating_mode", "ptt")
+            talk_primary_model = tcfg.get("primary_model") or chat_model
+            talk_summon = tcfg.get("summon_policy", "knock")
+            op_labels = {
+                "ptt": "Funkgerät · PTT",
+                "duplex": "Live-Duplex",
+                "wake_word": "Wake-Word",
+                "off": "Aus",
+            }
+            talk_mode_str = op_labels.get(talk_op_mode, "Funkgerät · PTT")
+            talk_subitems = [
+                pystray.MenuItem("🎙️ Begleitfenster öffnen (Companion)", self._open_talk_companion),
+                pystray.MenuItem("⚡ In Living & Running konfigurieren...", self._open_talk_running),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    f"Betriebsart: {talk_mode_str}",
+                    pystray.Menu(
+                        pystray.MenuItem(
+                            "📻 Funkgerät (Push-to-Talk)",
+                            self._make_talk_config_action("operating_mode", "ptt"),
+                            checked=lambda item, m=talk_op_mode: m == "ptt",
+                        ),
+                        pystray.MenuItem(
+                            "🎙️ Live-Duplex (Freisprechen)",
+                            self._make_talk_config_action("operating_mode", "duplex"),
+                            checked=lambda item, m=talk_op_mode: m == "duplex",
+                        ),
+                        pystray.MenuItem(
+                            "👂 Wake-Word („Hey Buddha“)",
+                            self._make_talk_config_action("operating_mode", "wake_word"),
+                            checked=lambda item, m=talk_op_mode: m == "wake_word",
+                        ),
+                        pystray.MenuItem(
+                            "⏸️ Aus",
+                            self._make_talk_config_action("operating_mode", "off"),
+                            checked=lambda item, m=talk_op_mode: m == "off",
+                        ),
+                    ),
+                ),
+                pystray.MenuItem(
+                    f"Persona / Modell-Slot: {talk_persona.capitalize()}",
+                    pystray.Menu(
+                        pystray.MenuItem(
+                            "🧘 Buddha (Lokal)",
+                            self._make_talk_config_action("persona", "buddha"),
+                            checked=lambda item, p=talk_persona: p == "buddha",
+                        ),
+                        pystray.MenuItem(
+                            "🟣 Claude (Opus / Sonnet)",
+                            self._make_talk_config_action("persona", "claude"),
+                            checked=lambda item, p=talk_persona: p == "claude",
+                        ),
+                        pystray.MenuItem(
+                            "🔵 Gemini (Antigravity)",
+                            self._make_talk_config_action("persona", "gemini"),
+                            checked=lambda item, p=talk_persona: p == "gemini",
+                        ),
+                        pystray.MenuItem(
+                            "🟢 Codex (GPT)",
+                            self._make_talk_config_action("persona", "codex"),
+                            checked=lambda item, p=talk_persona: p == "codex",
+                        ),
+                    ),
+                ),
+                pystray.MenuItem(
+                    f"Modell-Eigenstart: {talk_summon}",
+                    pystray.Menu(
+                        pystray.MenuItem(
+                            "🔔 Funkgerät-Anklopfen (Header-Signal)",
+                            self._make_talk_config_action("summon_policy", "knock"),
+                            checked=lambda item, sp=talk_summon: sp == "knock",
+                        ),
+                        pystray.MenuItem(
+                            "⚡ Auto-Popup (bei Präsenz via Sensation)",
+                            self._make_talk_config_action("summon_policy", "auto_popup"),
+                            checked=lambda item, sp=talk_summon: sp == "auto_popup",
+                        ),
+                        pystray.MenuItem(
+                            "🔕 Stumm (Kein Modell-Anruf)",
+                            self._make_talk_config_action("summon_policy", "muted"),
+                            checked=lambda item, sp=talk_summon: sp == "muted",
+                        ),
+                    ),
+                ),
+            ]
+            items.append(
+                pystray.MenuItem(
+                    f"📻 Buddha Talk [{talk_mode_str}]: {talk_primary_model}",
+                    pystray.Menu(*talk_subitems),
+                )
+            )
+
             # Dynamic Workers Submenu
             workers_subitems = []
             for w in self.dynamic_workers:
@@ -1392,6 +1494,25 @@ class BACHTray:
     def _open_talk(self, *_):
         import webbrowser
         webbrowser.open(f"{self.gui_url}/talk")
+
+    def _open_talk_companion(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/talk?companion=1")
+
+    def _open_talk_running(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/agenten/running#talk-slot")
+
+    def _make_talk_config_action(self, key: str, value: str):
+        def action(*_):
+            result = self._api("POST", "/api/talk/config", {key: value}, base=self.gui_url)
+            cfg = result.get("config") if isinstance(result, dict) else None
+            if isinstance(cfg, dict):
+                self.talk_config.update(cfg)
+            else:
+                self.talk_config[key] = value
+            self._update_icon()
+        return action
 
     def _notify_error(self, action_name):
         if self.icon:
