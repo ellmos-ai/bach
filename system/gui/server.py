@@ -1726,7 +1726,6 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/chat/compare-race/buddha",
         "/api/domains/installed",
         "/api/domains/pins",
-        "/api/permissions",
         "/api/voice/status",
         "/api/talk/status",
         "/api/sensation/status",
@@ -1794,7 +1793,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=403, content={"detail": "Cross-origin API request denied"})
 
         # 2. Status & probe endpoints pass through
-        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/domains/pins", "/api/gui/capabilities"} and request.method == "GET"):
+        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/domains/pins", "/api/gui/capabilities"} and request.method == "GET") or (path == "/api/permissions" and request.method in {"GET", "HEAD"}):
             return await call_next(request)
 
         # The browser authenticates as a registered device. The proxy supplies
@@ -16533,7 +16532,8 @@ async def get_workflow_content(path: str):
 #   - Capability Permissions Matrix (`/api/permissions`)
 # ═══════════════════════════════════════════════════════════════
 
-_CAPABILITY_PERMISSIONS_FILE = Path.home() / ".bach" / "capability_permissions.json"
+_CAPABILITY_PERMISSIONS_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "capability_permissions.json"
+_CAPABILITY_PERMISSIONS_LOCK = threading.RLock()
 _TALK_SESSION_SINGLETON = None
 
 
@@ -16549,32 +16549,47 @@ def _load_capability_permissions() -> dict[str, bool]:
         "smarthome_robotics": False,
         "ollama": True,
     }
-    if _CAPABILITY_PERMISSIONS_FILE.is_file():
-        try:
-            saved = json.loads(_CAPABILITY_PERMISSIONS_FILE.read_text(encoding="utf-8"))
-            if isinstance(saved, dict):
-                for k in defaults:
-                    if k in saved:
-                        defaults[k] = bool(saved[k])
-        except (OSError, ValueError, json.JSONDecodeError):
-            pass
+    try:
+        saved = json.loads(_CAPABILITY_PERMISSIONS_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return defaults
+    except (OSError, ValueError):
+        return dict.fromkeys(defaults, False)
+    if not isinstance(saved, dict) or any(type(v) is not bool for k, v in saved.items() if k in defaults):
+        return dict.fromkeys(defaults, False)
+    defaults.update({k: v for k, v in saved.items() if k in defaults})
     return defaults
 
 
 def _save_capability_permissions(perms: dict[str, bool]) -> dict[str, bool]:
-    current = _load_capability_permissions()
-    for k, v in perms.items():
-        if k in current:
-            current[k] = bool(v)
-    try:
-        _CAPABILITY_PERMISSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _CAPABILITY_PERMISSIONS_FILE.write_text(
-            json.dumps(current, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return current
+    import tempfile
+
+    with _CAPABILITY_PERMISSIONS_LOCK:
+        current = _load_capability_permissions()
+        if not perms or any(k not in current or type(v) is not bool for k, v in perms.items()):
+            raise ValueError("Ungültige Berechtigungsänderung")
+        current.update(perms)
+        target = _CAPABILITY_PERMISSIONS_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staged = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent,
+                                             prefix=".capability-permissions-", delete=False) as stream:
+                staged = Path(stream.name)
+                stream.write(json.dumps(current, indent=2, ensure_ascii=False) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(staged, target)
+            try:
+                confirmed = json.loads(target.read_text(encoding="utf-8"))
+            except ValueError:
+                raise OSError("Berechtigungsänderung nicht bestätigt") from None
+            if confirmed != current:
+                raise OSError("Berechtigungsänderung nicht bestätigt")
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
+        return current
 
 
 def _get_talk_session():
@@ -16601,12 +16616,16 @@ async def api_get_capability_permissions():
 async def api_update_capability_permissions(payload: dict = Body(...)):
     """Update one or more capability permissions (#3768)."""
     updates: dict[str, bool] = {}
-    if "key" in payload and "enabled" in payload:
-        updates[str(payload["key"])] = bool(payload["enabled"])
-    elif isinstance(payload.get("permissions"), dict):
-        for k, v in payload["permissions"].items():
-            updates[str(k)] = bool(v)
-    perms = _save_capability_permissions(updates)
+    if set(payload) == {"key", "enabled"} and type(payload["key"]) is str:
+        updates[payload["key"]] = payload["enabled"]
+    elif set(payload) == {"permissions"} and isinstance(payload["permissions"], dict):
+        updates = payload["permissions"]
+    try:
+        perms = _save_capability_permissions(updates)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültige Berechtigungsänderung") from None
+    except OSError:
+        raise HTTPException(status_code=503, detail="Berechtigungsänderung konnte nicht bestätigt werden") from None
     return {
         "schema": "ellmos.capability-permissions.v1",
         "updated": list(updates.keys()),
