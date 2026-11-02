@@ -1453,3 +1453,38 @@ def test_worker_configuration_projects_pickup_filter_only_as_selection_policy(tm
     assert worker_status_adapter._project_configuration(
         {"ok": True, **changed}, worker_id
     )["selection_policy"]["pickup_filter"] == pickup_filter
+
+
+def test_tray_promptboard_library_and_chat_actions(tmp_path):
+    with patch.dict('sys.modules', {
+        'pystray': MagicMock(),
+        'PIL': MagicMock(),
+        'PIL.Image': MagicMock(),
+        'PIL.ImageDraw': MagicMock(),
+        'PIL.ImageFont': MagicMock(),
+    }):
+        from hub._services.chat.chat_tray import BACHTray
+        tray = BACHTray(host="testhost", port=9999, gui_port=8000)
+        tray.icon = MagicMock()
+
+        # Test _open_prompt_library
+        with patch("webbrowser.open") as mock_open:
+            tray._open_prompt_library()
+            mock_open.assert_called_once_with("http://testhost:8000/prompt-library")
+
+        # Test _make_prompt_open_chat_action
+        with patch.object(tray, "_copy_to_clipboard") as mock_copy, patch("webbrowser.open") as mock_open:
+            action = tray._make_prompt_open_chat_action("Test Prompt Content")
+            action()
+            mock_copy.assert_called_once_with("Test Prompt Content")
+            mock_open.assert_called_once_with("http://testhost:8000/chat")
+            tray.icon.notify.assert_called_with("Prompt kopiert & Chat geöffnet", "BACH Prompt")
+
+        # Test _open_promptboard with exe on win32
+        exe_path = tmp_path / "PromptBoard-1.1.1-win64.exe"
+        exe_path.write_text("", encoding="utf-8")
+        with patch.object(tray, "_promptboard_app_path", return_value=exe_path), \
+             patch("sys.platform", "win32"), \
+             patch("os.startfile", create=True) as mock_startfile:
+            tray._open_promptboard()
+            mock_startfile.assert_called_once_with(str(exe_path))

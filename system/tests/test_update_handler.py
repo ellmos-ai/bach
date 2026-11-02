@@ -71,6 +71,9 @@ class TestUpdateBasics:
         assert "rollback" in ops
         assert "verify" in ops
         assert "migrations" in ops
+        assert "skills" in ops
+        assert "modules" in ops
+        assert "all" in ops
 
     def test_handle_unknown_operation(self, handler):
         ok, msg = handler.handle("nonexistent", [])
@@ -519,3 +522,115 @@ def test_dry_run_flag_in_handler_args_never_executes(handler):
     assert ok and "DRY-RUN" in message
     assert handler.db_path.read_bytes() == before
     assert not list(handler.db_path.parent.glob("bach.db.premig-*.bak"))
+
+
+# ──────────────────────────────────────────────
+# Skills & Modules Update/Sync Tests
+# ──────────────────────────────────────────────
+
+class TestSkillsAndModulesUpdate:
+    def test_update_skills_missing_sources_file(self, handler):
+        ok, msg = handler.handle("skills", [])
+        assert ok is True
+        assert "Keine skill_sources.json" in msg
+
+    def test_update_skills_check_and_apply(self, handler, tmp_path):
+        # Setup local skill
+        local_skill_dir = handler.base_path / "skills" / "sync_demo"
+        local_skill_dir.mkdir(parents=True)
+        (local_skill_dir / "SKILL.md").write_text("---\nname: sync_demo\nversion: 1.0.0\n---\n# v1.0", encoding="utf-8")
+
+        # Setup canonical source (v1.2.0)
+        canonical_dir = tmp_path / "canonical_repo" / "sync_demo"
+        canonical_dir.mkdir(parents=True)
+        (canonical_dir / "SKILL.md").write_text("---\nname: sync_demo\nversion: 1.2.0\n---\n# v1.2", encoding="utf-8")
+
+        # Register in skill_sources.json
+        sources_data = {
+            "version_sources": {
+                "sync_demo": {
+                    "canonical": [
+                        {
+                            "source": "test-canonical",
+                            "path": str(canonical_dir)
+                        }
+                    ]
+                }
+            }
+        }
+        (handler.base_path / "data" / "skill_sources.json").write_text(json.dumps(sources_data), encoding="utf-8")
+
+        # Check mode: reports update available
+        ok_check, msg_check = handler.handle("skills", [])
+        assert ok_check is True
+        assert "Update verfuegbar (v1.0.0 -> v1.2.0)" in msg_check
+
+        # Apply mode: updates file and creates backup
+        ok_apply, msg_apply = handler.handle("skills", ["--apply"])
+        assert ok_apply is True
+        assert "v1.0.0 -> v1.2.0 aktualisiert" in msg_apply
+        assert (local_skill_dir / "SKILL.md").read_text(encoding="utf-8") == "---\nname: sync_demo\nversion: 1.2.0\n---\n# v1.2"
+
+        # Check backup created
+        backups = list((handler.backups_dir / "skills").glob("sync_demo_backup_v1.0.0_*"))
+        assert len(backups) == 1
+
+    def test_update_skills_sync_copies(self, handler, tmp_path):
+        # Setup local skill
+        local_skill_dir = handler.base_path / "skills" / "bach"
+        local_skill_dir.mkdir(parents=True)
+        (local_skill_dir / "SKILL.md").write_text("---\nname: bach\nversion: 3.10.0\n---\n# BACH Skill", encoding="utf-8")
+
+        # Setup copy target dir
+        copy_target_dir = tmp_path / "agent_skills" / "bach"
+        copy_target_file = copy_target_dir / "SKILL.md"
+
+        sources_data = {
+            "version_sources": {
+                "bach": {
+                    "canonical": [
+                        {
+                            "source": "repo-root",
+                            "path": str(local_skill_dir / "SKILL.md")
+                        }
+                    ],
+                    "copies": [
+                        {
+                            "source": "claude-copy",
+                            "path": str(copy_target_file)
+                        }
+                    ]
+                }
+            }
+        }
+        (handler.base_path / "data" / "skill_sources.json").write_text(json.dumps(sources_data), encoding="utf-8")
+
+        ok, msg = handler.handle("skills", ["--sync-copies"])
+        assert ok is True
+        assert "SYNCHRONISIERTE KOPIEN" in msg
+        assert copy_target_file.exists()
+        assert copy_target_file.read_text(encoding="utf-8") == "---\nname: bach\nversion: 3.10.0\n---\n# BACH Skill"
+
+    def test_update_modules_lists_manifests(self, handler):
+        modules_dir = handler.base_path.parent / ".MODULES" / ".CONTROL" / "sample-module"
+        modules_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "name": "sample-module",
+            "version": "1.0.0",
+            "description": "Sample self-contained module",
+            "entry_point": "sample.py"
+        }
+        (modules_dir / "MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        ok, msg = handler.handle("modules", [])
+        assert ok is True
+        assert "sample-module" in msg
+        assert "v1.0.0" in msg
+
+    def test_update_all_runs_substeps(self, handler):
+        with patch.object(handler, "_check", return_value=(True, "=== GIT CHECK OK ===")):
+            ok, msg = handler.handle("all", [])
+            assert ok is True
+            assert "=== GIT CHECK OK ===" in msg
+            assert "=== SKILL UPDATE & SYNC ===" in msg
+            assert "=== MODULE & ADAPTER STATUS ===" in msg

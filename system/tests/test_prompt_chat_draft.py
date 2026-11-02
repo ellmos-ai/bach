@@ -69,3 +69,31 @@ def test_prompt_library_and_chat_routes_render_the_helper():
         response = client.get(route)
         assert response.status_code == 200
         assert "/static/js/prompt-chat-draft.js?v=1" in response.text
+
+
+def test_prompt_library_import_preview_endpoint(monkeypatch, tmp_path):
+    pytest.importorskip("fastapi")
+    import json
+    from fastapi.testclient import TestClient
+    from gui import server
+
+    lib_path = tmp_path / "library.json"
+    lib_path.write_text(json.dumps({"items": [{"name": "P1", "content": "Text"}]}), encoding="utf-8")
+    monkeypatch.setattr(server, "_promptboard_library_paths", lambda: [lib_path])
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "test-token" else None)
+
+    client = TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-token"})
+    response = client.get("/api/prompt-library/import-promptboard/preview")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert data["dry_run"] is True
+    assert data["imported"] == 1
+    assert data["source"] == str(lib_path)
+
+
+def test_prompt_library_template_has_preview_and_tag_filtering():
+    source = (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
+    assert "previewPromptBoard()" in source
+    assert "/api/prompt-library/import-promptboard/preview" in source
+    assert "filterTag(tag)" in source

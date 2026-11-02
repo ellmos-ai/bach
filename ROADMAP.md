@@ -87,6 +87,49 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## Review 2026-11-02 (BACH TASKS UND DEV - Gemini 3.8 Flash)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **PromptBoard- & Tray-App-Integration (Task #-6, Erledigt):**
+  - Tray-Menü (`chat_tray.py`) um direkten Web-Zugang ("Prompt-Bibliothek (Web) öffnen") und für jeden Prompt um "💬 Im Chat öffnen" (Prompt in Zwischenablage + Web-Chat `/chat` als Entwurf) erweitert.
+  - Auf Windows `.exe`-Starts via `os.startfile` entkoppelt und robust gemacht.
+  - 114 Tray- und Connector-Tests in `test_connectors_and_tray.py` vollständig grün.
+  - Task #-6 erledigt gemeldet.
+
+- **Modularisierung: Self-contained Modul- & Skill-Export und Re-Import (Task #-5, Erledigt):**
+  - `skills export` (`hub/skills.py`) um ungepackte self-contained Verzeichnisstruktur (`export_path / "skill"`) mit `manifest.json` (`selfcontained: true`, `consumers: [BACH, Ocean, Standalone]`) und Tools/Workflows erweitert.
+  - `skills install` um direkte Installation aus entpackten Verzeichnissen und nahtloses Ersetzen/Upgraden von Legacy-Single-File-Skills mit automatischem Backup in `exports/_backups/` erweitert.
+  - 20 Skills-Tests in `test_skills_handler.py` vollständig grün.
+  - Task #-5 erledigt gemeldet.
+
+- **Update-Engine: `bach update` für regelmäßige Modul- und Skill-Synchronisation (Task #-7, Erledigt):**
+  - `bach update skills [--apply]`: Versionsvergleich mit kanonischen Quellen aus `data/skill_sources.json`, automatisches Backup und In-Place-Update.
+  - `bach update modules`: Inventarisierung und Statusanzeige aller geteilten Module unter `.MODULES/.CONTROL/`.
+  - `bach update all`: Führt Core-Git-Check, Skills-Sync und Modul-Status gebündelt aus.
+  - 55 Update-Tests in `test_update_handler.py` vollständig grün.
+  - Task #-7 erledigt gemeldet.
+
+- **PromptBoard GUI Vorschau & Tag-Filtering (Task #-9, Erledigt):**
+  - GET-Endpoint `/api/prompt-library/import-promptboard/preview` für Dry-Run-Vorschau ohne Schreibzugriff hinzugefügt.
+  - "PromptBoard-Vorschau"-Button sowie interaktive Tag- und Kategorie-Pills (mit Klick-Filterung) in `prompt-library.html` integriert.
+  - 8/8 Tests in `test_prompt_chat_draft.py` vollständig grün.
+  - Task #-9 erledigt gemeldet.
+
+- **Multi-Device / Multi-Agent Skill-Synchronisation (Task #-10, Erledigt):**
+  - `bach update skills` um `--sync-copies` (sowie automatische Spiegelung bei `--apply`) für `~/.claude/skills` und `~/.codex/skills` erweitert.
+  - Automatische Spiegelung von `SKILL.md` an registrierte Kopien in `data/skill_sources.json` implementiert und verifiziert.
+  - 56/56 Tests in `test_update_handler.py` vollständig grün.
+  - Task #-10 erledigt gemeldet.
+
+- **Lokales Ocean-Resources Repository gebunden:**
+  - `https://github.com/ellmos-ai/ocean-resources.git` geklont unter `C:\_Local_DEV\repos\ocean-resources`.
+
+- **Roadmap-Fortschritt & Neue Aufgaben (Erstellt):**
+  - Task ID `-8`: `Modularisierung: Ocean-Stack Bridge Consumer-Seams fuer verbleibende 54 Transfer-Tasks fortfuehren` (P2, core).
+  - Task ID `-11`: `Modularisierung: ocean-resources und agents-heart Installations- und Update-Automatisierung in bach update` (P2, core).
+  - Task ID `-12`: `Prompt-Bibliothek: Board-Import per Drag & Drop von JSON-Dateien in der GUI` (P2, gui).
+
 ## Review 2026-11-01 (Daily Care & Dev Check - Gemini 3.8 Flash)
 
 Automatisierter Daily Care & Dev Check (BACH TASKS UND DEV). Befund und Status:

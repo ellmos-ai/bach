@@ -24,6 +24,7 @@ import sqlite3
 import subprocess
 import sys
 import zipfile
+import shutil
 import re
 try:
     import yaml
@@ -36,6 +37,31 @@ from .lang import t
 
 
 from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+
+
+def parse_version(v: str) -> tuple:
+    """Version in Tupel umwandeln für Vergleich (z.B. 'v3.10.0' -> (3, 10, 0))."""
+    if not v:
+        return (0, 0, 0)
+    try:
+        clean = str(v).strip().lstrip('v')
+        parts = clean.split('.')
+        nums = []
+        for p in parts[:3]:
+            digits = ""
+            for c in p:
+                if c.isdigit():
+                    digits += c
+                else:
+                    break
+            nums.append(int(digits) if digits else 0)
+        while len(nums) < 3:
+            nums.append(0)
+        return tuple(nums)
+    except (ValueError, AttributeError):
+        return (0, 0, 0)
+
+
 @deprecated_legacy_bach("capability-views")
 class SkillsHandler(BaseHandler):
     """Handler fuer --skills Operationen"""
@@ -400,6 +426,36 @@ class SkillsHandler(BaseHandler):
             readme_file = export_path / "README.md"
             readme_file.write_text(readme_content, encoding='utf-8')
 
+            # Ungepackte selfcontained Verzeichnisstruktur in export_path / "skill" bereitstellen
+            skill_dir = export_path / "skill"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            for file_path in files_to_export:
+                if is_directory:
+                    try:
+                        rel = file_path.relative_to(skill_path)
+                    except ValueError:
+                        rel = Path(file_path.name)
+                else:
+                    rel = Path(file_path.name)
+                dest = skill_dir / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(file_path, dest)
+            if tools:
+                tools_dest = skill_dir / "tools"
+                tools_dest.mkdir(parents=True, exist_ok=True)
+                for tool_path, rel_name in tools:
+                    dest = tools_dest / Path(rel_name).name
+                    if not dest.exists():
+                        shutil.copy2(tool_path, dest)
+            if workflows:
+                wf_dest = skill_dir / "workflows"
+                wf_dest.mkdir(parents=True, exist_ok=True)
+                for wf_path, rel_name in workflows:
+                    dest = wf_dest / Path(rel_name).name
+                    if not dest.exists():
+                        shutil.copy2(wf_path, dest)
+            results.append(f"  + Ungepacktes selfcontained Paket: {skill_dir}")
+
         except Exception as e:
             return False, f"ZIP-Erstellung fehlgeschlagen: {e}"
         
@@ -741,6 +797,13 @@ Weitere Informationen: https://github.com/anthropics/skills
                 "handler": f"hub/handlers/{name}.py" if (self.base_path / "hub" / "handlers" / f"{name}.py").exists() else None
             }
 
+        manifest["selfcontained"] = True
+        manifest["consumers"] = [
+            {"name": "BACH", "version": ">=3.0", "integration": "adapter"},
+            {"name": "Ocean", "version": ">=1.0", "integration": "adapter"},
+            {"name": "Standalone", "version": "*", "integration": "direct"},
+        ]
+
         return manifest
     
     def _install(self, path: str, dry_run: bool = False) -> tuple:
@@ -810,6 +873,8 @@ Weitere Informationen: https://github.com/anthropics/skills
                 target_path = self.base_path / "agents" / "_experts" / skill_name
             elif skill_type == 'service':
                 target_path = self.skills_dir / "_services" / skill_name
+            elif skill_type in ('protocol', 'workflow'):
+                target_path = self.skills_dir / "workflows" / skill_name
             else:
                 target_path = self.skills_dir / skill_name
             
@@ -826,6 +891,14 @@ Weitere Informationen: https://github.com/anthropics/skills
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(target_path), str(backup_path))
                     results.append(f"    Backup erstellt: {backup_path}")
+            elif (target_path.with_suffix('.md')).exists():
+                results.append(f"[!] Legacy Single-File Skill existiert: {target_path.with_suffix('.md')}")
+                if not dry_run:
+                    backup_name = f"{skill_name}_legacy_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                    backup_path = self.base_path / "exports" / "_backups" / backup_name
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(target_path.with_suffix('.md')), str(backup_path))
+                    results.append(f"    Legacy Backup erstellt: {backup_path}")
             
             # 6. Skill-Dateien finden
             skill_source = manifest_dir / "skill"
@@ -1650,14 +1723,6 @@ anthropic_compatible: true
         # 4. Versionen vergleichen
         results.append("")
         results.append("-" * 40)
-
-        def parse_version(v: str) -> tuple:
-            """Version in Tupel umwandeln für Vergleich."""
-            try:
-                parts = v.replace('v', '').split('.')
-                return tuple(int(p) for p in parts[:3])
-            except (ValueError, AttributeError):
-                return (0, 0, 0)
 
         local_tuple = parse_version(local_version)
         central_tuple = parse_version(central_version) if central_version else (0, 0, 0)

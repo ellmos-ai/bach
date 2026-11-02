@@ -960,6 +960,15 @@ class BACHTray:
             threading.Thread(target=self._send_prompt, args=(text,), daemon=True).start()
         return action
 
+    def _make_prompt_open_chat_action(self, text):
+        def action(*_):
+            self._copy_to_clipboard(text)
+            import webbrowser
+            webbrowser.open(f"{self.gui_url}/chat")
+            if self.icon:
+                self.icon.notify("Prompt kopiert & Chat geöffnet", "BACH Prompt")
+        return action
+
     # --- Idle Worker ---
 
     def _always_on_can_start(self):
@@ -1422,7 +1431,8 @@ class BACHTray:
         app_path = self._promptboard_app_path()
         if app_path:
             prompt_items.append(pystray.MenuItem("PromptBoard App öffnen", self._open_promptboard))
-            prompt_items.append(pystray.Menu.SEPARATOR)
+        prompt_items.append(pystray.MenuItem("Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
+        prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
             for name, text in prompts.items():
@@ -1433,6 +1443,10 @@ class BACHTray:
                 cat_items.append(pystray.MenuItem(
                     f"▶ Senden: {name}",
                     self._make_prompt_send_action(text),
+                ))
+                cat_items.append(pystray.MenuItem(
+                    f"💬 Im Chat öffnen: {name}",
+                    self._make_prompt_open_chat_action(text),
                 ))
             prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
         if prompt_items:
@@ -1755,6 +1769,10 @@ class BACHTray:
         # the working chat is the GUI page (plan item 1.1.6).
         webbrowser.open(f"{self.gui_url}/chat")
 
+    def _open_prompt_library(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/prompt-library")
+
     def _open_promptboard(self, *_):
         app_path = self._promptboard_app_path()
         if not app_path:
@@ -1762,7 +1780,7 @@ class BACHTray:
                 self.icon.notify("PromptBoard-App nicht gefunden", "BACH PromptBoard")
             return
         try:
-            if sys.platform == "win32" and app_path.suffix.lower() in {".bat", ".msix"}:
+            if sys.platform == "win32" and app_path.suffix.lower() in {".bat", ".msix", ".exe"}:
                 os.startfile(str(app_path))
             else:
                 subprocess.Popen(

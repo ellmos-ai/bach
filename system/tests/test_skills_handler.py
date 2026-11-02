@@ -291,6 +291,76 @@ class TestHierarchy:
 
 
 # ═══════════════════════════════════════════════════════════════
+# EXPORT & INSTALL (SELF-CONTAINED MODULES)
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestExportInstallSelfContained:
+    def test_export_creates_selfcontained_directory_and_manifest(self, populated_skills, tmp_path):
+        h = SkillsHandler(populated_skills)
+        out_dir = tmp_path / "custom_export"
+        ok, output = h.handle("export", ["demo_skill", str(out_dir)])
+        assert ok is True
+        assert "Ungepacktes selfcontained Paket" in output
+
+        manifest_path = out_dir / "manifest.json"
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["name"] == "demo_skill"
+        assert manifest["selfcontained"] is True
+        assert any(c["name"] == "Ocean" for c in manifest["consumers"])
+
+        unpacked_skill = out_dir / "skill"
+        assert unpacked_skill.exists()
+        assert (unpacked_skill / "SKILL.md").exists()
+        assert (unpacked_skill / "main.py").exists()
+
+        # Re-import from directory (unpacked self-contained module)
+        ok_install, out_install = h.handle("install", [str(out_dir)])
+        assert ok_install is True
+        assert "erfolgreich installiert" in out_install
+        assert (populated_skills / "skills" / "demo_skill" / "SKILL.md").exists()
+        assert (populated_skills / "skills" / "demo_skill" / "manifest.json").exists()
+
+    def test_install_replaces_legacy_single_file_with_backup(self, skills_env, tmp_path):
+        services_dir = skills_env / "skills" / "_services"
+        services_dir.mkdir(parents=True, exist_ok=True)
+        legacy_file = services_dir / "think.md"
+        legacy_file.write_text("---\nname: think\nversion: 1.0.0\n---\n# Think Legacy\n", encoding="utf-8")
+
+        # Create updated selfcontained export package
+        pkg_dir = tmp_path / "think_new_pkg"
+        pkg_dir.mkdir()
+        manifest = {
+            "name": "think",
+            "version": "1.1.0",
+            "type": "service",
+            "selfcontained": True,
+            "consumers": [{"name": "BACH", "version": ">=3.0"}]
+        }
+        (pkg_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        pkg_skill = pkg_dir / "skill"
+        pkg_skill.mkdir()
+        (pkg_skill / "SKILL.md").write_text("---\nname: think\nversion: 1.1.0\n---\n# Think v1.1.0\n", encoding="utf-8")
+
+        h = SkillsHandler(skills_env)
+        ok, output = h.handle("install", [str(pkg_dir)])
+        assert ok is True
+        assert "Legacy Backup erstellt" in output
+
+        # Check backup exists in exports/_backups
+        backups = list((skills_env / "exports" / "_backups").glob("think_legacy_backup_*.md"))
+        assert len(backups) == 1
+        assert "Think Legacy" in backups[0].read_text(encoding="utf-8")
+
+        # Check new version installed
+        installed = services_dir / "think"
+        assert installed.is_dir()
+        assert (installed / "SKILL.md").exists()
+        assert "Think v1.1.0" in (installed / "SKILL.md").read_text(encoding="utf-8")
+
+
+# ═══════════════════════════════════════════════════════════════
 # CODE QUALITY
 # ═══════════════════════════════════════════════════════════════
 

@@ -130,6 +130,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
             <h1 style="margin: 0;">Prompt-Bibliothek</h1>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn" onclick="previewPromptBoard()" title="Vorschau der PromptBoard-Library ohne Speichern">PromptBoard-Vorschau</button>
                 <button class="btn" onclick="importPromptBoard()" title="Importiert library.json aus PromptBoard (idempotent)">Import aus PromptBoard</button>
                 <button class="btn btn-primary" onclick="startCreate()">Neuer Prompt</button>
             </div>
@@ -211,19 +212,40 @@
                 (cats || []).map(c => '<option value="' + escapeHtml(c) + '"' + (c === current ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('');
         }
 
+        function filterTag(tag) {
+            const search = document.getElementById('pl-search');
+            if (search) {
+                search.value = tag;
+                loadList();
+            }
+        }
+
         function renderList(prompts) {
             const el = document.getElementById('pl-list');
             if (!prompts || !prompts.length) {
                 el.innerHTML = '<div class="pl-muted">Keine Prompts in der Bibliothek.<br>Tipp: "Import aus PromptBoard" oder "Neuer Prompt".</div>';
                 return;
             }
-            el.innerHTML = prompts.map(p =>
-                '<div class="pl-item' + (p.id === currentId ? ' active' : '') + '" onclick="openPrompt(' + p.id + ')">' +
-                '<div class="pl-item-name">' + escapeHtml(p.name) +
-                (p.category ? '<span class="pl-badge">' + escapeHtml(p.category) + '</span>' : '') + '</div>' +
-                '<div class="pl-item-meta">' + escapeHtml(p.purpose || '') + '</div>' +
-                '</div>'
-            ).join('');
+            el.innerHTML = prompts.map(p => {
+                let tagsHtml = '';
+                if (p.tags) {
+                    try {
+                        const parsed = typeof p.tags === 'string' && p.tags.startsWith('[') ? JSON.parse(p.tags) : p.tags.split(',');
+                        if (Array.isArray(parsed) && parsed.length) {
+                            tagsHtml = '<div style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">' +
+                                parsed.map(t => String(t).trim()).filter(Boolean).map(t =>
+                                    '<span class="pl-badge" style="margin-left:0; font-size: 0.65rem; background: var(--bg-elevated); cursor: pointer;" onclick="event.stopPropagation(); filterTag(\'' + escapeHtml(t) + '\')">' + escapeHtml(t) + '</span>'
+                                ).join('') + '</div>';
+                        }
+                    } catch (e) {}
+                }
+                return '<div class="pl-item' + (p.id === currentId ? ' active' : '') + '" onclick="openPrompt(' + p.id + ')">' +
+                    '<div class="pl-item-name">' + escapeHtml(p.name) +
+                    (p.category ? '<span class="pl-badge">' + escapeHtml(p.category) + '</span>' : '') + '</div>' +
+                    '<div class="pl-item-meta">' + escapeHtml(p.purpose || '') + '</div>' +
+                    tagsHtml +
+                    '</div>';
+            }).join('');
         }
 
         async function openPrompt(id) {
@@ -333,6 +355,13 @@
             } catch (e) {
                 setStatus('Der Entwurf konnte nicht lokal übergeben werden', true);
             }
+        }
+
+        async function previewPromptBoard() {
+            try {
+                const data = await api('/api/prompt-library/import-promptboard/preview');
+                setStatus('PromptBoard-Vorschau: ' + data.imported + ' importierbar, ' + data.skipped + ' bereits vorhanden (' + data.source + ')');
+            } catch (e) { setStatus(e.message, true); }
         }
 
         async function importPromptBoard() {

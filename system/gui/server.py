@@ -11762,6 +11762,20 @@ async def delete_prompt_library_entry(prompt_id: int):
         conn.close()
 
 
+@app.get("/api/prompt-library/import-promptboard/preview")
+async def preview_promptboard_library():
+    """Preview PromptBoard import items and counts without changing the database."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    library_path = next((p for p in candidates if p.exists()), None)
+    if library_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path, dry_run=True)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
+
+
 @app.post("/api/prompt-library/import-promptboard")
 async def import_promptboard_library():
     """Import through the same handler used by CLI and library API."""

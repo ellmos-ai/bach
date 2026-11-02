@@ -607,9 +607,9 @@ class TestSetupCheck:
 
 class TestLanguageSwap:
     def test_invalid_language_fails(self, handler):
-        ok, msg = handler._swap_doc_language("fr")
+        ok, msg = handler._swap_doc_language("xx")
         assert not ok
-        assert "de|en|es|ja|ru|zh" in msg
+        assert "Usage: bach setup lang" in msg
 
     def test_none_language_fails(self, handler):
         ok, msg = handler._swap_doc_language(None)

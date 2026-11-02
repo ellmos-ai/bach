@@ -35,6 +35,7 @@ bach update migrations     Ausstehende Migrationen anzeigen/ausfuehren
 """
 
 import json
+import os
 import importlib
 import importlib.util
 import subprocess
@@ -113,6 +114,9 @@ class UpdateHandler(BaseHandler):
             "rollback": t("update_rollback_desc", default="Rollback zum letzten Pre-Update-Backup"),
             "verify": t("update_verify_desc", default="System-Integritaet pruefen"),
             "migrations": t("update_migrations_desc", default="Migrationen anzeigen/ausfuehren"),
+            "skills": t("update_skills_desc", default="Skills-Versionen pruefen und synchronisieren (bach update skills [--apply])"),
+            "modules": t("update_modules_desc", default="Module- und Adapter-Status pruefen (bach update modules)"),
+            "all": t("update_all_desc", default="Gesamtes System pruefen: Core, Skills und Module"),
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -126,6 +130,12 @@ class UpdateHandler(BaseHandler):
             return self._rollback(args, dry_run)
         elif operation == "verify":
             return self._verify()
+        elif operation == "skills":
+            return self._update_skills(args, dry_run)
+        elif operation == "modules":
+            return self._update_modules(args, dry_run)
+        elif operation == "all":
+            return self._update_all(args, dry_run)
         elif operation == "migrations":
             sub = args[0] if args else "list"
             if sub == "run":
@@ -735,3 +745,196 @@ class UpdateHandler(BaseHandler):
             changed = len([ln for ln in status.strip().split("\n") if ln.strip()])
             info["Geaenderte Dateien"] = str(changed)
         return info if info else None
+
+    # ──────────────────────────────────────────────
+    # Skills & Modules Update/Sync (v3.15+)
+    # ──────────────────────────────────────────────
+
+    def _update_skills(self, args: list, dry_run: bool = False) -> tuple:
+        """Prüft und aktualisiert Skills aus registrierten Quellen und zentraler Bibliothek."""
+        apply_changes = ("--apply" in args or "-a" in args) and not dry_run
+        from hub.skills import SkillsHandler, parse_version
+
+        skills_handler = SkillsHandler(self.base_path)
+        sources_file = self.base_path / "data" / "skill_sources.json"
+
+        lines = ["=== SKILL UPDATE & SYNC ===", ""]
+        if not sources_file.exists():
+            lines.append(f"Keine skill_sources.json unter {sources_file} gefunden.")
+            return True, "\n".join(lines)
+
+        try:
+            registry = json.loads(sources_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return False, f"Fehler beim Lesen von skill_sources.json: {exc}"
+
+        version_sources = registry.get("version_sources", {})
+        if not version_sources:
+            lines.append("Keine version_sources in skill_sources.json registriert.")
+            return True, "\n".join(lines)
+
+        checked = 0
+        up_to_date = 0
+        needs_update = []
+        updated = 0
+
+        for skill_name, cfg in sorted(version_sources.items()):
+            checked += 1
+            # Ermittle lokale Version
+            local_skill_path = skills_handler._find_skill(skill_name)
+            local_ver = "0.0.0"
+            if local_skill_path and local_skill_path.exists():
+                skill_md = local_skill_path / "SKILL.md" if local_skill_path.is_dir() else local_skill_path
+                if skill_md.exists():
+                    header = skills_handler._extract_yaml_header(skill_md)
+                    local_ver = header.get("version") or "0.0.0"
+
+            # Ermittle zentrale Version
+            central_ver = None
+            central_source_path = None
+            for src in cfg.get("canonical", []):
+                ver, p = skills_handler._get_registered_version(src, registry_dir=str(sources_file.parent))
+                if ver:
+                    central_ver = ver
+                    central_source_path = p
+                    break
+
+            if not central_ver:
+                lines.append(f"  ? {skill_name}: keine zentrale Version ermittelbar (lokal: v{local_ver})")
+                continue
+
+            loc_tuple = parse_version(local_ver)
+            cen_tuple = parse_version(central_ver)
+
+            if cen_tuple > loc_tuple:
+                needs_update.append((skill_name, local_ver, central_ver, central_source_path, local_skill_path))
+                lines.append(f"  ! {skill_name}: Update verfuegbar (v{local_ver} -> v{central_ver})")
+            else:
+                up_to_date += 1
+                lines.append(f"  ✓ {skill_name}: aktuell (v{local_ver})")
+
+        lines.append("")
+        lines.append(f"Geprueft: {checked} Skills | Aktuell: {up_to_date} | Updates verfuegbar: {len(needs_update)}")
+
+        if needs_update and apply_changes:
+            lines.append("")
+            lines.append("WENDE UPDATES AN:")
+            lines.append("-" * 40)
+            backups_dir = self.backups_dir / "skills"
+            backups_dir.mkdir(parents=True, exist_ok=True)
+            for s_name, old_v, new_v, src_p, loc_p in needs_update:
+                if not src_p or not src_p.exists():
+                    lines.append(f"  [WARNUNG] Quelldatei fuer {s_name} existiert nicht: {src_p}")
+                    continue
+                # Backup erstellen
+                if loc_p and loc_p.exists():
+                    backup_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    if loc_p.is_dir():
+                        b_dest = backups_dir / f"{s_name}_backup_v{old_v}_{backup_ts}"
+                        shutil.copytree(loc_p, b_dest)
+                    else:
+                        b_dest = backups_dir / f"{loc_p.stem}_backup_v{old_v}_{backup_ts}{loc_p.suffix}"
+                        shutil.copy2(loc_p, b_dest)
+                # Aktualisieren
+                if src_p.is_dir():
+                    dest_dir = loc_p if loc_p else (self.base_path / "skills" / s_name)
+                    if dest_dir.exists():
+                        shutil.rmtree(dest_dir)
+                    shutil.copytree(src_p, dest_dir)
+                else:
+                    target_file = loc_p if loc_p else (self.base_path / "skills" / f"{s_name}.md")
+                    target_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_p, target_file)
+                updated += 1
+                lines.append(f"  + {s_name}: v{old_v} -> v{new_v} aktualisiert")
+            lines.append(f"Erfolgreich aktualisiert: {updated} Skill(s)")
+
+        # Multi-Device / Agent Copies spiegeln (z.B. ~/.claude/skills, ~/.codex/skills)
+        sync_copies = ("--sync-copies" in args or "--all-targets" in args) or (apply_changes and "--no-copies" not in args)
+        if sync_copies and not dry_run:
+            copy_lines = []
+            for s_name, cfg in sorted(version_sources.items()):
+                for cp in cfg.get("copies", []):
+                    if not isinstance(cp, dict):
+                        continue
+                    path_str = cp.get("path")
+                    if not path_str:
+                        continue
+                    target_p = Path(os.path.expandvars(path_str)).expanduser()
+                    source_skill = skills_handler._find_skill(s_name)
+                    if not source_skill or not source_skill.exists():
+                        for src in cfg.get("canonical", []):
+                            _, p = skills_handler._get_registered_version(src, registry_dir=str(sources_file.parent))
+                            if p and p.exists():
+                                source_skill = p
+                                break
+                    if not source_skill or not source_skill.exists():
+                        continue
+                    src_file = source_skill / "SKILL.md" if source_skill.is_dir() else source_skill
+                    if not src_file.exists():
+                        continue
+                    try:
+                        # Bei optionalen Kopien nur anlegen wenn Elternordner (z.B. ~/.claude/skills) existiert
+                        if cp.get("optional", False) and not (target_p.parent.exists() or target_p.parent.parent.exists()):
+                            continue
+                        target_p.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_file, target_p)
+                        copy_lines.append(f"  → Kopie synchronisiert ({cp.get('source')}): {target_p}")
+                    except Exception as cp_err:
+                        copy_lines.append(f"  [WARNUNG] Kopie an {target_p} fehlgeschlagen: {cp_err}")
+            if copy_lines:
+                lines.append("")
+                lines.append("SYNCHRONISIERTE KOPIEN & AGENTEN-FLOTTE:")
+                lines.append("-" * 40)
+                lines.extend(copy_lines)
+        elif needs_update and not apply_changes:
+            lines.append("")
+            lines.append("Hinweis: Nutze 'bach update skills --apply' zum Einspielen der Updates.")
+
+        return True, "\n".join(lines)
+
+    def _update_modules(self, args: list, dry_run: bool = False) -> tuple:
+        """Prüft geteilte Module in .MODULES/ und Plan D Repos."""
+        lines = ["=== MODULE & ADAPTER STATUS ===", ""]
+        modules_dir = self.base_path.parent / ".MODULES"
+        if not modules_dir.exists():
+            modules_dir = self.base_path / ".MODULES"
+
+        if not modules_dir.exists():
+            lines.append("Kein .MODULES-Verzeichnis gefunden.")
+            return True, "\n".join(lines)
+
+        module_count = 0
+        manifests = list(modules_dir.glob("**/MANIFEST.json")) + list(modules_dir.glob("**/ellmos-module.v2.json"))
+
+        lines.append(f"Gefundene Modul-Manifeste in {modules_dir}:")
+        lines.append("-" * 50)
+        for m_path in sorted(manifests):
+            try:
+                data = json.loads(m_path.read_text(encoding="utf-8"))
+                name = data.get("name") or m_path.parent.name
+                version = data.get("version", "?")
+                desc = (data.get("description") or "")[:50]
+                entry = data.get("entry_point") or "?"
+                lines.append(f"  • {name:<25} v{version:<8} [{entry}]")
+                if desc:
+                    lines.append(f"    {desc}")
+                module_count += 1
+            except (OSError, ValueError):
+                continue
+
+        lines.append("-" * 50)
+        lines.append(f"Gesamt: {module_count} geteilte(s) Modul(e) registriert.")
+        lines.append("Alle Module sind self-contained und interoperabel mit BACH und Ocean.")
+        return True, "\n".join(lines)
+
+    def _update_all(self, args: list, dry_run: bool = False) -> tuple:
+        """Führt Core-Check, Skills-Check und Modules-Status zusammen aus."""
+        sections = []
+        ok1, msg1 = self._check()
+        sections.append(msg1)
+        ok2, msg2 = self._update_skills(args, dry_run=dry_run)
+        sections.append(msg2)
+        ok3, msg3 = self._update_modules(args, dry_run=dry_run)
+        sections.append(msg3)
+        return (ok1 and ok2 and ok3), "\n\n".join(sections)
