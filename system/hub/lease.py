@@ -41,6 +41,8 @@ def _flags(args: List[str]) -> dict:
     return out
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class LeaseHandler(BaseHandler):
     """Handler fuer Ressourcen-Leases. Die 'Operation' ist der Ressourcenname."""
 

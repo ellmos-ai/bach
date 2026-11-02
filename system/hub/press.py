@@ -55,6 +55,8 @@ if sys.stderr:
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class PressHandler(BaseHandler):
 
     VALID_TYPES = ('pressemitteilung', 'positionspapier')

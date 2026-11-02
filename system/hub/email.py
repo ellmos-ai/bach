@@ -56,6 +56,8 @@ from hub.base import BaseHandler
 SERVICE_DIR = Path(__file__).parent / "_services" / "mail"
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("mail-connector")
 class EmailHandler(BaseHandler):
 
     def __init__(self, base_path_or_app):

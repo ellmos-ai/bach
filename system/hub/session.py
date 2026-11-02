@@ -31,6 +31,8 @@ from ._services.user_config_store import load_user_config, update_user_config
 from ._services.session_scope import parse_scope, select_session
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class SessionHandler(BaseHandler):
     """Handler fuer Session-Verwaltung (SESSION_001-006)"""
 

@@ -142,6 +142,8 @@ def resolve_agent_name(db_path, query: str) -> dict:
     return None
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class AgentsHandler(BaseHandler):
     """Handler fuer --agents Operationen"""
 

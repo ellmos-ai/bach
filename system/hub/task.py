@@ -79,6 +79,8 @@ def _valid_result_service_id(service_id):
     )
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class TaskHandler(BaseHandler):
     """Handler fuer Task-Verwaltung"""
     

@@ -102,6 +102,8 @@ def promptboard_library_not_found(candidates):
             f"geprüft: {searched})")
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("prompt-evidence-collector")
 class PromptHandler(BaseHandler):
     """Handler fuer Prompt-Templates und Boards."""
 

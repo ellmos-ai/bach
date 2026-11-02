@@ -26,6 +26,8 @@ def _write_private_text(path: Path, content: str):
         f.write(content)
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class MediPlanerHandler(BaseHandler):
     """Importiert und exportiert MediPlaner-v1-JSON aus BACH heraus."""
 

@@ -36,6 +36,8 @@ from hub.domain_writer_gate import blocked_reason
 from hub.lang import t
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("assistant-core")
 class GesundheitHandler(BaseHandler):
 
     def __init__(self, base_path: Path):

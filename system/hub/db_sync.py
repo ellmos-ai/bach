@@ -859,6 +859,8 @@ class DBSyncManager:
         return '\n'.join(lines)
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("sqlite-transit-sync")
 class DBSyncHandler(BaseHandler):
     """CLI-Handler für DB-Sync-Befehle."""
 

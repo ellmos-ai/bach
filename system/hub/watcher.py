@@ -46,6 +46,8 @@ from typing import Tuple, List
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("automation-master")
 class WatcherHandler(BaseHandler):
     """CLI-Handler fuer den Mistral Watcher Daemon."""
 

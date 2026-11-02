@@ -47,6 +47,8 @@ from typing import List, Tuple
 from hub.base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class ProfileHandler(BaseHandler):
 
     def __init__(self, base_path_or_app):

@@ -20,6 +20,8 @@ from .base import BaseHandler
 from . import session_checkpoint_provider
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("cloud-safe-exporter")
 class SnapshotHandler(BaseHandler):
     """Handler fuer --snapshot Operationen (Session-Wiederherstellung)"""
     

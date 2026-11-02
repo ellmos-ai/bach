@@ -17,6 +17,8 @@ from typing import List, Tuple, Optional
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("memory-hooker")
 class ContextHandler(BaseHandler):
     """Handler fuer --context Operationen."""
     

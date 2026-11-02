@@ -43,6 +43,8 @@ from hub.base import BaseHandler
 from hub.notify_storage import BachNotifyStorage
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("connectors")
 class NotifyHandler(BaseHandler):
     """Preserve the ``bach notify`` surface while delegating neutral logic."""
 

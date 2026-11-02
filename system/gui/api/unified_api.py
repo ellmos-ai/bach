@@ -3144,6 +3144,41 @@ def toggle_domain_pin_endpoint(domain_id: str, request: Request, payload: Dict[s
     return _domain_pin_call(save)
 
 
+@router.get("/domains/modules")
+async def get_domains_modules():
+    """Return canonical Ocean & BACH modules with documentation metadata for /help and /skills/ocean."""
+    from hub._services.ocean_stack_bridge import ocean_stack_status
+
+    def _load() -> Dict[str, Any]:
+        status = ocean_stack_status()
+        modules_list = []
+        for mod_id, info in status.get("modules", {}).items():
+            modules_list.append({
+                "id": mod_id,
+                "name": mod_id,
+                "version": "1.0.0",
+                "bound": bool(info.get("bound")),
+                "module": info.get("module"),
+                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
+            })
+        for ext_id, info in status.get("capability_extensions", {}).items():
+            modules_list.append({
+                "id": ext_id,
+                "name": ext_id,
+                "version": "0.1.0",
+                "bound": bool(info.get("bound")),
+                "module": info.get("module"),
+                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
+            })
+        return {
+            "schema": "bach.domains.modules.v1",
+            "count": len(modules_list),
+            "modules": modules_list,
+        }
+
+    return await asyncio.to_thread(_load)
+
+
 @router.get("/domains/{domain_id}")
 async def get_domain_detail_endpoint(domain_id: str):
     """Liefert Detail-Manifest, Zustände und Konfiguration einer Domäne."""
@@ -4038,41 +4073,6 @@ async def get_help_doc_audit():
             "chain_id": "doc-keeper-machine",
             "parity_check": parity,
             "findings": [],
-        }
-
-    return await asyncio.to_thread(_load)
-
-
-@router.get("/domains/modules")
-async def get_domains_modules():
-    """Return canonical Ocean & BACH modules with documentation metadata for /help and /skills/ocean."""
-    from hub._services.ocean_stack_bridge import ocean_stack_status
-
-    def _load() -> Dict[str, Any]:
-        status = ocean_stack_status()
-        modules_list = []
-        for mod_id, info in status.get("modules", {}).items():
-            modules_list.append({
-                "id": mod_id,
-                "name": mod_id,
-                "version": "1.0.0",
-                "bound": bool(info.get("bound")),
-                "module": info.get("module"),
-                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
-            })
-        for ext_id, info in status.get("capability_extensions", {}).items():
-            modules_list.append({
-                "id": ext_id,
-                "name": ext_id,
-                "version": "0.1.0",
-                "bound": bool(info.get("bound")),
-                "module": info.get("module"),
-                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
-            })
-        return {
-            "schema": "bach.domains.modules.v1",
-            "count": len(modules_list),
-            "modules": modules_list,
         }
 
     return await asyncio.to_thread(_load)

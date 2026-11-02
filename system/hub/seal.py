@@ -35,6 +35,8 @@ except ImportError:                          # pragma: no cover
     from bach_paths import BACH_DB           # als Top-Level-Modul: seal
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class SealHandler:
     """Handler fuer Kernel-Siegelsystem."""
 

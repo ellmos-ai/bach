@@ -1698,6 +1698,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/steuer-assistent",
         "/workflow-tuev",
         "/talk",
+        "/modules",
+        "/sensation",
+        "/connectors",
+        "/sessions",
         "/favicon.ico",
         "/device-fetch.js",
     })
@@ -1728,6 +1732,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/domains/pins",
         "/api/voice/status",
         "/api/talk/status",
+        "/api/talk/state",
         "/api/sensation/status",
         "/api/homecontrol/devices",
         "/api/homecontrol/energy",
@@ -6417,6 +6422,10 @@ async def system_ocean_page():
 
 @app.get("/agenten/bibliothek", response_class=HTMLResponse, tags=["shared-gui"])
 @app.get("/system/installation-updates", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/modules", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/sensation", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/connectors", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/sessions", response_class=HTMLResponse, tags=["shared-gui"])
 async def shared_gui_extension_page(request: Request):
     """Static GUI shells only; private data and actions retain device protection."""
     page = ASTRO_DIST_DIR / (request.url.path.lstrip("/") + ".html")
@@ -16702,6 +16711,7 @@ async def api_voice_tts(payload: dict = Body(...)):
 
 
 @app.get("/api/talk/status")
+@app.get("/api/talk/state")
 async def api_talk_status():
     """Return current live state of `ellmos-talk` Dual-Loop & Visualizer (#3764)."""
     engine = _get_talk_session()
@@ -16834,7 +16844,7 @@ async def api_robotics_estop(payload: dict = Body(default={})):
     return hub.robot_stop_emergency(reason)
 
 
-@app.get("/talk", response_class=HTMLResponse)
+@app.get("/talk", response_class=HTMLResponse, tags=["shared-gui"])
 async def talk_visualizer_companion_page():
     """Standalone ELLMOS Talk Live Voice & Emotion Visualizer Companion Window (#3764)."""
     html = """<!DOCTYPE html>

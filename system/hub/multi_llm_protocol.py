@@ -483,6 +483,8 @@ message: Protocol V3 activated. Ready for coordination.
 # CLI HANDLER INTERFACE
 # =========================================================
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-agent-bridge")
 class MultiLLMHandler:
     """CLI Handler fuer bach llm Befehle."""
     

@@ -40,6 +40,8 @@ def _ensure_api_prober_importable():
         sys.path.insert(0, modular_str)
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ApiProber")
 class ApiProberHandler(BaseHandler):
     """BACH-Handler fuer ApiProber -- delegiert an MODULAR_AGENTS/ApiProber.
 

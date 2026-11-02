@@ -6,6 +6,8 @@ from .base import BaseHandler
 from ._services import task_lease_settings as service
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class TaskLeaseHandler(BaseHandler):
     @property
     def profile_name(self):

@@ -16,6 +16,8 @@ import re
 SAFE_MOUNT_ALIAS_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 MOUNT_ALLOWED_ROOTS_ENV = "BACH_MOUNT_ALLOWED_ROOTS"
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-filecommander-mcp")
 class MountHandler(BaseHandler):
     """Handler fuer --mount Befehle"""
 

@@ -24,6 +24,8 @@ from hub.base import BaseHandler
 from hub.domain_writer_gate import blocked_reason
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("assistant-core")
 class RoutineHandler(BaseHandler):
 
     def __init__(self, base_path: Path):

@@ -122,6 +122,8 @@ def get_secret_value(key: str, connection=None, keyring_backend=None):
     return value
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class SecretsHandler:
     """Manage secret metadata and values stored in the OS keyring."""
 

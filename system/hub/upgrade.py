@@ -60,6 +60,8 @@ from hub.explorer_provider import (
 )
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class UpgradeHandler(BaseHandler):
     """Handler fuer selektive Upgrades und Downgrades."""
 

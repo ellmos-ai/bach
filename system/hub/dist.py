@@ -23,6 +23,8 @@ if str(TOOLS_PATH) not in sys.path:
     sys.path.insert(0, str(TOOLS_PATH))
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("bundle-installer")
 class DistHandler(BaseHandler):
     """Handler fuer --dist Befehle"""
     

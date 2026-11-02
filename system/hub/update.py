@@ -79,6 +79,8 @@ def _parse_migration_run_args(args) -> tuple[list[str] | None, bool]:
     return selected or None, dry_run
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class UpdateHandler(BaseHandler):
     """Handler fuer bach update Operationen."""
 

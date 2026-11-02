@@ -28,6 +28,8 @@ sys.path.insert(0, str(RECURRING_DIR))
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-scheduler")
 class RecurringHandler(BaseHandler):
     """Handler fuer recurring Tasks."""
 

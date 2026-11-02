@@ -29,6 +29,8 @@ except ImportError:
     OllamaModel = None
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ocean-resources")
 class OllamaHandler(BaseHandler):
     """Handler fuer --ollama Operationen"""
     

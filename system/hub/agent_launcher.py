@@ -32,6 +32,8 @@ except ImportError:  # pragma: no cover - optional dependency
     yaml = None
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class AgentLauncherHandler(BaseHandler):
     """Handler fuer Agent-Operationen (list, start, stop, steer, status)."""
 

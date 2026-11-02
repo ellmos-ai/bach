@@ -100,6 +100,8 @@ _UI_ENUMS = {
 }
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class ThemeHandler(BaseHandler):
     """Persist dashboard theme preferences without owning unrelated config."""
 

@@ -25,6 +25,8 @@ import urllib.error
 from typing import Optional
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("n8n-workflow-manager")
 class N8nManagerHandler:
     """
     BACH-Handler fuer n8n Workflow Manager Integration.

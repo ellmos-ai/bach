@@ -25,6 +25,8 @@ from .lang import t
 from .status import StatusHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("system-gap-master")
 class MaintainHandler(BaseHandler):
     """Handler fuer --maintain Befehle"""
 

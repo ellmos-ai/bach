@@ -38,6 +38,8 @@ def _read_request(path_text: str) -> dict:
     return request
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class SubscriptionAgentsHandler(BaseHandler):
     @property
     def profile_name(self):

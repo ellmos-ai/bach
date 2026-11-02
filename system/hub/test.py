@@ -36,6 +36,8 @@ PROFILES = ["QUICK", "STANDARD", "FULL", "OBSERVATION", "OUTPUT", "MEMORY_FOCUS"
 ELLMOS_PROFILES = {"QUICK", "STANDARD", "FULL"}
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class TestHandler(BaseHandler):
     """Handler fuer --test Befehle"""
 

@@ -89,6 +89,8 @@ class _StartupTimingList(list):
         return lines
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class StartupHandler(BaseHandler):
     """Handler fuer --startup - DB-basiert"""
 

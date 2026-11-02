@@ -17,6 +17,8 @@ from datetime import datetime
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("system-explorer")
 class ScanHandler(BaseHandler):
     """Handler fuer scan Operationen"""
     
