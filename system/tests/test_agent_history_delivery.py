@@ -285,3 +285,51 @@ def test_missing_chat_key_cannot_override_existing_profile_binding(history):
     assert client.get("/api/agent-history/sessions?archive=archived&agent_id=1").json()["total"]==0
     assert client.get("/api/agent-history/sessions/"+str(snapshot_id)).status_code==409
     assert client.get("/api/agent-history/sessions/"+str(snapshot_id)+"?agent_id=1").status_code==409
+
+
+def test_session_include_tools_and_resume_with_selected_model(history, monkeypatch):
+    store, client, _, _ = history
+    store.save("gui-web", [
+        {"role": "user", "content": "Untersuche #2496"},
+        {"role": "tool", "content": json.dumps({"tool": "submit_result", "error": "rejected"})},
+        {"role": "assistant", "content": "Abgabe fehlgeschlagen", "answer_status": "failed"},
+    ])
+    snapshot_id = client.get("/api/agent-history/sessions").json()["sessions"][0]["id"]
+    with_tools = client.get(f"/api/agent-history/sessions/{snapshot_id}?include_tools=true").json()
+    tool_msg = [m for m in with_tools["messages"] if m["role"] == "tool"][0]
+    assert tool_msg["tool_result"] is True
+    assert tool_msg["tool_name"] == "submit_result"
+
+    from gui.api import worker_status_adapter
+    recorded = {}
+
+    def fake_request_control_api(method, path, **kwargs):
+        return {"configuration_version": "a" * 64}
+
+    def fake_update_config(worker_id, version, changes, **kwargs):
+        recorded["worker_id"] = worker_id
+        recorded["version"] = version
+        recorded["changes"] = changes
+        return {"ok": True}
+
+    def fake_start_worker(worker_id, **kwargs):
+        recorded["started"] = worker_id
+        return {"status": "running", "worker_id": worker_id}
+
+    monkeypatch.setattr(worker_status_adapter, "_request_control_api", fake_request_control_api)
+    monkeypatch.setattr(worker_status_adapter, "update_worker_configuration", fake_update_config)
+    monkeypatch.setattr(worker_status_adapter, "start_worker", fake_start_worker)
+
+    res = client.post(
+        f"/api/agent-history/sessions/{snapshot_id}/resume",
+        json={"worker_id": "worker-cloud-1", "model": "claude-sonnet-4-6", "prompt": "Behebe #2496"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["worker_id"] == "worker-cloud-1"
+    assert body["model"] == "claude-sonnet-4-6"
+    assert recorded["changes"]["model"] == "claude-sonnet-4-6"
+    assert "Untersuche #2496" in recorded["changes"]["task_prompt"]
+    assert "Assistent|FEHLGESCHLAGEN" in recorded["changes"]["task_prompt"]
+    assert "NUTZERHINWEIS: Behebe #2496" in recorded["changes"]["task_prompt"]
