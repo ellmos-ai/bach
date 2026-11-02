@@ -787,10 +787,29 @@ def _configured_task_prompt(worker_id: str) -> str | None:
     return prompt.strip() or None
 
 
-def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> dict[str, Any]:
+def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0,
+                 expected_worker_configuration_version: str | None = None) -> dict[str, Any]:
     """Preflight one existing worker, explicitly start it, then read back state."""
     if not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id):
         raise WorkerActionRejected("Worker-ID ist ungültig", 400)
+    bound_source = None
+    bound_prompt = None
+    if expected_worker_configuration_version is not None:
+        if (not isinstance(expected_worker_configuration_version, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", expected_worker_configuration_version)):
+            raise WorkerActionRejected("Bestätigte Worker-Konfigurationsversion erforderlich", 400)
+        # Read the complete admission revision before rechecking the acknowledged
+        # worker profile. A later write is rejected by the controller's atomic CAS.
+        bound_source = _request_control_api("GET", "system-slots", device_token=device_token,
+                                            timeout=timeout)
+        instance, version = bound_source.get("service_instance"), bound_source.get("configuration_version")
+        if (not isinstance(instance, str) or not _RUN_ID.fullmatch(instance)
+                or not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version)):
+            raise WorkerStatusUnavailable("Control-Instanz oder Konfiguration nicht verifizierbar")
+        acknowledged = read_worker_configuration(worker_id, device_token=device_token, timeout=timeout)
+        if acknowledged["configuration_version"] != expected_worker_configuration_version:
+            raise WorkerActionRejected("Worker-Konfiguration hat sich seit der Bestätigung geändert", 409)
+        bound_prompt = acknowledged["configuration"].get("task_prompt")
     current = read_worker_status(device_token=device_token, timeout=timeout)
     worker = next((item for item in current["workers"] if item["id"] == worker_id), None)
     if worker is None:
@@ -812,8 +831,8 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
                 or not 3 <= worker["max_model_requests"] <= 256
                 or type(worker.get("task_id")) is not int or worker["task_id"] <= 0):
             raise WorkerActionRejected("Budgetierter Taskworker ist nicht verifizierbar", 409)
-        source = _request_control_api("GET", "system-slots", device_token=device_token,
-                                      timeout=timeout)
+        source = (bound_source if bound_source is not None else
+                  _request_control_api("GET", "system-slots", device_token=device_token, timeout=timeout))
         instance, version = source.get("service_instance"), source.get("configuration_version")
         if (type(instance) is not str or not _RUN_ID.fullmatch(instance)
                 or type(version) is not str or re.fullmatch(r"[0-9a-f]{64}", version) is None):
@@ -821,7 +840,7 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
         request_id = uuid.uuid4().hex
         body = {"id": worker_id, "start_request_id": request_id,
                 "expected_service_instance": instance, "configuration_version": version}
-        prompt = _configured_task_prompt(worker_id)
+        prompt = bound_prompt if bound_source is not None else _configured_task_prompt(worker_id)
         if prompt:
             body["prompt"] = prompt
         accepted = _request_control_api("POST", "workers/run", device_token=device_token,
@@ -850,7 +869,11 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
                 "runtime_readback": "available", "worker": projected}
 
     start_payload: dict[str, Any] = {"id": worker_id}
-    task_prompt = _configured_task_prompt(worker_id)
+    if bound_source is not None:
+        start_payload.update({"configuration_version": bound_source["configuration_version"],
+                              "expected_service_instance": bound_source["service_instance"],
+                              "start_request_id": uuid.uuid4().hex})
+    task_prompt = bound_prompt if bound_source is not None else _configured_task_prompt(worker_id)
     if task_prompt:
         start_payload["prompt"] = task_prompt
     accepted = worker_action("start", start_payload, device_token=device_token, timeout=timeout)

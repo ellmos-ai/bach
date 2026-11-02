@@ -270,10 +270,11 @@ async def resume_session(request: Request,
         changes = {"task_prompt": zettel}
         if model:
             changes["model"] = model
-        await asyncio.to_thread(
+        updated = await asyncio.to_thread(
             update_worker_configuration, worker_id, version, changes, device_token=device_token)
         start_result = await asyncio.to_thread(
-            start_worker, worker_id, device_token=device_token, timeout=15.0)
+            start_worker, worker_id, device_token=device_token, timeout=15.0,
+            expected_worker_configuration_version=updated["configuration_version"])
     except WorkerActionRejected as exc:
         raise HTTPException(getattr(exc, "status_code", 409), str(exc))
     except WorkerStatusUnavailable as exc:
