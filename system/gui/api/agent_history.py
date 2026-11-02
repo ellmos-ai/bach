@@ -173,6 +173,8 @@ def _resume_zettel(raw_messages, prompt):
     lines = []
     for message in raw_messages:
         role = message.get("role")
+        if role == "system":
+            continue
         content = message.get("content") if isinstance(message.get("content"), str) else ""
         if role == "assistant":
             label = "Assistent|FEHLGESCHLAGEN" if message.get("answer_status") == "failed" else "Assistent"
@@ -257,11 +259,11 @@ async def resume_session(request: Request,
         raise HTTPException(503, "Gespeichertes Transkript nicht lesbar")
     from .worker_status_adapter import (
         WorkerActionRejected, WorkerStatusUnavailable, update_worker_configuration,
-        start_worker, _request_control_api,
+        start_worker, read_worker_configuration,
     )
     try:
         source = await asyncio.to_thread(
-            _request_control_api, "GET", "system-slots", device_token=device_token)
+            read_worker_configuration, worker_id, device_token=device_token)
         version = source.get("configuration_version") if isinstance(source, dict) else None
         if not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version):
             raise WorkerStatusUnavailable("Konfigurationsversion nicht ermittelbar")

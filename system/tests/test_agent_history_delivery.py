@@ -304,7 +304,8 @@ def test_session_include_tools_and_resume_with_selected_model(history, monkeypat
     recorded = {}
 
     def fake_request_control_api(method, path, **kwargs):
-        return {"configuration_version": "a" * 64}
+        return {"ok": True, "id": "worker-cloud-1", "configuration_version": "a" * 64,
+                "configuration": {}}
 
     def fake_update_config(worker_id, version, changes, **kwargs):
         recorded["worker_id"] = worker_id
@@ -333,3 +334,79 @@ def test_session_include_tools_and_resume_with_selected_model(history, monkeypat
     assert "Untersuche #2496" in recorded["changes"]["task_prompt"]
     assert "Assistent|FEHLGESCHLAGEN" in recorded["changes"]["task_prompt"]
     assert "NUTZERHINWEIS: Behebe #2496" in recorded["changes"]["task_prompt"]
+
+
+def test_resume_note_excludes_hidden_system_context():
+    note = api._resume_zettel([
+        {"role": "system", "content": "PRIVATE_SYSTEM_FIXTURE"},
+        {"role": "user", "content": "Öffentliche Aufgabe"},
+        {"role": "assistant", "content": "<think>PRIVATE_REASONING_FIXTURE</think>Sichtbare Antwort"},
+        {"role": "tool", "content": "Sichtbares Werkzeugergebnis"},
+    ], None)
+    assert "PRIVATE_SYSTEM_FIXTURE" not in note
+    assert "PRIVATE_REASONING_FIXTURE" not in note
+    assert "AUFTRAG: Öffentliche Aufgabe" in note
+    assert "[Werkzeug] Sichtbares Werkzeugergebnis" in note
+    assert "[Assistent] Sichtbare Antwort" in note
+
+
+@pytest.mark.parametrize("race", [False, True])
+def test_resume_uses_native_worker_cas_before_start(history, tmp_path, monkeypatch, race):
+    from gui.api import worker_status_adapter as adapter
+    from hub._services.chat import slots_config as slots
+
+    store, client, _, _ = history
+    store.save("gui-web", [
+        {"role": "system", "content": "PRIVATE_RESUME_FIXTURE"},
+        {"role": "user", "content": "Setze die synthetische Aufgabe fort"},
+    ])
+    snapshot_id = client.get("/api/agent-history/sessions").json()["sessions"][0]["id"]
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    worker = slots.add_worker({"name": "Resume fixture", "backend": "ollama", "model": "fixture-model"}, path=path)
+    worker_id = worker["id"]
+    global_version = slots.core_system_agents_snapshot(path)["configuration_version"]
+    assert global_version != slots.worker_configuration_snapshot(worker_id, path=path)["configuration_version"]
+    calls, starts, raced_bytes = [], [], []
+
+    def control(method, endpoint, *, params=None, body=None, **kwargs):
+        calls.append((method, endpoint))
+        if (method, endpoint) == ("GET", "system-slots"):
+            return {"configuration_version": global_version}
+        if (method, endpoint) == ("GET", "workers/configuration"):
+            assert params == {"id": worker_id}
+            snapshot = slots.worker_configuration_snapshot(worker_id, path=path)
+            if race and not raced_bytes:
+                slots.change_worker_configuration(worker_id, snapshot["configuration_version"],
+                                                  {"task_prompt": "Concurrent fixture change"}, path=path)
+                raced_bytes.append(Path(path).read_bytes())
+            return {"ok": True, **snapshot}
+        assert (method, endpoint) == ("POST", "workers/configuration")
+        try:
+            return {"ok": True, **slots.change_worker_configuration(
+                body["id"], body["configuration_version"], body["changes"], path=path)}
+        except RuntimeError as exc:
+            raise adapter.WorkerActionRejected(str(exc), 409) from None
+
+    def start(requested_id, **kwargs):
+        assert requested_id == worker_id
+        saved = slots.get_worker_slot(worker_id, path=path)
+        assert saved["model"] == "fixture-selected-model"
+        assert "PRIVATE_RESUME_FIXTURE" not in saved["task_prompt"]
+        starts.append(requested_id)
+        return {"status": "running", "worker_id": requested_id}
+
+    monkeypatch.setattr(adapter, "_request_control_api", control)
+    monkeypatch.setattr(adapter, "read_worker_status", lambda **kwargs: {
+        "workers": [{"id": worker_id, "status": "idle"}]})
+    monkeypatch.setattr(adapter, "start_worker", start)
+    response = client.post(f"/api/agent-history/sessions/{snapshot_id}/resume",
+                           json={"worker_id": worker_id, "model": "fixture-selected-model"})
+    assert response.status_code == (409 if race else 200)
+    assert ("GET", "workers/configuration") in calls
+    assert ("GET", "system-slots") not in calls
+    if race:
+        assert not starts
+        assert Path(path).read_bytes() == raced_bytes[0]
+    else:
+        assert starts == [worker_id]
