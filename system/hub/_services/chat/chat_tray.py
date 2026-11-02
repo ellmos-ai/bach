@@ -1380,8 +1380,12 @@ class BACHTray:
     def _make_permission_toggle_action(self, key: str):
         def action(*_):
             new_val = not bool(self.permissions.get(key, False))
-            self.permissions[key] = new_val
-            self._api("POST", "/api/permissions", {"key": key, "enabled": new_val}, base=self.gui_url)
+            result = self._api("POST", "/api/permissions", {"key": key, "enabled": new_val}, base=self.gui_url)
+            confirmed = result.get("permissions") if isinstance(result, dict) else None
+            if not isinstance(confirmed, dict) or confirmed.get(key) is not new_val:
+                self._notify_error("Berechtigungsänderung")
+                return
+            self.permissions[key] = confirmed[key]
             self._update_icon()
         return action
 
