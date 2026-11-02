@@ -1631,6 +1631,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/ocean",
         "/",
         "/agenten/fabrika",
+        "/agenten/bibliothek",
         "/agenten/blueprints",
         "/agenten/subscription-agents",
         "/agenten/running",
@@ -1656,6 +1657,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/settings",
         "/system",
         "/system/ocean",
+        "/system/installation-updates",
         "/wiki",
         "/agents",
         "/agents/ati",
@@ -6155,7 +6157,7 @@ async def agenten_sessions_page():
 
 
 
-@app.get("/inbox", response_class=HTMLResponse)
+@app.get("/inbox", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def inbox_page():
 
@@ -6243,7 +6245,7 @@ async def reports_page():
 
 
 
-@app.get("/help", response_class=HTMLResponse)
+@app.get("/help", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def help_page():
 
@@ -6265,7 +6267,7 @@ async def help_page():
 
 
 
-@app.get("/maintenance", response_class=HTMLResponse)
+@app.get("/maintenance", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def maintenance_page():
 
@@ -6310,7 +6312,7 @@ async def logs_page():
 
 
 
-@app.get("/chat", response_class=HTMLResponse)
+@app.get("/chat", response_class=HTMLResponse, tags=["shared-gui"])
 async def chat_page():
     """Buddha Chat Seite."""
     chat_file = TEMPLATES_DIR / "chat.html"
@@ -6405,6 +6407,16 @@ async def system_ocean_page():
     return FileResponse(page)
 
 
+@app.get("/agenten/bibliothek", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/system/installation-updates", response_class=HTMLResponse, tags=["shared-gui"])
+async def shared_gui_extension_page(request: Request):
+    """Static GUI shells only; private data and actions retain device protection."""
+    page = ASTRO_DIST_DIR / (request.url.path.lstrip("/") + ".html")
+    if not page.is_file() or page.is_symlink():
+        raise HTTPException(status_code=503, detail="Gemeinsame GUI-Seite nicht verfügbar")
+    return FileResponse(page)
+
+
 @app.get("/system", response_class=HTMLResponse)
 async def system_page(request: Request):
     """System-Route leitet auf Einstellungen/Setup weiter; ?tab=ocean liefert die gebaute Ocean-Seite."""
@@ -6417,7 +6429,7 @@ async def system_page(request: Request):
     return await settings_page()
 
 
-@app.get("/system/ocean", response_class=HTMLResponse)
+@app.get("/system/ocean", response_class=HTMLResponse, tags=["shared-gui"])
 async def system_ocean_page():
     """Betrieb › Systeme (Ocean-Systemkarten & Sync-Netzbild)."""
     ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
@@ -6453,7 +6465,7 @@ async def agents_page():
         return FileResponse(agents_file)
     raise HTTPException(status_code=404, detail="Template agents.html nicht gefunden")
 
-@app.get("/ati", response_class=HTMLResponse)
+@app.get("/ati", response_class=HTMLResponse, tags=["shared-gui"])
 @app.get("/agents/ati", response_class=HTMLResponse)
 async def ati_agent_page():
     """ATI Agent Dashboard Seite."""
@@ -6573,15 +6585,15 @@ async def capability_board_page(request: Request):
 async def finanzen_redirect():
     return RedirectResponse("/financial")
 
-@app.get("/steuer")
+@app.get("/steuer", tags=["shared-gui"])
 async def steuer_redirect():
     return RedirectResponse("/agents/steuer")
 
-@app.get("/gesundheit")
+@app.get("/gesundheit", tags=["shared-gui"])
 async def gesundheit_redirect():
     return RedirectResponse("/agents/gesundheit")
 
-@app.get("/persoenlich")
+@app.get("/persoenlich", tags=["shared-gui"])
 async def persoenlich_redirect():
     return RedirectResponse("/agents/persoenlich")
 
@@ -6591,8 +6603,8 @@ async def routines_redirect():
 
 
 
-@app.get("/denkarium", response_class=HTMLResponse)
-@app.get("/notizen", response_class=HTMLResponse)
+@app.get("/denkarium", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/notizen", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def denkarium_page():
 
@@ -8701,7 +8713,7 @@ def save_financial_data_json():
 
 
 
-@app.get("/financial", response_class=HTMLResponse)
+@app.get("/financial", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def financial_page():
 
@@ -11232,7 +11244,7 @@ TOOLS_DIR = BACH_DIR / "tools"
 
 
 
-@app.get("/tools", response_class=HTMLResponse)
+@app.get("/tools", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def tools_page():
 
@@ -14394,7 +14406,7 @@ async def execute_usecase(usecase_id: int, request: Request):
 # API ROUTES - CONTACTS (v1.1.84 - Task 789)
 # ═══════════════════════════════════════════════════════════════
 
-@app.get("/kontakte", response_class=HTMLResponse)
+@app.get("/kontakte", response_class=HTMLResponse, tags=["shared-gui"])
 async def kontakte_page():
     """Kontakte Verwaltung."""
     kontakte_file = TEMPLATES_DIR / "kontakte.html"
@@ -14609,7 +14621,7 @@ async def export_contacts():
 # API ROUTES - ROUTINES (v1.1.84 - Task 788)
 # ═══════════════════════════════════════════════════════════════
 
-@app.get("/routinen", response_class=HTMLResponse)
+@app.get("/routinen", response_class=HTMLResponse, tags=["shared-gui"])
 async def routinen_page():
     """Routinen Dashboard: shared GUI page first; the BACH template only without a shared release page."""
     astro_routinen = ASTRO_DIST_DIR / "routinen.html"
