@@ -10,8 +10,19 @@ import shutil
 from pathlib import Path
 import subprocess
 import sys
+import pytest
 
 SCANNER = Path(__file__).parents[1] / "tools" / "lock_scan.py"
+
+
+def _symlink_or_skip(link: Path, target: Path) -> None:
+    """Erstellt einen Symlink oder überspringt den Test unter Windows ohne SeCreateSymbolicLinkPrivilege."""
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege (WinError 1314) not enabled")
+        raise
 
 
 def run_scanner(path: Path) -> tuple[int, dict]:
@@ -36,7 +47,7 @@ def test_regular_file_link_does_not_block_scan():
         target = root / "real_file.txt"
         target.write_text("content")
         link = root / "link_to_file.txt"
-        link.symlink_to(target)
+        _symlink_or_skip(link, target)
 
         code, payload = run_scanner(root)
         assert code == 0, f"Exit code should be 0 for regular file link, got {code}"
@@ -58,7 +69,7 @@ def test_directory_link_blocks_scan():
         subdir.mkdir()
         (subdir / "inner.txt").write_text("inner")
         link = root / "link_to_dir"
-        link.symlink_to(subdir)
+        _symlink_or_skip(link, subdir)
 
         code, payload = run_scanner(root)
         assert code == 1, f"Exit code should be 1 for directory link, got {code}"
@@ -72,7 +83,7 @@ def test_broken_symlink_blocks_scan():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         link = root / "broken_link"
-        link.symlink_to(root / "does_not_exist")
+        _symlink_or_skip(link, root / "does_not_exist")
 
         code, payload = run_scanner(root)
         assert code == 1, f"Exit code should be 1 for broken link, got {code}"
@@ -87,8 +98,8 @@ def test_cycle_symlink_blocks_scan():
         root = Path(tmp)
         a = root / "a"
         b = root / "b"
-        a.symlink_to(b)
-        b.symlink_to(a)
+        _symlink_or_skip(a, b)
+        _symlink_or_skip(b, a)
 
         code, payload = run_scanner(root)
         assert code == 1, f"Exit code should be 1 for cycle, got {code}"
@@ -102,7 +113,7 @@ def test_path_redirect_blocks_scan():
         real_dir.mkdir()
         (real_dir / "file.txt").write_text("content")
         root = Path(tmp) / "redirect_root"
-        root.symlink_to(real_dir)
+        _symlink_or_skip(root, real_dir)
 
         code, payload = run_scanner(root)
         assert code == 1, f"Exit code should be 1 for path redirect, got {code}"
@@ -121,7 +132,7 @@ def test_file_link_lock_evaluated():
         target = root / "LOCK.test"
         target.write_text("lock content")
         link = root / "link_to_lock.txt"
-        link.symlink_to(target)
+        _symlink_or_skip(link, target)
 
         code, payload = run_scanner(root)
         assert code == 0
@@ -139,7 +150,7 @@ def test_mixed_regular_and_file_links():
         (root / "dir" / "inner.txt").write_text("inner")
         target = root / "target.txt"
         target.write_text("target")
-        (root / "link.txt").symlink_to(target)
+        _symlink_or_skip(root / "link.txt", target)
 
         code, payload = run_scanner(root)
         assert code == 0
