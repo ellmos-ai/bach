@@ -10,7 +10,6 @@ import shutil
 from pathlib import Path
 import subprocess
 import sys
-import pytest
 
 SCANNER = Path(__file__).parents[1] / "tools" / "lock_scan.py"
 
@@ -21,6 +20,8 @@ def _symlink_or_skip(link: Path, target: Path) -> None:
         link.symlink_to(target)
     except OSError as exc:
         if getattr(exc, "winerror", None) == 1314:
+            import pytest
+
             pytest.skip("Windows symlink privilege (WinError 1314) not enabled")
         raise
 
