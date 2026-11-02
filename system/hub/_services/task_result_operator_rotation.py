@@ -216,6 +216,12 @@ def _rotate_operator_credential(conn, device_id, *, expected, request_id,
         if hmac.compare_digest(old_hash, new_hash):
             raise ResultConflict("Widerrufenes Credential darf nicht wiederverwendet werden")
         _ensure_audit(conn)
+        # Sessions belong to the old credential authority, even though the
+        # stable device identity is retained. Invalidate them atomically with
+        # activation; receipt replays return above and preserve new sessions.
+        conn.execute("DELETE FROM browser_sessions WHERE device_id=?", (device_id,))
+        if conn.execute("SELECT 1 FROM browser_sessions WHERE device_id=?", (device_id,)).fetchone():
+            raise ResultConflict("Alte Browsersitzungen wurden nicht vollständig widerrufen")
         cursor = conn.execute("UPDATE devices SET token_hash=?,status='active',revoked_at=NULL "
                               "WHERE id=? AND name=? AND status='revoked' AND token_hash=?",
                               (new_hash, device_id, before["device"]["name"], old_hash))

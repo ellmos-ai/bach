@@ -28,6 +28,8 @@ class RotationTests(unittest.TestCase):
         self.conn.execute("UPDATE task_result_operators SET device_id=45 WHERE device_id=1")
         self.conn.execute("UPDATE task_result_operators SET device_id=47 WHERE device_id=2")
         self.conn.commit()
+        self.old_session, _ = device_auth.create_browser_session(self.old, connection=self.conn)
+        self.assertIsNotNone(device_auth.validate_token(self.old_session, connection=self.conn))
         self.assertTrue(device_auth.revoke_device("ticket-master-review-luna-session01a176e7", connection=self.conn))
         self.expected = owner.rotation_snapshot(self.conn, 47, operator_token=self.actor, expected_actor_device_id=45)
         self.temp = tempfile.TemporaryDirectory(prefix="private-operator-rotation-")
@@ -92,6 +94,62 @@ class RotationTests(unittest.TestCase):
         owner.install_confirmed_stage(self.conn, stage["intent_path"], root=self.root, operator_token=self.actor)
         self.assertTrue(self.conn.total_changes == changes)
         self.assertTrue(self.conn.execute(f"SELECT count(*) FROM {owner._AUDIT}").fetchone()[0] == 1)
+
+    def test_rotation_keeps_old_sessions_revoked_and_preserves_other_devices(self):
+        self.assertIsNone(device_auth.validate_token(self.old_session, connection=self.conn))
+        actor_session, _ = device_auth.create_browser_session(self.actor, connection=self.conn)
+        self.expected = owner.rotation_snapshot(self.conn, 47, operator_token=self.actor, expected_actor_device_id=45)
+        stage = self.prepare()
+        self.rotate(stage)
+        self.assertIsNone(device_auth.validate_token(self.old, connection=self.conn))
+        self.assertIsNone(device_auth.validate_token(self.old_session, connection=self.conn))
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM browser_sessions WHERE device_id=47").fetchone()[0], 0)
+        self.assertIsNotNone(device_auth.validate_token(actor_session, connection=self.conn))
+        new_token = Path(stage["stage_path"]).read_text().strip()
+        new_session, _ = device_auth.create_browser_session(new_token, connection=self.conn)
+        self.assertIsNotNone(device_auth.validate_token(new_session, connection=self.conn))
+
+    def test_session_invalidation_is_rolled_back_with_failed_audit(self):
+        stage = self.prepare()
+        owner._ensure_audit(self.conn)
+        self.conn.execute(f"CREATE TRIGGER fail_session_audit BEFORE INSERT ON {owner._AUDIT} "
+                          "BEGIN SELECT RAISE(ABORT,'private audit failure'); END")
+        self.conn.commit()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.rotate(stage)
+        self.assertEqual(self.conn.execute(
+            "SELECT count(*) FROM browser_sessions WHERE device_id=47").fetchone()[0], 1)
+        self.assertEqual(self.conn.execute("SELECT status FROM devices WHERE id=47").fetchone()[0], "revoked")
+        self.assertIsNone(device_auth.validate_token(self.old_session, connection=self.conn))
+
+    def test_failed_session_invalidation_cannot_activate_device(self):
+        stage = self.prepare()
+        self.conn.execute("CREATE TRIGGER fail_session_delete BEFORE DELETE ON browser_sessions "
+                          "WHEN OLD.device_id=47 BEGIN SELECT RAISE(ABORT,'private session failure'); END")
+        self.conn.commit()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.rotate(stage)
+        row = self.conn.execute("SELECT status,token_hash FROM devices WHERE id=47").fetchone()
+        self.assertEqual(tuple(row), ("revoked", device_auth._hash_token(self.old)))
+        self.assertIsNone(device_auth.validate_token(self.old_session, connection=self.conn))
+
+    def test_rotation_and_install_replay_preserve_new_sessions(self):
+        stage = self.prepare()
+        first = self.rotate(stage)
+        new_token = Path(stage["stage_path"]).read_text().strip()
+        new_session, _ = device_auth.create_browser_session(new_token, connection=self.conn)
+        replay = owner._rotate_operator_credential(
+            self.conn, 47, expected=self.expected, request_id=self.request_id,
+            replacement_token=new_token, operator_token=self.actor, expected_actor_device_id=45)
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(replay["event_id"], first["event_id"])
+        owner.install_confirmed_stage(self.conn, stage["intent_path"], root=self.root,
+                                      operator_token=self.actor)
+        owner.install_confirmed_stage(self.conn, stage["intent_path"], root=self.root,
+                                      operator_token=self.actor)
+        self.assertIsNotNone(device_auth.validate_token(new_session, connection=self.conn))
+        self.assertIsNone(device_auth.validate_token(self.old_session, connection=self.conn))
 
     def test_unknown_not_applied_does_not_install_or_rotate(self):
         stage = self.prepare()
