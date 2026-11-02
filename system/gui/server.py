@@ -1697,6 +1697,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/foerderplaner",
         "/steuer-assistent",
         "/workflow-tuev",
+        "/talk",
         "/favicon.ico",
         "/device-fetch.js",
     })
@@ -1725,6 +1726,14 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/chat/compare-race/buddha",
         "/api/domains/installed",
         "/api/domains/pins",
+        "/api/permissions",
+        "/api/voice/status",
+        "/api/talk/status",
+        "/api/sensation/status",
+        "/api/homecontrol/devices",
+        "/api/homecontrol/energy",
+        "/api/robotics/capabilities",
+        "/api/robotics/telemetry",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -16515,8 +16524,588 @@ async def get_workflow_content(path: str):
 
 
 # ═══════════════════════════════════════════════════════════════
+# MULTIMODAL & EMBODIED CAPABILITIES (#3763–#3768 / Ocean #533–#538)
+#   - ellmos-voice-io: Universal STT/TTS API (`/api/voice/*`)
+#   - ellmos-talk: Live Dual-Loop Voice & Visualizer (`/talk`, `/api/talk/*`)
+#   - ellmos-sensation: Fail-Closed Camera/Mic/Sound & Open-Compute Gate (`/api/sensation/*`)
+#   - ellmos-homecontrol: FritzBox/HA/Matter/Shelly SmartHome Hub (`/api/homecontrol/*`)
+#   - ellmos-robotics: MCP Standard `ellmos.robotics.mcp.v1` (`/api/robotics/*`)
+#   - Capability Permissions Matrix (`/api/permissions`)
+# ═══════════════════════════════════════════════════════════════
 
-# UNIFIED GUI (optionales externes Modul ellmos-unified-gui)
+_CAPABILITY_PERMISSIONS_FILE = Path.home() / ".bach" / "capability_permissions.json"
+_TALK_SESSION_SINGLETON = None
+
+
+def _load_capability_permissions() -> dict[str, bool]:
+    defaults = {
+        "system_tools": True,
+        "browser_control": True,
+        "camera": False,
+        "microphone": False,
+        "screen_capture": False,
+        "voice_tts": True,
+        "speech_to_text": True,
+        "smarthome_robotics": False,
+        "ollama": True,
+    }
+    if _CAPABILITY_PERMISSIONS_FILE.is_file():
+        try:
+            saved = json.loads(_CAPABILITY_PERMISSIONS_FILE.read_text(encoding="utf-8"))
+            if isinstance(saved, dict):
+                for k in defaults:
+                    if k in saved:
+                        defaults[k] = bool(saved[k])
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+    return defaults
+
+
+def _save_capability_permissions(perms: dict[str, bool]) -> dict[str, bool]:
+    current = _load_capability_permissions()
+    for k, v in perms.items():
+        if k in current:
+            current[k] = bool(v)
+    try:
+        _CAPABILITY_PERMISSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _CAPABILITY_PERMISSIONS_FILE.write_text(
+            json.dumps(current, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    return current
+
+
+def _get_talk_session():
+    global _TALK_SESSION_SINGLETON
+    if _TALK_SESSION_SINGLETON is None:
+        from hub._services.ocean_stack_bridge import load_talk_module
+
+        talk_mod = load_talk_module()
+        _TALK_SESSION_SINGLETON = talk_mod.TalkEngine()
+    return _TALK_SESSION_SINGLETON
+
+
+@app.get("/api/permissions")
+async def api_get_capability_permissions():
+    """Return the unified hardware & agent capability permissions matrix (#3768)."""
+    perms = _load_capability_permissions()
+    return {
+        "schema": "ellmos.capability-permissions.v1",
+        "permissions": perms,
+    }
+
+
+@app.post("/api/permissions")
+async def api_update_capability_permissions(payload: dict = Body(...)):
+    """Update one or more capability permissions (#3768)."""
+    updates: dict[str, bool] = {}
+    if "key" in payload and "enabled" in payload:
+        updates[str(payload["key"])] = bool(payload["enabled"])
+    elif isinstance(payload.get("permissions"), dict):
+        for k, v in payload["permissions"].items():
+            updates[str(k)] = bool(v)
+    perms = _save_capability_permissions(updates)
+    return {
+        "schema": "ellmos.capability-permissions.v1",
+        "updated": list(updates.keys()),
+        "permissions": perms,
+    }
+
+
+@app.get("/api/voice/status")
+async def api_voice_status():
+    """Return status of `ellmos-voice-io` STT/TTS engines (#3763)."""
+    from hub._services.ocean_stack_bridge import load_voice_io_module
+
+    perms = _load_capability_permissions()
+    voice_mod = load_voice_io_module()
+    svc = voice_mod.VoiceIO()
+    return {
+        "schema": "ellmos.voice-io.status.v1",
+        "stt_permission": perms.get("speech_to_text", True),
+        "tts_permission": perms.get("voice_tts", True),
+        "status": svc.status().as_dict(),
+    }
+
+
+@app.post("/api/voice/stt")
+async def api_voice_stt(payload: dict = Body(...)):
+    """Universal chat input transcription endpoint backed by `ellmos-voice-io` (#3763)."""
+    import base64
+    from hub._services.ocean_stack_bridge import load_voice_io_module
+
+    perms = _load_capability_permissions()
+    if not perms.get("speech_to_text", True):
+        raise HTTPException(status_code=403, detail="Spracheingabe (STT) ist in den Berechtigungen deaktiviert")
+    audio_b64 = str(payload.get("audio_b64") or "").strip()
+    suffix = str(payload.get("suffix") or ".wav").strip()
+    language = str(payload.get("language") or "de").strip()
+    if not audio_b64:
+        raise HTTPException(status_code=400, detail="audio_b64 fehlt")
+    try:
+        raw_bytes = base64.b64decode(audio_b64)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
+    voice_mod = load_voice_io_module()
+    svc = voice_mod.VoiceIO()
+    text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
+    return {
+        "schema": "ellmos.voice-io.stt.v1",
+        "text": text,
+        "language": language,
+    }
+
+
+@app.post("/api/voice/tts")
+async def api_voice_tts(payload: dict = Body(...)):
+    """Universal speech synthesis endpoint backed by `ellmos-voice-io` (#3763)."""
+    import base64
+    from hub._services.ocean_stack_bridge import load_voice_io_module
+
+    perms = _load_capability_permissions()
+    if not perms.get("voice_tts", True):
+        raise HTTPException(status_code=403, detail="Sprachausgabe (TTS) ist in den Berechtigungen deaktiviert")
+    text = str(payload.get("text") or "").strip()
+    language = str(payload.get("language") or "de").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text fehlt")
+    voice_mod = load_voice_io_module()
+    svc = voice_mod.VoiceIO()
+    wav_bytes = svc.synthesize_bytes(text)
+    return {
+        "schema": "ellmos.voice-io.tts.v1",
+        "language": language,
+        "audio_b64": base64.b64encode(wav_bytes).decode("ascii"),
+        "mime_type": "audio/wav",
+    }
+
+
+@app.get("/api/talk/status")
+async def api_talk_status():
+    """Return current live state of `ellmos-talk` Dual-Loop & Visualizer (#3764)."""
+    engine = _get_talk_session()
+    return engine.state.as_dict()
+
+
+@app.post("/api/talk/turn")
+async def api_talk_turn(payload: dict = Body(...)):
+    """Process a live conversational turn through `ellmos-talk` (FastReflexLoop + DeepCortexLoop, #3764)."""
+    from dataclasses import asdict
+
+    engine = _get_talk_session()
+    user_utterance = str(payload.get("user_utterance") or "").strip()
+    model_response = payload.get("model_response")
+    persona = str(payload.get("persona") or "").strip().lower()
+    language = str(payload.get("language") or "").strip().lower()
+    directive: dict[str, Any] = {}
+    if persona in {"buddha", "gemini", "claude", "codex"}:
+        directive["persona"] = persona
+    if language in {"de", "en"}:
+        directive["language"] = language
+    if directive:
+        engine.update_visual_state(directive)
+    res = engine.process_turn(
+        user_utterance=user_utterance,
+        model_response=str(model_response) if model_response else None,
+    )
+    return {
+        "spoken_text": res.spoken_text,
+        "sentences": res.sentence_chunks,
+        "reflex": asdict(res.reflex),
+        "visual_state": res.visual_state,
+        "applied_directives": res.applied_directives,
+    }
+
+
+@app.post("/api/talk/directive")
+async def api_talk_directive(payload: dict = Body(...)):
+    """Allow the active LLM or operator to directly mutate the `ellmos-talk` visualizer state (#3764)."""
+    engine = _get_talk_session()
+    state = engine.update_visual_state(payload)
+    return {"visual_state": state.as_dict()}
+
+
+@app.get("/api/sensation/status")
+async def api_sensation_status():
+    """Return status & permission state of `ellmos-sensation` (#3765)."""
+    from hub._services.ocean_stack_bridge import load_sensation_module
+
+    perms = _load_capability_permissions()
+    sens_mod = load_sensation_module()
+    sp = sens_mod.SensationPermissions(
+        camera=bool(perms.get("camera", False)),
+        microphone=bool(perms.get("microphone", False)),
+        sound_output=bool(perms.get("voice_tts", True)),
+    )
+    gate = sens_mod.OpenComputePresenceGate()
+    return {
+        "schema": "ellmos.sensation.status.v1",
+        "permissions": sp.as_dict(),
+        "open_compute_gate": gate.evaluate(sp, idle_seconds=300.0),
+    }
+
+
+@app.post("/api/sensation/open-compute-gate")
+async def api_sensation_open_compute_gate(payload: dict = Body(...)):
+    """Evaluate whether `open-compute` is allowed to take over desktop input (#3765)."""
+    from hub._services.ocean_stack_bridge import load_sensation_module
+
+    perms = _load_capability_permissions()
+    sens_mod = load_sensation_module()
+    sp = sens_mod.SensationPermissions(
+        camera=bool(payload.get("camera_permission", perms.get("camera", False))),
+        microphone=bool(payload.get("microphone_permission", perms.get("microphone", False))),
+        sound_output=True,
+    )
+    gate = sens_mod.OpenComputePresenceGate()
+    return gate.evaluate(sp, idle_seconds=float(payload.get("idle_seconds", 0.0)))
+
+
+@app.get("/api/homecontrol/devices")
+async def api_homecontrol_devices():
+    """List SmartHome devices via `ellmos-homecontrol` (#3766)."""
+    from hub._services.ocean_stack_bridge import load_homecontrol_module
+
+    hc_mod = load_homecontrol_module()
+    hub = hc_mod.HomeControlHub(smarthome_permission=True)
+    devices = hub.hc_list_devices()
+    return {"total_devices": len(devices), "devices": devices}
+
+
+@app.get("/api/homecontrol/energy")
+async def api_homecontrol_energy():
+    """Return SmartHome power & energy telemetry via `ellmos-homecontrol` (#3766)."""
+    from hub._services.ocean_stack_bridge import load_homecontrol_module
+
+    hc_mod = load_homecontrol_module()
+    hub = hc_mod.HomeControlHub(smarthome_permission=True)
+    return hub.hc_energy_status()
+
+
+@app.get("/api/robotics/capabilities")
+async def api_robotics_capabilities():
+    """Return canonical MCP `ellmos.robotics.mcp.v1` robot capabilities (#3767)."""
+    from hub._services.ocean_stack_bridge import load_robotics_module
+
+    rob_mod = load_robotics_module()
+    hub = rob_mod.RoboticsHub(robotics_permission=True)
+    return hub.robot_capabilities()
+
+
+@app.get("/api/robotics/telemetry")
+async def api_robotics_telemetry():
+    """Return robot pose, battery, and safety envelope telemetry (#3767)."""
+    from hub._services.ocean_stack_bridge import load_robotics_module
+
+    rob_mod = load_robotics_module()
+    hub = rob_mod.RoboticsHub(robotics_permission=True)
+    return hub.robot_telemetry()
+
+
+@app.post("/api/robotics/estop")
+async def api_robotics_estop(payload: dict = Body(default={})):
+    """Trigger immediate fail-closed E-Stop across the robotics hub (#3767)."""
+    from hub._services.ocean_stack_bridge import load_robotics_module
+
+    rob_mod = load_robotics_module()
+    hub = rob_mod.RoboticsHub(robotics_permission=True)
+    reason = str(payload.get("reason") or "operator_e_stop")
+    return hub.robot_stop_emergency(reason)
+
+
+@app.get("/talk", response_class=HTMLResponse)
+async def talk_visualizer_companion_page():
+    """Standalone ELLMOS Talk Live Voice & Emotion Visualizer Companion Window (#3764)."""
+    html = """<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ELLMOS Talk — Live Voice & Visualizer</title>
+  <style>
+    :root {
+      --primary: #38bdf8;
+      --secondary: #1e293b;
+      --glow: #0284c7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at center, var(--secondary) 0%, #090d16 100%);
+      color: #f8fafc;
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px;
+      transition: background 0.6s ease;
+    }
+    header {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      padding: 12px 18px;
+      border-radius: 14px;
+      backdrop-filter: blur(12px);
+    }
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    select, button, input[type="text"] {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button.primary { background: var(--primary); color: #090d16; font-weight: 600; border: none; }
+    .stage {
+      position: relative;
+      width: 320px;
+      height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    canvas { width: 320px; height: 320px; }
+    .emoji-badge {
+      position: absolute;
+      font-size: 44px;
+      pointer-events: none;
+      filter: drop-shadow(0 0 16px var(--glow));
+    }
+    .dialog-box {
+      width: 100%;
+      max-width: 760px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .status-bar { font-size: 13px; color: #94a3b8; display: flex; justify-content: space-between; }
+    .input-row { display: flex; gap: 8px; }
+    .input-row input { flex: 1; cursor: text; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>🎙️ ELLMOS Talk</strong>
+      <span id="personaLabel" style="margin-left:8px;font-size:13px;color:#94a3b8;">Persona: buddha (DE)</span>
+    </div>
+    <div class="controls">
+      <select id="personaSelect" aria-label="Persona">
+        <option value="buddha">Buddha (Local MLX/Ollama)</option>
+        <option value="gemini">Gemini</option>
+        <option value="claude">Claude</option>
+        <option value="codex">Codex / GPT</option>
+      </select>
+      <select id="langSelect" aria-label="Sprache">
+        <option value="de">Deutsch (DE)</option>
+        <option value="en">English (EN)</option>
+      </select>
+      <select id="patternSelect" aria-label="Muster">
+        <option value="orb">Orb</option>
+        <option value="wave">Wave</option>
+        <option value="rings">Rings</option>
+        <option value="constellation">Constellation</option>
+        <option value="pulse">Pulse</option>
+      </select>
+      <select id="emotionSelect" aria-label="Emotion">
+        <option value="calm">Calm</option>
+        <option value="curious">Curious</option>
+        <option value="joyful">Joyful</option>
+        <option value="focused">Focused</option>
+        <option value="empathetic">Empathetic</option>
+        <option value="alert">Alert</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="stage">
+    <canvas id="vizCanvas" width="320" height="320"></canvas>
+    <div class="emoji-badge" id="emojiBadge">✨</div>
+  </div>
+
+  <div class="dialog-box">
+    <div class="status-bar">
+      <span id="reflexStatus">FastReflexLoop (&lt;250ms): bereit · Wake-Word: „Hey Buddha“</span>
+      <span id="listeningState">Modus: listening</span>
+    </div>
+    <div id="transcriptBox" style="min-height:48px;font-size:15px;line-height:1.5;color:#e2e8f0;">
+      Sprich oder tippe eine Nachricht – das Modell steuert Farben, Muster und Emotionen live über &lt;talk_control /&gt;.
+    </div>
+    <div class="input-row">
+      <input type="text" id="utteranceInput" placeholder="Sage etwas zu Buddha, Gemini, Claude oder Codex..." />
+      <button id="micBtn" title="Mikrofon-Spracheingabe starten">🎤</button>
+      <button class="primary" id="sendBtn">Sprechen</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('vizCanvas');
+    const ctx = canvas.getContext('2d');
+    let vizState = {
+      pattern: 'orb',
+      emotion: 'calm',
+      palette: { primary: '#38bdf8', secondary: '#1e293b', glow: '#0284c7' },
+      emoji: '✨',
+      pulse_hz: 1.2,
+      listening_mode: 'listening',
+      active_persona: 'buddha'
+    };
+    let tick = 0;
+
+    function applyVisualState(vs) {
+      if (!vs) return;
+      vizState = Object.assign(vizState, vs);
+      if (vs.palette) {
+        document.documentElement.style.setProperty('--primary', vs.palette.primary);
+        document.documentElement.style.setProperty('--secondary', vs.palette.secondary);
+        document.documentElement.style.setProperty('--glow', vs.palette.glow);
+      }
+      document.getElementById('emojiBadge').textContent = vs.emoji || '✨';
+      document.getElementById('listeningState').textContent = 'Modus: ' + (vs.listening_mode || 'listening');
+      document.getElementById('personaLabel').textContent = 'Persona: ' + (vs.active_persona || 'buddha');
+      document.getElementById('patternSelect').value = vs.pattern || 'orb';
+      document.getElementById('emotionSelect').value = vs.emotion || 'calm';
+    }
+
+    function drawVisualizer() {
+      tick += 0.04 * (vizState.pulse_hz || 1.2);
+      ctx.clearRect(0, 0, 320, 320);
+      const cx = 160, cy = 160;
+      const primary = (vizState.palette && vizState.palette.primary) || '#38bdf8';
+      const glow = (vizState.palette && vizState.palette.glow) || '#0284c7';
+      ctx.strokeStyle = primary;
+      ctx.fillStyle = primary;
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = 24;
+
+      if (vizState.pattern === 'wave') {
+        ctx.beginPath();
+        for (let x = 20; x <= 300; x += 4) {
+          const y = cy + Math.sin((x * 0.04) + tick * 2) * 36 * Math.sin(tick);
+          if (x === 20) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      } else if (vizState.pattern === 'rings') {
+        for (let i = 1; i <= 4; i++) {
+          ctx.beginPath();
+          const r = 28 * i + Math.sin(tick + i) * 8;
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+      } else if (vizState.pattern === 'constellation') {
+        const pts = [];
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2 + tick * 0.3;
+          const rad = 85 + Math.sin(tick + i * 1.7) * 20;
+          pts.push([cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad]);
+        }
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < pts.length; i++) {
+          const [x1, y1] = pts[i];
+          const [x2, y2] = pts[(i + 1) % pts.length];
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x1, y1, 5, 0, Math.PI * 2); ctx.fill();
+        }
+      } else {
+        const r = 78 + Math.sin(tick * 2) * (vizState.pattern === 'pulse' ? 24 : 12);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.globalAlpha = 0.25;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      requestAnimationFrame(drawVisualizer);
+    }
+    requestAnimationFrame(drawVisualizer);
+
+    async function sendTurn() {
+      const input = document.getElementById('utteranceInput');
+      const text = input.value.trim();
+      if (!text) return;
+      const persona = document.getElementById('personaSelect').value;
+      const language = document.getElementById('langSelect').value;
+      const res = await fetch('/api/talk/turn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_utterance: text, persona, language })
+      });
+      const data = await res.json();
+      if (data.visual_state) applyVisualState(data.visual_state);
+      if (data.reflex) {
+        document.getElementById('reflexStatus').textContent =
+          'FastReflexLoop (' + data.reflex.latency_target_ms + 'ms): ' + (data.reflex.ack_text || 'ack');
+      }
+      const sentences = (data.sentences || []).join(' ');
+      document.getElementById('transcriptBox').textContent = sentences || text;
+      if ('speechSynthesis' in window && sentences) {
+        const utter = new SpeechSynthesisUtterance(sentences);
+        utter.lang = language === 'en' ? 'en-US' : 'de-DE';
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      }
+      input.value = '';
+    }
+
+    document.getElementById('sendBtn').addEventListener('click', sendTurn);
+    document.getElementById('utteranceInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendTurn();
+    });
+
+    async function pushDirective() {
+      const pattern = document.getElementById('patternSelect').value;
+      const emotion = document.getElementById('emotionSelect').value;
+      const persona = document.getElementById('personaSelect').value;
+      const res = await fetch('/api/talk/directive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pattern, emotion, persona })
+      });
+      const data = await res.json();
+      if (data.visual_state) applyVisualState(data.visual_state);
+    }
+    document.getElementById('patternSelect').addEventListener('change', pushDirective);
+    document.getElementById('emotionSelect').addEventListener('change', pushDirective);
+    document.getElementById('personaSelect').addEventListener('change', pushDirective);
+
+    document.getElementById('micBtn').addEventListener('click', () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        alert('Browser Web Speech API nicht verfügbar – nutze POST /api/voice/stt.');
+        return;
+      }
+      const rec = new SR();
+      rec.lang = document.getElementById('langSelect').value === 'en' ? 'en-US' : 'de-DE';
+      rec.onresult = (ev) => {
+        const t = ev.results[0][0].transcript;
+        document.getElementById('utteranceInput').value = t;
+        sendTurn();
+      };
+      rec.start();
+    });
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
 # Operator-Konsole als Sub-App unter /control — Panels erscheinen
 # capability-driven je nach erreichbaren Backends. Fehlt das Paket,
 # laeuft BACH unveraendert (bewusst weiches Optional).

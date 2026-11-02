@@ -289,6 +289,21 @@ def check_authority_escalation(
     )
 
 
+def check_capability_permission(
+    capability_key: str,
+    permissions: dict[str, bool] | None = None,
+    *,
+    has_user_gate: bool = False,
+) -> dict[str, Any]:
+    mod = load_escalation_ladder_module()
+    return mod.evaluate_capability_permission(
+        capability_key,
+        permissions=permissions,
+        has_user_gate=has_user_gate,
+    )
+
+
+
 def load_persona_routing_module() -> Any:
     return _load_module_from_repo(
         "ocean_persona_routing",
@@ -418,6 +433,78 @@ def ocean_task_result(task_id: int, bach_db_path: Path | None = None) -> dict[st
     return gov_mod.task_result_view(bach_db_path, task_id)
 
 
+def load_voice_io_module() -> Any:
+    return _load_module_from_repo(
+        "ellmos_voice_io_service",
+        "ellmos_voice_io.service",
+        "ellmos-voice-io",
+        "src/ellmos_voice_io/service.py",
+    )
+
+
+def load_talk_module() -> Any:
+    return _load_module_from_repo(
+        "ellmos_talk_engine",
+        "ellmos_talk.engine",
+        "ellmos-talk",
+        "src/ellmos_talk/engine.py",
+    )
+
+
+def load_sensation_module() -> Any:
+    return _load_module_from_repo(
+        "ellmos_sensation_sensor_hub",
+        "ellmos_sensation.sensor_hub",
+        "ellmos-sensation",
+        "src/ellmos_sensation/sensor_hub.py",
+    )
+
+
+def load_homecontrol_module() -> Any:
+    return _load_module_from_repo(
+        "ellmos_homecontrol_hub",
+        "ellmos_homecontrol.hub",
+        "ellmos-homecontrol",
+        "src/ellmos_homecontrol/hub.py",
+    )
+
+
+def load_robotics_module() -> Any:
+    return _load_module_from_repo(
+        "ellmos_robotics_mcp_standard",
+        "ellmos_robotics.mcp_standard",
+        "ellmos-robotics",
+        "src/ellmos_robotics/mcp_standard.py",
+    )
+
+
+def ocean_capability_extensions_status() -> dict[str, Any]:
+    """Return status of the 5 multimodal/embodied Ocean capability modules (#3763-#3767)."""
+    ext_modules = {
+        "ellmos-voice-io": ("ellmos_voice_io.service", load_voice_io_module),
+        "ellmos-talk": ("ellmos_talk.engine", load_talk_module),
+        "ellmos-sensation": ("ellmos_sensation.sensor_hub", load_sensation_module),
+        "ellmos-homecontrol": ("ellmos_homecontrol.hub", load_homecontrol_module),
+        "ellmos-robotics": ("ellmos_robotics.mcp_standard", load_robotics_module),
+    }
+    bound: dict[str, Any] = {}
+    for name, (mod_id, loader) in ext_modules.items():
+        try:
+            m = loader()
+            bound[name] = {
+                "bound": True,
+                "module": mod_id,
+                "file": getattr(m, "__file__", None),
+            }
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+            bound[name] = {
+                "bound": False,
+                "module": mod_id,
+                "error": str(exc),
+            }
+    return bound
+
+
 def ocean_stack_status() -> dict[str, Any]:
     """Return status of all 11 canonical Ocean modules bound into BACH."""
     modules = {
@@ -448,9 +535,12 @@ def ocean_stack_status() -> dict[str, Any]:
                 "module": mod_id,
                 "error": str(exc),
             }
+    extensions = ocean_capability_extensions_status()
     return {
         "schema": "bach.ocean-stack-bindings.v1",
         "stack_role": "branded-partial-os-stack-of-ocean",
         "legacy_mode": "deprecated-fallback-only",
         "modules": bound,
+        "capability_extensions": extensions,
+        "capability_extensions_bound_count": sum(1 for item in extensions.values() if item["bound"]),
     }

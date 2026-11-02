@@ -93,7 +93,10 @@ try:
 except ImportError:
     WAKEWORD_AVAILABLE = False
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
 
+
+@deprecated_legacy_bach("ellmos_voice_io.service.VoiceIO")
 class VoiceSTT:
     """Speech-to-Text Service. Whisper (online) oder Vosk (offline)."""
 
@@ -279,6 +282,7 @@ def transcribe_b64_payload(body: dict) -> Tuple[dict, int]:
     return {"ok": True, "text": text, "engine": engine}, 200
 
 
+@deprecated_legacy_bach("ellmos_talk.engine.TalkSession")
 class VoiceTTS:
     """Text-to-Speech Service mit Voice-Selection und Non-Blocking-Modus.
 

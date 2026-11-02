@@ -295,6 +295,17 @@ class BACHTray:
         self._stop = threading.Event()
 
         self.services = {"gui": False, "control": False, "ollama": False}
+        self.permissions = {
+            "system_tools": True,
+            "browser_control": True,
+            "camera": False,
+            "microphone": False,
+            "screen_capture": False,
+            "voice_tts": True,
+            "speech_to_text": True,
+            "smarthome_robotics": False,
+            "ollama": True,
+        }
 
         # Idle-Worker ist per Default aktiv (deaktivierbar via BACH_IDLE_WORKER=0)
         self.idle_enabled = not remote and os.environ.get("BACH_IDLE_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")
@@ -1282,6 +1293,28 @@ class BACHTray:
             ))
         items.append(pystray.MenuItem("Services", pystray.Menu(*svc_items)))
 
+        # ── Berechtigungen (Permissions Sub-Flyout, #3768) ──
+        perm_labels = (
+            ("system_tools", "System-Tools (Shell & Skripte)"),
+            ("browser_control", "Browser-Steuerung"),
+            ("camera", "Kamera (ellmos-sensation Präsenz)"),
+            ("microphone", "Mikrofon (Wake-Word & Ambiente)"),
+            ("screen_capture", "Bildschirmaufnahme (Open-Compute)"),
+            ("voice_tts", "Sprachausgabe (Voice TTS / Talk)"),
+            ("speech_to_text", "Spracheingabe (Diktat / STT)"),
+            ("smarthome_robotics", "SmartHome & Robotik-Steuerung"),
+            ("ollama", "Lokale Ollama-Modelle"),
+        )
+        perm_items = [
+            pystray.MenuItem(
+                label,
+                self._make_permission_toggle_action(pkey),
+                checked=lambda item, pkey=pkey: bool(self.permissions.get(pkey, False)),
+            )
+            for pkey, label in perm_labels
+        ]
+        items.append(pystray.MenuItem("🛡️ Berechtigungen (Permissions)", pystray.Menu(*perm_items)))
+
         # ── PromptBoard ──
         prompt_items = []
         app_path = self._promptboard_app_path()
@@ -1332,6 +1365,7 @@ class BACHTray:
         items.append(pystray.MenuItem(gui_label, self._open_gui, default=True))
         chat_label = "Ocean Chat" if getattr(self, "brand", "bach") == "ocean" else "Buddha Chat"
         items.append(pystray.MenuItem(chat_label, self._open_webchat))
+        items.append(pystray.MenuItem("🎙️ ELLMOS Talk (Live-Stimme)", self._open_talk))
         items.append(pystray.MenuItem("Laufende Agenten", self._open_running))
         items.append(pystray.MenuItem("Agenten-Blueprints", self._open_blueprints))
         items.append(pystray.MenuItem("Telegram", self._open_telegram))
@@ -1342,6 +1376,18 @@ class BACHTray:
         return pystray.Menu(*items)
 
     # --- Actions ---
+
+    def _make_permission_toggle_action(self, key: str):
+        def action(*_):
+            new_val = not bool(self.permissions.get(key, False))
+            self.permissions[key] = new_val
+            self._api("POST", "/api/permissions", {"key": key, "enabled": new_val}, base=self.gui_url)
+            self._update_icon()
+        return action
+
+    def _open_talk(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/talk")
 
     def _notify_error(self, action_name):
         if self.icon:

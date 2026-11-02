@@ -194,3 +194,64 @@ def test_bach_consumes_configurable_review_worktree_and_escalation(tmp_path: Pat
     tres = ocean_task_result(999999, bach_db_path=dummy_db)
     assert tres["available"] is True
     assert tres["found"] is False
+
+    status = ocean_stack_status()
+    assert status["capability_extensions_bound_count"] == 5
+    for ext_name in (
+        "ellmos-voice-io",
+        "ellmos-talk",
+        "ellmos-sensation",
+        "ellmos-homecontrol",
+        "ellmos-robotics",
+    ):
+        assert status["capability_extensions"][ext_name]["bound"] is True
+
+    from hub._services.ocean_stack_bridge import check_capability_permission
+    from hub._services.voice.voice_stt import VoiceSTT, VoiceTTS
+    from hub.smarthome import SmartHomeHandler
+
+    assert check_capability_permission("camera")["allowed"] is False
+    assert check_capability_permission("camera", {"camera": True})["allowed"] is True
+    assert getattr(VoiceSTT, "__ocean_deprecated__", False) is True
+    assert getattr(VoiceTTS, "__ocean_deprecated__", False) is True
+    assert getattr(SmartHomeHandler, "__ocean_deprecated__", False) is True
+
+
+def test_bach_multimodal_and_embodied_gui_endpoints():
+    import asyncio
+    from gui import server
+
+    perms = asyncio.run(server.api_get_capability_permissions())
+    assert perms["schema"] == "ellmos.capability-permissions.v1"
+    assert perms["permissions"]["camera"] is False
+
+    v_status = asyncio.run(server.api_voice_status())
+    assert v_status["schema"] == "ellmos.voice-io.status.v1"
+
+    t_status = asyncio.run(server.api_talk_status())
+    assert t_status["persona"] == "buddha"
+
+    t_turn = asyncio.run(server.api_talk_turn({"user_utterance": "Hallo Buddha", "persona": "buddha", "language": "de"}))
+    assert "emotion" in t_turn["visual_state"]
+    assert len(t_turn["sentences"]) >= 1
+
+    s_status = asyncio.run(server.api_sensation_status())
+    assert s_status["schema"] == "ellmos.sensation.status.v1"
+    assert s_status["open_compute_gate"]["should_pause_open_compute"] is False
+
+    hc_devs = asyncio.run(server.api_homecontrol_devices())
+    assert hc_devs["total_devices"] >= 4
+    hc_energy = asyncio.run(server.api_homecontrol_energy())
+    assert hc_energy["total_power_watts"] > 0
+
+    rob_caps = asyncio.run(server.api_robotics_capabilities())
+    assert rob_caps["schema"] == "ellmos.robotics.mcp.v1"
+    rob_tel = asyncio.run(server.api_robotics_telemetry())
+    assert rob_tel["battery_pct"] > 0
+    rob_stop = asyncio.run(server.api_robotics_estop({"reason": "unit_test"}))
+    assert rob_stop["status"] == "emergency_stopped"
+
+    talk_html = asyncio.run(server.talk_visualizer_companion_page())
+    assert b"ELLMOS Talk" in talk_html.body
+
+
