@@ -36,33 +36,48 @@ logger = logging.getLogger("bach.skill_capabilities")
 # _ID_PATTERN: via skill-registry-Modul gebunden (siehe Import oben, Task #2449).
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 
+def _filter_macos_cloudstorage(paths: list[Path]) -> list[Path]:
+    import sys
+    if sys.platform != "darwin":
+        return paths
+    filtered: list[Path] = []
+    for p in paths:
+        try:
+            if "/Library/CloudStorage/" in os.path.realpath(p):
+                continue
+        except OSError:
+            continue
+        filtered.append(p)
+    return filtered
+
+
 # Suchpfade fuer echte Plugins
-PLUGIN_SEARCH_PATHS = [
+PLUGIN_SEARCH_PATHS = _filter_macos_cloudstorage([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.PLUGINS")),
     Path("C:/Users/User/OneDrive/.TOPICS/.AI/.PLUGINS"),
     Path(os.path.expanduser("~/.gemini/config/plugins")),
     Path("C:/Users/User/.gemini/config/plugins"),
     Path(os.path.expanduser("~/.claude/plugins")),
     Path("C:/Users/User/.claude/plugins"),
-]
+])
 
 # Suchpfade fuer MCP Server
-MCP_SEARCH_PATHS = [
+MCP_SEARCH_PATHS = _filter_macos_cloudstorage([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.MCP")),
     Path("C:/Users/User/OneDrive/.TOPICS/.AI/.MCP"),
     Path(os.path.expanduser("~/.gemini/antigravity-cli/mcp")),
     Path("C:/Users/User/.gemini/antigravity-cli/mcp"),
-]
+])
 
 # Suchpfade fuer Skills
-SKILLS_SEARCH_PATHS = [
+SKILLS_SEARCH_PATHS = _filter_macos_cloudstorage([
     Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.SKILLS/skills")),
     Path("C:/Users/User/OneDrive/.TOPICS/.AI/.SKILLS/skills"),
     Path(os.path.expanduser("~/.agents/skills")),
     Path("C:/Users/User/.agents/skills"),
     Path(os.path.expanduser("~/.claude/skills")),
     Path("C:/Users/User/.claude/skills"),
-]
+])
 
 # Suchpfade fuer externe Artefakte (GUX-066)
 ARTIFACT_SEARCH_PATHS = {
@@ -621,7 +636,11 @@ converted_at: {now_iso}
 # 6. BLUEPRINT-SKILLREFS VALIDIERUNG (GUX-031)
 # ═══════════════════════════════════════════════════════════════
 
-def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
+def validate_blueprint_skills(
+    skills: list[Any],
+    *,
+    source_skills: dict[str, dict] | None = None,
+) -> dict[str, Any]:
     """
     Distinguishes declared capability IDs from skills with executable SKILL.md sources.
     """
@@ -630,8 +649,9 @@ def validate_blueprint_skills(skills: list[Any]) -> dict[str, Any]:
                 "unmatched_count": 0, "matched": [], "unmatched": [], "missing": [],
                 "executable": True, "executable_count": 0, "missing_source": [],
                 "canonical_registry_size": len(CANONICAL_CORE_SKILLS)}
-    from .skill_source_service import source_catalog, skill_roots
-    source_skills = source_catalog(skill_roots())
+    if source_skills is None:
+        from .skill_source_service import source_catalog, skill_roots
+        source_skills = source_catalog(skill_roots())
     known_skills = {s["id"]: s for s in CANONICAL_CORE_SKILLS}
     known_skills.update(source_skills)
 

@@ -99,6 +99,12 @@ def _get_conn(timeout: float = 30.0) -> sqlite3.Connection:
 
 def _find_existing_path(candidates: List[Path]) -> Optional[Path]:
     for p in candidates:
+        if sys.platform == "darwin":
+            try:
+                if "/Library/CloudStorage/" in os.path.realpath(p):
+                    continue
+            except OSError:
+                continue
         if p.exists():
             return p
     return None
@@ -359,6 +365,8 @@ async def list_agent_blueprints(
             SELECT * FROM agent_blueprints
             ORDER BY is_template DESC, name ASC
         """).fetchall()
+        from hub._services.skill_source_service import source_catalog, skill_roots
+        source_skills = await asyncio.to_thread(lambda: source_catalog(skill_roots()))
         blueprints = []
         templates = []
         for r in rows:
@@ -375,7 +383,9 @@ async def list_agent_blueprints(
                 item["skills"] = json.loads(item.get("skills_json") or "[]")
             except Exception:
                 item["skills"] = []
-            item["skills_validation"] = svc_validate_blueprint_skills(item["skills"])
+            item["skills_validation"] = svc_validate_blueprint_skills(
+                item["skills"], source_skills=source_skills
+            )
             try:
                 item["contractus"] = json.loads(item.get("contractus_json") or "{}")
             except Exception:

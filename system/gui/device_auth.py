@@ -65,6 +65,11 @@ CREATE TABLE IF NOT EXISTS browser_sessions (
 );
 """
 
+BROWSER_SESSIONS_INDEX_SCHEMA = """
+CREATE INDEX IF NOT EXISTS idx_browser_sessions_expires_at
+ON browser_sessions(expires_at);
+"""
+
 
 def _hash_token(token: str) -> str:
     """Compute SHA-256 hexadecimal hash of a token string."""
@@ -81,6 +86,7 @@ def init_devices_db(connection: sqlite3.Connection | None = None) -> None:
     try:
         connection.execute(DEVICES_TABLE_SCHEMA)
         connection.execute(BROWSER_SESSIONS_TABLE_SCHEMA)
+        connection.execute(BROWSER_SESSIONS_INDEX_SCHEMA)
         connection.commit()
     finally:
         if close_after:
@@ -325,14 +331,16 @@ def validate_token(token: str, connection: sqlite3.Connection | None = None) -> 
             return None
 
         device_id = row["id"] if hasattr(row, "keys") else row[0]
+        prev_seen = row["last_seen_at"] if hasattr(row, "keys") else row[5]
         from datetime import datetime, timezone
 
         now_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        connection.execute(
-            "UPDATE devices SET last_seen_at = ? WHERE id = ?",
-            (now_ts, device_id),
-        )
-        connection.commit()
+        if prev_seen != now_ts:
+            connection.execute(
+                "UPDATE devices SET last_seen_at = ? WHERE id = ?",
+                (now_ts, device_id),
+            )
+            connection.commit()
 
         if isinstance(row, sqlite3.Row) or hasattr(row, "keys"):
             res = dict(row)

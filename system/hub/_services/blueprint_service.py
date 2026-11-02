@@ -198,12 +198,23 @@ def project_contractus(
     return normalized, modus, animus_type, preset_metadata
 
 # Standard-Pfade fuer Skills
-SKILLS_SEARCH_PATHS = [
-    Path("C:/Users/User/OneDrive/.TOPICS/.AI/.SKILLS/skills"),
-    Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.SKILLS/skills")),
-    Path("C:/Users/User/.agents/skills"),
-    Path(os.path.expanduser("~/.agents/skills")),
-]
+def _default_skill_search_paths() -> list[Path]:
+    import sys
+    candidates = [
+        Path("C:/Users/User/OneDrive/.TOPICS/.AI/.SKILLS/skills"),
+        Path(os.path.expanduser("~/OneDrive/.TOPICS/.AI/.SKILLS/skills")),
+        Path("C:/Users/User/.agents/skills"),
+        Path(os.path.expanduser("~/.agents/skills")),
+    ]
+    if sys.platform != "darwin":
+        return candidates
+    return [
+        p for p in candidates
+        if "/Library/CloudStorage/" not in os.path.realpath(p)
+    ]
+
+
+SKILLS_SEARCH_PATHS = _default_skill_search_paths()
 
 FALLBACK_CORE_SKILLS = [
     {"id": "git-hygiene", "name": "Git Hygiene", "category": "dev", "role": "Fail-Closed Git & Branch Management", "version": "v1.2.0"},
