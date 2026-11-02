@@ -1121,15 +1121,29 @@ class BACHTray:
             conn_backend = conn_slot.get("backend") or "ollama"
             conn_rounds = conn_slot.get("max_tool_rounds", 10)
 
-            # Slot 1: Buddha Chat
-            chat_subitems = []
+            # Deine Agenten (Direkte Modell-Bindung & Claim-Klassen 1-4)
+            items.append(
+                pystray.MenuItem(
+                    "🤖 Deine Agenten (Modell-Bindung & Claim)",
+                    None,
+                    enabled=False,
+                )
+            )
+            # Agent 1: Buddha Chat (Klasse 1 = Interaktiv)
+            chat_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 1 · Direkt interaktiv (höchster Modell-Vorrang)",
+                    None,
+                    enabled=False,
+                )
+            ]
             if self.models:
                 chat_model_items = [
                     pystray.MenuItem(m, self._make_slot_model_action("buddha_chat", m),
                                      checked=lambda item, m=m, s=chat_model: m == s)
                     for m in self.models[:15]
                 ]
-                chat_subitems.append(pystray.MenuItem(f"Modell: {chat_model}", pystray.Menu(*chat_model_items)))
+                chat_subitems.append(pystray.MenuItem(f"Modell-Bindung: {chat_model}", pystray.Menu(*chat_model_items)))
 
             chat_backend_items = [
                 pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_chat", name),
@@ -1152,17 +1166,23 @@ class BACHTray:
                                                   checked=lambda item, cm=chat_mode: cm == "full"))
             chat_subitems.append(pystray.MenuItem("Denkmodus", lambda *_: self._toggle_slot_think("buddha_chat"),
                                                   checked=lambda item, ct=chat_think: ct))
-            items.append(pystray.MenuItem(f"💬 Buddha Chat: {chat_model}", pystray.Menu(*chat_subitems)))
+            items.append(pystray.MenuItem(f"💬 Buddha Chat [Klasse 1]: {chat_model}", pystray.Menu(*chat_subitems)))
 
-            # Slot 2: Buddha Always-On (Hintergrundworker)
-            always_subitems = []
+            # Agent 2: Buddha Always-On (Klasse 4 = Autonomer Hintergrund)
+            always_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 4 · Autonomer Hintergrund (pausiert für Klassen 1–3)",
+                    None,
+                    enabled=False,
+                )
+            ]
             if self.models:
                 always_model_items = [
                     pystray.MenuItem(m, self._make_slot_model_action("buddha_always_on", m),
                                      checked=lambda item, m=m, s=always_model: m == s)
                     for m in self.models[:15]
                 ]
-                always_subitems.append(pystray.MenuItem(f"Modell: {always_model}", pystray.Menu(*always_model_items)))
+                always_subitems.append(pystray.MenuItem(f"Modell-Bindung: {always_model}", pystray.Menu(*always_model_items)))
 
             always_backend_items = [
                 pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_always_on", name),
@@ -1185,17 +1205,23 @@ class BACHTray:
                                                     checked=lambda item, am=always_mode: am == "safe"))
             act_text = self.idle_task_name or always_slot.get("current_activity") or "Wartet auf Leerlauf"
             always_subitems.append(pystray.MenuItem(f"Aktivität: {act_text[:35]}", None, enabled=False))
-            items.append(pystray.MenuItem(f"⚡ Buddha Always-On [{always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
+            items.append(pystray.MenuItem(f"⚡ Buddha Always-On [Klasse 4 · {always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
 
-            # Slot 3: Buddha Connector (Messaging)
-            conn_subitems = []
+            # Agent 3: Buddha Connector (Klasse 2 = Delegierter Vordergrund / Messaging)
+            conn_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 2 · Delegierter Auftrag / Messaging",
+                    None,
+                    enabled=False,
+                )
+            ]
             if self.models:
                 conn_model_items = [
                     pystray.MenuItem(m, self._make_slot_model_action("buddha_connector", m),
                                      checked=lambda item, m=m, s=conn_model: m == s)
                     for m in self.models[:15]
                 ]
-                conn_subitems.append(pystray.MenuItem(f"Modell: {conn_model}", pystray.Menu(*conn_model_items)))
+                conn_subitems.append(pystray.MenuItem(f"Modell-Bindung: {conn_model}", pystray.Menu(*conn_model_items)))
 
             conn_backend_items = [
                 pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_connector", name),
@@ -1212,9 +1238,9 @@ class BACHTray:
             ]
             conn_subitems.append(pystray.MenuItem(f"Max Turns: {conn_rounds}", pystray.Menu(*conn_round_items)))
             conn_subitems.append(pystray.MenuItem("Telegram öffnen", self._open_telegram))
-            items.append(pystray.MenuItem(f"📱 Buddha Connector: {conn_model}", pystray.Menu(*conn_subitems)))
+            items.append(pystray.MenuItem(f"📱 Buddha Connector [Klasse 2]: {conn_model}", pystray.Menu(*conn_subitems)))
 
-            # Slot 4: Buddha Talk / Funkgerät (ellmos-talk Live-Stimme & Modell-Summon)
+            # Agent 4: Buddha Talk / Funkgerät (Klasse 1 = Interaktiv · ellmos-talk Live-Stimme & Modell-Summon)
             tcfg = getattr(self, "talk_config", {}) or {}
             talk_persona = tcfg.get("persona", "buddha")
             talk_op_mode = tcfg.get("operating_mode", "ptt")
@@ -1228,6 +1254,11 @@ class BACHTray:
             }
             talk_mode_str = op_labels.get(talk_op_mode, "Funkgerät · PTT")
             talk_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 1 · Direkt interaktiv (Sprachkanal)",
+                    None,
+                    enabled=False,
+                ),
                 pystray.MenuItem("🎙️ Begleitfenster öffnen (Companion)", self._open_talk_companion),
                 pystray.MenuItem("⚡ In Living & Running konfigurieren...", self._open_talk_running),
                 pystray.Menu.SEPARATOR,
@@ -1257,7 +1288,7 @@ class BACHTray:
                     ),
                 ),
                 pystray.MenuItem(
-                    f"Persona / Modell-Slot: {talk_persona.capitalize()}",
+                    f"Persona / Agenten-Bindung: {talk_persona.capitalize()}",
                     pystray.Menu(
                         pystray.MenuItem(
                             "🧘 Buddha (Lokal)",
@@ -1350,9 +1381,15 @@ class BACHTray:
 
             items.append(pystray.Menu.SEPARATOR)
 
-            # Fackel (Ressourcen-Priorität)
+            # RAM-Distributor & Modell-Runtime (Ressourcen-Priorität)
             fackel_label = self._fackel_runtime_label()
             fackel_items = [
+                pystray.MenuItem(
+                    "Claim-Klassen: 1 Interaktiv → 2 Auftrag → 3 Termin → 4 Hintergrund",
+                    None,
+                    enabled=False,
+                ),
+                pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     "Ollama / Chat & Worker bevorzugen",
                     lambda *_: self._set_fackel("ollama"),
@@ -1362,6 +1399,15 @@ class BACHTray:
                     "Rechenjobs bevorzugen (Compute)",
                     lambda *_: self._set_fackel("compute"),
                     checked=lambda item: self.state.get("fackel_preference", "compute") == "compute",
+                ),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    "🔓 Modell & RAM jetzt für andere Prozesse freigeben (Compute-Vorrang + Unload)",
+                    self._release_model_for_compute,
+                ),
+                pystray.MenuItem(
+                    "📖 Doku: Modell- & RAM-Claiming öffnen (/help)",
+                    self._open_claiming_docs,
                 ),
             ]
             items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
@@ -1669,6 +1715,18 @@ class BACHTray:
     def _open_blueprints(self, *_):
         import webbrowser
         webbrowser.open(f"{self.gui_url}/agenten/blueprints")
+
+    def _open_claiming_docs(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/help?topic=claiming")
+
+    def _release_model_for_compute(self, *_):
+        self._set_fackel("compute")
+        self._api("POST", "/api/slots", {"slot_id": "buddha_always_on", "updates": {"enabled": False}})
+        self._refresh()
+        self._update_icon()
+        if self.icon:
+            self.icon.notify("Modell & RAM für externe Prozesse freigegeben", "BACH")
 
     def _make_slot_model_action(self, slot_id, model):
         def action(*_):
