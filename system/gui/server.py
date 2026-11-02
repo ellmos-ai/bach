@@ -6016,6 +6016,21 @@ async def life_page():
     raise HTTPException(status_code=404, detail="Life-Seite nicht gefunden")
 
 
+@app.get("/api/health")
+async def get_api_health():
+    """Kanonischer Health-Endpunkt für Shared-GUI-Runtime und Smoke-Tests (#3744)."""
+    return {"status": "ok"}
+
+
+@app.get("/dist-manifest.json")
+async def get_dist_manifest():
+    """Liefert das dist-manifest.json aus dem konfigurierten Shared-GUI-Build (#3744)."""
+    manifest_file = ASTRO_DIST_DIR / "dist-manifest.json"
+    if manifest_file.exists():
+        return FileResponse(manifest_file, media_type="application/json")
+    raise HTTPException(status_code=404, detail="dist-manifest.json nicht gefunden")
+
+
 @app.get("/api/life/providers")
 async def get_life_providers():
     """Prüft die Verfügbarkeit von externen Life-Providern (Routinika, UpToDay, Health, Balance)."""

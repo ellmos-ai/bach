@@ -1,6 +1,14 @@
 # DEPRICATED – Register ersetzter BACH-Teile
 
-Stand: 31. Oktober 2026. Der Dateiname bleibt für vorhandene Plan- und Taskverweise erhalten. Ein Eintrag bedeutet keine endgültige Löschung.
+Stand: 02. November 2026. Der Dateiname bleibt für vorhandene Plan- und Taskverweise erhalten. Ein Eintrag bedeutet keine endgültige Löschung.
+
+## SOLL vs. IST (Stand 2026-11-02)
+
+| Dimension | SOLL (Zielbild) | IST (Gemessener Stand 2026-11-02) |
+|---|---|---|
+| **Ocean-Stack-Bindungen (`ocean_stack_bridge.py`)** | Alle 11 kanonischen Kernmodule über `CANONICAL_MODULES` produktiv gebunden | **11 / 11 gebunden** (`ocean-resources`, `task-master`, `ellmos-worker`, `review-policy`, `escalation-ladder`, `persona-routing`, `learning-loop`, `agent-library`, `capability-views`, `governance-bridge`, `doc-keeper`) |
+| **`@deprecated_legacy_bach`-Markierungen** | Alle durch Ocean-Module abgelösten BACH-Altklassen markiert und nach Parität abgebaut | **`OceanRamDistributor`** (`ocean_resources_adapter.py`) und **`BundledTaskPlanClient`** (`taskplan_bridge.py`) aktiv dekoriert (`__bach_deprecated__ = True`); Altklassen bleiben als Offline-/Rollback-Fallback erhalten |
+| **Gemeinsame GUI (`ellmos-system-gui`)** | Einzige kanonische GUI-Quelle (`v0.2.30`, 42 Seiten inkl. `SET-02`); `system/gui/web` entfällt nach Paritätsabnahme | `kit_manifest.json` & `gui-consumer.v1.json` auf `0.2.30` (`1277f0afc6e5`, 42 Seiten) gepinnt; `system/gui/web` bleibt vorerst für Legacy-Fallback erhalten |
 
 | Teil | Seit | Ersatz | Endpunkte und Zustand | Rollback / Entfernung |
 |---|---|---|---|---|

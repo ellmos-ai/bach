@@ -1,24 +1,35 @@
 # Ocean–BACH-Transferplan
 
-Stand: 31. Oktober 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+Stand: 02. November 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur, die verbindliche SOLL/IST-Trennung und die Abnahmeregeln.
 
-## Meilenstein `v3.15.0-ocean-stack-m1` – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31)
+## SOLL/IST-Abgleich des Transferplans (Stand 2026-11-02)
 
-Ab Commit `0dab1a8fa1` (Tag `v3.15.0-ocean-stack-m1`) ist das verbindliche Architekturmuster für die schrittweise Umwandlung von BACH in einen gebrandeten Teil-OS-Stack von Ocean produktiv im Code verankert:
+| Bereich | SOLL (Zielbild) | IST (Verifizierter Stand 2026-11-02) |
+|---|---|---|
+| **Ocean-Stack-Bridge (`system/hub/_services/ocean_stack_bridge.py`)** | 11 kanonische Ocean-Module konfliktfrei geladen (`GET /api/ocean/stack-bindings`) | **11 / 11 Module aktiv gebunden** (`ocean-resources`, `task-master`, `ellmos-worker`, `review-policy`, `escalation-ladder`, `persona-routing`, `learning-loop`, `agent-library`, `capability-views`, `governance-bridge`, `doc-keeper`) |
+| **Eigenständige Ziel-Repos (`ocean-resources`, `agents-heart`)** | Private GitHub-Repos unter `ellmos-ai/*`, lokal geklont und in `.MODULES/modules.catalog.json` registriert | **`ellmos-ai/ocean-resources` (`06aa475`)** und **`ellmos-ai/agents-heart` (`a4ec348`)** gepusht, auf Windows & Mac Studio geklont und im Modulkatalog (`48` Module) registriert |
+| **Gemeinsame GUI (`ellmos-system-gui`)** | Gepinntes Release-Archiv inkl. 4-Stufen-Onboarding (`SET-02`) | **`v0.2.30` (`1277f0afc6e5`, `42` Seiten)** veröffentlicht und in `kit_manifest.json` / `gui-consumer.v1.json` gepinnt |
+| **API-/CLI-Referenz (`#2556`)** | Automatisch aus Code generierte Referenz mit Drift-Test | **`system/tools/generate_api_cli_reference.py`** + `docs/api/*` + `test_api_cli_reference_drift.py` aktiv |
+| **Verbleibende `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`)** | Vollständige 3-Stufen-Abarbeitung aller 64 Schnitte | **11 Kernschnitte produktiv gebunden**, verbleibende Transfers werden einzeln mit Commit-/PR-Beleg abgearbeitet |
+
+## Meilenstein `v3.15.0-ocean-stack-m1` – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31 / 2026-11-02)
+
+Ab Commit `0dab1a8fa1` (Tag `v3.15.0-ocean-stack-m1`, ausgebaut am 2026-11-02 auf 11/11 gebundene Module) ist das verbindliche Architekturmuster für die schrittweise Umwandlung von BACH in einen gebrandeten Teil-OS-Stack von Ocean produktiv im Code verankert:
 
 1. **Zentrale Ocean-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):**
-   - Lädt die kanonischen Ocean-Module (`ocean-resources`, `task-master/taskplan`, `open-ocean/tools/*`) konfliktfrei neben `bach/system/tools` und stellt den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings` (`stack_role: "branded_partial_os_stack_of_ocean"`) bereit.
-   - Aktuell 10 produktiv angebundene Modul-Seams (Tasks `#1858, #1859, #1860, #1862, #1869, #1896, #1898, #1906, #1914, #1917` auf `done`):
-     1. `ocean_resources`: `ocean_resources.ram_distributor.RAMDistributor` & `WatchdogHysteresisPolicy` (über `ocean_resources_adapter.evaluate_ocean_ram_admission`)
-     2. `taskplan_lease`: `taskplan.lease.TaskLeaseManager` (über `taskplan_bridge.execute_taskplan_lease`)
-     3. `worker_worktree_policy`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag (`open-ocean/tools/worker_worktree_policy.py`)
-     4. `task_result_review_policy`: Konfigurierbare Modell-Review-Regeln & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`)
-     5. `escalation_ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`)
-     6. `persona_routing`: Rollen- und Wartungsmanifest-Prüfung (`open-ocean/tools/persona_routing.py`)
-     7. `learning_loop`: Skill-Gärtner-Kandidatenvertrag (`open-ocean/tools/learning_loop.py`)
-     8. `agent_library`: Einheitliche Agenten-Bibliothek (`open-ocean/tools/agent_library.py`)
-     9. `capability_views`: Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`)
-     10. `governance_bridge`: Governance-Audit, Assignees & Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`)
+   - Lädt die kanonischen Ocean-Module (`ocean-resources`, `task-master/taskplan`, `doc-keeper`, `open-ocean/tools/*`) konfliktfrei neben `bach/system/tools` und stellt den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings` (`stack_role: "branded_partial_os_stack_of_ocean"`) bereit.
+   - Aktuell **11 produktiv angebundene Modul-Seams**:
+     1. `ocean-resources`: `ocean_resources.ram_distributor.RAMDistributor` & `WatchdogHysteresisPolicy` (über `ocean_resources_adapter.evaluate_ocean_ram_admission`)
+     2. `task-master`: `taskplan.lease.TaskLeaseManager` (über `taskplan_bridge.execute_taskplan_lease`)
+     3. `ellmos-worker`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag (`open-ocean/tools/worker_worktree_policy.py`)
+     4. `review-policy`: Konfigurierbare Modell-Review-Regeln & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`)
+     5. `escalation-ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`)
+     6. `persona-routing`: Rollen- und Wartungsmanifest-Prüfung (`open-ocean/tools/persona_routing.py`)
+     7. `learning-loop`: Skill-Gärtner-Kandidatenvertrag (`open-ocean/tools/learning_loop.py` & `skill_keeper_service.py`)
+     8. `agent-library`: Einheitliche Agenten-Bibliothek (`open-ocean/tools/agent_library.py`)
+     9. `capability-views`: Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`)
+     10. `governance-bridge`: Governance-Audit, Assignees & Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`)
+     11. `doc-keeper`: Dokumentations-Qualitätswächter (`doc_keeper`)
 2. **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach("<canonical-ocean-module>")`):**
    - Jede durch ein Ocean-Modul abgelöste BACH-Altklasse oder -Altfunktion wird mit `@deprecated_legacy_bach(...)` dekoriert (`__bach_deprecated__ = True`, `__ocean_replacement__ = "<modul>"`, `DeprecationWarning` beim Aufruf) und in [`DEPRICATED.md`](DEPRICATED.md) registriert.
    - Die verbleibenden 54 `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`) werden Modul für Modul nach genau diesem 3-Stufen-Verfahren abgearbeitet: **(1) Ocean-Modul über Seam/Adapter anbinden → (2) BACH-Altcode mit `@deprecated_legacy_bach` markieren → (3) Altcode nach Paritätsabnahme entfernen.**

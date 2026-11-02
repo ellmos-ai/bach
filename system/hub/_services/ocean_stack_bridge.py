@@ -25,6 +25,20 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 _MODULE_CACHE: dict[str, Any] = {}
 
+CANONICAL_MODULES: tuple[str, ...] = (
+    "ocean-resources",
+    "task-master",
+    "ellmos-worker",
+    "review-policy",
+    "escalation-ladder",
+    "persona-routing",
+    "learning-loop",
+    "agent-library",
+    "capability-views",
+    "governance-bridge",
+    "doc-keeper",
+)
+
 
 def deprecated_legacy_bach(replacement: str) -> Callable[[F], F]:
     """Mark a legacy BACH class or function as deprecated in favor of an Ocean module."""
@@ -99,6 +113,7 @@ def _load_module_from_repo(cache_key: str, import_name: str, repo_name: str, rel
                 sys.modules[cache_key] = mod
                 try:
                     spec.loader.exec_module(mod)
+                    sys.modules[import_name] = mod
                     _MODULE_CACHE[cache_key] = mod
                     return mod
                 except ImportError:
@@ -274,13 +289,59 @@ def check_authority_escalation(
     )
 
 
+def load_persona_routing_module() -> Any:
+    return _load_module_from_repo(
+        "ocean_persona_routing",
+        "tools.persona_routing",
+        "open-ocean",
+        "tools/persona_routing.py",
+    )
+
+
+def load_learning_loop_module() -> Any:
+    return _load_module_from_repo(
+        "ocean_learning_loop",
+        "tools.learning_loop",
+        "open-ocean",
+        "tools/learning_loop.py",
+    )
+
+
+def load_agent_library_module() -> Any:
+    load_persona_routing_module()
+    return _load_module_from_repo(
+        "ocean_agent_library",
+        "tools.agent_library",
+        "open-ocean",
+        "tools/agent_library.py",
+    )
+
+
+def load_capability_views_module() -> Any:
+    return _load_module_from_repo(
+        "ocean_capability_views",
+        "tools.capability_views",
+        "open-ocean",
+        "tools/capability_views.py",
+    )
+
+
+def load_governance_bridge_module() -> Any:
+    return _load_module_from_repo(
+        "ocean_governance_bridge",
+        "tools.governance_bridge",
+        "open-ocean",
+        "tools/governance_bridge.py",
+    )
+
+
 def validate_module_persona_routing(manifest: dict[str, Any]) -> dict[str, Any]:
-    mod = load_escalation_ladder_module()
+    mod = load_persona_routing_module()
     return mod.validate_persona_routing_manifest(manifest)
 
 
 def validate_skill_learning_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
-    mod = load_escalation_ladder_module()
+    mod = load_learning_loop_module()
     return mod.validate_learning_candidate(candidate)
 
 
@@ -290,7 +351,7 @@ def project_agent_library(
     prompt_agents: list[dict[str, Any]],
     chains: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    mod = load_escalation_ladder_module()
+    mod = load_agent_library_module()
     return mod.project_agent_library_catalog(
         templates=templates,
         prompt_agents=prompt_agents,
@@ -300,13 +361,13 @@ def project_agent_library(
 
 def get_ocean_role_routing_catalog() -> dict[str, Any]:
     """Return the canonical BACH-to-Ocean Coordinator & Expert role catalog with flexible provider sockets."""
-    mod = load_escalation_ladder_module()
+    mod = load_persona_routing_module()
     return mod.get_ocean_role_routing_catalog()
 
 
 def discover_ocean_agent_library_templates(repos_root: str | Path | None = None) -> dict[str, Any]:
     """Build the full 3-tab Agent-Library catalog combining BACH Coordinator/Expert roles and module `roles[]`."""
-    mod = load_escalation_ladder_module()
+    mod = load_agent_library_module()
     return mod.build_full_agent_library_catalog(repos_root=repos_root)
 
 
@@ -338,53 +399,38 @@ def audit_repository_with_doc_keeper(
 
 
 def ocean_software_inventory(releases_path: Path) -> dict[str, Any]:
-    cap_mod = _load_module_from_repo(
-        "ocean_capability_views",
-        "tools.capability_views",
-        "open-ocean",
-        "tools/capability_views.py",
-    )
+    cap_mod = load_capability_views_module()
     return cap_mod.software_inventory(releases_path=Path(releases_path))
 
 
 def ocean_governance_audit(bach_db_path: Path | None = None, limit: int = 100) -> dict[str, Any]:
-    gov_mod = _load_module_from_repo(
-        "ocean_governance_bridge",
-        "tools.governance_bridge",
-        "open-ocean",
-        "tools/governance_bridge.py",
-    )
+    gov_mod = load_governance_bridge_module()
     return gov_mod.task_history_audit(bach_db_path, limit=limit)
 
 
 def ocean_task_assignees(config_path: Path) -> dict[str, Any]:
-    gov_mod = _load_module_from_repo(
-        "ocean_governance_bridge",
-        "tools.governance_bridge",
-        "open-ocean",
-        "tools/governance_bridge.py",
-    )
+    gov_mod = load_governance_bridge_module()
     return gov_mod.task_assignees_view(Path(config_path))
 
 
 def ocean_task_result(task_id: int, bach_db_path: Path | None = None) -> dict[str, Any]:
-    gov_mod = _load_module_from_repo(
-        "ocean_governance_bridge",
-        "tools.governance_bridge",
-        "open-ocean",
-        "tools/governance_bridge.py",
-    )
+    gov_mod = load_governance_bridge_module()
     return gov_mod.task_result_view(bach_db_path, task_id)
 
 
 def ocean_stack_status() -> dict[str, Any]:
-    """Return status of all Ocean modules bound into BACH."""
+    """Return status of all 11 canonical Ocean modules bound into BACH."""
     modules = {
         "ocean-resources": ("ocean_resources.ram_distributor", load_ocean_ram_distributor_module),
         "task-master": ("taskplan.lease", load_taskplan_lease_module),
         "ellmos-worker": ("tools.worker_worktree_policy", load_worker_worktree_policy_module),
         "review-policy": ("tools.task_result_review_policy", load_task_result_review_policy_module),
         "escalation-ladder": ("tools.escalation_ladder", load_escalation_ladder_module),
+        "persona-routing": ("tools.persona_routing", load_persona_routing_module),
+        "learning-loop": ("tools.learning_loop", load_learning_loop_module),
+        "agent-library": ("tools.agent_library", load_agent_library_module),
+        "capability-views": ("tools.capability_views", load_capability_views_module),
+        "governance-bridge": ("tools.governance_bridge", load_governance_bridge_module),
         "doc-keeper": ("doc_keeper", load_doc_keeper_module),
     }
     bound: dict[str, Any] = {}

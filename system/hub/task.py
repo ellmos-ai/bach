@@ -103,6 +103,7 @@ class TaskHandler(BaseHandler):
             "block": t("task_block_desc", default="Task(s) blockieren (Multi-ID)"),
             "unblock": t("task_unblock_desc", default="Task(s) entblocken (Multi-ID)"),
             "reopen": t("task_reopen_desc", default="Task(s) wieder oeffnen (Multi-ID)"),
+            "archive": "Task(s) archivieren (Multi-ID, --reason TEXT)",
             "show": t("task_show_desc", default="Task-Details anzeigen"),
             "delete": t("task_delete_desc", default="Task(s) loeschen (Multi-ID)"),
             "purge-cancelled": "Abgebrochene Worker-Mülltasks löschen und echte Alt-Tasks archivieren (oder --all für Komplettlöschung)",
@@ -242,6 +243,10 @@ class TaskHandler(BaseHandler):
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
             return self._reopen(args)
+        elif operation == "archive":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._archive(args)
         elif operation == "show":
             return self._show(args)
         elif operation == "delete":
@@ -2188,8 +2193,9 @@ class TaskHandler(BaseHandler):
         ids, rest = self._parse_ids(args)
 
         if not ids:
-            return False, "Usage: bach task reopen <id> [id2 id3...]"
+            return False, "Usage: bach task reopen <id> [id2 id3...] [--note <text>]"
 
+        note = self._get_note(rest) or self._get_reason(rest)
         results = []
 
         with self._get_db() as conn:
@@ -2204,18 +2210,55 @@ class TaskHandler(BaseHandler):
                 # verschwinden -- clear_fields deckt genau das ab (Erweiterung von
                 # apply_task_field_changes fuer diesen Fall).
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
-                 # T-20260916-1330: _reopen ist wie _unblock die explizite Operator-
-                 # Aktion (auditiert) -> allow_reopen=True, damit der Terminal-Park-
-                 # Guard den bewussten Reopen nicht falsch blockiert.
-                apply_task_field_changes(conn, task_id, existing_row, {"status": "pending"},
+                fields = {"status": "pending"}
+                if note:
+                    old_desc = (existing_row.get("description") or "").strip()
+                    stamp = f"[REOPEN] {note}"
+                    fields["description"] = f"{old_desc}\n\n{stamp}" if old_desc else stamp
+                # T-20260916-1330: _reopen ist wie _unblock die explizite Operator-
+                # Aktion (auditiert) -> allow_reopen=True, damit der Terminal-Park-
+                # Guard den bewussten Reopen nicht falsch blockiert.
+                apply_task_field_changes(conn, task_id, existing_row, fields,
                                           clear_fields=("completed_at",),
                                           changed_by="cli-task", now=now,
                                           allow_reopen=True)
 
-                results.append(f"[OK] Task {task_id} wieder geoeffnet")
+                results.append(f"[OK] Task {task_id} wieder geoeffnet" + (f" ({note})" if note else ""))
 
             conn.commit()
 
+        return True, "\n".join(results)
+
+    def _archive(self, args: List[str]) -> Tuple[bool, str]:
+        """Task(s) kontrolliert archivieren (Multi-ID, Pflicht --reason/--note)."""
+        ids, rest = self._parse_ids(args)
+        reason = self._get_reason(rest) or self._get_note(rest)
+        if not ids or not reason:
+            return False, "Usage: bach task archive <id> [id2 id3...] --reason <grund>"
+
+        results = []
+        with self._get_db() as conn:
+            for task_id in ids:
+                existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if not existing:
+                    results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
+                    continue
+                existing_row = dict(existing)
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                old_desc = (existing_row.get("description") or "").strip()
+                stamp = f"[ARCHIVED] {reason}"
+                new_desc = f"{old_desc}\n\n{stamp}" if old_desc else stamp
+                apply_task_field_changes(
+                    conn,
+                    task_id,
+                    existing_row,
+                    {"status": "archived", "description": new_desc},
+                    clear_fields=("claimed_by", "claimed_at"),
+                    changed_by="cli-task",
+                    now=now,
+                )
+                results.append(f"[OK] Task {task_id} archiviert ({reason})")
+            conn.commit()
         return True, "\n".join(results)
     
     def _delete(self, args: List[str]) -> Tuple[bool, str]:

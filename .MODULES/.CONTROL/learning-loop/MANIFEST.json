@@ -1,0 +1,9 @@
+{
+  "schema": "ellmos.module.v2",
+  "id": "control.learning-loop",
+  "version": "1.0.0",
+  "title": "Skill-Gärtner (Skill Keeper) Learning Loop",
+  "category": "control",
+  "entrypoint": "skill_keeper.py",
+  "ui_location": "Skills & Software › Skill Keeper"
+}

@@ -1,6 +1,6 @@
 # Portabilität: UNIVERSAL
-# Zuletzt validiert: 2026-05-30 (Registry-Abgleich hub/*.py + core/aliases.py)
-# Nächste Prüfung: 2026-11-30
+# Zuletzt validiert: 2026-11-02 (Registry-Abgleich hub/*.py + docs/api/cli-reference.md, #2556)
+# Nächste Prüfung: 2027-05-02
 
 CLI-KONVENTIONEN (v2.0 Registry-Based)
 =======================================
@@ -28,7 +28,7 @@ ZWEI ZUGRIFFSWEGE:
 
 KERN-SUBCOMMANDS (Verwaltung):
 ----------------------------------------
-  task      Task-Verwaltung (add, list, done, block, next)
+  task      Task-Verwaltung (add, list, done, block, reopen, archive, next)
   mem       Working Memory (write, read, status, archive)
   memory    Erweiterter Memory-Handler (facts, lessons, archive)
   msg       Nachrichtensystem (send, list, read, ping)

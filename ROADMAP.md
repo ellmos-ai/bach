@@ -1,24 +1,35 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-10-31 | **Version:** 4.4.0 (`v3.15.0-ocean-stack-m1`) | **Review:** 2026-10-31 (Ocean-Stack Meilenstein 1)
+**Stand:** 2026-11-02 | **Version:** 4.4.1 (`v3.15.0-ocean-stack-m1`) | **Review:** 2026-11-02 (SOLL/IST-Abgleich & 11/11 Ocean-Stack-Bindungen)
 
-## Meilenstein 2026-10-31: BACH als gebrandeter Teil-OS-Stack von Ocean (`v3.15.0-ocean-stack-m1`)
+## SOLL/IST-Übersicht der Meilenstein-Linie (Stand 2026-11-02)
 
-Mit dem GUI-Meilenstein `v3.15.0` (*„BACH fließt ins Meer – gemeinsame GUI“*, Pin `ellmos-system-gui 0.2.30`) und dem Architektur-Meilenstein **`v3.15.0-ocean-stack-m1`** (Commit `0dab1a8fa1` / `d0b2059e4f`, korrespondierend mit `open-ocean` **`v0.4.0-ocean-stack-m1`**) ist die in Abschnitt *„Aktueller Transformationsrahmen: OCEAN als Nachfolgerlinie“* beschriebene Konvergenz produktiv im Code verankert:
+| Meilenstein / Bereich | SOLL (Zielbild) | IST (Verifizierter Stand 2026-11-02) |
+|---|---|---|
+| **Gemeinsame GUI (`ellmos-system-gui`)** | Einzige kanonische GUI (`v0.2.30`, 42 Seiten inkl. 4-Stufen-Onboarding `SET-02`) auf Windows & Mac Studio aktiv | Release `v0.2.30` (`1277f0afc6e5`, SHA-256 `f6f9d7c5...`, 42 Seiten) gebaut, veröffentlicht und in `kit_manifest.json` / `gui-consumer.v1.json` gepinnt |
+| **Ocean-Stack-Consumer-Brücke (`ocean_stack_bridge.py`)** | Alle 11 kanonischen Kernmodule produktiv in `ocean_stack_status()` gebunden | **11 / 11 gebunden** (`ocean-resources`, `task-master`, `ellmos-worker`, `review-policy`, `escalation-ladder`, `persona-routing`, `learning-loop`, `agent-library`, `capability-views`, `governance-bridge`, `doc-keeper`) |
+| **Neue Modul-Repos (`ocean-resources`, `agents-heart`)** | Eigenständige GitHub-Repos unter `ellmos-ai/*` + Katalog-Registrierung | **`ellmos-ai/ocean-resources` (`06aa475`)** & **`ellmos-ai/agents-heart` (`a4ec348`)** erstellt, gepusht, geklont und in `.MODULES/modules.catalog.json` registriert |
+| **Desktop-Harness (`#2337`) & Store-Readiness (`#2497`)** | Gemeinsamer Desktop-Vertrag + 15/15 Store-Readiness-Checks grün | `desktop_harness_contract.py` in `open-ocean`, `ellmos-system-gui` & `bach`; `store_readiness.py` 15/15 grün |
+| **Automatische API-/CLI-Referenz (`#2556`)** | Aus Code generierte HTTP-/CLI-Referenz mit CI-Drift-Test | `system/tools/generate_api_cli_reference.py`, `docs/api/*` und `test_api_cli_reference_drift.py` aktiv |
+
+## Meilenstein 2026-10-31 / 2026-11-02: BACH als gebrandeter Teil-OS-Stack von Ocean (`v3.15.0-ocean-stack-m1`)
+
+Mit dem GUI-Meilenstein `v3.15.0` (*„BACH fließt ins Meer – gemeinsame GUI“*, Pin `ellmos-system-gui 0.2.30` @ `1277f0afc6e5`) und dem Architektur-Meilenstein **`v3.15.0-ocean-stack-m1`** ist die in Abschnitt *„Aktueller Transformationsrahmen: OCEAN als Nachfolgerlinie“* beschriebene Konvergenz produktiv im Code verankert:
 
 1. **Zentrale Ocean-Stack-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):**
    - BACH konsumiert die herausgelösten und neuen Ocean-Module direkt als gebrandeter Teil-OS-Stack (`stack_role: "branded_partial_os_stack_of_ocean"`, Live-Status über `GET /api/ocean/stack-bindings`).
-   - **10 aktiv gebundene Ocean-Seams (`done` in TaskDB):**
+   - **11 aktiv gebundene Ocean-Seams:**
      1. `ocean-resources`: `RAMDistributor` & `WatchdogHysteresisPolicy` über `ocean_resources_adapter.evaluate_ocean_ram_admission()` (#2441 — löst das frühere Fackel-/Compute-Lock-Problem aus dem Programm *„Modell-Backend = das Herz von BACH“*).
      2. `task-master` (`taskplan`): `TaskLeaseManager` (`claim`, `heartbeat`, `release`, `sweep_expired`) über `taskplan_bridge.execute_taskplan_lease()` sowie gemeinsames CLI `bach.py task` / `ocean.py task` (#2096, #2124 — führt den *TASKPLAN-Cutover* fort; ATI-Datenbank wird stillgelegt).
-     3. `worker_worktree_policy`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag für alle Ocean-Modulrepos (`open-ocean/tools/worker_worktree_policy.py`, #2577).
-     4. `task_result_review_policy`: Konfigurierbare Modellregeln (*„Default: jedes Modell in frischem Lauf“*) & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`, #2210).
-     5. `escalation_ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`, #1958).
-     6. `persona_routing`: Rollen- und Wartungsmanifest-Prüfung `roles[]` & `maintenance[]` (`open-ocean/tools/persona_routing.py`, #2447, #2448).
-     7. `learning_loop`: Skill-Gärtner-Pipeline (vormals Hermes) und Kandidatenvertrag (`open-ocean/tools/learning_loop.py`, #1999–#2003, #2455).
-     8. `agent_library`: Einheitliche Agenten-Bibliothek für Vorlagen, Prompt-Agenten und Systemprofile (`open-ocean/tools/agent_library.py`, #2478).
-     9. `capability_views`: Kanonisches Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`, #2075).
-     10. `governance_bridge`: Governance-Audit, Task-Assignees und Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`, #2094, #2097, #2098).
+     3. `ellmos-worker`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag für alle Ocean-Modulrepos (`open-ocean/tools/worker_worktree_policy.py`, #2577).
+     4. `review-policy`: Konfigurierbare Modellregeln (*„Default: jedes Modell in frischem Lauf“*) & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`, #2210).
+     5. `escalation-ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`, #1958).
+     6. `persona-routing`: Rollen- und Wartungsmanifest-Prüfung `roles[]` & `maintenance[]` (`open-ocean/tools/persona_routing.py`, #2447, #2448).
+     7. `learning-loop`: Skill-Gärtner-Pipeline (vormals Hermes) und Kandidatenvertrag (`open-ocean/tools/learning_loop.py` & `skill_keeper_service.py`, #1999–#2003, #2455).
+     8. `agent-library`: Einheitliche Agenten-Bibliothek für Vorlagen, Prompt-Agenten und Systemprofile (`open-ocean/tools/agent_library.py`, #2478).
+     9. `capability-views`: Kanonisches Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`, #2075).
+     10. `governance-bridge`: Governance-Audit, Task-Assignees und Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`, #2094, #2097, #2098).
+     11. `doc-keeper`: Dokumentations-Qualitätswächter (`doc_keeper`).
 2. **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach("<canonical-ocean-module>")`):**
    - Abgelöste BACH-interne Klassen (`OceanRamDistributor`, `BundledTaskPlanClient`) sind mit `@deprecated_legacy_bach(...)` dekoriert (`__bach_deprecated__ = True`, `DeprecationWarning`) und in [`DEPRICATED.md`](DEPRICATED.md) dokumentiert.
    - Die verbleibenden **54 `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`)** werden schrittweise nach demselben 3-Stufen-Muster (*Ocean-Seam aktivieren → BACH-Altcode `@deprecated_legacy_bach` → nach Paritätsabnahme entfernen*) umgesetzt.

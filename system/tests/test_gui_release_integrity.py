@@ -96,17 +96,17 @@ def test_gui_consumer_and_kit_pin_bind_same_029_release():
     assert consumer["version"] == "0.2.30"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "eb0251ac4b85574087ad934611d19dc3df1f9c4c",
-        "archive_sha256": "ff07b55656349da60cb18b5ead867da3f03d43d81e6964bc6448212d7412b188",
+        "commit": "1277f0afc6e55b7fb3aaf1242a0c8a92e8772093",
+        "archive_sha256": "f6f9d7c5eedc569ffdb20843eb85394d37cf2b6f62250f94209273fa77d0cac2",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }
     assert kit["verified"] is True  # Identity metadata only; installed bytes are verified separately.
     assert kit["version"] == consumer["version"]
     assert kit["pinned_source_commit"] == consumer["source"]["commit"]
     assert kit["release_archive_sha256"] == consumer["source"]["archive_sha256"]
-    assert kit["release_archive"] == "ellmos-system-gui-0.2.30-eb0251ac4b85.zip"
+    assert kit["release_archive"] == "ellmos-system-gui-0.2.30-1277f0afc6e5.zip"
     assert kit["dist_manifest_schema"] == "ellmos-system-gui.dist.v1"
-    assert kit["expected_page_count"] == 39
+    assert kit["expected_page_count"] == 42
     assert "installed" not in kit
     assert consumer["required_backend_routes"] == [
         "/api/gui/brand",

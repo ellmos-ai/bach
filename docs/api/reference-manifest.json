@@ -1,0 +1,3826 @@
+{
+  "schema_version": "1.0.0",
+  "generator": "system/tools/generate_api_cli_reference.py",
+  "cli_handler_count": 118,
+  "http_route_count": 348,
+  "canonical_module_count": 11,
+  "canonical_modules": [
+    "ocean-resources",
+    "task-master",
+    "ellmos-worker",
+    "review-policy",
+    "escalation-ladder",
+    "persona-routing",
+    "learning-loop",
+    "agent-library",
+    "capability-views",
+    "governance-bridge",
+    "doc-keeper"
+  ],
+  "cli_handlers": [
+    {
+      "profile_name": "abo",
+      "class_name": "AboHandler",
+      "source": "system/hub/abo.py",
+      "operations": [
+        "scan",
+        "list",
+        "confirm",
+        "dismiss",
+        "costs",
+        "export",
+        "patterns",
+        "init",
+        "sync-mail",
+        "import",
+        "schedule-import"
+      ]
+    },
+    {
+      "profile_name": "agent",
+      "class_name": "AgentLauncherHandler",
+      "source": "system/hub/agent_launcher.py",
+      "operations": [
+        "list",
+        "start",
+        "stop",
+        "status",
+        "doctor",
+        "steer",
+        "pause",
+        "resume",
+        "checkpoint",
+        "clear-steer",
+        "rename"
+      ]
+    },
+    {
+      "profile_name": "agents",
+      "class_name": "AgentsHandler",
+      "source": "system/hub/agents.py",
+      "operations": [
+        "list",
+        "info",
+        "active",
+        "sync",
+        "rename"
+      ]
+    },
+    {
+      "profile_name": "api",
+      "class_name": "ApiBookHandler",
+      "source": "system/hub/apibook.py",
+      "operations": [
+        "add",
+        "list",
+        "show",
+        "endpoint",
+        "verify",
+        "search",
+        "remove",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "apiprober",
+      "class_name": "ApiProberHandler",
+      "source": "system/hub/api_prober.py",
+      "operations": [
+        "probe",
+        "list",
+        "status",
+        "export",
+        "config"
+      ]
+    },
+    {
+      "profile_name": "ati",
+      "class_name": "ATIHandler",
+      "source": "system/hub/ati.py",
+      "operations": [
+        "status",
+        "start",
+        "stop",
+        "session",
+        "onboard",
+        "check",
+        "problems",
+        "context",
+        "task",
+        "scan",
+        "sync",
+        "path",
+        "export",
+        "install",
+        "bootstrap",
+        "migrate",
+        "modules"
+      ]
+    },
+    {
+      "profile_name": "backup",
+      "class_name": "BackupHandler",
+      "source": "system/hub/backup.py",
+      "operations": [
+        "create",
+        "status",
+        "list",
+        "info"
+      ]
+    },
+    {
+      "profile_name": "beat",
+      "class_name": "BeatHandler",
+      "source": "system/hub/time.py",
+      "operations": [
+        "",
+        "on",
+        "off",
+        "interval"
+      ]
+    },
+    {
+      "profile_name": "bericht",
+      "class_name": "BerichtHandler",
+      "source": "system/hub/bericht.py",
+      "operations": [
+        "generate",
+        "export",
+        "archive",
+        "extract",
+        "prompt",
+        "pipeline",
+        "list",
+        "status",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "between",
+      "class_name": "BetweenHandler",
+      "source": "system/hub/time.py",
+      "operations": [
+        "on",
+        "off",
+        "status",
+        "use",
+        "profile"
+      ]
+    },
+    {
+      "profile_name": "calendar",
+      "class_name": "CalendarHandler",
+      "source": "system/hub/calendar_handler.py",
+      "operations": [
+        "list",
+        "week",
+        "month",
+        "today",
+        "add",
+        "show",
+        "done",
+        "delete",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "chain",
+      "class_name": "ChainHandler",
+      "source": "system/hub/chain.py",
+      "operations": [
+        "list",
+        "run",
+        "add",
+        "show",
+        "delete",
+        "log",
+        "create",
+        "start",
+        "stop",
+        "pause",
+        "resume",
+        "steer",
+        "status",
+        "reset"
+      ]
+    },
+    {
+      "profile_name": "claude-bridge",
+      "class_name": "ClaudeBridgeHandler",
+      "source": "system/hub/claude_bridge.py",
+      "operations": [
+        "start",
+        "stop",
+        "status",
+        "mode",
+        "test",
+        "logs",
+        "workers",
+        "password",
+        "setup",
+        "challenge",
+        "verify",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "clock",
+      "class_name": "ClockHandler",
+      "source": "system/hub/time.py",
+      "operations": [
+        "on",
+        "off",
+        "status",
+        "interval"
+      ]
+    },
+    {
+      "profile_name": "cloud",
+      "class_name": "CloudHandler",
+      "source": "system/hub/cloud.py",
+      "operations": [
+        "status",
+        "pause",
+        "resume",
+        "toggle",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "clutch",
+      "class_name": "ClutchHandler",
+      "source": "system/hub/clutch.py",
+      "operations": [
+        "status",
+        "analyse",
+        "metriken",
+        "fitness",
+        "health",
+        "migration"
+      ]
+    },
+    {
+      "profile_name": "connections",
+      "class_name": "ConnectionsHandler",
+      "source": "system/hub/connections.py",
+      "operations": [
+        "list",
+        "db",
+        "show",
+        "actors",
+        "partners"
+      ]
+    },
+    {
+      "profile_name": "connector",
+      "class_name": "ConnectorHandler",
+      "source": "system/hub/connector.py",
+      "operations": [
+        "list",
+        "status",
+        "add",
+        "remove",
+        "enable",
+        "disable",
+        "messages",
+        "unprocessed",
+        "route",
+        "smart-route",
+        "send",
+        "send-file",
+        "poll",
+        "dispatch",
+        "setup-scheduler",
+        "setup-daemon",
+        "queue-status",
+        "retry",
+        "configure",
+        "setup-wizard",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "consolidation",
+      "class_name": "ConsolidationHandler",
+      "source": "system/hub/consolidation.py",
+      "operations": [
+        "status",
+        "run",
+        "policy",
+        "compress",
+        "weight",
+        "archive",
+        "index",
+        "review",
+        "init",
+        "sync-triggers",
+        "forget",
+        "reclassify",
+        "sleep"
+      ]
+    },
+    {
+      "profile_name": "contact",
+      "class_name": "ContactHandler",
+      "source": "system/hub/contact.py",
+      "operations": [
+        "list",
+        "search",
+        "add",
+        "show",
+        "edit",
+        "delete",
+        "birthday",
+        "export",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "context",
+      "class_name": "ContextHandler",
+      "source": "system/hub/context.py",
+      "operations": [
+        "auto",
+        "search",
+        "longterm",
+        "recent"
+      ]
+    },
+    {
+      "profile_name": "cookbook",
+      "class_name": "CookbookHandler",
+      "source": "system/hub/cookbook.py",
+      "operations": [
+        "list",
+        "generate",
+        "add",
+        "delete",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "countdown",
+      "class_name": "CountdownHandler",
+      "source": "system/hub/time.py",
+      "operations": [
+        "start",
+        "stop",
+        "pause",
+        "resume",
+        "list"
+      ]
+    },
+    {
+      "profile_name": "cv",
+      "class_name": "CVHandler",
+      "source": "system/hub/cv.py",
+      "operations": [
+        "generate",
+        "status"
+      ]
+    },
+    {
+      "profile_name": "daily-agent",
+      "class_name": "DailyAgentHandler",
+      "source": "system/hub/daily_agent.py",
+      "operations": [
+        "start",
+        "stop",
+        "status",
+        "briefing",
+        "deliver",
+        "summary",
+        "config",
+        "modules",
+        "toggle"
+      ]
+    },
+    {
+      "profile_name": "data",
+      "class_name": "DataAnalysisHandler",
+      "source": "system/hub/data_analysis.py",
+      "operations": [
+        "load",
+        "describe",
+        "head",
+        "corr",
+        "chart",
+        "list"
+      ]
+    },
+    {
+      "profile_name": "db",
+      "class_name": "DbHandler",
+      "source": "system/hub/db.py",
+      "operations": [
+        "status",
+        "tables",
+        "info",
+        "query",
+        "schema",
+        "count",
+        "export",
+        "insert",
+        "backup"
+      ]
+    },
+    {
+      "profile_name": "dbsync",
+      "class_name": "DBSyncHandler",
+      "source": "system/hub/db_sync.py",
+      "operations": [
+        "backup",
+        "sync",
+        "pull",
+        "push",
+        "status",
+        "init",
+        "cleanup",
+        "enable",
+        "disable"
+      ]
+    },
+    {
+      "profile_name": "denkarium",
+      "class_name": "DenkariumHandler",
+      "source": "system/hub/denkarium.py",
+      "operations": [
+        "write",
+        "read",
+        "search",
+        "brainstorm",
+        "promote",
+        "categories",
+        "stats"
+      ]
+    },
+    {
+      "profile_name": "dist",
+      "class_name": "DistHandler",
+      "source": "system/hub/dist.py",
+      "operations": [
+        "status",
+        "verify",
+        "classify",
+        "snapshot",
+        "release",
+        "restore",
+        "install",
+        "list"
+      ]
+    },
+    {
+      "profile_name": "doc",
+      "class_name": "DocHandler",
+      "source": "system/hub/doc.py",
+      "operations": [
+        "index",
+        "search",
+        "status",
+        "rebuild",
+        "clear",
+        "recent",
+        "folders",
+        "scan",
+        "dedup",
+        "classify",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "docs",
+      "class_name": "DocsHandler",
+      "source": "system/hub/docs.py",
+      "operations": [
+        "list",
+        "<name>",
+        "guides/<name>",
+        "reference/<name>",
+        "search",
+        "sync",
+        "migrate",
+        "generate"
+      ]
+    },
+    {
+      "profile_name": "docs-search",
+      "class_name": "DocsSearchHandler",
+      "source": "system/hub/docs_search.py",
+      "operations": [
+        "search",
+        "index",
+        "lookup",
+        "fetch",
+        "stats"
+      ]
+    },
+    {
+      "profile_name": "email",
+      "class_name": "EmailHandler",
+      "source": "system/hub/email.py",
+      "operations": [
+        "send",
+        "draft",
+        "confirm",
+        "cancel",
+        "drafts",
+        "sent",
+        "show",
+        "setup",
+        "test",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "extensions",
+      "class_name": "ExtensionsHandler",
+      "source": "system/hub/extensions.py",
+      "operations": [
+        "list",
+        "show",
+        "run",
+        "sync",
+        "search"
+      ]
+    },
+    {
+      "profile_name": "fs",
+      "class_name": "FSHandler",
+      "source": "system/hub/fs.py",
+      "operations": [
+        "check",
+        "heal",
+        "classify",
+        "scan",
+        "status",
+        "backup"
+      ]
+    },
+    {
+      "profile_name": "gesundheit",
+      "class_name": "GesundheitHandler",
+      "source": "system/hub/gesundheit.py",
+      "operations": [
+        "status",
+        "contacts",
+        "diagnoses",
+        "meds",
+        "labs",
+        "docs",
+        "appointments",
+        "vorsorge",
+        "vorsorge-faellig",
+        "add-diagnosis",
+        "add-med",
+        "add-lab",
+        "add-doc",
+        "add-appointment",
+        "add-vorsorge",
+        "vorsorge-done",
+        "show",
+        "reminders",
+        "interactions",
+        "export",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "gui",
+      "class_name": "GuiHandler",
+      "source": "system/hub/gui.py",
+      "operations": [
+        "start",
+        "start-bg",
+        "stop",
+        "status",
+        "info"
+      ]
+    },
+    {
+      "profile_name": "haushalt",
+      "class_name": "HaushaltHandler",
+      "source": "system/hub/haushalt.py",
+      "operations": [
+        "status",
+        "due",
+        "today",
+        "week",
+        "costs",
+        "financial-summary",
+        "kosten-monat",
+        "add-kosten",
+        "kosten-list",
+        "insurance-check",
+        "shopping",
+        "add-shopping",
+        "done-shopping",
+        "inventory",
+        "add-item",
+        "stock-in",
+        "stock-out",
+        "pull-check",
+        "ampel",
+        "order",
+        "supplier",
+        "add-supplier",
+        "export-routine",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "healthcheck",
+      "class_name": "HealthCheckHandler",
+      "source": "system/hub/health.py",
+      "operations": [
+        "status",
+        "disk",
+        "ping",
+        "dns",
+        "network",
+        "nas",
+        "all"
+      ]
+    },
+    {
+      "profile_name": "help",
+      "class_name": "HelpHandler",
+      "source": "system/hub/help.py",
+      "operations": [
+        "list",
+        "<topic>",
+        "<folder>/<topic>"
+      ]
+    },
+    {
+      "profile_name": "hooks",
+      "class_name": "HooksHandler",
+      "source": "system/hub/hooks.py",
+      "operations": [
+        "status",
+        "events",
+        "log",
+        "test"
+      ]
+    },
+    {
+      "profile_name": "inject",
+      "class_name": "InjectHandler",
+      "source": "system/hub/inject.py",
+      "operations": [
+        "status",
+        "toggle",
+        "task",
+        "decompose"
+      ]
+    },
+    {
+      "profile_name": "integration",
+      "class_name": "IntegrationHandler",
+      "source": "system/hub/integration.py",
+      "operations": [
+        "status",
+        "push-claude",
+        "push-gemini",
+        "push-ollama",
+        "pull-claude",
+        "config",
+        "set"
+      ]
+    },
+    {
+      "profile_name": "lang",
+      "class_name": "LangHandler",
+      "source": "system/hub/lang.py",
+      "operations": [
+        "status",
+        "scan",
+        "report",
+        "list",
+        "missing",
+        "translate",
+        "add",
+        "add-language",
+        "export",
+        "import",
+        "set",
+        "dict",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "learning",
+      "class_name": "LearningHandler",
+      "source": "system/hub/learning.py",
+      "operations": [
+        "analyze",
+        "store"
+      ]
+    },
+    {
+      "profile_name": "lesson",
+      "class_name": "LessonHandler",
+      "source": "system/hub/lesson.py",
+      "operations": [
+        "add",
+        "edit",
+        "deactivate",
+        "list",
+        "last",
+        "search",
+        "show",
+        "categories"
+      ]
+    },
+    {
+      "profile_name": "literatur",
+      "class_name": "LiteraturHandler",
+      "source": "system/hub/literatur.py",
+      "operations": [
+        "add",
+        "list",
+        "search",
+        "show",
+        "edit",
+        "delete",
+        "quote",
+        "quotes",
+        "cite",
+        "export",
+        "summary",
+        "stats",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "logs",
+      "class_name": "LogsHandler",
+      "source": "system/hub/logs.py",
+      "operations": [
+        "status",
+        "show",
+        "tail",
+        "clear"
+      ]
+    },
+    {
+      "profile_name": "maintain",
+      "class_name": "MaintainHandler",
+      "source": "system/hub/maintain.py",
+      "operations": [
+        "docs",
+        "duplicates",
+        "generate",
+        "export",
+        "health",
+        "pattern",
+        "scan",
+        "clean",
+        "json",
+        "heal",
+        "docs-paths",
+        "registry",
+        "skills",
+        "sync",
+        "headers",
+        "skill-help",
+        "workflows",
+        "nul",
+        "list"
+      ]
+    },
+    {
+      "profile_name": "mcp",
+      "class_name": "McpHandler",
+      "source": "system/hub/mcp.py",
+      "operations": [
+        "serve"
+      ]
+    },
+    {
+      "profile_name": "media",
+      "class_name": "MediaHandler",
+      "source": "system/hub/media.py",
+      "operations": [
+        "add",
+        "list",
+        "search",
+        "show",
+        "edit",
+        "fav",
+        "blacklist",
+        "open",
+        "history",
+        "stats",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "mediplaner",
+      "class_name": "MediPlanerHandler",
+      "source": "system/hub/mediplaner.py",
+      "operations": [
+        "export",
+        "import",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "mem",
+      "class_name": "MemHandler",
+      "source": "system/hub/mem.py",
+      "operations": [
+        "status",
+        "write",
+        "read",
+        "fact",
+        "facts",
+        "search",
+        "context",
+        "session",
+        "sessions",
+        "working",
+        "decay"
+      ]
+    },
+    {
+      "profile_name": "memory",
+      "class_name": "MemoryHandler",
+      "source": "system/hub/memory.py",
+      "operations": [
+        "status",
+        "write",
+        "read",
+        "fact",
+        "facts",
+        "certain",
+        "uncertain",
+        "confidence",
+        "search",
+        "context",
+        "provenance",
+        "clear",
+        "session",
+        "sessions"
+      ]
+    },
+    {
+      "profile_name": "model-sockets",
+      "class_name": "ModelSocketsHandler",
+      "source": "system/hub/model_sockets.py",
+      "operations": [
+        "list",
+        "catalog",
+        "migrate",
+        "configure",
+        "bind",
+        "unbind"
+      ]
+    },
+    {
+      "profile_name": "mount",
+      "class_name": "MountHandler",
+      "source": "system/hub/mount.py",
+      "operations": [
+        "add",
+        "remove",
+        "list",
+        "restore"
+      ]
+    },
+    {
+      "profile_name": "msg",
+      "class_name": "MessagesHandler",
+      "source": "system/hub/messages.py",
+      "operations": [
+        "list",
+        "inbox",
+        "outbox",
+        "unread",
+        "send",
+        "read",
+        "ping",
+        "watch",
+        "count",
+        "delete",
+        "archive"
+      ]
+    },
+    {
+      "profile_name": "n8n-manager",
+      "class_name": "N8nManagerHandler",
+      "source": "system/hub/n8n_manager.py",
+      "operations": [
+        "status",
+        "list",
+        "sync"
+      ]
+    },
+    {
+      "profile_name": "news",
+      "class_name": "NewsHandler",
+      "source": "system/hub/news.py",
+      "operations": [
+        "add",
+        "list",
+        "fetch",
+        "items",
+        "read",
+        "remove",
+        "categories",
+        "stats",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "newspaper",
+      "class_name": "NewspaperHandler",
+      "source": "system/hub/newspaper.py",
+      "operations": [
+        "generate",
+        "deliver",
+        "config",
+        "history",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "notespace",
+      "class_name": "NoteSpaceHandler",
+      "source": "system/hub/notespace.py",
+      "operations": [
+        "status",
+        "gui",
+        "cli"
+      ]
+    },
+    {
+      "profile_name": "notify",
+      "class_name": "NotifyHandler",
+      "source": "system/hub/notify.py",
+      "operations": [
+        "send",
+        "setup",
+        "test",
+        "list",
+        "status",
+        "history",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "obsidian",
+      "class_name": "ObsidianHandler",
+      "source": "system/hub/obsidian.py",
+      "operations": [
+        "status",
+        "sync",
+        "config",
+        "daily",
+        "tasks",
+        "wiki"
+      ]
+    },
+    {
+      "profile_name": "ollama",
+      "class_name": "OllamaHandler",
+      "source": "system/hub/ollama.py",
+      "operations": [
+        "status",
+        "ask",
+        "models",
+        "embed",
+        "set_num_ctx"
+      ]
+    },
+    {
+      "profile_name": "partner",
+      "class_name": "PartnerHandler",
+      "source": "system/hub/partner.py",
+      "operations": [
+        "list",
+        "status",
+        "info",
+        "active",
+        "delegate"
+      ]
+    },
+    {
+      "profile_name": "path",
+      "class_name": "PathHandler",
+      "source": "system/hub/path.py",
+      "operations": [
+        "status",
+        "list",
+        "get",
+        "resolve",
+        "overrides",
+        "set",
+        "validate"
+      ]
+    },
+    {
+      "profile_name": "permissions",
+      "class_name": "ClaudePermissionsHandler",
+      "source": "system/hub/claude_permissions.py",
+      "operations": [
+        "list",
+        "show",
+        "set",
+        "remove",
+        "activate",
+        "deactivate",
+        "sync",
+        "reset",
+        "status",
+        "init"
+      ]
+    },
+    {
+      "profile_name": "pipeline",
+      "class_name": "PipelineCoordinationHandler",
+      "source": "system/hub/pipeline.py",
+      "operations": [
+        "resources",
+        "catalog",
+        "host",
+        "capacity",
+        "shadow"
+      ]
+    },
+    {
+      "profile_name": "plugins",
+      "class_name": "PluginsHandler",
+      "source": "system/hub/plugins.py",
+      "operations": [
+        "list",
+        "inspect",
+        "load",
+        "unload",
+        "tools",
+        "info",
+        "create",
+        "caps",
+        "trust",
+        "audit"
+      ]
+    },
+    {
+      "profile_name": "polaris",
+      "class_name": "LeaseHandler",
+      "source": "system/hub/lease.py",
+      "operations": [
+        "<resource> acquire",
+        "<resource> renew",
+        "<resource> release",
+        "<resource> status",
+        "<resource> register",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "press",
+      "class_name": "PressHandler",
+      "source": "system/hub/press.py",
+      "operations": [
+        "create",
+        "templates",
+        "list",
+        "show",
+        "send",
+        "config",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "profile",
+      "class_name": "ProfileHandler",
+      "source": "system/hub/profile.py",
+      "operations": [
+        "show",
+        "edit",
+        "update",
+        "stats",
+        "json",
+        "db",
+        "export"
+      ]
+    },
+    {
+      "profile_name": "profiler",
+      "class_name": "ProfilerHandler",
+      "source": "system/hub/profiler.py",
+      "operations": [
+        "search",
+        "profile",
+        "hash",
+        "categorize",
+        "status",
+        "stats"
+      ]
+    },
+    {
+      "profile_name": "prompt",
+      "class_name": "PromptHandler",
+      "source": "system/hub/prompt.py",
+      "operations": [
+        "list",
+        "add",
+        "get",
+        "update",
+        "delete",
+        "search",
+        "boards",
+        "board",
+        "import_promptboard"
+      ]
+    },
+    {
+      "profile_name": "recurring",
+      "class_name": "RecurringHandler",
+      "source": "system/hub/recurring.py",
+      "operations": [
+        "list",
+        "check",
+        "trigger",
+        "done",
+        "enable",
+        "disable"
+      ]
+    },
+    {
+      "profile_name": "reflection",
+      "class_name": "ReflectionHandler",
+      "source": "system/hub/reflection.py",
+      "operations": [
+        "status",
+        "review",
+        "gaps",
+        "log"
+      ]
+    },
+    {
+      "profile_name": "restore",
+      "class_name": "RestoreHandler",
+      "source": "system/hub/restore.py",
+      "operations": [
+        "file",
+        "list",
+        "category",
+        "info"
+      ]
+    },
+    {
+      "profile_name": "routine",
+      "class_name": "RoutineHandler",
+      "source": "system/hub/routine.py",
+      "operations": [
+        "list",
+        "due",
+        "done",
+        "add",
+        "show",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "sandbox",
+      "class_name": "SandboxHandler",
+      "source": "system/hub/sandbox.py",
+      "operations": [
+        "run",
+        "eval",
+        "test",
+        "shell",
+        "policy",
+        "allow",
+        "deny",
+        "limit"
+      ]
+    },
+    {
+      "profile_name": "scan",
+      "class_name": "ScanHandler",
+      "source": "system/hub/scan.py",
+      "operations": [
+        "run",
+        "status",
+        "tasks",
+        "tools",
+        "dir"
+      ]
+    },
+    {
+      "profile_name": "scheduler",
+      "class_name": "SchedulerHandler",
+      "source": "system/hub/scheduler.py",
+      "operations": [
+        "start",
+        "stop",
+        "status",
+        "doctor",
+        "pause",
+        "resume",
+        "steer",
+        "clear-steer",
+        "jobs",
+        "run",
+        "logs",
+        "maintenance",
+        "session",
+        "external"
+      ]
+    },
+    {
+      "profile_name": "schwarm",
+      "class_name": "SchwarmHandler",
+      "source": "system/hub/schwarm.py",
+      "operations": [
+        "list",
+        "run",
+        "translate",
+        "summarize",
+        "benchmark",
+        "consensus",
+        "hierarchy",
+        "stigmergy",
+        "specialist",
+        "status"
+      ]
+    },
+    {
+      "profile_name": "search",
+      "class_name": "SearchHandler",
+      "source": "system/hub/search.py",
+      "operations": [
+        "search",
+        "index",
+        "status",
+        "rebuild",
+        "tags",
+        "dupes",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "security",
+      "class_name": "SecurityHandler",
+      "source": "system/hub/security.py",
+      "operations": [
+        "scan",
+        "status",
+        "report"
+      ]
+    },
+    {
+      "profile_name": "session",
+      "class_name": "SessionHandler",
+      "source": "system/hub/session.py",
+      "operations": [
+        "start",
+        "status",
+        "end",
+        "check",
+        "next",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "settings",
+      "class_name": "SettingsHandler",
+      "source": "system/hub/settings.py",
+      "operations": [
+        "list",
+        "get",
+        "set",
+        "reset",
+        "export",
+        "import",
+        "categories"
+      ]
+    },
+    {
+      "profile_name": "setup",
+      "class_name": "SetupHandler",
+      "source": "system/hub/setup.py",
+      "operations": [
+        "mcp",
+        "n8n",
+        "hooks",
+        "hooks-remove",
+        "check",
+        "secrets",
+        "user",
+        "prosync",
+        "preflight",
+        "full-install",
+        "lang"
+      ]
+    },
+    {
+      "profile_name": "shared-mem",
+      "class_name": "SharedMemoryHandler",
+      "source": "system/hub/shared_memory.py",
+      "operations": [
+        "facts",
+        "lessons",
+        "working",
+        "sessions",
+        "consolidation",
+        "triggers",
+        "context",
+        "changes"
+      ]
+    },
+    {
+      "profile_name": "shutdown",
+      "class_name": "ShutdownHandler",
+      "source": "system/hub/shutdown.py",
+      "operations": [
+        "complete",
+        "quick",
+        "emergency"
+      ]
+    },
+    {
+      "profile_name": "skills",
+      "class_name": "SkillsHandler",
+      "source": "system/hub/skills.py",
+      "operations": [
+        "list",
+        "show",
+        "search",
+        "create",
+        "reload",
+        "export",
+        "export-agent",
+        "install",
+        "hierarchy",
+        "version"
+      ]
+    },
+    {
+      "profile_name": "smarthome",
+      "class_name": "SmartHomeHandler",
+      "source": "system/hub/smarthome.py",
+      "operations": [
+        "status",
+        "devices",
+        "wifi",
+        "bandwidth",
+        "calls",
+        "reconnect",
+        "info",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "snapshot",
+      "class_name": "SnapshotHandler",
+      "source": "system/hub/snapshot.py",
+      "operations": [
+        "create",
+        "load",
+        "list",
+        "delete"
+      ]
+    },
+    {
+      "profile_name": "sources",
+      "class_name": "SourcesHandler",
+      "source": "system/hub/sources.py",
+      "operations": [
+        "status",
+        "toggle",
+        "inject",
+        "get",
+        "search",
+        "contacts",
+        "problems"
+      ]
+    },
+    {
+      "profile_name": "startup",
+      "class_name": "StartupHandler",
+      "source": "system/hub/startup.py",
+      "operations": [
+        "run",
+        "quick",
+        "ensure",
+        "mode"
+      ]
+    },
+    {
+      "profile_name": "status",
+      "class_name": "StatusHandler",
+      "source": "system/hub/status.py",
+      "operations": [
+        "show"
+      ]
+    },
+    {
+      "profile_name": "steuer",
+      "class_name": "SteuerHandler",
+      "source": "system/hub/steuer.py",
+      "operations": [
+        "status",
+        "scan",
+        "init",
+        "list",
+        "profile",
+        "watch",
+        "export",
+        "posten",
+        "beleg",
+        "batch",
+        "tools",
+        "check",
+        "eigenbeleg"
+      ]
+    },
+    {
+      "profile_name": "subscription_agents",
+      "class_name": "SubscriptionAgentsHandler",
+      "source": "system/hub/subscription_agents.py",
+      "operations": [
+        "compose"
+      ]
+    },
+    {
+      "profile_name": "sync",
+      "class_name": "SyncHandler",
+      "source": "system/hub/sync.py",
+      "operations": [
+        "skills",
+        "tools",
+        "all",
+        "status"
+      ]
+    },
+    {
+      "profile_name": "task",
+      "class_name": "TaskHandler",
+      "source": "system/hub/task.py",
+      "operations": [
+        "add",
+        "list",
+        "edit",
+        "done",
+        "block",
+        "unblock",
+        "reopen",
+        "archive",
+        "show",
+        "delete",
+        "purge-cancelled",
+        "priority",
+        "assign",
+        "depends",
+        "next",
+        "take",
+        "renew",
+        "submit",
+        "return",
+        "sync",
+        "pull",
+        "lead",
+        "claim",
+        "release",
+        "lease",
+        "lease-show",
+        "lease-renew",
+        "lease-release",
+        "reap",
+        "result-history",
+        "result-policy",
+        "review-backfill",
+        "result-correct",
+        "sweep",
+        "taskplan",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "task-lease",
+      "class_name": "TaskLeaseHandler",
+      "source": "system/hub/task_lease.py",
+      "operations": [
+        "status",
+        "set"
+      ]
+    },
+    {
+      "profile_name": "telemetry",
+      "class_name": "TelemetryHandler",
+      "source": "system/hub/telemetry.py",
+      "operations": [
+        "report",
+        "status",
+        "reset"
+      ]
+    },
+    {
+      "profile_name": "test",
+      "class_name": "TestHandler",
+      "source": "system/hub/test.py",
+      "operations": [
+        "self",
+        "run",
+        "pytest",
+        "compare",
+        "profiles",
+        "results"
+      ]
+    },
+    {
+      "profile_name": "theme",
+      "class_name": "ThemeHandler",
+      "source": "system/hub/theme.py",
+      "operations": [
+        "status",
+        "set"
+      ]
+    },
+    {
+      "profile_name": "timer",
+      "class_name": "TimerHandler",
+      "source": "system/hub/time.py",
+      "operations": [
+        "start",
+        "stop",
+        "list",
+        "clear"
+      ]
+    },
+    {
+      "profile_name": "tokens",
+      "class_name": "TokensHandler",
+      "source": "system/hub/tokens.py",
+      "operations": [
+        "status",
+        "today",
+        "week",
+        "report"
+      ]
+    },
+    {
+      "profile_name": "tools",
+      "class_name": "ToolsHandler",
+      "source": "system/hub/tools.py",
+      "operations": [
+        "list",
+        "db",
+        "show",
+        "run",
+        "search",
+        "suggest",
+        "migrate",
+        "docs"
+      ]
+    },
+    {
+      "profile_name": "trash",
+      "class_name": "TrashHandler",
+      "source": "system/hub/trash.py",
+      "operations": [
+        "list",
+        "delete",
+        "restore",
+        "purge",
+        "info",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "tuev",
+      "class_name": "TuevHandler",
+      "source": "system/hub/tuev.py",
+      "operations": [
+        "status",
+        "check",
+        "run",
+        "renew",
+        "init"
+      ]
+    },
+    {
+      "profile_name": "update",
+      "class_name": "UpdateHandler",
+      "source": "system/hub/update.py",
+      "operations": [
+        "check",
+        "status",
+        "apply",
+        "rollback",
+        "verify",
+        "migrations"
+      ]
+    },
+    {
+      "profile_name": "upgrade",
+      "class_name": "UpgradeHandler",
+      "source": "system/hub/upgrade.py",
+      "operations": [
+        "list",
+        "status",
+        "check",
+        "repair",
+        "core",
+        "templates",
+        "agents",
+        "skills",
+        "hub",
+        "tools",
+        "connectors",
+        "partners",
+        "docs",
+        "gui",
+        "file",
+        "downgrade",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "usecase",
+      "class_name": "UsecaseHandler",
+      "source": "system/hub/tuev.py",
+      "operations": [
+        "add",
+        "list",
+        "run",
+        "run-all",
+        "show"
+      ]
+    },
+    {
+      "profile_name": "versicherung",
+      "class_name": "VersicherungHandler",
+      "source": "system/hub/versicherung.py",
+      "operations": [
+        "list",
+        "show",
+        "add",
+        "edit",
+        "delete",
+        "status",
+        "fristen",
+        "check",
+        "claim",
+        "import",
+        "schedule-import",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "watcher",
+      "class_name": "WatcherHandler",
+      "source": "system/hub/watcher.py",
+      "operations": [
+        "start",
+        "stop",
+        "status",
+        "classify",
+        "logs",
+        "events",
+        "help"
+      ]
+    },
+    {
+      "profile_name": "web-parse",
+      "class_name": "WebParseHandler",
+      "source": "system/hub/web_parse.py",
+      "operations": [
+        "url",
+        "clean",
+        "cache"
+      ]
+    },
+    {
+      "profile_name": "web-scrape",
+      "class_name": "WebScrapeHandler",
+      "source": "system/hub/web_scrape.py",
+      "operations": [
+        "get",
+        "links",
+        "forms",
+        "screenshot",
+        "headers"
+      ]
+    },
+    {
+      "profile_name": "wiki",
+      "class_name": "WikiHandler",
+      "source": "system/hub/wiki.py",
+      "operations": [
+        "list",
+        "folders",
+        "read",
+        "<thema>",
+        "<ordner>/<thema>",
+        "search",
+        "provenance",
+        "sync"
+      ]
+    },
+    {
+      "profile_name": "worker-policy",
+      "class_name": "WorkerPolicyHandler",
+      "source": "system/hub/worker_policy.py",
+      "operations": [
+        "status",
+        "set",
+        "task_show",
+        "task_set"
+      ]
+    }
+  ],
+  "http_routes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "handler": "index",
+      "line": 5901
+    },
+    {
+      "method": "GET",
+      "path": "/agenten/blueprints",
+      "handler": "agenten_blueprints_page",
+      "line": 5932
+    },
+    {
+      "method": "GET",
+      "path": "/agenten/fabrika",
+      "handler": "agenten_fabrika_page",
+      "line": 5921
+    },
+    {
+      "method": "GET",
+      "path": "/agenten/marblerun",
+      "handler": "agenten_marblerun_page",
+      "line": 5959
+    },
+    {
+      "method": "GET",
+      "path": "/agenten/running",
+      "handler": "agenten_running_page",
+      "line": 5951
+    },
+    {
+      "method": "GET",
+      "path": "/agenten/sessions",
+      "handler": "agenten_sessions_page",
+      "line": 6122
+    },
+    {
+      "method": "GET",
+      "path": "/agenten/subscription-agents",
+      "handler": "subscription_agents_page",
+      "line": 5943
+    },
+    {
+      "method": "GET",
+      "path": "/agents",
+      "handler": "agents_page",
+      "line": 6449
+    },
+    {
+      "method": "GET",
+      "path": "/agents-board",
+      "handler": "skills_board_page",
+      "line": 6540
+    },
+    {
+      "method": "GET",
+      "path": "/agents/ati",
+      "handler": "ati_agent_page",
+      "line": 6458
+    },
+    {
+      "method": "GET",
+      "path": "/agents/foerderplaner",
+      "handler": "foerderplaner_dashboard_page",
+      "line": 6529
+    },
+    {
+      "method": "GET",
+      "path": "/agents/gesundheit",
+      "handler": "gesundheit_dashboard_page",
+      "line": 6498
+    },
+    {
+      "method": "GET",
+      "path": "/agents/persoenlich",
+      "handler": "persoenlich_dashboard_page",
+      "line": 6514
+    },
+    {
+      "method": "GET",
+      "path": "/agents/steuer",
+      "handler": "steuer_dashboard_page",
+      "line": 6480
+    },
+    {
+      "method": "GET",
+      "path": "/anonymization",
+      "handler": "serve_anonymization",
+      "line": 15492
+    },
+    {
+      "method": "GET",
+      "path": "/anonymizer",
+      "handler": "anonymizer_fachseite_page",
+      "line": 6099
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents",
+      "handler": "api_list_agents",
+      "line": 3521
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/runtime",
+      "handler": "api_agent_runtime",
+      "line": 3594
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agents/{agent_id}/toggle",
+      "handler": "api_toggle_agent",
+      "line": 3652
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai/headless/run",
+      "handler": "api_ai_headless_run",
+      "line": 7102
+    },
+    {
+      "method": "GET",
+      "path": "/api/anonymization/clients",
+      "handler": "list_anon_clients",
+      "line": 15924
+    },
+    {
+      "method": "POST",
+      "path": "/api/anonymization/profile",
+      "handler": "create_anon_profile",
+      "line": 15946
+    },
+    {
+      "method": "POST",
+      "path": "/api/anonymization/upload",
+      "handler": "upload_anon_file",
+      "line": 15984
+    },
+    {
+      "method": "GET",
+      "path": "/api/assignees",
+      "handler": "list_assignees",
+      "line": 3362
+    },
+    {
+      "method": "POST",
+      "path": "/api/ati/session/start",
+      "handler": "start_ati_session",
+      "line": 5267
+    },
+    {
+      "method": "POST",
+      "path": "/api/ati/session/start-cli",
+      "handler": "start_ati_session_cli",
+      "line": 5401
+    },
+    {
+      "method": "GET",
+      "path": "/api/ati/sessions",
+      "handler": "get_ati_sessions",
+      "line": 5252
+    },
+    {
+      "method": "GET",
+      "path": "/api/ati/stats",
+      "handler": "get_ati_stats",
+      "line": 5191
+    },
+    {
+      "method": "GET",
+      "path": "/api/ati/tasks",
+      "handler": "list_scanned_tasks",
+      "line": 3700
+    },
+    {
+      "method": "POST",
+      "path": "/api/ati/tasks",
+      "handler": "create_ati_task",
+      "line": 5526
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/ati/tasks/{task_id}",
+      "handler": "delete_ati_task",
+      "line": 5649
+    },
+    {
+      "method": "GET",
+      "path": "/api/ati/tasks/{task_id}",
+      "handler": "get_ati_task",
+      "line": 5231
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ati/tasks/{task_id}",
+      "handler": "update_ati_task",
+      "line": 5602
+    },
+    {
+      "method": "POST",
+      "path": "/api/auto-sessions/launch",
+      "handler": "launch_auto_session",
+      "line": 12319
+    },
+    {
+      "method": "GET",
+      "path": "/api/bach-agents",
+      "handler": "get_bach_agents",
+      "line": 7577
+    },
+    {
+      "method": "GET",
+      "path": "/api/bericht/clients",
+      "handler": "api_bericht_clients",
+      "line": 3764
+    },
+    {
+      "method": "POST",
+      "path": "/api/bericht/export",
+      "handler": "api_bericht_export",
+      "line": 3788
+    },
+    {
+      "method": "POST",
+      "path": "/api/bericht/generate",
+      "handler": "api_bericht_generate",
+      "line": 3816
+    },
+    {
+      "method": "GET",
+      "path": "/api/bericht/status",
+      "handler": "api_bericht_status",
+      "line": 3740
+    },
+    {
+      "method": "GET",
+      "path": "/api/contacts",
+      "handler": "get_contacts",
+      "line": 14407
+    },
+    {
+      "method": "POST",
+      "path": "/api/contacts",
+      "handler": "add_contact",
+      "line": 14466
+    },
+    {
+      "method": "GET",
+      "path": "/api/contacts/export",
+      "handler": "export_contacts",
+      "line": 14559
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/contacts/{contact_id}",
+      "handler": "delete_contact",
+      "line": 14545
+    },
+    {
+      "method": "GET",
+      "path": "/api/contacts/{contact_id}",
+      "handler": "get_contact",
+      "line": 14449
+    },
+    {
+      "method": "PUT",
+      "path": "/api/contacts/{contact_id}",
+      "handler": "update_contact",
+      "line": 14504
+    },
+    {
+      "method": "GET",
+      "path": "/api/daemon/chains",
+      "handler": "list_chains",
+      "line": 4398
+    },
+    {
+      "method": "POST",
+      "path": "/api/daemon/chains",
+      "handler": "create_chain",
+      "line": 4418
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/daemon/chains/{chain_id}",
+      "handler": "delete_chain",
+      "line": 4562
+    },
+    {
+      "method": "PUT",
+      "path": "/api/daemon/chains/{chain_id}",
+      "handler": "update_chain",
+      "line": 4460
+    },
+    {
+      "method": "POST",
+      "path": "/api/daemon/chains/{chain_id}/run",
+      "handler": "run_chain",
+      "line": 4592
+    },
+    {
+      "method": "GET",
+      "path": "/api/daemon/chains/{chain_id}/runs",
+      "handler": "list_chain_runs",
+      "line": 4626
+    },
+    {
+      "method": "PUT",
+      "path": "/api/daemon/chains/{chain_id}/toggle",
+      "handler": "toggle_chain",
+      "line": 4532
+    },
+    {
+      "method": "PUT",
+      "path": "/api/daemon/config",
+      "handler": "update_daemon_config",
+      "line": 10307
+    },
+    {
+      "method": "GET",
+      "path": "/api/daemon/jobs",
+      "handler": "list_scheduler_jobs",
+      "line": 4102
+    },
+    {
+      "method": "POST",
+      "path": "/api/daemon/jobs",
+      "handler": "create_daemon_job",
+      "line": 4122
+    },
+    {
+      "method": "POST",
+      "path": "/api/daemon/jobs/{job_id}/run",
+      "handler": "run_daemon_job",
+      "line": 4364
+    },
+    {
+      "method": "PUT",
+      "path": "/api/daemon/jobs/{job_id}/toggle",
+      "handler": "toggle_daemon_job",
+      "line": 4152
+    },
+    {
+      "method": "POST",
+      "path": "/api/daemon/kill-all",
+      "handler": "kill_all_daemons",
+      "line": 4357
+    },
+    {
+      "method": "GET",
+      "path": "/api/daemon/runs",
+      "handler": "list_scheduler_runs",
+      "line": 4182
+    },
+    {
+      "method": "POST",
+      "path": "/api/daemon/start",
+      "handler": "start_daemon",
+      "line": 4308
+    },
+    {
+      "method": "GET",
+      "path": "/api/daemon/status",
+      "handler": "get_daemon_status",
+      "line": 4227
+    },
+    {
+      "method": "POST",
+      "path": "/api/daemon/stop",
+      "handler": "stop_daemon",
+      "line": 4343
+    },
+    {
+      "method": "GET",
+      "path": "/api/denkarium",
+      "handler": "denkarium_list",
+      "line": 6616
+    },
+    {
+      "method": "POST",
+      "path": "/api/denkarium",
+      "handler": "denkarium_create",
+      "line": 6672
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/denkarium/{entry_id}",
+      "handler": "denkarium_delete",
+      "line": 6730
+    },
+    {
+      "method": "POST",
+      "path": "/api/denkarium/{entry_id}/archive",
+      "handler": "denkarium_archive_direct",
+      "line": 6754
+    },
+    {
+      "method": "POST",
+      "path": "/api/denkarium/{entry_id}/promote",
+      "handler": "denkarium_promote",
+      "line": 6784
+    },
+    {
+      "method": "POST",
+      "path": "/api/denkarium/{entry_id}/unarchive",
+      "handler": "denkarium_unarchive_direct",
+      "line": 6771
+    },
+    {
+      "method": "GET",
+      "path": "/api/devices",
+      "handler": "api_list_devices",
+      "line": 6867
+    },
+    {
+      "method": "POST",
+      "path": "/api/devices",
+      "handler": "api_create_device",
+      "line": 6873
+    },
+    {
+      "method": "POST",
+      "path": "/api/devices/auto-session",
+      "handler": "api_auto_session_device",
+      "line": 6968
+    },
+    {
+      "method": "POST",
+      "path": "/api/devices/session/logout",
+      "handler": "api_logout_device",
+      "line": 7020
+    },
+    {
+      "method": "POST",
+      "path": "/api/devices/verify",
+      "handler": "api_verify_device",
+      "line": 6908
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/devices/{name}",
+      "handler": "api_revoke_device",
+      "line": 6887
+    },
+    {
+      "method": "POST",
+      "path": "/api/devices/{name}/revoke",
+      "handler": "api_revoke_device",
+      "line": 6887
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs/help/search/{term}",
+      "handler": "search_help",
+      "line": 8418
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/docs/help/{name:path}",
+      "handler": "delete_help_file",
+      "line": 8379
+    },
+    {
+      "method": "GET",
+      "path": "/api/docs/help/{name:path}",
+      "handler": "get_help_file",
+      "line": 8189
+    },
+    {
+      "method": "PUT",
+      "path": "/api/docs/help/{name:path}",
+      "handler": "update_help_file",
+      "line": 8264
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/accounts",
+      "handler": "financial_accounts",
+      "line": 9431
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/accounts",
+      "handler": "create_mail_account",
+      "line": 9479
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/accounts/{account_id}",
+      "handler": "delete_mail_account",
+      "line": 9595
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/accounts/{account_id}/test",
+      "handler": "test_mail_account",
+      "line": 9707
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/accounts/{account_id}/toggle",
+      "handler": "toggle_mail_account",
+      "line": 9655
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/bank-accounts",
+      "handler": "get_bank_accounts",
+      "line": 14912
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/bank-accounts",
+      "handler": "add_bank_account",
+      "line": 14922
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/bank-accounts/{account_id}",
+      "handler": "delete_bank_account",
+      "line": 14959
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/bank-accounts/{account_id}",
+      "handler": "update_bank_account",
+      "line": 14940
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/categories",
+      "handler": "financial_categories",
+      "line": 9065
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/config",
+      "handler": "financial_config",
+      "line": 9227
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/config",
+      "handler": "update_financial_config",
+      "line": 9251
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/contracts",
+      "handler": "get_contracts",
+      "line": 13638
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/contracts",
+      "handler": "add_contract",
+      "line": 13668
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/contracts/{contract_id}",
+      "handler": "delete_contract",
+      "line": 13740
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/contracts/{contract_id}",
+      "handler": "update_contract",
+      "line": 13705
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/credits",
+      "handler": "get_credits",
+      "line": 14973
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/credits",
+      "handler": "add_credit",
+      "line": 14989
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/credits/{credit_id}",
+      "handler": "delete_credit",
+      "line": 15055
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/credits/{credit_id}",
+      "handler": "update_credit",
+      "line": 15020
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/deadlines",
+      "handler": "get_financial_deadlines",
+      "line": 13810
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/emails",
+      "handler": "financial_emails",
+      "line": 8843
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/emails/{email_id}",
+      "handler": "get_financial_email",
+      "line": 8919
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/emails/{email_id}/status",
+      "handler": "update_email_status",
+      "line": 9307
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/export",
+      "handler": "financial_export",
+      "line": 9339
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/false-positives",
+      "handler": "get_false_positives",
+      "line": 13128
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/false-positives",
+      "handler": "add_false_positive",
+      "line": 13148
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/false-positives/{message_id}",
+      "handler": "remove_false_positive",
+      "line": 13238
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/gmail/find-credentials",
+      "handler": "find_gmail_credentials",
+      "line": 9849
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/gmail/setup",
+      "handler": "setup_gmail_api",
+      "line": 9887
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/gmail/status",
+      "handler": "gmail_api_status",
+      "line": 10083
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/imap-presets",
+      "handler": "get_imap_presets",
+      "line": 9817
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/insurances",
+      "handler": "get_insurances",
+      "line": 13768
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/insurances",
+      "handler": "add_insurance",
+      "line": 13926
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/insurances/{ins_id}",
+      "handler": "delete_insurance",
+      "line": 13992
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/insurances/{ins_id}",
+      "handler": "update_insurance",
+      "line": 13960
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/profiles",
+      "handler": "get_mail_profiles",
+      "line": 12862
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/profiles",
+      "handler": "create_mail_profile",
+      "line": 12948
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/profiles/import",
+      "handler": "import_profiles_from_universal_mail",
+      "line": 13464
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/profiles/test",
+      "handler": "test_mail_profile",
+      "line": 13274
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/profiles/{profile_id}",
+      "handler": "delete_mail_profile",
+      "line": 13088
+    },
+    {
+      "method": "PUT",
+      "path": "/api/financial/profiles/{profile_id}",
+      "handler": "update_mail_profile",
+      "line": 13022
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/save-json",
+      "handler": "save_financial_json",
+      "line": 9179
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/status",
+      "handler": "financial_status",
+      "line": 8724
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/subscriptions",
+      "handler": "financial_subscriptions",
+      "line": 8949
+    },
+    {
+      "method": "GET",
+      "path": "/api/financial/subscriptions-unified",
+      "handler": "financial_subscriptions_unified",
+      "line": 8993
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/financial/subscriptions/{sub_id}",
+      "handler": "delete_financial_subscription",
+      "line": 9039
+    },
+    {
+      "method": "POST",
+      "path": "/api/financial/sync",
+      "handler": "financial_sync",
+      "line": 9117
+    },
+    {
+      "method": "GET",
+      "path": "/api/gui/architecture/concepts",
+      "handler": "get_gui_architecture_concepts",
+      "line": 2140
+    },
+    {
+      "method": "GET",
+      "path": "/api/gui/backend-origin",
+      "handler": "get_gui_backend_origin",
+      "line": 2033
+    },
+    {
+      "method": "GET",
+      "path": "/api/gui/brand",
+      "handler": "get_gui_brand",
+      "line": 2051
+    },
+    {
+      "method": "GET",
+      "path": "/api/gui/capabilities",
+      "handler": "get_gui_capabilities",
+      "line": 2059
+    },
+    {
+      "method": "GET",
+      "path": "/api/gui/kit-manifest",
+      "handler": "get_gui_kit_manifest",
+      "line": 2127
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "handler": "get_api_health",
+      "line": 6020
+    },
+    {
+      "method": "GET",
+      "path": "/api/help",
+      "handler": "list_help_files",
+      "line": 8024
+    },
+    {
+      "method": "POST",
+      "path": "/api/help",
+      "handler": "create_help_file",
+      "line": 8320
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/help/{name:path}",
+      "handler": "delete_help_file",
+      "line": 8379
+    },
+    {
+      "method": "GET",
+      "path": "/api/help/{name:path}",
+      "handler": "get_help_file",
+      "line": 8189
+    },
+    {
+      "method": "PUT",
+      "path": "/api/help/{name:path}",
+      "handler": "update_help_file",
+      "line": 8264
+    },
+    {
+      "method": "GET",
+      "path": "/api/inbox/analyze/{filename}",
+      "handler": "analyze_inbox_file",
+      "line": 15700
+    },
+    {
+      "method": "GET",
+      "path": "/api/inbox/config",
+      "handler": "api_get_inbox_config",
+      "line": 7078
+    },
+    {
+      "method": "POST",
+      "path": "/api/inbox/config",
+      "handler": "api_save_inbox_config",
+      "line": 7147
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/inbox/folders",
+      "handler": "remove_inbox_folder",
+      "line": 15319
+    },
+    {
+      "method": "GET",
+      "path": "/api/inbox/folders",
+      "handler": "get_inbox_folders",
+      "line": 15173
+    },
+    {
+      "method": "POST",
+      "path": "/api/inbox/folders",
+      "handler": "add_inbox_folder",
+      "line": 15197
+    },
+    {
+      "method": "PUT",
+      "path": "/api/inbox/folders",
+      "handler": "update_inbox_folder",
+      "line": 15243
+    },
+    {
+      "method": "GET",
+      "path": "/api/inbox/preview/{filename}",
+      "handler": "get_inbox_preview",
+      "line": 15668
+    },
+    {
+      "method": "GET",
+      "path": "/api/inbox/rules",
+      "handler": "get_inbox_rules",
+      "line": 15351
+    },
+    {
+      "method": "POST",
+      "path": "/api/inbox/rules",
+      "handler": "add_inbox_rule",
+      "line": 15379
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/inbox/rules/{rule_id}",
+      "handler": "delete_inbox_rule",
+      "line": 15459
+    },
+    {
+      "method": "PUT",
+      "path": "/api/inbox/rules/{rule_id}",
+      "handler": "update_inbox_rule",
+      "line": 15425
+    },
+    {
+      "method": "POST",
+      "path": "/api/inbox/scan",
+      "handler": "run_inbox_scan",
+      "line": 15502
+    },
+    {
+      "method": "PUT",
+      "path": "/api/inbox/settings",
+      "handler": "update_inbox_settings",
+      "line": 15788
+    },
+    {
+      "method": "POST",
+      "path": "/api/inbox/sort",
+      "handler": "sort_inbox_file",
+      "line": 15590
+    },
+    {
+      "method": "GET",
+      "path": "/api/inbox/status",
+      "handler": "get_inbox_status",
+      "line": 15086
+    },
+    {
+      "method": "GET",
+      "path": "/api/inbox/unsorted",
+      "handler": "get_unsorted_files",
+      "line": 15542
+    },
+    {
+      "method": "GET",
+      "path": "/api/life/providers",
+      "handler": "get_life_providers",
+      "line": 6035
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/facts",
+      "handler": "get_facts",
+      "line": 10877
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/facts",
+      "handler": "add_fact",
+      "line": 10907
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/memory/facts/{fact_id}",
+      "handler": "delete_fact",
+      "line": 10947
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/lessons",
+      "handler": "get_lessons",
+      "line": 10727
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/lessons",
+      "handler": "add_lesson",
+      "line": 10847
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/memory/lessons/{lesson_id}",
+      "handler": "delete_lesson",
+      "line": 10993
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/maintenance/cleanup",
+      "handler": "memory_maintenance_cleanup",
+      "line": 11095
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/overview",
+      "handler": "get_memory_overview",
+      "line": 10510
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/sessions",
+      "handler": "get_sessions",
+      "line": 10775
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/sessions",
+      "handler": "add_session_memory",
+      "line": 12670
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/sessions/{session_id}",
+      "handler": "get_session_detail",
+      "line": 11169
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/stats/db",
+      "handler": "get_memory_db_stats",
+      "line": 11017
+    },
+    {
+      "method": "GET",
+      "path": "/api/memory/working",
+      "handler": "get_working_memory",
+      "line": 10697
+    },
+    {
+      "method": "POST",
+      "path": "/api/memory/working",
+      "handler": "add_working_memory",
+      "line": 10817
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/memory/working/{entry_id}",
+      "handler": "delete_working_memory",
+      "line": 10971
+    },
+    {
+      "method": "GET",
+      "path": "/api/messages",
+      "handler": "list_messages",
+      "line": 4019
+    },
+    {
+      "method": "POST",
+      "path": "/api/messages",
+      "handler": "create_message",
+      "line": 4036
+    },
+    {
+      "method": "POST",
+      "path": "/api/messages/mark-all-read",
+      "handler": "mark_all_messages_read",
+      "line": 4050
+    },
+    {
+      "method": "PUT",
+      "path": "/api/messages/{msg_id}/archive",
+      "handler": "archive_message",
+      "line": 4057
+    },
+    {
+      "method": "PUT",
+      "path": "/api/messages/{msg_id}/delete",
+      "handler": "delete_message",
+      "line": 4064
+    },
+    {
+      "method": "PUT",
+      "path": "/api/messages/{msg_id}/read",
+      "handler": "mark_message_read",
+      "line": 4043
+    },
+    {
+      "method": "GET",
+      "path": "/api/mounts",
+      "handler": "api_list_mounts",
+      "line": 3856
+    },
+    {
+      "method": "POST",
+      "path": "/api/mounts",
+      "handler": "api_add_mount",
+      "line": 3926
+    },
+    {
+      "method": "POST",
+      "path": "/api/mounts/restore",
+      "handler": "api_restore_mounts",
+      "line": 3978
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/mounts/{alias}",
+      "handler": "api_remove_mount",
+      "line": 3952
+    },
+    {
+      "method": "GET",
+      "path": "/api/partners",
+      "handler": "get_partners",
+      "line": 4071
+    },
+    {
+      "method": "POST",
+      "path": "/api/presence",
+      "handler": "update_presence",
+      "line": 3497
+    },
+    {
+      "method": "PUT",
+      "path": "/api/prompt-generator/daemon/config",
+      "handler": "update_prompt_daemon_config",
+      "line": 12092
+    },
+    {
+      "method": "GET",
+      "path": "/api/prompt-generator/daemon/status",
+      "handler": "get_prompt_daemon_status",
+      "line": 12002
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompt-generator/daemon/toggle",
+      "handler": "toggle_prompt_daemon",
+      "line": 12150
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompt-generator/send/copy",
+      "handler": "copy_prompt_to_clipboard",
+      "line": 11974
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompt-generator/send/session",
+      "handler": "send_prompt_direct_session",
+      "line": 11855
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompt-generator/send/task",
+      "handler": "send_prompt_as_task",
+      "line": 11827
+    },
+    {
+      "method": "GET",
+      "path": "/api/prompt-generator/template/{template_path:path}",
+      "handler": "get_prompt_template",
+      "line": 11775
+    },
+    {
+      "method": "GET",
+      "path": "/api/prompt-generator/templates",
+      "handler": "get_prompt_templates",
+      "line": 11747
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompt-generator/templates/save",
+      "handler": "save_prompt_template",
+      "line": 12376
+    },
+    {
+      "method": "GET",
+      "path": "/api/prompt-library",
+      "handler": "list_prompt_library",
+      "line": 11612
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompt-library",
+      "handler": "create_prompt_library_entry",
+      "line": 11661
+    },
+    {
+      "method": "POST",
+      "path": "/api/prompt-library/import-promptboard",
+      "handler": "import_promptboard_library",
+      "line": 11732
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/prompt-library/{prompt_id}",
+      "handler": "delete_prompt_library_entry",
+      "line": 11715
+    },
+    {
+      "method": "GET",
+      "path": "/api/prompt-library/{prompt_id}",
+      "handler": "get_prompt_library_entry",
+      "line": 11643
+    },
+    {
+      "method": "PUT",
+      "path": "/api/prompt-library/{prompt_id}",
+      "handler": "update_prompt_library_entry",
+      "line": 11685
+    },
+    {
+      "method": "GET",
+      "path": "/api/recurring",
+      "handler": "get_recurring_tasks",
+      "line": 10384
+    },
+    {
+      "method": "POST",
+      "path": "/api/recurring/check",
+      "handler": "check_recurring",
+      "line": 10416
+    },
+    {
+      "method": "POST",
+      "path": "/api/recurring/trigger/{task_id}",
+      "handler": "trigger_recurring",
+      "line": 10448
+    },
+    {
+      "method": "GET",
+      "path": "/api/report/pending",
+      "handler": "list_pending_reports",
+      "line": 16249
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/session/start",
+      "handler": "start_report_session",
+      "line": 16021
+    },
+    {
+      "method": "GET",
+      "path": "/api/report/session/{session_id}",
+      "handler": "get_session_status",
+      "line": 16235
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/session/{session_id}/anonymize",
+      "handler": "anonymize_session_documents",
+      "line": 16116
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/session/{session_id}/cleanup",
+      "handler": "cleanup_session",
+      "line": 16214
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/session/{session_id}/generate",
+      "handler": "generate_session_report",
+      "line": 16181
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/session/{session_id}/import",
+      "handler": "import_files_to_session",
+      "line": 16036
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/session/{session_id}/profile",
+      "handler": "create_session_profile",
+      "line": 16077
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/session/{session_id}/prompt",
+      "handler": "generate_session_prompt",
+      "line": 16143
+    },
+    {
+      "method": "GET",
+      "path": "/api/resources/{name}/lease",
+      "handler": "read_resource_lease_route",
+      "line": 3192
+    },
+    {
+      "method": "POST",
+      "path": "/api/resources/{name}/lease",
+      "handler": "acquire_resource_lease_route",
+      "line": 3181
+    },
+    {
+      "method": "POST",
+      "path": "/api/resources/{name}/lease/release",
+      "handler": "release_resource_lease_route",
+      "line": 3208
+    },
+    {
+      "method": "POST",
+      "path": "/api/resources/{name}/lease/renew",
+      "handler": "renew_resource_lease_route",
+      "line": 3200
+    },
+    {
+      "method": "GET",
+      "path": "/api/routines",
+      "handler": "get_routines",
+      "line": 14625
+    },
+    {
+      "method": "POST",
+      "path": "/api/routines",
+      "handler": "add_routine",
+      "line": 14716
+    },
+    {
+      "method": "GET",
+      "path": "/api/routines/export",
+      "handler": "export_routines",
+      "line": 14860
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/routines/{routine_id}",
+      "handler": "delete_routine",
+      "line": 14845
+    },
+    {
+      "method": "GET",
+      "path": "/api/routines/{routine_id}",
+      "handler": "get_routine",
+      "line": 14689
+    },
+    {
+      "method": "PUT",
+      "path": "/api/routines/{routine_id}",
+      "handler": "update_routine",
+      "line": 14754
+    },
+    {
+      "method": "POST",
+      "path": "/api/routines/{routine_id}/complete",
+      "handler": "complete_routine",
+      "line": 14788
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanned-tasks",
+      "handler": "list_scanned_tasks",
+      "line": 3700
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanner/config",
+      "handler": "get_scan_config",
+      "line": 5157
+    },
+    {
+      "method": "POST",
+      "path": "/api/scanner/run",
+      "handler": "run_scanner",
+      "line": 5070
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanner/status",
+      "handler": "get_scanner_status",
+      "line": 5102
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanner/tools",
+      "handler": "list_tools",
+      "line": 5140
+    },
+    {
+      "method": "POST",
+      "path": "/api/scanner/trigger",
+      "handler": "trigger_scanner",
+      "line": 5028
+    },
+    {
+      "method": "GET",
+      "path": "/api/session/activities",
+      "handler": "get_session_activities",
+      "line": 12432
+    },
+    {
+      "method": "POST",
+      "path": "/api/session/end",
+      "handler": "end_session",
+      "line": 12618
+    },
+    {
+      "method": "POST",
+      "path": "/api/session/generate-summary",
+      "handler": "generate_session_summary",
+      "line": 12544
+    },
+    {
+      "method": "GET",
+      "path": "/api/settings/theme",
+      "handler": "get_gui_theme",
+      "line": 5805
+    },
+    {
+      "method": "PUT",
+      "path": "/api/settings/theme",
+      "handler": "update_gui_theme",
+      "line": 5814
+    },
+    {
+      "method": "GET",
+      "path": "/api/settings/ui",
+      "handler": "get_gui_ui",
+      "line": 5830
+    },
+    {
+      "method": "PUT",
+      "path": "/api/settings/ui",
+      "handler": "update_gui_ui",
+      "line": 5839
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills",
+      "handler": "list_skills",
+      "line": 5675
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills-board/hierarchy",
+      "handler": "get_skills_hierarchy",
+      "line": 7866
+    },
+    {
+      "method": "PUT",
+      "path": "/api/skills-board/hierarchy",
+      "handler": "save_skills_hierarchy",
+      "line": 8001
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills-board/item-file",
+      "handler": "get_skills_item_file",
+      "line": 7846
+    },
+    {
+      "method": "PUT",
+      "path": "/api/skills-board/item-file",
+      "handler": "update_skills_item_file",
+      "line": 7856
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills/categories",
+      "handler": "list_skill_categories",
+      "line": 5705
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills/{skill_id}",
+      "handler": "get_skill",
+      "line": 5726
+    },
+    {
+      "method": "GET",
+      "path": "/api/status",
+      "handler": "get_status",
+      "line": 2149
+    },
+    {
+      "method": "GET",
+      "path": "/api/steuer/dokumente/unlinked",
+      "handler": "api_steuer_unlinked_docs",
+      "line": 7301
+    },
+    {
+      "method": "POST",
+      "path": "/api/steuer/match-bank",
+      "handler": "api_steuer_match_bank",
+      "line": 7381
+    },
+    {
+      "method": "POST",
+      "path": "/api/steuer/posten/{posten_id}/link",
+      "handler": "api_steuer_link_posten",
+      "line": 7337
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/logs",
+      "handler": "list_system_logs",
+      "line": 5746
+    },
+    {
+      "method": "GET",
+      "path": "/api/system/logs/{filename}",
+      "handler": "get_log_content",
+      "line": 5771
+    },
+    {
+      "method": "GET",
+      "path": "/api/task-capabilities",
+      "handler": "get_task_capabilities",
+      "line": 2641
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks",
+      "handler": "api_get_tasks",
+      "line": 2391
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks",
+      "handler": "api_post_task",
+      "line": 2562
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/export",
+      "handler": "api_tasks_export",
+      "line": 2324
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/leases/by-worker",
+      "handler": "read_physical_worker_leases",
+      "line": 3060
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/meta",
+      "handler": "api_tasks_meta",
+      "line": 2370
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tasks/{task_id}",
+      "handler": "api_del_task",
+      "line": 2300
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tasks/{task_id}",
+      "handler": "delete_task",
+      "line": 3344
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/{task_id}",
+      "handler": "get_task",
+      "line": 2655
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tasks/{task_id}",
+      "handler": "update_task",
+      "line": 3216
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/{task_id}/lease",
+      "handler": "read_task_lease",
+      "line": 3053
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/lease",
+      "handler": "acquire_task_lease",
+      "line": 3042
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/{task_id}/lease/correction-context",
+      "handler": "read_task_correction_context",
+      "line": 3067
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/lease/decompose",
+      "handler": "decompose_task_lease",
+      "line": 3122
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/lease/reclaim-unresolved",
+      "handler": "reclaim_unresolved_task_lease",
+      "line": 3105
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/lease/release",
+      "handler": "release_task_lease",
+      "line": 3095
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/lease/renew",
+      "handler": "renew_task_lease",
+      "line": 3087
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/lease/update",
+      "handler": "update_task_lease",
+      "line": 3114
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/{task_id}/legacy-review/eligibility",
+      "handler": "legacy_review_reopen_eligibility_read",
+      "line": 2959
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/legacy-review/reopen",
+      "handler": "reopen_legacy_review_task",
+      "line": 2991
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/{task_id}/result",
+      "handler": "read_task_result",
+      "line": 2785
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/result/accept",
+      "handler": "accept_task_result",
+      "line": 2886
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/result/correction",
+      "handler": "request_task_result_correction",
+      "line": 2847
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/{task_id}/result/history",
+      "handler": "read_task_result_history",
+      "line": 2820
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/{task_id}/result/reconcile",
+      "handler": "reconcile_task_result",
+      "line": 2933
+    },
+    {
+      "method": "GET",
+      "path": "/api/tokens/usage",
+      "handler": "get_token_usage",
+      "line": 4936
+    },
+    {
+      "method": "GET",
+      "path": "/api/tools",
+      "handler": "get_tools",
+      "line": 11259
+    },
+    {
+      "method": "GET",
+      "path": "/api/tools/{name}",
+      "handler": "api_get_tool_detail",
+      "line": 7432
+    },
+    {
+      "method": "POST",
+      "path": "/api/tools/{name}/run",
+      "handler": "api_run_tool",
+      "line": 7504
+    },
+    {
+      "method": "GET",
+      "path": "/api/usecases",
+      "handler": "get_usecases",
+      "line": 14095
+    },
+    {
+      "method": "POST",
+      "path": "/api/usecases",
+      "handler": "add_usecase",
+      "line": 14151
+    },
+    {
+      "method": "POST",
+      "path": "/api/usecases/test-all",
+      "handler": "test_all_usecases",
+      "line": 14301
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/usecases/{usecase_id}",
+      "handler": "delete_usecase",
+      "line": 14202
+    },
+    {
+      "method": "GET",
+      "path": "/api/usecases/{usecase_id}",
+      "handler": "get_usecase",
+      "line": 14131
+    },
+    {
+      "method": "PUT",
+      "path": "/api/usecases/{usecase_id}",
+      "handler": "update_usecase",
+      "line": 14175
+    },
+    {
+      "method": "POST",
+      "path": "/api/usecases/{usecase_id}/execute",
+      "handler": "execute_usecase",
+      "line": 14365
+    },
+    {
+      "method": "POST",
+      "path": "/api/usecases/{usecase_id}/test",
+      "handler": "test_usecase",
+      "line": 14216
+    },
+    {
+      "method": "GET",
+      "path": "/api/wartung/status",
+      "handler": "get_wartung_status",
+      "line": 4807
+    },
+    {
+      "method": "POST",
+      "path": "/api/wartung/trigger",
+      "handler": "trigger_wartung_job",
+      "line": 4660
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow-tuev",
+      "handler": "get_workflow_tuev",
+      "line": 16313
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow-tuev/check-all",
+      "handler": "check_all_workflows",
+      "line": 16420
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow-tuev/content",
+      "handler": "get_workflow_content",
+      "line": 16486
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow-tuev/sync",
+      "handler": "sync_workflow_tuev",
+      "line": 16451
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow-tuev/{workflow_id}/check",
+      "handler": "check_workflow_tuev",
+      "line": 16364
+    },
+    {
+      "method": "GET",
+      "path": "/api/ws/status",
+      "handler": "websocket_status",
+      "line": 15898
+    },
+    {
+      "method": "GET",
+      "path": "/artefakte",
+      "handler": "artefakte_page",
+      "line": 6111
+    },
+    {
+      "method": "GET",
+      "path": "/ati",
+      "handler": "ati_agent_page",
+      "line": 6458
+    },
+    {
+      "method": "GET",
+      "path": "/chat",
+      "handler": "chat_page",
+      "line": 6314
+    },
+    {
+      "method": "GET",
+      "path": "/daemon",
+      "handler": "daemon_page",
+      "line": 6180
+    },
+    {
+      "method": "GET",
+      "path": "/denkarium",
+      "handler": "denkarium_page",
+      "line": 6597
+    },
+    {
+      "method": "GET",
+      "path": "/device-fetch.js",
+      "handler": "get_device_fetch_script",
+      "line": 2042
+    },
+    {
+      "method": "GET",
+      "path": "/dist-manifest.json",
+      "handler": "get_dist_manifest",
+      "line": 6026
+    },
+    {
+      "method": "GET",
+      "path": "/domains",
+      "handler": "domains_page",
+      "line": 6067
+    },
+    {
+      "method": "GET",
+      "path": "/favicon.ico",
+      "handler": "favicon",
+      "line": 5913
+    },
+    {
+      "method": "GET",
+      "path": "/financial",
+      "handler": "financial_page",
+      "line": 8706
+    },
+    {
+      "method": "GET",
+      "path": "/finanzen",
+      "handler": "finanzen_redirect",
+      "line": 6573
+    },
+    {
+      "method": "GET",
+      "path": "/foerderplaner",
+      "handler": "foerderplaner_fachseite_page",
+      "line": 6081
+    },
+    {
+      "method": "GET",
+      "path": "/gesundheit",
+      "handler": "gesundheit_redirect",
+      "line": 6581
+    },
+    {
+      "method": "GET",
+      "path": "/governance",
+      "handler": "governance_page",
+      "line": 5967
+    },
+    {
+      "method": "GET",
+      "path": "/governance/funk",
+      "handler": "governance_funk_page",
+      "line": 5975
+    },
+    {
+      "method": "GET",
+      "path": "/governance/logs",
+      "handler": "governance_logs_page",
+      "line": 5994
+    },
+    {
+      "method": "GET",
+      "path": "/governance/usecases",
+      "handler": "governance_usecases_page",
+      "line": 5983
+    },
+    {
+      "method": "GET",
+      "path": "/help",
+      "handler": "help_page",
+      "line": 6248
+    },
+    {
+      "method": "GET",
+      "path": "/inbox",
+      "handler": "inbox_page",
+      "line": 6160
+    },
+    {
+      "method": "GET",
+      "path": "/kontakte",
+      "handler": "kontakte_page",
+      "line": 14398
+    },
+    {
+      "method": "GET",
+      "path": "/life",
+      "handler": "life_page",
+      "line": 6006
+    },
+    {
+      "method": "GET",
+      "path": "/logs",
+      "handler": "logs_page",
+      "line": 6299
+    },
+    {
+      "method": "GET",
+      "path": "/maintenance",
+      "handler": "maintenance_page",
+      "line": 6270
+    },
+    {
+      "method": "GET",
+      "path": "/memory",
+      "handler": "memory_page",
+      "line": 10490
+    },
+    {
+      "method": "GET",
+      "path": "/messages",
+      "handler": "messages_page",
+      "line": 6231
+    },
+    {
+      "method": "GET",
+      "path": "/notizen",
+      "handler": "denkarium_page",
+      "line": 6597
+    },
+    {
+      "method": "GET",
+      "path": "/ocean",
+      "handler": "unified_ocean_dashboard",
+      "line": 5892
+    },
+    {
+      "method": "GET",
+      "path": "/partners",
+      "handler": "partners_page",
+      "line": 6470
+    },
+    {
+      "method": "GET",
+      "path": "/persoenlich",
+      "handler": "persoenlich_redirect",
+      "line": 6585
+    },
+    {
+      "method": "GET",
+      "path": "/prompt-generator",
+      "handler": "prompt_generator_page",
+      "line": 11554
+    },
+    {
+      "method": "GET",
+      "path": "/prompt-library",
+      "handler": "prompt_library_page",
+      "line": 11600
+    },
+    {
+      "method": "GET",
+      "path": "/reports",
+      "handler": "reports_page",
+      "line": 6237
+    },
+    {
+      "method": "GET",
+      "path": "/routinen",
+      "handler": "routinen_page",
+      "line": 14613
+    },
+    {
+      "method": "GET",
+      "path": "/routines",
+      "handler": "routines_redirect",
+      "line": 6589
+    },
+    {
+      "method": "GET",
+      "path": "/settings",
+      "handler": "settings_page",
+      "line": 6388
+    },
+    {
+      "method": "GET",
+      "path": "/skills",
+      "handler": "skills_page",
+      "line": 6547
+    },
+    {
+      "method": "GET",
+      "path": "/skills-board",
+      "handler": "skills_board_page",
+      "line": 6540
+    },
+    {
+      "method": "GET",
+      "path": "/skills/mcp",
+      "handler": "capability_board_page",
+      "line": 6562
+    },
+    {
+      "method": "GET",
+      "path": "/skills/ocean",
+      "handler": "capability_board_page",
+      "line": 6562
+    },
+    {
+      "method": "GET",
+      "path": "/skills/plugins",
+      "handler": "capability_board_page",
+      "line": 6562
+    },
+    {
+      "method": "GET",
+      "path": "/skills/software",
+      "handler": "capability_board_page",
+      "line": 6562
+    },
+    {
+      "method": "GET",
+      "path": "/steuer",
+      "handler": "steuer_redirect",
+      "line": 6577
+    },
+    {
+      "method": "GET",
+      "path": "/steuer-assistent",
+      "handler": "steuer_assistent_redirect",
+      "line": 6093
+    },
+    {
+      "method": "GET",
+      "path": "/system",
+      "handler": "system_page",
+      "line": 6409
+    },
+    {
+      "method": "GET",
+      "path": "/system/ocean",
+      "handler": "system_ocean_page",
+      "line": 6400
+    },
+    {
+      "method": "GET",
+      "path": "/system/ocean",
+      "handler": "system_ocean_page",
+      "line": 6421
+    },
+    {
+      "method": "GET",
+      "path": "/tasks",
+      "handler": "tasks_page",
+      "line": 6202
+    },
+    {
+      "method": "GET",
+      "path": "/tasks-board",
+      "handler": "tasks_board_api",
+      "line": 7041
+    },
+    {
+      "method": "GET",
+      "path": "/token-dashboard",
+      "handler": "token_dashboard_page",
+      "line": 6856
+    },
+    {
+      "method": "GET",
+      "path": "/tokens",
+      "handler": "tokens_page",
+      "line": 6842
+    },
+    {
+      "method": "GET",
+      "path": "/tools",
+      "handler": "tools_page",
+      "line": 11237
+    },
+    {
+      "method": "GET",
+      "path": "/unified",
+      "handler": "unified_ocean_dashboard",
+      "line": 5892
+    },
+    {
+      "method": "GET",
+      "path": "/usecases",
+      "handler": "usecases_page",
+      "line": 14020
+    },
+    {
+      "method": "GET",
+      "path": "/user-inbox",
+      "handler": "user_inbox_page",
+      "line": 6222
+    },
+    {
+      "method": "GET",
+      "path": "/wiki",
+      "handler": "wiki_page",
+      "line": 6434
+    },
+    {
+      "method": "GET",
+      "path": "/workflow-tuev",
+      "handler": "workflow_tuev_page",
+      "line": 16304
+    }
+  ]
+}
