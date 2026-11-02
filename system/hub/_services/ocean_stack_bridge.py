@@ -478,14 +478,24 @@ def load_robotics_module() -> Any:
     )
 
 
+def load_universal_gui_module() -> Any:
+    return _load_module_from_repo(
+        "ellmos_universal_gui_app",
+        "ellmos_universal_gui.app",
+        "ellmos-universal-gui",
+        "src/ellmos_universal_gui/app.py",
+    )
+
+
 def ocean_capability_extensions_status() -> dict[str, Any]:
-    """Return status of the 5 multimodal/embodied Ocean capability modules (#3763-#3767)."""
+    """Return status of the multimodal/embodied & universal-GUI Ocean capability modules (#3763-#3767, GUX-002)."""
     ext_modules = {
         "ellmos-voice-io": ("ellmos_voice_io.service", load_voice_io_module),
         "ellmos-talk": ("ellmos_talk.engine", load_talk_module),
         "ellmos-sensation": ("ellmos_sensation.sensor_hub", load_sensation_module),
         "ellmos-homecontrol": ("ellmos_homecontrol.hub", load_homecontrol_module),
         "ellmos-robotics": ("ellmos_robotics.mcp_standard", load_robotics_module),
+        "ellmos-universal-gui": ("ellmos_universal_gui.app", load_universal_gui_module),
     }
     bound: dict[str, Any] = {}
     for name, (mod_id, loader) in ext_modules.items():

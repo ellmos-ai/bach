@@ -173,13 +173,13 @@ class TestPinnedKitManifest(unittest.TestCase):
         manifest = get_pinned_kit_manifest()
         self.assertTrue(manifest.get("verified"), f"Manifest failed: {manifest.get('error')}")
         self.assertEqual(manifest.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(manifest.get("pinned_source_commit"), "1277f0afc6e55b7fb3aaf1242a0c8a92e8772093")
+        self.assertEqual(manifest.get("pinned_source_commit"), "294889dda579af59003740eb506daa763987232d")
         self.assertEqual(manifest.get("version"), "0.2.30")
         self.assertEqual(manifest.get("expected_page_count"), 42)
-        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.30-1277f0afc6e5.zip")
+        self.assertEqual(manifest.get("release_archive"), "ellmos-system-gui-0.2.30-294889dda579.zip")
         self.assertEqual(
             manifest.get("release_archive_sha256"),
-            "f6f9d7c5eedc569ffdb20843eb85394d37cf2b6f62250f94209273fa77d0cac2",
+            "1f820f06361a34e00c7cadb6a0c951c20d7a749e2312c802b9ab867a2e078a9e",
         )
 
     def test_dist_manifest_verification_against_local_repo(self):
@@ -190,7 +190,7 @@ class TestPinnedKitManifest(unittest.TestCase):
         dist_path = Path(configured)
         self.assertTrue(dist_path.is_dir(), "Explicit release distribution must exist")
         if dist_path.is_dir():
-            verification = verify_installed_dist(dist_path, expected_commit="1277f0afc6e55b7fb3aaf1242a0c8a92e8772093")
+            verification = verify_installed_dist(dist_path, expected_commit="294889dda579af59003740eb506daa763987232d")
             self.assertTrue(verification["installed"])
             self.assertTrue(verification["verified"])
             self.assertEqual(verification["reason_code"], "verified")
@@ -310,7 +310,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos-system-gui.kit-manifest.v1")
-        self.assertEqual(data.get("pinned_source_commit"), "1277f0afc6e55b7fb3aaf1242a0c8a92e8772093")
+        self.assertEqual(data.get("pinned_source_commit"), "294889dda579af59003740eb506daa763987232d")
         self.assertIn("installed_dist", data)
 
     def test_route_gui_architecture_concepts(self):
@@ -328,7 +328,7 @@ class TestGuiServerEndpoints(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data.get("schema"), "ellmos.gui.capabilities.v1")
         self.assertIn("kit", data)
-        self.assertEqual(data["kit"].get("revision"), "1277f0afc6e55b7fb3aaf1242a0c8a92e8772093")
+        self.assertEqual(data["kit"].get("revision"), "294889dda579af59003740eb506daa763987232d")
         self.assertIn("brand", data)
         self.assertIn("modules", data)
 
