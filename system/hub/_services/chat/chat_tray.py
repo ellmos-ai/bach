@@ -1412,10 +1412,6 @@ class BACHTray:
             ]
             items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
 
-            # Laufende Agenten & Werkstatt
-            items.append(pystray.MenuItem("📊 Laufende Agenten & Worker...", self._open_running))
-            items.append(pystray.MenuItem("🛠 Agentenvorlagen & Blueprints...", self._open_blueprints))
-
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
             lt = self.state.get("last_tools", [])
@@ -1526,11 +1522,16 @@ class BACHTray:
         gui_label = "Ocean Dashboard" if getattr(self, "brand", "bach") == "ocean" else "GUI Dashboard"
         items.append(pystray.MenuItem(gui_label, self._open_gui, default=True))
         chat_label = "Ocean Chat" if getattr(self, "brand", "bach") == "ocean" else "Buddha Chat"
-        items.append(pystray.MenuItem(chat_label, self._open_webchat))
-        items.append(pystray.MenuItem("🎙️ ELLMOS Talk (Live-Stimme)", self._open_talk))
-        items.append(pystray.MenuItem("Laufende Agenten", self._open_running))
-        items.append(pystray.MenuItem("Agenten-Blueprints", self._open_blueprints))
-        items.append(pystray.MenuItem("Telegram", self._open_telegram))
+        quick_items = [
+            pystray.MenuItem(f"💬 {chat_label}", self._open_webchat),
+            pystray.MenuItem("🎙️ ELLMOS Talk (Live-Stimme)", self._open_talk),
+            pystray.MenuItem("⚡ Agenten · Running und Verlauf", self._open_running),
+            pystray.MenuItem("📚 Agenten-Bibliothek · Vorlagen", self._open_blueprints),
+            pystray.MenuItem("📖 Hilfe & Claim-Doku", self._open_claiming_docs),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("📱 Telegram", self._open_telegram),
+        ]
+        items.append(pystray.MenuItem("🧭 Direktzugriff (Seiten & Kanäle)", pystray.Menu(*quick_items)))
 
         items.append(pystray.Menu.SEPARATOR)
         items.append(pystray.MenuItem("Beenden", self._quit))
