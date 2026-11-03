@@ -287,6 +287,7 @@ class BACHTray:
             "fackel_preference": "compute",
             "current_tool": "",
             "last_tools": [],
+            "ram_claiming": {"loaded_models": [], "claimed_gib": 0.0},
         }
         self.backends = {}
         self.models = []
@@ -728,6 +729,12 @@ class BACHTray:
         self.services["control"] = self.state["connected"]
         self.services["gui"] = self._check_url(self.gui_url + "/")
         self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
+        if self.services["ollama"]:
+            ps_resp = self._api("GET", "/api/ps", base=self.ollama_url, timeout=2)
+            models_ps = ps_resp.get("models", []) if isinstance(ps_resp, dict) else []
+            names_ps = [str(m.get("name") or m.get("model") or "").strip() for m in models_ps if isinstance(m, dict) and (m.get("name") or m.get("model"))]
+            bytes_ps = sum(int(m.get("size_vram") or m.get("size") or 0) for m in models_ps if isinstance(m, dict) and isinstance(m.get("size_vram") or m.get("size"), (int, float)))
+            self.state["ram_claiming"] = {"loaded_models": names_ps, "claimed_gib": round(bytes_ps / (1024 ** 3), 1) if bytes_ps > 0 else 0.0}
 
         if not self.remote and ("fackel_preference" not in self.state or not self.state.get("fackel_preference")):
             try:
@@ -1523,7 +1530,20 @@ class BACHTray:
 
             # RAM-Distributor & Modell-Runtime (Ressourcen-Priorität)
             fackel_label = self._fackel_runtime_label()
+            ram_claim = self.state.get("ram_claiming") or {}
+            loaded_models = ram_claim.get("loaded_models") or []
+            claimed_gib = ram_claim.get("claimed_gib") or 0.0
+            ram_line = (
+                f"RAM-Belegung: {len(loaded_models)} Modell(e) ({', '.join(loaded_models[:2])}) · {claimed_gib:.1f} GiB"
+                if loaded_models
+                else "RAM-Belegung: 0 Modelle im Speicher (0.0 GiB belegt)"
+            )
             fackel_items = [
+                pystray.MenuItem(
+                    ram_line,
+                    None,
+                    enabled=False,
+                ),
                 pystray.MenuItem(
                     "Claim-Klassen: 1 Interaktiv → 2 Auftrag → 3 Termin → 4 Hintergrund",
                     None,
@@ -1899,6 +1919,11 @@ class BACHTray:
     def _release_model_for_compute(self, *_):
         self._set_fackel("compute")
         self._api("POST", "/api/slots", {"slot_id": "buddha_always_on", "updates": {"enabled": False}})
+        loaded = (self.state.get("ram_claiming") or {}).get("loaded_models") or []
+        target_models = list(dict.fromkeys([*loaded, self.state.get("model")]))
+        for m in target_models:
+            if m and m != "?":
+                self._api("POST", "/api/generate", {"model": m, "keep_alive": 0}, base=self.ollama_url, timeout=3)
         self._refresh()
         self._update_icon()
         if self.icon:

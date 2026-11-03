@@ -17324,8 +17324,14 @@ async def api_robotics_estop(payload: dict = Body(default={})):
 
 
 @app.get("/talk", response_class=HTMLResponse, tags=["shared-gui"])
-async def talk_visualizer_companion_page():
-    """Standalone ELLMOS Talk Live Voice & Emotion Visualizer Companion Window (#3764)."""
+async def talk_visualizer_companion_page(request: Request):
+    """ELLMOS Talk Studio & Standalone Live Voice / Emotion Visualizer Companion Window (#3764)."""
+    companion_mode = request.query_params.get("companion") == "1" or request.query_params.get("standalone") == "1"
+    if not companion_mode and ASTRO_DIST_DIR is not None:
+        for rel in ("talk/index.html", "talk.html"):
+            cand = ASTRO_DIST_DIR / rel
+            if cand.is_file():
+                return HTMLResponse(content=cand.read_text(encoding="utf-8"))
     html = """<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -17562,15 +17568,33 @@ async def talk_visualizer_companion_page():
         document.getElementById('reflexStatus').textContent =
           'FastReflexLoop (' + data.reflex.latency_target_ms + 'ms): ' + (data.reflex.ack_text || 'ack');
       }
-      const sentences = (data.sentences || []).join(' ');
+      const sentences = data.spoken_text || (data.sentences || []).join(' ');
       document.getElementById('transcriptBox').textContent = sentences || text;
-      if ('speechSynthesis' in window && sentences) {
-        const utter = new SpeechSynthesisUtterance(sentences);
-        utter.lang = language === 'en' ? 'en-US' : 'de-DE';
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utter);
-      }
       input.value = '';
+      if (sentences) {
+        let playedLocal = false;
+        try {
+          const ttsRes = await fetch('/api/voice/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: sentences, language })
+          });
+          if (ttsRes.ok) {
+            const ttsData = await ttsRes.json();
+            if (ttsData && ttsData.audio_b64) {
+              const audio = new Audio('data:' + (ttsData.mime_type || 'audio/wav') + ';base64,' + ttsData.audio_b64);
+              await audio.play();
+              playedLocal = true;
+            }
+          }
+        } catch (_) {}
+        if (!playedLocal && 'speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(sentences);
+          utter.lang = language === 'en' ? 'en-US' : 'de-DE';
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+        }
+      }
     }
 
     document.getElementById('sendBtn').addEventListener('click', sendTurn);
@@ -17594,20 +17618,52 @@ async def talk_visualizer_companion_page():
     document.getElementById('emotionSelect').addEventListener('change', pushDirective);
     document.getElementById('personaSelect').addEventListener('change', pushDirective);
 
-    document.getElementById('micBtn').addEventListener('click', () => {
+    document.getElementById('micBtn').addEventListener('click', async () => {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        alert('Browser Web Speech API nicht verfügbar – nutze POST /api/voice/stt.');
+      const lang = document.getElementById('langSelect').value || 'de';
+      if (SR) {
+        const rec = new SR();
+        rec.lang = lang === 'en' ? 'en-US' : 'de-DE';
+        rec.onresult = (ev) => {
+          const t = ev.results[0][0].transcript;
+          document.getElementById('utteranceInput').value = t;
+          sendTurn();
+        };
+        rec.start();
         return;
       }
-      const rec = new SR();
-      rec.lang = document.getElementById('langSelect').value === 'en' ? 'en-US' : 'de-DE';
-      rec.onresult = (ev) => {
-        const t = ev.results[0][0].transcript;
-        document.getElementById('utteranceInput').value = t;
-        sendTurn();
-      };
-      rec.start();
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function' && typeof window.MediaRecorder === 'function') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const chunks = [];
+          const recorder = new MediaRecorder(stream);
+          recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+          recorder.onstop = async () => {
+            stream.getTracks().forEach((t) => t.stop());
+            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+            const b64 = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(String(reader.result || '').split(',')[1] || '');
+              reader.readAsDataURL(blob);
+            });
+            if (!b64) return;
+            const r = await fetch('/api/voice/stt', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ audio_b64: b64, suffix: '.webm', language: lang })
+            });
+            if (r.ok) {
+              const d = await r.json();
+              if (d && d.text) {
+                document.getElementById('utteranceInput').value = d.text;
+                sendTurn();
+              }
+            }
+          };
+          recorder.start();
+          setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 3500);
+        } catch (_) {}
+      }
     });
   </script>
 </body>
