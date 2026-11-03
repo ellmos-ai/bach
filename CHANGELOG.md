@@ -31,6 +31,11 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Modularisierung: Export der Standalone-Module `domain_writer_gate`, `scheduler_provider` und `db_sync_adapter` (Task #-25, 2026-11-03):**
+  - Standalone-Module für `domain_writer_gate`, `scheduler_provider` und `db_sync_adapter` mit `manifest.json`, `src/`, `tests/`, `README.md` und ZIP-Archiven via `bach skills export-module` exportiert und validiert.
+  - Dynamische Seam-Loader (`load_domain_writer_gate_module()`, `load_scheduler_provider_module()`, `load_db_sync_adapter_module()`) und `ocean_modularized_services_status()` in `system/hub/_services/ocean_stack_bridge.py` verankert (6/6 Standalone-Module gebunden).
+  - Smoke- und Validierungstests in allen drei Modulen sowie Integrationstests in `system/tests/test_ocean_stack_consumption.py` erfolgreich durchgeführt (100% grün).
+
 - **PromptBoard Tray- & GUI-Integration, Modularer Skill-Export/Import und Update-Engine (`bach update`) (2026-11-02):**
   - **PromptBoard & Tray-App (Task #-6 & #-9):** Tray-Menü (`chat_tray.py`) um PromptBoard Web-Zugang und Chat-Draft-Aktion ("💬 Im Chat öffnen" mit Zwischenablage-Puffer und Weiterleitung an `/chat`) erweitert; Windows `.exe`-Starts via `os.startfile` entkoppelt; GET-Endpoint `/api/prompt-library/import-promptboard/preview` für Dry-Run Vorschau sowie Klick-Filterung via Tag-Pills in `prompt-library.html` hinzugefügt.
   - **Self-contained Modul- & Skill-Export/-Import (Task #-5):** `skills export` (`hub/skills.py`) exportiert nun strukturierte Verzeichnisse mit `manifest.json` (`selfcontained: true`), Tools und Workflows; `skills install` erlaubt In-Place-Upgrade bestehender Single-File-Skills mit automatischem Backup in `exports/_backups/`.

@@ -697,12 +697,42 @@ def load_session_checkpoint_adapter_module() -> Any:
     )
 
 
+def load_domain_writer_gate_module() -> Any:
+    return _load_standalone_or_fallback(
+        "standalone_domain_writer_gate",
+        "domain_writer_gate",
+        "src/domain_writer_gate.py",
+        "hub.domain_writer_gate",
+    )
+
+
+def load_scheduler_provider_module() -> Any:
+    return _load_standalone_or_fallback(
+        "standalone_scheduler_provider",
+        "scheduler_provider",
+        "src/scheduler_provider.py",
+        "hub.scheduler_provider",
+    )
+
+
+def load_db_sync_adapter_module() -> Any:
+    return _load_standalone_or_fallback(
+        "standalone_db_sync_adapter",
+        "db_sync_adapter",
+        "src/db_sync_adapter.py",
+        "hub.db_sync_adapter",
+    )
+
+
 def ocean_modularized_services_status() -> dict[str, Any]:
     """Return status of newly modularized services and whether they are running standalone or legacy hub."""
     services = {
         "agent_spawn_gate": ("agent_spawn_gate", load_agent_spawn_gate_module),
         "context_hints": ("context_hints", load_context_hints_module),
         "session_checkpoint_adapter": ("session_checkpoint_adapter", load_session_checkpoint_adapter_module),
+        "domain_writer_gate": ("domain_writer_gate", load_domain_writer_gate_module),
+        "scheduler_provider": ("scheduler_provider", load_scheduler_provider_module),
+        "db_sync_adapter": ("db_sync_adapter", load_db_sync_adapter_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():
@@ -724,4 +754,3 @@ def ocean_modularized_services_status() -> dict[str, Any]:
                 "standalone": False,
             }
     return status_map
-

@@ -205,8 +205,14 @@ Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und S
     - Web Speech API als parallele Live-Vorschau gekoppelt; nahtloser Tray-Handoff via `?voice=1`.
     - `ellmos-voice-io` und `server.py` (`/api/voice/stt`) um robuste Fallbacks und `transcribe_bytes` erweitert. 14/14 Tests in `test_prompt_chat_draft.py` grün. Task #-24 erledigt gemeldet.
 
+- **Roadmap-Fortschritt & Erledigte Aufgaben (Task -25):**
+  - **Modularisierung: Export der nächsten Dienstgruppe (Task #-25, Erledigt):**
+    - `domain_writer_gate`, `scheduler_provider` und `db_sync_adapter` via `bach skills export-module <name>` in autarke Standalone-Module exportiert.
+    - Vollständige Pakete mit `manifest.json`, `src/`, `tests/`, `README.md` und Zip-Archiven erzeugt und via `verify_selfcontained_module()` validiert.
+    - `ocean_stack_bridge.py` um dynamische Seam-Loader (`load_domain_writer_gate_module()`, `load_scheduler_provider_module()`, `load_db_sync_adapter_module()`) und `ocean_modularized_services_status()` (jetzt 6/6 Standalone-Module gebunden) erweitert.
+    - Smoke-Tests in allen 3 Modulen und Integrationstests in `test_ocean_stack_consumption.py` 100% grün. Task #-25 erledigt gemeldet.
+
 - **Nächste Aufgaben der Roadmap (Erstellt):**
-  - Task ID `-25`: `Modularisierung: Export der nächsten Dienstgruppe (domain_writer_gate, scheduler_provider, db_sync_adapter) als Standalone-Module` (P3, core).
   - Task ID `-26`: `Tray & GUI: Prompt-Bibliothek Schnellzugriff und Auto-Vorschau in Tray-Kontextmenü für Favoriten-Prompts` (P3, gui).
   - Task ID `-27`: `Modularer Core: Auto-Erkennung veralteter In-Tree-Dienste und automatische Umschaltung auf Standalone-Module via ocean_stack_bridge` (P3, infrastructure).
 

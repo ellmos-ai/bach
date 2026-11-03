@@ -284,6 +284,9 @@ def test_modularized_services_and_hot_wiring():
         load_agent_spawn_gate_module,
         load_context_hints_module,
         load_session_checkpoint_adapter_module,
+        load_domain_writer_gate_module,
+        load_scheduler_provider_module,
+        load_db_sync_adapter_module,
         ocean_modularized_services_status,
         ocean_stack_status,
     )
@@ -303,18 +306,36 @@ def test_modularized_services_and_hot_wiring():
     assert mod_cp is not None
     assert hasattr(mod_cp, "NAMESPACE")
 
+    mod_dw = load_domain_writer_gate_module()
+    assert mod_dw is not None
+    assert hasattr(mod_dw, "blocked_reason")
+
+    mod_sp = load_scheduler_provider_module()
+    assert mod_sp is not None
+    assert hasattr(mod_sp, "probe_scheduler_provider")
+
+    mod_db = load_db_sync_adapter_module()
+    assert mod_db is not None
+    assert hasattr(mod_db, "SharedDBSyncAdapter")
+
     status = ocean_modularized_services_status()
     assert "agent_spawn_gate" in status
     assert "context_hints" in status
     assert "session_checkpoint_adapter" in status
+    assert "domain_writer_gate" in status
+    assert "scheduler_provider" in status
+    assert "db_sync_adapter" in status
     for s_name, s_info in status.items():
         assert s_info["bound"] is True, f"Service {s_name} not bound: {s_info}"
 
     full_status = ocean_stack_status()
     assert "modularized_services" in full_status
-    assert full_status["modularized_services"]["agent_spawn_gate"]["bound"] is True
-    assert full_status["modularized_services"]["context_hints"]["bound"] is True
-    assert full_status["modularized_services"]["session_checkpoint_adapter"]["bound"] is True
-
-
-
+    for s_name in (
+        "agent_spawn_gate",
+        "context_hints",
+        "session_checkpoint_adapter",
+        "domain_writer_gate",
+        "scheduler_provider",
+        "db_sync_adapter",
+    ):
+        assert full_status["modularized_services"][s_name]["bound"] is True
