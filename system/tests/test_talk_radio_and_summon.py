@@ -14,7 +14,11 @@ def test_bach_tray_exposes_buddha_talk_radio_slot():
     menu = tray._build_menu()
     labels = [str(item.text) for item in menu.items if getattr(item, "text", None)]
     assert any("📻 Buddha Talk" in lbl for lbl in labels), f"Missing Buddha Talk slot in {labels}"
-    assert any("🎙️ ELLMOS Talk" in lbl for lbl in labels)
+    direkt = next((item for item in menu.items if "🧭 Direktzugriff" in str(getattr(item, "text", ""))), None)
+    assert direkt is not None, f"Missing Direktzugriff submenu in {labels}"
+    sub_items = getattr(direkt.submenu, "items", []) if getattr(direkt, "submenu", None) else []
+    sub_labels = [str(sub.text) for sub in sub_items if getattr(sub, "text", None)]
+    assert any("🎙️ ELLMOS Talk" in lbl for lbl in sub_labels), f"Missing ELLMOS Talk in {sub_labels}"
 
 
 def test_talk_config_and_summon_endpoints(monkeypatch, tmp_path):
