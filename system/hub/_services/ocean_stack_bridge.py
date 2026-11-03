@@ -37,6 +37,7 @@ CANONICAL_MODULES: tuple[str, ...] = (
     "capability-views",
     "governance-bridge",
     "doc-keeper",
+    "agents-heart",
 )
 
 
@@ -413,6 +414,60 @@ def audit_repository_with_doc_keeper(
     )
 
 
+# ---------------------------------------------------------------------------
+# 12. agents-heart Besetzungs- & Rollenvertrag (#2103)
+# ---------------------------------------------------------------------------
+
+def load_agents_heart_module() -> Any:
+    """Load the standalone `agents-heart` module (`agents_heart`)."""
+    return _load_module_from_repo(
+        "agents_heart_kernel",
+        "agents_heart",
+        "agents-heart",
+        "src/agents_heart/__init__.py",
+    )
+
+
+def evaluate_agents_heart_assignment(
+    role_id: str,
+    *,
+    mode: str = "safe",
+    required_rights: tuple[str, ...] = ("task.claim", "task.execute"),
+    backend_id: str = "default",
+    model_id: str = "default",
+    slot_id: str = "slot-1",
+    task_id: int | str = 0,
+    session_id: str = "session-1",
+    initiated_by: str = "system",
+    event_recorder: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Prüft und erzeugt eine Besetzung gemäß dem kanonischen agents-heart Seam."""
+    mod = load_agents_heart_module()
+    recorder = event_recorder or (lambda _details: None)
+    try:
+        assignment = mod.begin_assignment(
+            role_id=role_id,
+            mode=mode,
+            agent_instance_id=f"inst-{role_id}",
+            backend_id=backend_id,
+            model_id=model_id,
+            slot_id=slot_id,
+            task_id=task_id,
+            session_id=session_id,
+            initiated_by=initiated_by,
+            event_recorder=recorder,
+        )
+        return {
+            "allowed": True,
+            "assignment_id": assignment.assignment_id,
+            "role_id": assignment.role_id,
+            "role_revision": assignment.role_revision,
+            "started_at": assignment.started_at,
+        }
+    except Exception as exc:
+        return {"allowed": False, "reason": str(exc)}
+
+
 def ocean_software_inventory(releases_path: Path) -> dict[str, Any]:
     cap_mod = load_capability_views_module()
     return cap_mod.software_inventory(releases_path=Path(releases_path))
@@ -516,7 +571,7 @@ def ocean_capability_extensions_status() -> dict[str, Any]:
 
 
 def ocean_stack_status() -> dict[str, Any]:
-    """Return status of all 11 canonical Ocean modules bound into BACH."""
+    """Return status of all 12 canonical Ocean modules bound into BACH."""
     modules = {
         "ocean-resources": ("ocean_resources.ram_distributor", load_ocean_ram_distributor_module),
         "task-master": ("taskplan.lease", load_taskplan_lease_module),
@@ -529,6 +584,7 @@ def ocean_stack_status() -> dict[str, Any]:
         "capability-views": ("tools.capability_views", load_capability_views_module),
         "governance-bridge": ("tools.governance_bridge", load_governance_bridge_module),
         "doc-keeper": ("doc_keeper", load_doc_keeper_module),
+        "agents-heart": ("agents_heart", load_agents_heart_module),
     }
     bound: dict[str, Any] = {}
     for name, (mod_id, loader) in modules.items():
@@ -546,6 +602,7 @@ def ocean_stack_status() -> dict[str, Any]:
                 "error": str(exc),
             }
     extensions = ocean_capability_extensions_status()
+    modularized = ocean_modularized_services_status()
     return {
         "schema": "bach.ocean-stack-bindings.v1",
         "stack_role": "branded-partial-os-stack-of-ocean",
@@ -553,4 +610,118 @@ def ocean_stack_status() -> dict[str, Any]:
         "modules": bound,
         "capability_extensions": extensions,
         "capability_extensions_bound_count": sum(1 for item in extensions.values() if item["bound"]),
+        "modularized_services": modularized,
+        "modularized_standalone_count": sum(1 for item in modularized.values() if item.get("standalone")),
     }
+
+
+def invalidate_module_cache(cache_key: str | None = None) -> None:
+    """Clear cached modules so hot-wiring and re-imported modules take effect immediately."""
+    if cache_key:
+        _MODULE_CACHE.pop(cache_key, None)
+    else:
+        _MODULE_CACHE.clear()
+
+
+def _load_standalone_or_fallback(
+    cache_key: str,
+    module_name: str,
+    standalone_subpath: str,
+    fallback_import: str,
+) -> Any:
+    """Load module from candidate standalone repos, .MODULES, or exports/modules, falling back to legacy hub."""
+    if cache_key in _MODULE_CACHE:
+        return _MODULE_CACHE[cache_key]
+
+    bach_root = Path(__file__).resolve().parents[3]
+    candidate_locations = [
+        Path("C:/_Local_DEV/repos") / module_name / standalone_subpath,
+        bach_root / ".MODULES" / module_name / standalone_subpath,
+        bach_root.parent / ".MODULES" / module_name / standalone_subpath,
+        bach_root / "system" / "exports" / "modules" / f"{module_name}_export" / "src" / f"{module_name}.py",
+        bach_root / "exports" / "modules" / f"{module_name}_export" / "src" / f"{module_name}.py",
+    ]
+
+    for target in candidate_locations:
+        if target.is_file():
+            target_dir = str(target.parent)
+            if target_dir not in sys.path:
+                sys.path.insert(0, target_dir)
+            spec = importlib.util.spec_from_file_location(cache_key, target)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules[cache_key] = mod
+                try:
+                    spec.loader.exec_module(mod)
+                    _MODULE_CACHE[cache_key] = mod
+                    return mod
+                except Exception:
+                    pass
+
+    try:
+        mod = importlib.import_module(fallback_import)
+        _MODULE_CACHE[cache_key] = mod
+        return mod
+    except ImportError:
+        pass
+
+    mod = importlib.import_module(f"hub.{module_name}")
+    _MODULE_CACHE[cache_key] = mod
+    return mod
+
+
+def load_agent_spawn_gate_module() -> Any:
+    return _load_standalone_or_fallback(
+        "standalone_agent_spawn_gate",
+        "agent_spawn_gate",
+        "src/agent_spawn_gate.py",
+        "hub.agent_spawn_gate",
+    )
+
+
+def load_context_hints_module() -> Any:
+    return _load_standalone_or_fallback(
+        "standalone_context_hints",
+        "context_hints",
+        "src/context_hints.py",
+        "hub.context_hints",
+    )
+
+
+def load_session_checkpoint_adapter_module() -> Any:
+    return _load_standalone_or_fallback(
+        "standalone_session_checkpoint_adapter",
+        "session_checkpoint_adapter",
+        "src/session_checkpoint_adapter.py",
+        "hub.session_checkpoint_adapter",
+    )
+
+
+def ocean_modularized_services_status() -> dict[str, Any]:
+    """Return status of newly modularized services and whether they are running standalone or legacy hub."""
+    services = {
+        "agent_spawn_gate": ("agent_spawn_gate", load_agent_spawn_gate_module),
+        "context_hints": ("context_hints", load_context_hints_module),
+        "session_checkpoint_adapter": ("session_checkpoint_adapter", load_session_checkpoint_adapter_module),
+    }
+    status_map: dict[str, Any] = {}
+    for name, (mod_id, loader) in services.items():
+        try:
+            m = loader()
+            f_path = getattr(m, "__file__", "") or ""
+            is_standalone = any(marker in f_path for marker in ("exports", ".MODULES", "_Local_DEV", "standalone"))
+            status_map[name] = {
+                "bound": True,
+                "status": "standalone" if is_standalone else "legacy_hub",
+                "file": f_path,
+                "standalone": is_standalone,
+            }
+        except Exception as exc:
+            status_map[name] = {
+                "bound": False,
+                "status": "error",
+                "error": str(exc),
+                "standalone": False,
+            }
+    return status_map
+

@@ -131,6 +131,7 @@ class PromptHandler(BaseHandler):
             "boards": "Alle Boards listen: bach prompt boards",
             "board": "Board verwalten: bach prompt board <title> [--add-prompt ID] [--remove-prompt ID] [--description TEXT]",
             "import_promptboard": "PromptBoard importieren: bach prompt import-promptboard [library.json] [--dry-run]",
+            "export_promptboard": "Prompts nach PromptBoard exportieren: bach prompt export-promptboard [library.json] [--category CAT] [--dry-run]",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -145,6 +146,30 @@ class PromptHandler(BaseHandler):
                 return True, json.dumps(result, ensure_ascii=False)
             except (OSError, ValueError, sqlite3.Error) as exc:
                 return False, f"PromptBoard-Import fehlgeschlagen: {exc}"
+        elif operation in ("export_promptboard", "export-promptboard"):
+            preview_flags = ("--dry-run", "-n")
+            dry_run = dry_run or any(flag in args for flag in preview_flags)
+            clean_args = [arg for arg in args if arg not in preview_flags]
+            category = None
+            target_path = None
+            i = 0
+            while i < len(clean_args):
+                if clean_args[i] == "--category" and i + 1 < len(clean_args):
+                    category = clean_args[i + 1]
+                    i += 2
+                elif clean_args[i].startswith("--category="):
+                    category = clean_args[i].split("=", 1)[1]
+                    i += 1
+                elif not clean_args[i].startswith("-") and target_path is None:
+                    target_path = clean_args[i]
+                    i += 1
+                else:
+                    i += 1
+            try:
+                result = self.export_promptboard(target_path, category=category, dry_run=dry_run)
+                return True, json.dumps(result, ensure_ascii=False)
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                return False, f"PromptBoard-Export fehlgeschlagen: {exc}"
         elif operation == "list":
             return self._list(args)
         elif operation == "add":
@@ -179,15 +204,29 @@ class PromptHandler(BaseHandler):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def import_promptboard(self, library_path=None, *, dry_run=False):
+    def import_promptboard(self, library_path=None, *, payload=None, dry_run=False):
         """Validate first, then import atomically; duplicate names keep user data.
 
         Missing/empty entries are counted as invalid. Non-text fields reject the
         entire library instead of silently converting JSON objects to prompts.
         The dry run counts additions and duplicates without changing the DB.
         """
-        if library_path is not None:
+        source_name = None
+        if payload is not None:
+            source_name = getattr(payload, "name", "upload") if hasattr(payload, "name") else "upload"
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            if isinstance(payload, list):
+                items = payload
+            elif isinstance(payload, dict):
+                items = payload.get("items")
+            else:
+                items = None
+        elif library_path is not None:
             path = Path(library_path).expanduser()
+            source_name = str(path)
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            items = payload.get("items") if isinstance(payload, dict) else None
         else:
             candidates = [p for p in promptboard_library_paths() if p.exists()]
             path = None
@@ -205,10 +244,12 @@ class PromptHandler(BaseHandler):
                     continue
             if path is None and candidates:
                 path = candidates[0]
-        if path is None:
-            raise FileNotFoundError(promptboard_library_not_found(promptboard_library_paths()))
-        payload = json.loads(path.read_text(encoding="utf-8-sig"))
-        items = payload.get("items") if isinstance(payload, dict) else None
+            if path is None:
+                raise FileNotFoundError(promptboard_library_not_found(promptboard_library_paths()))
+            source_name = str(path)
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            items = payload.get("items") if isinstance(payload, dict) else None
+
         if not isinstance(items, list):
             raise ValueError("Unerwartetes Format: 'items'-Liste fehlt")
         entries, invalid = [], 0
@@ -253,10 +294,142 @@ class PromptHandler(BaseHandler):
                         )
                     names.add(entry[0])
                     imported += 1
-            return {"ok": True, "source": str(path), "imported": imported,
+            return {"ok": True, "source": str(source_name), "imported": imported,
                     "skipped": skipped, "invalid": invalid, "dry_run": bool(dry_run)}
         finally:
             conn.close()
+
+    def export_promptboard(self, library_path=None, *, category=None, dry_run=False):
+        """Export or sync prompt templates from BACH to PromptBoard's library.json.
+
+        Loads existing items from the target library.json (if present), matches by name
+        (or ID), adds missing prompts with uuid, updates modified fields, and writes
+        back atomically without corrupting external PromptBoard items.
+        """
+        import uuid
+        target = None
+        if library_path is not None:
+            target = Path(library_path).expanduser()
+        else:
+            candidates = [p for p in promptboard_library_paths() if p.exists()]
+            if candidates:
+                target = candidates[0]
+            else:
+                target = Path.home() / ".promptboard" / "library.json"
+
+        # Load existing items if target exists
+        existing_items = []
+        if target.exists():
+            try:
+                content = target.read_text(encoding="utf-8-sig")
+                data = json.loads(content)
+                if isinstance(data, dict) and isinstance(data.get("items"), list):
+                    existing_items = data["items"]
+                elif isinstance(data, list):
+                    existing_items = data
+            except Exception as e:
+                raise ValueError(f"Fehler beim Lesen der Ziel-Bibliothek '{target}': {e}")
+
+        # Map existing items by lower-case trimmed name
+        item_by_name = {}
+        for idx, item in enumerate(existing_items):
+            if isinstance(item, dict) and item.get("name"):
+                name_key = str(item["name"]).strip().lower()
+                item_by_name[name_key] = idx
+
+        # Fetch templates from BACH database
+        conn = self._get_conn()
+        try:
+            query = "SELECT id, name, text, tags, category, purpose, created_at, updated_at FROM prompt_templates"
+            params = []
+            if category:
+                query += " WHERE category = ?"
+                params.append(category)
+            query += " ORDER BY id"
+            rows = conn.execute(query, params).fetchall()
+        finally:
+            conn.close()
+
+        exported = 0
+        updated = 0
+        now_iso = datetime.now().isoformat()
+
+        final_items = [dict(it) if isinstance(it, dict) else it for it in existing_items]
+
+        for row in rows:
+            name = (row["name"] or "").strip()
+            text = (row["text"] or "").strip()
+            if not name or not text:
+                continue
+
+            raw_tags = row["tags"]
+            parsed_tags = []
+            if raw_tags:
+                try:
+                    pt = json.loads(raw_tags)
+                    if isinstance(pt, list):
+                        parsed_tags = [str(t).strip() for t in pt if str(t).strip()]
+                    elif isinstance(pt, str):
+                        parsed_tags = [t.strip() for t in pt.split(",") if t.strip()]
+                except Exception:
+                    parsed_tags = [t.strip() for t in str(raw_tags).split(",") if t.strip()]
+
+            cat = (row["category"] or "PromptBoard").strip() or "PromptBoard"
+            desc = (row["purpose"] or "").strip()
+            name_key = name.lower()
+
+            if name_key in item_by_name:
+                idx = item_by_name[name_key]
+                existing = dict(final_items[idx])
+                changed = False
+                if existing.get("content") != text:
+                    existing["content"] = text
+                    changed = True
+                if cat and existing.get("category") != cat and existing.get("category") != "PromptBoard":
+                    existing["category"] = cat
+                    changed = True
+                if parsed_tags and existing.get("tags") != parsed_tags:
+                    existing["tags"] = parsed_tags
+                    changed = True
+                if desc and not existing.get("description"):
+                    existing["description"] = desc
+                    changed = True
+                if changed:
+                    existing["updated_at"] = now_iso
+                    final_items[idx] = existing
+                    updated += 1
+            else:
+                new_item = {
+                    "id": uuid.uuid4().hex,
+                    "item_type": "PROMPT",
+                    "name": name,
+                    "content": text,
+                    "category": cat,
+                    "tags": parsed_tags,
+                    "source": "bach",
+                    "description": desc,
+                    "created_at": row["created_at"] or now_iso,
+                    "updated_at": row["updated_at"] or now_iso,
+                }
+                final_items.append(new_item)
+                item_by_name[name_key] = len(final_items) - 1
+                exported += 1
+
+        if not dry_run:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temp_file = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+            out_payload = {"items": final_items}
+            temp_file.write_text(json.dumps(out_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            os.replace(temp_file, target)
+
+        return {
+            "ok": True,
+            "target": str(target),
+            "exported": exported,
+            "updated": updated,
+            "total": len(final_items),
+            "dry_run": bool(dry_run),
+        }
 
     def _resolve_prompt(self, conn, id_or_name: str):
         """Findet ein Template per ID oder Name. Returns Row oder None."""

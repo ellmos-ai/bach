@@ -158,6 +158,7 @@ id_ed25519.*
 # === EXPORTS & GENERATED ARTIFACTS ===
 /exports/**/*.zip
 /exports/**/_archive/
+/system/exports/
 /system/tools/analysis_results.json
 /system/tools/testing/results/
 

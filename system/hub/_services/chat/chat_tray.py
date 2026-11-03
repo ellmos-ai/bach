@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -745,7 +746,12 @@ class BACHTray:
         dirs = []
         # 1. Plan D canonical local dev repos
         local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
-        for repo_name in ("REL-PUB_PromptBoard-tasksolver-1136-1137", "REL-PUB_PromptBoard"):
+        for repo_name in (
+            "promptboard",
+            "PromptBoard",
+            "REL-PUB_PromptBoard-tasksolver-1136-1137",
+            "REL-PUB_PromptBoard",
+        ):
             p = local_dev / repo_name
             if p.exists() and p not in dirs:
                 dirs.append(p)
@@ -754,16 +760,17 @@ class BACHTray:
         user_profile = os.environ.get("USERPROFILE")
         if user_profile:
             for sub in ("DATA", "LLM"):
-                p = (
-                    Path(user_profile)
-                    / "OneDrive"
-                    / ".TOPICS"
-                    / ".SOFTWARE"
-                    / sub
-                    / "REL-PUB_PromptBoard"
-                )
-                if p.exists() and p not in dirs:
-                    dirs.append(p)
+                for folder in ("REL-PUB_PromptBoard", "PromptBoard"):
+                    p = (
+                        Path(user_profile)
+                        / "OneDrive"
+                        / ".TOPICS"
+                        / ".SOFTWARE"
+                        / sub
+                        / folder
+                    )
+                    if p.exists() and p not in dirs:
+                        dirs.append(p)
         return dirs
 
     def _promptboard_project_dir(self):
@@ -882,6 +889,33 @@ class BACHTray:
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
 
+    def _load_db_prompts(self):
+        """Load curated prompts from BACH's canonical database (prompt_templates)."""
+        db_path = None
+        for cand in (
+            Path.home() / ".bach" / "bach.db",
+            Path(_root_dir) / "data" / "bach.db",
+            Path(_system_dir) / "data" / "bach.db",
+        ):
+            if cand.exists():
+                db_path = cand
+                break
+        if not db_path:
+            return {}
+        try:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name, text, category FROM prompt_templates WHERE text IS NOT NULL AND text != ''"
+                )
+                db_prompts = {}
+                for name, text, category in cursor.fetchall():
+                    cat = (category.strip() if category and category.strip() else "BACH")
+                    db_prompts.setdefault(cat, {})[str(name).strip()] = str(text).strip()
+                return db_prompts
+        except Exception:
+            return {}
+
     def _load_prompts(self):
         config_dir = os.path.expanduser("~/.config/bach")
         prompts_path = Path(config_dir) / "prompts.json"
@@ -895,6 +929,12 @@ class BACHTray:
             if prompts:
                 self.prompt_source = str(candidate)
                 return prompts
+
+        db_prompts = self._load_db_prompts()
+        if db_prompts:
+            self.prompt_source = "bach_db"
+            return db_prompts
+
         self.prompt_source = "defaults"
         return DEFAULT_PROMPTS
 
@@ -1474,6 +1514,8 @@ class BACHTray:
         if app_path:
             prompt_items.append(pystray.MenuItem("PromptBoard App öffnen", self._open_promptboard))
         prompt_items.append(pystray.MenuItem("Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
+        prompt_items.append(pystray.MenuItem("PromptBoard in BACH importieren", self._import_promptboard_action))
+        prompt_items.append(pystray.MenuItem("Prompts nach PromptBoard exportieren", self._export_promptboard_action))
         prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
@@ -1525,6 +1567,7 @@ class BACHTray:
         quick_items = [
             pystray.MenuItem(f"💬 {chat_label}", self._open_webchat),
             pystray.MenuItem("🎙️ ELLMOS Talk (Live-Stimme)", self._open_talk),
+            pystray.MenuItem("🎙️ Sprach-Prompt aufnehmen (Chat-Handoff)", self._record_audio_prompt_action),
             pystray.MenuItem("⚡ Agenten · Running und Verlauf", self._open_running),
             pystray.MenuItem("📚 Agenten-Bibliothek · Vorlagen", self._open_blueprints),
             pystray.MenuItem("📖 Hilfe & Claim-Doku", self._open_claiming_docs),
@@ -1851,6 +1894,73 @@ class BACHTray:
         except OSError:
             if self.icon:
                 self.icon.notify("PromptBoard-Start fehlgeschlagen", "BACH PromptBoard")
+
+    def _import_promptboard_action(self, *_):
+        """Imports prompts from PromptBoard library.json into BACH DB."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            _, result = handler.handle("import-promptboard", [])
+            data = json.loads(result) if isinstance(result, str) and result.strip().startswith("{") else {}
+            imported = data.get("imported", 0)
+            skipped = data.get("skipped", 0)
+            if self.icon:
+                self.icon.notify(
+                    f"PromptBoard-Import: {imported} neu, {skipped} bestehend.",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Import fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _export_promptboard_action(self, *_):
+        """Exports prompts from BACH DB into PromptBoard library.json."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            _, result = handler.handle("export-promptboard", [])
+            data = json.loads(result) if isinstance(result, str) and result.strip().startswith("{") else {}
+            exported = data.get("exported", 0)
+            updated = data.get("updated", 0)
+            total = data.get("total", 0)
+            if self.icon:
+                self.icon.notify(
+                    f"PromptBoard-Export: {exported} neu, {updated} aktualisiert ({total} gesamt).",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Export fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _record_audio_prompt_action(self, *_):
+        """Triggers audio prompt recording via ellmos-voice-io or speech interface handoff."""
+        def record_worker():
+            try:
+                from hub._services.ocean_stack_bridge import load_voice_io_module
+                mod = load_voice_io_module()
+                voice = mod.VoiceIO()
+                stt_ok, engine = voice.stt.available()
+                if not stt_ok:
+                    if self.icon:
+                        self.icon.notify("Kein STT-Modul (Whisper/Vosk) installiert. Öffne Talk Web-GUI...", "BACH Sprach-Prompt")
+                    import webbrowser
+                    webbrowser.open(f"{self.gui_url}/talk")
+                    return
+                if self.icon:
+                    self.icon.notify(f"STT aktiv ({engine}). Öffne Spracheingabe im Chat...", "BACH Sprach-Prompt")
+                import webbrowser
+                webbrowser.open(f"{self.gui_url}/chat?voice=1")
+            except Exception as e:
+                if self.icon:
+                    self.icon.notify(f"Sprach-Interface: Öffne Talk ({e})...", "BACH Sprach-Prompt")
+                import webbrowser
+                webbrowser.open(f"{self.gui_url}/talk")
+
+        threading.Thread(target=record_worker, daemon=True).start()
 
     def _open_telegram(self, *_):
         import webbrowser

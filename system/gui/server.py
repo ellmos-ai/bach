@@ -11790,6 +11790,72 @@ async def import_promptboard_library():
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
 
+@app.post("/api/prompt-library/import-json/preview")
+async def preview_prompt_json_upload(req: Request):
+    """Preview uploaded PromptBoard JSON items without changing the database."""
+    from hub.prompt import PromptHandler
+    try:
+        body = await req.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
+    try:
+        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
+        res = handler.import_promptboard(payload=payload, dry_run=True)
+        if isinstance(body, dict) and "filename" in body:
+            res["source"] = str(body["filename"])
+        return res
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
+
+
+@app.post("/api/prompt-library/import-json")
+async def import_prompt_json_upload(req: Request):
+    """Import uploaded PromptBoard JSON items directly into the library."""
+    from hub.prompt import PromptHandler
+    try:
+        body = await req.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
+    try:
+        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
+        res = handler.import_promptboard(payload=payload, dry_run=False)
+        if isinstance(body, dict) and "filename" in body:
+            res["source"] = str(body["filename"])
+        return res
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
+
+
+@app.post("/api/prompt-library/export-promptboard")
+async def export_promptboard_library(req: Request = None):
+    """Export and sync prompt templates from BACH to external PromptBoard library.json."""
+    from hub.prompt import PromptHandler
+    candidates = _promptboard_library_paths()
+    target_path = next((p for p in candidates if p.exists()), None)
+    if target_path is None and candidates:
+        target_path = candidates[0]
+    category = None
+    dry_run = False
+    if req is not None:
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                category = body.get("category")
+                dry_run = bool(body.get("dry_run", False))
+                if body.get("target_path"):
+                    target_path = Path(body["target_path"])
+        except Exception:
+            pass
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).export_promptboard(
+            target_path, category=category, dry_run=dry_run
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Export fehlgeschlagen: {exc}") from exc
+
+
 @app.get("/api/prompt-generator/templates")
 
 async def get_prompt_templates():
@@ -16881,7 +16947,15 @@ async def api_voice_stt(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
     voice_mod = load_voice_io_module()
     svc = voice_mod.VoiceIO()
-    text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
+    try:
+        text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
+    except Exception as exc:
+        return {
+            "schema": "ellmos.voice-io.stt.v1",
+            "text": "",
+            "warning": f"STT-Engine (Whisper/Vosk) nicht verfügbar oder Audio-Fehler: {exc}",
+            "language": language,
+        }
     return {
         "schema": "ellmos.voice-io.stt.v1",
         "text": text,
@@ -16904,7 +16978,10 @@ async def api_voice_tts(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="text fehlt")
     voice_mod = load_voice_io_module()
     svc = voice_mod.VoiceIO()
-    wav_bytes = svc.synthesize_bytes(text)
+    try:
+        wav_bytes = svc.synthesize_bytes(text)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
     return {
         "schema": "ellmos.voice-io.tts.v1",
         "language": language,

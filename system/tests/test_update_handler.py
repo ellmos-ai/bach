@@ -627,6 +627,75 @@ class TestSkillsAndModulesUpdate:
         assert "sample-module" in msg
         assert "v1.0.0" in msg
 
+    def test_update_modules_sync_dry_run(self, handler):
+        modules_dir = handler.base_path.parent / ".MODULES" / ".CONTROL" / "sample-mod"
+        modules_dir.mkdir(parents=True, exist_ok=True)
+        (modules_dir / "MANIFEST.json").write_text(json.dumps({"name": "sample-mod", "version": "1.0.0"}), encoding="utf-8")
+
+        ok, msg = handler.handle("modules", ["--sync", "--dry-run"])
+        assert ok is True
+        assert "[DRY-RUN]" in msg
+        assert "=== STANDALONE REPOSITORIEN & OCEAN-MODULE ===" in msg
+
+    def test_update_modules_sync_targeted(self, handler, tmp_path, monkeypatch):
+        local_repos = tmp_path / "repos"
+        local_repos.mkdir()
+        monkeypatch.setenv("LOCAL_DEV_REPOS", str(local_repos))
+
+        modules_dir = handler.base_path.parent / ".MODULES" / ".CONTROL" / "test-target-mod"
+        modules_dir.mkdir(parents=True, exist_ok=True)
+        (modules_dir / "MANIFEST.json").write_text(json.dumps({"name": "test-target-mod", "version": "1.0.0"}), encoding="utf-8")
+        (modules_dir / "code.py").write_text("print('hello')", encoding="utf-8")
+
+        # Mock catalog
+        catalog = {
+            "modules": {
+                "test-target-mod": {
+                    "id": "test-target-mod",
+                    "runtime_source": str(local_repos / "test-target-mod"),
+                    "resolved_source": ".CONTROL/test-target-mod",
+                    "source_of_truth": {"repository": "https://example.com/test-target-mod.git"}
+                }
+            }
+        }
+        (handler.base_path.parent / ".MODULES" / "modules.catalog.json").write_text(json.dumps(catalog), encoding="utf-8")
+
+        ok, msg = handler.handle("modules", ["--sync", "test-target-mod"])
+        assert ok is True
+        assert "test-target-mod" in msg
+        target_repo = local_repos / "test-target-mod"
+        assert target_repo.exists()
+        assert (target_repo / "code.py").exists()
+
+    def test_update_modules_tier_resolution_rinnsal_and_bach(self, handler):
+        modules_dir = handler.base_path.parent / ".MODULES"
+        modules_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Rinnsal Tier
+        ok_r, msg_r = handler.handle("modules", ["--tier", "rinnsal"])
+        assert ok_r is True
+        assert "RINNSAL (4 Module aufgelöst)" in msg_r
+        assert "open-ocean" in msg_r
+        assert "task-master" in msg_r
+        assert "agents-heart" in msg_r
+        assert "condition-gates" in msg_r
+
+        # 2. BACH Tier
+        ok_b, msg_b = handler.handle("modules", ["--tier=bach"])
+        assert ok_b is True
+        assert "BACH (12 Module aufgelöst)" in msg_b
+        assert "foerderplaner" in msg_b
+        assert "worksheet-generator" in msg_b
+        assert "law-checker" in msg_b
+
+    def test_update_modules_tier_unknown_rejected(self, handler):
+        modules_dir = handler.base_path.parent / ".MODULES"
+        modules_dir.mkdir(parents=True, exist_ok=True)
+
+        ok, msg = handler.handle("modules", ["--tier", "fantasia"])
+        assert ok is False
+        assert "[FEHLER] Unbekannter Tier: 'fantasia'" in msg
+
     def test_update_all_runs_substeps(self, handler):
         with patch.object(handler, "_check", return_value=(True, "=== GIT CHECK OK ===")):
             ok, msg = handler.handle("all", [])
@@ -634,3 +703,30 @@ class TestSkillsAndModulesUpdate:
             assert "=== GIT CHECK OK ===" in msg
             assert "=== SKILL UPDATE & SYNC ===" in msg
             assert "=== MODULE & ADAPTER STATUS ===" in msg
+
+    def test_update_modules_reimport_and_hotwire(self, handler):
+        modules_dir = handler.base_path.parent / ".MODULES"
+        modules_dir.mkdir(parents=True, exist_ok=True)
+        exports_dir = handler.base_path / "exports" / "modules" / "test_mod_export"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        src_dir = exports_dir / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        (src_dir / "test_mod.py").write_text("# dummy test module\n__version__ = '1.0.0'\n", encoding="utf-8")
+        manifest = {
+            "name": "test_mod",
+            "version": "1.0.0",
+            "type": "module",
+            "description": "Test standalone module",
+            "author": "BACH Team",
+            "selfcontained": True,
+            "entrypoints": {"library": "src/test_mod.py"}
+        }
+        (exports_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        ok, msg = handler.handle("modules", ["--reimport"])
+        assert ok is True
+        assert "=== RE-IMPORT & HOT-WIRING (Standalone Module) ===" in msg
+        assert "test_mod" in msg
+        assert "[RE-IMPORTIERT] v1.0.0" in msg
+        assert (modules_dir / "test_mod" / "src" / "test_mod.py").exists()
+

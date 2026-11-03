@@ -57,6 +57,18 @@ def test_both_pages_load_the_shared_draft_helper():
 
     assert include in (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
     assert include in (TEMPLATES / "chat.html").read_text(encoding="utf-8")
+    assert include in (TEMPLATES / "index.html").read_text(encoding="utf-8")
+
+
+def test_index_dashboard_has_quick_prompt_card_and_chat_handoff():
+    source = (TEMPLATES / "index.html").read_text(encoding="utf-8")
+
+    assert "quick-prompt-input" in source
+    assert "quick-prompt-select" in source
+    assert "openQuickPromptInChat()" in source
+    assert "window.BachChatDraft.store(text)" in source
+    assert "loadQuickPromptTemplates()" in source
+    assert "/api/prompt-library" in source
 
 
 def test_prompt_library_and_chat_routes_render_the_helper():
@@ -97,3 +109,97 @@ def test_prompt_library_template_has_preview_and_tag_filtering():
     assert "previewPromptBoard()" in source
     assert "/api/prompt-library/import-promptboard/preview" in source
     assert "filterTag(tag)" in source
+
+
+def test_prompt_library_template_has_drag_and_drop_and_file_upload():
+    source = (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
+    assert "pl-drop-area" in source
+    assert "handleDragOver(event)" in source
+    assert "handleDrop(event)" in source
+    assert "handleFileSelect(event)" in source
+    assert "pl-file-input" in source
+    assert "/api/prompt-library/import-json/preview" in source
+    assert "/api/prompt-library/import-json" in source
+
+
+def test_prompt_library_import_json_endpoints(monkeypatch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from gui import server
+
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "test-token" else None)
+    client = TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-token"})
+
+    payload = {
+        "filename": "external_library.json",
+        "payload": {
+            "items": [
+                {"name": "UploadPrompt1", "content": "Text 1", "category": "Uploaded"},
+                {"name": "UploadPrompt1", "content": "Duplikat"},
+            ]
+        }
+    }
+
+    # 1. Preview
+    res_preview = client.post("/api/prompt-library/import-json/preview", json=payload)
+    assert res_preview.status_code == 200
+    data_preview = res_preview.json()
+    assert data_preview["ok"] is True
+    assert data_preview["dry_run"] is True
+    assert data_preview["imported"] == 1
+    assert data_preview["skipped"] == 1
+    assert data_preview["source"] == "external_library.json"
+
+    # 2. Actual Import
+    res_import = client.post("/api/prompt-library/import-json", json=payload)
+    assert res_import.status_code == 200
+    data_import = res_import.json()
+    assert data_import["ok"] is True
+    assert data_import["dry_run"] is False
+    assert data_import["imported"] == 1
+    assert data_import["source"] == "external_library.json"
+
+
+def test_prompt_library_template_has_variable_replacement_and_preview():
+    source = (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
+    assert "pl-variables-panel" in source
+    assert "extractTemplateVariables" in source
+    assert "getSubstitutedPromptText" in source
+    assert "updateVariablePreview" in source
+    assert "openResolvedInChat" in source
+    assert "pl-preview-box" in source
+    assert "pl-variables-grid" in source
+    assert "BachChatDraft.store(text.value)" in source
+
+
+def test_chat_has_voice_input_and_stt_streaming_support():
+    source = (TEMPLATES / "chat.html").read_text(encoding="utf-8")
+    assert 'id="mic-btn"' in source
+    mic_idx = source.index('id="mic-btn"')
+    assert 'hidden' not in source[mic_idx-30:mic_idx+30]
+    assert "navigator.mediaDevices.getUserMedia" in source
+    assert "MediaRecorder" in source
+    assert "/api/voice/stt" in source
+    assert "params.get('voice') === '1'" in source
+
+
+def test_api_voice_stt_endpoint(monkeypatch):
+    import base64
+    from fastapi.testclient import TestClient
+    from gui import server
+
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "test-token" else None)
+    client = TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-token"})
+
+    # Missing audio_b64 -> 400
+    res_bad = client.post("/api/voice/stt", json={})
+    assert res_bad.status_code == 400
+
+    # Valid audio_b64
+    fake_audio = base64.b64encode(b"RIFF-fake-wav").decode("ascii")
+    res_ok = client.post("/api/voice/stt", json={"audio_b64": fake_audio, "suffix": ".wav", "language": "de"})
+    assert res_ok.status_code == 200
+    data = res_ok.json()
+    assert data["schema"] == "ellmos.voice-io.stt.v1"
+
+

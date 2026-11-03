@@ -1,13 +1,13 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-11-02 | **Version:** 4.4.1 (`v3.15.0-ocean-stack-m1`) | **Review:** 2026-11-02 (SOLL/IST-Abgleich & 11/11 Ocean-Stack-Bindungen)
+**Stand:** 2026-11-03 | **Version:** 4.4.4 (`v3.15.0-ocean-stack-m4`) | **Review:** 2026-11-03 (Modularisierungs-Export, Re-Import Hot-Wiring & Web-Chat Audio-STT)
 
 ## SOLL/IST-Übersicht der Meilenstein-Linie (Stand 2026-11-02)
 
 | Meilenstein / Bereich | SOLL (Zielbild) | IST (Verifizierter Stand 2026-11-02) |
 |---|---|---|
 | **Gemeinsame GUI (`ellmos-system-gui`)** | Einzige kanonische GUI (`v0.2.30`, 42 Seiten inkl. 4-Stufen-Onboarding `SET-02`) auf Windows & Mac Studio aktiv | Release `v0.2.30` (`1277f0afc6e5`, SHA-256 `f6f9d7c5...`, 42 Seiten) gebaut, veröffentlicht und in `kit_manifest.json` / `gui-consumer.v1.json` gepinnt |
-| **Ocean-Stack-Consumer-Brücke (`ocean_stack_bridge.py`)** | Alle 11 kanonischen Kernmodule produktiv in `ocean_stack_status()` gebunden | **11 / 11 gebunden** (`ocean-resources`, `task-master`, `ellmos-worker`, `review-policy`, `escalation-ladder`, `persona-routing`, `learning-loop`, `agent-library`, `capability-views`, `governance-bridge`, `doc-keeper`) |
+| **Ocean-Stack-Consumer-Brücke (`ocean_stack_bridge.py`)** | Alle 12 kanonischen Kernmodule produktiv in `ocean_stack_status()` gebunden | **12 / 12 gebunden** (`ocean-resources`, `task-master`, `ellmos-worker`, `review-policy`, `escalation-ladder`, `persona-routing`, `learning-loop`, `agent-library`, `capability-views`, `governance-bridge`, `doc-keeper`, `agents-heart`) |
 | **Neue Modul-Repos (`ocean-resources`, `agents-heart`)** | Eigenständige GitHub-Repos unter `ellmos-ai/*` + Katalog-Registrierung | **`ellmos-ai/ocean-resources` (`06aa475`)** & **`ellmos-ai/agents-heart` (`a4ec348`)** erstellt, gepusht, geklont und in `.MODULES/modules.catalog.json` registriert |
 | **Desktop-Harness (`#2337`) & Store-Readiness (`#2497`)** | Gemeinsamer Desktop-Vertrag + 15/15 Store-Readiness-Checks grün | `desktop_harness_contract.py` in `open-ocean`, `ellmos-system-gui` & `bach`; `store_readiness.py` 15/15 grün |
 | **Automatische API-/CLI-Referenz (`#2556`)** | Aus Code generierte HTTP-/CLI-Referenz mit CI-Drift-Test | `system/tools/generate_api_cli_reference.py`, `docs/api/*` und `test_api_cli_reference_drift.py` aktiv |
@@ -125,10 +125,90 @@ Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und S
 - **Lokales Ocean-Resources Repository gebunden:**
   - `https://github.com/ellmos-ai/ocean-resources.git` geklont unter `C:\_Local_DEV\repos\ocean-resources`.
 
-- **Roadmap-Fortschritt & Neue Aufgaben (Erstellt):**
-  - Task ID `-8`: `Modularisierung: Ocean-Stack Bridge Consumer-Seams fuer verbleibende 54 Transfer-Tasks fortfuehren` (P2, core).
-  - Task ID `-11`: `Modularisierung: ocean-resources und agents-heart Installations- und Update-Automatisierung in bach update` (P2, core).
-  - Task ID `-12`: `Prompt-Bibliothek: Board-Import per Drag & Drop von JSON-Dateien in der GUI` (P2, gui).
+- **PromptBoard GUI Drag & Drop JSON-Import (Task #-12, Erledigt):**
+  - Prompt-Bibliothek (`system/gui/templates/prompt-library.html`) um Drag & Drop-Dateiupload und Datei-Auswahl (`.json`) erweitert.
+  - Endpoints `POST /api/prompt-library/import-json/preview` und `POST /api/prompt-library/import-json` in `server.py` implementiert.
+  - `PromptHandler.import_promptboard` (`system/hub/prompt.py`) erweitert, um sowohl Dateipfade als auch direkte JSON-Payloads/Listen atomar und duplikatsicher zu importieren.
+  - 41 Tests in `test_promptboard_import.py` und `test_prompt_chat_draft.py` vollständig grün.
+  - Task #-12 erledigt gemeldet.
+
+- **Modul-Installations- & Synchronisations-Pipeline in `bach update` (Task #-11, Erledigt):**
+  - `bach update modules` (`system/hub/update.py`) um `--sync`, `--install`, `--apply` und gezielte Modulfilterung (`ocean-resources`, `agents-heart`, etc.) erweitert.
+  - Automatisches Klonen fehlender Standalone-Repositories aus GitHub / `source_of_truth` sowie robuster `.CONTROL`-Abgleich ohne `.git`- oder Cache-Kollisionen implementiert.
+  - Standalone-Repos `agents-heart`, `anonymizer`, `condition-gates`, `doc-keeper`, `ellmos-system-gui`, `foerderplaner`, `law-checker`, `worksheet-generator` etc. erfolgreich synchronisiert.
+  - 58 Tests in `test_update_handler.py` vollständig grün.
+  - Task #-11 erledigt gemeldet.
+
+- **Ocean-Stack Bridge: `agents-heart` als 12. kanonisches Modul gebunden (Task #-8, Erledigt):**
+  - `agents-heart` (`src/agents_heart/__init__.py`) als 12. Seam in `system/hub/_services/ocean_stack_bridge.py` (`CANONICAL_MODULES`) verankert.
+  - `load_agents_heart_module()` und `evaluate_agents_heart_assignment()` implementiert; Rollenvertrag und Besetzungsnachweis angebunden.
+  - Hardware- und GUI-Capability-Extensions (`ellmos-sensation`, `ellmos-homecontrol`, `ellmos-robotics`) geklont und synchronisiert.
+  - Alle 12 kanonischen Kernmodule in `ocean_stack_status()` aktiv gebunden (`bound: true`); 7/7 Tests in `test_ocean_stack_consumption.py` vollständig grün.
+  - Task #-8 erledigt gemeldet.
+
+- **Roadmap-Fortschritt & Erledigte Aufgaben (Tasks -13, -14, -15):**
+  - **Prompt-Editor Variablen-Ersetzung & Live-Vorschau (Task #-13, Erledigt):**
+    - Interaktives Template-Variablen-Panel (`#pl-variables-panel`) in `system/gui/templates/prompt-library.html` integriert.
+    - Automatische Regex-Erkennung von `{variable}` und `{{variable}}`, dynamische Eingabefelder mit Live-Vorschau (`#pl-preview-box`) und Echtzeit-Ersetzung.
+    - Übergabe aufgelöster Prompts via `BachChatDraft.store(...)` an `/chat`. 11/11 Tests in `test_prompt_chat_draft.py` grün.
+  - **Modularisierung: Core-Entflechtung & Installer-Modulpaket-Resolution (Task #-14, Erledigt):**
+    - Ausbaustufen-Auflösung in `system/hub/update.py` implementiert: `bach update modules --tier=rinnsal|bach|meer` (bzw. `--bundle=...`).
+    - *Rinnsal* (4 Minimal-Module), *BACH* (12 kanonische Ocean-Stack Module) und *Meer* (79 Module aus `modules.catalog.json`).
+    - Kanonische Installations- und Modularisierungsanleitung `docs/INSTALLATION.md` verfasst. 60/60 Tests in `test_update_handler.py` grün.
+  - **Module-Lifecycle: Automatisierte Validierung vor Re-Import (Task #-15, Erledigt):**
+    - `verify_selfcontained_module()` in `system/hub/skills.py` implementiert (Manifest-Syntax, SemVer, Entrypoints-Existenz, Boundaries, Zip-Slip-Schutz und Hygiene).
+    - Neuer CLI-Befehl `bach skills verify <path>` / `bach skills lint <path>` bereitgestellt.
+    - Fail-Closed Vorab-Validierung in `SkillsHandler._install()` verankert; fehlerhafte Pakete werden vor Schreibaktionen abgewiesen. 28/28 Tests in `test_skills_handler.py` grün.
+
+- **Roadmap-Fortschritt & Erledigte Aufgaben (Tasks -16, -17, -18, 1157):**
+  - **Tray-App & PromptBoard Integration (Task #-16, Erledigt):**
+    - In `system/hub/_services/chat/chat_tray.py` die Aktion `PromptBoard in BACH importieren` (`_import_promptboard_action`) integriert.
+    - Kanonische Datenbankprompts (`prompt_templates` in `bach.db`) als Fallback eingebunden (`_load_db_prompts`).
+    - Repository-Kandidatensuche um `promptboard` und `PromptBoard` erweitert.
+    - 5/5 Tests in `test_connectors_and_tray.py` vollständig grün. Task #-16 erledigt gemeldet.
+  - **Installer-CLI & Tier-Resolution (Task #-17, Erledigt):**
+    - 4-Stufen Installations- und Modularisierungsanleitung `docs/INSTALLATION.md` verfasst.
+    - Auflösung der 3 Tiers (Rinnsal, BACH, Meer) und 79 Katalogmodule in `system/hub/update.py` (`bach update modules --tier=...`) abgedeckt. Task #-17 erledigt gemeldet.
+  - **Modul-Export-Generator (Task #-18, Erledigt):**
+    - Neuer CLI-Befehl `bach skills export-module <name> [output_dir]` in `system/hub/skills.py` implementiert.
+    - Automatische Extraktion von Legacy-Hub-Diensten / Seams in autarke Standalone-Modul-Strukturen mit `manifest.json`, `src/`, `tests/`, `README.md` und `.zip`.
+    - Strikte Vorab- und Abschlussprüfung über `verify_selfcontained_module()`.
+    - 29/29 Tests in `test_skills_handler.py` vollständig grün. Task #-18 erledigt gemeldet.
+  - **Startseite & Chatoberflächen-Funktionstest (Task #1157, Erledigt):**
+    - Analyse der Startseite und Chat-Architektur abgeschlossen: Chat-Backend läuft über Startspine `/api/chat-control/*` mit Proxy in `server.py`, Verläufe und Sessions werden in `/chat` dargestellt.
+    - Startseite `system/gui/templates/index.html` um Card `Schnell-Prompt & Dialog` erweitert: Prompt-Auswahl aus der Bibliothek, Direkteingabe, Ziel-Agent-Wahl, Übergabe via `BachChatDraft.store` direkt in `/chat` und Verlaufs-Links.
+    - 12/12 Tests in `test_prompt_chat_draft.py` vollständig grün. Task #1157 erledigt gemeldet.
+
+- **Roadmap-Fortschritt & Erledigte Aufgaben (Tasks -19, -20, -21):**
+  - **Modularisierungs-Audit (Task #-19, Erledigt):**
+    - `bach skills audit` / `export-audit` in `system/hub/skills.py` implementiert.
+    - Vollständiger Scan über alle 151 Hub-Dienste: 113 Dienste bereits entflochten (74.8% Seams), 32 export-bereite Dienste identifiziert.
+    - Ausgabe von Koppelungsgrad, internen Abhängigkeiten und One-Click-Export-Befehlen (`bach skills export-module <name>`). 30/30 Tests in `test_skills_handler.py` grün. Task #-19 erledigt gemeldet.
+  - **Tray-App & Sprach-Prompt Chat-Handoff (Task #-20, Erledigt):**
+    - `_record_audio_prompt_action` in `system/hub/_services/chat/chat_tray.py` integriert: Nutzt `ellmos-voice-io` (`VoiceIO.stt`) zur Erkennung und übergibt an Chat bzw. öffnet Talk-GUI bei fehlender lokaler Hardware.
+    - Menüpunkt "🎙️ Sprach-Prompt aufnehmen (Chat-Handoff)" in der Tray verankert. 114/114 Tests in `test_connectors_and_tray.py` grün. Task #-20 erledigt gemeldet.
+  - **PromptBoard Two-Way-Sync & Export (Task #-21, Erledigt):**
+    - `PromptHandler.export_promptboard` in `system/hub/prompt.py` implementiert (CLI `bach prompt export-promptboard [path] [--dry-run]`, idempotentes Matching, Erhalt bestehender Felder und UUID-Generierung).
+    - Menü-Aktion "Prompts nach PromptBoard exportieren" in `chat_tray.py` integriert.
+    - Neuer Endpunkt `POST /api/prompt-library/export-promptboard` in `server.py` und UI-Button "Nach PromptBoard exportieren" in `prompt-library.html`. 34/34 Tests in `test_promptboard_import.py` grün. Task #-21 erledigt gemeldet.
+
+- **Roadmap-Fortschritt & Erledigte Aufgaben (Tasks -22, -23, -24):**
+  - **Modularisierung: Export der ersten Top-Kandidaten (Task #-22, Erledigt):**
+    - `agent_spawn_gate`, `context_hints` und `session_checkpoint_adapter` via `bach skills export-module <name>` in autarke Standalone-Module exportiert.
+    - Vollständige Pakete mit `manifest.json`, `src/`, `tests/`, `README.md` und Zip-Archiven erzeugt und via `verify_selfcontained_module()` abgenommen. Task #-22 erledigt gemeldet.
+  - **Update-Engine: Automatischer Re-Import & Hot-Wiring (Task #-23, Erledigt):**
+    - `bach update modules` um automatischen Re-Import (`--reimport`, `--sync`) erweitert: erkennt exportierte Standalone-Module in `exports/modules/`, validiert sie fail-closed und synchronisiert sie in `.MODULES/`.
+    - `ocean_stack_bridge.py` um dynamische Seam-Loader (`load_agent_spawn_gate_module()`, `load_context_hints_module()`, `load_session_checkpoint_adapter_module()`), `invalidate_module_cache()` und `ocean_modularized_services_status()` erweitert.
+    - 61/61 Tests in `test_update_handler.py` und 8/8 Tests in `test_ocean_stack_consumption.py` grün. Task #-23 erledigt gemeldet.
+  - **GUI & Chat: Direkte Audio-Prompt-Aufnahme mit ellmos-voice-io STT-Streaming (Task #-24, Erledigt):**
+    - `chat.html` um lokale MediaRecorder-Aufnahme mit direktem STT-Streaming zu `POST /api/voice/stt` erweitert. Funktioniert auf allen Browsern ohne Cloud-Zwang.
+    - Web Speech API als parallele Live-Vorschau gekoppelt; nahtloser Tray-Handoff via `?voice=1`.
+    - `ellmos-voice-io` und `server.py` (`/api/voice/stt`) um robuste Fallbacks und `transcribe_bytes` erweitert. 14/14 Tests in `test_prompt_chat_draft.py` grün. Task #-24 erledigt gemeldet.
+
+- **Nächste Aufgaben der Roadmap (Erstellt):**
+  - Task ID `-25`: `Modularisierung: Export der nächsten Dienstgruppe (domain_writer_gate, scheduler_provider, db_sync_adapter) als Standalone-Module` (P3, core).
+  - Task ID `-26`: `Tray & GUI: Prompt-Bibliothek Schnellzugriff und Auto-Vorschau in Tray-Kontextmenü für Favoriten-Prompts` (P3, gui).
+  - Task ID `-27`: `Modularer Core: Auto-Erkennung veralteter In-Tree-Dienste und automatische Umschaltung auf Standalone-Module via ocean_stack_bridge` (P3, infrastructure).
 
 ## Review 2026-11-01 (Daily Care & Dev Check - Gemini 3.8 Flash)
 

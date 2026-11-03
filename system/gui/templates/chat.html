@@ -824,7 +824,7 @@
 
                 <div class="voice-interim" id="voice-interim"></div>
             <div class="chat-input-area">
-                    <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe" hidden>🎙</button>
+                    <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe">🎙</button>
                     <input type="file" id="audio-file-input" accept="audio/*,.ogg,.oga,.opus,.mp3,.m4a,.mp4,.aac,.wav,.flac,.webm" hidden>
                     <button class="mic-btn" id="audio-btn" title="Audio-Datei transkribieren (lokal, Whisper)" aria-label="Audiodatei transkribieren">🎧</button>
                       <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
@@ -1618,93 +1618,160 @@
 
         inputEl.addEventListener('input', autoResize);
 
-        // ── Voice Input (Browser-Mittel / Web Speech API) ──
+        // ── Voice Input & STT Streaming (MediaRecorder + ellmos-voice-io + Web Speech Fallback) ──
         (function initVoiceInput() {
-            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             const micBtn = document.getElementById('mic-btn');
             const interimEl = document.getElementById('voice-interim');
-            if (!SR) {
-                if (micBtn) micBtn.hidden = true; // nicht unterstützt -> Button ausblenden
-                return;
-            }
             if (!micBtn) return;
-            micBtn.hidden = false;
 
-            const rec = new SR();
-            rec.continuous = false;
-            rec.interimResults = true;
-            rec.lang = 'de-DE';
-            let listening = false;
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const hasMediaRecorder = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let stream = null;
+            let recording = false;
+            let srRec = null;
             let baseText = '';
 
-            function setListening(on) {
-                listening = on;
+            function setRecording(on) {
+                recording = on;
                 micBtn.classList.toggle('recording', on);
                 micBtn.textContent = on ? '■' : '🎙';
-                micBtn.title = on ? 'Aufnahme stoppen' : 'Sprache eingeben (Transkription)';
+                micBtn.title = on ? 'Aufnahme stoppen & transkribieren' : 'Sprach-Prompt aufnehmen (ellmos-voice-io)';
                 micBtn.setAttribute('aria-label', micBtn.title);
+                if (on) {
+                    interimEl.textContent = '🎙️ Aufnahme läuft … Bitte sprechen (Klick zum Beenden & Transkribieren)';
+                } else {
+                    interimEl.textContent = '';
+                }
             }
 
-            rec.onstart = function() {
-                baseText = inputEl.value ? inputEl.value + (inputEl.value.trim() ? ' ' : '') : '';
-                setListening(true);
-                showToast('🎙 Höre zu …');
-            };
+            async function startRecording() {
+                if (sending) { showToast('Antwort wird gerade generiert …'); return; }
+                baseText = inputEl.value ? inputEl.value.trim() + ' ' : '';
+                audioChunks = [];
 
-            rec.onresult = function(ev) {
-                let interim = '';
-                let final = '';
-                for (let i = ev.resultIndex; i < ev.results.length; i++) {
-                    const t = ev.results[i][0].transcript;
-                    if (ev.results[i].isFinal) final += t;
-                    else interim += t;
+                if (hasMediaRecorder) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
+                            ? 'audio/webm;codecs=opus'
+                            : ((window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : 'audio/ogg');
+                        mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+                        mediaRecorder.ondataavailable = function(e) {
+                            if (e.data && e.data.size > 0) {
+                                audioChunks.push(e.data);
+                            }
+                        };
+                        mediaRecorder.onstop = async function() {
+                            if (stream) {
+                                stream.getTracks().forEach(t => t.stop());
+                                stream = null;
+                            }
+                            if (audioChunks.length === 0) {
+                                setRecording(false);
+                                return;
+                            }
+                            interimEl.textContent = '⏳ Transkribiere mit ellmos-voice-io …';
+                            const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                            const reader = new FileReader();
+                            reader.onloadend = async function() {
+                                try {
+                                    const b64 = (reader.result || '').split(',')[1] || '';
+                                    const ext = (mediaRecorder.mimeType && mediaRecorder.mimeType.includes('ogg')) ? '.ogg' : '.webm';
+                                    const res = await fetch('/api/voice/stt', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ audio_b64: b64, suffix: ext, language: 'de' })
+                                    });
+                                    const data = await res.json();
+                                    if (data && data.text && data.text.trim()) {
+                                        inputEl.value = baseText + data.text.trim();
+                                        autoResize();
+                                        inputEl.focus();
+                                        showToast('🎙️ Transkript eingefügt: „' + data.text.trim().substring(0, 40) + '…“', 3000);
+                                    } else if (data && data.warning) {
+                                        showToast('Hinweis: ' + data.warning, 4000);
+                                    } else {
+                                        showToast('Keine Sprache erkannt', 2500);
+                                    }
+                                } catch (err) {
+                                    showToast('STT-Fehler: ' + err.message, 3500);
+                                } finally {
+                                    setRecording(false);
+                                }
+                            };
+                            reader.readAsDataURL(blob);
+                        };
+                        mediaRecorder.start(250);
+                        setRecording(true);
+                        showToast('🎙️ Sprach-Prompt Aufnahme läuft …');
+                    } catch (err) {
+                        setRecording(false);
+                        showToast('Mikrofon-Zugriff verweigert oder nicht verfügbar: ' + err.message, 4000);
+                        return;
+                    }
                 }
-                if (interim) interimEl.textContent = '„' + baseText + interim + '“';
-                else interimEl.textContent = '';
-                if (final) {
-                    const chunk = baseText + final;
-                    inputEl.value = chunk.trim();
-                    autoResize();
-                    interimEl.textContent = '';
-                    inputEl.focus();
+
+                if (SR) {
+                    try {
+                        srRec = new SR();
+                        srRec.continuous = true;
+                        srRec.interimResults = true;
+                        srRec.lang = 'de-DE';
+                        srRec.onresult = function(ev) {
+                            let interim = '';
+                            for (let i = ev.resultIndex; i < ev.results.length; i++) {
+                                interim += ev.results[i][0].transcript;
+                            }
+                            if (interim) {
+                                interimEl.textContent = '„' + baseText + interim + '“';
+                            }
+                        };
+                        srRec.onerror = function() {};
+                        srRec.start();
+                    } catch (_) {}
                 }
-            };
+            }
 
-            rec.onerror = function(ev) {
-                setListening(false);
-                interimEl.textContent = '';
-                if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed')
-                    showToast('Mikrofon-Zugriff verweigert', 3500);
-                else if (ev.error === 'no-speech')
-                    showToast('Keine Sprache erkannt', 2500);
-                else if (ev.error !== 'aborted')
-                    showToast('Spracherkennungsfehler: ' + ev.error, 3000);
-            };
-
-            rec.onend = function() {
-                setListening(false);
-                interimEl.textContent = '';
-            };
+            function stopRecording() {
+                if (srRec) {
+                    try { srRec.stop(); } catch (_) {}
+                    srRec = null;
+                }
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                } else {
+                    setRecording(false);
+                }
+            }
 
             micBtn.addEventListener('click', function() {
-                if (sending) { showToast('Antwort wird gerade generiert …'); return; }
-                if (listening) {
-                    rec.stop();
+                if (recording) {
+                    stopRecording();
                 } else {
-                    try {
-                        baseText = '';
-                        rec.start();
-                    } catch (e) { /* schon gestartet -> ignorieren */ }
+                    startRecording();
                 }
             });
 
-            // Tab-Shortcut: Tab umschaltet Aufnahme (Shift+Tab lässt Standard-Verhalten)
+            // Tab-Shortcut
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Tab' && !e.shiftKey && e.target === inputEl) {
                     e.preventDefault();
                     micBtn.click();
                 }
             });
+
+            // Tray-Handoff via URL Query ?voice=1
+            try {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('voice') === '1') {
+                    setTimeout(() => {
+                        showToast('🎙️ Sprach-Prompt aus Tray aktiviert — Klicke auf 🎙️ zum Sprechen', 4000);
+                        micBtn.focus();
+                    }, 500);
+                }
+            } catch (_) {}
         })();
 
         // ── Audio-Datei-Transkription (serverseitig, Whisper — Task #1338) ──

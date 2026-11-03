@@ -255,3 +255,66 @@ def test_bach_multimodal_and_embodied_gui_endpoints():
     assert b"ELLMOS Talk" in talk_html.body
 
 
+def test_bach_consumes_agents_heart_assignment():
+    from hub._services.ocean_stack_bridge import (
+        evaluate_agents_heart_assignment,
+        load_agents_heart_module,
+    )
+    mod = load_agents_heart_module()
+    assert mod is not None
+    assert "task_worker" in mod.ROLE_CONTRACTS
+
+    res = evaluate_agents_heart_assignment(
+        role_id="task_worker",
+        backend_id="ollama",
+        model_id="qwen3.8:27b-mlx",
+        slot_id="slot-worker-1",
+        task_id=1234,
+        session_id="test-session",
+        initiated_by="test",
+    )
+    assert res["allowed"] is True
+    assert res["role_id"] == "task_worker"
+    assert "assignment_id" in res
+
+
+def test_modularized_services_and_hot_wiring():
+    from hub._services.ocean_stack_bridge import (
+        invalidate_module_cache,
+        load_agent_spawn_gate_module,
+        load_context_hints_module,
+        load_session_checkpoint_adapter_module,
+        ocean_modularized_services_status,
+        ocean_stack_status,
+    )
+
+    # Invalidate cache to test clean load
+    invalidate_module_cache()
+
+    mod_gate = load_agent_spawn_gate_module()
+    assert mod_gate is not None
+    assert hasattr(mod_gate, "main")
+
+    mod_hints = load_context_hints_module()
+    assert mod_hints is not None
+    assert hasattr(mod_hints, "neutral_manual_hint")
+
+    mod_cp = load_session_checkpoint_adapter_module()
+    assert mod_cp is not None
+    assert hasattr(mod_cp, "NAMESPACE")
+
+    status = ocean_modularized_services_status()
+    assert "agent_spawn_gate" in status
+    assert "context_hints" in status
+    assert "session_checkpoint_adapter" in status
+    for s_name, s_info in status.items():
+        assert s_info["bound"] is True, f"Service {s_name} not bound: {s_info}"
+
+    full_status = ocean_stack_status()
+    assert "modularized_services" in full_status
+    assert full_status["modularized_services"]["agent_spawn_gate"]["bound"] is True
+    assert full_status["modularized_services"]["context_hints"]["bound"] is True
+    assert full_status["modularized_services"]["session_checkpoint_adapter"]["bound"] is True
+
+
+

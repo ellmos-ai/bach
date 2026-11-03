@@ -1488,3 +1488,30 @@ def test_tray_promptboard_library_and_chat_actions(tmp_path):
              patch("os.startfile", create=True) as mock_startfile:
             tray._open_promptboard()
             mock_startfile.assert_called_once_with(str(exe_path))
+
+        # Test _import_promptboard_action
+        with patch("hub.prompt.PromptHandler") as mock_handler_cls:
+            mock_inst = MagicMock()
+            mock_inst.handle.return_value = (True, json.dumps({"imported": 3, "skipped": 1}))
+            mock_handler_cls.return_value = mock_inst
+            tray._import_promptboard_action()
+            tray.icon.notify.assert_called_with("PromptBoard-Import: 3 neu, 1 bestehend.", "BACH PromptBoard")
+
+        # Test _export_promptboard_action
+        with patch("hub.prompt.PromptHandler") as mock_handler_cls:
+            mock_inst = MagicMock()
+            mock_inst.handle.return_value = (True, json.dumps({"exported": 2, "updated": 1, "total": 5}))
+            mock_handler_cls.return_value = mock_inst
+            tray._export_promptboard_action()
+            tray.icon.notify.assert_called_with("PromptBoard-Export: 2 neu, 1 aktualisiert (5 gesamt).", "BACH PromptBoard")
+
+        # Test _record_audio_prompt_action fallback when STT missing
+        with patch("hub._services.ocean_stack_bridge.load_voice_io_module") as mock_voice_mod, \
+             patch("webbrowser.open") as mock_open:
+            mock_voice_inst = MagicMock()
+            mock_voice_inst.VoiceIO.return_value.stt.available.return_value = (False, "none")
+            mock_voice_mod.return_value = mock_voice_inst
+            tray._record_audio_prompt_action()
+            import time
+            time.sleep(0.1)
+            mock_open.assert_called_with("http://testhost:8000/talk")

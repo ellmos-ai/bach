@@ -217,3 +217,101 @@ def test_imported_ambiguous_tags_keep_boundaries_on_gui_text_save(gui_client, ha
                               json={"text": "Only the text changed", "tags": prompt["tags"]})
     assert response.status_code == 200
     assert json.loads(rows(prompt_env)[0][2]) == tags
+
+
+def test_import_promptboard_with_direct_payload(handler, prompt_env):
+    payload = {
+        "items": [
+            {"name": "PayloadPrompt", "content": "Direkt aus JSON-Payload", "category": "Test"},
+            {"name": "PayloadPrompt", "content": "Duplikat wird uebersprungen"}
+        ]
+    }
+    preview = handler.import_promptboard(payload=payload, dry_run=True)
+    assert preview["ok"] is True
+    assert preview["dry_run"] is True
+    assert preview["imported"] == 1
+    assert preview["skipped"] == 1
+    assert rows(prompt_env) == []
+
+    result = handler.import_promptboard(payload=payload, dry_run=False)
+    assert result["ok"] is True
+    assert result["dry_run"] is False
+    assert result["imported"] == 1
+    assert result["skipped"] == 1
+    assert rows(prompt_env)[0][0] == "PayloadPrompt"
+
+
+def test_import_promptboard_with_list_payload(handler, prompt_env):
+    payload = [
+        {"name": "ListPrompt1", "content": "Inhalt 1"},
+        {"name": "ListPrompt2", "content": "Inhalt 2", "tags": ["tag1", "tag2"]}
+    ]
+    result = handler.import_promptboard(payload=payload, dry_run=False)
+    assert result["ok"] is True
+    assert result["imported"] == 2
+    assert len(rows(prompt_env)) == 2
+
+
+def test_export_promptboard_creates_new_library_file(handler, prompt_env, tmp_path):
+    handler.handle("add", ["PromptA", "Inhalt von Prompt A", "--category", "Entwicklung", "--tags", "python,cli"])
+    target = tmp_path / "exported_library.json"
+
+    # Dry-Run
+    preview = handler.export_promptboard(target, dry_run=True)
+    assert preview["ok"] is True
+    assert preview["dry_run"] is True
+    assert preview["exported"] == 1
+    assert preview["updated"] == 0
+    assert not target.exists()
+
+    # Tatsächlicher Export
+    res = handler.export_promptboard(target, dry_run=False)
+    assert res["ok"] is True
+    assert res["dry_run"] is False
+    assert res["exported"] == 1
+    assert target.exists()
+
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert "items" in data
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    assert item["name"] == "PromptA"
+    assert item["content"] == "Inhalt von Prompt A"
+    assert item["category"] == "Entwicklung"
+    assert item["tags"] == ["python", "cli"]
+    assert item["item_type"] == "PROMPT"
+
+
+def test_export_promptboard_updates_modified_prompts(handler, prompt_env, tmp_path):
+    target = tmp_path / "existing_library.json"
+    target.write_text(json.dumps({
+        "items": [
+            {"id": "123", "item_type": "PROMPT", "name": "PromptA", "content": "Alter Inhalt", "tags": ["alt"]},
+            {"id": "456", "item_type": "PROMPT", "name": "Unberührt", "content": "Bleibt erhalten", "tags": []}
+        ]
+    }), encoding="utf-8")
+
+    handler.handle("add", ["PromptA", "Neuer Inhalt aus BACH", "--tags", "neu,v2"])
+    res = handler.export_promptboard(target, dry_run=False)
+    assert res["ok"] is True
+    assert res["exported"] == 0
+    assert res["updated"] == 1
+    assert res["total"] == 2
+
+    data = json.loads(target.read_text(encoding="utf-8"))
+    items = {it["name"]: it for it in data["items"]}
+    assert items["PromptA"]["content"] == "Neuer Inhalt aus BACH"
+    assert items["PromptA"]["tags"] == ["neu", "v2"]
+    assert items["PromptA"]["id"] == "123"  # ID beibehalten
+    assert items["Unberührt"]["content"] == "Bleibt erhalten"
+
+
+def test_export_promptboard_cli_operation(handler, prompt_env, tmp_path):
+    handler.handle("add", ["PromptCLI", "CLI Test"])
+    target = tmp_path / "cli_library.json"
+    ok, msg = handler.handle("export-promptboard", [str(target)])
+    assert ok
+    data = json.loads(msg)
+    assert data["exported"] == 1
+    assert target.exists()
+
