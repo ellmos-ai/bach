@@ -87,6 +87,28 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## Review 2026-11-03 (BACH TASKS UND DEV - Gemini 3.8 Flash)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **Modularer Core: Export Dienstgruppe (token_budget, rate_limit_policy, audit_logger) als Standalone-Module (Task #-28, Erledigt):**
+  - Autarke Standalone-Module für `token_budget` (Token-Quota, Burn-Rate-Status & Soft-Gate), `rate_limit_policy` (429 Cooldowns, Retry-After Header Parser & Exponential Backoff) und `audit_logger` (Strukturierte Audit-Events & Fail-Soft System-Health Audit) via `bach skills export-module` exportiert und validiert.
+  - Synchronisation nach `.MODULES/` via `bach update modules --sync` und Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py` (`load_token_budget_module()`, `load_rate_limit_policy_module()`, `load_audit_logger_module()`).
+  - `ocean_modularized_services_status()` auf 12/12 gebundene Standalone-Module erweitert (100% Standalone-Betrieb).
+  - Relative-Import-Fix in `session_checkpoint_adapter.py` zur nahtlosen autarken Ausführung.
+  - 8/8 Tests in `test_ocean_stack_consumption.py`, 30/30 in `test_skills_handler.py` und 61/61 in `test_update_handler.py` bestanden (100% grün).
+  - Task #-28 erledigt gemeldet.
+
+- **GUI & Tray: Auto-Update Check & Status-Indikator für Standalone-Module im Dashboard und Tray (Task #-29, Erledigt):**
+  - Neuer API-Endpunkt `GET /api/modules/status` (exponiert Standalone-Count 12, Gesamtübersicht, verbleibende Monolithen und Auto-Update-Bereitschaft) und `POST /api/modules/sync` in `system/gui/server.py` implementiert; `GET /api/status` um `modular_services` erweitert; Pfade in `EXEMPT_API_PATHS` registriert.
+  - Tray-App (`chat_tray.py`): Neuer Menüeintrag `📦 Standalone-Module (12/12 aktiv)` mit Submenü (Status-Indikatoren aller 12 Module, 1-Click `🔄 Modul-Sync ausführen`, Smoke-Snapshot-Verdrahtung).
+  - 116/116 Tests in `test_connectors_and_tray.py` vollständig grün.
+  - Task #-29 erledigt gemeldet.
+
+- **Neue Folge-Aufgaben angelegt:**
+  - `Task #-30`: Modularer Core: Export & Entflechtung der nächsten Dienstgruppe (telemetry, limits, worker_policy) mit Standalone-Validierung (P3, infrastructure)
+  - `Task #-31`: GUI & Tray: Modul-Installations- & Update-Zentrale in GUI einbinden (Live-Sync Button für Standalone-Module) (P3, gui)
+
 ## Review 2026-11-02 (BACH TASKS UND DEV - Gemini 3.8 Flash)
 
 Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:

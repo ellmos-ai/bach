@@ -1743,6 +1743,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/homecontrol/energy",
         "/api/robotics/capabilities",
         "/api/robotics/telemetry",
+        "/api/modules/status",
+        "/api/modules/sync",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -2273,6 +2275,18 @@ async def get_status():
     except (OSError, sqlite3.Error):
         pass
 
+    modular_info = {}
+    try:
+        from hub._services.ocean_stack_bridge import ocean_modularized_services_status
+        m_status = ocean_modularized_services_status()
+        modular_info = {
+            "total": len(m_status),
+            "standalone_count": sum(1 for v in m_status.values() if v.get("standalone")),
+            "auto_update_ready": True,
+        }
+    except Exception:
+        pass
+
     return {
 
         "status": "online",
@@ -2295,9 +2309,49 @@ async def get_status():
             "last_scan": last_scan[0] if last_scan else None
 
         },
-        "system": system_info
+        "system": system_info,
+        "modular_services": modular_info
 
     }
+
+
+@app.get("/api/modules/status")
+async def get_modules_status():
+    """Return status of all modularized core services, standalone detection, and auto-update readiness."""
+    try:
+        from hub._services.ocean_stack_bridge import (
+            detect_legacy_in_tree_services,
+            ocean_modularized_services_status,
+            ocean_stack_status,
+        )
+        mod_status = ocean_modularized_services_status()
+        detection = detect_legacy_in_tree_services()
+        stack = ocean_stack_status()
+        standalone_count = sum(1 for v in mod_status.values() if v.get("standalone"))
+        return {
+            "status": "ok",
+            "schema": "bach.modules-status.v1",
+            "standalone_count": standalone_count,
+            "modularized_total": len(mod_status),
+            "modularized_services": mod_status,
+            "legacy_services_remaining": detection.get("legacy_in_tree_only_count", 0),
+            "standalone_modules_available": detection.get("standalone_modules_available", 0),
+            "stack_role": stack.get("stack_role", "branded-partial-os-stack-of-ocean"),
+            "auto_update_ready": True,
+        }
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/sync")
+async def trigger_modules_sync():
+    """Run auto-update sync across standalone modules."""
+    try:
+        from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
+        report = auto_switch_to_standalone_modules()
+        return {"status": "ok", "sync_report": report}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
 
 
 

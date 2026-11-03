@@ -25,7 +25,16 @@ from typing import TYPE_CHECKING, Optional, Union
 if TYPE_CHECKING:
     from session_checkpoint import Checkpoint, CheckpointStore
 
-from .snapshot_payload import collect_snapshot_payload
+try:
+    from .snapshot_payload import collect_snapshot_payload
+except ImportError:
+    try:
+        from snapshot_payload import collect_snapshot_payload
+    except ImportError:
+        try:
+            from hub.snapshot_payload import collect_snapshot_payload
+        except ImportError:
+            collect_snapshot_payload = None
 
 NAMESPACE = "bach"
 

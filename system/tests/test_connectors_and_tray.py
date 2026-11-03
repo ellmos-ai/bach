@@ -1515,3 +1515,53 @@ def test_tray_promptboard_library_and_chat_actions(tmp_path):
             import time
             time.sleep(0.1)
             mock_open.assert_called_with("http://testhost:8000/talk")
+
+
+def test_tray_modular_status_and_menu():
+    from hub._services.chat.chat_tray import BACHTray
+    tray = BACHTray(host="testhost", port=8081, gui_port=8000)
+    snap = tray.modular_status_smoke_snapshot()
+    assert "standalone_count" in snap
+    assert snap["standalone_count"] >= 11
+    assert snap["total_modularized"] >= 12
+    assert snap["auto_update_ready"] is True
+
+    # Test menu building contains modular item
+    menu = tray._build_menu()
+    labels = [getattr(item, "text", "") for item in menu]
+    mod_item = next((item for item in menu if "📦 Standalone-Module" in getattr(item, "text", "")), None)
+    assert mod_item is not None, f"Modular status item missing from menu: {labels}"
+    assert f"{snap['standalone_count']}/12 aktiv" in mod_item.text
+
+    # Test sub-items of modular status
+    sub_menu = mod_item.submenu
+    assert sub_menu is not None
+    sub_labels = [getattr(sub, "text", "") for sub in sub_menu]
+    assert any("Status:" in l and "aktiv" in l for l in sub_labels)
+    assert any("Modul-Sync ausführen" in l for l in sub_labels)
+    assert any("token_budget" in l for l in sub_labels)
+    assert any("rate_limit_policy" in l for l in sub_labels)
+    assert any("audit_logger" in l for l in sub_labels)
+
+
+def test_api_modules_status_and_sync():
+    from starlette.testclient import TestClient
+    from gui.server import app
+    client = TestClient(app)
+
+    res = client.get("/api/modules/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert data["standalone_count"] >= 11
+    assert data["modularized_total"] >= 12
+    assert "token_budget" in data["modularized_services"]
+    assert "rate_limit_policy" in data["modularized_services"]
+    assert "audit_logger" in data["modularized_services"]
+    assert data["auto_update_ready"] is True
+
+    sync_res = client.post("/api/modules/sync")
+    assert sync_res.status_code == 200
+    sync_data = sync_res.json()
+    assert sync_data["status"] == "ok"
+    assert "sync_report" in sync_data

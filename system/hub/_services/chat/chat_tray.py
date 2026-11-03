@@ -333,6 +333,9 @@ class BACHTray:
         self._failed_status_count = 0
         self.prompt_source = "defaults"
         self.favorite_prompts = {}
+        self.modular_status = {}
+        self.modular_standalone_count = 0
+        self._reload_modular_status()
         self.prompts = self._load_prompts()
 
     # --- API ---
@@ -989,6 +992,50 @@ class BACHTray:
             self.icon.notify(f"{fav_count} Favoriten, {total_count} Prompts geladen", "BACH Prompts")
             self._update_icon()
 
+    def _reload_modular_status(self):
+        try:
+            from hub._services.ocean_stack_bridge import ocean_modularized_services_status
+            self.modular_status = ocean_modularized_services_status()
+            self.modular_standalone_count = sum(1 for v in self.modular_status.values() if v.get("standalone"))
+        except Exception:
+            self.modular_status = {}
+            self.modular_standalone_count = 0
+
+    def _trigger_modules_sync(self, icon=None, item=None):
+        try:
+            from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
+            auto_switch_to_standalone_modules()
+            self._reload_modular_status()
+            if self.icon:
+                self.icon.menu = self._build_menu()
+                self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/12 aktiv)", "BACH Module")
+        except Exception:
+            pass
+
+    def _build_modular_status_menu_items(self):
+        items = []
+        count = self.modular_standalone_count
+        total = max(12, len(self.modular_status))
+        items.append(pystray.MenuItem(f"Status: {count}/{total} aktiv (Standalone-Modus)", None, enabled=False))
+        items.append(pystray.MenuItem("🔄 Modul-Sync ausführen (bach update modules --sync)", self._trigger_modules_sync))
+        items.append(pystray.Menu.SEPARATOR)
+        if self.modular_status:
+            for mod_name, info in sorted(self.modular_status.items()):
+                status_icon = "✅" if info.get("standalone") else "⚠️"
+                st = "standalone" if info.get("standalone") else info.get("status", "legacy")
+                items.append(pystray.MenuItem(f"{status_icon} {mod_name} ({st})", None, enabled=False))
+        else:
+            items.append(pystray.MenuItem("(Keine Modul-Daten)", None, enabled=False))
+        return items
+
+    def modular_status_smoke_snapshot(self):
+        return {
+            "standalone_count": self.modular_standalone_count,
+            "total_modularized": len(self.modular_status),
+            "modules": {k: v.get("status") for k, v in self.modular_status.items()},
+            "auto_update_ready": True,
+        }
+
     def promptboard_smoke_snapshot(self):
         app_path = self._promptboard_app_path()
         library_candidates = []
@@ -1010,6 +1057,7 @@ class BACHTray:
             "prompt_categories": list(self.prompts.keys()),
             "prompt_count": prompt_count,
             "favorite_count": len(self.favorite_prompts),
+            "modular_standalone_count": self.modular_standalone_count,
         }
 
     def _copy_to_clipboard(self, text):
@@ -1581,6 +1629,10 @@ class BACHTray:
         fav_items.append(pystray.MenuItem("📚 Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
         fav_items.append(pystray.MenuItem("🔄 Prompts neu laden", self._reload_prompts))
         items.append(pystray.MenuItem(f"⭐ Favoriten-Prompts ({len(self.favorite_prompts)})", pystray.Menu(*fav_items)))
+
+        # ── 📦 Standalone-Module & Auto-Update Status ──
+        mod_items = self._build_modular_status_menu_items()
+        items.append(pystray.MenuItem(f"📦 Standalone-Module ({self.modular_standalone_count}/12 aktiv)", pystray.Menu(*mod_items)))
 
         # ── PromptBoard ──
         prompt_items = []

@@ -751,6 +751,18 @@ def load_db_sync_readiness_module() -> Any:
     return get_service_or_standalone("db_sync_readiness")
 
 
+def load_token_budget_module() -> Any:
+    return get_service_or_standalone("token_budget")
+
+
+def load_rate_limit_policy_module() -> Any:
+    return get_service_or_standalone("rate_limit_policy")
+
+
+def load_audit_logger_module() -> Any:
+    return get_service_or_standalone("audit_logger")
+
+
 def detect_legacy_in_tree_services() -> dict[str, Any]:
     """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
     bach_root = Path(__file__).resolve().parents[3]
@@ -852,6 +864,9 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "agent_process_provider": ("agent_process_provider", load_agent_process_provider_module),
         "session_checkpoint_provider": ("session_checkpoint_provider", load_session_checkpoint_provider_module),
         "db_sync_readiness": ("db_sync_readiness", load_db_sync_readiness_module),
+        "token_budget": ("token_budget", load_token_budget_module),
+        "rate_limit_policy": ("rate_limit_policy", load_rate_limit_policy_module),
+        "audit_logger": ("audit_logger", load_audit_logger_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():

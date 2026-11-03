@@ -290,6 +290,9 @@ def test_modularized_services_and_hot_wiring():
         load_agent_process_provider_module,
         load_session_checkpoint_provider_module,
         load_db_sync_readiness_module,
+        load_token_budget_module,
+        load_rate_limit_policy_module,
+        load_audit_logger_module,
         detect_legacy_in_tree_services,
         auto_switch_to_standalone_modules,
         get_service_or_standalone,
@@ -336,6 +339,18 @@ def test_modularized_services_and_hot_wiring():
     assert mod_dsr is not None
     assert hasattr(mod_dsr, "validate_native_db")
 
+    mod_tb = load_token_budget_module()
+    assert mod_tb is not None
+    assert hasattr(mod_tb, "evaluate_token_budget")
+
+    mod_rlp = load_rate_limit_policy_module()
+    assert mod_rlp is not None
+    assert hasattr(mod_rlp, "evaluate_rate_limit")
+
+    mod_al = load_audit_logger_module()
+    assert mod_al is not None
+    assert hasattr(mod_al, "log_audit_event")
+
     # Dynamic service resolver test
     dyn_dw = get_service_or_standalone("domain_writer_gate")
     assert dyn_dw is not None
@@ -345,13 +360,13 @@ def test_modularized_services_and_hot_wiring():
     detection = detect_legacy_in_tree_services()
     assert detection["schema"] == "bach.legacy-in-tree-detection.v1"
     assert detection["total_in_tree_services"] >= 140
-    assert detection["standalone_modules_available"] >= 9
-    assert detection["switched_or_switchable_count"] >= 9
+    assert detection["standalone_modules_available"] >= 12
+    assert detection["switched_or_switchable_count"] >= 12
 
     # Auto-switch execution
     switch_report = auto_switch_to_standalone_modules()
     assert switch_report["schema"] == "bach.auto-switch-standalone-report.v1"
-    assert switch_report["total_switched"] >= 9
+    assert switch_report["total_switched"] >= 12
 
     status = ocean_modularized_services_status()
     for s_name in (
@@ -364,13 +379,16 @@ def test_modularized_services_and_hot_wiring():
         "agent_process_provider",
         "session_checkpoint_provider",
         "db_sync_readiness",
+        "token_budget",
+        "rate_limit_policy",
+        "audit_logger",
     ):
         assert s_name in status
         assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
 
     full_status = ocean_stack_status()
     assert "modularized_services" in full_status
-    assert full_status["modularized_standalone_count"] >= 8
+    assert full_status["modularized_standalone_count"] >= 11
     for s_name in (
         "agent_spawn_gate",
         "context_hints",
@@ -381,5 +399,8 @@ def test_modularized_services_and_hot_wiring():
         "agent_process_provider",
         "session_checkpoint_provider",
         "db_sync_readiness",
+        "token_budget",
+        "rate_limit_policy",
+        "audit_logger",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True

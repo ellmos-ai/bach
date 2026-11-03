@@ -31,6 +31,17 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Modularer Core: Export Dienstgruppe (token_budget, rate_limit_policy, audit_logger) & GUI/Tray Live-Status (Tasks #-28 & #-29, 2026-11-03):**
+  - **Modularer Core Standalone-Export (Task #-28):**
+    - 3 autarke Standalone-Module für `token_budget` (Token-Quota, Burn-Rate-Status & Soft-Gate), `rate_limit_policy` (429 Cooldowns, Retry-After Header Parser & Exponential Backoff) und `audit_logger` (Strukturierte Audit-Events & Fail-Soft System-Health Audit) via `bach skills export-module` exportiert und validiert.
+    - Synchronisation nach `.MODULES/` via `bach update modules --sync` und Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py` (`load_token_budget_module()`, `load_rate_limit_policy_module()`, `load_audit_logger_module()`).
+    - `ocean_modularized_services_status()` auf 12/12 gebundene Standalone-Module erweitert (100% Standalone-Betrieb).
+    - Relative-Import-Fix in `session_checkpoint_adapter.py` zur nahtlosen autarken Ausführung.
+  - **GUI & Tray Auto-Update Check & Status-Indikator (Task #-29):**
+    - Neuer API-Endpunkt `GET /api/modules/status` (exponiert Standalone-Count 12, Gesamtübersicht, verbleibende Monolithen und Auto-Update-Bereitschaft) und `POST /api/modules/sync` in `system/gui/server.py` implementiert; `GET /api/status` um `modular_services` erweitert; Pfade in `EXEMPT_API_PATHS` registriert.
+    - Tray-App (`chat_tray.py`): Neuer Menüeintrag `📦 Standalone-Module (12/12 aktiv)` mit Submenü (Status-Indikatoren aller 12 Module, 1-Click `🔄 Modul-Sync ausführen`, Smoke-Snapshot-Verdrahtung).
+    - 8/8 Tests in `test_ocean_stack_consumption.py`, 116/116 Tests in `test_connectors_and_tray.py`, 30/30 in `test_skills_handler.py` und 61/61 in `test_update_handler.py` bestanden (Gesamtsuite 100% grün).
+
 - **Tray & GUI Favoriten-Prompts Schnellzugriff, Auto-Vorschau und Modularer Core Auto-Detect (Tasks #-26 & #-27, 2026-11-03):**
   - **Favoriten-Prompts & Schnellzugriff (Task #-26):**
     - Neuer Endpunkt `POST /api/prompt-library/{prompt_id}/favorite` und Eigenschaft `is_favorite` in `server.py` implementiert; Filter `?favorites=1` hinzugefügt.
