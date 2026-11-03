@@ -284,7 +284,43 @@ SYSTEM_SLOT_PRESETS = {
     "developer": {"name": "Experte · Entwicklung", "role_id": "entwickler", "icon": "🛠️"},
     "research": {"name": "Experte · Recherche", "role_id": "recherche", "icon": "🔎"},
     "assistant": {"name": "Persönlicher Assistent", "role_id": "personal-assistant", "icon": "💬"},
+    "talk": {"name": "ELLMOS-Talk · Funkgerät", "role_id": "personal-assistant", "icon": "🎙️"},
+    "ticket_master": {"name": "Ticket-Master (Living)", "role_id": "ticket-master", "icon": "🎫"},
+    "foerderplaner": {"name": "Förderplaner (Living)", "role_id": "foerderplaner", "icon": "📋"},
 }
+
+INTERFACE_SYSTEM_SLOT_IDS = ("buddha_chat", "buddha_connector", "buddha_talk", "buddha_always_on")
+LEGACY_PRECONFIGURED_ROLE_SLOT_IDS = ("buddha_boss", "buddha_developer", "buddha_research")
+PRIMARY_INTERFACE_INTEGRATED_ROLES = ("personal-assistant", "ticket-master", "boss-coordinator")
+OPTIONAL_HARDWARE_INTERFACE_SLOTS = (
+    {
+        "id": "interface_sensation",
+        "name": "Sensation & Open-Compute",
+        "icon": "👁️",
+        "surface": "sensation",
+        "module_id": "ellmos-sensation",
+        "description": "Kamera-/Präsenz-Gate & Desktop-Steuerung (inaktiv, wenn unbesetzt)",
+        "allow_unassigned": True,
+    },
+    {
+        "id": "interface_homecontrol",
+        "name": "SmartHome · HomeControl",
+        "icon": "🏠",
+        "surface": "homecontrol",
+        "module_id": "ellmos-homecontrol",
+        "description": "Haushaltsgeräte & Smart-Home-Schnittstelle (inaktiv, wenn unbesetzt)",
+        "allow_unassigned": True,
+    },
+    {
+        "id": "interface_robotics",
+        "name": "Robotik · ELLMOS Robotics",
+        "icon": "🦾",
+        "surface": "robotics",
+        "module_id": "ellmos-robotics",
+        "description": "ROS2 / LeRobot / Hardware-Aktoren (inaktiv, wenn unbesetzt)",
+        "allow_unassigned": True,
+    },
+)
 
 AGENT_AVATAR_PRESETS = frozenset({"preset:companion", "preset:guardian", "preset:connector",
                                 "preset:coordinator", "preset:engineer", "preset:researcher",
@@ -915,6 +951,7 @@ CORE_SYSTEM_AGENT_ICONS = {
     "buddha_chat": "💬",
     "buddha_always_on": "⚡",
     "buddha_connector": "📱",
+    "buddha_talk": "🎙️",
 }
 CORE_EDITABLE_FIELDS = frozenset({
     "name", "icon", "symbol", "backend", "model", "mode", "think",
@@ -1109,6 +1146,18 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "running": None,
             "worker_active": None,
             "runtime_reason_code": "runtime_not_probed",
+            "slot_category": (
+                "interface_system_slot"
+                if (slot_id in INTERFACE_SYSTEM_SLOT_IDS or str(slot_id).startswith("interface_"))
+                else "preconfigured_role_agent"
+            ),
+            "integrated_roles": (
+                list(PRIMARY_INTERFACE_INTEGRATED_ROLES)
+                if slot_id in ("buddha_chat", "buddha_connector", "buddha_talk")
+                else ["hintergrund_worker"]
+                if slot_id == "buddha_always_on"
+                else [slot.get("role_id", defaults["role_id"])]
+            ),
         })
     return {
         "schema": "bach.core-system-agents.v1",
@@ -1116,6 +1165,10 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
         "configuration_version": version,
         "updated_at": config.get("updated_at"),
         "agents": public_slots,
+        "interface_system_slot_ids": list(INTERFACE_SYSTEM_SLOT_IDS),
+        "legacy_preconfigured_role_slot_ids": list(LEGACY_PRECONFIGURED_ROLE_SLOT_IDS),
+        "primary_interface_integrated_roles": list(PRIMARY_INTERFACE_INTEGRATED_ROLES),
+        "optional_hardware_interface_slots": [dict(item) for item in OPTIONAL_HARDWARE_INTERFACE_SLOTS],
         "supported_backend_ids": sorted(CORE_KNOWN_BACKENDS),
         "role_ids": list(DEFAULT_ROLE_PROMPTS),
         "slot_presets": SYSTEM_SLOT_PRESETS,
@@ -1124,6 +1177,61 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "roles": {role: prompts.get("role_" + role, text)
                       for role, text in DEFAULT_ROLE_PROMPTS.items()},
         },
+    }
+
+
+def resolve_role_execution_slot(
+    role_id: str,
+    path: str | None = None,
+    *,
+    interface_slot_id: str = "buddha_chat",
+) -> dict[str, Any]:
+    """2-Stufen-Rollenmodell (Nutzerentscheidung 04.11.2026):
+    Prüft vorrangig, ob ein aktiver Living-Agent außerhalb der Schnittstellen-Systemplätze
+    die Rolle `role_id` mit eigener Modellbindung besetzt (Stufe 2: `pinned_living_agent`).
+    Andernfalls übernimmt der angegebene Schnittstellen-Systemplatz (`buddha_chat`,
+    `buddha_connector`, `buddha_talk`) die Rolle dynamisch (Stufe 1: `dynamic_persona_routing`).
+    """
+    snapshot = core_system_agents_snapshot(path)
+    normalized_role = str(role_id or "").strip()
+    if not normalized_role:
+        raise ValueError("role_id darf nicht leer sein")
+    for agent in snapshot["agents"]:
+        if agent.get("slot_category") == "interface_system_slot":
+            continue
+        if agent.get("enabled") is not True:
+            continue
+        model = str(agent.get("model") or "").strip()
+        if agent.get("role_id") == normalized_role and model:
+            return {
+                "role_id": normalized_role,
+                "resolution_stage": "pinned_living_agent",
+                "slot_id": agent["id"],
+                "name": agent.get("name", agent["id"]),
+                "backend": agent.get("backend", "ollama"),
+                "model": model,
+                "model_fallbacks": list(agent.get("model_fallbacks") or []),
+            }
+    iface = next(
+        (a for a in snapshot["agents"] if a["id"] == interface_slot_id),
+        next((a for a in snapshot["agents"] if a["id"] == "buddha_chat"), None),
+    )
+    if not iface or iface.get("enabled") is not True or not str(iface.get("model") or "").strip():
+        return {
+            "role_id": normalized_role,
+            "resolution_stage": "interface_unassigned",
+            "slot_id": interface_slot_id,
+            "active": False,
+        }
+    return {
+        "role_id": normalized_role,
+        "resolution_stage": "dynamic_persona_routing",
+        "slot_id": iface["id"],
+        "name": iface.get("name", iface["id"]),
+        "backend": iface.get("backend", "ollama"),
+        "model": str(iface.get("model") or ""),
+        "model_fallbacks": list(iface.get("model_fallbacks") or []),
+        "integrated_in_interface": normalized_role in (iface.get("integrated_roles") or PRIMARY_INTERFACE_INTEGRATED_ROLES),
     }
 
 
