@@ -1,11 +1,11 @@
 {
   "schema": "ellmos-system-gui.kit-manifest.v1",
   "repository": "https://github.com/ellmos-ai/ellmos-system-gui",
-  "pinned_source_commit": "a155cb4dd977607c89806cada316de6d3cf2f462",
+  "pinned_source_commit": "e3dde20d74be50890ab7e455f9afd35b50a83da4",
   "version": "0.2.32",
   "dist_manifest_schema": "ellmos-system-gui.dist.v1",
   "expected_page_count": 47,
-  "release_archive": "ellmos-system-gui-0.2.32-a155cb4dd977.zip",
-  "release_archive_sha256": "75e2791ea540def0235fd1c75d6c32895ef8a809e259d6c0d0054482e3b6db17",
-  "pinned_at": "2026-11-02T12:55:00Z"
+  "release_archive": "ellmos-system-gui-0.2.32-e3dde20d74be.zip",
+  "release_archive_sha256": "1c6e5bef3ecc47d3f4986da436376b1107cdb0886fb563513f5606dde7826279",
+  "pinned_at": "2026-11-03T00:50:00Z"
 }
