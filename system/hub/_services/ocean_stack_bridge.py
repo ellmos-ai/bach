@@ -724,8 +724,124 @@ def load_db_sync_adapter_module() -> Any:
     )
 
 
+def get_service_or_standalone(service_name: str, fallback_import: str | None = None) -> Any:
+    """Dynamically resolve any service from its standalone module if available.
+
+    Otherwise loads from legacy in-tree hub.<service_name> and marks it with
+    @deprecated_legacy_bach.
+    """
+    cache_key = f"standalone_{service_name}"
+    return _load_standalone_or_fallback(
+        cache_key=cache_key,
+        module_name=service_name,
+        standalone_subpath=f"src/{service_name}.py",
+        fallback_import=fallback_import or f"hub.{service_name}",
+    )
+
+
+def load_agent_process_provider_module() -> Any:
+    return get_service_or_standalone("agent_process_provider")
+
+
+def load_session_checkpoint_provider_module() -> Any:
+    return get_service_or_standalone("session_checkpoint_provider")
+
+
+def load_db_sync_readiness_module() -> Any:
+    return get_service_or_standalone("db_sync_readiness")
+
+
+def detect_legacy_in_tree_services() -> dict[str, Any]:
+    """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
+    bach_root = Path(__file__).resolve().parents[3]
+    hub_dir = bach_root / "system" / "hub"
+    if not hub_dir.exists():
+        hub_dir = bach_root / "hub"
+
+    candidates = [
+        bach_root / "system" / "exports" / "modules",
+        bach_root / "exports" / "modules",
+        bach_root / ".MODULES",
+        bach_root.parent / ".MODULES",
+        Path("C:/_Local_DEV/repos"),
+    ]
+
+    standalone_available: dict[str, Path] = {}
+    for cand_dir in candidates:
+        if not cand_dir.is_dir():
+            continue
+        try:
+            for p in cand_dir.iterdir():
+                if p.is_dir():
+                    mod_name = p.name.replace("_export", "")
+                    manifest = p / "manifest.json"
+                    src_file = p / "src" / f"{mod_name}.py"
+                    if manifest.is_file() and src_file.is_file():
+                        standalone_available[mod_name] = src_file
+                    elif (p / f"{mod_name}.py").is_file():
+                        standalone_available[mod_name] = p / f"{mod_name}.py"
+        except OSError:
+            pass
+
+    in_tree_services: list[dict[str, Any]] = []
+    if hub_dir.is_dir():
+        for py_f in sorted(hub_dir.glob("*.py")):
+            if py_f.name in ("__init__.py", "base.py", "canonical_seam.py"):
+                continue
+            stem = py_f.stem
+            has_standalone = stem in standalone_available
+            in_tree_services.append({
+                "name": stem,
+                "file": str(py_f),
+                "has_standalone": has_standalone,
+                "standalone_path": str(standalone_available[stem]) if has_standalone else None,
+            })
+
+    switched = [s for s in in_tree_services if s["has_standalone"]]
+    legacy = [s for s in in_tree_services if not s["has_standalone"]]
+
+    return {
+        "schema": "bach.legacy-in-tree-detection.v1",
+        "hub_path": str(hub_dir),
+        "total_in_tree_services": len(in_tree_services),
+        "standalone_modules_available": len(standalone_available),
+        "switched_or_switchable_count": len(switched),
+        "switched_services": switched,
+        "legacy_in_tree_only_count": len(legacy),
+        "legacy_services": legacy,
+    }
+
+
+def auto_switch_to_standalone_modules() -> dict[str, Any]:
+    """Auto-detect all available standalone modules and dynamically switch/hot-wire them into the bridge registry."""
+    detection = detect_legacy_in_tree_services()
+    switched_report: dict[str, Any] = {}
+    for item in detection.get("switched_services", []):
+        name = item["name"]
+        try:
+            mod = get_service_or_standalone(name)
+            f_path = getattr(mod, "__file__", "") or ""
+            is_standalone = any(marker in f_path for marker in ("exports", ".MODULES", "_Local_DEV", "standalone"))
+            switched_report[name] = {
+                "switched": is_standalone,
+                "status": "standalone" if is_standalone else "legacy_hub",
+                "file": f_path,
+            }
+        except Exception as exc:
+            switched_report[name] = {
+                "switched": False,
+                "status": "error",
+                "error": str(exc),
+            }
+    return {
+        "schema": "bach.auto-switch-standalone-report.v1",
+        "total_switched": sum(1 for v in switched_report.values() if v.get("switched")),
+        "modules": switched_report,
+    }
+
+
 def ocean_modularized_services_status() -> dict[str, Any]:
-    """Return status of newly modularized services and whether they are running standalone or legacy hub."""
+    """Return status of modularized services and whether they are running standalone or legacy hub."""
     services = {
         "agent_spawn_gate": ("agent_spawn_gate", load_agent_spawn_gate_module),
         "context_hints": ("context_hints", load_context_hints_module),
@@ -733,6 +849,9 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "domain_writer_gate": ("domain_writer_gate", load_domain_writer_gate_module),
         "scheduler_provider": ("scheduler_provider", load_scheduler_provider_module),
         "db_sync_adapter": ("db_sync_adapter", load_db_sync_adapter_module),
+        "agent_process_provider": ("agent_process_provider", load_agent_process_provider_module),
+        "session_checkpoint_provider": ("session_checkpoint_provider", load_session_checkpoint_provider_module),
+        "db_sync_readiness": ("db_sync_readiness", load_db_sync_readiness_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():

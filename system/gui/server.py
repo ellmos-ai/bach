@@ -11617,10 +11617,13 @@ class PromptUpdateRequest(BaseModel):
 
 
 def _prompt_library_row(row):
-    """Keep tags editable without losing boundaries in existing JSON lists."""
+    """Keep tags editable without losing boundaries in existing JSON lists and expose favorite status."""
     from hub.prompt import prompt_tags_edit_text
     result = row_to_dict(row)
-    result["tags"] = prompt_tags_edit_text(result.get("tags"))
+    tags_str = prompt_tags_edit_text(result.get("tags"))
+    result["tags"] = tags_str
+    tags_lower = (tags_str or "").lower()
+    result["is_favorite"] = any(f in tags_lower for f in ("favorite", "favorit", "star", "pinned"))
     return result
 
 
@@ -11643,8 +11646,8 @@ async def prompt_library_page():
 
 
 @app.get("/api/prompt-library")
-async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
-    """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
+async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None, favorites: Optional[bool] = None):
+    """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie/Favoriten)."""
     from hub.prompt import prompt_tags_text
     conn = get_bach_db()
     try:
@@ -11658,6 +11661,8 @@ async def list_prompt_library(q: Optional[str] = None, category: Optional[str] =
         if category:
             clauses.append("category = ?")
             params.append(category)
+        if favorites:
+            clauses.append("(tags LIKE '%favorite%' OR tags LIKE '%favorit%' OR tags LIKE '%star%' OR tags LIKE '%pinned%')")
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY name"
@@ -11669,6 +11674,39 @@ async def list_prompt_library(q: Optional[str] = None, category: Optional[str] =
             "prompts": [_prompt_library_row(r) for r in rows],
             "categories": [c["category"] for c in cats],
         }
+    finally:
+        conn.close()
+
+
+@app.post("/api/prompt-library/{prompt_id}/favorite")
+async def toggle_prompt_favorite(prompt_id: int):
+    """Favoriten-Status eines Prompt-Templates umschalten."""
+    from hub.prompt import serialize_prompt_tags, prompt_tags_edit_text
+    conn = get_bach_db()
+    try:
+        row = conn.execute("SELECT id, tags FROM prompt_templates WHERE id = ?", (prompt_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Prompt nicht gefunden")
+        raw_tags = row["tags"]
+        tags_text = prompt_tags_edit_text(raw_tags) or ""
+        tags_list = [t.strip() for t in tags_text.split(",") if t.strip()]
+
+        is_fav = any(t.lower() in ("favorite", "favorit", "star", "pinned") for t in tags_list)
+        if is_fav:
+            tags_list = [t for t in tags_list if t.lower() not in ("favorite", "favorit", "star", "pinned")]
+            new_is_fav = False
+        else:
+            tags_list.append("favorite")
+            new_is_fav = True
+
+        new_tags = ", ".join(tags_list) if tags_list else None
+        now = datetime.now().isoformat()
+        conn.execute(
+            "UPDATE prompt_templates SET tags = ?, updated_at = ? WHERE id = ?",
+            (serialize_prompt_tags(new_tags), now, prompt_id),
+        )
+        conn.commit()
+        return {"ok": True, "id": prompt_id, "is_favorite": new_is_fav, "tags": new_tags or ""}
     finally:
         conn.close()
 

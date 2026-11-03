@@ -132,6 +132,7 @@ class PromptHandler(BaseHandler):
             "board": "Board verwalten: bach prompt board <title> [--add-prompt ID] [--remove-prompt ID] [--description TEXT]",
             "import_promptboard": "PromptBoard importieren: bach prompt import-promptboard [library.json] [--dry-run]",
             "export_promptboard": "Prompts nach PromptBoard exportieren: bach prompt export-promptboard [library.json] [--category CAT] [--dry-run]",
+            "favorite": "Favorit umschalten / listen: bach prompt favorite <id_oder_name> [--list]",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -192,6 +193,8 @@ class PromptHandler(BaseHandler):
             return self._search(" ".join(args))
         elif operation == "boards":
             return self._boards()
+        elif operation == "favorite":
+            return self._favorite(args)
         elif operation == "board":
             if not args:
                 return False, "Argument benoetigt: bach prompt board <title> [--add-prompt ID] [--remove-prompt ID] [--description TEXT]"
@@ -827,5 +830,64 @@ class PromptHandler(BaseHandler):
             return True, msg
         except sqlite3.Error as e:
             return False, f"DB-Fehler: {e}"
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # favorite (umschalten oder listen)
+    # ------------------------------------------------------------------
+    def _favorite(self, args: list) -> tuple:
+        if not args or "--list" in args:
+            conn = self._get_conn()
+            try:
+                rows = conn.execute(
+                    "SELECT id, name, category, purpose, tags FROM prompt_templates "
+                    "WHERE (tags LIKE '%favorite%' OR tags LIKE '%favorit%' OR tags LIKE '%star%' OR tags LIKE '%pinned%') "
+                    "ORDER BY name"
+                ).fetchall()
+                if not rows:
+                    return True, "Keine Favoriten-Prompts markiert."
+                lines = [
+                    f"{'ID':<5} {'Name':<30} {'Kategorie':<15} {'Tags'}",
+                    "-" * 70,
+                ]
+                for r in rows:
+                    cat = r["category"] or "-"
+                    tags_t = prompt_tags_text(r["tags"]) or "-"
+                    lines.append(f"{r['id']:<5} {r['name']:<30} {cat:<15} {tags_t}")
+                lines.append(f"\n{len(rows)} Favorit(en) markiert.")
+                return True, "\n".join(lines)
+            finally:
+                conn.close()
+
+        target = args[0]
+        conn = self._get_conn()
+        try:
+            row = self._resolve_prompt(conn, target)
+            if not row:
+                return False, f"Template '{target}' nicht gefunden."
+            prompt_id = row["id"]
+            name = row["name"]
+            raw_tags = row["tags"]
+            tags_text = prompt_tags_edit_text(raw_tags) or ""
+            tags_list = [t.strip() for t in tags_text.split(",") if t.strip()]
+
+            is_fav = any(t.lower() in ("favorite", "favorit", "star", "pinned") for t in tags_list)
+            if is_fav:
+                tags_list = [t for t in tags_list if t.lower() not in ("favorite", "favorit", "star", "pinned")]
+                new_is_fav = False
+            else:
+                tags_list.append("favorite")
+                new_is_fav = True
+
+            new_tags = ", ".join(tags_list) if tags_list else None
+            now = datetime.now().isoformat()
+            conn.execute(
+                "UPDATE prompt_templates SET tags = ?, updated_at = ? WHERE id = ?",
+                (serialize_prompt_tags(new_tags), now, prompt_id),
+            )
+            conn.commit()
+            state_str = "als Favorit markiert (⭐)" if new_is_fav else "Favoriten-Markierung entfernt"
+            return True, f"Prompt '{name}' (ID: {prompt_id}) {state_str}."
         finally:
             conn.close()

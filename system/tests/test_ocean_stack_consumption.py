@@ -287,6 +287,12 @@ def test_modularized_services_and_hot_wiring():
         load_domain_writer_gate_module,
         load_scheduler_provider_module,
         load_db_sync_adapter_module,
+        load_agent_process_provider_module,
+        load_session_checkpoint_provider_module,
+        load_db_sync_readiness_module,
+        detect_legacy_in_tree_services,
+        auto_switch_to_standalone_modules,
+        get_service_or_standalone,
         ocean_modularized_services_status,
         ocean_stack_status,
     )
@@ -318,18 +324,36 @@ def test_modularized_services_and_hot_wiring():
     assert mod_db is not None
     assert hasattr(mod_db, "SharedDBSyncAdapter")
 
-    status = ocean_modularized_services_status()
-    assert "agent_spawn_gate" in status
-    assert "context_hints" in status
-    assert "session_checkpoint_adapter" in status
-    assert "domain_writer_gate" in status
-    assert "scheduler_provider" in status
-    assert "db_sync_adapter" in status
-    for s_name, s_info in status.items():
-        assert s_info["bound"] is True, f"Service {s_name} not bound: {s_info}"
+    mod_app = load_agent_process_provider_module()
+    assert mod_app is not None
+    assert hasattr(mod_app, "create_agent_registry")
 
-    full_status = ocean_stack_status()
-    assert "modularized_services" in full_status
+    mod_scp = load_session_checkpoint_provider_module()
+    assert mod_scp is not None
+    assert hasattr(mod_scp, "get_checkpoint_store")
+
+    mod_dsr = load_db_sync_readiness_module()
+    assert mod_dsr is not None
+    assert hasattr(mod_dsr, "validate_native_db")
+
+    # Dynamic service resolver test
+    dyn_dw = get_service_or_standalone("domain_writer_gate")
+    assert dyn_dw is not None
+    assert hasattr(dyn_dw, "blocked_reason")
+
+    # Legacy in-tree detection
+    detection = detect_legacy_in_tree_services()
+    assert detection["schema"] == "bach.legacy-in-tree-detection.v1"
+    assert detection["total_in_tree_services"] >= 140
+    assert detection["standalone_modules_available"] >= 9
+    assert detection["switched_or_switchable_count"] >= 9
+
+    # Auto-switch execution
+    switch_report = auto_switch_to_standalone_modules()
+    assert switch_report["schema"] == "bach.auto-switch-standalone-report.v1"
+    assert switch_report["total_switched"] >= 9
+
+    status = ocean_modularized_services_status()
     for s_name in (
         "agent_spawn_gate",
         "context_hints",
@@ -337,5 +361,25 @@ def test_modularized_services_and_hot_wiring():
         "domain_writer_gate",
         "scheduler_provider",
         "db_sync_adapter",
+        "agent_process_provider",
+        "session_checkpoint_provider",
+        "db_sync_readiness",
+    ):
+        assert s_name in status
+        assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
+
+    full_status = ocean_stack_status()
+    assert "modularized_services" in full_status
+    assert full_status["modularized_standalone_count"] >= 8
+    for s_name in (
+        "agent_spawn_gate",
+        "context_hints",
+        "session_checkpoint_adapter",
+        "domain_writer_gate",
+        "scheduler_provider",
+        "db_sync_adapter",
+        "agent_process_provider",
+        "session_checkpoint_provider",
+        "db_sync_readiness",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True

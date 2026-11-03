@@ -169,9 +169,10 @@
             <div class="pl-panel">
                 <div class="pl-panel-header">
                     <input class="pl-search" id="pl-search" placeholder="Suche (Name, Text, Tags)..." oninput="debouncedLoad()">
-                    <select id="pl-category" class="pl-search" style="flex: 0 1 140px;" onchange="loadList()">
+                    <select id="pl-category" class="pl-search" style="flex: 0 1 130px;" onchange="loadList()">
                         <option value="">Alle Kategorien</option>
                     </select>
+                    <button class="btn" id="pl-fav-filter" onclick="toggleFavoritesOnly()" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" title="Nur Favoriten anzeigen">⭐ Favoriten</button>
                 </div>
                 <div class="pl-panel-content" id="pl-list">
                     <div class="pl-muted">Lade...</div>
@@ -199,10 +200,48 @@
     <script>
         let currentId = null;
         let debounceTimer = null;
+        let favoritesOnly = false;
 
         function debouncedLoad() {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(loadList, 300);
+        }
+
+        function toggleFavoritesOnly() {
+            favoritesOnly = !favoritesOnly;
+            const btn = document.getElementById('pl-fav-filter');
+            if (btn) {
+                if (favoritesOnly) {
+                    btn.style.background = 'var(--accent, #3b82f6)';
+                    btn.style.color = '#fff';
+                    btn.textContent = '⭐ Nur Favoriten (aktiv)';
+                } else {
+                    btn.style.background = '';
+                    btn.style.color = '';
+                    btn.textContent = '⭐ Favoriten';
+                }
+            }
+            loadList();
+        }
+
+        async function toggleFavById(id) {
+            try {
+                const data = await api('/api/prompt-library/' + id + '/favorite', { method: 'POST' });
+                setStatus(data.is_favorite ? 'Als Favorit markiert (⭐)' : 'Favorit entfernt');
+                if (currentId === id) {
+                    openPrompt(id);
+                } else {
+                    loadList();
+                }
+            } catch (e) {
+                setStatus('Fehler beim Ändern des Favoriten-Status: ' + e.message, true);
+            }
+        }
+
+        async function toggleCurrentFavorite() {
+            if (currentId) {
+                await toggleFavById(currentId);
+            }
         }
 
         function setStatus(msg, isError) {
@@ -225,6 +264,7 @@
             const params = new URLSearchParams();
             if (q) params.set('q', q);
             if (cat) params.set('category', cat);
+            if (favoritesOnly) params.set('favorites', '1');
             try {
                 const data = await api('/api/prompt-library?' + params.toString());
                 renderList(data.prompts);
@@ -268,8 +308,11 @@
                         }
                     } catch (e) {}
                 }
+                const favStar = p.is_favorite
+                    ? '<span style="color:#eab308; cursor:pointer; margin-right:4px;" title="Favorit (Klicken zum Entfernen)" onclick="event.stopPropagation(); toggleFavById(' + p.id + ')">⭐</span>'
+                    : '<span style="color:var(--text-muted); opacity:0.4; cursor:pointer; margin-right:4px;" title="Als Favorit markieren" onclick="event.stopPropagation(); toggleFavById(' + p.id + ')">☆</span>';
                 return '<div class="pl-item' + (p.id === currentId ? ' active' : '') + '" onclick="openPrompt(' + p.id + ')">' +
-                    '<div class="pl-item-name">' + escapeHtml(p.name) +
+                    '<div class="pl-item-name">' + favStar + escapeHtml(p.name) +
                     (p.category ? '<span class="pl-badge">' + escapeHtml(p.category) + '</span>' : '') + '</div>' +
                     '<div class="pl-item-meta">' + escapeHtml(p.purpose || '') + '</div>' +
                     tagsHtml +
@@ -287,7 +330,7 @@
         }
 
         function renderDetail(p, versions) {
-            document.getElementById('pl-detail-title').textContent = p.name + ' (#' + p.id + ')';
+            document.getElementById('pl-detail-title').textContent = (p.is_favorite ? '⭐ ' : '') + p.name + ' (#' + p.id + ')';
             const vHtml = (versions && versions.length)
                 ? versions.map(v =>
                     '<div class="pl-version"><b>v' + v.version_number + '</b> — ' + escapeHtml(v.created_at || '') +
@@ -314,6 +357,7 @@
                 '<button class="btn btn-primary" onclick="saveCurrent()">Speichern (neue Version)</button>' +
                 '<button class="btn" onclick="copyCurrent()">Text kopieren</button>' +
                 '<button class="btn" onclick="openCurrentInChat()">Im Chat als Entwurf öffnen</button>' +
+                '<button class="btn" id="pl-btn-fav" onclick="toggleCurrentFavorite()">' + (p.is_favorite ? '⭐ Favorit (entfernen)' : '⭐ Als Favorit markieren') + '</button>' +
                 '<button class="btn" onclick="deleteCurrent()" style="margin-left:auto;">Löschen</button>' +
                 '</div>' +
                 '<h3 style="margin-top:1.25rem;">Versionshistorie</h3>' + vHtml;

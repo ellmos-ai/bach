@@ -203,3 +203,102 @@ def test_api_voice_stt_endpoint(monkeypatch):
     assert data["schema"] == "ellmos.voice-io.stt.v1"
 
 
+def test_prompt_library_favorite_api_and_gui_features(monkeypatch, tmp_path):
+    import sqlite3
+    from fastapi.testclient import TestClient
+    from gui import server
+
+    db_path = tmp_path / "test_bach.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE prompt_templates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, purpose TEXT, text TEXT, tags TEXT, category TEXT, created_at TEXT, updated_at TEXT, dist_type INTEGER DEFAULT 1)"
+    )
+    conn.execute(
+        "CREATE TABLE prompt_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, prompt_id INTEGER, version_number INTEGER, text TEXT, tags TEXT, created_at TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO prompt_templates (name, purpose, text, tags, category) VALUES ('Fav1', 'Test Purpose', 'Content 1', 'tagA', 'CatA')"
+    )
+    conn.execute(
+        "INSERT INTO prompt_templates (name, purpose, text, tags, category) VALUES ('Fav2', 'Test Purpose 2', 'Content 2', 'favorite,tagB', 'CatB')"
+    )
+    conn.commit()
+    conn.close()
+
+    def get_test_db():
+        c = sqlite3.connect(db_path)
+        c.row_factory = sqlite3.Row
+        return c
+
+    monkeypatch.setattr(server, "get_bach_db", get_test_db)
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "test-token" else None)
+    client = TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-token"})
+
+    # 1. List all prompts - checks is_favorite attribute
+    res = client.get("/api/prompt-library")
+    assert res.status_code == 200
+    data = res.json()
+    prompts = {p["name"]: p for p in data["prompts"]}
+    assert prompts["Fav1"]["is_favorite"] is False
+    assert prompts["Fav2"]["is_favorite"] is True
+
+    # 2. Filter by favorites=1
+    res_fav = client.get("/api/prompt-library?favorites=1")
+    assert res_fav.status_code == 200
+    fav_prompts = res_fav.json()["prompts"]
+    assert len(fav_prompts) == 1
+    assert fav_prompts[0]["name"] == "Fav2"
+
+    # 3. Toggle favorite on Fav1 -> becomes True
+    fav1_id = prompts["Fav1"]["id"]
+    res_toggle = client.post(f"/api/prompt-library/{fav1_id}/favorite")
+    assert res_toggle.status_code == 200
+    assert res_toggle.json()["is_favorite"] is True
+
+    # Check updated list
+    res_fav_after = client.get("/api/prompt-library?favorites=1")
+    assert len(res_fav_after.json()["prompts"]) == 2
+
+    # Toggle again -> becomes False
+    res_toggle_off = client.post(f"/api/prompt-library/{fav1_id}/favorite")
+    assert res_toggle_off.status_code == 200
+    assert res_toggle_off.json()["is_favorite"] is False
+
+    # Check GUI template contains favorite controls
+    source = (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
+    assert "pl-fav-filter" in source
+    assert "toggleFavoritesOnly" in source
+    assert "toggleFavById" in source
+    assert "⭐ Nur Favoriten" in source
+
+
+def test_chat_tray_favorite_prompts_and_auto_preview():
+    from unittest.mock import MagicMock, patch
+
+    with patch.dict("sys.modules", {
+        "pystray": MagicMock(),
+        "PIL": MagicMock(),
+        "PIL.Image": MagicMock(),
+        "PIL.ImageDraw": MagicMock(),
+        "PIL.ImageFont": MagicMock(),
+    }):
+        from hub._services.chat.chat_tray import BACHTray
+        tray = BACHTray(host="testhost", port=9999)
+
+        # Test preview generator
+        long_text = "Dies ist ein sehr langer Prompt mit vielen Zeilen\n\nund Absätzen\tund Leerzeichen, der auf maximal siebzig Zeichen gekürzt werden muss."
+        preview = tray._make_prompt_preview(long_text, max_len=60)
+        assert len(preview) <= 60
+        assert preview.endswith("...")
+        assert "\n" not in preview
+
+        # Ensure initial favorites is populated
+        assert len(tray.favorite_prompts) > 0
+
+        # Snapshot contains favorite count
+        snapshot = tray.promptboard_smoke_snapshot()
+        assert "favorite_count" in snapshot
+        assert snapshot["favorite_count"] >= 1
+
+
+

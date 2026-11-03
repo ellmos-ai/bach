@@ -332,6 +332,7 @@ class BACHTray:
         self.max_status_failures = 3
         self._failed_status_count = 0
         self.prompt_source = "defaults"
+        self.favorite_prompts = {}
         self.prompts = self._load_prompts()
 
     # --- API ---
@@ -889,8 +890,15 @@ class BACHTray:
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
 
+    def _make_prompt_preview(self, text: str, max_len: int = 70) -> str:
+        """Create a clean, single-line preview string for prompt menus."""
+        cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+        if len(cleaned) > max_len:
+            return cleaned[:max_len - 3] + "..."
+        return cleaned
+
     def _load_db_prompts(self):
-        """Load curated prompts from BACH's canonical database (prompt_templates)."""
+        """Load curated prompts and favorites from BACH's canonical database (prompt_templates)."""
         db_path = None
         for cand in (
             Path.home() / ".bach" / "bach.db",
@@ -906,15 +914,45 @@ class BACHTray:
             with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT name, text, category FROM prompt_templates WHERE text IS NOT NULL AND text != ''"
+                    "SELECT name, text, category, tags FROM prompt_templates WHERE text IS NOT NULL AND text != ''"
                 )
                 db_prompts = {}
-                for name, text, category in cursor.fetchall():
+                fav_prompts = {}
+                for name, text, category, tags in cursor.fetchall():
                     cat = (category.strip() if category and category.strip() else "BACH")
-                    db_prompts.setdefault(cat, {})[str(name).strip()] = str(text).strip()
+                    name_str = str(name).strip()
+                    text_str = str(text).strip()
+                    db_prompts.setdefault(cat, {})[name_str] = text_str
+                    tags_lower = (str(tags) if tags else "").lower()
+                    if any(f in tags_lower for f in ("favorite", "favorit", "star", "pinned")):
+                        fav_prompts[name_str] = {
+                            "text": text_str,
+                            "category": cat,
+                            "preview": self._make_prompt_preview(text_str),
+                        }
+                if fav_prompts:
+                    self.favorite_prompts = fav_prompts
                 return db_prompts
         except Exception:
             return {}
+
+    def _ensure_initial_favorites(self, prompts):
+        """Seed favorites from available prompts if no explicit favorites are marked yet."""
+        if self.favorite_prompts:
+            return
+        favs = {}
+        for cat, p_map in prompts.items():
+            for name, text in p_map.items():
+                favs[name] = {
+                    "text": text,
+                    "category": cat,
+                    "preview": self._make_prompt_preview(text),
+                }
+                if len(favs) >= 4:
+                    break
+            if len(favs) >= 4:
+                break
+        self.favorite_prompts = favs
 
     def _load_prompts(self):
         config_dir = os.path.expanduser("~/.config/bach")
@@ -922,21 +960,34 @@ class BACHTray:
         prompts = self._read_prompt_file(prompts_path)
         if prompts:
             self.prompt_source = str(prompts_path)
+            self._ensure_initial_favorites(prompts)
             return prompts
 
         for candidate in self._promptboard_library_candidates():
             prompts = self._read_prompt_file(candidate)
             if prompts:
                 self.prompt_source = str(candidate)
+                self._ensure_initial_favorites(prompts)
                 return prompts
 
         db_prompts = self._load_db_prompts()
         if db_prompts:
             self.prompt_source = "bach_db"
+            self._ensure_initial_favorites(db_prompts)
             return db_prompts
 
         self.prompt_source = "defaults"
+        self._ensure_initial_favorites(DEFAULT_PROMPTS)
         return DEFAULT_PROMPTS
+
+    def _reload_prompts(self, *_):
+        self.favorite_prompts = {}
+        self.prompts = self._load_prompts()
+        if self.icon:
+            fav_count = len(self.favorite_prompts)
+            total_count = sum(len(p) for p in self.prompts.values())
+            self.icon.notify(f"{fav_count} Favoriten, {total_count} Prompts geladen", "BACH Prompts")
+            self._update_icon()
 
     def promptboard_smoke_snapshot(self):
         app_path = self._promptboard_app_path()
@@ -958,6 +1009,7 @@ class BACHTray:
             "using_default_prompts": self.prompt_source == "defaults",
             "prompt_categories": list(self.prompts.keys()),
             "prompt_count": prompt_count,
+            "favorite_count": len(self.favorite_prompts),
         }
 
     def _copy_to_clipboard(self, text):
@@ -1508,6 +1560,28 @@ class BACHTray:
         ]
         items.append(pystray.MenuItem("🛡️ Berechtigungen (Permissions)", pystray.Menu(*perm_items)))
 
+        # ── ⭐ Favoriten-Prompts (Schnellzugriff & Auto-Vorschau) ──
+        fav_items = []
+        if self.favorite_prompts:
+            for fav_name, fav_data in self.favorite_prompts.items():
+                f_text = fav_data["text"] if isinstance(fav_data, dict) else str(fav_data)
+                f_preview = fav_data.get("preview") if isinstance(fav_data, dict) else self._make_prompt_preview(f_text)
+                sub_items = [
+                    pystray.MenuItem(f"🔍 \"{f_preview}\"", None, enabled=False),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(f"📋 Kopieren", self._make_prompt_copy_action(f_text)),
+                    pystray.MenuItem(f"▶ Direkt senden", self._make_prompt_send_action(f_text)),
+                    pystray.MenuItem(f"💬 Im Chat öffnen (Entwurf)", self._make_prompt_open_chat_action(f_text)),
+                ]
+                fav_items.append(pystray.MenuItem(f"⭐ {fav_name}", pystray.Menu(*sub_items)))
+        else:
+            fav_items.append(pystray.MenuItem("(Keine Favoriten — in Bibliothek als ⭐ markieren)", None, enabled=False))
+
+        fav_items.append(pystray.Menu.SEPARATOR)
+        fav_items.append(pystray.MenuItem("📚 Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
+        fav_items.append(pystray.MenuItem("🔄 Prompts neu laden", self._reload_prompts))
+        items.append(pystray.MenuItem(f"⭐ Favoriten-Prompts ({len(self.favorite_prompts)})", pystray.Menu(*fav_items)))
+
         # ── PromptBoard ──
         prompt_items = []
         app_path = self._promptboard_app_path()
@@ -1520,18 +1594,24 @@ class BACHTray:
         for category, prompts in self.prompts.items():
             cat_items = []
             for name, text in prompts.items():
-                cat_items.append(pystray.MenuItem(
-                    f"\U0001F4CB {name}",
-                    self._make_prompt_copy_action(text),
-                ))
-                cat_items.append(pystray.MenuItem(
-                    f"▶ Senden: {name}",
-                    self._make_prompt_send_action(text),
-                ))
-                cat_items.append(pystray.MenuItem(
-                    f"💬 Im Chat öffnen: {name}",
-                    self._make_prompt_open_chat_action(text),
-                ))
+                preview = self._make_prompt_preview(text)
+                prompt_subitems = [
+                    pystray.MenuItem(f"🔍 \"{preview}\"", None, enabled=False),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        f"\U0001F4CB {name}",
+                        self._make_prompt_copy_action(text),
+                    ),
+                    pystray.MenuItem(
+                        f"▶ Senden: {name}",
+                        self._make_prompt_send_action(text),
+                    ),
+                    pystray.MenuItem(
+                        f"💬 Im Chat öffnen: {name}",
+                        self._make_prompt_open_chat_action(text),
+                    ),
+                ]
+                cat_items.append(pystray.MenuItem(name, pystray.Menu(*prompt_subitems)))
             prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
         if prompt_items:
             items.append(pystray.MenuItem("PromptBoard", pystray.Menu(*prompt_items)))

@@ -212,9 +212,22 @@ Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und S
     - `ocean_stack_bridge.py` um dynamische Seam-Loader (`load_domain_writer_gate_module()`, `load_scheduler_provider_module()`, `load_db_sync_adapter_module()`) und `ocean_modularized_services_status()` (jetzt 6/6 Standalone-Module gebunden) erweitert.
     - Smoke-Tests in allen 3 Modulen und Integrationstests in `test_ocean_stack_consumption.py` 100% grün. Task #-25 erledigt gemeldet.
 
+- **Roadmap-Fortschritt & Erledigte Aufgaben (Tasks -26, -27):**
+  - **Tray & GUI: Prompt-Bibliothek Schnellzugriff und Auto-Vorschau in Tray-Kontextmenü für Favoriten-Prompts (Task #-26, Erledigt):**
+    - `POST /api/prompt-library/{prompt_id}/favorite` Endpoint und `is_favorite` Eigenschaft in `server.py` implementiert.
+    - CLI & SDK Handler: `bach prompt favorite <id_oder_name> [--list]` in `system/hub/prompt.py` verankert.
+    - Web-GUI `prompt-library.html`: Neuer Schnellfilter `⭐ Favoriten`, 1-Click Inline-Stern in der Liste und Favorit-Button in den Aktionen.
+    - Tray-App `chat_tray.py`: Neuer Top-Level Menübereich `⭐ Favoriten-Prompts (Schnellzugriff)` mit Auto-Vorschau (`🔍 "..."`), Kopieren, Direkt-Senden und Chat-Entwurf.
+    - 16/16 Tests in `test_prompt_chat_draft.py` und 114/114 Tests in `test_connectors_and_tray.py` vollständig grün. Task #-26 erledigt gemeldet.
+  - **Modularer Core: Auto-Erkennung veralteter In-Tree-Dienste und automatische Umschaltung auf Standalone-Module via ocean_stack_bridge (Task #-27, Erledigt):**
+    - `detect_legacy_in_tree_services()`: Automatischer Abgleich aller 151 Hub-Dienste gegen Standalone-Pakete in `exports/modules/`, `.MODULES/` und Repos.
+    - `get_service_or_standalone()` & `auto_switch_to_standalone_modules()`: Dynamischer Resolver und Umschaltung auf Standalone-Module mit `@deprecated_legacy_bach` Fallback.
+    - Export der nächsten 3 High-Readiness Module (`agent_process_provider`, `session_checkpoint_provider`, `db_sync_readiness`) via `bach skills export-module` und Hot-Wiring in `ocean_modularized_services_status()` (jetzt 9/9 Standalone-Module gebunden).
+    - 8/8 Tests in `test_ocean_stack_consumption.py` und 61/61 Tests in `test_update_handler.py` vollständig grün. Task #-27 erledigt gemeldet.
+
 - **Nächste Aufgaben der Roadmap (Erstellt):**
-  - Task ID `-26`: `Tray & GUI: Prompt-Bibliothek Schnellzugriff und Auto-Vorschau in Tray-Kontextmenü für Favoriten-Prompts` (P3, gui).
-  - Task ID `-27`: `Modularer Core: Auto-Erkennung veralteter In-Tree-Dienste und automatische Umschaltung auf Standalone-Module via ocean_stack_bridge` (P3, infrastructure).
+  - Task ID `-28`: `Modularer Core: Export der nächsten Dienstgruppe (token_budget, rate_limit_policy, audit_logger) als autarke Standalone-Module` (P3, infrastructure).
+  - Task ID `-29`: `GUI & Tray: Auto-Update Check & Status-Indikator für Standalone-Module im Dashboard und Tray` (P3, gui).
 
 ## Review 2026-11-01 (Daily Care & Dev Check - Gemini 3.8 Flash)
 

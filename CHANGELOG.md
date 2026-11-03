@@ -31,6 +31,19 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Tray & GUI Favoriten-Prompts Schnellzugriff, Auto-Vorschau und Modularer Core Auto-Detect (Tasks #-26 & #-27, 2026-11-03):**
+  - **Favoriten-Prompts & Schnellzugriff (Task #-26):**
+    - Neuer Endpunkt `POST /api/prompt-library/{prompt_id}/favorite` und Eigenschaft `is_favorite` in `server.py` implementiert; Filter `?favorites=1` hinzugefügt.
+    - CLI & SDK Handler: `bach prompt favorite <id_oder_name> [--list]` in `system/hub/prompt.py` verankert.
+    - Web-GUI (`prompt-library.html`): Schnellfilter `⭐ Favoriten`, 1-Click Inline-Favoritenstern in der Prompt-Liste und Favorit-Button in den Detailaktionen integriert.
+    - Tray-App (`chat_tray.py`): Neuer Menübereich `⭐ Favoriten-Prompts (Schnellzugriff)` mit Auto-Vorschau (`🔍 "..."`), Text-Kopieren, Direkt-Senden und Chat-Entwurf.
+    - 16/16 Tests in `test_prompt_chat_draft.py` und 114/114 Tests in `test_connectors_and_tray.py` erfolgreich durchgeführt.
+  - **Modularer Core: Auto-Erkennung & Standalone-Umschaltung (Task #-27):**
+    - `detect_legacy_in_tree_services()`: Automatischer Abgleich aller 151 In-Tree Hub-Dienste gegen Standalone-Pakete in `exports/modules/`, `.MODULES/` und Repositories implementiert.
+    - `get_service_or_standalone()` & `auto_switch_to_standalone_modules()`: Dynamischer Resolver und automatisches Hot-Wiring verfügbarer Standalone-Module mit `@deprecated_legacy_bach` Fallback.
+    - Export der nächsten 3 High-Readiness Module (`agent_process_provider`, `session_checkpoint_provider`, `db_sync_readiness`) via `bach skills export-module` und Hot-Wiring in `ocean_modularized_services_status()` (jetzt 9/9 Standalone-Module gebunden).
+    - 8/8 Tests in `test_ocean_stack_consumption.py` und 61/61 Tests in `test_update_handler.py` erfolgreich durchgeführt.
+
 - **Modularisierung: Export der Standalone-Module `domain_writer_gate`, `scheduler_provider` und `db_sync_adapter` (Task #-25, 2026-11-03):**
   - Standalone-Module für `domain_writer_gate`, `scheduler_provider` und `db_sync_adapter` mit `manifest.json`, `src/`, `tests/`, `README.md` und ZIP-Archiven via `bach skills export-module` exportiert und validiert.
   - Dynamische Seam-Loader (`load_domain_writer_gate_module()`, `load_scheduler_provider_module()`, `load_db_sync_adapter_module()`) und `ocean_modularized_services_status()` in `system/hub/_services/ocean_stack_bridge.py` verankert (6/6 Standalone-Module gebunden).

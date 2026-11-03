@@ -1,0 +1,31 @@
+{
+  "name": "session_checkpoint_provider",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BACH Standalone Module: session_checkpoint_provider",
+  "author": "BACH Team",
+  "created_at": "2026-11-03T20:49:11.933121",
+  "selfcontained": true,
+  "entrypoints": {
+    "library": "src/session_checkpoint_provider.py"
+  },
+  "boundaries": {
+    "data": "user-local",
+    "network": "full",
+    "platforms": [
+      "windows",
+      "macos",
+      "linux"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "BACH",
+      "minimum_version": "3.15.0"
+    },
+    {
+      "name": "Ocean",
+      "minimum_version": "1.0.0"
+    }
+  ]
+}
