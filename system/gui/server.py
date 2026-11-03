@@ -16621,6 +16621,145 @@ def _save_capability_permissions(perms: dict[str, bool]) -> dict[str, bool]:
 
 
 _TALK_CONFIG_FILE = Path.home() / ".bach" / "talk_config.json"
+_TALK_HISTORY: dict[str, list[dict[str, str]]] = {}
+
+_TALK_PERSONA_SYSTEM_PROMPTS = {
+    "buddha": (
+        "Du bist Buddha, der zentrale KI-Orchestrator und ruhige Begleiter im BACH/Ocean-System von Lukas. "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+    "claude": (
+        "Du bist Claude im BACH/Ocean-Team von Lukas (Fokus: präzise Analyse, Architektur, Sorgfalt). "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+    "gemini": (
+        "Du bist Gemini (Antigravity) im BACH/Ocean-Team von Lukas (Fokus: schnelle Umsetzung, UI/Design, System-Integration). "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+    "codex": (
+        "Du bist Codex / GPT im BACH/Ocean-Team von Lukas (Fokus: Code, Infrastruktur, präzise Technik). "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+}
+
+
+def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str = "de") -> str:
+    """Route ELLMOS Talk turns to a live LLM (Ollama fast path or BACH Chat-Control API)."""
+    norm_persona = (persona or "buddha").strip().lower()
+    norm_lang = (language or "de").strip().lower()
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        if norm_lang == "en":
+            return (
+                '<talk_control {"emotion": "curious", "pattern": "wave", "emoji_overlay": "✨"} /> '
+                f"[{norm_persona.capitalize()}] I heard you clearly. How would you like to proceed?"
+            )
+        return (
+            '<talk_control {"emotion": "curious", "pattern": "wave", "emoji_overlay": "✨"} /> '
+            f"[{norm_persona.capitalize()}] Ich habe dich klar verstanden. Wie wollen wir weitermachen?"
+        )
+
+    role_intro = _TALK_PERSONA_SYSTEM_PROMPTS.get(norm_persona, _TALK_PERSONA_SYSTEM_PROMPTS["buddha"])
+    lang_hint = "Antworte auf Englisch (English)." if norm_lang == "en" else "Antworte auf Deutsch."
+    sys_instruction = (
+        f"{role_intro} {lang_hint} "
+        "WICHTIG für das Funkgerät: Antworte natürlich, direkt und gesprochen-prägnant in 1 bis maximal 3 kurzen Sätzen "
+        "(ohne Markdown-Tabellen, ohne Codeblöcke, ideal zum direkten Vorlesen per Sprachausgabe). "
+        "Beginne deine Antwort optional mit genau einem Steuer-Tag im Format "
+        '<talk_control {"emotion": "calm|curious|joyful|focused|empathetic|alert", "pattern": "orb|wave|rings|constellation|pulse", "emoji_overlay": "🎙️"} /> '
+        "passend zur Stimmung deiner Antwort."
+    )
+
+    history = _TALK_HISTORY.setdefault(norm_persona, [])
+    messages = [{"role": "system", "content": sys_instruction}]
+    messages.extend(history[-6:])
+    messages.append({"role": "user", "content": prompt})
+
+    reply_text = ""
+
+    # 1. Fast path: local Ollama /api/chat (no multi-round tool loop latency)
+    ollama_base = os.environ.get("BACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        with httpx.Client(timeout=18.0) as client:
+            tags_resp = client.get(f"{ollama_base}/api/tags")
+            if tags_resp.status_code == 200:
+                installed = [
+                    str(m.get("name") or "")
+                    for m in (tags_resp.json().get("models") or [])
+                    if isinstance(m, dict) and m.get("name")
+                ]
+                preferred_order = [
+                    "glm-5.3-flash:cloud",
+                    "kimi-k2.7-code:cloud",
+                    "deepseek-v4.1-flash:cloud",
+                    "gemma4:e2b",
+                    "qwen3.8:27b-mlx",
+                    "qwen3.8:27b-q4_K_M",
+                ]
+                chosen_model = next((m for m in preferred_order if m in installed), installed[0] if installed else "")
+                if chosen_model:
+                    chat_resp = client.post(
+                        f"{ollama_base}/api/chat",
+                        json={
+                            "model": chosen_model,
+                            "stream": False,
+                            "messages": messages,
+                            "options": {"num_predict": 220, "temperature": 0.5},
+                        },
+                    )
+                    if chat_resp.status_code == 200:
+                        msg_obj = chat_resp.json().get("message") or {}
+                        content = str(msg_obj.get("content") or "").strip()
+                        if content:
+                            reply_text = content
+    except Exception:
+        pass
+
+    # 2. Fallback: BACH Chat-Control API (/api/chat on port 8081)
+    if not reply_text:
+        base_url = _chat_control_base_url()
+        auth_header = get_control_api_auth_header()
+        if base_url and auth_header:
+            try:
+                compact_prompt = (
+                    f"[ELLMOS Talk Funkgerät · Persona: {norm_persona.capitalize()} · {lang_hint} "
+                    "Antworte direkt in 1-3 kurzen gesprochenen Sätzen ohne Tool-Aufrufe] "
+                    f"{prompt}"
+                )
+                with httpx.Client(timeout=25.0) as client:
+                    ctrl_resp = client.post(
+                        f"{base_url}/chat",
+                        headers={"Authorization": auth_header},
+                        json={"prompt": compact_prompt, "chat_id": "gui-web"},
+                    )
+                    if ctrl_resp.status_code == 200:
+                        payload = ctrl_resp.json()
+                        ans = str(payload.get("answer") or payload.get("response") or "").strip()
+                        if ans:
+                            reply_text = ans
+            except Exception:
+                pass
+
+    if reply_text:
+        if "<talk_control" not in reply_text:
+            reply_text = (
+                '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} /> '
+                + reply_text
+            )
+        history.append({"role": "user", "content": prompt})
+        history.append({"role": "assistant", "content": reply_text})
+        if len(history) > 12:
+            del history[:-12]
+        return reply_text
+
+    if norm_lang == "en":
+        return (
+            '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "📡"} /> '
+            f"[{norm_persona.capitalize()}] Radio link active, but no language model backend responded."
+        )
+    return (
+        '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "📡"} /> '
+        f"[{norm_persona.capitalize()}] Funkkanal steht, aber aktuell antwortet kein Sprachmodell-Backend."
+    )
 
 
 def _get_talk_session():
@@ -16629,7 +16768,8 @@ def _get_talk_session():
         from hub._services.ocean_stack_bridge import load_talk_module
 
         talk_mod = load_talk_module()
-        engine = talk_mod.TalkEngine()
+        cortex = talk_mod.DeepCortexLoop(responder=_talk_cortex_responder)
+        engine = talk_mod.TalkEngine(cortex=cortex)
         if _TALK_CONFIG_FILE.is_file():
             try:
                 persisted = json.loads(_TALK_CONFIG_FILE.read_text(encoding="utf-8"))
