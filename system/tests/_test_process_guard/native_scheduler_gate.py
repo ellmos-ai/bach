@@ -16,6 +16,8 @@ import zlib
 from pathlib import Path
 
 _DIRECTORY = Path(__file__).resolve().parent
+# Imported eagerly by both guard entry points, before test code can patch sys.
+_TRUSTED_EXECUTABLE = sys.executable
 
 _BOOTSTRAP = r'''
 import base64,hashlib,json,os,sys,types,zlib
@@ -54,7 +56,7 @@ def _gate_shape(command, options):
     """Validate source-pinned code and the exact production constructor shape."""
     if not isinstance(command, (list, tuple)) or not all(type(v) is str for v in command):
         return False
-    if len(command) not in (7, 8) or command[0] != sys.executable:
+    if len(command) not in (7, 8) or command[0] != _TRUSTED_EXECUTABLE:
         return False
     if list(command[1:5]) != ['-I', '-S', '-B', '-c']:
         return False
