@@ -1,7 +1,7 @@
 {
   "schema": "ellmos-system-gui.kit-manifest.v1",
   "repository": "https://github.com/ellmos-ai/ellmos-system-gui",
-  "pinned_source_commit": "adcb746c568a202e35f8ce379b4b998abbb229bf",
+  "pinned_source_commit": "399e35cf0dac68a9cc7368e2a883361b7e20eecb",
   "version": "0.2.33",
   "dist_manifest_schema": "ellmos-system-gui.dist.v1",
   "expected_page_count": 47,

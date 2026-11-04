@@ -96,7 +96,7 @@ def test_gui_consumer_and_kit_pin_bind_same_029_release():
     assert consumer["version"] == "0.2.33"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "adcb746c568a202e35f8ce379b4b998abbb229bf",
+        "commit": "399e35cf0dac68a9cc7368e2a883361b7e20eecb",
         "archive_sha256": "01969eba5b938ae0eb9613730db15fa6f288a5c7bd10a00b2e84db39c2472508",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }

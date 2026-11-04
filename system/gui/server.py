@@ -1731,7 +1731,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/domains/installed",
         "/api/domains/pins",
         "/api/voice/status",
+        "/api/voice/stt",
+        "/api/voice/tts",
         "/api/talk/status",
+        "/api/talk/reflex",
         "/api/talk/state",
         "/api/talk/config",
         "/api/talk/summon",
@@ -17200,6 +17203,38 @@ async def api_talk_summon_ack(payload: dict = Body(default={})):
     return {"schema": "ellmos.talk.summon-ack.v1", "visual_state": state.as_dict()}
 
 
+@app.post("/api/talk/reflex")
+async def api_talk_reflex(payload: dict = Body(...)):
+    """Stage-1 Sub-250ms FastReflexLoop backchannel & visualizer transition prior to DeepCortex completion (#3764)."""
+    from dataclasses import asdict
+
+    engine = _get_talk_session()
+    user_utterance = str(payload.get("user_utterance") or "").strip()
+    persona = str(payload.get("persona") or "").strip().lower() or None
+    language = str(payload.get("language") or "").strip().lower() or None
+    if hasattr(engine, "preview_reflex"):
+        return engine.preview_reflex(user_utterance, persona=persona, language=language)
+    decision = engine.reflex.evaluate_utterance(
+        user_utterance,
+        current_mode=engine.state.mode,
+        language=language or engine.state.language,
+        wake_word=engine.state.wake_word,
+        wake_word_enabled=engine.state.wake_word_enabled,
+    )
+    state = engine.update_visual_state({"mode": "thinking", "emotion": decision.emotion_hint, "pattern": "wave"})
+    ack_text = decision.backchannel_text or ("Einen kurzen Moment, ich schaue mir das an." if (language or engine.state.language) != "en" else "One moment, let me check that.")
+    return {
+        "schema": "ellmos.talk.reflex.v1",
+        "reflex": {
+            **asdict(decision),
+            "ack_text": ack_text,
+            "latency_target_ms": decision.latency_budget_ms,
+            "fast_model": getattr(engine.reflex, "model_name", "smollm2:360m"),
+        },
+        "visual_state": state.as_dict(),
+    }
+
+
 @app.post("/api/talk/turn")
 async def api_talk_turn(payload: dict = Body(...)):
     """Process a live conversational turn through `ellmos-talk` (FastReflexLoop + DeepCortexLoop, #3764)."""
@@ -17221,10 +17256,14 @@ async def api_talk_turn(payload: dict = Body(...)):
         user_utterance=user_utterance,
         model_response=str(model_response) if model_response else None,
     )
+    reflex_dict = asdict(res.reflex)
+    reflex_dict.setdefault("ack_text", res.reflex.backchannel_text or ("Verstanden." if engine.state.language != "en" else "Got it."))
+    reflex_dict.setdefault("latency_target_ms", res.reflex.latency_budget_ms)
+    reflex_dict.setdefault("fast_model", getattr(engine.reflex, "model_name", "smollm2:360m"))
     return {
         "spoken_text": res.spoken_text,
         "sentences": res.sentence_chunks,
-        "reflex": asdict(res.reflex),
+        "reflex": reflex_dict,
         "visual_state": res.visual_state,
         "applied_directives": res.applied_directives,
     }
