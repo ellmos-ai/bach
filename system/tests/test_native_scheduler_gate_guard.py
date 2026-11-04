@@ -118,6 +118,47 @@ def test_bootstrap_requires_active_inherited_test_mode(invocation, monkeypatch):
     assert guard_native_gate(command, options) is None
 
 
+def test_mutable_sys_executable_cannot_rebind_gate_interpreter(invocation, monkeypatch):
+    command, options = invocation
+    forged = list(command)
+    forged[0] = str(os.path.join(os.getcwd(), 'synthetic-does-not-exist', 'foreign-host.exe'))
+    monkeypatch.setattr(sys, 'executable', forged[0])
+    # Shape-only assertions: the synthetic executable is never started.
+    assert guard_native_gate(forged, options) is None
+    assert guard_native_gate(command, options) is not None
+
+
+def test_child_startup_captures_interpreter_before_first_gate_classification():
+    code = f'''
+import os,subprocess,sys
+assert 'native_scheduler_gate' in sys.modules, 'helper must be loaded by startup guard'
+helper=sys.modules['native_scheduler_gate']
+real=sys.executable
+assert helper._TRUSTED_EXECUTABLE==real
+sys.executable=os.path.join(os.getcwd(),'synthetic-does-not-exist','foreign-host.exe')
+command=[sys.executable,'-I','-S','-B','-c',{native._GATE!r}]
+options=dict(cwd=None,env=dict(os.environ),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0)
+descriptors=()
+if os.name=='nt':
+    command.append('win')
+    options['creationflags']=subprocess.CREATE_NO_WINDOW|subprocess.CREATE_NEW_PROCESS_GROUP
+else:
+    descriptors=os.pipe()
+    command.extend(['posix',str(descriptors[1])])
+    options.update(start_new_session=True,pass_fds=(descriptors[1],))
+try:
+    assert helper.guard_native_gate(command,options) is None
+    command[0]=real
+    assert helper.guard_native_gate(command,options) is not None
+finally:
+    for descriptor in descriptors: os.close(descriptor)
+print('startup interpreter retained')
+'''
+    result = subprocess.run([sys.executable, '-c', code], check=True,
+                            capture_output=True, text=True, timeout=8)
+    assert result.stdout.strip() == 'startup interpreter retained'
+
+
 def test_native_legitimate_child_has_guard_even_with_spoofed_env(tmp_path):
     marker = tmp_path / 'guard.txt'
     code = (

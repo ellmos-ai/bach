@@ -4,6 +4,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from native_scheduler_gate import guard_native_gate
+
 _GUARD_DIR = Path(__file__).resolve().parent
 
 
@@ -86,8 +88,6 @@ if os.environ.get("BACH_TEST_MODE") == "1":
 
     class _GuardedPopen(_real_popen):
         def __init__(self, args, *popenargs, **kwargs):
-            from native_scheduler_gate import guard_native_gate
-
             guarded_gate = guard_native_gate(args, kwargs) if not popenargs else None
             if _dangerous_command(args) and guarded_gate is None:
                 raise RuntimeError(

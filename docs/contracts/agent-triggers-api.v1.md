@@ -64,11 +64,28 @@ bestehende Fehlerformat. Keine rohen Exceptiontexte oder lokalen Pfade ausgeben.
 
 Synthetische native Stores prüfen CRUD/CAS/Tombstones, Schemafehler ohne Mutation,
 Readback-Rennen und Event-Deduplizierung. Auth/Origin/Präfix werden getrennt geprüft.
-Die isoliert installierte Pin-Fassung besteht 56 API- und zwei Provider-Tests.
-Die Windows-Wiring-Prüfung besteht nach Quoting des Interpreterpfads 27 Fälle;
-der echte Prozesslauf wird vom bestehenden Testschutz wegen des isolierten
-Scheduler-Hilfsprozesses blockiert und ist damit nicht abgenommen. Der Schutz
-wird nicht deaktiviert.
+Die isoliert installierte Pin-Fassung bestand zunächst 110 Tests ohne Skip:
+56 API-, zwei Provider-, 28 Windows-Wiring- und 24 Guardfälle. Der echte
+Adapter-Tick läuft mit aktivem Testschutz; der frühere Windows-Guard-Blocker
+ist durch den engen Testbootstrap behoben. Dessen geprüfter Gate-Hash,
+Startinterpreter und native Prozessbesitzform werden vor der Ausführung geprüft;
+die Kindprozess-Guards werden vor dem Lesen eines Auftragsframes installiert.
+Das ist keine Betriebssystem-Sandbox. Die bestehende allgemeine Kindprozesslücke
+bei POSIX `os.killpg` bleibt davon getrennt und wird hier nicht geschlossen.
+
+Die nachfolgende Identitätsbindung besteht zusätzlich drei native HTTP-Fälle
+mit echter synthetischer Geräteauthentifizierung (59 API-Tests insgesamt):
+Trigger-ID vor und nach `deliver` sowie Agenten-ID jedes gefilterten Snapshots
+müssen zur Anfrage passen. Ein widersprüchlicher Readback ergibt 503 ohne
+positiven ACK; ein Fehler erst nach Materialisierung rollt den bereits erstellten
+Job nicht zurück. Die CI verlangt außerdem die Guardtests ohne Skip, Fehler oder
+Fehlschlag. Zwei weitere sichere Regressionen prüfen die frühe Interpreterbindung
+auch bei nachträglich verändertem `sys.executable`, ohne einen fremden Interpreter
+zu starten. Der aktuelle isolierte Windows-Lauf besteht 115 Tests ohne Skip:
+59 API-, zwei Provider-, 28 Wiring- und 26 Guardfälle. Eine zusätzliche native
+Linux-Gegenprobe bestätigt Startup-Guard, eigene Session/Prozessgruppe,
+Frame-Blockaden sowie Timeout-Aufräumen eigener Nachkommen bei weiterlaufendem
+Kontrollprozess. Diese synthetischen Belege sind keine produktive Laufzeitabnahme.
 
 Provider-Deployment, gemeinsame GUI, tatsächliche Aufgabenausführung und Kalender
 bleiben getrennte Liefer- und Abnahmeschritte. Kein Produktivstart durch diese API.

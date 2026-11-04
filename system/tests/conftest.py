@@ -33,6 +33,7 @@ import warnings
 from pathlib import Path
 
 import pytest
+from tests._test_process_guard.native_scheduler_gate import guard_native_gate
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
@@ -521,8 +522,6 @@ def _guard_real_process_control(monkeypatch):
 
     class GuardedPopen(real_popen):
         def __init__(self, args, *popenargs, **kwargs):
-            from tests._test_process_guard.native_scheduler_gate import guard_native_gate
-
             guarded_gate = guard_native_gate(args, kwargs) if not popenargs else None
             reason = _destructive_process_reason(args)
             if reason and guarded_gate is None:
