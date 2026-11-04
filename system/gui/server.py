@@ -11860,6 +11860,14 @@ async def delete_prompt_library_entry(prompt_id: int):
         conn.close()
 
 
+def _prompt_import_connection():
+    """Keep infrastructure failures distinct from invalid uploaded libraries."""
+    try:
+        return get_bach_db()
+    except (OSError, sqlite3.Error):
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
+
+
 @app.get("/api/prompt-library/import-promptboard/preview")
 async def preview_promptboard_library():
     """Preview PromptBoard import items and counts without changing the database."""
@@ -11869,7 +11877,9 @@ async def preview_promptboard_library():
     if library_path is None:
         raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path, dry_run=True)
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path, dry_run=True)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
@@ -11883,7 +11893,9 @@ async def import_promptboard_library():
     if library_path is None:
         raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path)
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
@@ -11897,12 +11909,14 @@ async def preview_prompt_json_upload(req: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
     try:
-        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
         payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
         res = handler.import_promptboard(payload=payload, dry_run=True)
         if isinstance(body, dict) and "filename" in body:
             res["source"] = str(body["filename"])
         return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
 
@@ -11916,12 +11930,14 @@ async def import_prompt_json_upload(req: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
     try:
-        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
         payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
         res = handler.import_promptboard(payload=payload, dry_run=False)
         if isinstance(body, dict) and "filename" in body:
             res["source"] = str(body["filename"])
         return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
 
@@ -17060,7 +17076,10 @@ async def api_voice_stt(payload: dict = Body(...)):
         raw_bytes = base64.b64decode(audio_b64)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
-    svc = _get_voice_io_service()
+    try:
+        svc = _get_voice_io_service()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Sprachmodul nicht verfügbar") from None
     try:
         text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
     except Exception as exc:
