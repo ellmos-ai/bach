@@ -12,9 +12,10 @@ import json
 import os
 import re
 import sqlite3
-from datetime import datetime, timezone
+from contextlib import closing
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any
 
 __version__ = "1.0.0"
 
@@ -65,14 +66,32 @@ def _sanitize_label_value(val: Any) -> str:
 
 
 def _build_labels_json(counter: str, outcome: str, **kwargs) -> str:
-    out = _sanitize_label_value(outcome)
-    if out not in OUTCOMES:
-        out = OTHER
-    res = {"outcome": out}
+    res = {"outcome": outcome if outcome in OUTCOMES else OTHER}
     expected = COUNTERS.get(counter, set())
     for k in sorted(expected):
-        res[k] = _sanitize_label_value(kwargs.get(k))
-    return json.dumps(res, sort_keys=True, separators=(",", ":"))
+        if k in kwargs:
+            res[k] = _sanitize_label_value(kwargs[k])
+    # Preserve the exact key format used by existing core.telemetry producers.
+    return json.dumps(res, sort_keys=True, ensure_ascii=True)
+
+
+def _db_path(db_path):
+    if db_path is not None:
+        return Path(db_path)
+    value = os.environ.get("BACH_DB")
+    return Path(value) if value else None
+
+
+def _connect(path, *, write=False):
+    # A selected store is authoritative: never create a new DB or silently use RAM.
+    return sqlite3.connect(
+        path.resolve().as_uri() + ("?mode=rw" if write else "?mode=ro"),
+        uri=True, timeout=5.0,
+    )
+
+
+def _overflow(outcome):
+    return '{"overflow":"true","outcome":"' + outcome + '"}'
 
 
 def increment(
@@ -82,25 +101,28 @@ def increment(
     **labels,
 ) -> bool:
     """Fail-silent increment of a telemetry counter."""
-    if not is_enabled():
-        return False
-    if counter not in COUNTERS:
-        return False
-    now = datetime.now(timezone.utc)
-    day = now.strftime("%Y-%m-%d")
-    labels_str = _build_labels_json(counter, outcome, **labels)
-    updated_at = now.isoformat()
-
-    if db_path is not None:
-        p = Path(db_path)
-    else:
-        env_db = os.environ.get("BACH_DB")
-        p = Path(env_db) if env_db else None
-
-    if p and p.is_file():
-        try:
-            with sqlite3.connect(p, timeout=5.0) as conn:
+    try:
+        if not is_enabled() or counter not in COUNTERS:
+            return False
+        now = datetime.now(timezone.utc)
+        day = now.strftime("%Y-%m-%d")
+        labels_str = _build_labels_json(counter, outcome, **labels)
+        outcome = outcome if outcome in OUTCOMES else OTHER
+        p = _db_path(db_path)
+        if p is not None:
+            with closing(_connect(p, write=True)) as conn:
+                conn.execute("BEGIN IMMEDIATE")
                 conn.execute(_SCHEMA)
+                count = conn.execute(
+                    f"SELECT COUNT(DISTINCT labels) FROM {_TABLE} WHERE counter=? AND day=?",
+                    (counter, day),
+                ).fetchone()[0]
+                exists = conn.execute(
+                    f"SELECT 1 FROM {_TABLE} WHERE counter=? AND day=? AND labels=?",
+                    (counter, day, labels_str),
+                ).fetchone()
+                if count >= MAX_SERIES_PER_DAY and exists is None:
+                    labels_str = _overflow(outcome)
                 conn.execute(
                     f"""
                     INSERT INTO {_TABLE} (counter, labels, day, value, updated_at)
@@ -108,58 +130,69 @@ def increment(
                     ON CONFLICT(counter, labels, day)
                     DO UPDATE SET value = value + 1, updated_at = excluded.updated_at
                     """,
-                    (counter, labels_str, day, updated_at),
+                    (counter, labels_str, day, now.isoformat()),
                 )
                 conn.commit()
                 return True
-        except Exception:
-            pass
-
-    key = (counter, labels_str, day)
-    _MEM_COUNTERS[key] = _MEM_COUNTERS.get(key, 0) + 1
-    return True
+        key = (counter, labels_str, day)
+        count = sum(1 for c, _, d in _MEM_COUNTERS if c == counter and d == day)
+        if count >= MAX_SERIES_PER_DAY and key not in _MEM_COUNTERS:
+            key = (counter, _overflow(outcome), day)
+        _MEM_COUNTERS[key] = _MEM_COUNTERS.get(key, 0) + 1
+        return True
+    except Exception:
+        return False
 
 
 def report(days: int = 7, db_path: Path | str | None = None) -> tuple[bool, str]:
     """Report aggregated counters over the last N days."""
-    if not is_enabled():
-        return True, "[TELEMETRIE] Erfassung ist deaktiviert (OPT-OUT)."
-
+    if days <= 0:
+        days = 7
     lines = [
         f"[TELEMETRIE REPORT - Letzte {days} Tage]",
         "=" * 50,
     ]
 
-    p = Path(db_path) if db_path else (Path(os.environ["BACH_DB"]) if os.environ.get("BACH_DB") else None)
-    found_db = False
-    if p and p.is_file():
-        try:
-            with sqlite3.connect(p, timeout=5.0) as conn:
+    try:
+        p = _db_path(db_path)
+        if p is not None:
+            with closing(_connect(p)) as conn:
                 rows = conn.execute(
-                    f"SELECT counter, labels, day, value FROM {_TABLE} ORDER BY day DESC, counter ASC"
+                    f"SELECT counter, labels, SUM(value) FROM {_TABLE} "
+                    "WHERE day >= date('now', ?) GROUP BY counter, labels "
+                    "ORDER BY counter, SUM(value) DESC", (f"-{days} days",),
                 ).fetchall()
-                found_db = True
-                if not rows:
-                    lines.append("Keine Einträge in der Telemetrie-Tabelle.")
-                else:
-                    for c, l, d, v in rows:
-                        lines.append(f"  [{d}] {c:<14} {l} : {v}")
-        except Exception as exc:
-            lines.append(f"DB-Hinweis: {exc}")
-
-    if not found_db or _MEM_COUNTERS:
-        if _MEM_COUNTERS:
-            lines.append("In-Memory Zähler:")
-            for (c, l, d), v in sorted(_MEM_COUNTERS.items()):
-                lines.append(f"  [{d}] {c:<14} {l} : {v}")
-        elif not found_db:
-            lines.append("Keine aktiven Telemetrie-Zähler erfasst.")
-
-    return True, "\n".join(lines)
+        else:
+            cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+            totals = {}
+            for (counter, labels, day), value in _MEM_COUNTERS.items():
+                if day >= cutoff:
+                    key = (counter, labels)
+                    totals[key] = totals.get(key, 0) + value
+            rows = [(counter, labels, value) for (counter, labels), value in sorted(
+                totals.items(), key=lambda item: (item[0][0], -item[1]))]
+        if not rows:
+            lines.append("Keine Telemetrie-Daten erfasst.")
+        for counter, labels, value in rows:
+            lines.append(f"  {counter:<14} {labels} : {value}")
+        return True, "\n".join(lines)
+    except Exception:
+        return False, "Telemetrie-DB nicht verfügbar"
 
 
 def status(db_path: Path | str | None = None) -> tuple[bool, str]:
     """Status der Telemetrie-Erfassung und Zähler."""
+    try:
+        p = _db_path(db_path)
+        if p is not None:
+            with closing(_connect(p)) as conn:
+                series, total = conn.execute(
+                    f"SELECT COUNT(*), COALESCE(SUM(value), 0) FROM {_TABLE}"
+                ).fetchone()
+        else:
+            series, total = len(_MEM_COUNTERS), sum(_MEM_COUNTERS.values())
+    except Exception:
+        return False, "Telemetrie-DB nicht verfügbar"
     enabled = is_enabled()
     lines = [
         "[TELEMETRIE STATUS]",
@@ -167,7 +200,9 @@ def status(db_path: Path | str | None = None) -> tuple[bool, str]:
         f"Aktiviert:        {'JA' if enabled else 'NEIN (Opt-Out)'}",
         f"Erlaubte Counter: {', '.join(sorted(COUNTERS.keys()))}",
         f"Erlaubte Outcomes:{', '.join(sorted(OUTCOMES))}",
-        f"In-Memory Zähler: {len(_MEM_COUNTERS)} Serien aktiv",
+        f"Serien (Label-Sets): {series}",
+        f"Ereignisse gesamt: {total}",
+        f"Serien-Cap/Tag: {MAX_SERIES_PER_DAY}",
     ]
     return True, "\n".join(lines)
 
@@ -176,15 +211,16 @@ def reset(confirm: bool = False, db_path: Path | str | None = None) -> tuple[boo
     """Reset telemetry counters."""
     if not confirm:
         return False, "Zur Bestätigung bitte confirm=True oder --confirm angeben."
-    _MEM_COUNTERS.clear()
-    p = Path(db_path) if db_path else (Path(os.environ["BACH_DB"]) if os.environ.get("BACH_DB") else None)
-    if p and p.is_file():
-        try:
-            with sqlite3.connect(p, timeout=5.0) as conn:
+    try:
+        p = _db_path(db_path)
+        if p is not None:
+            with closing(_connect(p, write=True)) as conn:
                 conn.execute(f"DELETE FROM {_TABLE}")
                 conn.commit()
-        except Exception as exc:
-            return False, f"Fehler beim Leeren der DB-Tabelle: {exc}"
+        else:
+            _MEM_COUNTERS.clear()
+    except Exception:
+        return False, "Telemetrie-DB nicht verfügbar; keine Resetbestätigung"
     return True, "[OK] Alle Telemetrie-Zähler zurückgesetzt."
 
 

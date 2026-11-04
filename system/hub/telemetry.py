@@ -43,6 +43,9 @@ class TelemetryHandler(BaseHandler):
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
+        from hub import bach_paths
+
+        db_path = Path(bach_paths.BACH_DB)
         try:
             from hub._services.ocean_stack_bridge import load_telemetry_module
             tel = load_telemetry_module()
@@ -61,17 +64,17 @@ class TelemetryHandler(BaseHandler):
                     break
             if dry_run:
                 return True, f"[DRY-RUN] Wuerde Telemetrie-Report ({days} Tage) zeigen"
-            return report(days=days)
+            return report(days=days, db_path=db_path)
 
         elif operation == "status":
             if dry_run:
                 return True, "[DRY-RUN] Wuerde Telemetrie-Status zeigen"
-            return status()
+            return status(db_path=db_path)
 
         elif operation == "reset":
             if dry_run:
                 return True, "[DRY-RUN] Wuerde alle Telemetrie-Zaehler loeschen"
-            return reset(confirm="--confirm" in args)
+            return reset(confirm="--confirm" in args, db_path=db_path)
 
         elif operation == "help":
             return True, self._help()
