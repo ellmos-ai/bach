@@ -387,7 +387,7 @@ def legacy_db(tmp_path):
     conn.executescript(LEGACY_SCHEMA)
     jobs = [
         ("Intervall Script", "interval", "30s", "", str(tmp_path / "noop.py"), "", 1),
-        ("Cron Command", "cron", "0 7 * * *", str(Path(sys.executable)), "", "-V", 1),
+        ("Cron Command", "cron", "0 7 * * *", f'"{Path(sys.executable)}"', "", "-V", 1),
         ("Chain Job", "chain", "", "", "", "", 1),
         ("Event Job", "event", "", "", "", "", 1),
         ("Manual Job", "manual", "", "", "", "", 1),
@@ -500,7 +500,7 @@ def test_integration_adapter_tick_executes_due_job(monkeypatch, tmp_path, legacy
     due = datetime.now(UTC) + timedelta(seconds=5)
     runs = adapter.tick(now=due)
     assert runs, "Tick musste den faelligen Job ausfuehren"
-    assert any(run["status"] == "succeeded" for run in runs)
+    assert any(run["status"] == "succeeded" for run in runs), [run["error"] for run in adapter.store.recent_runs()]
     assert marker.exists()
 
     status = adapter.status()
