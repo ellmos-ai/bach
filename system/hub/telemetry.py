@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MIT
 """
-Telemetry Handler - Low-cardinality, privacy-first Zaehler (OPS-TELEM-001)
+Telemetry Handler - Low-cardinality, privacy-first Zähler (OPS-TELEM-001)
 ===========================================================================
 
 Subcommands:
-  bach telemetry report [days]      - Zaehler der letzten N Tage (Default 7)
+  bach telemetry report [days]      - Zähler der letzten N Tage (Default 7)
   bach telemetry status             - Erfassungs-/Schema-Status
-  bach telemetry reset --confirm    - alle Zaehler loeschen
+  bach telemetry reset --confirm    - alle Zähler löschen
 
-Privacy: Es werden NUR aggregierte Zaehler mit validierten Labels
+Privacy: Es werden NUR aggregierte Zähler mit validierten Labels
 (Counter: agent_starts/model_calls/tool_calls; outcome: ok/error/dummy/timeout)
 gespeichert -- keine Payloads, Prompts, Pfade oder Nutzerdaten.
 Opt-Out: BACH_TELEMETRY_DISABLED=1
@@ -22,7 +22,7 @@ from .base import BaseHandler
 from hub._services.ocean_stack_bridge import deprecated_legacy_bach
 @deprecated_legacy_bach("ellmos-core")
 class TelemetryHandler(BaseHandler):
-    """Handler fuer bach telemetry"""
+    """Handler für bach telemetry"""
 
     def __init__(self, base_path: Path):
         super().__init__(base_path)
@@ -37,9 +37,9 @@ class TelemetryHandler(BaseHandler):
 
     def get_operations(self) -> dict:
         return {
-            "report": "Zaehler der letzten N Tage anzeigen (Default 7)",
+            "report": "Zähler der letzten N Tage anzeigen (Default 7)",
             "status": "Erfassungs-/Schema-Status anzeigen",
-            "reset": "Alle Zaehler loeschen (erfordert --confirm)"
+            "reset": "Alle Zähler löschen (erfordert --confirm)"
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -54,7 +54,7 @@ class TelemetryHandler(BaseHandler):
             try:
                 from core.telemetry import report, status, reset
             except Exception as e:
-                return False, f"Telemetrie-Modul nicht verfuegbar: {e}"
+                return False, f"Telemetrie-Modul nicht verfügbar: {e}"
 
         if operation == "report" or not operation:
             days = 7
@@ -63,17 +63,17 @@ class TelemetryHandler(BaseHandler):
                     days = int(arg)
                     break
             if dry_run:
-                return True, f"[DRY-RUN] Wuerde Telemetrie-Report ({days} Tage) zeigen"
+                return True, f"[DRY-RUN] Würde Telemetrie-Report ({days} Tage) zeigen"
             return report(days=days, db_path=db_path)
 
         elif operation == "status":
             if dry_run:
-                return True, "[DRY-RUN] Wuerde Telemetrie-Status zeigen"
+                return True, "[DRY-RUN] Würde Telemetrie-Status zeigen"
             return status(db_path=db_path)
 
         elif operation == "reset":
             if dry_run:
-                return True, "[DRY-RUN] Wuerde alle Telemetrie-Zaehler loeschen"
+                return True, "[DRY-RUN] Würde alle Telemetrie-Zähler löschen"
             return reset(confirm="--confirm" in args, db_path=db_path)
 
         elif operation == "help":
@@ -86,13 +86,13 @@ class TelemetryHandler(BaseHandler):
     def _help(self) -> str:
         return "\n".join([
             "",
-            "[TELEMETRIE] Low-cardinality Zaehler (OPS-TELEM-001)",
+            "[TELEMETRIE] Low-cardinality Zähler (OPS-TELEM-001)",
             "=" * 50,
             "  Befehle:",
             "    bach telemetry report [days]    - Report (Default 7 Tage)",
             "    bach telemetry status           - Status",
-            "    bach telemetry reset --confirm  - Zaehler loeschen",
+            "    bach telemetry reset --confirm  - Zähler löschen",
             "",
-            "  Privacy: Nur Zaehler, keine Payloads.",
+            "  Privacy: Nur Zähler, keine Payloads.",
             "  Opt-Out: BACH_TELEMETRY_DISABLED=1",
         ])

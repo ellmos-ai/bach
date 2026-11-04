@@ -15,6 +15,7 @@ import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 __version__ = "1.0.0"
@@ -47,6 +48,12 @@ _DISABLE_ENV_VALUES = {"1", "true", "yes", "on"}
 
 # In-memory fallback if no DB path is supplied
 _MEM_COUNTERS: dict[tuple[str, str, str], int] = {}
+_MEM_LOCK = Lock()
+
+
+def _memory_snapshot():
+    with _MEM_LOCK:
+        return dict(_MEM_COUNTERS)
 
 
 def is_enabled() -> bool:
@@ -135,10 +142,11 @@ def increment(
                 conn.commit()
                 return True
         key = (counter, labels_str, day)
-        count = sum(1 for c, _, d in _MEM_COUNTERS if c == counter and d == day)
-        if count >= MAX_SERIES_PER_DAY and key not in _MEM_COUNTERS:
-            key = (counter, _overflow(outcome), day)
-        _MEM_COUNTERS[key] = _MEM_COUNTERS.get(key, 0) + 1
+        with _MEM_LOCK:
+            count = sum(1 for c, _, d in _MEM_COUNTERS if c == counter and d == day)
+            if count >= MAX_SERIES_PER_DAY and key not in _MEM_COUNTERS:
+                key = (counter, _overflow(outcome), day)
+            _MEM_COUNTERS[key] = _MEM_COUNTERS.get(key, 0) + 1
         return True
     except Exception:
         return False
@@ -165,7 +173,7 @@ def report(days: int = 7, db_path: Path | str | None = None) -> tuple[bool, str]
         else:
             cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
             totals = {}
-            for (counter, labels, day), value in _MEM_COUNTERS.items():
+            for (counter, labels, day), value in _memory_snapshot().items():
                 if day >= cutoff:
                     key = (counter, labels)
                     totals[key] = totals.get(key, 0) + value
@@ -190,7 +198,8 @@ def status(db_path: Path | str | None = None) -> tuple[bool, str]:
                     f"SELECT COUNT(*), COALESCE(SUM(value), 0) FROM {_TABLE}"
                 ).fetchone()
         else:
-            series, total = len(_MEM_COUNTERS), sum(_MEM_COUNTERS.values())
+            snapshot = _memory_snapshot()
+            series, total = len(snapshot), sum(snapshot.values())
     except Exception:
         return False, "Telemetrie-DB nicht verfügbar"
     enabled = is_enabled()
@@ -218,7 +227,8 @@ def reset(confirm: bool = False, db_path: Path | str | None = None) -> tuple[boo
                 conn.execute(f"DELETE FROM {_TABLE}")
                 conn.commit()
         else:
-            _MEM_COUNTERS.clear()
+            with _MEM_LOCK:
+                _MEM_COUNTERS.clear()
     except Exception:
         return False, "Telemetrie-DB nicht verfügbar; keine Resetbestätigung"
     return True, "[OK] Alle Telemetrie-Zähler zurückgesetzt."

@@ -1,6 +1,8 @@
 """Native core/consumer/export parity on explicitly prepared synthetic stores."""
 import importlib.util
+import json
 import sqlite3
+import threading
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -78,7 +80,10 @@ def test_consumer_reads_and_resets_core_canonical_store(
     before, other = rows(database), rows(decoy)
     assert handler.handle('reset', [])[0] is False
     assert rows(database) == before
-    assert handler.handle('reset', ['--confirm'], dry_run=True)[0] is True
+    dry_success, dry_text = handler.handle('reset', ['--confirm'], dry_run=True)
+    assert dry_success and 'Würde' in dry_text and 'Zähler' in dry_text
+    help_success, help_text = handler.handle('help', [])
+    assert help_success and 'Zähler' in help_text
     assert rows(database) == before
     assert handler.handle('reset', ['--confirm'])[0] is True
     assert rows(database) == [] and rows(decoy) == other
@@ -220,3 +225,132 @@ def test_report_and_status_are_read_only_and_release_file_handles(exported, data
     renamed = database.with_name('renamed synthetic.db')
     database.replace(renamed)
     assert renamed.read_bytes() == before
+
+
+@pytest.mark.parametrize('same_series', [False, True])
+def test_two_memory_writers_keep_cap_and_event_sum(exported, monkeypatch, same_series):
+    for index in range(199):
+        assert exported.increment('tool_calls', tool=f'seed-{index}')
+    ready, release, second_started, second_done = (
+        threading.Event() for _ in range(4)
+    )
+    results = []
+    underlying = exported._MEM_LOCK
+
+    class ObservedLock:
+        def __enter__(self):
+            if threading.current_thread().name == 'second-memory-writer':
+                second_started.set()
+            underlying.acquire()
+
+        def __exit__(self, *args):
+            underlying.release()
+
+    monkeypatch.setattr(exported, '_MEM_LOCK', ObservedLock())
+
+    class PausingDictionary(dict):
+        def get(self, key, default=None):
+            value = super().get(key, default)
+            if threading.current_thread().name == 'first-memory-writer':
+                ready.set()
+                assert release.wait(5), 'bounded first writer release timed out'
+            return value
+
+    exported._MEM_COUNTERS = PausingDictionary(exported._MEM_COUNTERS)
+
+    def writer(label, second=False):
+        try:
+            results.append(exported.increment('tool_calls', tool=label))
+        finally:
+            if second:
+                second_done.set()
+
+    first = threading.Thread(target=writer, args=('new-first',),
+                             name='first-memory-writer', daemon=True)
+    second = threading.Thread(target=writer,
+                              args=('new-first' if same_series else 'new-second', True),
+                              name='second-memory-writer', daemon=True)
+    first.start()
+    try:
+        assert ready.wait(5)
+        second.start()
+        assert second_started.wait(5)
+        # The real lock is still owned by the paused first writer. Do not wait
+        # for completion of the second writer before releasing the first.
+        assert not second_done.is_set()
+    finally:
+        release.set()
+        first.join(5)
+        if second.ident is not None:
+            second.join(5)
+    assert not first.is_alive() and not second.is_alive()
+    assert results == [True, True]
+    saved = exported._MEM_COUNTERS
+    ordinary = sum('overflow' not in json.loads(labels) for _, labels, _ in saved)
+    assert ordinary == 200
+    assert sum(saved.values()) == 201
+    overflow = sum(value for (_, labels, _), value in saved.items()
+                   if 'overflow' in json.loads(labels))
+    assert overflow == (0 if same_series else 1)
+
+
+@pytest.mark.parametrize('operation', ['report', 'status', 'reset'])
+def test_memory_read_and_reset_wait_for_atomic_writer(exported, monkeypatch, operation):
+    assert exported.increment('tool_calls', tool='seed')
+    ready, release, reader_waiting, reader_done = (
+        threading.Event() for _ in range(4)
+    )
+    underlying = exported._MEM_LOCK
+    results = {}
+
+    class ObservedLock:
+        def __enter__(self):
+            if threading.current_thread().name == 'memory-reader':
+                reader_waiting.set()
+            underlying.acquire()
+
+        def __exit__(self, *args):
+            underlying.release()
+
+    class PausingDictionary(dict):
+        def get(self, key, default=None):
+            value = super().get(key, default)
+            ready.set()
+            assert release.wait(5), 'bounded writer release timed out'
+            return value
+
+    monkeypatch.setattr(exported, '_MEM_LOCK', ObservedLock())
+    exported._MEM_COUNTERS = PausingDictionary(exported._MEM_COUNTERS)
+
+    def write():
+        results['write'] = exported.increment('tool_calls', tool='new-value')
+
+    def read():
+        try:
+            function = getattr(exported, operation)
+            results['read'] = function(confirm=True) if operation == 'reset' else function()
+        finally:
+            reader_done.set()
+
+    writer = threading.Thread(target=write, daemon=True)
+    reader = threading.Thread(target=read, name='memory-reader', daemon=True)
+    writer.start()
+    try:
+        assert ready.wait(5)
+        reader.start()
+        assert reader_waiting.wait(5), 'reader/reset did not use the shared lock'
+        assert not reader_done.is_set()
+    finally:
+        release.set()
+        writer.join(5)
+        if reader.ident is not None:
+            reader.join(5)
+    assert not writer.is_alive() and not reader.is_alive()
+    assert results['write'] is True and results['read'][0] is True
+    if operation == 'report':
+        assert 'new-value' in results['read'][1]
+    elif operation == 'status':
+        assert 'Serien (Label-Sets): 2' in results['read'][1]
+        assert 'Ereignisse gesamt: 2' in results['read'][1]
+    else:
+        assert exported._MEM_COUNTERS == {}
