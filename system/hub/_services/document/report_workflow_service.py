@@ -1522,6 +1522,14 @@ JSON:
         auto_deanonymize: bool
     ) -> Path:
         """Generiert Bericht aus JSON-Daten mit dem Generator."""
+        # De-Anonymisierung der JSON-Daten vorab (damit auch der Markdown-Fallback
+        # bereits vollstaendig de-anonymisierte Daten erhaelt, falls generator.py fehlt)
+        if auto_deanonymize and session.profile:
+            json_data = self._deanonymize_json(json_data, session.profile)
+            original_name = session.profile.original_name
+        else:
+            original_name = session.profile.tarnname if session.profile else "Klient"
+
         try:
             # Generator importieren - Direkter Pfad, da 'agents' mit hub/agents.py kollidiert
             import sys
@@ -1535,13 +1543,6 @@ JSON:
                 sys.path.insert(0, gen_dir)
             spec.loader.exec_module(generator_mod)
             fill_template = generator_mod.fill_template
-
-            # De-Anonymisierung der JSON-Daten
-            if auto_deanonymize and session.profile:
-                json_data = self._deanonymize_json(json_data, session.profile)
-                original_name = session.profile.original_name
-            else:
-                original_name = session.profile.tarnname if session.profile else "Klient"
 
             # Output-Pfad
             safe_name = "".join(c for c in original_name if c.isalnum() or c in " -_").strip()
@@ -1569,12 +1570,12 @@ JSON:
             session.error_message = "JSON-Generierung fehlgeschlagen"
             session.status = "error"
             print("[FEHLER] fill_template Exception")
-            # Fallback zu Markdown - json_data mitgeben fuer ICF-Tabelle!
+            # Fallback zu Markdown - json_data ist bereits de-anonymisiert!
             print("[INFO] Fallback zu Markdown-Generator...")
             return self._generate_from_markdown(
                 session,
                 json.dumps(json_data, ensure_ascii=False, indent=2),
-                auto_deanonymize,
+                False,
                 json_data
             )
 
@@ -1635,7 +1636,7 @@ JSON:
             original_name = session.profile.original_name
         else:
             final_text = llm_response
-            original_name = session.profile.tarnname if session.profile else "Klient"
+            original_name = (session.profile.original_name or session.profile.tarnname) if session.profile else "Klient"
 
         # Basis-Platzhalter aus Session/Profil
         placeholders = self._build_placeholders(session, final_text, report_data)
@@ -1683,6 +1684,12 @@ JSON:
     def _deanonymize_text(self, text: str, profile: TempAnonymProfile) -> str:
         """De-anonymisiert Text (Tarnname -> Original)."""
         reverse_mappings = profile.get_reverse_mappings()
+        if profile.tarnname and profile.original_name:
+            reverse_mappings[profile.tarnname] = profile.original_name
+            reverse_mappings[profile.tarnname.upper()] = profile.original_name.upper()
+            if profile.fake_geburtsdatum:
+                for orig_date, fake_date in profile.mappings.get("dates", {}).items():
+                    reverse_mappings[fake_date] = orig_date
         sorted_mappings = sorted(reverse_mappings.items(), key=lambda x: len(x[0]), reverse=True)
 
         result = text
