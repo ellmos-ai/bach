@@ -3,6 +3,7 @@
 
 import hashlib
 import sqlite3
+from contextlib import closing
 from types import SimpleNamespace
 
 import pytest
@@ -500,4 +501,111 @@ def test_native_slash_ids_share_exact_crud_and_delivery_identity(native, identif
         and deleted.json()["trigger"]["deleted"]
     )
     assert client.get(path).json()["trigger"]["deleted"] is True
+    assert store.recent_runs() == []
+
+
+@pytest.fixture
+def authenticated_native(tmp_path, monkeypatch):
+    """Native store and real device/session authorization; synthetic credentials only."""
+    from gui.api import unified_api
+
+    module = pytest.importorskip("ellmos_scheduler")
+    store = module.SchedulerStore(tmp_path / "scheduler.db")
+    store.init()
+    auth_db = tmp_path / "auth.db"
+    with closing(sqlite3.connect(auth_db)) as conn:
+        conn.executescript(
+            "CREATE TABLE devices(id INTEGER,token_hash TEXT,status TEXT);"
+            "CREATE TABLE browser_sessions(session_hash TEXT,device_id INTEGER,expires_at TEXT);"
+        )
+        conn.execute(
+            "INSERT INTO devices VALUES(1,?,'active')",
+            (hashlib.sha256(b"synthetic-device-secret").hexdigest(),),
+        )
+        conn.execute(
+            "INSERT INTO browser_sessions VALUES(?,1,'2099-01-01')",
+            (hashlib.sha256(b"synthetic-browser-secret").hexdigest(),),
+        )
+        conn.commit()
+    monkeypatch.setattr(unified_api, "BACH_DB", auth_db)
+    monkeypatch.setenv("BACH_EXTERNAL_SCHEDULER_DB", str(store.path))
+    monkeypatch.setattr(api.scheduler_provider, "probe_scheduler_provider", lambda: SimpleNamespace(external=True))
+    monkeypatch.setattr(api.scheduler_provider, "load_external_scheduler", lambda: module)
+    monkeypatch.setattr(module.SchedulerStore, "init", lambda self: pytest.fail("API must not initialize"))
+    app = FastAPI()
+    app.include_router(api.router)
+    with TestClient(app) as client:
+        yield module, store, client
+
+
+@pytest.mark.parametrize("transport", ["device-cookie", "browser-cookie", "bearer"])
+@pytest.mark.parametrize("padding", ["", " ", "  "])
+@pytest.mark.parametrize("as_key", [False, True])
+def test_canonical_auth_credentials_cannot_be_persisted_as_keys_or_values(
+    authenticated_native, transport, padding, as_key
+):
+    _, store, client = authenticated_native
+    secret = "synthetic-browser-secret" if transport == "browser-cookie" else "synthetic-device-secret"
+    headers = (
+        {"Authorization": f"Bearer {padding}{secret}{padding}"}
+        if transport == "bearer" else
+        {"Cookie": f'bach_device_token="{padding}{secret}{padding}"'}
+    )
+    # Demonstrate that this exact padded credential really authenticates.
+    assert client.get("/api/agent-triggers", headers=headers).status_code == 200
+    payload = {secret: "note"} if as_key else {"note": f"prefix {secret} suffix"}
+    response = client.post("/api/agent-triggers", headers=headers, json=definition(payload={"nested": [payload]}))
+    assert response.status_code == 400
+    assert response.json()["detail"]["reason_code"] == "credential_in_payload"
+    assert secret not in response.text
+    assert store.list_jobs() == []
+    assert client.get("/api/agent-triggers", headers=headers).json()["triggers"] == []
+
+
+def test_all_mutation_bodies_reject_auth_secret_before_native_state_changes(authenticated_native):
+    _, store, client = authenticated_native
+    secret = "synthetic-device-secret"
+    headers = {"Cookie": f'bach_device_token=" {secret} "'}
+    created = client.post(
+        "/api/agent-triggers", headers=headers,
+        json=definition(schedule={"kind": "event", "event_type": "task.accepted"}),
+    ).json()["trigger"]
+    attempts = [
+        ("PUT", "/api/agent-triggers/shared-1", {"expected_version": 1, "changes": {"payload": {secret: "note"}}}),
+        ("DELETE", "/api/agent-triggers/shared-1", {"expected_version": 1, "note": secret}),
+        ("POST", "/api/agent-triggers/shared-1/deliver", {
+            "expected_version": 1, "event_id": "event-1", "event_type": "task.accepted", "source": secret,
+        }),
+    ]
+    for method, path, body in attempts:
+        response = client.request(method, path, headers=headers, json=body)
+        assert response.status_code == 400
+        assert response.json()["detail"]["reason_code"] == "credential_in_payload"
+        assert secret not in response.text
+        assert client.get("/api/agent-triggers/shared-1", headers=headers).json()["trigger"] == created
+    assert store.list_jobs() == [] and store.recent_runs() == []
+
+
+@pytest.mark.parametrize("as_key", [False, True])
+def test_preexisting_native_snapshot_cannot_echo_auth_secret_or_success_ack(authenticated_native, as_key):
+    module, store, client = authenticated_native
+    secret = "synthetic-device-secret"
+    leaked = {secret: "note"} if as_key else {"note": secret}
+    # Model already-persisted provider data, without bypassing route authentication.
+    module.AgentTriggers(store).create(
+        "existing", agent_id="worker", schedule={"kind": "once", "at": "2026-12-01T12:00:00Z"},
+        executor="noop", payload={"nested": [leaked]},
+    )
+    headers = {"Authorization": f"Bearer  {secret} "}
+    for method, path, body in [
+        ("GET", "/api/agent-triggers", None),
+        ("GET", "/api/agent-triggers/existing", None),
+        ("PUT", "/api/agent-triggers/existing", {"expected_version": 1, "changes": {"enabled": True}}),
+        ("DELETE", "/api/agent-triggers/existing", {"expected_version": 2}),
+    ]:
+        response = client.request(method, path, headers=headers, **({"json": body} if body is not None else {}))
+        assert response.status_code == 503
+        assert response.json()["detail"]["reason_code"] == "credential_in_response"
+        assert secret not in response.text
+        assert "ack" not in response.json()
     assert store.recent_runs() == []
