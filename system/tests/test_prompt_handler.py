@@ -99,7 +99,7 @@ class TestPromptHandlerInit:
 
     def test_operations(self, handler):
         ops = handler.get_operations()
-        expected = {"list", "add", "get", "update", "delete", "search", "boards", "board", "import_promptboard"}
+        expected = {"list", "add", "get", "update", "delete", "search", "boards", "board", "import_promptboard", "export_promptboard", "favorite"}
         assert set(ops.keys()) == expected
 
 
@@ -307,3 +307,31 @@ class TestBoard:
         ok, msg = populated.handle("board", ["My Board", "--add-prompt", "nope"])
         assert not ok
         assert "nicht gefunden" in msg
+
+
+class TestPromptFeatureOperations:
+    def test_favorite_operation_toggles_persisted_tag_and_lists(self, populated):
+        import json
+        ok, _ = populated.handle("favorite", ["code-review"])
+        assert ok
+        with sqlite3.connect(populated.db_path) as conn:
+            tags = json.loads(conn.execute("SELECT tags FROM prompt_templates WHERE name='code-review'").fetchone()[0])
+        assert "favorite" in tags and "dev" in tags
+        ok, listed = populated.handle("favorite", ["--list"])
+        assert ok and "code-review" in listed
+        ok, _ = populated.handle("favorite", ["code-review"])
+        assert ok
+        with sqlite3.connect(populated.db_path) as conn:
+            tags = json.loads(conn.execute("SELECT tags FROM prompt_templates WHERE name='code-review'").fetchone()[0])
+        assert "favorite" not in tags and "dev" in tags
+
+    def test_export_operation_preserves_preview_and_syncs_explicit_target(self, populated, tmp_path):
+        import json
+        target = tmp_path / "library.json"
+        ok, preview = populated.handle("export_promptboard", [str(target), "--dry-run"])
+        assert ok and json.loads(preview)["dry_run"] is True and not target.exists()
+        ok, result = populated.handle("export-promptboard", [str(target)])
+        assert ok and json.loads(result)["exported"] == 2
+        items = {item["name"]: item for item in json.loads(target.read_text(encoding="utf-8"))["items"]}
+        assert set(items) == {"code-review", "summarize"}
+        assert items["code-review"]["content"] == "Review this code: {code}"
