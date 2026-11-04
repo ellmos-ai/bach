@@ -521,11 +521,14 @@ def _guard_real_process_control(monkeypatch):
 
     class GuardedPopen(real_popen):
         def __init__(self, args, *popenargs, **kwargs):
+            from tests._test_process_guard.native_scheduler_gate import guard_native_gate
+
+            guarded_gate = guard_native_gate(args, kwargs) if not popenargs else None
             reason = _destructive_process_reason(args)
-            if reason:
+            if reason and guarded_gate is None:
                 raise RuntimeError(f"real {reason} blocked in test: {args!r}")
             kwargs["env"] = _protected_subprocess_env(kwargs.get("env"))
-            super().__init__(args, *popenargs, **kwargs)
+            super().__init__(guarded_gate if guarded_gate is not None else args, *popenargs, **kwargs)
 
     def is_own_test_process(pid):
         if pid == os.getpid():
