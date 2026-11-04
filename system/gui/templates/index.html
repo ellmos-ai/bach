@@ -204,6 +204,43 @@ style="background: var(--bg-dark); color: var(--text)">
                 </div>
             </div>
 
+            <!-- 📦 Standalone-Module & Update-Zentrale -->
+            <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg lg:col-span-2">
+                <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-xl font-bold text-gray-200 flex items-center gap-2">
+                            <span>📦</span> Standalone-Module & Update-Zentrale
+                        </h2>
+                        <span id="modules-active-badge" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-900/60 text-emerald-400 border border-emerald-700">
+                            Lade Status...
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            id="modules-sync-btn"
+                            type="button"
+                            onclick="triggerModulesLiveSync()"
+                            class="px-3 py-1.5 text-xs font-semibold bg-bach-accent text-white rounded-lg hover:opacity-90 transition-all flex items-center gap-1.5 shadow"
+                        >
+                            <span id="modules-sync-spinner" class="hidden animate-spin">🔄</span>
+                            <span id="modules-sync-icon">🔄</span>
+                            <span>Jetzt synchronisieren (Live-Sync)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <p class="text-xs text-gray-400 mb-3">
+                    Autarke, modularisierte Dienste von BACH & Ocean. Werden bei Updates synchronisiert und hot-wired:
+                </p>
+
+                <!-- Modul-Kacheln Grid -->
+                <div id="modules-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-3">
+                    <!-- Wird dynamisch befüllt -->
+                </div>
+
+                <div id="modules-sync-msg" class="text-xs text-gray-400 mt-2 hidden p-2 bg-[#171b28] rounded border border-[#1e2236]"></div>
+            </div>
+
             <!-- Task Statistik / Scanner Monitor -->
             <div id="scanner-status" class="hidden bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg"></div>
         </div>
@@ -296,9 +333,81 @@ style="background: var(--bg-dark); color: var(--text)">
             } catch (e) { console.error('Deadlines API Fehler:', e); }
         }
 
+        // Standalone-Module & Live-Sync
+        async function loadModulesStatus() {
+            try {
+                const res = await fetch('/api/modules/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                const badge = document.getElementById('modules-active-badge');
+                const grid = document.getElementById('modules-grid');
+                if (badge && data.standalone_count !== undefined) {
+                    badge.textContent = `${data.standalone_count}/${data.modularized_total} aktiv (Standalone)`;
+                }
+                if (grid && data.modularized_services) {
+                    grid.innerHTML = '';
+                    for (const [name, info] of Object.entries(data.modularized_services)) {
+                        const isStand = info.standalone;
+                        const el = document.createElement('div');
+                        el.className = `p-2 rounded border text-xs flex items-center justify-between ${
+                            isStand ? 'bg-[#171b28] border-emerald-800/60 text-gray-200' : 'bg-[#171b28] border-yellow-800/60 text-yellow-300'
+                        }`;
+                        el.innerHTML = `
+                            <span class="truncate font-mono" title="${esc(name)}">${esc(name)}</span>
+                            <span class="inline-block w-2 h-2 rounded-full ${isStand ? 'bg-emerald-400' : 'bg-yellow-400'} ml-1.5 flex-shrink-0" title="${isStand ? 'Standalone Modul aktiv' : 'Legacy Fallback'}"></span>
+                        `;
+                        grid.appendChild(el);
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load modules status:', e);
+            }
+        }
+
+        async function triggerModulesLiveSync() {
+            const btn = document.getElementById('modules-sync-btn');
+            const spinner = document.getElementById('modules-sync-spinner');
+            const icon = document.getElementById('modules-sync-icon');
+            const msg = document.getElementById('modules-sync-msg');
+            if (btn) btn.disabled = true;
+            if (spinner) spinner.classList.remove('hidden');
+            if (icon) icon.classList.add('hidden');
+            if (msg) {
+                msg.classList.remove('hidden');
+                msg.textContent = 'Synchronisiere Standalone-Module und aktualisiere Hot-Wiring...';
+            }
+            try {
+                const res = await fetch('/api/modules/sync', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    if (msg) {
+                        const switched = data.sync_report ? data.sync_report.total_switched : 'alle';
+                        msg.textContent = `✓ Erfolgreich synchronisiert! ${switched} Standalone-Module aktiv gebunden.`;
+                        msg.className = 'text-xs text-emerald-400 mt-2 p-2 bg-[#171b28] rounded border border-emerald-800/60';
+                    }
+                    await loadModulesStatus();
+                } else {
+                    if (msg) {
+                        msg.textContent = `Fehler beim Synchronisieren: ${data.error || 'Unbekannter Fehler'}`;
+                        msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                    }
+                }
+            } catch (e) {
+                if (msg) {
+                    msg.textContent = `Netzwerkfehler: ${e.message}`;
+                    msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                }
+            } finally {
+                if (btn) btn.disabled = false;
+                if (spinner) spinner.classList.add('hidden');
+                if (icon) icon.classList.remove('hidden');
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             loadDeadlines();
             loadQuickPromptTemplates();
+            loadModulesStatus();
         });
     </script>
 </body>

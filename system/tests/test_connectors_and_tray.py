@@ -1531,7 +1531,7 @@ def test_tray_modular_status_and_menu():
     labels = [getattr(item, "text", "") for item in menu]
     mod_item = next((item for item in menu if "📦 Standalone-Module" in getattr(item, "text", "")), None)
     assert mod_item is not None, f"Modular status item missing from menu: {labels}"
-    assert f"{snap['standalone_count']}/12 aktiv" in mod_item.text
+    assert f"{snap['standalone_count']}/{snap['total_modularized']} aktiv" in mod_item.text
 
     # Test sub-items of modular status
     sub_menu = mod_item.submenu
@@ -1553,11 +1553,14 @@ def test_api_modules_status_and_sync():
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "ok"
-    assert data["standalone_count"] >= 11
-    assert data["modularized_total"] >= 12
+    assert data["standalone_count"] >= 15
+    assert data["modularized_total"] >= 15
     assert "token_budget" in data["modularized_services"]
     assert "rate_limit_policy" in data["modularized_services"]
     assert "audit_logger" in data["modularized_services"]
+    assert "telemetry" in data["modularized_services"]
+    assert "limits" in data["modularized_services"]
+    assert "worker_policy" in data["modularized_services"]
     assert data["auto_update_ready"] is True
 
     sync_res = client.post("/api/modules/sync")

@@ -31,6 +31,18 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Modularer Core: Export Dienstgruppe (telemetry, limits, worker_policy) & GUI Dashboard Update-Zentrale (Tasks #-30 & #-31, 2026-11-04):**
+  - **Modularer Core Standalone-Export (Task #-30):**
+    - 3 autarke Standalone-Module für `telemetry` (Low-Cardinality Counter Engine & SQLite/In-Memory Adapter), `limits` (Laufzeit-Limits & Timeout-Registry) und `worker_policy` (Fail-Soft Worker Review & Execution Policy) via `bach skills export-module` exportiert und validiert.
+    - Synchronisation nach `.MODULES/` via `bach update modules --sync` und Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py` (`load_telemetry_module()`, `load_limits_module()`, `load_worker_policy_module()`).
+    - Delegation in `system/hub/telemetry.py` und `system/hub/worker_policy.py` auf Standalone-Loader umgestellt; `system/hub/update.py` sucht Modul-Exporte in `exports/modules` und `system/exports/modules`.
+    - `ocean_modularized_services_status()` auf 15/15 gebundene Standalone-Module erweitert (100% Standalone-Betrieb).
+    - 8/8 Tests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - **GUI Dashboard Modul-Installations- & Update-Zentrale mit Live-Sync Button (Task #-31):**
+    - Web-GUI (`system/gui/templates/index.html`): Neue interaktive Dashboard-Card „📦 Standalone-Module & Update-Zentrale“ integriert (Live-Badge `15/15 aktiv (Standalone)`, 15-Modul-Statusgrid mit Echtzeit-Indikatoren, 1-Click `🔄 Jetzt synchronisieren (Live-Sync)` via `POST /api/modules/sync` mit dynamischem Reload).
+    - Tray-App (`chat_tray.py`): Dynamische Zählung aktiver Standalone-Module (`📦 Standalone-Module (15/15 aktiv)`) im Kontextmenü und bei Status-Benachrichtigungen.
+    - 124/124 Tests in `test_connectors_and_tray.py` und `test_ocean_stack_consumption.py` vollständig grün.
+
 - **Modularer Core: Export Dienstgruppe (token_budget, rate_limit_policy, audit_logger) & GUI/Tray Live-Status (Tasks #-28 & #-29, 2026-11-03):**
   - **Modularer Core Standalone-Export (Task #-28):**
     - 3 autarke Standalone-Module für `token_budget` (Token-Quota, Burn-Rate-Status & Soft-Gate), `rate_limit_policy` (429 Cooldowns, Retry-After Header Parser & Exponential Backoff) und `audit_logger` (Strukturierte Audit-Events & Fail-Soft System-Health Audit) via `bach skills export-module` exportiert und validiert.

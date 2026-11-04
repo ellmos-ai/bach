@@ -87,6 +87,28 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## Review 2026-11-04 (BACH TASKS UND DEV - Gemini 3.8 Flash)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **Modularer Core: Export Dienstgruppe (telemetry, limits, worker_policy) als Standalone-Module (Task #-30, Erledigt):**
+  - Autarke Standalone-Module für `telemetry` (Low-Cardinality Counter Engine & SQLite/In-Memory Adapter), `limits` (Laufzeit-Limits & Timeout-Registry) und `worker_policy` (Fail-Soft Worker Review & Execution Policy) via `bach skills export-module` exportiert und validiert.
+  - Synchronisation nach `.MODULES/` via `bach update modules --sync` und Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py` (`load_telemetry_module()`, `load_limits_module()`, `load_worker_policy_module()`).
+  - `system/hub/telemetry.py` und `system/hub/worker_policy.py` delegieren nahtlos an die Standalone-Loader.
+  - `ocean_modularized_services_status()` auf 15/15 gebundene Standalone-Module erweitert (100% Standalone-Betrieb).
+  - 8/8 Tests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - Task #-30 erledigt gemeldet.
+
+- **GUI & Tray: Modul-Installations- & Update-Zentrale in GUI einbinden (Task #-31, Erledigt):**
+  - Web-GUI (`system/gui/templates/index.html`): Neue interaktive Dashboard-Card „📦 Standalone-Module & Update-Zentrale“ integriert (Live-Badge `15/15 aktiv (Standalone)`, 15-Modul-Statusgrid mit Echtzeit-Indikatoren, 1-Click `🔄 Jetzt synchronisieren (Live-Sync)` via `POST /api/modules/sync` mit dynamischem Reload).
+  - Tray-App (`chat_tray.py`): Dynamische Zählung aktiver Standalone-Module (`📦 Standalone-Module (15/15 aktiv)`) im Kontextmenü und bei Status-Benachrichtigungen.
+  - 124/124 Tests in `test_connectors_and_tray.py` und `test_ocean_stack_consumption.py` vollständig grün.
+  - Task #-31 erledigt gemeldet.
+
+- **Neue Folge-Aufgaben angelegt:**
+  - `Task #-32`: Modularer Core: Export & Entflechtung der nächsten Dienstgruppe (prompt, message_delivery, conversation_store) mit Standalone-Validierung (P3, infrastructure)
+  - `Task #-33`: GUI & Tray: PromptBoard Two-Way-Sync (direktes Bearbeiten und bidirektionales Synchronisieren von Prompts zwischen BACH Web-GUI, Tray und externer library.json) (P3, gui)
+
 ## Review 2026-11-03 (BACH TASKS UND DEV - Gemini 3.8 Flash)
 
 Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:

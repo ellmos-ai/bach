@@ -1015,7 +1015,7 @@ class BACHTray:
             self._reload_modular_status()
             if self.icon:
                 self.icon.menu = self._build_menu()
-                self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/12 aktiv)", "BACH Module")
+                self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", "BACH Module")
         except Exception:
             pass
 
@@ -1652,7 +1652,7 @@ class BACHTray:
 
         # ── 📦 Standalone-Module & Auto-Update Status ──
         mod_items = self._build_modular_status_menu_items()
-        items.append(pystray.MenuItem(f"📦 Standalone-Module ({self.modular_standalone_count}/12 aktiv)", pystray.Menu(*mod_items)))
+        items.append(pystray.MenuItem(f"📦 Standalone-Module ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", pystray.Menu(*mod_items)))
 
         # ── PromptBoard ──
         prompt_items = []

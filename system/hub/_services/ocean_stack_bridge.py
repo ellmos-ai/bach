@@ -763,6 +763,18 @@ def load_audit_logger_module() -> Any:
     return get_service_or_standalone("audit_logger")
 
 
+def load_telemetry_module() -> Any:
+    return get_service_or_standalone("telemetry")
+
+
+def load_limits_module() -> Any:
+    return get_service_or_standalone("limits")
+
+
+def load_worker_policy_module() -> Any:
+    return get_service_or_standalone("worker_policy")
+
+
 def detect_legacy_in_tree_services() -> dict[str, Any]:
     """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
     bach_root = Path(__file__).resolve().parents[3]
@@ -796,18 +808,23 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
             pass
 
     in_tree_services: list[dict[str, Any]] = []
-    if hub_dir.is_dir():
-        for py_f in sorted(hub_dir.glob("*.py")):
-            if py_f.name in ("__init__.py", "base.py", "canonical_seam.py"):
-                continue
-            stem = py_f.stem
-            has_standalone = stem in standalone_available
-            in_tree_services.append({
-                "name": stem,
-                "file": str(py_f),
-                "has_standalone": has_standalone,
-                "standalone_path": str(standalone_available[stem]) if has_standalone else None,
-            })
+    seen_stems = set()
+    for search_dir in (hub_dir, hub_dir / "_services"):
+        if search_dir.is_dir():
+            for py_f in sorted(search_dir.glob("*.py")):
+                if py_f.name in ("__init__.py", "base.py", "canonical_seam.py"):
+                    continue
+                stem = py_f.stem
+                if stem in seen_stems:
+                    continue
+                seen_stems.add(stem)
+                has_standalone = stem in standalone_available
+                in_tree_services.append({
+                    "name": stem,
+                    "file": str(py_f),
+                    "has_standalone": has_standalone,
+                    "standalone_path": str(standalone_available[stem]) if has_standalone else None,
+                })
 
     switched = [s for s in in_tree_services if s["has_standalone"]]
     legacy = [s for s in in_tree_services if not s["has_standalone"]]
@@ -867,6 +884,9 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "token_budget": ("token_budget", load_token_budget_module),
         "rate_limit_policy": ("rate_limit_policy", load_rate_limit_policy_module),
         "audit_logger": ("audit_logger", load_audit_logger_module),
+        "telemetry": ("telemetry", load_telemetry_module),
+        "limits": ("limits", load_limits_module),
+        "worker_policy": ("worker_policy", load_worker_policy_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():

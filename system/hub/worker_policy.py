@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import json
 from .base import BaseHandler
-from ._services import worker_policy_settings as service
+try:
+    from hub._services.ocean_stack_bridge import load_worker_policy_module
+    service = load_worker_policy_module()
+except Exception:
+    from ._services import worker_policy_settings as service
 
 
 from hub._services.ocean_stack_bridge import deprecated_legacy_bach

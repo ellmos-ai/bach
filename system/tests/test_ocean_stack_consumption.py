@@ -293,6 +293,9 @@ def test_modularized_services_and_hot_wiring():
         load_token_budget_module,
         load_rate_limit_policy_module,
         load_audit_logger_module,
+        load_telemetry_module,
+        load_limits_module,
+        load_worker_policy_module,
         detect_legacy_in_tree_services,
         auto_switch_to_standalone_modules,
         get_service_or_standalone,
@@ -351,6 +354,18 @@ def test_modularized_services_and_hot_wiring():
     assert mod_al is not None
     assert hasattr(mod_al, "log_audit_event")
 
+    mod_telem = load_telemetry_module()
+    assert mod_telem is not None
+    assert hasattr(mod_telem, "increment")
+
+    mod_lim = load_limits_module()
+    assert mod_lim is not None
+    assert hasattr(mod_lim, "limit")
+
+    mod_wp = load_worker_policy_module()
+    assert mod_wp is not None
+    assert hasattr(mod_wp, "read_global_policy")
+
     # Dynamic service resolver test
     dyn_dw = get_service_or_standalone("domain_writer_gate")
     assert dyn_dw is not None
@@ -360,13 +375,13 @@ def test_modularized_services_and_hot_wiring():
     detection = detect_legacy_in_tree_services()
     assert detection["schema"] == "bach.legacy-in-tree-detection.v1"
     assert detection["total_in_tree_services"] >= 140
-    assert detection["standalone_modules_available"] >= 12
-    assert detection["switched_or_switchable_count"] >= 12
+    assert detection["standalone_modules_available"] >= 15
+    assert detection["switched_or_switchable_count"] >= 15
 
     # Auto-switch execution
     switch_report = auto_switch_to_standalone_modules()
     assert switch_report["schema"] == "bach.auto-switch-standalone-report.v1"
-    assert switch_report["total_switched"] >= 12
+    assert switch_report["total_switched"] >= 15
 
     status = ocean_modularized_services_status()
     for s_name in (
@@ -382,6 +397,9 @@ def test_modularized_services_and_hot_wiring():
         "token_budget",
         "rate_limit_policy",
         "audit_logger",
+        "telemetry",
+        "limits",
+        "worker_policy",
     ):
         assert s_name in status
         assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
@@ -402,5 +420,8 @@ def test_modularized_services_and_hot_wiring():
         "token_budget",
         "rate_limit_policy",
         "audit_logger",
+        "telemetry",
+        "limits",
+        "worker_policy",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True
