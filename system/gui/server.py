@@ -17009,14 +17009,32 @@ async def api_update_capability_permissions(payload: dict = Body(...)):
     }
 
 
+_VOICE_IO_SINGLETON = None
+
+
+def _get_voice_io_service():
+    global _VOICE_IO_SINGLETON
+    if _VOICE_IO_SINGLETON is None:
+        from hub._services.ocean_stack_bridge import load_voice_io_module
+
+        voice_mod = load_voice_io_module()
+        local_whisper = Path.home() / ".cache" / "whisper" / "base.pt"
+        stt_kwargs = {"allow_model_download": True}
+        if local_whisper.is_file():
+            stt_kwargs["model_path"] = local_whisper
+        try:
+            stt_engine = voice_mod.SpeechToText(**stt_kwargs)
+            _VOICE_IO_SINGLETON = voice_mod.VoiceIO(stt=stt_engine)
+        except Exception:
+            _VOICE_IO_SINGLETON = voice_mod.VoiceIO()
+    return _VOICE_IO_SINGLETON
+
+
 @app.get("/api/voice/status")
 async def api_voice_status():
     """Return status of `ellmos-voice-io` STT/TTS engines (#3763)."""
-    from hub._services.ocean_stack_bridge import load_voice_io_module
-
     perms = _load_capability_permissions()
-    voice_mod = load_voice_io_module()
-    svc = voice_mod.VoiceIO()
+    svc = _get_voice_io_service()
     return {
         "schema": "ellmos.voice-io.status.v1",
         "stt_permission": perms.get("speech_to_text", True),
@@ -17029,7 +17047,6 @@ async def api_voice_status():
 async def api_voice_stt(payload: dict = Body(...)):
     """Universal chat input transcription endpoint backed by `ellmos-voice-io` (#3763)."""
     import base64
-    from hub._services.ocean_stack_bridge import load_voice_io_module
 
     perms = _load_capability_permissions()
     if not perms.get("speech_to_text", True):
@@ -17043,8 +17060,7 @@ async def api_voice_stt(payload: dict = Body(...)):
         raw_bytes = base64.b64decode(audio_b64)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
-    voice_mod = load_voice_io_module()
-    svc = voice_mod.VoiceIO()
+    svc = _get_voice_io_service()
     try:
         text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
     except Exception as exc:
@@ -17057,6 +17073,7 @@ async def api_voice_stt(payload: dict = Body(...)):
     return {
         "schema": "ellmos.voice-io.stt.v1",
         "text": text,
+        "backend": svc.status().stt_engine,
         "language": language,
     }
 
