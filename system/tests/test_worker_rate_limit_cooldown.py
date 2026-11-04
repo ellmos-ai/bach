@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import pytest
 
 from hub._services.worker_rate_limit_cooldown import (
@@ -45,6 +46,44 @@ def test_non_429_does_not_trigger_cooldown():
     assert decision.cooldown_seconds == 0.0
     assert decision.task_return_state == "unchanged"
     assert decision.require_new_session_scope is False
+
+
+@pytest.mark.parametrize("value", ["NaN", "inf", "-inf", "Infinity"])
+def test_nonfinite_header_uses_bounded_default(value):
+    seconds, source = parse_retry_after_seconds({"Retry-After": value})
+    assert seconds == DEFAULT_429_COOLDOWN_SECONDS
+    assert math.isfinite(seconds)
+    assert source == "default"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf"), None, "invalid"])
+def test_invalid_default_cannot_escape_bounds(value):
+    seconds, source = parse_retry_after_seconds(None, default_seconds=value)
+    assert seconds == DEFAULT_429_COOLDOWN_SECONDS
+    assert math.isfinite(seconds) and source == "default"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_clock_cannot_create_date_cooldown(value):
+    seconds, source = parse_retry_after_seconds(
+        {"Retry-After": "Sun, 02 Nov 2026 05:01:30 GMT"}, now_epoch=value)
+    assert seconds == DEFAULT_429_COOLDOWN_SECONDS
+    assert source == "default"
+
+
+@pytest.mark.parametrize("previous,current", [("old", "old "), (" old", "old"), (" old ", "\told\n")])
+def test_scope_freshness_compares_canonical_identities(previous, current):
+    with pytest.raises(RateLimitCooldownError, match="fresh session_scope_id"):
+        bind_post_cooldown_submission(task_id=1, claim_fence=2, result_text="new result",
+            session_scope_id=current, cooldown_generation=1, previous_claim_fence=1,
+            previous_session_scope_id=previous)
+
+
+@pytest.mark.parametrize("previous", ["", " ", 1, False])
+def test_invalid_previous_scope_is_rejected(previous):
+    with pytest.raises(RateLimitCooldownError, match="previous_session_scope_id"):
+        bind_post_cooldown_submission(task_id=1, claim_fence=2, result_text="new result",
+            session_scope_id="new", cooldown_generation=1, previous_session_scope_id=previous)
 
 
 def test_bind_post_cooldown_rejects_unchanged_result_and_stale_fence_or_scope():

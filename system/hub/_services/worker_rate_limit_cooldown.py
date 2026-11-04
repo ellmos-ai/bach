@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import hashlib
+import math
 from typing import Mapping
 
 DEFAULT_429_COOLDOWN_SECONDS = 60.0
@@ -54,14 +55,17 @@ def parse_retry_after_seconds(
     if raw:
         try:
             seconds = float(raw)
-            return _clamp(seconds), "retry-after-seconds"
+            if math.isfinite(seconds):
+                return _clamp(seconds), "retry-after-seconds"
         except ValueError:
             pass
         try:
             dt = parsedate_to_datetime(raw)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-            ref = now_epoch if now_epoch is not None else datetime.now(timezone.utc).timestamp()
+            ref = float(now_epoch) if now_epoch is not None else datetime.now(timezone.utc).timestamp()
+            if not math.isfinite(ref):
+                raise ValueError("nonfinite clock reference")
             return _clamp(max(MIN_429_COOLDOWN_SECONDS, dt.timestamp() - ref)), "retry-after-date"
         except (TypeError, ValueError, OverflowError):
             pass
@@ -69,6 +73,12 @@ def parse_retry_after_seconds(
 
 
 def _clamp(value: float) -> float:
+    try:
+        value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        value = DEFAULT_429_COOLDOWN_SECONDS
+    if not math.isfinite(value):
+        value = DEFAULT_429_COOLDOWN_SECONDS
     if value < MIN_429_COOLDOWN_SECONDS:
         return MIN_429_COOLDOWN_SECONDS
     if value > MAX_429_COOLDOWN_SECONDS:
@@ -129,6 +139,11 @@ def bind_post_cooldown_submission(
         raise RateLimitCooldownError("result_text must be a non-empty string")
     if not isinstance(session_scope_id, str) or not session_scope_id.strip():
         raise RateLimitCooldownError("session_scope_id must be a non-empty string")
+    session_scope_id = session_scope_id.strip()
+    if previous_session_scope_id is not None:
+        if not isinstance(previous_session_scope_id, str) or not previous_session_scope_id.strip():
+            raise RateLimitCooldownError("previous_session_scope_id must be a non-empty string")
+        previous_session_scope_id = previous_session_scope_id.strip()
 
     digest = hashlib.sha256(result_text.encode("utf-8")).hexdigest()
     if previous_result_sha256 is not None and digest == previous_result_sha256:
@@ -152,6 +167,6 @@ def bind_post_cooldown_submission(
         task_id=task_id,
         claim_fence=claim_fence,
         result_sha256=digest,
-        session_scope_id=session_scope_id.strip(),
+        session_scope_id=session_scope_id,
         cooldown_generation=cooldown_generation,
     )
