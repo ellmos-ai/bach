@@ -2,6 +2,8 @@
 import importlib.util
 import json
 import sqlite3
+import subprocess
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -192,3 +194,68 @@ def test_invalid_payload_is_not_success(exported, database):
         exported.write_global_policy({"arbitrary": "input"}, db_path=database)
     with pytest.raises(ValueError):
         exported.write_task_policy(1, {}, db_path=database)
+
+
+@pytest.mark.parametrize("entry", ["loader", "cli", "status"])
+def test_missing_native_import_never_resolves_to_cli_handler(entry):
+    # A fresh interpreter blocks both import_module and the CLI's direct from-import.
+    # No native store or provider is constructed.
+    code = '''
+import importlib,importlib.abc,json,sys
+from pathlib import Path
+from hub._services import ocean_stack_bridge as bridge
+native_name='hub._services.worker_policy_settings'
+sys.modules.pop(native_name,None)
+services=importlib.import_module('hub._services')
+if hasattr(services,'worker_policy_settings'):
+    delattr(services,'worker_policy_settings')
+class MissingNative(importlib.abc.MetaPathFinder):
+    def find_spec(self,fullname,path=None,target=None):
+        if fullname==native_name:
+            raise ModuleNotFoundError('synthetic native service unavailable')
+sys.meta_path.insert(0,MissingNative())
+original_file=Path.is_file
+def candidate_exists(path):
+    if path.as_posix().endswith('/src/worker_policy.py'): return False
+    return original_file(path)
+Path.is_file=candidate_exists
+bridge._MODULE_CACHE.clear()
+entry=sys.argv[1]
+if entry=='status':
+    result=bridge.ocean_modularized_services_status()['worker_policy']
+    assert result['bound'] is False and result['standalone'] is False,result
+    assert result['status']=='error'
+else:
+    try:
+        if entry=='loader': bridge.load_worker_policy_module()
+        else: importlib.import_module('hub.worker_policy')
+    except ImportError: pass
+    else: raise AssertionError('unavailable policy import was accepted')
+assert 'standalone_worker_policy' not in bridge._MODULE_CACHE
+assert 'hub.worker_policy' not in sys.modules
+print(json.dumps({'entry':entry,'unavailable':True,'handler_cached':False}))
+'''
+    result = subprocess.run([sys.executable, "-c", code, entry], check=True,
+                            capture_output=True, text=True, timeout=20)
+    assert json.loads(result.stdout) == {
+        "entry": entry, "unavailable": True, "handler_cached": False
+    }
+
+
+def test_other_module_keeps_generic_final_fallback(monkeypatch):
+    from types import SimpleNamespace
+
+    expected = SimpleNamespace()
+    monkeypatch.setattr(bridge, "_MODULE_CACHE", {})
+    monkeypatch.setattr(Path, "is_file", lambda path: False)
+
+    def load(name):
+        if name == "synthetic.explicit":
+            raise ImportError("synthetic absent explicit service")
+        assert name == "hub.synthetic_service"
+        return expected
+
+    monkeypatch.setattr(bridge.importlib, "import_module", load)
+    assert bridge._load_standalone_or_fallback(
+        "synthetic_cache", "synthetic_service", "src/module.py", "synthetic.explicit"
+    ) is expected

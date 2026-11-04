@@ -674,6 +674,8 @@ def _load_standalone_or_fallback(
         _MODULE_CACHE[cache_key] = mod
         return mod
     except ImportError:
+        if module_name == "worker_policy":
+            raise ImportError("Nativer Worker-Policydienst nicht verfügbar") from None
         pass
 
     mod = importlib.import_module(f"hub.{module_name}")
