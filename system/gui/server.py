@@ -17383,9 +17383,11 @@ async def api_robotics_estop(payload: dict = Body(default={})):
 
 
 @app.get("/talk", response_class=HTMLResponse, tags=["shared-gui"])
-async def talk_visualizer_companion_page(request: Request):
+async def talk_visualizer_companion_page(request: Request = None):
     """ELLMOS Talk Studio & Standalone Live Voice / Emotion Visualizer Companion Window (#3764)."""
-    companion_mode = request.query_params.get("companion") == "1" or request.query_params.get("standalone") == "1"
+    companion_mode = False
+    if request is not None and hasattr(request, "query_params"):
+        companion_mode = request.query_params.get("companion") == "1" or request.query_params.get("standalone") == "1"
     if not companion_mode and ASTRO_DIST_DIR is not None:
         for rel in ("talk/index.html", "talk.html"):
             cand = ASTRO_DIST_DIR / rel
