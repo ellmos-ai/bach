@@ -1553,7 +1553,7 @@ def test_api_modules_status_and_sync():
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "ok"
-    assert data["standalone_count"] >= 15
+    assert data["standalone_count"] >= 14
     assert data["modularized_total"] >= 15
     assert "token_budget" in data["modularized_services"]
     assert "rate_limit_policy" in data["modularized_services"]
@@ -1561,6 +1561,8 @@ def test_api_modules_status_and_sync():
     assert "telemetry" in data["modularized_services"]
     assert "limits" in data["modularized_services"]
     assert "worker_policy" in data["modularized_services"]
+    assert data["modularized_services"]["worker_policy"]["bound"] is True
+    assert data["modularized_services"]["worker_policy"]["standalone"] is False
     assert data["auto_update_ready"] is True
 
     sync_res = client.post("/api/modules/sync")

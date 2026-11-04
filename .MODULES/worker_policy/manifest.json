@@ -5,7 +5,7 @@
   "description": "BACH Standalone Module: worker_policy",
   "author": "BACH Team",
   "created_at": "2026-11-04T12:43:12.849095",
-  "selfcontained": true,
+  "selfcontained": false,
   "entrypoints": {
     "library": "src/worker_policy.py"
   },

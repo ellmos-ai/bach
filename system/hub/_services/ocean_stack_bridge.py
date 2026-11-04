@@ -14,6 +14,7 @@ from __future__ import annotations
 import functools
 import importlib
 import importlib.util
+import json
 import os
 import sys
 import warnings
@@ -623,6 +624,14 @@ def invalidate_module_cache(cache_key: str | None = None) -> None:
         _MODULE_CACHE.clear()
 
 
+def _explicitly_not_selfcontained(module_dir: Path) -> bool:
+    try:
+        manifest = json.loads((module_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(manifest, dict) and manifest.get("selfcontained") is False
+
+
 def _load_standalone_or_fallback(
     cache_key: str,
     module_name: str,
@@ -643,6 +652,8 @@ def _load_standalone_or_fallback(
     ]
 
     for target in candidate_locations:
+        if module_name == "worker_policy" and _explicitly_not_selfcontained(target.parent.parent):
+            continue
         if target.is_file():
             target_dir = str(target.parent)
             if target_dir not in sys.path:
@@ -731,6 +742,8 @@ def get_service_or_standalone(service_name: str, fallback_import: str | None = N
     @deprecated_legacy_bach.
     """
     cache_key = f"standalone_{service_name}"
+    if service_name == "worker_policy" and fallback_import is None:
+        fallback_import = "hub._services.worker_policy_settings"
     return _load_standalone_or_fallback(
         cache_key=cache_key,
         module_name=service_name,
@@ -772,7 +785,7 @@ def load_limits_module() -> Any:
 
 
 def load_worker_policy_module() -> Any:
-    return get_service_or_standalone("worker_policy")
+    return get_service_or_standalone("worker_policy", fallback_import="hub._services.worker_policy_settings")
 
 
 def detect_legacy_in_tree_services() -> dict[str, Any]:
@@ -798,6 +811,8 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
             for p in cand_dir.iterdir():
                 if p.is_dir():
                     mod_name = p.name.replace("_export", "")
+                    if mod_name == "worker_policy" and _explicitly_not_selfcontained(p):
+                        continue
                     manifest = p / "manifest.json"
                     src_file = p / "src" / f"{mod_name}.py"
                     if manifest.is_file() and src_file.is_file():
@@ -894,6 +909,8 @@ def ocean_modularized_services_status() -> dict[str, Any]:
             m = loader()
             f_path = getattr(m, "__file__", "") or ""
             is_standalone = any(marker in f_path for marker in ("exports", ".MODULES", "_Local_DEV", "standalone"))
+            if name == "worker_policy" and getattr(m, "__name__", None) == "hub._services.worker_policy_settings":
+                is_standalone = False
             status_map[name] = {
                 "bound": True,
                 "status": "standalone" if is_standalone else "legacy_hub",
