@@ -13,6 +13,11 @@ IST: Dünne Projektion von `ellmos_scheduler.AgentTriggers`, ohne Legacy-
 Deployment und erfolgt weder bei GET noch bei einem Schreibversuch. Alter oder
 fehlender Provider, Rollback und fehlendes Schema ergeben HTTP 503.
 
+`requirements.txt` pinnt den Scheduler auf den geprüften Merge-Commit
+`29065fe5aade28cad457b4bf935309d1079c39e2` (Trigger, Kalender und nativer
+Ausführungskontext). Eine isolierte Paketinstallation aus diesem Git-Commit
+ist geprüft; das aktualisiert keine bestehende produktive Installation.
+
 Alle Routen benötigen gültige Geräte- oder Browsersitzungsanmeldung; Origin-Gate
 und explizite Middleware-Präfixgrenze bleiben erhalten. Credentialfelder und der
 Anmeldetoken sind im Body verboten. Keine Providerstarts oder Executoraufrufe.
@@ -59,5 +64,11 @@ bestehende Fehlerformat. Keine rohen Exceptiontexte oder lokalen Pfade ausgeben.
 
 Synthetische native Stores prüfen CRUD/CAS/Tombstones, Schemafehler ohne Mutation,
 Readback-Rennen und Event-Deduplizierung. Auth/Origin/Präfix werden getrennt geprüft.
+Die isoliert installierte Pin-Fassung besteht 56 API- und zwei Provider-Tests.
+Die Windows-Wiring-Prüfung besteht nach Quoting des Interpreterpfads 27 Fälle;
+der echte Prozesslauf wird vom bestehenden Testschutz wegen des isolierten
+Scheduler-Hilfsprozesses blockiert und ist damit nicht abgenommen. Der Schutz
+wird nicht deaktiviert.
+
 Provider-Deployment, gemeinsame GUI, tatsächliche Aufgabenausführung und Kalender
 bleiben getrennte Liefer- und Abnahmeschritte. Kein Produktivstart durch diese API.
