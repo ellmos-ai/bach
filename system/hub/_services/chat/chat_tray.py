@@ -33,6 +33,7 @@ for _p in (_system_dir, _root_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from hub.bach_paths import BACH_DB
 from hub._services.chat.control_auth import get_control_api_auth_header
 from hub._services.chat.tray_worker_execution import NativeWorkerObserver, WORKER_ID
 
@@ -909,19 +910,11 @@ class BACHTray:
 
     def _load_db_prompts(self):
         """Load curated prompts and favorites from BACH's canonical database (prompt_templates)."""
-        db_path = None
-        for cand in (
-            Path.home() / ".bach" / "bach.db",
-            Path(_root_dir) / "data" / "bach.db",
-            Path(_system_dir) / "data" / "bach.db",
-        ):
-            if cand.exists():
-                db_path = cand
-                break
-        if not db_path:
+        db_path = BACH_DB
+        if not db_path.is_file():
             return {}
         try:
-            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            with sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT name, text, category, tags FROM prompt_templates WHERE text IS NOT NULL AND text != ''"
