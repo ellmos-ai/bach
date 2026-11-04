@@ -1706,7 +1706,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/device-fetch.js",
     })
     # Static assets (JS/CSS/images/fonts) without data.
-    PUBLIC_STATIC_PREFIXES = ("/static/", "/_astro/")
+    PUBLIC_STATIC_PREFIXES = ("/static/", "/_astro/", "/assets/")
 
     EXEMPT_API_PATHS = {
         "/api/health",
@@ -5951,6 +5951,9 @@ if STATIC_DIR.exists():
 
 if (ASTRO_DIST_DIR / "_astro").exists():
     app.mount("/_astro", StaticFiles(directory=ASTRO_DIST_DIR / "_astro"), name="astro_assets")
+
+if (ASTRO_DIST_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=ASTRO_DIST_DIR / "assets"), name="astro_public_assets")
 
 
 # Operator-Konsole bleibt standardmaessig aus. Bei expliziter Aktivierung
