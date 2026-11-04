@@ -182,8 +182,10 @@ def test_readback_race_is_not_success_and_never_retries(native, monkeypatch):
     assert calls == ["shared-1"]
 
 
+@pytest.mark.parametrize("lineage", [None, [], ["previous-trigger"]])
 def test_event_delivery_reads_materialized_job_and_deduplicates_across_revisions(
     native,
+    lineage,
 ):
     _, store, client = native
     config = definition(schedule={"kind": "event", "event_type": "task.accepted"})
@@ -193,6 +195,7 @@ def test_event_delivery_reads_materialized_job_and_deduplicates_across_revisions
         "event_id": "event-1",
         "event_type": "task.accepted",
         "source": "explicit-api",
+        "lineage": lineage,
     }
     first = client.post("/api/agent-triggers/shared-1/deliver", json=event)
     assert first.status_code == 200, first.text
@@ -452,3 +455,49 @@ def test_nonobject_bodies_fail_without_echoing_content(native, body):
         assert response.status_code == 400
         assert "sensitive-input" not in response.text
     assert store.list_jobs() == []
+
+
+@pytest.mark.parametrize("identifier", ["a/b", "a/deliver", "a/b/deliver"])
+def test_native_slash_ids_share_exact_crud_and_delivery_identity(native, identifier):
+    from urllib.parse import quote
+
+    _, store, client = native
+    agent = "agents/worker@host"
+    body = definition(
+        identifier=identifier,
+        agent_id=agent,
+        schedule={"kind": "event", "event_type": "task.accepted"},
+    )
+    created = client.post("/api/agent-triggers", json=body)
+    assert created.status_code == 200, created.text
+    assert created.json()["trigger"]["id"] == identifier
+    path = "/api/agent-triggers/" + quote(identifier, safe="")
+    assert client.get(path).json()["trigger"]["id"] == identifier
+    listed = client.get("/api/agent-triggers", params={"agent_id": agent}).json()[
+        "triggers"
+    ]
+    assert len(listed) == 1 and listed[0]["id"] == identifier
+    changed = client.put(
+        path, json={"expected_version": 1, "changes": {"enabled": True}}
+    )
+    assert changed.status_code == 200 and changed.json()["trigger"]["id"] == identifier
+    delivered = client.post(
+        path + "/deliver",
+        json={
+            "expected_version": 2,
+            "event_id": "event/slash",
+            "event_type": "task.accepted",
+            "source": "explicit/api",
+        },
+    )
+    assert delivered.status_code == 200, delivered.text
+    assert delivered.json()["trigger"]["id"] == identifier
+    assert len(store.list_jobs()) == 1
+    deleted = client.request("DELETE", path, json={"expected_version": 2})
+    assert deleted.status_code == 200
+    assert (
+        deleted.json()["trigger"]["id"] == identifier
+        and deleted.json()["trigger"]["deleted"]
+    )
+    assert client.get(path).json()["trigger"]["deleted"] is True
+    assert store.recent_runs() == []

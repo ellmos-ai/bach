@@ -19,7 +19,7 @@ from hub import scheduler_provider
 
 router = APIRouter(prefix="/api/agent-triggers", tags=["agent-triggers"])
 SCHEMA = "bach.agent-triggers.v1"
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}\Z")
+_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}\Z")
 _CONFIG = {
     "agent_id",
     "schedule",
@@ -280,7 +280,7 @@ def _execute(operation, identifier=None, payload=None, agent_id=None):
                         for key in ("event_id", "event_type", "source")
                     )
                     and provenance["lineage"]
-                    == [*payload.get("lineage", []), identifier]
+                    == [*(payload.get("lineage") or []), identifier]
                     and (
                         delivery["duplicate"]
                         or definition["revision"] == after["revision"]
@@ -338,7 +338,7 @@ async def list_triggers(request: Request, agent_id: str | None = None):
     return await asyncio.to_thread(_execute, "list", agent_id=agent_id)
 
 
-@router.get("/{identifier}")
+@router.get("/{identifier:path}")
 async def get_trigger(identifier: str, request: Request):
     _authorize(request)
     return await asyncio.to_thread(_execute, "get", identifier)
@@ -356,21 +356,21 @@ async def create_trigger(request: Request, payload: Any = Body(...)):  # noqa: B
     )
 
 
-@router.put("/{identifier}")
+@router.put("/{identifier:path}")
 async def update_trigger(identifier: str, request: Request, payload: Any = Body(...)):  # noqa: B008 - FastAPI injection
     _authorize(request)
     _reject_transport_credentials(request, payload)
     return await asyncio.to_thread(_execute, "update", identifier, payload)
 
 
-@router.delete("/{identifier}")
+@router.delete("/{identifier:path}")
 async def delete_trigger(identifier: str, request: Request, payload: Any = Body(...)):  # noqa: B008 - FastAPI injection
     _authorize(request)
     _reject_transport_credentials(request, payload)
     return await asyncio.to_thread(_execute, "delete", identifier, payload)
 
 
-@router.post("/{identifier}/deliver")
+@router.post("/{identifier:path}/deliver")
 async def deliver_event(identifier: str, request: Request, payload: Any = Body(...)):  # noqa: B008 - FastAPI injection
     """Explicit authenticated action, never evidence of trusted task ingestion."""
     _authorize(request)

@@ -36,7 +36,9 @@ Erfolg: `schema=bach.agent-triggers.v1`, `provider=ellmos-scheduler`,
   Kein Ereignisauslöseknopf in der GUI aus diesem Endpunkt ableiten.
 
 IDs/Filter: höchstens 128 Zeichen, führend alphanumerisch, danach alphanumerisch
-oder `_.:@-`. Keine Slash-/Pfad-IDs. Unbekannte Bodyfelder werden abgelehnt.
+oder `_.:@/-` wie im nativen Scheduler. Slash-IDs werden als gesamter URL-Wert
+mit `encodeURIComponent(id)` codiert. IDs werden niemals als Dateipfade verwendet.
+Unbekannte Bodyfelder werden abgelehnt.
 Snapshot: `id`, `version`, `revision`, `agent_id`, `schedule`, `executor`, `payload`,
 `enabled`, `deleted`, `authorities`, `lease_seconds`, `timeout_seconds`.
 
