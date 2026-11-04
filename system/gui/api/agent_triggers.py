@@ -85,27 +85,41 @@ def _no_credentials(value):
             _no_credentials(child)
 
 
-def _reject_transport_credentials(request: Request, payload):
-    """Never persist the credential used to authorize this request, under any key."""
-    header = request.headers.get("Authorization", "")
-    credentials = [request.cookies.get("bach_device_token", "")]
+def _transport_credentials(request: Request):
+    """Use the same whitespace normalization as device/session authentication."""
+    header = request.headers.get("Authorization", "").strip()
+    credentials = [request.cookies.get("bach_device_token", "").strip()]
     if header.startswith("Bearer "):
         credentials.append(header[7:].strip())
-    credentials = [value for value in credentials if value]
+    return tuple(dict.fromkeys(value for value in credentials if value))
 
-    def visit(value):
-        if isinstance(value, str) and any(
-            credential in value for credential in credentials
-        ):
-            _error(400, "invalid", "credential_in_payload")
-        if isinstance(value, dict):
-            for child in value.values():
-                visit(child)
-        elif isinstance(value, list):
-            for child in value:
-                visit(child)
 
-    visit(payload)
+def _contains_transport_credential(value, credentials):
+    if isinstance(value, str):
+        return any(credential in value for credential in credentials)
+    if isinstance(value, dict):
+        return any(
+            _contains_transport_credential(key, credentials)
+            or _contains_transport_credential(child, credentials)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_transport_credential(child, credentials) for child in value)
+    return False
+
+
+def _reject_transport_credentials(request: Request, payload, *, response=False):
+    """Never persist or echo the request credential, including JSON object keys."""
+    if _contains_transport_credential(payload, _transport_credentials(request)):
+        if response:
+            _error(503, "unavailable", "credential_in_response")
+        _error(400, "invalid", "credential_in_payload")
+
+
+async def _checked_response(request: Request, *args, **kwargs):
+    result = await asyncio.to_thread(_execute, *args, **kwargs)
+    _reject_transport_credentials(request, result, response=True)
+    return result
 
 
 def _provider():
@@ -335,21 +349,21 @@ def _execute(operation, identifier=None, payload=None, agent_id=None):
 @router.get("")
 async def list_triggers(request: Request, agent_id: str | None = None):
     _authorize(request)
-    return await asyncio.to_thread(_execute, "list", agent_id=agent_id)
+    return await _checked_response(request, "list", agent_id=agent_id)
 
 
 @router.get("/{identifier:path}")
 async def get_trigger(identifier: str, request: Request):
     _authorize(request)
-    return await asyncio.to_thread(_execute, "get", identifier)
+    return await _checked_response(request, "get", identifier)
 
 
 @router.post("")
 async def create_trigger(request: Request, payload: Any = Body(...)):  # noqa: B008 - FastAPI injection
     _authorize(request)
     _reject_transport_credentials(request, payload)
-    return await asyncio.to_thread(
-        _execute,
+    return await _checked_response(
+        request,
         "create",
         payload.get("id") if isinstance(payload, dict) else None,
         payload,
@@ -360,14 +374,14 @@ async def create_trigger(request: Request, payload: Any = Body(...)):  # noqa: B
 async def update_trigger(identifier: str, request: Request, payload: Any = Body(...)):  # noqa: B008 - FastAPI injection
     _authorize(request)
     _reject_transport_credentials(request, payload)
-    return await asyncio.to_thread(_execute, "update", identifier, payload)
+    return await _checked_response(request, "update", identifier, payload)
 
 
 @router.delete("/{identifier:path}")
 async def delete_trigger(identifier: str, request: Request, payload: Any = Body(...)):  # noqa: B008 - FastAPI injection
     _authorize(request)
     _reject_transport_credentials(request, payload)
-    return await asyncio.to_thread(_execute, "delete", identifier, payload)
+    return await _checked_response(request, "delete", identifier, payload)
 
 
 @router.post("/{identifier:path}/deliver")
@@ -375,4 +389,4 @@ async def deliver_event(identifier: str, request: Request, payload: Any = Body(.
     """Explicit authenticated action, never evidence of trusted task ingestion."""
     _authorize(request)
     _reject_transport_credentials(request, payload)
-    return await asyncio.to_thread(_execute, "deliver", identifier, payload)
+    return await _checked_response(request, "deliver", identifier, payload)
