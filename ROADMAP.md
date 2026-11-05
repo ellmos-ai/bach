@@ -87,6 +87,35 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## Review 2026-11-05 (Mittags-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **Modularer Core: Export Dienstgruppe (session, cache, scheduler) als Standalone-Module (Task #-36, Erledigt):**
+  - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
+    - `session` (`.MODULES/session/`): Eigenständiges Session-Lifecycle-Management, Dauer-Berechnung und Coaching-Nudges für Zwischen-Task-Prüfungen (`between_task_check`).
+    - `cache` (`.MODULES/cache/`): Multi-Tier Key-Value Store mit TTL-Ablauf, Namespace-Isolation (`cache.namespace("...")`), `@cached` Funktionsdekorator mit Hash-Keys, Hit/Miss/Eviction-Telemetrie und JSON-Persistenz.
+    - `scheduler` (`.MODULES/scheduler/`): Standalone periodische Job-Scheduling-Engine mit Intervallsteuerung, Error-Containment, Quittungs-Historie und Einzellauf-Erzwingung (`run_job`).
+  - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_session_module()`, `load_cache_module()`, `load_scheduler_module()` angebunden.
+  - Standalone-Zähler in `ocean_modularized_services_status()` auf 24/24 gebundene Module erweitert (100.0% autarker Standalone-Betrieb).
+  - 10/10 Modultests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - Task #-36 erledigt gemeldet.
+
+- **Modularer Core & Update-Zentrale: CLI/API Modul-Paketmanager (Task #-37, Erledigt):**
+  - Neuer CLI/API Handler `ModulesHandler` (`system/hub/modules.py`):
+    - CLI-Operationen: `bach modules list`, `bach modules status`, `bach modules check [name]`, `bach modules install <path|zip>`, `bach modules update [--dry-run]`, `bach modules export <name>`, `bach modules wire`, `bach modules help`.
+    - SemVer-basierter Update-Scan gegen lokale Quellen und Checkouts.
+  - Integration in `system/hub/update.py`: `bach update modules [--dry-run]` triggert automatisch den Modul-Update-Scan.
+  - Web-GUI (`system/gui/server.py` & `system/gui/templates/index.html`):
+    - Neue API-Endpunkte: `GET /api/modules/list`, `POST /api/modules/update`, `POST /api/modules/wire`.
+    - Dashboard-Erweiterung: Neuer Button `📦 Auf Updates prüfen` mit Live-Feedback.
+  - Testabdeckung: 7/7 Tests in `system/tests/test_modules_handler.py` erfolgreich durchgeführt.
+  - Task #-37 erledigt gemeldet.
+
+- **Neue Folge-Aufgaben angelegt:**
+  - `Task #-38`: Modularer Core: Automatischer Update-Check & Notification in Tray und GUI (Live-Indikator bei verfuegbaren Modul-Updates) (P3, gui)
+  - `Task #-39`: Modularer Core: Export Dienstgruppe (plugins, hooks, memory) als autarke Standalone-Module (P3, infrastructure)
+
 ## Review 2026-11-05 (Früh-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
 
 Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:

@@ -799,6 +799,18 @@ def load_notify_module() -> Any:
     return get_service_or_standalone("notify", fallback_import="hub.notify")
 
 
+def load_session_module() -> Any:
+    return get_service_or_standalone("session", fallback_import="hub.session")
+
+
+def load_cache_module() -> Any:
+    return get_service_or_standalone("cache")
+
+
+def load_scheduler_module() -> Any:
+    return get_service_or_standalone("scheduler", fallback_import="hub.scheduler")
+
+
 def detect_legacy_in_tree_services() -> dict[str, Any]:
     """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
     bach_root = Path(__file__).resolve().parents[3]
@@ -839,6 +851,9 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
         "email_bridge": "email",
         "inbox": "inbox",
         "notify": "notify",
+        "session": "session",
+        "cache": "cache",
+        "scheduler": "scheduler",
     }
 
     in_tree_services: list[dict[str, Any]] = []
@@ -929,6 +944,9 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "inbox": ("inbox", load_inbox_module),
         "email_bridge": ("email_bridge", load_email_bridge_module),
         "notify": ("notify", load_notify_module),
+        "session": ("session", load_session_module),
+        "cache": ("cache", load_cache_module),
+        "scheduler": ("scheduler", load_scheduler_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():

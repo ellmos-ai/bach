@@ -296,6 +296,9 @@ def test_modularized_services_and_hot_wiring():
         load_telemetry_module,
         load_limits_module,
         load_worker_policy_module,
+        load_session_module,
+        load_cache_module,
+        load_scheduler_module,
         detect_legacy_in_tree_services,
         auto_switch_to_standalone_modules,
         get_service_or_standalone,
@@ -366,6 +369,18 @@ def test_modularized_services_and_hot_wiring():
     assert mod_wp is not None
     assert hasattr(mod_wp, "read_global_policy")
 
+    mod_sess = load_session_module()
+    assert mod_sess is not None
+    assert hasattr(mod_sess, "SessionManager")
+
+    mod_cache = load_cache_module()
+    assert mod_cache is not None
+    assert hasattr(mod_cache, "CacheManager")
+
+    mod_sched = load_scheduler_module()
+    assert mod_sched is not None
+    assert hasattr(mod_sched, "JobScheduler")
+
     # Dynamic service resolver test
     dyn_dw = get_service_or_standalone("domain_writer_gate")
     assert dyn_dw is not None
@@ -381,7 +396,7 @@ def test_modularized_services_and_hot_wiring():
     # Auto-switch execution
     switch_report = auto_switch_to_standalone_modules()
     assert switch_report["schema"] == "bach.auto-switch-standalone-report.v1"
-    assert switch_report["total_switched"] >= 21
+    assert switch_report["total_switched"] >= 23
 
     status = ocean_modularized_services_status()
     for s_name in (
@@ -406,6 +421,9 @@ def test_modularized_services_and_hot_wiring():
         "inbox",
         "email_bridge",
         "notify",
+        "session",
+        "cache",
+        "scheduler",
     ):
         assert s_name in status
         assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
@@ -435,5 +453,8 @@ def test_modularized_services_and_hot_wiring():
         "inbox",
         "email_bridge",
         "notify",
+        "session",
+        "cache",
+        "scheduler",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True

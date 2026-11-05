@@ -2357,6 +2357,41 @@ async def trigger_modules_sync():
         return {"status": "error", "error": public_error_message()}
 
 
+@app.get("/api/modules/list")
+async def get_modules_list():
+    """Return list of all standalone modules in .MODULES/ with metadata."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {"status": "ok", "modules": handler.get_modules_data()}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/update")
+async def trigger_modules_update(dry_run: bool = False):
+    """Trigger check and update of modules from available source repos."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("update", dry_run=dry_run)
+        return {"status": "ok" if ok else "error", "message": msg, "dry_run": dry_run}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/wire")
+async def trigger_modules_wire():
+    """Trigger hot-wiring of all available standalone modules."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("wire")
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
 
 # ═══════════════════════════════════════════════════════════════
 

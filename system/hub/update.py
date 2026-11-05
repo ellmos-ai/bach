@@ -1192,6 +1192,16 @@ class UpdateHandler(BaseHandler):
                 invalidate_module_cache()
                 lines.append(f"\n[OK] {reimported_count} Standalone-Modul(e) re-importiert und ueber ocean_stack_bridge hot-wired.")
 
+        # Module-Update-Scan über ModulesHandler
+        try:
+            from hub.modules import ModulesHandler
+            mod_handler = ModulesHandler(self.base_path)
+            _, mod_update_msg = mod_handler.handle("update", args, dry_run=is_dry_run)
+            lines.append("")
+            lines.append(mod_update_msg)
+        except Exception as exc:
+            lines.append(f"\n[WARNUNG] ModulesHandler update fehlgeschlagen: {exc}")
+
         return True, "\n".join(lines)
 
     def _update_all(self, args: list, dry_run: bool = False) -> tuple:

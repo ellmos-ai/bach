@@ -225,6 +225,15 @@ style="background: var(--bg-dark); color: var(--text)">
                     </div>
                     <div class="flex items-center gap-2">
                         <button
+                            id="modules-update-btn"
+                            type="button"
+                            onclick="triggerModulesUpdate()"
+                            class="px-3 py-1.5 text-xs font-semibold bg-[#1e2236] text-gray-200 border border-[#2a304a] rounded-lg hover:bg-[#252b42] transition-all flex items-center gap-1.5 shadow"
+                        >
+                            <span>📦</span>
+                            <span>Auf Updates prüfen</span>
+                        </button>
+                        <button
                             id="modules-sync-btn"
                             type="button"
                             onclick="triggerModulesLiveSync()"
@@ -424,6 +433,38 @@ style="background: var(--bg-dark); color: var(--text)">
                 if (btn) btn.disabled = false;
                 if (spinner) spinner.classList.add('hidden');
                 if (icon) icon.classList.remove('hidden');
+            }
+        }
+
+        async function triggerModulesUpdate() {
+            const btn = document.getElementById('modules-update-btn');
+            const msg = document.getElementById('modules-sync-msg');
+            if (btn) btn.disabled = true;
+            if (msg) {
+                msg.classList.remove('hidden');
+                msg.textContent = 'Prüfe Quell-Repositories auf neuere Modulversionen...';
+            }
+            try {
+                const res = await fetch('/api/modules/update?dry_run=true', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    if (msg) {
+                        msg.textContent = data.message || 'Prüfung abgeschlossen.';
+                        msg.className = 'text-xs text-gray-300 mt-2 p-2 bg-[#171b28] rounded border border-[#2a304a] whitespace-pre-wrap font-mono';
+                    }
+                } else {
+                    if (msg) {
+                        msg.textContent = `Fehler: ${data.message || data.error || 'Fehlgeschlagen'}`;
+                        msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                    }
+                }
+            } catch (e) {
+                if (msg) {
+                    msg.textContent = `Netzwerkfehler: ${e.message}`;
+                    msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                }
+            } finally {
+                if (btn) btn.disabled = false;
             }
         }
 
