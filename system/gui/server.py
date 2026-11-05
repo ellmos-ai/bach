@@ -16949,7 +16949,7 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
     # 1. Fast path: local Ollama /api/chat (no multi-round tool loop latency)
     ollama_base = os.environ.get("BACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
     try:
-        with httpx.Client(timeout=18.0) as client:
+        with httpx.Client(timeout=90.0) as client:
             tags_resp = client.get(f"{ollama_base}/api/tags")
             if tags_resp.status_code == 200:
                 installed = [
@@ -16964,14 +16964,9 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                     m
                     for m in [
                         configured_primary,
+                        "qwen3.8:27b-mlx",
                         "gpt-oss:120b-cloud",
                         "qwen3:1.7b",
-                        "glm-5.3-flash:cloud",
-                        "kimi-k2.7-code:cloud",
-                        "deepseek-v4.1-flash:cloud",
-                        "gemma4:e2b",
-                        "qwen3.8:27b-mlx",
-                        "qwen3.8:27b-q4_K_M",
                     ]
                     if m
                 ]
