@@ -775,6 +775,30 @@ def load_worker_policy_module() -> Any:
     return get_service_or_standalone("worker_policy")
 
 
+def load_prompt_module() -> Any:
+    return get_service_or_standalone("prompt")
+
+
+def load_message_delivery_module() -> Any:
+    return get_service_or_standalone("message_delivery", fallback_import="hub.messages")
+
+
+def load_conversation_store_module() -> Any:
+    return get_service_or_standalone("conversation_store", fallback_import="hub._services.chat.session_store")
+
+
+def load_inbox_module() -> Any:
+    return get_service_or_standalone("inbox", fallback_import="hub.inbox")
+
+
+def load_email_bridge_module() -> Any:
+    return get_service_or_standalone("email_bridge", fallback_import="hub.email")
+
+
+def load_notify_module() -> Any:
+    return get_service_or_standalone("notify", fallback_import="hub.notify")
+
+
 def detect_legacy_in_tree_services() -> dict[str, Any]:
     """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
     bach_root = Path(__file__).resolve().parents[3]
@@ -807,9 +831,19 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
         except OSError:
             pass
 
+    aliases = {
+        "messages": "message_delivery",
+        "session_store": "conversation_store",
+        "conversation_store": "session_store",
+        "email": "email_bridge",
+        "email_bridge": "email",
+        "inbox": "inbox",
+        "notify": "notify",
+    }
+
     in_tree_services: list[dict[str, Any]] = []
     seen_stems = set()
-    for search_dir in (hub_dir, hub_dir / "_services"):
+    for search_dir in (hub_dir, hub_dir / "_services", hub_dir / "_services" / "chat"):
         if search_dir.is_dir():
             for py_f in sorted(search_dir.glob("*.py")):
                 if py_f.name in ("__init__.py", "base.py", "canonical_seam.py"):
@@ -818,12 +852,14 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
                 if stem in seen_stems:
                     continue
                 seen_stems.add(stem)
-                has_standalone = stem in standalone_available
+                standalone_key = stem if stem in standalone_available else aliases.get(stem)
+                has_standalone = bool(standalone_key and standalone_key in standalone_available)
                 in_tree_services.append({
                     "name": stem,
+                    "standalone_name": standalone_key or stem,
                     "file": str(py_f),
                     "has_standalone": has_standalone,
-                    "standalone_path": str(standalone_available[stem]) if has_standalone else None,
+                    "standalone_path": str(standalone_available[standalone_key]) if has_standalone else None,
                 })
 
     switched = [s for s in in_tree_services if s["has_standalone"]]
@@ -846,7 +882,7 @@ def auto_switch_to_standalone_modules() -> dict[str, Any]:
     detection = detect_legacy_in_tree_services()
     switched_report: dict[str, Any] = {}
     for item in detection.get("switched_services", []):
-        name = item["name"]
+        name = item.get("standalone_name") or item["name"]
         try:
             mod = get_service_or_standalone(name)
             f_path = getattr(mod, "__file__", "") or ""
@@ -887,6 +923,12 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "telemetry": ("telemetry", load_telemetry_module),
         "limits": ("limits", load_limits_module),
         "worker_policy": ("worker_policy", load_worker_policy_module),
+        "prompt": ("prompt", load_prompt_module),
+        "message_delivery": ("message_delivery", load_message_delivery_module),
+        "conversation_store": ("conversation_store", load_conversation_store_module),
+        "inbox": ("inbox", load_inbox_module),
+        "email_bridge": ("email_bridge", load_email_bridge_module),
+        "notify": ("notify", load_notify_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():

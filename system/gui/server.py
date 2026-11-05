@@ -11954,6 +11954,52 @@ async def export_promptboard_library(req: Request = None):
         raise HTTPException(status_code=422, detail=f"PromptBoard-Export fehlgeschlagen: {exc}") from exc
 
 
+@app.get("/api/prompt-library/sync-promptboard/preview")
+async def preview_sync_promptboard_library():
+    """Preview PromptBoard two-way synchronization counts without changing the database or library."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    library_path = next((p for p in candidates if p.exists()), None)
+    if library_path is None and candidates:
+        library_path = candidates[0]
+    if library_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(library_path, dry_run=True)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync Vorschau fehlgeschlagen: {exc}") from exc
+
+
+@app.post("/api/prompt-library/sync-promptboard")
+async def sync_promptboard_library(req: Request = None):
+    """Bidirectionally synchronize prompt templates between BACH and PromptBoard library.json."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    target_path = next((p for p in candidates if p.exists()), None)
+    if target_path is None and candidates:
+        target_path = candidates[0]
+    category = None
+    dry_run = False
+    if req is not None:
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                category = body.get("category")
+                dry_run = bool(body.get("dry_run", False))
+                if body.get("target_path"):
+                    target_path = Path(body["target_path"])
+        except Exception:
+            pass
+    if target_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(
+            target_path, category=category, dry_run=dry_run
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync fehlgeschlagen: {exc}") from exc
+
+
 @app.get("/api/prompt-generator/templates")
 
 async def get_prompt_templates():

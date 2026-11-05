@@ -87,7 +87,57 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
-## Review 2026-11-04 (BACH TASKS UND DEV - Gemini 3.8 Flash)
+## Review 2026-11-05 (Früh-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **GUI & Web-Chat: Direkte Prompt-Ausführung (Prompt-Runner) mit Persona-Binding (Task #-35, Erledigt):**
+  - `prompt-chat-draft.js` erweitert: Unterstützung von Metadaten (`autorun`, `agent_id`, `slot_id`, `persona`) in `store()` und `consume()` bei Wahrung der String-Rückwärtskompatibilität und maximaler Längenbeschränkung.
+  - Web-GUI (`prompt-library.html` & `index.html`): Neue Prompt-Runner-Aktionen `🚀 Direkt ausführen` für aufgelöste und rohe Templates sowie im Dashboard-Schnell-Prompt mit Persona-/Ziel-Selektor (`#pl-chat-target`).
+  - Chat-GUI (`chat.html`): Automatische Übergabe von `draftAgentId` an den Chat-Turn (`/api/chat-control/chat`) und automatisierte Ausführung via `pendingPromptAutorun` nach erfolgreicher Bereitschaftsprüfung.
+  - 17/17 Tests in `test_prompt_chat_draft.py` erfolgreich durchgeführt.
+  - Task #-35 erledigt gemeldet.
+
+- **Modularer Core: Export Dienstgruppe (inbox, email_bridge, notify) als Standalone-Module (Task #-34, Erledigt):**
+  - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
+    - `inbox` (`.MODULES/inbox/`): Sicheres Datei-Scanning, Ausschlussfilter für Locks/temporäre Dateien und atomare Aufnahme.
+    - `email_bridge` (`.MODULES/email_bridge/`): Zwei-Phasen-Entwurfssicherheit (Draft-First), E-Mail-Adressvalidierung und Outbox-Statusverwaltung.
+    - `notify` (`.MODULES/notify/`): Multi-Channel Benachrichtigungsrouter (Desktop, Console, Queue, Webhook) mit Tag-Präfixen und persistenter Warteschlange.
+  - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_inbox_module()`, `load_email_bridge_module()`, `load_notify_module()` angebunden.
+  - Standalone-Zähler in `ocean_modularized_services_status()` auf 21/21 gebundene Module erweitert (100% autarker Betrieb).
+  - 16/16 Tests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - Task #-34 erledigt gemeldet.
+
+- **Neue Folge-Aufgaben angelegt:**
+  - `Task #-36`: Modularer Core: Export Dienstgruppe (session, cache, scheduler) als autarke Standalone-Module (P3, infrastructure)
+  - `Task #-37`: Modularer Core & Update-Zentrale: CLI/API Modul-Paketmanager (bach modules update/install) (P3, core)
+
+## Review 2026-11-04 (Abend-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **GUI & Tray: PromptBoard Two-Way-Sync (Task #-33, Erledigt):**
+  - Neuer Zwei-Wege-Sync `sync_promptboard()` in `system/hub/prompt.py` und CLI-Befehl `bach prompt sync-promptboard [library.json] [--category CAT] [--dry-run]` implementiert: vollständige bidirektionale Synchronisation zwischen BACH SQLite-Datenbank (`prompt_templates`, `prompt_versions`) und externer PromptBoard `library.json`, inklusive automatischer Versionsarchivierung bei Aktualisierungen, Tag-Reconciliation und atomarem Schreibschutz.
+  - Web-GUI (`system/gui/server.py` & `system/gui/templates/prompt-library.html`): API-Endpunkte `GET /api/prompt-library/sync-promptboard/preview` und `POST /api/prompt-library/sync-promptboard` mit neuem 1-Click Button `🔄 Zwei-Wege-Sync` und Status-Feedback.
+  - Tray-App (`system/hub/_services/chat/chat_tray.py`): Neuer Menüeintrag `🔄 PromptBoard Zwei-Wege-Sync` mit nativer Systembenachrichtigung.
+  - 36/36 Tests in `test_promptboard_import.py` und Tray-Integrationstests in `test_connectors_and_tray.py` erfolgreich durchgeführt.
+  - Task #-33 erledigt gemeldet.
+
+- **Modularer Core: Export Dienstgruppe (prompt, message_delivery, conversation_store) als Standalone-Module (Task #-32, Erledigt):**
+  - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
+    - `prompt` (`.MODULES/prompt/`): Template-Verwaltung, Tag-Formatierung, Versionierung und PromptBoard-Sync.
+    - `message_delivery` (`.MODULES/message_delivery/`): Nachrichtensystem mit Routing für Inbox/Outbox/Archiv und Partner-Presence/Ack.
+    - `conversation_store` (`.MODULES/conversation_store/`): Transkript-Speicherung in `session_snapshots` mit gehashten Session-IDs (`chat-runtime:v1:<sha256>`), Rollen-Gatekeeper und `max_messages`/`max_content_chars`-Begrenzung.
+  - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_prompt_module()`, `load_message_delivery_module()`, `load_conversation_store_module()` angebunden.
+  - Standalone-Zähler in `ocean_modularized_services_status()` auf 18/18 gebundene Module erweitert (100% autarker Betrieb).
+  - 7/7 Tests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - Task #-32 erledigt gemeldet.
+
+- **Neue Folge-Aufgaben angelegt:**
+  - `Task #-34`: Modularer Core: Export Dienstgruppe (inbox, email_bridge, notify) als autarke Standalone-Module (P3, infrastructure)
+  - `Task #-35`: GUI & Web-Chat: Direkte Prompt-Ausführung (Prompt-Runner) mit Modell- und Persona-Vorauswahl (P3, gui)
+
+## Review 2026-11-04 (Mittags-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
 
 Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
 

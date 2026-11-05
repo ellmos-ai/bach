@@ -188,6 +188,14 @@ style="background: var(--bg-dark); color: var(--text)">
                         <div class="flex items-center gap-2">
                             <button
                                 type="button"
+                                onclick="runQuickPromptInChat()"
+                                class="px-3 py-1.5 text-xs font-semibold bg-[#2a6850] hover:bg-[#348062] text-white rounded-lg transition-all flex items-center gap-1.5 shadow"
+                                title="Prompt direkt an den Chat senden und Antwort generieren"
+                            >
+                                <span>🚀</span> Direkt ausführen
+                            </button>
+                            <button
+                                type="button"
                                 onclick="openQuickPromptInChat()"
                                 class="px-3 py-1.5 text-xs font-semibold bg-bach-accent text-white rounded-lg hover:opacity-90 transition-all flex items-center gap-1.5 shadow"
                             >
@@ -306,6 +314,21 @@ style="background: var(--bg-dark); color: var(--text)">
             }
             if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
                 window.BachChatDraft.store(text);
+            }
+            window.location.assign('/chat');
+        }
+
+        function runQuickPromptInChat() {
+            const input = document.getElementById('quick-prompt-input');
+            const text = input ? input.value.trim() : '';
+            if (!text) {
+                alert('Bitte gib zuerst einen Prompt oder eine Nachricht ein.');
+                return;
+            }
+            const targetEl = document.getElementById('quick-prompt-target');
+            const target = targetEl ? targetEl.value : 'buddha';
+            if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
+                window.BachChatDraft.store(text, null, { autorun: true, slot_id: target === 'idle' ? 'idle_worker' : 'buddha_chat' });
             }
             window.location.assign('/chat');
         }

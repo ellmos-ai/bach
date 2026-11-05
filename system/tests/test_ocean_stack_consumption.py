@@ -375,13 +375,13 @@ def test_modularized_services_and_hot_wiring():
     detection = detect_legacy_in_tree_services()
     assert detection["schema"] == "bach.legacy-in-tree-detection.v1"
     assert detection["total_in_tree_services"] >= 140
-    assert detection["standalone_modules_available"] >= 15
-    assert detection["switched_or_switchable_count"] >= 15
+    assert detection["standalone_modules_available"] >= 18
+    assert detection["switched_or_switchable_count"] >= 18
 
     # Auto-switch execution
     switch_report = auto_switch_to_standalone_modules()
     assert switch_report["schema"] == "bach.auto-switch-standalone-report.v1"
-    assert switch_report["total_switched"] >= 15
+    assert switch_report["total_switched"] >= 21
 
     status = ocean_modularized_services_status()
     for s_name in (
@@ -400,6 +400,12 @@ def test_modularized_services_and_hot_wiring():
         "telemetry",
         "limits",
         "worker_policy",
+        "prompt",
+        "message_delivery",
+        "conversation_store",
+        "inbox",
+        "email_bridge",
+        "notify",
     ):
         assert s_name in status
         assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
@@ -423,5 +429,11 @@ def test_modularized_services_and_hot_wiring():
         "telemetry",
         "limits",
         "worker_policy",
+        "prompt",
+        "message_delivery",
+        "conversation_store",
+        "inbox",
+        "email_bridge",
+        "notify",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True

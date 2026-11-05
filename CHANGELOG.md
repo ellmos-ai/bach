@@ -31,6 +31,36 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Prompt-Runner mit Persona-Binding & Modularer Core Export (inbox, email_bridge, notify) (Tasks #-34 & #-35, 2026-11-05):**
+  - **GUI & Web-Chat Prompt-Runner (Task #-35):**
+    - `prompt-chat-draft.js`: Payload-Erweiterung für `store()` und `consume()` mit Metadaten (`autorun`, `agent_id`, `slot_id`, `persona`) bei voller Rückwärtskompatibilität zu String-Verbrauchern und unverletzter Einweg-Sicherheit.
+    - Web-GUI (`prompt-library.html` & `index.html`): Neue Prompt-Runner-Aktionen `🚀 Direkt ausführen` in der Prompt-Bibliothek (für aufgelöste und rohe Templates) sowie im Dashboard Schnell-Prompt mit Ziel- und Persona-Vorauswahl (`#pl-chat-target`).
+    - Chat-GUI (`chat.html`): Dynamische Bindung von `draftAgentId` an den Chat-Request (`/api/chat-control/chat`) und automatische Ausführung (`pendingPromptAutorun`) mit Composer-Freigabeprüfung.
+    - Testabdeckung: 17/17 Tests in `test_prompt_chat_draft.py` erfolgreich durchgeführt.
+  - **Modularer Core Standalone-Export (Task #-34):**
+    - 3 autarke Standalone-Module in `.MODULES/` erstellt:
+      - `inbox`: Eigenständiges Verzeichnis-Scanning, sichere Ausschlussfilter (Locks, temporäre Dateien, versteckte Verzeichnisse) und atomare Dateiaufnahme.
+      - `email_bridge`: Two-Phase-Commit Entwurfssicherheit (Draft-First), Adressvalidierung und Outbox-Statusprüfung.
+      - `notify`: Multi-Channel Benachrichtigungsrouter (Desktop, Console, Queue, Webhook), Tag-Präfixe und asynchrone Warteschlange.
+    - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_inbox_module()`, `load_email_bridge_module()`, `load_notify_module()`; Alias-Mapping und Pfade integriert.
+    - Standalone-Zähler in `ocean_modularized_services_status()` auf 21/21 gebundene Module erweitert (100% autarker Betrieb).
+    - 16/16 Modultests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+
+- **PromptBoard Zwei-Wege-Sync & Modularer Core Export (prompt, message_delivery, conversation_store) (Tasks #-32 & #-33, 2026-11-04):**
+  - **PromptBoard Zwei-Wege-Sync (Two-Way-Sync) (Task #-33):**
+    - `PromptHandler` (`system/hub/prompt.py`): Neue Methode `sync_promptboard(library_path, category, dry_run)` und CLI-Operation `bach prompt sync-promptboard [library.json] [--dry-run]` implementiert (bidirektionaler Abgleich von Templates, Versionsarchivierung bei Aktualisierung, Tag-Merging und atomare Speicherung).
+    - Web-GUI (`system/gui/server.py` & `prompt-library.html`): Neue Endpunkte `GET /api/prompt-library/sync-promptboard/preview` und `POST /api/prompt-library/sync-promptboard` sowie Button `🔄 Zwei-Wege-Sync` mit Feedback-Handling und dynamischem List-Reload.
+    - Tray-App (`chat_tray.py`): Neuer Menüeintrag `🔄 PromptBoard Zwei-Wege-Sync` mit Benachrichtigung im PromptBoard-Submenü integriert.
+    - Testabdeckung: 36/36 Tests in `test_promptboard_import.py` und erweiterte Tray-Aktionstests in `test_connectors_and_tray.py` erfolgreich durchgeführt.
+  - **Modularer Core Standalone-Export (Task #-32):**
+    - 3 autarke Standalone-Module in `.MODULES/` erstellt:
+      - `prompt`: Template- und Board-Verwaltung, Tag-Serialisierung und Zwei-Wege-PromptBoard-Synchronisation.
+      - `message_delivery`: Atomare Nachrichtenzustellung, Multi-Partner-Routing (User, Claude, Gemini, Codex, Ollama) und Archivierung.
+      - `conversation_store`: Transcript-Speicherung mit gehashten Session-IDs (`chat-runtime:v1:<sha256>`), Rollenvalidierung und Begrenzung von Max-Messages / Max-Content-Chars.
+    - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_prompt_module()`, `load_message_delivery_module()`, `load_conversation_store_module()`; Alias-Mapping und Pfade in `detect_legacy_in_tree_services()` integriert.
+    - Standalone-Zähler in `ocean_modularized_services_status()` auf 18/18 gebundene Module erweitert (100% autarker Betrieb).
+    - 7/7 Modultests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+
 - **Modularer Core: Export Dienstgruppe (telemetry, limits, worker_policy) & GUI Dashboard Update-Zentrale (Tasks #-30 & #-31, 2026-11-04):**
   - **Modularer Core Standalone-Export (Task #-30):**
     - 3 autarke Standalone-Module für `telemetry` (Low-Cardinality Counter Engine & SQLite/In-Memory Adapter), `limits` (Laufzeit-Limits & Timeout-Registry) und `worker_policy` (Fail-Soft Worker Review & Execution Policy) via `bach skills export-module` exportiert und validiert.
