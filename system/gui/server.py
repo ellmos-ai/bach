@@ -16851,30 +16851,50 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                     for m in (tags_resp.json().get("models") or [])
                     if isinstance(m, dict) and m.get("name")
                 ]
+                configured_primary = ""
+                if _TALK_SESSION_SINGLETON is not None:
+                    configured_primary = str(getattr(_TALK_SESSION_SINGLETON.state, "primary_model", "") or "").strip()
                 preferred_order = [
-                    "glm-5.3-flash:cloud",
-                    "kimi-k2.7-code:cloud",
-                    "deepseek-v4.1-flash:cloud",
-                    "gemma4:e2b",
-                    "qwen3.8:27b-mlx",
-                    "qwen3.8:27b-q4_K_M",
+                    m
+                    for m in [
+                        configured_primary,
+                        "gpt-oss:120b-cloud",
+                        "qwen3:1.7b",
+                        "glm-5.3-flash:cloud",
+                        "kimi-k2.7-code:cloud",
+                        "deepseek-v4.1-flash:cloud",
+                        "gemma4:e2b",
+                        "qwen3.8:27b-mlx",
+                        "qwen3.8:27b-q4_K_M",
+                    ]
+                    if m
                 ]
-                chosen_model = next((m for m in preferred_order if m in installed), installed[0] if installed else "")
-                if chosen_model:
-                    chat_resp = client.post(
-                        f"{ollama_base}/api/chat",
-                        json={
-                            "model": chosen_model,
-                            "stream": False,
-                            "messages": messages,
-                            "options": {"num_predict": 220, "temperature": 0.5},
-                        },
-                    )
-                    if chat_resp.status_code == 200:
-                        msg_obj = chat_resp.json().get("message") or {}
-                        content = str(msg_obj.get("content") or "").strip()
-                        if content:
-                            reply_text = content
+                candidates: list[str] = []
+                for m in preferred_order + installed:
+                    if m in installed and m not in candidates and "smollm2" not in m:
+                        candidates.append(m)
+                for chosen_model in candidates[:3]:
+                    try:
+                        chat_resp = client.post(
+                            f"{ollama_base}/api/chat",
+                            json={
+                                "model": chosen_model,
+                                "stream": False,
+                                "think": False,
+                                "messages": messages,
+                                "options": {"num_predict": 260, "temperature": 0.5},
+                            },
+                        )
+                        if chat_resp.status_code == 200:
+                            msg_obj = chat_resp.json().get("message") or {}
+                            content = str(msg_obj.get("content") or "").strip()
+                            if "<think>" in content:
+                                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                            if content:
+                                reply_text = content
+                                break
+                    except Exception:
+                        continue
     except Exception:
         pass
 
@@ -17012,8 +17032,64 @@ async def api_update_capability_permissions(payload: dict = Body(...)):
 _VOICE_IO_SINGLETON = None
 
 
+def _ensure_audio_tools_path() -> None:
+    cur_path = os.environ.get("PATH", "")
+    for extra in ("/opt/homebrew/bin", "/usr/local/bin"):
+        if extra not in cur_path and os.path.isdir(extra):
+            cur_path = f"{extra}{os.pathsep}{cur_path}" if cur_path else extra
+    os.environ["PATH"] = cur_path
+
+
+def _synthesize_os_native_wav(text: str, language: str = "de") -> tuple[bytes, str] | None:
+    """Synthesize speech to WAV using OS-native engines (macOS /usr/bin/say or Windows SAPI)."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    clean_text = re.sub(r"<talk_control[^>]*/>", "", text or "").strip()
+    if not clean_text:
+        clean_text = text.strip()
+    if not clean_text:
+        return None
+
+    if sys.platform == "darwin":
+        say_bin = shutil.which("say") or ("/usr/bin/say" if os.path.isfile("/usr/bin/say") else None)
+        if say_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                cmd = [say_bin, "-o", str(out_wav), "--data-format=LEI16@22050", clean_text]
+                try:
+                    subprocess.run(cmd, check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "macos-say"
+                except Exception:
+                    pass
+    elif sys.platform == "win32":
+        ps_bin = shutil.which("powershell") or shutil.which("pwsh")
+        if ps_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                escaped_text = clean_text.replace("'", "''")
+                escaped_path = str(out_wav).replace("'", "''")
+                ps_script = (
+                    "Add-Type -AssemblyName System.Speech; "
+                    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                    f"$s.SetOutputToWaveFile('{escaped_path}'); "
+                    f"$s.Speak('{escaped_text}'); "
+                    "$s.Dispose();"
+                )
+                try:
+                    subprocess.run([ps_bin, "-NoProfile", "-Command", ps_script], check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "windows-sapi"
+                except Exception:
+                    pass
+    return None
+
+
 def _get_voice_io_service():
     global _VOICE_IO_SINGLETON
+    _ensure_audio_tools_path()
     if _VOICE_IO_SINGLETON is None:
         from hub._services.ocean_stack_bridge import load_voice_io_module
 
@@ -17033,13 +17109,23 @@ def _get_voice_io_service():
 @app.get("/api/voice/status")
 async def api_voice_status():
     """Return status of `ellmos-voice-io` STT/TTS engines (#3763)."""
+    import shutil
+
     perms = _load_capability_permissions()
     svc = _get_voice_io_service()
+    st_dict = svc.status().as_dict()
+    if not st_dict.get("tts_available"):
+        if sys.platform == "darwin" and (shutil.which("say") or os.path.isfile("/usr/bin/say")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "macos-say"
+        elif sys.platform == "win32" and (shutil.which("powershell") or shutil.which("pwsh")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "windows-sapi"
     return {
         "schema": "ellmos.voice-io.status.v1",
         "stt_permission": perms.get("speech_to_text", True),
         "tts_permission": perms.get("voice_tts", True),
-        "status": svc.status().as_dict(),
+        "status": st_dict,
     }
 
 
@@ -17047,12 +17133,18 @@ async def api_voice_status():
 async def api_voice_stt(payload: dict = Body(...)):
     """Universal chat input transcription endpoint backed by `ellmos-voice-io` (#3763)."""
     import base64
+    import shutil
+    import subprocess
+    import tempfile
 
+    _ensure_audio_tools_path()
     perms = _load_capability_permissions()
     if not perms.get("speech_to_text", True):
         raise HTTPException(status_code=403, detail="Spracheingabe (STT) ist in den Berechtigungen deaktiviert")
     audio_b64 = str(payload.get("audio_b64") or "").strip()
     suffix = str(payload.get("suffix") or ".wav").strip()
+    if not suffix.startswith("."):
+        suffix = f".{suffix}"
     language = str(payload.get("language") or "de").strip()
     if not audio_b64:
         raise HTTPException(status_code=400, detail="audio_b64 fehlt")
@@ -17060,6 +17152,26 @@ async def api_voice_stt(payload: dict = Body(...)):
         raw_bytes = base64.b64decode(audio_b64)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
+
+    # Convert browser MediaRecorder container (.webm/.ogg/.mp4) to 16kHz mono PCM .wav if ffmpeg is available
+    if suffix.lower() in {".webm", ".ogg", ".mp4", ".m4a"} and shutil.which("ffmpeg"):
+        try:
+            with tempfile.TemporaryDirectory(prefix="ellmos_stt_") as tmp_dir:
+                in_file = Path(tmp_dir) / f"in{suffix}"
+                out_file = Path(tmp_dir) / "out.wav"
+                in_file.write_bytes(raw_bytes)
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(in_file), "-ar", "16000", "-ac", "1", str(out_file)],
+                    check=True,
+                    timeout=12,
+                    capture_output=True,
+                )
+                if out_file.is_file() and out_file.stat().st_size > 44:
+                    raw_bytes = out_file.read_bytes()
+                    suffix = ".wav"
+        except Exception:
+            pass
+
     svc = _get_voice_io_service()
     try:
         text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
@@ -17072,7 +17184,7 @@ async def api_voice_stt(payload: dict = Body(...)):
         }
     return {
         "schema": "ellmos.voice-io.stt.v1",
-        "text": text,
+        "text": str(text or "").strip(),
         "backend": svc.status().stt_engine,
         "language": language,
     }
@@ -17080,7 +17192,7 @@ async def api_voice_stt(payload: dict = Body(...)):
 
 @app.post("/api/voice/tts")
 async def api_voice_tts(payload: dict = Body(...)):
-    """Universal speech synthesis endpoint backed by `ellmos-voice-io` (#3763)."""
+    """Universal speech synthesis endpoint backed by `ellmos-voice-io` + OS-native fallback (#3763)."""
     import base64
     from hub._services.ocean_stack_bridge import load_voice_io_module
 
@@ -17093,13 +17205,19 @@ async def api_voice_tts(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="text fehlt")
     voice_mod = load_voice_io_module()
     svc = voice_mod.VoiceIO()
+    backend_used = "ellmos-voice-io"
     try:
         wav_bytes = svc.synthesize_bytes(text)
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
+        native_res = _synthesize_os_native_wav(text, language=language)
+        if native_res is not None:
+            wav_bytes, backend_used = native_res
+        else:
+            raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
     return {
         "schema": "ellmos.voice-io.tts.v1",
         "language": language,
+        "backend": backend_used,
         "audio_b64": base64.b64encode(wav_bytes).decode("ascii"),
         "mime_type": "audio/wav",
     }
@@ -17226,7 +17344,13 @@ async def api_talk_reflex(payload: dict = Body(...)):
     from dataclasses import asdict
 
     engine = _get_talk_session()
-    user_utterance = str(payload.get("user_utterance") or "").strip()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
     persona = str(payload.get("persona") or "").strip().lower() or None
     language = str(payload.get("language") or "").strip().lower() or None
     if hasattr(engine, "preview_reflex"):
@@ -17258,7 +17382,13 @@ async def api_talk_turn(payload: dict = Body(...)):
     from dataclasses import asdict
 
     engine = _get_talk_session()
-    user_utterance = str(payload.get("user_utterance") or "").strip()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
     model_response = payload.get("model_response")
     persona = str(payload.get("persona") or "").strip().lower()
     language = str(payload.get("language") or "").strip().lower()
