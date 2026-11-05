@@ -43,5 +43,5 @@ class WorkerPolicyHandler(BaseHandler):
             else:
                 return False, "Erwartet: status | task_show ID | set JSON | task_set ID JSON"
             return True, json.dumps(result, ensure_ascii=False, sort_keys=True)
-        except (service.PolicyUnavailable, service.PolicyConflict, ValueError, TypeError, KeyError) as exc:
+        except (service.PolicyUnavailable, service.PolicyConflict, PermissionError, ValueError, TypeError, KeyError) as exc:
             return False, str(exc)

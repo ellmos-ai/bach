@@ -137,6 +137,9 @@ def verify_selfcontained_module(source_path: Union[str, Path]) -> Tuple[bool, Li
         if not isinstance(manifest_data, dict):
             return False, ["Manifest-Inhalt ist kein JSON-Objekt"], warnings, metadata
 
+        if manifest_data.get("selfcontained") is False:
+            errors.append("Modul ist ausdrücklich nicht eigenständig und nicht für den Self-contained-Re-Import bereit")
+
         # 2. Name / ID prüfen
         name = manifest_data.get("name") or manifest_data.get("id") or manifest_data.get("display_name")
         if not name or not isinstance(name, str) or not name.strip():
