@@ -16807,6 +16807,28 @@ _TALK_PERSONA_SYSTEM_PROMPTS = {
 }
 
 
+def _strip_talk_control_tags(text: str) -> str:
+    """Remove both well-formed and truncated <talk_control ...> tags from spoken text."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"<talk_control\b[^>]*/>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^>]*>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^\n]*", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _infer_talk_control_tag(spoken: str) -> str:
+    """Synthesize a well-formed <talk_control ... /> directive from spoken content."""
+    lower = spoken.lower()
+    if "?" in spoken:
+        return '<talk_control {"emotion": "curious", "pattern": "rings", "emoji_overlay": "✨"} />'
+    if any(w in lower for w in ("achtung", "warnung", "fehler", "problem", "warning", "error")):
+        return '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "⚠️"} />'
+    if any(w in lower for w in ("super", "klasse", "perfekt", "gerne", "freut", "great", "glad")):
+        return '<talk_control {"emotion": "joyful", "pattern": "orb", "emoji_overlay": "😊"} />'
+    return '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} />'
+
+
 def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str = "de") -> str:
     """Route ELLMOS Talk turns to a live LLM (Ollama fast path or BACH Chat-Control API)."""
     norm_persona = (persona or "buddha").strip().lower()
@@ -16827,13 +16849,16 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
     sys_instruction = (
         f"{role_intro} {lang_hint} "
         "WICHTIG für das Funkgerät: Antworte natürlich, direkt und gesprochen-prägnant in 1 bis maximal 3 kurzen Sätzen "
-        "(ohne Markdown-Tabellen, ohne Codeblöcke, ideal zum direkten Vorlesen per Sprachausgabe). "
-        "Beginne deine Antwort optional mit genau einem Steuer-Tag im Format "
-        '<talk_control {"emotion": "calm|curious|joyful|focused|empathetic|alert", "pattern": "orb|wave|rings|constellation|pulse", "emoji_overlay": "🎙️"} /> '
-        "passend zur Stimmung deiner Antwort."
+        "(reiner Fließtext zum direkten Vorlesen per Sprachausgabe, ohne XML/HTML-Tags, ohne Markdown-Tabellen, ohne Codeblöcke)."
     )
 
-    history = _TALK_HISTORY.setdefault(norm_persona, [])
+    raw_history = _TALK_HISTORY.setdefault(norm_persona, [])
+    history = [
+        {"role": h.get("role", "user"), "content": _strip_talk_control_tags(str(h.get("content") or ""))}
+        for h in raw_history
+        if _strip_talk_control_tags(str(h.get("content") or ""))
+    ]
+    _TALK_HISTORY[norm_persona] = history
     messages = [{"role": "system", "content": sys_instruction}]
     messages.extend(history[-6:])
     messages.append({"role": "user", "content": prompt})
@@ -16875,14 +16900,15 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                         candidates.append(m)
                 for chosen_model in candidates[:3]:
                     try:
+                        think_param: bool | str = "low" if "gpt-oss" in chosen_model.lower() else False
                         chat_resp = client.post(
                             f"{ollama_base}/api/chat",
                             json={
                                 "model": chosen_model,
                                 "stream": False,
-                                "think": False,
+                                "think": think_param,
                                 "messages": messages,
-                                "options": {"num_predict": 260, "temperature": 0.5},
+                                "options": {"num_predict": 800, "temperature": 0.5},
                             },
                         )
                         if chat_resp.status_code == 200:
@@ -16890,7 +16916,8 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                             content = str(msg_obj.get("content") or "").strip()
                             if "<think>" in content:
                                 content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-                            if content:
+                            content = _strip_talk_control_tags(content)
+                            if len(content) >= 2:
                                 reply_text = content
                                 break
                     except Exception:
@@ -16917,23 +16944,19 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                     )
                     if ctrl_resp.status_code == 200:
                         payload = ctrl_resp.json()
-                        ans = str(payload.get("answer") or payload.get("response") or "").strip()
-                        if ans:
+                        ans = _strip_talk_control_tags(str(payload.get("answer") or payload.get("response") or ""))
+                        if len(ans) >= 2:
                             reply_text = ans
             except Exception:
                 pass
 
     if reply_text:
-        if "<talk_control" not in reply_text:
-            reply_text = (
-                '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} /> '
-                + reply_text
-            )
         history.append({"role": "user", "content": prompt})
         history.append({"role": "assistant", "content": reply_text})
         if len(history) > 12:
             del history[:-12]
-        return reply_text
+        ctrl_tag = _infer_talk_control_tag(reply_text)
+        return f"{ctrl_tag} {reply_text}"
 
     if norm_lang == "en":
         return (
@@ -17353,6 +17376,11 @@ async def api_talk_reflex(payload: dict = Body(...)):
     ).strip()
     persona = str(payload.get("persona") or "").strip().lower() or None
     language = str(payload.get("language") or "").strip().lower() or None
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        engine.update_visual_state({"mode": "listening"})
     if hasattr(engine, "preview_reflex"):
         return engine.preview_reflex(user_utterance, persona=persona, language=language)
     decision = engine.reflex.evaluate_utterance(
@@ -17392,7 +17420,12 @@ async def api_talk_turn(payload: dict = Body(...)):
     model_response = payload.get("model_response")
     persona = str(payload.get("persona") or "").strip().lower()
     language = str(payload.get("language") or "").strip().lower()
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
     directive: dict = {}
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        directive["mode"] = "listening"
     if persona in {"buddha", "gemini", "claude", "codex"}:
         directive["persona"] = persona
     if language in {"de", "en", "es", "fr", "zh", "ja", "ru", "ar", "pt", "hi", "it"}:
@@ -17407,9 +17440,11 @@ async def api_talk_turn(payload: dict = Body(...)):
     reflex_dict.setdefault("ack_text", res.reflex.backchannel_text or ("Verstanden." if engine.state.language != "en" else "Got it."))
     reflex_dict.setdefault("latency_target_ms", res.reflex.latency_budget_ms)
     reflex_dict.setdefault("fast_model", getattr(engine.reflex, "model_name", "smollm2:360m"))
+    clean_spoken = _strip_talk_control_tags(res.spoken_text)
+    clean_sentences = [s for s in (_strip_talk_control_tags(c) for c in (res.sentence_chunks or [])) if s]
     return {
-        "spoken_text": res.spoken_text,
-        "sentences": res.sentence_chunks,
+        "spoken_text": clean_spoken,
+        "sentences": clean_sentences,
         "reflex": reflex_dict,
         "visual_state": res.visual_state,
         "applied_directives": res.applied_directives,
