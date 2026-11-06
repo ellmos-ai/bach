@@ -16,7 +16,7 @@ EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme
                "GET /api/setup/ocean-map", "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates",
                "GET /api/system/external-artifacts", "GET /api/task-capabilities", "GET /api/routines",
                "GET /api/permissions", "GET /api/talk/state")
-EXACT_WRITES = ("PUT /api/settings/ui", "POST /api/permissions", "POST /api/chat/send")
+EXACT_WRITES = ("PUT /api/settings/ui", "POST /api/permissions")
 # Reads of src/layouts/BachLayout.astro -> src/components/Header.astro:242,280 and src/lib/domain-pins.mjs:46 (domain menu): every
 # page makes them. Only the pages checked so far list them; completeness for all pages is a task of the GUI manifest (#2087).
 LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins", "/api/talk/config"]
