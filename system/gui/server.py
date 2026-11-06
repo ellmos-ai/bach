@@ -1774,7 +1774,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                          or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
                 response = await call_next(request)
                 if (request.method == "GET"
-                        and (path in self.PUBLIC_PAGE_PATHS or path in ("/device-fetch.js", "/static/js/device-fetch.js"))
+                        # Nur echte Browser-Navigationen mint eine Sitzung; Unterressourcen (device-fetch.js)
+                        # und cookielose Nicht-Browser-Clients (Probes, curl) hinterliessen sonst je Aufruf eine Zeile.
+                        and path in self.PUBLIC_PAGE_PATHS
+                        and request.headers.get("sec-fetch-dest") == "document"
                         and _hostname(request.headers.get("host", "")) in LOOPBACK_HOSTS
                         and request.cookies.get("bach_manual_logout") != "1"):
                     existing_cookie = request.cookies.get("bach_device_token", "").strip()
@@ -2525,7 +2528,7 @@ async def api_get_tasks(
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
         if status and status.lower() == "nonterminal":
-            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate', 'archived')"
         elif status and status.lower() != "all":
             requested = [s.strip().lower() for s in status.split(",") if s.strip()]
             normalized = set()
