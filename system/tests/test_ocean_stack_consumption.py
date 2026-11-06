@@ -196,15 +196,20 @@ def test_bach_consumes_configurable_review_worktree_and_escalation(tmp_path: Pat
     assert tres["found"] is False
 
     status = ocean_stack_status()
-    assert status["capability_extensions_bound_count"] == 5
-    for ext_name in (
-        "ellmos-voice-io",
-        "ellmos-talk",
-        "ellmos-sensation",
-        "ellmos-homecontrol",
-        "ellmos-robotics",
-    ):
-        assert status["capability_extensions"][ext_name]["bound"] is True
+    expected_extensions = {
+        "ellmos-voice-io": "ellmos_voice_io.service",
+        "ellmos-talk": "ellmos_talk.engine",
+        "ellmos-sensation": "ellmos_sensation.sensor_hub",
+        "ellmos-homecontrol": "ellmos_homecontrol.hub",
+        "ellmos-robotics": "ellmos_robotics.mcp_standard",
+        "ellmos-universal-gui": "ellmos_universal_gui.app",
+    }
+    extensions = status["capability_extensions"]
+    assert set(extensions) == set(expected_extensions)
+    assert status["capability_extensions_bound_count"] == len(expected_extensions)
+    for ext_name, module in expected_extensions.items():
+        assert extensions[ext_name]["bound"] is True
+        assert extensions[ext_name]["module"] == module
 
     from hub._services.ocean_stack_bridge import check_capability_permission
     from hub._services.voice.voice_stt import VoiceSTT, VoiceTTS
