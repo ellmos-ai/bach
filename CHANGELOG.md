@@ -6,6 +6,13 @@
 - **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach`):** BACH-interne Alt-Implementierungen (`OceanRamDistributor` in `ocean_resources_adapter.py`, `BundledTaskPlanClient` in `taskplan_bridge.py`) sind mit `@deprecated_legacy_bach("<canonical-ocean-module>")` dekoriert (`__bach_deprecated__ = True`, `DeprecationWarning`) und in `DEPRICATED.md` dokumentiert.
 - **Vertragstests (`system/tests/test_ocean_stack_consumption.py`):** 8/8 Tests prüfen alle 10 produktiven Ocean-Seams, Lease-Lifecycle, RAM-Admission, konfigurierbare Review-Regeln, Eskalationsleiter und Deprecation-Signale.
 
+## Unreleased — Sicherheit Homecontrol/Robotik (PB-13, #3996)
+
+- `/api/homecontrol/*` und `/api/robotics/*` folgen der Rechtematrix (`smarthome_robotics`, Standard aus): ohne Grant HTTP 403 statt fest verdrahtetem `True`.
+- `POST /api/robotics/estop` setzt einen persistenten E-Stop (`~/.bach/robotics_estop.json`, überlebt Requests und Neustarts; kein Grant nötig). Solange er aktiv ist, lehnt die Robotik jede Aktorik/Navigation ab. Freigabe nur über das neue `POST /api/robotics/estop/reset` (Geräteanmeldung + Grant). Voraussetzung: `ellmos-robotics` mit `state_path` (PB-13-PR).
+- Antworten mit Demo-Daten tragen `demo: true` (Nutzerentscheidung E3).
+- `HomeAssistantConnector` (BACH-Kopie): `domain`/`service`/`entity_id`/`event_type` per Allowlist validiert, gefährliche Domains (`shell_command`, `hassio`, `rest_command`, ...) gesperrt – kein Pfad-Traversal/SSRF über die HA-REST-URL.
+
 ## Unreleased — Task-Leases: Ersteller-Vorrang konfigurierbar
 
 - Neue Einstellung `task_lease_creator_priority.v1` (Schema `bach.task-lease-creator-priority.v1`) steuert einen befristeten Ersteller-Vorrang auf Task-Leases. Der Vorrang ist standardmäßig **aus**; ist er aktiv, gilt ein Fenster von 120 Sekunden (`DEFAULT_WINDOW_SECONDS`, Obergrenze 86400).

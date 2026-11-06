@@ -16827,6 +16827,8 @@ async def get_workflow_content(path: str):
 _CAPABILITY_PERMISSIONS_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "capability_permissions.json"
 _CAPABILITY_PERMISSIONS_LOCK = threading.RLock()
 _TALK_SESSION_SINGLETON = None
+# Persisted E-Stop of the robotics hub: every request builds a fresh hub, so the stop must live on disk.
+_ROBOTICS_ESTOP_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "robotics_estop.json"
 
 
 def _load_capability_permissions() -> dict[str, bool]:
@@ -17595,15 +17597,31 @@ async def api_sensation_open_compute_gate(payload: dict = Body(...)):
     return gate.evaluate(sp, idle_seconds=float(payload.get("idle_seconds", 0.0)))
 
 
+def _require_smarthome_robotics_grant() -> None:
+    """403 unless the capability matrix grants `smarthome_robotics` (default: denied)."""
+    if not _load_capability_permissions().get("smarthome_robotics", False):
+        raise HTTPException(status_code=403, detail="Berechtigung 'smarthome_robotics' nicht erteilt")
+
+
+def _robotics_hub(*, granted: bool):
+    from hub._services.ocean_stack_bridge import load_robotics_module
+
+    try:
+        return load_robotics_module().RoboticsHub(robotics_permission=granted, state_path=_ROBOTICS_ESTOP_FILE)
+    except TypeError:  # ellmos-robotics without persistent E-Stop: refuse instead of running without it
+        raise HTTPException(status_code=503, detail="ellmos-robotics ohne persistenten E-Stop (Update nötig)") from None
+
+
 @app.get("/api/homecontrol/devices")
 async def api_homecontrol_devices():
     """List SmartHome devices via `ellmos-homecontrol` (#3766)."""
     from hub._services.ocean_stack_bridge import load_homecontrol_module
 
+    _require_smarthome_robotics_grant()
     hc_mod = load_homecontrol_module()
     hub = hc_mod.HomeControlHub(smarthome_permission=True)
     devices = hub.hc_list_devices()
-    return {"total_devices": len(devices), "devices": devices}
+    return {"total_devices": len(devices), "devices": devices, "demo": getattr(hub, "demo", True)}
 
 
 @app.get("/api/homecontrol/energy")
@@ -17611,6 +17629,7 @@ async def api_homecontrol_energy():
     """Return SmartHome power & energy telemetry via `ellmos-homecontrol` (#3766)."""
     from hub._services.ocean_stack_bridge import load_homecontrol_module
 
+    _require_smarthome_robotics_grant()
     hc_mod = load_homecontrol_module()
     hub = hc_mod.HomeControlHub(smarthome_permission=True)
     return hub.hc_energy_status()
@@ -17619,32 +17638,30 @@ async def api_homecontrol_energy():
 @app.get("/api/robotics/capabilities")
 async def api_robotics_capabilities():
     """Return canonical MCP `ellmos.robotics.mcp.v1` robot capabilities (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
-    return hub.robot_capabilities()
+    _require_smarthome_robotics_grant()
+    return _robotics_hub(granted=True).robot_capabilities()
 
 
 @app.get("/api/robotics/telemetry")
 async def api_robotics_telemetry():
     """Return robot pose, battery, and safety envelope telemetry (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
-    return hub.robot_telemetry()
+    _require_smarthome_robotics_grant()
+    return _robotics_hub(granted=True).robot_telemetry()
 
 
 @app.post("/api/robotics/estop")
 async def api_robotics_estop(payload: dict = Body(default={})):
     """Trigger immediate fail-closed E-Stop across the robotics hub (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
+    # Stopping never needs a grant (fail-closed); the stop is persisted and blocks all actuation.
     reason = str(payload.get("reason") or "operator_e_stop")
-    return hub.robot_stop_emergency(reason)
+    return _robotics_hub(granted=False).robot_stop_emergency(reason)
+
+
+@app.post("/api/robotics/estop/reset")
+async def api_robotics_estop_reset():
+    """Release the persisted E-Stop. Needs the `smarthome_robotics` grant (#3996)."""
+    _require_smarthome_robotics_grant()
+    return _robotics_hub(granted=True).reset_emergency_stop()
 
 
 @app.get("/talk", response_class=HTMLResponse, tags=["shared-gui"])
