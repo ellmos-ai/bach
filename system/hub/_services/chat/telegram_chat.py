@@ -315,6 +315,8 @@ class _WorkerControl:
     deferred_task_versions: dict[int, str] = field(default_factory=dict)
     return_note: str = ""
     scope_preparation_deferrals: ScopePreparationDeferrals = field(default_factory=ScopePreparationDeferrals)
+    host_precondition_failures: int = 0
+    worker_resolver_closed: bool = False
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
@@ -1093,6 +1095,22 @@ def _native_task_client():
     return client
 
 
+def _ensure_worker_resolver(worker_id, error_code):
+    try:
+        _native_task_client().ensure_worker_resolver(worker_id, error_code)
+    except Exception as exc:  # noqa: BLE001 -- never delays the worker
+        log.warning("resolver_task_unconfirmed origin=worker:%s reason=%s",
+                    worker_id, type(exc).__name__)
+
+
+def _close_worker_resolver(worker_id):
+    try:
+        _native_task_client().close_worker_resolver(worker_id)
+    except Exception as exc:  # noqa: BLE001 -- never delays the worker
+        log.warning("resolver_close_unconfirmed origin=worker:%s reason=%s",
+                    worker_id, type(exc).__name__)
+
+
 def _execution_worker_slot(worker_id: str) -> dict:
     if worker_id == "buddha_always_on":
         return get_always_on_execution_slot()
@@ -1388,6 +1406,30 @@ _TASK_SCOPE_DIAGNOSTICS = frozenset({
 })
 
 
+# Write-guard literals that fail for every task on this host, not for one task
+# (PB-1, #3985: a dehydrated twin pointer made all 159 queued tasks "unavailable").
+_HOST_PRECONDITION_CODES = {
+    "Twin-Sperrstatus ist unbekannt": "twin_status_unknown",
+    "Kanonischer BACH-Twin wurde nicht bestätigt": "canonical_twin_unconfirmed",
+    "Kanonischer Sperrscanner ist nicht konfiguriert": "lock_scanner_unavailable",
+    "Kanonischer Sperrscanner ist nicht verfügbar": "lock_scanner_unavailable",
+    "Sperrscan fehlt oder ist nicht lesbar": "lock_scan_failed",
+    "Sperrscan ist fehlgeschlagen": "lock_scan_failed",
+    "Sperrscan ist unvollständig": "lock_scan_incomplete",
+    "Sperrscan ist unvollständig oder ein Hook-Guard blockiert": "lock_scan_incomplete",
+    "Fremde oder unbekannte Projektsperre blockiert": "project_lock",
+}
+_HOST_PRECONDITION_ESCALATE_AFTER = 4  # ~15 min of backoff, then one resolver task
+
+
+class TaskScopeUnavailable(RuntimeError):
+    """Scope preparation failed; ``host_code`` names a fixed host-wide cause."""
+
+    def __init__(self, host_code=None):
+        super().__init__("Task-Arbeitsbaum vor Modellstart nicht bestätigt")
+        self.host_code = host_code
+
+
 def _task_scope_failure_reason(exc):
     """Expose only reviewed literals; an exception class is not a text boundary."""
     if type(exc) is RuntimeError and len(exc.args) == 1:
@@ -1395,6 +1437,23 @@ def _task_scope_failure_reason(exc):
         if type(reason) is str and reason in _TASK_SCOPE_DIAGNOSTICS:
             return reason
     return type(exc).__name__
+
+
+def _host_precondition_code(exc):
+    from hub._services.chat.worker_write_guard import WorkerWriteGuardError
+    if isinstance(exc, WorkerWriteGuardError) and len(exc.args) == 1 and type(exc.args[0]) is str:
+        return _HOST_PRECONDITION_CODES.get(exc.args[0])
+    return None
+
+
+def _host_precondition_delay(failures):
+    """60 s, doubled per consecutive host failure, at most 15 min."""
+    return min(900, 60 * 2 ** (max(1, failures) - 1))
+
+
+def _wait_host_precondition(control, failures) -> bool:
+    """Lease-free wait before the next acquisition is the probe; False on stop."""
+    return not control.stop_event.wait(_host_precondition_delay(failures))
 
 
 def _prepare_bound_task_scope(binding, slot):
@@ -1459,9 +1518,10 @@ def _prepare_bound_task_scope(binding, slot):
             raise RuntimeError("scope_unavailable")
     except Exception as exc:
         # Fixed-text RuntimeErrors name the failed check; other types may carry paths.
-        reason = _task_scope_failure_reason(exc)
+        host_code = _host_precondition_code(exc)
+        reason = f"host_precondition:{host_code}" if host_code else _task_scope_failure_reason(exc)
         logger.warning("Task #%s: Arbeitsbaum nicht bestätigt (%s)", binding.task_id, reason)
-        raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestätigt") from None
+        raise TaskScopeUnavailable(host_code) from None
 
 
 _PRIOR_EFFECT_LIMIT = 20
@@ -2105,6 +2165,40 @@ def _secure_context_wip(control, worker_session, reason):
     return result
 
 
+def _secure_worktree_wip(control, reason):
+    """PB-14 (#3999): commit uncommitted task-tree work locally before a return.
+
+    Only for workers with a write grant; never pushes and never blocks the
+    return. A failed attempt is noted in the task instead of leaving a silent
+    dirty tree that someone has to re-certify later.
+    """
+    binding = getattr(control, "task_binding", None)
+    if binding is None or binding.closed:
+        return None
+    try:
+        from hub import worker_git
+        from hub._services.chat.worker_write_guard import is_write_tool
+        slot = _execution_worker_slot(control.worker_id) or {}
+        if not any(is_write_tool(tool) for tool in (slot.get("allowed_tools") or [])):
+            return None
+        target = worker_git.get_worktrees_dir() / f"task-{binding.task_id}"
+        if not target.is_dir() or not worker_git.changed_worktree_files(target):
+            return None
+        result = worker_git.finish_task(
+            binding.task_id, f"wip(task-{binding.task_id}): {reason}", is_wip=True, run_tests=False,
+            worker_task_binding=binding, push=False)
+    except Exception as exc:  # noqa: BLE001 -- the return must still happen
+        result = {"success": False, "error": type(exc).__name__}
+    if not (isinstance(result, dict) and result.get("success") is True):
+        error = str((result or {}).get("error") or "unbekannt")[:200]
+        log.warning("worktree_wip_unconfirmed task_id=%s", binding.task_id)
+        try:
+            binding.record_worktree_result(binding.task_id, f"[WIP nicht gesichert] {reason}: {error}")
+        except Exception:  # noqa: BLE001
+            log.warning("worktree_wip_note_unconfirmed task_id=%s", binding.task_id)
+    return result
+
+
 def _worker_return_note(detail, reason_code):
     """Fixed-vocabulary return reason; provider text never reaches task history."""
     if reason_code:
@@ -2224,7 +2318,7 @@ def _worker_no_credit(error):
 
 def _worker_backend_retry_delay(
     slot, detail, *, model, retries, waited_seconds, reason_code=None,
-    pre_effect_verified=False,
+    pre_effect_verified=False, transient_failure=None,
 ):
     """Cloud retry waits are lease-free; local retries keep their hard budget."""
     if type(retries) is not int or retries < 0:
@@ -2239,6 +2333,11 @@ def _worker_backend_retry_delay(
              or (slot.get("backend") == "ollama"
                  and isinstance(model, str) and model.lower().endswith(":cloud")))
     )
+    if (transient_failure == "httpx_connect_error" and reason_code is None and cloud
+            and slot.get("type") in {"continuous", "persistent"}):
+        # Typed pre-request connection failure (#3777): no answer or tool call
+        # escaped, so wait like a rate limit instead of stopping after three.
+        return min(900, _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** min(retries, 4)))
     if (reason_code in {None, "cloud_call_retry_exhausted"} and cloud
             and slot.get("type") in {"continuous", "persistent"} and _worker_no_credit(error)):
         # No credit: return the lease and check once a day; a restart checks at once.
@@ -2275,9 +2374,14 @@ def _worker_backend_retry_delay(
                                and slot.get("max_model_requests") is None))):
         # Respect provider Retry-After, with bounded exponential request frequency.
         # A configured worker's stop/TTL, not three retries, ends this wait loop.
+        # The #2994 cooldown helper bounds the header (a valid one reaches 68 years).
+        from hub._services.worker_rate_limit_cooldown import parse_retry_after_seconds
+        retry_after = error.get("retry_after_seconds")
+        if retry_after is not None:
+            retry_after = int(parse_retry_after_seconds({"Retry-After": str(retry_after)})[0])
         return max(
             min(900, _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** min(retries, 4))),
-            error.get("retry_after_seconds", 0),
+            retry_after or 0,
         )
     if retries >= _WORKER_BACKEND_RETRY_LIMIT:
         return None
@@ -6124,6 +6228,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 if control.lease_supervisor is None:
                     control.lease_supervisor = WorkerLeaseSupervisor(control.task_binding)
                     control.lease_supervisor.__enter__()
+                    # PB-14: every later return of this lease first commits the task tree locally.
+                    control.task_binding.before_return = (
+                        lambda note, ctrl=control: _secure_worktree_wip(ctrl, note or "worker_ended"))
 
                 if control.stop_event.is_set():
                     break
@@ -6158,19 +6265,25 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         raise control.lease_supervisor.failure
                     try:
                         _prepare_bound_task_scope(control.task_binding, current_slot)
-                    except RuntimeError:
+                    except RuntimeError as scope_error:
                         if current_slot.get("type") not in {"continuous", "persistent"}:
                             raise
                         # A background worker returns this task (e.g. an orphaned
                         # bach-task branch) and stays available for the next one.
                         # Same order as the final cleanup: settle renews first.
+                        host_code = getattr(scope_error, "host_code", None)
+                        return_note = (f"host_precondition:{host_code}" if host_code
+                                       else "task_scope_unavailable")
                         returned = control.task_binding.task_snapshot()
                         control.lease_supervisor.close()
                         control.lease_supervisor = None
-                        if not control.task_binding.return_lease(note="task_scope_unavailable"):
+                        # No model ran on this lease: an old dirty tree is not this run's work,
+                        # and a WIP attempt per loop cycle would only flood the task history.
+                        control.task_binding.before_return = None
+                        if not control.task_binding.return_lease(note=return_note):
                             raise
                         finish_assignment(current_assignment, status="released",
-                                          result="task_returned", reason="task_scope_unavailable")
+                                          result="task_returned", reason=return_note)
                         assignment_open = False
                         scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
                         if (not isinstance(scope_deferrals, ScopePreparationDeferrals)
@@ -6178,10 +6291,30 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                     returned["task_version"], tool_dispatch_count=getattr(
                                         control.task_binding, "tool_dispatch_count", None))):
                             control.deferred_task_versions[control.task_binding.task_id] = returned["task_version"]
-                        _record_worker_activity(control,
-                            f"Task #{control.task_binding.task_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
-                            "pending")
+                        returned_id = control.task_binding.task_id
                         control.task_binding = None
+                        if host_code:
+                            # The host, not the task, is broken: do not take the next
+                            # task at once (PB-1: ~557 returns/h). The next acquisition
+                            # after the lease-free wait is the probe.
+                            control.host_precondition_failures += 1
+                            failures = control.host_precondition_failures
+                            delay = _host_precondition_delay(failures)
+                            _record_worker_activity(control,
+                                f"Task #{returned_id} zurückgegeben: Host-Voraussetzung fehlt ({host_code})",
+                                "pending")
+                            if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                    "current_activity": f"Host-Voraussetzung fehlt ({host_code}); "
+                                                        f"Versuch {failures}, nächster in {delay} s"}) is None:
+                                break
+                            if failures == _HOST_PRECONDITION_ESCALATE_AFTER:
+                                _ensure_worker_resolver(worker_id, host_code)
+                            if not _wait_host_precondition(control, failures):
+                                break
+                            continue
+                        _record_worker_activity(control,
+                            f"Task #{returned_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
+                            "pending")
                         if _update_worker_slot(control, {"status": "running", "task_id": None,
                                 "current_activity": "Task-Arbeitsbaum nicht bereit; suche nächste passende Aufgabe"}) is None:
                             break
@@ -6189,7 +6322,12 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             break
                         continue
                     control.scope_preparation_deferrals.resolved(control.task_binding.task_id)
+                    control.host_precondition_failures = 0
                     newly_acquired_binding = None
+                if not control.worker_resolver_closed:
+                    # The worker works again: its "wieder in Gang bringen" task is done.
+                    control.worker_resolver_closed = True
+                    _close_worker_resolver(worker_id)
                 loop = asyncio.new_event_loop()
                 ans = ""
                 worker_session = None
@@ -6285,6 +6423,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         current_slot, detail, model=model, retries=backend_retries,
                         waited_seconds=backend_waited_seconds, reason_code=failure_reason,
                         pre_effect_verified=pre_effect_retry_binding is not None,
+                        transient_failure=getattr(ans, "transient_failure", None),
                     )
                     persistent_retry_binding = None
                     if (failure_reason == "local_reserve_reserve_wait_expired"
@@ -6335,8 +6474,10 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                                       if detail and detail.get("provider") == "openrouter"
                                                       and detail.get("status_code") == 504
                                                       else "temporary_connection_error"
-                                                      if detail and detail.get("provider") == "openrouter"
-                                                      and detail.get("kind") == "connection_error"
+                                                      if (detail and detail.get("provider") == "openrouter"
+                                                          and detail.get("kind") == "connection_error")
+                                                      or getattr(ans, "transient_failure", None)
+                                                      == "httpx_connect_error"
                                                       else "temporary_no_endpoint"
                                                       if detail and detail.get("provider") == "openrouter"
                                                       and detail.get("status_code") == 404
@@ -6893,11 +7034,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     log.warning("Modellanfragenlauf konnte nicht terminal bestätigt werden", exc_info=True)
             if control.start_error and not control.stop_event.is_set():
                 # A run that ended in error gets one open resolver task (#2661).
-                try:
-                    _native_task_client().ensure_worker_resolver(worker_id, control.start_error)
-                except Exception as exc:  # noqa: BLE001 -- never delays the terminal state
-                    log.warning("resolver_task_unconfirmed origin=worker:%s reason=%s",
-                                worker_id, type(exc).__name__)
+                _ensure_worker_resolver(worker_id, control.start_error)
             with _WORKER_CONTROL_LOCK:
                 control.handoff.cancel()
                 control.task_actions.cancel()
