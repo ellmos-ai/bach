@@ -17031,6 +17031,8 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
         history.append({"role": "assistant", "content": reply_text})
         if len(history) > 12:
             del history[:-12]
+        from hub._services.chat.talk_history import record_talk_turn
+        record_talk_turn(norm_persona, prompt, reply_text)  # PB-2: Talk-Verlauf erscheint in der Verlaufsliste
         ctrl_tag = _infer_talk_control_tag(reply_text)
         return f"{ctrl_tag} {reply_text}"
 
