@@ -136,6 +136,16 @@ def test_host_precondition_returns_never_block_the_task(binding, mem_db):  # noq
     assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "pending"
 
 
+def test_returns_without_reason_never_block(binding, mem_db):  # noqa: F811
+    """Review R1 (task-master#24): the kernel never blocks an empty reason; BACH relies on that."""
+    pytest.importorskip("taskplan.return_policy")
+    client, tid = binding._client, binding.task_id
+    assert binding.return_lease(note="")
+    for i in range(6):
+        _cycle(client, tid, "", f"g{i}")
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "pending"
+
+
 def test_return_stats_adapter_reports_api_fields(binding, mem_db):  # noqa: F811
     pytest.importorskip("taskplan.return_policy")
     from hub._services.task_return_stats import summarize_task_returns

@@ -71,7 +71,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ellmos-ai/task-master
-          ref: 450920023206cc2e1a2cee0cd93e225126e82cfd
+          # PB-1 (#3985): merge of task-master#24 adds taskplan.return_policy (task-returns.v1)
+          ref: 23ddcb3b66bdbff03342872adf5a096333a4a30c
           path: .ci-sources/worker-policy
           persist-credentials: false
 
