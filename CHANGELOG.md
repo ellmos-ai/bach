@@ -8,7 +8,7 @@
 
 ## Unreleased — Sicherheit Homecontrol/Robotik (PB-13, #3996)
 
-- `/api/homecontrol/*` und `/api/robotics/*` folgen der Rechtematrix (`smarthome_robotics`, Standard aus): ohne Grant HTTP 403 statt fest verdrahtetem `True`.
+- Lese-Routen `/api/homecontrol/*` und `/api/robotics/*` bleiben ohne Grant erreichbar (Antworten tragen `demo`). Schreibende/aktorische Routen folgen der Rechtematrix (`smarthome_robotics`, Standard aus): ohne Grant HTTP 403 mit `{"error": "permission_required", "permission": "smarthome_robotics", "hint": ...}` statt fest verdrahtetem `True`.
 - `POST /api/robotics/estop` setzt einen persistenten E-Stop (`~/.bach/robotics_estop.json`, überlebt Requests und Neustarts; kein Grant nötig). Solange er aktiv ist, lehnt die Robotik jede Aktorik/Navigation ab. Freigabe nur über das neue `POST /api/robotics/estop/reset` (Geräteanmeldung + Grant). Voraussetzung: `ellmos-robotics` mit `state_path` (PB-13-PR).
 - Antworten mit Demo-Daten tragen `demo: true` (Nutzerentscheidung E3).
 - `HomeAssistantConnector` (BACH-Kopie): `domain`/`service`/`entity_id`/`event_type` per Allowlist validiert, gefährliche Domains (`shell_command`, `hassio`, `rest_command`, ...) gesperrt – kein Pfad-Traversal/SSRF über die HA-REST-URL.

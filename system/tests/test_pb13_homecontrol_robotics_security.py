@@ -35,15 +35,17 @@ def _client():
     return TestClient(server.app)
 
 
-@pytest.mark.parametrize("path", READ_ROUTES)
-def test_read_routes_denied_without_grant(env, path):
-    with _client() as c:
-        assert c.get(path).status_code == 403
+PERMISSION_REQUIRED = {
+    "error": "permission_required",
+    "permission": "smarthome_robotics",
+    "hint": "Freigabe unter /api/permissions bzw. Einstellungen → Rechte",
+}
 
 
+@pytest.mark.parametrize("granted", [False, True])
 @pytest.mark.parametrize("path", READ_ROUTES)
-def test_read_routes_work_with_grant_and_are_marked_demo(env, path):
-    env(True)
+def test_read_routes_work_without_grant_and_are_marked_demo(env, path, granted):
+    env(granted)
     with _client() as c:
         r = c.get(path)
     assert r.status_code == 200
@@ -72,10 +74,11 @@ def test_estop_works_without_grant_and_blocks_actuation_until_reset(env):
         assert r.json()["persisted"] is True
         with pytest.raises(robotics.RoboticsSafetyViolationError, match="E-Stop active"):
             actuate()
-        env(True)
-        assert c.get("/api/robotics/telemetry").json()["emergency_stopped"] is True
+        assert c.get("/api/robotics/telemetry").json()["emergency_stopped"] is True  # readable without grant
         env(False)
-        assert c.post("/api/robotics/estop/reset", headers=AUTH).status_code == 403  # reset needs grant
+        denied = c.post("/api/robotics/estop/reset", headers=AUTH)  # reset needs grant
+        assert denied.status_code == 403
+        assert denied.json() == PERMISSION_REQUIRED
         with pytest.raises(robotics.RoboticsSafetyViolationError):
             actuate()
         env(True)
