@@ -1521,11 +1521,19 @@
             }
         }
 
+        let pendingPromptAutorun = false;
+        let draftAgentId = null;
         function loadLibraryDraft() {
             const draft = BachChatDraft.consume();
             if (draft === null) return;
 
             inputEl.value = draft;
+            if (draft && draft.autorun) {
+                pendingPromptAutorun = true;
+            }
+            if (draft && draft.agent_id && !profileAgentId) {
+                draftAgentId = draft.agent_id;
+            }
             autoResize();
             inputEl.focus();
         }
@@ -1569,11 +1577,12 @@
                 addMessage(text, 'user');
                 setTyping(true);
 
+                const effectiveAgent = draftAgentId || profileAgentId;
                 const resp = await fetch(CHAT_API + '/chat', {
                     method: 'POST',
                     headers: controlHeaders('POST', true),
                     body: JSON.stringify({ prompt: text, chat_id: currentChatId,
-                        ...(profileAgentId ? { agent_id: profileAgentId } : {}) })
+                        ...(effectiveAgent ? { agent_id: effectiveAgent } : {}) })
                 });
                 const data = await resp.json();
                 setTyping(false);
@@ -2068,9 +2077,24 @@
         }
         window.loadHistory = loadHistory;
         loadWebSessions().then(() => {
-            loadHistory().then(loadLibraryDraft);
+            loadHistory().then(loadLibraryDraft).then(() => {
+                if (pendingPromptAutorun) {
+                    setTimeout(() => {
+                        if (inputEl.value.trim() && !sending && backendAvailable && !profileSelectionError) {
+                            send();
+                        }
+                    }, 350);
+                }
+            });
         });
         loadLibraryDraft();
+        if (pendingPromptAutorun) {
+            setTimeout(() => {
+                if (inputEl.value.trim() && !sending && backendAvailable && !profileSelectionError) {
+                    send();
+                }
+            }, 450);
+        }
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

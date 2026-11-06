@@ -1008,7 +1008,7 @@ class BACHTray:
             self._reload_modular_status()
             if self.icon:
                 self.icon.menu = self._build_menu()
-                self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/12 aktiv)", "BACH Module")
+                self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", "BACH Module")
         except Exception:
             pass
 
@@ -1645,7 +1645,7 @@ class BACHTray:
 
         # ── 📦 Standalone-Module & Auto-Update Status ──
         mod_items = self._build_modular_status_menu_items()
-        items.append(pystray.MenuItem(f"📦 Standalone-Module ({self.modular_standalone_count}/12 aktiv)", pystray.Menu(*mod_items)))
+        items.append(pystray.MenuItem(f"📦 Standalone-Module ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", pystray.Menu(*mod_items)))
 
         # ── PromptBoard ──
         prompt_items = []
@@ -1655,6 +1655,7 @@ class BACHTray:
         prompt_items.append(pystray.MenuItem("Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
         prompt_items.append(pystray.MenuItem("PromptBoard in BACH importieren", self._import_promptboard_action))
         prompt_items.append(pystray.MenuItem("Prompts nach PromptBoard exportieren", self._export_promptboard_action))
+        prompt_items.append(pystray.MenuItem("🔄 PromptBoard Zwei-Wege-Sync", self._sync_promptboard_action))
         prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
@@ -2085,6 +2086,30 @@ class BACHTray:
         except Exception as e:
             if self.icon:
                 self.icon.notify(f"Export fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _sync_promptboard_action(self, *_):
+        """Bidirectionally synchronizes prompts between PromptBoard library.json and BACH DB."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            _, result = handler.handle("sync-promptboard", [])
+            data = json.loads(result) if isinstance(result, str) else result
+            if self.icon:
+                imported = data.get("imported", 0)
+                exported = data.get("exported", 0)
+                updated_bach = data.get("updated_in_bach", 0)
+                updated_pb = data.get("updated_in_promptboard", 0)
+                total = data.get("total_promptboard", 0)
+                self.icon.notify(
+                    f"PromptBoard Zwei-Wege-Sync: {imported} importiert, {exported} exportiert, "
+                    f"{updated_bach + updated_pb} aktualisiert ({total} gesamt).",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Sync fehlgeschlagen: {e}", "BACH PromptBoard")
 
     def _record_audio_prompt_action(self, *_):
         """Triggers audio prompt recording via ellmos-voice-io or speech interface handoff."""

@@ -351,6 +351,30 @@ def test_chat_tray_favorite_prompts_and_auto_preview():
         assert snapshot["favorite_count"] >= 1
 
 
+def test_prompt_runner_and_persona_binding_in_gui_and_templates():
+    """Verify that Prompt-Runner and Persona-Binding controls are integrated across GUI pages."""
+    pl_src = (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
+    assert "runResolvedInChat()" in pl_src
+    assert "runCurrentInChat()" in pl_src
+    assert 'id="pl-chat-target"' in pl_src
+    assert "/chat?" not in pl_src
+
+    idx_src = (TEMPLATES / "index.html").read_text(encoding="utf-8")
+    assert "runQuickPromptInChat()" in idx_src
+    assert "Direkt ausführen" in idx_src
+
+    chat_src = (TEMPLATES / "chat.html").read_text(encoding="utf-8")
+    assert "pendingPromptAutorun" in chat_src
+    assert "draftAgentId" in chat_src
+    assert "effectiveAgent" in chat_src
+
+    js_src = (STATIC_JS / "prompt-chat-draft.js").read_text(encoding="utf-8")
+    assert "autorun" in js_src
+    assert "agent_id" in js_src
+    assert "slot_id" in js_src
+
+
+
 
 
 
