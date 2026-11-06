@@ -93,18 +93,18 @@ def test_gui_consumer_and_kit_pin_bind_same_029_release():
     assert consumer["schema"] == "ellmos.bach.gui-consumer.v1"
     assert consumer["id"] == "ellmos-system-gui"
     assert consumer["status"] == "pinned_release"
-    assert consumer["version"] == "0.2.33"
+    assert consumer["version"] == "0.2.34"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "399e35cf0dac68a9cc7368e2a883361b7e20eecb",
-        "archive_sha256": "01969eba5b938ae0eb9613730db15fa6f288a5c7bd10a00b2e84db39c2472508",
+        "commit": "86693d9a0dffbc7f1a86767b91fa0eacdca4b681",
+        "archive_sha256": "e80c1d2cf4e4b15fc19fa5f6739220ecedc7ae140a682d01a64fe3472fc9c378",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }
     assert kit["verified"] is True  # Identity metadata only; installed bytes are verified separately.
     assert kit["version"] == consumer["version"]
     assert kit["pinned_source_commit"] == consumer["source"]["commit"]
     assert kit["release_archive_sha256"] == consumer["source"]["archive_sha256"]
-    assert kit["release_archive"] == "ellmos-system-gui-0.2.33-adcb746c568a.zip"
+    assert kit["release_archive"] == "ellmos-system-gui-0.2.34-86693d9a0dff.zip"
     assert kit["dist_manifest_schema"] == "ellmos-system-gui.dist.v1"
     assert kit["expected_page_count"] == 47
     assert "installed" not in kit
