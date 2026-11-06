@@ -1459,8 +1459,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
               require_task_binding: bool = False, agent_operations=None,
               allowed_tools=None) -> str:
     allowed_tools = _review_tool_grants(worker_task_binding, allowed_tools)
+
+    def capability_denial(code, text):
+        # PB-1: the bound run remembers it, so it cannot file a "Rest:" task for it.
+        record = getattr(worker_task_binding, "record_capability_denial", None)
+        if callable(record):
+            record(code)
+        return _tool_policy_denial(code, text)
+
     if allowed_tools is not None and name not in allowed_tools:
-        return _tool_policy_denial("tool_not_authorized", "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben.")
+        return capability_denial("tool_not_authorized", "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben.")
     if require_task_binding and worker_task_binding is None:
         return ToolErrorText("Taskbindung fehlt; Werkzeug nicht ausgeführt.", code="task_binding_required")
     if worker_task_binding is not None:
@@ -1473,9 +1481,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             try:
                 worker_write_guard.require_write_grant(name, allowed_tools)
             except worker_write_guard.WorkerWriteGuardError as exc:
-                return _tool_policy_denial("write_grant_denied", "BLOCKIERT: Schreibfreigabe ist für diesen Worker nicht vorhanden.")
+                return capability_denial("write_grant_denied", "BLOCKIERT: Schreibfreigabe ist für diesen Worker nicht vorhanden.")
         if name not in {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}:
-            return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar.")
+            return capability_denial("mode_not_authorized", "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar.")
         # Shared by the chat loop and the managed CLI bridge. Preserve proof
         # before dispatch, including reads and uncertain tool outcomes.
         mark_dispatch = getattr(worker_task_binding, "mark_tool_dispatch", None)
