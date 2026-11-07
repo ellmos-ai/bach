@@ -2227,8 +2227,35 @@ def _secure_worktree_wip(control, reason):
     return result
 
 
-def _worker_return_note(detail, reason_code, transient_failure=None):
-    """Fixed-vocabulary return reason; provider text never reaches task history."""
+# ponytail: one process-wide record; all workers of a host run in this process (Mac: telegram-bot).
+# Two tasks that both always stall, with no success in between, look like a stalled host;
+# the worker's stop after _WORKER_TASK_FAILURE_LIMIT failures still bounds that case.
+_READ_TIMEOUT_HOST_WINDOW_SECONDS = 2 * 3600
+_last_read_timeout = {}
+_last_read_timeout_lock = threading.Lock()
+
+
+def _host_read_timeout_stall(task_id):
+    """True when another task timed out before this one and no worker run succeeded since."""
+    now = time.monotonic()
+    with _last_read_timeout_lock:
+        previous = dict(_last_read_timeout)
+        _last_read_timeout.update(task_id=task_id, at=now)
+    return (previous.get("task_id") not in (None, task_id)
+            and now - previous["at"] <= _READ_TIMEOUT_HOST_WINDOW_SECONDS)
+
+
+def _note_worker_model_success():
+    """A worker run succeeded: the host serves, the next stall counts for its task."""
+    with _last_read_timeout_lock:
+        _last_read_timeout.clear()
+
+
+def _worker_return_note(detail, reason_code, transient_failure=None, task_id=None):
+    """Fixed-vocabulary return reason; provider text never reaches task history.
+
+    With ``task_id`` a ReadTimeout is recorded for the host-stall signal.
+    """
     if reason_code:
         return f"model_failure:{reason_code}"
     if detail:
@@ -2237,6 +2264,12 @@ def _worker_return_note(detail, reason_code, transient_failure=None):
     if transient_failure == "httpx_connect_error":
         # The provider is unreachable, not the task broken: never counts toward a block (#657 review).
         return "backend_error:transient:httpx_connect_error"
+    if transient_failure == "httpx_read_timeout":
+        # No byte for the whole read timeout (T-20261107-718218941). The host's only during a
+        # host-wide stall; otherwise the task's, so an oversized prompt still blocks (PB-1, #681).
+        if task_id is not None and _host_read_timeout_stall(task_id):
+            return "backend_error:transient:httpx_read_timeout"
+        return "model_failure:httpx_read_timeout"
     return "model_failure:unclassified"
 
 
@@ -6412,7 +6445,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     detail = normalize_backend_error(getattr(ans, "backend_error", None))
                     failure_reason = getattr(ans, "reason_code", None)
                     control.return_note = _worker_return_note(
-                        detail, failure_reason, getattr(ans, "transient_failure", None))
+                        detail, failure_reason, getattr(ans, "transient_failure", None),
+                        task_id=control.task_binding.task_id)
                     if failure_reason == "local_reserve_reserve_wait_expired":
                         error_activity = "Lokale Ressourcenreserve wurde nicht rechtzeitig frei"
                     elif failure_reason == "local_reserve_reserve_wait_lease_return_required":
@@ -6692,6 +6726,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             f"{error_activity} Wiederaufnahme begrenzt beendet; erneut ausdrücklich starten."})
                     return
                 task_failures = 0
+                _note_worker_model_success()
                 resolved = getattr(worker_session, "resolved_model", None)
                 if isinstance(resolved, str) and resolved.strip():
                     _update_worker_slot(control, {"resolved_model": resolved})
