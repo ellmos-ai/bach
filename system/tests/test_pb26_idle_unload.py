@@ -62,7 +62,10 @@ def worker(tmp_path, monkeypatch, ollama):
     from hub._services import task_lease_client as client_module
     from hub._services.task_lease_client import TaskLeaseClient
     from system.tests.test_task_lease_client import _init_db
+    from hub._services.chat import worker_repo_registry
     control = _controller()
+    # The host's real repo registry (present on the Mac) would mark test tasks "repository_unverified".
+    monkeypatch.setattr(worker_repo_registry, "registry_path", lambda: tmp_path / "no-repo-registry.json")
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
