@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
 from datetime import datetime, timezone
 
 SCHEMA = "bach.worker-queue.v1"
@@ -224,3 +225,21 @@ class QueueObservation:
         except Exception:  # noqa: BLE001 -- telemetry must not lose an acquired lease.
             # Observation failure must not lose an already acquired capability.
             log.warning("Worker queue observation could not be published")
+
+
+_WAIT_CODE = re.compile(r"[a-z][a-z0-9_]{0,47}\Z")
+
+
+def project_precondition_wait(raw):
+    """Bounded view of "no new lease until the host precondition holds" (PB-4); None if malformed."""
+    if (not isinstance(raw, dict) or set(raw) != {"state", "code", "attempt", "next_check_at"}
+            or raw["state"] != "waiting_precondition" or type(raw["code"]) is not str
+            or not _WAIT_CODE.fullmatch(raw["code"])
+            or type(raw["attempt"]) is not int or not 1 <= raw["attempt"] <= 1_000_000
+            or type(raw["next_check_at"]) is not str):
+        return None
+    try:
+        when = datetime.fromisoformat(raw["next_check_at"])
+    except ValueError:
+        return None
+    return dict(raw) if when.tzinfo is not None else None
