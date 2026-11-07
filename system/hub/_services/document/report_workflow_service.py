@@ -1849,7 +1849,7 @@ JSON:
             # Fake-Geburtsdatum -> echtes (falls vorhanden)
             if profile.fake_geburtsdatum:
                 # Suche das echte Geburtsdatum in den Datum-Mappings
-                for orig_date, fake_date in profile.mappings.get("dates", {}).items():
+                for orig_date, fake_date in reversed(list(profile.mappings.get("dates", {}).items())):  # Hauptform gewinnt
                     reverse_mappings[fake_date] = orig_date
 
         def deanon_value(value):
@@ -2012,7 +2012,7 @@ JSON:
             reverse_mappings[profile.tarnname] = profile.original_name
             reverse_mappings[profile.tarnname.upper()] = profile.original_name.upper()
             if profile.fake_geburtsdatum:
-                for orig_date, fake_date in profile.mappings.get("dates", {}).items():
+                for orig_date, fake_date in reversed(list(profile.mappings.get("dates", {}).items())):  # Hauptform gewinnt
                     reverse_mappings[fake_date] = orig_date
         return _restore_original_values(text, reverse_mappings)
 

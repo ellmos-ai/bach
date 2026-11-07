@@ -106,6 +106,18 @@ def test_prompt_gate_blocks_remaining_case_data_without_naming_it(tmp_path, monk
     assert "jonas" not in str(exc.value).lower()
 
 
+def test_date_variants_restore_to_the_main_form(tmp_path, monkeypatch):
+    """Tarndatum ohne fuehrende Nullen (13.11.) ist fuer 15.03. und 15.3. gleich: Hauptform gewinnt."""
+    monkeypatch.setattr(rws, "_generate_fake_date_same_age", lambda real: ("13.11.2015", 0))
+    service = rws.ReportWorkflowService(base_path=tmp_path)
+    session = service.start_session()
+    profile = service.create_temp_profile(session, "Max Probe", "15.03.2016")
+
+    assert profile.mappings["dates"]["15.3.2016"] == "13.11.2015"  # Variante wird ersetzt ...
+    assert service._deanonymize_json({"geb": "13.11.2015"}, profile) == {"geb": "15.03.2016"}  # ... Hauptform zurueck
+    assert service._deanonymize_text("am 13. November 2015", profile) == "am 15. März 2016"
+
+
 # --- N1: Tarnorte ------------------------------------------------------------------------------
 
 def test_fake_addresses_use_no_real_places():

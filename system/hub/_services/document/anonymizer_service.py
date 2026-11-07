@@ -2210,6 +2210,8 @@ class DocumentDeanonymizer:
 
         for category, mapping in profile.mappings.items():
             reverse_profile.mappings[category] = {v: k for k, v in mapping.items()}
+            if category == "dates":  # Datumsvarianten mit gleicher Tarnform: Hauptform (erste) gewinnt
+                reverse_profile.mappings[category] = {v: k for k, v in reversed(list(mapping.items()))}
 
         # Anonymizer mit umgekehrten Mappings nutzen
         anon = DocumentAnonymizer()
