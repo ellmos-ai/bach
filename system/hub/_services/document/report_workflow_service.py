@@ -79,7 +79,7 @@ try:
         _generate_fake_phone,
         _generate_fake_email,
         _generate_fake_address,
-        _replace_word_boundary,
+        EMAIL_PATTERN,
         TARN_VORNAMEN,
         TARN_VORNAMEN_M,
         TARN_VORNAMEN_W,
@@ -113,7 +113,7 @@ except ImportError:
         _generate_fake_phone,
         _generate_fake_email,
         _generate_fake_address,
-        _replace_word_boundary,
+        EMAIL_PATTERN,
         TARN_VORNAMEN,
         TARN_VORNAMEN_M,
         TARN_VORNAMEN_W,
@@ -171,6 +171,25 @@ DEFAULT_WHITELIST = [
 # ═══════════════════════════════════════════════════════════════
 # Datenklassen
 # ═══════════════════════════════════════════════════════════════
+
+def _restore_original_values(text: str, mappings: Dict[str, str]) -> str:
+    """Replace only source matches, never reprocess restored original identities."""
+    keys = sorted((key for key in mappings if key), key=lambda key: (-len(key), key))
+    if not keys:
+        return text
+    pattern = re.compile(r"\b(?:" + "|".join(re.escape(key) for key in keys) + r")\b")
+    email_spans = [match.span("email") for match in EMAIL_PATTERN.finditer(text)]
+
+    def replace(match):
+        key = match.group(0)
+        if "@" not in key and any(
+            start <= match.start() and match.end() <= end for start, end in email_spans
+        ):
+            return key
+        return mappings[key]
+
+    return pattern.sub(replace, text)
+
 
 @dataclass
 class TempAnonymProfile:
@@ -1570,13 +1589,14 @@ JSON:
             session.error_message = "JSON-Generierung fehlgeschlagen"
             session.status = "error"
             print("[FEHLER] fill_template Exception")
-            # Fallback zu Markdown - json_data ist bereits de-anonymisiert!
+            # Preserve the caller's identity policy; JSON was already transformed above.
             print("[INFO] Fallback zu Markdown-Generator...")
             return self._generate_from_markdown(
                 session,
                 json.dumps(json_data, ensure_ascii=False, indent=2),
-                False,
-                json_data
+                auto_deanonymize,
+                json_data,
+                content_already_deanonymized=True,
             )
 
     def _deanonymize_json(self, data: Dict, profile: TempAnonymProfile) -> Dict:
@@ -1598,14 +1618,9 @@ JSON:
                 for orig_date, fake_date in profile.mappings.get("dates", {}).items():
                     reverse_mappings[fake_date] = orig_date
 
-        sorted_mappings = sorted(reverse_mappings.items(), key=lambda x: len(x[0]), reverse=True)
-
         def deanon_value(value):
             if isinstance(value, str):
-                result = value
-                for tarn, original in sorted_mappings:
-                    result, _ = _replace_word_boundary(result, tarn, original)
-                return result
+                return _restore_original_values(value, reverse_mappings)
             elif isinstance(value, dict):
                 return {k: deanon_value(v) for k, v in value.items()}
             elif isinstance(value, list):
@@ -1620,9 +1635,11 @@ JSON:
         session: WorkflowSession,
         llm_response: str,
         auto_deanonymize: bool,
-        report_data: Optional[Dict]
+        report_data: Optional[Dict],
+        *,
+        content_already_deanonymized: bool = False,
     ) -> Path:
-        """Fallback: Generiert Bericht aus Markdown-Text."""
+        """Fallback: Generiert Bericht aus Markdown-Text ohne doppelte Rückersetzung."""
         try:
             from docx import Document
         except ImportError:
@@ -1632,14 +1649,19 @@ JSON:
 
         # Text de-anonymisieren
         if auto_deanonymize and session.profile:
-            final_text = self._deanonymize_text(llm_response, session.profile)
+            final_text = (
+                llm_response if content_already_deanonymized else
+                self._deanonymize_text(llm_response, session.profile)
+            )
             original_name = session.profile.original_name
         else:
             final_text = llm_response
-            original_name = (session.profile.original_name or session.profile.tarnname) if session.profile else "Klient"
+            original_name = session.profile.tarnname if session.profile else "Klient"
 
         # Basis-Platzhalter aus Session/Profil
-        placeholders = self._build_placeholders(session, final_text, report_data)
+        placeholders = self._build_placeholders(
+            session, final_text, report_data, auto_deanonymize=auto_deanonymize
+        )
 
         # Template laden
         if TEMPLATE_PATH.exists():
@@ -1690,19 +1712,15 @@ JSON:
             if profile.fake_geburtsdatum:
                 for orig_date, fake_date in profile.mappings.get("dates", {}).items():
                     reverse_mappings[fake_date] = orig_date
-        sorted_mappings = sorted(reverse_mappings.items(), key=lambda x: len(x[0]), reverse=True)
-
-        result = text
-        for tarn, original in sorted_mappings:
-            result, _ = _replace_word_boundary(result, tarn, original)
-
-        return result
+        return _restore_original_values(text, reverse_mappings)
 
     def _build_placeholders(
         self,
         session: WorkflowSession,
         llm_text: str,
-        report_data: Optional[Dict] = None
+        report_data: Optional[Dict] = None,
+        *,
+        auto_deanonymize: bool = True,
     ) -> Dict[str, str]:
         """
         Erstellt Platzhalter-Mapping aus Session und LLM-Text.
@@ -1715,7 +1733,9 @@ JSON:
 
         # Basis-Daten aus Profil
         if session.profile:
-            original_name = session.profile.original_name
+            original_name = (
+                session.profile.original_name if auto_deanonymize else session.profile.tarnname
+            )
             # Name aufteilen
             name_parts = original_name.split()
             if len(name_parts) >= 2:
@@ -1737,7 +1757,7 @@ JSON:
 
             # Geburtsdatum (aus Mappings extrahieren)
             for orig, tarn in session.profile.mappings.get("dates", {}).items():
-                placeholders["GEBURTSDATUM"] = orig
+                placeholders["GEBURTSDATUM"] = orig if auto_deanonymize else tarn
                 break
 
         # Datum/Zeitraum
