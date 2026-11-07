@@ -220,6 +220,7 @@ jobs:
             system/tests/test_db_sync_handler.py \
             system/tests/test_delegation_adapter.py \
             system/tests/test_denkarium_handler.py \
+            system/tests/test_notes_adapter.py \
             system/tests/test_dist_handler.py \
             system/tests/test_dist_type_catchup_migration.py \
             system/tests/test_doc_analysis.py \
