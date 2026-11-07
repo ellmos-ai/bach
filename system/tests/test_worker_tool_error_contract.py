@@ -337,7 +337,7 @@ def test_stdio_mcp_exposes_structured_error_metadata(monkeypatch):
                 assert answer.structuredContent["code"] == "tool_dispatch_denied"
                 assert answer.structuredContent["effect_state"] == "not_applied"
 
-        asyncio.run(run())
+        asyncio.run(asyncio.wait_for(run(), 180))
 
 
 @pytest.mark.parametrize(("name", "args", "mode", "bach_app", "reason"), [

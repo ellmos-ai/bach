@@ -422,7 +422,7 @@ def test_versioned_read_result_survives_bridge_and_mcp(formatter_mode, fenced_re
                     assert payload["source_sha256"] is None
                     assert payload["lines"][0]["text"] == "BACH v1 content"
                     assert fenced_readonly_bridge.private_environment()["BACH_WORKER_TOOL_TOKEN"] not in output
-    asyncio.run(run())
+    asyncio.run(asyncio.wait_for(run(), 180))  # a silent shim must fail the test, not hang the suite
     events = fenced_readonly_bridge.binding._client.tool_trace_events(
         fenced_readonly_bridge.binding.task_id,
     )["events"]
@@ -585,7 +585,7 @@ def test_actual_mcp_stdio_subprocess_uses_bound_relay(bridge):
                 assert answer.content[0].text == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
                 assert bridge.binding._ack.lease_id not in str(answer)
                 assert bridge.private_environment()["BACH_WORKER_TOOL_TOKEN"] not in str(answer)
-    asyncio.run(run())
+    asyncio.run(asyncio.wait_for(run(), 180))
     assert bridge.binding.completed_task_ids == ()
     assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
 
