@@ -31,3 +31,13 @@ c) Sonstiges Artefakt der unlesbaren Vorlage #3892 — nicht ermittelbar.
 ABNAHME: Eine verbindliche Semantik erfordert Nachweis aus Originaltask
 #3892 oder einer Nutzeranweisung. Bis dahin ist diese Datei bewusst ein
 inertes Namenstraeger-Dokument mit offen dokumentierter Interpretation.
+
+ADDENDUM (Fortsetzungs-Lauf zu Task #3920): Der Ziel-Worktree task-3892 ist
+von dieser Bindung aus systemseitig nicht anlegbar: start_task_worktree(3892)
+wurde verweigert ("Worktree gehoert nicht zur gebundenen Task"); file_info
+bestaetigt, dass weder /services/bach-worktrees/task-3892 noch
+/Users/lukas/services/bach-worktrees/task-3892 existieren. Die Datei
+'bach-ci' verbleibt daher im registrierten Worktree task-3920. Referenz:
+https://github.com/ellmos-ai/bach/pull/675 (im Task-Text von #3920
+vermerkt). Inhalt und Zweck von 'bach-ci' bleiben unbelegt; es wurde nichts
+ergaenzt und keine Semantik erfunden.
