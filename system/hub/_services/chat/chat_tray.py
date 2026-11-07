@@ -337,7 +337,11 @@ class BACHTray:
         self.favorite_prompts = {}
         self.modular_status = {}
         self.modular_standalone_count = 0
+        self.module_updates = {"has_updates": False, "count": 0, "updates": []}
+        self._last_module_update_check = 0.0
+        self._notified_module_update_count = 0
         self._reload_modular_status()
+        self._check_module_updates(force=True)
         self.prompts = self._load_prompts()
 
     # --- API ---
@@ -751,6 +755,7 @@ class BACHTray:
                     self.state["fackel_preference"] = pref
             except Exception:
                 pass
+        self._check_module_updates(force=False)
 
     # --- PromptBoard ---
 
@@ -849,6 +854,7 @@ class BACHTray:
             candidates.extend([
                 project_dir / "start.bat",
                 project_dir / "releases" / "PromptBoard.msix",
+                project_dir / "src" / "promptboard.py",
             ])
         return candidates
 
@@ -1001,11 +1007,71 @@ class BACHTray:
             self.modular_status = {}
             self.modular_standalone_count = 0
 
+    def _check_module_updates(self, force: bool = False):
+        now = time.time()
+        if not force and (now - getattr(self, "_last_module_update_check", 0.0) < 60):
+            return
+        self._last_module_update_check = now
+        try:
+            from hub.modules import ModulesHandler
+            handler = ModulesHandler(_root_dir)
+            check = handler.check_for_updates()
+            has_upd = bool(check.get("has_updates"))
+            count = int(check.get("updates_count", 0))
+            updates = list(check.get("updates", []))
+            self.module_updates = {
+                "has_updates": has_upd,
+                "count": count,
+                "updates": updates,
+            }
+            prev_notified = getattr(self, "_notified_module_update_count", 0)
+            if has_upd and count > prev_notified:
+                self._notified_module_update_count = count
+                if self.icon:
+                    names = ", ".join(u["name"] for u in updates[:3])
+                    if len(updates) > 3:
+                        names += "..."
+                    self.icon.notify(
+                        f"{count} Modul-Update(s) verfügbar: {names}",
+                        "BACH Modul-Manager"
+                    )
+                    self.icon.menu = self._build_menu()
+        except Exception:
+            pass
+
+    def _trigger_modules_update_action(self, icon=None, item=None):
+        try:
+            from hub.modules import ModulesHandler
+            handler = ModulesHandler(_root_dir)
+            ok, msg = handler.handle("update", [])
+            self._reload_modular_status()
+            self._check_module_updates(force=True)
+            if self.icon:
+                self.icon.menu = self._build_menu()
+                if ok:
+                    self.icon.notify("Alle Module erfolgreich aktualisiert und hot-wired!", "BACH Modul-Manager")
+                else:
+                    self.icon.notify(f"Update-Fehler: {msg}", "BACH Modul-Manager")
+        except Exception as exc:
+            if self.icon:
+                self.icon.notify(f"Update-Fehler: {exc}", "BACH Modul-Manager")
+
+    def _manual_check_module_updates(self, icon=None, item=None):
+        self._check_module_updates(force=True)
+        if self.icon:
+            self.icon.menu = self._build_menu()
+            if self.module_updates.get("has_updates"):
+                c = self.module_updates["count"]
+                self.icon.notify(f"{c} Modul-Update(s) verfügbar!", "BACH Modul-Manager")
+            else:
+                self.icon.notify("Alle Module sind auf dem aktuellen Stand.", "BACH Modul-Manager")
+
     def _trigger_modules_sync(self, icon=None, item=None):
         try:
             from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
             auto_switch_to_standalone_modules()
             self._reload_modular_status()
+            self._check_module_updates(force=True)
             if self.icon:
                 self.icon.menu = self._build_menu()
                 self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", "BACH Module")
@@ -1017,6 +1083,16 @@ class BACHTray:
         count = self.modular_standalone_count
         total = max(12, len(self.modular_status))
         items.append(pystray.MenuItem(f"Status: {count}/{total} aktiv (Standalone-Modus)", None, enabled=False))
+
+        if self.module_updates.get("has_updates"):
+            upd_count = self.module_updates["count"]
+            items.append(pystray.MenuItem(f"⚡ {upd_count} Modul-Update(s) verfügbar!", self._trigger_modules_update_action))
+            for u in self.module_updates["updates"][:5]:
+                items.append(pystray.MenuItem(f"  • {u['name']} (v{u['current_version']} -> v{u['new_version']})", None, enabled=False))
+            items.append(pystray.MenuItem("📦 Alle Module jetzt aktualisieren", self._trigger_modules_update_action))
+        else:
+            items.append(pystray.MenuItem("📦 Auf Modul-Updates prüfen", self._manual_check_module_updates))
+
         items.append(pystray.MenuItem("🔄 Modul-Sync ausführen (bach update modules --sync)", self._trigger_modules_sync))
         items.append(pystray.Menu.SEPARATOR)
         if self.modular_status:
@@ -1034,6 +1110,9 @@ class BACHTray:
             "total_modularized": len(self.modular_status),
             "modules": {k: v.get("status") for k, v in self.modular_status.items()},
             "auto_update_ready": True,
+            "has_updates": self.module_updates.get("has_updates", False),
+            "updates_count": self.module_updates.get("count", 0),
+            "updates": self.module_updates.get("updates", []),
         }
 
     def promptboard_smoke_snapshot(self):
@@ -1058,9 +1137,10 @@ class BACHTray:
             "prompt_count": prompt_count,
             "favorite_count": len(self.favorite_prompts),
             "modular_standalone_count": self.modular_standalone_count,
+            "quick_insert_supported": True,
         }
 
-    def _copy_to_clipboard(self, text):
+    def _copy_to_clipboard(self, text, notify: bool = True):
         try:
             if sys.platform == "darwin":
                 subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
@@ -1069,10 +1149,46 @@ class BACHTray:
             else:
                 subprocess.run(["xclip", "-selection", "clipboard"],
                                input=text.encode("utf-8"), check=False)
-            if self.icon:
+            if notify and self.icon:
                 self.icon.notify("In Zwischenablage kopiert", "BACH Prompt")
         except FileNotFoundError:
             pass
+
+    def _simulate_paste(self):
+        """Simuliert Tastenkombination zum direkten Einfügen in das aktive Eingabefeld."""
+        time.sleep(0.12)
+        if sys.platform == "win32":
+            import ctypes
+            VK_CONTROL = 0x11
+            VK_V = 0x56
+            KEYEVENTF_KEYUP = 0x0002
+            user32 = ctypes.windll.user32
+            user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            user32.keybd_event(VK_V, 0, 0, 0)
+            time.sleep(0.02)
+            user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
+            user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+        elif sys.platform == "darwin":
+            subprocess.run([
+                "osascript", "-e",
+                'tell application "System Events" to keystroke "v" using command down'
+            ], check=False)
+        else:
+            subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], check=False)
+
+    def _make_prompt_quick_insert_action(self, text):
+        def action(*_):
+            self._copy_to_clipboard(text, notify=False)
+            def do_paste():
+                try:
+                    self._simulate_paste()
+                    if self.icon:
+                        self.icon.notify("Prompt direkt eingefügt!", "BACH Quick-Insert")
+                except Exception:
+                    if self.icon:
+                        self.icon.notify("In Zwischenablage kopiert (Strg+V)", "BACH Quick-Insert")
+            threading.Thread(target=do_paste, daemon=True).start()
+        return action
 
     def _send_prompt(self, prompt):
         result = self._api("POST", "/api/chat", {
@@ -1630,6 +1746,7 @@ class BACHTray:
                 sub_items = [
                     pystray.MenuItem(f"🔍 \"{f_preview}\"", None, enabled=False),
                     pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(f"⚡ Direkt einfügen", self._make_prompt_quick_insert_action(f_text)),
                     pystray.MenuItem(f"📋 Kopieren", self._make_prompt_copy_action(f_text)),
                     pystray.MenuItem(f"▶ Direkt senden", self._make_prompt_send_action(f_text)),
                     pystray.MenuItem(f"💬 Im Chat öffnen (Entwurf)", self._make_prompt_open_chat_action(f_text)),
@@ -1656,6 +1773,7 @@ class BACHTray:
         prompt_items.append(pystray.MenuItem("PromptBoard in BACH importieren", self._import_promptboard_action))
         prompt_items.append(pystray.MenuItem("Prompts nach PromptBoard exportieren", self._export_promptboard_action))
         prompt_items.append(pystray.MenuItem("🔄 PromptBoard Zwei-Wege-Sync", self._sync_promptboard_action))
+        prompt_items.append(pystray.MenuItem("⭐ Favoriten synchronisieren", self._sync_favorites_action))
         prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
@@ -1664,6 +1782,10 @@ class BACHTray:
                 prompt_subitems = [
                     pystray.MenuItem(f"🔍 \"{preview}\"", None, enabled=False),
                     pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        f"⚡ Einfügen: {name}",
+                        self._make_prompt_quick_insert_action(text),
+                    ),
                     pystray.MenuItem(
                         f"\U0001F4CB {name}",
                         self._make_prompt_copy_action(text),
@@ -2035,6 +2157,11 @@ class BACHTray:
         try:
             if sys.platform == "win32" and app_path.suffix.lower() in {".bat", ".msix", ".exe"}:
                 os.startfile(str(app_path))
+            elif app_path.suffix.lower() == ".py":
+                subprocess.Popen(
+                    [sys.executable, str(app_path)],
+                    cwd=str(app_path.parent.parent if app_path.parent.name == "src" else app_path.parent),
+                )
             else:
                 subprocess.Popen(
                     [str(app_path)],
@@ -2110,6 +2237,16 @@ class BACHTray:
         except Exception as e:
             if self.icon:
                 self.icon.notify(f"Sync fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _sync_favorites_action(self, *_):
+        """Synchronizes PromptBoard library and updates favorite prompts in tray."""
+        self._sync_promptboard_action()
+        self._reload_prompts()
+        if self.icon:
+            self.icon.notify(
+                f"Favoriten abgeglichen ({len(self.favorite_prompts)} aktiv).",
+                "BACH Favoriten"
+            )
 
     def _record_audio_prompt_action(self, *_):
         """Triggers audio prompt recording via ellmos-voice-io or speech interface handoff."""
@@ -2223,6 +2360,11 @@ def main():
         action="store_true",
         help="Print PromptBoard tray detection smoke data and exit",
     )
+    parser.add_argument(
+        "--smoke-modules",
+        action="store_true",
+        help="Print modular core update-check smoke data and exit",
+    )
     args = parser.parse_args()
 
     tray = BACHTray(host=args.host, port=args.port, gui_port=args.gui_port,
@@ -2231,6 +2373,10 @@ def main():
                     brand=args.brand)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
+        return
+    if args.smoke_modules:
+        tray._check_module_updates(force=True)
+        print(json.dumps(tray.modular_status_smoke_snapshot(), ensure_ascii=False, indent=2))
         return
     lock_file = Path.home() / ".bach" / f"{args.brand}_tray.lock" if args.brand != "bach" else TRAY_LOCK_FILE
     lock = acquire_single_instance_lock(lock_file)

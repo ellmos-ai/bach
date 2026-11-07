@@ -222,6 +222,9 @@ style="background: var(--bg-dark); color: var(--text)">
                         <span id="modules-active-badge" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-900/60 text-emerald-400 border border-emerald-700">
                             Lade Status...
                         </span>
+                        <span id="modules-update-badge" class="hidden px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-900/60 text-amber-300 border border-amber-600 animate-pulse">
+                            📦 Updates verfügbar
+                        </span>
                     </div>
                     <div class="flex items-center gap-2">
                         <button
@@ -390,6 +393,28 @@ style="background: var(--bg-dark); color: var(--text)">
                         `;
                         grid.appendChild(el);
                     }
+                }
+
+                // Update-Check
+                try {
+                    const updRes = await fetch('/api/modules/update-check');
+                    if (updRes.ok) {
+                        const updData = await updRes.json();
+                        const updBadge = document.getElementById('modules-update-badge');
+                        const updBtn = document.getElementById('modules-update-btn');
+                        if (updBadge) {
+                            if (updData.has_updates && updData.updates_count > 0) {
+                                updBadge.textContent = `📦 ${updData.updates_count} Update(s) verfügbar`;
+                                updBadge.classList.remove('hidden');
+                                if (updBtn) updBtn.classList.add('border-amber-500', 'text-amber-300');
+                            } else {
+                                updBadge.classList.add('hidden');
+                                if (updBtn) updBtn.classList.remove('border-amber-500', 'text-amber-300');
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.debug('Module update check failed:', err);
                 }
             } catch (e) {
                 console.warn('Failed to load modules status:', e);

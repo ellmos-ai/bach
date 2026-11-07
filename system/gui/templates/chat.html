@@ -447,6 +447,43 @@
         .send-btn:active { transform: scale(0.94); }
         .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+        /* ── Quick Prompt Bar ── */
+        .chat-quick-prompt-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+        .quick-prompt-select {
+            flex: 1;
+            background: var(--bg-panel);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            outline: none;
+            max-width: 320px;
+        }
+        .quick-prompt-btn {
+            background: var(--bg-panel);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.76rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .quick-prompt-btn:hover {
+            color: var(--text);
+            border-color: var(--accent);
+        }
+
         /* ── Microphone / Voice Transcription ── */
         .mic-btn {
             width: 46px;
@@ -823,6 +860,14 @@
                 </div>
 
                 <div class="voice-interim" id="voice-interim"></div>
+                <div class="chat-quick-prompt-bar" id="chat-quick-prompt-bar">
+                    <span class="quick-prompt-icon" title="Schnellauswahl Prompt-Bibliothek">⚡</span>
+                    <select id="chat-quick-prompt-select" class="quick-prompt-select" title="Prompt aus Bibliothek oder Favoriten laden">
+                        <option value="">Prompt-Vorlage auswählen…</option>
+                    </select>
+                    <button type="button" class="quick-prompt-btn" id="btn-chat-open-generator" title="Prompt-Generator öffnen">✍ Generator</button>
+                    <button type="button" class="quick-prompt-btn" id="btn-chat-open-library" title="Prompt-Bibliothek öffnen">📚 Bibliothek</button>
+                </div>
             <div class="chat-input-area">
                     <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe">🎙</button>
                     <input type="file" id="audio-file-input" accept="audio/*,.ogg,.oga,.opus,.mp3,.m4a,.mp4,.aac,.wav,.flac,.webm" hidden>
@@ -2071,11 +2116,54 @@
             });
         });
 
+        // ── Quick-Prompt Bar Setup ──
+        async function loadChatQuickPrompts() {
+            const selectEl = document.getElementById('chat-quick-prompt-select');
+            if (!selectEl) return;
+            try {
+                const res = await fetch('/api/prompt-library', { headers: controlHeaders('GET') });
+                if (!res.ok) return;
+                const data = await res.json();
+                const prompts = data.prompts || data.items || [];
+                selectEl.innerHTML = '<option value="">⚡ Prompt-Vorlage wählen…</option>';
+                for (const p of prompts) {
+                    const opt = document.createElement('option');
+                    opt.value = p.text || p.content || '';
+                    const fav = p.is_favorite ? '★ ' : '';
+                    opt.textContent = fav + (p.name || p.title || 'Prompt');
+                    selectEl.appendChild(opt);
+                }
+            } catch (err) {
+                console.warn('Quick-Prompts load error:', err);
+            }
+        }
+
+        const quickSelect = document.getElementById('chat-quick-prompt-select');
+        if (quickSelect) {
+            quickSelect.addEventListener('change', () => {
+                const val = quickSelect.value;
+                if (!val) return;
+                inputEl.value = val;
+                autoResize();
+                inputEl.focus();
+                quickSelect.value = '';
+            });
+        }
+        const btnGen = document.getElementById('btn-chat-open-generator');
+        if (btnGen) {
+            btnGen.addEventListener('click', () => window.location.assign('/prompt-generator'));
+        }
+        const btnLib = document.getElementById('btn-chat-open-library');
+        if (btnLib) {
+            btnLib.addEventListener('click', () => window.location.assign('/prompt-library'));
+        }
+
         // ── Init ──
         function loadHistory() {
             return loadActiveChat();
         }
         window.loadHistory = loadHistory;
+        loadChatQuickPrompts();
         loadWebSessions().then(() => {
             loadHistory().then(loadLibraryDraft).then(() => {
                 if (pendingPromptAutorun) {

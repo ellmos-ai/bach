@@ -60,6 +60,25 @@ def test_both_pages_load_the_shared_draft_helper():
     assert include in (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
     assert include in (TEMPLATES / "chat.html").read_text(encoding="utf-8")
     assert include in (TEMPLATES / "index.html").read_text(encoding="utf-8")
+    assert include in (TEMPLATES / "prompt-generator.html").read_text(encoding="utf-8")
+
+
+def test_prompt_generator_has_chat_handoff():
+    source = (TEMPLATES / "prompt-generator.html").read_text(encoding="utf-8")
+    assert "btn-send-to-chat" in source
+    assert "sendToChat()" in source
+    assert "window.BachChatDraft.store(prompt)" in source
+    assert "window.location.assign('/chat')" in source
+
+
+def test_chat_has_quick_prompt_bar_and_navigation():
+    source = (TEMPLATES / "chat.html").read_text(encoding="utf-8")
+    assert "chat-quick-prompt-bar" in source
+    assert "chat-quick-prompt-select" in source
+    assert "btn-chat-open-generator" in source
+    assert "btn-chat-open-library" in source
+    assert "loadChatQuickPrompts()" in source
+    assert "/api/prompt-library" in source
 
 
 def test_index_dashboard_has_quick_prompt_card_and_chat_handoff():

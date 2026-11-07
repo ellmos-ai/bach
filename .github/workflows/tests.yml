@@ -79,6 +79,70 @@ jobs:
       - name: Install pinned shared worker-policy contract
         run: python -m pip install --no-deps ./.ci-sources/worker-policy
 
+      - name: Verify installed scheduler provenance and native API coverage
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+          BACH_NO_AUTO_MIGRATE: '1'
+        run: |
+          python - <<'PY'
+          import importlib.metadata
+          import json
+          from pathlib import Path
+          import re
+          import ellmos_scheduler
+
+          lines = [line.strip() for line in Path('requirements.txt').read_text().splitlines()
+                   if line.strip().startswith('ellmos-scheduler ')]
+          assert len(lines) == 1, 'Exactly one scheduler requirement is required'
+          match = re.fullmatch(
+              r'ellmos-scheduler @ git\+(https://github\.com/ellmos-ai/ellmos-scheduler\.git)@([0-9a-f]{40})',
+              lines[0],
+          )
+          assert match, 'Scheduler requirement must use the canonical URL and a full commit SHA'
+          expected_url, expected_sha = match.groups()
+          distribution = importlib.metadata.distribution('ellmos-scheduler')
+          try:
+              direct = json.loads(distribution.read_text('direct_url.json') or '{}')
+              vcs = direct.get('vcs_info', {})
+              valid = (direct.get('url') == expected_url and vcs.get('vcs') == 'git'
+                       and vcs.get('commit_id') == expected_sha
+                       and vcs.get('requested_revision') == expected_sha)
+          except (ValueError, TypeError, AttributeError):
+              raise AssertionError('Scheduler installation provenance is invalid') from None
+          assert valid, 'Scheduler installation does not match the reviewed requirement'
+          expected_origin = Path(distribution.locate_file('ellmos_scheduler/__init__.py')).resolve()
+          assert Path(ellmos_scheduler.__file__).resolve() == expected_origin, 'Scheduler import shadows installed metadata'
+          for name in ('AgentTriggers', 'DefinitionConflict', 'EventTriggers', 'SchedulerStore',
+                       'SchedulerService', 'ExecutionContext', 'create_bach_adapter'):
+              assert callable(getattr(ellmos_scheduler, name, None)), 'Required native scheduler export is missing'
+          assert issubclass(ellmos_scheduler.DefinitionConflict, ValueError)
+          print('Verified installed scheduler commit:', expected_sha)
+          PY
+          python -B -m pytest -q -rA -p no:cacheprovider --timeout=120 -o xfail_strict=true \
+            --junitxml="$RUNNER_TEMP/native-scheduler.xml" \
+            system/tests/test_agent_triggers_api.py \
+            system/tests/test_scheduler_provider.py \
+            system/tests/test_scheduler_provider_wiring.py \
+            system/tests/test_native_scheduler_gate_guard.py
+          python - <<'PY'
+          from collections import Counter
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(Path(os.environ['RUNNER_TEMP']) / 'native-scheduler.xml').getroot()
+          counts = Counter()
+          for case in root.iter('testcase'):
+              assert not any(case.find(tag) is not None for tag in ('skipped', 'failure', 'error')), 'Native scheduler case was not successful'
+              counts[case.get('classname', '').rsplit('.', 1)[-1]] += 1
+          baseline = {'test_agent_triggers_api': 56, 'test_scheduler_provider': 2,
+                      'test_scheduler_provider_wiring': 28,
+                      'test_native_scheduler_gate_guard': 24}
+          assert all(counts[name] >= minimum for name, minimum in baseline.items()), 'Native scheduler coverage is incomplete'
+          print('Required native scheduler cases:', dict(counts), 'no skips/failures/errors')
+          PY
+
       - name: Worker completion, settings, independent reviews, provenance and project scope
         env:
           PYTHONIOENCODING: utf-8
@@ -220,6 +284,7 @@ jobs:
             system/tests/test_db_sync_handler.py \
             system/tests/test_delegation_adapter.py \
             system/tests/test_denkarium_handler.py \
+            system/tests/test_notes_adapter.py \
             system/tests/test_dist_handler.py \
             system/tests/test_dist_type_catchup_migration.py \
             system/tests/test_doc_analysis.py \
