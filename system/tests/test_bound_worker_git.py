@@ -1,5 +1,6 @@
 """Canonical worktree receipts against isolated authority; no Git publication."""
 from pathlib import Path
+import json
 import os
 import subprocess
 from types import SimpleNamespace
@@ -41,6 +42,39 @@ def git_run(bridge, tmp_path, monkeypatch):
     (repo / "README.md").write_text("# Test", encoding="utf-8")
     _REAL_SUBPROCESS_RUN(["git", "add", "."], cwd=str(repo), check=True)
     _REAL_SUBPROCESS_RUN(["git", "commit", "-m", "initial"], cwd=str(repo), check=True, capture_output=True)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    bach_dir = tmp_path / ".bach"
+    bach_dir.mkdir(mode=0o700)
+    os.chmod(bach_dir, 0o700)
+    fixed_root = bach_dir / "task-repo-sources"
+    fixed_root.mkdir(mode=0o700)
+    os.chmod(fixed_root, 0o700)
+    repo_ns = fixed_root / "ellmos-ai" / "bach"
+    repo_ns.mkdir(parents=True, mode=0o700)
+    clone_path = repo_ns / ("a" * 40)
+    _REAL_SUBPROCESS_RUN(["git", "clone", str(repo), str(clone_path)], check=True, capture_output=True)
+    os.chmod(clone_path, 0o700)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.name", "Test"], cwd=str(clone_path), check=True)
+    _REAL_SUBPROCESS_RUN(["git", "config", "user.email", "test@example.com"], cwd=str(clone_path), check=True)
+    registry = {
+        "schema": "bach.worker-repo-registry.v1",
+        "repositories": {
+            "ellmos-ai/bach": {
+                "origin": "https://github.com/ellmos-ai/bach",
+                "default_branch": "main",
+                "visibility": "public",
+            }
+        },
+        "tasks": {
+            str(bridge.binding.task_id): {
+                "repository": "ellmos-ai/bach",
+                "source_sha": "a" * 40,
+            }
+        },
+    }
+    reg = bach_dir / "worker_repo_registry.v1.json"
+    reg.write_text(json.dumps(registry), encoding="utf-8")
+    os.chmod(reg, 0o600)
     root = tmp_path / "worktrees"
     root.mkdir()
     monkeypatch.setenv("BACH_ROOT", str(repo))
@@ -51,6 +85,50 @@ def git_run(bridge, tmp_path, monkeypatch):
     _add_task_tree(bridge.binding.task_id)
     monkeypatch.setattr(worker_git, "scan_for_secrets", lambda path: [])
     monkeypatch.setattr(worker_git, "check_git_diff", lambda path: [])
+    monkeypatch.setattr(
+        worker_git, "_git_text",
+        lambda repo, op, **kw: "https://github.com/ellmos-ai/bach" if op == "origin" else "a" * 40,
+    )
+    monkeypatch.setattr(
+        worker_git, "_public_default_branch_metadata",
+        lambda repo, branch: {"source_sha": "a" * 40, "default_branch": "main", "visibility": "public", "private": False},
+    )
+    monkeypatch.setattr(
+        worker_git, "_local_commit_identity",
+        lambda repo, **k: {"user.name": "Test", "user.email": "test@example.com"},
+    )
+    monkeypatch.setattr(
+        worker_git, "_resolve_task_source",
+        lambda task_id, require_current=False: (None, "source", None),
+    )
+    monkeypatch.setattr(
+        worker_git, "_require_source_commit_identity",
+        lambda repo, repo_name: {"user.name": "Test", "user.email": "test@example.com"},
+    )
+    _cfs_calls = []
+    def _fake_cfs(*a, **k):
+        _cfs_calls.append(1)
+        return None if len(_cfs_calls) == 1 else {"success": True, "pr_url": PR, "status": "review"}
+    monkeypatch.setattr(worker_git, "_confirmed_finish_submission", _fake_cfs)
+    monkeypatch.setattr(bridge.binding, "_generation", "t-1", raising=False)
+    monkeypatch.setattr(bridge.binding, "capture_confirmed_scope", lambda *a, **k: None)
+    monkeypatch.setattr(
+        worker_write_guard, "authorize_mutation",
+        lambda *a, **k: (root / f"task-{bridge.binding.task_id}",
+                         [root / f"task-{bridge.binding.task_id}"]),
+    )
+    monkeypatch.setattr(
+        worker_write_guard, "snapshot_task_scope",
+        lambda task_id, *a, **k: {"availability": "available", "repository": "ellmos-ai/bach",
+                                  "source_pin": {"commit": "a" * 40}, "head_oid": "a" * 40},
+    )
+    from hub._services import task_result_service
+    monkeypatch.setattr(task_result_service, "validate_submission", lambda *a, **k: None)
+    monkeypatch.setattr(bridge.binding, "task_snapshot",
+                        lambda: {"_generation": "t-1", "result_max_chars": 3000})
+    monkeypatch.setattr(bridge.binding, "record_worktree_result", lambda *a, **k: None)
+    monkeypatch.setattr(bridge.binding, "execute_task_manage",
+                        lambda *a, **k: {"success": True, "pr_url": PR, "status": "review"})
     calls = []
     def physical(cmd, **kwargs):
         calls.append(cmd)
@@ -147,8 +225,12 @@ def test_bound_finish_uses_real_bound_python_pytest_parser(bridge, git_run, monk
     assert argv[1:4] == ["-m", "pytest", "-q"]
     state = target / ".cache" / ".worker-check"
     separator = argv.index("--")
-    assert argv[4:separator] == [
-        "--basetemp", str(state / "pytest-temp"),
+    assert argv[4] == "--basetemp"
+    basetemp_prefix = str(state / "pytest-temp") + "/run-"
+    assert argv[5].startswith(basetemp_prefix), argv[5]
+    run_suffix = argv[5][len(basetemp_prefix):]
+    assert len(run_suffix) == 32 and all(c in "0123456789abcdef" for c in run_suffix), argv[5]
+    assert argv[6:separator] == [
         "-o", "cache_dir=" + str(state / "pytest-cache"),
         "-o", "addopts=",
         "-o", "log_file=",
