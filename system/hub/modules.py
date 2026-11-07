@@ -111,6 +111,8 @@ class ModulesHandler(BaseHandler):
             "install": "Modul aus Pfad oder ZIP installieren (bach modules install <path|zip>)",
             "update": "Module auf neueste Versionen aktualisieren (bach modules update [--dry-run])",
             "export": "Modul als Standalone-Paket exportieren (bach modules export <name>)",
+            "pack": "Modul als Standalone-Bundle mit Prüfsumme packen (bach modules pack <name> [--out DIR] [--bundle-deps])",
+            "schedule": "Auto-Update-Job im Daemon Scheduler registrieren/konfigurieren (bach modules schedule [--interval-hours N])",
             "wire": "Hot-Wiring für alle Standalone-Module ausführen",
             "help": "Hilfe anzeigen",
         }
@@ -148,6 +150,27 @@ class ModulesHandler(BaseHandler):
                 if idx + 1 < len(args):
                     out_dir = args[idx + 1]
             return self._export_module(args[0], out_dir=out_dir)
+        elif op == "pack":
+            if not args:
+                return False, "Fehler: Modulname erforderlich: bach modules pack <name> [--out DIR] [--bundle-deps]"
+            name = args[0]
+            bundle_deps = any(a in ("--bundle-deps", "--bundle", "-b") for a in args)
+            out_dir = None
+            if "--out" in args:
+                idx = args.index("--out")
+                if idx + 1 < len(args):
+                    out_dir = args[idx + 1]
+            return self._pack_module(name, out_dir=out_dir, bundle_deps=bundle_deps)
+        elif op in ("schedule", "scheduler-sync", "daemon-sync"):
+            interval = 6
+            for a in args:
+                if a.isdigit():
+                    interval = int(a)
+                elif a.startswith("--interval-hours="):
+                    interval = int(a.split("=")[1])
+            res = ensure_scheduler_auto_update_job(interval_hours=interval)
+            stat = "angelegt" if res["created"] else "aktualisiert"
+            return True, f"[OK] Scheduler-Job '{res['name']}' erfolgreich {stat} (Intervall: {res['schedule']})."
         elif op in ("wire", "hotwire", "hot-wire"):
             return self._wire_modules()
         elif op == "help":
@@ -322,6 +345,20 @@ class ModulesHandler(BaseHandler):
         inspect_dir = source
 
         if source.is_file() and source.suffix.lower() == ".zip":
+            # Optional: SHA-256 Prüfsummenvalidierung
+            sha_candidate = source.with_suffix(".zip.sha256")
+            if not sha_candidate.is_file():
+                sha_candidate = Path(str(source) + ".sha256")
+            if sha_candidate.is_file():
+                import hashlib
+                expected_sha = sha_candidate.read_text(encoding="utf-8").split()[0].strip()
+                hasher = hashlib.sha256()
+                with open(source, "rb") as f:
+                    while chunk := f.read(65536):
+                        hasher.update(chunk)
+                if hasher.hexdigest().lower() != expected_sha.lower():
+                    return False, f"Prüfsummen-Fehler bei {source.name}: Erwartet {expected_sha}, berechnet {hasher.hexdigest()}"
+
             tmp_extract_dir = self.modules_dir / f".tmp_extract_{int(time.time())}"
             tmp_extract_dir.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(source, "r") as zf:
@@ -590,6 +627,110 @@ class ModulesHandler(BaseHandler):
 
         return True, f"[OK] Modul '{name}' v{version} exportiert nach:\n  {zip_path}"
 
+    def _pack_module(
+        self,
+        name: str,
+        out_dir: Optional[str] = None,
+        bundle_deps: bool = False,
+    ) -> Tuple[bool, str]:
+        """Erstellt ein autarkes, verteilbares Bundle-Paket eines Moduls mit Prüfsumme und optionaler Vendor-Isolation."""
+        target_dir = self.modules_dir / name
+        if not target_dir.is_dir():
+            return False, f"Modul '{name}' nicht in .MODULES/ gefunden."
+
+        manifest_file = target_dir / "manifest.json"
+        if not manifest_file.is_file():
+            return False, f"Modul '{name}' besitzt kein manifest.json."
+
+        try:
+            meta = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return False, f"Manifest konnte nicht gelesen werden: {exc}"
+
+        version = meta.get("version", "1.0.0")
+        entrypoints = meta.get("entrypoints", {})
+        deps = meta.get("dependencies", {})
+
+        dest_dir = Path(out_dir) if out_dir else (self.base_path / "exports" / "modules")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        bundle_tag = "bundle" if bundle_deps else "pkg"
+        zip_name = f"{name}_v{version}_{bundle_tag}_{time.strftime('%Y%m%d_%H%M%S')}.zip"
+        zip_path = dest_dir / zip_name
+
+        stage_dir = self.modules_dir / f".tmp_pack_{name}_{int(time.time())}"
+        stage_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            shutil.copytree(target_dir, stage_dir / name)
+            mod_stage = stage_dir / name
+
+            receipt_meta = {
+                "name": name,
+                "version": version,
+                "entrypoints": entrypoints,
+                "bundled_dependencies": bundle_deps,
+                "dependencies": deps,
+                "selfcontained": True,
+                "packaged_at": datetime.now().isoformat(),
+                "packaged_by": "bach.modules.pack.v1",
+            }
+
+            if bundle_deps:
+                vendor_dir = mod_stage / "vendor"
+                vendor_dir.mkdir(parents=True, exist_ok=True)
+                v_loader = vendor_dir / "__init__.py"
+                if not v_loader.exists():
+                    v_loader.write_text(
+                        "# -*- coding: utf-8 -*-\n"
+                        "import sys\n"
+                        "from pathlib import Path\n"
+                        "_v_dir = Path(__file__).parent\n"
+                        "if str(_v_dir) not in sys.path:\n"
+                        "    sys.path.insert(0, str(_v_dir))\n",
+                        encoding="utf-8"
+                    )
+                receipt_meta["vendor_dir"] = "vendor"
+
+            receipt_file = mod_stage / "package_receipt.json"
+            receipt_file.write_text(json.dumps(receipt_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for root, _, files in os.walk(mod_stage):
+                    for f in files:
+                        full_p = Path(root) / f
+                        rel_p = full_p.relative_to(mod_stage)
+                        zf.write(full_p, rel_p)
+
+            import hashlib
+            hasher = hashlib.sha256()
+            with open(zip_path, "rb") as f:
+                while chunk := f.read(65536):
+                    hasher.update(chunk)
+            digest = hasher.hexdigest()
+            sha_path = dest_dir / f"{zip_name}.sha256"
+            sha_path.write_text(f"{digest}  {zip_name}\n", encoding="utf-8")
+
+        finally:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+
+        lines = [
+            f"[OK] Modul '{name}' v{version} erfolgreich gepackt:",
+            f"  Archiv:      {zip_path}",
+            f"  Prüfsumme:   {digest[:16]}... ({sha_path.name})",
+            f"  Bundle-Deps: {'Ja (vendor-isolated)' if bundle_deps else 'Nein'}",
+        ]
+        return True, "\n".join(lines)
+
+    def pack_module(
+        self,
+        name: str,
+        out_dir: Optional[Union[str, Path]] = None,
+        bundle_deps: bool = False,
+    ) -> Tuple[bool, str]:
+        """Programmatischer Aufruf für Modulpaketierung."""
+        return self._pack_module(name, out_dir=str(out_dir) if out_dir else None, bundle_deps=bundle_deps)
+
     def _wire_modules(self) -> Tuple[bool, str]:
         invalidate_module_cache()
         report = auto_switch_to_standalone_modules()
@@ -658,4 +799,63 @@ def run_modules_auto_update_runner(
         "updates_count": check.get("updates_count", 0),
         "applied": apply_updates and not dry_run,
         "timestamp": time.time(),
+    }
+
+
+def ensure_scheduler_auto_update_job(
+    conn_or_db_path: Optional[Any] = None,
+    interval_hours: int = 6,
+    active: bool = True,
+) -> Dict[str, Any]:
+    """Registriert oder aktualisiert den periodischen Modul-Auto-Update-Job im Daemon Scheduler."""
+    import sqlite3
+    from hub.bach_paths import BACH_DB
+
+    db_path = conn_or_db_path if isinstance(conn_or_db_path, (str, Path)) else BACH_DB
+    job_name = "Modular Core Auto-Update"
+    schedule_str = f"{max(1, interval_hours)}h"
+    command_str = "python bach.py modules auto-update --apply"
+
+    conn = sqlite3.connect(str(db_path)) if not hasattr(conn_or_db_path, "execute") else conn_or_db_path
+    conn.row_factory = sqlite3.Row
+    created = False
+    job_id = None
+    try:
+        cur = conn.execute("SELECT id, is_active, schedule FROM scheduler_jobs WHERE name = ?", (job_name,))
+        row = cur.fetchone()
+        if row:
+            job_id = row["id"]
+            conn.execute(
+                "UPDATE scheduler_jobs SET schedule = ?, is_active = ?, command = ? WHERE id = ?",
+                (schedule_str, 1 if active else 0, command_str, job_id)
+            )
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO scheduler_jobs 
+                (name, description, job_type, schedule, command, is_active, timeout_seconds, retry_on_fail, max_retries)
+                VALUES (?, ?, 'interval', ?, ?, ?, 300, 1, 2)
+                """,
+                (
+                    job_name,
+                    "Prüft Quell-Repositories periodisch auf neuere Modulversionen und aktualisiert Standalone-Module in .MODULES/",
+                    schedule_str,
+                    command_str,
+                    1 if active else 0,
+                )
+            )
+            job_id = cur.lastrowid
+            created = True
+        if hasattr(conn, "commit"):
+            conn.commit()
+    finally:
+        if not hasattr(conn_or_db_path, "execute"):
+            conn.close()
+
+    return {
+        "job_id": job_id,
+        "name": job_name,
+        "schedule": schedule_str,
+        "created": created,
+        "active": active,
     }

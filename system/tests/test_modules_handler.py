@@ -189,3 +189,68 @@ def test_modules_auto_update_cycle():
     assert res["success"] is True
     assert "MODUL AUTO-UPDATE RUNNER" in res["message"]
     assert "has_updates" in res
+
+
+def test_modules_pack_and_checksum_verification(tmp_path):
+    system_root = Path(__file__).parent.parent
+    handler = ModulesHandler(system_root)
+
+    ok_pack, msg_pack = handler.handle("pack", ["skills", "--bundle-deps", "--out", str(tmp_path)])
+    assert ok_pack is True
+    assert "erfolgreich gepackt" in msg_pack
+    assert "Prüfsumme" in msg_pack
+
+    zips = list(tmp_path.glob("skills_*_bundle_*.zip"))
+    assert len(zips) == 1
+    zip_p = zips[0]
+
+    sha_p = tmp_path / f"{zip_p.name}.sha256"
+    assert sha_p.is_file()
+    expected_sha = sha_p.read_text(encoding="utf-8").split()[0].strip()
+
+    import hashlib
+    hasher = hashlib.sha256()
+    with open(zip_p, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    assert hasher.hexdigest().lower() == expected_sha.lower()
+
+    with zipfile.ZipFile(zip_p, "r") as zf:
+        names = zf.namelist()
+        assert "package_receipt.json" in names
+        assert "manifest.json" in names
+        assert "vendor/__init__.py" in names
+
+
+def test_modules_scheduler_auto_update_job_registration(tmp_path):
+    import sqlite3
+    from hub.modules import ensure_scheduler_auto_update_job
+
+    db_p = tmp_path / "test_scheduler.db"
+    with sqlite3.connect(db_p) as conn:
+        conn.execute("""
+            CREATE TABLE scheduler_jobs (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                job_type TEXT DEFAULT 'interval',
+                schedule TEXT DEFAULT '',
+                command TEXT DEFAULT '',
+                is_active INTEGER DEFAULT 1,
+                timeout_seconds INTEGER DEFAULT 60,
+                retry_on_fail INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 0
+            )
+        """)
+
+    res = ensure_scheduler_auto_update_job(conn_or_db_path=db_p, interval_hours=8)
+    assert res["created"] is True
+    assert res["name"] == "Modular Core Auto-Update"
+    assert res["schedule"] == "8h"
+
+    # Re-call updates without creating duplicate
+    res2 = ensure_scheduler_auto_update_job(conn_or_db_path=db_p, interval_hours=12)
+    assert res2["created"] is False
+    assert res2["schedule"] == "12h"
+    assert res2["job_id"] == res["job_id"]
+
