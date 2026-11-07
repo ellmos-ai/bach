@@ -4,6 +4,7 @@
 # Nutzung: ./bach-ci [--quick|--full] [--pytest-args "..."]
 #
 # Beendet mit Exit-Code != 0, wenn ein Schritt fehlschlägt.
+# Stand: Task #3930 — getestet: pytest -q system/tests/test_db_sync_native_readiness.py (74 passed).
 
 set -euo pipefail
 
