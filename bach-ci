@@ -1,0 +1,33 @@
+bach-ci — Namens-Traeger ohne belegte Semantik (Beleg-Notiz)
+============================================================
+
+STATUS: Diese Datei erfuellt den Literal-Auftrag von Task #3920 (Rest aus
+#3892: "Schreibe in den Worktree ... mit der Datei 'bach-ci'"). Weder der
+Originaltask #3892 (detail-lesbar war nur die eigene ID) noch der Repo-Code
+definieren Inhalt oder Zweck von 'bach-ci'. Hier wird deshalb NICHTS
+erfunden: kein Shebang, kein ausfuehrbares Verhalten, keine CI-Wirkung.
+
+BELEGE (geprueft im Worktree task-3920, Stand dieses Laufs):
+- 0 Treffer fuer 'bach-ci' im gesamten Arbeitsbaum (vollstaendige Suchen);
+  auch 'bach[-_]ci' in system/tests sowie '(?i)bach.?[._-]?ci' im Root: 0.
+- Einziger bekannter realer Bezug: Task-Kategorie 'bach-ci' (Kategoriefeld
+  von #3920). Der vormalige Fixture-Verweis test_pb1_worker_return_loop.py
+  Zeile 383 (category='bach-ci') entwertet: die Datei existiert im Repo
+  nicht.
+- CI des Repos liegt an belegten Pfaden: 9 Workflows unter
+  .github/workflows/; module_gate.yml ist der einzige Required Check auf
+  main und ruft .github/workflows/module_gate_check.py auf; tests.yml ist
+  die Testsuite. Kein Workflow verweist auf 'bach-ci'.
+- Skriptkonvention im Repo: start/bach.sh + start/bach.bat als duenne
+  Adapter zur Startspine; Rollenskripte unter start/agents/{posix,windows}.
+  Ein Skript 'bach-ci' ist dort nicht vorgesehen.
+
+INTERPRETATIONSOPTIONEN (dokumentiert, NICHT implementiert):
+a) CI-Einstiegsskript im Stil von start/bach.sh — plausibel, aber unbelegt.
+b) Artefakt der Task-Kategorie 'bach-ci' (Organisations-Verwaltungskontext)
+   — durch den Kategoriebezug gestuetzt, aber rein verwaltungsmaessig.
+c) Sonstiges Artefakt der unlesbaren Vorlage #3892 — nicht ermittelbar.
+
+ABNAHME: Eine verbindliche Semantik erfordert Nachweis aus Originaltask
+#3892 oder einer Nutzeranweisung. Bis dahin ist diese Datei bewusst ein
+inertes Namenstraeger-Dokument mit offen dokumentierter Interpretation.
