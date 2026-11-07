@@ -450,13 +450,16 @@ def test_modularized_services_and_hot_wiring():
         "plugins",
         "hooks",
         "memory",
+        "skills",
+        "tools",
+        "agents",
     ):
         assert s_name in status
         assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
 
     full_status = ocean_stack_status()
     assert "modularized_services" in full_status
-    assert full_status["modularized_standalone_count"] >= 11
+    assert full_status["modularized_standalone_count"] >= 14
     for s_name in (
         "agent_spawn_gate",
         "context_hints",
@@ -485,6 +488,9 @@ def test_modularized_services_and_hot_wiring():
         "plugins",
         "hooks",
         "memory",
+        "skills",
+        "tools",
+        "agents",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True
 

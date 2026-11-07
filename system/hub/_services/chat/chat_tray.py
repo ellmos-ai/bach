@@ -1137,9 +1137,10 @@ class BACHTray:
             "prompt_count": prompt_count,
             "favorite_count": len(self.favorite_prompts),
             "modular_standalone_count": self.modular_standalone_count,
+            "quick_insert_supported": True,
         }
 
-    def _copy_to_clipboard(self, text):
+    def _copy_to_clipboard(self, text, notify: bool = True):
         try:
             if sys.platform == "darwin":
                 subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
@@ -1148,10 +1149,46 @@ class BACHTray:
             else:
                 subprocess.run(["xclip", "-selection", "clipboard"],
                                input=text.encode("utf-8"), check=False)
-            if self.icon:
+            if notify and self.icon:
                 self.icon.notify("In Zwischenablage kopiert", "BACH Prompt")
         except FileNotFoundError:
             pass
+
+    def _simulate_paste(self):
+        """Simuliert Tastenkombination zum direkten Einfügen in das aktive Eingabefeld."""
+        time.sleep(0.12)
+        if sys.platform == "win32":
+            import ctypes
+            VK_CONTROL = 0x11
+            VK_V = 0x56
+            KEYEVENTF_KEYUP = 0x0002
+            user32 = ctypes.windll.user32
+            user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            user32.keybd_event(VK_V, 0, 0, 0)
+            time.sleep(0.02)
+            user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
+            user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+        elif sys.platform == "darwin":
+            subprocess.run([
+                "osascript", "-e",
+                'tell application "System Events" to keystroke "v" using command down'
+            ], check=False)
+        else:
+            subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], check=False)
+
+    def _make_prompt_quick_insert_action(self, text):
+        def action(*_):
+            self._copy_to_clipboard(text, notify=False)
+            def do_paste():
+                try:
+                    self._simulate_paste()
+                    if self.icon:
+                        self.icon.notify("Prompt direkt eingefügt!", "BACH Quick-Insert")
+                except Exception:
+                    if self.icon:
+                        self.icon.notify("In Zwischenablage kopiert (Strg+V)", "BACH Quick-Insert")
+            threading.Thread(target=do_paste, daemon=True).start()
+        return action
 
     def _send_prompt(self, prompt):
         result = self._api("POST", "/api/chat", {
@@ -1709,6 +1746,7 @@ class BACHTray:
                 sub_items = [
                     pystray.MenuItem(f"🔍 \"{f_preview}\"", None, enabled=False),
                     pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(f"⚡ Direkt einfügen", self._make_prompt_quick_insert_action(f_text)),
                     pystray.MenuItem(f"📋 Kopieren", self._make_prompt_copy_action(f_text)),
                     pystray.MenuItem(f"▶ Direkt senden", self._make_prompt_send_action(f_text)),
                     pystray.MenuItem(f"💬 Im Chat öffnen (Entwurf)", self._make_prompt_open_chat_action(f_text)),
@@ -1735,6 +1773,7 @@ class BACHTray:
         prompt_items.append(pystray.MenuItem("PromptBoard in BACH importieren", self._import_promptboard_action))
         prompt_items.append(pystray.MenuItem("Prompts nach PromptBoard exportieren", self._export_promptboard_action))
         prompt_items.append(pystray.MenuItem("🔄 PromptBoard Zwei-Wege-Sync", self._sync_promptboard_action))
+        prompt_items.append(pystray.MenuItem("⭐ Favoriten synchronisieren", self._sync_favorites_action))
         prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
@@ -1743,6 +1782,10 @@ class BACHTray:
                 prompt_subitems = [
                     pystray.MenuItem(f"🔍 \"{preview}\"", None, enabled=False),
                     pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        f"⚡ Einfügen: {name}",
+                        self._make_prompt_quick_insert_action(text),
+                    ),
                     pystray.MenuItem(
                         f"\U0001F4CB {name}",
                         self._make_prompt_copy_action(text),
@@ -2194,6 +2237,16 @@ class BACHTray:
         except Exception as e:
             if self.icon:
                 self.icon.notify(f"Sync fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _sync_favorites_action(self, *_):
+        """Synchronizes PromptBoard library and updates favorite prompts in tray."""
+        self._sync_promptboard_action()
+        self._reload_prompts()
+        if self.icon:
+            self.icon.notify(
+                f"Favoriten abgeglichen ({len(self.favorite_prompts)} aktiv).",
+                "BACH Favoriten"
+            )
 
     def _record_audio_prompt_action(self, *_):
         """Triggers audio prompt recording via ellmos-voice-io or speech interface handoff."""

@@ -27,8 +27,9 @@ import re
 import shutil
 import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from hub.base import BaseHandler
 from hub._services.ocean_stack_bridge import (
@@ -106,6 +107,7 @@ class ModulesHandler(BaseHandler):
             "status": "Modularisierungs- und Hot-Wiring-Status anzeigen",
             "check": "Integrität und Manifeste validieren (bach modules check [name])",
             "check-updates": "Auf verfügbare neuere Modulversionen prüfen",
+            "auto-update": "Hintergrund-Zyklus zur automatisierten Modul-Aktualisierung (bach modules auto-update [--apply] [--dry-run])",
             "install": "Modul aus Pfad oder ZIP installieren (bach modules install <path|zip>)",
             "update": "Module auf neueste Versionen aktualisieren (bach modules update [--dry-run])",
             "export": "Modul als Standalone-Paket exportieren (bach modules export <name>)",
@@ -126,6 +128,10 @@ class ModulesHandler(BaseHandler):
             return self._check_modules(target)
         elif op in ("check-updates", "update-check", "check_updates"):
             return self._check_updates_cli()
+        elif op in ("auto-update", "auto_update"):
+            apply_updates = any(a in ("--apply", "-a", "--force") for a in args)
+            is_dry = dry_run or any(a in ("--dry-run", "-n") for a in args)
+            return self._auto_update_cycle(apply_updates=apply_updates, dry_run=is_dry)
         elif op == "install":
             if not args:
                 return False, "Fehler: Pfad oder ZIP-Datei erforderlich: bach modules install <pfad_oder_zip>"
@@ -450,6 +456,40 @@ class ModulesHandler(BaseHandler):
         lines.append("Führe 'bach modules update' aus, um alle Updates zu installieren.")
         return True, "\n".join(lines)
 
+    def _auto_update_cycle(self, apply_updates: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
+        """Führt einen automatisierten Prüf- und Aktualisierungszyklus aus."""
+        check = self.check_for_updates(cache_ttl_sec=0)
+        has_upd = bool(check.get("has_updates"))
+        upd_count = int(check.get("updates_count", 0))
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        lines = [
+            "=== MODUL AUTO-UPDATE RUNNER ===",
+            f"Prüfzeitpunkt:        {now_str}",
+            f"Installierte Module:  {check.get('total_installed', 0)}",
+            f"Verfügbare Updates:   {upd_count}",
+            f"Modus:                {'Automatisches Upgrade (--apply)' if apply_updates else 'Monitoring / Benachrichtigung'}",
+            "",
+        ]
+
+        if not has_upd:
+            lines.append("[OK] Alle Module sind aktuell. Keine Hintergrund-Aktion erforderlich.")
+            return True, "\n".join(lines)
+
+        for u in check.get("updates", []):
+            lines.append(f"  • {u['name']:<24} v{u['current_version']} -> v{u['new_version']} ({u['source']})")
+
+        if not apply_updates:
+            lines.append("")
+            lines.append(f"[HINWEIS] {upd_count} Modul-Update(s) erkannt. Führe 'bach modules auto-update --apply' oder 'bach modules update' aus.")
+            return True, "\n".join(lines)
+
+        lines.append("")
+        lines.append("Starte automatisches Modul-Update...")
+        ok_upd, msg_upd = self._update_modules(dry_run=dry_run)
+        lines.append(msg_upd)
+        return ok_upd, "\n".join(lines)
+
     def _update_modules(self, dry_run: bool = False) -> Tuple[bool, str]:
         """Sucht nach neueren Modulversionen in allen Quellpfaden und aktualisiert sie."""
         installed = {m["name"]: m for m in self.get_modules_data()}
@@ -600,3 +640,22 @@ class ModulesHandler(BaseHandler):
             "  bach modules wire",
         ]
         return True, "\n".join(lines)
+
+
+def run_modules_auto_update_runner(
+    base_dir: Optional[Union[str, Path]] = None,
+    apply_updates: bool = False,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Programmatischer Einstiegspunkt für den Scheduler / Daemon-Runner."""
+    handler = ModulesHandler(base_dir)
+    ok, msg = handler._auto_update_cycle(apply_updates=apply_updates, dry_run=dry_run)
+    check = handler.check_for_updates(cache_ttl_sec=0)
+    return {
+        "success": ok,
+        "message": msg,
+        "has_updates": check.get("has_updates", False),
+        "updates_count": check.get("updates_count", 0),
+        "applied": apply_updates and not dry_run,
+        "timestamp": time.time(),
+    }

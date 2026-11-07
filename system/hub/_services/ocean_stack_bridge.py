@@ -839,6 +839,18 @@ def load_memory_module() -> Any:
     return get_service_or_standalone("memory", fallback_import="hub.mem")
 
 
+def load_skills_module() -> Any:
+    return get_service_or_standalone("skills", fallback_import="hub.skills")
+
+
+def load_tools_module() -> Any:
+    return get_service_or_standalone("tools", fallback_import="hub.tools")
+
+
+def load_agents_module() -> Any:
+    return get_service_or_standalone("agents", fallback_import="hub.agents")
+
+
 def detect_legacy_in_tree_services() -> dict[str, Any]:
     """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
     bach_root = Path(__file__).resolve().parents[3]
@@ -886,6 +898,9 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
         "hooks": "hooks",
         "mem": "memory",
         "memory": "memory",
+        "skills": "skills",
+        "tools": "tools",
+        "agents": "agents",
     }
 
     in_tree_services: list[dict[str, Any]] = []
@@ -982,6 +997,9 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "plugins": ("plugins", load_plugins_module),
         "hooks": ("hooks", load_hooks_module),
         "memory": ("memory", load_memory_module),
+        "skills": ("skills", load_skills_module),
+        "tools": ("tools", load_tools_module),
+        "agents": ("agents", load_agents_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():
