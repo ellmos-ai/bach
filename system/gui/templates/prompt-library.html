@@ -158,6 +158,7 @@
                 <button class="btn" onclick="previewPromptBoard()" title="Vorschau der PromptBoard-Library ohne Speichern">PromptBoard-Vorschau</button>
                 <button class="btn" onclick="importPromptBoard()" title="Importiert library.json aus PromptBoard (idempotent)">Import aus PromptBoard</button>
                 <button class="btn" onclick="exportPromptBoard()" title="Prompts aus BACH nach PromptBoard synchronisieren/exportieren">Nach PromptBoard exportieren</button>
+                <button class="btn btn-primary" onclick="syncPromptBoard()" title="Bidirektionaler Zwei-Wege-Sync zwischen BACH und PromptBoard library.json">🔄 Zwei-Wege-Sync</button>
                 <input type="file" id="pl-file-input" accept=".json,application/json" style="display: none;" onchange="handleFileSelect(event)">
                 <button class="btn" onclick="document.getElementById('pl-file-input').click()" title="Externe PromptBoard library.json Datei auswählen">JSON-Datei importieren</button>
                 <button class="btn btn-primary" onclick="startCreate()">Neuer Prompt</button>
@@ -348,7 +349,8 @@
                 '<label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:0.25rem;">Live-Vorschau (aufgelöster Prompt):</label>' +
                 '<div id="pl-preview-box" style="white-space:pre-wrap; font-family:monospace; font-size:0.82rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:0.75rem; max-height:180px; overflow-y:auto; color:var(--text); margin-bottom:0.75rem;"></div>' +
                 '<div class="pl-actions" style="margin-top:0;">' +
-                '<button class="btn btn-primary" onclick="openResolvedInChat()">Mit Variablen im Chat öffnen</button>' +
+                '<button class="btn btn-primary" onclick="runResolvedInChat()" title="Startet den Chat direkt mit dem aufgelösten Prompt und sendet ihn ab">🚀 Direkt ausführen</button>' +
+                '<button class="btn" onclick="openResolvedInChat()">Mit Variablen im Chat öffnen</button>' +
                 '<button class="btn" onclick="copyResolved()">Vorschau kopieren</button>' +
                 '<button class="btn" onclick="resetVariableValues()">Variablen leeren</button>' +
                 '</div>' +
@@ -357,6 +359,14 @@
                 '<button class="btn btn-primary" onclick="saveCurrent()">Speichern (neue Version)</button>' +
                 '<button class="btn" onclick="copyCurrent()">Text kopieren</button>' +
                 '<button class="btn" onclick="openCurrentInChat()">Im Chat als Entwurf öffnen</button>' +
+                '<label style="font-size:0.8rem; color:var(--text-muted); margin-left:6px; margin-right:2px; display:inline-flex; align-items:center;">Persona:</label>' +
+                '<select id="pl-chat-target" class="btn" style="background:var(--bg-card); color:var(--text); border:1px solid var(--border); padding:4px 6px; font-size:0.8rem;" title="Ziel-Chat oder Persona für Prompt-Ausführung">' +
+                '<option value="">Buddha (Standard)</option>' +
+                '<option value="agent:1">Agent #1 (Buddha Lead)</option>' +
+                '<option value="agent:2">Agent #2 (Rechercheur)</option>' +
+                '<option value="agent:3">Agent #3 (Coder)</option>' +
+                '</select>' +
+                '<button class="btn btn-primary" onclick="runCurrentInChat()" title="Prompt direkt im gewählten Chat/Persona ausführen">🚀 Direkt ausführen</button>' +
                 '<button class="btn" id="pl-btn-fav" onclick="toggleCurrentFavorite()">' + (p.is_favorite ? '⭐ Favorit (entfernen)' : '⭐ Als Favorit markieren') + '</button>' +
                 '<button class="btn" onclick="deleteCurrent()" style="margin-left:auto;">Löschen</button>' +
                 '</div>' +
@@ -523,9 +533,50 @@
             }
         }
 
+        function runResolvedInChat() {
+            const text = document.getElementById('pl-text');
+            if (!currentId || !text || !text.value.trim()) {
+                setStatus('Bitte zuerst einen nicht leeren Prompt auswählen', true);
+                return;
+            }
+            try {
+                const resolved = getSubstitutedPromptText();
+                const targetEl = document.getElementById('pl-chat-target');
+                const targetVal = targetEl ? targetEl.value : '';
+                const agentId = targetVal && targetVal.startsWith('agent:') ? Number(targetVal.split(':')[1]) : null;
+                BachChatDraft.store(resolved, null, { autorun: true, agent_id: agentId });
+                window.location.assign('/chat');
+            } catch (e) {
+                setStatus('Der Prompt-Runner konnte nicht gestartet werden', true);
+            }
+        }
+
         function copyCurrent() {
             const text = document.getElementById('pl-text');
             if (text) navigator.clipboard.writeText(text.value).then(() => setStatus('In Zwischenablage kopiert'));
+        }
+
+        function runCurrentInChat() {
+            const text = document.getElementById('pl-text');
+            if (!currentId || !text || !text.value.trim()) {
+                setStatus('Bitte zuerst einen nicht leeren Prompt auswählen', true);
+                return;
+            }
+            try {
+                const vars = extractTemplateVariables(text.value);
+                const hasFilledVars = vars.some(v => {
+                    const inp = document.querySelector('#pl-variables-grid input[data-var="' + v + '"]');
+                    return inp && inp.value.trim().length > 0;
+                });
+                const resolved = hasFilledVars ? getSubstitutedPromptText() : text.value;
+                const targetEl = document.getElementById('pl-chat-target');
+                const targetVal = targetEl ? targetEl.value : '';
+                const agentId = targetVal && targetVal.startsWith('agent:') ? Number(targetVal.split(':')[1]) : null;
+                BachChatDraft.store(resolved, null, { autorun: true, agent_id: agentId });
+                window.location.assign('/chat');
+            } catch (e) {
+                setStatus('Der Prompt-Runner konnte nicht gestartet werden', true);
+            }
         }
 
         function openCurrentInChat() {
@@ -573,6 +624,15 @@
                 const data = await api('/api/prompt-library/export-promptboard', { method: 'POST' });
                 setStatus('Export nach PromptBoard: ' + data.exported + ' neu hinzugefügt, ' + data.updated + ' aktualisiert (' + data.total + ' Einträge in ' + data.target + ')');
             } catch (e) { setStatus(e.message, true); }
+        }
+
+        async function syncPromptBoard() {
+            try {
+                const data = await api('/api/prompt-library/sync-promptboard', { method: 'POST' });
+                const updatedTotal = (data.updated_in_bach || 0) + (data.updated_in_promptboard || 0);
+                setStatus('Zwei-Wege-Sync abgeschlossen: ' + data.imported + ' importiert, ' + data.exported + ' exportiert, ' + updatedTotal + ' aktualisiert (' + data.total_promptboard + ' in PromptBoard, ' + data.total_bach + ' in BACH)');
+                loadList();
+            } catch (e) { setStatus('Sync fehlgeschlagen: ' + e.message, true); }
         }
 
         function handleDragOver(e) {

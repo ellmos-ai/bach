@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from system.tests.test_prompt_handler import PROMPT_SCHEMA
+
 
 SYSTEM_ROOT = Path(__file__).parent.parent
 TEMPLATES = SYSTEM_ROOT / "gui" / "templates"
@@ -83,7 +85,19 @@ def test_prompt_library_and_chat_routes_render_the_helper():
         assert "/static/js/prompt-chat-draft.js?v=1" in response.text
 
 
-def test_prompt_library_import_preview_endpoint(monkeypatch, tmp_path):
+@pytest.fixture
+def prompt_api_db(tmp_path, monkeypatch):
+    """Import tests always use their own schema, never an incidental global DB."""
+    import sqlite3
+    from gui import server
+    path = tmp_path / "prompt-api.sqlite"
+    with sqlite3.connect(path) as conn:
+        conn.executescript(PROMPT_SCHEMA)
+    monkeypatch.setattr(server, "BACH_DB", path)
+    return path
+
+
+def test_prompt_library_import_preview_endpoint(monkeypatch, tmp_path, prompt_api_db):
     pytest.importorskip("fastapi")
     import json
     from fastapi.testclient import TestClient
@@ -122,7 +136,7 @@ def test_prompt_library_template_has_drag_and_drop_and_file_upload():
     assert "/api/prompt-library/import-json" in source
 
 
-def test_prompt_library_import_json_endpoints(monkeypatch):
+def test_prompt_library_import_json_endpoints(monkeypatch, prompt_api_db):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
     from gui import server
@@ -188,6 +202,16 @@ def test_api_voice_stt_endpoint(monkeypatch):
     from fastapi.testclient import TestClient
     from gui import server
 
+    from types import SimpleNamespace
+    calls = []
+    class SyntheticVoice:
+        def transcribe_bytes(self, data, *, suffix, language):
+            calls.append((data, suffix, language))
+            return "synthetischer Text"
+        def status(self):
+            return SimpleNamespace(stt_engine="synthetic-test")
+    monkeypatch.setattr(server, "_get_voice_io_service", lambda: SyntheticVoice())
+    monkeypatch.setattr(server, "_load_capability_permissions", lambda: {"speech_to_text": True})
     monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "test-token" else None)
     client = TestClient(server.app, raise_server_exceptions=False, headers={"Authorization": "Bearer test-token"})
 
@@ -201,6 +225,25 @@ def test_api_voice_stt_endpoint(monkeypatch):
     assert res_ok.status_code == 200
     data = res_ok.json()
     assert data["schema"] == "ellmos.voice-io.stt.v1"
+    assert data["text"] == "synthetischer Text"
+    assert data["backend"] == "synthetic-test"
+    assert calls == [(b"RIFF-fake-wav", ".wav", "de")]
+
+
+def test_voice_missing_provider_returns_explicit_unavailable_without_details(monkeypatch):
+    import base64
+    from fastapi.testclient import TestClient
+    from gui import server
+    def missing():
+        raise ModuleNotFoundError("private-provider-path")
+    monkeypatch.setattr(server, "_get_voice_io_service", missing)
+    monkeypatch.setattr(server, "_load_capability_permissions", lambda: {"speech_to_text": True})
+    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "test-token" else None)
+    client = TestClient(server.app, raise_server_exceptions=True, headers={"Authorization": "Bearer test-token"})
+    response = client.post("/api/voice/stt", json={"audio_b64": base64.b64encode(b"fixture").decode()})
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Sprachmodul nicht verfügbar"}
+    assert "private-provider-path" not in response.text
 
 
 def test_prompt_library_favorite_api_and_gui_features(monkeypatch, tmp_path):
@@ -283,7 +326,14 @@ def test_chat_tray_favorite_prompts_and_auto_preview():
         "PIL.ImageFont": MagicMock(),
     }):
         from hub._services.chat.chat_tray import BACHTray
-        tray = BACHTray(host="testhost", port=9999)
+        tray = BACHTray.__new__(BACHTray)
+        tray.favorite_prompts = {}
+        tray.prompts = {"Synthetic": {"Example": "Synthetic prompt"}}
+        tray.prompt_source = "fixture"
+        tray.modular_standalone_count = 0
+        tray._promptboard_app_path = lambda: None
+        tray._promptboard_library_candidates = lambda: []
+        tray._ensure_initial_favorites(tray.prompts)
 
         # Test preview generator
         long_text = "Dies ist ein sehr langer Prompt mit vielen Zeilen\n\nund Absätzen\tund Leerzeichen, der auf maximal siebzig Zeichen gekürzt werden muss."
@@ -301,4 +351,107 @@ def test_chat_tray_favorite_prompts_and_auto_preview():
         assert snapshot["favorite_count"] >= 1
 
 
+def test_prompt_runner_and_persona_binding_in_gui_and_templates():
+    """Verify that Prompt-Runner and Persona-Binding controls are integrated across GUI pages."""
+    pl_src = (TEMPLATES / "prompt-library.html").read_text(encoding="utf-8")
+    assert "runResolvedInChat()" in pl_src
+    assert "runCurrentInChat()" in pl_src
+    assert 'id="pl-chat-target"' in pl_src
+    assert "/chat?" not in pl_src
 
+    idx_src = (TEMPLATES / "index.html").read_text(encoding="utf-8")
+    assert "runQuickPromptInChat()" in idx_src
+    assert "Direkt ausführen" in idx_src
+
+    chat_src = (TEMPLATES / "chat.html").read_text(encoding="utf-8")
+    assert "pendingPromptAutorun" in chat_src
+    assert "draftAgentId" in chat_src
+    assert "effectiveAgent" in chat_src
+
+    js_src = (STATIC_JS / "prompt-chat-draft.js").read_text(encoding="utf-8")
+    assert "autorun" in js_src
+    assert "agent_id" in js_src
+    assert "slot_id" in js_src
+
+
+
+
+
+
+def test_tray_prompt_read_uses_only_registry_database_readonly(monkeypatch, tmp_path):
+    import sqlite3
+    from unittest.mock import MagicMock, patch
+    db = tmp_path / "registry.sqlite"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE prompt_templates(name TEXT,text TEXT,category TEXT,tags TEXT)")
+        conn.execute("INSERT INTO prompt_templates VALUES ('Canonical','Synthetic text','Test','favorite')")
+    with patch.dict("sys.modules", {name: MagicMock() for name in ("pystray","PIL","PIL.Image","PIL.ImageDraw","PIL.ImageFont")}):
+        import importlib
+        chat_tray = importlib.import_module("hub._services.chat.chat_tray")
+        monkeypatch.setattr(chat_tray, "BACH_DB", db)
+        tray = chat_tray.BACHTray.__new__(chat_tray.BACHTray)
+        tray.favorite_prompts = {}
+        real_connect = sqlite3.connect
+        calls = []
+        def readonly_connect(database, **kwargs):
+            calls.append(database)
+            assert database == db.resolve().as_uri() + "?mode=ro" and kwargs.get("uri") is True
+            return real_connect(database, **kwargs)
+        monkeypatch.setattr(chat_tray.sqlite3, "connect", readonly_connect)
+        assert tray._load_db_prompts.__globals__["BACH_DB"] is db and db.is_file()
+        observed = tray._load_db_prompts()
+        assert calls, (observed, str(chat_tray.BACH_DB), chat_tray.__file__)
+        assert observed == {"Test": {"Canonical": "Synthetic text"}}, calls
+        assert tray.favorite_prompts["Canonical"]["text"] == "Synthetic text"
+        missing = tmp_path / "missing.sqlite"
+        monkeypatch.setattr(chat_tray, "BACH_DB", missing)
+        assert tray._load_db_prompts() == {}
+        assert len(calls) == 1 and not missing.exists()
+
+
+@pytest.mark.parametrize("missing_schema", [False, True])
+def test_prompt_import_infrastructure_is_unavailable_without_mutation(monkeypatch, tmp_path, missing_schema):
+    import json
+    import sqlite3
+    from fastapi.testclient import TestClient
+    from gui import server
+    db = tmp_path / "not-ready.sqlite"
+    if missing_schema:
+        with sqlite3.connect(db) as conn:
+            conn.execute("CREATE TABLE marker(value TEXT)")
+        before = db.read_bytes()
+    library = tmp_path / "library.json"
+    library.write_text(json.dumps({"items":[{"name":"Synthetic","content":"text"}]}),encoding="utf-8")
+    monkeypatch.setattr(server,"BACH_DB",db)
+    monkeypatch.setattr(server,"_promptboard_library_paths",lambda:[library])
+    monkeypatch.setattr(server,"validate_token",lambda token: {"id":1} if token=="test-token" else None)
+    client=TestClient(server.app,raise_server_exceptions=True,headers={"Authorization":"Bearer test-token"})
+    calls=[('GET','/api/prompt-library/import-promptboard/preview',None),
+           ('POST','/api/prompt-library/import-promptboard',None),
+           ('POST','/api/prompt-library/import-json/preview',{'payload':{'items':[{'name':'Synthetic','content':'text'}]}}),
+           ('POST','/api/prompt-library/import-json',{'payload':{'items':[{'name':'Synthetic','content':'text'}]}})]
+    for method,url,payload in calls:
+        response=client.request(method,url,**({'json':payload} if payload else {}))
+        assert response.status_code==503
+        assert response.json()=={'detail':'Prompt-Datenbank nicht verfügbar'}
+    if missing_schema:
+        assert db.read_bytes()==before
+        with sqlite3.connect(db) as conn:
+            assert conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()==[('marker',)]
+    else:
+        assert not db.exists()
+
+
+def test_prompt_preview_does_not_write_and_bad_input_stays_distinct(monkeypatch, prompt_api_db):
+    from fastapi.testclient import TestClient
+    from gui import server
+    monkeypatch.setattr(server,"validate_token",lambda token:{"id":1} if token=="test-token" else None)
+    client=TestClient(server.app,raise_server_exceptions=True,headers={"Authorization":"Bearer test-token"})
+    before=prompt_api_db.read_bytes()
+    preview=client.post('/api/prompt-library/import-json/preview',json={'payload':{'items':[{'name':'Synthetic','content':'text'}]}})
+    assert preview.status_code==200 and preview.json()['imported']==1
+    malformed=client.post('/api/prompt-library/import-json/preview',content='{',headers={'Content-Type':'application/json'})
+    assert malformed.status_code==400
+    invalid=client.post('/api/prompt-library/import-json/preview',json={'payload':{'items':'not-list'}})
+    assert invalid.status_code==422
+    assert prompt_api_db.read_bytes()==before

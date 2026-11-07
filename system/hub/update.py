@@ -1156,18 +1156,27 @@ class UpdateHandler(BaseHandler):
         if reimport_mode:
             lines.append("")
             lines.append("=== RE-IMPORT & HOT-WIRING (Standalone Module) ===")
-            exports_dir = self.base_path / "exports" / "modules"
+            candidate_exports = [
+                self.base_path / "exports" / "modules",
+                self.base_path / "system" / "exports" / "modules",
+            ]
             from hub.skills import verify_selfcontained_module
             from hub._services.ocean_stack_bridge import invalidate_module_cache
 
             reimported_count = 0
-            if exports_dir.exists():
+            seen_module_names = set()
+            for exports_dir in candidate_exports:
+                if not exports_dir.exists():
+                    continue
                 for exp_dir in sorted(exports_dir.glob("*_export")):
                     if not exp_dir.is_dir():
                         continue
                     m_valid, m_errs, _, meta = verify_selfcontained_module(exp_dir)
                     if m_valid:
                         m_name = meta.get("name", exp_dir.name.replace("_export", ""))
+                        if m_name in seen_module_names:
+                            continue
+                        seen_module_names.add(m_name)
                         m_ver = meta.get("version", "1.0.0")
                         target_mod_dir = modules_dir / m_name
                         if is_dry_run:
@@ -1182,6 +1191,16 @@ class UpdateHandler(BaseHandler):
             if not is_dry_run and reimported_count > 0:
                 invalidate_module_cache()
                 lines.append(f"\n[OK] {reimported_count} Standalone-Modul(e) re-importiert und ueber ocean_stack_bridge hot-wired.")
+
+        # Module-Update-Scan über ModulesHandler
+        try:
+            from hub.modules import ModulesHandler
+            mod_handler = ModulesHandler(self.base_path)
+            _, mod_update_msg = mod_handler.handle("update", args, dry_run=is_dry_run)
+            lines.append("")
+            lines.append(mod_update_msg)
+        except Exception as exc:
+            lines.append(f"\n[WARNUNG] ModulesHandler update fehlgeschlagen: {exc}")
 
         return True, "\n".join(lines)
 

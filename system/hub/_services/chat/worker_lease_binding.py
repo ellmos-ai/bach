@@ -91,6 +91,7 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
         "decompose_already_decomposed": 'Diese Aufgabe wurde bereits in Teilaufgaben zerlegt; keine erneute Zerlegung anlegen, sondern Zwischenstand mit submit_result(complete=false) zurückgeben.',
         "mutation_scope": 'Änderungen nur an der gebundenen Task: task_id ist die eigene ID als Zahl, nicht als Text.',
+        "followup_capability_missing": 'Ein Werkzeug wurde abgelehnt, weil diesem Worker die Freigabe fehlt. Das ist ein Blocker, kein Rest: keine Folgetask anlegen, sondern task_manage(action="submit_result", task_id=<ID>, result="<fehlende Freigabe>", complete=false) zurückgeben.',
     }
 
     def __init__(self, reason):
@@ -139,6 +140,9 @@ class WorkerLeaseBinding:
         # Cumulative for this lease, not reset by model block boundaries.
         # Starting a tool can have an effect even when its response is lost.
         self._tool_dispatch_count = 0
+        # PB-1: a refused capability is a blocker, never a reason for a follow-up.
+        self._capability_denials = set()
+        self.before_return = None  # PB-14: controller hook run before every return
 
     @classmethod
     def acquire(cls, client, task_id, *, worker_id, host, generation, is_current,
@@ -632,6 +636,11 @@ class WorkerLeaseBinding:
         with self._lock:
             self.assert_active(soft=soft)
             self._tool_dispatch_count += 1
+
+    def record_capability_denial(self, code):
+        """A tool this worker may not use was refused (fixed denial code)."""
+        with self._lock:
+            self._capability_denials.add(code)
 
     @property
     def decomposition_receipt(self):
@@ -1167,13 +1176,34 @@ class WorkerLeaseBinding:
         with self._lock:
             if not self._active or self._closed or not self._is_current():
                 return False
+            outcome, note = self._return_outcome(note)
             try:
-                self._operation(self._client.release, outcome="return", note=note,
+                self._operation(self._client.release, outcome=outcome, note=note,
                                 check_policy=False)
             except LeaseError:
                 return False
             self._deactivate("lease_returned", close=True)
             return True
+
+    def _before_release(self, note):
+        """PB-14 (#3999): controller hook, e.g. a local WIP commit of the task tree."""
+        hook = getattr(self, "before_return", None)
+        if callable(hook):
+            try:
+                hook(note)
+            except Exception as exc:  # noqa: BLE001 -- the release must still happen
+                log.warning("before_return_failed task_id=%s reason=%s", self.task_id, type(exc).__name__)
+
+    def _return_outcome(self, note):
+        """The n-th identical task-scoped return blocks the task (PB-1, #3985)."""
+        self._before_release(note)
+        from hub._services.task_return_stats import block_reason_for_next_return
+        try:
+            reason = block_reason_for_next_return(self._client, self.task_id, note)
+        except Exception as exc:  # noqa: BLE001 -- accounting never prevents a return
+            log.warning("return_accounting_unavailable task_id=%s reason=%s", self.task_id, type(exc).__name__)
+            reason = None
+        return ("blocked", reason) if reason else ("return", note)
 
     def execute_task_command(self, operation, arguments):
         from .bound_task_command import bound_task_command
@@ -1561,7 +1591,11 @@ class WorkerLeaseBinding:
                         raise WorkerTaskManageArgumentError("update_status")
                     outcome = outcomes[changes["status"]]
                     # Fixed reason codes; a saved partial state stays in the description.
-                    note = "worker_returned_open" if outcome == "return" else "worker_blocked"
+                    if outcome == "return":
+                        outcome, note = self._return_outcome("worker_returned_open")
+                    else:
+                        note = "worker_blocked"
+                        self._before_release(note)
                     self._operation(self._client.release, outcome=outcome, note=note)
                     self._deactivate("status_released", close=True)
                 else:
@@ -1575,6 +1609,8 @@ class WorkerLeaseBinding:
                               "category", "required_model", "assigned_slot", "result_max_chars"}
                     if set(args) - fields - {"action"}:
                         raise LeaseProtocolError("Unbekannte Teilaufgabenfelder")
+                    if self._capability_denials:
+                        raise WorkerTaskManageArgumentError("followup_capability_missing")
                     subtasks = [{key: value for key, value in args.items() if key in fields}]
                     close_parent = False
                 else:
