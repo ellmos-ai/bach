@@ -123,7 +123,8 @@ jobs:
             --junitxml="$RUNNER_TEMP/native-scheduler.xml" \
             system/tests/test_agent_triggers_api.py \
             system/tests/test_scheduler_provider.py \
-            system/tests/test_scheduler_provider_wiring.py
+            system/tests/test_scheduler_provider_wiring.py \
+            system/tests/test_native_scheduler_gate_guard.py
           python - <<'PY'
           from collections import Counter
           import os
@@ -136,7 +137,8 @@ jobs:
               assert not any(case.find(tag) is not None for tag in ('skipped', 'failure', 'error')), 'Native scheduler case was not successful'
               counts[case.get('classname', '').rsplit('.', 1)[-1]] += 1
           baseline = {'test_agent_triggers_api': 56, 'test_scheduler_provider': 2,
-                      'test_scheduler_provider_wiring': 28}
+                      'test_scheduler_provider_wiring': 28,
+                      'test_native_scheduler_gate_guard': 24}
           assert all(counts[name] >= minimum for name, minimum in baseline.items()), 'Native scheduler coverage is incomplete'
           print('Required native scheduler cases:', dict(counts), 'no skips/failures/errors')
           PY

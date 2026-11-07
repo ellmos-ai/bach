@@ -211,9 +211,12 @@ def _execute(operation, identifier=None, payload=None, agent_id=None):
         if operation == "list":
             if agent_id is not None:
                 _identifier(agent_id)
-            return _response(
-                triggers=[_snapshot(row) for row in triggers.list(agent_id=agent_id)]
-            )
+            snapshots = [_snapshot(row) for row in triggers.list(agent_id=agent_id)]
+            if agent_id is not None and any(
+                row["agent_id"] != agent_id for row in snapshots
+            ):
+                _error(503, "unavailable", "readback_unverified")
+            return _response(triggers=snapshots)
         identifier = _identifier(identifier)
         if operation == "get":
             current = _snapshot(triggers.get(identifier))
@@ -263,9 +266,15 @@ def _execute(operation, identifier=None, payload=None, agent_id=None):
             ):
                 _error(400, "invalid", "invalid_delivery")
             before = _snapshot(triggers.get(identifier))
+            if before["id"] != identifier:
+                _error(503, "unavailable", "readback_unverified")
             delivery = triggers.deliver(identifier, **payload)
             after = _snapshot(triggers.get(identifier))
-            if before != after or after["version"] != expected:
+            if (
+                after["id"] != identifier
+                or before != after
+                or after["version"] != expected
+            ):
                 _error(503, "unavailable", "readback_unverified")
             if (
                 not isinstance(delivery, dict)

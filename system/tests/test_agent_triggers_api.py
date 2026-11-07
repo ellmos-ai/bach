@@ -538,6 +538,63 @@ def authenticated_native(tmp_path, monkeypatch):
         yield module, store, client
 
 
+@pytest.mark.parametrize("wrong_read", ["before", "after"])
+def test_delivery_readback_is_bound_to_requested_identity(
+    authenticated_native, monkeypatch, wrong_read
+):
+    module, store, client = authenticated_native
+    headers = {"Authorization": "Bearer synthetic-device-secret"}
+    for identifier in ("requested", "foreign"):
+        response = client.post(
+            "/api/agent-triggers", headers=headers,
+            json=definition(identifier, schedule={"kind": "event", "event_type": "task.accepted"}),
+        )
+        assert response.status_code == 200, response.text
+    original = module.AgentTriggers.get
+    calls = []
+
+    def wrong_identity(self, identifier):
+        calls.append(identifier)
+        if wrong_read == "before" or len(calls) == 2:
+            return original(self, "foreign")
+        return original(self, identifier)
+
+    monkeypatch.setattr(module.AgentTriggers, "get", wrong_identity)
+    response = client.post(
+        "/api/agent-triggers/requested/deliver", headers=headers,
+        json={"expected_version": 1, "event_id": "identity-event",
+              "event_type": "task.accepted", "source": "synthetic-http"},
+    )
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["reason_code"] == "readback_unverified"
+    assert "ack" not in response.json()
+    expected_jobs = 0 if wrong_read == "before" else 1
+    assert len(store.list_jobs()) == expected_jobs
+    with closing(sqlite3.connect(store.path)) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM agent_trigger_deliveries").fetchone()[0] == expected_jobs
+    assert store.recent_runs() == []
+
+
+def test_filtered_list_rejects_native_snapshot_for_foreign_agent(
+    authenticated_native, monkeypatch
+):
+    module, store, client = authenticated_native
+    headers = {"Authorization": "Bearer synthetic-device-secret"}
+    response = client.post(
+        "/api/agent-triggers", headers=headers,
+        json=definition("foreign", agent_id="foreign@host",
+                        schedule={"kind": "event", "event_type": "task.accepted"}),
+    )
+    assert response.status_code == 200, response.text
+    original = module.AgentTriggers.list
+    monkeypatch.setattr(module.AgentTriggers, "list", lambda self, **kwargs: original(self))
+    response = client.get("/api/agent-triggers?agent_id=requested@host", headers=headers)
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"]["reason_code"] == "readback_unverified"
+    assert "foreign@host" not in response.text
+    assert store.list_jobs() == [] and store.recent_runs() == []
+
+
 @pytest.mark.parametrize("transport", ["device-cookie", "browser-cookie", "bearer"])
 @pytest.mark.parametrize("padding", ["", " ", "  "])
 @pytest.mark.parametrize("as_key", [False, True])
