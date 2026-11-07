@@ -82,7 +82,8 @@ def _akte(service, text, name="Verlaufsprotokoll_2025.txt"):
 
 # --- F1: Geburtsdatum ----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("value", ["", "   ", "unbekannt", "31.02.2014", "14", None])
+@pytest.mark.parametrize("value", ["", "   ", "unbekannt", "31.02.2014", "14", None,
+                                    "Juli 2014", "Jul 2014", "Juli2014", "July 2014", "07/2014", "2014"])
 def test_cloud_profile_refuses_a_birth_date_it_cannot_read(service, value):
     session = service.start_session()
 
@@ -92,6 +93,15 @@ def test_cloud_profile_refuses_a_birth_date_it_cannot_read(service, value):
     assert exc.value.code == "birth_date_invalid"
     assert session.profile is None
     assert "31.02" not in str(exc.value) and "unbekannt" not in str(exc.value)
+
+
+@pytest.mark.parametrize("value", ["Juli 2014", "Jul 2014", "Juli2014", "July 2014", "07/2014", "2014"])
+def test_month_or_year_alone_never_becomes_a_full_birth_date(value):
+    """R8-a: "Juli 2014" wurde als "Juli 20 14" gelesen -> 20.07.2014, ein erfundener Tag."""
+    assert anonymizer_service.normalize_date(value) == ""
+    with pytest.raises(rws.PromptPrivacyError) as exc:
+        rws.require_birth_date(value)
+    assert exc.value.code == "birth_date_invalid"
 
 
 def test_cloud_profile_needs_the_birth_date_argument(service):

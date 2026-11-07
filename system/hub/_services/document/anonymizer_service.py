@@ -306,7 +306,8 @@ _DATE_INPUTS = (  # (Regex, Reihenfolge der Gruppen): Tag/Monat/Jahr; Monat als 
     (re.compile(r"(\d{2})(\d{2})(\d{4}|\d{2})"), "dmy"),
     (re.compile(r"(\d{4})(\d{2})(\d{2})"), "ymd"),
     (re.compile(rf"(\d{{1,2}}){_ORD}\.?\s*([^\W\d_]+)\.?,?\s*'?(\d{{4}}|\d{{2}})"), "dmy"),
-    (re.compile(rf"([^\W\d_]+)\.?\s*(\d{{1,2}}){_ORD}\.?,?\s*'?(\d{{4}}|\d{{2}})"), "mdy"),
+    # (?!\d): "Juli 2014" ist Monat+Jahr, nie "Juli 20 14" (erfundener Tag im Geburtsdatum, R8-a)
+    (re.compile(rf"([^\W\d_]+)\.?\s*(\d{{1,2}})(?!\d){_ORD}\.?,?\s*'?(\d{{4}}|\d{{2}})"), "mdy"),
 )
 
 
