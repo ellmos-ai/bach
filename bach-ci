@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# bach-ci - lokale CI-Pruefkette fuer BACH (im Repo-Root ablegen).
+# Aufruf: bash bach-ci   (oder nach 'chmod +x bach-ci' direkt als ./bach-ci)
+#
+# Pruefkette, passend zu den BACH-Pruefregeln aus AGENTS/Contributing
+# ("Vor jedem Commit Pruefung auf Zugangsdaten und git diff --check"):
+#   1. python3 -m compileall        Syntaxcheck des Python-Codes
+#   2. pytest                       Test-Suite aus pytest.ini (testpaths=system/tests)
+#   3. Secrets-Scan                 Zugangsdaten-Muster in geaenderten/untracked Dateien
+#   4. git diff --check             Whitespace-/Konfliktmarker-Fehler im Diff
+#
+# Optionen:
+#   --fast         nur Schritt 3+4 (Smoke wenn nur Doku/Shell geaendert wurde)
+#   --skip-tests   Schritt 1 laufen lassen, Schritt 2 ueberspringen
+#
+# Bewusst nur geaenderte Dateien scannen (unstaged + staged + untracked),
+# damit ein Lauf auf einem frischen Checkout schnell bleibt.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
+
+FAST=0
+SKIP_TESTS=0
+for arg in "$@"; do
+  case "$arg" in
+    --fast) FAST=1 ;;
+    --skip-tests) SKIP_TESTS=1 ;;
+    *)
+      echo "bach-ci: unbekannte Option '$arg' (unterstuetzt: --fast, --skip-tests)" >&2
+      exit 2
+      ;;
+  esac
+done
+
+echo "== bach-ci: Start in $REPO_ROOT =="
+
+# --- Schritt 1: compileall -----------------------------------------------
+if [ "$FAST" -eq 0 ]; then
+  echo "[1/4] compileall ..."
+  python3 -m compileall -q -x '_archive|templates' bach.py bach_api.py bach_report_client.py system tests
+  echo "OK: compileall"
+else
+  echo "[1/4] compileall uebersprungen (--fast)"
+fi
+
+# --- Schritt 2: pytest ---------------------------------------------------
+if [ "$FAST" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ]; then
+  echo "[2/4] pytest ..."
+  if python3 -m pytest --version >/dev/null 2>&1; then
+    python3 -m pytest -q
+  else
+    echo "FEHLER: pytest nicht installiert (pip install -r requirements.txt)." >&2
+    echo "        Kein unittest-Fallback, damit die Suite wie im GitHub-CI laeuft." >&2
+    exit 3
+  fi
+  echo "OK: Tests"
+else
+  echo "[2/4] Tests uebersprungen"
+fi
+
+# --- Schritt 3: Secrets-Scan ---------------------------------------------
+echo "[3/4] Secrets-Scan ..."
+changed_files="$(
+  { git diff --name-only; git diff --cached --name-only; git ls-files -o --exclude-standard; } \
+    2>/dev/null | sort -u
+)"
+
+scan_failed=0
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  [ -f "$f" ] || continue
+  if grep -EIq \
+       -e 'AKIA[0-9A-Z]{16}' \
+       -e 'ghp_[A-Za-z0-9]{36}' \
+       -e 'github_pat_[A-Za-z0-9_]{20,}' \
+       -e 'sk-[A-Za-z0-9_-]{20,}' \
+       -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+       -e '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' \
+       "$f"; then
+    echo "SECRETS-TREFFER (harte Muster) in $f:" >&2
+    grep -EIn \
+       -e 'AKIA[0-9A-Z]{16}' \
+       -e 'ghp_[A-Za-z0-9]{36}' \
+       -e 'github_pat_[A-Za-z0-9_]{20,}' \
+       -e 'sk-[A-Za-z0-9_-]{20,}' \
+       -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+       -e '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' \
+       "$f" | head -n 5 >&2
+    scan_failed=1
+  fi
+  if grep -Eiq \
+       -e '(api[_-]?key|secret|passwd|password)[[:space:]]*[=:][[:space:]]\"[^\"]{12,}\"' \
+       -e "(api[_-]?key|secret|passwd|password)[[:space:]]*[=:][[:space:]]'[^']{12,}'" \
+       "$f"; then
+    echo "SECRETS-TREFFER (Zuweisung von Literalen) in $f:" >&2
+    grep -Ein \
+       -e '(api[_-]?key|secret|passwd|password)[[:space:]]*[=:][[:space:]]\"[^\"]{12,}\"' \
+       -e "(api[_-]?key|secret|passwd|password)[[:space:]]*[=:][[:space:]]'[^']{12,}'" \
+       "$f" | head -n 5 >&2
+    scan_failed=1
+  fi
+done <<EOF
+$changed_files
+EOF
+
+if [ "$scan_failed" -ne 0 ]; then
+  echo "FEHLER: moegliche Zugangsdaten gefunden - Commit verweigert." >&2
+  exit 4
+fi
+if [ -z "$changed_files" ]; then
+  echo "OK: keine geaenderten Dateien - Scan ausgesetzt"
+else
+  echo "OK: Secrets-Scan sauber"
+fi
+
+# --- Schritt 4: git diff --check -----------------------------------------
+echo "[4/4] git diff --check ..."
+git diff --check
+git diff --cached --check
+echo "OK: kein Whitespace-/Konfliktproblem im Diff"
+
+echo "== bach-ci: alle Pruefungen bestanden =="

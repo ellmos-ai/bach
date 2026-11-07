@@ -217,6 +217,10 @@ def _parse_daily_day(day: dict) -> dict:
 
 def get_weather(lat: float, lon: float, lang: str = "de",
                 include_forecast: bool = False) -> Optional[dict]:
+    url = f"https://wttr.in/{lat:.4f},{lon:.4f}?format=j1&lang={lang}"
+    data = _fetch_json(url, lang)
+    cc = data.get("current_condition", [{}])[0]
+    try:
         area = data.get("nearest_area", [{}])[0]
 
         area_name = area.get("areaName", [{}])[0].get("value", "?")
