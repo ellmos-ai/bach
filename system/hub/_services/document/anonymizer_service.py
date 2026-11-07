@@ -601,6 +601,9 @@ _NER_COMMON_WORDS = {
     "alltag", "anziehen", "ausziehen", "zuständig", "zustaendig", "situationen",
     "freizeit", "verhalten", "essen", "spielen", "lernen", "schlafen", "waschen",
     "wahrnehmung", "kommunikation", "sprache", "schule", "kindergarten", "beispiele",
+    # Fachbegriffe aus Foerderberichten (PB-15): sonst werden sie zu "Person00X" und das Cloud-Modell
+    # bekommt kaum Fachinhalt
+    "fortschritte", "feinmotorik", "grobmotorik", "motorik", "sozialverhalten",
 }
 # Endungen/Kopfwoerter typischer Gattungsbegriffe aus Foerderberichten. Bewusst
 # KEIN "-lich"/"-ig" (Nachnamen wie Ehrlich, Hennig).
@@ -608,6 +611,7 @@ _NER_COMMON_SUFFIXES = ("ung", "ungen", "heit", "keit", "schaft", "tion", "tione
 _NER_COMMON_HEADS = (
     "bericht", "protokoll", "gespräch", "plan", "zeitraum", "therapie",
     "diagnostik", "gutachten", "bescheid", "antrag", "verlauf",
+    "gespraech", "situation", "situationen",
 )
 
 # Anrede/Titel + Name: deterministisch, unabhaengig vom NER-Modell (NER verfehlt

@@ -3,7 +3,7 @@
 """PB-15: Der Foerderbericht muss ein echter Bericht aus der Vorlage sein.
 
 Nur synthetische Daten und eine neutrale, im Test erzeugte Vorlage. Die private
-Geiger-Vorlage und der private Generator werden nie gelesen.
+private Vorlage und der private Generator werden nie gelesen.
 """
 
 import re
@@ -92,5 +92,5 @@ def test_unmatched_sections_and_placeholders_are_reported(tmp_path, monkeypatch)
 
     assert path is not None
     joined = " ".join(session.warnings)
-    assert "ZUSATZ_OHNE_PLATZHALTER" in joined  # Inhalt ohne Platz in der Vorlage
+    assert "zusatz_ohne_platzhalter" in joined  # Inhalt ohne Platz in der Vorlage
     assert "EMPFEHLUNG" in joined  # Vorlagenfeld ohne Inhalt

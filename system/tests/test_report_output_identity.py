@@ -50,6 +50,12 @@ def test_markdown_filename_and_content_follow_explicit_identity_policy(
     alias = session.profile.tarnname
     response = "# Aktuelle Entwicklungen\n\n" + alias + " trifft BEGRIFF_01."
     path = service._generate_from_markdown(session, response, restore, None)
+    if not template:
+        # PB-15: wie beim JSON-Weg kein Ersatzdokument, sondern eine klare Fehlermeldung
+        assert path is None and session.status == "error"
+        assert "Vorlage" in session.error_message
+        assert not list((tmp_path / "output_berichte").glob("*.docx"))
+        return
     expected_name = session.profile.original_name if restore else alias
     assert path.name.startswith("Foerderbericht_" + expected_name + "_")
     text = document_text(path)

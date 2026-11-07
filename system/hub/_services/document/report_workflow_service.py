@@ -176,30 +176,115 @@ def _template_path() -> Path:
 
 
 def _report_text(value) -> str:
-    """JSON-Wert als lesbarer Text (Listen zeilenweise, Dicts als 'Schluessel: Wert')."""
+    """JSON-Wert als lesbarer Text: Ja/Nein, leere Felder weglassen, Eintraege getrennt."""
     if value is None:
         return ""
+    if isinstance(value, bool):
+        return "Ja" if value else "Nein"
     if isinstance(value, dict):
-        return "\n".join(f"{k}: {_report_text(v)}" for k, v in value.items())
+        return "\n".join(
+            f"{k}: {_report_text(v)}" for k, v in value.items() if v not in ("", None, [], {})
+        )
     if isinstance(value, list):
-        return "\n".join(_report_text(v) for v in value)
+        sep = "\n\n" if any(isinstance(v, dict) for v in value) else "\n"
+        return sep.join(t for t in (_report_text(v) for v in value) if t)
     return str(value)
 
 
-def _flatten_report(data: Dict) -> Dict[str, str]:
-    """Berichts-JSON -> {{PLATZHALTER}}-Werte: Blattname und voller Pfad, GROSS, nur Text."""
+def _flatten_report(data: Dict, owners: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Berichts-JSON -> {{PLATZHALTER}}-Werte: Blattname und voller Pfad, GROSS, nur Text.
+
+    owners (optional) merkt je Platzhalter den Schluessel der obersten Ebene.
+    """
     out: Dict[str, str] = {}
 
-    def walk(value, path):
+    def walk(value, path, top):
         if isinstance(value, dict):
             for key, item in value.items():
-                walk(item, path + [str(key).upper()])
+                walk(item, path + [str(key).upper()], top or str(key))
         elif path:
             text = _report_text(value)
-            out["_".join(path)] = text
-            out.setdefault(path[-1], text)
+            for name in ("_".join(path), path[-1]):
+                if name not in out:
+                    out[name] = text
+                    if owners is not None:
+                        owners[name] = top
 
-    walk(data, [])
+    walk(data, [], None)
+    return out
+
+
+_STAMM_FIELDS = {
+    "NAME": "name", "GEBURTSDATUM": "geburtsdatum", "SACHBEARBEITER": "sachbearbeiter",
+    "KOSTENZUSAGE_ENDE": "kostenzusage_ende", "WEITERBEWILLIGUNG_AB": "weiterbewilligung_ab",
+    "FOERDERUNGSBEGINN": "foerderungsbeginn", "THERAPEUT_EINZEL": "therapeut_einzel",
+    "THERAPEUT_GRUPPE": "therapeut_gruppe", "KOPIE_AN": "kopie_an",
+    "Zeichen Amtschreiben": "zeichen_amt", "AMT_ADRESSE": "amt_adresse", "LANDKREIS": "landkreis",
+}
+_BEREICH_FIELDS = {
+    "BEREICH_MOBILITAET": "mobilitaet", "BEREICH_SELBSTVERSORGUNG": "selbstversorgung",
+    "BEREICH_HAUSHALT": "haushalt", "BEREICH_LEBENSBEREICHE": "lebensbereiche",
+    "BEREICH_GESELLSCHAFT_FREIZEIT": "gesellschaft_freizeit",
+}
+_UMWELT_FIELDS = {
+    "UMWELT_WAHRNEHMUNG": "wahrnehmung", "UMWELT_KOMMUNIKATION": "kommunikation",
+    "UMWELT_KOGNITION_MOTORIK": "kognition_motorik", "UMWELT_MEDIZINISCHES": "medizinisches",
+}
+
+
+def _area_text(value) -> str:
+    """Text eines Bereichs/Umweltfaktors: nur aktive (Flag-Format) bzw. gefuellte Codes (flaches Format)."""
+    if not isinstance(value, dict):
+        return str(value or "")
+    if value.get("aktiv"):
+        return str(value.get("text") or "")
+    codes = [v for k, v in value.items() if k not in ("aktiv", "text") and isinstance(v, str) and v.strip()]
+    return "\n\n".join(codes)
+
+
+def _diagnosis_line(diag) -> str:
+    if not isinstance(diag, dict):
+        return str(diag)
+    line = f"{diag.get('icd_code', '')} {diag.get('bezeichnung', '')}".strip()
+    extras = [x for x in (f"Diagnose {diag['diagnostiker']}" if diag.get("diagnostiker") else "", diag.get("datum", "")) if x]
+    return line + (f" ({', '.join(extras)})" if extras else "")
+
+
+def _schema_fields(data: Dict) -> Dict[str, Tuple[Optional[str], str]]:
+    """Platzhalter der Foerderbericht-Vorlage aus dem schema-foermigen JSON.
+
+    Wert None = Feld fehlt in den Daten (anders als bewusst leer). Nur wenn 'stammdaten' vorhanden ist.
+    """
+    stamm = data.get("stammdaten")
+    if not isinstance(stamm, dict):
+        return {}
+    out: Dict[str, Tuple[Optional[str], str]] = {}
+
+    def put(name, top, present, value):
+        out[name] = (value if present else None, top)
+
+    for name, key in _STAMM_FIELDS.items():
+        put(name, "stammdaten", key in stamm, _report_text(stamm.get(key)))
+    put("DIAGNOSE_1", "stammdaten", "diagnosen" in stamm,
+        "\n".join(_diagnosis_line(d) for d in stamm.get("diagnosen") or []))
+    empf = data.get("empfehlung") if isinstance(data.get("empfehlung"), dict) else {}
+    cont_key = "verlaengerung" if "verlaengerung" in empf else "verlängerung"
+    present = isinstance(empf.get(cont_key), bool)
+    put("Empfehlung", "empfehlung", present, "die Weiterbewilligung" if empf.get(cont_key) else "die Beendigung")
+    put("Weiterbewilligung oder Beendigung", "empfehlung", present,
+        "Weiterbewilligung" if empf.get(cont_key) else "Beendigung")
+    put("UMFANG", "empfehlung", "umfang" in empf, _report_text(empf.get("umfang")))
+    put("SONSTIGE_EMPFEHLUNG", "empfehlung", "sonstige_empfehlung" in empf,
+        _report_text(empf.get("sonstige_empfehlung")))
+    abschluss = data.get("abschluss") if isinstance(data.get("abschluss"), dict) else {}
+    for name in ("AKTUELLE_ENTWICKLUNGEN", "BEDINGUNGSMODELL"):
+        put(name, "abschluss", name.lower() in abschluss, _report_text(abschluss.get(name.lower())))
+    put("BESONDERE_FAEHIGKEITEN", "besondere_faehigkeiten", "besondere_faehigkeiten" in data,
+        _report_text(data.get("besondere_faehigkeiten")))
+    for fields, top in ((_BEREICH_FIELDS, "bereiche"), (_UMWELT_FIELDS, "umweltfaktoren")):
+        group = data.get(top) if isinstance(data.get(top), dict) else {}
+        for name, key in fields.items():
+            put(name, top, key in group, _area_text(group.get(key)))
     return out
 
 
@@ -645,6 +730,7 @@ Interpersonelle Interaktionen:
             vorname_hint or "",
             nachname_hint or "",
             *(parent_names or []),
+            *(additional_terms or []),  # echte Namen der Begriffsliste duerfen nicht als Tarnname auftauchen
         ]
 
         # Gender erkennen
@@ -760,6 +846,19 @@ Interpersonelle Interaktionen:
         if client_address and client_address not in wl:
             fake_addr = _generate_fake_address()
             mappings["addresses"][client_address] = fake_addr
+            # "Strasse Nr, PLZ Ort": Teile einzeln mappen, sonst rutscht der Freitext
+            # ("... 18 in Freiburg") an die Cloud durch.
+            parts = re.match(
+                r"^\s*(?P<street>[^,]+?\s\d+\w?)\s*,\s*(?P<plz>\d{5})\s+(?P<city>.+?)\s*$", client_address
+            )
+            if parts:
+                fake_street, fake_city = fake_addr.split(", ", 1)
+                for real, fake in (
+                    (parts["street"], fake_street),
+                    (parts["plz"], str(10000 + secrets.randbelow(89999))),
+                    (parts["city"], fake_city),
+                ):
+                    mappings["addresses"].setdefault(real, fake)
             # Kein Klartext-Adresse im Log
             print(f"[INFO] Klienten-Adresse anonymisiert -> {fake_addr}")
 
@@ -1643,27 +1742,27 @@ JSON:
                 session.error_message = f"Generator-Fehler: {'; '.join(result.errors)}"
                 session.status = "error"
                 return None
-            except Exception:
+            except Exception as exc:
+                # Vorhandener Generator, der scheitert: Fehler, kein stiller Ersatzbericht.
                 print("[FEHLER] fill_template Exception")
-                session.warnings.append("Generator fehlgeschlagen; Vorlagen-Fallback genutzt")
+                session.error_message = f"Generator-Fehler: {type(exc).__name__}"
+                session.status = "error"
+                return None
 
-        # Ohne Vorlage gibt es keinen Foerderbericht -- kein stilles Ersatzdokument.
-        if not template_path.is_file():
-            session.error_message = (
-                f"Vorlage nicht gefunden: {template_path}. Pfad per Umgebungsvariable "
-                "FOERDERBERICHT_TEMPLATE binden; es wird kein Ersatzdokument erzeugt."
-            )
-            session.status = "error"
-            return None
-
-        # Vorlagen-Fallback (ohne privaten Generator): JSON-Felder in die {{PLATZHALTER}} der Vorlage.
-        # json_data ist oben bereits de-anonymisiert, daher keine zweite Rueckuebersetzung.
+        # Vorlagen-Fallback nur ohne privaten Generator: JSON-Felder in die {{PLATZHALTER}} der
+        # Vorlage; ohne Vorlage meldet _generate_from_markdown den Fehler. json_data ist oben
+        # bereits de-anonymisiert, daher keine zweite Rueckuebersetzung.
+        owners: Dict[str, str] = {}
+        flat = _flatten_report(json_data, owners)
+        fields: Dict[str, Tuple[Optional[str], str]] = {k: (v, owners[k]) for k, v in flat.items()}
+        fields.update(_schema_fields(json_data))
         return self._generate_from_markdown(
             session,
             _report_markdown(json_data),
             auto_deanonymize,
-            _flatten_report(json_data),
+            json_data,
             content_already_deanonymized=True,
+            fields=fields,
         )
 
     def _deanonymize_json(self, data: Dict, profile: TempAnonymProfile) -> Dict:
@@ -1705,6 +1804,7 @@ JSON:
         report_data: Optional[Dict],
         *,
         content_already_deanonymized: bool = False,
+        fields: Optional[Dict[str, Tuple[Optional[str], str]]] = None,
     ) -> Path:
         """Fallback: Generiert Bericht aus Markdown-Text ohne doppelte Rückersetzung."""
         try:
@@ -1729,39 +1829,47 @@ JSON:
         placeholders = self._build_placeholders(
             session, final_text, report_data, auto_deanonymize=auto_deanonymize
         )
+        # Felder aus dem Berichts-JSON gewinnen gegen Standardwerte und Abschnittserkennung
+        placeholders.update({k: v for k, (v, _top) in (fields or {}).items() if v is not None})
 
-        # Template laden
+        # Ohne Vorlage gibt es keinen Foerderbericht -- kein Ersatzdokument mit Rohtext/JSON.
         template_path = _template_path()
-        if template_path.exists():
-            doc = Document(str(template_path))
-            template_fields = _doc_placeholders(doc)
-            # Platzhalter in Paragraphen ersetzen
-            self._replace_placeholders_in_doc(doc, placeholders)
-            unfilled = sorted(_doc_placeholders(doc))
-            if unfilled:
-                session.warnings.append("Vorlagenfelder ohne Inhalt: " + ", ".join(unfilled))
-            unused = sorted(k for k in (report_data or {}) if k not in template_fields)
-            if unused:
-                session.warnings.append("Inhalt ohne Platz in der Vorlage: " + ", ".join(unused))
+        if not template_path.exists():
+            session.error_message = (
+                f"Vorlage nicht gefunden: {template_path.name}. Pfad per Umgebungsvariable "
+                "FOERDERBERICHT_TEMPLATE binden; es wird kein Ersatzdokument erzeugt."
+            )
+            session.status = "error"
+            return None
 
-            # ICF-Tabelle bereinigen wenn Foerderziele vorhanden
-            if report_data and len(doc.tables) >= 3:
-                foerderziele = report_data.get("foerderziele", []) or report_data.get("förderziele", [])
-                if foerderziele:
-                    try:
-                        svc = WordTemplateService()
-                        icf_table = doc.tables[2]  # ICF-Tabelle ist Tabelle 3 (0-basiert: Index 2)
-                        svc.fill_icf_placeholders_and_cleanup(icf_table, foerderziele, header_rows=1)
-                    except Exception as e:
-                        # Logging wäre gut, aber Fehler nicht kritisch
-                        pass
-        else:
-            # Fallback: Neues Dokument mit rohem Text
-            doc = Document()
-            doc.add_heading("Förderbericht", 0)
-            for para_text in final_text.split("\n\n"):
-                if para_text.strip():
-                    doc.add_paragraph(para_text.strip())
+        doc = Document(str(template_path))
+        template_fields = _doc_placeholders(doc)
+        # Platzhalter in Paragraphen ersetzen
+        self._replace_placeholders_in_doc(doc, placeholders)
+        self._report_template_warnings(session, doc, template_fields, report_data, fields)
+
+        # ICF-Tabelle bereinigen wenn Foerderziele vorhanden
+        if report_data and len(doc.tables) >= 3:
+            foerderziele = report_data.get("foerderziele", []) or report_data.get("förderziele", [])
+            if foerderziele:
+                try:
+                    svc = WordTemplateService()
+                    icf_table = doc.tables[2]  # ICF-Tabelle ist Tabelle 3 (0-basiert: Index 2)
+                    svc.fill_icf_placeholders_and_cleanup(icf_table, foerderziele, header_rows=1)
+                except Exception as e:
+                    # Logging wäre gut, aber Fehler nicht kritisch
+                    pass
+
+        # Neue Ziele (Tabelle 4): Zeile 0 ist der Kopf
+        neue_ziele = (report_data or {}).get("neue_ziele") or []
+        if neue_ziele and len(doc.tables) >= 4:
+            svc = WordTemplateService()
+            table = doc.tables[3]
+            for row_idx, ziel in enumerate(neue_ziele, start=1):
+                if row_idx >= len(table.rows) or not isinstance(ziel, dict):
+                    break
+                for col, key in enumerate(("icf_code", "kapitel", "zielformulierung", "ist_stand")):
+                    svc.set_cell_text(table, row_idx, col, str(ziel.get(key) or ""))
 
         # Speichern
         safe_name = "".join(c for c in original_name if c.isalnum() or c in " -_").strip()
@@ -1777,6 +1885,30 @@ JSON:
         session.status = "completed"
 
         return output_path
+
+    @staticmethod
+    def _report_template_warnings(session, doc, template_fields, report_data, fields) -> None:
+        """Echte Luecken melden: fehlende Daten, unaufgeloeste Felder, Inhalt ohne Platz."""
+        fields = fields or {}
+        missing = sorted(k for k, (v, _top) in fields.items() if v is None and k in template_fields)
+        if missing:
+            session.warnings.append("Daten fehlen fuer Vorlagenfelder: " + ", ".join(missing))
+        unresolved = sorted(_doc_placeholders(doc) - set(missing))
+        if unresolved:
+            session.warnings.append("Vorlagenfelder ohne Inhalt: " + ", ".join(unresolved))
+        if not fields:
+            return
+        used = {top for k, (_v, top) in fields.items() if k in template_fields}
+        if len(doc.tables) >= 3:
+            used.update(("foerderziele", "förderziele"))
+        if len(doc.tables) >= 4:
+            used.add("neue_ziele")
+        unused = sorted(
+            k for k, v in (report_data or {}).items()
+            if k not in used and _report_text(v).strip()
+        )
+        if unused:
+            session.warnings.append("Inhalt ohne Platz in der Vorlage: " + ", ".join(unused))
 
     def _deanonymize_text(self, text: str, profile: TempAnonymProfile) -> str:
         """De-anonymisiert Text (Tarnname -> Original)."""
@@ -1841,7 +1973,7 @@ JSON:
 
         # Wenn strukturierte Daten übergeben wurden
         if report_data:
-            placeholders.update(report_data)
+            placeholders.update({k: v for k, v in report_data.items() if isinstance(v, str)})
 
         # LLM-Text parsen und Abschnitte extrahieren
         sections = self._parse_llm_sections(llm_text)

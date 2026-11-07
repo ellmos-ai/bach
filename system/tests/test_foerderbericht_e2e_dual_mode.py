@@ -61,8 +61,8 @@ def _create_synthetic_case(base_path: Path) -> dict:
         "Geboren am 14.05.2017\n"
         "Adresse: Gartenstraße 18, 79102 Freiburg\n"
         "Eltern: Sabine Leonhardt, Markus Leonhardt\n"
-        "Telefon: 0761-445566\n"
-        "E-Mail: sabine.leonhardt@gmx.de\n"
+        "Telefon: 0761-5550100\n"
+        "E-Mail: sabine.leonhardt@example.org\n"
         "Einzeltherapeutin: Frau Bergmann\n",
         encoding="utf-8",
     )
@@ -87,8 +87,15 @@ def _create_synthetic_case(base_path: Path) -> dict:
             "Bergmann",
             "14.05.2017",
             "Gartenstraße",
-            "0761-445566",
-            "sabine.leonhardt@gmx.de",
+            "Gartenstrasse",
+            "Freiburg",
+            "79102",
+            "0761-5550100",
+            "sabine.leonhardt@example.org",
+        ],
+        # Fachbegriffe sind keine Personen und muessen fuer das Cloud-Modell lesbar bleiben
+        "required_in_cloud_prompt": [
+            "Fortschritte", "Feinmotorik", "Sozialverhalten", "Elterngespraech", "Hausaufgabensituationen",
         ],
     }
 
@@ -222,9 +229,13 @@ def test_e2e_cloud_mode_with_pseudonymization_and_deanonymization_produces_docx(
     _assert_real_report(res.output_path)
 
     prompt = captured_cloud_prompt["prompt"]
-    bundle_segment = prompt[prompt.index("=== DOKUMENTEN-BUNDLE"):prompt.index("=== AUFGABE")]
+    # Gesamter Prompt (nicht nur das Bundle), Gross-/Kleinschreibung egal
+    lowered = prompt.lower()
     for forbidden in meta["forbidden_in_cloud_prompt"]:
-        assert forbidden not in bundle_segment, f"PII-Leck im Cloud-Prompt gefunden: {forbidden!r}"
+        assert forbidden.lower() not in lowered, f"PII-Leck im Cloud-Prompt gefunden: {forbidden!r}"
+    assert not re.search(r"stra(ß|ss)e\s*18", lowered), "Strasse mit Hausnummer im Cloud-Prompt"
+    for term in meta["required_in_cloud_prompt"]:
+        assert term in prompt, f"Fachbegriff wurde mitpseudonymisiert: {term!r}"
 
     docx_text = _read_docx_full_text(res.output_path)
     assert "Jonas Leonhardt" in docx_text
