@@ -21,6 +21,15 @@ def bridge(tmp_path, monkeypatch):
     _create_db(database)
     conn = _connect(database)
     task_id = _insert(conn, title="Bridge task", assigned_to="BACH")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    _seed_task_worker_policy(conn, task_id)
+    conn.commit()
     conn.close()
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
@@ -29,6 +38,16 @@ def bridge(tmp_path, monkeypatch):
         stop_event=threading.Event(), clock=lambda: datetime.now(timezone.utc))
     with WorkerToolBridge(binding, mode="safe") as relay:
         yield relay
+
+
+def _seed_task_worker_policy(conn, task_id):
+    conn.execute(
+        "INSERT INTO system_config (key, value) VALUES (?, ?)",
+        ("worker_review_task.v1:" + str(task_id),
+         json.dumps({"revision": 1, "values": {"mode": None, "require_user_review": False,
+             "github_external_review": None, "allow_review_task_pickup": None,
+             "require_assigned_slot": False, "enforce_model_binding": False}})),
+    )
 
 
 _READ_ONLY_PROFILE_TOOLS = ("read_file", "search_text", "task_manage")
@@ -51,10 +70,18 @@ def _make_fenced_readonly_worker(
     conn.execute("ALTER TABLE tasks ADD COLUMN assigned_slot TEXT")
     conn.execute("ALTER TABLE tasks ADD COLUMN required_model TEXT")
     task_id = _insert(conn, title="BACH-owned read-only worker fixture", assigned_to="BACH")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.execute(
         "UPDATE tasks SET assigned_slot = ?, required_model = ? WHERE id = ?",
         ("", required_model, task_id),
     )
+    _seed_task_worker_policy(conn, task_id)
     conn.commit()
     conn.close()
 
@@ -68,6 +95,8 @@ def _make_fenced_readonly_worker(
         "enabled": True,
         "allow_tools": True,
         "allowed_tools": list(profile_tools),
+        "pickup_filter": {"enabled": False},
+        "allowed_repositories": [],
         "task_prompt": "fixture profile only",
         "expires_at": None,
     }
@@ -100,14 +129,38 @@ def _make_fenced_readonly_worker(
     assert live_reads == [profile_id, profile_id]
     assert admitted_slot["backend"] == backend and admitted_slot["model"] == model
     assert admitted_slot.get("model_fallbacks", []) == (model_fallbacks or [])
+    admitted_slot.setdefault("pickup_filter", {"enabled": False})
+    admitted_slot.setdefault("allowed_repositories", [])
 
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
+
+
+
+    from hub._services.chat import worker_repo_registry as _wrr
+    from hub._services import worker_policy_settings
+    _registry_dir = tmp_path / ".bach"
+    _registry_dir.mkdir(mode=0o700)
+    _registry_dir.chmod(0o700)
+    _registry_file = _registry_dir / "worker_repo_registry.v1.json"
+    _registry_file.write_text(json.dumps({
+        "schema": _wrr.REGISTRY_SCHEMA,
+        "repositories": {"bach-test/bach": {"origin": "https://github.com/bach-test/bach", "default_branch": "main", "visibility": "public"}},
+        "tasks": {"1": {"repository": "bach-test/bach", "source_sha": "a" * 40}},
+    }), encoding="utf-8")
+    _registry_file.chmod(0o600)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _pre = worker_policy_settings.read_task_policy(1, db_path=database)
+    worker_policy_settings.write_task_policy(1, {"task_id": 1, "task_version": _pre["task_version"], "configuration_version": _pre["configuration_version"], "override": dict(_pre["override"])}, actor="fixture", db_path=database)
     binding = WorkerLeaseBinding.acquire_next(
         task_lease_client.TaskLeaseClient(db_path=database), admitted_slot,
         worker_id=f"{profile_id}@HOST", host="HOST", generation="b" * 32,
         is_current=lambda: True, stop_event=threading.Event(),
         clock=lambda: datetime.now(timezone.utc),
+    )
+    assert binding is not None, getattr(
+        task_lease_client.TaskLeaseClient, "_policy_diag_error",
+        "reader nicht gerufen / Snapshot-Grundvalidierung fehlgeschlagen",
     )
     assert binding._snapshot["assigned_to"] == "BACH"
     assert binding._snapshot.get("assigned_slot") == ""
