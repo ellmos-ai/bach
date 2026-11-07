@@ -208,3 +208,94 @@ def test_worker_status_adapter_passes_only_a_valid_precondition_wait():
     assert _project_worker({"id": "worker-1", "precondition_wait": wait})["precondition_wait"] == wait
     assert "precondition_wait" not in _project_worker({"id": "worker-1", "precondition_wait": {**wait, "attempt": 0}})
     assert "precondition_wait" not in _project_worker({"id": "worker-1"})
+
+
+# --- R2: the inbox is capped (E1 "nur Wichtiges"): single messages per hour, then one summary ---------
+
+def _many_tasks(conn, count):
+    from system.tests.test_task_lease_service import _insert
+    return [_insert(conn, title=f"Aufgabe {i}") for i in range(count)]
+
+
+def _block_all(conn, ids):
+    from system.tests.test_task_lease_service import _get
+    from hub.task_audit import apply_task_field_changes
+    for tid in ids:
+        apply_task_field_changes(conn, tid, _get(conn, tid), {"status": "blocked"}, changed_by="worker-x",
+                                 allow_reopen=True, block_reason="lease_release: repeated_return:task_scope_unavailable")
+    conn.commit()
+
+
+def test_forty_blocked_tasks_in_one_hour_make_at_most_four_messages(tmp_path):
+    conn = _inbox_db(tmp_path)
+    ids = _many_tasks(conn, 40)
+    _block_all(conn, ids)
+    messages = _inbox(conn)
+    assert len(messages) == 4
+    singles, summary = messages[:3], messages[3]
+    assert all(json.loads(m["metadata"]).get("kind", "single") == "single" for m in singles)
+    assert "37 weitere" in summary["subject"]
+    assert all(f"#{tid}" in summary["body"] for tid in ids[3:])  # nothing is lost, it is listed
+    assert "/tasks" in summary["body"]
+
+
+def test_twenty_worker_resolvers_in_one_hour_make_at_most_four_messages(tmp_path):
+    from hub.task_audit import ensure_worker_error_resolver
+    conn = _inbox_db(tmp_path)
+    for n in range(20):
+        assert ensure_worker_error_resolver(conn, f"worker-{n:04d}", "twin_status_unknown") is not None
+    assert len(_inbox(conn)) == 4
+
+
+def test_summary_is_updated_not_repeated_and_unread_again(tmp_path):
+    conn = _inbox_db(tmp_path)
+    ids = _many_tasks(conn, 8)
+    _block_all(conn, ids[:5])
+    summary_id = _inbox(conn)[3]["id"]
+    conn.execute("UPDATE messages SET status='read' WHERE id=?", (summary_id,))
+    _block_all(conn, ids[5:])
+    messages = _inbox(conn)
+    assert len(messages) == 4
+    assert messages[3]["id"] == summary_id and messages[3]["status"] == "unread"
+    assert "5 weitere" in messages[3]["subject"]
+
+
+def test_old_singles_do_not_count_against_the_hour(tmp_path):
+    from hub._services import abort_notices
+    conn = _inbox_db(tmp_path)
+    for n in range(3):
+        abort_notices.post(conn, f"old:{n}", "alt", "alt")
+    conn.execute("UPDATE messages SET created_at = datetime('now', '-2 hours')")
+    assert abort_notices.post(conn, "new:1", "neu", "neu") is not None
+    assert [json.loads(m["metadata"]).get("kind", "single") for m in _inbox(conn)][-1] == "single"
+
+
+def test_cap_is_configurable_and_zero_sends_only_the_summary(tmp_path):
+    from hub._services import abort_notices
+    conn = _inbox_db(tmp_path)
+    conn.execute("INSERT INTO system_config(key,value) VALUES (?,?)", (abort_notices.KEY, json.dumps(
+        {"revision": 1, "values": {"repeated_abort": True, "max_per_hour": 1}})))
+    conn.commit()
+    ids = _many_tasks(conn, 4)
+    _block_all(conn, ids)
+    assert len(_inbox(conn)) == 2 and "3 weitere" in _inbox(conn)[1]["subject"]
+    assert abort_notices.stored_max_per_hour(conn) == 1
+    conn.execute("UPDATE system_config SET value=? WHERE key=?", (json.dumps(
+        {"revision": 2, "values": {"repeated_abort": True, "max_per_hour": 0}}), abort_notices.KEY))
+    conn.execute("DELETE FROM messages")
+    conn.commit()
+    abort_notices.post(conn, "z:1", "eins", "x")
+    only, = _inbox(conn)
+    assert "1 weitere" in only["subject"]
+
+
+def test_max_per_hour_in_the_settings_api(api):  # noqa: F811
+    before = api.client.get(PATH, headers=_auth(api)).json()
+    assert before["max_per_hour"] == 3
+    payload = {"configuration_version": before["configuration_version"], "repeated_abort": True, "max_per_hour": 5}
+    assert api.client.put(PATH, headers=_auth(api), json=payload).status_code == 200
+    after = api.client.get(PATH, headers=_auth(api)).json()
+    assert (after["max_per_hour"], after["repeated_abort"]) == (5, True)
+    for bad in ("x", -1, 21, True):
+        body = {"configuration_version": after["configuration_version"], "repeated_abort": True, "max_per_hour": bad}
+        assert api.client.put(PATH, headers=_auth(api), json=body).status_code == 400
