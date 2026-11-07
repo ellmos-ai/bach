@@ -420,6 +420,10 @@ def local_task_tree(bridge, tmp_path, monkeypatch):  # noqa: F811
     monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: repo)
     monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: root)
     monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
+    # The trusted repo registry lives in the real home (~/.bach); a host that has one (the Mac) would
+    # otherwise demand a binding for this throwaway task. These tests exercise the unbound path.
+    from hub._services.chat import worker_repo_registry
+    monkeypatch.setattr(worker_repo_registry, "registry_path", lambda: tmp_path / "no_registry.json")
     target = _add_task_tree(bridge.binding.task_id)
     (target / "half_done.py").write_text("print('half')\n", encoding="utf-8")
     return bridge.binding, target
