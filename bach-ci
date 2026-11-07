@@ -1,0 +1,6 @@
+bach-ci – BACH (Basic Automated Computer Hub)
+Kategorie: bach-ci
+
+Platzhalter, angelegt als Restaufgabe Task #3916 (offener Rest von Parent-Task 3892).
+Der Inhalt der Datei war im Auftrag nirgends spezifiziert.
+Ziel laut Auftrag war der Worktree /services/bach-worktrees/task-3892; Schreibzugriff darauf ist blockiert („Task-Schreibpfad nicht bestätigt“), daher Anlage im eigenen registrierten Arbeitsbaum task-3916 und Sicherung über finish_task (Commit/PR).
