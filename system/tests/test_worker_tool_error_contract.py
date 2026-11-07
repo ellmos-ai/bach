@@ -310,7 +310,7 @@ def test_legacy_call_tuple_survives_for_confirmed_success_and_denial(monkeypatch
     assert success == ("ordinary success", False)
 
 
-def test_stdio_mcp_exposes_structured_error_metadata(monkeypatch):
+def test_stdio_mcp_exposes_structured_error_metadata(monkeypatch, run_mcp_stdio):
     pytest.importorskip("mcp")
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
@@ -337,7 +337,7 @@ def test_stdio_mcp_exposes_structured_error_metadata(monkeypatch):
                 assert answer.structuredContent["code"] == "tool_dispatch_denied"
                 assert answer.structuredContent["effect_state"] == "not_applied"
 
-        asyncio.run(asyncio.wait_for(run(), 180))
+        run_mcp_stdio(run())
 
 
 @pytest.mark.parametrize(("name", "args", "mode", "bach_app", "reason"), [

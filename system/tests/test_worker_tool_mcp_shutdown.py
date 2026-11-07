@@ -68,3 +68,20 @@ def test_shim_exits_promptly_after_stdin_close_with_relay_request_in_flight():
         for conn in held:
             conn.close()
         server.close()
+
+
+def test_live_child_that_never_answers_fails_within_the_limit(run_mcp_stdio):
+    """A child that lives but stays silent must end the test with an error, not a hang."""
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    async def drive():
+        params = StdioServerParameters(command=sys.executable,
+                                       args=["-c", "import time; time.sleep(600)"])
+        async with stdio_client(params) as streams, ClientSession(*streams) as session:
+            await session.initialize()
+
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        run_mcp_stdio(drive(), timeout=5)
+    assert time.monotonic() - started < 60  # includes terminating the silent child
