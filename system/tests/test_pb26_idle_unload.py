@@ -79,11 +79,16 @@ def worker(tmp_path, monkeypatch, ollama):
     client = TaskLeaseClient(conn=conn)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
     acquire = control._acquire_worker_task
+    trace = []  # acquired task IDs, or why the selector found nothing
 
     def acquire_or_stop(*args, **kwargs):
         bound = acquire(*args, **kwargs)
         if bound is None:  # queue drained: end this run after the idle branch
+            status = getattr(control._WORKER_CONTROLS.get(ident), "queue_status", None) or {}
+            trace.append((status.get("reason"), status.get("rejected_counts")))
             control._WORKER_EXECUTIONS[ident].stop_event.set()
+        else:
+            trace.append(bound.task_id)
         return bound
     monkeypatch.setattr(control, "_acquire_worker_task", acquire_or_stop)
     backend = OllamaBackend(default_model=MODEL)
@@ -103,6 +108,9 @@ def worker(tmp_path, monkeypatch, ollama):
     monkeypatch.setattr(runtime, "process", process)
 
     class Worker:
+        def __init__(self):
+            self.trace = trace
+
         def add(self, task_id):
             conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
                          "VALUES (?,?,'pending','P2','INBOX','BACH',?)", (task_id, f"Task {task_id}", ident))
@@ -133,7 +141,7 @@ def test_empty_queue_unloads_the_model_exactly_once(worker, ollama):
 def test_no_unload_while_work_is_queued_only_after_the_last_task(worker, ollama):
     worker.add(41)
     worker.run()
-    assert ollama == [("chat", None), ("unload", {"model": MODEL, "keep_alive": 0})]
+    assert ollama == [("chat", None), ("unload", {"model": MODEL, "keep_alive": 0})], worker.trace
 
 
 def test_one_unload_per_idle_period_and_never_without_a_verified_empty_queue(ollama):
