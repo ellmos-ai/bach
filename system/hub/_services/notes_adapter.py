@@ -4,8 +4,9 @@
 Die Notizen liegen in `~/.bach/llm-note.db` (`BACH_LOCAL_DIR`), nie im Klon und nicht in `bach.db`.
 `/api/notes*` spricht das llm-note-Vokabular (`note`/`logbook`); `/api/denkarium*` bleibt als Alias
 mit unverändertem Antwortformat (`denkarium`/`logbuch`), bis alle Verbraucher umgestellt sind.
-Solange die Altdaten (`denkarium_entries`) nicht migriert sind, bedient der Alias weiter den Altbestand
-(`use_llm_note`), damit nach dem Rollout nichts "verschwindet".
+Solange die Altdaten (`denkarium_entries`) nicht migriert sind (`use_llm_note`: die Migration hat noch keine Zeile
+mit `legacy_id` geschrieben), bleiben Alias UND `/api/notes` auf der Alt-Tabelle; `GET /api/notes` meldet dann
+`pending_migration`. Lesende Aufrufe legen `llm-note.db` nie an, erst das erste Schreiben nach der Migration.
 """
 from __future__ import annotations
 
@@ -30,13 +31,16 @@ def notes_db_path() -> Path:
     return Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "llm-note.db"
 
 
-def _store() -> Any:
+def _store(create: bool = True) -> Any:
+    """Open the store. Readers pass create=False: a missing DB yields None instead of a new empty file."""
     try:
         cls = load_llm_note_module().NoteStore
     except ImportError as exc:
         raise NotesUnavailable(f"llm-note nicht verfügbar: {exc}") from exc
     if not hasattr(cls, "import_entry"):
         raise NotesUnavailable("llm-note ohne Archivfunktion (>= PB-11 nötig)")
+    if not create and not notes_db_path().exists():
+        return None
     return cls(notes_db_path())
 
 
@@ -55,24 +59,44 @@ def _engine_ready() -> bool:
         return False
 
 
-def use_llm_note(legacy_db: str | Path) -> bool:
-    """True when `/api/denkarium` should be served from llm-note.
-
-    llm-note DB exists -> yes (migrated or already in use). Otherwise only if the legacy table has no
-    rows (fresh install). Unmigrated legacy rows keep the legacy path, so a rollout never hides notes.
-    """
-    if not _engine_ready():
-        return False
-    if notes_db_path().exists():
-        return True
+def _ids(db: Path, sql: str) -> set[int]:
+    """First column of a read-only query; missing file, table or column -> empty set. Never creates a file."""
+    if not Path(db).exists():
+        return set()
     try:
-        conn = sqlite3.connect(f"file:{Path(legacy_db).as_posix()}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{Path(db).as_posix()}?mode=ro", uri=True)
         try:
-            return conn.execute("SELECT COUNT(*) FROM denkarium_entries").fetchone()[0] == 0
+            return {int(r[0]) for r in conn.execute(sql) if r[0] is not None}
         finally:
             conn.close()
     except sqlite3.Error:
-        return True  # no legacy table / DB: nothing to protect
+        return set()
+
+
+def _legacy_ids(legacy_db: str | Path) -> set[int]:
+    return _ids(Path(legacy_db), "SELECT id FROM denkarium_entries")
+
+
+def _migrated_ids() -> set[int]:
+    return _ids(notes_db_path(), "SELECT legacy_id FROM note_entries WHERE legacy_id IS NOT NULL")
+
+
+def pending_count(legacy_db: str | Path) -> int:
+    """Legacy rows that have no counterpart (`legacy_id`) in llm-note yet."""
+    return len(_legacy_ids(legacy_db) - _migrated_ids())
+
+
+def use_llm_note(legacy_db: str | Path) -> bool:
+    """True when notes (and the `/api/denkarium` alias) are served from llm-note.
+
+    Only after the migration has run: llm-note holds rows with a `legacy_id`, or it exists next to an empty
+    legacy table (migration of an empty Denkarium). Before that the legacy table stays the single store, so a
+    rollout never hides notes and a read never flips the backend. Legacy rows added after the migration do not
+    flip it back: `pending_count` reports them and re-running the idempotent migration picks them up.
+    """
+    if not _engine_ready():
+        return False
+    return bool(_migrated_ids()) or (notes_db_path().exists() and not _legacy_ids(legacy_db))
 
 
 # --- llm-note vocabulary (`/api/notes`) -------------------------------------------------------
@@ -84,8 +108,12 @@ def list_notes(
     limit: int = 50,
     search: str | None = None,
     include_archived: bool = False,
+    legacy_db: str | Path | None = None,
 ) -> dict[str, Any]:
-    store = _store()
+    store = _store(create=False)
+    pending = pending_count(legacy_db) if legacy_db else 0
+    if store is None:  # nothing written yet: answer empty, create no file
+        return _list_result("llm-note", [], [], pending)
     limit = max(0, min(int(limit), _MAX_LIMIT))
     if search:
         found = store.search(search, entry_type=entry_type, category=category, limit=limit,
@@ -95,12 +123,18 @@ def list_notes(
                                    include_archived=include_archived)
     # ponytail: stats/categories from one capped scan (<= 1000 entries); use SQL aggregates if it ever grows
     everything = store.list_entries(include_archived=True, limit=_MAX_LIMIT)
+    return _list_result("llm-note", found, everything, pending)
+
+
+def _list_result(backend: str, found: list[Any], everything: list[Any], pending: int) -> dict[str, Any]:
     live = [e for e in everything if not e.is_archived]
     cats: dict[str, int] = {}
     for e in live:
         cats[e.category] = cats.get(e.category, 0) + 1
     return {
-        "backend": "llm-note",
+        "backend": backend,
+        "pending_migration": pending > 0,
+        "pending_count": pending,
         "entries": [_entry(e) for e in found],
         "count": len(found),
         "stats": {
@@ -150,6 +184,37 @@ def get_note(entry_id: int) -> dict[str, Any]:
 
 def mark_promoted(entry_id: int, target: str, promoted_id: int) -> dict[str, Any]:
     return _entry(_store().promote(entry_id, target, promoted_id=promoted_id))
+
+
+# --- llm-note vocabulary on top of the legacy table (before the migration) ---------------------
+
+_FROM_DENKARIUM = {"denkarium": "note", "logbuch": "logbook"}
+_TO_LEGACY = {v: k for k, v in _FROM_DENKARIUM.items()}
+
+
+def legacy_type(entry_type: str | None) -> str | None:
+    """llm-note type -> legacy type (unknown values pass through)."""
+    return _TO_LEGACY.get(entry_type, entry_type) if entry_type else entry_type
+
+
+def from_denkarium_list(legacy: dict[str, Any], legacy_db: str | Path) -> dict[str, Any]:
+    """Re-label a legacy list response in the llm-note vocabulary; flags the pending migration."""
+    entries = []
+    for e in legacy["entries"]:
+        e = dict(e)
+        e["entry_type"] = _FROM_DENKARIUM.get(e.get("entry_type") or "denkarium", e.get("entry_type"))
+        e["is_archived"] = bool(e.get("is_archived"))
+        entries.append(e)
+    s = legacy["stats"]
+    return {
+        "backend": "denkarium-legacy",
+        "pending_migration": True,
+        "pending_count": pending_count(legacy_db),
+        "entries": entries,
+        "count": legacy["count"],
+        "stats": {"total": s["total"], "archived": s["archived"], "logbook": s["logbuch"], "note": s["denkarium"]},
+        "categories": legacy["categories"],
+    }
 
 
 # --- legacy `/api/denkarium` alias (response format unchanged) --------------------------------

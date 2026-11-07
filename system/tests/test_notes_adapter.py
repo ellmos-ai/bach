@@ -99,13 +99,18 @@ def _legacy_db(path: Path, rows: int) -> Path:
 def test_use_llm_note_falls_back_to_legacy_until_migrated(notes_env):
     legacy = _legacy_db(notes_env / "legacy.db", rows=2)
     assert notes_adapter.use_llm_note(legacy) is False  # legacy rows, nothing migrated yet
-    notes_adapter.create_note({"content": "now the db exists"})
-    assert notes_adapter.use_llm_note(legacy) is True
+    notes_adapter.create_note({"content": "a bare llm-note row is no migration"})
+    assert notes_adapter.use_llm_note(legacy) is False
+    load_llm_note_module().NoteStore(notes_adapter.notes_db_path()).import_entry("alt", legacy_id=1)
+    assert notes_adapter.use_llm_note(legacy) is True  # the migration marker: a row with legacy_id
 
 
-def test_use_llm_note_true_on_fresh_install(notes_env):
-    assert notes_adapter.use_llm_note(notes_env / "missing.db") is True
-    assert notes_adapter.use_llm_note(_legacy_db(notes_env / "empty.db", rows=0)) is True
+def test_use_llm_note_needs_the_migration_even_on_an_empty_denkarium(notes_env):
+    empty = _legacy_db(notes_env / "empty.db", rows=0)
+    assert notes_adapter.use_llm_note(notes_env / "missing.db") is False
+    assert notes_adapter.use_llm_note(empty) is False  # nothing migrated, no llm-note db yet
+    notes_adapter.create_note({"content": "migration of an empty Denkarium creates the db"})
+    assert notes_adapter.use_llm_note(empty) is True
 
 
 def test_mark_promoted_records_target(notes_env):
@@ -114,19 +119,19 @@ def test_mark_promoted_records_target(notes_env):
     assert promoted["promoted_to"] == "task" and promoted["promoted_id"] == 77
 
 
-def test_gui_notes_routes_end_to_end(notes_env):
-    from gui import server
-
+def test_gui_notes_routes_end_to_end(monkeypatch, notes_env):
+    server = _server_with_legacy(monkeypatch, notes_env, ["alt"])
+    _migrate(server)
     created = asyncio.run(server.notes_create(_FakeRequest({"content": "via route", "entry_type": "logbook"})))
     assert created["entry"]["entry_type"] == "logbook"
     listing = asyncio.run(server.notes_list())
-    assert listing["count"] == 1 and listing["backend"] == "llm-note"
+    assert listing["count"] == 2 and listing["backend"] == "llm-note"
     asyncio.run(server.notes_archive(created["entry"]["id"], _FakeRequest({"reason": "r"})))
-    assert asyncio.run(server.notes_list())["count"] == 0
-    assert asyncio.run(server.notes_list(include_archived=True))["count"] == 1
+    assert asyncio.run(server.notes_list())["count"] == 1
+    assert asyncio.run(server.notes_list(include_archived=True))["count"] == 2
     asyncio.run(server.notes_unarchive(created["entry"]["id"]))
     asyncio.run(server.notes_delete(created["entry"]["id"]))
-    assert asyncio.run(server.notes_list(include_archived=True))["count"] == 0
+    assert asyncio.run(server.notes_list(include_archived=True))["count"] == 1
 
 
 class _FakeRequest:
@@ -165,6 +170,7 @@ def test_denkarium_alias_serves_legacy_rows_until_migration(monkeypatch, tmp_pat
 
 def test_denkarium_alias_switches_to_llm_note_after_migration(monkeypatch, tmp_path):
     server = _server_with_legacy(monkeypatch, tmp_path, [])
+    _migrate(server)  # empty Denkarium: creates the llm-note db, which is the marker
     created = asyncio.run(server.denkarium_create(_FakeRequest({"content": "neu", "category": "test"})))
     assert created["ok"] is True
     result = asyncio.run(server.denkarium_list())
@@ -183,9 +189,100 @@ def test_notes_routes_map_errors_to_http_status(monkeypatch, tmp_path):
     from fastapi import HTTPException
 
     server = _server_with_legacy(monkeypatch, tmp_path, [])
+    _migrate(server)
     with pytest.raises(HTTPException) as bad:
         asyncio.run(server.notes_create(_FakeRequest({"content": ""})))
     assert bad.value.status_code == 400
     with pytest.raises(HTTPException) as missing:
         asyncio.run(server.notes_unarchive(4242))
     assert missing.value.status_code == 404
+
+
+# --- R2 review (bach#668): reads never create the DB, the alias stays on the legacy table until migrated ------
+
+def _migrate(server):
+    from llm_note.migrate_denkarium import migrate
+
+    return migrate(server.USER_DB, notes_adapter.notes_db_path(), apply=True,
+                   snapshot_dir=notes_adapter.notes_db_path().parent / "snap")
+
+
+def test_reading_notes_never_creates_the_llm_note_db(monkeypatch, tmp_path):
+    server = _server_with_legacy(monkeypatch, tmp_path, [])
+    assert notes_adapter.list_notes()["entries"] == []
+    asyncio.run(server.notes_list())
+    asyncio.run(server.denkarium_list())
+    assert not notes_adapter.notes_db_path().exists()
+
+
+def test_get_notes_before_migration_keeps_legacy_rows_visible(monkeypatch, tmp_path):
+    server = _server_with_legacy(monkeypatch, tmp_path, ["alt-1", "alt-2"])
+    notes = asyncio.run(server.notes_list())
+    assert notes["pending_migration"] is True and notes["backend"] == "denkarium-legacy"
+    assert sorted(e["content"] for e in notes["entries"]) == ["alt-1", "alt-2"]
+    assert {e["entry_type"] for e in notes["entries"]} == {"note"}  # llm-note vocabulary
+    assert notes["stats"]["note"] == 2
+    assert asyncio.run(server.denkarium_list())["count"] == 2  # alias did not flip
+    assert not notes_adapter.notes_db_path().exists()
+
+
+def test_writes_before_migration_go_to_the_legacy_table_only(monkeypatch, tmp_path):
+    server = _server_with_legacy(monkeypatch, tmp_path, ["alt-1"])
+    created = asyncio.run(server.notes_create(_FakeRequest({"content": "neu", "entry_type": "logbook", "title": "T"})))
+    assert created["ok"] is True and created["pending_migration"] is True
+    legacy = asyncio.run(server.denkarium_list())
+    assert legacy["count"] == 2 and legacy["stats"]["logbuch"] == 1
+    new_id = created["entry"]["id"]
+    asyncio.run(server.notes_archive(new_id, _FakeRequest({"reason": "r"})))
+    assert asyncio.run(server.notes_list())["count"] == 1
+    assert asyncio.run(server.notes_list(include_archived=True))["count"] == 2
+    asyncio.run(server.notes_unarchive(new_id))
+    asyncio.run(server.notes_delete(new_id))
+    assert asyncio.run(server.notes_list())["count"] == 1
+    assert not notes_adapter.notes_db_path().exists()  # no second store
+
+
+def test_after_migration_both_routes_show_the_same_notes_with_original_dates(monkeypatch, tmp_path):
+    server = _server_with_legacy(monkeypatch, tmp_path, ["alt-1", "alt-2"])
+    assert _migrate(server)["target_count"] == 2
+    notes = asyncio.run(server.notes_list())
+    assert notes["backend"] == "llm-note" and notes["pending_migration"] is False
+    assert sorted(e["content"] for e in notes["entries"]) == ["alt-1", "alt-2"]
+    assert {e["created_at"] for e in notes["entries"]} == {"2026-02-19 08:00"}
+    alias = asyncio.run(server.denkarium_list())
+    assert alias["count"] == 2 and alias["entries"][0]["entry_type"] == "denkarium"
+
+
+def test_legacy_straggler_after_migration_is_reported_not_hidden(monkeypatch, tmp_path):
+    server = _server_with_legacy(monkeypatch, tmp_path, ["alt-1"])
+    _migrate(server)
+    conn = sqlite3.connect(server.USER_DB)
+    conn.execute("INSERT INTO denkarium_entries (entry_type, content, category, created_at)"
+                 " VALUES ('denkarium', 'spaet', 'notiz', '2026-03-01 10:00')")
+    conn.commit()
+    conn.close()
+    notes = asyncio.run(server.notes_list())
+    assert notes["backend"] == "llm-note"  # stays on llm-note, no flip back
+    assert notes["pending_migration"] is True and notes["pending_count"] == 1
+    _migrate(server)  # idempotent re-run picks it up
+    assert asyncio.run(server.notes_list())["pending_migration"] is False
+
+
+def test_denkarium_handler_writes_follow_the_active_store(monkeypatch, tmp_path):
+    from hub.denkarium import DenkariumHandler
+
+    server = _server_with_legacy(monkeypatch, tmp_path, ["alt-1"])
+    handler = DenkariumHandler(tmp_path)
+    handler.db_path = server.USER_DB
+    ok, _ = handler.handle("write", ["vor der Migration"])
+    assert ok and asyncio.run(server.denkarium_list())["count"] == 2
+    assert not notes_adapter.notes_db_path().exists()
+    _migrate(server)
+    ok, text = handler.handle("write", ["nach der Migration", "--type=logbuch"])
+    ok2, _ = handler.handle("brainstorm", ["Thema"])
+    assert ok and ok2 and "gespeichert" in text
+    contents = [e["content"] for e in notes_adapter.list_notes(include_archived=True)["entries"]]
+    assert any("nach der Migration" in c for c in contents) and any("Thema" in c for c in contents)
+    conn = sqlite3.connect(server.USER_DB)
+    assert conn.execute("SELECT COUNT(*) FROM denkarium_entries").fetchone()[0] == 2  # no new legacy rows
+    conn.close()

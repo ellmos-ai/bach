@@ -6763,19 +6763,40 @@ def _notes_http_errors():
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+class _JsonBody:
+    """Minimal request stand-in so the notes routes can reuse the legacy handlers before the migration."""
+
+    def __init__(self, data):
+        self._data = data
+
+    async def json(self):
+        return self._data
+
+
 @app.get("/api/notes")
 async def notes_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None,
                      include_archived: bool = False):
-    """Notizen aus llm-note (PB-11, #3994)."""
-    with _notes_http_errors():
-        return notes_adapter.list_notes(entry_type=entry_type, category=category, limit=limit,
-                                        search=search, include_archived=include_archived)
+    """Notizen aus llm-note (PB-11, #3994). Vor der Migration: Altbestand, `pending_migration: true`."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.list_notes(entry_type=entry_type, category=category, limit=limit, search=search,
+                                            include_archived=include_archived, legacy_db=USER_DB)
+    legacy = await denkarium_list(notes_adapter.legacy_type(entry_type), category, limit, search, not include_archived)
+    return notes_adapter.from_denkarium_list(legacy, USER_DB)
 
 
 @app.post("/api/notes")
 async def notes_create(request: Request):
-    with _notes_http_errors():
-        return {"ok": True, "entry": notes_adapter.create_note(await request.json())}
+    data = await request.json()
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return {"ok": True, "entry": notes_adapter.create_note(data)}
+    # before the migration the legacy table stays the only store; the idempotent migration picks the row up
+    body = {**data, "entry_type": notes_adapter.legacy_type(data.get("entry_type") or "note")}
+    created = await denkarium_create(_JsonBody(body))
+    if isinstance(created, JSONResponse):
+        return created
+    return {"ok": True, "entry": {"id": created["id"]}, "pending_migration": True}
 
 
 @app.post("/api/notes/{entry_id}/archive")
@@ -6784,6 +6805,9 @@ async def notes_archive(entry_id: int, request: Request):
         data = await request.json()
     except Exception:
         data = {}
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_archive_direct(entry_id, _JsonBody(data))
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
     with _notes_http_errors():
         reason = data.get("reason") if isinstance(data, dict) else None
         return {"ok": True, "entry": notes_adapter.archive_note(entry_id, reason)}
@@ -6791,12 +6815,17 @@ async def notes_archive(entry_id: int, request: Request):
 
 @app.post("/api/notes/{entry_id}/unarchive")
 async def notes_unarchive(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_unarchive_direct(entry_id)
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
     with _notes_http_errors():
         return {"ok": True, "entry": notes_adapter.unarchive_note(entry_id)}
 
 
 @app.delete("/api/notes/{entry_id}")
 async def notes_delete(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        return await denkarium_delete(entry_id)
     with _notes_http_errors():
         notes_adapter.delete_note(entry_id)
     return {"ok": True}

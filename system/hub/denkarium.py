@@ -106,6 +106,15 @@ class DenkariumHandler(BaseHandler):
         if dry_run:
             return True, f"[DRY-RUN] Wuerde {entry_type}-Eintrag erstellen"
 
+        from hub._services import notes_adapter
+
+        if notes_adapter.use_llm_note(self.db_path):  # migrated: llm-note is the single store (PB-11)
+            entry_id = notes_adapter.denkarium_create({
+                "content": text, "entry_type": entry_type, "category": category, "title": title,
+                "mood": mood, "source": "user"})["id"]
+            type_label = "Logbuch" if entry_type == "logbuch" else "Denkarium"
+            return True, f"[OK] {type_label}-Eintrag #{entry_id} gespeichert ({category})"
+
         conn = self._get_conn()
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -217,10 +226,18 @@ class DenkariumHandler(BaseHandler):
         if dry_run:
             return True, f"[DRY-RUN] Wuerde Brainstorm zu '{topic}' erstellen"
 
-        conn = self._get_conn()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        from hub._services import notes_adapter
+
         title = f"Brainstorm: {topic}"
         content = f"Thema: {topic}\n\nIdeen:\n- \n\n(Ergaenze Ideen mit: bach denkarium write \"Idee\" --cat=idee)"
+        if notes_adapter.use_llm_note(self.db_path):  # migrated: llm-note is the single store (PB-11)
+            entry_id = notes_adapter.denkarium_create({
+                "content": content, "entry_type": "denkarium", "category": "brainstorm", "title": title,
+                "source": "user"})["id"]
+            return True, f"[OK] Brainstorm #{entry_id} gestartet: {topic}\n     Ideen ergaenzen mit: bach denkarium write \"Idee\" --cat=idee"
+
+        conn = self._get_conn()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         conn.execute("""
             INSERT INTO denkarium_entries

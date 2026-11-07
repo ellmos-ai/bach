@@ -1854,7 +1854,7 @@
       "method": "GET",
       "path": "/anonymization",
       "handler": "serve_anonymization",
-      "line": 15898
+      "line": 15927
     },
     {
       "method": "GET",
@@ -1884,25 +1884,25 @@
       "method": "POST",
       "path": "/api/ai/headless/run",
       "handler": "api_ai_headless_run",
-      "line": 7328
+      "line": 7357
     },
     {
       "method": "GET",
       "path": "/api/anonymization/clients",
       "handler": "list_anon_clients",
-      "line": 16330
+      "line": 16359
     },
     {
       "method": "POST",
       "path": "/api/anonymization/profile",
       "handler": "create_anon_profile",
-      "line": 16352
+      "line": 16381
     },
     {
       "method": "POST",
       "path": "/api/anonymization/upload",
       "handler": "upload_anon_file",
-      "line": 16390
+      "line": 16419
     },
     {
       "method": "GET",
@@ -1968,13 +1968,13 @@
       "method": "POST",
       "path": "/api/auto-sessions/launch",
       "handler": "launch_auto_session",
-      "line": 12725
+      "line": 12754
     },
     {
       "method": "GET",
       "path": "/api/bach-agents",
       "handler": "get_bach_agents",
-      "line": 7803
+      "line": 7832
     },
     {
       "method": "GET",
@@ -2004,37 +2004,37 @@
       "method": "GET",
       "path": "/api/contacts",
       "handler": "get_contacts",
-      "line": 14813
+      "line": 14842
     },
     {
       "method": "POST",
       "path": "/api/contacts",
       "handler": "add_contact",
-      "line": 14872
+      "line": 14901
     },
     {
       "method": "GET",
       "path": "/api/contacts/export",
       "handler": "export_contacts",
-      "line": 14965
+      "line": 14994
     },
     {
       "method": "DELETE",
       "path": "/api/contacts/{contact_id}",
       "handler": "delete_contact",
-      "line": 14951
+      "line": 14980
     },
     {
       "method": "GET",
       "path": "/api/contacts/{contact_id}",
       "handler": "get_contact",
-      "line": 14855
+      "line": 14884
     },
     {
       "method": "PUT",
       "path": "/api/contacts/{contact_id}",
       "handler": "update_contact",
-      "line": 14910
+      "line": 14939
     },
     {
       "method": "GET",
@@ -2082,7 +2082,7 @@
       "method": "PUT",
       "path": "/api/daemon/config",
       "handler": "update_daemon_config",
-      "line": 10533
+      "line": 10562
     },
     {
       "method": "GET",
@@ -2142,391 +2142,391 @@
       "method": "GET",
       "path": "/api/denkarium",
       "handler": "denkarium_list",
-      "line": 6806
+      "line": 6835
     },
     {
       "method": "POST",
       "path": "/api/denkarium",
       "handler": "denkarium_create",
-      "line": 6865
+      "line": 6894
     },
     {
       "method": "DELETE",
       "path": "/api/denkarium/{entry_id}",
       "handler": "denkarium_delete",
-      "line": 6927
+      "line": 6956
     },
     {
       "method": "POST",
       "path": "/api/denkarium/{entry_id}/archive",
       "handler": "denkarium_archive_direct",
-      "line": 6956
+      "line": 6985
     },
     {
       "method": "POST",
       "path": "/api/denkarium/{entry_id}/promote",
       "handler": "denkarium_promote",
-      "line": 6992
+      "line": 7021
     },
     {
       "method": "POST",
       "path": "/api/denkarium/{entry_id}/unarchive",
       "handler": "denkarium_unarchive_direct",
-      "line": 6976
+      "line": 7005
     },
     {
       "method": "GET",
       "path": "/api/devices",
       "handler": "api_list_devices",
-      "line": 7093
+      "line": 7122
     },
     {
       "method": "POST",
       "path": "/api/devices",
       "handler": "api_create_device",
-      "line": 7099
+      "line": 7128
     },
     {
       "method": "POST",
       "path": "/api/devices/auto-session",
       "handler": "api_auto_session_device",
-      "line": 7194
+      "line": 7223
     },
     {
       "method": "POST",
       "path": "/api/devices/session/logout",
       "handler": "api_logout_device",
-      "line": 7246
+      "line": 7275
     },
     {
       "method": "POST",
       "path": "/api/devices/verify",
       "handler": "api_verify_device",
-      "line": 7134
+      "line": 7163
     },
     {
       "method": "DELETE",
       "path": "/api/devices/{name}",
       "handler": "api_revoke_device",
-      "line": 7113
+      "line": 7142
     },
     {
       "method": "POST",
       "path": "/api/devices/{name}/revoke",
       "handler": "api_revoke_device",
-      "line": 7113
+      "line": 7142
     },
     {
       "method": "GET",
       "path": "/api/docs/help/search/{term}",
       "handler": "search_help",
-      "line": 8644
+      "line": 8673
     },
     {
       "method": "DELETE",
       "path": "/api/docs/help/{name:path}",
       "handler": "delete_help_file",
-      "line": 8605
+      "line": 8634
     },
     {
       "method": "GET",
       "path": "/api/docs/help/{name:path}",
       "handler": "get_help_file",
-      "line": 8415
+      "line": 8444
     },
     {
       "method": "PUT",
       "path": "/api/docs/help/{name:path}",
       "handler": "update_help_file",
-      "line": 8490
+      "line": 8519
     },
     {
       "method": "GET",
       "path": "/api/financial/accounts",
       "handler": "financial_accounts",
-      "line": 9657
+      "line": 9686
     },
     {
       "method": "POST",
       "path": "/api/financial/accounts",
       "handler": "create_mail_account",
-      "line": 9705
+      "line": 9734
     },
     {
       "method": "DELETE",
       "path": "/api/financial/accounts/{account_id}",
       "handler": "delete_mail_account",
-      "line": 9821
+      "line": 9850
     },
     {
       "method": "POST",
       "path": "/api/financial/accounts/{account_id}/test",
       "handler": "test_mail_account",
-      "line": 9933
+      "line": 9962
     },
     {
       "method": "PUT",
       "path": "/api/financial/accounts/{account_id}/toggle",
       "handler": "toggle_mail_account",
-      "line": 9881
+      "line": 9910
     },
     {
       "method": "GET",
       "path": "/api/financial/bank-accounts",
       "handler": "get_bank_accounts",
-      "line": 15318
+      "line": 15347
     },
     {
       "method": "POST",
       "path": "/api/financial/bank-accounts",
       "handler": "add_bank_account",
-      "line": 15328
+      "line": 15357
     },
     {
       "method": "DELETE",
       "path": "/api/financial/bank-accounts/{account_id}",
       "handler": "delete_bank_account",
-      "line": 15365
+      "line": 15394
     },
     {
       "method": "PUT",
       "path": "/api/financial/bank-accounts/{account_id}",
       "handler": "update_bank_account",
-      "line": 15346
+      "line": 15375
     },
     {
       "method": "GET",
       "path": "/api/financial/categories",
       "handler": "financial_categories",
-      "line": 9291
+      "line": 9320
     },
     {
       "method": "GET",
       "path": "/api/financial/config",
       "handler": "financial_config",
-      "line": 9453
+      "line": 9482
     },
     {
       "method": "PUT",
       "path": "/api/financial/config",
       "handler": "update_financial_config",
-      "line": 9477
+      "line": 9506
     },
     {
       "method": "GET",
       "path": "/api/financial/contracts",
       "handler": "get_contracts",
-      "line": 14044
+      "line": 14073
     },
     {
       "method": "POST",
       "path": "/api/financial/contracts",
       "handler": "add_contract",
-      "line": 14074
+      "line": 14103
     },
     {
       "method": "DELETE",
       "path": "/api/financial/contracts/{contract_id}",
       "handler": "delete_contract",
-      "line": 14146
+      "line": 14175
     },
     {
       "method": "PUT",
       "path": "/api/financial/contracts/{contract_id}",
       "handler": "update_contract",
-      "line": 14111
+      "line": 14140
     },
     {
       "method": "GET",
       "path": "/api/financial/credits",
       "handler": "get_credits",
-      "line": 15379
+      "line": 15408
     },
     {
       "method": "POST",
       "path": "/api/financial/credits",
       "handler": "add_credit",
-      "line": 15395
+      "line": 15424
     },
     {
       "method": "DELETE",
       "path": "/api/financial/credits/{credit_id}",
       "handler": "delete_credit",
-      "line": 15461
+      "line": 15490
     },
     {
       "method": "PUT",
       "path": "/api/financial/credits/{credit_id}",
       "handler": "update_credit",
-      "line": 15426
+      "line": 15455
     },
     {
       "method": "GET",
       "path": "/api/financial/deadlines",
       "handler": "get_financial_deadlines",
-      "line": 14216
+      "line": 14245
     },
     {
       "method": "GET",
       "path": "/api/financial/emails",
       "handler": "financial_emails",
-      "line": 9069
+      "line": 9098
     },
     {
       "method": "GET",
       "path": "/api/financial/emails/{email_id}",
       "handler": "get_financial_email",
-      "line": 9145
+      "line": 9174
     },
     {
       "method": "PUT",
       "path": "/api/financial/emails/{email_id}/status",
       "handler": "update_email_status",
-      "line": 9533
+      "line": 9562
     },
     {
       "method": "GET",
       "path": "/api/financial/export",
       "handler": "financial_export",
-      "line": 9565
+      "line": 9594
     },
     {
       "method": "GET",
       "path": "/api/financial/false-positives",
       "handler": "get_false_positives",
-      "line": 13534
+      "line": 13563
     },
     {
       "method": "POST",
       "path": "/api/financial/false-positives",
       "handler": "add_false_positive",
-      "line": 13554
+      "line": 13583
     },
     {
       "method": "DELETE",
       "path": "/api/financial/false-positives/{message_id}",
       "handler": "remove_false_positive",
-      "line": 13644
+      "line": 13673
     },
     {
       "method": "GET",
       "path": "/api/financial/gmail/find-credentials",
       "handler": "find_gmail_credentials",
-      "line": 10075
+      "line": 10104
     },
     {
       "method": "POST",
       "path": "/api/financial/gmail/setup",
       "handler": "setup_gmail_api",
-      "line": 10113
+      "line": 10142
     },
     {
       "method": "GET",
       "path": "/api/financial/gmail/status",
       "handler": "gmail_api_status",
-      "line": 10309
+      "line": 10338
     },
     {
       "method": "GET",
       "path": "/api/financial/imap-presets",
       "handler": "get_imap_presets",
-      "line": 10043
+      "line": 10072
     },
     {
       "method": "GET",
       "path": "/api/financial/insurances",
       "handler": "get_insurances",
-      "line": 14174
+      "line": 14203
     },
     {
       "method": "POST",
       "path": "/api/financial/insurances",
       "handler": "add_insurance",
-      "line": 14332
+      "line": 14361
     },
     {
       "method": "DELETE",
       "path": "/api/financial/insurances/{ins_id}",
       "handler": "delete_insurance",
-      "line": 14398
+      "line": 14427
     },
     {
       "method": "PUT",
       "path": "/api/financial/insurances/{ins_id}",
       "handler": "update_insurance",
-      "line": 14366
+      "line": 14395
     },
     {
       "method": "GET",
       "path": "/api/financial/profiles",
       "handler": "get_mail_profiles",
-      "line": 13268
+      "line": 13297
     },
     {
       "method": "POST",
       "path": "/api/financial/profiles",
       "handler": "create_mail_profile",
-      "line": 13354
+      "line": 13383
     },
     {
       "method": "POST",
       "path": "/api/financial/profiles/import",
       "handler": "import_profiles_from_universal_mail",
-      "line": 13870
+      "line": 13899
     },
     {
       "method": "POST",
       "path": "/api/financial/profiles/test",
       "handler": "test_mail_profile",
-      "line": 13680
+      "line": 13709
     },
     {
       "method": "DELETE",
       "path": "/api/financial/profiles/{profile_id}",
       "handler": "delete_mail_profile",
-      "line": 13494
+      "line": 13523
     },
     {
       "method": "PUT",
       "path": "/api/financial/profiles/{profile_id}",
       "handler": "update_mail_profile",
-      "line": 13428
+      "line": 13457
     },
     {
       "method": "POST",
       "path": "/api/financial/save-json",
       "handler": "save_financial_json",
-      "line": 9405
+      "line": 9434
     },
     {
       "method": "GET",
       "path": "/api/financial/status",
       "handler": "financial_status",
-      "line": 8950
+      "line": 8979
     },
     {
       "method": "GET",
       "path": "/api/financial/subscriptions",
       "handler": "financial_subscriptions",
-      "line": 9175
+      "line": 9204
     },
     {
       "method": "GET",
       "path": "/api/financial/subscriptions-unified",
       "handler": "financial_subscriptions_unified",
-      "line": 9219
+      "line": 9248
     },
     {
       "method": "DELETE",
       "path": "/api/financial/subscriptions/{sub_id}",
       "handler": "delete_financial_subscription",
-      "line": 9265
+      "line": 9294
     },
     {
       "method": "POST",
       "path": "/api/financial/sync",
       "handler": "financial_sync",
-      "line": 9343
+      "line": 9372
     },
     {
       "method": "GET",
@@ -2568,145 +2568,145 @@
       "method": "GET",
       "path": "/api/help",
       "handler": "list_help_files",
-      "line": 8250
+      "line": 8279
     },
     {
       "method": "POST",
       "path": "/api/help",
       "handler": "create_help_file",
-      "line": 8546
+      "line": 8575
     },
     {
       "method": "DELETE",
       "path": "/api/help/{name:path}",
       "handler": "delete_help_file",
-      "line": 8605
+      "line": 8634
     },
     {
       "method": "GET",
       "path": "/api/help/{name:path}",
       "handler": "get_help_file",
-      "line": 8415
+      "line": 8444
     },
     {
       "method": "PUT",
       "path": "/api/help/{name:path}",
       "handler": "update_help_file",
-      "line": 8490
+      "line": 8519
     },
     {
       "method": "GET",
       "path": "/api/homecontrol/devices",
       "handler": "api_homecontrol_devices",
-      "line": 17716
+      "line": 17745
     },
     {
       "method": "GET",
       "path": "/api/homecontrol/energy",
       "handler": "api_homecontrol_energy",
-      "line": 17727
+      "line": 17756
     },
     {
       "method": "GET",
       "path": "/api/inbox/analyze/{filename}",
       "handler": "analyze_inbox_file",
-      "line": 16106
+      "line": 16135
     },
     {
       "method": "GET",
       "path": "/api/inbox/config",
       "handler": "api_get_inbox_config",
-      "line": 7304
+      "line": 7333
     },
     {
       "method": "POST",
       "path": "/api/inbox/config",
       "handler": "api_save_inbox_config",
-      "line": 7373
+      "line": 7402
     },
     {
       "method": "DELETE",
       "path": "/api/inbox/folders",
       "handler": "remove_inbox_folder",
-      "line": 15725
+      "line": 15754
     },
     {
       "method": "GET",
       "path": "/api/inbox/folders",
       "handler": "get_inbox_folders",
-      "line": 15579
+      "line": 15608
     },
     {
       "method": "POST",
       "path": "/api/inbox/folders",
       "handler": "add_inbox_folder",
-      "line": 15603
+      "line": 15632
     },
     {
       "method": "PUT",
       "path": "/api/inbox/folders",
       "handler": "update_inbox_folder",
-      "line": 15649
+      "line": 15678
     },
     {
       "method": "GET",
       "path": "/api/inbox/preview/{filename}",
       "handler": "get_inbox_preview",
-      "line": 16074
+      "line": 16103
     },
     {
       "method": "GET",
       "path": "/api/inbox/rules",
       "handler": "get_inbox_rules",
-      "line": 15757
+      "line": 15786
     },
     {
       "method": "POST",
       "path": "/api/inbox/rules",
       "handler": "add_inbox_rule",
-      "line": 15785
+      "line": 15814
     },
     {
       "method": "DELETE",
       "path": "/api/inbox/rules/{rule_id}",
       "handler": "delete_inbox_rule",
-      "line": 15865
+      "line": 15894
     },
     {
       "method": "PUT",
       "path": "/api/inbox/rules/{rule_id}",
       "handler": "update_inbox_rule",
-      "line": 15831
+      "line": 15860
     },
     {
       "method": "POST",
       "path": "/api/inbox/scan",
       "handler": "run_inbox_scan",
-      "line": 15908
+      "line": 15937
     },
     {
       "method": "PUT",
       "path": "/api/inbox/settings",
       "handler": "update_inbox_settings",
-      "line": 16194
+      "line": 16223
     },
     {
       "method": "POST",
       "path": "/api/inbox/sort",
       "handler": "sort_inbox_file",
-      "line": 15996
+      "line": 16025
     },
     {
       "method": "GET",
       "path": "/api/inbox/status",
       "handler": "get_inbox_status",
-      "line": 15492
+      "line": 15521
     },
     {
       "method": "GET",
       "path": "/api/inbox/unsorted",
       "handler": "get_unsorted_files",
-      "line": 15948
+      "line": 15977
     },
     {
       "method": "GET",
@@ -2718,91 +2718,91 @@
       "method": "GET",
       "path": "/api/memory/facts",
       "handler": "get_facts",
-      "line": 11103
+      "line": 11132
     },
     {
       "method": "POST",
       "path": "/api/memory/facts",
       "handler": "add_fact",
-      "line": 11133
+      "line": 11162
     },
     {
       "method": "DELETE",
       "path": "/api/memory/facts/{fact_id}",
       "handler": "delete_fact",
-      "line": 11173
+      "line": 11202
     },
     {
       "method": "GET",
       "path": "/api/memory/lessons",
       "handler": "get_lessons",
-      "line": 10953
+      "line": 10982
     },
     {
       "method": "POST",
       "path": "/api/memory/lessons",
       "handler": "add_lesson",
-      "line": 11073
+      "line": 11102
     },
     {
       "method": "DELETE",
       "path": "/api/memory/lessons/{lesson_id}",
       "handler": "delete_lesson",
-      "line": 11219
+      "line": 11248
     },
     {
       "method": "POST",
       "path": "/api/memory/maintenance/cleanup",
       "handler": "memory_maintenance_cleanup",
-      "line": 11321
+      "line": 11350
     },
     {
       "method": "GET",
       "path": "/api/memory/overview",
       "handler": "get_memory_overview",
-      "line": 10736
+      "line": 10765
     },
     {
       "method": "GET",
       "path": "/api/memory/sessions",
       "handler": "get_sessions",
-      "line": 11001
+      "line": 11030
     },
     {
       "method": "POST",
       "path": "/api/memory/sessions",
       "handler": "add_session_memory",
-      "line": 13076
+      "line": 13105
     },
     {
       "method": "GET",
       "path": "/api/memory/sessions/{session_id}",
       "handler": "get_session_detail",
-      "line": 11395
+      "line": 11424
     },
     {
       "method": "GET",
       "path": "/api/memory/stats/db",
       "handler": "get_memory_db_stats",
-      "line": 11243
+      "line": 11272
     },
     {
       "method": "GET",
       "path": "/api/memory/working",
       "handler": "get_working_memory",
-      "line": 10923
+      "line": 10952
     },
     {
       "method": "POST",
       "path": "/api/memory/working",
       "handler": "add_working_memory",
-      "line": 11043
+      "line": 11072
     },
     {
       "method": "DELETE",
       "path": "/api/memory/working/{entry_id}",
       "handler": "delete_working_memory",
-      "line": 11197
+      "line": 11226
     },
     {
       "method": "GET",
@@ -2898,31 +2898,31 @@
       "method": "GET",
       "path": "/api/notes",
       "handler": "notes_list",
-      "line": 6767
+      "line": 6777
     },
     {
       "method": "POST",
       "path": "/api/notes",
       "handler": "notes_create",
-      "line": 6776
+      "line": 6789
     },
     {
       "method": "DELETE",
       "path": "/api/notes/{entry_id}",
       "handler": "notes_delete",
-      "line": 6799
+      "line": 6826
     },
     {
       "method": "POST",
       "path": "/api/notes/{entry_id}/archive",
       "handler": "notes_archive",
-      "line": 6782
+      "line": 6803
     },
     {
       "method": "POST",
       "path": "/api/notes/{entry_id}/unarchive",
       "handler": "notes_unarchive",
-      "line": 6793
+      "line": 6817
     },
     {
       "method": "GET",
@@ -2934,13 +2934,13 @@
       "method": "GET",
       "path": "/api/permissions",
       "handler": "api_get_capability_permissions",
-      "line": 17218
+      "line": 17247
     },
     {
       "method": "POST",
       "path": "/api/permissions",
       "handler": "api_update_capability_permissions",
-      "line": 17228
+      "line": 17257
     },
     {
       "method": "POST",
@@ -2952,205 +2952,205 @@
       "method": "PUT",
       "path": "/api/prompt-generator/daemon/config",
       "handler": "update_prompt_daemon_config",
-      "line": 12498
+      "line": 12527
     },
     {
       "method": "GET",
       "path": "/api/prompt-generator/daemon/status",
       "handler": "get_prompt_daemon_status",
-      "line": 12408
+      "line": 12437
     },
     {
       "method": "POST",
       "path": "/api/prompt-generator/daemon/toggle",
       "handler": "toggle_prompt_daemon",
-      "line": 12556
+      "line": 12585
     },
     {
       "method": "POST",
       "path": "/api/prompt-generator/send/copy",
       "handler": "copy_prompt_to_clipboard",
-      "line": 12380
+      "line": 12409
     },
     {
       "method": "POST",
       "path": "/api/prompt-generator/send/session",
       "handler": "send_prompt_direct_session",
-      "line": 12261
+      "line": 12290
     },
     {
       "method": "POST",
       "path": "/api/prompt-generator/send/task",
       "handler": "send_prompt_as_task",
-      "line": 12233
+      "line": 12262
     },
     {
       "method": "GET",
       "path": "/api/prompt-generator/template/{template_path:path}",
       "handler": "get_prompt_template",
-      "line": 12181
+      "line": 12210
     },
     {
       "method": "GET",
       "path": "/api/prompt-generator/templates",
       "handler": "get_prompt_templates",
-      "line": 12153
+      "line": 12182
     },
     {
       "method": "POST",
       "path": "/api/prompt-generator/templates/save",
       "handler": "save_prompt_template",
-      "line": 12782
+      "line": 12811
     },
     {
       "method": "GET",
       "path": "/api/prompt-library",
       "handler": "list_prompt_library",
-      "line": 11841
+      "line": 11870
     },
     {
       "method": "POST",
       "path": "/api/prompt-library",
       "handler": "create_prompt_library_entry",
-      "line": 11925
+      "line": 11954
     },
     {
       "method": "POST",
       "path": "/api/prompt-library/export-promptboard",
       "handler": "export_promptboard_library",
-      "line": 12078
+      "line": 12107
     },
     {
       "method": "POST",
       "path": "/api/prompt-library/import-json",
       "handler": "import_prompt_json_upload",
-      "line": 12057
+      "line": 12086
     },
     {
       "method": "POST",
       "path": "/api/prompt-library/import-json/preview",
       "handler": "preview_prompt_json_upload",
-      "line": 12036
+      "line": 12065
     },
     {
       "method": "POST",
       "path": "/api/prompt-library/import-promptboard",
       "handler": "import_promptboard_library",
-      "line": 12020
+      "line": 12049
     },
     {
       "method": "GET",
       "path": "/api/prompt-library/import-promptboard/preview",
       "handler": "preview_promptboard_library",
-      "line": 12004
+      "line": 12033
     },
     {
       "method": "POST",
       "path": "/api/prompt-library/sync-promptboard",
       "handler": "sync_promptboard_library",
-      "line": 12122
+      "line": 12151
     },
     {
       "method": "GET",
       "path": "/api/prompt-library/sync-promptboard/preview",
       "handler": "preview_sync_promptboard_library",
-      "line": 12106
+      "line": 12135
     },
     {
       "method": "DELETE",
       "path": "/api/prompt-library/{prompt_id}",
       "handler": "delete_prompt_library_entry",
-      "line": 11979
+      "line": 12008
     },
     {
       "method": "GET",
       "path": "/api/prompt-library/{prompt_id}",
       "handler": "get_prompt_library_entry",
-      "line": 11907
+      "line": 11936
     },
     {
       "method": "PUT",
       "path": "/api/prompt-library/{prompt_id}",
       "handler": "update_prompt_library_entry",
-      "line": 11949
+      "line": 11978
     },
     {
       "method": "POST",
       "path": "/api/prompt-library/{prompt_id}/favorite",
       "handler": "toggle_prompt_favorite",
-      "line": 11874
+      "line": 11903
     },
     {
       "method": "GET",
       "path": "/api/recurring",
       "handler": "get_recurring_tasks",
-      "line": 10610
+      "line": 10639
     },
     {
       "method": "POST",
       "path": "/api/recurring/check",
       "handler": "check_recurring",
-      "line": 10642
+      "line": 10671
     },
     {
       "method": "POST",
       "path": "/api/recurring/trigger/{task_id}",
       "handler": "trigger_recurring",
-      "line": 10674
+      "line": 10703
     },
     {
       "method": "GET",
       "path": "/api/report/pending",
       "handler": "list_pending_reports",
-      "line": 16655
+      "line": 16684
     },
     {
       "method": "POST",
       "path": "/api/report/session/start",
       "handler": "start_report_session",
-      "line": 16427
+      "line": 16456
     },
     {
       "method": "GET",
       "path": "/api/report/session/{session_id}",
       "handler": "get_session_status",
-      "line": 16641
+      "line": 16670
     },
     {
       "method": "POST",
       "path": "/api/report/session/{session_id}/anonymize",
       "handler": "anonymize_session_documents",
-      "line": 16522
+      "line": 16551
     },
     {
       "method": "POST",
       "path": "/api/report/session/{session_id}/cleanup",
       "handler": "cleanup_session",
-      "line": 16620
+      "line": 16649
     },
     {
       "method": "POST",
       "path": "/api/report/session/{session_id}/generate",
       "handler": "generate_session_report",
-      "line": 16587
+      "line": 16616
     },
     {
       "method": "POST",
       "path": "/api/report/session/{session_id}/import",
       "handler": "import_files_to_session",
-      "line": 16442
+      "line": 16471
     },
     {
       "method": "POST",
       "path": "/api/report/session/{session_id}/profile",
       "handler": "create_session_profile",
-      "line": 16483
+      "line": 16512
     },
     {
       "method": "POST",
       "path": "/api/report/session/{session_id}/prompt",
       "handler": "generate_session_prompt",
-      "line": 16549
+      "line": 16578
     },
     {
       "method": "GET",
@@ -3180,67 +3180,67 @@
       "method": "GET",
       "path": "/api/robotics/capabilities",
       "handler": "api_robotics_capabilities",
-      "line": 17737
+      "line": 17766
     },
     {
       "method": "POST",
       "path": "/api/robotics/estop",
       "handler": "api_robotics_estop",
-      "line": 17749
+      "line": 17778
     },
     {
       "method": "POST",
       "path": "/api/robotics/estop/reset",
       "handler": "api_robotics_estop_reset",
-      "line": 17757
+      "line": 17786
     },
     {
       "method": "GET",
       "path": "/api/robotics/telemetry",
       "handler": "api_robotics_telemetry",
-      "line": 17743
+      "line": 17772
     },
     {
       "method": "GET",
       "path": "/api/routines",
       "handler": "get_routines",
-      "line": 15031
+      "line": 15060
     },
     {
       "method": "POST",
       "path": "/api/routines",
       "handler": "add_routine",
-      "line": 15122
+      "line": 15151
     },
     {
       "method": "GET",
       "path": "/api/routines/export",
       "handler": "export_routines",
-      "line": 15266
+      "line": 15295
     },
     {
       "method": "DELETE",
       "path": "/api/routines/{routine_id}",
       "handler": "delete_routine",
-      "line": 15251
+      "line": 15280
     },
     {
       "method": "GET",
       "path": "/api/routines/{routine_id}",
       "handler": "get_routine",
-      "line": 15095
+      "line": 15124
     },
     {
       "method": "PUT",
       "path": "/api/routines/{routine_id}",
       "handler": "update_routine",
-      "line": 15160
+      "line": 15189
     },
     {
       "method": "POST",
       "path": "/api/routines/{routine_id}/complete",
       "handler": "complete_routine",
-      "line": 15194
+      "line": 15223
     },
     {
       "method": "GET",
@@ -3282,31 +3282,31 @@
       "method": "POST",
       "path": "/api/sensation/open-compute-gate",
       "handler": "api_sensation_open_compute_gate",
-      "line": 17679
+      "line": 17708
     },
     {
       "method": "GET",
       "path": "/api/sensation/status",
       "handler": "api_sensation_status",
-      "line": 17659
+      "line": 17688
     },
     {
       "method": "GET",
       "path": "/api/session/activities",
       "handler": "get_session_activities",
-      "line": 12838
+      "line": 12867
     },
     {
       "method": "POST",
       "path": "/api/session/end",
       "handler": "end_session",
-      "line": 13024
+      "line": 13053
     },
     {
       "method": "POST",
       "path": "/api/session/generate-summary",
       "handler": "generate_session_summary",
-      "line": 12950
+      "line": 12979
     },
     {
       "method": "GET",
@@ -3342,25 +3342,25 @@
       "method": "GET",
       "path": "/api/skills-board/hierarchy",
       "handler": "get_skills_hierarchy",
-      "line": 8092
+      "line": 8121
     },
     {
       "method": "PUT",
       "path": "/api/skills-board/hierarchy",
       "handler": "save_skills_hierarchy",
-      "line": 8227
+      "line": 8256
     },
     {
       "method": "GET",
       "path": "/api/skills-board/item-file",
       "handler": "get_skills_item_file",
-      "line": 8072
+      "line": 8101
     },
     {
       "method": "PUT",
       "path": "/api/skills-board/item-file",
       "handler": "update_skills_item_file",
-      "line": 8082
+      "line": 8111
     },
     {
       "method": "GET",
@@ -3384,19 +3384,19 @@
       "method": "GET",
       "path": "/api/steuer/dokumente/unlinked",
       "handler": "api_steuer_unlinked_docs",
-      "line": 7527
+      "line": 7556
     },
     {
       "method": "POST",
       "path": "/api/steuer/match-bank",
       "handler": "api_steuer_match_bank",
-      "line": 7607
+      "line": 7636
     },
     {
       "method": "POST",
       "path": "/api/steuer/posten/{posten_id}/link",
       "handler": "api_steuer_link_posten",
-      "line": 7563
+      "line": 7592
     },
     {
       "method": "GET",
@@ -3414,55 +3414,55 @@
       "method": "GET",
       "path": "/api/talk/config",
       "handler": "api_get_talk_config",
-      "line": 17454
+      "line": 17483
     },
     {
       "method": "POST",
       "path": "/api/talk/config",
       "handler": "api_update_talk_config",
-      "line": 17490
+      "line": 17519
     },
     {
       "method": "POST",
       "path": "/api/talk/directive",
       "handler": "api_talk_directive",
-      "line": 17651
+      "line": 17680
     },
     {
       "method": "POST",
       "path": "/api/talk/reflex",
       "handler": "api_talk_reflex",
-      "line": 17561
+      "line": 17590
     },
     {
       "method": "GET",
       "path": "/api/talk/state",
       "handler": "api_talk_status",
-      "line": 17447
+      "line": 17476
     },
     {
       "method": "GET",
       "path": "/api/talk/status",
       "handler": "api_talk_status",
-      "line": 17447
+      "line": 17476
     },
     {
       "method": "POST",
       "path": "/api/talk/summon",
       "handler": "api_talk_summon",
-      "line": 17524
+      "line": 17553
     },
     {
       "method": "POST",
       "path": "/api/talk/summon/ack",
       "handler": "api_talk_summon_ack",
-      "line": 17550
+      "line": 17579
     },
     {
       "method": "POST",
       "path": "/api/talk/turn",
       "handler": "api_talk_turn",
-      "line": 17604
+      "line": 17633
     },
     {
       "method": "GET",
@@ -3624,85 +3624,85 @@
       "method": "GET",
       "path": "/api/tools",
       "handler": "get_tools",
-      "line": 11485
+      "line": 11514
     },
     {
       "method": "GET",
       "path": "/api/tools/{name}",
       "handler": "api_get_tool_detail",
-      "line": 7658
+      "line": 7687
     },
     {
       "method": "POST",
       "path": "/api/tools/{name}/run",
       "handler": "api_run_tool",
-      "line": 7730
+      "line": 7759
     },
     {
       "method": "GET",
       "path": "/api/usecases",
       "handler": "get_usecases",
-      "line": 14501
+      "line": 14530
     },
     {
       "method": "POST",
       "path": "/api/usecases",
       "handler": "add_usecase",
-      "line": 14557
+      "line": 14586
     },
     {
       "method": "POST",
       "path": "/api/usecases/test-all",
       "handler": "test_all_usecases",
-      "line": 14707
+      "line": 14736
     },
     {
       "method": "DELETE",
       "path": "/api/usecases/{usecase_id}",
       "handler": "delete_usecase",
-      "line": 14608
+      "line": 14637
     },
     {
       "method": "GET",
       "path": "/api/usecases/{usecase_id}",
       "handler": "get_usecase",
-      "line": 14537
+      "line": 14566
     },
     {
       "method": "PUT",
       "path": "/api/usecases/{usecase_id}",
       "handler": "update_usecase",
-      "line": 14581
+      "line": 14610
     },
     {
       "method": "POST",
       "path": "/api/usecases/{usecase_id}/execute",
       "handler": "execute_usecase",
-      "line": 14771
+      "line": 14800
     },
     {
       "method": "POST",
       "path": "/api/usecases/{usecase_id}/test",
       "handler": "test_usecase",
-      "line": 14622
+      "line": 14651
     },
     {
       "method": "GET",
       "path": "/api/voice/status",
       "handler": "api_voice_status",
-      "line": 17326
+      "line": 17355
     },
     {
       "method": "POST",
       "path": "/api/voice/stt",
       "handler": "api_voice_stt",
-      "line": 17349
+      "line": 17378
     },
     {
       "method": "POST",
       "path": "/api/voice/tts",
       "handler": "api_voice_tts",
-      "line": 17413
+      "line": 17442
     },
     {
       "method": "GET",
@@ -3720,37 +3720,37 @@
       "method": "GET",
       "path": "/api/workflow-tuev",
       "handler": "get_workflow_tuev",
-      "line": 16719
+      "line": 16748
     },
     {
       "method": "POST",
       "path": "/api/workflow-tuev/check-all",
       "handler": "check_all_workflows",
-      "line": 16826
+      "line": 16855
     },
     {
       "method": "GET",
       "path": "/api/workflow-tuev/content",
       "handler": "get_workflow_content",
-      "line": 16892
+      "line": 16921
     },
     {
       "method": "POST",
       "path": "/api/workflow-tuev/sync",
       "handler": "sync_workflow_tuev",
-      "line": 16857
+      "line": 16886
     },
     {
       "method": "POST",
       "path": "/api/workflow-tuev/{workflow_id}/check",
       "handler": "check_workflow_tuev",
-      "line": 16770
+      "line": 16799
     },
     {
       "method": "GET",
       "path": "/api/ws/status",
       "handler": "websocket_status",
-      "line": 16304
+      "line": 16333
     },
     {
       "method": "GET",
@@ -3816,7 +3816,7 @@
       "method": "GET",
       "path": "/financial",
       "handler": "financial_page",
-      "line": 8932
+      "line": 8961
     },
     {
       "method": "GET",
@@ -3876,7 +3876,7 @@
       "method": "GET",
       "path": "/kontakte",
       "handler": "kontakte_page",
-      "line": 14804
+      "line": 14833
     },
     {
       "method": "GET",
@@ -3900,7 +3900,7 @@
       "method": "GET",
       "path": "/memory",
       "handler": "memory_page",
-      "line": 10716
+      "line": 10745
     },
     {
       "method": "GET",
@@ -3942,13 +3942,13 @@
       "method": "GET",
       "path": "/prompt-generator",
       "handler": "prompt_generator_page",
-      "line": 11780
+      "line": 11809
     },
     {
       "method": "GET",
       "path": "/prompt-library",
       "handler": "prompt_library_page",
-      "line": 11829
+      "line": 11858
     },
     {
       "method": "GET",
@@ -3960,7 +3960,7 @@
       "method": "GET",
       "path": "/routinen",
       "handler": "routinen_page",
-      "line": 15019
+      "line": 15048
     },
     {
       "method": "GET",
@@ -4062,7 +4062,7 @@
       "method": "GET",
       "path": "/talk",
       "handler": "talk_visualizer_companion_page",
-      "line": 17766
+      "line": 17795
     },
     {
       "method": "GET",
@@ -4074,25 +4074,25 @@
       "method": "GET",
       "path": "/tasks-board",
       "handler": "tasks_board_api",
-      "line": 7267
+      "line": 7296
     },
     {
       "method": "GET",
       "path": "/token-dashboard",
       "handler": "token_dashboard_page",
-      "line": 7082
+      "line": 7111
     },
     {
       "method": "GET",
       "path": "/tokens",
       "handler": "tokens_page",
-      "line": 7068
+      "line": 7097
     },
     {
       "method": "GET",
       "path": "/tools",
       "handler": "tools_page",
-      "line": 11463
+      "line": 11492
     },
     {
       "method": "GET",
@@ -4104,7 +4104,7 @@
       "method": "GET",
       "path": "/usecases",
       "handler": "usecases_page",
-      "line": 14426
+      "line": 14455
     },
     {
       "method": "GET",
@@ -4122,7 +4122,7 @@
       "method": "GET",
       "path": "/workflow-tuev",
       "handler": "workflow_tuev_page",
-      "line": 16710
+      "line": 16739
     }
   ]
 }
