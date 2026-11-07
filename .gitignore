@@ -388,3 +388,5 @@ LOCK*.guard
 /tests_tmp_gardener/
 .MODULES/.CONTROL/
 
+.MODULES/.*.json
+.MODULES/.backup/

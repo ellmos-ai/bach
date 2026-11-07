@@ -1138,6 +1138,7 @@ class BACHTray:
             "favorite_count": len(self.favorite_prompts),
             "modular_standalone_count": self.modular_standalone_count,
             "quick_insert_supported": True,
+            "prompt_execute_supported": True,
         }
 
     def _copy_to_clipboard(self, text, notify: bool = True):
@@ -1195,15 +1196,18 @@ class BACHTray:
             "prompt": prompt,
             "chat_id": "tray-prompt",
         }, timeout=300)
-        answer = (result or {}).get("answer", "")[:120]
+        if not result:
+            result = self._api("POST", "/api/prompts/execute", {
+                "prompt": prompt,
+                "persona": "buddha",
+            }, timeout=60)
+        answer = (result or {}).get("answer") or (result or {}).get("clean_reply") or (result or {}).get("reply") or ""
+        answer = str(answer)[:120]
         if not self.icon:
             return
-        if result and result.get("ok"):
-            self.icon.notify(answer, "BACH Antwort")
+        if result and (result.get("ok") or result.get("status") == "ok"):
+            self.icon.notify(answer or "Prompt erfolgreich ausgeführt", "BACH Antwort")
         else:
-            # Ein gefangener Backend-Fehler liefert seit T-20260906-743610852
-            # ok=False, traegt die Ursache aber im Antworttext. Die anzeigen,
-            # statt sie gegen ein nacktes "fehlgeschlagen" zu tauschen.
             self.icon.notify(answer or "Senden fehlgeschlagen", "BACH Fehler")
 
     def _make_prompt_copy_action(self, text):

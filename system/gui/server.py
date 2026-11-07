@@ -2422,6 +2422,114 @@ async def trigger_modules_wire():
         return {"status": "error", "error": public_error_message()}
 
 
+@app.get("/api/modules/feeds")
+async def get_modules_feeds():
+    """Return list of registered module manifest feeds and cached feed modules."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {
+            "status": "ok",
+            "feeds": handler.get_feeds(),
+            "feed_modules": handler.get_feed_modules(),
+        }
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/feeds")
+async def add_modules_feed(req: Request):
+    """Register a new module manifest feed."""
+    try:
+        body = await req.json()
+        url = str(body.get("url") or "").strip()
+        name = body.get("name")
+        if not url:
+            raise HTTPException(status_code=400, detail="Feld 'url' erforderlich")
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.add_feed(url, name=name)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except HTTPException:
+        raise
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.delete("/api/modules/feeds/{feed_id}")
+async def delete_modules_feed(feed_id: str):
+    """Remove a registered module manifest feed."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.remove_feed(feed_id)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/feeds/sync")
+async def sync_modules_feeds_endpoint():
+    """Sync and refresh all registered module manifest feeds."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        res = handler.sync_feeds(force=True)
+        return {"status": "ok", "sync_result": res}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/pins")
+async def get_modules_version_pins():
+    """Return version pins, quarantined versions, and rollback history."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {"status": "ok", **handler.get_version_pins()}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/pin/{module_name}")
+async def pin_module_version_endpoint(module_name: str, req: Request):
+    """Pin a module to a specific or current version."""
+    try:
+        body = await req.json() if req.headers.get("content-length", "0") != "0" else {}
+        version = body.get("version")
+        reason = str(body.get("reason") or "").strip()
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.pin_version(module_name, version=version, reason=reason)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.delete("/api/modules/pin/{module_name}")
+async def unpin_module_version_endpoint(module_name: str):
+    """Unpin a module version."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.unpin_version(module_name)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/rollback/{module_name}")
+async def rollback_module_endpoint(module_name: str):
+    """Roll back a module to its previous backup."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler._rollback_module(module_name)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
 
 # ═══════════════════════════════════════════════════════════════
 
@@ -12293,6 +12401,12 @@ class PromptSendRequest(BaseModel):
 
     include_header: Optional[bool] = True  # Toggle fuer Auto-Session Header
 
+    persona: Optional[str] = "buddha"
+
+    language: Optional[str] = "de"
+
+    stream: Optional[bool] = False
+
 
 
 
@@ -12467,6 +12581,71 @@ async def copy_prompt_to_clipboard(req: PromptSendRequest):
     except Exception as e:
 
         return {"status": "error", "message": public_error_message()}
+
+
+@app.post("/api/prompts/execute")
+@app.post("/api/prompt-generator/send/chat")
+async def execute_prompt_endpoint(req: PromptSendRequest):
+    """Directly execute a prompt via local cortex responder / chat backend and broadcast to GUI."""
+    try:
+        clean_prompt = str(req.prompt or "").strip()
+        if not clean_prompt:
+            raise HTTPException(status_code=400, detail="Prompt darf nicht leer sein")
+
+        persona = req.persona or "buddha"
+        reply = _talk_cortex_responder(clean_prompt, persona=persona, language=req.language or "de")
+        clean_reply = _strip_talk_control_tags(reply)
+
+        if "ws_manager" in globals() and ws_manager is not None:
+            try:
+                await ws_manager.broadcast({
+                    "type": "prompt_executed",
+                    "persona": persona,
+                    "prompt": clean_prompt[:150],
+                    "reply_preview": clean_reply[:150],
+                    "timestamp": datetime.now().isoformat(),
+                })
+            except Exception:
+                pass
+
+        return {
+            "status": "ok",
+            "reply": reply,
+            "clean_reply": clean_reply,
+            "persona": persona,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/prompts/stream")
+async def stream_prompt_endpoint(req: PromptSendRequest):
+    """Stream prompt execution chunk by chunk via Server-Sent Events (SSE)."""
+    from starlette.responses import StreamingResponse
+
+    async def event_generator():
+        clean_prompt = str(req.prompt or "").strip()
+        if not clean_prompt:
+            yield "event: error\ndata: Prompt darf nicht leer sein\n\n"
+            return
+
+        yield f"event: start\ndata: {json.dumps({'persona': req.persona or 'buddha', 'timestamp': datetime.now().isoformat()})}\n\n"
+
+        reply = _talk_cortex_responder(clean_prompt, persona=req.persona or "buddha", language=req.language or "de")
+        clean_text = _strip_talk_control_tags(reply)
+
+        words = clean_text.split(" ")
+        for i, w in enumerate(words):
+            chunk = w + (" " if i < len(words) - 1 else "")
+            yield f"data: {json.dumps({'chunk': chunk, 'index': i})}\n\n"
+            await asyncio.sleep(0.01)
+
+        yield f"event: done\ndata: {json.dumps({'total_chars': len(clean_text)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 
