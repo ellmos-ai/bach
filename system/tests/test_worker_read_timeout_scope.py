@@ -58,11 +58,14 @@ def stalled_host(tmp_path, monkeypatch):
     client = TaskLeaseClient(conn=conn)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
     acquire = control._acquire_worker_task
+    acquired = []
 
     def acquire_or_stop(*args, **kwargs):
         bound = acquire(*args, **kwargs)
         if bound is None:  # queue drained: end this run instead of polling
             control._WORKER_EXECUTIONS[ident].stop_event.set()
+        else:
+            acquired.append(bound.task_id)
         return bound
     monkeypatch.setattr(control, "_acquire_worker_task", acquire_or_stop)
     # Not localhost: no local resource reserve, so a busy test host (Mac: Buddha's model
@@ -91,11 +94,16 @@ def stalled_host(tmp_path, monkeypatch):
             conn.commit()
 
         def run(self):
+            before = len(acquired)
             response, code = control.start_worker_execution(ident)
             assert code == 200 and response["ok"] is True, response
             thread = control._WORKER_EXECUTIONS[ident].thread
             thread.join(15)
             assert not thread.is_alive()
+            current = control._WORKER_CONTROLS.get(ident)
+            assert len(acquired) > before, (  # name the cause when the queue stays closed
+                slots.get_slot(ident, path).get("current_activity"),
+                getattr(current, "queue_status", None))
 
         def notes(self, task_id):
             return [json.loads(row["new_value"])["note"] for row in conn.execute(
