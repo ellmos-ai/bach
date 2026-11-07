@@ -138,8 +138,9 @@ def test_worker_still_stops_after_three_stalled_tasks(stalled_host):
     for task_id in (41, 42, 43, 44):
         stalled_host.add(task_id, "P1" if task_id < 44 else "P3")
     stalled_host.run()
-    assert [stalled_host.notes(t) for t in (41, 42, 43, 44)] == [
-        [TASK_NOTE], [HOST_NOTE], [HOST_NOTE], []]
+    returned = sorted(note for t in (41, 42, 43) for note in stalled_host.notes(t))
+    assert returned == [HOST_NOTE, HOST_NOTE, TASK_NOTE]  # pickup order among equals is open
+    assert stalled_host.notes(44) == []
 
 
 def test_success_or_age_ends_the_host_stall(monkeypatch):
