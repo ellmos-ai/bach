@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+# bach-ci — Lokales CI-Skript für BACH
+# Führt die wichtigsten Prüfungen lokal aus, ähnlich wie der GitHub Actions Workflow.
+# Nutzung: ./bach-ci [--quick|--full] [--pytest-args "..."]
+#
+# Beendet mit Exit-Code != 0, wenn ein Schritt fehlschlägt.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$SCRIPT_DIR"
+SYSTEM_DIR="$ROOT_DIR/system"
+STARTSPINE="$ROOT_DIR/start/startspine.py"
+
+# Standard-Werte
+MODE="standard"
+PYTEST_ARGS=""
+
+# Argumente parsen
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --quick)
+            MODE="quick"
+            shift
+            ;;
+        --full)
+            MODE="full"
+            shift
+            ;;
+        --pytest-args)
+            PYTEST_ARGS="$2"
+            shift 2
+            ;;
+        --help|-h)
+            cat <<EOF
+bach-ci — Lokales CI-Skript für BACH
+
+Usage: ./bach-ci [OPTIONEN]
+
+Optionen:
+  --quick          Nur schnelle Basis-Tests (Worker-Policy, Kern-Tests)
+  --full           Vollständiger Testlauf (alle Suites wie im CI)
+  --pytest-args    Zusätzliche Argumente an pytest weitergeben
+  --help, -h       Diese Hilfe anzeigen
+
+Beispiele:
+  ./bach-ci                    # Standard-Lauf (Worker-Policy + Kern + Native)
+  ./bach-ci --quick            # Nur schnelle Prüfung
+  ./bach-ci --full             # Vollständiger Lauf
+  ./bach-ci --pytest-args "-k not slow"  # Mit pytest-Filter
+
+Exit-Codes:
+  0  Alles erfolgreich
+  1  Allgemeiner Fehler
+  2  Abhängigkeiten fehlen
+  3  Tests fehlgeschlagen
+EOF
+            exit 0
+            ;;
+        *)
+            echo "Unbekannte Option: $1" >&2
+            echo "Nutze --help für Hilfe." >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Farben für Ausgabe
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+log_info()  { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+
+# Prüfen, ob wir im richtigen Verzeichnis sind
+if [[ ! -f "$SYSTEM_DIR/bach.py" ]] || [[ ! -f "$STARTSPINE" ]]; then
+    log_error "BACH-System nicht gefunden. Erwartet: $SYSTEM_DIR/bach.py und $STARTSPINE"
+    exit 1
+fi
+
+# Python-Interpreter ermitteln
+if [[ -x "$HOME/.venvs/bach/bin/python" ]]; then
+    PYTHON="$HOME/.venvs/bach/bin/python"
+elif [[ -x "$HOME/.venvs/science/bin/python" ]]; then
+    PYTHON="$HOME/.venvs/science/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+else
+    PYTHON=python
+fi
+
+log_info "Verwende Python: $($PYTHON --version)"
+
+# Abhängigkeiten prüfen
+log_info "Prüfe Abhängigkeiten..."
+if ! "$PYTHON" -c "import pytest; import psutil" 2>/dev/null; then
+    log_warn "Fehlende Abhängigkeiten (pytest, psutil). Installiere via: pip install pytest psutil"
+    log_warn "Fahre trotzdem fort – Tests werden fehlschlagen, wenn Abhängigkeiten fehlen."
+fi
+
+# PYTHONPATH setzen
+export PYTHONPATH="$SYSTEM_DIR${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONIOENCODING=utf-8
+export PYTHONUNBUFFERED=1
+export PYTHONDONTWRITEBYTECODE=1
+export PYSTRAY_BACKEND=dummy
+
+# Test-Suiten definieren
+WORKER_POLICY_TESTS=(
+    "system/tests/test_worker_policy_settings.py"
+    "system/tests/test_worker_result_submission_receipt.py"
+    "system/tests/test_worker_execution_evidence.py"
+    "system/tests/test_worker_execution_runtime.py"
+    "system/tests/test_worker_scope_snapshot.py"
+    "system/tests/test_worker_scope_evidence.py"
+    "system/tests/test_worker_scope_integration.py"
+    "system/tests/test_provider_model_provenance.py"
+    "system/tests/test_worker_model_provenance.py"
+    "system/tests/test_model_backend.py"
+    "system/tests/test_ollama_stream.py"
+    "system/tests/test_worker_review_identity.py"
+    "system/tests/test_worker_result_review.py"
+    "system/tests/test_worker_review_runtime.py"
+    "system/tests/test_worker_completion_policy.py"
+    "system/tests/test_machine_false_acceptance_recovery.py"
+    "system/tests/test_worker_completion_cli.py"
+    "system/tests/test_task_completion_safe_db.py"
+    "system/tests/test_task_result_correction.py"
+    "system/tests/test_task_result_correction_client.py"
+    "system/tests/test_task_result_correction_api.py"
+    "system/tests/test_task_result_service_scopes_migration.py"
+    "system/tests/test_legacy_review_reopen.py"
+)
+
+BUDGET_TESTS=(
+    "system/tests/test_model_request_budget_store.py"
+    "system/tests/test_model_request_budget_runtime.py"
+    "system/tests/test_task_manage_budget_diagnostics.py"
+)
+
+GUI_TESTS=(
+    "system/tests/test_gui_release_integrity.py"
+    "system/tests/test_gui_gux_shared_contract.py"
+)
+
+NATIVE_CORE_TESTS=(
+    "system/tests/test_native_sequences.py"
+    "system/tests/test_worker_lease_binding.py"
+    "system/tests/test_bound_tool_provider.py"
+    "system/tests/test_worker_start_admission.py"
+    "system/tests/test_ocean_marblerun_unavailable.py"
+)
+
+STANDARD_TESTS=(
+    "system/tests/test_docs_maintenance.py"
+    "system/tests/test_task_handler.py"
+    "system/tests/test_task_slot_fields.py"
+    "system/tests/test_rheingold_handler.py"
+)
+
+LEARNING_TESTS=(
+    "system/tests/test_learning_promotion_contract.py"
+    "system/tests/test_hermes_skill_distillation.py"
+    "system/tests/test_nemofold_workflow_synthesis.py"
+    "system/tests/test_learning_sources.py"
+    "system/tests/test_learning_source_http_limits.py"
+)
+
+GUI_GUX_TESTS=(
+    "system/tests/test_gui_gux_kognitiv.py"
+    "system/tests/test_gui_gux_guardrails.py"
+)
+
+NATIVE_DB_SYNC_TESTS=(
+    "system/tests/test_db_sync_native_readiness.py"
+    "system/tests/test_db_sync_handler.py"
+    "system/tests/test_transit_sync_provider_wiring.py"
+    "system/tests/test_prosync_race.py"
+)
+
+# Funktion zum Ausführen von Tests
+run_test_suite() {
+    local name="$1"
+    shift
+    local tests=("$@")
+    log_info "=== $name ==="
+    # Nur existierende Test-Dateien filtern
+    local existing_tests=()
+    for test in "${tests[@]}"; do
+        if [[ -f "$ROOT_DIR/$test" ]]; then
+            existing_tests+=("$test")
+        else
+            log_warn "Test nicht gefunden (übersprungen): $test"
+        fi
+    done
+    if [[ ${#existing_tests[@]} -eq 0 ]]; then
+        log_warn "Keine Tests in Suite '$name' gefunden."
+        return 0
+    fi
+    local cmd=("$PYTHON" -B -m pytest -q -p no:cacheprovider --timeout=120 $PYTEST_ARGS "${existing_tests[@]}")
+    log_info "Ausführen: ${cmd[*]}"
+    if "${cmd[@]}"; then
+        log_ok "$name: erfolgreich"
+        return 0
+    else
+        log_error "$name: FEHLGESCHLAGEN"
+        return 3
+    fi
+}
+
+# Haupt-Ausführung
+OVERALL_EXIT=0
+
+case "$MODE" in
+    quick)
+        log_info "=== BACH CI: QUICK MODE ==="
+        run_test_suite "Worker Policy & Completion" "${WORKER_POLICY_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Model Request Budget" "${BUDGET_TESTS[@]}" || OVERALL_EXIT=3
+        ;;
+    full)
+        log_info "=== BACH CI: FULL MODE ==="
+        run_test_suite "Worker Policy & Completion" "${WORKER_POLICY_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Model Request Budget" "${BUDGET_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "GUI Release & Shared Contract" "${GUI_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Native Core" "${NATIVE_CORE_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Standard Suites" "${STANDARD_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Learning & Hermes" "${LEARNING_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "GUI GUX" "${GUI_GUX_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Native DB Sync" "${NATIVE_DB_SYNC_TESTS[@]}" || OVERALL_EXIT=3
+        ;;
+    standard|*)
+        log_info "=== BACH CI: STANDARD MODE ==="
+        run_test_suite "Worker Policy & Completion" "${WORKER_POLICY_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Model Request Budget" "${BUDGET_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "GUI Release & Shared Contract" "${GUI_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Native Core" "${NATIVE_CORE_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Standard Suites" "${STANDARD_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Learning & Hermes" "${LEARNING_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "GUI GUX" "${GUI_GUX_TESTS[@]}" || OVERALL_EXIT=3
+        run_test_suite "Native DB Sync" "${NATIVE_DB_SYNC_TESTS[@]}" || OVERALL_EXIT=3
+        ;;
+esac
+
+# Native Readiness Prüfung (wie im CI)
+log_info "=== Native Readiness Check ==="
+if "$PYTHON" -c "
+import sys, hashlib, sqlite3
+from pathlib import Path
+root = Path('$ROOT_DIR')
+for mod_name, rel in [('sqlite_transit_sync', 'sqlite_transit_sync/__init__.py'), ('sqlite_transit_sync.core', 'sqlite_transit_sync/core.py')]:
+    try:
+        mod = __import__(mod_name, fromlist=[''])
+        if Path(mod.__file__).resolve() != (root / rel).resolve():
+            print(f'Shadow import: {mod.__file__}')
+            sys.exit(1)
+    except ImportError:
+        pass
+if sqlite3.sqlite_version_info < (3, 37, 0):
+    print(f'SQLite {sqlite3.sqlite_version} zu alt, brauche 3.37+')
+    sys.exit(1)
+conn = sqlite3.connect(':memory:')
+try:
+    conn.execute('CREATE VIRTUAL TABLE ci_fts USING fts5(body)')
+    conn.execute(\"INSERT INTO ci_fts(body) VALUES ('required native capability')\")
+    row = conn.execute(\"SELECT body FROM ci_fts WHERE ci_fts MATCH 'native'\").fetchone()
+    if row != ('required native capability',):
+        print('FTS5 query failed')
+        sys.exit(1)
+    tables = conn.execute('PRAGMA table_list').fetchall()
+    if not any(r[1] == 'ci_fts' and r[2] == 'virtual' for r in tables):
+        print('table_list failed')
+        sys.exit(1)
+    cols = conn.execute('PRAGMA table_xinfo(ci_fts)').fetchall()
+    if not any(c[1] == 'body' and c[6] == 0 for c in cols) or not any(c[1] == 'rank' and c[6] == 1 for c in cols):
+        print('table_xinfo failed')
+        sys.exit(1)
+    for suite in ('test_db_sync_native_readiness.py', 'test_db_sync_handler.py', 'test_transit_sync_provider_wiring.py', 'test_prosync_race.py'):
+        if not (root / 'system/tests' / suite).is_file():
+            print(f'Missing suite: {suite}')
+            sys.exit(1)
+    print(f'Native readiness OK: SQLite {sqlite3.sqlite_version}')
+finally:
+    conn.close()
+"; then
+    log_ok "Native Readiness Check: erfolgreich"
+else
+    log_error "Native Readiness Check: FEHLGESCHLAGEN"
+    OVERALL_EXIT=3
+fi
+
+# Zusammenfassung
+echo
+if [[ $OVERALL_EXIT -eq 0 ]]; then
+    log_ok "=== ALLE PRÜFUNGEN ERFOLGREICH ==="
+else
+    log_error "=== PRÜFUNGEN FEHLGESCHLAGEN (Exit: $OVERALL_EXIT) ==="
+fi
+
+exit $OVERALL_EXIT
