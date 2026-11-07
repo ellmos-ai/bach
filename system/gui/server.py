@@ -1641,6 +1641,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/governance/funk",
         "/governance/usecases",
         "/governance/logs",
+        "/governance/hooks",
+        "/governance/rechte",
+        "/governance/regeln",
+        "/governance/sperren",
         "/life",
         "/domains",
         "/artefakte",
@@ -6098,6 +6102,22 @@ async def governance_funk_page():
     if p.exists():
         return FileResponse(p)
     return await governance_page()
+
+
+def _governance_sub_page(name: str):
+    async def page():
+        p = ASTRO_DIST_DIR / "governance" / f"{name}.html"
+        if p.exists():
+            return FileResponse(p)
+        return await governance_page()
+    page.__name__ = f"governance_{name}_page"
+    return page
+
+
+# Governance sub-routes of the area navigation (ellmos-system-gui#125, GUI 0.2.36).
+for _governance_name in ("hooks", "rechte", "regeln", "sperren"):
+    app.add_api_route(f"/governance/{_governance_name}", _governance_sub_page(_governance_name),
+                      methods=["GET"], response_class=HTMLResponse, tags=["shared-gui"])
 
 
 @app.get("/governance/usecases", response_class=HTMLResponse, tags=["shared-gui"])
