@@ -186,6 +186,29 @@ def mark_promoted(entry_id: int, target: str, promoted_id: int) -> dict[str, Any
     return _entry(_store().promote(entry_id, target, promoted_id=promoted_id))
 
 
+# --- CLI ids (bach denkarium ...): migrated entries keep their old number, new ones are "n<id>" ------------
+
+def display_id(entry: dict[str, Any]) -> str:
+    """The id a user types and reads: the legacy number for migrated entries, `n<llm-note id>` for new ones."""
+    return str(entry["legacy_id"]) if entry.get("legacy_id") is not None else f"n{entry['id']}"
+
+
+def resolve_display_id(token: str) -> int:
+    """CLI id -> llm-note id. A plain number is a legacy id (no fallback to llm-note ids: they may collide)."""
+    token = str(token).strip()
+    entries = _store().list_entries(include_archived=True, limit=_MAX_LIMIT)
+    if token[:1] in ("n", "N") and token[1:].isdigit():
+        wanted = int(token[1:])
+        found = [e.id for e in entries if e.id == wanted and e.legacy_id is None]
+    elif token.isdigit():
+        found = [e.id for e in entries if e.legacy_id == int(token)]
+    else:
+        raise ValueError("Ungueltige Entry-ID.")
+    if not found:
+        raise KeyError(f"Eintrag #{token} nicht gefunden.")
+    return found[0]
+
+
 # --- llm-note vocabulary on top of the legacy table (before the migration) ---------------------
 
 _FROM_DENKARIUM = {"denkarium": "note", "logbuch": "logbook"}

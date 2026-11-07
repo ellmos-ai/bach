@@ -82,6 +82,56 @@ class DenkariumHandler(BaseHandler):
         conn.row_factory = sqlite3.Row
         return conn
 
+    @staticmethod
+    def _format_entries(entries: list, header: str, with_mood: bool, short: int = 80) -> str:
+        """Listing in the legacy layout; ids as `notes_adapter.display_id` (old numbers stay valid)."""
+        from hub._services import notes_adapter
+
+        lines = [header, "=" * 60, ""]
+        for e in entries:
+            icon = "B" if e["entry_type"] == "logbook" else "D"
+            mood = f" [{e['mood']}/5]" if with_mood and e["mood"] else ""
+            title = f" {e['title']}" if e["title"] else ""
+            did = notes_adapter.display_id(e)
+            if with_mood:
+                lines.append(f"  [{icon}] #{did} [{e['created_at']}] ({e['category']}){mood}{title}")
+            else:
+                lines.append(f"  [{icon}] #{did} [{e['created_at']}]{title}")
+            content = e["content"]
+            if len(content) > short:
+                content = content[:short - 3] + "..."
+            lines.append(f"      {content}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _promote_llm(self, entry_id: str, target: str, dry_run: bool) -> tuple:
+        from hub._services import notes_adapter
+
+        try:
+            llm_id = notes_adapter.resolve_display_id(entry_id)
+        except ValueError as exc:
+            return False, str(exc)
+        except KeyError as exc:
+            return False, exc.args[0]
+        note = notes_adapter.get_note(llm_id)
+        shown = notes_adapter.display_id(note)
+        if dry_run:
+            return True, f"[DRY-RUN] Wuerde #{shown} zu {target} befoerdern"
+        promoted_id = 0  # wiki promotion only marks, as before
+        if target == 'task':
+            conn = self._get_conn()
+            cur = conn.execute(
+                "INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) "
+                "VALUES (?, ?, 'pending', 3, 'user', 0)",
+                (note["title"] or note["content"][:50], note["content"]))
+            promoted_id = cur.lastrowid
+            conn.commit()
+            conn.close()
+        notes_adapter.mark_promoted(llm_id, target, promoted_id)
+        if target == 'task':
+            return True, f"[OK] Eintrag #{shown} zu Task #{promoted_id} befoerdert"
+        return True, f"[OK] Eintrag #{shown} fuer Wiki-Erstellung markiert"
+
     def _write(self, args: list, dry_run: bool) -> tuple:
         """Neuen Eintrag schreiben."""
         text = args[0]
@@ -113,7 +163,7 @@ class DenkariumHandler(BaseHandler):
                 "content": text, "entry_type": entry_type, "category": category, "title": title,
                 "mood": mood, "source": "user"})["id"]
             type_label = "Logbuch" if entry_type == "logbuch" else "Denkarium"
-            return True, f"[OK] {type_label}-Eintrag #{entry_id} gespeichert ({category})"
+            return True, f"[OK] {type_label}-Eintrag #n{entry_id} gespeichert ({category})"
 
         conn = self._get_conn()
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -151,6 +201,12 @@ class DenkariumHandler(BaseHandler):
                     limit = int(arg.split("=", 1)[1])
                 except ValueError:
                     pass
+
+        from hub._services import notes_adapter
+
+        if notes_adapter.use_llm_note(self.db_path):  # migrated: llm-note is the single store (PB-11)
+            found = notes_adapter.list_notes(entry_type=entry_type, category=category, limit=limit)["entries"]
+            return True, self._format_entries(found, f"DENKARIUM ({entry_type or 'alle'}, letzte {limit})", with_mood=True)
 
         conn = self._get_conn()
 
@@ -196,6 +252,14 @@ class DenkariumHandler(BaseHandler):
 
     def _search(self, term: str) -> tuple:
         """In Eintraegen suchen."""
+        from hub._services import notes_adapter
+
+        if notes_adapter.use_llm_note(self.db_path):  # migrated: llm-note is the single store (PB-11)
+            found = notes_adapter.list_notes(search=term, limit=20)["entries"]
+            if not found:
+                return True, f"Keine Treffer fuer '{term}'."
+            return True, self._format_entries(found, f"DENKARIUM-SUCHE: {term}", with_mood=False, short=60) + f"\n{len(found)} Treffer"
+
         conn = self._get_conn()
         rows = conn.execute("""
             SELECT id, entry_type, title, content, category, created_at
@@ -234,7 +298,7 @@ class DenkariumHandler(BaseHandler):
             entry_id = notes_adapter.denkarium_create({
                 "content": content, "entry_type": "denkarium", "category": "brainstorm", "title": title,
                 "source": "user"})["id"]
-            return True, f"[OK] Brainstorm #{entry_id} gestartet: {topic}\n     Ideen ergaenzen mit: bach denkarium write \"Idee\" --cat=idee"
+            return True, f"[OK] Brainstorm #n{entry_id} gestartet: {topic}\n     Ideen ergaenzen mit: bach denkarium write \"Idee\" --cat=idee"
 
         conn = self._get_conn()
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -253,13 +317,18 @@ class DenkariumHandler(BaseHandler):
 
     def _promote(self, entry_id: str, target: str, dry_run: bool) -> tuple:
         """Eintrag zu Task oder Wiki befoerdern."""
+        if target not in ('task', 'wiki'):
+            return False, "Ziel muss 'task' oder 'wiki' sein."
+
+        from hub._services import notes_adapter
+
+        if notes_adapter.use_llm_note(self.db_path):  # migrated: llm-note is the single store (PB-11)
+            return self._promote_llm(entry_id, target, dry_run)
+
         try:
             eid = int(entry_id)
         except ValueError:
             return False, "Ungueltige Entry-ID."
-
-        if target not in ('task', 'wiki'):
-            return False, "Ziel muss 'task' oder 'wiki' sein."
 
         conn = self._get_conn()
         entry = conn.execute(
@@ -302,6 +371,20 @@ class DenkariumHandler(BaseHandler):
 
     def _categories(self) -> tuple:
         """Kategorien auflisten."""
+        from hub._services import notes_adapter
+
+        if notes_adapter.use_llm_note(self.db_path):  # migrated: llm-note is the single store (PB-11)
+            counts: dict = {}
+            for e in notes_adapter.list_notes(limit=1000)["entries"]:
+                key = (e["category"], "logbuch" if e["entry_type"] == "logbook" else "denkarium")
+                counts[key] = counts.get(key, 0) + 1
+            if not counts:
+                return True, "Keine Eintraege vorhanden."
+            lines = ["DENKARIUM-KATEGORIEN", "=" * 40, ""]
+            for (category, kind), cnt in sorted(counts.items()):
+                lines.append(f"  {category:20s} [{'Logbuch' if kind == 'logbuch' else 'Denkarium':10s}] ({cnt} Eintraege)")
+            return True, "\n".join(lines)
+
         conn = self._get_conn()
         rows = conn.execute("""
             SELECT category, entry_type, COUNT(*) as cnt
@@ -323,6 +406,23 @@ class DenkariumHandler(BaseHandler):
 
     def _stats(self) -> tuple:
         """Statistik anzeigen."""
+        from hub._services import notes_adapter
+
+        if notes_adapter.use_llm_note(self.db_path):  # migrated: llm-note is the single store (PB-11)
+            entries = notes_adapter.list_notes(include_archived=True, limit=1000)["entries"]
+            dates = sorted(e["created_at"] for e in entries if e["created_at"])
+            lines = [
+                "DENKARIUM-STATISTIK", "=" * 40, "",
+                f"  Gesamt:    {len(entries)}",
+                f"  Logbuch:   {sum(e['entry_type'] == 'logbook' for e in entries)}",
+                f"  Denkarium: {sum(e['entry_type'] == 'note' for e in entries)}",
+                f"  Befoerdert: {sum(e['promoted_to'] is not None for e in entries)}",
+                "",
+                f"  Erster Eintrag: {dates[0] if dates else '-'}",
+                f"  Letzter Eintrag: {dates[-1] if dates else '-'}",
+            ]
+            return True, "\n".join(lines)
+
         conn = self._get_conn()
 
         total = conn.execute("SELECT COUNT(*) FROM denkarium_entries").fetchone()[0]

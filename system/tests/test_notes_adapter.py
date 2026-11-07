@@ -286,3 +286,71 @@ def test_denkarium_handler_writes_follow_the_active_store(monkeypatch, tmp_path)
     conn = sqlite3.connect(server.USER_DB)
     assert conn.execute("SELECT COUNT(*) FROM denkarium_entries").fetchone()[0] == 2  # no new legacy rows
     conn.close()
+
+
+# --- R2 follow-up: every CLI/chat operation follows the same migration marker ------------------------------
+
+def _cli_env(monkeypatch, tmp_path):
+    """Legacy ids 2 and 3 (id 1 deleted) so that llm-note ids (1, 2) differ from the legacy ids."""
+    from hub.denkarium import DenkariumHandler
+
+    server = _server_with_legacy(monkeypatch, tmp_path, ["alt-1", "alt-2", "alt-3"])
+    conn = sqlite3.connect(server.USER_DB)
+    conn.execute("DELETE FROM denkarium_entries WHERE id = 1")
+    conn.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT,"
+                 " status TEXT, priority INTEGER, assigned_to TEXT, dist_type INTEGER)")
+    conn.commit()
+    conn.close()
+    handler = DenkariumHandler(tmp_path)
+    handler.db_path = server.USER_DB
+    return server, handler
+
+
+def test_cli_read_search_stats_categories_find_new_entries_after_migration(monkeypatch, tmp_path):
+    server, handler = _cli_env(monkeypatch, tmp_path)
+    _migrate(server)
+    ok, text = handler.handle("write", ["frisch geschrieben", "--cat=idee"])
+    assert ok and "#n" in text  # new entries carry the llm-note id with an n prefix
+    assert "frisch geschrieben" in handler.handle("read", [])[1]
+    assert "frisch geschrieben" in handler.handle("search", ["frisch"])[1]
+    assert "idee" in handler.handle("categories", [])[1]
+    stats = handler.handle("stats", [])[1]
+    assert "Gesamt:    3" in stats  # alt-2, alt-3 and the new entry, not the legacy table
+    # migrated entries keep their old numbers in the listing
+    listing = handler.handle("read", ["--limit=10"])[1]
+    assert "#2 " in listing and "#3 " in listing
+
+
+def test_cli_promote_with_an_old_id_hits_the_same_note_as_before(monkeypatch, tmp_path):
+    server, handler = _cli_env(monkeypatch, tmp_path)
+    _migrate(server)
+    ok, text = handler.handle("promote", ["2", "task"])  # old id 2 = "alt-2" (llm-note id 1)
+    assert ok and "#2" in text
+    by_legacy = {e["legacy_id"]: e for e in notes_adapter.list_notes(include_archived=True)["entries"]}
+    assert by_legacy[2]["promoted_to"] == "task" and by_legacy[3]["promoted_to"] is None
+    conn = sqlite3.connect(server.USER_DB)
+    assert conn.execute("SELECT description FROM tasks").fetchall() == [("alt-2",)]
+    conn.close()
+    assert not handler.handle("promote", ["999", "task"])[0]  # unknown old id -> error, no fallback to llm id 999
+
+
+def test_cli_promote_of_a_new_entry_uses_the_n_prefixed_id(monkeypatch, tmp_path):
+    server, handler = _cli_env(monkeypatch, tmp_path)
+    _migrate(server)
+    _, text = handler.handle("write", ["neu und befoerdert"])
+    new_id = text.split("#")[1].split()[0]  # e.g. "n3"
+    assert new_id.startswith("n")
+    ok, message = handler.handle("promote", [new_id, "task"])
+    assert ok, message
+    conn = sqlite3.connect(server.USER_DB)
+    assert conn.execute("SELECT description FROM tasks").fetchall() == [("neu und befoerdert",)]
+    conn.close()
+    assert handler.handle("promote", ["2", "wiki", ], dry_run=True)[1].startswith("[DRY-RUN]")
+
+
+def test_cli_operations_stay_on_the_legacy_table_before_the_migration(monkeypatch, tmp_path):
+    server, handler = _cli_env(monkeypatch, tmp_path)
+    assert "alt-2" in handler.handle("read", [])[1]
+    assert "Gesamt:    2" in handler.handle("stats", [])[1]
+    assert handler.handle("promote", ["2", "task"])[0] is True
+    assert not notes_adapter.notes_db_path().exists()
