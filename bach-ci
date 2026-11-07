@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+"""bach-ci: lokaler Spiegel der GitHub-CI-Pytests aus .github/workflows/tests.yml.
+
+Die Workflow-Datei wird zur Laufzeit eingelesen (bewusst ohne PyYAML; ein
+Regex-Subset deckt genau die in tests.yml genutzte Struktur ab) und jede
+pytest-Gruppe (Job plus Step) wird lokal so ausgeführt, wie es die GitHub-CI
+tut:
+
+* ${{ github.workspace }} wird durch das Wurzelverzeichnis ersetzt.
+* ${{ runner.temp }} bzw. $RUNNER_TEMP zeigt auf ein frisches lokales
+  Tempverzeichnis (eines je Gruppe).
+* Die in der CI gepinnten Worker-Venv-Interpreter
+  ("$RUNNER_TEMP/worker-policy-tests/bin/python" und
+  "$RUNNER_TEMP/bound-worker-git-venv/bin/python") werden auf die Variable
+  BACH_CI_WORKER_POLICY_PYTHON oder – mit einmaliger Warnung – den aufrufenden
+  Interpreter umgebogen, weil die Venvs lokal nicht aufgebaut sind (der
+  venv-create-Schritt selbst bleibt unverändert 1:1 im Kommandotext).
+* Gruppen, deren .ci-sources-Pfade lokal fehlen, werden übersprungen und
+  nicht als Fehler gewertet.
+
+Aufruf:
+    ./bach-ci                alle Gruppen sequenziell ausführen
+    ./bach-ci --list         Gruppen mit Index, Job, Step-Name, Skip-Status
+    ./bach-ci --dry-run       env und substituierte Kommandos anzeigen
+    ./bach-ci -j pytest       nur Gruppen eines Jobs (Substring, case-insensitiv)
+    ./bach-ci 3 seal          Auswahl per 1-basiertem Index (Gesamtliste) oder
+                              Substring gegen Job + Step-Name; kein Treffer
+                              bedeutet Exit 2
+
+Exit-Codes: 0 Erfolg (Übersprungenes zählt als Erfolg), 2 Auswahl- bzw.
+Workflow-Fehler, sonst der Returncode des ersten fehlgeschlagenen Kommandos.
+
+Task #3929.
+"""
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+WORKFLOW_RELPATH = os.path.join(".github", "workflows", "tests.yml")
+REPO_ROOT = os.environ.get("GITHUB_WORKSPACE") or os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+# Umgebung, die jede Gruppe zusätzlich erhält (Spiegel der CI-Standardumgebung).
+BASE_ENV = {
+    "PYTHONIOENCODING": "utf-8",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYSTRAY_BACKEND": "dummy",
+}
+
+# YAML-Subset: genau die Struktur, die tests.yml für Jobs, env-Blöcke,
+# Step-Felder und run-Blöcke nutzt.
+RE_JOB = re.compile(r"^  ([a-z0-9_-]+):$")
+RE_JOB_ENV = re.compile(r"^    env:$")
+RE_JOB_ENV_ENTRY = re.compile(r"^      ([A-Za-z_][A-Za-z0-9_]*): (.*)$")
+RE_STEP = re.compile(r"^      - ")
+RE_STEP_NAME = re.compile(r"^        name: (.*)$")
+RE_STEP_ENV = re.compile(r"^        env:$")
+RE_STEP_ENV_ENTRY = re.compile(r"^          ([A-Za-z_][A-Za-z0-9_]*): (.*)$")
+RE_STEP_RUN = re.compile(r"^        run: \|$")
+RE_STEP_SHELL = re.compile(r"^        shell: (.*)$")
+
+# .ci-sources existiert lokal nur bei zusätzlichem Auschecken; fehlt ein Pfad,
+# wird die Gruppe übersprungen.
+RE_CI_SOURCES = re.compile(r"\S*/\.ci-sources/\S*")
+
+# CI-Venv-Pins: Wortlaute aus tests.yml (worker-policy-tests bzw.
+# bound-worker-git-venv), jeweils inklusive umschließender Quotes; die
+# ${RUNNER_TEMP}-Form wird mit erlaubt.
+RE_VENV_PY = re.compile(
+    r'"(?:\$\{RUNNER_TEMP\}|\$RUNNER_TEMP)/'
+    r'(worker-policy-tests|bound-worker-git-venv)/bin/python"'
+)
+
+DRY_RUNNER_TEMP = "$RUNNER_TEMP"  # Platzhalter für --list und --dry-run
+_WARNED_NO_PIN = False
+
+
+def yaml_scalar(value):
+    """YAML-Skalar nachbilden: trimmen, gleiche umschließende Quotes entfernen."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        value = value[1:-1]
+    return value
+
+
+def join_run_lines(lines):
+    """run-Block zusammenfügen; bash-Fortsetzungen (Backslash am Zeilenende)
+    zu einer Zeile falten, damit der Kommandotext 1:1 bleibt."""
+    return re.sub(r"\\\n[ \t]*", " ", "\n".join(lines))
+
+
+def parse_workflow(text):
+    """tests.yml lesen und Jobs mit env und Steps zurückgeben."""
+    jobs = []
+    cur_job = None
+    cur_step = None
+    section = None  # None, "job_env", "step", "step_env", "step_run"
+
+    def finish_step():
+        nonlocal cur_step
+        if cur_step is not None and cur_job is not None:
+            cur_job["steps"].append(cur_step)
+        cur_step = None
+
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if section == "step_run":
+            if not raw.strip():
+                cur_step["run_lines"].append("")
+                continue
+            if raw.startswith(" " * 10):
+                cur_step["run_lines"].append(raw[10:])
+                continue
+            section = "step"  # run-Block endet, Zeile fällt normal durch
+        if not line.strip():
+            continue
+        m = RE_JOB.match(line)
+        if m:
+            finish_step()
+            cur_job = {"name": m.group(1), "env": {}, "steps": []}
+            jobs.append(cur_job)
+            section = None
+            continue
+        if RE_STEP.match(line):
+            finish_step()
+            if cur_job is not None:
+                cur_step = {"name": None, "env": {}, "run_lines": [], "shell": None}
+                nm = re.match(r"name: (.*)$", line[8:])
+                if nm:
+                    cur_step["name"] = yaml_scalar(nm.group(1))
+                section = "step"
+            continue
+        m = RE_JOB_ENV.match(line)
+        if m and cur_job is not None:
+            section = "job_env"
+            continue
+        m = RE_STEP_ENV.match(line)
+        if m and cur_step is not None:
+            section = "step_env"
+            continue
+        m = RE_STEP_RUN.match(line)
+        if m and cur_step is not None:
+            section = "step_run"
+            continue
+        m = RE_STEP_SHELL.match(line)
+        if m and cur_step is not None:
+            shell = yaml_scalar(m.group(1))
+            cur_step["shell"] = shell
+            if shell != "bash":
+                print(
+                    f"bach-ci: Warnung: Step-Schale {shell!r} wird lokal "
+                    "wie in der CI üblich durch bash ersetzt.",
+                    file=sys.stderr,
+                )
+            continue
+        m = RE_STEP_NAME.match(line)
+        if m and cur_step is not None:
+            cur_step["name"] = yaml_scalar(m.group(1))
+            continue
+        if section == "job_env":
+            m = RE_JOB_ENV_ENTRY.match(line)
+            if m and cur_job is not None:
+                cur_job["env"][m.group(1)] = yaml_scalar(m.group(2))
+                continue
+            section = None
+            continue
+        if section == "step_env":
+            m = RE_STEP_ENV_ENTRY.match(line)
+            if m:
+                cur_step["env"][m.group(1)] = yaml_scalar(m.group(2))
+                continue
+            section = "step"
+            continue
+        # Alles andere (uses:, with:, runs-on:, strategy:, matrix:, …) ist für
+        # die Pytest-Spiegelung ohne Belang und wird ignoriert.
+    finish_step()
+    return jobs
+
+
+def collect_groups(jobs):
+    """Alle Steps mit pytest-Aufruf zu Gruppen verdichten."""
+    groups = []
+    for job in jobs:
+        for step in job["steps"]:
+            if not step["run_lines"]:
+                continue
+            run_text = join_run_lines(step["run_lines"])
+            if "-m pytest" not in run_text:
+                continue
+            groups.append(
+                {
+                    "index": len(groups) + 1,
+                    "job": job["name"],
+                    "name": step["name"] or "<Step ohne name>",
+                    "job_env": dict(job["env"]),
+                    "step_env": dict(step["env"]),
+                    "run": run_text,
+                }
+            )
+    return groups
+
+
+def substitute(text, runner_temp):
+    """GitHub-Expressions ersetzen: github.workspace und runner.temp."""
+    text = text.replace("${{ github.workspace }}", REPO_ROOT)
+    if runner_temp:
+        text = text.replace("${{ runner.temp }}", runner_temp)
+    return text
+
+
+def worker_python():
+    pinned = os.environ.get("BACH_CI_WORKER_POLICY_PYTHON")
+    if pinned:
+        return pinned
+    global _WARNED_NO_PIN
+    if not _WARNED_NO_PIN:
+        _WARNED_NO_PIN = True
+        print(
+            "bach-ci: Hinweis: BACH_CI_WORKER_POLICY_PYTHON ist nicht gesetzt; "
+            "der CI-Venv-Pin (worker-policy-tests/bound-worker-git-venv) wird "
+            f"lokal nicht nachgebaut, pytest läuft mit dem Interpreter {sys.executable}.",
+            file=sys.stderr,
+        )
+    return sys.executable
+
+
+def pin_venv_python(run_text):
+    """CI-Venv-Interpreter im Kommandotext auf den lokalen Interpreter umbiegen."""
+    if not RE_VENV_PY.search(run_text):
+        return run_text
+    interpreter = worker_python()
+    return RE_VENV_PY.sub(lambda m: '"' + interpreter + '"', run_text)
+
+
+def ci_sources_skip(env_values, run_text):
+    """Prüfen, ob alle .ci-sources-Pfade lokal existieren; sonst Sprunggrund."""
+    for match in RE_CI_SOURCES.finditer("\n".join(env_values + [run_text])):
+        path = match.group(0).strip("\"'(),;")
+        if not os.path.exists(path):
+            return f".ci-sources fehlt lokal (Pfad: {path})"
+    return None
+
+
+def materialize(group, runner_temp, pin=True):
+    """env-Werte und Kommandotext substituieren; Sprunggrund bestimmen."""
+    run_text = substitute(group["run"], runner_temp)
+    if pin:
+        run_text = pin_venv_python(run_text)
+    env_values = [substitute(v, runner_temp) for v in group["job_env"].values()]
+    env_values += [substitute(v, runner_temp) for v in group["step_env"].values()]
+    skip = ci_sources_skip(env_values, run_text)
+    return run_text, skip
+
+
+def fail(message):
+    print(f"bach-ci: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def select_groups(groups, selectors, job_filter):
+    """Auswahl per 1-basiertem Index (Gesamtliste) oder Substring (Job + Name)."""
+    selected = list(groups)
+    if selectors:
+        chosen = []
+        for sel in selectors:
+            if sel.isdigit():
+                idx = int(sel)
+                if not 1 <= idx <= len(groups):
+                    fail(f"Keine Gruppe mit Index {idx} (gültig: 1..{len(groups)}).")
+                chosen.append(groups[idx - 1])
+                continue
+            needle = sel.lower()
+            hits = [g for g in groups if needle in (g["job"] + " " + g["name"]).lower()]
+            if not hits:
+                fail(f"Keine Gruppe passt zu {sel!r}.")
+            chosen.extend(hits)
+        chosen_ids = {id(g) for g in chosen}
+        selected = [g for g in groups if id(g) in chosen_ids]
+    if job_filter:
+        needle = job_filter.lower()
+        selected = [g for g in selected if needle in g["job"].lower()]
+        if not selected:
+            fail(f"Keine Gruppe des Jobs passt zu {job_filter!r}.")
+    return selected
+
+
+def print_list(selected):
+    for g in selected:
+        _, skip = materialize(g, DRY_RUNNER_TEMP, pin=False)
+        status = f"SKIP: {skip}" if skip else "ok"
+        print(f"{g['index']:3d}  {g['job']:<26}  {g['name']}  [{status}]")
+
+
+def print_dry_run(selected):
+    for g in selected:
+        run_text, skip = materialize(g, DRY_RUNNER_TEMP, pin=True)
+        print(f"== [{g['index']}] {g['job']} / {g['name']} ==")
+        if skip:
+            print(f"  SKIP: {skip}")
+            print()
+            continue
+        for key in sorted(g["job_env"]):
+            print(f"  env (Job): {key}={substitute(g['job_env'][key], DRY_RUNNER_TEMP)}")
+        for key in sorted(g["step_env"]):
+            print(f"  env (Step): {key}={substitute(g['step_env'][key], DRY_RUNNER_TEMP)}")
+        print("  env (bach-ci): RUNNER_TEMP=<frisches Tempverzeichnis je Gruppe>")
+        print("  run:")
+        for line in run_text.splitlines():
+            print(f"    {line}")
+        print()
+
+
+def execute_groups(selected):
+    tempdirs = []
+    try:
+        total = len(selected)
+        for pos, g in enumerate(selected, 1):
+            runner_temp = tempfile.mkdtemp(prefix="bach-ci-")
+            tempdirs.append(runner_temp)
+            run_text, skip = materialize(g, runner_temp, pin=True)
+            label = f"[{pos}/{total}] {g['job']} / {g['name']}"
+            if skip:
+                print(f"{label}: SKIP – {skip}")
+                continue
+            env = os.environ.copy()
+            env.update(BASE_ENV)
+            for key, value in g["job_env"].items():
+                env[key] = substitute(value, runner_temp)
+            for key, value in g["step_env"].items():
+                env[key] = substitute(value, runner_temp)
+            env["RUNNER_TEMP"] = runner_temp
+            print(f"{label}: Ausführung (bash -e -o pipefail):")
+            proc = subprocess.run(
+                ["bash", "-e", "-o", "pipefail", "-c", run_text],
+                cwd=REPO_ROOT,
+                env=env,
+            )
+            if proc.returncode != 0:
+                print(
+                    f"bach-ci: Gruppe fehlgeschlagen (Exit {proc.returncode}): {label}",
+                    file=sys.stderr,
+                )
+                return proc.returncode
+        return 0
+    finally:
+        for tempdir in tempdirs:
+            shutil.rmtree(tempdir, ignore_errors=True)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="bach-ci",
+        description=(
+            "Führt die pytest-Schritte aus .github/workflows/tests.yml lokal aus "
+            "(Spiegel der GitHub-CI)."
+        ),
+        epilog=(
+            "Exit-Codes: 0 Erfolg (übersprungene Gruppen zählen als Erfolg), "
+            "2 Auswahl-/Workflow-Fehler, sonst der Returncode des ersten "
+            "fehlgeschlagenen Kommandos."
+        ),
+    )
+    parser.add_argument(
+        "-l", "--list", action="store_true",
+        help="Gruppen mit Index, Job, Step-Name und Skip-Status auflisten.",
+    )
+    parser.add_argument(
+        "-n", "--dry-run", action="store_true",
+        help="env und substituierte Kommandos anzeigen, nichts ausführen.",
+    )
+    parser.add_argument(
+        "-j", "--job", metavar="SUBSTRING",
+        help="Nur Gruppen, deren Job den Substring enthält (case-insensitiv).",
+    )
+    parser.add_argument(
+        "selectors", nargs="*",
+        help=(
+            "Gruppenauswahl: 1-basierter Index auf die Gesamtliste oder "
+            "case-insensitiver Substring gegen Job + Step-Name."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    workflow = os.path.join(REPO_ROOT, WORKFLOW_RELPATH)
+    if not os.path.isfile(workflow):
+        print(f"bach-ci: Workflow-Datei fehlt: {workflow}", file=sys.stderr)
+        return 2
+    with open(workflow, encoding="utf-8") as fh:
+        jobs = parse_workflow(fh.read())
+    groups = collect_groups(jobs)
+    if not groups:
+        print(f"bach-ci: In {workflow} wurden keine pytest-Schritte gefunden.", file=sys.stderr)
+        return 2
+
+    selected = select_groups(groups, args.selectors, args.job)
+
+    if args.list:
+        print_list(selected)
+        return 0
+    if args.dry_run:
+        print_dry_run(selected)
+        return 0
+    return execute_groups(selected)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
