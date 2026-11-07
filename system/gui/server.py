@@ -2038,6 +2038,8 @@ try:
     app.include_router(prompt_router)
     from gui.api.task_assignment import router as task_assignment_router
     app.include_router(task_assignment_router)
+    from gui.api.task_returns import router as task_returns_router
+    app.include_router(task_returns_router)
     from gui.api.governance_registry import router as governance_registry_router
     app.include_router(governance_registry_router)
     from gui.api.catalog_projection import router as catalog_projection_router

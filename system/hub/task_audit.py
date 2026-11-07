@@ -115,6 +115,26 @@ def ensure_worker_error_resolver(conn: sqlite3.Connection, worker_id: str, error
         title=f"Worker {worker_id} nach {error_code} wieder in Gang bringen",
         evidence=evidence, priority="P2", now=now)
 
+
+def close_worker_error_resolver(conn: sqlite3.Connection, worker_id: str,
+                                now: Optional[str] = None) -> Optional[int]:
+    """Close the open resolver of a worker that runs again (PB-1); returns its id or None."""
+    if not isinstance(worker_id, str) or not _RESOLVER_WORKER.fullmatch(worker_id):
+        raise ValueError("worker_id ist ungültig")
+    now = _iso_now(now)
+    cursor = conn.execute(
+        "SELECT * FROM tasks WHERE source = ? AND status NOT IN ('done', 'completed', 'cancelled') "
+        "ORDER BY id LIMIT 1", (f"resolver:worker:{worker_id}",))
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    existing = dict(zip([column[0] for column in cursor.description], row))
+    note = f"\n\n[ERLEDIGT {now}] Worker {worker_id} ist wieder in Betrieb (neuer Lauf gestartet)."
+    apply_task_field_changes(conn, existing["id"], existing,
+        {"status": "done", "description": (existing.get("description") or "") + note},
+        changed_by="auto-resolver", now=now)
+    return existing["id"]
+
 # Status, bei denen completed_at gesetzt wird. GUI-Server nutzt 'completed',
 # CLI/Headless/Chat nutzen 'done' -- beide bleiben gueltig, keiner wird umbenannt.
 COMPLETED_STATUSES = frozenset({"completed", "done"})
