@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+"""
+BACH CI Wrapper - Root-Level Entry Point
+=========================================
+
+Dünner Wrapper im BACH-Root für CI-Umgebungen: leitet alle
+Argumente unverändert an system/bach.py weiter (identisches
+Verhalten wie bach.py, unter CI-freundlichem Namen).
+
+Usage:
+    python bach-ci <command> [args]
+    python bach-ci --startup
+
+Referenz: Task #3927 (Original-Spezifikation aus Task #3892 nicht auffindbar;
+Wrapper-Muster von bach.py übernommen)
+Datum: 2026-11-06
+"""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main():
+    """Wrapper-Einstiegspunkt für BACH CLI in CI-Umgebungen."""
+    # BACH Root (wo dieses Script liegt)
+    bach_root = Path(__file__).parent
+    system_bach = bach_root / "system" / "bach.py"
+
+    # Verifizieren dass system/bach.py existiert
+    if not system_bach.exists():
+        print(f"ERROR: system/bach.py nicht gefunden in {bach_root}", file=sys.stderr)
+        print(f"       Erwartet: {system_bach}", file=sys.stderr)
+        sys.exit(1)
+
+    # UTF-8 Encoding setzen (Windows)
+    os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+
+    # system/bach.py mit allen Argumenten aufrufen
+    # CWD muss system/ sein, damit relative Pfade (data/bach.db) funktionieren
+    result = subprocess.run(
+        [sys.executable, str(system_bach)] + sys.argv[1:],
+        cwd=str(bach_root / "system")
+    )
+
+    sys.exit(result.returncode)
+
+
+if __name__ == "__main__":
+    main()
