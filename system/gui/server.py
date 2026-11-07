@@ -1868,6 +1868,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/artifacts" or path.startswith("/api/artifacts/")
                 or path == "/api/artefakte"
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path == "/api/agent-triggers" or path.startswith("/api/agent-triggers/")
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
@@ -2012,6 +2013,11 @@ try:
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
+
+# The trigger router has no eager optional-provider imports. Keep it registered
+# even when the provider is missing so callers receive a truthful 503 contract.
+from gui.api.agent_triggers import router as agent_triggers_router
+app.include_router(agent_triggers_router)
 
 try:
     from gui.api.subscription_agents_transport import (
