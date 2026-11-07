@@ -21,7 +21,17 @@ def bridge(tmp_path, monkeypatch):
     _create_db(database)
     conn = _connect(database)
     task_id = _insert(conn, title="Bridge task", assigned_to="BACH")
+    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.commit()
     conn.close()
+    from hub._services.worker_policy_settings import read_task_policy, write_task_policy
+    snapshot = read_task_policy(task_id, db_path=database)
+    write_task_policy(task_id, {
+        "task_id": task_id, "task_version": snapshot["task_version"],
+        "configuration_version": snapshot["configuration_version"],
+        "override": {"mode": None, "require_user_review": False,
+                    "github_external_review": None, "allow_review_task_pickup": None},
+    }, actor="bridge-fixture", db_path=database)
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
     binding = WorkerLeaseBinding.acquire(task_lease_client.TaskLeaseClient(db_path=database), task_id,

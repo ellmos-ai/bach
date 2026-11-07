@@ -48,6 +48,12 @@ def git_run(bridge, tmp_path, monkeypatch):
     monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: repo)
     monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: root)
     monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
+    # task 3877: the trusted repo registry lives in the protected BACH home dir,
+    # unreachable in this tmp sandbox; authorize_mutation -> _paths only consumes
+    # the returned repo path (element 2), so stub the source resolution to the
+    # fixture repository.
+    monkeypatch.setattr(worker_git, "_resolve_task_source",
+                        lambda tid, *, require_current=False: (None, repo, None))
     _add_task_tree(bridge.binding.task_id)
     monkeypatch.setattr(worker_git, "scan_for_secrets", lambda path: [])
     monkeypatch.setattr(worker_git, "check_git_diff", lambda path: [])
