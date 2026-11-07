@@ -12,6 +12,8 @@ import json
 from datetime import datetime, timezone
 
 RETURN_BLOCK_THRESHOLD = 5  # ponytail: fixed; make it a worker-policy setting if it needs tuning
+NO_PROGRESS_SUFFIX = ":no_progress"  # a return without commit/result blocks sooner
+NO_PROGRESS_BLOCK_THRESHOLD = 3
 _HISTORY_LIMIT = 200
 _PROGRESS_OUTCOMES = frozenset({"review", "done", "completed"})
 # Only causes that belong to the task may block it. Provider errors, stops and
@@ -69,12 +71,13 @@ def block_reason_for_next_return(client, task_id, note):
             or not isinstance(note, str) or not note.startswith(_TASK_SCOPED_PREFIXES)
             or note.startswith(_HOST_SCOPED_MODEL_FAILURES)):
         return None
+    threshold = NO_PROGRESS_BLOCK_THRESHOLD if note.endswith(NO_PROGRESS_SUFFIX) else RETURN_BLOCK_THRESHOLD
     conn = client._get_local_connection()
     try:
-        events = release_events(conn, task_id, limit=RETURN_BLOCK_THRESHOLD)
+        events = release_events(conn, task_id, limit=threshold)
     finally:
         if conn is not getattr(client, "_conn", None):
             conn.close()
     now = datetime.now(timezone.utc)
     summary = policy.summarize_returns([*events, {"at": now, "reason": note, "progress": False}], now=now)
-    return policy.block_reason(summary, threshold=RETURN_BLOCK_THRESHOLD)
+    return policy.block_reason(summary, threshold=threshold)

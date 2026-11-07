@@ -43,6 +43,7 @@ from typing import Any
 try:
     from hub._services.task_schema import (
         ensure_task_claim_columns,
+        ensure_task_creation_origin,
         ensure_task_result_contract_columns,
         ensure_task_slot_columns,
         inspect_task_dependencies,
@@ -50,6 +51,7 @@ try:
 except ImportError:  # pragma: no cover - Paketimport aus system/hub
     from .task_schema import (
         ensure_task_claim_columns,
+        ensure_task_creation_origin,
         ensure_task_result_contract_columns,
         ensure_task_slot_columns,
         inspect_task_dependencies,
@@ -297,6 +299,7 @@ def ensure_task_lease_schema(conn: sqlite3.Connection) -> None:
         ensure_task_claim_columns(conn)
         ensure_task_slot_columns(conn)
         ensure_task_result_contract_columns(conn)
+        ensure_task_creation_origin(conn)
         existing = _columns(conn)
         if not {"id", "status"} <= existing:
             raise RuntimeError("tasks-Tabelle mit id/status fehlt")
@@ -1205,8 +1208,8 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
             cursor = conn.execute(
                 """INSERT INTO tasks (title, description, priority, category, assigned_to,
                                       depends_on, created_by, required_model, assigned_slot,
-                                      result_max_chars, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+                                      result_max_chars, creation_origin, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'worker', 'pending', ?, ?)""",
                 (item["title"], item.get("description", ""), item.get("priority") or parent.get("priority") or "P3",
                  item.get("category") or parent.get("category") or "",
                  item.get("assigned_to") or parent.get("assigned_to") or "bach", dependency,

@@ -420,6 +420,10 @@ def local_task_tree(bridge, tmp_path, monkeypatch):  # noqa: F811
     monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: repo)
     monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: root)
     monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
+    # The trusted repo registry lives in the real home (~/.bach); a host that has one (the Mac) would
+    # otherwise demand a binding for this throwaway task. These tests exercise the unbound path.
+    from hub._services.chat import worker_repo_registry
+    monkeypatch.setattr(worker_repo_registry, "registry_path", lambda: tmp_path / "no_registry.json")
     target = _add_task_tree(bridge.binding.task_id)
     (target / "half_done.py").write_text("print('half')\n", encoding="utf-8")
     return bridge.binding, target
@@ -517,3 +521,131 @@ def test_after_an_operator_stop_no_write_happens_but_the_return_does(local_task_
     binding._stop_event.set()
     assert binding.return_lease(note="worker_stopped")
     assert "half_done.py" in _git_out(target, "status", "--porcelain")
+
+
+# --- PB-1 follow-up: rotation loop (description kept, no follow-ups of follow-ups, no-progress block) ----
+
+def _acquire(client, tid, generation):
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+    return WorkerLeaseBinding.acquire(client, tid, worker_id="physical-worker@HOST", host="HOST",
+                                      generation=generation, is_current=lambda: True,
+                                      stop_event=threading.Event(), clock=lambda: T0)
+
+
+def _description(db, tid):
+    return db.execute("SELECT description FROM tasks WHERE id=?", (tid,)).fetchone()[0]
+
+
+def test_worker_update_appends_partial_state_and_keeps_assignment(binding, mem_db):  # noqa: F811
+    tid = binding.task_id
+    binding.execute_task_manage({"action": "update", "task_id": tid, "description": "Auftrag X"})
+    for text in ("Teilstand 1", "Teilstand 2"):
+        binding.execute_task_manage({"action": "update", "task_id": tid, "description": text})
+    stored = _description(mem_db, tid)
+    assert stored.startswith("Auftrag X")
+    assert stored.index("Teilstand 1") < stored.index("Teilstand 2")
+
+
+def test_worker_update_that_extends_the_assignment_is_taken_as_is(binding, mem_db):  # noqa: F811
+    tid = binding.task_id
+    binding.execute_task_manage({"action": "update", "task_id": tid, "description": "Auftrag X"})
+    binding.execute_task_manage({"action": "update", "task_id": tid, "description": "Auftrag X\n\nErgaenzung"})
+    assert _description(mem_db, tid) == "Auftrag X\n\nErgaenzung"
+
+
+def test_worker_interim_states_stay_bounded(binding, mem_db):  # noqa: F811
+    tid = binding.task_id
+    binding.execute_task_manage({"action": "update", "task_id": tid, "description": "Auftrag X"})
+    for i in range(30):
+        binding.execute_task_manage({"action": "update", "task_id": tid, "description": f"Stand {i} " + "z" * 9000})
+    stored = _description(mem_db, tid)
+    assert stored.startswith("Auftrag X") and "Stand 29" in stored and "Stand 0 " not in stored
+    assert len(stored) < 20000
+
+
+def test_worker_created_task_cannot_spawn_further_followups(binding, mem_db):  # noqa: F811
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    client = binding._client
+    assert "erstellt" in binding.execute_task_manage({"action": "add", "title": "Rest: Teil B"})
+    child, = mem_db.execute("SELECT id FROM tasks WHERE title='Rest: Teil B'").fetchone(),
+    child_id = child[0]
+    assert binding.return_lease(note="x")
+    bound = _acquire(client, child_id, "g-child")
+    count = mem_db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    for action in ({"action": "add", "title": "Rest: Teil C"},
+                   {"action": "decompose", "task_id": child_id, "subtasks": [{"title": "Teil D"}],
+                    "close_parent": False}):
+        with pytest.raises(WorkerTaskManageArgumentError) as refused:
+            bound.execute_task_manage(action)
+        assert refused.value.reason == "followup_depth_exceeded"
+    assert mem_db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == count
+
+
+def _return_open(client, tid, generation, *, progress=False):
+    bound = _acquire(client, tid, generation)
+    if progress:
+        bound.note_progress()
+    bound.execute_task_manage({"action": "update", "task_id": tid, "status": "pending"})
+
+
+def _last_release_note(db, tid):
+    return db.execute("SELECT json_extract(new_value, '$.note') FROM task_history WHERE task_id=? "
+                      "AND action='lease_release' ORDER BY id DESC LIMIT 1", (tid,)).fetchone()[0]
+
+
+def test_open_returns_without_progress_block_after_three(binding, mem_db):  # noqa: F811
+    pytest.importorskip("taskplan.return_policy")
+    client, tid = binding._client, binding.task_id
+    binding.execute_task_manage({"action": "update", "task_id": tid, "description": "Neufassung statt Arbeit"})
+    binding.execute_task_manage({"action": "update", "task_id": tid, "status": "pending"})
+    _return_open(client, tid, "g1")
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "pending"
+    assert _last_release_note(mem_db, tid) == "worker_returned_open:no_progress"
+    _return_open(client, tid, "g2")
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "blocked"
+    assert _last_release_note(mem_db, tid) == "repeated_return:worker_returned_open:no_progress"
+
+
+def test_open_returns_with_progress_keep_the_five_return_rule(binding, mem_db):  # noqa: F811
+    pytest.importorskip("taskplan.return_policy")
+    client, tid = binding._client, binding.task_id
+    binding.note_progress()
+    binding.execute_task_manage({"action": "update", "task_id": tid, "status": "pending"})
+    for i in range(3):
+        _return_open(client, tid, f"g{i}", progress=True)
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "pending"
+    assert _last_release_note(mem_db, tid) == "worker_returned_open"
+    _return_open(client, tid, "g-last", progress=True)
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "blocked"
+    assert _last_release_note(mem_db, tid) == "repeated_return:worker_returned_open"
+
+
+def test_no_progress_block_opens_exactly_one_resolver(binding, mem_db):  # noqa: F811
+    pytest.importorskip("taskplan.return_policy")
+    client, tid = binding._client, binding.task_id
+    binding.execute_task_manage({"action": "update", "task_id": tid, "status": "pending"})
+    _return_open(client, tid, "g1")
+    _return_open(client, tid, "g2")
+    source = f"resolver:task:{tid}"
+    assert mem_db.execute("SELECT COUNT(*) FROM tasks WHERE source=?", (source,)).fetchone()[0] == 1
+
+
+def test_wip_commit_counts_as_progress(local_task_tree):
+    from hub import worker_git
+    binding, _ = local_task_tree
+    assert binding._progress is False
+    worker_git.finish_task(binding.task_id, f"wip(task-{binding.task_id}): x", is_wip=True, run_tests=False,
+                           worker_task_binding=binding, push=False)
+    assert binding._progress is True
+
+
+def test_decomposing_counts_as_progress(binding):  # noqa: F811
+    assert binding._progress is False
+    binding.execute_task_manage({"action": "decompose", "task_id": binding.task_id,
+                                 "subtasks": [{"title": "Kind A"}], "close_parent": False})
+    assert binding._progress is True
+
+
+def test_a_bare_add_is_no_progress(binding):  # noqa: F811
+    binding.execute_task_manage({"action": "add", "title": "Rest: nur ein Folgetask"})
+    assert binding._progress is False
