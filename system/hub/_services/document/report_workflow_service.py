@@ -70,6 +70,7 @@ def _safe_import_name(path: Path) -> str:
 
 # Lokale Imports - mit Fallback für CLI-Ausführung
 try:
+    from . import anonymizer_service as _anon
     from .anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
@@ -106,6 +107,7 @@ except ImportError:
     if str(_bach_root / "system") not in sys.path:
         sys.path.insert(0, str(_bach_root / "system"))
 
+    import anonymizer_service as _anon
     from anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
@@ -337,7 +339,30 @@ def _doc_placeholders(doc) -> set:
 # ═══════════════════════════════════════════════════════════════
 
 class PromptPrivacyError(ValueError):
-    """Datenschutz-Sperre: Der Cloud-Prompt enthielte noch Kennungen des Falls."""
+    """Datenschutz-Sperre: Der Cloud-Prompt wird nicht gebaut.
+
+    ``code`` ist maschinenlesbar (identity_terms_in_prompt, ner_unavailable, document_scan_missing,
+    profile_missing); Meldung und Code enthalten nie Werte des Falls (sie landen in GUI-Antworten).
+    """
+
+    def __init__(self, message: str, code: str = "identity_terms_in_prompt"):
+        super().__init__(message)
+        self.code = code
+
+
+def require_cloud_ner() -> None:
+    """Cloud-Modus nur mit vollstaendiger Namenserkennung (fail-closed).
+
+    Ohne spaCy/NER-Modelle blieben Namen Dritter, Strassen und Orte im Freitext stehen.
+    """
+    ready, reason = _anon.ner_ready()
+    if not ready:
+        raise PromptPrivacyError(
+            f"Cloud-Modus verweigert: Namenserkennung unvollstaendig ({reason}). "
+            "spaCy mit " + " und ".join(_anon.NER_MODELS)
+            + " installieren oder Modus 'lokal' nutzen. Es wurde nichts gesendet.",
+            code="ner_unavailable",
+        )
 
 
 def _assert_no_identity_terms(terms, *parts) -> None:
@@ -392,6 +417,8 @@ class TempAnonymProfile:
     # Sichere Kennungen des Falls (Name, Eltern, Geburtsdatum + Schreibweisen, Adresse, Begriffsliste,
     # gefundene Telefon/Mail): duerfen in keiner Schreibweise im Cloud-Prompt stehen (Datenschutz-Sperre).
     identity_terms: list[str] = field(default_factory=list)
+    # Akte mit Namenserkennung gescannt (Telefon, Mail, Adressen, Namen Dritter): Pflicht fuer Cloud.
+    document_scanned: bool = False
 
     def get_all_mappings(self) -> Dict[str, str]:
         """Flache Map aller Ersetzungen (Original -> Tarn)."""
@@ -449,6 +476,7 @@ class WorkflowSession:
     error_message: str = ""
     warnings: List[str] = field(default_factory=list)
     created: str = field(default_factory=lambda: datetime.now().isoformat())
+    anonymized: bool = False  # data_ano/ in dieser Session mit diesem Profil erzeugt
 
     def to_dict(self) -> dict:
         """Serialisiert Session fuer API-Response."""
@@ -528,7 +556,7 @@ class ReportWorkflowService:
     Workflow:
         1. start_session() - Neue Session starten
         2. import_files() - Dateien nach data_roh/ kopieren
-        3. create_temp_profile() - Temporaeres Anonymisierungsprofil
+        3. create_cloud_profile() - Temporaeres Profil (NER-Pflicht, Scan der Akte)
         4. anonymize_to_bundles() - Dateien anonymisieren nach data_ano/
         5. generate_prompt() - Prompt mit Wissensdatenbank
         6. generate_report() - Word-Dokument erstellen nach output_berichte/
@@ -538,9 +566,9 @@ class ReportWorkflowService:
         service = ReportWorkflowService()
         session = service.start_session()
         service.import_files(session, [Path("dokument.docx")])
-        service.create_temp_profile(session, "Max Mustermann", "15.03.2016")
+        service.create_cloud_profile(session, "Max Mustermann", "15.03.2016")
         service.anonymize_to_bundles(session)
-        prompt = service.generate_prompt(session)
+        prompt = service.generate_prompt(session)  # PromptPrivacyError = Sperre, nichts gesendet
         # ... LLM aufrufen ...
         service.generate_report(session, llm_response)
         service.cleanup(session)
@@ -920,7 +948,9 @@ Interpersonelle Interaktionen:
         identity = {k for cat in ("names", "dates", "addresses", "misc") for k in mappings[cat]}
 
         # Automatische Erkennung von Telefon, E-Mail, Adressen, Personennamen
+        document_scanned = False
         if scan_folder and scan_folder.exists():
+            document_scanned = _anon.ner_ready()[0]  # Scan ohne NER findet keine Namen Dritter
             print(f"[INFO] Scanne Ordner nach sensiblen Daten: {scan_folder}")
             anonymizer = DocumentAnonymizer()
 
@@ -1031,10 +1061,21 @@ Interpersonelle Interaktionen:
             _temp_dir=temp_dir,
             whitelist=sorted(wl),
             identity_terms=identity_terms,
+            document_scanned=document_scanned,
         )
 
         session.profile = profile
         return profile
+
+    def create_cloud_profile(
+        self, session: WorkflowSession, client_name: str, geburtsdatum: str = "01.01.2010", **kwargs
+    ) -> TempAnonymProfile:
+        """Profil fuer jeden Cloud-Weg (Pipeline, Chat-Werkzeug, GUI/API): NER-Pflicht und Scan
+        der importierten Akte (data_roh/, dieselbe Auswahl wie anonymize_to_bundles)."""
+        require_cloud_ner()
+        return self.create_temp_profile(
+            session, client_name, geburtsdatum, scan_folder=self.base_path / "data_roh", **kwargs
+        )
 
     def auto_detect_profile(
         self,
@@ -1130,6 +1171,7 @@ Interpersonelle Interaktionen:
             # Dateinamen anonymisieren
             self._anonymize_filename(dest_file, session.profile)
 
+        session.anonymized = True
         return result
 
     def anonymize_to_bundles_from_folder(
@@ -1207,6 +1249,7 @@ Interpersonelle Interaktionen:
             self._anonymize_filename(dest_file, session.profile)
 
         print(f"[DEBUG] {processed} Dateien in data_ano/ verarbeitet")
+        session.anonymized = True
         return result
 
     def _anonymize_filename(self, filepath: Path, profile: TempAnonymProfile) -> Path:
@@ -1291,7 +1334,9 @@ Interpersonelle Interaktionen:
         session: WorkflowSession,
         include_wissensdatenbank: bool = True,
         berichtszeitraum: str = "01.01.2025 - 31.12.2025",
-        custom_instructions: str = ""
+        custom_instructions: str = "",
+        *,
+        cloud: Optional[bool] = None,
     ) -> str:
         """
         Generiert den LLM-Prompt mit Kontext.
@@ -1301,11 +1346,40 @@ Interpersonelle Interaktionen:
             include_wissensdatenbank: Wissensdatenbank einbeziehen
             berichtszeitraum: Zeitraum fuer den Bericht
             custom_instructions: Zusaetzliche Anweisungen
+            cloud: Prompt geht an ein Cloud-Modell. None = Profil mit Ersetzungen (wie bisher);
+                   True erzwingt alle Cloud-Sperren auch ohne Profil (GUI/API-Weg).
 
         Returns:
             Fertiger Prompt fuer LLM
+
+        Raises:
+            PromptPrivacyError: Cloud-Weg ohne Profil, ohne Akten-Scan mit NER oder mit Kennungen
+                des Falls im Prompt. Es wird nichts gebaut und nichts gesendet.
         """
         session.status = "generating"
+        has_mappings = any((getattr(session.profile, "mappings", None) or {}).values())
+        if cloud is None:
+            cloud = has_mappings
+        if cloud:
+            if not has_mappings:
+                raise PromptPrivacyError(
+                    "Datenschutz-Sperre: Fuer diesen Fall gibt es kein Pseudonymisierungsprofil. "
+                    "Zuerst das Profil anlegen. Es wurde nichts gesendet.",
+                    code="profile_missing",
+                )
+            if not getattr(session.profile, "document_scanned", False):
+                require_cloud_ner()
+                raise PromptPrivacyError(
+                    "Datenschutz-Sperre: Die Akte wurde nicht auf Namen Dritter, Telefonnummern, "
+                    "Mail-Adressen und Adressen gescannt. Profil nach dem Import der Akte anlegen. "
+                    "Es wurde nichts gesendet.",
+                    code="document_scan_missing",
+                )
+            # Wie die Pipeline: Bundle nur aus data_ano/, das in DIESER Session erzeugt wurde.
+            if not session.bundle:
+                if not session.anonymized:
+                    self.anonymize_to_bundles(session)
+                self.extract_bundle_text(session)
 
         # Bundle extrahieren falls noch nicht geschehen
         # Pruefe ob data_ano/ Dateien hat, sonst aus data_roh/ lesen
@@ -1328,7 +1402,7 @@ Interpersonelle Interaktionen:
         # Cloud-Weg (Profil mit Ersetzungen): Wissensdatenbank und Zusatzanweisungen laufen durch
         # dieselbe Pseudonymisierung wie die Akte; danach prueft die Datenschutz-Sperre alle
         # veraenderlichen Teile auf Kennungen des Falls, in jeder Gross-/Kleinschreibung.
-        if any((getattr(session.profile, "mappings", None) or {}).values()):
+        if cloud:
             replacements = DocumentAnonymizer._sorted_replacements(session.profile.to_anonym_profile())
             kb_context = _apply_replacements(kb_context, replacements)[0]
             custom_instructions = _apply_replacements(custom_instructions or "", replacements)[0]

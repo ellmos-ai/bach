@@ -444,19 +444,8 @@ class FoerderberichtPipeline:
                 result.duration_s = time.time() - start_time
                 return result
 
-            # --- Schritt 1c: Cloud-Modus nur mit vollstaendiger Namenserkennung (fail-closed) ---
-            # Ohne spaCy/NER-Modelle blieben Namen Dritter, Strassen und Orte im Freitext stehen.
-            result.step = "datenschutz"
-            from hub._services.document import anonymizer_service
-            ready, reason = anonymizer_service.ner_ready()
-            if not ready:
-                raise PipelineError(
-                    f"Cloud-Modus verweigert: Namenserkennung unvollstaendig ({reason}). "
-                    "spaCy mit " + " und ".join(anonymizer_service.NER_MODELS)
-                    + " installieren oder Modus 'lokal' nutzen. Es wurde nichts gesendet."
-                )
-
-            # --- Schritt 2: Session + Profil ---
+            # --- Schritt 2: Session + Profil (gemeinsamer Cloud-Weg mit GUI/API) ---
+            # create_cloud_profile verweigert ohne spaCy/NER-Modelle (fail-closed) und scannt data_roh/.
             result.step = "profil"
             from hub._services.document.report_workflow_service import ReportWorkflowService
             workflow = ReportWorkflowService(base_path=self.base_path)
@@ -466,11 +455,10 @@ class FoerderberichtPipeline:
             session.status = "importing"
             session.input_files = list(data_roh.rglob("*"))
 
-            profile = workflow.create_temp_profile(
+            profile = workflow.create_cloud_profile(
                 session, client_name, geburtsdatum,
                 additional_terms=additional_terms,
                 whitelist=whitelist,
-                scan_folder=data_roh,
                 parent_names=parent_names,
                 client_address=client_address,
             )

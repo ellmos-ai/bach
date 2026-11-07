@@ -1011,7 +1011,12 @@ async def test_local_backend_exception_cleans_ephemeral_session(tmp_path, monkey
 
 
 @pytest.mark.asyncio
-async def test_cloud_route_status_has_explicit_nonlocal_mode_and_no_fallback():
+async def test_cloud_route_status_has_explicit_nonlocal_mode_and_no_fallback(monkeypatch):
+    from hub._services.document import anonymizer_service
+
+    # NER-Pflicht des Cloud-Wegs hat eigene Tests (test_report_gui_privacy.py)
+    monkeypatch.setattr(anonymizer_service, "ner_ready", lambda: (True, ""))
+
     class Backend:
         async def chat(self, _messages, *, tools, model):
             assert tools is None
