@@ -16342,6 +16342,20 @@ def _report_error_response(exc: Exception) -> dict:
     return {"success": False, "error": public_error_message()}
 
 
+@app.get("/api/report/readiness")
+async def report_readiness():
+    """Ob der Cloud-Weg laufen darf (Namenserkennung bereit); sonst Grund maschinenlesbar, ohne Werte."""
+    try:
+        from hub._services.document.report_workflow_service import PromptPrivacyError, require_cloud_ner
+        try:
+            require_cloud_ner()
+        except PromptPrivacyError as e:
+            return {"success": True, "cloud_ready": False, "error_code": e.code, "error": str(e)}
+        return {"success": True, "cloud_ready": True, "error_code": None, "error": None}
+    except Exception:
+        return {"success": False, "error": public_error_message()}
+
+
 @app.post("/api/report/session/start")
 async def start_report_session():
     """Startet eine neue Report-Workflow-Session."""

@@ -48,7 +48,9 @@ import os
 import re
 import secrets
 import string
+import unicodedata
 from dataclasses import dataclass, field
+from functools import lru_cache
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -265,22 +267,101 @@ _DATE_FORMATS = (
 )
 
 
-def _date_variant_pairs(real: str, fake: str) -> List[Tuple[str, str]]:
-    """(echte Schreibweise, Tarn-Schreibweise) fuer alle _DATE_FORMATS; leer, wenn kein dd.mm.yyyy."""
-    def parse(value):
-        try:
-            dt = datetime.strptime((value or "").strip(), "%d.%m.%Y")
-        except ValueError:
-            return None
-        return dt.day, dt.month, dt.year
+# Kurzformen je Monat (Mai hat keine); Stil der echten Form bestimmt die Tarn-Schreibweise.
+_MONAT_KURZ = (("Jan",), ("Feb",), ("Mär", "Mrz", "Mar"), ("Apr",), (), ("Jun",), ("Jul",), ("Aug",),
+               ("Sep", "Sept"), ("Okt",), ("Nov",), ("Dez",))
 
-    r, f = parse(real), parse(fake)
+
+def _month_forms(m: int) -> List[Tuple[str, str]]:
+    """(Stil, Schreibweise) eines Monatsnamens: voll, mit ae, Kuerzel mit und ohne Punkt, auch klein
+    ("14 mai 2017"; zwischen Ziffern ist das unbedenklich, anders als bei Namen)."""
+    full = _MONATE[m - 1]
+    forms = [("full", full)] + ([("full_ae", full.replace("ä", "ae"))] if "ä" in full else [])
+    for short in _MONAT_KURZ[m - 1]:
+        forms += [("short_dot", short + "."), ("short", short)]
+    return forms + [(style, name.lower()) for style, name in forms]
+
+
+def _month_in_style(m: int, style: str) -> str:
+    full = _MONATE[m - 1]
+    short = _MONAT_KURZ[m - 1][0] if _MONAT_KURZ[m - 1] else full
+    return {"full": full, "full_ae": full.replace("ä", "ae"), "short": short,
+            "short_dot": short + "." if _MONAT_KURZ[m - 1] else full}[style]
+
+
+def _parse_date(value: str) -> Optional[Tuple[int, int, int]]:
+    try:
+        dt = datetime.strptime((value or "").strip(), "%d.%m.%Y")
+    except ValueError:
+        return None
+    return dt.day, dt.month, dt.year
+
+
+def _generated_date_forms(r, f):
+    """Systematische Schreibweisen (R6-2): Trenner . / - Leerzeichen, fuehrende Null, Jahr 4/2-stellig,
+    Reihenfolge TMJ, JMT und (nur eindeutig, Tag > 12) MTJ, Monatsname und -kuerzel."""
+    (rd, rm, ry), (fd, fm, fy) = r, f
+    days = (lambda d: f"{d:02d}", str)
+    years = (str, lambda y: f"{y % 100:02d}")
+    for sep in (".", "/", "-", " ", ". ", " / ", " - "):
+        for D in days:
+            for M in days:
+                for Y in years:
+                    yield f"{D(rd)}{sep}{M(rm)}{sep}{Y(ry)}", f"{D(fd)}{sep}{M(fm)}{sep}{Y(fy)}"
+                    if rd > 12 and sep in ("/", "-"):
+                        yield f"{M(rm)}{sep}{D(rd)}{sep}{Y(ry)}", f"{M(fm)}{sep}{D(fd)}{sep}{Y(fy)}"
+    for sep in ("-", "/", "."):
+        for M in days:
+            for D in days:
+                yield f"{ry}{sep}{M(rm)}{sep}{D(rd)}", f"{fy}{sep}{M(fm)}{sep}{D(fd)}"
+    for style, name in _month_forms(rm):
+        fake_name = _month_in_style(fm, style)
+        for D in days:
+            for dsep in (". ", " ", "."):
+                for ysep in (" ", "."):
+                    if ysep == "." and name.endswith("."):
+                        continue
+                    for Y in years:
+                        yield (f"{D(rd)}{dsep}{name}{ysep}{Y(ry)}",
+                               f"{D(fd)}{dsep}{fake_name}{ysep if not fake_name.endswith('.') else ' '}{Y(fy)}")
+
+
+def _date_variant_pairs(real: str, fake: str) -> List[Tuple[str, str]]:
+    """(echte Schreibweise, Tarn-Schreibweise) fuer alle Formen; leer, wenn kein dd.mm.yyyy.
+
+    Zuerst die bisherigen _DATE_FORMATS (Reihenfolge bestimmt bei gleicher Tarnform die Rueckuebersetzung),
+    dann die systematisch erzeugten. Was keine Form trifft, faengt date_pattern() in der Sperre.
+    """
+    r, f = _parse_date(real), _parse_date(fake)
     if not (r and f):
         return []
     pairs: Dict[str, str] = {}
     for fmt in _DATE_FORMATS:
         pairs.setdefault(fmt(*r), fmt(*f))
+    for real_form, fake_form in _generated_date_forms(r, f):
+        pairs.setdefault(real_form, fake_form)
     return list(pairs.items())
+
+
+@lru_cache(maxsize=64)
+def date_pattern(value: str) -> Optional["re.Pattern"]:
+    """Regex fuer ein Datum (dd.mm.yyyy) in jeder Schreibweise, fuer die Datenschutz-Sperre (R6-2).
+
+    Beliebige Trenner (. / -, Leerzeichen, auch gemischt), fuehrende Null, Jahr vier- oder zweistellig,
+    Reihenfolge TMJ und JMT, MTJ nur wenn eindeutig (Tag > 12), Monatsname oder -kuerzel davor/danach.
+    """
+    parsed = _parse_date(value)
+    if not parsed:
+        return None
+    d, m, y = parsed
+    day, mon, year = rf"0?{d}", rf"0?{m}", rf"(?:{y}|{y % 100:02d})"
+    name = "(?:" + "|".join(re.escape(n.rstrip(".")) for _, n in _month_forms(m)) + r")\.?"
+    sep = r"(?:\s*[./\-]\s*|\s+)"
+    parts = [rf"{day}{sep}{mon}{sep}{year}", rf"{y}{sep}{mon}{sep}{day}",
+             rf"{day}\.?\s*{name}\s*[.,]?\s*{year}", rf"{name}\s*{day}\.?,?\s*{year}"]
+    if d > 12:
+        parts.append(rf"{mon}{sep}{day}{sep}{year}")
+    return re.compile(r"(?<!\d)(?:" + "|".join(parts) + r")(?!\d)", re.IGNORECASE)
 
 
 def _detect_gender(vorname: str) -> str:
@@ -400,10 +481,11 @@ def _generate_fake_phone() -> str:
     return f"{prefix}/{number}"
 
 
-def _generate_fake_email(original: str = None) -> str:
-    """Generiert eine falsche E-Mail-Adresse."""
-    vorname = secrets.choice(TARN_VORNAMEN).lower()
-    nachname = secrets.choice(TARN_NACHNAMEN).lower()
+def _generate_fake_email(original: str = None, excluded_name_parts: Optional[Iterable[str]] = None) -> str:
+    """Generiert eine falsche E-Mail-Adresse ohne echte Namensteile (sonst traefe die Sperre den Tarnwert)."""
+    banned = {w.casefold() for part in (excluded_name_parts or []) for w in str(part).split()}
+    vorname = secrets.choice([v for v in TARN_VORNAMEN if v.casefold() not in banned] or ["tarn"]).lower()
+    nachname = secrets.choice([n for n in TARN_NACHNAMEN if n.casefold() not in banned] or ["person"]).lower()
     domain = secrets.choice(["beispiel.de", "muster.org", "test-mail.de", "privat.net"])
     return f"{vorname}.{nachname}@{domain}"
 
@@ -439,6 +521,34 @@ def _generate_fake_institution(original: str) -> str:
     return f"{prefix}{found_suffix} {stadt}"
 
 
+# Beugungsendungen hinter Namen und Orten: Genitiv/Plural (-s, -es, -n, -en, -ns), weibliche Form
+# (-in, -innen), Herkunft (-er, -ern, -ers: "Freiburger"). Gross/klein egal ("MUELLERS").
+INFLECTION_SUFFIX = r"(?i:innen|ern|ers|es|en|er|in|ns|s|n)"
+
+_UMLAUT_AE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
+_UMLAUT_PLAIN = str.maketrans({"ä": "a", "ö": "o", "ü": "u", "Ä": "A", "Ö": "O", "Ü": "U", "ß": "ss"})
+
+
+@lru_cache(maxsize=8192)
+def _term_pattern(old: str) -> "re.Pattern":
+    """Fundstellen von `old` als ganzes Wort ("_" zaehlt als Trenner), bei Woertern mit Beugungsendung."""
+    left = r"(?<![^\W_])" if re.match(r"\w", old[0]) else ""
+    right = r"(?![^\W_])" if re.match(r"\w", old[-1]) else ""
+    sfx = f"(?P<sfx>{INFLECTION_SUFFIX})?" if old[-1].isalpha() and len(old) >= 3 else "(?P<sfx>)"
+    return re.compile(left + re.escape(old) + sfx + right)
+
+
+def _spelling_variants(term: str) -> List[str]:
+    """Andere Schreibweisen desselben Begriffs (R6-3): ae/oe/ue/ss, ohne Umlautpunkte, zerlegte Umlaute (NFD)."""
+    if term.isascii():
+        return []
+    ae = term.translate(_UMLAUT_AE)
+    out = {ae.upper() if term.isupper() else ae, term.translate(_UMLAUT_PLAIN),
+           unicodedata.normalize("NFD", term), unicodedata.normalize("NFC", term)}
+    out.discard(term)
+    return sorted(out)
+
+
 def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
     """
     Ersetzt `old` in `text` NUR an Wortgrenzen (nicht als blinder Teilstring).
@@ -451,10 +561,12 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
     an Stellen, wo derselbe Teilstring OHNE Wortgrenze auftaucht.
 
     Python-`\\b` behandelt deutsche Umlaute/ß korrekt als Wortzeichen.
+    "_" trennt dabei Woerter (Dateinamen wie "Bericht_Mueller_2025"), und gebeugte Formen
+    ("Muellers", "Muellerin", "Freiburger") werden mit ersetzt; die Endung bleibt erhalten (R6-1/R6-3).
     """
     if not old:
         return text, 0
-    pattern = re.compile(r'\b' + re.escape(old) + r'\b')
+    pattern = _term_pattern(old)
     # Addresses are replaced as whole identities. Replacing a name component
     # inside an allowed address corrupts it and can break the reverse mapping.
     email_spans = [m.span("email") for m in EMAIL_PATTERN.finditer(text)] if "@" not in old else []
@@ -465,7 +577,7 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
         if any(start <= match.start() and match.end() <= end for start, end in email_spans):
             return match.group(0)
         count += 1
-        return new
+        return new + (match.group("sfx") or "")
 
     text = pattern.sub(replace, text)
     return text, count
@@ -1454,7 +1566,7 @@ class DocumentAnonymizer:
             if "telefon" in weitere_daten:
                 mappings["phones"][weitere_daten["telefon"]] = _generate_fake_phone()
             if "email" in weitere_daten:
-                mappings["emails"][weitere_daten["email"]] = _generate_fake_email()
+                mappings["emails"][weitere_daten["email"]] = _generate_fake_email(excluded_name_parts=excluded_name_parts)
             # Restliche als misc
             for key, val in weitere_daten.items():
                 if key not in ("adresse", "telefon", "email") and val:
@@ -1470,7 +1582,7 @@ class DocumentAnonymizer:
             # E-Mail-Adressen
             for email in scanned_data.get("emails", []):
                 if email not in mappings["emails"]:
-                    mappings["emails"][email] = _generate_fake_email(email)
+                    mappings["emails"][email] = _generate_fake_email(email, excluded_name_parts=excluded_name_parts)
 
             # Straßenadressen
             for addr in scanned_data.get("addresses", []):
@@ -1897,6 +2009,11 @@ class DocumentAnonymizer:
                 if k.strip().lower() not in wl_lower
                 and not ("@" in k and k.rsplit("@", 1)[-1].lower() in wl_lower)
             }
+        # Umschriften (Mueller, Muller, zerlegte Umlaute) bekommen denselben Tarnwert (R6-3).
+        for key, value in list(all_replacements.items()):
+            for variant in _spelling_variants(key):
+                if variant.strip().lower() not in wl_lower:
+                    all_replacements.setdefault(variant, value)
         return sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
     def _anonymize_eml(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:

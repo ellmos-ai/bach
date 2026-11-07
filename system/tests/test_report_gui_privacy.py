@@ -108,6 +108,17 @@ def test_api_refuses_cloud_profile_without_spacy_and_names_the_reason(api, monke
     assert "jonas" not in dumped and "leonhardt" not in dumped
 
 
+def test_api_readiness_says_whether_cloud_may_run_and_why_not(api, monkeypatch):
+    assert api.get("/api/report/readiness").json() == {
+        "success": True, "cloud_ready": True, "error_code": None, "error": None}
+
+    monkeypatch.setattr(anonymizer_service, "ner_ready", lambda: (False, "spaCy-Modelle fehlen: de_core_news_lg"))
+    res = api.get("/api/report/readiness").json()
+
+    assert res["success"] is True and res["cloud_ready"] is False
+    assert res["error_code"] == "ner_unavailable" and "de_core_news_lg" in res["error"]
+
+
 def test_api_refuses_prompt_without_pseudonymisation_profile(api):
     sid = _session(api)
 

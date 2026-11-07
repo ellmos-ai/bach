@@ -410,6 +410,10 @@ class FoerderberichtPipeline:
                 f"Gestartet: {datetime.now().isoformat()}\n", encoding="utf-8"
             )
 
+            # Vor jeder Pruefung: Ergebnisse frueherer Laeufe weg (z. B. Klartext-prompt.txt eines
+            # lokalen Laufs), sonst stuende nach einer Verweigerung ein alter Prompt bereit (R6-5).
+            self._deep_cleanup(self.base_path / "data_bundled")
+
             # --- Schritt 1: Validierung ---
             result.step = "validierung"
             data_roh = self.base_path / "data_roh"

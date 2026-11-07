@@ -53,6 +53,7 @@ import re
 import shutil
 import sys
 import tempfile
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -365,13 +366,29 @@ def require_cloud_ner() -> None:
         )
 
 
-def _assert_no_identity_terms(terms, *parts) -> None:
-    """Sperrt, wenn eine Kennung des Falls (ohne Gross-/Kleinschreibung) in den Teilen steht.
+def _fold(text: str) -> str:
+    """Vergleichsform der Sperre: Gross/klein, Umlaut/ae/ohne Punkte, zerlegte Zeichen und "_" gleich."""
+    text = "".join(c for c in unicodedata.normalize("NFKD", text.casefold()) if not unicodedata.combining(c))
+    return text.replace("ae", "a").replace("oe", "o").replace("ue", "u").replace("_", " ")
 
+
+def _assert_no_identity_terms(terms, *parts, birth_date: str = "") -> None:
+    """Sperrt, wenn eine Kennung des Falls in den Teilen steht (fail-closed: Falschtreffer brechen nur ab).
+
+    Verglichen wird in der Vergleichsform (_fold), mit Beugungsendungen ("Muellers", "Muellerin") und
+    "_" als Trenner (R6-1/R6-3); das Geburtsdatum zusaetzlich in jeder Schreibweise (R6-2).
     Die Meldung nennt bewusst keinen Wert (sie landet in Logs und GUI-Antworten).
     """
     text = "\n".join(p or "" for p in parts)
-    hits = [t for t in terms if re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", text, re.IGNORECASE)]
+    keys = sorted({_fold(t) for t in terms if t and t.strip()}, key=len, reverse=True)
+    hits = set()
+    if keys:
+        pattern = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, keys)) + r")"
+                             + _anon.INFLECTION_SUFFIX + r"?(?!\w)")
+        hits = {m.group(0) for m in pattern.finditer(_fold(text))}
+    dates = _anon.date_pattern(birth_date) if birth_date else None
+    if dates:
+        hits |= {m.group(0) for m in dates.finditer(unicodedata.normalize("NFC", text))}
     if hits:
         raise PromptPrivacyError(
             f"Datenschutz-Sperre: {len(hits)} Kennung(en) des Falls stuenden noch im Cloud-Prompt "
@@ -385,16 +402,28 @@ def _restore_original_values(text: str, mappings: Dict[str, str]) -> str:
     keys = sorted((key for key in mappings if key), key=lambda key: (-len(key), key))
     if not keys:
         return text
-    pattern = re.compile(r"\b(?:" + "|".join(re.escape(key) for key in keys) + r")\b")
+    # Gleiche Wortgrenzen wie die Ersetzung (_replace_word_boundary). Genitiv des Tarnwerts ("Vogels Mutter")
+    # -> Genitiv des Originals; nur -s, weil Tarnnamen wie "Bauer" sonst gewoehnliche Woerter ("Bauern")
+    # zurueckuebersetzen wuerden.
+    def alternative(key):
+        left = r"(?<![^\W_])" if re.match(r"\w", key[0]) else ""
+        right = r"(?![^\W_])" if re.match(r"\w", key[-1]) else ""
+        return left + re.escape(key) + ("s?" if key[-1].isalpha() and len(key) >= 3 else "") + right
+
+    pattern = re.compile("|".join(alternative(key) for key in keys))
     email_spans = [match.span("email") for match in EMAIL_PATTERN.finditer(text)]
 
     def replace(match):
-        key = match.group(0)
+        found = match.group(0)
+        key, sfx = (found, "") if found in mappings else (found[:-1], found[-1])
         if "@" not in key and any(
             start <= match.start() and match.end() <= end for start, end in email_spans
         ):
-            return key
-        return mappings[key]
+            return found
+        original = mappings[key]
+        if sfx and original[-1:].lower() in ("s", "ß", "x", "z"):
+            sfx = "'"  # "Jonas'" statt "Jonass"
+        return original + sfx
 
     return pattern.sub(replace, text)
 
@@ -984,7 +1013,7 @@ Interpersonelle Interaktionen:
             # E-Mail-Adressen (kein Klartextwert im Log)
             for email in scanned.get("emails", []):
                 if email not in wl:
-                    fake_email = _generate_fake_email()
+                    fake_email = _generate_fake_email(excluded_name_parts=excluded_name_parts)
                     mappings["emails"][email] = fake_email
 
             # Straßenadressen (kein Klartextwert im Log)
@@ -1260,8 +1289,8 @@ Interpersonelle Interaktionen:
         filename = filepath.stem
         suffix = filepath.suffix
 
-        mappings = profile.get_all_mappings()
-        sorted_mappings = sorted(mappings.items(), key=lambda x: len(x[0]), reverse=True)
+        # Dieselbe Liste wie fuer den Inhalt (Whitelist, Umschriften wie "Bericht_Joerg_Mueller", R6-3)
+        sorted_mappings = DocumentAnonymizer._sorted_replacements(profile.to_anonym_profile())
 
         new_filename = filename
         changed = False
@@ -1412,6 +1441,7 @@ Interpersonelle Interaktionen:
             _assert_no_identity_terms(
                 getattr(session.profile, "identity_terms", None) or [],
                 bundle.core_text, bundle.stufe2_text, kb_context, custom_instructions, berichtszeitraum,
+                birth_date=next(iter(session.profile.mappings.get("dates") or {}), ""),
             )
 
         # Prompt zusammenbauen
@@ -2428,7 +2458,11 @@ def quick_report(
 
     Returns:
         (prompt, data_path) - Prompt und Pfad zu den Daten
+
+    Raises:
+        PromptPrivacyError: ohne Namenserkennung, bevor eine Datei kopiert wird (R6-4).
     """
+    require_cloud_ner()  # der Prompt ist fuer ein Cloud-Modell bestimmt (CLI "generate" sendet ihn)
     service = ReportWorkflowService()
     session = service.start_session()
 

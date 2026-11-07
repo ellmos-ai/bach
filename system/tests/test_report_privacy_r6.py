@@ -126,6 +126,14 @@ def test_pipeline_cloud_prompt_carries_none_of_the_r6_forms(cloud):
     assert "feinmotorik" in folded
 
 
+def test_fake_email_never_reuses_a_real_name_part(monkeypatch):
+    """Sonst sperrt die Sperre den eigenen Tarnwert ("jonas.hofmann@..."; zufaellig, etwa 1 von 40 e2e-Laeufen)."""
+    monkeypatch.setattr(anonymizer_service.secrets, "choice",
+                        lambda seq: next((s for s in seq if str(s).lower() in ("jonas", "leonhardt")), seq[0]))
+    fake = anonymizer_service._generate_fake_email(excluded_name_parts=["Jonas Leonhardt", "Sabine Leonhardt"])
+    assert "jonas" not in fake.lower() and "leonhardt" not in fake.lower()
+
+
 # --- R6-4: Modul-CLI ohne NER ------------------------------------------------------------------
 
 def test_module_cli_refuses_cloud_prompt_without_ner_before_touching_files(tmp_path, monkeypatch):
