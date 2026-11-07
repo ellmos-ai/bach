@@ -41,6 +41,7 @@ from datetime import datetime, date
 
 from typing import Optional, List, Union
 
+import contextlib
 from contextlib import asynccontextmanager
 
 # BACH imports
@@ -1640,6 +1641,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/governance/funk",
         "/governance/usecases",
         "/governance/logs",
+        "/governance/hooks",
+        "/governance/rechte",
+        "/governance/regeln",
+        "/governance/sperren",
         "/life",
         "/domains",
         "/artefakte",
@@ -1748,6 +1753,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/robotics/telemetry",
         "/api/modules/status",
         "/api/modules/sync",
+        "/api/modules/update-check",
+        "/api/modules/list",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -1868,6 +1875,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/artifacts" or path.startswith("/api/artifacts/")
                 or path == "/api/artefakte"
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path == "/api/agent-triggers" or path.startswith("/api/agent-triggers/")
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
@@ -2012,6 +2020,11 @@ try:
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
+
+# The trigger router has no eager optional-provider imports. Keep it registered
+# even when the provider is missing so callers receive a truthful 503 contract.
+from gui.api.agent_triggers import router as agent_triggers_router
+app.include_router(agent_triggers_router)
 
 try:
     from gui.api.subscription_agents_transport import (
@@ -2369,6 +2382,18 @@ async def get_modules_list():
         from hub.modules import ModulesHandler
         handler = ModulesHandler(BACH_DIR)
         return {"status": "ok", "modules": handler.get_modules_data()}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/update-check")
+async def get_modules_update_check():
+    """Check for available updates for standalone modules in .MODULES/."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        check = handler.check_for_updates()
+        return {"status": "ok", **check}
     except Exception as exc:
         return {"status": "error", "error": public_error_message()}
 
@@ -6099,6 +6124,22 @@ async def governance_funk_page():
     return await governance_page()
 
 
+def _governance_sub_page(name: str):
+    async def page():
+        p = ASTRO_DIST_DIR / "governance" / f"{name}.html"
+        if p.exists():
+            return FileResponse(p)
+        return await governance_page()
+    page.__name__ = f"governance_{name}_page"
+    return page
+
+
+# Governance sub-routes of the area navigation (ellmos-system-gui#125, GUI 0.2.36).
+for _governance_name in ("hooks", "rechte", "regeln", "sperren"):
+    app.add_api_route(f"/governance/{_governance_name}", _governance_sub_page(_governance_name),
+                      methods=["GET"], response_class=HTMLResponse, tags=["shared-gui"])
+
+
 @app.get("/governance/usecases", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_usecases_page():
     p = ASTRO_DIST_DIR / "governance" / "usecases.html"
@@ -6746,9 +6787,96 @@ async def denkarium_page():
 
 
 
+from hub._services import notes_adapter  # PB-11 (#3994): llm-note als Notiz-Engine
+
+
+@contextlib.contextmanager
+def _notes_http_errors():
+    """Map adapter errors to HTTP status codes (404 unknown id, 400 bad input, 503 engine missing)."""
+    try:
+        yield
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0] if exc.args else exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except notes_adapter.NotesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+class _JsonBody:
+    """Minimal request stand-in so the notes routes can reuse the legacy handlers before the migration."""
+
+    def __init__(self, data):
+        self._data = data
+
+    async def json(self):
+        return self._data
+
+
+@app.get("/api/notes")
+async def notes_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None,
+                     include_archived: bool = False):
+    """Notizen aus llm-note (PB-11, #3994). Vor der Migration: Altbestand, `pending_migration: true`."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.list_notes(entry_type=entry_type, category=category, limit=limit, search=search,
+                                            include_archived=include_archived, legacy_db=USER_DB)
+    legacy = await denkarium_list(notes_adapter.legacy_type(entry_type), category, limit, search, not include_archived)
+    return notes_adapter.from_denkarium_list(legacy, USER_DB)
+
+
+@app.post("/api/notes")
+async def notes_create(request: Request):
+    data = await request.json()
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return {"ok": True, "entry": notes_adapter.create_note(data)}
+    # before the migration the legacy table stays the only store; the idempotent migration picks the row up
+    body = {**data, "entry_type": notes_adapter.legacy_type(data.get("entry_type") or "note")}
+    created = await denkarium_create(_JsonBody(body))
+    if isinstance(created, JSONResponse):
+        return created
+    return {"ok": True, "entry": {"id": created["id"]}, "pending_migration": True}
+
+
+@app.post("/api/notes/{entry_id}/archive")
+async def notes_archive(entry_id: int, request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_archive_direct(entry_id, _JsonBody(data))
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
+    with _notes_http_errors():
+        reason = data.get("reason") if isinstance(data, dict) else None
+        return {"ok": True, "entry": notes_adapter.archive_note(entry_id, reason)}
+
+
+@app.post("/api/notes/{entry_id}/unarchive")
+async def notes_unarchive(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_unarchive_direct(entry_id)
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
+    with _notes_http_errors():
+        return {"ok": True, "entry": notes_adapter.unarchive_note(entry_id)}
+
+
+@app.delete("/api/notes/{entry_id}")
+async def notes_delete(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        return await denkarium_delete(entry_id)
+    with _notes_http_errors():
+        notes_adapter.delete_note(entry_id)
+    return {"ok": True}
+
+
 @app.get("/api/denkarium")
 async def denkarium_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None, exclude_archived: bool = True):
-    """Denkarium-Einträge abrufen (GUX-043)."""
+    """Denkarium-Einträge abrufen (GUX-043). Alias auf llm-note, sobald migriert (PB-11)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_list(entry_type, category, limit, search, exclude_archived)
     conn = sqlite3.connect(str(USER_DB))
     try:
         ensure_denkarium_schema(conn)
@@ -6809,6 +6937,10 @@ async def denkarium_create(request: Request):
 
     data = await request.json()
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_create(data)
+
     content = data.get("content", "").strip()
 
     if not content:
@@ -6865,6 +6997,11 @@ async def denkarium_delete(entry_id: int):
 
     """Denkarium-Eintrag löschen."""
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            notes_adapter.delete_note(entry_id)
+        return {"ok": True}
+
     conn = sqlite3.connect(str(USER_DB))
 
     try:
@@ -6892,6 +7029,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
     except Exception:
         data = {}
     reason = data.get("reason", "wrong_agent_dump") if isinstance(data, dict) else "wrong_agent_dump"
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_archive(entry_id, reason)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return archive_denkarium_entry(entry_id, reason=reason, conn=conn)
@@ -6904,6 +7044,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
 @app.post("/api/denkarium/{entry_id}/unarchive")
 async def denkarium_unarchive_direct(entry_id: int):
     """Archivierten Denkarium-Eintrag wiederherstellen (GUX-043)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_unarchive(entry_id)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return unarchive_denkarium_entry(entry_id, conn=conn)
@@ -6922,6 +7065,24 @@ async def denkarium_promote(entry_id: int, request: Request):
     data = await request.json()
 
     target = data.get("target", "task")
+
+    if notes_adapter.use_llm_note(USER_DB):
+        if target != "task":
+            raise HTTPException(status_code=400, detail=f"Unbekanntes Ziel: {target}. Erlaubt: task")
+        with _notes_http_errors():
+            note = notes_adapter.get_note(entry_id)
+        conn = sqlite3.connect(str(USER_DB))
+        try:
+            cur = conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)",
+                (note["title"] or note["content"][:50] or "Denkarium-Eintrag", note["content"]))
+            conn.commit()
+            promoted_id = cur.lastrowid
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
+        finally:
+            conn.close()
+        notes_adapter.mark_promoted(entry_id, target, promoted_id)
+        return {"ok": True, "promoted_id": promoted_id}
 
     conn = sqlite3.connect(str(USER_DB))
 

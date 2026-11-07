@@ -91,6 +91,7 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
         "decompose_already_decomposed": 'Diese Aufgabe wurde bereits in Teilaufgaben zerlegt; keine erneute Zerlegung anlegen, sondern Zwischenstand mit submit_result(complete=false) zurückgeben.',
         "mutation_scope": 'Änderungen nur an der gebundenen Task: task_id ist die eigene ID als Zahl, nicht als Text.',
+        "followup_depth_exceeded": 'Diese Aufgabe wurde selbst von einem Worker angelegt; daraus entstehen keine weiteren Folgetasks. Offenen Rest mit task_manage(action="submit_result", task_id=<ID>, result="<Stand und Blocker>", complete=false) zurückgeben.',
         "followup_capability_missing": 'Ein Werkzeug wurde abgelehnt, weil diesem Worker die Freigabe fehlt. Das ist ein Blocker, kein Rest: keine Folgetask anlegen, sondern task_manage(action="submit_result", task_id=<ID>, result="<fehlende Freigabe>", complete=false) zurückgeben.',
     }
 
@@ -98,6 +99,29 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         self.reason = reason
         self.user_message = self._GUIDANCE[reason]
         super().__init__(self.user_message)
+
+
+# PB-1 rotation fix: a worker `update` never replaces the assignment. Text that does not extend it is
+# appended as a dated interim block; only the newest few are kept (ponytail: fixed bounds, no setting).
+_INTERIM_RE = re.compile(r"\n\n\[Worker-Zwischenstand [^\]\n]*\]\n.*?\n\[/Worker-Zwischenstand\]", re.S)
+_INTERIM_START = "\n\n[Worker-Zwischenstand "
+_PARTIAL_MARK = "\n\nTeilstand (Worker, "  # same text as bach_tools._PARTIAL_STATE_MARK
+_INTERIM_KEEP, _INTERIM_MAX_CHARS = 5, 3000
+
+
+def _keep_assignment(current, new, now):
+    """(description, appended): ``new`` as is if it extends the assignment, else appended to ``current``."""
+    current, new = str(current or ""), str(new)
+    base = current
+    for mark in (_PARTIAL_MARK, _INTERIM_START):
+        base = base.split(mark, 1)[0]
+    if new.startswith(base.rstrip()):
+        return new, False
+    blocks = list(_INTERIM_RE.finditer(current))
+    for block in blocks[:max(0, len(blocks) - _INTERIM_KEEP + 1)]:
+        current = current.replace(block.group(0), "", 1)
+    stamp = now.strftime("%Y-%m-%d %H:%M")
+    return (f"{current}{_INTERIM_START}{stamp}]\n{new[:_INTERIM_MAX_CHARS]}\n[/Worker-Zwischenstand]", True)
 
 
 # Owners a worker may name for a subtask; anything else (e.g. a topic) leaves the child unpickable.
@@ -143,6 +167,11 @@ class WorkerLeaseBinding:
         # PB-1: a refused capability is a blocker, never a reason for a follow-up.
         self._capability_denials = set()
         self.before_return = None  # PB-14: controller hook run before every return
+        self._progress = False  # PB-1: a commit (or result) happened in this lease
+
+    def note_progress(self):
+        """A confirmed commit in the task tree: this lease did real work."""
+        self._progress = True
 
     @classmethod
     def acquire(cls, client, task_id, *, worker_id, host, generation, is_current,
@@ -1197,6 +1226,9 @@ class WorkerLeaseBinding:
     def _return_outcome(self, note):
         """The n-th identical task-scoped return blocks the task (PB-1, #3985)."""
         self._before_release(note)
+        if note == "worker_returned_open" and not self._progress:
+            # Handing a task back without a commit is a distinct, faster-blocking reason.
+            note = "worker_returned_open:no_progress"
         from hub._services.task_return_stats import block_reason_for_next_return
         try:
             reason = block_reason_for_next_return(self._client, self.task_id, note)
@@ -1566,6 +1598,10 @@ class WorkerLeaseBinding:
                 if set(args) - allowed - {"action", "task_id", "result"}:
                     raise WorkerTaskManageArgumentError("update_fields")
                 changes = {key: value for key, value in args.items() if key in allowed}
+                interim_appended = False
+                if isinstance(changes.get("description"), str):
+                    changes["description"], interim_appended = _keep_assignment(
+                        self._snapshot.get("description"), changes["description"], datetime.now())
                 if "result_max_chars" in changes:
                     value = changes["result_max_chars"]
                     if value is not None and (type(value) is not int or not 1 <= value <= 3000):
@@ -1602,8 +1638,13 @@ class WorkerLeaseBinding:
                     ack = self._operation(self._client.update, changes=changes)
                     self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
                     self._snapshot.update(changes)
-                return f"Task #{self.task_id} aktualisiert: {', '.join(changes)}"
+                return (f"Task #{self.task_id} aktualisiert: {', '.join(changes)}"
+                        + (" (Beschreibung ersetzt den Auftrag nicht; als Zwischenstand angehängt)"
+                           if interim_appended else ""))
             if action in {"decompose", "add"}:
+                if self._snapshot.get("creation_origin") == "worker":
+                    # PB-1 rotation fix: follow-ups of worker-made follow-ups only feed the cascade.
+                    raise WorkerTaskManageArgumentError("followup_depth_exceeded")
                 if action == "add":
                     fields = {"title", "description", "priority", "depends_on", "assigned_to",
                               "category", "required_model", "assigned_slot", "result_max_chars"}
@@ -1642,6 +1683,8 @@ class WorkerLeaseBinding:
                                       keep_denied=(action == "decompose"),
                                       soft=(action == "decompose"))
                 if action == "decompose":
+                    if ack.created_ids and not ack.reused_ids:
+                        self._progress = True  # new child tasks are real work; a bare `add` is not
                     self._decomposition_receipt = {
                         "task_id": self.task_id, "previous_version": previous_version,
                         "created_ids": tuple(ack.created_ids), "parent_closed": ack.parent_closed,

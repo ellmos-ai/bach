@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
     <script src="/static/js/device-fetch.js"></script>
+    <script src="/static/js/prompt-chat-draft.js?v=1"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BACH Prompt-Generator</title>
@@ -507,6 +508,11 @@
                             <span class="send-btn-label">Direkt Session</span>
                             <span class="send-btn-desc">Sofort starten</span>
                         </button>
+                        <button class="send-btn" id="btn-send-to-chat" onclick="sendToChat()">
+                            <span class="send-btn-icon">💬</span>
+                            <span class="send-btn-label">Web-Chat</span>
+                            <span class="send-btn-desc">Im Chat öffnen</span>
+                        </button>
                         <button class="send-btn" onclick="copyToClipboard()">
                             <span class="send-btn-icon">📋</span>
                             <span class="send-btn-label">Kopieren</span>
@@ -886,6 +892,21 @@
                 } else {
                     showToast(data.message || 'Session-Start fehlgeschlagen', 'error');
                 }
+            }
+        }
+
+        function sendToChat() {
+            const prompt = applyVariables();
+            if (!prompt.trim()) {
+                showToast('Bitte erst einen Prompt eingeben', 'error');
+                return;
+            }
+            if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
+                window.BachChatDraft.store(prompt);
+                showToast('Prompt an Web-Chat übergeben', 'success');
+                window.location.assign('/chat');
+            } else {
+                showToast('Chat-Draft-Helper nicht verfügbar', 'error');
             }
         }
 

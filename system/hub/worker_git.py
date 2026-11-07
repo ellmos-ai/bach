@@ -1353,6 +1353,10 @@ def _finish_task(
         )
         if res_commit.returncode != 0 and "nothing to commit" not in (res_commit.stdout or ""):
             return {"success": False, "error": "WIP-Commit nicht bestätigt"}
+        if res_commit.returncode == 0:
+            note_progress = getattr(worker_task_binding, "note_progress", None)
+            if callable(note_progress):
+                note_progress()  # PB-1: a real commit keeps the lease out of the no-progress count
         if not push:
             worker_task_binding.record_worktree_result(
                 int(task_id_str), result_annotation or f"[WIP] Stand lokal auf {branch_name} committet (ohne Push)",
