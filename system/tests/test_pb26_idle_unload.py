@@ -21,6 +21,7 @@ from hub._services.chat.chat_runtime import ChatRuntime
 from hub._services.llm.model_backend import OllamaBackend, OpenRouterBackend
 from system.tests.test_worker_backend_errors import _persistent_session_store
 
+REAL_UNLOAD = OllamaBackend.unload  # conftest stubs it per test; these tests mock HTTP instead
 MODEL = "qwen3.8:27b-mlx"
 WAITING = {  # a verified empty-queue observation (schema bach.worker-queue.v1)
     "schema": "bach.worker-queue.v1", "state": "waiting", "reason": "empty_queue",
@@ -50,6 +51,7 @@ def ollama(monkeypatch):
     monkeypatch.setattr(httpx, "Client", lambda **kw: real_sync(transport=httpx.MockTransport(reply), **kw))
     monkeypatch.setattr(httpx, "AsyncClient",
                         lambda **kw: real_async(transport=httpx.MockTransport(reply), **kw))
+    monkeypatch.setattr(OllamaBackend, "unload", REAL_UNLOAD)
     return events
 
 

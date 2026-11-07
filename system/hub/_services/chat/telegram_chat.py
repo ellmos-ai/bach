@@ -321,6 +321,7 @@ class _WorkerControl:
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
+    idle_model_unloaded: bool = False  # PB-26: one keep_alive 0 per idle period
     lease_supervisor: Any = None
     supports_step_actions: bool = False
     run_receipt_fields: Optional[Dict[str, Any]] = None
@@ -1246,6 +1247,31 @@ def _task_divider_available():
         )
     except Exception:
         return True
+
+
+def _unload_idle_worker_model(control, backend, model):
+    """PB-26 (Lukas 07.11.2026): no claimable task left -> unload the local model once.
+
+    While the queue has work the model stays resident. Only a verified
+    "waiting" observation of the real selector counts as empty; an unread or
+    failed queue keeps the status quo. The next acquired task re-arms this and
+    its model call loads the model again through the normal reserve gate.
+    """
+    from hub._services.chat.worker_queue_status import project_queue_status
+    from hub._services.llm.model_backend import OllamaBackend
+    if control.idle_model_unloaded or not isinstance(backend, OllamaBackend):
+        return
+    report = project_queue_status(control.queue_status)
+    if report is None or report["state"] != "waiting":
+        return
+    if (not isinstance(model, str) or not model.strip()
+            or model.rsplit(":", 1)[-1].lower().endswith("cloud")):
+        return  # cloud models hold no local memory
+    # ponytail: unloads the shared model even if the chat or another local worker
+    # still uses it; that caller reloads once. Per-model usage count if that bites.
+    control.idle_model_unloaded = True
+    unloaded = backend.unload(model)
+    log.info("idle_model_unload worker_id=%s model=%s ok=%s", control.worker_id, model, unloaded)
 
 
 def _acquire_worker_task(control, slot, physical_worker_id):
@@ -6249,6 +6275,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             queue_waiting_activity,
                         )
                         waiting_activity = queue_waiting_activity(control.queue_status)
+                        _unload_idle_worker_model(control, target_backend, model)
                         if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": waiting_activity})
                             return
@@ -6257,6 +6284,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             break
                         continue
                     newly_acquired_binding = control.task_binding
+                    control.idle_model_unloaded = False  # work again: the next empty queue unloads
                     if (control.model_request_budget is not None
                             and control.task_binding.task_id != control.model_request_budget.task_id):
                         raise RuntimeError("budget_fixed_task_conflict")

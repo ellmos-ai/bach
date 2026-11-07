@@ -153,6 +153,18 @@ class OllamaBackend(ModelBackend):
         """Return the same context cap that is sent to Ollama as ``num_ctx``."""
         return self.num_ctx
 
+    def unload(self, model: str | None = None, timeout: float = 5.0) -> bool:
+        """Entlädt das Modell sofort (keep_alive 0); der nächste Aufruf lädt es neu."""
+        import httpx
+
+        try:
+            with httpx.Client(timeout=timeout, trust_env=False) as client:
+                response = client.post(f"{self.base_url}/api/generate",
+                                       json={"model": model or self.default_model, "keep_alive": 0})
+            return response.is_success
+        except httpx.HTTPError:
+            return False
+
     async def _lebt(self, client, model: str) -> bool:
         """Prüfe billig, ob Ollama und das ausgewählte Modell noch leben."""
         try:
