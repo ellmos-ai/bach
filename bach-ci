@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Lokaler CI-Einstieg „bach-ci“ – führt die Repo-CI-Gatter lokal aus.
+
+Task #3918 – Ablageort und Typ wurden abgeleitet, da keine explizite
+Spezifikation auffindbar war (completion_contract_json=None, Vorlauftexte
+ohne Treffer). Vorbild sind die GitHub-Workflows des Repos:
+
+- .github/workflows/module_gate.yml: einziger Required Check auf main,
+  ruft .github/workflows/module_gate_check.py auf.
+- .github/workflows/tests.yml: pytest-Aufrufe mit den Flags
+  ``-B -m pytest -q -p no:cacheprovider --timeout=120``.
+
+Der Wrapper ist bewusst dünn gehalten (analog zum Root-Wrapper bach.py):
+Er reproduziert die komplette CI-Dateiliste aus tests.yml NICHT lokal,
+weil das zu fragil wäre; Details der vollen Testsuite stehen in
+.github/workflows/tests.yml. Lokal laufen nur die zwei stabilen Gatter:
+Modul-Gate und die pytest-Suite unter system/tests.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent
+
+
+def run_gate() -> int:
+    """Modul-Gate analog .github/workflows/module_gate.yml ausführen."""
+    result = subprocess.run(
+        [sys.executable, ".github/workflows/module_gate_check.py"],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    return result.returncode
+
+
+def run_pytest() -> int:
+    """Lokale pytest-Suite (Flags analog .github/workflows/tests.yml)."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "system/tests",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    return result.returncode
+
+
+def main() -> int:
+    """Beide Gatter nacheinander ausführen und Exit-Codes sammeln."""
+    exit_code = 0
+    steps = (("Modul-Gate", run_gate), ("Pytest-Suite", run_pytest))
+    for name, step in steps:
+        print(f"== bach-ci: {name} ==")
+        code = step()
+        if code != 0:
+            print(f"bach-ci: {name} schlug fehl (Exit-Code {code}).")
+            exit_code = code
+    if exit_code == 0:
+        print("bach-ci: Alle Gatter bestanden.")
+    else:
+        print("bach-ci: Mindestens ein Gatter ist fehlgeschlagen.")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
