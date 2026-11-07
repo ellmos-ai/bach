@@ -52,6 +52,9 @@ def parse_semver(ver: str) -> Tuple[int, int, int]:
     return (nums[0], nums[1], nums[2])
 
 
+_MODULES_UPDATE_CACHE: Dict[str, Any] = {"data": None, "timestamp": 0.0}
+
+
 class ModulesHandler(BaseHandler):
     """Handler für Modul-Paketverwaltung und Modularer Core Lifecycle."""
 
@@ -102,6 +105,7 @@ class ModulesHandler(BaseHandler):
             "list": "Alle installierten Module in .MODULES auflisten",
             "status": "Modularisierungs- und Hot-Wiring-Status anzeigen",
             "check": "Integrität und Manifeste validieren (bach modules check [name])",
+            "check-updates": "Auf verfügbare neuere Modulversionen prüfen",
             "install": "Modul aus Pfad oder ZIP installieren (bach modules install <path|zip>)",
             "update": "Module auf neueste Versionen aktualisieren (bach modules update [--dry-run])",
             "export": "Modul als Standalone-Paket exportieren (bach modules export <name>)",
@@ -120,6 +124,8 @@ class ModulesHandler(BaseHandler):
         elif op == "check":
             target = args[0] if args else None
             return self._check_modules(target)
+        elif op in ("check-updates", "update-check", "check_updates"):
+            return self._check_updates_cli()
         elif op == "install":
             if not args:
                 return False, "Fehler: Pfad oder ZIP-Datei erforderlich: bach modules install <pfad_oder_zip>"
@@ -370,6 +376,80 @@ class ModulesHandler(BaseHandler):
             f"Hot-Wiring ausgeführt ({wire_report['total_switched']} Module verdrahtet)."
         )
 
+    def check_for_updates(self, cache_ttl_sec: int = 60) -> Dict[str, Any]:
+        """Prüft Quellpfade auf verfügbare neuere Modulversionen (mit Caching)."""
+        global _MODULES_UPDATE_CACHE
+        now = time.time()
+        if _MODULES_UPDATE_CACHE["data"] is not None and (now - _MODULES_UPDATE_CACHE["timestamp"]) < cache_ttl_sec:
+            cached_res = dict(_MODULES_UPDATE_CACHE["data"])
+            cached_res["cached"] = True
+            return cached_res
+
+        installed = {m["name"]: m for m in self.get_modules_data()}
+        source_dirs = self._resolve_source_dirs()
+        updates_found: List[Dict[str, Any]] = []
+
+        for s_dir in source_dirs:
+            if not s_dir.is_dir():
+                continue
+            try:
+                for cand in s_dir.iterdir():
+                    if not cand.is_dir():
+                        continue
+                    m_file = cand / "manifest.json"
+                    if not m_file.is_file():
+                        continue
+                    try:
+                        meta = json.loads(m_file.read_text(encoding="utf-8"))
+                        c_name = meta.get("name")
+                        c_ver = meta.get("version", "1.0.0")
+                        if c_name in installed:
+                            cur_ver = installed[c_name]["version"]
+                            if parse_semver(c_ver) > parse_semver(cur_ver):
+                                updates_found.append({
+                                    "name": c_name,
+                                    "current_version": cur_ver,
+                                    "new_version": c_ver,
+                                    "source": str(cand),
+                                })
+                    except Exception:
+                        pass
+            except OSError:
+                pass
+
+        result = {
+            "schema": "bach.modules-update-check.v1",
+            "has_updates": len(updates_found) > 0,
+            "updates_count": len(updates_found),
+            "updates": updates_found,
+            "checked_sources": [str(d) for d in source_dirs],
+            "total_installed": len(installed),
+            "timestamp": now,
+            "cached": False,
+        }
+        _MODULES_UPDATE_CACHE["data"] = result
+        _MODULES_UPDATE_CACHE["timestamp"] = now
+        return result
+
+    def _check_updates_cli(self) -> Tuple[bool, str]:
+        res = self.check_for_updates(cache_ttl_sec=0)
+        lines = [
+            "=== MODUL-UPDATE-CHECK ===",
+            f"Installierte Module: {res['total_installed']}",
+            f"Geprüfte Quellen:   {len(res['checked_sources'])}",
+            "",
+        ]
+        if not res["has_updates"]:
+            lines.append("[INFO] Keine Modul-Updates verfügbar. Alle Module sind auf dem neuesten Stand.")
+            return True, "\n".join(lines)
+
+        lines.append(f"Verfügbare Updates ({res['updates_count']}):")
+        for u in res["updates"]:
+            lines.append(f"  • {u['name']:<24} v{u['current_version']} -> v{u['new_version']} (Quelle: {u['source']})")
+        lines.append("")
+        lines.append("Führe 'bach modules update' aus, um alle Updates zu installieren.")
+        return True, "\n".join(lines)
+
     def _update_modules(self, dry_run: bool = False) -> Tuple[bool, str]:
         """Sucht nach neueren Modulversionen in allen Quellpfaden und aktualisiert sie."""
         installed = {m["name"]: m for m in self.get_modules_data()}
@@ -428,6 +508,8 @@ class ModulesHandler(BaseHandler):
                 shutil.copytree(upd["source_path"], tgt)
 
         if not dry_run:
+            global _MODULES_UPDATE_CACHE
+            _MODULES_UPDATE_CACHE = {"data": None, "timestamp": 0.0}
             invalidate_module_cache()
             wire_res = auto_switch_to_standalone_modules()
             lines.append("")

@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-11-03 | **Version:** 4.4.4 (`v3.15.0-ocean-stack-m4`) | **Review:** 2026-11-03 (Modularisierungs-Export, Re-Import Hot-Wiring & Web-Chat Audio-STT)
+**Stand:** 2026-11-07 | **Version:** 4.4.5 (`v3.15.0-ocean-stack-m5`) | **Review:** 2026-11-07 (Modularer Core Export: plugins/hooks/memory, Auto-Update-Check & Tray-Notification)
 
 ## SOLL/IST-Übersicht der Meilenstein-Linie (Stand 2026-11-02)
 
@@ -86,6 +86,41 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-11-07 (Früh-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **Modularer Core: Export Dienstgruppe (plugins, hooks, memory) als autarke Standalone-Module (Task #-39, Erledigt):**
+  - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
+    - `plugins` (`.MODULES/plugins/`): Eigenständige Plugin-Registry, Manifest-Inspektion (`plugin.json`), Lifecycle (load, unload, enable, disable), Trust-Level-Management (`untrusted`, `standard`, `trusted`, `core`) und Capability-Auditing.
+    - `hooks` (`.MODULES/hooks/`): Priorisiertes Event-Hook- und Dispatcher-Framework, Once-Listener mit Auto-Cleanup, fehlertolerante Callback-Ausführung mit Signatur-Erkennung und Ausführungs-Auditlog.
+    - `memory` (`.MODULES/memory/`): Episodisches & Working Memory, Facts-Speicher mit Konfidenzen, Sessions-Protokoll mit Zeitmessung, TTL-Decay-Bereinigung (`cleanup_expired`), Keyword-Suche sowie Daten-Export/Import.
+  - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_plugins_module()`, `load_hooks_module()`, `load_memory_module()` angebunden und registriert.
+  - Standalone-Zähler in `ocean_modularized_services_status()` auf **27/27 gebundene Module** erweitert (**100.0% autarker Standalone-Betrieb**).
+  - 9/9 Modultests in `.MODULES/*/tests/` und `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - Task #-39 als erledigt gebucht.
+
+- **Modularer Core & Tray/GUI: Automatischer Update-Check & Live-Indikator (Task #-38, Erledigt):**
+  - Caching & Update-Check Engine in `system/hub/modules.py`:
+    - `check_for_updates(cache_ttl_sec=60)`: Automatischer Quellpfad-Scan mit SemVer-Vergleich und Timestamp-Caching gegen Disk-Thrashing.
+    - Neue CLI-Operation `bach modules check-updates` implementiert.
+  - Web-GUI (`system/gui/server.py` & `system/gui/templates/index.html`):
+    - Neuer Endpunkt `GET /api/modules/update-check` hinzugefügt und in `AUTH_EXEMPT_PREFIXES` eingetragen.
+    - Dashboard: Neuer Live-Badge `#modules-update-badge` mit animiertem Puls und dynamischer Erkennung verfügbarer Updates bei Seitenaufruf und Polling.
+  - Tray-App (`system/hub/_services/chat/chat_tray.py`):
+    - Periodische Hintergrundprüfung auf Modul-Updates (`_check_module_updates`) in der Refresh-Schleife.
+    - Benachrichtigung (System-Toast) bei neu erkannten Modul-Updates.
+    - Menü-Erweiterung: Dynamischer Menüeintrag `⚡ Modul-Updates (X verfügbar)` mit 1-Click Aktualisierung (`_trigger_modules_update_action`).
+    - Neuer CLI-Schalter `--smoke-modules` für Headless-Validierung integriert.
+    - PromptBoard Start-Resilienz erweitert: `_open_promptboard` unterstützt nun auch Python-Skripte (`src/promptboard.py`) als Startziel neben `.exe`/`.bat`/`.msix`.
+  - Testabdeckung: 8/8 Tests in `system/tests/test_modules_handler.py` grün.
+  - Task #-38 als erledigt gebucht.
+
+- **Neue Folge-Aufgaben angelegt:**
+  - `Task #-40`: Modularer Core: Export Dienstgruppe (skills, tools, agents) als autarke Standalone-Module (P3, infrastructure)
+  - `Task #-41`: GUI & Tray: PromptBoard Quick-Insert & Favoriten-Synchronisation (Direktes Einfügen von Prompts in aktive Eingabefelder aus der Tray) (P3, gui)
+  - `Task #-42`: Modularer Core: Auto-Update Background-Runner (bach update modules scheduler zur automatisierten Hintergrundaktualisierung) (P3, core)
 
 ## Review 2026-11-05 (Mittags-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
 

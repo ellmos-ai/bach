@@ -1,0 +1,31 @@
+{
+  "name": "plugins",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BACH Standalone Module: selfcontained plugin discovery, manifest inspection, lifecycle management, and capability auditing",
+  "author": "BACH Team",
+  "created_at": "2026-11-07T04:35:00.000000",
+  "selfcontained": true,
+  "entrypoints": {
+    "library": "src/plugins.py"
+  },
+  "boundaries": {
+    "data": "user-local",
+    "network": "none",
+    "platforms": [
+      "windows",
+      "macos",
+      "linux"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "BACH",
+      "minimum_version": "3.15.0"
+    },
+    {
+      "name": "Ocean",
+      "minimum_version": "1.0.0"
+    }
+  ]
+}

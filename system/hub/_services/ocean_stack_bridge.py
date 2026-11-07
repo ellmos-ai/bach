@@ -827,6 +827,18 @@ def load_scheduler_module() -> Any:
     return get_service_or_standalone("scheduler", fallback_import="hub.scheduler")
 
 
+def load_plugins_module() -> Any:
+    return get_service_or_standalone("plugins", fallback_import="hub.plugins")
+
+
+def load_hooks_module() -> Any:
+    return get_service_or_standalone("hooks", fallback_import="hub.hooks")
+
+
+def load_memory_module() -> Any:
+    return get_service_or_standalone("memory", fallback_import="hub.mem")
+
+
 def detect_legacy_in_tree_services() -> dict[str, Any]:
     """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
     bach_root = Path(__file__).resolve().parents[3]
@@ -870,6 +882,10 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
         "session": "session",
         "cache": "cache",
         "scheduler": "scheduler",
+        "plugins": "plugins",
+        "hooks": "hooks",
+        "mem": "memory",
+        "memory": "memory",
     }
 
     in_tree_services: list[dict[str, Any]] = []
@@ -963,6 +979,9 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "session": ("session", load_session_module),
         "cache": ("cache", load_cache_module),
         "scheduler": ("scheduler", load_scheduler_module),
+        "plugins": ("plugins", load_plugins_module),
+        "hooks": ("hooks", load_hooks_module),
+        "memory": ("memory", load_memory_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():

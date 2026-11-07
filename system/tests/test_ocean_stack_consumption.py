@@ -307,6 +307,9 @@ def test_modularized_services_and_hot_wiring():
         load_session_module,
         load_cache_module,
         load_scheduler_module,
+        load_plugins_module,
+        load_hooks_module,
+        load_memory_module,
         detect_legacy_in_tree_services,
         auto_switch_to_standalone_modules,
         get_service_or_standalone,
@@ -389,6 +392,18 @@ def test_modularized_services_and_hot_wiring():
     assert mod_sched is not None
     assert hasattr(mod_sched, "JobScheduler")
 
+    mod_plug = load_plugins_module()
+    assert mod_plug is not None
+    assert hasattr(mod_plug, "PluginRegistry")
+
+    mod_hook = load_hooks_module()
+    assert mod_hook is not None
+    assert hasattr(mod_hook, "HookRegistry")
+
+    mod_mem = load_memory_module()
+    assert mod_mem is not None
+    assert hasattr(mod_mem, "MemoryStore")
+
     # Dynamic service resolver test
     dyn_dw = get_service_or_standalone("domain_writer_gate")
     assert dyn_dw is not None
@@ -432,6 +447,9 @@ def test_modularized_services_and_hot_wiring():
         "session",
         "cache",
         "scheduler",
+        "plugins",
+        "hooks",
+        "memory",
     ):
         assert s_name in status
         assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
@@ -464,6 +482,9 @@ def test_modularized_services_and_hot_wiring():
         "session",
         "cache",
         "scheduler",
+        "plugins",
+        "hooks",
+        "memory",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True
 

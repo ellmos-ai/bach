@@ -1753,6 +1753,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/robotics/telemetry",
         "/api/modules/status",
         "/api/modules/sync",
+        "/api/modules/update-check",
+        "/api/modules/list",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -2374,6 +2376,18 @@ async def get_modules_list():
         from hub.modules import ModulesHandler
         handler = ModulesHandler(BACH_DIR)
         return {"status": "ok", "modules": handler.get_modules_data()}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/update-check")
+async def get_modules_update_check():
+    """Check for available updates for standalone modules in .MODULES/."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        check = handler.check_for_updates()
+        return {"status": "ok", **check}
     except Exception as exc:
         return {"status": "error", "error": public_error_message()}
 

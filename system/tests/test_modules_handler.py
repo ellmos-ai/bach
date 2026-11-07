@@ -40,6 +40,7 @@ def test_modules_handler_basics():
     assert "list" in ops
     assert "status" in ops
     assert "check" in ops
+    assert "check-updates" in ops
     assert "install" in ops
     assert "update" in ops
     assert "export" in ops
@@ -56,6 +57,9 @@ def test_modules_list_and_status():
     assert "session" in msg_list
     assert "cache" in msg_list
     assert "scheduler" in msg_list
+    assert "plugins" in msg_list
+    assert "hooks" in msg_list
+    assert "memory" in msg_list
 
     ok_status, msg_status = handler.handle("status")
     assert ok_status is True
@@ -64,8 +68,8 @@ def test_modules_list_and_status():
 
     status_data = handler.get_status_data()
     assert status_data["schema"] == "bach.modules-status.v1"
-    assert status_data["modularized_services_total"] >= 24
-    assert status_data["standalone_bound_count"] >= 24
+    assert status_data["modularized_services_total"] >= 27
+    assert status_data["standalone_bound_count"] >= 27
     assert status_data["coverage_percent"] == 100.0
 
 
@@ -122,18 +126,39 @@ def test_modules_wire_and_update_dry_run():
     assert "MODUL-UPDATE-SCAN" in msg_upd
 
 
+def test_modules_check_for_updates():
+    system_root = Path(__file__).parent.parent
+    handler = ModulesHandler(system_root)
+
+    check = handler.check_for_updates(cache_ttl_sec=0)
+    assert check["schema"] == "bach.modules-update-check.v1"
+    assert "has_updates" in check
+    assert "updates_count" in check
+    assert check["total_installed"] >= 27
+
+    ok_cli, msg_cli = handler.handle("check-updates")
+    assert ok_cli is True
+    assert "MODUL-UPDATE-CHECK" in msg_cli
+
+
 def test_gui_api_modules_endpoints(client):
     res_list = client.get("/api/modules/list")
     assert res_list.status_code == 200
     data_list = res_list.json()
     assert data_list["status"] == "ok"
-    assert len(data_list["modules"]) >= 24
+    assert len(data_list["modules"]) >= 27
 
     res_status = client.get("/api/modules/status")
     assert res_status.status_code == 200
     data_status = res_status.json()
     assert data_status["status"] == "ok"
-    assert data_status["standalone_count"] >= 24
+    assert data_status["standalone_count"] >= 27
+
+    res_upd_chk = client.get("/api/modules/update-check")
+    assert res_upd_chk.status_code == 200
+    data_upd_chk = res_upd_chk.json()
+    assert data_upd_chk["status"] == "ok"
+    assert "has_updates" in data_upd_chk
 
     res_wire = client.post("/api/modules/wire")
     assert res_wire.status_code == 200
