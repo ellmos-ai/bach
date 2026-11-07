@@ -694,6 +694,13 @@ def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any], *, selec
             return "pickup_priority"
 
     raw_tags = task.get("tags") or []
+    if isinstance(raw_tags, str) and raw_tags.lstrip().startswith("["):
+        # The native write path (task_audit.normalize_task_tags) stores a JSON
+        # array; comma-splitting it made every exclude tag ineffective (PB-1).
+        try:
+            raw_tags = json.loads(raw_tags)
+        except ValueError:
+            raw_tags = []
     if isinstance(raw_tags, str):
         task_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
     elif isinstance(raw_tags, (list, tuple, set)):

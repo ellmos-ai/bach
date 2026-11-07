@@ -1774,7 +1774,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                          or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
                 response = await call_next(request)
                 if (request.method == "GET"
-                        and (path in self.PUBLIC_PAGE_PATHS or path in ("/device-fetch.js", "/static/js/device-fetch.js"))
+                        # Nur echte Browser-Navigationen mint eine Sitzung; Unterressourcen (device-fetch.js)
+                        # und cookielose Nicht-Browser-Clients (Probes, curl) hinterliessen sonst je Aufruf eine Zeile.
+                        and path in self.PUBLIC_PAGE_PATHS
+                        and request.headers.get("sec-fetch-dest") == "document"
                         and _hostname(request.headers.get("host", "")) in LOOPBACK_HOSTS
                         and request.cookies.get("bach_manual_logout") != "1"):
                     existing_cookie = request.cookies.get("bach_device_token", "").strip()
@@ -2035,6 +2038,8 @@ try:
     app.include_router(prompt_router)
     from gui.api.task_assignment import router as task_assignment_router
     app.include_router(task_assignment_router)
+    from gui.api.task_returns import router as task_returns_router
+    app.include_router(task_returns_router)
     from gui.api.governance_registry import router as governance_registry_router
     app.include_router(governance_registry_router)
     from gui.api.catalog_projection import router as catalog_projection_router
@@ -2357,6 +2362,41 @@ async def trigger_modules_sync():
         return {"status": "error", "error": public_error_message()}
 
 
+@app.get("/api/modules/list")
+async def get_modules_list():
+    """Return list of all standalone modules in .MODULES/ with metadata."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {"status": "ok", "modules": handler.get_modules_data()}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/update")
+async def trigger_modules_update(dry_run: bool = False):
+    """Trigger check and update of modules from available source repos."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("update", dry_run=dry_run)
+        return {"status": "ok" if ok else "error", "message": msg, "dry_run": dry_run}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/wire")
+async def trigger_modules_wire():
+    """Trigger hot-wiring of all available standalone modules."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("wire")
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
 
 # ═══════════════════════════════════════════════════════════════
 
@@ -2490,7 +2530,7 @@ async def api_get_tasks(
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
         if status and status.lower() == "nonterminal":
-            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate', 'archived')"
         elif status and status.lower() != "all":
             requested = [s.strip().lower() for s in status.split(",") if s.strip()]
             normalized = set()
@@ -11860,6 +11900,14 @@ async def delete_prompt_library_entry(prompt_id: int):
         conn.close()
 
 
+def _prompt_import_connection():
+    """Keep infrastructure failures distinct from invalid uploaded libraries."""
+    try:
+        return get_bach_db()
+    except (OSError, sqlite3.Error):
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
+
+
 @app.get("/api/prompt-library/import-promptboard/preview")
 async def preview_promptboard_library():
     """Preview PromptBoard import items and counts without changing the database."""
@@ -11869,7 +11917,9 @@ async def preview_promptboard_library():
     if library_path is None:
         raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path, dry_run=True)
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path, dry_run=True)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
@@ -11883,7 +11933,9 @@ async def import_promptboard_library():
     if library_path is None:
         raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path)
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
@@ -11897,12 +11949,14 @@ async def preview_prompt_json_upload(req: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
     try:
-        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
         payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
         res = handler.import_promptboard(payload=payload, dry_run=True)
         if isinstance(body, dict) and "filename" in body:
             res["source"] = str(body["filename"])
         return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
 
@@ -11916,12 +11970,14 @@ async def import_prompt_json_upload(req: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
     try:
-        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
         payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
         res = handler.import_promptboard(payload=payload, dry_run=False)
         if isinstance(body, dict) and "filename" in body:
             res["source"] = str(body["filename"])
         return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
 
@@ -11952,6 +12008,52 @@ async def export_promptboard_library(req: Request = None):
         )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard-Export fehlgeschlagen: {exc}") from exc
+
+
+@app.get("/api/prompt-library/sync-promptboard/preview")
+async def preview_sync_promptboard_library():
+    """Preview PromptBoard two-way synchronization counts without changing the database or library."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    library_path = next((p for p in candidates if p.exists()), None)
+    if library_path is None and candidates:
+        library_path = candidates[0]
+    if library_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(library_path, dry_run=True)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync Vorschau fehlgeschlagen: {exc}") from exc
+
+
+@app.post("/api/prompt-library/sync-promptboard")
+async def sync_promptboard_library(req: Request = None):
+    """Bidirectionally synchronize prompt templates between BACH and PromptBoard library.json."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    target_path = next((p for p in candidates if p.exists()), None)
+    if target_path is None and candidates:
+        target_path = candidates[0]
+    category = None
+    dry_run = False
+    if req is not None:
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                category = body.get("category")
+                dry_run = bool(body.get("dry_run", False))
+                if body.get("target_path"):
+                    target_path = Path(body["target_path"])
+        except Exception:
+            pass
+    if target_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(
+            target_path, category=category, dry_run=dry_run
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync fehlgeschlagen: {exc}") from exc
 
 
 @app.get("/api/prompt-generator/templates")
@@ -16727,6 +16829,8 @@ async def get_workflow_content(path: str):
 _CAPABILITY_PERMISSIONS_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "capability_permissions.json"
 _CAPABILITY_PERMISSIONS_LOCK = threading.RLock()
 _TALK_SESSION_SINGLETON = None
+# Persisted E-Stop of the robotics hub: every request builds a fresh hub, so the stop must live on disk.
+_ROBOTICS_ESTOP_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "robotics_estop.json"
 
 
 def _load_capability_permissions() -> dict[str, bool]:
@@ -16807,6 +16911,28 @@ _TALK_PERSONA_SYSTEM_PROMPTS = {
 }
 
 
+def _strip_talk_control_tags(text: str) -> str:
+    """Remove both well-formed and truncated <talk_control ...> tags from spoken text."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"<talk_control\b[^>]*/>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^>]*>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^\n]*", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _infer_talk_control_tag(spoken: str) -> str:
+    """Synthesize a well-formed <talk_control ... /> directive from spoken content."""
+    lower = spoken.lower()
+    if "?" in spoken:
+        return '<talk_control {"emotion": "curious", "pattern": "rings", "emoji_overlay": "✨"} />'
+    if any(w in lower for w in ("achtung", "warnung", "fehler", "problem", "warning", "error")):
+        return '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "⚠️"} />'
+    if any(w in lower for w in ("super", "klasse", "perfekt", "gerne", "freut", "great", "glad")):
+        return '<talk_control {"emotion": "joyful", "pattern": "orb", "emoji_overlay": "😊"} />'
+    return '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} />'
+
+
 def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str = "de") -> str:
     """Route ELLMOS Talk turns to a live LLM (Ollama fast path or BACH Chat-Control API)."""
     norm_persona = (persona or "buddha").strip().lower()
@@ -16827,13 +16953,16 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
     sys_instruction = (
         f"{role_intro} {lang_hint} "
         "WICHTIG für das Funkgerät: Antworte natürlich, direkt und gesprochen-prägnant in 1 bis maximal 3 kurzen Sätzen "
-        "(ohne Markdown-Tabellen, ohne Codeblöcke, ideal zum direkten Vorlesen per Sprachausgabe). "
-        "Beginne deine Antwort optional mit genau einem Steuer-Tag im Format "
-        '<talk_control {"emotion": "calm|curious|joyful|focused|empathetic|alert", "pattern": "orb|wave|rings|constellation|pulse", "emoji_overlay": "🎙️"} /> '
-        "passend zur Stimmung deiner Antwort."
+        "(reiner Fließtext zum direkten Vorlesen per Sprachausgabe, ohne XML/HTML-Tags, ohne Markdown-Tabellen, ohne Codeblöcke)."
     )
 
-    history = _TALK_HISTORY.setdefault(norm_persona, [])
+    raw_history = _TALK_HISTORY.setdefault(norm_persona, [])
+    history = [
+        {"role": h.get("role", "user"), "content": _strip_talk_control_tags(str(h.get("content") or ""))}
+        for h in raw_history
+        if _strip_talk_control_tags(str(h.get("content") or ""))
+    ]
+    _TALK_HISTORY[norm_persona] = history
     messages = [{"role": "system", "content": sys_instruction}]
     messages.extend(history[-6:])
     messages.append({"role": "user", "content": prompt})
@@ -16843,7 +16972,7 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
     # 1. Fast path: local Ollama /api/chat (no multi-round tool loop latency)
     ollama_base = os.environ.get("BACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
     try:
-        with httpx.Client(timeout=18.0) as client:
+        with httpx.Client(timeout=90.0) as client:
             tags_resp = client.get(f"{ollama_base}/api/tags")
             if tags_resp.status_code == 200:
                 installed = [
@@ -16851,30 +16980,47 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                     for m in (tags_resp.json().get("models") or [])
                     if isinstance(m, dict) and m.get("name")
                 ]
+                configured_primary = ""
+                if _TALK_SESSION_SINGLETON is not None:
+                    configured_primary = str(getattr(_TALK_SESSION_SINGLETON.state, "primary_model", "") or "").strip()
                 preferred_order = [
-                    "glm-5.3-flash:cloud",
-                    "kimi-k2.7-code:cloud",
-                    "deepseek-v4.1-flash:cloud",
-                    "gemma4:e2b",
-                    "qwen3.8:27b-mlx",
-                    "qwen3.8:27b-q4_K_M",
+                    m
+                    for m in [
+                        configured_primary,
+                        "qwen3.8:27b-mlx",
+                        "gpt-oss:120b-cloud",
+                        "qwen3:1.7b",
+                    ]
+                    if m
                 ]
-                chosen_model = next((m for m in preferred_order if m in installed), installed[0] if installed else "")
-                if chosen_model:
-                    chat_resp = client.post(
-                        f"{ollama_base}/api/chat",
-                        json={
-                            "model": chosen_model,
-                            "stream": False,
-                            "messages": messages,
-                            "options": {"num_predict": 220, "temperature": 0.5},
-                        },
-                    )
-                    if chat_resp.status_code == 200:
-                        msg_obj = chat_resp.json().get("message") or {}
-                        content = str(msg_obj.get("content") or "").strip()
-                        if content:
-                            reply_text = content
+                candidates: list[str] = []
+                for m in preferred_order + installed:
+                    if m in installed and m not in candidates and "smollm2" not in m:
+                        candidates.append(m)
+                for chosen_model in candidates[:3]:
+                    try:
+                        think_param: bool | str = "low" if "gpt-oss" in chosen_model.lower() else False
+                        chat_resp = client.post(
+                            f"{ollama_base}/api/chat",
+                            json={
+                                "model": chosen_model,
+                                "stream": False,
+                                "think": think_param,
+                                "messages": messages,
+                                "options": {"num_predict": 800, "temperature": 0.5},
+                            },
+                        )
+                        if chat_resp.status_code == 200:
+                            msg_obj = chat_resp.json().get("message") or {}
+                            content = str(msg_obj.get("content") or "").strip()
+                            if "<think>" in content:
+                                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                            content = _strip_talk_control_tags(content)
+                            if len(content) >= 2:
+                                reply_text = content
+                                break
+                    except Exception:
+                        continue
     except Exception:
         pass
 
@@ -16897,23 +17043,21 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                     )
                     if ctrl_resp.status_code == 200:
                         payload = ctrl_resp.json()
-                        ans = str(payload.get("answer") or payload.get("response") or "").strip()
-                        if ans:
+                        ans = _strip_talk_control_tags(str(payload.get("answer") or payload.get("response") or ""))
+                        if len(ans) >= 2:
                             reply_text = ans
             except Exception:
                 pass
 
     if reply_text:
-        if "<talk_control" not in reply_text:
-            reply_text = (
-                '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} /> '
-                + reply_text
-            )
         history.append({"role": "user", "content": prompt})
         history.append({"role": "assistant", "content": reply_text})
         if len(history) > 12:
             del history[:-12]
-        return reply_text
+        from hub._services.chat.talk_history import record_talk_turn
+        record_talk_turn(norm_persona, prompt, reply_text)  # PB-2: Talk-Verlauf erscheint in der Verlaufsliste
+        ctrl_tag = _infer_talk_control_tag(reply_text)
+        return f"{ctrl_tag} {reply_text}"
 
     if norm_lang == "en":
         return (
@@ -17012,8 +17156,64 @@ async def api_update_capability_permissions(payload: dict = Body(...)):
 _VOICE_IO_SINGLETON = None
 
 
+def _ensure_audio_tools_path() -> None:
+    cur_path = os.environ.get("PATH", "")
+    for extra in ("/opt/homebrew/bin", "/usr/local/bin"):
+        if extra not in cur_path and os.path.isdir(extra):
+            cur_path = f"{extra}{os.pathsep}{cur_path}" if cur_path else extra
+    os.environ["PATH"] = cur_path
+
+
+def _synthesize_os_native_wav(text: str, language: str = "de") -> tuple[bytes, str] | None:
+    """Synthesize speech to WAV using OS-native engines (macOS /usr/bin/say or Windows SAPI)."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    clean_text = re.sub(r"<talk_control[^>]*/>", "", text or "").strip()
+    if not clean_text:
+        clean_text = text.strip()
+    if not clean_text:
+        return None
+
+    if sys.platform == "darwin":
+        say_bin = shutil.which("say") or ("/usr/bin/say" if os.path.isfile("/usr/bin/say") else None)
+        if say_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                cmd = [say_bin, "-o", str(out_wav), "--data-format=LEI16@22050", clean_text]
+                try:
+                    subprocess.run(cmd, check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "macos-say"
+                except Exception:
+                    pass
+    elif sys.platform == "win32":
+        ps_bin = shutil.which("powershell") or shutil.which("pwsh")
+        if ps_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                escaped_text = clean_text.replace("'", "''")
+                escaped_path = str(out_wav).replace("'", "''")
+                ps_script = (
+                    "Add-Type -AssemblyName System.Speech; "
+                    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                    f"$s.SetOutputToWaveFile('{escaped_path}'); "
+                    f"$s.Speak('{escaped_text}'); "
+                    "$s.Dispose();"
+                )
+                try:
+                    subprocess.run([ps_bin, "-NoProfile", "-Command", ps_script], check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "windows-sapi"
+                except Exception:
+                    pass
+    return None
+
+
 def _get_voice_io_service():
     global _VOICE_IO_SINGLETON
+    _ensure_audio_tools_path()
     if _VOICE_IO_SINGLETON is None:
         from hub._services.ocean_stack_bridge import load_voice_io_module
 
@@ -17033,13 +17233,23 @@ def _get_voice_io_service():
 @app.get("/api/voice/status")
 async def api_voice_status():
     """Return status of `ellmos-voice-io` STT/TTS engines (#3763)."""
+    import shutil
+
     perms = _load_capability_permissions()
     svc = _get_voice_io_service()
+    st_dict = svc.status().as_dict()
+    if not st_dict.get("tts_available"):
+        if sys.platform == "darwin" and (shutil.which("say") or os.path.isfile("/usr/bin/say")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "macos-say"
+        elif sys.platform == "win32" and (shutil.which("powershell") or shutil.which("pwsh")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "windows-sapi"
     return {
         "schema": "ellmos.voice-io.status.v1",
         "stt_permission": perms.get("speech_to_text", True),
         "tts_permission": perms.get("voice_tts", True),
-        "status": svc.status().as_dict(),
+        "status": st_dict,
     }
 
 
@@ -17047,12 +17257,18 @@ async def api_voice_status():
 async def api_voice_stt(payload: dict = Body(...)):
     """Universal chat input transcription endpoint backed by `ellmos-voice-io` (#3763)."""
     import base64
+    import shutil
+    import subprocess
+    import tempfile
 
+    _ensure_audio_tools_path()
     perms = _load_capability_permissions()
     if not perms.get("speech_to_text", True):
         raise HTTPException(status_code=403, detail="Spracheingabe (STT) ist in den Berechtigungen deaktiviert")
     audio_b64 = str(payload.get("audio_b64") or "").strip()
     suffix = str(payload.get("suffix") or ".wav").strip()
+    if not suffix.startswith("."):
+        suffix = f".{suffix}"
     language = str(payload.get("language") or "de").strip()
     if not audio_b64:
         raise HTTPException(status_code=400, detail="audio_b64 fehlt")
@@ -17060,7 +17276,30 @@ async def api_voice_stt(payload: dict = Body(...)):
         raw_bytes = base64.b64decode(audio_b64)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
-    svc = _get_voice_io_service()
+
+    # Convert browser MediaRecorder container (.webm/.ogg/.mp4) to 16kHz mono PCM .wav if ffmpeg is available
+    if suffix.lower() in {".webm", ".ogg", ".mp4", ".m4a"} and shutil.which("ffmpeg"):
+        try:
+            with tempfile.TemporaryDirectory(prefix="ellmos_stt_") as tmp_dir:
+                in_file = Path(tmp_dir) / f"in{suffix}"
+                out_file = Path(tmp_dir) / "out.wav"
+                in_file.write_bytes(raw_bytes)
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(in_file), "-ar", "16000", "-ac", "1", str(out_file)],
+                    check=True,
+                    timeout=12,
+                    capture_output=True,
+                )
+                if out_file.is_file() and out_file.stat().st_size > 44:
+                    raw_bytes = out_file.read_bytes()
+                    suffix = ".wav"
+        except Exception:
+            pass
+
+    try:
+        svc = _get_voice_io_service()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Sprachmodul nicht verfügbar") from None
     try:
         text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
     except Exception as exc:
@@ -17072,7 +17311,7 @@ async def api_voice_stt(payload: dict = Body(...)):
         }
     return {
         "schema": "ellmos.voice-io.stt.v1",
-        "text": text,
+        "text": str(text or "").strip(),
         "backend": svc.status().stt_engine,
         "language": language,
     }
@@ -17080,7 +17319,7 @@ async def api_voice_stt(payload: dict = Body(...)):
 
 @app.post("/api/voice/tts")
 async def api_voice_tts(payload: dict = Body(...)):
-    """Universal speech synthesis endpoint backed by `ellmos-voice-io` (#3763)."""
+    """Universal speech synthesis endpoint backed by `ellmos-voice-io` + OS-native fallback (#3763)."""
     import base64
     from hub._services.ocean_stack_bridge import load_voice_io_module
 
@@ -17093,13 +17332,19 @@ async def api_voice_tts(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="text fehlt")
     voice_mod = load_voice_io_module()
     svc = voice_mod.VoiceIO()
+    backend_used = "ellmos-voice-io"
     try:
         wav_bytes = svc.synthesize_bytes(text)
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
+        native_res = _synthesize_os_native_wav(text, language=language)
+        if native_res is not None:
+            wav_bytes, backend_used = native_res
+        else:
+            raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
     return {
         "schema": "ellmos.voice-io.tts.v1",
         "language": language,
+        "backend": backend_used,
         "audio_b64": base64.b64encode(wav_bytes).decode("ascii"),
         "mime_type": "audio/wav",
     }
@@ -17226,9 +17471,20 @@ async def api_talk_reflex(payload: dict = Body(...)):
     from dataclasses import asdict
 
     engine = _get_talk_session()
-    user_utterance = str(payload.get("user_utterance") or "").strip()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
     persona = str(payload.get("persona") or "").strip().lower() or None
     language = str(payload.get("language") or "").strip().lower() or None
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        engine.update_visual_state({"mode": "listening"})
     if hasattr(engine, "preview_reflex"):
         return engine.preview_reflex(user_utterance, persona=persona, language=language)
     decision = engine.reflex.evaluate_utterance(
@@ -17258,11 +17514,22 @@ async def api_talk_turn(payload: dict = Body(...)):
     from dataclasses import asdict
 
     engine = _get_talk_session()
-    user_utterance = str(payload.get("user_utterance") or "").strip()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
     model_response = payload.get("model_response")
     persona = str(payload.get("persona") or "").strip().lower()
     language = str(payload.get("language") or "").strip().lower()
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
     directive: dict = {}
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        directive["mode"] = "listening"
     if persona in {"buddha", "gemini", "claude", "codex"}:
         directive["persona"] = persona
     if language in {"de", "en", "es", "fr", "zh", "ja", "ru", "ar", "pt", "hi", "it"}:
@@ -17277,9 +17544,11 @@ async def api_talk_turn(payload: dict = Body(...)):
     reflex_dict.setdefault("ack_text", res.reflex.backchannel_text or ("Verstanden." if engine.state.language != "en" else "Got it."))
     reflex_dict.setdefault("latency_target_ms", res.reflex.latency_budget_ms)
     reflex_dict.setdefault("fast_model", getattr(engine.reflex, "model_name", "smollm2:360m"))
+    clean_spoken = _strip_talk_control_tags(res.spoken_text)
+    clean_sentences = [s for s in (_strip_talk_control_tags(c) for c in (res.sentence_chunks or [])) if s]
     return {
-        "spoken_text": res.spoken_text,
-        "sentences": res.sentence_chunks,
+        "spoken_text": clean_spoken,
+        "sentences": clean_sentences,
         "reflex": reflex_dict,
         "visual_state": res.visual_state,
         "applied_directives": res.applied_directives,
@@ -17330,6 +17599,27 @@ async def api_sensation_open_compute_gate(payload: dict = Body(...)):
     return gate.evaluate(sp, idle_seconds=float(payload.get("idle_seconds", 0.0)))
 
 
+def _smarthome_robotics_denied() -> JSONResponse | None:
+    """Machine-readable 403 for write/actuating routes unless the capability matrix grants
+    `smarthome_robotics` (default: denied). Read routes stay open (demo data, marked `demo`)."""
+    if _load_capability_permissions().get("smarthome_robotics", False):
+        return None
+    return JSONResponse(status_code=403, content={
+        "error": "permission_required",
+        "permission": "smarthome_robotics",
+        "hint": "Freigabe unter /api/permissions bzw. Einstellungen → Rechte",
+    })
+
+
+def _robotics_hub(*, granted: bool):
+    from hub._services.ocean_stack_bridge import load_robotics_module
+
+    try:
+        return load_robotics_module().RoboticsHub(robotics_permission=granted, state_path=_ROBOTICS_ESTOP_FILE)
+    except TypeError:  # ellmos-robotics without persistent E-Stop: refuse instead of running without it
+        raise HTTPException(status_code=503, detail="ellmos-robotics ohne persistenten E-Stop (Update nötig)") from None
+
+
 @app.get("/api/homecontrol/devices")
 async def api_homecontrol_devices():
     """List SmartHome devices via `ellmos-homecontrol` (#3766)."""
@@ -17338,7 +17628,7 @@ async def api_homecontrol_devices():
     hc_mod = load_homecontrol_module()
     hub = hc_mod.HomeControlHub(smarthome_permission=True)
     devices = hub.hc_list_devices()
-    return {"total_devices": len(devices), "devices": devices}
+    return {"total_devices": len(devices), "devices": devices, "demo": getattr(hub, "demo", True)}
 
 
 @app.get("/api/homecontrol/energy")
@@ -17354,38 +17644,38 @@ async def api_homecontrol_energy():
 @app.get("/api/robotics/capabilities")
 async def api_robotics_capabilities():
     """Return canonical MCP `ellmos.robotics.mcp.v1` robot capabilities (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
-    return hub.robot_capabilities()
+    return _robotics_hub(granted=True).robot_capabilities()  # read-only: no grant needed
 
 
 @app.get("/api/robotics/telemetry")
 async def api_robotics_telemetry():
     """Return robot pose, battery, and safety envelope telemetry (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
-    return hub.robot_telemetry()
+    return _robotics_hub(granted=True).robot_telemetry()  # read-only: no grant needed
 
 
 @app.post("/api/robotics/estop")
 async def api_robotics_estop(payload: dict = Body(default={})):
     """Trigger immediate fail-closed E-Stop across the robotics hub (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
+    # Stopping never needs a grant (fail-closed); the stop is persisted and blocks all actuation.
     reason = str(payload.get("reason") or "operator_e_stop")
-    return hub.robot_stop_emergency(reason)
+    return _robotics_hub(granted=False).robot_stop_emergency(reason)
+
+
+@app.post("/api/robotics/estop/reset")
+async def api_robotics_estop_reset():
+    """Release the persisted E-Stop. Needs the `smarthome_robotics` grant (#3996)."""
+    denied = _smarthome_robotics_denied()
+    if denied is not None:
+        return denied
+    return _robotics_hub(granted=True).reset_emergency_stop()
 
 
 @app.get("/talk", response_class=HTMLResponse, tags=["shared-gui"])
-async def talk_visualizer_companion_page(request: Request):
+async def talk_visualizer_companion_page(request: Request = None):
     """ELLMOS Talk Studio & Standalone Live Voice / Emotion Visualizer Companion Window (#3764)."""
-    companion_mode = request.query_params.get("companion") == "1" or request.query_params.get("standalone") == "1"
+    companion_mode = False
+    if request is not None and hasattr(request, "query_params"):
+        companion_mode = request.query_params.get("companion") == "1" or request.query_params.get("standalone") == "1"
     if not companion_mode and ASTRO_DIST_DIR is not None:
         for rel in ("talk/index.html", "talk.html"):
             cand = ASTRO_DIST_DIR / rel

@@ -1174,8 +1174,14 @@ def _confirmed_finish_submission(binding, task_id):
 
 def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=None, db_path=None,
                 worker_task_binding=None, require_task_binding=False,
-                result_annotation=None, needs_split=False):
-    """Preserve private ownership through every Git mutation and task receipt."""
+                result_annotation=None, needs_split=False, push=True):
+    """Preserve private ownership through every Git mutation and task receipt.
+
+    ``push=False`` (WIP only) commits locally with ``message`` as subject and
+    never contacts the remote (PB-14: no abandoned dirty task trees).
+    """
+    if not push and not is_wip:
+        return {"success": False, "error": "Nur ein WIP-Stand darf ohne Push gesichert werden"}
     if require_task_binding and worker_task_binding is None:
         return {"success": False, "error": "Taskbindung fehlt"}
     if worker_task_binding is None:
@@ -1200,7 +1206,8 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
             with WorkerLeaseSupervisor(binding):
                 result = finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests, repo_root=repo_root,
                                      worker_task_binding=binding, require_task_binding=True,
-                                     result_annotation=result_annotation, needs_split=needs_split)
+                                     result_annotation=result_annotation, needs_split=needs_split,
+                                     push=push)
         except Exception:
             result = {"success": False, "error": "Kanonische Worktree-Taskbindung nicht bestätigt"}
         finally:
@@ -1220,7 +1227,7 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
             worker_task_binding.assert_active()
             return _finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests,
                                 repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding,
-                                result_annotation=result_annotation, needs_split=needs_split)
+                                result_annotation=result_annotation, needs_split=needs_split, push=push)
         except Exception:
             return {"success": False, "error": "Worktree-Ergebnis oder Taskänderung nicht bestätigt"}
 
@@ -1236,6 +1243,7 @@ def _finish_task(
     worker_task_binding=None,
     result_annotation: str | None = None,
     needs_split: bool = False,
+    push: bool = True,
 ) -> dict[str, Any]:
     """Schließt einen Task im Worktree ab oder sichert den WIP-Stand.
 
@@ -1333,7 +1341,7 @@ def _finish_task(
 
     if is_wip:
         # WIP-Commit
-        commit_msg = f"[WIP] [task {task_id_str}] {message}"
+        commit_msg = f"[WIP] [task {task_id_str}] {message}" if push else message
         run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
         res_commit = run_checked(
             ["git", "commit", "-m", commit_msg],
@@ -1345,6 +1353,12 @@ def _finish_task(
         )
         if res_commit.returncode != 0 and "nothing to commit" not in (res_commit.stdout or ""):
             return {"success": False, "error": "WIP-Commit nicht bestätigt"}
+        if not push:
+            worker_task_binding.record_worktree_result(
+                int(task_id_str), result_annotation or f"[WIP] Stand lokal auf {branch_name} committet (ohne Push)",
+                needs_split=needs_split)
+            return {"success": True, "wip": True, "branch": branch_name,
+                    "status": "wip_committed", "needs_split": needs_split}
         res_push = run_checked(
             ["git", "push", "-u", "origin", branch_name],
             cwd=str(target_dir),

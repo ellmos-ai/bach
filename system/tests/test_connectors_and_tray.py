@@ -1505,6 +1505,14 @@ def test_tray_promptboard_library_and_chat_actions(tmp_path):
             tray._export_promptboard_action()
             tray.icon.notify.assert_called_with("PromptBoard-Export: 2 neu, 1 aktualisiert (5 gesamt).", "BACH PromptBoard")
 
+        # Test _sync_promptboard_action
+        with patch("hub.prompt.PromptHandler") as mock_handler_cls:
+            mock_inst = MagicMock()
+            mock_inst.handle.return_value = (True, json.dumps({"imported": 2, "exported": 1, "updated_in_bach": 1, "updated_in_promptboard": 0, "total_promptboard": 6}))
+            mock_handler_cls.return_value = mock_inst
+            tray._sync_promptboard_action()
+            tray.icon.notify.assert_called_with("PromptBoard Zwei-Wege-Sync: 2 importiert, 1 exportiert, 1 aktualisiert (6 gesamt).", "BACH PromptBoard")
+
         # Test _record_audio_prompt_action fallback when STT missing
         with patch("hub._services.ocean_stack_bridge.load_voice_io_module") as mock_voice_mod, \
              patch("webbrowser.open") as mock_open:
@@ -1531,7 +1539,7 @@ def test_tray_modular_status_and_menu():
     labels = [getattr(item, "text", "") for item in menu]
     mod_item = next((item for item in menu if "📦 Standalone-Module" in getattr(item, "text", "")), None)
     assert mod_item is not None, f"Modular status item missing from menu: {labels}"
-    assert f"{snap['standalone_count']}/12 aktiv" in mod_item.text
+    assert f"{snap['standalone_count']}/{snap['total_modularized']} aktiv" in mod_item.text
 
     # Test sub-items of modular status
     sub_menu = mod_item.submenu
@@ -1553,11 +1561,17 @@ def test_api_modules_status_and_sync():
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "ok"
-    assert data["standalone_count"] >= 11
-    assert data["modularized_total"] >= 12
+    assert data["standalone_count"] >= 18
+    assert data["modularized_total"] >= 18
     assert "token_budget" in data["modularized_services"]
     assert "rate_limit_policy" in data["modularized_services"]
     assert "audit_logger" in data["modularized_services"]
+    assert "telemetry" in data["modularized_services"]
+    assert "limits" in data["modularized_services"]
+    assert "worker_policy" in data["modularized_services"]
+    assert "prompt" in data["modularized_services"]
+    assert "message_delivery" in data["modularized_services"]
+    assert "conversation_store" in data["modularized_services"]
     assert data["auto_update_ready"] is True
 
     sync_res = client.post("/api/modules/sync")

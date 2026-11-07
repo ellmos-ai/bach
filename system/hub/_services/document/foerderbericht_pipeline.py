@@ -444,6 +444,18 @@ class FoerderberichtPipeline:
                 result.duration_s = time.time() - start_time
                 return result
 
+            # --- Schritt 1c: Cloud-Modus nur mit vollstaendiger Namenserkennung (fail-closed) ---
+            # Ohne spaCy/NER-Modelle blieben Namen Dritter, Strassen und Orte im Freitext stehen.
+            result.step = "datenschutz"
+            from hub._services.document import anonymizer_service
+            ready, reason = anonymizer_service.ner_ready()
+            if not ready:
+                raise PipelineError(
+                    f"Cloud-Modus verweigert: Namenserkennung unvollstaendig ({reason}). "
+                    "spaCy mit " + " und ".join(anonymizer_service.NER_MODELS)
+                    + " installieren oder Modus 'lokal' nutzen. Es wurde nichts gesendet."
+                )
+
             # --- Schritt 2: Session + Profil ---
             result.step = "profil"
             from hub._services.document.report_workflow_service import ReportWorkflowService
@@ -614,13 +626,15 @@ class FoerderberichtPipeline:
             clean_report = workflow.generate_report(
                 session, llm_response, auto_deanonymize=True
             )
-            if clean_report:
-                output_dir = self.base_path / "output_berichte"
-                clean_dest = output_dir / Path(clean_report).name
-                if Path(clean_report).resolve() != clean_dest.resolve():
-                    shutil.copy2(str(clean_report), str(clean_dest))
-                result.output_path = clean_dest
-                result.steps_completed.append("bericht: erstellt")
+            if not clean_report:
+                raise PipelineError(session.error_message or "Es wurde kein Bericht erstellt")
+            output_dir = self.base_path / "output_berichte"
+            clean_dest = output_dir / Path(clean_report).name
+            if Path(clean_report).resolve() != clean_dest.resolve():
+                shutil.copy2(str(clean_report), str(clean_dest))
+            result.output_path = clean_dest
+            result.steps_completed.append("bericht: erstellt")
+            result.steps_completed.extend(f"bericht: Warnung: {w}" for w in session.warnings)
 
             # Cleanup
             if auto_cleanup:

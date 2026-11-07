@@ -9,7 +9,7 @@ import sqlite3
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request, Path as PathParam
 from hub.bach_paths import BACH_DB
-from hub._services.chat.session_store import SQLiteChatSessionStore, ChatSessionStoreError
+from hub._services.chat.session_store import SQLiteChatSessionStore, ChatSessionStoreError, chat_source
 from hub._services.chat.agent_profile_context import (
     ProfileUnavailable, resolve_profile, require_current_binding, profile_chat_id_agent,
 )
@@ -32,12 +32,15 @@ def _store():
 def sessions(request: Request, limit: int = Query(25, ge=1, le=100),
              offset: int = Query(0, ge=0, le=100_000),
              agent_id: int | None = Query(None, ge=1, le=2_147_483_647),
-             archive: str = Query("all", pattern="^(all|current|archived)$")):
+             archive: str = Query("all", pattern="^(all|current|archived)$"),
+             source: str = Query("all", pattern="^(all|user|buddha|worker|system)$"),
+             problems: bool = Query(False)):
     authorize(request)
     try:
         if agent_id is not None:
             resolve_profile(agent_id)
-        page = _store().list_snapshot_page(limit=limit, offset=offset, agent_id=agent_id, archive=archive)
+        page = _store().list_snapshot_page(limit=limit, offset=offset, agent_id=agent_id, archive=archive,
+                                        source=source, problems=problems)
         return {"schema": "bach.chat-sessions.v1", "source": "session_snapshots",
                 "snapshot_type": "chat-transcript.v1", "context": "profile" if agent_id else "global",
                 "agent_id": agent_id, "archive": archive, **page}
@@ -107,6 +110,7 @@ def session(request: Request, snapshot_id: int = PathParam(..., ge=1, le=2_147_4
         return {"schema": "bach.chat-session.v1", "source": "session_snapshots",
                 "snapshot_id": snapshot_id, "created_at": snapshot.get("created_at"),
                 "updated_at": snapshot.get("updated_at"), "name": snapshot.get("name"),
+                "chat_id": str(snapshot.get("chat_id", "")), "chat_source": chat_source(snapshot.get("chat_id", "")),
                 "archived": ":archived:" in snapshot["session_id"],
                 "context": "profile" if binding else "global", "agent_id": agent_id,
                 "stored_message_count": len(raw_messages), "messages": messages,

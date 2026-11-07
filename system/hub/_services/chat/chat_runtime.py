@@ -546,7 +546,7 @@ class FailedAnswer(str):
         )
         # Live typed metadata only: never infer retry authority from answer text.
         answer.transient_failure = (
-            "httpx_read_timeout" if transient_failure == "httpx_read_timeout" else None
+            transient_failure if transient_failure in {"httpx_read_timeout", "httpx_connect_error"} else None
         )
         return answer
 
@@ -617,7 +617,10 @@ class FailedAnswer(str):
             transient_failure = None
         else:
             transient_failure = (
-                "httpx_read_timeout" if isinstance(exc, httpx.ReadTimeout) else None
+                "httpx_read_timeout" if isinstance(exc, httpx.ReadTimeout)
+                # Connecting failed: nothing was sent, so nothing can have escaped.
+                else "httpx_connect_error" if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
+                else None
             )
         return cls(
             f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "),
@@ -2127,7 +2130,13 @@ class ChatRuntime(_ModuleChatRuntime):
             allowed_tools=_effective_tool_grants(session),
             agent_operations=self.agent_operations,
         )
-        return provider.get_tools(session.mode)
+        tools = provider.get_tools(session.mode)
+        if _effective_tool_grants(session) is None:
+            # Without explicit grants every write is refused (require_write_grant);
+            # offering those tools anyway made Buddha file 199 "Rest:" tasks (PB-1).
+            from hub._services.chat.worker_write_guard import is_write_tool
+            tools = [tool for tool in tools if not is_write_tool(tool["function"]["name"])]
+        return tools
 
     def _request_tool_group(self, session, backend, arguments) -> str:
         """Meta tool: open one group from the next round, only within allowed_tools."""
