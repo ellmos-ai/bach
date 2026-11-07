@@ -1,0 +1,191 @@
+"""PB-11 (#3994): notes adapter on top of llm-note, `/api/notes` and the `/api/denkarium` alias."""
+from __future__ import annotations
+
+import asyncio
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from hub._services import notes_adapter
+from hub._services.ocean_stack_bridge import load_llm_note_module
+
+
+@pytest.fixture(autouse=True)
+def notes_env(tmp_path, monkeypatch):
+    """Isolated DB location; skip when the installed llm-note predates PB-11."""
+    monkeypatch.setenv("BACH_LOCAL_DIR", str(tmp_path / "local"))
+    try:
+        mod = load_llm_note_module()
+    except ImportError:
+        pytest.skip("llm-note checkout not present")
+    if not hasattr(mod.NoteStore, "import_entry"):
+        pytest.skip("llm-note without archive/import support (PB-11 not merged in the sibling checkout)")
+    return tmp_path
+
+
+def test_db_lives_outside_the_repo(notes_env):
+    path = notes_adapter.notes_db_path()
+    assert path == notes_env / "local" / "llm-note.db"
+
+
+def test_create_list_archive_unarchive_delete_roundtrip():
+    created = notes_adapter.create_note({"content": "hello", "category": "idee"})
+    assert created["id"] >= 1 and created["entry_type"] == "note"
+
+    listing = notes_adapter.list_notes()
+    assert [e["content"] for e in listing["entries"]] == ["hello"]
+    assert listing["stats"] == {"total": 1, "archived": 0, "logbook": 0, "note": 1}
+    assert listing["categories"] == [{"name": "idee", "count": 1}]
+
+    notes_adapter.archive_note(created["id"], "weg")
+    assert notes_adapter.list_notes()["entries"] == []
+    both = notes_adapter.list_notes(include_archived=True)
+    assert both["entries"][0]["is_archived"] is True and both["stats"]["archived"] == 1
+
+    notes_adapter.unarchive_note(created["id"])
+    assert len(notes_adapter.list_notes()["entries"]) == 1
+
+    notes_adapter.delete_note(created["id"])
+    assert notes_adapter.list_notes()["count"] == 0
+
+
+def test_empty_content_is_rejected_and_unknown_id_raises_keyerror():
+    with pytest.raises(ValueError):
+        notes_adapter.create_note({"content": "   "})
+    with pytest.raises(KeyError):
+        notes_adapter.archive_note(999)
+
+
+def test_search_and_type_filter():
+    notes_adapter.create_note({"content": "alpha thought"})
+    notes_adapter.create_note({"content": "alpha log", "entry_type": "logbook"})
+    assert notes_adapter.list_notes(search="alpha")["count"] == 2
+    only_logs = notes_adapter.list_notes(entry_type="logbook")
+    assert [e["content"] for e in only_logs["entries"]] == ["alpha log"]
+
+
+def test_denkarium_view_keeps_legacy_response_format():
+    notes_adapter.create_note({"content": "gedanke"})
+    notes_adapter.create_note({"content": "logeintrag", "entry_type": "logbuch"})
+    view = notes_adapter.denkarium_list(entry_type="logbuch")
+    assert set(view) == {"entries", "count", "stats", "categories"}
+    assert set(view["stats"]) == {"total", "archived", "logbuch", "denkarium"}
+    assert view["stats"] == {"total": 2, "archived": 0, "logbuch": 1, "denkarium": 1}
+    entry = view["entries"][0]
+    assert entry["entry_type"] == "logbuch"
+    assert {"id", "title", "content", "category", "source", "mood", "promoted_to", "promoted_id",
+            "is_archived", "archived_reason", "archived_at", "created_at", "updated_at"} <= set(entry)
+
+
+def test_denkarium_create_defaults_match_legacy_route():
+    result = notes_adapter.denkarium_create({"content": "x", "entry_type": "logbuch"})
+    assert result["ok"] is True and result["message"].startswith("Eintrag #")
+    entry = notes_adapter.list_notes()["entries"][0]
+    assert entry["entry_type"] == "logbook" and entry["title"].startswith("Sternzeit ")
+    assert entry["category"] == "notiz" and entry["source"] == "web"
+
+
+def _legacy_db(path: Path, rows: int) -> Path:
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE denkarium_entries (id INTEGER PRIMARY KEY, content TEXT)")
+    for i in range(rows):
+        conn.execute("INSERT INTO denkarium_entries (content) VALUES (?)", (f"c{i}",))
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_use_llm_note_falls_back_to_legacy_until_migrated(notes_env):
+    legacy = _legacy_db(notes_env / "legacy.db", rows=2)
+    assert notes_adapter.use_llm_note(legacy) is False  # legacy rows, nothing migrated yet
+    notes_adapter.create_note({"content": "now the db exists"})
+    assert notes_adapter.use_llm_note(legacy) is True
+
+
+def test_use_llm_note_true_on_fresh_install(notes_env):
+    assert notes_adapter.use_llm_note(notes_env / "missing.db") is True
+    assert notes_adapter.use_llm_note(_legacy_db(notes_env / "empty.db", rows=0)) is True
+
+
+def test_mark_promoted_records_target(notes_env):
+    entry = notes_adapter.create_note({"content": "p"})
+    promoted = notes_adapter.mark_promoted(entry["id"], "task", 77)
+    assert promoted["promoted_to"] == "task" and promoted["promoted_id"] == 77
+
+
+def test_gui_notes_routes_end_to_end(notes_env):
+    from gui import server
+
+    created = asyncio.run(server.notes_create(_FakeRequest({"content": "via route", "entry_type": "logbook"})))
+    assert created["entry"]["entry_type"] == "logbook"
+    listing = asyncio.run(server.notes_list())
+    assert listing["count"] == 1 and listing["backend"] == "llm-note"
+    asyncio.run(server.notes_archive(created["entry"]["id"], _FakeRequest({"reason": "r"})))
+    assert asyncio.run(server.notes_list())["count"] == 0
+    assert asyncio.run(server.notes_list(include_archived=True))["count"] == 1
+    asyncio.run(server.notes_unarchive(created["entry"]["id"]))
+    asyncio.run(server.notes_delete(created["entry"]["id"]))
+    assert asyncio.run(server.notes_list(include_archived=True))["count"] == 0
+
+
+class _FakeRequest:
+    def __init__(self, data):
+        self._data = data
+
+    async def json(self):
+        return self._data
+
+
+def _server_with_legacy(monkeypatch, tmp_path, rows):
+    from gui import server
+
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE denkarium_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_type TEXT, title TEXT,"
+        " content TEXT, category TEXT, source TEXT, mood INTEGER, promoted_to TEXT, promoted_id INTEGER,"
+        " created_at TEXT, updated_at TEXT)"
+    )
+    for text in rows:
+        conn.execute("INSERT INTO denkarium_entries (entry_type, content, category, created_at)"
+                     " VALUES ('denkarium', ?, 'notiz', '2026-02-19 08:00')", (text,))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(server, "USER_DB", db)
+    return server
+
+
+def test_denkarium_alias_serves_legacy_rows_until_migration(monkeypatch, tmp_path):
+    server = _server_with_legacy(monkeypatch, tmp_path, ["alt-1", "alt-2"])
+    result = asyncio.run(server.denkarium_list())
+    assert sorted(e["content"] for e in result["entries"]) == ["alt-1", "alt-2"]
+    assert not notes_adapter.notes_db_path().exists()  # reading must not create the llm-note DB
+
+
+def test_denkarium_alias_switches_to_llm_note_after_migration(monkeypatch, tmp_path):
+    server = _server_with_legacy(monkeypatch, tmp_path, [])
+    created = asyncio.run(server.denkarium_create(_FakeRequest({"content": "neu", "category": "test"})))
+    assert created["ok"] is True
+    result = asyncio.run(server.denkarium_list())
+    assert set(result) == {"entries", "count", "stats", "categories"}
+    assert [e["content"] for e in result["entries"]] == ["neu"]
+    assert result["stats"] == {"total": 1, "archived": 0, "logbuch": 0, "denkarium": 1}
+    archived = asyncio.run(server.denkarium_archive_direct(created["id"], _FakeRequest({"reason": "x"})))
+    assert archived["action"] == "archived"
+    assert asyncio.run(server.denkarium_list())["count"] == 0
+    assert asyncio.run(server.denkarium_list(exclude_archived=False))["count"] == 1
+    assert asyncio.run(server.denkarium_unarchive_direct(created["id"]))["action"] == "unarchived"
+    assert asyncio.run(server.denkarium_delete(created["id"])) == {"ok": True}
+
+
+def test_notes_routes_map_errors_to_http_status(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+
+    server = _server_with_legacy(monkeypatch, tmp_path, [])
+    with pytest.raises(HTTPException) as bad:
+        asyncio.run(server.notes_create(_FakeRequest({"content": ""})))
+    assert bad.value.status_code == 400
+    with pytest.raises(HTTPException) as missing:
+        asyncio.run(server.notes_unarchive(4242))
+    assert missing.value.status_code == 404

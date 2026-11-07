@@ -41,6 +41,7 @@ from datetime import datetime, date
 
 from typing import Optional, List, Union
 
+import contextlib
 from contextlib import asynccontextmanager
 
 # BACH imports
@@ -6746,9 +6747,67 @@ async def denkarium_page():
 
 
 
+from hub._services import notes_adapter  # PB-11 (#3994): llm-note als Notiz-Engine
+
+
+@contextlib.contextmanager
+def _notes_http_errors():
+    """Map adapter errors to HTTP status codes (404 unknown id, 400 bad input, 503 engine missing)."""
+    try:
+        yield
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0] if exc.args else exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except notes_adapter.NotesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.get("/api/notes")
+async def notes_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None,
+                     include_archived: bool = False):
+    """Notizen aus llm-note (PB-11, #3994)."""
+    with _notes_http_errors():
+        return notes_adapter.list_notes(entry_type=entry_type, category=category, limit=limit,
+                                        search=search, include_archived=include_archived)
+
+
+@app.post("/api/notes")
+async def notes_create(request: Request):
+    with _notes_http_errors():
+        return {"ok": True, "entry": notes_adapter.create_note(await request.json())}
+
+
+@app.post("/api/notes/{entry_id}/archive")
+async def notes_archive(entry_id: int, request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    with _notes_http_errors():
+        reason = data.get("reason") if isinstance(data, dict) else None
+        return {"ok": True, "entry": notes_adapter.archive_note(entry_id, reason)}
+
+
+@app.post("/api/notes/{entry_id}/unarchive")
+async def notes_unarchive(entry_id: int):
+    with _notes_http_errors():
+        return {"ok": True, "entry": notes_adapter.unarchive_note(entry_id)}
+
+
+@app.delete("/api/notes/{entry_id}")
+async def notes_delete(entry_id: int):
+    with _notes_http_errors():
+        notes_adapter.delete_note(entry_id)
+    return {"ok": True}
+
+
 @app.get("/api/denkarium")
 async def denkarium_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None, exclude_archived: bool = True):
-    """Denkarium-Einträge abrufen (GUX-043)."""
+    """Denkarium-Einträge abrufen (GUX-043). Alias auf llm-note, sobald migriert (PB-11)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_list(entry_type, category, limit, search, exclude_archived)
     conn = sqlite3.connect(str(USER_DB))
     try:
         ensure_denkarium_schema(conn)
@@ -6809,6 +6868,10 @@ async def denkarium_create(request: Request):
 
     data = await request.json()
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_create(data)
+
     content = data.get("content", "").strip()
 
     if not content:
@@ -6865,6 +6928,11 @@ async def denkarium_delete(entry_id: int):
 
     """Denkarium-Eintrag löschen."""
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            notes_adapter.delete_note(entry_id)
+        return {"ok": True}
+
     conn = sqlite3.connect(str(USER_DB))
 
     try:
@@ -6892,6 +6960,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
     except Exception:
         data = {}
     reason = data.get("reason", "wrong_agent_dump") if isinstance(data, dict) else "wrong_agent_dump"
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_archive(entry_id, reason)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return archive_denkarium_entry(entry_id, reason=reason, conn=conn)
@@ -6904,6 +6975,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
 @app.post("/api/denkarium/{entry_id}/unarchive")
 async def denkarium_unarchive_direct(entry_id: int):
     """Archivierten Denkarium-Eintrag wiederherstellen (GUX-043)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_unarchive(entry_id)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return unarchive_denkarium_entry(entry_id, conn=conn)
@@ -6922,6 +6996,24 @@ async def denkarium_promote(entry_id: int, request: Request):
     data = await request.json()
 
     target = data.get("target", "task")
+
+    if notes_adapter.use_llm_note(USER_DB):
+        if target != "task":
+            raise HTTPException(status_code=400, detail=f"Unbekanntes Ziel: {target}. Erlaubt: task")
+        with _notes_http_errors():
+            note = notes_adapter.get_note(entry_id)
+        conn = sqlite3.connect(str(USER_DB))
+        try:
+            cur = conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)",
+                (note["title"] or note["content"][:50] or "Denkarium-Eintrag", note["content"]))
+            conn.commit()
+            promoted_id = cur.lastrowid
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
+        finally:
+            conn.close()
+        notes_adapter.mark_promoted(entry_id, target, promoted_id)
+        return {"ok": True, "promoted_id": promoted_id}
 
     conn = sqlite3.connect(str(USER_DB))
 

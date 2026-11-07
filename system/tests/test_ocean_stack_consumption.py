@@ -196,7 +196,7 @@ def test_bach_consumes_configurable_review_worktree_and_escalation(tmp_path: Pat
     assert tres["found"] is False
 
     status = ocean_stack_status()
-    assert status["capability_extensions_bound_count"] == 5
+    assert status["capability_extensions_bound_count"] >= 5  # + universal-gui / llm-note when their checkouts exist
     for ext_name in (
         "ellmos-voice-io",
         "ellmos-talk",
@@ -466,3 +466,19 @@ def test_modularized_services_and_hot_wiring():
         "scheduler",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True
+
+
+def test_llm_note_is_bound_without_shadowing_gui_package():
+    """PB-11 (#3994): llm-note joins `ext_modules`; its flat package must not shadow `gui`."""
+    import sys
+
+    from hub._services.ocean_stack_bridge import load_llm_note_module, ocean_capability_extensions_status
+
+    entry = ocean_capability_extensions_status()["llm-note"]
+    assert entry["module"] == "llm_note.store"
+    if not entry["bound"]:
+        import pytest
+
+        pytest.skip("llm-note checkout not present")
+    assert load_llm_note_module().NoteStore is not None
+    assert "gui" not in sys.modules or getattr(sys.modules["gui"], "__file__", "").replace("\\", "/").find("llm_note") < 0

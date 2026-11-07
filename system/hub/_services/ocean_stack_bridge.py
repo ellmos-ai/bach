@@ -542,6 +542,21 @@ def load_universal_gui_module() -> Any:
     )
 
 
+def load_llm_note_module() -> Any:
+    """Notes engine (PB-11, #3994): `llm_note.store.NoteStore` replaces the Denkarium.
+
+    Not via `_load_module_from_repo`: llm-note is a flat package, and that helper would put the
+    package directory itself on `sys.path`, so `llm_note/gui.py` would shadow BACH's `gui` package.
+    """
+    for root in _candidate_repo_roots():
+        repo_dir = root / "llm-note"
+        if (repo_dir / "llm_note" / "store.py").is_file():
+            if str(repo_dir) not in sys.path:
+                sys.path.insert(0, str(repo_dir))
+            break
+    return importlib.import_module("llm_note.store")
+
+
 def ocean_capability_extensions_status() -> dict[str, Any]:
     """Return status of the multimodal/embodied & universal-GUI Ocean capability modules (#3763-#3767, GUX-002)."""
     ext_modules = {
@@ -551,6 +566,7 @@ def ocean_capability_extensions_status() -> dict[str, Any]:
         "ellmos-homecontrol": ("ellmos_homecontrol.hub", load_homecontrol_module),
         "ellmos-robotics": ("ellmos_robotics.mcp_standard", load_robotics_module),
         "ellmos-universal-gui": ("ellmos_universal_gui.app", load_universal_gui_module),
+        "llm-note": ("llm_note.store", load_llm_note_module),
     }
     bound: dict[str, Any] = {}
     for name, (mod_id, loader) in ext_modules.items():
