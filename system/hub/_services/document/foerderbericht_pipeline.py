@@ -906,12 +906,14 @@ class FoerderberichtPipeline:
 
     def _detect_geburtsdatum(self, data_roh: Path, client_name: str) -> str:
         """
-        Versucht das Geburtsdatum aus dem Aktendeckblatt zu extrahieren.
-        Fallback: Platzhalter '01.01.2010'.
+        Versucht das Geburtsdatum aus dem Aktendeckblatt zu extrahieren (jede gaengige Schreibweise).
+        Nicht gefunden: "" -- kein Platzhalter mehr; der Cloud-Weg sperrt dann mit birth_date_invalid,
+        statt das echte Datum der Akte unersetzt durchzulassen (R7-F1).
 
         WICHTIG: Laeuft lokal, Ergebnis wird NICHT an die AI weitergegeben.
         """
         import re
+        from hub._services.document.anonymizer_service import normalize_date
 
         # Suche Aktendeckblatt in data_roh/
         for filepath in data_roh.rglob("*"):
@@ -931,20 +933,18 @@ class FoerderberichtPipeline:
                         except Exception:
                             pass
 
-                    if text:
-                        # Geburtsdatum-Pattern: DD.MM.YYYY
-                        match = re.search(
-                            r"(?:geb(?:oren|urtsdatum)?|geboren am|geb\.?\s*:?)\s*"
-                            r"(\d{1,2}\.\d{1,2}\.\d{4})",
-                            text, re.IGNORECASE
-                        )
-                        if match:
-                            return match.group(1)
+                    # Hinter "Geburtsdatum", "geboren (am)", "geb." den laengsten lesbaren Anfang des Rests
+                    for match in re.finditer(r"(?<!\w)(?:geburtsdatum|geboren|geb\.?)\s*:?\s*(?:am\s+)?([^\n;()]+)",
+                                             text, re.IGNORECASE):
+                        words = match.group(1).split()
+                        for n in range(min(4, len(words)), 0, -1):
+                            found = normalize_date(" ".join(words[:n]).rstrip(",;"))
+                            if found:
+                                return found
                 except Exception:
                     pass
 
-        # Fallback
-        return "01.01.2010"
+        return ""
 
     # ─────────────────────────────────────────────────────────────
     # Cleanup & Migration

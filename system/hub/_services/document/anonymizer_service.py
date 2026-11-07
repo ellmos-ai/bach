@@ -270,31 +270,79 @@ _DATE_FORMATS = (
 # Kurzformen je Monat (Mai hat keine); Stil der echten Form bestimmt die Tarn-Schreibweise.
 _MONAT_KURZ = (("Jan",), ("Feb",), ("Mär", "Mrz", "Mar"), ("Apr",), (), ("Jun",), ("Jul",), ("Aug",),
                ("Sep", "Sept"), ("Okt",), ("Nov",), ("Dez",))
+# Englische Monatsnamen (R7-F6: "July 3, 2014" in englischen Befunden)
+_MONTHS_EN = ("January", "February", "March", "April", "May", "June", "July", "August", "September",
+              "October", "November", "December")
 
 
 def _month_forms(m: int) -> List[Tuple[str, str]]:
-    """(Stil, Schreibweise) eines Monatsnamens: voll, mit ae, Kuerzel mit und ohne Punkt, auch klein
+    """(Stil, Schreibweise) eines Monatsnamens: voll, mit ae, Kuerzel mit und ohne Punkt, englisch, auch klein
     ("14 mai 2017"; zwischen Ziffern ist das unbedenklich, anders als bei Namen)."""
     full = _MONATE[m - 1]
     forms = [("full", full)] + ([("full_ae", full.replace("ä", "ae"))] if "ä" in full else [])
     for short in _MONAT_KURZ[m - 1]:
         forms += [("short_dot", short + "."), ("short", short)]
+    en = _MONTHS_EN[m - 1]
+    forms += [("en", en), ("en_short_dot", en[:3] + "."), ("en_short", en[:3])]
     return forms + [(style, name.lower()) for style, name in forms]
 
 
 def _month_in_style(m: int, style: str) -> str:
     full = _MONATE[m - 1]
     short = _MONAT_KURZ[m - 1][0] if _MONAT_KURZ[m - 1] else full
+    en = _MONTHS_EN[m - 1]
     return {"full": full, "full_ae": full.replace("ä", "ae"), "short": short,
-            "short_dot": short + "." if _MONAT_KURZ[m - 1] else full}[style]
+            "short_dot": short + "." if _MONAT_KURZ[m - 1] else full,
+            "en": en, "en_short": en[:3], "en_short_dot": en[:3] + "."}[style]
+
+
+_MONTH_BY_NAME = {name.rstrip(".").casefold(): m for m in range(1, 13) for _, name in _month_forms(m)}
+_MONTH_BY_NAME.update({"marz": 3, "maerz": 3})
+_DSEP = r"(?:\s*[./\-]\s*|\s+)"
+_ORD = r"(?:st|nd|rd|th)?"
+_DATE_INPUTS = (  # (Regex, Reihenfolge der Gruppen): Tag/Monat/Jahr; Monat als Zahl oder Name
+    (re.compile(rf"(\d{{4}}){_DSEP}(\d{{1,2}}){_DSEP}(\d{{1,2}})"), "ymd"),
+    (re.compile(rf"(\d{{1,2}}){_DSEP}(\d{{1,2}}){_DSEP}'?(\d{{4}}|\d{{2}})"), "dmy"),
+    (re.compile(r"(\d{2})(\d{2})(\d{4}|\d{2})"), "dmy"),
+    (re.compile(r"(\d{4})(\d{2})(\d{2})"), "ymd"),
+    (re.compile(rf"(\d{{1,2}}){_ORD}\.?\s*([^\W\d_]+)\.?,?\s*'?(\d{{4}}|\d{{2}})"), "dmy"),
+    (re.compile(rf"([^\W\d_]+)\.?\s*(\d{{1,2}}){_ORD}\.?,?\s*'?(\d{{4}}|\d{{2}})"), "mdy"),
+)
 
 
 def _parse_date(value: str) -> Optional[Tuple[int, int, int]]:
-    try:
-        dt = datetime.strptime((value or "").strip(), "%d.%m.%Y")
-    except ValueError:
-        return None
-    return dt.day, dt.month, dt.year
+    """(Tag, Monat, Jahr) aus jeder gaengigen Eingabeform (R7-F1): 03.07.2014, 3.7.14, 2014-07-03, 03/07/2014,
+    03072014, 20140703, 3. Juli 2014, July 3, 2014, 3.7.'14. Nicht lesbar oder kein gueltiges Datum: None.
+
+    Zweistellige Jahre: bis zum laufenden Jahr 20xx, sonst 19xx (Geburtsdaten). Zahlenformen gelten als
+    Tag vor Monat (deutsche Akten).
+    """
+    text = unicodedata.normalize("NFC", str(value or "")).strip().rstrip(".").strip()
+    for regex, order in _DATE_INPUTS:
+        match = regex.fullmatch(text)
+        if not match:
+            continue
+        a, b, c = match.groups()
+        d, m, y = {"dmy": (a, b, c), "ymd": (c, b, a), "mdy": (b, a, c)}[order]
+        m = int(m) if m.isdigit() else _MONTH_BY_NAME.get(m.casefold())
+        if m is None:
+            continue
+        year = int(y)
+        if len(y) == 2:
+            year += 2000 if 2000 + year <= datetime.now().year else 1900
+        try:
+            dt = datetime(year, m, int(d))
+        except ValueError:
+            continue
+        if 1900 <= dt.year <= 2100:
+            return dt.day, dt.month, dt.year
+    return None
+
+
+def normalize_date(value: str) -> str:
+    """Datum in der Hauptform TT.MM.JJJJ, oder "" wenn nicht lesbar."""
+    parsed = _parse_date(value)
+    return f"{parsed[0]:02d}.{parsed[1]:02d}.{parsed[2]}" if parsed else ""
 
 
 def _generated_date_forms(r, f):
@@ -324,6 +372,23 @@ def _generated_date_forms(r, f):
                     for Y in years:
                         yield (f"{D(rd)}{dsep}{name}{ysep}{Y(ry)}",
                                f"{D(fd)}{dsep}{fake_name}{ysep if not fake_name.endswith('.') else ' '}{Y(fy)}")
+            # Monat vorn ("July 3, 2014", "Juli 3 2014") und englische Ordnungszahl ("3rd July 2014", R7-F6)
+            for ysep in (", ", " "):
+                yield f"{name} {D(rd)}{ysep}{ry}", f"{fake_name} {D(fd)}{ysep}{fy}"
+                yield (f"{name} {D(rd)}{_ordinal(rd)}{ysep}{ry}", f"{fake_name} {D(fd)}{_ordinal(fd)}{ysep}{fy}")
+            yield f"{D(rd)}{_ordinal(rd)} {name} {ry}", f"{D(fd)}{_ordinal(fd)} {fake_name} {fy}"
+    # Ohne Trenner (030714, 03072014, 20140703) und Jahr mit Apostroph (3.7.'14), R7-F6
+    yield f"{rd:02d}{rm:02d}{ry % 100:02d}", f"{fd:02d}{fm:02d}{fy % 100:02d}"
+    yield f"{rd:02d}{rm:02d}{ry}", f"{fd:02d}{fm:02d}{fy}"
+    yield f"{ry}{rm:02d}{rd:02d}", f"{fy}{fm:02d}{fd:02d}"
+    for sep in (".", "/", "-"):
+        for D in days:
+            for M in days:
+                yield f"{D(rd)}{sep}{M(rm)}{sep}'{ry % 100:02d}", f"{D(fd)}{sep}{M(fm)}{sep}'{fy % 100:02d}"
+
+
+def _ordinal(d: int) -> str:
+    return "th" if 10 <= d % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
 
 
 def _date_variant_pairs(real: str, fake: str) -> List[Tuple[str, str]]:
@@ -354,11 +419,13 @@ def date_pattern(value: str) -> Optional["re.Pattern"]:
     if not parsed:
         return None
     d, m, y = parsed
-    day, mon, year = rf"0?{d}", rf"0?{m}", rf"(?:{y}|{y % 100:02d})"
+    day, mon, year = rf"0?{d}{_ORD}", rf"0?{m}", rf"(?:{y}|'?{y % 100:02d})"
     name = "(?:" + "|".join(re.escape(n.rstrip(".")) for _, n in _month_forms(m)) + r")\.?"
     sep = r"(?:\s*[./\-]\s*|\s+)"
     parts = [rf"{day}{sep}{mon}{sep}{year}", rf"{y}{sep}{mon}{sep}{day}",
-             rf"{day}\.?\s*{name}\s*[.,]?\s*{year}", rf"{name}\s*{day}\.?,?\s*{year}"]
+             rf"{day}\.?\s*{name}\s*[.,]?\s*{year}", rf"{name}\s*{day}\.?,?\s*{year}",
+             # ohne Trenner (R7-F6): 030714, 03072014, 20140703
+             rf"{d:02d}{m:02d}(?:{y}|{y % 100:02d})", rf"{y}{m:02d}{d:02d}"]
     if d > 12:
         parts.append(rf"{mon}{sep}{day}{sep}{year}")
     return re.compile(r"(?<!\d)(?:" + "|".join(parts) + r")(?!\d)", re.IGNORECASE)
@@ -452,14 +519,13 @@ def _generate_tarnname(
 def _shift_date(date_str: str, days_offset: int) -> str:
     """
     Verschiebt ein Datum um eine feste Anzahl Tage.
-    Akzeptiert dd.mm.yyyy Format.
+    Akzeptiert jede Eingabeform von _parse_date, liefert TT.MM.JJJJ.
     """
-    try:
-        dt = datetime.strptime(date_str.strip(), "%d.%m.%Y")
-        shifted = dt + timedelta(days=days_offset)
-        return shifted.strftime("%d.%m.%Y")
-    except ValueError:
+    parsed = _parse_date(date_str)
+    if not parsed:
         return date_str
+    shifted = datetime(parsed[2], parsed[1], parsed[0]) + timedelta(days=days_offset)
+    return shifted.strftime("%d.%m.%Y")
 
 
 def _generate_fake_date_same_age(real_date: str) -> Tuple[str, int]:
@@ -522,8 +588,10 @@ def _generate_fake_institution(original: str) -> str:
 
 
 # Beugungsendungen hinter Namen und Orten: Genitiv/Plural (-s, -es, -n, -en, -ns), weibliche Form
-# (-in, -innen), Herkunft (-er, -ern, -ers: "Freiburger"). Gross/klein egal ("MUELLERS").
-INFLECTION_SUFFIX = r"(?i:innen|ern|ers|es|en|er|in|ns|s|n)"
+# (-in, -innen), Herkunft (-er, -ern, -ers: "Freiburger", -erin: "Freiburgerin"), Ableitung (-sche: "die
+# Berghofersche Villa", R7-F3). Gross/klein egal ("MUELLERS"). Komposita ("Berghoferhaus") ersetzt die
+# Ersetzung bewusst nicht ("Kleinkind" bei Familie Klein); die Sperre faengt sie als Wortanfang.
+INFLECTION_SUFFIX = r"(?i:erinnen|erin|innen|ern|ers|es|en|er|in|ns|s|n|sche[nmrs]?)"
 
 _UMLAUT_AE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
 _UMLAUT_PLAIN = str.maketrans({"ä": "a", "ö": "o", "ü": "u", "Ä": "A", "Ö": "O", "Ü": "U", "ß": "ss"})
@@ -588,14 +656,28 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # ═══════════════════════════════════════════════════════════════
 
 # Telefonnummern (deutsch): 07761/123456, +49 7761 123456, 0049-7761-123456, 0761 12345678,
-# 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
+# 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert), +49 (0)761 1234567, (0761) 1234567 (R7-F2)
 PHONE_PATTERN = re.compile(
     r'(?<!\w)(?:'
     r'(?:\+49|0049)(?:[ \t]*/[ \t]*|[ \t\-/]{1,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){1,3}|'
-    r'0\d{2,4}(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}'
+    r'(?:\+49|0049)[ \t]*\((?:0|\d{2,5})\)[ \t\-/]*\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,3}|'
+    r'0\d{2,4}(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}|'
+    r'\(0\d{2,4}\)[ \t\-/]*\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}'
     r')(?!\w)',
     re.IGNORECASE
 )
+
+# Konto- und Kennnummern (R7-F2): IBAN kompakt oder in Vierergruppen, BIC (DE/AT/CH), Steuer-
+# Identifikationsnummer, Krankenversicherten- und Rentenversicherungsnummer. Ersatz: KENNUNG_nn.
+ID_PATTERNS = (
+    re.compile(r'(?<![A-Za-z0-9])[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?(?![A-Za-z0-9])'),
+    re.compile(r'(?<![A-Za-z0-9])[A-Z]{4}(?:DE|AT|CH)[A-Z0-9]{2}(?:[A-Z0-9]{3})?(?![A-Za-z0-9])'),
+    re.compile(r'(?<!\d)[1-9]\d(?: ?\d{3}){3}(?!\d)'),
+    re.compile(r'(?<![A-Za-z0-9])[A-Z]\d{9}(?![A-Za-z0-9])'),
+    re.compile(r'(?<!\d)\d{2} ?\d{6} ?[A-Z] ?\d{3}(?!\d)'),
+)
+# Was die Sperre in der Akte zusaetzlich als Muster sucht (Treffer, die kein Tarnwert sind, sperren).
+CASE_NUMBER_PATTERNS = (PHONE_PATTERN, *ID_PATTERNS)
 
 # E-Mail-Adressen
 EMAIL_PATTERN = re.compile(
@@ -1400,6 +1482,7 @@ class DocumentAnonymizer:
         """
         found = {
             "phones": [],
+            "ids": [],
             "emails": [],
             "addresses": [],
             "institutions": [],
@@ -1413,6 +1496,9 @@ class DocumentAnonymizer:
             cleaned = phone.strip()
             if cleaned and cleaned not in found["phones"]:
                 found["phones"].append(cleaned)
+
+        # Konto- und Kennnummern (IBAN, BIC, Steuer-ID, Versichertennummern), R7-F2
+        found["ids"] = list(dict.fromkeys(m.group(0) for regex in ID_PATTERNS for m in regex.finditer(text)))
 
         # Adressen finden
         addresses = STREET_PATTERN.findall(text)
@@ -1579,6 +1665,10 @@ class DocumentAnonymizer:
                 if phone not in mappings["phones"]:
                     mappings["phones"][phone] = _generate_fake_phone()
 
+            # Konto- und Kennnummern
+            for value in scanned_data.get("ids", []):
+                mappings["misc"].setdefault(value, "[KENNUNG_ANON]")
+
             # E-Mail-Adressen
             for email in scanned_data.get("emails", []):
                 if email not in mappings["emails"]:
@@ -1713,6 +1803,7 @@ class DocumentAnonymizer:
         """
         combined = {
             "phones": [],
+            "ids": [],
             "emails": [],
             "addresses": [],
             "table_row_names": [],

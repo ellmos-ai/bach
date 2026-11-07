@@ -16343,12 +16343,22 @@ def _report_error_response(exc: Exception) -> dict:
 
 
 @app.get("/api/report/readiness")
-async def report_readiness():
-    """Ob der Cloud-Weg laufen darf (Namenserkennung bereit); sonst Grund maschinenlesbar, ohne Werte."""
+async def report_readiness(session_id: Optional[str] = None):
+    """Ob der Cloud-Weg laufen darf (Namenserkennung bereit); sonst Grund maschinenlesbar, ohne Werte.
+
+    Mit ?session_id= zusaetzlich die Session: Profil, lesbares Geburtsdatum, Akten-Scan nach dem
+    letzten Import (R7-F5)."""
     try:
         from hub._services.document.report_workflow_service import PromptPrivacyError, require_cloud_ner
+        session = None
+        if session_id is not None:
+            session = get_report_workflow_service().get_session(session_id)
+            if not session:
+                return {"success": False, "error": "Session nicht gefunden"}
         try:
             require_cloud_ner()
+            if session is not None:
+                get_report_workflow_service().require_cloud_session(session)
         except PromptPrivacyError as e:
             return {"success": True, "cloud_ready": False, "error_code": e.code, "error": str(e)}
         return {"success": True, "cloud_ready": True, "error_code": None, "error": None}
@@ -16436,7 +16446,7 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
             return {"success": False, "error": "client_name erforderlich"}
 
         profile = service.create_cloud_profile(
-            session, client_name, data.get("geburtsdatum", "01.01.2010"),
+            session, client_name, data.get("geburtsdatum") or "",  # kein Platzhalter: fehlt -> Sperre (R7-F1)
             additional_terms=data.get("additional_terms") or [],
             whitelist=data.get("whitelist") or None,
             parent_names=data.get("parent_names") or None,

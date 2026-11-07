@@ -343,7 +343,8 @@ class PromptPrivacyError(ValueError):
     """Datenschutz-Sperre: Der Cloud-Prompt wird nicht gebaut.
 
     ``code`` ist maschinenlesbar (identity_terms_in_prompt, ner_unavailable, document_scan_missing,
-    profile_missing); Meldung und Code enthalten nie Werte des Falls (sie landen in GUI-Antworten).
+    profile_missing, birth_date_invalid); Meldung und Code enthalten nie Werte des Falls (sie landen in
+    GUI-Antworten).
     """
 
     def __init__(self, message: str, code: str = "identity_terms_in_prompt"):
@@ -366,34 +367,63 @@ def require_cloud_ner() -> None:
         )
 
 
+def require_birth_date(value) -> str:
+    """Geburtsdatum fuer den Cloud-Weg in der Hauptform TT.MM.JJJJ (R7-F1, fail-closed).
+
+    Jede gaengige Eingabeform wird gelesen (3.7.14, 2014-07-03, 3. Juli 2014, ...). Fehlt das Datum oder
+    ist es nicht lesbar, gibt es keinen Platzhalter: Sonst bliebe das echte Datum der Akte im Prompt.
+    """
+    normalized = _anon.normalize_date(value)
+    if not normalized:
+        raise PromptPrivacyError(
+            "Datenschutz-Sperre: Das Geburtsdatum fehlt oder ist nicht lesbar (z. B. TT.MM.JJJJ). Ohne es "
+            "bliebe das echte Datum der Akte im Cloud-Prompt stehen. Geburtsdatum angeben oder Modus 'lokal' "
+            "nutzen. Es wurde nichts gesendet.",
+            code="birth_date_invalid",
+        )
+    return normalized
+
+
 def _fold(text: str) -> str:
     """Vergleichsform der Sperre: Gross/klein, Umlaut/ae/ohne Punkte, zerlegte Zeichen und "_" gleich."""
     text = "".join(c for c in unicodedata.normalize("NFKD", text.casefold()) if not unicodedata.combining(c))
     return text.replace("ae", "a").replace("oe", "o").replace("ue", "u").replace("_", " ")
 
 
-def _assert_no_identity_terms(terms, *parts, birth_date: str = "") -> None:
+def _assert_no_identity_terms(terms, *parts, birth_date: str = "", case_parts=(), allowed=()) -> None:
     """Sperrt, wenn eine Kennung des Falls in den Teilen steht (fail-closed: Falschtreffer brechen nur ab).
 
     Verglichen wird in der Vergleichsform (_fold), mit Beugungsendungen ("Muellers", "Muellerin") und
     "_" als Trenner (R6-1/R6-3); das Geburtsdatum zusaetzlich in jeder Schreibweise (R6-2).
+    In den Fallteilen (`case_parts`: Akte, Zusatzanweisungen) zusaetzlich (R7-F2/F3): Namensteile ab
+    5 Buchstaben als Wortanfang ("Berghoferhaus") und Telefon-/Konto-/Kennnummern nach Muster.
+    `allowed` (Tarnwerte, Whitelist) sperrt nie; so loest die Whitelist einen Falschtreffer ("Ernstfall").
     Die Meldung nennt bewusst keinen Wert (sie landet in Logs und GUI-Antworten).
     """
     text = "\n".join(p or "" for p in parts)
+    case_text = "\n".join(p or "" for p in case_parts)
     keys = sorted({_fold(t) for t in terms if t and t.strip()}, key=len, reverse=True)
     hits = set()
     if keys:
         pattern = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, keys)) + r")"
                              + _anon.INFLECTION_SUFFIX + r"?(?!\w)")
         hits = {m.group(0) for m in pattern.finditer(_fold(text))}
+    stems = [k for k in keys if len(k) >= 5 and k.isalpha()]
+    if stems and case_text:
+        prefix = re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, stems)) + r")\w*")
+        hits |= {m.group(0) for m in prefix.finditer(_fold(case_text))}
+    hits |= {m.group(0).strip() for regex in _anon.CASE_NUMBER_PATTERNS for m in regex.finditer(case_text)}
+    allowed_folded = {_fold(a).strip() for value in allowed if value for a in (value, *value.split())}
+    hits = {h for h in hits if _fold(h).strip() not in allowed_folded}
     dates = _anon.date_pattern(birth_date) if birth_date else None
     if dates:
         hits |= {m.group(0) for m in dates.finditer(unicodedata.normalize("NFC", text))}
     if hits:
         raise PromptPrivacyError(
             f"Datenschutz-Sperre: {len(hits)} Kennung(en) des Falls stuenden noch im Cloud-Prompt "
-            "(z. B. andere Schreibweise oder unerkannte Mail-Adresse). Es wurde nichts gesendet. "
-            "Begriffsliste ergaenzen oder Modus 'lokal' nutzen."
+            "(z. B. andere Schreibweise, Wortteil, unerkannte Telefon-, Konto- oder Mail-Angabe). Es wurde "
+            "nichts gesendet. Begriffsliste (oder bei Falschtreffern die Whitelist) ergaenzen oder Modus "
+            "'lokal' nutzen."
         )
 
 
@@ -526,6 +556,21 @@ class WorkflowSession:
 # ═══════════════════════════════════════════════════════════════
 
 _MANUAL_TITLES = ("Frau", "Herr", "Dr.", "Prof.", "Frau Dr.", "Herr Dr.", "Frau Prof.", "Herr Prof.")
+
+
+_STREET_TYPES = ("straße", "strasse", "str.", "str", "weg", "gasse", "platz", "allee", "ring", "pfad")
+
+
+def _street_name_pairs(street: str) -> List[Tuple[str, str]]:
+    """(echter, Tarn-)Strassenname ohne Hausnummer (R7-F4): "Lindenweg 12a" -> Lindenweg, Lindenstr.,
+    Lindenstraße, ... Je Strassentyp ein eigener Tarnname ("Tarnweg", "Tarnstr."), damit die
+    Rueckuebersetzung eindeutig bleibt. Ohne erkennbaren Typ ("Am Bach") nur der Name selbst."""
+    name = re.sub(r"(?i)\s*(?:nr\.?\s*)?\d+\s*[a-z]?\s*$", "", street or "").strip()
+    match = re.fullmatch(r"(?P<stem>.{3,}?)(?P<type>(?i:" + "|".join(map(re.escape, _STREET_TYPES)) + "))", name)
+    if not match:
+        return [(name, "Tarnweg")] if len(name) >= 4 else []
+    case = str.capitalize if match["type"][0].isupper() else str
+    return [(match["stem"] + case(t), "Tarn" + t) for t in _STREET_TYPES]
 
 
 def _expand_manual_terms(terms, whitelist):
@@ -729,6 +774,12 @@ Interpersonelle Interaktionen:
             Anzahl importierter Dateien
         """
         session.status = "importing"
+        # Neue Dateien kennt der Akten-Scan des bestehenden Profils nicht (R7-F5): Scan, Bundle und
+        # data_ano/ gelten nicht mehr; der Cloud-Weg sperrt mit document_scan_missing bis zum neuen Profil.
+        if session.profile is not None:
+            session.profile.document_scanned = False
+        session.bundle = None
+        session.anonymized = False
         data_dir = self.base_path / "data_roh"
         data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -787,7 +838,7 @@ Interpersonelle Interaktionen:
         self,
         session: WorkflowSession,
         client_name: str,
-        geburtsdatum: str = "01.01.2010",
+        geburtsdatum: str = "",
         additional_terms: Optional[List[str]] = None,
         whitelist: Optional[List[str]] = None,
         scan_folder: Optional[Path] = None,
@@ -848,8 +899,10 @@ Interpersonelle Interaktionen:
         )
         self._used_tarnnames.add(tarnname)
 
-        # Falsches Geburtsdatum
-        fake_geb, _ = _generate_fake_date_same_age(geburtsdatum)
+        # Falsches Geburtsdatum. Jede Eingabeform zaehlt (3.7.14, 2014-07-03, ...), Hauptform TT.MM.JJJJ;
+        # nicht lesbar -> keine Datumszuordnung, der Cloud-Weg sperrt dann mit birth_date_invalid (R7-F1).
+        geburtsdatum = _anon.normalize_date(geburtsdatum)
+        fake_geb = _generate_fake_date_same_age(geburtsdatum)[0] if geburtsdatum else ""
 
         # Mappings aufbauen
         mappings: Dict[str, Dict[str, str]] = {
@@ -857,6 +910,7 @@ Interpersonelle Interaktionen:
             "dates": {},
             "addresses": {},
             "phones": {},
+            "ids": {},  # Konto- und Kennnummern aus dem Akten-Scan (R7-F2)
             "emails": {},
             "misc": {}
         }
@@ -903,9 +957,10 @@ Interpersonelle Interaktionen:
 
         # Geburtsdatum, auch in anderen Schreibweisen (14.5.2017, 14. Mai 2017, 2017-05-14, ...);
         # die Hauptform bleibt der erste Eintrag (GEBURTSDATUM-Platzhalter liest ihn).
-        mappings["dates"][geburtsdatum] = fake_geb
-        for real_form, fake_form in _date_variant_pairs(geburtsdatum, fake_geb):
-            mappings["dates"].setdefault(real_form, fake_form)
+        if geburtsdatum:
+            mappings["dates"][geburtsdatum] = fake_geb
+            for real_form, fake_form in _date_variant_pairs(geburtsdatum, fake_geb):
+                mappings["dates"].setdefault(real_form, fake_form)
 
         # Elternnamen anonymisieren (mit Gender-Matching)
         if parent_names:
@@ -960,6 +1015,10 @@ Interpersonelle Interaktionen:
                 for key in ("street", "plz", "city"):
                     mappings["addresses"].setdefault(parts[key], fake_parts[key])
                     mappings["addresses"].setdefault(parts[key].upper(), fake_parts[key].upper())
+            # Strassenname auch ohne (gleiche) Hausnummer und mit anderem Strassentyp (R7-F4)
+            for real_form, fake_form in _street_name_pairs(parts["street"] if parts else client_address.split(",")[0]):
+                mappings["addresses"].setdefault(real_form, fake_form)
+                mappings["addresses"].setdefault(real_form.upper(), fake_form.upper())
             # Kein Klartext-Adresse im Log
             print(f"[INFO] Klienten-Adresse anonymisiert -> {fake_addr}")
 
@@ -1009,6 +1068,11 @@ Interpersonelle Interaktionen:
                 if phone not in wl:
                     fake_phone = _generate_fake_phone()
                     mappings["phones"][phone] = fake_phone
+
+            # Konto- und Kennnummern: je Wert ein eigener Platzhalter (eindeutige Rueckuebersetzung)
+            for value in scanned.get("ids", []):
+                if value not in wl:
+                    mappings["ids"].setdefault(value, f"KENNUNG_{len(mappings['ids']) + 1:02d}")
 
             # E-Mail-Adressen (kein Klartextwert im Log)
             for email in scanned.get("emails", []):
@@ -1075,7 +1139,7 @@ Interpersonelle Interaktionen:
 
         # Regex-Funde (Telefon, Mail, Adressen) sind sichere Kennungen; kurze Woerter (< 3) und
         # Whitelist nicht, sonst sperrt die Pruefung ohne Wortgrenzen-Sinn ("li.", Amtspersonen).
-        identity |= set(mappings["phones"]) | set(mappings["emails"]) | set(mappings["addresses"])
+        identity |= set(mappings["phones"]) | set(mappings["ids"]) | set(mappings["emails"]) | set(mappings["addresses"])
         wl_lower = {w.lower() for w in wl}
         identity_terms = sorted(t for t in identity if len(t.strip()) >= 3 and t.lower() not in wl_lower)
 
@@ -1100,14 +1164,39 @@ Interpersonelle Interaktionen:
         return profile
 
     def create_cloud_profile(
-        self, session: WorkflowSession, client_name: str, geburtsdatum: str = "01.01.2010", **kwargs
+        self, session: WorkflowSession, client_name: str, geburtsdatum: str = "", **kwargs
     ) -> TempAnonymProfile:
-        """Profil fuer jeden Cloud-Weg (Pipeline, Chat-Werkzeug, GUI/API): NER-Pflicht und Scan
-        der importierten Akte (data_roh/, dieselbe Auswahl wie anonymize_to_bundles)."""
+        """Profil fuer jeden Cloud-Weg (Pipeline, Chat-Werkzeug, GUI/API): NER-Pflicht, lesbares
+        Geburtsdatum (kein Platzhalter, R7-F1) und Scan der importierten Akte (data_roh/, dieselbe
+        Auswahl wie anonymize_to_bundles)."""
         require_cloud_ner()
+        geburtsdatum = require_birth_date(geburtsdatum)
         return self.create_temp_profile(
             session, client_name, geburtsdatum, scan_folder=self.base_path / "data_roh", **kwargs
         )
+
+    def require_cloud_session(self, session: WorkflowSession) -> None:
+        """Darf aus dieser Session ein Cloud-Prompt entstehen? Sonst PromptPrivacyError mit Code, ohne Werte.
+
+        Profil mit Ersetzungen, lesbares Geburtsdatum, Akten-Scan mit Namenserkennung nach dem letzten
+        Import (R7-F5). Gemeinsame Pruefung von generate_prompt und /api/report/readiness?session_id=.
+        """
+        profile = session.profile
+        if not any((getattr(profile, "mappings", None) or {}).values()):
+            raise PromptPrivacyError(
+                "Datenschutz-Sperre: Fuer diesen Fall gibt es kein Pseudonymisierungsprofil. "
+                "Zuerst das Profil anlegen. Es wurde nichts gesendet.",
+                code="profile_missing",
+            )
+        require_birth_date(next(iter(profile.mappings.get("dates") or {}), ""))
+        if not getattr(profile, "document_scanned", False):
+            require_cloud_ner()
+            raise PromptPrivacyError(
+                "Datenschutz-Sperre: Die Akte wurde nicht (oder vor dem letzten Import) auf Namen Dritter, "
+                "Telefonnummern, Mail-Adressen und Adressen gescannt. Profil nach dem Import der ganzen Akte "
+                "anlegen. Es wurde nichts gesendet.",
+                code="document_scan_missing",
+            )
 
     def auto_detect_profile(
         self,
@@ -1393,20 +1482,7 @@ Interpersonelle Interaktionen:
         if cloud is None:
             cloud = has_mappings
         if cloud:
-            if not has_mappings:
-                raise PromptPrivacyError(
-                    "Datenschutz-Sperre: Fuer diesen Fall gibt es kein Pseudonymisierungsprofil. "
-                    "Zuerst das Profil anlegen. Es wurde nichts gesendet.",
-                    code="profile_missing",
-                )
-            if not getattr(session.profile, "document_scanned", False):
-                require_cloud_ner()
-                raise PromptPrivacyError(
-                    "Datenschutz-Sperre: Die Akte wurde nicht auf Namen Dritter, Telefonnummern, "
-                    "Mail-Adressen und Adressen gescannt. Profil nach dem Import der Akte anlegen. "
-                    "Es wurde nichts gesendet.",
-                    code="document_scan_missing",
-                )
+            self.require_cloud_session(session)
             # Wie die Pipeline: Bundle nur aus data_ano/, das in DIESER Session erzeugt wurde.
             if not session.bundle:
                 if not session.anonymized:
@@ -1438,10 +1514,13 @@ Interpersonelle Interaktionen:
             replacements = DocumentAnonymizer._sorted_replacements(session.profile.to_anonym_profile())
             kb_context = _apply_replacements(kb_context, replacements)[0]
             custom_instructions = _apply_replacements(custom_instructions or "", replacements)[0]
+            fakes = list(session.profile.get_all_mappings().values())
             _assert_no_identity_terms(
                 getattr(session.profile, "identity_terms", None) or [],
                 bundle.core_text, bundle.stufe2_text, kb_context, custom_instructions, berichtszeitraum,
                 birth_date=next(iter(session.profile.mappings.get("dates") or {}), ""),
+                case_parts=(bundle.core_text, bundle.stufe2_text, custom_instructions),
+                allowed=[*fakes, *(getattr(session.profile, "whitelist", None) or [])],
             )
 
         # Prompt zusammenbauen
@@ -2444,7 +2523,7 @@ JSON:
 def quick_report(
     input_folder: Path,
     client_name: str,
-    geburtsdatum: str = "01.01.2010",
+    geburtsdatum: str = "",
     berichtszeitraum: str = "01.01.2025 - 31.12.2025"
 ) -> Tuple[str, Path]:
     """
@@ -2460,9 +2539,11 @@ def quick_report(
         (prompt, data_path) - Prompt und Pfad zu den Daten
 
     Raises:
-        PromptPrivacyError: ohne Namenserkennung, bevor eine Datei kopiert wird (R6-4).
+        PromptPrivacyError: ohne Namenserkennung oder lesbares Geburtsdatum, bevor eine Datei kopiert
+            wird (R6-4, R7-F1).
     """
     require_cloud_ner()  # der Prompt ist fuer ein Cloud-Modell bestimmt (CLI "generate" sendet ihn)
+    geburtsdatum = require_birth_date(geburtsdatum)
     service = ReportWorkflowService()
     session = service.start_session()
 
@@ -2549,7 +2630,7 @@ def main():
 
         folder = Path(sys.argv[2])
         name = sys.argv[3]
-        geb = sys.argv[4] if len(sys.argv) > 4 else "01.01.2010"
+        geb = sys.argv[4] if len(sys.argv) > 4 else ""  # ohne Datum sperrt quick_report (R7-F1)
 
         print(f"Generiere Prompt fuer: {name}")
         prompt, data_path = quick_report(folder, name, geb)
@@ -2600,7 +2681,7 @@ def main():
 
         folder = Path(sys.argv[2])
         name = sys.argv[3]
-        geb = sys.argv[4] if len(sys.argv) > 4 else "01.01.2010"
+        geb = sys.argv[4] if len(sys.argv) > 4 else ""  # ohne Datum sperrt quick_report (R7-F1)
 
         print(f"=== BERICHTERSTELLUNG fuer: {name} ===\n")
 
