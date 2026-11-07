@@ -48,6 +48,7 @@ Erstellt: 2026-02-01
 """
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -168,6 +169,61 @@ DEFAULT_WHITELIST = [
 ]
 
 
+def _template_path() -> Path:
+    """Vorlage: Umgebungsvariable FOERDERBERICHT_TEMPLATE (private Bindung) vor Standardpfad."""
+    override = os.environ.get("FOERDERBERICHT_TEMPLATE", "").strip()
+    return Path(override) if override else TEMPLATE_PATH
+
+
+def _report_text(value) -> str:
+    """JSON-Wert als lesbarer Text (Listen zeilenweise, Dicts als 'Schluessel: Wert')."""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return "\n".join(f"{k}: {_report_text(v)}" for k, v in value.items())
+    if isinstance(value, list):
+        return "\n".join(_report_text(v) for v in value)
+    return str(value)
+
+
+def _flatten_report(data: Dict) -> Dict[str, str]:
+    """Berichts-JSON -> {{PLATZHALTER}}-Werte: Blattname und voller Pfad, GROSS, nur Text."""
+    out: Dict[str, str] = {}
+
+    def walk(value, path):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                walk(item, path + [str(key).upper()])
+        elif path:
+            text = _report_text(value)
+            out["_".join(path)] = text
+            out.setdefault(path[-1], text)
+
+    walk(data, [])
+    return out
+
+
+def _report_markdown(data: Dict) -> str:
+    """Berichts-JSON als lesbarer Markdown-Text (Abschnitt je Schluessel der obersten Ebene)."""
+    return "\n\n".join(
+        f"## {str(key).replace('_', ' ').title()}\n\n{_report_text(value)}"
+        for key, value in data.items()
+    )
+
+
+_PLACEHOLDER_RE = re.compile(r"\{\{([^}]+)\}\}")
+
+
+def _doc_placeholders(doc) -> set:
+    """Alle {{NAME}}-Platzhalter in Absaetzen und Tabellen (Kopf-/Fusszeilen bewusst nicht)."""
+    paragraphs = list(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                paragraphs.extend(cell.paragraphs)
+    return {m.strip() for p in paragraphs for m in _PLACEHOLDER_RE.findall(p.text)}
+
+
 # ═══════════════════════════════════════════════════════════════
 # Datenklassen
 # ═══════════════════════════════════════════════════════════════
@@ -261,6 +317,7 @@ class WorkflowSession:
     bundle: Optional[TextBundle] = None
     output_path: Optional[Path] = None
     error_message: str = ""
+    warnings: List[str] = field(default_factory=list)
     created: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
@@ -272,6 +329,7 @@ class WorkflowSession:
             "input_files_count": len(self.input_files),
             "output_path": str(self.output_path) if self.output_path else None,
             "error": self.error_message or None,
+            "warnings": list(self.warnings),
             "created": self.created
         }
 
@@ -1549,55 +1607,64 @@ JSON:
         else:
             original_name = session.profile.tarnname if session.profile else "Klient"
 
-        try:
-            # Generator importieren - Direkter Pfad, da 'agents' mit hub/agents.py kollidiert
-            import sys
-            import importlib.util
-            generator_path = BACH_BASE / "system" / "agents" / "_experts" / "report_generator" / "generator.py"
-            spec = importlib.util.spec_from_file_location("report_generator", str(generator_path))
-            generator_mod = importlib.util.module_from_spec(spec)
-            # Generator braucht Zugriff auf seine Nachbar-Module
-            gen_dir = str(generator_path.parent)
-            if gen_dir not in sys.path:
-                sys.path.insert(0, gen_dir)
-            spec.loader.exec_module(generator_mod)
-            fill_template = generator_mod.fill_template
+        generator_path = BACH_BASE / "system" / "agents" / "_experts" / "report_generator" / "generator.py"
+        template_path = _template_path()
+        if generator_path.is_file() and template_path.is_file():
+            try:
+                # Generator importieren - Direkter Pfad, da 'agents' mit hub/agents.py kollidiert
+                import sys
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("report_generator", str(generator_path))
+                generator_mod = importlib.util.module_from_spec(spec)
+                # Generator braucht Zugriff auf seine Nachbar-Module
+                gen_dir = str(generator_path.parent)
+                if gen_dir not in sys.path:
+                    sys.path.insert(0, gen_dir)
+                spec.loader.exec_module(generator_mod)
+                fill_template = generator_mod.fill_template
 
-            # Output-Pfad
-            safe_name = "".join(c for c in original_name if c.isalnum() or c in " -_").strip()
-            timestamp = datetime.now().strftime("%Y%m%d")
-            output_name = f"Foerderbericht_{safe_name}_{timestamp}.docx"
-            output_path = self.base_path / "output_berichte" / output_name
+                # Output-Pfad
+                safe_name = "".join(c for c in original_name if c.isalnum() or c in " -_").strip()
+                timestamp = datetime.now().strftime("%Y%m%d")
+                output_name = f"Foerderbericht_{safe_name}_{timestamp}.docx"
+                output_path = self.base_path / "output_berichte" / output_name
 
-            # Generator nutzen
-            result = fill_template(
-                template_path=str(TEMPLATE_PATH),
-                report_data=json_data,
-                output_path=str(output_path)
-            )
+                # Generator nutzen
+                result = fill_template(
+                    template_path=str(template_path),
+                    report_data=json_data,
+                    output_path=str(output_path)
+                )
 
-            if result.success:
-                session.output_path = output_path
-                session.status = "completed"
-                return output_path
-            else:
+                if result.success:
+                    session.output_path = output_path
+                    session.status = "completed"
+                    return output_path
                 session.error_message = f"Generator-Fehler: {'; '.join(result.errors)}"
                 session.status = "error"
                 return None
+            except Exception:
+                print("[FEHLER] fill_template Exception")
+                session.warnings.append("Generator fehlgeschlagen; Vorlagen-Fallback genutzt")
 
-        except Exception:
-            session.error_message = "JSON-Generierung fehlgeschlagen"
-            session.status = "error"
-            print("[FEHLER] fill_template Exception")
-            # Preserve the caller's identity policy; JSON was already transformed above.
-            print("[INFO] Fallback zu Markdown-Generator...")
-            return self._generate_from_markdown(
-                session,
-                json.dumps(json_data, ensure_ascii=False, indent=2),
-                auto_deanonymize,
-                json_data,
-                content_already_deanonymized=True,
+        # Ohne Vorlage gibt es keinen Foerderbericht -- kein stilles Ersatzdokument.
+        if not template_path.is_file():
+            session.error_message = (
+                f"Vorlage nicht gefunden: {template_path}. Pfad per Umgebungsvariable "
+                "FOERDERBERICHT_TEMPLATE binden; es wird kein Ersatzdokument erzeugt."
             )
+            session.status = "error"
+            return None
+
+        # Vorlagen-Fallback (ohne privaten Generator): JSON-Felder in die {{PLATZHALTER}} der Vorlage.
+        # json_data ist oben bereits de-anonymisiert, daher keine zweite Rueckuebersetzung.
+        return self._generate_from_markdown(
+            session,
+            _report_markdown(json_data),
+            auto_deanonymize,
+            _flatten_report(json_data),
+            content_already_deanonymized=True,
+        )
 
     def _deanonymize_json(self, data: Dict, profile: TempAnonymProfile) -> Dict:
         """De-anonymisiert alle String-Werte in einem JSON-Dict rekursiv."""
@@ -1664,10 +1731,18 @@ JSON:
         )
 
         # Template laden
-        if TEMPLATE_PATH.exists():
-            doc = Document(str(TEMPLATE_PATH))
+        template_path = _template_path()
+        if template_path.exists():
+            doc = Document(str(template_path))
+            template_fields = _doc_placeholders(doc)
             # Platzhalter in Paragraphen ersetzen
             self._replace_placeholders_in_doc(doc, placeholders)
+            unfilled = sorted(_doc_placeholders(doc))
+            if unfilled:
+                session.warnings.append("Vorlagenfelder ohne Inhalt: " + ", ".join(unfilled))
+            unused = sorted(k for k in (report_data or {}) if k not in template_fields)
+            if unused:
+                session.warnings.append("Inhalt ohne Platz in der Vorlage: " + ", ".join(unused))
 
             # ICF-Tabelle bereinigen wenn Foerderziele vorhanden
             if report_data and len(doc.tables) >= 3:

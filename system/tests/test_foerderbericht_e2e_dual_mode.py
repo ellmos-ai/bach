@@ -19,6 +19,38 @@ from hub._services.document import foerderbericht_pipeline as fp
 from hub._services.document.foerderbericht_pipeline import FoerderberichtPipeline
 
 
+REQUIRED_HEADINGS = ["Stammdaten", "Aktuelle Entwicklungen", "Empfehlung"]
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_template(tmp_path, monkeypatch):
+    """Neutrale Vorlage; der private Generator ist im Testlauf nie vorhanden."""
+    from hub._services.document import report_workflow_service as rws
+
+    template = tmp_path.parent / f"{tmp_path.name}_vorlage.docx"
+    doc = Document()
+    doc.add_heading("Stammdaten", 1)
+    doc.add_paragraph("Name: {{KLIENT_NAME}}")
+    doc.add_paragraph("Geburtsdatum: {{GEBURTSDATUM}}")
+    doc.add_heading("Aktuelle Entwicklungen", 1)
+    doc.add_paragraph("{{AKTUELLE_ENTWICKLUNGEN}}")
+    doc.add_heading("Empfehlung", 1)
+    doc.add_paragraph("{{EMPFEHLUNG}}")
+    doc.save(template)
+    monkeypatch.setattr(rws, "TEMPLATE_PATH", template)
+    monkeypatch.setattr(rws, "BACH_BASE", tmp_path / "kein-generator")
+
+
+def _assert_real_report(path: Path) -> None:
+    """Echter Bericht: Pflichtueberschriften der Vorlage, Absaetze, keine JSON-Reste."""
+    texts = [p.text for p in Document(str(path)).paragraphs]
+    assert len([t for t in texts if t.strip()]) >= 6
+    for heading in REQUIRED_HEADINGS:
+        assert heading in texts, f"Pflichtueberschrift fehlt: {heading}"
+    body = "\n".join(texts)
+    assert not re.search(r'[{}"]', body), "JSON-Reste oder Platzhalter im Bericht"
+
+
 def _create_synthetic_case(base_path: Path) -> dict:
     """Legt eine vollstaendig synthetische Klientenakte in data_roh/ an."""
     client_dir = base_path / "data_roh" / "Leonhardt, Jonas"
@@ -120,6 +152,7 @@ def test_e2e_lokal_mode_without_anonymization_produces_docx(tmp_path, monkeypatc
     assert res.success, f"Lokal-Pipeline fehlgeschlagen: {res.error}"
     assert res.output_path is not None and res.output_path.is_file()
     assert res.output_path.suffix == ".docx"
+    _assert_real_report(res.output_path)
 
     # Prompt im lokalen Modus enthaelt Klartext (keine Person###-Platzhalter)
     assert len(captured_Prompts) == 1
@@ -186,6 +219,7 @@ def test_e2e_cloud_mode_with_pseudonymization_and_deanonymization_produces_docx(
     assert res.success, f"Cloud-Pipeline fehlgeschlagen: {res.error}"
     assert res.output_path is not None and res.output_path.is_file()
     assert res.output_path.suffix == ".docx"
+    _assert_real_report(res.output_path)
 
     prompt = captured_cloud_prompt["prompt"]
     bundle_segment = prompt[prompt.index("=== DOKUMENTEN-BUNDLE"):prompt.index("=== AUFGABE")]
@@ -200,3 +234,32 @@ def test_e2e_cloud_mode_with_pseudonymization_and_deanonymization_produces_docx(
     assert res.tarnname not in docx_text, f"Tarnname {res.tarnname!r} wurde nicht zurueckuebersetzt"
     assert not re.search(r"Person\d{3}", docx_text)
     assert not re.search(r"BEGRIFF_\d{2}", docx_text)
+
+
+def test_e2e_missing_template_fails_with_clear_error_and_no_document(tmp_path, monkeypatch):
+    """Fehlende Vorlage: klare Fehlermeldung, kein Dokument, das wie ein Bericht aussieht."""
+    from hub._services.document import report_workflow_service as rws
+
+    monkeypatch.setattr(FoerderberichtPipeline, "_find_onedrive_exe", staticmethod(lambda: None))
+    monkeypatch.setattr(rws, "TEMPLATE_PATH", tmp_path / "gibt-es-nicht.docx")
+    monkeypatch.setattr(
+        FoerderberichtPipeline, "_call_llm",
+        lambda self, prompt, backend, model: json.dumps({"empfehlung": "Weiterbewilligung."}),
+    )
+    meta = _create_synthetic_case(tmp_path)
+
+    res = FoerderberichtPipeline(base_path=tmp_path).run_full_pipeline(
+        modus="cloud",
+        client_name=meta["client_name"],
+        geburtsdatum=meta["geburtsdatum"],
+        parent_names=meta["parent_names"],
+        client_address=meta["client_address"],
+        additional_terms=meta["additional_terms"],
+        berichtszeitraum="01.01.2025 - 31.12.2025",
+        auto_cleanup=False,
+    )
+
+    assert not res.success
+    assert "Vorlage" in res.error and "gibt-es-nicht.docx" in res.error
+    assert res.output_path is None or res.output_path.suffix != ".docx"
+    assert not list((tmp_path / "output_berichte").glob("*.docx"))

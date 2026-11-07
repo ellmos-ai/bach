@@ -77,6 +77,11 @@ def test_json_fallback_retains_public_identity_choice_without_second_restoration
     path = service._generate_from_json(
         session, {"summary": "Felix Bergmann trifft BEGRIFF_01."}, restore
     )
+    if not template:
+        # PB-15: ohne Vorlage kein Ersatzdokument, sondern eine klare Fehlermeldung
+        assert path is None and session.status == "error"
+        assert "Vorlage" in session.error_message
+        return
     text = document_text(path)
     name = "Jonas Leonhardt" if restore else "Felix Bergmann"
     assert path.name.startswith("Foerderbericht_" + name + "_")
