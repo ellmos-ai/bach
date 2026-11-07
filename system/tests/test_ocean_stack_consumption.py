@@ -196,7 +196,7 @@ def test_bach_consumes_configurable_review_worktree_and_escalation(tmp_path: Pat
     assert tres["found"] is False
 
     status = ocean_stack_status()
-    assert status["capability_extensions_bound_count"] == 5
+    assert status["capability_extensions_bound_count"] >= 5  # + universal-gui / llm-note when their checkouts exist
     for ext_name in (
         "ellmos-voice-io",
         "ellmos-talk",
@@ -217,9 +217,17 @@ def test_bach_consumes_configurable_review_worktree_and_escalation(tmp_path: Pat
     assert getattr(SmartHomeHandler, "__ocean_deprecated__", False) is True
 
 
-def test_bach_multimodal_and_embodied_gui_endpoints():
+def test_bach_multimodal_and_embodied_gui_endpoints(tmp_path, monkeypatch):
     import asyncio
+    import json
     from gui import server
+
+    # Homecontrol/robotics routes are gated by the capability matrix (PB-13, #3996);
+    # isolate the grant and the persisted E-Stop from the real ~/.bach.
+    grants = tmp_path / "capability_permissions.json"
+    grants.write_text(json.dumps({"smarthome_robotics": True}), encoding="utf-8")
+    monkeypatch.setattr(server, "_CAPABILITY_PERMISSIONS_FILE", grants)
+    monkeypatch.setattr(server, "_ROBOTICS_ESTOP_FILE", tmp_path / "robotics_estop.json")
 
     perms = asyncio.run(server.api_get_capability_permissions())
     assert perms["schema"] == "ellmos.capability-permissions.v1"
@@ -293,6 +301,15 @@ def test_modularized_services_and_hot_wiring():
         load_token_budget_module,
         load_rate_limit_policy_module,
         load_audit_logger_module,
+        load_telemetry_module,
+        load_limits_module,
+        load_worker_policy_module,
+        load_session_module,
+        load_cache_module,
+        load_scheduler_module,
+        load_plugins_module,
+        load_hooks_module,
+        load_memory_module,
         detect_legacy_in_tree_services,
         auto_switch_to_standalone_modules,
         get_service_or_standalone,
@@ -351,6 +368,42 @@ def test_modularized_services_and_hot_wiring():
     assert mod_al is not None
     assert hasattr(mod_al, "log_audit_event")
 
+    mod_telem = load_telemetry_module()
+    assert mod_telem is not None
+    assert hasattr(mod_telem, "increment")
+
+    mod_lim = load_limits_module()
+    assert mod_lim is not None
+    assert hasattr(mod_lim, "limit")
+
+    mod_wp = load_worker_policy_module()
+    assert mod_wp is not None
+    assert hasattr(mod_wp, "read_global_policy")
+
+    mod_sess = load_session_module()
+    assert mod_sess is not None
+    assert hasattr(mod_sess, "SessionManager")
+
+    mod_cache = load_cache_module()
+    assert mod_cache is not None
+    assert hasattr(mod_cache, "CacheManager")
+
+    mod_sched = load_scheduler_module()
+    assert mod_sched is not None
+    assert hasattr(mod_sched, "JobScheduler")
+
+    mod_plug = load_plugins_module()
+    assert mod_plug is not None
+    assert hasattr(mod_plug, "PluginRegistry")
+
+    mod_hook = load_hooks_module()
+    assert mod_hook is not None
+    assert hasattr(mod_hook, "HookRegistry")
+
+    mod_mem = load_memory_module()
+    assert mod_mem is not None
+    assert hasattr(mod_mem, "MemoryStore")
+
     # Dynamic service resolver test
     dyn_dw = get_service_or_standalone("domain_writer_gate")
     assert dyn_dw is not None
@@ -360,13 +413,13 @@ def test_modularized_services_and_hot_wiring():
     detection = detect_legacy_in_tree_services()
     assert detection["schema"] == "bach.legacy-in-tree-detection.v1"
     assert detection["total_in_tree_services"] >= 140
-    assert detection["standalone_modules_available"] >= 12
-    assert detection["switched_or_switchable_count"] >= 12
+    assert detection["standalone_modules_available"] >= 18
+    assert detection["switched_or_switchable_count"] >= 18
 
     # Auto-switch execution
     switch_report = auto_switch_to_standalone_modules()
     assert switch_report["schema"] == "bach.auto-switch-standalone-report.v1"
-    assert switch_report["total_switched"] >= 12
+    assert switch_report["total_switched"] >= 23
 
     status = ocean_modularized_services_status()
     for s_name in (
@@ -382,13 +435,31 @@ def test_modularized_services_and_hot_wiring():
         "token_budget",
         "rate_limit_policy",
         "audit_logger",
+        "telemetry",
+        "limits",
+        "worker_policy",
+        "prompt",
+        "message_delivery",
+        "conversation_store",
+        "inbox",
+        "email_bridge",
+        "notify",
+        "session",
+        "cache",
+        "scheduler",
+        "plugins",
+        "hooks",
+        "memory",
+        "skills",
+        "tools",
+        "agents",
     ):
         assert s_name in status
         assert status[s_name]["bound"] is True, f"Service {s_name} not bound: {status[s_name]}"
 
     full_status = ocean_stack_status()
     assert "modularized_services" in full_status
-    assert full_status["modularized_standalone_count"] >= 11
+    assert full_status["modularized_standalone_count"] >= 14
     for s_name in (
         "agent_spawn_gate",
         "context_hints",
@@ -402,5 +473,39 @@ def test_modularized_services_and_hot_wiring():
         "token_budget",
         "rate_limit_policy",
         "audit_logger",
+        "telemetry",
+        "limits",
+        "worker_policy",
+        "prompt",
+        "message_delivery",
+        "conversation_store",
+        "inbox",
+        "email_bridge",
+        "notify",
+        "session",
+        "cache",
+        "scheduler",
+        "plugins",
+        "hooks",
+        "memory",
+        "skills",
+        "tools",
+        "agents",
     ):
         assert full_status["modularized_services"][s_name]["bound"] is True
+
+
+def test_llm_note_is_bound_without_shadowing_gui_package():
+    """PB-11 (#3994): llm-note joins `ext_modules`; its flat package must not shadow `gui`."""
+    import sys
+
+    from hub._services.ocean_stack_bridge import load_llm_note_module, ocean_capability_extensions_status
+
+    entry = ocean_capability_extensions_status()["llm-note"]
+    assert entry["module"] == "llm_note.store"
+    if not entry["bound"]:
+        import pytest
+
+        pytest.skip("llm-note checkout not present")
+    assert load_llm_note_module().NoteStore is not None
+    assert "gui" not in sys.modules or getattr(sys.modules["gui"], "__file__", "").replace("\\", "/").find("llm_note") < 0

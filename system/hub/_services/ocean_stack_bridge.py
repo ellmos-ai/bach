@@ -542,6 +542,21 @@ def load_universal_gui_module() -> Any:
     )
 
 
+def load_llm_note_module() -> Any:
+    """Notes engine (PB-11, #3994): `llm_note.store.NoteStore` replaces the Denkarium.
+
+    Not via `_load_module_from_repo`: llm-note is a flat package, and that helper would put the
+    package directory itself on `sys.path`, so `llm_note/gui.py` would shadow BACH's `gui` package.
+    """
+    for root in _candidate_repo_roots():
+        repo_dir = root / "llm-note"
+        if (repo_dir / "llm_note" / "store.py").is_file():
+            if str(repo_dir) not in sys.path:
+                sys.path.insert(0, str(repo_dir))
+            break
+    return importlib.import_module("llm_note.store")
+
+
 def ocean_capability_extensions_status() -> dict[str, Any]:
     """Return status of the multimodal/embodied & universal-GUI Ocean capability modules (#3763-#3767, GUX-002)."""
     ext_modules = {
@@ -551,6 +566,7 @@ def ocean_capability_extensions_status() -> dict[str, Any]:
         "ellmos-homecontrol": ("ellmos_homecontrol.hub", load_homecontrol_module),
         "ellmos-robotics": ("ellmos_robotics.mcp_standard", load_robotics_module),
         "ellmos-universal-gui": ("ellmos_universal_gui.app", load_universal_gui_module),
+        "llm-note": ("llm_note.store", load_llm_note_module),
     }
     bound: dict[str, Any] = {}
     for name, (mod_id, loader) in ext_modules.items():
@@ -763,6 +779,78 @@ def load_audit_logger_module() -> Any:
     return get_service_or_standalone("audit_logger")
 
 
+def load_telemetry_module() -> Any:
+    return get_service_or_standalone("telemetry")
+
+
+def load_limits_module() -> Any:
+    return get_service_or_standalone("limits")
+
+
+def load_worker_policy_module() -> Any:
+    return get_service_or_standalone("worker_policy")
+
+
+def load_prompt_module() -> Any:
+    return get_service_or_standalone("prompt")
+
+
+def load_message_delivery_module() -> Any:
+    return get_service_or_standalone("message_delivery", fallback_import="hub.messages")
+
+
+def load_conversation_store_module() -> Any:
+    return get_service_or_standalone("conversation_store", fallback_import="hub._services.chat.session_store")
+
+
+def load_inbox_module() -> Any:
+    return get_service_or_standalone("inbox", fallback_import="hub.inbox")
+
+
+def load_email_bridge_module() -> Any:
+    return get_service_or_standalone("email_bridge", fallback_import="hub.email")
+
+
+def load_notify_module() -> Any:
+    return get_service_or_standalone("notify", fallback_import="hub.notify")
+
+
+def load_session_module() -> Any:
+    return get_service_or_standalone("session", fallback_import="hub.session")
+
+
+def load_cache_module() -> Any:
+    return get_service_or_standalone("cache")
+
+
+def load_scheduler_module() -> Any:
+    return get_service_or_standalone("scheduler", fallback_import="hub.scheduler")
+
+
+def load_plugins_module() -> Any:
+    return get_service_or_standalone("plugins", fallback_import="hub.plugins")
+
+
+def load_hooks_module() -> Any:
+    return get_service_or_standalone("hooks", fallback_import="hub.hooks")
+
+
+def load_memory_module() -> Any:
+    return get_service_or_standalone("memory", fallback_import="hub.mem")
+
+
+def load_skills_module() -> Any:
+    return get_service_or_standalone("skills", fallback_import="hub.skills")
+
+
+def load_tools_module() -> Any:
+    return get_service_or_standalone("tools", fallback_import="hub.tools")
+
+
+def load_agents_module() -> Any:
+    return get_service_or_standalone("agents", fallback_import="hub.agents")
+
+
 def detect_legacy_in_tree_services() -> dict[str, Any]:
     """Auto-detect in-tree hub services that have a standalone module available in exports/modules, .MODULES, or sibling checkouts."""
     bach_root = Path(__file__).resolve().parents[3]
@@ -795,19 +883,46 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
         except OSError:
             pass
 
+    aliases = {
+        "messages": "message_delivery",
+        "session_store": "conversation_store",
+        "conversation_store": "session_store",
+        "email": "email_bridge",
+        "email_bridge": "email",
+        "inbox": "inbox",
+        "notify": "notify",
+        "session": "session",
+        "cache": "cache",
+        "scheduler": "scheduler",
+        "plugins": "plugins",
+        "hooks": "hooks",
+        "mem": "memory",
+        "memory": "memory",
+        "skills": "skills",
+        "tools": "tools",
+        "agents": "agents",
+    }
+
     in_tree_services: list[dict[str, Any]] = []
-    if hub_dir.is_dir():
-        for py_f in sorted(hub_dir.glob("*.py")):
-            if py_f.name in ("__init__.py", "base.py", "canonical_seam.py"):
-                continue
-            stem = py_f.stem
-            has_standalone = stem in standalone_available
-            in_tree_services.append({
-                "name": stem,
-                "file": str(py_f),
-                "has_standalone": has_standalone,
-                "standalone_path": str(standalone_available[stem]) if has_standalone else None,
-            })
+    seen_stems = set()
+    for search_dir in (hub_dir, hub_dir / "_services", hub_dir / "_services" / "chat"):
+        if search_dir.is_dir():
+            for py_f in sorted(search_dir.glob("*.py")):
+                if py_f.name in ("__init__.py", "base.py", "canonical_seam.py"):
+                    continue
+                stem = py_f.stem
+                if stem in seen_stems:
+                    continue
+                seen_stems.add(stem)
+                standalone_key = stem if stem in standalone_available else aliases.get(stem)
+                has_standalone = bool(standalone_key and standalone_key in standalone_available)
+                in_tree_services.append({
+                    "name": stem,
+                    "standalone_name": standalone_key or stem,
+                    "file": str(py_f),
+                    "has_standalone": has_standalone,
+                    "standalone_path": str(standalone_available[standalone_key]) if has_standalone else None,
+                })
 
     switched = [s for s in in_tree_services if s["has_standalone"]]
     legacy = [s for s in in_tree_services if not s["has_standalone"]]
@@ -829,7 +944,7 @@ def auto_switch_to_standalone_modules() -> dict[str, Any]:
     detection = detect_legacy_in_tree_services()
     switched_report: dict[str, Any] = {}
     for item in detection.get("switched_services", []):
-        name = item["name"]
+        name = item.get("standalone_name") or item["name"]
         try:
             mod = get_service_or_standalone(name)
             f_path = getattr(mod, "__file__", "") or ""
@@ -867,6 +982,24 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "token_budget": ("token_budget", load_token_budget_module),
         "rate_limit_policy": ("rate_limit_policy", load_rate_limit_policy_module),
         "audit_logger": ("audit_logger", load_audit_logger_module),
+        "telemetry": ("telemetry", load_telemetry_module),
+        "limits": ("limits", load_limits_module),
+        "worker_policy": ("worker_policy", load_worker_policy_module),
+        "prompt": ("prompt", load_prompt_module),
+        "message_delivery": ("message_delivery", load_message_delivery_module),
+        "conversation_store": ("conversation_store", load_conversation_store_module),
+        "inbox": ("inbox", load_inbox_module),
+        "email_bridge": ("email_bridge", load_email_bridge_module),
+        "notify": ("notify", load_notify_module),
+        "session": ("session", load_session_module),
+        "cache": ("cache", load_cache_module),
+        "scheduler": ("scheduler", load_scheduler_module),
+        "plugins": ("plugins", load_plugins_module),
+        "hooks": ("hooks", load_hooks_module),
+        "memory": ("memory", load_memory_module),
+        "skills": ("skills", load_skills_module),
+        "tools": ("tools", load_tools_module),
+        "agents": ("agents", load_agents_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():
