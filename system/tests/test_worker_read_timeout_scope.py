@@ -65,7 +65,9 @@ def stalled_host(tmp_path, monkeypatch):
             control._WORKER_EXECUTIONS[ident].stop_event.set()
         return bound
     monkeypatch.setattr(control, "_acquire_worker_task", acquire_or_stop)
-    backend = OllamaBackend(default_model=model)
+    # Not localhost: no local resource reserve, so a busy test host (Mac: Buddha's model
+    # holds the RAM) cannot park the worker before the stalled call.
+    backend = OllamaBackend(base_url="http://stalled-ollama.test:11434", default_model=model)
     runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
     monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
     monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *a: "")
