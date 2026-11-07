@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# bach-ci – minimaler CI-Einstiegs-Stub für BACH.
+#
+# HINWEIS (Task 3919): Im gesamten Repository existierte zum Zeitpunkt der
+# Erzeugung KEINE Datei 'bach-ci' und kein Präzedenzfall (Recherche: Suche
+# nach 'bach-ci' in '.', 'docs', '.github', 'system', TODO.md, MODULES.md,
+# OCEAN-TRANSFER-PLAN.md ohne Treffer). Dieser Stub ist daher eine eigen-
+# ständige, minimal-invasive Inhaltsentscheidung und erhebt keinen Anspruch,
+# ein fremddefiniertes Verhalten zu reproduzieren.
+#
+# Bestehende CI-Konvention im Repo: GitHub-Workflows unter .github/workflows/
+# (module_gate, module_gate_check.py, welcome, label_sync, stale, tests u.a.).
+# Sobald konkrete Anforderungen an 'bach-ci' definiert sind, sollte dieser
+# Stub um die tatsächlichen CI-Schritte (z. B. Tests/Module-Gate) erweitert
+# oder auf die existierenden Workflows verzweigt werden.
+set -euo pipefail
+
+if [ "${1:-}" = "--version" ]; then
+    echo "bach-ci 0.0.1 (stub)"
+    exit 0
+fi
+
+echo "bach-ci: stub - keine CI-Schritte definiert. Siehe Dateikopf." >&2
+exit 0
