@@ -1104,6 +1104,18 @@ def _ensure_worker_resolver(worker_id, error_code):
                     worker_id, type(exc).__name__)
 
 
+def _open_worker_resolver(control, worker_id, error_code):
+    """Escalation opens a resolver; the next working task closes it again (#657 review)."""
+    _ensure_worker_resolver(worker_id, error_code)
+    control.worker_resolver_closed = False
+
+
+def _close_worker_resolver_once(control, worker_id):
+    if not control.worker_resolver_closed:
+        control.worker_resolver_closed = True
+        _close_worker_resolver(worker_id)
+
+
 def _close_worker_resolver(worker_id):
     try:
         _native_task_client().close_worker_resolver(worker_id)
@@ -2215,13 +2227,16 @@ def _secure_worktree_wip(control, reason):
     return result
 
 
-def _worker_return_note(detail, reason_code):
+def _worker_return_note(detail, reason_code, transient_failure=None):
     """Fixed-vocabulary return reason; provider text never reaches task history."""
     if reason_code:
         return f"model_failure:{reason_code}"
     if detail:
         status = detail.get("status_code")
         return f"backend_error:{detail['provider']}:{detail['kind']}" + (f":{status}" if status else "")
+    if transient_failure == "httpx_connect_error":
+        # The provider is unreachable, not the task broken: never counts toward a block (#657 review).
+        return "backend_error:transient:httpx_connect_error"
     return "model_failure:unclassified"
 
 
@@ -6325,7 +6340,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                                         f"Versuch {failures}, nächster in {delay} s"}) is None:
                                 break
                             if failures == _HOST_PRECONDITION_ESCALATE_AFTER:
-                                _ensure_worker_resolver(worker_id, host_code)
+                                _open_worker_resolver(control, worker_id, host_code)
                             if not _wait_host_precondition(control, failures):
                                 break
                             continue
@@ -6342,10 +6357,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     control.host_precondition_failures = 0
                     _set_precondition_wait(control, None)
                     newly_acquired_binding = None
-                if not control.worker_resolver_closed:
-                    # The worker works again: its "wieder in Gang bringen" task is done.
-                    control.worker_resolver_closed = True
-                    _close_worker_resolver(worker_id)
+                # The worker works again: its "wieder in Gang bringen" task is done.
+                _close_worker_resolver_once(control, worker_id)
                 loop = asyncio.new_event_loop()
                 ans = ""
                 worker_session = None
@@ -6398,7 +6411,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     from hub._services.llm.backend_errors import normalize_backend_error
                     detail = normalize_backend_error(getattr(ans, "backend_error", None))
                     failure_reason = getattr(ans, "reason_code", None)
-                    control.return_note = _worker_return_note(detail, failure_reason)
+                    control.return_note = _worker_return_note(
+                        detail, failure_reason, getattr(ans, "transient_failure", None))
                     if failure_reason == "local_reserve_reserve_wait_expired":
                         error_activity = "Lokale Ressourcenreserve wurde nicht rechtzeitig frei"
                     elif failure_reason == "local_reserve_reserve_wait_lease_return_required":

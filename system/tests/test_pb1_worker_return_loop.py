@@ -225,6 +225,78 @@ def test_failed_answer_marks_connect_errors_as_typed_transient():
     assert FailedAnswer.from_exception(ValueError("x")).transient_failure is None
 
 
+
+# --- follow-up to #657 (review R2): transient host/provider failures never block -----------
+
+def _connect_error_note():
+    """The return note the controller writes for a cloud ConnectError (same derivation as the loop)."""
+    import httpx
+    from hub._services.chat.chat_runtime import FailedAnswer
+    from hub._services.llm.backend_errors import normalize_backend_error
+    answer = FailedAnswer.from_exception(httpx.ConnectError("All connection attempts failed"))
+    return _controller()._worker_return_note(
+        normalize_backend_error(answer.backend_error), answer.reason_code, answer.transient_failure)
+
+
+def test_connect_error_return_note_is_not_task_scoped():
+    from hub._services.task_return_stats import _TASK_SCOPED_PREFIXES
+    note = _connect_error_note()
+    assert note == "backend_error:transient:httpx_connect_error"
+    assert not note.startswith(_TASK_SCOPED_PREFIXES)
+
+
+def test_thirty_minute_connect_outage_never_blocks_the_task(binding, mem_db):  # noqa: F811
+    """Backoff 60/120/240/480/900 s: about seven returns of the same task in 30 min."""
+    pytest.importorskip("taskplan.return_policy")
+    from hub._services.task_return_stats import summarize_task_returns
+    client, tid = binding._client, binding.task_id
+    note = _connect_error_note()
+    assert binding.return_lease(note=note)
+    for i in range(6):
+        _cycle(client, tid, note, f"g{i}")
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "pending"
+    summary = summarize_task_returns(mem_db, tid)
+    assert summary["return_count"] == 7 and summary["last_return_reason"] == note
+
+
+@pytest.mark.parametrize("note", [
+    "model_failure:local_reserve_reserve_wait_expired",
+    "model_failure:temporary_connection_error",
+    "model_failure:cloud_call_retry_exhausted",
+])
+def test_host_and_provider_model_failures_never_block(binding, mem_db, note):  # noqa: F811
+    pytest.importorskip("taskplan.return_policy")
+    client, tid = binding._client, binding.task_id
+    assert binding.return_lease(note=note)
+    for i in range(6):
+        _cycle(client, tid, note, f"g{i}")
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "pending"
+
+
+def test_task_scoped_model_failure_still_blocks_after_five(binding, mem_db):  # noqa: F811
+    """Negative control: the exemption above must not switch the loop guard off."""
+    pytest.importorskip("taskplan.return_policy")
+    client, tid = binding._client, binding.task_id
+    assert binding.return_lease(note="model_failure:invalid_tool_call")
+    for i in range(4):
+        _cycle(client, tid, "model_failure:invalid_tool_call", f"g{i}")
+    assert mem_db.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "blocked"
+
+
+def test_resolver_closes_again_after_a_second_outage(monkeypatch):
+    """Success closes the resolver; a later host outage opens one; the next success closes it again."""
+    control = _controller()
+    calls = []
+    monkeypatch.setattr(control, "_ensure_worker_resolver", lambda ident, code: calls.append(("open", code)))
+    monkeypatch.setattr(control, "_close_worker_resolver", lambda ident: calls.append(("close", ident)))
+    ctrl = control._WorkerControl("worker-x")
+    control._close_worker_resolver_once(ctrl, "worker-x")   # first successful task
+    control._close_worker_resolver_once(ctrl, "worker-x")   # further tasks: no extra close
+    control._open_worker_resolver(ctrl, "worker-x", "twin_status_unknown")  # second outage escalates
+    control._close_worker_resolver_once(ctrl, "worker-x")   # recovery
+    assert calls == [("close", "worker-x"), ("open", "twin_status_unknown"), ("close", "worker-x")]
+
+
 # --- resolver tasks close when the worker works again -----------------------------------
 
 def test_worker_resolver_closes_itself(tmp_path):
