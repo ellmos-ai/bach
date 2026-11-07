@@ -135,6 +135,24 @@ def test_api_block_reason_is_machine_readable_without_values(api, tmp_path):
         assert value not in dumped
 
 
+def test_api_new_profile_after_a_block_rebuilds_the_bundle(api, tmp_path):
+    """Ausweg aus der Sperre: Schreibweise in die Begriffsliste, Profil neu -> Prompt aus neuem Bundle."""
+    (tmp_path / "akte" / "Mailverteiler.txt").write_text("Verteiler: familie jonas leonhardt\n", encoding="utf-8")
+    sid = _session_with_three_files(api)
+    assert api.post(f"/api/report/session/{sid}/profile", json=PROFILE).json()["success"]
+    blocked = api.post(f"/api/report/session/{sid}/prompt", json={"include_wissensdatenbank": False}).json()
+    assert blocked["error_code"] == "identity_terms_in_prompt"
+
+    fixed = dict(PROFILE, additional_terms=[*PROFILE["additional_terms"], "familie jonas leonhardt"])
+    assert api.post(f"/api/report/session/{sid}/profile", json=fixed).json()["success"]
+    res = api.post(f"/api/report/session/{sid}/prompt", json={"include_wissensdatenbank": False}).json()
+
+    assert res["success"], res
+    low = res["prompt"].lower()
+    for forbidden in FORBIDDEN:
+        assert forbidden.lower() not in low, f"Falldatum im Cloud-Prompt: {forbidden!r}"
+
+
 def _session_with_three_files(client) -> str:
     started = client.post("/api/report/session/start").json()
     sid = started["session_id"]

@@ -1065,6 +1065,9 @@ Interpersonelle Interaktionen:
         )
 
         session.profile = profile
+        # Ein neues Profil (z. B. nach einer Sperre mit ergaenzter Begriffsliste) macht abgeleitete Daten ungueltig.
+        session.bundle = None
+        session.anonymized = False
         return profile
 
     def create_cloud_profile(
