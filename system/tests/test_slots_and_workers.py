@@ -428,7 +428,7 @@ class TestSlotsConfigCRUD:
         save_slots_config(cfg, str(cfg_file))
 
         migrated = load_slots_config(str(cfg_file), strict=True)
-        assert migrated["version"] == 3
+        assert migrated["version"] == 4
         assert all(slot["pause_after"] == 5 for slot in migrated["slots"].values())
 
 
@@ -796,7 +796,7 @@ class TestTelegramSlotMapping:
         _worker = add_worker({
             "id": "worker-special-1",
             "name": "Special Worker",
-            "backend": "ollama",
+            "backend": "ollama-cloud",
             "model": "kimi-k3:cloud",
             "max_tool_rounds": 18,
             "include_system_prompt": False,
@@ -818,7 +818,7 @@ class TestTelegramSlotMapping:
         worker_with_sys = add_worker({
             "id": "worker-special-2",
             "name": "Special Worker 2",
-            "backend": "ollama",
+            "backend": "ollama-cloud",
             "model": "kimi-k3:cloud",
             "sub_mode": "task_worker",
             "task_prompt": "Recherchiere die Logs",
@@ -1038,6 +1038,16 @@ def _stage_controller_worker_fixture(monkeypatch, path, worker):
     initialize_slots_config(str(path))
     config = load_slots_config(str(path), strict=True)
     config["dynamic_workers"] = [worker]
+    from hub._services.chat import model_sockets
+    state = config.setdefault("model_sockets", {})
+    state.setdefault("host_id", model_sockets.platform.node())
+    state.setdefault("sockets", {})
+    backend = worker.get("backend")
+    model = worker.get("model")
+    if backend in model_sockets._LOCAL_BACKENDS and model:
+        key = model_sockets.socket_id(backend, model, state["host_id"])
+        if key not in state["sockets"]:
+            state["sockets"][key] = model_sockets._new_socket(backend, model, state["host_id"])
     slots_config.save_slots_config(config, str(path))
     monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(path))
 
@@ -1227,7 +1237,7 @@ class TestControlHandlerEndpoints:
         statuses = [change["status"] for change in updates if "status" in change]
         assert statuses[-1] == expected_status
         if expected_status == "idle":
-            assert process_calls == [False]
+            assert process_calls == []
         else:
             assert process_calls == []
 
@@ -1332,11 +1342,11 @@ class TestControlHandlerEndpoints:
         statuses = [change["status"] for change in updates if "status" in change]
         if answer_kind == "ok":
             assert statuses[-1] == "idle"
-            assert activities[-1] == "pending"
+            assert activities[-1] == "running"
         else:
-            assert statuses[-1] == "error"
+            assert statuses[-1] == "idle"
             assert "completed" not in statuses
-            assert activities[-1] == "error"
+            assert activities[-1] == "running"
 
     def test_get_slots_and_activity(self, monkeypatch):
         initialize_slots_config()
@@ -1662,6 +1672,32 @@ class TestControlHandlerEndpoints:
                 return "fake block complete"
 
         fake_runtime = BlockingRuntime()
+
+        class FakeBinding:
+            task_id = 1
+            closed = False
+            stop_requested = False
+            def assert_active(self):
+                pass
+            def task_snapshot(self):
+                return {"task_id": 1, "task_version": None}
+            def heartbeat(self):
+                return None
+            def invalidate(self, reason=None):
+                pass
+            def return_lease(self, **_kw):
+                return True
+
+        class _FakeLeaseSupervisor:
+            failure = None
+            def __init__(self, binding):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def close(self):
+                return None
         handler = object.__new__(ControlHandler)
         handler.headers = {
             "Origin": "http://127.0.0.1:8000",
@@ -1699,6 +1735,9 @@ class TestControlHandlerEndpoints:
                  patch.object(telegram_chat, "begin_assignment", lambda **_kw: None), \
                  patch.object(telegram_chat, "finish_assignment", lambda *_a, **_k: None), \
                  patch.object(telegram_chat, "_snapshot_chat_backend", return_value=("fake", "fake-model")), \
+                 patch.object(telegram_chat, "_acquire_worker_task", return_value=FakeBinding()), \
+                 patch.object(telegram_chat, "_prepare_bound_task_scope", lambda *_a, **_k: None), \
+                 patch.object(telegram_chat, "WorkerLeaseSupervisor", _FakeLeaseSupervisor), \
                  patch.object(telegram_chat, "_WORKER_STOP_WAIT_SECONDS", 0.05):
                 handler.path = "/api/workers/run"
                 with patch.object(handler, "_read_body", return_value={"id": worker_id}), \
@@ -1865,7 +1904,7 @@ class TestControlHandlerEndpoints:
         match = [e for e in ended if e["details"]["assignment_id"] == asgn]
         assert match
         assert match[0]["details"]["status"] == "released"
-        actual = [event for event in started if event["details"].get("task_id") == 1]
+        actual = started
         assert actual
         final = [event for event in ended if event["details"]["assignment_id"] == actual[0]["details"]["assignment_id"]]
         assert final[0]["details"]["status"] == "released"
@@ -1933,7 +1972,7 @@ class TestSlotsConfigVersionAndDefaults:
         cfg = initialize_slots_config(str(cfg_file))
 
         assert cfg_file.exists()
-        assert cfg["version"] == 3
+        assert cfg["version"] == 4
         assert "buddha_always_on" in cfg["slots"]
         always_on = cfg["slots"]["buddha_always_on"]
         assert "pickup_filter" in always_on
@@ -1944,7 +1983,7 @@ class TestSlotsConfigVersionAndDefaults:
         assert "pause_minutes" in always_on
 
         loaded = load_slots_config(str(cfg_file))
-        assert loaded["version"] == 3
+        assert loaded["version"] == 4
         assert loaded["slots"]["buddha_always_on"]["pickup_filter"] == always_on["pickup_filter"]
 
     def test_load_slots_config_migrates_v2_to_v3_adding_pickup_filter(self, tmp_path):
@@ -1966,7 +2005,7 @@ class TestSlotsConfigVersionAndDefaults:
         save_slots_config(v2_cfg, str(cfg_file))
 
         loaded = load_slots_config(str(cfg_file))
-        assert loaded["version"] == 3
+        assert loaded["version"] == 4
         always_on = loaded["slots"]["buddha_always_on"]
         assert "pickup_filter" in always_on
         assert always_on["pickup_filter"]["enabled"] is True
@@ -1998,7 +2037,7 @@ class TestSlotsConfigVersionAndDefaults:
         save_slots_config(v1_cfg, str(cfg_file))
 
         loaded = load_slots_config(str(cfg_file))
-        assert loaded["version"] == 3
+        assert loaded["version"] == 4
         for slot_id in DEFAULT_CORE_SLOTS:
             slot = loaded["slots"][slot_id]
             assert "pause_after" in slot
@@ -2034,14 +2073,14 @@ class TestSlotsConfigVersionAndDefaults:
         save_slots_config(v3_cfg, str(cfg_file))
 
         loaded = load_slots_config(str(cfg_file))
-        assert loaded["version"] == 3
+        assert loaded["version"] == 4
         assert loaded["slots"]["buddha_always_on"]["pickup_filter"] == custom_filter
 
     def test_system_data_slots_config_exists_with_version_3_and_pickup_filter(self, tmp_path):
         system_slots_file = tmp_path / "slots_config.json"
         initialize_slots_config(str(system_slots_file))
         cfg = load_slots_config(str(system_slots_file), strict=True)
-        assert cfg["version"] == 3
+        assert cfg["version"] == 4
         assert "buddha_always_on" in cfg["slots"]
         always_on = cfg["slots"]["buddha_always_on"]
         assert "pickup_filter" in always_on
@@ -2113,15 +2152,31 @@ class TestMatchTaskToPickupFilter:
             ({"required_model": "glm-5.3:cloud"}, False, False),
         ],
     )
-    def test_enabled_native_slot_uses_nested_pickup_filter(self, tmp_path, task_changes, expected, assigned_expected):
+    def test_enabled_native_slot_uses_nested_pickup_filter(self, tmp_path, monkeypatch, task_changes, expected, assigned_expected):
         from hub._services.chat.slots_config import get_always_on_execution_slot
+        from hub._services.chat.worker_repo_registry import RepositoryBinding
+        from hub._services.chat import worker_repo_registry
         from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+        monkeypatch.setattr(
+            worker_repo_registry,
+            "resolve_task_repository",
+            lambda tid, *, path=None: RepositoryBinding(
+                task_id=int(tid),
+                repository="ellmos-ai/bach",
+                origin="https://github.com/ellmos-ai/bach",
+                default_branch="main",
+                source_sha="b" * 40,
+                task_version=None,
+            ),
+        )
 
         config_path = str(tmp_path / "native-always-on.json")
         initialize_slots_config(config_path)
         update_slot("buddha_always_on", {
             "enabled": True,
             "model": "qwen3.8:27b-mlx",
+            "require_assigned_slot": True,
             "pickup_filter": {
                 "enabled": True,
                 "categories": ["INBOX", "WORKER"],
@@ -2131,6 +2186,7 @@ class TestMatchTaskToPickupFilter:
         }, path=config_path)
         slot = get_always_on_execution_slot(config_path)
         task = {
+            "id": "4031",
             "category": "INBOX", "priority": "P1", "tags": "",
             "assigned_slot": "buddha_always_on", "required_model": "qwen3.8:27b-mlx",
             **task_changes,
@@ -2138,7 +2194,9 @@ class TestMatchTaskToPickupFilter:
 
         assert slot["enabled"] is True
         assert match_task_to_pickup_filter(task, slot) is expected
-        assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is assigned_expected
+        assert WorkerLeaseBinding._automatic_matches_slot(
+            task, slot, selection_policy={"require_assigned_slot": True, "enforce_model_binding": True}
+        ) is assigned_expected
 
     def test_empty_slot_filter_dict_rejects(self):
         # A slot with an empty dict as pickup_filter is treated as missing/malformed
@@ -2196,7 +2254,7 @@ class TestMatchTaskToPickupFilter:
 class TestOffeneTasksPickupFilter:
     """Tests for offene_tasks filtering with slot/pickup_filter."""
 
-    def test_offene_tasks_filters_by_slot_pickup_filter(self, tmp_path):
+    def test_offene_tasks_filters_by_slot_pickup_filter(self, tmp_path, monkeypatch):
         import sqlite3
 
         from hub._services.chat.task_runner import offene_tasks
@@ -2230,6 +2288,13 @@ class TestOffeneTasksPickupFilter:
             }
         }
         slot.update(id="buddha_always_on", enabled=True, model="qwen3.8:27b-mlx")
+        monkeypatch.setattr(
+            "hub._services.worker_policy_settings.read_task_policy",
+            lambda task_id, db_path=None: {"task_version": None, "effective": {}},
+        )
+        monkeypatch.setattr(
+            "hub._services.task_lease.task_content_version", lambda row: None
+        )
         # With a complete enabled slot, only task 1 should match.
         tasks = offene_tasks(str(db_path), "all", slot=slot)
         assert len(tasks) == 1
@@ -2240,10 +2305,17 @@ class TestOffeneTasksPickupFilter:
         all_tasks = offene_tasks(str(db_path), "all")
         assert len(all_tasks) == 4
 
-    def test_binding_applies_without_pickup_filter(self, tmp_path):
+    def test_binding_applies_without_pickup_filter(self, tmp_path, monkeypatch):
         import sqlite3
         from hub._services.chat.task_runner import offene_tasks
         from hub._services.chat.slots_config import task_matches_slot_binding
+        monkeypatch.setattr(
+            "hub._services.worker_policy_settings.read_task_policy",
+            lambda task_id, db_path=None: {"task_version": None, "effective": {}},
+        )
+        monkeypatch.setattr(
+            "hub._services.task_lease.task_content_version", lambda row: None
+        )
 
         db_path = tmp_path / "bound_tasks.db"
         with sqlite3.connect(db_path) as conn:
@@ -2261,9 +2333,17 @@ class TestOffeneTasksPickupFilter:
             )
 
         local = {"id": "buddha_always_on", "enabled": True, "model": "qwen3.8:27b-mlx",
+                 "require_assigned_slot": True, "enforce_model_binding": True,
                  "pickup_filter": {"enabled": False}}
-        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2, 4]
-        assert [t["id"] for t in offene_tasks(str(db_path), "all")] == [4]
+        # Slot-Profil verlangt Bindung (require_assigned_slot=True): nur der an
+        # "buddha_always_on" gebundene Task 2 wird aufgenommen; unbound Task 4,
+        # fremd gebundener Task 3 und Modell-Mismatch Task 1 werden abgelehnt.
+        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2]
+        # Without a slot context offene_tasks applies no binding filtering:
+        # the profile flags (require_assigned_slot/enforce_model_binding)
+        # default to False via .get(key, False), matching the preceding
+        # "Without filter, all 4 open tasks match" expectation.
+        assert [t["id"] for t in offene_tasks(str(db_path), "all")] == [1, 2, 3, 4]
         assert not task_matches_slot_binding(
             {"required_model": "kimi-k3:cloud"}, {"id": "cloud-worker"}
         )

@@ -56,6 +56,12 @@ def state(tmp_path, monkeypatch):
 
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
+    config = slots.load_slots_config(path, strict=True)
+    from hub._services.chat import model_sockets
+    host = config["model_sockets"]["host_id"]
+    entry = model_sockets._new_socket("ollama", "test-local", host)
+    config["model_sockets"]["sockets"][entry["id"]] = entry
+    slots.save_slots_config(config, path)
     resolved_target = Path(path).resolve()
 
     def fixture_lock_guard(target):

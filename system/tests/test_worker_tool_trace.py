@@ -31,6 +31,10 @@ def binding(tmp_path, monkeypatch):
     _create_db(database)
     conn = _connect(database)
     task_id = _insert(conn, title="Trace task", assigned_to="BACH")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)"
+    )
+    conn.commit()
     conn.close()
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})

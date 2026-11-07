@@ -60,6 +60,10 @@ def mem_db():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     _init_db(conn)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)"
+    )
+    conn.commit()
     yield conn
     conn.close()
 

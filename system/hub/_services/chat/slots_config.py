@@ -104,6 +104,17 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "pause_basis": "runs",
         "pause_counter": 0,
         "pause_started_at": "",
+        "allowed_tools": [
+            "read_file",
+            "list_directory",
+            "search_text",
+            "file_info",
+            "task_manage",
+            "write_file",
+            "edit_file",
+            "start_task_worktree",
+            "execute_command",
+        ],
         "pickup_filter": {
             "enabled": True,
             "categories": ["INBOX"],
@@ -401,13 +412,18 @@ def _resolve_path(path: str | None = None) -> Path:
 
 
 def _fresh_slots_config() -> dict[str, Any]:
-    return {
-        "version": 3,
+    cfg: dict[str, Any] = {
+        "version": 4,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "slots": {k: dict(v) for k, v in DEFAULT_CORE_SLOTS.items()},
         "dynamic_workers": [],
         "activity_history": [],
     }
+    import platform
+    from . import model_sockets
+
+    cfg["model_sockets"] = model_sockets._legacy_projection(cfg, platform.node())
+    return cfg
 
 
 def initialize_slots_config(path: str | None = None) -> dict[str, Any]:
@@ -516,6 +532,21 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[
                         DEFAULT_CORE_SLOTS["buddha_always_on"]["pickup_filter"]
                     )
                 data["version"] = 3
+            # Migrate version 3 -> 4: add allowed_tools to buddha_always_on
+            if data.get("version", 1) < 4:
+                always_on = slots.get("buddha_always_on")
+                if always_on is not None and "allowed_tools" not in always_on:
+                    always_on["allowed_tools"] = list(
+                        DEFAULT_CORE_SLOTS["buddha_always_on"]["allowed_tools"]
+                    )
+                data["version"] = 4
+                if "model_sockets" not in data:
+                    import platform
+                    from . import model_sockets
+
+                    data["model_sockets"] = model_sockets._legacy_projection(
+                        data, platform.node()
+                    )
             data["slots"] = slots
             if strict and not isinstance(data.get("dynamic_workers"), list):
                 raise ValueError("Slots-Konfiguration enthält keine gültige Worker-Liste")

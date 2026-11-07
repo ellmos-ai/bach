@@ -8,7 +8,7 @@ from system.tests.test_task_lease_client import mem_db, _insert_task
 from system.tests.test_task_lease_client_review import T0
 from hub._services.task_lease_client import TaskLeaseClient, LeaseError, LeaseConnectionError, LeaseProtocolError
 from system.tests.test_worker_tool_trace import binding as trace_binding
-from system.tests.worker_completion_fixtures import CompletionHarness
+from system.tests.worker_completion_fixtures import CompletionHarness, PRINCIPAL
 from hub._services import worker_policy_settings as settings
 
 
@@ -32,8 +32,11 @@ def _require_personal_review(binding):
 def binding(mem_db):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     mem_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
+    mem_db.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)")
     mem_db.commit()
     tid = _insert_task(mem_db)
+    settings._persist(mem_db, settings.GLOBAL_KEY, settings._defaults(), actor="binding-fixture")
+    mem_db.commit()
     client = TaskLeaseClient(conn=mem_db)
     return WorkerLeaseBinding.acquire(client, tid, worker_id="physical-worker@HOST", host="HOST",
                                      generation="generation-1", is_current=lambda: True,
@@ -42,8 +45,14 @@ def binding(mem_db):
 
 @pytest.fixture
 def completion_binding(binding, tmp_path, monkeypatch):
+    conn = binding._client._conn
+    values = settings._defaults()
+    values["policy"]["default_mode"] = "simple_task"
+    values["policy"]["reviewers"] = [{"reviewer_id": PRINCIPAL, "tier": "standard"}]
+    settings._persist(conn, settings.GLOBAL_KEY, values, actor="completion-binding-fixture")
+    conn.commit()
     harness = CompletionHarness(tmp_path, monkeypatch)
-    harness.prepare(binding, binding._client._conn)
+    harness.prepare(binding, conn)
     binding._test_completion_harness = harness
     return binding
 
@@ -559,14 +568,22 @@ def test_explicit_assignment_keeps_canonical_acquire_guards(request, denial):
 
 
 @pytest.mark.parametrize("tags, expected", [("ready", True), ("waiting", False), ("delegated", False), ("", False)])
-def test_explicit_assignment_preserves_required_and_excluded_tags(tags, expected):
+def test_explicit_assignment_preserves_required_and_excluded_tags(tags, expected, monkeypatch):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
-    task = {"assigned_slot": "our-slot", "required_model": "openrouter/free",
+    from hub._services.chat.worker_repo_registry import RepositoryBinding
+    from hub._services.chat import worker_repo_registry
+    monkeypatch.setattr(worker_repo_registry, "resolve_task_repository",
+        lambda tid, *, path=None: RepositoryBinding(task_id=int(tid),
+            repository="ellmos-ai/bach", origin="https://github.com/ellmos-ai/bach",
+            default_branch="main", source_sha="b" * 40, task_version=None))
+    task = {"id": "5691", "assigned_slot": "our-slot", "required_model": "openrouter/free",
             "category": "GUI", "priority": "P3", "tags": tags}
     slot = {"id": "our-slot", "model": "openrouter/free", "pickup_filter": {
         "enabled": True, "categories": ["WORKER"], "priorities": ["P1", "P2"],
-        "tags": ["ready"], "exclude_tags": ["waiting", "delegated"]}}
-    assert WorkerLeaseBinding._automatic_matches_slot(task, slot) is expected
+        "tags": ["ready"], "exclude_tags": ["waiting", "delegated"]}, "require_assigned_slot": True}
+    assert WorkerLeaseBinding._automatic_matches_slot(
+        task, slot, selection_policy={"require_assigned_slot": True, "enforce_model_binding": True}
+    ) is expected
 
 
 def _binding_with_output_limit(mem_db, result_max_chars):
