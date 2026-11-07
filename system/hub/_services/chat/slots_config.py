@@ -1551,6 +1551,8 @@ def materialize_system_blueprint(blueprint_id: int, blueprint_version: int,
     core.pop("governance_binding", None)
     if binding is not None:
         core["governance_binding"] = binding
+    # Omission retains an existing chain; validate its effective primary before any write.
+    core["model_fallbacks"] = _validated_model_fallback_profile(core)
     config["slots"][slot_id] = core
     _reconcile_available_model_bindings(config, slot_id)
     save_slots_config(config, path)
