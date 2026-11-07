@@ -237,15 +237,50 @@ TARN_NACHNAMEN = [
     "Keller", "Bauer", "Schuster", "Hofmann", "Albrecht", "Steiner"
 ]
 
+# Tarnadressen sind bewusst KEINE echten Orte (PB-15, Zweitpruefung O2): Frueher standen hier
+# echte Orte des Landkreises Waldshut; wohnte ein Klient dort, blieb sein Ort mit 1/6 stehen.
+# PLZ 00xxx gibt es in Deutschland nicht, "Tarn..." ist als Pseudonym erkennbar.
 TARN_STRASSEN = [
-    "Waldweg", "Birkenallee", "Sonnenstr.", "Gartenweg", "Lindenstr.",
-    "Bergstr.", "Rosenweg", "Eichenstr.", "Parkstr.", "Wiesenweg"
+    "Tarnweg", "Tarnallee", "Tarnstraße", "Tarnring", "Tarnpfad", "Tarngasse",
 ]
 
-TARN_STAEDTE = [
-    "79800 Tiengen", "79761 Waldshut", "79725 Laufenburg",
-    "79780 Stühlingen", "79807 Lottstetten", "79737 Herrischried"
-]
+TARN_STAEDTE = [f"{101 + i:05d} Tarnort {chr(65 + i)}" for i in range(12)]
+
+_MONATE = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
+           "September", "Oktober", "November", "Dezember")
+# Schreibweisen eines Datums (d, m, y als int); gleiche Formatfunktion fuer echt und Tarn,
+# damit die Rueckuebersetzung die Schreibweise erhaelt.
+_DATE_FORMATS = (
+    lambda d, m, y: f"{d:02d}.{m:02d}.{y}",
+    lambda d, m, y: f"{d}.{m}.{y}",
+    lambda d, m, y: f"{d}.{m:02d}.{y}",
+    lambda d, m, y: f"{d:02d}.{m}.{y}",
+    lambda d, m, y: f"{d:02d}.{m:02d}.{y % 100:02d}",
+    lambda d, m, y: f"{d}.{m}.{y % 100:02d}",
+    lambda d, m, y: f"{d}. {_MONATE[m - 1]} {y}",
+    lambda d, m, y: f"{d:02d}. {_MONATE[m - 1]} {y}",
+    lambda d, m, y: f"{d}.{_MONATE[m - 1]} {y}",
+    lambda d, m, y: f"{d}. {_MONATE[m - 1].replace('ä', 'ae')} {y}",
+    lambda d, m, y: f"{y}-{m:02d}-{d:02d}",
+)
+
+
+def _date_variant_pairs(real: str, fake: str) -> List[Tuple[str, str]]:
+    """(echte Schreibweise, Tarn-Schreibweise) fuer alle _DATE_FORMATS; leer, wenn kein dd.mm.yyyy."""
+    def parse(value):
+        try:
+            dt = datetime.strptime((value or "").strip(), "%d.%m.%Y")
+        except ValueError:
+            return None
+        return dt.day, dt.month, dt.year
+
+    r, f = parse(real), parse(fake)
+    if not (r and f):
+        return []
+    pairs: Dict[str, str] = {}
+    for fmt in _DATE_FORMATS:
+        pairs.setdefault(fmt(*r), fmt(*f))
+    return list(pairs.items())
 
 
 def _detect_gender(vorname: str) -> str:
@@ -737,6 +772,20 @@ def _get_spacy_model(model_name: str):
         nlp = None
     _spacy_model_cache[model_name] = nlp
     return nlp
+
+
+def ner_ready() -> Tuple[bool, str]:
+    """(True, "") nur wenn spaCy und ALLE NER_MODELS laden; sonst (False, Grund).
+
+    Voraussetzung fuer den Cloud-Modus: ohne NER bleiben Namen Dritter, Strassen und Orte im
+    Freitext stehen, ohne dass es jemand merkt (PB-15, Zweitpruefung O2).
+    """
+    if not SPACY_AVAILABLE:
+        return False, "spaCy ist nicht installiert"
+    missing = [name for name in NER_MODELS if _get_spacy_model(name) is None]
+    if missing:
+        return False, "spaCy-Modelle fehlen: " + ", ".join(missing)
+    return True, ""
 
 
 def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) -> List[str]:

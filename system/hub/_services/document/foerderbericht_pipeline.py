@@ -444,6 +444,18 @@ class FoerderberichtPipeline:
                 result.duration_s = time.time() - start_time
                 return result
 
+            # --- Schritt 1c: Cloud-Modus nur mit vollstaendiger Namenserkennung (fail-closed) ---
+            # Ohne spaCy/NER-Modelle blieben Namen Dritter, Strassen und Orte im Freitext stehen.
+            result.step = "datenschutz"
+            from hub._services.document import anonymizer_service
+            ready, reason = anonymizer_service.ner_ready()
+            if not ready:
+                raise PipelineError(
+                    f"Cloud-Modus verweigert: Namenserkennung unvollstaendig ({reason}). "
+                    "spaCy mit " + " und ".join(anonymizer_service.NER_MODELS)
+                    + " installieren oder Modus 'lokal' nutzen. Es wurde nichts gesendet."
+                )
+
             # --- Schritt 2: Session + Profil ---
             result.step = "profil"
             from hub._services.document.report_workflow_service import ReportWorkflowService

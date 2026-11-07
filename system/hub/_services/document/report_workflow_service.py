@@ -80,6 +80,8 @@ try:
         _generate_fake_phone,
         _generate_fake_email,
         _generate_fake_address,
+        _apply_replacements,
+        _date_variant_pairs,
         EMAIL_PATTERN,
         TARN_VORNAMEN,
         TARN_VORNAMEN_M,
@@ -114,6 +116,8 @@ except ImportError:
         _generate_fake_phone,
         _generate_fake_email,
         _generate_fake_address,
+        _apply_replacements,
+        _date_variant_pairs,
         EMAIL_PATTERN,
         TARN_VORNAMEN,
         TARN_VORNAMEN_M,
@@ -250,6 +254,23 @@ def _diagnosis_line(diag) -> str:
     return line + (f" ({', '.join(extras)})" if extras else "")
 
 
+_OPTIONAL_FIELDS = {"THERAPEUT_GRUPPE", "KOPIE_AN", "SONSTIGE_EMPFEHLUNG", *_BEREICH_FIELDS, *_UMWELT_FIELDS}
+# Ohne Angabe bleiben diese Felder leer, statt "Weiterbewilligung" zu raten (Warnung meldet die Luecke)
+_NO_DEFAULT_FIELDS = ("Empfehlung", "Weiterbewilligung oder Beendigung")
+
+
+def _as_bool(value) -> Optional[bool]:
+    """verlaengerung: bool oder gaengige Textform (ja/nein/true/false/...); sonst None."""
+    if isinstance(value, bool):
+        return value
+    text = str(value if value is not None else "").strip().lower()
+    if text in ("ja", "true", "1", "weiterbewilligung", "verlaengerung", "verlängerung"):
+        return True
+    if text in ("nein", "false", "0", "beendigung"):
+        return False
+    return None
+
+
 def _schema_fields(data: Dict) -> Dict[str, Tuple[Optional[str], str]]:
     """Platzhalter der Foerderbericht-Vorlage aus dem schema-foermigen JSON.
 
@@ -261,7 +282,9 @@ def _schema_fields(data: Dict) -> Dict[str, Tuple[Optional[str], str]]:
     out: Dict[str, Tuple[Optional[str], str]] = {}
 
     def put(name, top, present, value):
-        out[name] = (value if present else None, top)
+        # Pflichtfeld leer = Luecke (Warnung), optionale Felder duerfen leer sein
+        filled = present and (name in _OPTIONAL_FIELDS or bool(value.strip()))
+        out[name] = (value if filled else None, top)
 
     for name, key in _STAMM_FIELDS.items():
         put(name, "stammdaten", key in stamm, _report_text(stamm.get(key)))
@@ -269,10 +292,10 @@ def _schema_fields(data: Dict) -> Dict[str, Tuple[Optional[str], str]]:
         "\n".join(_diagnosis_line(d) for d in stamm.get("diagnosen") or []))
     empf = data.get("empfehlung") if isinstance(data.get("empfehlung"), dict) else {}
     cont_key = "verlaengerung" if "verlaengerung" in empf else "verlängerung"
-    present = isinstance(empf.get(cont_key), bool)
-    put("Empfehlung", "empfehlung", present, "die Weiterbewilligung" if empf.get(cont_key) else "die Beendigung")
-    put("Weiterbewilligung oder Beendigung", "empfehlung", present,
-        "Weiterbewilligung" if empf.get(cont_key) else "Beendigung")
+    decision = _as_bool(empf.get(cont_key))
+    put("Empfehlung", "empfehlung", decision is not None, "die Weiterbewilligung" if decision else "die Beendigung")
+    put("Weiterbewilligung oder Beendigung", "empfehlung", decision is not None,
+        "Weiterbewilligung" if decision else "Beendigung")
     put("UMFANG", "empfehlung", "umfang" in empf, _report_text(empf.get("umfang")))
     put("SONSTIGE_EMPFEHLUNG", "empfehlung", "sonstige_empfehlung" in empf,
         _report_text(empf.get("sonstige_empfehlung")))
@@ -313,6 +336,25 @@ def _doc_placeholders(doc) -> set:
 # Datenklassen
 # ═══════════════════════════════════════════════════════════════
 
+class PromptPrivacyError(ValueError):
+    """Datenschutz-Sperre: Der Cloud-Prompt enthielte noch Kennungen des Falls."""
+
+
+def _assert_no_identity_terms(terms, *parts) -> None:
+    """Sperrt, wenn eine Kennung des Falls (ohne Gross-/Kleinschreibung) in den Teilen steht.
+
+    Die Meldung nennt bewusst keinen Wert (sie landet in Logs und GUI-Antworten).
+    """
+    text = "\n".join(p or "" for p in parts)
+    hits = [t for t in terms if re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", text, re.IGNORECASE)]
+    if hits:
+        raise PromptPrivacyError(
+            f"Datenschutz-Sperre: {len(hits)} Kennung(en) des Falls stuenden noch im Cloud-Prompt "
+            "(z. B. andere Schreibweise oder unerkannte Mail-Adresse). Es wurde nichts gesendet. "
+            "Begriffsliste ergaenzen oder Modus 'lokal' nutzen."
+        )
+
+
 def _restore_original_values(text: str, mappings: Dict[str, str]) -> str:
     """Replace only source matches, never reprocess restored original identities."""
     keys = sorted((key for key in mappings if key), key=lambda key: (-len(key), key))
@@ -347,6 +389,9 @@ class TempAnonymProfile:
     _temp_dir: Optional[Path] = None
     created: str = field(default_factory=lambda: datetime.now().isoformat())
     whitelist: list[str] = field(default_factory=list)
+    # Sichere Kennungen des Falls (Name, Eltern, Geburtsdatum + Schreibweisen, Adresse, Begriffsliste,
+    # gefundene Telefon/Mail): duerfen in keiner Schreibweise im Cloud-Prompt stehen (Datenschutz-Sperre).
+    identity_terms: list[str] = field(default_factory=list)
 
     def get_all_mappings(self) -> Dict[str, str]:
         """Flache Map aller Ersetzungen (Original -> Tarn)."""
@@ -799,8 +844,11 @@ Interpersonelle Interaktionen:
                     mappings["names"][word] = fake_val
                     mappings["names"][word.upper()] = fake_val.upper()
 
-        # Geburtsdatum
+        # Geburtsdatum, auch in anderen Schreibweisen (14.5.2017, 14. Mai 2017, 2017-05-14, ...);
+        # die Hauptform bleibt der erste Eintrag (GEBURTSDATUM-Platzhalter liest ihn).
         mappings["dates"][geburtsdatum] = fake_geb
+        for real_form, fake_form in _date_variant_pairs(geburtsdatum, fake_geb):
+            mappings["dates"].setdefault(real_form, fake_form)
 
         # Elternnamen anonymisieren (mit Gender-Matching)
         if parent_names:
@@ -848,17 +896,13 @@ Interpersonelle Interaktionen:
             mappings["addresses"][client_address] = fake_addr
             # "Strasse Nr, PLZ Ort": Teile einzeln mappen, sonst rutscht der Freitext
             # ("... 18 in Freiburg") an die Cloud durch.
-            parts = re.match(
-                r"^\s*(?P<street>[^,]+?\s\d+\w?)\s*,\s*(?P<plz>\d{5})\s+(?P<city>.+?)\s*$", client_address
-            )
-            if parts:
-                fake_street, fake_city = fake_addr.split(", ", 1)
-                for real, fake in (
-                    (parts["street"], fake_street),
-                    (parts["plz"], str(10000 + secrets.randbelow(89999))),
-                    (parts["city"], fake_city),
-                ):
-                    mappings["addresses"].setdefault(real, fake)
+            address_re = r"^\s*(?P<street>[^,]+?\s\d+\w?)\s*,\s*(?P<plz>\d{5})\s+(?P<city>.+?)\s*$"
+            parts = re.match(address_re, client_address)
+            fake_parts = re.match(address_re, fake_addr)  # Tarnadresse: "Tarnweg 7, 00103 Tarnort C"
+            if parts and fake_parts:
+                for key in ("street", "plz", "city"):
+                    mappings["addresses"].setdefault(parts[key], fake_parts[key])
+                    mappings["addresses"].setdefault(parts[key].upper(), fake_parts[key].upper())
             # Kein Klartext-Adresse im Log
             print(f"[INFO] Klienten-Adresse anonymisiert -> {fake_addr}")
 
@@ -869,6 +913,11 @@ Interpersonelle Interaktionen:
         if additional_terms:
             for form, placeholder in _expand_manual_terms(additional_terms, wl):
                 mappings["misc"][form] = placeholder
+
+        # Sichere Kennungen des Falls fuer die Datenschutz-Sperre vor dem Senden. Bewusst VOR der
+        # NER-Erkennung: deren Treffer sind heuristisch (Fehltreffer wie "Rueckruf") und wuerden
+        # sonst Berichte grundlos sperren.
+        identity = {k for cat in ("names", "dates", "addresses", "misc") for k in mappings[cat]}
 
         # Automatische Erkennung von Telefon, E-Mail, Adressen, Personennamen
         if scan_folder and scan_folder.exists():
@@ -965,6 +1014,12 @@ Interpersonelle Interaktionen:
                   f"{len(third_party_names)} Drittpersonen-Namen "
                   f"(davon {len(scanned.get('ner_person_names', []))} via NER)")
 
+        # Regex-Funde (Telefon, Mail, Adressen) sind sichere Kennungen; kurze Woerter (< 3) und
+        # Whitelist nicht, sonst sperrt die Pruefung ohne Wortgrenzen-Sinn ("li.", Amtspersonen).
+        identity |= set(mappings["phones"]) | set(mappings["emails"]) | set(mappings["addresses"])
+        wl_lower = {w.lower() for w in wl}
+        identity_terms = sorted(t for t in identity if len(t.strip()) >= 3 and t.lower() not in wl_lower)
+
         # Temporaeres Verzeichnis
         temp_dir = Path(tempfile.mkdtemp(prefix="bach_report_"))
 
@@ -974,7 +1029,8 @@ Interpersonelle Interaktionen:
             mappings=mappings,
             original_name=client_name,
             _temp_dir=temp_dir,
-            whitelist=sorted(wl)
+            whitelist=sorted(wl),
+            identity_terms=identity_terms,
         )
 
         session.profile = profile
@@ -1268,6 +1324,18 @@ Interpersonelle Interaktionen:
             kb_context = self._search_wissensdatenbank([
                 "ICF", "Autismus", "Foerderplanung", "Methoden"
             ])
+
+        # Cloud-Weg (Profil mit Ersetzungen): Wissensdatenbank und Zusatzanweisungen laufen durch
+        # dieselbe Pseudonymisierung wie die Akte; danach prueft die Datenschutz-Sperre alle
+        # veraenderlichen Teile auf Kennungen des Falls, in jeder Gross-/Kleinschreibung.
+        if any((getattr(session.profile, "mappings", None) or {}).values()):
+            replacements = DocumentAnonymizer._sorted_replacements(session.profile.to_anonym_profile())
+            kb_context = _apply_replacements(kb_context, replacements)[0]
+            custom_instructions = _apply_replacements(custom_instructions or "", replacements)[0]
+            _assert_no_identity_terms(
+                getattr(session.profile, "identity_terms", None) or [],
+                bundle.core_text, bundle.stufe2_text, kb_context, custom_instructions, berichtszeitraum,
+            )
 
         # Prompt zusammenbauen
         prompt = f"""=== FÖRDERBERICHT ERSTELLEN ===
@@ -1830,7 +1898,11 @@ JSON:
             session, final_text, report_data, auto_deanonymize=auto_deanonymize
         )
         # Felder aus dem Berichts-JSON gewinnen gegen Standardwerte und Abschnittserkennung
-        placeholders.update({k: v for k, (v, _top) in (fields or {}).items() if v is not None})
+        for key, (value, _top) in (fields or {}).items():
+            if value is not None:
+                placeholders[key] = value
+            elif key in _NO_DEFAULT_FIELDS:
+                placeholders[key] = ""
 
         # Ohne Vorlage gibt es keinen Foerderbericht -- kein Ersatzdokument mit Rohtext/JSON.
         template_path = _template_path()
@@ -1848,28 +1920,51 @@ JSON:
         self._replace_placeholders_in_doc(doc, placeholders)
         self._report_template_warnings(session, doc, template_fields, report_data, fields)
 
-        # ICF-Tabelle bereinigen wenn Foerderziele vorhanden
-        if report_data and len(doc.tables) >= 3:
-            foerderziele = report_data.get("foerderziele", []) or report_data.get("förderziele", [])
-            if foerderziele:
-                try:
-                    svc = WordTemplateService()
-                    icf_table = doc.tables[2]  # ICF-Tabelle ist Tabelle 3 (0-basiert: Index 2)
-                    svc.fill_icf_placeholders_and_cleanup(icf_table, foerderziele, header_rows=1)
-                except Exception as e:
-                    # Logging wäre gut, aber Fehler nicht kritisch
-                    pass
+        # ICF-Tabelle (Tabelle 3): Ziele mit Vorlagenzeile fuellen, Ziele ohne Zeile anhaengen
+        # und melden -- kein Foerderziel faellt still weg.
+        data = report_data or {}
+        foerderziele = [z if isinstance(z, dict) else {"zielformulierung": str(z)}
+                        for z in (data.get("foerderziele") or data.get("förderziele") or [])]
+        if foerderziele and len(doc.tables) >= 3:
+            icf_table = doc.tables[2]
+            placeable = {code.strip().upper() for row in icf_table.rows for cell in row.cells
+                         for code in re.findall(r"\{([^{}]+?)-(?:Ziel|Ist|E|G)\}", cell.text)}
+            try:
+                WordTemplateService().fill_icf_placeholders_and_cleanup(icf_table, foerderziele, header_rows=1)
+            except Exception as exc:
+                placeable = set()  # nichts sicher eingetragen: alle Ziele anhaengen
+                session.warnings.append(f"ICF-Tabelle nicht gefuellt ({type(exc).__name__})")
+            extra = [z for z in foerderziele if str(z.get("icf_code") or "").strip().upper() not in placeable]
 
-        # Neue Ziele (Tabelle 4): Zeile 0 ist der Kopf
-        neue_ziele = (report_data or {}).get("neue_ziele") or []
+            def mark(value):  # Schreibweise wie fill_icf_placeholders_and_cleanup: "(2)"
+                return f"({value})" if isinstance(value, int) and not isinstance(value, bool) else ""
+
+            for ziel in extra:
+                values = (ziel.get("icf_code"), ziel.get("kapitel"), ziel.get("zielformulierung"),
+                          ziel.get("ist_stand"), mark(ziel.get("erreicht")), mark(ziel.get("grund_nichterreichung")))
+                for cell, value in zip(icf_table.add_row().cells, values):
+                    cell.text = str(value or "")
+            if extra:
+                session.warnings.append(
+                    "Foerderziele ohne Zeile in der ICF-Tabelle (am Tabellenende angefuegt, bitte pruefen): "
+                    + ", ".join(str(z.get("icf_code") or "ohne Code") for z in extra)
+                )
+
+        # Neue Ziele (Tabelle 4): Zeile 0 ist der Kopf; reicht die Vorlage nicht, kommen Zeilen dazu
+        neue_ziele = [z if isinstance(z, dict) else {"zielformulierung": str(z)}
+                      for z in (data.get("neue_ziele") or [])]
         if neue_ziele and len(doc.tables) >= 4:
             svc = WordTemplateService()
             table = doc.tables[3]
+            added = 0
             for row_idx, ziel in enumerate(neue_ziele, start=1):
-                if row_idx >= len(table.rows) or not isinstance(ziel, dict):
-                    break
+                if row_idx >= len(table.rows):
+                    table.add_row()
+                    added += 1
                 for col, key in enumerate(("icf_code", "kapitel", "zielformulierung", "ist_stand")):
                     svc.set_cell_text(table, row_idx, col, str(ziel.get(key) or ""))
+            if added:
+                session.warnings.append(f"Tabelle der neuen Ziele um {added} Zeile(n) erweitert (bitte pruefen)")
 
         # Speichern
         safe_name = "".join(c for c in original_name if c.isalnum() or c in " -_").strip()

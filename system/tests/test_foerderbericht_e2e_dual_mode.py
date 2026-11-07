@@ -39,6 +39,10 @@ def _synthetic_template(tmp_path, monkeypatch):
     doc.save(template)
     monkeypatch.setattr(rws, "TEMPLATE_PATH", template)
     monkeypatch.setattr(rws, "BACH_BASE", tmp_path / "kein-generator")
+    # Cloud-Sperre ohne NER hat eigene Tests (test_foerderbericht_privacy_gates.py). Hier geht es um den
+    # Durchstich; wo spaCy fehlt (CI, Mac), laeuft er ohne NER. Echte NER-Abdeckung nur mit spaCy.
+    from hub._services.document import anonymizer_service
+    monkeypatch.setattr(anonymizer_service, "ner_ready", lambda: (True, ""))
 
 
 def _assert_real_report(path: Path) -> None:

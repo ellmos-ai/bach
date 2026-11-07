@@ -3,7 +3,7 @@
 """PB-15: Der Foerderbericht muss ein echter Bericht aus der Vorlage sein.
 
 Nur synthetische Daten und eine neutrale, im Test erzeugte Vorlage. Die private
-private Vorlage und der private Generator werden nie gelesen.
+Vorlage und der private Generator werden nie gelesen.
 """
 
 import re
