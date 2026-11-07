@@ -316,6 +316,7 @@ class _WorkerControl:
     return_note: str = ""
     scope_preparation_deferrals: ScopePreparationDeferrals = field(default_factory=ScopePreparationDeferrals)
     host_precondition_failures: int = 0
+    precondition_wait: Any = None  # PB-4: structured "waiting_precondition" state for the GUI
     worker_resolver_closed: bool = False
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
@@ -1451,6 +1452,16 @@ def _host_precondition_delay(failures):
     return min(900, 60 * 2 ** (max(1, failures) - 1))
 
 
+def _set_precondition_wait(control, code, attempt=None, delay=None):
+    """Publish (or clear with ``code=None``) why the worker takes no new lease."""
+    if code is None:
+        control.precondition_wait = None
+        return
+    control.precondition_wait = {
+        "state": "waiting_precondition", "code": code, "attempt": attempt,
+        "next_check_at": (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()}
+
+
 def _wait_host_precondition(control, failures) -> bool:
     """Lease-free wait before the next acquisition is the probe; False on stop."""
     return not control.stop_event.wait(_host_precondition_delay(failures))
@@ -1866,6 +1877,11 @@ def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
             projected = project_queue_status(live_control.queue_status)
             if projected is not None:
                 worker["queue_status"] = projected
+            from hub._services.chat.worker_queue_status import project_precondition_wait
+            wait = project_precondition_wait(live_control.precondition_wait)
+            worker.pop("precondition_wait", None)
+            if wait is not None:
+                worker["precondition_wait"] = wait
         if retained is not None and (budget_execution is None or
                                      retained.start_request_id == budget_execution["start_request_id"]):
             execution = worker_execution_receipt(retained.worker_id, retained.start_request_id, verify_results=False)
@@ -6300,6 +6316,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             control.host_precondition_failures += 1
                             failures = control.host_precondition_failures
                             delay = _host_precondition_delay(failures)
+                            _set_precondition_wait(control, host_code, failures, delay)
                             _record_worker_activity(control,
                                 f"Task #{returned_id} zurückgegeben: Host-Voraussetzung fehlt ({host_code})",
                                 "pending")
@@ -6323,6 +6340,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         continue
                     control.scope_preparation_deferrals.resolved(control.task_binding.task_id)
                     control.host_precondition_failures = 0
+                    _set_precondition_wait(control, None)
                     newly_acquired_binding = None
                 if not control.worker_resolver_closed:
                     # The worker works again: its "wieder in Gang bringen" task is done.

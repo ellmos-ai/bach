@@ -42,6 +42,14 @@ _RESOLVER_CODE = re.compile(r"[a-z][a-z0-9_]{0,47}\Z")
 _RESOLVER_WORKER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,95}\Z")
 
 
+_RETURN_BLOCK_PREFIX = "lease_release: repeated_return:"  # reason the kernel's return rule gives (PB-1)
+
+
+def _notify_repeated_abort(conn, key, subject, body):
+    from hub._services.abort_notices import post
+    post(conn, key, subject, body)
+
+
 def ensure_resolver_task(conn: sqlite3.Connection, key: str, *, title: str, evidence: str,
                          priority: Optional[str] = None, now: Optional[str] = None) -> Optional[int]:
     """Create the one open resolver task for a block; an open one is never duplicated."""
@@ -89,6 +97,12 @@ def _ensure_block_resolver(conn, task_id, existing_row, *, reason, changed_by, n
                        (task_id, action, field_changed, old_value, new_value, changed_by, changed_at)
                        VALUES (?, 'resolver_task', 'status', NULL, ?, 'auto-resolver', ?)""",
                     (task_id, json.dumps({"resolver_task_id": resolver}), now))
+                if str(reason or "").startswith(_RETURN_BLOCK_PREFIX):
+                    _notify_repeated_abort(
+                        conn, f"repeated_return:task:{task_id}:{resolver}", f"Aufgabe #{task_id} wiederholt abgebrochen",
+                        f"Aufgabe #{task_id} „{title[:120]}“ wurde blockiert, weil sie mehrfach aus demselben Grund "
+                        f"zurückgegeben wurde.\nGrund: {str(reason)[:300]}\nAuflöser-Aufgabe: #{resolver}. "
+                        f"Verlauf: /tasks?task={task_id}")
             conn.execute("RELEASE SAVEPOINT block_resolver")
         except Exception:
             conn.execute("ROLLBACK TO SAVEPOINT block_resolver")
@@ -111,9 +125,15 @@ def ensure_worker_error_resolver(conn: sqlite3.Connection, worker_id: str, error
     evidence = (f"Automatisch angelegt: Worker {worker_id} hat seinen Lauf mit {error_code} beendet "
                 f"({now}). Belege: Worker-Aktivität im Slot und telegram-bot.err.log. "
                 f"Mit Grund neu starten oder die Ursache beheben.")
-    return ensure_resolver_task(conn, f"worker:{worker_id}",
+    resolver = ensure_resolver_task(conn, f"worker:{worker_id}",
         title=f"Worker {worker_id} nach {error_code} wieder in Gang bringen",
         evidence=evidence, priority="P2", now=now)
+    if resolver is not None:
+        _notify_repeated_abort(
+            conn, f"worker:{worker_id}:{resolver}", f"Worker {worker_id} ist stehen geblieben ({error_code})",
+            f"Worker {worker_id} hat seinen Lauf mit {error_code} beendet und kommt nicht von selbst weiter.\n"
+            f"Auflöser-Aufgabe: #{resolver}. Zustand: /agenten/running")
+    return resolver
 
 
 def close_worker_error_resolver(conn: sqlite3.Connection, worker_id: str,
