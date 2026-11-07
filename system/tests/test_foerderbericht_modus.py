@@ -86,6 +86,8 @@ def test_run_full_pipeline_cloud_still_anonymizes(pipe, monkeypatch):
     monkeypatch.setattr(FoerderberichtPipeline, "_call_llm", fake_llm)
     monkeypatch.setattr(FoerderberichtPipeline, "finish_report",
                         lambda self, **kw: kw.get("_result") or fp.PipelineResult(success=True))
+    from hub._services.document import anonymizer_service
+    monkeypatch.setattr(anonymizer_service, "ner_ready", lambda: (True, ""))  # NER-Sperre: eigene Tests
     pipe.run_full_pipeline()  # Default: cloud
     assert seen["backend"] == "claude_code"
     seg = seen["prompt"][seen["prompt"].index("=== DOKUMENTEN-BUNDLE"):seen["prompt"].index("=== AUFGABE")]
