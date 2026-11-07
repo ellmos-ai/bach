@@ -217,9 +217,17 @@ def test_bach_consumes_configurable_review_worktree_and_escalation(tmp_path: Pat
     assert getattr(SmartHomeHandler, "__ocean_deprecated__", False) is True
 
 
-def test_bach_multimodal_and_embodied_gui_endpoints():
+def test_bach_multimodal_and_embodied_gui_endpoints(tmp_path, monkeypatch):
     import asyncio
+    import json
     from gui import server
+
+    # Homecontrol/robotics routes are gated by the capability matrix (PB-13, #3996);
+    # isolate the grant and the persisted E-Stop from the real ~/.bach.
+    grants = tmp_path / "capability_permissions.json"
+    grants.write_text(json.dumps({"smarthome_robotics": True}), encoding="utf-8")
+    monkeypatch.setattr(server, "_CAPABILITY_PERMISSIONS_FILE", grants)
+    monkeypatch.setattr(server, "_ROBOTICS_ESTOP_FILE", tmp_path / "robotics_estop.json")
 
     perms = asyncio.run(server.api_get_capability_permissions())
     assert perms["schema"] == "ellmos.capability-permissions.v1"
