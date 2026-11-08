@@ -1149,12 +1149,16 @@ def _execution_worker_slot(worker_id: str) -> dict:
 
 
 def _execution_worker_configuration(slot: dict):
+    if not slot.get("system") and slot.get("id") not in DEFAULT_CORE_SLOTS:
+        slot = _project_dynamic_worker_slot(slot)
     configuration = _worker_configuration(slot)
     if not slot.get("system") and slot.get("id") not in DEFAULT_CORE_SLOTS:
         # Consent is control-plane state, not a change to the running task profile.
         from hub._services.chat.slots_config import _worker_profile_version
         configuration.pop("persistent_opt_in", None)
         configuration["configuration_version"] = _worker_profile_version(slot)
+    if slot.get("rights_effective") is not None:
+        configuration["rights_effective"] = slot["rights_effective"]
     if slot.get("id") == "buddha_always_on" or slot.get("system"):
         configuration = {**configuration, "execution": {key: slot.get(key) for key in
             ("enabled", "category", "pickup_filter", "workdir", "type", "require_assigned_slot",
@@ -1174,7 +1178,8 @@ def _preview_worker_selection(worker_id: str, *, limit=50, offset=0):
     slot = _execution_worker_slot(worker_id)
     if not slot:
         raise KeyError(worker_id)
-    version = _worker_configuration(slot)["configuration_version"]
+    raw_slot = get_worker_slot(worker_id) if not slot.get("system") and worker_id != "buddha_always_on" else slot
+    version = _worker_configuration(raw_slot or slot)["configuration_version"]
     execution_version = _execution_worker_configuration(slot)["configuration_version"]
     with _WORKER_CONTROL_LOCK:
         control = _WORKER_CONTROLS.get(worker_id)
@@ -1183,7 +1188,8 @@ def _preview_worker_selection(worker_id: str, *, limit=50, offset=0):
         configuration_version=version, execution_profile_version=execution_version,
         deferred_versions=deferred, limit=limit, offset=offset)
     current = _execution_worker_slot(worker_id)
-    if (not current or _worker_configuration(current)["configuration_version"] != version
+    current_raw = get_worker_slot(worker_id) if current and not current.get("system") and worker_id != "buddha_always_on" else current
+    if (not current or _worker_configuration(current_raw or current)["configuration_version"] != version
             or _execution_worker_configuration(current)["configuration_version"] != execution_version):
         raise PreviewUnavailable("Worker-Konfiguration hat sich während der Vorschau geändert")
     with _WORKER_CONTROL_LOCK:
@@ -1864,7 +1870,7 @@ def _live_resolved_execution(chat_id: str, *, generation=None, task_id=None) -> 
 
 
 def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
-    worker = dict(worker)
+    worker = _project_dynamic_worker_slot(worker)
     budget_execution = (_budget_execution_projection(worker.get("id"))
                         if worker.get("max_model_requests") is not None else None)
     worker.pop("_model_request_runs", None)
@@ -3824,7 +3830,7 @@ def _registered_worker_slot(worker_id: str) -> Optional[dict]:
         return None
     if not isinstance(worker, dict) or worker.get("id") != normalized:
         return None
-    return worker
+    return _project_dynamic_worker_slot(worker)
 
 
 def _bind_system_caller(chat_id: str, session: Any, slot: dict) -> None:
@@ -5728,9 +5734,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     slot = _execution_worker_slot(worker_id)
                 if not slot or slot.get("id") != worker_id:
                     return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
-                dynamic_profile = bool(get_worker_slot(worker_id))
+                raw_dynamic_slot = get_worker_slot(worker_id)
+                dynamic_profile = bool(raw_dynamic_slot)
                 if dynamic_profile:
-                    slot = {**slot, "system": False}
+                    slot = {**_project_dynamic_worker_slot(slot), "system": False}
                 if (_startup_profile_version and worker_id != "buddha_always_on"
                         and not slot.get("system") and cloud_binding is None):
                     return rejected({
@@ -5795,7 +5802,7 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                         "process_create_time": process_started,
                         "start_request_id": request_id,
                         "generation": _startup_generation or "", "task_id": slot["task_id"],
-                        "task_version": None, "configuration_version": _worker_profile_version(slot),
+                        "task_version": None, "configuration_version": _worker_profile_version(raw_dynamic_slot or slot),
                         "limit": budget_limit, "reserved_count": 0,
                         "phase": "admitted", "reason": "", "sequence": 0,
                     }
@@ -7808,10 +7815,15 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             try:
                 cfg = load_slots_config()
-                slots = cfg.get("slots", {})
+                slots = {sid: dict(s) for sid, s in cfg.get("slots", {}).items()}
+                if "buddha_always_on" in slots:
+                    slots["buddha_always_on"] = get_always_on_execution_slot()
                 for sid, s in slots.items():
                     s["pause_info"] = get_slot_pause_info(s)
-                workers = list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
+                workers = [
+                    _project_dynamic_worker_slot(w)
+                    for w in list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
+                ]
                 for w in workers:
                     w["pause_info"] = get_slot_pause_info(w)
                     w.pop("_model_request_runs", None)
