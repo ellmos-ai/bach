@@ -507,6 +507,13 @@ def _reset_lang_cache():
 
 
 @pytest.fixture(autouse=True)
+def _guard_real_model_unload(monkeypatch):
+    """PB-26: the suite runs next to a live Ollama on the Mac; no test may unload its model."""
+    from hub._services.llm.model_backend import OllamaBackend
+    monkeypatch.setattr(OllamaBackend, "unload", lambda self, model=None, timeout=5.0: False)
+
+
+@pytest.fixture(autouse=True)
 def _guard_real_process_control(monkeypatch):
     """Do not let unit/integration tests terminate real host processes."""
     real_run = subprocess.run
