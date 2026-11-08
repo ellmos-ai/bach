@@ -1755,6 +1755,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/modules/sync",
         "/api/modules/update-check",
         "/api/modules/list",
+        "/api/modules/reconcile",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -2526,6 +2527,71 @@ async def rollback_module_endpoint(module_name: str):
         handler = ModulesHandler(BACH_DIR)
         ok, msg = handler._rollback_module(module_name)
         return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/test/{module_name}")
+@app.post("/api/modules/test")
+async def run_modules_ci_endpoint(module_name: Optional[str] = None):
+    """Run isolated CI tests for a module or all modules in .MODULES/."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, text, summary = handler.run_module_tests(target=module_name)
+        return {"status": "ok" if ok else "error", "passed": ok, "output": text, "summary": summary}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/bootstrap")
+async def bootstrap_modules_endpoint(req: Request):
+    """Run core bootstrap, generate lockfile or verify dependencies."""
+    try:
+        body = await req.json() if req.headers.get("content-length", "0") != "0" else {}
+        action = body.get("action", "verify")
+        args = []
+        if action == "generate":
+            args.append("--generate-lockfile")
+        elif action == "verify":
+            args.append("--verify")
+        elif action == "minimal":
+            args.append("--minimal")
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.bootstrap_core(args)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/scaffold")
+async def scaffold_module_endpoint(req: Request):
+    """Scaffold a new standalone module with manifest, service code, tests, and README."""
+    try:
+        body = await req.json() if req.headers.get("content-length", "0") != "0" else {}
+        name = str(body.get("name") or "").strip()
+        module_type = str(body.get("type") or "module").strip()
+        description = str(body.get("description") or "").strip()
+        force = bool(body.get("force", False))
+        if not name:
+            return {"status": "error", "error": "Modulname erforderlich"}
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg, summary = handler.scaffold_module(name, module_type=module_type, description=description, force=force)
+        return {"status": "ok" if ok else "error", "message": msg, "summary": summary}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/reconcile")
+async def reconcile_modules_endpoint():
+    """Reconcile installed modules, version pins, feeds, and lockfile."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        data = handler.reconcile_feeds_and_pins()
+        return {"status": "ok", "data": data}
     except Exception:
         return {"status": "error", "error": public_error_message()}
 
@@ -12323,6 +12389,27 @@ async def sync_promptboard_library(req: Request = None):
         )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard-Sync fehlgeschlagen: {exc}") from exc
+
+
+@app.post("/api/prompt-library/import-software")
+async def import_software_prompts_endpoint(req: Request = None):
+    """Import prompt templates from .SOFTWARE/_prompts directory into BACH prompt library."""
+    from hub.prompt import PromptHandler
+    dry_run = False
+    software_dir = None
+    if req is not None and req.headers.get("content-length", "0") != "0":
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                dry_run = bool(body.get("dry_run", False))
+                software_dir = body.get("software_dir")
+        except Exception:
+            pass
+    try:
+        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        return handler.import_software_prompts(software_dir=software_dir, dry_run=dry_run)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Software-Prompts-Import fehlgeschlagen: {exc}") from exc
 
 
 @app.get("/api/prompt-generator/templates")

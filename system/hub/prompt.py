@@ -78,19 +78,25 @@ def promptboard_library_paths():
 
     # Plan D local dev repos
     local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
-    for repo_name in ("REL-PUB_PromptBoard-tasksolver-1136-1137", "REL-PUB_PromptBoard"):
+    for repo_name in (
+        "promptboard",
+        "PromptBoard",
+        "REL-PUB_PromptBoard-tasksolver-1136-1137",
+        "REL-PUB_PromptBoard",
+    ):
         repo_dir = local_dev / repo_name
         candidates.extend([repo_dir / "library.json", repo_dir / "data" / "library.json"])
 
     if os.environ.get("USERPROFILE"):
         for sub in ("DATA", "LLM"):
-            project = (Path(os.environ["USERPROFILE"]) / "OneDrive" / ".TOPICS" /
-                       ".SOFTWARE" / sub / "REL-PUB_PromptBoard")
-            candidates.extend([
-                project / "library.json",
-                project / "data" / "library.json",
-                project / "_tmp_accessibility_check" / "library.json",
-            ])
+            for folder in ("REL-PUB_PromptBoard", "PromptBoard"):
+                project = (Path(os.environ["USERPROFILE"]) / "OneDrive" / ".TOPICS" /
+                           ".SOFTWARE" / sub / folder)
+                candidates.extend([
+                    project / "library.json",
+                    project / "data" / "library.json",
+                    project / "_tmp_accessibility_check" / "library.json",
+                ])
     return candidates
 
 
@@ -131,13 +137,23 @@ class PromptHandler(BaseHandler):
             "boards": "Alle Boards listen: bach prompt boards",
             "board": "Board verwalten: bach prompt board <title> [--add-prompt ID] [--remove-prompt ID] [--description TEXT]",
             "import_promptboard": "PromptBoard importieren: bach prompt import-promptboard [library.json] [--dry-run]",
+            "import_software": "Software-Prompts importieren: bach prompt import-software [dir] [--dry-run]",
             "export_promptboard": "Prompts nach PromptBoard exportieren: bach prompt export-promptboard [library.json] [--category CAT] [--dry-run]",
             "sync_promptboard": "PromptBoard Zwei-Wege-Sync: bach prompt sync-promptboard [library.json] [--category CAT] [--dry-run]",
             "favorite": "Favorit umschalten / listen: bach prompt favorite <id_oder_name> [--list]",
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
-        if operation in ("import_promptboard", "import-promptboard"):
+        if operation in ("import_software", "import-software"):
+            preview_flags = ("--dry-run", "-n")
+            dry_run = dry_run or any(flag in args for flag in preview_flags)
+            paths = [arg for arg in args if arg not in preview_flags]
+            try:
+                result = self.import_software_prompts(paths[0] if paths else None, dry_run=dry_run)
+                return True, json.dumps(result, ensure_ascii=False)
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                return False, f"Software-Prompts-Import fehlgeschlagen: {exc}"
+        elif operation in ("import_promptboard", "import-promptboard"):
             preview_flags = ("--dry-run", "-n")
             dry_run = dry_run or any(flag in args for flag in preview_flags)
             paths = [arg for arg in args if arg not in preview_flags]
@@ -231,6 +247,82 @@ class PromptHandler(BaseHandler):
         conn = self._connection_factory() if self._connection_factory else sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def import_software_prompts(self, software_dir=None, dry_run=False):
+        """Import prompt templates from OneDrive .TOPICS/.SOFTWARE/_prompts directory."""
+        candidates = []
+        if software_dir:
+            candidates.append(Path(software_dir))
+        if os.environ.get("USERPROFILE"):
+            candidates.append(
+                Path(os.environ["USERPROFILE"])
+                / "OneDrive"
+                / ".TOPICS"
+                / ".SOFTWARE"
+                / "_prompts"
+            )
+        candidates.append(Path(r"C:\Users\lukas\OneDrive\.TOPICS\.SOFTWARE\_prompts"))
+
+        prompts_dir = None
+        for cand in candidates:
+            if cand.is_dir():
+                prompts_dir = cand
+                break
+
+        if not prompts_dir:
+            searched = ", ".join(str(c) for c in candidates)
+            raise OSError(f"Kein Software-Prompts-Ordner gefunden (geprüft: {searched})")
+
+        entries = []
+        for file_path in sorted(prompts_dir.iterdir()):
+            if not file_path.is_file() or file_path.name.startswith("."):
+                continue
+            if file_path.suffix.lower() not in (".txt", ".md"):
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace").strip()
+            except Exception:
+                continue
+            if not content:
+                continue
+
+            name = file_path.stem.replace("_", " ").strip()
+            purpose = f"Importiert aus .SOFTWARE/_prompts/{file_path.name}"
+            category = "Software"
+            tags = serialize_prompt_tags(["software", "automation", "promptboard"])
+            entries.append((name, purpose, content, tags, category))
+
+        imported, skipped = 0, 0
+        conn = self._get_conn()
+        try:
+            with conn:
+                if not dry_run:
+                    conn.execute("BEGIN IMMEDIATE")
+                names = {row[0] for row in conn.execute("SELECT name FROM prompt_templates")}
+                now = datetime.now().isoformat()
+                for entry in entries:
+                    if entry[0] in names:
+                        skipped += 1
+                        continue
+                    if not dry_run:
+                        conn.execute(
+                            "INSERT INTO prompt_templates "
+                            "(name, purpose, text, tags, category, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (*entry, now, now),
+                        )
+                    names.add(entry[0])
+                    imported += 1
+            return {
+                "ok": True,
+                "source": str(prompts_dir),
+                "imported": imported,
+                "skipped": skipped,
+                "total_found": len(entries),
+                "dry_run": bool(dry_run),
+            }
+        finally:
+            conn.close()
 
     def import_promptboard(self, library_path=None, *, payload=None, dry_run=False):
         """Validate first, then import atomically; duplicate names keep user data.

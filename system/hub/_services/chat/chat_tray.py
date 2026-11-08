@@ -1775,6 +1775,7 @@ class BACHTray:
             prompt_items.append(pystray.MenuItem("PromptBoard App öffnen", self._open_promptboard))
         prompt_items.append(pystray.MenuItem("Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
         prompt_items.append(pystray.MenuItem("PromptBoard in BACH importieren", self._import_promptboard_action))
+        prompt_items.append(pystray.MenuItem("Software-Prompts in BACH importieren", self._import_software_prompts_action))
         prompt_items.append(pystray.MenuItem("Prompts nach PromptBoard exportieren", self._export_promptboard_action))
         prompt_items.append(pystray.MenuItem("🔄 PromptBoard Zwei-Wege-Sync", self._sync_promptboard_action))
         prompt_items.append(pystray.MenuItem("⭐ Favoriten synchronisieren", self._sync_favorites_action))
@@ -2196,6 +2197,27 @@ class BACHTray:
         except Exception as e:
             if self.icon:
                 self.icon.notify(f"Import fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _import_software_prompts_action(self, *_):
+        """Imports prompt templates from .SOFTWARE/_prompts into BACH DB."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            ok, result = handler.handle("import-software", [])
+            data = json.loads(result) if isinstance(result, str) and result.strip().startswith("{") else {}
+            imported = data.get("imported", 0)
+            skipped = data.get("skipped", 0)
+            total = data.get("total_found", 0)
+            if self.icon:
+                self.icon.notify(
+                    f"Software-Prompts: {imported} neu, {skipped} bestehend ({total} gesamt).",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Software-Import fehlgeschlagen: {e}", "BACH PromptBoard")
 
     def _export_promptboard_action(self, *_):
         """Exports prompts from BACH DB into PromptBoard library.json."""

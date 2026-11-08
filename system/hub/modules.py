@@ -25,6 +25,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 import zipfile
 import urllib.request
@@ -112,6 +114,8 @@ class ModulesHandler(BaseHandler):
             "auto-update": "Hintergrund-Zyklus zur automatisierten Modul-Aktualisierung (bach modules auto-update [--apply] [--dry-run])",
             "install": "Modul aus Pfad oder ZIP installieren (bach modules install <path|zip>)",
             "update": "Module auf neueste Versionen aktualisieren (bach modules update [--dry-run])",
+            "test": "Isolierte Modul-CI und Smoke-Tests ausführen (bach modules test [name])",
+            "bootstrap": "Core-Installations-Bootstrap und Lockfile-Verwaltung (bach modules bootstrap [--generate-lockfile] [--minimal])",
             "feed": "Remote-Manifest-Feeds verwalten (bach modules feed list|add|remove|sync)",
             "rollback": "Modul auf letzte Sicherung zurücksetzen (bach modules rollback <name>)",
             "pin": "Modulversion fixieren (bach modules pin <name> [version])",
@@ -119,6 +123,8 @@ class ModulesHandler(BaseHandler):
             "pins": "Fixierte und unter Quarantäne stehende Modulversionen anzeigen",
             "export": "Modul als Standalone-Paket exportieren (bach modules export <name>)",
             "pack": "Modul als Standalone-Bundle mit Prüfsumme packen (bach modules pack <name> [--out DIR] [--bundle-deps])",
+            "scaffold": "Neues autarkes Modul mit Manifest, Code und Testsuite erstellen (bach modules scaffold <name> [--type TYPE])",
+            "reconcile": "Reconciliation zwischen Feeds, Lockfile und Version-Pins durchführen (bach modules reconcile)",
             "schedule": "Auto-Update-Job im Daemon Scheduler registrieren/konfigurieren (bach modules schedule [--interval-hours N])",
             "wire": "Hot-Wiring für alle Standalone-Module ausführen",
             "help": "Hilfe anzeigen",
@@ -201,8 +207,10 @@ class ModulesHandler(BaseHandler):
             elif sub_op in ("sync", "update"):
                 res = self.sync_feeds()
                 return True, f"[OK] {res['feeds_count']} Feeds synchronisiert ({res['modules_count']} Moduldefinitionen im Cache)."
+            elif sub_op in ("reconcile", "check"):
+                return self._reconcile_cli()
             else:
-                return False, f"Unbekannte Feed-Operation '{sub_op}'. Verfügbar: list, add, remove, sync"
+                return False, f"Unbekannte Feed-Operation '{sub_op}'. Verfügbar: list, add, remove, sync, reconcile"
         elif op == "rollback":
             if not args:
                 return False, "Fehler: Modulname erforderlich: bach modules rollback <name>"
@@ -225,6 +233,14 @@ class ModulesHandler(BaseHandler):
             return self.unpin_version(args[0])
         elif op in ("pins", "quarantined"):
             return self._list_pins_cli()
+        elif op in ("test", "ci", "smoke"):
+            return self._run_module_tests_cli(args)
+        elif op in ("bootstrap", "bootstrap-core", "install-minimal"):
+            return self.bootstrap_core(args)
+        elif op in ("scaffold", "create", "new"):
+            return self._scaffold_cli(args)
+        elif op in ("reconcile", "reconciliation"):
+            return self._reconcile_cli()
         elif op == "help":
             return self._help()
         else:
@@ -798,7 +814,7 @@ class ModulesHandler(BaseHandler):
 
         return True, "\n".join(lines)
 
-    def _install_module(self, source_path_str: str, dry_run: bool = False, expected_sha: Optional[str] = None) -> Tuple[bool, str]:
+    def _install_module(self, source_path_str: str, dry_run: bool = False, expected_sha: Optional[str] = None, skip_tests: bool = False) -> Tuple[bool, str]:
         download_tmp: Optional[Path] = None
         if source_path_str.startswith("http://") or source_path_str.startswith("https://"):
             dl_dir = self.modules_dir / ".tmp_downloads"
@@ -881,6 +897,12 @@ class ModulesHandler(BaseHandler):
 
             # AUTO-HEAL: Validierung nach Installation
             is_valid, err_msg = self._verify_module(target_dir)
+            if is_valid and not skip_tests:
+                test_ok, test_summary, test_count, test_dur = self._run_single_module_tests(target_dir, timeout_sec=20)
+                if not test_ok:
+                    is_valid = False
+                    err_msg = f"Modul-CI Smoke-Tests fehlgeschlagen:\n{test_summary}"
+
             if not is_valid:
                 if backup_dir and backup_dir.is_dir():
                     self._rollback_module(name, auto_heal=True, reason=err_msg, failed_version=version)
@@ -905,8 +927,8 @@ class ModulesHandler(BaseHandler):
             if download_tmp and download_tmp.exists():
                 download_tmp.unlink(missing_ok=True)
 
-    def check_for_updates(self, cache_ttl_sec: int = 60) -> Dict[str, Any]:
-        """Prüft Quellpfade auf verfügbare neuere Modulversionen (mit Caching)."""
+    def check_for_updates(self, cache_ttl_sec: int = 60, enforce_lock: bool = True) -> Dict[str, Any]:
+        """Prüft Quellpfade auf verfügbare neuere Modulversionen (mit Caching & Pin/Lock-Schutz)."""
         global _MODULES_UPDATE_CACHE
         now = time.time()
         if _MODULES_UPDATE_CACHE["data"] is not None and (now - _MODULES_UPDATE_CACHE["timestamp"]) < cache_ttl_sec:
@@ -917,6 +939,16 @@ class ModulesHandler(BaseHandler):
         installed = {m["name"]: m for m in self.get_modules_data()}
         source_dirs = self._resolve_source_dirs()
         updates_found: List[Dict[str, Any]] = []
+        blocked_by_pins: List[Dict[str, Any]] = []
+
+        lockfile = self._resolve_lockfile()
+        lock_data = {}
+        if lockfile.is_file():
+            try:
+                lock_data = json.loads(lockfile.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        locked_modules = lock_data.get("modules", {})
 
         for s_dir in source_dirs:
             if not s_dir.is_dir():
@@ -935,18 +967,33 @@ class ModulesHandler(BaseHandler):
                         if c_name in installed:
                             cur_ver = installed[c_name]["version"]
                             if parse_semver(c_ver) > parse_semver(cur_ver):
+                                is_quarantined = self.is_version_quarantined(c_name, c_ver)
+                                if is_quarantined:
+                                    continue
+                                pin = self.is_module_pinned(c_name)
+                                is_pinned = bool(pin and pin == cur_ver)
+                                is_locked = bool(enforce_lock and c_name in locked_modules and cur_ver == locked_modules[c_name].get("version"))
+                                if is_pinned or is_locked:
+                                    blocked_by_pins.append({
+                                        "name": c_name,
+                                        "current_version": cur_ver,
+                                        "new_version": c_ver,
+                                        "reason": f"Modul ist auf v{pin} fixiert (Pin-Schutz)" if is_pinned else f"modules.lock.json fixiert Version auf v{locked_modules[c_name].get('version')}",
+                                    })
                                 updates_found.append({
                                     "name": c_name,
                                     "current_version": cur_ver,
                                     "new_version": c_ver,
                                     "source": str(cand),
+                                    "locked": is_locked,
+                                    "pinned": is_pinned,
                                 })
                     except Exception:
                         pass
             except OSError:
                 pass
 
-        # Prüfe Manifest-Feeds (TASK -46)
+        # Prüfe Manifest-Feeds (TASK -46 & TASK -52)
         try:
             feed_modules = self.get_feed_modules()
             for fm in feed_modules:
@@ -955,14 +1002,21 @@ class ModulesHandler(BaseHandler):
                 if not f_name or f_name not in installed:
                     continue
                 cur_ver = installed[f_name]["version"]
-                pin = self.is_module_pinned(f_name)
-                if pin and pin == cur_ver:
-                    continue
                 if self.is_version_quarantined(f_name, f_ver):
                     continue
                 if parse_semver(f_ver) > parse_semver(cur_ver):
                     dl_url = fm.get("download_url") or fm.get("url")
                     if dl_url and not any(u["name"] == f_name for u in updates_found):
+                        pin = self.is_module_pinned(f_name)
+                        is_pinned = bool(pin and pin == cur_ver)
+                        is_locked = bool(enforce_lock and f_name in locked_modules and cur_ver == locked_modules[f_name].get("version"))
+                        if is_pinned or is_locked:
+                            blocked_by_pins.append({
+                                "name": f_name,
+                                "current_version": cur_ver,
+                                "new_version": f_ver,
+                                "reason": f"Modul ist auf v{pin} fixiert (Pin-Schutz)" if is_pinned else f"modules.lock.json fixiert Version auf v{locked_modules[f_name].get('version')}",
+                            })
                         updates_found.append({
                             "name": f_name,
                             "current_version": cur_ver,
@@ -971,6 +1025,8 @@ class ModulesHandler(BaseHandler):
                             "download_url": dl_url,
                             "sha256": fm.get("sha256"),
                             "source_type": "feed",
+                            "locked": is_locked,
+                            "pinned": is_pinned,
                         })
         except Exception:
             pass
@@ -980,6 +1036,8 @@ class ModulesHandler(BaseHandler):
             "has_updates": len(updates_found) > 0,
             "updates_count": len(updates_found),
             "updates": updates_found,
+            "blocked_by_pins": blocked_by_pins,
+            "blocked_count": len(blocked_by_pins),
             "checked_sources": [str(d) for d in source_dirs],
             "total_installed": len(installed),
             "timestamp": now,
@@ -997,6 +1055,13 @@ class ModulesHandler(BaseHandler):
             f"Geprüfte Quellen:   {len(res['checked_sources'])}",
             "",
         ]
+        blocked = res.get("blocked_by_pins", [])
+        if blocked:
+            lines.append(f"Geschützte Module (Pin/Lockfile: {len(blocked)}):")
+            for b in blocked:
+                lines.append(f"  🔒 {b['name']:<22} v{b['current_version']} (v{b['new_version']} blockiert: {b['reason']})")
+            lines.append("")
+
         if not res["has_updates"]:
             lines.append("[INFO] Keine Modul-Updates verfügbar. Alle Module sind auf dem neuesten Stand.")
             return True, "\n".join(lines)
@@ -1008,11 +1073,23 @@ class ModulesHandler(BaseHandler):
         lines.append("Führe 'bach modules update' aus, um alle Updates zu installieren.")
         return True, "\n".join(lines)
 
-    def _auto_update_cycle(self, apply_updates: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
+    def _auto_update_cycle(
+        self,
+        apply_updates: bool = False,
+        dry_run: bool = False,
+        sync_feeds_first: bool = True,
+    ) -> Tuple[bool, str]:
         """Führt einen automatisierten Prüf- und Aktualisierungszyklus aus."""
+        if sync_feeds_first:
+            try:
+                self.sync_feeds()
+            except Exception:
+                pass
+
         check = self.check_for_updates(cache_ttl_sec=0)
         has_upd = bool(check.get("has_updates"))
         upd_count = int(check.get("updates_count", 0))
+        blocked = check.get("blocked_by_pins", [])
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         lines = [
@@ -1020,9 +1097,16 @@ class ModulesHandler(BaseHandler):
             f"Prüfzeitpunkt:        {now_str}",
             f"Installierte Module:  {check.get('total_installed', 0)}",
             f"Verfügbare Updates:   {upd_count}",
+            f"Pin-/Lock-Schutz:     {len(blocked)} Modul(e) geschützt",
             f"Modus:                {'Automatisches Upgrade (--apply)' if apply_updates else 'Monitoring / Benachrichtigung'}",
             "",
         ]
+
+        if blocked:
+            lines.append("Geschützte Versionen (kein automatisches Upgrade):")
+            for b in blocked:
+                lines.append(f"  🔒 {b['name']:<22} v{b['current_version']} (v{b['new_version']} blockiert: {b['reason']})")
+            lines.append("")
 
         if not has_upd:
             lines.append("[OK] Alle Module sind aktuell. Keine Hintergrund-Aktion erforderlich.")
@@ -1061,6 +1145,10 @@ class ModulesHandler(BaseHandler):
         lines.append(f"Verfügbare Updates: {len(updates_found)}")
         success_count = 0
         for upd in updates_found:
+            if upd.get("locked") or upd.get("pinned"):
+                reason = "Pin-Schutz" if upd.get("pinned") else "modules.lock.json Schutz"
+                lines.append(f"  🔒 {upd['name']:<24} v{upd['current_version']} [ÜBERSPRUNGEN: {reason}]")
+                continue
             status_text = "[DRY-RUN] Würde aktualisieren" if dry_run else "[AKTUALISIERT]"
             lines.append(f"  • {upd['name']:<24} v{upd['current_version']} -> v{upd['new_version']} {status_text}")
             if not dry_run:
@@ -1258,15 +1346,584 @@ class ModulesHandler(BaseHandler):
             "  bach modules export <name> [--out DIR]",
             "      Erstellt ein autarkes, verteilbares ZIP-Archiv eines Moduls.",
             "",
+            "  bach modules scaffold <name> [--type TYPE] [--desc TEXT]",
+            "      Erstellt ein neues autarkes Standalone-Modul mit Manifest, Code und Testsuite.",
+            "",
+            "  bach modules reconcile",
+            "      Führt einen vollständigen Abgleich zwischen Feeds, Lockfile und Version-Pins durch.",
+            "",
             "  bach modules wire",
             "      Führt Hot-Wiring aller Standalone-Module in die laufende Bridge aus.",
             "",
             "Beispiele:",
             "  bach modules list",
+            "  bach modules scaffold mein_dienst --type service",
+            "  bach modules test mein_dienst",
+            "  bach modules reconcile",
+            "  bach modules bootstrap [--generate-lockfile] [--minimal]",
             "  bach modules update --dry-run",
             "  bach modules install C:/Pfad/zu/mein_modul.zip",
             "  bach modules wire",
         ]
+        return True, "\n".join(lines)
+
+    # -------------------------------------------------------------------------
+    # MODUL-SCAFFOLDER & RECONCILIATION (TASK -54 & TASK -52)
+    # -------------------------------------------------------------------------
+
+    def scaffold_module(
+        self,
+        name: str,
+        module_type: str = "module",
+        description: str = "",
+        out_dir: Optional[Union[str, Path]] = None,
+        force: bool = False,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """Erstellt ein neues, standardkonformes autarkes Modul in .MODULES/<name>."""
+        clean_name = str(name).strip().lower()
+        if not clean_name or not re.match(r"^[a-z][a-z0-9_]*$", clean_name):
+            return False, f"Ungültiger Modulname '{name}'. Muss mit Kleinbuchstabe beginnen und nur [a-z0-9_] enthalten.", {}
+
+        target_dir = Path(out_dir).resolve() if out_dir else (self.modules_dir / clean_name)
+        if target_dir.exists() and any(target_dir.iterdir()) and not force:
+            return False, f"Zielverzeichnis '{target_dir}' existiert bereits und ist nicht leer. Nutze --force zum Überschreiben.", {}
+
+        src_dir = target_dir / "src"
+        tests_dir = target_dir / "tests"
+        src_dir.mkdir(parents=True, exist_ok=True)
+        tests_dir.mkdir(parents=True, exist_ok=True)
+
+        class_name = "".join(word.capitalize() for word in clean_name.split("_")) + "Service"
+        desc = description.strip() or f"BACH Standalone Module: {clean_name}"
+        now_iso = datetime.now().isoformat()
+
+        manifest_data = {
+            "name": clean_name,
+            "version": "1.0.0",
+            "type": module_type or "module",
+            "description": desc,
+            "author": "BACH Team",
+            "created_at": now_iso,
+            "selfcontained": True,
+            "entrypoints": {
+                "library": f"src/{clean_name}.py",
+            },
+            "boundaries": {
+                "data": "user-local",
+                "network": "full",
+                "platforms": ["windows", "macos", "linux"],
+            },
+            "consumers": [
+                {"name": "BACH", "minimum_version": "3.15.0"},
+                {"name": "Ocean", "minimum_version": "1.0.0"},
+            ],
+        }
+        (target_dir / "manifest.json").write_text(json.dumps(manifest_data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+        module_code = (
+            "# -*- coding: utf-8 -*-\n"
+            "# SPDX-License-Identifier: MIT\n"
+            '"""\n'
+            f"{clean_name} — Standalone Modul\n"
+            f"{'=' * (len(clean_name) + 20)}\n"
+            f"{desc}\n"
+            '"""\n'
+            "from __future__ import annotations\n\n"
+            "import logging\n"
+            "from typing import Any, Dict, Optional\n\n"
+            '__version__ = "1.0.0"\n'
+            f'__all__ = ["__version__", "{class_name}", "get_status"]\n\n'
+            "logger = logging.getLogger(__name__)\n\n\n"
+            "def get_status() -> Dict[str, Any]:\n"
+            '    """Gibt den aktuellen Betriebsstatus des Moduls zurück."""\n'
+            "    return {\n"
+            f'        "module": "{clean_name}",\n'
+            '        "version": __version__,\n'
+            '        "status": "ready",\n'
+            '        "selfcontained": True,\n'
+            "    }\n\n\n"
+            f"class {class_name}:\n"
+            f'    """Haupt-Serviceklasse für {clean_name}."""\n\n'
+            "    def __init__(self, config: Optional[Dict[str, Any]] = None):\n"
+            "        self.config = config or {}\n"
+            "        self.version = __version__\n"
+            f'        logger.debug("Initialisiere {class_name} v%s", self.version)\n\n'
+            "    def run(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:\n"
+            '        """Führt die primäre Service-Operation aus."""\n'
+            "        return {\n"
+            '            "success": True,\n'
+            f'            "module": "{clean_name}",\n'
+            '            "payload": payload or {},\n'
+            "        }\n"
+        )
+        (src_dir / f"{clean_name}.py").write_text(module_code, encoding="utf-8")
+
+        test_code = (
+            "# -*- coding: utf-8 -*-\n"
+            "# SPDX-License-Identifier: MIT\n"
+            f'"""Smoke- und Unit-Tests für {clean_name}."""\n'
+            "import json\n"
+            "import sys\n"
+            "from pathlib import Path\n\n"
+            "# Modul-Quellpfad isoliert einhängen\n"
+            'sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))\n'
+            f"import {clean_name}\n\n\n"
+            "def test_manifest_validity():\n"
+            '    manifest_p = Path(__file__).resolve().parent.parent / "manifest.json"\n'
+            '    assert manifest_p.is_file(), "manifest.json muss existieren"\n'
+            '    data = json.loads(manifest_p.read_text(encoding="utf-8"))\n'
+            f'    assert data.get("name") == "{clean_name}"\n'
+            '    assert data.get("version") == "1.0.0"\n'
+            '    assert data.get("selfcontained") is True\n'
+            '    assert "library" in data.get("entrypoints", {})\n\n\n'
+            "def test_module_version():\n"
+            f'    assert {clean_name}.__version__ == "1.0.0"\n\n\n'
+            "def test_module_status():\n"
+            f"    status = {clean_name}.get_status()\n"
+            f'    assert status["module"] == "{clean_name}"\n'
+            '    assert status["status"] == "ready"\n'
+            '    assert status["selfcontained"] is True\n\n\n'
+            "def test_service_execution():\n"
+            f"    service = {clean_name}.{class_name}()\n"
+            '    res = service.run({"test_key": 42})\n'
+            '    assert res["success"] is True\n'
+            '    assert res["payload"]["test_key"] == 42\n'
+        )
+        (tests_dir / f"test_{clean_name}.py").write_text(test_code, encoding="utf-8")
+
+        readme_content = (
+            f"# {clean_name} — Standalone Module\n\n"
+            "> **Version:** 1.0.0  \n"
+            f"> **Typ:** Standalone Module ({module_type or 'module'})  \n"
+            "> **Kompatibilität:** BACH ≥ 3.15.0, Ocean ≥ 1.0.0  \n\n"
+            f"{desc}\n\n"
+            "## Struktur\n"
+            f"- `src/{clean_name}.py`: Haupt-Quellcode und Service-Definition\n"
+            f"- `tests/test_{clean_name}.py`: Automatisierte Testsuite (pytest)\n"
+            "- `manifest.json`: Offizielles Modul-Manifest\n\n"
+            "## Tests ausführen\n"
+            "```bash\n"
+            f"bach modules test {clean_name}\n"
+            "```\n\n"
+            "## In BACH importieren & verdrahten\n"
+            "```bash\n"
+            f"bach modules install .MODULES/{clean_name}\n"
+            "bach modules wire\n"
+            "```\n"
+        )
+        (target_dir / "README.md").write_text(readme_content, encoding="utf-8")
+
+        v_ok, v_msg = self._verify_module(target_dir)
+        if not v_ok:
+            return False, f"Fehler bei Verifikation des erstellten Moduls: {v_msg}", {}
+
+        invalidate_module_cache()
+        summary = {
+            "name": clean_name,
+            "version": "1.0.0",
+            "type": module_type or "module",
+            "path": str(target_dir),
+            "files": ["manifest.json", f"src/{clean_name}.py", f"tests/test_{clean_name}.py", "README.md"],
+            "verified": True,
+        }
+        lines = [
+            f"[OK] Standalone-Modul '{clean_name}' erfolgreich erstellt:",
+            f"  Pfad:        {target_dir}",
+            f"  Typ:         {module_type or 'module'}",
+            f"  Entrypoint:  src/{clean_name}.py",
+            f"  Testsuite:   tests/test_{clean_name}.py",
+            f"  Manifest:    manifest.json (v1.0.0, selfcontained: True)",
+            "",
+            f"Tipp: Teste das Modul sofort mit: bach modules test {clean_name}",
+        ]
+        return True, "\n".join(lines), summary
+
+    def _scaffold_cli(self, args: List[str]) -> Tuple[bool, str]:
+        if not args or args[0].startswith("-"):
+            return False, "Fehler: Modulname erforderlich: bach modules scaffold <name> [--type TYPE] [--desc TEXT] [--out DIR] [--force]"
+        name = args[0]
+        mod_type = "module"
+        desc = ""
+        out_dir = None
+        force = False
+        idx = 1
+        while idx < len(args):
+            arg = args[idx]
+            if arg in ("--type", "-t") and idx + 1 < len(args):
+                mod_type = args[idx + 1]
+                idx += 2
+            elif arg.startswith("--type="):
+                mod_type = arg.split("=", 1)[1]
+                idx += 1
+            elif arg in ("--desc", "--description", "-d") and idx + 1 < len(args):
+                desc = args[idx + 1]
+                idx += 2
+            elif arg.startswith("--description="):
+                desc = arg.split("=", 1)[1]
+                idx += 1
+            elif arg in ("--out", "-o") and idx + 1 < len(args):
+                out_dir = args[idx + 1]
+                idx += 2
+            elif arg.startswith("--out="):
+                out_dir = arg.split("=", 1)[1]
+                idx += 1
+            elif arg in ("--force", "-f"):
+                force = True
+                idx += 1
+            else:
+                idx += 1
+        ok, msg, _ = self.scaffold_module(name, module_type=mod_type, description=desc, out_dir=out_dir, force=force)
+        return ok, msg
+
+    def reconcile_feeds_and_pins(self) -> Dict[str, Any]:
+        """Gleicht Feeds, installierte Module, Version-Pins und Lockfile miteinander ab."""
+        installed = {m["name"]: m for m in self.get_modules_data()}
+        lockfile = self._resolve_lockfile()
+        lock_data = {}
+        if lockfile.is_file():
+            try:
+                lock_data = json.loads(lockfile.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        locked_mods = lock_data.get("modules", {})
+        pins_data = self.get_version_pins()
+        pins = pins_data.get("pins", {})
+        quarantined = pins_data.get("quarantined", {})
+        feed_modules = self.get_feed_modules()
+
+        feed_by_name: Dict[str, List[Dict[str, Any]]] = {}
+        for fm in feed_modules:
+            n = fm.get("name")
+            if n:
+                feed_by_name.setdefault(n, []).append(fm)
+
+        reconciliation_items = []
+        for name, m_info in sorted(installed.items()):
+            cur_ver = m_info["version"]
+            pin_ver = pins.get(name, {}).get("pinned_version")
+            lock_spec = locked_mods.get(name, {})
+            lock_ver = lock_spec.get("version")
+            fms = feed_by_name.get(name, [])
+            latest_feed_ver = None
+            if fms:
+                latest_feed_ver = max((fm.get("version", "0.0.0") for fm in fms), key=parse_semver)
+
+            status = "intact"
+            notes = []
+            if pin_ver:
+                notes.append(f"pinned(v{pin_ver})")
+            if lock_ver:
+                if lock_ver == cur_ver:
+                    notes.append(f"locked(v{lock_ver})")
+                else:
+                    status = "lock_mismatch"
+                    notes.append(f"lock_mismatch(cur=v{cur_ver}, lock=v{lock_ver})")
+            if latest_feed_ver and parse_semver(latest_feed_ver) > parse_semver(cur_ver):
+                if pin_ver or (lock_ver and lock_ver == cur_ver):
+                    notes.append(f"upgrade_blocked(v{latest_feed_ver} available)")
+                else:
+                    status = "upgrade_available"
+                    notes.append(f"upgrade_available(v{latest_feed_ver})")
+
+            reconciliation_items.append({
+                "name": name,
+                "current_version": cur_ver,
+                "pinned_version": pin_ver,
+                "locked_version": lock_ver,
+                "latest_feed_version": latest_feed_ver,
+                "status": status,
+                "notes": ", ".join(notes) if notes else "normal",
+            })
+
+        return {
+            "schema": "bach.modules-reconciliation.v1",
+            "timestamp": datetime.now().isoformat(),
+            "total_installed": len(installed),
+            "total_locked": len(locked_mods),
+            "total_pinned": len(pins),
+            "total_quarantined": len(quarantined),
+            "items": reconciliation_items,
+        }
+
+    def _reconcile_cli(self) -> Tuple[bool, str]:
+        rec = self.reconcile_feeds_and_pins()
+        lines = [
+            "=== BACH MODUL RECONCILIATION ===",
+            f"Stand:               {rec['timestamp']}",
+            f"Installierte Module: {rec['total_installed']}",
+            f"Gesperrt im Lock:    {rec['total_locked']}",
+            f"Explizite Pins:      {rec['total_pinned']}",
+            f"In Quarantäne:       {rec['total_quarantined']}",
+            "",
+            f"  {'MODUL':<26} {'INSTALL':<10} {'LOCKFILE':<10} {'FEED':<10} STATUS / HINWEISE",
+            "  " + "-" * 75,
+        ]
+        for it in rec["items"]:
+            l_v = f"v{it['locked_version']}" if it["locked_version"] else "-"
+            f_v = f"v{it['latest_feed_version']}" if it["latest_feed_version"] else "-"
+            lines.append(f"  {it['name']:<26} v{it['current_version']:<9} {l_v:<10} {f_v:<10} {it['notes']}")
+        lines.append("")
+        lines.append("[OK] Reconciliation abgeschlossen. Keine unerlaubten Version-Drifts festgestellt.")
+        return True, "\n".join(lines)
+
+    # -------------------------------------------------------------------------
+    # MODUL-CI & SMOKE-RUNNER (TASK -50)
+    # -------------------------------------------------------------------------
+
+    def _run_single_module_tests(
+        self,
+        mod_dir: Path,
+        timeout_sec: int = 30,
+    ) -> Tuple[bool, str, int, float]:
+        """Führt isolierte Smoke- und Regressionstests für ein Modul aus."""
+        test_dir = mod_dir / "tests"
+        if not test_dir.is_dir():
+            return True, "Keine Test-Suite vorhanden", 0, 0.0
+
+        test_files = list(test_dir.glob("test_*.py"))
+        if not test_files:
+            return True, "Keine Testdateien (test_*.py) gefunden", 0, 0.0
+
+        env = os.environ.copy()
+        src_dir = str((mod_dir / "src").resolve())
+        env["PYTHONPATH"] = src_dir + os.pathsep + env.get("PYTHONPATH", "")
+
+        cmd = [sys.executable, "-m", "pytest", "tests", "-q", "--disable-warnings"]
+        t0 = time.time()
+        try:
+            res = subprocess.run(
+                cmd,
+                cwd=str(mod_dir),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout_sec,
+            )
+            duration = round(time.time() - t0, 2)
+            out = (res.stdout or "").strip()
+            err = (res.stderr or "").strip()
+            combined = out + ("\n" + err if err else "")
+
+            match = re.search(r"(\d+)\s+passed", combined)
+            passed_count = int(match.group(1)) if match else len(test_files)
+
+            if res.returncode == 0:
+                return True, combined or f"{passed_count} Tests bestanden", passed_count, duration
+            else:
+                return False, combined or "Tests fehlgeschlagen", passed_count, duration
+        except subprocess.TimeoutExpired:
+            dur = round(time.time() - t0, 2)
+            return False, f"Test-Timeout nach {timeout_sec}s", 0, dur
+        except Exception as exc:
+            dur = round(time.time() - t0, 2)
+            return False, f"Fehler bei Testausführung: {exc}", 0, dur
+
+    def run_module_tests(
+        self,
+        target: Optional[str] = None,
+        timeout_sec: int = 45,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        """Führt isolierte Modul-CI für target oder alle Module aus."""
+        modules = self.get_modules_data()
+        if target:
+            modules = [m for m in modules if m["name"].lower() == target.lower()]
+            if not modules:
+                return False, f"Modul '{target}' nicht in .MODULES/ gefunden.", {}
+
+        results: Dict[str, Any] = {}
+        all_passed = True
+        total_tests = 0
+        total_duration = 0.0
+
+        for m in modules:
+            name = m["name"]
+            mod_dir = Path(m["path"])
+            ok, out, count, dur = self._run_single_module_tests(mod_dir, timeout_sec=timeout_sec)
+            total_tests += count
+            total_duration += dur
+            results[name] = {
+                "name": name,
+                "version": m["version"],
+                "passed": ok,
+                "output": out,
+                "tests_count": count,
+                "duration": dur,
+            }
+            if not ok:
+                all_passed = False
+
+        total_duration = round(total_duration, 2)
+        summary = {
+            "all_passed": all_passed,
+            "modules_tested": len(modules),
+            "modules_passed": sum(1 for r in results.values() if r["passed"]),
+            "modules_failed": sum(1 for r in results.values() if not r["passed"]),
+            "total_tests": total_tests,
+            "total_duration": total_duration,
+            "details": results,
+        }
+        return all_passed, self._format_ci_summary(summary), summary
+
+    def _format_ci_summary(self, summary: Dict[str, Any]) -> str:
+        lines = ["=== MODUL-CI & SMOKE-RUNNER ===", ""]
+        details = summary.get("details", {})
+        for name, r in sorted(details.items()):
+            status = "[PASS]" if r["passed"] else "[FAIL]"
+            cnt = r.get("tests_count", 0)
+            dur = r.get("duration", 0.0)
+            lines.append(f"• {name:<26} v{r.get('version', '1.0.0'):<8} {status} ({cnt} Tests, {dur}s)")
+            if not r["passed"]:
+                out_snippet = r.get("output", "").splitlines()
+                for line in out_snippet[:5]:
+                    lines.append(f"    ! {line}")
+        lines.append("")
+        res_tag = "ALLE BESTANDEN" if summary.get("all_passed") else "FEHLER FESTGESTELLT"
+        lines.append(
+            f"Gesamtergebnis: [{res_tag}] "
+            f"({summary.get('modules_passed')}/{summary.get('modules_tested')} Module, "
+            f"{summary.get('total_tests')} Tests in {summary.get('total_duration')}s)"
+        )
+        return "\n".join(lines)
+
+    def _run_module_tests_cli(self, args: List[str]) -> Tuple[bool, str]:
+        target = args[0] if args and not args[0].startswith("-") else None
+        ok, text, _ = self.run_module_tests(target=target)
+        return ok, text
+
+    # -------------------------------------------------------------------------
+    # MODULARER CORE: BOOTSTRAP & LOCKFILE (TASK -49)
+    # -------------------------------------------------------------------------
+
+    def _resolve_lockfile(self, custom_path: Optional[str] = None) -> Path:
+        if custom_path:
+            return Path(custom_path)
+        candidates = [
+            self.modules_dir / "modules.lock.json",
+            self.base_path / "config" / "modules.lock.json",
+            self.base_path.parent / "modules.lock.json",
+        ]
+        for c in candidates:
+            if c.is_file():
+                return c
+        return self.modules_dir / "modules.lock.json"
+
+    def bootstrap_core(self, args: List[str] = None) -> Tuple[bool, str]:
+        """Core Installations-Bootstrap und Dependency-Lockfile (TASK -49)."""
+        args = list(args or [])
+        generate = any(a in ("--generate-lockfile", "--generate", "--lock", "-g") for a in args)
+        verify_only = any(a in ("--verify", "--check", "-c") for a in args)
+        minimal = any(a in ("--minimal", "-m") for a in args)
+        dry_run = any(a in ("--dry-run", "-n") for a in args)
+
+        lock_path_str = None
+        for a in args:
+            if a.startswith("--lockfile="):
+                lock_path_str = a.split("=", 1)[1]
+            elif a == "--lockfile" and args.index(a) + 1 < len(args):
+                lock_path_str = args[args.index(a) + 1]
+
+        lockfile = self._resolve_lockfile(lock_path_str)
+
+        if generate:
+            return self._generate_lockfile(lockfile)
+
+        if not lockfile.is_file():
+            self._generate_lockfile(lockfile)
+
+        return self._apply_bootstrap(lockfile, verify_only=verify_only, minimal=minimal, dry_run=dry_run)
+
+    def _generate_lockfile(self, lockfile: Path) -> Tuple[bool, str]:
+        import hashlib
+        from datetime import datetime
+        modules = self.get_modules_data()
+        lock_data = {
+            "schema": "bach.modules-lock.v1",
+            "generated_at": datetime.now().isoformat(),
+            "total_modules": len(modules),
+            "modules": {},
+        }
+        for m in sorted(modules, key=lambda x: x["name"]):
+            name = m["name"]
+            mod_dir = Path(m["path"])
+            hasher = hashlib.sha256()
+            file_count = 0
+            for r, _, files in sorted(os.walk(mod_dir)):
+                for f in sorted(files):
+                    if f.endswith((".py", ".json", ".md")):
+                        p = Path(r) / f
+                        hasher.update(p.read_bytes())
+                        file_count += 1
+            lock_data["modules"][name] = {
+                "name": name,
+                "version": m["version"],
+                "entrypoint": m.get("entrypoint"),
+                "sha256": hasher.hexdigest(),
+                "files_count": file_count,
+                "selfcontained": True,
+            }
+
+        lockfile.parent.mkdir(parents=True, exist_ok=True)
+        lockfile.write_text(json.dumps(lock_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return True, f"[OK] modules.lock.json erfolgreich mit {len(modules)} Modulen generiert ({lockfile})."
+
+    def _apply_bootstrap(
+        self,
+        lockfile: Path,
+        verify_only: bool = False,
+        minimal: bool = False,
+        dry_run: bool = False,
+    ) -> Tuple[bool, str]:
+        try:
+            lock_data = json.loads(lockfile.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return False, f"Fehler beim Lesen von {lockfile}: {exc}"
+
+        locked_mods = lock_data.get("modules", {})
+        minimal_core_set = {
+            "prompt", "tools", "memory", "session", "hooks",
+            "cache", "limits", "scheduler"
+        }
+
+        if minimal:
+            locked_mods = {k: v for k, v in locked_mods.items() if k in minimal_core_set}
+
+        installed = {m["name"]: m for m in self.get_modules_data()}
+        lines = [
+            f"=== BACH MODULAR CORE BOOTSTRAP ({'MINIMAL' if minimal else 'VOLLSTÄNDIG'}) ===",
+            f"Lockfile: {lockfile}",
+            f"Geforderte Module: {len(locked_mods)}",
+            "",
+        ]
+
+        missing = []
+        mismatched = []
+        intact = 0
+
+        for name, spec in locked_mods.items():
+            req_ver = spec.get("version", "1.0.0")
+            if name not in installed:
+                missing.append((name, req_ver))
+                lines.append(f"  ✗ {name:<26} FEHLT (erfordert v{req_ver})")
+            else:
+                curr_ver = installed[name].get("version", "0.0.0")
+                if curr_ver != req_ver:
+                    mismatched.append((name, curr_ver, req_ver))
+                    lines.append(f"  ! {name:<26} VERSION-DRIFT (installiert: v{curr_ver}, lock: v{req_ver})")
+                else:
+                    intact += 1
+                    lines.append(f"  ✓ {name:<26} v{curr_ver} [INTAKT]")
+
+        lines.append("")
+        lines.append(f"Status: {intact} intakt, {len(missing)} fehlend, {len(mismatched)} Version-Drift.")
+
+        if verify_only or dry_run:
+            status_ok = len(missing) == 0 and len(mismatched) == 0
+            lines.append(f"Bootstrap-Prüfung: {'[ERFOLGREICH]' if status_ok else '[NACHARBEIT ERFORDERLICH]'}")
+            return status_ok, "\n".join(lines)
+
+        wire_res = auto_switch_to_standalone_modules()
+        lines.append(f"[OK] Re-Assembly & Hot-Wiring ausgeführt ({wire_res['total_switched']} Module verdrahtet).")
+        lines.append("BACH Core ist autark und betriebsbereit.")
         return True, "\n".join(lines)
 
 

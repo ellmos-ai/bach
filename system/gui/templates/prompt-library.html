@@ -145,6 +145,128 @@
         .pl-dropzone-active .pl-dropzone-overlay {
             display: flex;
         }
+
+        /* ── Spotlight / Quick-Switcher & Keyboard Modal (Task -53) ── */
+        .pl-modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.72);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 8vh;
+        }
+
+        .pl-modal-backdrop.active {
+            display: flex;
+        }
+
+        .pl-quick-dialog {
+            background: var(--bg-panel);
+            border: 1px solid var(--accent, #3b82f6);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 680px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: plModalIn 0.12s ease-out;
+        }
+
+        @keyframes plModalIn {
+            from { transform: scale(0.96) translateY(-8px); opacity: 0; }
+            to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .pl-quick-input {
+            width: 100%;
+            background: var(--bg-card);
+            border: none;
+            border-bottom: 1px solid var(--border);
+            padding: 0.9rem 1.25rem;
+            font-size: 1.05rem;
+            color: var(--text);
+            outline: none;
+        }
+
+        .pl-quick-chips {
+            display: flex;
+            gap: 0.4rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .pl-chip-btn {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            border-radius: 14px;
+            padding: 0.2rem 0.6rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .pl-chip-btn.active, .pl-chip-btn:hover {
+            background: var(--accent, #3b82f6);
+            color: #fff;
+            border-color: var(--accent, #3b82f6);
+        }
+
+        .pl-quick-results {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+            max-height: 52vh;
+        }
+
+        .pl-quick-item {
+            padding: 0.6rem 0.9rem;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.25rem;
+            transition: background 0.1s ease;
+        }
+
+        .pl-quick-item:hover, .pl-quick-item.selected {
+            background: var(--accent, #3b82f6);
+            color: #fff;
+        }
+
+        .pl-quick-item:hover .pl-quick-meta, .pl-quick-item.selected .pl-quick-meta {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .pl-quick-footer {
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        kbd {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.1rem 0.35rem;
+            font-size: 0.72rem;
+            font-family: inherit;
+            box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+            color: var(--text);
+        }
     </style>
 </head>
 
@@ -154,14 +276,53 @@
     <main class="main-content">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
             <h1 style="margin: 0;">Prompt-Bibliothek</h1>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <button class="btn" onclick="openQuickSwitcher()" title="Spotlight Quick-Switcher für Prompts & Favoriten (Strg+K)"><span style="color:#eab308;">⚡</span> Quick-Switcher (Strg+K)</button>
+                <button class="btn" onclick="toggleShortcutsModal()" title="Tastatur-Kurzbefehle anzeigen (?)">⌨️ Shortcuts (?)</button>
                 <button class="btn" onclick="previewPromptBoard()" title="Vorschau der PromptBoard-Library ohne Speichern">PromptBoard-Vorschau</button>
                 <button class="btn" onclick="importPromptBoard()" title="Importiert library.json aus PromptBoard (idempotent)">Import aus PromptBoard</button>
+                <button class="btn" onclick="importSoftwarePrompts()" title="Importiert Entwicklungs- und Loop-Prompts aus .SOFTWARE/_prompts">Import aus .SOFTWARE</button>
                 <button class="btn" onclick="exportPromptBoard()" title="Prompts aus BACH nach PromptBoard synchronisieren/exportieren">Nach PromptBoard exportieren</button>
                 <button class="btn btn-primary" onclick="syncPromptBoard()" title="Bidirektionaler Zwei-Wege-Sync zwischen BACH und PromptBoard library.json">🔄 Zwei-Wege-Sync</button>
                 <input type="file" id="pl-file-input" accept=".json,application/json" style="display: none;" onchange="handleFileSelect(event)">
                 <button class="btn" onclick="document.getElementById('pl-file-input').click()" title="Externe PromptBoard library.json Datei auswählen">JSON-Datei importieren</button>
                 <button class="btn btn-primary" onclick="startCreate()">Neuer Prompt</button>
+            </div>
+        </div>
+
+        <!-- Quick-Switcher Modal (Spotlight) -->
+        <div id="pl-quick-modal" class="pl-modal-backdrop" onclick="if(event.target===this) closeQuickSwitcher()">
+            <div class="pl-quick-dialog">
+                <input type="text" id="pl-quick-input" class="pl-quick-input" placeholder="Prompt oder Kategorie suchen... (Tipp: 'fav:' für Favoriten, Esc zum Schließen)" oninput="handleQuickInput(event)">
+                <div class="pl-quick-chips" id="pl-quick-chips">
+                    <button class="pl-chip-btn active" onclick="setQuickFilter('all', this)">Alle</button>
+                    <button class="pl-chip-btn" onclick="setQuickFilter('fav', this)">⭐ Favoriten</button>
+                </div>
+                <div class="pl-quick-results" id="pl-quick-results"></div>
+                <div class="pl-quick-footer">
+                    <span><kbd>↑</kbd><kbd>↓</kbd> Navigieren &bull; <kbd>Enter</kbd> Öffnen &bull; <kbd>Strg+Enter</kbd> Ausführen</span>
+                    <span><kbd>Esc</kbd> Schließen</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Modal -->
+        <div id="pl-shortcuts-modal" class="pl-modal-backdrop" onclick="if(event.target===this) toggleShortcutsModal()">
+            <div class="pl-quick-dialog" style="max-width: 500px;">
+                <div style="padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 0.5rem;">⌨️ Tastatur-Kurzbefehle</h3>
+                    <button class="btn" style="padding: 0.2rem 0.5rem;" onclick="toggleShortcutsModal()">✕</button>
+                </div>
+                <div style="padding: 1.25rem; font-size: 0.85rem; line-height: 2;">
+                    <div><kbd>Strg + K</kbd> oder <kbd>F2</kbd> : Quick-Switcher / Spotlight öffnen</div>
+                    <div><kbd>↑</kbd> / <kbd>↓</kbd> bzw. <kbd>J</kbd> / <kbd>K</kbd> : Prompts in Liste durchblättern</div>
+                    <div><kbd>Enter</kbd> : Gewählten Prompt öffnen</div>
+                    <div><kbd>Strg + Enter</kbd> : Prompt direkt im Chat ausführen</div>
+                    <div><kbd>Strg + S</kbd> : Prompt speichern (neue Version archivieren)</div>
+                    <div><kbd>Alt + F</kbd> : Favoriten-Status umschalten (⭐)</div>
+                    <div><kbd>?</kbd> : Diese Kurzbefehl-Übersicht einblenden</div>
+                    <div><kbd>Esc</kbd> : Dialog oder Quick-Switcher schließen</div>
+                </div>
             </div>
         </div>
 
@@ -259,6 +420,11 @@
             return data;
         }
 
+        let allPromptsCache = [];
+        let quickFilteredPrompts = [];
+        let quickSelectedIndex = 0;
+        let quickFilterMode = 'all';
+
         async function loadList() {
             const q = document.getElementById('pl-search').value.trim();
             const cat = document.getElementById('pl-category').value;
@@ -268,12 +434,266 @@
             if (favoritesOnly) params.set('favorites', '1');
             try {
                 const data = await api('/api/prompt-library?' + params.toString());
+                allPromptsCache = data.prompts || [];
                 renderList(data.prompts);
                 renderCategories(data.categories, cat);
+                updateQuickChips(data.categories);
             } catch (e) {
                 document.getElementById('pl-list').innerHTML = '<div class="pl-muted">Fehler: ' + escapeHtml(e.message) + '</div>';
             }
         }
+
+        function updateQuickChips(categories) {
+            const container = document.getElementById('pl-quick-chips');
+            if (!container) return;
+            let html = '<button class="pl-chip-btn ' + (quickFilterMode === 'all' ? 'active' : '') + '" onclick="setQuickFilter(\'all\', this)">Alle</button>' +
+                '<button class="pl-chip-btn ' + (quickFilterMode === 'fav' ? 'active' : '') + '" onclick="setQuickFilter(\'fav\', this)">⭐ Favoriten</button>';
+            if (categories && categories.length) {
+                categories.slice(0, 8).forEach(c => {
+                    const isAct = quickFilterMode === 'cat:' + c;
+                    html += '<button class="pl-chip-btn ' + (isAct ? 'active' : '') + '" onclick="setQuickFilter(\'cat:' + escapeHtml(c) + '\', this)">' + escapeHtml(c) + '</button>';
+                });
+            }
+            container.innerHTML = html;
+        }
+
+        function openQuickSwitcher() {
+            const modal = document.getElementById('pl-quick-modal');
+            const input = document.getElementById('pl-quick-input');
+            if (modal) {
+                modal.classList.add('active');
+                if (input) {
+                    input.value = '';
+                    input.focus();
+                }
+                filterQuickResults('');
+            }
+        }
+
+        function closeQuickSwitcher() {
+            const modal = document.getElementById('pl-quick-modal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function toggleShortcutsModal() {
+            const modal = document.getElementById('pl-shortcuts-modal');
+            if (modal) modal.classList.toggle('active');
+        }
+
+        function setQuickFilter(mode, btnEl) {
+            quickFilterMode = mode;
+            const container = document.getElementById('pl-quick-chips');
+            if (container) {
+                container.querySelectorAll('.pl-chip-btn').forEach(b => b.classList.remove('active'));
+            }
+            if (btnEl) btnEl.classList.add('active');
+            const input = document.getElementById('pl-quick-input');
+            filterQuickResults(input ? input.value : '');
+        }
+
+        function handleQuickInput(e) {
+            filterQuickResults(e.target.value);
+        }
+
+        function filterQuickResults(query) {
+            const q = (query || '').trim().toLowerCase();
+            let list = allPromptsCache.slice();
+
+            if (quickFilterMode === 'fav' || q.startsWith('fav:') || q === 'fav') {
+                list = list.filter(p => p.is_favorite);
+            } else if (quickFilterMode.startsWith('cat:')) {
+                const targetCat = quickFilterMode.slice(4).toLowerCase();
+                list = list.filter(p => (p.category || '').toLowerCase() === targetCat);
+            }
+
+            const cleanQ = q.replace(/^fav:\s*/, '');
+            if (cleanQ) {
+                list = list.filter(p => {
+                    const name = (p.name || '').toLowerCase();
+                    const purpose = (p.purpose || '').toLowerCase();
+                    const cat = (p.category || '').toLowerCase();
+                    const tags = (p.tags || '').toLowerCase();
+                    const text = (p.text || '').toLowerCase();
+                    return name.includes(cleanQ) || purpose.includes(cleanQ) || cat.includes(cleanQ) || tags.includes(cleanQ) || text.includes(cleanQ);
+                });
+            }
+
+            quickFilteredPrompts = list;
+            quickSelectedIndex = 0;
+            renderQuickResults();
+        }
+
+        function renderQuickResults() {
+            const container = document.getElementById('pl-quick-results');
+            if (!container) return;
+            if (!quickFilteredPrompts.length) {
+                container.innerHTML = '<div class="pl-muted" style="text-align:center; padding:2rem 1rem;">Keine Prompts gefunden.</div>';
+                return;
+            }
+            container.innerHTML = quickFilteredPrompts.slice(0, 30).map((p, idx) => {
+                const isSelected = idx === quickSelectedIndex;
+                const star = p.is_favorite ? '⭐ ' : '';
+                const catBadge = p.category ? '<span class="pl-badge" style="font-size:0.68rem; margin-left:6px;">' + escapeHtml(p.category) + '</span>' : '';
+                return '<div class="pl-quick-item ' + (isSelected ? 'selected' : '') + '" onclick="selectQuickItem(' + idx + ')">' +
+                    '<div>' +
+                    '<div style="font-weight:600; font-size:0.92rem;">' + star + escapeHtml(p.name) + catBadge + '</div>' +
+                    '<div class="pl-quick-meta" style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">' + escapeHtml(p.purpose || '') + '</div>' +
+                    '</div>' +
+                    '<div style="display:flex; gap:6px; align-items:center;">' +
+                    '<button class="btn" style="padding:0.2rem 0.5rem; font-size:0.72rem;" onclick="event.stopPropagation(); executeQuickItem(' + idx + ')">🚀 Start</button>' +
+                    '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function navigateQuickResults(step) {
+            if (!quickFilteredPrompts.length) return;
+            quickSelectedIndex = (quickSelectedIndex + step + quickFilteredPrompts.length) % quickFilteredPrompts.length;
+            renderQuickResults();
+            const container = document.getElementById('pl-quick-results');
+            const items = container ? container.querySelectorAll('.pl-quick-item') : [];
+            if (items[quickSelectedIndex]) {
+                items[quickSelectedIndex].scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function selectQuickItem(idx) {
+            const p = quickFilteredPrompts[idx];
+            if (p) {
+                closeQuickSwitcher();
+                openPrompt(p.id);
+            }
+        }
+
+        function executeQuickItem(idx) {
+            const p = quickFilteredPrompts[idx];
+            if (p) {
+                closeQuickSwitcher();
+                BachChatDraft.store(p.text, null, { autorun: true });
+                window.location.assign('/chat');
+            }
+        }
+
+        function navigateMainList(step) {
+            if (!allPromptsCache.length) return;
+            let curIdx = allPromptsCache.findIndex(p => p.id === currentId);
+            if (curIdx === -1) {
+                curIdx = step > 0 ? 0 : allPromptsCache.length - 1;
+            } else {
+                curIdx = (curIdx + step + allPromptsCache.length) % allPromptsCache.length;
+            }
+            const nextPrompt = allPromptsCache[curIdx];
+            if (nextPrompt) {
+                openPrompt(nextPrompt.id);
+                const activeEl = document.querySelector('.pl-item.active');
+                if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        // Global Keyboard Navigation (Task -53)
+        document.addEventListener('keydown', (e) => {
+            const quickModal = document.getElementById('pl-quick-modal');
+            const isQuickOpen = quickModal && quickModal.classList.contains('active');
+            const shortcutsModal = document.getElementById('pl-shortcuts-modal');
+            const isShortcutsOpen = shortcutsModal && shortcutsModal.classList.contains('active');
+
+            if (isQuickOpen) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeQuickSwitcher();
+                    return;
+                }
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    navigateQuickResults(1);
+                    return;
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    navigateQuickResults(-1);
+                    return;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.ctrlKey || e.metaKey) {
+                        executeQuickItem(quickSelectedIndex);
+                    } else {
+                        selectQuickItem(quickSelectedIndex);
+                    }
+                    return;
+                }
+                return;
+            }
+
+            if (isShortcutsOpen) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    toggleShortcutsModal();
+                    return;
+                }
+            }
+
+            // Global Ctrl+K / F2 Quick-Switcher trigger
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' || e.key === 'F2') {
+                e.preventDefault();
+                openQuickSwitcher();
+                return;
+            }
+
+            const targetTag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+            const isFormElement = targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select';
+
+            // Inside editor/form: Ctrl+Enter executes prompt; Ctrl+S saves; Alt+F toggles favorite
+            if (isFormElement) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    runCurrentInChat();
+                    return;
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                    e.preventDefault();
+                    saveCurrent();
+                    return;
+                }
+                if (e.altKey && e.key.toLowerCase() === 'f') {
+                    e.preventDefault();
+                    toggleCurrentFavorite();
+                    return;
+                }
+                return;
+            }
+
+            // Outside form elements: List navigation & Shortcut Help
+            if (e.key === '?') {
+                e.preventDefault();
+                toggleShortcutsModal();
+                return;
+            }
+            if (e.key === 'ArrowDown' || e.key === 'j') {
+                e.preventDefault();
+                navigateMainList(1);
+                return;
+            }
+            if (e.key === 'ArrowUp' || e.key === 'k') {
+                e.preventDefault();
+                navigateMainList(-1);
+                return;
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (currentId) {
+                    if (e.ctrlKey || e.metaKey) {
+                        runCurrentInChat();
+                    }
+                }
+                return;
+            }
+            if (e.altKey && e.key.toLowerCase() === 'f') {
+                e.preventDefault();
+                toggleCurrentFavorite();
+                return;
+            }
+        });
 
         function renderCategories(cats, selected) {
             const sel = document.getElementById('pl-category');
@@ -617,6 +1037,14 @@
                 setStatus('Import: ' + data.imported + ' neu, ' + data.skipped + ' vorhanden, ' + data.invalid + ' ungültig (' + data.source + ')');
                 loadList();
             } catch (e) { setStatus(e.message, true); }
+        }
+
+        async function importSoftwarePrompts() {
+            try {
+                const data = await api('/api/prompt-library/import-software', { method: 'POST' });
+                setStatus('Software-Prompts importiert: ' + data.imported + ' neu, ' + data.skipped + ' vorhanden (' + data.total_found + ' gesamt)');
+                loadList();
+            } catch (e) { setStatus('Software-Import fehlgeschlagen: ' + e.message, true); }
         }
 
         async function exportPromptBoard() {

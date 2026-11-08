@@ -70,19 +70,25 @@ def promptboard_library_paths() -> List[Path]:
         candidates.append(Path(os.environ["APPDATA"]) / "PromptBoard" / "library.json")
 
     local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
-    for repo_name in ("REL-PUB_PromptBoard-tasksolver-1136-1137", "REL-PUB_PromptBoard"):
+    for repo_name in (
+        "promptboard",
+        "PromptBoard",
+        "REL-PUB_PromptBoard-tasksolver-1136-1137",
+        "REL-PUB_PromptBoard",
+    ):
         repo_dir = local_dev / repo_name
         candidates.extend([repo_dir / "library.json", repo_dir / "data" / "library.json"])
 
     if os.environ.get("USERPROFILE"):
         for sub in ("DATA", "LLM"):
-            project = (Path(os.environ["USERPROFILE"]) / "OneDrive" / ".TOPICS" /
-                       ".SOFTWARE" / sub / "REL-PUB_PromptBoard")
-            candidates.extend([
-                project / "library.json",
-                project / "data" / "library.json",
-                project / "_tmp_accessibility_check" / "library.json",
-            ])
+            for folder in ("REL-PUB_PromptBoard", "PromptBoard"):
+                project = (Path(os.environ["USERPROFILE"]) / "OneDrive" / ".TOPICS" /
+                           ".SOFTWARE" / sub / folder)
+                candidates.extend([
+                    project / "library.json",
+                    project / "data" / "library.json",
+                    project / "_tmp_accessibility_check" / "library.json",
+                ])
     return candidates
 
 
@@ -356,3 +362,79 @@ class PromptCore:
             "total_promptboard": len(final_items),
             "dry_run": bool(dry_run),
         }
+
+    def import_software_prompts(self, software_dir=None, dry_run: bool = False) -> Dict[str, Any]:
+        """Import prompt templates from OneDrive .TOPICS/.SOFTWARE/_prompts directory."""
+        candidates = []
+        if software_dir:
+            candidates.append(Path(software_dir))
+        if os.environ.get("USERPROFILE"):
+            candidates.append(
+                Path(os.environ["USERPROFILE"])
+                / "OneDrive"
+                / ".TOPICS"
+                / ".SOFTWARE"
+                / "_prompts"
+            )
+        candidates.append(Path(r"C:\Users\lukas\OneDrive\.TOPICS\.SOFTWARE\_prompts"))
+
+        prompts_dir = None
+        for cand in candidates:
+            if cand.is_dir():
+                prompts_dir = cand
+                break
+
+        if not prompts_dir:
+            searched = ", ".join(str(c) for c in candidates)
+            raise OSError(f"Kein Software-Prompts-Ordner gefunden (geprüft: {searched})")
+
+        entries = []
+        for file_path in sorted(prompts_dir.iterdir()):
+            if not file_path.is_file() or file_path.name.startswith("."):
+                continue
+            if file_path.suffix.lower() not in (".txt", ".md"):
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace").strip()
+            except Exception:
+                continue
+            if not content:
+                continue
+
+            name = file_path.stem.replace("_", " ").strip()
+            purpose = f"Importiert aus .SOFTWARE/_prompts/{file_path.name}"
+            category = "Software"
+            tags = serialize_prompt_tags(["software", "automation", "promptboard"])
+            entries.append((name, purpose, content, tags, category))
+
+        imported, skipped = 0, 0
+        conn = self.get_connection()
+        try:
+            with conn:
+                if not dry_run:
+                    conn.execute("BEGIN IMMEDIATE")
+                names = {row[0] for row in conn.execute("SELECT name FROM prompt_templates")}
+                now = datetime.now().isoformat()
+                for entry in entries:
+                    if entry[0] in names:
+                        skipped += 1
+                        continue
+                    if not dry_run:
+                        conn.execute(
+                            "INSERT INTO prompt_templates "
+                            "(name, purpose, text, tags, category, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (*entry, now, now),
+                        )
+                    names.add(entry[0])
+                    imported += 1
+            return {
+                "ok": True,
+                "source": str(prompts_dir),
+                "imported": imported,
+                "skipped": skipped,
+                "total_found": len(entries),
+                "dry_run": bool(dry_run),
+            }
+        finally:
+            conn.close()
