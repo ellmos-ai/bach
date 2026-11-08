@@ -1397,7 +1397,35 @@ def _prepare_typechecker(task_root, cwd, base, args, checked):
     return output
 
 
-def _worker_check_environment(task_root):
+_EXECUTE_COMMAND_SECRET_SUBSTRINGS = (
+    "TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "APIKEY",
+    "ACCESS_KEY", "PRIVATE_KEY", "CREDENTIAL",
+)
+_EXECUTE_COMMAND_SECRET_EXACT_NAMES = frozenset({
+    "GH_TOKEN", "GITHUB_TOKEN", "GIT_ASKPASS", "SSH_ASKPASS", "SSH_AUTH_SOCK",
+})
+
+
+def build_execute_command_env(environ=None) -> dict[str, str]:
+    """Return a hardened child environment for execute_command without secret variables."""
+    source = os.environ if environ is None else environ
+    env: dict[str, str] = {}
+    for key, value in source.items():
+        if not isinstance(key, str):
+            continue
+        upper = key.upper()
+        if (upper in _EXECUTE_COMMAND_SECRET_EXACT_NAMES
+                or any(sub in upper for sub in _EXECUTE_COMMAND_SECRET_SUBSTRINGS)):
+            continue
+        env[key] = str(value)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = "credential.helper"
+    env["GIT_CONFIG_VALUE_0"] = ""
+    return env
+
+
+def _worker_check_environment(task_root, environ=None):
     state = task_root / ".cache" / ".worker-check"
     paths = {
         "HOME": state / "home",
@@ -1423,7 +1451,7 @@ def _worker_check_environment(task_root):
         "LOCALAPPDATA": state / "local-app-data",
         "APPDATA": state / "app-data",
     }
-    env = os.environ.copy()
+    env = build_execute_command_env(environ)
     checked = []
     for key, path in paths.items():
         env[key] = str(path)
@@ -1830,9 +1858,10 @@ def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, retur
         # materialization and immediately before launching the child process.
         authorize_mutation(binding, paths=(run_cwd, *checked))
     try:
+        child_env = build_execute_command_env() if env is None else env
         result = sandbox.run_isolated(
             argv, limits=sandbox.SandboxLimits(timeout_sec=timeout, memory_mb=None),
-            cwd=str(run_cwd), shell=False, env=env,
+            cwd=str(run_cwd), shell=False, env=child_env,
         )
     except Exception as exc:
         raise WorkerWriteGuardError("Prüfbefehl konnte nicht sicher gestartet werden") from exc
