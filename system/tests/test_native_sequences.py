@@ -9,8 +9,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from llmauto.core import embedded
 from hub._services.chat import native_sequences as native, slots_config as slots
+
+# llmauto.core.embedded existiert nicht; embedded wird dynamisch ueber den
+# nativen Loader (importlib.metadata, kein Netzwerk) geladen.
+embedded = native.embedded_module()
 from hub._services.chat.sequence_store import SequenceStore, SequenceConflict, definition
 from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 from hub._services.task_lease_client import TaskLeaseClient, LeaseConnectionError, LeaseProtocolError

@@ -914,3 +914,6 @@ class CapabilityManager:
 
 # Singleton-Instanz (praktisch fuer Aufrufer ohne eigene Instanz)
 capability_manager = CapabilityManager()
+
+# Rueckwaerts-kompatibler Alias (historische Aufrufer verwenden TRUST_PROFILES)
+TRUST_PROFILES = DEFAULT_TRUST_PROFILES

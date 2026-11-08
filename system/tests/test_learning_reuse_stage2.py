@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from learning_reuse_stage2 import (
+from system.tests.learning_reuse_stage2 import (
     BLIND_SCHEMA,
     Stage2ProtocolError,
     deterministic_schedule,
