@@ -31,6 +31,16 @@ def _persistent_session_store(tmp_path):
     return SQLiteChatSessionStore(session_db_path)
 
 
+def _add_test_worker(spec, path, *, monkeypatch=None, control=None):
+    worker_spec = {"rights": "read", **spec}
+    if control is None and "allowed_tools" not in worker_spec:
+        worker_spec["allowed_tools"] = []
+    ident = slots.add_worker(worker_spec, path)["id"]
+    if monkeypatch is not None and control is not None:
+        monkeypatch.setattr(control, "_prepare_bound_task_scope", lambda *_a: None)
+    return ident
+
+
 def run_http(monkeypatch, payload, *, status=429, headers=None):
     real_client = httpx.AsyncClient
     calls = []
@@ -328,7 +338,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)
     slots.update_slot(ident, {"backend": "openrouter" if connection else "ollama", "model": model, "enabled": True,
         "mode": "safe", "task_id": 42, "pause_after": 0}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
@@ -503,7 +513,12 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Real retry fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker(
+        {"name": "Real retry fixture", "type": "continuous"},
+        path,
+        monkeypatch=monkeypatch,
+        control=control,
+    )
     slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "enabled": True,
         "mode": "safe", "task_id": 42, "pause_after": 0, "max_tool_rounds": 5}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
@@ -1473,7 +1488,7 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Task failure fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker({"name": "Task failure fixture", "type": "continuous"}, path)
     slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
         "mode": "safe", "pause_after": 0}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
@@ -1571,7 +1586,12 @@ def test_rejected_tool_call_returns_task_or_shows_reason(tmp_path, monkeypatch, 
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Rejected tool call fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker(
+        {"name": "Rejected tool call fixture", "type": "continuous"},
+        path,
+        monkeypatch=monkeypatch,
+        control=control,
+    )
     slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
         "mode": "safe", "pause_after": 0, "max_tool_rounds": 5}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):

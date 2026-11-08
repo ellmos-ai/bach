@@ -1042,6 +1042,13 @@ def _stage_controller_worker_fixture(monkeypatch, path, worker):
     monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(path))
 
 
+def _add_test_worker(spec, path):
+    worker_spec = {"rights": "read", **spec}
+    if "allowed_tools" not in worker_spec:
+        worker_spec["allowed_tools"] = []
+    return add_worker(worker_spec, path=str(path))["id"]
+
+
 class TestControlHandlerEndpoints:
     @pytest.fixture(autouse=True)
     def isolated_native_task_authority(self, tmp_path, monkeypatch):
@@ -1639,12 +1646,11 @@ class TestControlHandlerEndpoints:
 
         cfg_file = tmp_path / "revocation_slots.json"
         initialize_slots_config(str(cfg_file))
-        worker = add_worker({
+        worker_id = _add_test_worker({
             "name": "Blocked-TTL-Worker",
             "type": "persistent",
             "ttl_seconds": 60,
-        }, path=str(cfg_file))
-        worker_id = worker["id"]
+        }, cfg_file)
 
         class BlockingRuntime(ChatRuntime):
             def __init__(self):
@@ -1795,9 +1801,8 @@ class TestControlHandlerEndpoints:
 
         cfg_file = tmp_path / "board-authz-slots.json"
         initialize_slots_config(str(cfg_file))
-        worker = add_worker({"name": "Board-E2E", "type": "once",
-                             "task_prompt": "Nur CLOUD_OK"}, path=str(cfg_file))
-        worker_id = worker["id"]
+        worker_id = _add_test_worker({"name": "Board-E2E", "type": "once",
+                                      "task_prompt": "Nur CLOUD_OK"}, cfg_file)
         update_slot(worker_id, {"status": "running"}, path=str(cfg_file))
 
         session = persistent_worker_runtime.get_session(worker_id)
