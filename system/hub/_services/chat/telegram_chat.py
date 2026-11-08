@@ -146,6 +146,7 @@ from hub._services.chat.slots_config import (
     worker_configuration_snapshot,
     change_worker_configuration,
     persistent_worker_startup_snapshot,
+    _project_dynamic_worker_slot,
     _worker_configuration,
 )
 
@@ -1132,7 +1133,7 @@ def _execution_worker_slot(worker_id: str) -> dict:
     worker = get_worker_slot(worker_id)
     if worker:
         # Registry membership defines a dynamic profile, never a payload flag.
-        return {**worker, "system": False}
+        return {**_project_dynamic_worker_slot(worker), "system": False}
     # Dynamic IDs are already resolved by their strict canonical registry.
     # Only an actual system-slot ID needs a second system-slot lookup.
     if worker_id not in load_slots_config().get("slots", {}):
@@ -3782,7 +3783,7 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
     # routing keys: duplicate names must remain unambiguous.
     for w in cfg.get("dynamic_workers", []):
         if w.get("id") == str_id:
-            return w
+            return _project_dynamic_worker_slot(w)
 
     # 2. Always-On / Idle Worker
     if str_id in ("idle-worker", "worker-always-on") or str_id.startswith("idle"):
@@ -6027,7 +6028,7 @@ def _persistent_cloud_admission_slot_snapshot(worker_id, profile, checkpoint):
         and current.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD) == checkpoint
     ):
         return None
-    return dict(current)
+    return _project_dynamic_worker_slot(current)
 
 
 def _persistent_cloud_admission_readback(worker_id, profile, admitted):

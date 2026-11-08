@@ -886,6 +886,15 @@ def get_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:
     return {}
 
 
+def _project_dynamic_worker_slot(worker: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(worker)
+    if projected.get("allowed_tools") is None and projected.get("rights") is not None:
+        projected["allowed_tools"] = background_worker_default_tools(
+            projected.get("mode"), projected.get("rights")
+        )
+    return projected
+
+
 def get_worker_slot(worker_id: str, path: str | None = None) -> dict[str, Any]:
     """Return only a unique dynamic worker; ambiguity fails closed."""
     cfg = load_slots_config(path, strict=True)
@@ -1664,7 +1673,7 @@ def system_worker_at_version(slot_id: str, expected_version: str,
                 worker.get("persistent_opt_in") is not True
                 or worker.get("persistent_opt_in_id") != persistent_intent_id):
             raise RuntimeError("persistent_intent_conflict")
-        return dict(worker)
+        return worker
     if version_scope == "worker_profile" and slot_id == "buddha_always_on":
         worker = _always_on_execution_slot_from_config(config)
         if (worker.get("persistent_opt_in") is not True
