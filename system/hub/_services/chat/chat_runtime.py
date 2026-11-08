@@ -467,11 +467,19 @@ class _SnapshotStoreAdapter:
 
 
 
+# PB-24: a bound worker whose model keeps sending denied tool calls must end with a visible reason.
+MAX_TOOL_CALLS_PER_ANSWER = 16  # measured: 5-6 per answer on the Mac Studio, 07.11.2026
+MAX_TOOL_DENIALS_PER_RUN = 4
+_NON_DENIAL_TOOL_REASONS = frozenset({"resource_not_found", "state_conflict", "no_updates"})
+
 _SAFE_FAILURE_REASON_CODES = frozenset({
     "cloud_call_retry_exhausted",
     "completion_reserve_context_exhausted",
     "handoff_context_too_large",
     "invalid_tool_call",
+    "tool_call_limit",
+    "tool_denial_limit",
+    "tool_denial_repeated",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -3184,6 +3192,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         auto_used = 0
         goal_checked = False
         handoffs = 0
+        denied_calls = set()  # PB-24: (tool, canonical args) of calls a bound worker already had denied
         seit_hook = 0
         session.tool_round = 0
         session.last_tools = []
@@ -3467,6 +3476,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
                 )
 
+            if (getattr(session, "worker_task_binding", None) is not None
+                    and len(tool_calls) > MAX_TOOL_CALLS_PER_ANSWER):
+                session.current_tool = ""
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}Zu viele Werkzeugaufrufe in einer Antwort "
+                    f"({len(tool_calls)} > {MAX_TOOL_CALLS_PER_ANSWER}); nichts ausgeführt",
+                    reason_code="tool_call_limit")
+
             raw_msg = result.get("raw_message", {})
             if raw_msg:
                 msgs.append(raw_msg)
@@ -3530,6 +3547,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         default_model=selected_model,
                         **tool_kwargs,
                     )
+                denial_key = None
+                if binding is not None:
+                    denial_key = (t_name, json.dumps(t_args, sort_keys=True, default=str))
+                    if denial_key in denied_calls:
+                        # The same call was already denied; sending it again cannot change the answer.
+                        session.current_tool = ""
+                        return FailedAnswer(
+                            f"{FailedAnswer.PREFIX}Werkzeugaufruf {t_name} wurde bereits verweigert "
+                            "und wird nicht erneut ausgeführt",
+                            reason_code="tool_denial_repeated")
                 traced_outcome = None
                 if binding is not None:
                     from hub._services.chat.worker_tool_dispatch_trace import (
@@ -3581,6 +3608,18 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         session.current_tool = ""
                         return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
                 read_trail.record(t_name, t_args, t_result)
+                if binding is not None:
+                    if isinstance(t_result, ToolErrorText):
+                        if getattr(t_result, "_reason", None) not in _NON_DENIAL_TOOL_REASONS:
+                            denied_calls.add(denial_key)
+                            if len(denied_calls) >= MAX_TOOL_DENIALS_PER_RUN:
+                                session.current_tool = ""
+                                return FailedAnswer(
+                                    f"{FailedAnswer.PREFIX}{len(denied_calls)} Werkzeugaufrufe wurden verweigert; "
+                                    "Lauf wird beendet",
+                                    reason_code="tool_denial_limit")
+                    else:
+                        denied_calls.clear()
                 if binding is not None:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":
