@@ -279,6 +279,25 @@ for _core_id, _core_defaults in DEFAULT_CORE_SLOTS.items():
     }.get(_core_id, "task_worker"))
     _core_defaults.setdefault("sub_mode", "task_worker" if _core_id == "buddha_always_on" else "expert_role")
 
+#: Standardfreigaben des Hintergrundworkers, wenn der Slot keine ausdrückliche Liste trägt.
+#: Lesen/Aufgaben-Werkzeuge immer; Schreiben nur im Full-Modus und nur über den gesicherten
+#: Pfad (Task-Arbeitsbaum, Lease, Sperrscan, Draft-PR; worker_write_guard).
+BACKGROUND_WORKER_READ_TOOLS = (
+    "read_file", "list_directory", "search_text", "file_info", "get_datetime", "task_manage",
+    "skill_create", "agent_manage", "bach_command", "maintain", "system_status", "ollama_info",
+    "weather", "foerderbericht", "web_search", "web_fetch",
+)
+BACKGROUND_WORKER_WRITE_TOOLS = (
+    "safe_shell", "start_task_worktree", "write_file", "edit_file", "execute_command", "finish_task",
+)
+
+
+def background_worker_default_tools(mode: Any) -> list[str]:
+    """Standard-``allowed_tools`` für buddha_always_on: Full = mit gesichertem Schreibweg, sonst nur lesend."""
+    tools = BACKGROUND_WORKER_READ_TOOLS + (BACKGROUND_WORKER_WRITE_TOOLS if mode == "full" else ())
+    return list(tools)
+
+
 SYSTEM_SLOT_PRESETS = {
     "boss": {"name": "Boss · Koordination", "role_id": "boss_routing", "sub_mode": "boss_routing", "icon": "🧭"},
     "developer": {"name": "Experte · Entwicklung", "role_id": "entwickler", "icon": "🛠️"},
@@ -874,7 +893,11 @@ def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, A
             or any(not isinstance(worker, dict) for worker in config["dynamic_workers"])
             or any(worker.get("id") == "buddha_always_on" for worker in config["dynamic_workers"])):
         raise ValueError("Always-On-Slot fehlt oder ist nicht eindeutig")
-    return {**slot, "type": "continuous", "sub_mode": slot.get("sub_mode") or "task_worker"}
+    projected = {**slot, "type": "continuous", "sub_mode": slot.get("sub_mode") or "task_worker"}
+    if projected.get("allowed_tools") is None:
+        # Seit #327 heißt None "keine Schreibfreigabe", der Tray-Schalter setzt aber nur ``mode``.
+        projected["allowed_tools"] = background_worker_default_tools(projected.get("mode"))
+    return projected
 
 
 @_serialized_mutation
