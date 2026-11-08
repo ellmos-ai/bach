@@ -255,6 +255,8 @@ _STATUS_LINE_RE = re.compile(
     r"\n?\[Modus=[^\n\]]*, Denken=(?:AN|AUS), Modell=[^\n\]]*\]"
 )
 
+BACH_CONTEXT_MARKER = "--- BACH ---"
+
 
 def _session_status_line(session) -> str:
     return (
@@ -303,10 +305,10 @@ def _split_volatile_system_prompt(content: str) -> tuple[str, list[str]]:
     if hook_sep in text:
         text, hook_part = text.split(hook_sep, 1)
         volatile_parts.insert(0, f"--- MEMORY-HOOK ---\n{hook_part.strip()}")
-    bach_sep = "\n\n--- BACH ---\n"
+    bach_sep = f"\n\n{BACH_CONTEXT_MARKER}\n"
     if bach_sep in text:
         text, bach_part = text.split(bach_sep, 1)
-        volatile_parts.insert(0, f"--- BACH ---\n{bach_part.strip()}")
+        volatile_parts.insert(0, f"{BACH_CONTEXT_MARKER}\n{bach_part.strip()}")
     status_matches = [m.group(0).strip() for m in _STATUS_LINE_RE.finditer(text)]
     if status_matches:
         text = _STATUS_LINE_RE.sub("", text)
@@ -322,7 +324,7 @@ def _is_volatile_context_message(message: dict) -> bool:
         return False
     return (
         bool(_STATUS_LINE_RE.match(content))
-        or content.startswith("--- BACH ---\n")
+        or content.startswith(f"{BACH_CONTEXT_MARKER}\n")
         or content.startswith("--- MEMORY-HOOK ---\n")
     )
 
@@ -3187,7 +3189,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             if status_line not in late_context_parts:
                 late_context_parts.insert(0, status_line)
         if bach_ctx and not custom_prompt:
-            late_context_parts.append(f"--- BACH ---\n{bach_ctx}")
+            late_context_parts.append(f"{BACH_CONTEXT_MARKER}\n{bach_ctx}")
         legacy_memory_hook = session.profile_binding is None and not custom_prompt
         configured_memory_hook = getattr(session, "_trusted_memory_hook_opt_in", False) is True
         if legacy_memory_hook or configured_memory_hook:
