@@ -10,7 +10,10 @@ import threading
 import time
 from threading import Thread as HeartbeatThread
 
-from hub._services.task_lease_client import LeaseProtocolError
+from hub._services.task_lease_client import (
+    LeaseOfflineDeadlineExceeded,
+    LeaseProtocolError,
+)
 
 
 class WorkerLeaseSupervisor:
@@ -46,6 +49,12 @@ class WorkerLeaseSupervisor:
                     renew_due=time.monotonic() - last_renew >= self.renew_interval)
                 if renewed:
                     last_renew = time.monotonic()
+            except LeaseOfflineDeadlineExceeded as exc:
+                if self.binding.stop_requested or self.binding.closed:
+                    return
+                self._failure = exc
+                self._failed.set()
+                return
             except BaseException:
                 # Stop/close may race this check. Neither is a lost ACK.
                 if self.binding.stop_requested or self.binding.closed:

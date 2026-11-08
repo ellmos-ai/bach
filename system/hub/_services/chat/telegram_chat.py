@@ -6488,47 +6488,109 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 loop = asyncio.new_event_loop()
                 ans = ""
                 worker_session = None
+                _turn_lease_exc = None
                 try:
-                    worker_session = runtime.get_session(worker_id)
-                    worker_session.worker_slot_reader = control.slot_policy_reader
-                    worker_session.worker_handoff = control.handoff
-                    worker_session.worker_task_actions = control.task_actions
-                    worker_session.worker_task_binding = control.task_binding
-                    worker_session.worker_model_request_control = control
-                    worker_session.require_task_binding = True
-                    worker_session.model_request_budget = control.model_request_budget
-                    worker_session._persistent_core_model_call_control = (
-                        control if control.persistent_core_intent_id is not None else None
-                    )
-                    bound_prompt = _bound_worker_prompt(control.task_binding, prompt_to_run)
-                    # Empty queue polling is not a model block or a failed
-                    # task attempt. Count only actual runtime submissions.
-                    run_count += 1
-                    ans = loop.run_until_complete(
-                        runtime.process(
-                            bound_prompt,
-                            worker_id,
-                            backend=target_backend,
-                            model=model,
-                            work_priority="background",
-                        )
-                    )
-                finally:
-                    if worker_session is not None:
-                        worker_session._persistent_core_model_call_control = None
-                        worker_session.worker_model_request_control = None
-                        worker_session.model_request_budget = None
                     try:
-                        loop.run_until_complete(loop.shutdown_asyncgens())
+                        worker_session = runtime.get_session(worker_id)
+                        worker_session.worker_slot_reader = control.slot_policy_reader
+                        worker_session.worker_handoff = control.handoff
+                        worker_session.worker_task_actions = control.task_actions
+                        worker_session.worker_task_binding = control.task_binding
+                        worker_session.worker_model_request_control = control
+                        worker_session.require_task_binding = True
+                        worker_session.model_request_budget = control.model_request_budget
+                        worker_session._persistent_core_model_call_control = (
+                            control if control.persistent_core_intent_id is not None else None
+                        )
+                        bound_prompt = _bound_worker_prompt(control.task_binding, prompt_to_run)
+                        # Empty queue polling is not a model block or a failed
+                        # task attempt. Count only actual runtime submissions.
+                        run_count += 1
+                        ans = loop.run_until_complete(
+                            runtime.process(
+                                bound_prompt,
+                                worker_id,
+                                backend=target_backend,
+                                model=model,
+                                work_priority="background",
+                            )
+                        )
                     finally:
-                        loop.close()
+                        if worker_session is not None:
+                            worker_session._persistent_core_model_call_control = None
+                            worker_session.worker_model_request_control = None
+                            worker_session.model_request_budget = None
+                        try:
+                            loop.run_until_complete(loop.shutdown_asyncgens())
+                        finally:
+                            loop.close()
 
-                if control.stop_event.is_set():
-                    break
-                if control.lease_supervisor.failure is not None:
-                    raise control.lease_supervisor.failure
-                if not control.task_binding.closed:
-                    control.task_binding.assert_active()
+                    if control.stop_event.is_set():
+                        break
+                    if control.lease_supervisor.failure is not None:
+                        raise control.lease_supervisor.failure
+                    if not control.task_binding.closed:
+                        control.task_binding.assert_active()
+                except Exception as _exc:
+                    _turn_lease_exc = _exc
+                if _turn_lease_exc is not None:
+                    from hub._services.task_lease_client import (
+                        LeaseOfflineDeadlineExceeded,
+                        LeaseProtocolError,
+                    )
+                    _is_correction_ctx_err = (
+                        isinstance(_turn_lease_exc, (LeaseProtocolError, RuntimeError))
+                        and "Task-Korrekturkontext" in str(_turn_lease_exc)
+                        and getattr(control.task_binding, "tool_dispatch_count", 0) == 0
+                        and current_slot.get("type") in {"continuous", "persistent"}
+                        and control.model_request_budget is None
+                    )
+                    _is_deadline_err = (
+                        isinstance(_turn_lease_exc, LeaseOfflineDeadlineExceeded)
+                        and current_slot.get("type") in {"continuous", "persistent"}
+                        and control.model_request_budget is None
+                        and control.persistent_core_intent_id is None
+                    )
+                    if not (_is_correction_ctx_err or _is_deadline_err) or control.stop_event.is_set():
+                        raise _turn_lease_exc
+                    _ret_note = "task_context_unavailable" if _is_correction_ctx_err else "total_deadline"
+                    returned = control.task_binding.task_snapshot()
+                    if control.lease_supervisor is not None:
+                        control.lease_supervisor.close()
+                        control.lease_supervisor = None
+                    if _is_correction_ctx_err:
+                        control.task_binding.before_return = None
+                    if not control.task_binding.return_lease(note=_ret_note):
+                        raise _turn_lease_exc
+                    if worker_session is not None and getattr(worker_session, "worker_task_binding", None) is control.task_binding:
+                        worker_session.worker_task_binding = None
+                    finish_assignment(
+                        current_assignment,
+                        status="released",
+                        result="task_returned" if _is_correction_ctx_err else "ttl_expired",
+                        reason=_ret_note,
+                    )
+                    assignment_open = False
+                    returned_id = control.task_binding.task_id
+                    if _is_correction_ctx_err and isinstance(returned.get("task_version"), str):
+                        control.deferred_task_versions[returned_id] = returned["task_version"]
+                    control.task_binding = None
+                    _msg = (
+                        f"Task #{returned_id} zurückgegeben: Task-Korrekturkontext nicht bestätigt"
+                        if _is_correction_ctx_err
+                        else f"Task #{returned_id} wegen abgelaufener lokaler Lease-Frist offen zurückgegeben"
+                    )
+                    _act = (
+                        "Task-Korrekturkontext nicht bestätigt; suche nächste passende Aufgabe"
+                        if _is_correction_ctx_err
+                        else "Zeitlimit für Task-Lease erreicht; suche nächste passende Aufgabe"
+                    )
+                    _record_worker_activity(control, _msg, "pending")
+                    if _update_worker_slot(control, {"status": "running", "task_id": None, "current_activity": _act}) is None:
+                        break
+                    if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
+                        break
+                    continue
                 ans_str = str(ans)
                 # FailedAnswer is a str subclass and may also be
                 # restored as plain text after persistence. Neither
