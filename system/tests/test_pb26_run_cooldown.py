@@ -17,6 +17,7 @@ from hub._services.llm.model_backend import OllamaBackend, OpenRouterBackend
 from system.tests.test_pb26_idle_unload import MODEL, ollama  # noqa: F401 -- HTTP-recording fixture
 
 UNLOAD = ("unload", {"model": MODEL, "keep_alive": 0})
+REAL_OPEN_GATE = run_cooldown.open_gate  # conftest stubs it per test
 
 
 def _controller():
@@ -109,14 +110,14 @@ def test_cloud_and_other_backends_get_no_gate_and_load_nothing(monkeypatch):
     ollama_backend = OllamaBackend(default_model=MODEL)
     for backend, model in ((ollama_backend, "glm-5.3:cloud"), (ollama_backend, "gpt-oss:120b-cloud"),
                            (ollama_backend, ""), (OpenRouterBackend.__new__(OpenRouterBackend), MODEL)):
-        assert run_cooldown.open_gate(backend, model) is None
+        assert REAL_OPEN_GATE(backend, model) is None
 
 
 def test_missing_gate_or_failed_baseline_is_safe(monkeypatch):
     backend = OllamaBackend(default_model=MODEL)
     old = SimpleNamespace()  # ocean-resources before PB-26 (the Mac until it is pulled)
     monkeypatch.setattr("hub._services.ocean_stack_bridge.load_ocean_ram_distributor_module", lambda: old)
-    assert run_cooldown.open_gate(backend, MODEL) is None
+    assert REAL_OPEN_GATE(backend, MODEL) is None
 
     def broken():
         raise OSError("probe failed")
@@ -124,7 +125,7 @@ def test_missing_gate_or_failed_baseline_is_safe(monkeypatch):
     current = SimpleNamespace(sample_stress=broken,
                               RunCooldownGate=lambda baseline: made.append(baseline) or "gate")
     monkeypatch.setattr("hub._services.ocean_stack_bridge.load_ocean_ram_distributor_module", lambda: current)
-    assert run_cooldown.open_gate(backend, MODEL) == ("gate", broken)  # still a gate: minimum pause stays
+    assert REAL_OPEN_GATE(backend, MODEL) == ("gate", broken)  # still a gate: minimum pause stays
     assert made == [None]
 
 

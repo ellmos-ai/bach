@@ -79,6 +79,7 @@ except ImportError as exc:
 # BACH imports
 from hub._services.chat.worker_lease_supervisor import WorkerLeaseSupervisor
 from hub._services.chat.worker_scope_deferrals import ScopePreparationDeferrals
+from hub._services.chat import run_cooldown
 try:
     import bach_api
     _memory = bach_api.memory
@@ -1258,15 +1259,11 @@ def _unload_idle_worker_model(control, backend, model):
     its model call loads the model again through the normal reserve gate.
     """
     from hub._services.chat.worker_queue_status import project_queue_status
-    from hub._services.llm.model_backend import OllamaBackend
-    if control.idle_model_unloaded or not isinstance(backend, OllamaBackend):
-        return
+    if control.idle_model_unloaded or not run_cooldown.is_local_model(backend, model):
+        return  # cloud models hold no local memory
     report = project_queue_status(control.queue_status)
     if report is None or report["state"] != "waiting":
         return
-    if (not isinstance(model, str) or not model.strip()
-            or model.rsplit(":", 1)[-1].lower().endswith("cloud")):
-        return  # cloud models hold no local memory
     # ponytail: unloads the shared model even if the chat or another local worker
     # still uses it; that caller reloads once. Per-model usage count if that bites.
     control.idle_model_unloaded = True
@@ -2592,12 +2589,20 @@ def _wait_persistent_core_capacity(control: _WorkerControl, expected_binding):
 
 
 def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> bool:
-    """Apply a configured run/task-count pause while keeping stop responsive."""
+    """Apply a configured run/task-count pause while keeping stop responsive.
+
+    PB-26: a local model worker then waits for the RAM distributor's admission;
+    the slot pause counts towards its minimum pause.
+    """
     worker_id = control.worker_id
     if not _worker_metadata_available(worker_id):
         return False
+    ended_at = time.monotonic()
+    backend, model = control._review_backend, control._review_requested_model
+    gate = run_cooldown.open_gate(backend, model)  # baseline sample at the end of the run
     if not bump_pause_counter(worker_id, event_type=event_type):
-        return not control.stop_event.is_set()
+        return (not control.stop_event.is_set()
+                and _wait_run_cooldown(control, gate, ended_at, backend, model))
 
     slot = _execution_worker_slot(worker_id)
     pause = get_slot_pause_info(slot)
@@ -2631,6 +2636,64 @@ def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> 
     if updated is None:
         return False
     _record_worker_activity(control, "Automatische Pause beendet", "ok")
+    return _wait_run_cooldown(control, gate, ended_at, backend, model)
+
+
+_RUN_COOLDOWN_POLL_SECONDS = 30.0
+
+
+def _wait_run_cooldown(control: _WorkerControl, gate, ended_at: float, backend, model) -> bool:
+    """PB-26 (Lukas 08.11.2026): pause until the RAM distributor admits the next run.
+
+    "nach abschluss eines laufes eine zwangspause einlegen lassen und nach cooldown
+    wieder anfahren". The reason (``cooldown:swap|thermal|min``) and the swap-out
+    rate stay visible in the worker status; a pause longer than the policy's
+    ``unload_after_seconds`` unloads the local model once. A failed measurement only
+    drops its own criterion, the minimum pause remains.
+    """
+    if gate is None:
+        return True
+    gate, sampler = gate
+    reason = None
+    unloaded = False
+    while True:
+        try:
+            sample = sampler()
+        except Exception:  # noqa: BLE001 -- an unmeasured host only gets the minimum pause
+            sample = None
+        decision = gate.check(sample, seconds_since_run_end=time.monotonic() - ended_at)
+        if decision.admitted:
+            break
+        rate = decision.swapout_mib_per_minute
+        shown = "unbekannt" if rate is None else f"{rate:.0f} MiB/min"
+        if decision.reason != reason:
+            reason = decision.reason
+            log.info("run_cooldown worker_id=%s reason=%s swapout_mib_per_min=%s",
+                     control.worker_id, reason, "unknown" if rate is None else f"{rate:.1f}")
+            _record_worker_activity(control, f"Abkühlpause ({reason})", "ok")
+        if (not unloaded and reason != "cooldown:min"
+                and time.monotonic() - ended_at >= gate.policy.unload_after_seconds):
+            unloaded = True
+            ok = backend.unload(model)
+            log.info("cooldown_model_unload worker_id=%s model=%s ok=%s", control.worker_id, model, ok)
+        if _update_worker_slot(control, {
+            "status": "paused",
+            "auto_paused": True,
+            "current_activity": f"Abkühlpause ({reason}), Swap-Schreibrate {shown}"
+                                + ("; Modell entladen" if unloaded else ""),
+        }) is None:
+            return False
+        if control.stop_event.wait(_RUN_COOLDOWN_POLL_SECONDS):
+            return False
+    if reason is None:
+        return True
+    if _update_worker_slot(control, {
+        "status": "running",
+        "auto_paused": False,
+        "current_activity": "Abkühlpause beendet; nächster Lauf startet",
+    }) is None:
+        return False
+    _record_worker_activity(control, "Abkühlpause beendet", "ok")
     return True
 
 

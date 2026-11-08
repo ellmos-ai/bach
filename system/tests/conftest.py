@@ -514,6 +514,13 @@ def _guard_real_model_unload(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _guard_real_run_cooldown(monkeypatch):
+    """PB-26: no test samples the host's swap or waits for the RAM distributor's cooldown."""
+    from hub._services.chat import run_cooldown
+    monkeypatch.setattr(run_cooldown, "open_gate", lambda backend, model: None)
+
+
+@pytest.fixture(autouse=True)
 def _guard_real_process_control(monkeypatch):
     """Do not let unit/integration tests terminate real host processes."""
     real_run = subprocess.run
