@@ -109,7 +109,7 @@ def test_private_cli_does_not_mark_global_continue_session_active(bridge, monkey
     assert backend._session_active is False
 
 
-def test_bound_command_mcp_child_uses_actual_stdio_and_reaches_terminal(bridge, monkeypatch):
+def test_bound_command_mcp_child_uses_actual_stdio_and_reaches_terminal(bridge, monkeypatch, run_mcp_stdio):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     backend = CLIBackend(cli_name="claude", cli_path="not-started")
@@ -127,7 +127,7 @@ def test_bound_command_mcp_child_uses_actual_stdio_and_reaches_terminal(bridge, 
                     response = await session.call_tool("task_manage", {"action": "done", "task_id": bridge.binding.task_id, "result": "Konkretes Ergebnis des CLI-Laufs", "complete": True})
                     assert not response.isError
                     return response.content[0].text
-        return asyncio.run(use_shim())  # Both SDK contexts close the actual child.
+        return run_mcp_stdio(use_shim())  # Both SDK contexts close the actual child.
     monkeypatch.setattr(backend, "_run_subprocess", physical)
     result = asyncio.run(backend.chat_bound([], binding=bridge.binding, mode="safe", guard=lambda: None))
     assert result["content"] == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
