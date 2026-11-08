@@ -65,8 +65,9 @@ def run(monkeypatch, ollama):  # noqa: F811
 def test_swap_cooldown_shows_reason_and_rate_unloads_once_and_resumes(run, ollama):  # noqa: F811
     assert run.gate(ScriptedGate("cooldown:swap", "cooldown:swap", "cooldown:swap")) is True
     assert ollama == [UNLOAD]  # a long pause unloads exactly once
-    paused = [u for u in run.updates if u.get("status") == "paused"]
-    assert len(paused) == 3 and all(u["auto_paused"] is True for u in paused)
+    paused = [u for u in run.updates if u.get("current_activity", "").startswith("Abkühlpause (")]
+    # "paused" + auto_paused needs pause_started_at; without it startup refuses (invalid_cooldown)
+    assert len(paused) == 3 and all(u["status"] == "running" and "auto_paused" not in u for u in paused)
     assert "cooldown:swap" in paused[0]["current_activity"]
     assert "198 MiB/min" in paused[0]["current_activity"]
     assert run.updates[-1]["status"] == "running" and run.updates[-1]["auto_paused"] is False

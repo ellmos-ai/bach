@@ -2676,9 +2676,10 @@ def _wait_run_cooldown(control: _WorkerControl, gate, ended_at: float, backend, 
             unloaded = True
             ok = backend.unload(model)
             log.info("cooldown_model_unload worker_id=%s model=%s ok=%s", control.worker_id, model, ok)
+        # Stays "running": "paused" + auto_paused without pause_started_at is refused
+        # at startup (invalid_cooldown), so a restart during the cooldown kept Buddha off.
         if _update_worker_slot(control, {
-            "status": "paused",
-            "auto_paused": True,
+            "status": "running",
             "current_activity": f"Abkühlpause ({reason}), Swap-Schreibrate {shown}"
                                 + ("; Modell entladen" if unloaded else ""),
         }) is None:
