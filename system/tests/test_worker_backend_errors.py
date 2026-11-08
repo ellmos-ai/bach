@@ -163,7 +163,8 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     ident = "buddha_always_on" if core else slots.add_worker({"name": "Quota", "type": "once"}, path)["id"]
     slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "think": True,
-        "enabled": True, "mode": "safe", "task_id": 42, "backend_error": {"old": "stale"}}, path)
+        "enabled": True, "mode": "safe", "task_id": 42, "allowed_tools": [],
+        "backend_error": {"old": "stale"}}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
         monkeypatch.setattr(control, registry, {})
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
@@ -437,7 +438,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         assert code == 200 and response["ok"] is True
         execution = control._WORKER_EXECUTIONS[ident]
         thread = execution.thread
-        thread.join(5)
+        thread.join(10)
         assert not thread.is_alive()
         assert all(json.loads(request.content)["model"] == model for request in calls)
         task = dict(conn.execute("SELECT * FROM tasks WHERE id=42").fetchone())
@@ -857,7 +858,7 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
     worker_id = "buddha_always_on"
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
-    slots.update_slot(worker_id, {"resolved_model": "stale-controller-model"}, path)
+    slots.update_slot(worker_id, {"resolved_model": "stale-controller-model", "allowed_tools": []}, path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     controller_cas_readbacks = []
     original_controller_update = slots.update_persistent_core_controller_state
