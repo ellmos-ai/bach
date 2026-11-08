@@ -600,3 +600,18 @@ def isolated_runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
     monkeypatch.setenv("BACH_RUNTIME", str(runtime_dir))
     yield runtime_dir
+
+
+@pytest.fixture
+def run_mcp_stdio():
+    """Run a coroutine that drives a stdio MCP child; fail instead of hanging.
+
+    A child that lives but never answers made the Mac suite wait forever
+    (T-20261107-512211369). ``asyncio.TimeoutError`` is raised after ``timeout`` seconds.
+    """
+    import asyncio
+
+    def run(coro, timeout=180):
+        return asyncio.run(asyncio.wait_for(coro, timeout))
+
+    return run
