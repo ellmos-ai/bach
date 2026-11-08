@@ -28,7 +28,7 @@ def _run(monkeypatch, answers, execute, *, max_rounds=12):
     session.chat_id = "pb24-test"
     session.model = "test-model"
     session.allow_tools = True
-    session.allowed_tools = {"task_manage", "read_file"}
+    session.allowed_tools = {"task_manage", "read_file", "write_file"}
     session.worker_task_binding = _Binding()
     session.max_tool_rounds = max_rounds
     calls = []
@@ -93,3 +93,62 @@ def test_tool_calls_per_answer_are_capped_before_any_dispatch(monkeypatch):
     assert effects == []
     assert isinstance(answer, FailedAnswer)
     assert answer.reason_code == "tool_call_limit"
+
+
+def test_read_not_found_then_write_then_read_again_succeeds(monkeypatch):
+    not_found = ToolErrorText(
+        "Datei nicht gefunden.", code="tool_policy_denied", reason="resource_not_found"
+    )
+    answers = [
+        [("read_file", {"path": "neu.txt"})],
+        [("write_file", {"path": "neu.txt", "content": "hallo"})],
+        [("read_file", {"path": "neu.txt"})],
+        None,
+    ]
+    results = iter([not_found, "geschrieben", "hallo"])
+    answer, _calls, effects = _run(monkeypatch, answers, lambda *_a: next(results))
+    assert len(effects) == 3
+    assert not isinstance(answer, FailedAnswer)
+    assert answer == "fertig"
+
+
+def test_six_resource_not_found_calls_in_a_row_do_not_hit_denial_cap(monkeypatch):
+    not_found = ToolErrorText(
+        "Datei nicht gefunden.", code="tool_policy_denied", reason="resource_not_found"
+    )
+    answers = [[("read_file", {"path": f"fehlt{i}.txt"})] for i in range(6)] + [None]
+    answer, _calls, effects = _run(monkeypatch, answers, lambda *_a: not_found)
+    assert len(effects) == 6
+    assert not isinstance(answer, FailedAnswer)
+    assert answer == "fertig"
+
+
+def test_successful_call_clears_consecutive_denial_counter(monkeypatch):
+    answers = [
+        [("task_manage", {"action": "detail", "task_id": 1001})],
+        [("task_manage", {"action": "detail", "task_id": 1002})],
+        [("task_manage", {"action": "detail", "task_id": 1003})],
+        [("task_manage", {"action": "detail", "task_id": 3781})],
+        [("task_manage", {"action": "detail", "task_id": 2001})],
+        [("task_manage", {"action": "detail", "task_id": 2002})],
+        [("task_manage", {"action": "detail", "task_id": 2003})],
+        None,
+    ]
+    results = iter([
+        _denied(), _denied(), _denied(),
+        "Task #3781: offen",
+        _denied(), _denied(), _denied(),
+    ])
+    answer, _calls, effects = _run(monkeypatch, answers, lambda *_a: next(results))
+    assert len(effects) == 7
+    assert not isinstance(answer, FailedAnswer)
+    assert answer == "fertig"
+
+
+def test_four_real_denials_in_a_row_still_end_with_tool_denial_limit(monkeypatch):
+    answers = [[("task_manage", {"action": "detail", "task_id": 1000 + i})] for i in range(4)] + [None]
+    answer, _calls, effects = _run(monkeypatch, answers, lambda *_a: _denied())
+    assert len(effects) == 4
+    assert isinstance(answer, FailedAnswer)
+    assert answer.reason_code == "tool_denial_limit"
+

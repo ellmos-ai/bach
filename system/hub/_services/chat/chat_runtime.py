@@ -470,6 +470,7 @@ class _SnapshotStoreAdapter:
 # PB-24: a bound worker whose model keeps sending denied tool calls must end with a visible reason.
 MAX_TOOL_CALLS_PER_ANSWER = 16  # measured: 5-6 per answer on the Mac Studio, 07.11.2026
 MAX_TOOL_DENIALS_PER_RUN = 4
+_NON_DENIAL_TOOL_REASONS = frozenset({"resource_not_found", "state_conflict", "no_updates"})
 
 _SAFE_FAILURE_REASON_CODES = frozenset({
     "cloud_call_retry_exhausted",
@@ -3607,14 +3608,18 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         session.current_tool = ""
                         return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
                 read_trail.record(t_name, t_args, t_result)
-                if binding is not None and isinstance(t_result, ToolErrorText):
-                    denied_calls.add(denial_key)
-                    if len(denied_calls) >= MAX_TOOL_DENIALS_PER_RUN:
-                        session.current_tool = ""
-                        return FailedAnswer(
-                            f"{FailedAnswer.PREFIX}{len(denied_calls)} Werkzeugaufrufe wurden verweigert; "
-                            "Lauf wird beendet",
-                            reason_code="tool_denial_limit")
+                if binding is not None:
+                    if isinstance(t_result, ToolErrorText):
+                        if getattr(t_result, "_reason", None) not in _NON_DENIAL_TOOL_REASONS:
+                            denied_calls.add(denial_key)
+                            if len(denied_calls) >= MAX_TOOL_DENIALS_PER_RUN:
+                                session.current_tool = ""
+                                return FailedAnswer(
+                                    f"{FailedAnswer.PREFIX}{len(denied_calls)} Werkzeugaufrufe wurden verweigert; "
+                                    "Lauf wird beendet",
+                                    reason_code="tool_denial_limit")
+                    else:
+                        denied_calls.clear()
                 if binding is not None:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":
