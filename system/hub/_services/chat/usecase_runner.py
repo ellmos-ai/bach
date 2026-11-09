@@ -1,3 +1,4 @@
+# BACH Adapter: usecase_runner
 """Usecase-Builder runner and automation for Buddha (Ticket T-20260909-613048528).
 
 Generates workflows for usecases, verifies test-scores, and handles escalation to Claude.

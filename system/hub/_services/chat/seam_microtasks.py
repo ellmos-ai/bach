@@ -1,3 +1,4 @@
+# BACH Adapter: seam_microtasks
 """BACH-to-ELLMOS Migration: Seam Micro-Tasks Catalog & Execution Pipeline (Ticket T-20260909-566626503).
 
 Defines the isolated 5 Seam Micro-Tasks (M1-M5), idempotent seeding, safety preflight,
