@@ -1542,7 +1542,7 @@ def _redact_ws_tokens(text: str) -> str:
 
 
 def _install_log_redaction():
-    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens."""
+    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens or PII."""
     import logging
     previous = logging.getLogRecordFactory()
     if getattr(previous, "_bach_redacts", False):
@@ -1551,10 +1551,21 @@ def _install_log_redaction():
     def factory(*args, **kwargs):
         record = previous(*args, **kwargs)
         try:
-            if record.name.startswith(_REDACT_LOGGERS):
-                message = record.getMessage()
-                if "bach.token." in message:
-                    record.msg, record.args = _redact_ws_tokens(message), ()
+            message = record.getMessage()
+            changed = False
+            if "bach.token." in message:
+                message = _redact_ws_tokens(message)
+                changed = True
+            try:
+                from hub._services.life_overview_service import sanitize_pii
+                sanitized = sanitize_pii(message)
+                if sanitized != message:
+                    message = sanitized
+                    changed = True
+            except Exception:
+                pass
+            if changed:
+                record.msg, record.args = message, ()
         except Exception:  # logging must never break the request
             pass
         return record
@@ -1755,6 +1766,9 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/modules/sync",
         "/api/modules/update-check",
         "/api/modules/list",
+        "/api/modules/surfaces",
+        "/api/financial/summary",
+        "/api/life/overview",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -2362,6 +2376,16 @@ async def get_modules_status():
         }
     except Exception as exc:
         return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/surfaces")
+async def get_modules_surfaces():
+    """Return canonical module surfaces and integration status matrix (PB-7 / #3991)."""
+    try:
+        from hub._services.life_overview_service import get_module_surfaces_matrix
+        return get_module_surfaces_matrix()
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
 
 
 @app.post("/api/modules/sync")
@@ -6222,6 +6246,26 @@ async def get_life_providers():
             "message": "In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt."
         }
     }
+
+
+@app.get("/api/life/overview")
+async def get_life_overview_endpoint():
+    """Aggregate local-only measured overview across finance, routines, health, and tasks (PB-12 / #3995)."""
+    try:
+        from hub._services.life_overview_service import get_life_overview
+        return get_life_overview(BACH_DB)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
+@app.get("/api/financial/summary")
+async def get_financial_summary_endpoint():
+    """Return fail-closed current period financial summary snapshot (PB-12 / #3995)."""
+    try:
+        from hub._services.life_overview_service import get_financial_summary
+        return get_financial_summary(BACH_DB)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
 
 
 @app.get("/domains", response_class=HTMLResponse, tags=["shared-gui"])
