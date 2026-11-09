@@ -975,6 +975,13 @@ class BachModelRoutePort:
             }
         if not callable(self._cloud_attestor):
             return {"available": False, "cloud_route": False, "fallback_disabled": True}
+        # Gleiche NER-Pflicht wie Pipeline und GUI/API: ohne Namenserkennung ist die
+        # Pseudonymisierung unvollstaendig, also kein Cloud-Weg (pin_route und generate pruefen hier).
+        from hub._services.document import anonymizer_service
+
+        if not anonymizer_service.ner_ready()[0]:
+            return {"available": False, "mode": "cloud", "cloud_route": False, "local_only": False,
+                    "fallback_disabled": True, "reason_code": "ner_unavailable"}
         try:
             raw = await _resolve(self._cloud_attestor(self._backend, model))
             data = _wire(raw)

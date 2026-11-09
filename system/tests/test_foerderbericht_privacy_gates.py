@@ -94,6 +94,7 @@ def test_prompt_gate_blocks_remaining_case_data_without_naming_it(tmp_path, monk
     service = rws.ReportWorkflowService(base_path=tmp_path)
     session = service.start_session()
     service.create_temp_profile(session, "Jonas Leonhardt", "14.05.2017")
+    session.profile.document_scanned = True  # Scan-/NER-Sperre: eigene Tests (test_report_gui_privacy.py)
 
     class Bundle:  # klein geschrieben: die Ersetzung trifft es nicht, die Sperre muss es finden
         core_text = "Kontakt: familie jonas leonhardt (mail-verteiler)"

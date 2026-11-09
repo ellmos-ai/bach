@@ -410,6 +410,10 @@ class FoerderberichtPipeline:
                 f"Gestartet: {datetime.now().isoformat()}\n", encoding="utf-8"
             )
 
+            # Vor jeder Pruefung: Ergebnisse frueherer Laeufe weg (z. B. Klartext-prompt.txt eines
+            # lokalen Laufs), sonst stuende nach einer Verweigerung ein alter Prompt bereit (R6-5).
+            self._deep_cleanup(self.base_path / "data_bundled")
+
             # --- Schritt 1: Validierung ---
             result.step = "validierung"
             data_roh = self.base_path / "data_roh"
@@ -444,19 +448,8 @@ class FoerderberichtPipeline:
                 result.duration_s = time.time() - start_time
                 return result
 
-            # --- Schritt 1c: Cloud-Modus nur mit vollstaendiger Namenserkennung (fail-closed) ---
-            # Ohne spaCy/NER-Modelle blieben Namen Dritter, Strassen und Orte im Freitext stehen.
-            result.step = "datenschutz"
-            from hub._services.document import anonymizer_service
-            ready, reason = anonymizer_service.ner_ready()
-            if not ready:
-                raise PipelineError(
-                    f"Cloud-Modus verweigert: Namenserkennung unvollstaendig ({reason}). "
-                    "spaCy mit " + " und ".join(anonymizer_service.NER_MODELS)
-                    + " installieren oder Modus 'lokal' nutzen. Es wurde nichts gesendet."
-                )
-
-            # --- Schritt 2: Session + Profil ---
+            # --- Schritt 2: Session + Profil (gemeinsamer Cloud-Weg mit GUI/API) ---
+            # create_cloud_profile verweigert ohne spaCy/NER-Modelle (fail-closed) und scannt data_roh/.
             result.step = "profil"
             from hub._services.document.report_workflow_service import ReportWorkflowService
             workflow = ReportWorkflowService(base_path=self.base_path)
@@ -466,11 +459,10 @@ class FoerderberichtPipeline:
             session.status = "importing"
             session.input_files = list(data_roh.rglob("*"))
 
-            profile = workflow.create_temp_profile(
+            profile = workflow.create_cloud_profile(
                 session, client_name, geburtsdatum,
                 additional_terms=additional_terms,
                 whitelist=whitelist,
-                scan_folder=data_roh,
                 parent_names=parent_names,
                 client_address=client_address,
             )
@@ -914,12 +906,14 @@ class FoerderberichtPipeline:
 
     def _detect_geburtsdatum(self, data_roh: Path, client_name: str) -> str:
         """
-        Versucht das Geburtsdatum aus dem Aktendeckblatt zu extrahieren.
-        Fallback: Platzhalter '01.01.2010'.
+        Versucht das Geburtsdatum aus dem Aktendeckblatt zu extrahieren (jede gaengige Schreibweise).
+        Nicht gefunden: "" -- kein Platzhalter mehr; der Cloud-Weg sperrt dann mit birth_date_invalid,
+        statt das echte Datum der Akte unersetzt durchzulassen (R7-F1).
 
         WICHTIG: Laeuft lokal, Ergebnis wird NICHT an die AI weitergegeben.
         """
         import re
+        from hub._services.document.anonymizer_service import normalize_date
 
         # Suche Aktendeckblatt in data_roh/
         for filepath in data_roh.rglob("*"):
@@ -939,20 +933,18 @@ class FoerderberichtPipeline:
                         except Exception:
                             pass
 
-                    if text:
-                        # Geburtsdatum-Pattern: DD.MM.YYYY
-                        match = re.search(
-                            r"(?:geb(?:oren|urtsdatum)?|geboren am|geb\.?\s*:?)\s*"
-                            r"(\d{1,2}\.\d{1,2}\.\d{4})",
-                            text, re.IGNORECASE
-                        )
-                        if match:
-                            return match.group(1)
+                    # Hinter "Geburtsdatum", "geboren (am)", "geb." den laengsten lesbaren Anfang des Rests
+                    for match in re.finditer(r"(?<!\w)(?:geburtsdatum|geboren|geb\.?)\s*:?\s*(?:am\s+)?([^\n;()]+)",
+                                             text, re.IGNORECASE):
+                        words = match.group(1).split()
+                        for n in range(min(4, len(words)), 0, -1):
+                            found = normalize_date(" ".join(words[:n]).rstrip(",;"))
+                            if found:
+                                return found
                 except Exception:
                     pass
 
-        # Fallback
-        return "01.01.2010"
+        return ""
 
     # ─────────────────────────────────────────────────────────────
     # Cleanup & Migration

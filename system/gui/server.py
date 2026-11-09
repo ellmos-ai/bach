@@ -16536,6 +16536,41 @@ def get_report_workflow_service():
     return _report_workflow_service
 
 
+def _report_error_response(exc: Exception) -> dict:
+    """Datenschutz-Sperre mit maschinenlesbarem Grund (Meldung und Code ohne Werte), sonst neutral."""
+    try:
+        from hub._services.document.report_workflow_service import PromptPrivacyError
+    except Exception:
+        PromptPrivacyError = ()  # isinstance(x, ()) ist immer False
+    if isinstance(exc, PromptPrivacyError):
+        return {"success": False, "privacy_block": True, "error_code": exc.code, "error": str(exc)}
+    return {"success": False, "error": public_error_message()}
+
+
+@app.get("/api/report/readiness")
+async def report_readiness(session_id: Optional[str] = None):
+    """Ob der Cloud-Weg laufen darf (Namenserkennung bereit); sonst Grund maschinenlesbar, ohne Werte.
+
+    Mit ?session_id= zusaetzlich die Session: Profil, lesbares Geburtsdatum, Akten-Scan nach dem
+    letzten Import (R7-F5)."""
+    try:
+        from hub._services.document.report_workflow_service import PromptPrivacyError, require_cloud_ner
+        session = None
+        if session_id is not None:
+            session = get_report_workflow_service().get_session(session_id)
+            if not session:
+                return {"success": False, "error": "Session nicht gefunden"}
+        try:
+            require_cloud_ner()
+            if session is not None:
+                get_report_workflow_service().require_cloud_session(session)
+        except PromptPrivacyError as e:
+            return {"success": True, "cloud_ready": False, "error_code": e.code, "error": str(e)}
+        return {"success": True, "cloud_ready": True, "error_code": None, "error": None}
+    except Exception:
+        return {"success": False, "error": public_error_message()}
+
+
 @app.post("/api/report/session/start")
 async def start_report_session():
     """Startet eine neue Report-Workflow-Session."""
@@ -16595,12 +16630,14 @@ async def import_files_to_session(session_id: str, data: dict = Body(...)):
 @app.post("/api/report/session/{session_id}/profile")
 async def create_session_profile(session_id: str, data: dict = Body(...)):
     """
-    Erstellt ein temporaeres Anonymisierungsprofil.
+    Erstellt das Pseudonymisierungsprofil fuer den Cloud-Weg (wie die Pipeline: Namenserkennung
+    Pflicht, Scan der importierten Akte). Ohne spaCy/NER: privacy_block mit error_code.
 
     Body: {
         "client_name": "Max Mustermann",
         "geburtsdatum": "15.03.2016",
-        "additional_terms": ["Term1", "Term2"]  / optional
+        "additional_terms": ["Term1", "Term2"],  / optional
+        "parent_names": ["..."], "client_address": "...", "whitelist": ["..."]  / optional
     }
     """
     try:
@@ -16613,11 +16650,12 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
         if not client_name:
             return {"success": False, "error": "client_name erforderlich"}
 
-        geburtsdatum = data.get("geburtsdatum", "01.01.2010")
-        additional_terms = data.get("additional_terms", [])
-
-        profile = service.create_temp_profile(
-            session, client_name, geburtsdatum, additional_terms
+        profile = service.create_cloud_profile(
+            session, client_name, data.get("geburtsdatum") or "",  # kein Platzhalter: fehlt -> Sperre (R7-F1)
+            additional_terms=data.get("additional_terms") or [],
+            whitelist=data.get("whitelist") or None,
+            parent_names=data.get("parent_names") or None,
+            client_address=data.get("client_address") or None,
         )
 
         return {
@@ -16628,7 +16666,7 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": public_error_message()}
+        return _report_error_response(e)
 
 
 @app.post("/api/report/session/{session_id}/anonymize")
@@ -16661,7 +16699,8 @@ async def anonymize_session_documents(session_id: str, data: dict = Body(default
 @app.post("/api/report/session/{session_id}/prompt")
 async def generate_session_prompt(session_id: str, data: dict = Body(default={})):
     """
-    Generiert den LLM-Prompt.
+    Generiert den Cloud-Prompt (Kopieren in ein Cloud-Modell): nur mit Pseudonymisierungsprofil
+    und hinter derselben Datenschutz-Sperre wie die Pipeline; Sperre -> privacy_block + error_code.
 
     Body: {
         "berichtszeitraum": "01.01.2025 - 31.12.2025",
@@ -16683,7 +16722,8 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
             session,
             include_wissensdatenbank=include_kb,
             berichtszeitraum=berichtszeitraum,
-            custom_instructions=custom
+            custom_instructions=custom,
+            cloud=True,
         )
 
         return {
@@ -16693,7 +16733,7 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": public_error_message()}
+        return _report_error_response(e)
 
 
 @app.post("/api/report/session/{session_id}/generate")
