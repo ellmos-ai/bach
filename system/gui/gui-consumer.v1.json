@@ -5,8 +5,8 @@
   "status": "pinned_release",
   "source": {
     "repository": "ellmos-ai/ellmos-system-gui",
-    "commit": "d83b9ceff9ecbb56f1f480fc472ed084ff9199fd",
-    "archive_sha256": "01e50d9b71a23b17085f4b3847bee33d804204ba9bf9f0ba9b3ed51dced5f265",
+    "commit": "d83b9ceff9ec00add08d4a194d6a7d7c43734203",
+    "archive_sha256": "13260580c608b6f0fbe696383b2b22a03b6d062795f142247f12c661a689f8ec",
     "dist_manifest_schema": "ellmos-system-gui.dist.v1"
   },
   "required_backend_routes": [
