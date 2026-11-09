@@ -21,9 +21,9 @@ from typing import Any
 
 # Importiere die Singleton-Instanz aus dem Policy-Modul (der Fachlogik)
 try:
-    from policy.governance import CAPABILITIES, TRUST_PROFILES, CapabilityManager, capability_manager as _policy_capability_manager
+    from policy.governance import CAPABILITIES, CapabilityManager, capability_manager as _policy_capability_manager, SETUP_GUARD_SURFACES, SETUP_CHECK_TYPES, SETUP_SURFACE_CHECKS, DEFAULT_TRUST_PROFILES
 except ImportError:
-    from system.policy.governance import CAPABILITIES, TRUST_PROFILES, CapabilityManager, capability_manager as _policy_capability_manager
+    from system.policy.governance import CAPABILITIES, CapabilityManager, capability_manager as _policy_capability_manager, SETUP_GUARD_SURFACES, SETUP_CHECK_TYPES, SETUP_SURFACE_CHECKS, DEFAULT_TRUST_PROFILES
 capability_manager = _policy_capability_manager
 
 # Alias zur gleichen Instanz – gleiche API, nahtloser Übergang
@@ -49,11 +49,7 @@ status = _policy_capability_manager.status
 get_audit_log = _policy_capability_manager.get_audit_log
 get_profiles = _policy_capability_manager.get_profiles
 
-# CAPABILITIES imported from policy.governance
-SETUP_GUARD_SURFACES = _policy_capability_manager.SETUP_GUARD_SURFACES
-SETUP_CHECK_TYPES = _policy_capability_manager.SETUP_CHECK_TYPES
-SETUP_SURFACE_CHECKS = _policy_capability_manager.SETUP_SURFACE_CHECKS
-DEFAULT_TRUST_PROFILES = _policy_capability_manager.DEFAULT_TRUST_PROFILES
+# CAPABILITIES, SETUP_* und DEFAULT_TRUST_PROFILES imported from policy.governance (module-level globals)
 
 # Singleton – gleiche ID wie das Policy-Objekt
 capability_manager = _policy_capability_manager
@@ -105,9 +101,15 @@ class _ForwarderModule(ModuleType):
             return getattr(target, name)
         # Andernfalls Attribute vom Typ CapabilityManager selbst holen (Klassenmethoden)
         # Aber Kapazität_manager ist eine Instanzklasse; ihre Methoden sind bereits über Proxy oben vorhanden.
-        # Wenn das Attribut immer noch nicht existiert, löse den Import für unbekannte Attribute auf.
+        # Wenn das Attribut immer noch nicht existiert, lies es aus den echten
+        # Modul-Globals dieser Datei. Vorher stand hier
+        # __import__(__name__, fromlist=[name]).__dict__[name] – auf dem Proxy
+        # löst fromlist intern hasattr(module, '__path__') aus, was erneut den
+        # Proxy-__getattr__ triggert → endlose Rekursion (RecursionError beim
+        # Import). globals() ist das __dict__ des Original-Moduls und enthält
+        # alle Modul-Namen (inkl. CAPABILITIES, SETUP_*, DEFAULT_TRUST_PROFILES).
         try:
-            return __import__(__name__, fromlist=[name]).__dict__[name]
+            return globals()[name]
         except KeyError:
             raise AttributeError(f"'module {__name__}' hat kein Attribut '{name}'")
 
