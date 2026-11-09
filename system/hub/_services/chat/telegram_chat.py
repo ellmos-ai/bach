@@ -7415,6 +7415,42 @@ def _create_control_report_owner(host_dependencies=None):
         log.warning("Report-Owner nicht verfuegbar (%s)", type(exc).__name__)
         return disabled
 
+def _get_buddha_worker_status() -> dict:
+    worker_slot = {}
+    try:
+        worker_slot = get_always_on_execution_slot()
+    except Exception:
+        try:
+            worker_slot = DEFAULT_CORE_SLOTS.get("buddha_always_on", {})
+        except Exception:
+            worker_slot = {}
+
+    control = _WORKER_EXECUTIONS.get("buddha_always_on")
+    raw_status = str(worker_slot.get("status") or "idle").lower()
+
+    if control and hasattr(control, "terminal_event") and not control.terminal_event.is_set():
+        worker_status = "working"
+        task_id = getattr(control, "active_task_id", None) or worker_slot.get("active_task_id") or worker_slot.get("task_id")
+        task_title = getattr(control, "task_title", None) or worker_slot.get("current_activity") or ""
+    elif raw_status in ("paused", "pause"):
+        worker_status = "paused"
+        task_id = worker_slot.get("active_task_id") or worker_slot.get("task_id")
+        task_title = worker_slot.get("current_activity") or ""
+    elif raw_status in ("running", "working", "busy"):
+        worker_status = "working"
+        task_id = worker_slot.get("active_task_id") or worker_slot.get("task_id")
+        task_title = worker_slot.get("current_activity") or ""
+    else:
+        worker_status = "idle"
+        task_id = None
+        task_title = ""
+
+    return {
+        "worker_status": worker_status,
+        "task_id": task_id,
+        "task_title": task_title,
+    }
+
 class ControlHandler(BaseHTTPRequestHandler):
     def _sequence_response(self, action, body=None, query=None):
         from hub._services.chat.sequence_store import SequenceConflict
@@ -7643,6 +7679,7 @@ class ControlHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/status":
             try:
+                buddha_status = _get_buddha_worker_status()
                 model, mode, think = _get_active_session_state()
                 backend_name = type(runtime.backend).__name__
                 cli_name = getattr(runtime.backend, "cli_name", "")
@@ -7686,9 +7723,13 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "current_tool": current_tool,
                     "tool_round": tool_round,
                     "last_tools": active_tools,
+                    "worker_status": buddha_status.get("worker_status", "idle"),
+                    "task_id": buddha_status.get("task_id"),
+                    "task_title": buddha_status.get("task_title", ""),
                 })
             except Exception as e:
                 logger.warning(f"/api/status Snapshot-Fehler abgefangen: {e}")
+                buddha_status = _get_buddha_worker_status()
                 self._json({
                     "service": "bach-chat-control",
                     "telegram_verified": TELEGRAM_VERIFIED,
@@ -7712,6 +7753,9 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "current_tool": "",
                     "tool_round": 0,
                     "last_tools": [],
+                    "worker_status": buddha_status.get("worker_status", "idle"),
+                    "task_id": buddha_status.get("task_id"),
+                    "task_title": buddha_status.get("task_title", ""),
                 })
 
         elif path == "/api/backends":
@@ -8326,14 +8370,18 @@ class ControlHandler(BaseHTTPRequestHandler):
             response, status = delete_worker_profile(worker_id)
             self._json(response, status)
 
-        elif path == "/api/workers/toggle":
-            worker_id = body.get("id") or body.get("worker_id")
+        elif path in ("/api/workers/toggle", "/api/worker/toggle", "/api/worker/pause"):
+            worker_id = body.get("id") or body.get("worker_id") or "buddha_always_on"
             new_status = body.get("status")
-            if not worker_id:
-                self._json({"error": "id erforderlich"}, 400)
-                return
+            if path == "/api/worker/pause":
+                new_status = "paused"
             try:
-                w = _execution_worker_slot(worker_id)
+                try:
+                    w = _execution_worker_slot(worker_id)
+                except Exception:
+                    w = {}
+                if not w and worker_id in DEFAULT_CORE_SLOTS:
+                    w = dict(DEFAULT_CORE_SLOTS[worker_id])
                 if not w:
                     self._json({"error": "Worker nicht gefunden"}, 404)
                     return

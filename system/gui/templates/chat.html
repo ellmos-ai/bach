@@ -447,6 +447,105 @@
         .send-btn:active { transform: scale(0.94); }
         .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+        .queue-btn {
+            height: 46px;
+            padding: 0 14px;
+            border-radius: 12px;
+            background: var(--bg-hover, rgba(255,255,255,0.08));
+            border: 1px solid var(--border);
+            color: var(--text-normal, #e0e0e0);
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: background 0.2s, opacity 0.2s;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .queue-btn:hover { background: var(--bg-card); opacity: 0.95; }
+        .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* ── Queue Tray ── */
+        .chat-queue-tray {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px 16px;
+            background: var(--bg-card, #1c1c24);
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.82rem;
+            flex-shrink: 0;
+        }
+        .queue-tray-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 500;
+        }
+        .queue-tray-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .queue-tray-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+        .queue-tray-btn:hover {
+            color: var(--text-normal);
+            background: var(--bg-hover);
+        }
+        .queue-items-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .queue-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            max-width: 280px;
+        }
+        .queue-item-index {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 0.75rem;
+        }
+        .queue-item-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-normal);
+            flex: 1;
+        }
+        .queue-item-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0 3px;
+            font-size: 0.75rem;
+        }
+        .queue-item-btn:hover {
+            color: var(--text-normal);
+        }
+
         /* ── Quick Prompt Bar ── */
         .chat-quick-prompt-bar {
             display: flex;
@@ -868,11 +967,24 @@
                     <button type="button" class="quick-prompt-btn" id="btn-chat-open-generator" title="Prompt-Generator öffnen">✍ Generator</button>
                     <button type="button" class="quick-prompt-btn" id="btn-chat-open-library" title="Prompt-Bibliothek öffnen">📚 Bibliothek</button>
                 </div>
+
+                <div class="chat-queue-tray" id="chat-queue-tray" style="display: none;">
+                    <div class="queue-tray-header">
+                        <span id="queue-tray-title">⏳ Warteschlange (0)</span>
+                        <div class="queue-tray-actions">
+                            <button type="button" class="queue-tray-btn" id="btn-toggle-queue-pause" title="Warteschlange pausieren / fortsetzen">⏸️ Pausieren</button>
+                            <button type="button" class="queue-tray-btn" id="btn-clear-queue" title="Alle Nachrichten aus der Warteschlange entfernen">🗑️ Alle leeren</button>
+                        </div>
+                    </div>
+                    <div class="queue-items-list" id="queue-items-list"></div>
+                </div>
+
             <div class="chat-input-area">
                     <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe">🎙</button>
                     <input type="file" id="audio-file-input" accept="audio/*,.ogg,.oga,.opus,.mp3,.m4a,.mp4,.aac,.wav,.flac,.webm" hidden>
                     <button class="mic-btn" id="audio-btn" title="Audio-Datei transkribieren (lokal, Whisper)" aria-label="Audiodatei transkribieren">🎧</button>
                       <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
+                    <button type="button" class="queue-btn" id="queue-btn" title="Nachricht einreihen (Alt+Enter)">⏳ Einreihen</button>
                     <button class="send-btn" id="send-btn" title="Backend wird geprüft" disabled>&#x27A4;</button>
                 </div>
             </div>
@@ -1264,6 +1376,7 @@
         const emptyState = document.getElementById('empty-state');
         const inputEl = document.getElementById('input');
         const sendBtn = document.getElementById('send-btn');
+        const queueBtn = document.getElementById('queue-btn');
         const typingEl = document.getElementById('typing');
         let sending = false;
         let backendAvailable = false;
@@ -1293,12 +1406,161 @@
         }
 
         function updateComposerAvailability() {
-            sendBtn.disabled = sending || !backendAvailable;
-            sendBtn.title = backendAvailable ? 'Senden' :
+            if (queueBtn) {
+                queueBtn.disabled = !backendAvailable;
+            }
+            sendBtn.disabled = !backendAvailable;
+            sendBtn.title = sending ? 'In Warteschlange einreihen (Antwort wird generiert…)' :
+                (backendAvailable ? 'Senden' :
                 (profileSelectionError ? 'Ungültige Agenten-ID' :
-                profileUnavailable ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar');
+                profileUnavailable ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar'));
             sendBtn.setAttribute('aria-label', sendBtn.title);
         }
+
+        class ChatQueueManager {
+            constructor() {
+                this.items = [];
+                this.paused = false;
+                this.timer = null;
+            }
+
+            storageKey(chatId) {
+                return 'bach_chat_queue_' + (chatId || currentChatId || 'default');
+            }
+
+            loadFromStorage(chatId) {
+                try {
+                    const raw = localStorage.getItem(this.storageKey(chatId));
+                    this.items = raw ? JSON.parse(raw) : [];
+                    if (!Array.isArray(this.items)) this.items = [];
+                } catch(e) {
+                    this.items = [];
+                }
+                this.render();
+                return this.items;
+            }
+
+            persist(chatId) {
+                try {
+                    localStorage.setItem(this.storageKey(chatId), JSON.stringify(this.items));
+                } catch(e) {}
+            }
+
+            enqueue(text, chatId) {
+                const trimmed = (text || '').trim();
+                if (!trimmed) return;
+                this.items.push(trimmed);
+                this.persist(chatId);
+                this.render();
+            }
+
+            dequeue(chatId) {
+                if (this.items.length === 0) return null;
+                const next = this.items.shift();
+                this.persist(chatId);
+                this.render();
+                return next;
+            }
+
+            remove(index, chatId) {
+                if (index >= 0 && index < this.items.length) {
+                    this.items.splice(index, 1);
+                    this.persist(chatId);
+                    this.render();
+                }
+            }
+
+            reorder(fromIdx, toIdx, chatId) {
+                if (fromIdx >= 0 && fromIdx < this.items.length && toIdx >= 0 && toIdx < this.items.length) {
+                    const item = this.items.splice(fromIdx, 1)[0];
+                    this.items.splice(toIdx, 0, item);
+                    this.persist(chatId);
+                    this.render();
+                }
+            }
+
+            clear(chatId) {
+                this.items = [];
+                this.persist(chatId);
+                this.render();
+            }
+
+            togglePause() {
+                this.paused = !this.paused;
+                this.render();
+                showToast(this.paused ? 'Warteschlange pausiert' : 'Warteschlange fortgesetzt');
+                if (!this.paused && !sending) {
+                    processNextQueuedMessage();
+                }
+            }
+
+            render() {
+                const tray = document.getElementById('chat-queue-tray');
+                const list = document.getElementById('queue-items-list');
+                const title = document.getElementById('queue-tray-title');
+                const pauseBtn = document.getElementById('btn-toggle-queue-pause');
+                if (!tray || !list) return;
+
+                if (this.items.length === 0) {
+                    tray.style.display = 'none';
+                    return;
+                }
+
+                tray.style.display = 'flex';
+                if (title) {
+                    title.textContent = `⏳ Warteschlange (${this.items.length})` + (this.paused ? ' [Pausiert]' : '');
+                }
+                if (pauseBtn) {
+                    pauseBtn.textContent = this.paused ? '▶️ Fortsetzen' : '⏸️ Pausieren';
+                }
+
+                list.innerHTML = '';
+                this.items.forEach((item, idx) => {
+                    const el = document.createElement('div');
+                    el.className = 'queue-item';
+
+                    const idxSpan = document.createElement('span');
+                    idxSpan.className = 'queue-item-index';
+                    idxSpan.textContent = '#' + (idx + 1);
+
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'queue-item-text';
+                    textSpan.title = item;
+                    textSpan.textContent = item;
+
+                    const upBtn = document.createElement('button');
+                    upBtn.className = 'queue-item-btn';
+                    upBtn.textContent = '▲';
+                    upBtn.title = 'Nach oben';
+                    upBtn.onclick = () => this.reorder(idx, idx - 1, currentChatId);
+                    if (idx === 0) upBtn.disabled = true;
+
+                    const downBtn = document.createElement('button');
+                    downBtn.className = 'queue-item-btn';
+                    downBtn.textContent = '▼';
+                    downBtn.title = 'Nach unten';
+                    downBtn.onclick = () => this.reorder(idx, idx + 1, currentChatId);
+                    if (idx === this.items.length - 1) downBtn.disabled = true;
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'queue-item-btn';
+                    delBtn.textContent = '×';
+                    delBtn.title = 'Entfernen';
+                    delBtn.onclick = () => this.remove(idx, currentChatId);
+
+                    el.appendChild(idxSpan);
+                    el.appendChild(textSpan);
+                    el.appendChild(upBtn);
+                    el.appendChild(downBtn);
+                    el.appendChild(delBtn);
+                    list.appendChild(el);
+                });
+            }
+        }
+
+        const queueManager = new ChatQueueManager();
+        queueManager.loadFromStorage(currentChatId);
+        window.queueManager = queueManager;
 
         if (typeof marked !== 'undefined') {
             marked.setOptions({
@@ -1453,6 +1715,7 @@
             const targetChatId = s.chat_id || ('web-snap-' + s.id);
             currentChatId = targetChatId;
             localStorage.setItem(profileStorageKey, currentChatId);
+            queueManager.loadFromStorage(currentChatId);
             showChatBindingInfo();
 
             const displayTitle = (s.name || 'Chat').replace(/^Web:\s*/i, '');
@@ -1511,6 +1774,7 @@
             if (profileSelectionError) return;
             currentChatId = newProfileChatId();
             localStorage.setItem(profileStorageKey, currentChatId);
+            queueManager.loadFromStorage(currentChatId);
             showChatBindingInfo();
             currentChatTitleEl.textContent = profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · Neuer Chat' : 'Neuer Chat';
 
@@ -1643,7 +1907,15 @@
                     addMessage(data.answer, 'bot');
                     // Reload sessions in background to update titles and timestamps
                     loadWebSessions();
+                    if (!queueManager.paused && queueManager.items.length > 0) {
+                        setTimeout(processNextQueuedMessage, 600);
+                    }
                 } else {
+                    if (queueManager.items.length > 0 && !queueManager.paused) {
+                        queueManager.paused = true;
+                        queueManager.render();
+                        showToast('Warteschlange wegen Fehler pausiert');
+                    }
                     addMessage(data.ok && profileAgentId ? 'Profilbindung in Antwort nicht bestätigt' :
                         (data.error || data.detail || 'Unbekannter Fehler'), 'error');
                 }
@@ -1653,6 +1925,11 @@
                     inputEl.value = text;
                     autoResize();
                 }
+                if (queueManager.items.length > 0 && !queueManager.paused) {
+                    queueManager.paused = true;
+                    queueManager.render();
+                    showToast('Warteschlange wegen Fehler pausiert');
+                }
                 addMessage('Verbindungsfehler: ' + e.message, 'error');
             } finally {
                 sending = false;
@@ -1661,12 +1938,62 @@
             }
         }
 
-        sendBtn.addEventListener('click', send);
+        async function processNextQueuedMessage() {
+            if (sending || queueManager.paused) return;
+            const nextMsg = queueManager.dequeue(currentChatId);
+            if (!nextMsg) return;
+            inputEl.value = nextMsg;
+            autoResize();
+            await send();
+        }
+        window.processNextQueuedMessage = processNextQueuedMessage;
+
+        async function handleSendOrEnqueue() {
+            const text = inputEl.value.trim();
+            if (!text || !backendAvailable || profileSelectionError) return;
+            if (sending) {
+                queueManager.enqueue(text, currentChatId);
+                inputEl.value = '';
+                autoResize();
+                showToast('Nachricht in Warteschlange eingereiht');
+                return;
+            }
+            await send();
+        }
+
+        function handleEnqueueBtn() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+            queueManager.enqueue(text, currentChatId);
+            inputEl.value = '';
+            autoResize();
+            showToast('Nachricht in Warteschlange eingereiht');
+        }
+
+        sendBtn.addEventListener('click', handleSendOrEnqueue);
+        if (queueBtn) queueBtn.addEventListener('click', handleEnqueueBtn);
+
+        const btnToggleQueuePause = document.getElementById('btn-toggle-queue-pause');
+        if (btnToggleQueuePause) {
+            btnToggleQueuePause.addEventListener('click', () => queueManager.togglePause());
+        }
+        const btnClearQueue = document.getElementById('btn-clear-queue');
+        if (btnClearQueue) {
+            btnClearQueue.addEventListener('click', () => {
+                queueManager.clear(currentChatId);
+                showToast('Warteschlange geleert');
+            });
+        }
 
         inputEl.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send();
+            if (e.key === 'Enter') {
+                if (e.altKey) {
+                    e.preventDefault();
+                    handleEnqueueBtn();
+                } else if (!e.shiftKey) {
+                    e.preventDefault();
+                    handleSendOrEnqueue();
+                }
             }
         });
 
@@ -2082,6 +2409,7 @@
                         currentChatId = forkChatId;
                         localStorage.setItem(profileStorageKey, currentChatId);
                     }
+                    queueManager.loadFromStorage(currentChatId);
                     closeProtocols();
                     await loadWebSessions();
                     await loadActiveChat();

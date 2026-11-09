@@ -263,6 +263,7 @@ class BACHTray:
                  activity_url=None, gui_url=None, brand="bach", execution_state_path=None):
         self.brand = (brand or "bach").lower()
         self.host = host
+        self.port = port
         self.remote = remote
         self.base_url = f"http://{host}:{port}"
         self.control_api_auth_header = get_control_api_auth_header()
@@ -1335,23 +1336,63 @@ class BACHTray:
 
     @property
     def _icon_image(self):
-        if self._always_on_runtime_label(self.slots.get(WORKER_ID, {})).startswith("Running"):
-            return self._make_icon((90, 120, 220, 255))  # actual native inference
-        if self.state["connected"]:
-            if self.state.get("mode") == "full":
-                return self._make_icon((255, 165, 0, 255))  # orange = full
-            return self._make_icon((0, 200, 100, 255))  # green = connected safe
-        return self._make_icon((180, 40, 40, 255))  # red = disconnected
+        if not self.state.get("connected"):
+            return self._make_icon((180, 40, 40, 255))  # red = disconnected
+        ws = self.state.get("worker_status")
+        if ws == "working" or self._always_on_runtime_label(self.slots.get(WORKER_ID, {})).startswith("Running"):
+            return self._make_icon((90, 120, 220, 255))  # actual native inference / working
+        if ws == "paused":
+            return self._make_icon((150, 150, 150, 255))  # grey = paused
+        if self.state.get("mode") == "full":
+            return self._make_icon((255, 165, 0, 255))  # orange = full
+        return self._make_icon((0, 200, 100, 255))  # green = connected safe
 
     # --- Menu ---
+
+    def _toggle_server_worker(self, *_):
+        """Send pause/toggle signal to the server worker instead of running tasks locally."""
+        try:
+            self._api("POST", "/api/worker/toggle", body={"worker_id": WORKER_ID})
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Worker-Signal fehlgeschlagen: {e}", "BACH System")
+        self._refresh()
+        self._update_icon()
 
     def _build_menu(self):
         items = []
         always_status_str = self._always_on_runtime_label(
             self.slots.get("buddha_always_on", {})
         )
-        target_label = "Ziel: Server (Tunnel)" if self.remote else "Ziel: Lokal"
+        # ── WP4: Transparente Server-Zielanzeige im Menuekopf ──
+        if self.remote or (self.host not in ("127.0.0.1", "localhost")):
+            host_name = "Mac Studio" if ("100.119.69" in self.host or "mac" in self.host.lower()) else self.host
+            target_label = f"Verbunden mit: {host_name} ({self.host}:{self.port})"
+        else:
+            target_label = f"Verbunden mit: Lokal ({self.host}:{self.port})"
         items.append(pystray.MenuItem(target_label, None, enabled=False))
+
+        # ── WP2: Buddha Server-Worker-Status Display ──
+        ws = self.state.get("worker_status", "idle")
+        tid = self.state.get("task_id")
+        ttitle = self.state.get("task_title")
+        if ws == "working":
+            buddha_label = f"🔵 Buddha: Rechnet an Task #{tid}" if tid else "🔵 Buddha: Rechnet"
+            if ttitle:
+                buddha_label += f" ({ttitle[:30]})"
+        elif ws == "paused":
+            buddha_label = "⏸️ Buddha: Pausiert"
+        elif self.state.get("active_sessions", 0) > 0:
+            buddha_label = "⚪ Buddha: Chat aktiv"
+        else:
+            buddha_label = "🟢 Buddha: Bereit (Leerlauf)"
+        items.append(pystray.MenuItem(buddha_label, None, enabled=False))
+
+        # ── WP3: Remote-Pause-Schalter (Hintergrundarbeit erlauben [✔ / ❌]) ──
+        is_allowed = (ws != "paused")
+        toggle_label = f"Hintergrundarbeit erlauben [{'✔' if is_allowed else '❌'}]"
+        items.append(pystray.MenuItem(toggle_label, self._toggle_server_worker))
+        items.append(pystray.Menu.SEPARATOR)
 
         # ── Status ──
         if self.state["connected"]:
@@ -2327,6 +2368,9 @@ class BACHTray:
             len(getattr(self, "models", [])),
             getattr(self, "idle_task_name", None),
             getattr(self, "active_tool", None),
+            self.state.get("worker_status"),
+            self.state.get("task_id"),
+            self.state.get("task_title"),
             worker_sig,
             slot_sig,
         )
@@ -2341,7 +2385,6 @@ class BACHTray:
             if new_sig != old_sig:
                 self._update_icon()
                 old_sig = new_sig
-            self._idle_tick()
             self._stop.wait(self.POLL_INTERVAL)
 
     # --- Run ---
