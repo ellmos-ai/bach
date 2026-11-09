@@ -76,8 +76,24 @@ jobs:
           path: .ci-sources/worker-policy
           persist-credentials: false
 
-      - name: Install pinned shared worker-policy contract
-        run: python -m pip install --no-deps ./.ci-sources/worker-policy
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/ellmos-robotics
+          # PB-13 (#3996, T-20261107-820069419): shared E-Stop path & RoboticsHub
+          ref: f72fe813e6d90f81323fce469d6b33c0450ff4df
+          path: .ci-sources/ellmos-robotics
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/ellmos-homecontrol
+          # PB-13 (#3996, T-20261107-820069419): Homecontrol Hub & TR-064 escaping
+          ref: 5b65c8379f6fe1177fe18e234dd2e65e12125535
+          path: .ci-sources/ellmos-homecontrol
+          persist-credentials: false
+
+      - name: Install pinned shared worker-policy and PB-13 modules
+        run: python -m pip install --no-deps ./.ci-sources/worker-policy ./.ci-sources/ellmos-robotics ./.ci-sources/ellmos-homecontrol
 
       - name: Verify installed scheduler provenance and native API coverage
         env:
@@ -388,6 +404,7 @@ jobs:
             system/tests/test_pb26_stable_prefix_handover.py \
             system/tests/test_pb4_abort_visibility.py \
             system/tests/test_pb7_pb12_surfaces_and_life.py \
+            system/tests/test_pb17_help_freshness_and_claims.py \
             system/tests/test_persoenlich_dashboard.py \
             system/tests/test_pipeline_handler.py \
             system/tests/test_plugin_security.py \
