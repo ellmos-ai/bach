@@ -892,6 +892,8 @@ def _project_dynamic_worker_slot(worker: dict[str, Any]) -> dict[str, Any]:
         projected["allowed_tools"] = background_worker_default_tools(
             projected.get("mode"), projected.get("rights")
         )
+    if projected.get("rights") is not None:
+        projected["rights_effective"] = effective_worker_rights(projected)
     return projected
 
 
@@ -957,6 +959,7 @@ def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, A
         projected["allowed_tools"] = background_worker_default_tools(
             projected.get("mode"), projected.get("rights")
         )
+    projected["rights_effective"] = effective_worker_rights(projected)
     return projected
 
 

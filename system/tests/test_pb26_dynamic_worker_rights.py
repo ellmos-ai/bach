@@ -11,7 +11,13 @@ if str(SYSTEM_DIR) not in sys.path:
 
 import pytest
 
-from hub._services.chat import chat_runtime, slots_config, telegram_chat, worker_write_guard
+from hub._services.chat import (
+    chat_runtime,
+    slots_config,
+    telegram_chat,
+    worker_selection_preview,
+    worker_write_guard,
+)
 
 
 def _write_minimal_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch | None = None) -> str:
@@ -286,4 +292,157 @@ def test_runtime_execution_slot_gets_level_ii_tools(tmp_path, monkeypatch):
 
     chat_slot = telegram_chat._resolve_slot_for_chat(created["id"])
     assert chat_slot["allowed_tools"] == expected_tools
+
+
+def test_preview_and_display_surfaces_show_effective_rights_and_tools(tmp_path, monkeypatch):
+    cfg_path = _write_minimal_config(tmp_path, monkeypatch)
+    created = slots_config.add_worker(
+        {
+            "name": "Preview Write Worker",
+            "model": "qwen3.8:27b-mlx",
+            "backend": "ollama",
+            "mode": "full",
+            "rights": "write",
+        },
+        path=cfg_path,
+    )
+    worker_id = created["id"]
+    expected_tools = slots_config.background_worker_default_tools("full", "write")
+
+    # 1. _execution_worker_configuration projects raw dynamic worker slots and exposes rights_effective
+    raw_slot = slots_config.get_worker_slot(worker_id, path=cfg_path)
+    assert raw_slot["allowed_tools"] is None
+    assert "rights_effective" not in raw_slot
+
+    exec_cfg_from_raw = telegram_chat._execution_worker_configuration(raw_slot)
+    exec_cfg_from_exec = telegram_chat._execution_worker_configuration(
+        telegram_chat._execution_worker_slot(worker_id)
+    )
+    assert exec_cfg_from_raw == exec_cfg_from_exec
+    assert exec_cfg_from_raw["configuration"]["allowed_tools"] == expected_tools
+    assert exec_cfg_from_raw["configuration"]["rights"] == "write"
+    assert exec_cfg_from_raw["rights_effective"] == "write"
+
+    # 2. _preview_worker_selection / preview_worker_selection / project_selection_preview
+    class _StubAuthority:
+        mode = "local"
+
+        def task_candidates(self, **kwargs):
+            return {"tasks": [], "total": 0, "offset": 0, "has_more": False}
+
+    monkeypatch.setattr(telegram_chat, "_native_task_client", lambda: _StubAuthority())
+    preview_res = telegram_chat._preview_worker_selection(worker_id)
+    snap = slots_config.worker_configuration_snapshot(worker_id, path=cfg_path)
+    assert preview_res["configuration_version"] == snap["configuration_version"]
+    assert preview_res["rights"] == "write"
+    assert preview_res["rights_effective"] == "write"
+    assert preview_res["allowed_tools"] == expected_tools
+    assert {"write_file", "edit_file", "finish_task", "safe_shell", "start_task_worktree"} <= set(
+        preview_res["allowed_tools"]
+    )
+    assert "execute_command" not in preview_res["allowed_tools"]
+    assert worker_selection_preview.project_selection_preview(preview_res, worker_id) == preview_res
+
+    # Direct preview_worker_selection with raw slot also projects runtime tools/rights
+    direct_preview = worker_selection_preview.preview_worker_selection(
+        _StubAuthority(),
+        raw_slot,
+        configuration_version=snap["configuration_version"],
+        execution_profile_version=preview_res["execution_profile_version"],
+    )
+    assert direct_preview["rights"] == "write"
+    assert direct_preview["rights_effective"] == "write"
+    assert direct_preview["allowed_tools"] == expected_tools
+
+    # 3. _worker_handoff_snapshot / _worker_execution_snapshots / _registered_worker_slot
+    handoff_snap = telegram_chat._worker_handoff_snapshot(raw_slot)
+    assert handoff_snap["allowed_tools"] == expected_tools
+    assert handoff_snap["rights"] == "write"
+    assert handoff_snap["rights_effective"] == "write"
+
+    exec_snaps = telegram_chat._worker_execution_snapshots()
+    our_snap = next(w for w in exec_snaps if w["id"] == worker_id)
+    assert our_snap["allowed_tools"] == expected_tools
+    assert our_snap["rights_effective"] == "write"
+
+    reg_slot = telegram_chat._registered_worker_slot(worker_id)
+    assert reg_slot is not None
+    assert reg_slot["allowed_tools"] == expected_tools
+    assert reg_slot["rights_effective"] == "write"
+
+    # 4. Safe mode caps rights="execute" to rights_effective="read" and read-only tools
+    safe_worker = slots_config.add_worker(
+        {
+            "name": "Preview Safe Worker",
+            "model": "qwen3.8:27b-mlx",
+            "backend": "ollama",
+            "mode": "safe",
+            "rights": "execute",
+        },
+        path=cfg_path,
+    )
+    safe_preview = telegram_chat._preview_worker_selection(safe_worker["id"])
+    assert safe_preview["rights"] == "execute"
+    assert safe_preview["rights_effective"] == "read"
+    assert safe_preview["allowed_tools"] == list(slots_config.BACKGROUND_WORKER_READ_TOOLS)
+
+    # Stored config remains raw (allowed_tools is None) across all preview/display calls
+    stored_raw = json.loads(Path(cfg_path).read_text(encoding="utf-8"))
+    for w in stored_raw["dynamic_workers"]:
+        assert w["allowed_tools"] is None
+        assert "rights_effective" not in w
+
+
+def test_start_worker_execution_with_expected_version_projects_runtime_slot(tmp_path, monkeypatch):
+    cfg_path = _write_minimal_config(tmp_path, monkeypatch)
+    created = slots_config.add_worker(
+        {
+            "name": "Versioned Start Worker",
+            "model": "qwen3.8:27b-mlx",
+            "backend": "ollama",
+            "mode": "full",
+            "rights": "write",
+        },
+        path=cfg_path,
+    )
+    worker_id = created["id"]
+    core_snap = slots_config.core_system_agents_snapshot(cfg_path)
+    expected_version = core_snap["configuration_version"]
+    expected_tools = slots_config.background_worker_default_tools("full", "write")
+
+    captured: dict = {}
+
+    def _fake_start_reserved(control, slot, custom_prompt=None):
+        captured["control"] = control
+        captured["slot"] = dict(slot)
+        captured["custom_prompt"] = custom_prompt
+        control.launch_attempted = True
+        control.done_event.set()
+        return {"ok": True, "started": True, "id": slot["id"], "allowed_tools": slot.get("allowed_tools")}, 200
+
+    monkeypatch.setattr(telegram_chat, "_assert_worker_profile_inactive", lambda *a, **kw: None)
+    monkeypatch.setattr(telegram_chat, "_start_reserved_worker_execution", _fake_start_reserved)
+    try:
+        res, status = telegram_chat._start_worker_execution(
+            worker_id,
+            expected_configuration_version=expected_version,
+        )
+        assert status == 200
+        assert res["started"] is True
+        started_slot = captured["slot"]
+        assert started_slot["allowed_tools"] == expected_tools
+        assert started_slot["rights"] == "write"
+        assert started_slot["rights_effective"] == "write"
+        assert telegram_chat._execution_worker_configuration(
+            started_slot
+        ) == telegram_chat._execution_worker_configuration(
+            telegram_chat._execution_worker_slot(worker_id)
+        )
+        # Stored config stays raw
+        assert slots_config.get_worker_slot(worker_id, path=cfg_path)["allowed_tools"] is None
+    finally:
+        telegram_chat._WORKER_CONTROLS.pop(worker_id, None)
+        telegram_chat._ACTIVE_WORKER_THREADS.pop(worker_id, None)
+        telegram_chat._WORKER_EXECUTIONS.pop(worker_id, None)
+
 
