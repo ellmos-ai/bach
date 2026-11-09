@@ -16720,6 +16720,22 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
 
         output_path = service.generate_report(session, llm_response, auto_deanonymize)
 
+        if not output_path or not Path(output_path).is_file():
+            # generate_report() returns None and sets session.error_message on failure. Only a
+            # finite reason leaves here: the session text can carry case data.
+            detail = str(getattr(session, "error_message", "") or "")
+            reason = next((r for prefix, r in (
+                ("Vorlage nicht gefunden", "template_missing"),
+                ("Generator-Fehler", "generator_failed"),
+                ("python-docx", "docx_missing")) if detail.startswith(prefix)), "unknown")
+            return {
+                "success": False,
+                "code": "report_not_generated",
+                "reason": reason,
+                "error": "Der Bericht wurde nicht erzeugt.",
+                "status": session.status,
+            }
+
         return {
             "success": True,
             "output_path": str(output_path),
