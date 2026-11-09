@@ -125,3 +125,90 @@ def test_ha_call_service_valid_still_goes_out():
     with patch("urllib.request.urlopen", return_value=resp) as m:
         assert _ha().call_service("light", "turn_on", {"entity_id": "light.wohnzimmer"}) is True
     assert m.call_args[0][0].full_url.endswith("/api/services/light/turn_on")
+
+
+@pytest.mark.parametrize("entity_id", [
+    "../../etc/passwd",
+    "light",
+    "light/wohnzimmer",
+    "light.wohnzimmer?x=1",
+    "light.wohnzimmer\n",
+    "light.wohnzimmer#top",
+    "http://evil.com/state",
+])
+def test_ha_get_state_rejects_without_network(entity_id):
+    with patch("urllib.request.urlopen") as m:
+        assert _ha().get_state(entity_id) is None
+        m.assert_not_called()
+
+
+def test_ha_get_state_valid_calls_api():
+    resp = MagicMock()
+    resp.read.return_value = b'{"state": "on", "entity_id": "light.wohnzimmer"}'
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    with patch("urllib.request.urlopen", return_value=resp) as m:
+        state = _ha().get_state("light.wohnzimmer")
+    assert state == {"state": "on", "entity_id": "light.wohnzimmer"}
+    assert m.call_args[0][0].full_url.endswith("/api/states/light.wohnzimmer")
+
+
+@pytest.mark.parametrize("entity_id", [
+    "../../etc/passwd",
+    "sensor",
+    "sensor/temperature",
+    "sensor.temperature?hours=24",
+    "sensor.temperature\n",
+])
+def test_ha_get_history_rejects_without_network(entity_id):
+    with patch("urllib.request.urlopen") as m:
+        assert _ha().get_history(entity_id) == []
+        m.assert_not_called()
+
+
+def test_ha_get_history_valid_calls_api():
+    resp = MagicMock()
+    resp.read.return_value = b'[{"entity_id": "sensor.temperature", "state": "21.5"}]'
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    with patch("urllib.request.urlopen", return_value=resp) as m:
+        history = _ha().get_history("sensor.temperature", hours=12)
+    assert len(history) == 1
+    assert history[0]["entity_id"] == "sensor.temperature"
+    url = m.call_args[0][0].full_url
+    assert "/api/history/period/" in url
+    assert "filter_entity_id=sensor.temperature" in url
+
+
+@pytest.mark.parametrize("event_type", [
+    "../evil",
+    "ha/event",
+    "event\n",
+    "event with space",
+    "event?x=1",
+    "event#frag",
+    "*event*",
+    "a" * 65,  # longer than 64 chars
+    "",
+])
+def test_ha_fire_event_rejects_without_network(event_type):
+    with patch("urllib.request.urlopen") as m:
+        assert _ha().fire_event(event_type, {"key": "val"}) is False
+        m.assert_not_called()
+
+
+@pytest.mark.parametrize("event_type", [
+    "custom_event",
+    "ha.event",
+    "device.button_1-pressed",
+    "HOMEASSISTANT_START",
+    "test_event.dot_and-dash.v1",
+])
+def test_ha_fire_event_valid_calls_api(event_type):
+    resp = MagicMock()
+    resp.read.return_value = b'{"message": "Event fired."}'
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    with patch("urllib.request.urlopen", return_value=resp) as m:
+        assert _ha().fire_event(event_type, {"button": 1}) is True
+    assert m.call_args[0][0].full_url.endswith(f"/api/events/{event_type}")
