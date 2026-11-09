@@ -1769,6 +1769,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/modules/surfaces",
         "/api/financial/summary",
         "/api/life/overview",
+        "/api/automations",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -6266,6 +6267,34 @@ async def get_financial_summary_endpoint():
         return get_financial_summary(BACH_DB)
     except Exception as exc:
         return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
+@app.get("/api/automations")
+async def get_automations(source: Optional[str] = None):
+    """Return available module automations from automation-master adapter (PB-6 / T-20261107-206833979)."""
+    try:
+        from hub._services.automation_master_adapter import list_module_automations
+        items = list_module_automations(BACH_DB)
+        if source:
+            items = [item for item in items if item.get("source") == source]
+        return {
+            "ok": True,
+            "source": "automation-master",
+            "automations": items,
+            "items": items,
+            "count": len(items),
+        }
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Failed to list module automations: %s", exc)
+        return {
+            "ok": False,
+            "error": public_error_message(),
+            "source": "automation-master",
+            "automations": [],
+            "items": [],
+            "count": 0,
+        }
 
 
 @app.get("/domains", response_class=HTMLResponse, tags=["shared-gui"])
