@@ -104,6 +104,26 @@ DEFAULT_CORE_SLOTS: dict[str, dict[str, Any]] = {
         "pause_basis": "runs",
         "pause_counter": 0,
         "pause_started_at": "",
+        "allowed_tools": [
+            "read_file",
+            "list_directory",
+            "search_text",
+            "file_info",
+            "task_manage",
+            "write_file",
+            "edit_file",
+            "move_file",
+            "copy_file",
+            "create_directory",
+            "recycle",
+            "start_task_worktree",
+            "finish_task",
+            "cleanup_task_worktree",
+            "execute_command",
+            "safe_shell",
+            "web_search",
+            "web_fetch",
+        ],
         "pickup_filter": {
             "enabled": True,
             "categories": ["INBOX"],
@@ -516,6 +536,14 @@ def load_slots_config(path: str | None = None, *, strict: bool = False) -> dict[
                         DEFAULT_CORE_SLOTS["buddha_always_on"]["pickup_filter"]
                     )
                 data["version"] = 3
+            # Allowed_tools-Grant für buddha_always_on: versionunabhängig
+            # und idempotent ergänzen. Keine Versionsanhebung: v4 bleibt die
+            # model_sockets-Marke (Format >= 4 ohne "model_sockets" ist ein Fehler).
+            always_on = slots.get("buddha_always_on")
+            if always_on is not None and "allowed_tools" not in always_on:
+                always_on["allowed_tools"] = list(
+                    DEFAULT_CORE_SLOTS["buddha_always_on"]["allowed_tools"]
+                )
             data["slots"] = slots
             if strict and not isinstance(data.get("dynamic_workers"), list):
                 raise ValueError("Slots-Konfiguration enthält keine gültige Worker-Liste")
