@@ -1809,11 +1809,20 @@ def _cleanup_pytest_current_links(owner, result=None) -> None:
             raise WorkerWriteGuardError("pytest-Pointerowner ist unbekannt")
         candidates.append((path, raw, info.st_dev, info.st_ino, info.st_mtime_ns, resolved,
                            resolved.stat().st_dev, resolved.stat().st_ino))
-    if result is not None:
-        if (getattr(result, "cleanup_confirmed", None) is not True
-                or getattr(result, "watchdog_joined", None) is not True
-                or getattr(result, "cleanup_scope", None) != "owned_posix_process_group"):
-            raise WorkerWriteGuardError("Aktiver oder unbekannter pytest-Run darf nicht bereinigt werden")
+    nested = []
+    if run.is_dir() and not run.is_symlink() and not _is_directory_redirect(run):
+        for sub in list(run.rglob("*")):
+            try:
+                if sub.is_symlink() or _is_directory_redirect(sub):
+                    nested.append(sub)
+            except OSError:
+                pass
+    if not candidates and not nested:
+        return
+    if (getattr(result, "cleanup_confirmed", None) is not True
+            or getattr(result, "watchdog_joined", None) is not True
+            or getattr(result, "cleanup_scope", None) != "owned_posix_process_group"):
+        raise WorkerWriteGuardError("Aktiver oder unbekannter pytest-Run darf nicht bereinigt werden")
     verify_owner()
     if (run.stat().st_dev, run.stat().st_ino) != run_anchor:
         raise WorkerWriteGuardError("pytest-Rundirectory wurde ausgetauscht")
@@ -1833,13 +1842,12 @@ def _cleanup_pytest_current_links(owner, result=None) -> None:
             raise WorkerWriteGuardError("pytest-Pointer wurde vor Unlink verändert")
         path.unlink()
     # Recursively remove all nested symlinks and junctions under run
-    if run.is_dir() and not run.is_symlink() and not _is_directory_redirect(run):
-        for sub in list(run.rglob("*")):
-            try:
-                if sub.is_symlink() or _is_directory_redirect(sub):
-                    sub.unlink(missing_ok=True)
-            except OSError:
-                pass
+    for sub in nested:
+        try:
+            if sub.is_symlink() or _is_directory_redirect(sub):
+                sub.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, return_result=False) -> str | SandboxResult:

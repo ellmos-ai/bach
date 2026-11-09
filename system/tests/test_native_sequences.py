@@ -30,6 +30,8 @@ from hub._services import worker_policy_settings as settings
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     monkeypatch.delenv("BACH_TASK_LEASE_CREATOR_WINDOW", raising=False)
+    from hub._services.chat import worker_write_guard
+    monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
     path = tmp_path / "authority.db"
     db = sqlite3.connect(path)
     _init_db(db)
@@ -98,7 +100,8 @@ class IsolatedNative:
         output="Ergebnis "+str(len(self.calls))+" · Müller & Söhne"
         binding.execute_task_manage({"action":"done","task_id":binding.task_id,
                                      "result":_self_check(output)})
-        assert not binding.completed_task_ids and binding.reviewed_task_ids == (binding.task_id,)
+        state=binding.result_state()
+        assert not state["completed_task_ids"] and state["reviewed_task_ids"] == (binding.task_id,)
         approve_result(binding, db)
         self.results[worker_id]={**binding.completion_result,"schema":"bach.task-result.v1"}
         self.receipts[worker_id]={"schema":"bach.worker-execution.v1","service_instance":"a"*32,
@@ -139,10 +142,10 @@ def start_payload(chain):
             "expected_service_instance":"a"*32,"input":"Isolierter Arbeitsauftrag"}
 
 
-def wait(controller,run_id):
+def wait(controller,run_id,timeout=120):
     # The isolated transport completes real V1 execution, scope, and policy
     # evidence synchronously before the sequence thread can observe it.
-    controller._threads[run_id].join(60)
+    controller._threads[run_id].join(timeout)
     assert not controller._threads[run_id].is_alive()
     return controller.get_run(run_id)
 

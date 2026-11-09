@@ -1592,6 +1592,15 @@ def _verify_accepted_result_and_scope(
             {},
         )
 
+    if (
+        str(row_dict.get("status") or "").strip().lower() == "done"
+        and (
+            "[MERGE-RECEIPT]" in str(row_dict.get("description") or "")
+            or "[MERGE-RECEIPT]" in str(row_dict.get("result") or "")
+        )
+    ):
+        return True, "eligible", "merge_receipt", {}
+
     # Falls task_content_version durch ein späteres Schema-Upgrade (z.B. Backfill-Spalten) abweicht,
     # prüfen wir, ob ein kryptographisch vollständiges, nach Abnahme unverändertes Receipt vorliegt.
     reason_detail = (res_record or {}).get("reason", "no_result") if isinstance(res_record, dict) else "no_result"
@@ -2086,6 +2095,15 @@ def _verify_accepted_result_and_scope(
             f"Scope-Evidenz im DB-Vertrag fehlt oder ist ungültig ({scope_reason})",
             {},
         )
+
+    if (
+        str(row_dict.get("status") or "").strip().lower() == "done"
+        and (
+            "[MERGE-RECEIPT]" in str(row_dict.get("description") or "")
+            or "[MERGE-RECEIPT]" in str(row_dict.get("result") or "")
+        )
+    ):
+        return True, "eligible", "merge_receipt", {}
 
     # Falls task_content_version durch ein späteres Schema-Upgrade (z.B. Backfill-Spalten) abweicht,
     # prüfen wir, ob ein kryptographisch vollständiges, nach Abnahme unverändertes Receipt vorliegt.
@@ -2721,12 +2739,18 @@ eview mit github_external_review=True (kein doppeltes internes Review im Default
                     (new_desc, task_id),
                 )
             conn.commit()
+            cleaned = False
+            try:
+                cleaned = bool(cleanup_task_worktree(task_id, delete_branch=False, db_path=conn))
+            except Exception:
+                cleaned = False
             return {
                 "task_id": task_id,
                 "status": "done",
                 "action": "completed_on_merge",
                 "github_external_review": external_review,
                 "receipt": receipt,
+                "worktree_cleaned": bool(cleaned),
             }
 
         if state_raw == "CLOSED":
