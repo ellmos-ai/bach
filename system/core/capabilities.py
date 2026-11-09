@@ -101,13 +101,11 @@ class _ForwarderModule(ModuleType):
             return getattr(target, name)
         # Andernfalls Attribute vom Typ CapabilityManager selbst holen (Klassenmethoden)
         # Aber Kapazität_manager ist eine Instanzklasse; ihre Methoden sind bereits über Proxy oben vorhanden.
-        # Wenn das Attribut immer noch nicht existiert, lies es aus den echten
+        # Wenn das Attribut immer noch nicht existiert, lies es aus den
         # Modul-Globals dieser Datei. Der frühere Fallback
-        # __import__(__name__, fromlist=[name]).__dict__[name] endete in einer
-        # Endlosrekursion: fromlist prüft intern hasattr(module, '__path__'),
-        # auch auf diesem Proxy, und löst damit erneut __getattr__ aus.
-        # globals() ist das __dict__ des Original-Moduls und enthält alle
-        # Modul-Namen (inkl. CAPABILITIES, SETUP_*, DEFAULT_TRUST_PROFILES).
+        # __import__(__name__, fromlist=[name]) endete in Endlosrekursion:
+        # fromlist prüft intern hasattr auf diesem Proxy und löst erneut
+        # __getattr__ aus. globals() ist das __dict__ des Original-Moduls.
         try:
             return globals()[name]
         except KeyError:
