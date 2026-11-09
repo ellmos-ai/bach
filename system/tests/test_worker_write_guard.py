@@ -1136,3 +1136,63 @@ def test_task_reader_rejects_hardlinks_and_changed_base_registration(tmp_path, m
     _run_git(["commit", "-m", "task implementation"], target)
     assert worker_git.read_task_public_source_registration(repo, target, 41)["source_sha"] == record["source_sha"]
     assert guard.authorize_task_read(binding, ".", secret_check=lambda _path: False).root == target
+
+
+def test_cleanup_pytest_current_links_removes_nested_symlinks(tmp_path, monkeypatch):
+    scanner = Path(r"C:\Users\User\OneDrive\_scripts\lock_scan.py")
+    if not scanner.is_file():
+        scanner = Path.home() / "OneDrive" / "_scripts" / "lock_scan.py"
+    if scanner.is_file():
+        monkeypatch.setenv("BACH_LOCK_SCAN", str(scanner))
+    else:
+        scanner = tmp_path / "mock_lock_scanner.py"
+        scanner.write_text(
+            "import sys, json, stat\n"
+            "from pathlib import Path\n"
+            "def _is_dir_redirect(p):\n"
+            "    try:\n"
+            "        st = p.lstat()\n"
+            "    except OSError: return False\n"
+            "    if stat.S_ISLNK(st.st_mode): return True\n"
+            "    tag = getattr(st, 'st_reparse_tag', None)\n"
+            "    return tag is not None and bool(tag & 0x20000000)\n"
+            "target = Path(sys.argv[2]).resolve(strict=False)\n"
+            "has_links = any(p.is_symlink() or _is_dir_redirect(p) for p in target.rglob('*'))\n"
+            "payload = {'checked': str(target), 'locks': [], 'hook_guards': [], 'twin_status': 'not-applicable', 'descendants_complete': not has_links, 'twins_checked': []}\n"
+            "print(json.dumps(payload))\n"
+            "sys.exit(0 if not has_links else 1)\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("BACH_LOCK_SCAN", str(scanner))
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    nested_dir = worktree / ".cache" / ".worker-check" / "pytest-temp" / "run-test" / "nested_dir"
+    nested_dir.mkdir(parents=True)
+    target_dir = tmp_path / "target_dir"
+    target_dir.mkdir()
+    link = nested_dir / "symlink_dir"
+    try:
+        link.symlink_to(target_dir)
+    except OSError:
+        if sys.platform == "win32":
+            import _winapi
+            _winapi.CreateJunction(str(target_dir), str(link))
+        else:
+            raise
+
+    assert link.exists()
+    assert link.is_symlink() or guard._is_directory_redirect(link)
+
+    with pytest.raises(guard.WorkerWriteGuardError, match="Sperrscan ist unvollständig"):
+        guard._scan_locks(worktree)
+
+    guard._cleanup_pytest_current_links(worktree)
+
+    assert not link.exists()
+    assert not link.is_symlink()
+    assert not guard._is_directory_redirect(link)
+
+    payload = guard._scan_locks(worktree)
+    assert payload.get("descendants_complete") is True
+

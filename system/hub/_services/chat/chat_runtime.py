@@ -251,13 +251,107 @@ def _read_trail_span(text):
     return (rows[0], rows[-1]) if rows else None
 
 
+_STATUS_LINE_RE = re.compile(
+    r"\n?\[Modus=[^\n\]]*, Denken=(?:AN|AUS), Modell=[^\n\]]*\]"
+)
+
+BACH_CONTEXT_MARKER = "--- BACH ---"
+
+
+def _session_status_line(session) -> str:
+    return (
+        f"[Modus={getattr(session, 'mode', 'safe')}, "
+        f"Denken={'AN' if getattr(session, 'think', True) else 'AUS'}, "
+        f"Modell={getattr(session, 'model', '')}]"
+    )
+
+
+def _tool_name(tool: Any) -> str:
+    if not isinstance(tool, dict):
+        return ""
+    fn = tool.get("function")
+    if isinstance(fn, dict) and isinstance(fn.get("name"), str):
+        return fn["name"]
+    name = tool.get("name")
+    return name if isinstance(name, str) else ""
+
+
+def _deterministic_tools(tools: list[dict] | None) -> list[dict]:
+    """Keep tool definitions in a canonical, deterministic order across calls and handovers."""
+    if not tools:
+        return []
+    from hub._services.chat.bach_tools import TOOLS_FULL, TOOLS_SAFE
+    canonical_order: dict[str, int] = {}
+    for idx, item in enumerate(TOOLS_SAFE):
+        name = _tool_name(item)
+        if name and name not in canonical_order:
+            canonical_order[name] = idx
+    base = len(canonical_order)
+    for idx, item in enumerate(TOOLS_FULL):
+        name = _tool_name(item)
+        if name and name not in canonical_order:
+            canonical_order[name] = base + idx
+    return sorted(
+        tools,
+        key=lambda item: (canonical_order.get(_tool_name(item), 10_000), _tool_name(item)),
+    )
+
+
+def _split_volatile_system_prompt(content: str) -> tuple[str, list[str]]:
+    """Strip volatile status/time/hook sections from a system prompt into late parts."""
+    text = str(content or "")
+    volatile_parts: list[str] = []
+    hook_sep = "\n\n--- MEMORY-HOOK ---\n"
+    if hook_sep in text:
+        text, hook_part = text.split(hook_sep, 1)
+        volatile_parts.insert(0, f"--- MEMORY-HOOK ---\n{hook_part.strip()}")
+    bach_sep = f"\n\n{BACH_CONTEXT_MARKER}\n"
+    if bach_sep in text:
+        text, bach_part = text.split(bach_sep, 1)
+        volatile_parts.insert(0, f"{BACH_CONTEXT_MARKER}\n{bach_part.strip()}")
+    status_matches = [m.group(0).strip() for m in _STATUS_LINE_RE.finditer(text)]
+    if status_matches:
+        text = _STATUS_LINE_RE.sub("", text)
+        volatile_parts = status_matches + volatile_parts
+    return text.rstrip(), volatile_parts
+
+
+def _is_volatile_context_message(message: dict) -> bool:
+    if not isinstance(message, dict) or message.get("role") != "user":
+        return False
+    content = str(message.get("content", "")).strip()
+    if not content:
+        return False
+    return (
+        bool(_STATUS_LINE_RE.match(content))
+        or content.startswith(f"{BACH_CONTEXT_MARKER}\n")
+        or content.startswith("--- MEMORY-HOOK ---\n")
+    )
+
+
 def _resume_handoff_context(original, summary, *, background_task, has_tools,
                             round_num, max_rounds, read_trail: str = ""):
     """Bewahrt die Rolle und setzt genau die aktuellen Laufhinweise ein."""
+    system_messages: list[dict] = []
+    volatile_parts: list[str] = []
+    for message in original:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "system":
+            raw_content = str(message.get("content", ""))
+            if raw_content.startswith("Bisheriger Kontext:"):
+                continue
+            stable_content, extracted_volatile = _split_volatile_system_prompt(raw_content)
+            system_messages.append({**message, "content": stable_content})
+            volatile_parts.extend(extracted_volatile)
+        elif _is_volatile_context_message(message):
+            volatile_parts.append(str(message.get("content", "")).strip())
+
     history = [
         message for message in summary
         if message.get("role") != "system"
         and message.get("content") != SELF_DECOMPOSE_INSTRUCTION
+        and not _is_volatile_context_message(message)
         and not str(message.get("content", "")).startswith(READ_TRAIL_HEADER)
         and not re.fullmatch(
             r"\[Werkzeugrunde \d+(?:/\d+ · noch \d+| · ohne Limit)\]",
@@ -266,7 +360,11 @@ def _resume_handoff_context(original, summary, *, background_task, has_tools,
     ]
     if read_trail:
         history.append({"role": "user", "content": read_trail})
-    messages = [message for message in original if message.get("role") == "system"] + history
+    messages = system_messages + list(history)
+    if volatile_parts:
+        deduped_volatile = list(dict.fromkeys(part for part in volatile_parts if part))
+        if deduped_volatile:
+            messages.append({"role": "user", "content": "\n\n".join(deduped_volatile)})
     if background_task and has_tools:
         messages.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
     messages.append({"role": "user", "content": tool_round_counter(round_num, max_rounds)})
@@ -467,11 +565,19 @@ class _SnapshotStoreAdapter:
 
 
 
+# PB-24: a bound worker whose model keeps sending denied tool calls must end with a visible reason.
+MAX_TOOL_CALLS_PER_ANSWER = 16  # measured: 5-6 per answer on the Mac Studio, 07.11.2026
+MAX_TOOL_DENIALS_PER_RUN = 4
+_NON_DENIAL_TOOL_REASONS = frozenset({"resource_not_found", "state_conflict", "no_updates"})
+
 _SAFE_FAILURE_REASON_CODES = frozenset({
     "cloud_call_retry_exhausted",
     "completion_reserve_context_exhausted",
     "handoff_context_too_large",
     "invalid_tool_call",
+    "tool_call_limit",
+    "tool_denial_limit",
+    "tool_denial_repeated",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -1292,11 +1398,16 @@ class ChatRuntime(_ModuleChatRuntime):
     @staticmethod
     def _messages_for_backend(messages: list[dict]) -> list[dict]:
         """Remove runtime-only status metadata before a provider call."""
-        return [
-            {key: value for key, value in message.items()
-              if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error", "reason_code")}
-            for message in messages
-        ]
+        cleaned: list[dict] = []
+        for message in messages:
+            item = {
+                key: value for key, value in message.items()
+                if key not in (FailedAnswer.STATUS_KEY, "completed_task_ids", "backend_error", "reason_code")
+            }
+            if item.get("role") == "system":
+                item["role"] = "user"
+            cleaned.append(item)
+        return cleaned
 
     @staticmethod
     def _messages_for_store(messages: list[dict]) -> list[dict]:
@@ -2111,11 +2222,11 @@ class ChatRuntime(_ModuleChatRuntime):
             return []
         tools = self._granted_worker_tools(session, backend)
         if completion_reserve:
-            return _completion_reserve_tools(tools, session.worker_task_binding)
+            return _deterministic_tools(_completion_reserve_tools(tools, session.worker_task_binding))
         grants = _effective_tool_grants(session)
         if grants is not None and REQUEST_TOOLS in grants:
-            return on_demand_tools(tools, getattr(session, "requested_tool_groups", ()))
-        return tools
+            return _deterministic_tools(on_demand_tools(tools, getattr(session, "requested_tool_groups", ())))
+        return _deterministic_tools(tools)
 
     def _granted_worker_tools(self, session, backend) -> list[dict]:
         """Every tool the bound session's live mode and allowed_tools grant."""
@@ -2136,7 +2247,7 @@ class ChatRuntime(_ModuleChatRuntime):
             # offering those tools anyway made Buddha file 199 "Rest:" tasks (PB-1).
             from hub._services.chat.worker_write_guard import is_write_tool
             tools = [tool for tool in tools if not is_write_tool(tool["function"]["name"])]
-        return tools
+        return _deterministic_tools(tools)
 
     def _request_tool_group(self, session, backend, arguments) -> str:
         """Meta tool: open one group from the next round, only within allowed_tools."""
@@ -2870,7 +2981,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         s = base + "\n\n" + capabilities
         if profile_context:
             s += "\n\n--- AUSGEWÄHLTES AGENTENPROFIL ---\n" + profile_context
-        s += f"\n[Modus={session.mode}, Denken={'AN' if session.think else 'AUS'}, Modell={session.model}]"
         return s
 
     def _get_extra_context(self, text: str) -> str:
@@ -3068,10 +3178,18 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             )
 
         bach_ctx = "" if session.profile_binding else self._get_bach_context(text)
-        sys_prompt = getattr(session, "custom_system_prompt", "") or self.build_system_prompt(session)
-        if bach_ctx and not getattr(session, "custom_system_prompt", ""):
-            sys_prompt += f"\n\n--- BACH ---\n{bach_ctx}"
         custom_prompt = getattr(session, "custom_system_prompt", "")
+        sys_prompt = custom_prompt or self.build_system_prompt(session)
+        sys_prompt, extracted_volatile = _split_volatile_system_prompt(sys_prompt)
+        late_context_parts: list[str] = list(extracted_volatile)
+        if not custom_prompt or (
+            session.profile_binding is not None and not getattr(session, "system_slot_id", None)
+        ):
+            status_line = _session_status_line(session)
+            if status_line not in late_context_parts:
+                late_context_parts.insert(0, status_line)
+        if bach_ctx and not custom_prompt:
+            late_context_parts.append(f"{BACH_CONTEXT_MARKER}\n{bach_ctx}")
         legacy_memory_hook = session.profile_binding is None and not custom_prompt
         configured_memory_hook = getattr(session, "_trusted_memory_hook_opt_in", False) is True
         if legacy_memory_hook or configured_memory_hook:
@@ -3079,17 +3197,19 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             # Only a native slot reader can opt profile/custom-prompt sessions in.
             hook_ctx = self._get_memory_hook_context(text, chat_id)
             if hook_ctx:
-                sys_prompt += f"\n\n--- MEMORY-HOOK ---\n{hook_ctx}"
+                late_context_parts.append(f"--- MEMORY-HOOK ---\n{hook_ctx}")
         if session.allow_tools is False:
             sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
 
         msgs = [{"role": "system", "content": sys_prompt}] + self._messages_for_backend(
             session.messages
         )
+        if late_context_parts:
+            msgs.append({"role": "user", "content": "\n\n".join(late_context_parts)})
 
         if getattr(selected_backend, "manages_own_tools", False):
             if session.allow_tools is True and self._compute_turn_context.get() == (str(chat_id), "background"):
-                msgs[0]["content"] += "\n\n" + SELF_DECOMPOSE_INSTRUCTION
+                msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
             capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
             if capability_error is not None:
                 session.messages.append({"role": "assistant", "content": capability_error})
@@ -3117,6 +3237,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             grants = _effective_tool_grants(session)
             if grants is not None:
                 tools = [tool for tool in tools if tool["function"]["name"] in grants]
+            tools = _deterministic_tools(tools)
             answer = await self._tool_loop(
                 msgs,
                 session,
@@ -3184,6 +3305,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         auto_used = 0
         goal_checked = False
         handoffs = 0
+        denied_calls = set()  # PB-24: (tool, canonical args) of calls a bound worker already had denied
         seit_hook = 0
         session.tool_round = 0
         session.last_tools = []
@@ -3191,18 +3313,24 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         result = {}
         chars_at_last_call = 0
         last_prompt_tokens = None  # measured prompt of the last main call; cleared by every handoff
-        offered_tools = tools
+        offered_tools = _deterministic_tools(tools)
         read_trail = _ReadTrail()
         reserve_notified_rounds = set()
         turn_context = self._compute_turn_context.get()
         background_task = turn_context is not None and turn_context[1] == "background"
+        if msgs and isinstance(msgs[0], dict) and msgs[0].get("role") == "system":
+            stable_sys, extracted_volatile = _split_volatile_system_prompt(str(msgs[0].get("content", "")))
+            if extracted_volatile:
+                msgs = [{**msgs[0], "content": stable_sys}] + list(msgs[1:]) + [
+                    {"role": "user", "content": "\n\n".join(extracted_volatile)}
+                ]
         msgs.append({"role": "user", "content": tool_round_counter(0, max_rounds)})
         while True:
             capability_error = self._refresh_worker_tools(session)
             if capability_error is not None:
                 session.current_tool = ""
                 return capability_error
-            tools = offered_tools if session.allow_tools is True else []
+            tools = list(offered_tools) if session.allow_tools is True else []
             if max_rounds > 0 and round_num > max_rounds:
                 session.current_tool = ""
                 return result.get("content", "") or "(Max Tool-Runden erreicht)"
@@ -3251,8 +3379,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             request_id = handoff_control.consume() if handoff_control is not None else None
             if request_id is not None:
                 try:
+                    handoff_kwargs = {"tools": tools} if tools else {}
                     summary = await self._handoff(
                         msgs, session, backend=selected_backend, model=selected_model, strict=True,
+                        **handoff_kwargs,
                     )
                     resumed, history = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
@@ -3268,7 +3398,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     capability_error = self._refresh_worker_tools(session)
                     if capability_error is not None:
                         return capability_error
-                    tools = offered_tools if session.allow_tools is True else []
+                    tools = list(offered_tools) if session.allow_tools is True else []
                 except Exception as exc:
                     handoff_control.finish(request_id, succeeded=False)
                     return FailedAnswer.from_exception(exc)
@@ -3308,9 +3438,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                                       context_limit=context_limit):
                     handoffs += 1
                     try:
+                        handoff_kwargs = {"tools": tools} if tools else {}
                         summary = await self._handoff(
                             msgs, session, backend=selected_backend, model=selected_model,
-                            strict=selected_model == "glm-5.3:cloud")
+                            strict=selected_model == "glm-5.3:cloud", **handoff_kwargs)
                         msgs, session.messages = _resume_with_handoff_state(session,
                             msgs, summary, background_task=background_task,
                             has_tools=session.allow_tools is True and bool(offered_tools),
@@ -3421,12 +3552,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 log.info("Kontext-Uebergabe [%d] bei %s Token",
                          handoffs, result.get("prompt_tokens"))
                 try:
+                    handoff_kwargs = {"tools": tools} if tools else {}
                     summary = await self._handoff(
                         msgs,
                         session,
                         backend=selected_backend,
                         model=selected_model,
                         strict=selected_model == "glm-5.3:cloud",
+                        **handoff_kwargs,
                     )
                     msgs, session.messages = _resume_with_handoff_state(session,
                         msgs, summary, background_task=background_task,
@@ -3466,6 +3599,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 return FailedAnswer(
                     f"{FailedAnswer.PREFIX}Tool-Aufruf im tool-freien Lauf blockiert"
                 )
+
+            if (getattr(session, "worker_task_binding", None) is not None
+                    and len(tool_calls) > MAX_TOOL_CALLS_PER_ANSWER):
+                session.current_tool = ""
+                return FailedAnswer(
+                    f"{FailedAnswer.PREFIX}Zu viele Werkzeugaufrufe in einer Antwort "
+                    f"({len(tool_calls)} > {MAX_TOOL_CALLS_PER_ANSWER}); nichts ausgeführt",
+                    reason_code="tool_call_limit")
 
             raw_msg = result.get("raw_message", {})
             if raw_msg:
@@ -3530,6 +3671,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         default_model=selected_model,
                         **tool_kwargs,
                     )
+                denial_key = None
+                if binding is not None:
+                    denial_key = (t_name, json.dumps(t_args, sort_keys=True, default=str))
+                    if denial_key in denied_calls:
+                        # The same call was already denied; sending it again cannot change the answer.
+                        session.current_tool = ""
+                        return FailedAnswer(
+                            f"{FailedAnswer.PREFIX}Werkzeugaufruf {t_name} wurde bereits verweigert "
+                            "und wird nicht erneut ausgeführt",
+                            reason_code="tool_denial_repeated")
                 traced_outcome = None
                 if binding is not None:
                     from hub._services.chat.worker_tool_dispatch_trace import (
@@ -3581,6 +3732,18 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         session.current_tool = ""
                         return FailedAnswer("Konsum der Werkzeugantwort ist nicht bestätigt")
                 read_trail.record(t_name, t_args, t_result)
+                if binding is not None:
+                    if isinstance(t_result, ToolErrorText):
+                        if getattr(t_result, "_reason", None) not in _NON_DENIAL_TOOL_REASONS:
+                            denied_calls.add(denial_key)
+                            if len(denied_calls) >= MAX_TOOL_DENIALS_PER_RUN:
+                                session.current_tool = ""
+                                return FailedAnswer(
+                                    f"{FailedAnswer.PREFIX}{len(denied_calls)} Werkzeugaufrufe wurden verweigert; "
+                                    "Lauf wird beendet",
+                                    reason_code="tool_denial_limit")
+                    else:
+                        denied_calls.clear()
                 if binding is not None:
                     actions = getattr(session, "worker_task_actions", None)
                     if actions is not None and t_name == "task_manage":
@@ -3745,7 +3908,8 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         return used >= active_limit * self.handoff_percent / 100
 
     async def _handoff(self, msgs: list, session: ChatSession, *, backend=None,
-                       model: str = "", strict: bool = False) -> list:
+                       model: str = "", strict: bool = False,
+                       tools: list | None = None) -> list:
         """Laesst das Modell sich selbst uebergeben und leert den Kontext.
 
         Anders als _summarize (Gespraechsprosa aus fremder Sicht) schreibt hier
@@ -3758,12 +3922,24 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
+        raw_max_rounds = getattr(session, "max_tool_rounds", None)
+        max_rounds = (
+            raw_max_rounds
+            if isinstance(raw_max_rounds, int) and raw_max_rounds >= 0
+            else self.max_tool_rounds
+        )
+        handoff_tools = (
+            _deterministic_tools(tools)
+            if tools and getattr(session, "allow_tools", True) is not False
+            else None
+        )
         handoff_error = None
         try:
             res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                 session, selected_backend, selected_model,
-                frage, tools=None,
+                frage, tools=handoff_tools,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
+                **({"_tool_rounds_enabled": max_rounds > 0} if handoff_tools is not None else {}),
             )
             if res.get("error"):
                 raise RuntimeError(str(res["error"]))

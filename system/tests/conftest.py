@@ -507,6 +507,20 @@ def _reset_lang_cache():
 
 
 @pytest.fixture(autouse=True)
+def _guard_real_model_unload(monkeypatch):
+    """PB-26: the suite runs next to a live Ollama on the Mac; no test may unload its model."""
+    from hub._services.llm.model_backend import OllamaBackend
+    monkeypatch.setattr(OllamaBackend, "unload", lambda self, model=None, timeout=5.0: False)
+
+
+@pytest.fixture(autouse=True)
+def _guard_real_run_cooldown(monkeypatch):
+    """PB-26: no test samples the host's swap or waits for the RAM distributor's cooldown."""
+    from hub._services.chat import run_cooldown
+    monkeypatch.setattr(run_cooldown, "open_gate", lambda backend, model: None)
+
+
+@pytest.fixture(autouse=True)
 def _guard_real_process_control(monkeypatch):
     """Do not let unit/integration tests terminate real host processes."""
     real_run = subprocess.run
@@ -600,3 +614,18 @@ def isolated_runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
     monkeypatch.setenv("BACH_RUNTIME", str(runtime_dir))
     yield runtime_dir
+
+
+@pytest.fixture
+def run_mcp_stdio():
+    """Run a coroutine that drives a stdio MCP child; fail instead of hanging.
+
+    A child that lives but never answers made the Mac suite wait forever
+    (T-20261107-512211369). ``asyncio.TimeoutError`` is raised after ``timeout`` seconds.
+    """
+    import asyncio
+
+    def run(coro, timeout=180):
+        return asyncio.run(asyncio.wait_for(coro, timeout))
+
+    return run

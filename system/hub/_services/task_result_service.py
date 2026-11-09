@@ -961,7 +961,16 @@ def read_result(conn, task_id, *, operator_token=None, service_id=None, service_
         if service_context is not None:
             _authorize_result_service(conn, service_context, task, record, "read")
             service_capabilities = _result_service_capabilities(conn, service_context, task, record)
-        same_content = task_content_version(task) == record["task_version"]
+        same_content = (
+            task_content_version(task) == record["task_version"]
+            or (
+                "task_incarnation_id" in task
+                and task_content_version(
+                    {key: value for key, value in task.items() if key != "task_incarnation_id"}
+                )
+                == record["task_version"]
+            )
+        )
         same_fence = int(task.get("claim_fence") or 0) == record["fence"]
         same_digest = hashlib.sha256(record["result"].encode("utf-8")).hexdigest() == record["result_sha256"]
         submission = _submission_readback(conn, record)

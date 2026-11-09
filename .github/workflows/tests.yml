@@ -76,8 +76,24 @@ jobs:
           path: .ci-sources/worker-policy
           persist-credentials: false
 
-      - name: Install pinned shared worker-policy contract
-        run: python -m pip install --no-deps ./.ci-sources/worker-policy
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/ellmos-robotics
+          # PB-13 (#3996, T-20261107-820069419): shared E-Stop path & RoboticsHub
+          ref: f72fe813e6d90f81323fce469d6b33c0450ff4df
+          path: .ci-sources/ellmos-robotics
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/ellmos-homecontrol
+          # PB-13 (#3996, T-20261107-820069419): Homecontrol Hub & TR-064 escaping
+          ref: 5b65c8379f6fe1177fe18e234dd2e65e12125535
+          path: .ci-sources/ellmos-homecontrol
+          persist-credentials: false
+
+      - name: Install pinned shared worker-policy and PB-13 modules
+        run: python -m pip install --no-deps ./.ci-sources/worker-policy ./.ci-sources/ellmos-robotics ./.ci-sources/ellmos-homecontrol
 
       - name: Verify installed scheduler provenance and native API coverage
         env:
@@ -300,6 +316,7 @@ jobs:
             system/tests/test_fs_handler.py \
             system/tests/test_fs_protection.py \
             system/tests/test_gesundheit_handler.py \
+            system/tests/test_github_pr_task_reconciliation.py \
             system/tests/test_gui_handler.py \
             system/tests/test_gui_console.py \
             system/tests/test_agent_history_delivery.py \
@@ -363,6 +380,7 @@ jobs:
             system/tests/test_migration_baseline_check.py \
             system/tests/test_migrate_unify_distribution.py \
             system/tests/test_model_backend.py \
+            system/tests/test_module_gate_check.py \
             system/tests/test_mount_handler.py \
             system/tests/test_multi_host_lease_acceptance.py \
             system/tests/test_n8n_handler.py \
@@ -377,6 +395,16 @@ jobs:
             system/tests/test_partner_handler.py \
             system/tests/test_path_handler.py \
             system/tests/test_path_traversal.py \
+            system/tests/test_pb13_homecontrol_robotics_security.py \
+            system/tests/test_pb24_tool_denial_loop.py \
+            system/tests/test_pb26_buddha_write_default.py \
+            system/tests/test_pb26_dynamic_worker_rights.py \
+            system/tests/test_pb26_rights_levels.py \
+            system/tests/test_pb26_run_cooldown.py \
+            system/tests/test_pb26_stable_prefix_handover.py \
+            system/tests/test_pb4_abort_visibility.py \
+            system/tests/test_pb7_pb12_surfaces_and_life.py \
+            system/tests/test_pb17_help_freshness_and_claims.py \
             system/tests/test_persoenlich_dashboard.py \
             system/tests/test_pipeline_handler.py \
             system/tests/test_plugin_security.py \
@@ -465,6 +493,7 @@ jobs:
             system/tests/test_web_parse_handler.py \
             system/tests/test_web_scrape_handler.py \
             system/tests/test_wiki_handler.py \
+            system/tests/test_worker_git_cleanup.py \
             system/tests/test_worker_seam_fixes.py \
             system/tests/test_safe_exec.py \
             system/tests/test_safe_shell_args.py \

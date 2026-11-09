@@ -279,6 +279,74 @@ for _core_id, _core_defaults in DEFAULT_CORE_SLOTS.items():
     }.get(_core_id, "task_worker"))
     _core_defaults.setdefault("sub_mode", "task_worker" if _core_id == "buddha_always_on" else "expert_role")
 
+VALID_WORKER_RIGHTS = ("read", "write", "execute")
+
+#: Standardfreigaben des Hintergrundworkers, wenn der Slot keine ausdrückliche Liste trägt.
+#: Lesen/Aufgaben-Werkzeuge immer; Schreiben nur im Full-Modus und nur über den gesicherten
+#: Pfad (Task-Arbeitsbaum, Lease, Sperrscan, Draft-PR; worker_write_guard).
+BACKGROUND_WORKER_READ_TOOLS = (
+    "read_file", "list_directory", "search_text", "file_info", "get_datetime", "task_manage",
+    "skill_create", "agent_manage", "bach_command", "maintain", "system_status", "ollama_info",
+    "weather", "foerderbericht", "web_search", "web_fetch",
+)
+BACKGROUND_WORKER_WRITE_ONLY_TOOLS = (
+    "safe_shell", "start_task_worktree", "write_file", "edit_file", "finish_task",
+)
+BACKGROUND_WORKER_EXECUTE_TOOLS = (
+    "execute_command",
+)
+BACKGROUND_WORKER_WRITE_TOOLS = BACKGROUND_WORKER_WRITE_ONLY_TOOLS + BACKGROUND_WORKER_EXECUTE_TOOLS
+
+ALWAYS_ON_RIGHTS_TRAY_ITEMS = (
+    ("read", "Stufe I: nur lesen"),
+    ("write", "Stufe II: lesen + schreiben"),
+    ("execute", "Stufe III: schreiben + Befehle ausführen"),
+)
+_RIGHTS_LEVEL_TO_MODE_RIGHTS = {
+    "read": ("safe", "read"),
+    "write": ("full", "write"),
+    "execute": ("full", "execute"),
+    "I": ("safe", "read"),
+    "II": ("full", "write"),
+    "III": ("full", "execute"),
+    "Stufe I: nur lesen": ("safe", "read"),
+    "Stufe II: lesen + schreiben": ("full", "write"),
+    "Stufe III: schreiben + Befehle ausführen": ("full", "execute"),
+}
+
+
+def effective_worker_rights(mode_or_slot: Any, rights: Any = None) -> str:
+    """Return effective background-worker rights ('read', 'write', or 'execute')."""
+    if isinstance(mode_or_slot, dict):
+        mode = mode_or_slot.get("mode", "full")
+        if rights is None:
+            rights = mode_or_slot.get("rights")
+    else:
+        mode = mode_or_slot
+    if mode != "full":
+        return "read"
+    if rights in VALID_WORKER_RIGHTS:
+        return rights
+    return "execute"
+
+
+def worker_rights_level_to_mode_rights(level: str) -> tuple[str, str]:
+    """Map a tray rights level identifier or label to (mode, rights)."""
+    if not isinstance(level, str) or level not in _RIGHTS_LEVEL_TO_MODE_RIGHTS:
+        raise ValueError(f"Unbekannte Rechte-Stufe: {level!r}")
+    return _RIGHTS_LEVEL_TO_MODE_RIGHTS[level]
+
+
+def background_worker_default_tools(mode: Any, rights: Any = None) -> list[str]:
+    """Standard-``allowed_tools`` für Hintergrundworker je nach Modus und Rechte-Stufe."""
+    level = effective_worker_rights(mode, rights)
+    if level == "read":
+        return list(BACKGROUND_WORKER_READ_TOOLS)
+    if level == "write":
+        return list(BACKGROUND_WORKER_READ_TOOLS + BACKGROUND_WORKER_WRITE_ONLY_TOOLS)
+    return list(BACKGROUND_WORKER_READ_TOOLS + BACKGROUND_WORKER_WRITE_TOOLS)
+
+
 SYSTEM_SLOT_PRESETS = {
     "boss": {"name": "Boss · Koordination", "role_id": "boss_routing", "sub_mode": "boss_routing", "icon": "🧭"},
     "developer": {"name": "Experte · Entwicklung", "role_id": "entwickler", "icon": "🛠️"},
@@ -818,6 +886,17 @@ def get_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:
     return {}
 
 
+def _project_dynamic_worker_slot(worker: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(worker)
+    if projected.get("allowed_tools") is None and projected.get("rights") is not None:
+        projected["allowed_tools"] = background_worker_default_tools(
+            projected.get("mode"), projected.get("rights")
+        )
+    if projected.get("rights") is not None:
+        projected["rights_effective"] = effective_worker_rights(projected)
+    return projected
+
+
 def get_worker_slot(worker_id: str, path: str | None = None) -> dict[str, Any]:
     """Return only a unique dynamic worker; ambiguity fails closed."""
     cfg = load_slots_config(path, strict=True)
@@ -874,7 +953,14 @@ def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, A
             or any(not isinstance(worker, dict) for worker in config["dynamic_workers"])
             or any(worker.get("id") == "buddha_always_on" for worker in config["dynamic_workers"])):
         raise ValueError("Always-On-Slot fehlt oder ist nicht eindeutig")
-    return {**slot, "type": "continuous", "sub_mode": slot.get("sub_mode") or "task_worker"}
+    projected = {**slot, "type": "continuous", "sub_mode": slot.get("sub_mode") or "task_worker"}
+    if projected.get("allowed_tools") is None:
+        # Seit #327 heißt None "keine Schreibfreigabe", der Tray-Schalter setzt aber ``mode``/``rights``.
+        projected["allowed_tools"] = background_worker_default_tools(
+            projected.get("mode"), projected.get("rights")
+        )
+    projected["rights_effective"] = effective_worker_rights(projected)
+    return projected
 
 
 @_serialized_mutation
@@ -898,7 +984,7 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     if MATERIALIZE_OWNED_FIELDS & set(updates):
         raise ValueError("Blueprint-Bindung wird nur beim Materialisieren gesetzt")
-    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs", "allowed_repositories", "tool_profile") if key in updates}
+    capability_edits = {key: updates[key] for key in ("rights", "allowed_tools", "skill_refs", "allowed_repositories", "tool_profile") if key in updates}
     if capability_edits:
         updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
@@ -961,7 +1047,7 @@ CORE_SYSTEM_AGENT_ICONS = {
     "buddha_talk": "🎙️",
 }
 CORE_EDITABLE_FIELDS = frozenset({
-    "name", "icon", "symbol", "backend", "model", "mode", "think",
+    "name", "icon", "symbol", "backend", "model", "mode", "rights", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
     "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs", "tool_profile",
@@ -1390,7 +1476,7 @@ def _validated_core_edits(
         elif field == "sub_mode":
             if value not in {"expert_role", "boss_routing", "task_worker", "hintergrund_worker"}:
                 raise ValueError("Unbekannter Rollenmodus")
-        elif field in {"name", "icon", "backend", "model", "mode"}:
+        elif field in {"name", "icon", "backend", "model", "mode", "rights"}:
             limit = 8 if field == "icon" else 120
             if (not isinstance(value, str) or not value.strip()
                     or len(value) > limit or any(ord(c) < 32 for c in value)):
@@ -1400,6 +1486,8 @@ def _validated_core_edits(
                 raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
             if field == "mode" and value not in {"safe", "full"}:
                 raise ValueError("Modus muss safe oder full sein")
+            if field == "rights" and value not in VALID_WORKER_RIGHTS:
+                raise ValueError("Rechte-Stufe muss read, write oder execute sein")
         elif field in {"think", "enabled", "include_system_prompt", "allow_tools", "memory_hook_opt_in"}:
             if type(value) is not bool:
                 raise ValueError(f"{field} muss wahr oder falsch sein")
@@ -1588,7 +1676,7 @@ def system_worker_at_version(slot_id: str, expected_version: str,
                 worker.get("persistent_opt_in") is not True
                 or worker.get("persistent_opt_in_id") != persistent_intent_id):
             raise RuntimeError("persistent_intent_conflict")
-        return dict(worker)
+        return worker
     if version_scope == "worker_profile" and slot_id == "buddha_always_on":
         worker = _always_on_execution_slot_from_config(config)
         if (worker.get("persistent_opt_in") is not True
@@ -1916,6 +2004,11 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     backend = worker_data.get("backend", "ollama")
     model = worker_data.get("model", "qwen3.8:27b-mlx")
     mode = worker_data.get("mode", "full")
+    if mode not in {"safe", "full"}:
+        raise ValueError("Modus muss safe oder full sein")
+    rights = worker_data.get("rights", "write")
+    if rights not in VALID_WORKER_RIGHTS:
+        raise ValueError("Rechte-Stufe muss read, write oder execute sein")
     think = bool(worker_data.get("think", True))
     max_tool_rounds = int(worker_data.get("max_tool_rounds", 20))
     max_model_requests = worker_data.get("max_model_requests")
@@ -1970,6 +2063,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "model": model,
         "resolved_model": worker_data.get("resolved_model") or "",
         "mode": mode,
+        "rights": rights,
         "think": think,
         "max_tool_rounds": max_tool_rounds,
         "max_model_requests": max_model_requests,
@@ -2163,9 +2257,8 @@ def record_activity(
 
 WORKER_EDITABLE_POLICY_FIELDS = frozenset({"pickup_filter"})
 WORKER_EDITABLE_FIELDS = frozenset({
-    "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "max_model_requests", "allow_tools",
+    "name", "avatar", "symbol", "backend", "model", "mode", "rights", "think", "max_tool_rounds", "max_model_requests", "allow_tools",
     "memory_hook_opt_in", "model_fallbacks",
-    "allowed_tools", "skill_refs",
     "allowed_tools", "skill_refs", "persistent_opt_in",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
@@ -2231,6 +2324,8 @@ def _worker_profile_version(worker: dict[str, Any]) -> str:
         # Old unbudgeted profile versions, including persistent opt-in grants,
         # keep their established digest until a budget is explicitly set.
         fields = fields - {"max_model_requests"}
+    if worker.get("rights") is None:
+        fields = fields - {"rights"}
     profile = {field: worker.get(field) for field in sorted(fields)}
     policy = worker_selection_policy(worker)
     raw = json.dumps({"id": worker["id"], **profile, "selection_policy": policy},
@@ -3473,7 +3568,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
             low, high = ranges[field]
             if type(value) is not int or not low <= value <= high:
                 raise ValueError(f"{field} liegt außerhalb des erlaubten Bereichs")
-        if field in {"name", "backend", "model", "mode", "sub_mode", "role_id", "pause_basis", "task_prompt"}:
+        if field in {"name", "backend", "model", "mode", "rights", "sub_mode", "role_id", "pause_basis", "task_prompt"}:
             maximum = 20000 if field == "task_prompt" else 180
             if not isinstance(value, str) or len(value) > maximum or "\x00" in value:
                 raise ValueError(f"{field} ist ungültig")
@@ -3503,6 +3598,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         updated.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
     if (updated.get("backend") not in {"ollama", "ollama-cloud", "openrouter"}
             or updated.get("mode") not in {"safe", "full"}
+            or updated.get("rights", "write") not in VALID_WORKER_RIGHTS
             or updated.get("pause_basis") not in {"runs", "tasks"}
             or updated.get("sub_mode") not in {"hintergrund_worker", "task_worker", "boss_routing", "expert_role"}):
         raise ValueError("Worker-Modus oder Provider ist ungültig")

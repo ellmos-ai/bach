@@ -79,6 +79,7 @@ except ImportError as exc:
 # BACH imports
 from hub._services.chat.worker_lease_supervisor import WorkerLeaseSupervisor
 from hub._services.chat.worker_scope_deferrals import ScopePreparationDeferrals
+from hub._services.chat import run_cooldown
 try:
     import bach_api
     _memory = bach_api.memory
@@ -145,6 +146,7 @@ from hub._services.chat.slots_config import (
     worker_configuration_snapshot,
     change_worker_configuration,
     persistent_worker_startup_snapshot,
+    _project_dynamic_worker_slot,
     _worker_configuration,
 )
 
@@ -321,6 +323,7 @@ class _WorkerControl:
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
+    idle_model_unloaded: bool = False  # PB-26: one keep_alive 0 per idle period
     lease_supervisor: Any = None
     supports_step_actions: bool = False
     run_receipt_fields: Optional[Dict[str, Any]] = None
@@ -1130,7 +1133,7 @@ def _execution_worker_slot(worker_id: str) -> dict:
     worker = get_worker_slot(worker_id)
     if worker:
         # Registry membership defines a dynamic profile, never a payload flag.
-        return {**worker, "system": False}
+        return {**_project_dynamic_worker_slot(worker), "system": False}
     # Dynamic IDs are already resolved by their strict canonical registry.
     # Only an actual system-slot ID needs a second system-slot lookup.
     if worker_id not in load_slots_config().get("slots", {}):
@@ -1146,12 +1149,16 @@ def _execution_worker_slot(worker_id: str) -> dict:
 
 
 def _execution_worker_configuration(slot: dict):
+    if not slot.get("system") and slot.get("id") not in DEFAULT_CORE_SLOTS:
+        slot = _project_dynamic_worker_slot(slot)
     configuration = _worker_configuration(slot)
     if not slot.get("system") and slot.get("id") not in DEFAULT_CORE_SLOTS:
         # Consent is control-plane state, not a change to the running task profile.
         from hub._services.chat.slots_config import _worker_profile_version
         configuration.pop("persistent_opt_in", None)
         configuration["configuration_version"] = _worker_profile_version(slot)
+    if slot.get("rights_effective") is not None:
+        configuration["rights_effective"] = slot["rights_effective"]
     if slot.get("id") == "buddha_always_on" or slot.get("system"):
         configuration = {**configuration, "execution": {key: slot.get(key) for key in
             ("enabled", "category", "pickup_filter", "workdir", "type", "require_assigned_slot",
@@ -1171,7 +1178,8 @@ def _preview_worker_selection(worker_id: str, *, limit=50, offset=0):
     slot = _execution_worker_slot(worker_id)
     if not slot:
         raise KeyError(worker_id)
-    version = _worker_configuration(slot)["configuration_version"]
+    raw_slot = get_worker_slot(worker_id) if not slot.get("system") and worker_id != "buddha_always_on" else slot
+    version = _worker_configuration(raw_slot or slot)["configuration_version"]
     execution_version = _execution_worker_configuration(slot)["configuration_version"]
     with _WORKER_CONTROL_LOCK:
         control = _WORKER_CONTROLS.get(worker_id)
@@ -1180,7 +1188,8 @@ def _preview_worker_selection(worker_id: str, *, limit=50, offset=0):
         configuration_version=version, execution_profile_version=execution_version,
         deferred_versions=deferred, limit=limit, offset=offset)
     current = _execution_worker_slot(worker_id)
-    if (not current or _worker_configuration(current)["configuration_version"] != version
+    current_raw = get_worker_slot(worker_id) if current and not current.get("system") and worker_id != "buddha_always_on" else current
+    if (not current or _worker_configuration(current_raw or current)["configuration_version"] != version
             or _execution_worker_configuration(current)["configuration_version"] != execution_version):
         raise PreviewUnavailable("Worker-Konfiguration hat sich während der Vorschau geändert")
     with _WORKER_CONTROL_LOCK:
@@ -1246,6 +1255,27 @@ def _task_divider_available():
         )
     except Exception:
         return True
+
+
+def _unload_idle_worker_model(control, backend, model):
+    """PB-26 (Lukas 07.11.2026): no claimable task left -> unload the local model once.
+
+    While the queue has work the model stays resident. Only a verified
+    "waiting" observation of the real selector counts as empty; an unread or
+    failed queue keeps the status quo. The next acquired task re-arms this and
+    its model call loads the model again through the normal reserve gate.
+    """
+    from hub._services.chat.worker_queue_status import project_queue_status
+    if control.idle_model_unloaded or not run_cooldown.is_local_model(backend, model):
+        return  # cloud models hold no local memory
+    report = project_queue_status(control.queue_status)
+    if report is None or report["state"] != "waiting":
+        return
+    # ponytail: unloads the shared model even if the chat or another local worker
+    # still uses it; that caller reloads once. Per-model usage count if that bites.
+    control.idle_model_unloaded = True
+    unloaded = backend.unload(model)
+    log.info("idle_model_unload worker_id=%s model=%s ok=%s", control.worker_id, model, unloaded)
 
 
 def _acquire_worker_task(control, slot, physical_worker_id):
@@ -1840,7 +1870,7 @@ def _live_resolved_execution(chat_id: str, *, generation=None, task_id=None) -> 
 
 
 def _worker_handoff_snapshot(worker: Dict[str, Any]) -> Dict[str, Any]:
-    worker = dict(worker)
+    worker = _project_dynamic_worker_slot(worker)
     budget_execution = (_budget_execution_projection(worker.get("id"))
                         if worker.get("max_model_requests") is not None else None)
     worker.pop("_model_request_runs", None)
@@ -2227,8 +2257,35 @@ def _secure_worktree_wip(control, reason):
     return result
 
 
-def _worker_return_note(detail, reason_code, transient_failure=None):
-    """Fixed-vocabulary return reason; provider text never reaches task history."""
+# ponytail: one process-wide record; all workers of a host run in this process (Mac: telegram-bot).
+# Two tasks that both always stall, with no success in between, look like a stalled host;
+# the worker's stop after _WORKER_TASK_FAILURE_LIMIT failures still bounds that case.
+_READ_TIMEOUT_HOST_WINDOW_SECONDS = 2 * 3600
+_last_read_timeout = {}
+_last_read_timeout_lock = threading.Lock()
+
+
+def _host_read_timeout_stall(task_id):
+    """True when another task timed out before this one and no worker run succeeded since."""
+    now = time.monotonic()
+    with _last_read_timeout_lock:
+        previous = dict(_last_read_timeout)
+        _last_read_timeout.update(task_id=task_id, at=now)
+    return (previous.get("task_id") not in (None, task_id)
+            and now - previous["at"] <= _READ_TIMEOUT_HOST_WINDOW_SECONDS)
+
+
+def _note_worker_model_success():
+    """A worker run succeeded: the host serves, the next stall counts for its task."""
+    with _last_read_timeout_lock:
+        _last_read_timeout.clear()
+
+
+def _worker_return_note(detail, reason_code, transient_failure=None, task_id=None):
+    """Fixed-vocabulary return reason; provider text never reaches task history.
+
+    With ``task_id`` a ReadTimeout is recorded for the host-stall signal.
+    """
     if reason_code:
         return f"model_failure:{reason_code}"
     if detail:
@@ -2237,6 +2294,12 @@ def _worker_return_note(detail, reason_code, transient_failure=None):
     if transient_failure == "httpx_connect_error":
         # The provider is unreachable, not the task broken: never counts toward a block (#657 review).
         return "backend_error:transient:httpx_connect_error"
+    if transient_failure == "httpx_read_timeout":
+        # No byte for the whole read timeout (T-20261107-718218941). The host's only during a
+        # host-wide stall; otherwise the task's, so an oversized prompt still blocks (PB-1, #681).
+        if task_id is not None and _host_read_timeout_stall(task_id):
+            return "backend_error:transient:httpx_read_timeout"
+        return "model_failure:httpx_read_timeout"
     return "model_failure:unclassified"
 
 
@@ -2533,12 +2596,20 @@ def _wait_persistent_core_capacity(control: _WorkerControl, expected_binding):
 
 
 def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> bool:
-    """Apply a configured run/task-count pause while keeping stop responsive."""
+    """Apply a configured run/task-count pause while keeping stop responsive.
+
+    PB-26: a local model worker then waits for the RAM distributor's admission;
+    the slot pause counts towards its minimum pause.
+    """
     worker_id = control.worker_id
     if not _worker_metadata_available(worker_id):
         return False
+    ended_at = time.monotonic()
+    backend, model = control._review_backend, control._review_requested_model
+    gate = run_cooldown.open_gate(backend, model)  # baseline sample at the end of the run
     if not bump_pause_counter(worker_id, event_type=event_type):
-        return not control.stop_event.is_set()
+        return (not control.stop_event.is_set()
+                and _wait_run_cooldown(control, gate, ended_at, backend, model))
 
     slot = _execution_worker_slot(worker_id)
     pause = get_slot_pause_info(slot)
@@ -2572,6 +2643,65 @@ def _wait_worker_cooldown(control: _WorkerControl, event_type: str = "runs") -> 
     if updated is None:
         return False
     _record_worker_activity(control, "Automatische Pause beendet", "ok")
+    return _wait_run_cooldown(control, gate, ended_at, backend, model)
+
+
+_RUN_COOLDOWN_POLL_SECONDS = 30.0
+
+
+def _wait_run_cooldown(control: _WorkerControl, gate, ended_at: float, backend, model) -> bool:
+    """PB-26 (Lukas 08.11.2026): pause until the RAM distributor admits the next run.
+
+    "nach abschluss eines laufes eine zwangspause einlegen lassen und nach cooldown
+    wieder anfahren". The reason (``cooldown:swap|thermal|min``) and the swap-out
+    rate stay visible in the worker status; a pause longer than the policy's
+    ``unload_after_seconds`` unloads the local model once. A failed measurement only
+    drops its own criterion, the minimum pause remains.
+    """
+    if gate is None:
+        return True
+    gate, sampler = gate
+    reason = None
+    unloaded = False
+    while True:
+        try:
+            sample = sampler()
+        except Exception:  # noqa: BLE001 -- an unmeasured host only gets the minimum pause
+            sample = None
+        decision = gate.check(sample, seconds_since_run_end=time.monotonic() - ended_at)
+        if decision.admitted:
+            break
+        rate = decision.swapout_mib_per_minute
+        shown = "unbekannt" if rate is None else f"{rate:.0f} MiB/min"
+        if decision.reason != reason:
+            reason = decision.reason
+            log.info("run_cooldown worker_id=%s reason=%s swapout_mib_per_min=%s",
+                     control.worker_id, reason, "unknown" if rate is None else f"{rate:.1f}")
+            _record_worker_activity(control, f"Abkühlpause ({reason})", "ok")
+        if (not unloaded and reason != "cooldown:min"
+                and time.monotonic() - ended_at >= gate.policy.unload_after_seconds):
+            unloaded = True
+            ok = backend.unload(model)
+            log.info("cooldown_model_unload worker_id=%s model=%s ok=%s", control.worker_id, model, ok)
+        # Stays "running": "paused" + auto_paused without pause_started_at is refused
+        # at startup (invalid_cooldown), so a restart during the cooldown kept Buddha off.
+        if _update_worker_slot(control, {
+            "status": "running",
+            "current_activity": f"Abkühlpause ({reason}), Swap-Schreibrate {shown}"
+                                + ("; Modell entladen" if unloaded else ""),
+        }) is None:
+            return False
+        if control.stop_event.wait(_RUN_COOLDOWN_POLL_SECONDS):
+            return False
+    if reason is None:
+        return True
+    if _update_worker_slot(control, {
+        "status": "running",
+        "auto_paused": False,
+        "current_activity": "Abkühlpause beendet; nächster Lauf startet",
+    }) is None:
+        return False
+    _record_worker_activity(control, "Abkühlpause beendet", "ok")
     return True
 
 
@@ -3649,6 +3779,10 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
     selected_id = system_slot_chat_id(str_id)
     if str_id.startswith("slot:") and selected_id is None:
         raise WorkerBindingError("Ungültige System-Steckplatz-Chat-ID")
+    if selected_id:
+        for w in cfg.get("dynamic_workers", []):
+            if w.get("id") == selected_id:
+                return {**_project_dynamic_worker_slot(w), "enabled": True}
     if selected_id or str_id in slots:
         selected = get_system_slot(selected_id or str_id)
         if not selected or selected.get("enabled", True) is not True:
@@ -3659,7 +3793,7 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
     # routing keys: duplicate names must remain unambiguous.
     for w in cfg.get("dynamic_workers", []):
         if w.get("id") == str_id:
-            return w
+            return _project_dynamic_worker_slot(w)
 
     # 2. Always-On / Idle Worker
     if str_id in ("idle-worker", "worker-always-on") or str_id.startswith("idle"):
@@ -3700,7 +3834,7 @@ def _registered_worker_slot(worker_id: str) -> Optional[dict]:
         return None
     if not isinstance(worker, dict) or worker.get("id") != normalized:
         return None
-    return worker
+    return _project_dynamic_worker_slot(worker)
 
 
 def _bind_system_caller(chat_id: str, session: Any, slot: dict) -> None:
@@ -5604,9 +5738,10 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                     slot = _execution_worker_slot(worker_id)
                 if not slot or slot.get("id") != worker_id:
                     return rejected({"error": f"Worker {worker_id} nicht gefunden"}, 404)
-                dynamic_profile = bool(get_worker_slot(worker_id))
+                raw_dynamic_slot = get_worker_slot(worker_id)
+                dynamic_profile = bool(raw_dynamic_slot)
                 if dynamic_profile:
-                    slot = {**slot, "system": False}
+                    slot = {**_project_dynamic_worker_slot(slot), "system": False}
                 if (_startup_profile_version and worker_id != "buddha_always_on"
                         and not slot.get("system") and cloud_binding is None):
                     return rejected({
@@ -5671,7 +5806,7 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                         "process_create_time": process_started,
                         "start_request_id": request_id,
                         "generation": _startup_generation or "", "task_id": slot["task_id"],
-                        "task_version": None, "configuration_version": _worker_profile_version(slot),
+                        "task_version": None, "configuration_version": _worker_profile_version(raw_dynamic_slot or slot),
                         "limit": budget_limit, "reserved_count": 0,
                         "phase": "admitted", "reason": "", "sequence": 0,
                     }
@@ -5904,7 +6039,7 @@ def _persistent_cloud_admission_slot_snapshot(worker_id, profile, checkpoint):
         and current.get(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD) == checkpoint
     ):
         return None
-    return dict(current)
+    return _project_dynamic_worker_slot(current)
 
 
 def _persistent_cloud_admission_readback(worker_id, profile, admitted):
@@ -6216,6 +6351,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             queue_waiting_activity,
                         )
                         waiting_activity = queue_waiting_activity(control.queue_status)
+                        _unload_idle_worker_model(control, target_backend, model)
                         if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": waiting_activity})
                             return
@@ -6224,6 +6360,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             break
                         continue
                     newly_acquired_binding = control.task_binding
+                    control.idle_model_unloaded = False  # work again: the next empty queue unloads
                     if (control.model_request_budget is not None
                             and control.task_binding.task_id != control.model_request_budget.task_id):
                         raise RuntimeError("budget_fixed_task_conflict")
@@ -6362,47 +6499,109 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 loop = asyncio.new_event_loop()
                 ans = ""
                 worker_session = None
+                _turn_lease_exc = None
                 try:
-                    worker_session = runtime.get_session(worker_id)
-                    worker_session.worker_slot_reader = control.slot_policy_reader
-                    worker_session.worker_handoff = control.handoff
-                    worker_session.worker_task_actions = control.task_actions
-                    worker_session.worker_task_binding = control.task_binding
-                    worker_session.worker_model_request_control = control
-                    worker_session.require_task_binding = True
-                    worker_session.model_request_budget = control.model_request_budget
-                    worker_session._persistent_core_model_call_control = (
-                        control if control.persistent_core_intent_id is not None else None
-                    )
-                    bound_prompt = _bound_worker_prompt(control.task_binding, prompt_to_run)
-                    # Empty queue polling is not a model block or a failed
-                    # task attempt. Count only actual runtime submissions.
-                    run_count += 1
-                    ans = loop.run_until_complete(
-                        runtime.process(
-                            bound_prompt,
-                            worker_id,
-                            backend=target_backend,
-                            model=model,
-                            work_priority="background",
-                        )
-                    )
-                finally:
-                    if worker_session is not None:
-                        worker_session._persistent_core_model_call_control = None
-                        worker_session.worker_model_request_control = None
-                        worker_session.model_request_budget = None
                     try:
-                        loop.run_until_complete(loop.shutdown_asyncgens())
+                        worker_session = runtime.get_session(worker_id)
+                        worker_session.worker_slot_reader = control.slot_policy_reader
+                        worker_session.worker_handoff = control.handoff
+                        worker_session.worker_task_actions = control.task_actions
+                        worker_session.worker_task_binding = control.task_binding
+                        worker_session.worker_model_request_control = control
+                        worker_session.require_task_binding = True
+                        worker_session.model_request_budget = control.model_request_budget
+                        worker_session._persistent_core_model_call_control = (
+                            control if control.persistent_core_intent_id is not None else None
+                        )
+                        bound_prompt = _bound_worker_prompt(control.task_binding, prompt_to_run)
+                        # Empty queue polling is not a model block or a failed
+                        # task attempt. Count only actual runtime submissions.
+                        run_count += 1
+                        ans = loop.run_until_complete(
+                            runtime.process(
+                                bound_prompt,
+                                worker_id,
+                                backend=target_backend,
+                                model=model,
+                                work_priority="background",
+                            )
+                        )
                     finally:
-                        loop.close()
+                        if worker_session is not None:
+                            worker_session._persistent_core_model_call_control = None
+                            worker_session.worker_model_request_control = None
+                            worker_session.model_request_budget = None
+                        try:
+                            loop.run_until_complete(loop.shutdown_asyncgens())
+                        finally:
+                            loop.close()
 
-                if control.stop_event.is_set():
-                    break
-                if control.lease_supervisor.failure is not None:
-                    raise control.lease_supervisor.failure
-                if not control.task_binding.closed:
-                    control.task_binding.assert_active()
+                    if control.stop_event.is_set():
+                        break
+                    if control.lease_supervisor.failure is not None:
+                        raise control.lease_supervisor.failure
+                    if not control.task_binding.closed:
+                        control.task_binding.assert_active()
+                except Exception as _exc:
+                    _turn_lease_exc = _exc
+                if _turn_lease_exc is not None:
+                    from hub._services.task_lease_client import (
+                        LeaseOfflineDeadlineExceeded,
+                        LeaseProtocolError,
+                    )
+                    _is_correction_ctx_err = (
+                        isinstance(_turn_lease_exc, (LeaseProtocolError, RuntimeError))
+                        and "Task-Korrekturkontext" in str(_turn_lease_exc)
+                        and getattr(control.task_binding, "tool_dispatch_count", 0) == 0
+                        and current_slot.get("type") in {"continuous", "persistent"}
+                        and control.model_request_budget is None
+                    )
+                    _is_deadline_err = (
+                        isinstance(_turn_lease_exc, LeaseOfflineDeadlineExceeded)
+                        and current_slot.get("type") in {"continuous", "persistent"}
+                        and control.model_request_budget is None
+                        and control.persistent_core_intent_id is None
+                    )
+                    if not (_is_correction_ctx_err or _is_deadline_err) or control.stop_event.is_set():
+                        raise _turn_lease_exc
+                    _ret_note = "task_context_unavailable" if _is_correction_ctx_err else "total_deadline"
+                    returned = control.task_binding.task_snapshot()
+                    if control.lease_supervisor is not None:
+                        control.lease_supervisor.close()
+                        control.lease_supervisor = None
+                    if _is_correction_ctx_err:
+                        control.task_binding.before_return = None
+                    if not control.task_binding.return_lease(note=_ret_note):
+                        raise _turn_lease_exc
+                    if worker_session is not None and getattr(worker_session, "worker_task_binding", None) is control.task_binding:
+                        worker_session.worker_task_binding = None
+                    finish_assignment(
+                        current_assignment,
+                        status="released",
+                        result="task_returned" if _is_correction_ctx_err else "ttl_expired",
+                        reason=_ret_note,
+                    )
+                    assignment_open = False
+                    returned_id = control.task_binding.task_id
+                    if _is_correction_ctx_err and isinstance(returned.get("task_version"), str):
+                        control.deferred_task_versions[returned_id] = returned["task_version"]
+                    control.task_binding = None
+                    _msg = (
+                        f"Task #{returned_id} zurückgegeben: Task-Korrekturkontext nicht bestätigt"
+                        if _is_correction_ctx_err
+                        else f"Task #{returned_id} wegen abgelaufener lokaler Lease-Frist offen zurückgegeben"
+                    )
+                    _act = (
+                        "Task-Korrekturkontext nicht bestätigt; suche nächste passende Aufgabe"
+                        if _is_correction_ctx_err
+                        else "Zeitlimit für Task-Lease erreicht; suche nächste passende Aufgabe"
+                    )
+                    _record_worker_activity(control, _msg, "pending")
+                    if _update_worker_slot(control, {"status": "running", "task_id": None, "current_activity": _act}) is None:
+                        break
+                    if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
+                        break
+                    continue
                 ans_str = str(ans)
                 # FailedAnswer is a str subclass and may also be
                 # restored as plain text after persistence. Neither
@@ -6412,7 +6611,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     detail = normalize_backend_error(getattr(ans, "backend_error", None))
                     failure_reason = getattr(ans, "reason_code", None)
                     control.return_note = _worker_return_note(
-                        detail, failure_reason, getattr(ans, "transient_failure", None))
+                        detail, failure_reason, getattr(ans, "transient_failure", None),
+                        task_id=control.task_binding.task_id)
                     if failure_reason == "local_reserve_reserve_wait_expired":
                         error_activity = "Lokale Ressourcenreserve wurde nicht rechtzeitig frei"
                     elif failure_reason == "local_reserve_reserve_wait_lease_return_required":
@@ -6692,6 +6892,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             f"{error_activity} Wiederaufnahme begrenzt beendet; erneut ausdrücklich starten."})
                     return
                 task_failures = 0
+                _note_worker_model_success()
                 resolved = getattr(worker_session, "resolved_model", None)
                 if isinstance(resolved, str) and resolved.strip():
                     _update_worker_slot(control, {"resolved_model": resolved})
@@ -7680,10 +7881,15 @@ class ControlHandler(BaseHTTPRequestHandler):
                 return
             try:
                 cfg = load_slots_config()
-                slots = cfg.get("slots", {})
+                slots = {sid: dict(s) for sid, s in cfg.get("slots", {}).items()}
+                if "buddha_always_on" in slots:
+                    slots["buddha_always_on"] = get_always_on_execution_slot()
                 for sid, s in slots.items():
                     s["pause_info"] = get_slot_pause_info(s)
-                workers = list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
+                workers = [
+                    _project_dynamic_worker_slot(w)
+                    for w in list_workers(include_expired=True, active_worker_ids=_active_worker_ids())
+                ]
                 for w in workers:
                     w["pause_info"] = get_slot_pause_info(w)
                     w.pop("_model_request_runs", None)

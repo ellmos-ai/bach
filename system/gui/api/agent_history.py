@@ -34,13 +34,14 @@ def sessions(request: Request, limit: int = Query(25, ge=1, le=100),
              agent_id: int | None = Query(None, ge=1, le=2_147_483_647),
              archive: str = Query("all", pattern="^(all|current|archived)$"),
              source: str = Query("all", pattern="^(all|user|buddha|worker|system)$"),
-             problems: bool = Query(False)):
+             problems: bool = Query(False),
+             slot_id: str | None = Query(None, pattern="^[A-Za-z0-9._-]{1,80}$")):
     authorize(request)
     try:
         if agent_id is not None:
             resolve_profile(agent_id)
         page = _store().list_snapshot_page(limit=limit, offset=offset, agent_id=agent_id, archive=archive,
-                                        source=source, problems=problems)
+                                        source=source, problems=problems, slot_id=slot_id)
         return {"schema": "bach.chat-sessions.v1", "source": "session_snapshots",
                 "snapshot_type": "chat-transcript.v1", "context": "profile" if agent_id else "global",
                 "agent_id": agent_id, "archive": archive, **page}

@@ -962,8 +962,12 @@ def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
         return _tool_effect_unconfirmed()
 
 
+from hub._services.chat.worker_write_guard import build_execute_command_env
+
+
 def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
-                          allowed: Optional[FrozenSet[str]] = None) -> str:
+                          allowed: Optional[FrozenSet[str]] = None,
+                          *, env: Optional[dict[str, str]] = None) -> str:
     """Fuehrt cmd fail-closed aus - IMMER shell=False (hub/safe_exec.py).
 
     Fuer safe_shell/execute_command: cmd kommt direkt aus einem
@@ -981,12 +985,18 @@ def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
         argv = safe_exec.resolve_executable(cmd, allowed)
     except safe_exec.CommandRejected as e:
         return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
+    base_env = (
+        build_execute_command_env()
+        if env is None and allowed is None
+        else (os.environ if env is None else env)
+    )
+    child_env = {**base_env, "PYTHONIOENCODING": "utf-8"}
     try:
         r = subprocess.run(
             argv, shell=False, capture_output=True, text=True,
             encoding='utf-8', errors='replace',
             timeout=timeout, stdin=subprocess.DEVNULL,
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env=child_env,
         )
         if r.returncode != 0:
             return _tool_effect_unconfirmed()

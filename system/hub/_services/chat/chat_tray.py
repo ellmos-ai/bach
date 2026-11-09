@@ -35,6 +35,11 @@ for _p in (_system_dir, _root_dir):
 
 from hub.bach_paths import BACH_DB
 from hub._services.chat.control_auth import get_control_api_auth_header
+from hub._services.chat.slots_config import (
+    ALWAYS_ON_RIGHTS_TRAY_ITEMS,
+    effective_worker_rights,
+    worker_rights_level_to_mode_rights,
+)
 from hub._services.chat.tray_worker_execution import NativeWorkerObserver, WORKER_ID
 
 try:
@@ -1371,6 +1376,7 @@ class BACHTray:
             always_backend = always_slot.get("backend") or "ollama"
             always_rounds = always_slot.get("max_tool_rounds", 25)
             always_mode = always_slot.get("mode", "full")
+            always_rights = effective_worker_rights(always_slot)
             always_status_str = self._always_on_runtime_label(always_slot)
 
             conn_model = conn_slot.get("model") or "qwen3.8:27b-mlx"
@@ -1455,10 +1461,15 @@ class BACHTray:
                 for v in [10, 20, 25, 30, 50, 0]
             ]
             always_subitems.append(pystray.MenuItem(f"Max Turns: {'Unbegrenzt' if always_rounds == 0 else always_rounds}", pystray.Menu(*always_round_items)))
-            always_subitems.append(pystray.MenuItem("Full-Modus (Schreibrechte)", self._make_slot_mode_action("buddha_always_on", "full"),
-                                                    checked=lambda item, am=always_mode: am == "full"))
-            always_subitems.append(pystray.MenuItem("Safe-Modus", self._make_slot_mode_action("buddha_always_on", "safe"),
-                                                    checked=lambda item, am=always_mode: am == "safe"))
+            for rights_level, rights_label in ALWAYS_ON_RIGHTS_TRAY_ITEMS:
+                always_subitems.append(
+                    pystray.MenuItem(
+                        rights_label,
+                        self._make_slot_rights_action("buddha_always_on", rights_level),
+                        checked=lambda item, rl=rights_level, ar=always_rights: ar == rl,
+                        radio=True,
+                    )
+                )
             act_text = self.idle_task_name or always_slot.get("current_activity") or "Wartet auf Leerlauf"
             always_subitems.append(pystray.MenuItem(f"Aktivität: {act_text[:35]}", None, enabled=False))
             items.append(pystray.MenuItem(f"⚡ Buddha Always-On [Klasse 4 · {always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
@@ -2072,14 +2083,21 @@ class BACHTray:
             self._update_icon()
         return action
 
-    def _make_slot_mode_action(self, slot_id, mode):
+    def _make_slot_mode_action(self, slot_id, mode, rights=None):
         def action(*_):
-            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"mode": mode}})
+            updates = {"mode": mode}
+            if rights is not None:
+                updates["rights"] = rights
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": updates})
             if res is None or res.get("error"):
                 self._notify_error(f"{slot_id} Modus → {mode}")
             self._refresh()
             self._update_icon()
         return action
+
+    def _make_slot_rights_action(self, slot_id, level):
+        mode, rights = worker_rights_level_to_mode_rights(level)
+        return self._make_slot_mode_action(slot_id, mode, rights=rights)
 
     def _toggle_slot_think(self, slot_id):
         slot = self.slots.get(slot_id, {})
@@ -2294,7 +2312,7 @@ class BACHTray:
             for w in getattr(self, "dynamic_workers", [])
         )
         slot_sig = tuple(
-            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("enabled"), v.get("current_activity"))
+            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("rights"), v.get("enabled"), v.get("current_activity"))
             for k, v in sorted(getattr(self, "slots", {}).items())
         )
         return (
