@@ -132,7 +132,10 @@ def test_missing_gate_or_failed_baseline_is_safe(monkeypatch):
 
 def test_real_ram_distributor_gate_through_the_worker_wait(run, ollama, monkeypatch):  # noqa: F811
     from hub._services.ocean_stack_bridge import load_ocean_ram_distributor_module
-    mod = load_ocean_ram_distributor_module()
+    try:
+        mod = load_ocean_ram_distributor_module()
+    except ModuleNotFoundError:
+        pytest.skip("ocean-resources sibling repo not checked out in isolated CI")
     if not hasattr(mod, "RunCooldownGate"):
         pytest.skip("ocean-resources without the PB-26 gate on this host")
     mib = 1024**2

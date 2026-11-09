@@ -1,7 +1,12 @@
 """Tests for PB-26 background worker rights levels (Stufe I/II/III) and execute_command env hardening."""
+import sys
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+
+for _mod in ("pystray", "PIL", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFont"):
+    sys.modules.setdefault(_mod, MagicMock())
 
 from hub._services.chat import bach_tools, chat_tray, slots_config, worker_write_guard
 
