@@ -403,6 +403,7 @@ jobs:
             system/tests/test_pb26_run_cooldown.py \
             system/tests/test_pb26_stable_prefix_handover.py \
             system/tests/test_pb4_abort_visibility.py \
+            system/tests/test_pb6_module_automations_api.py \
             system/tests/test_pb7_pb12_surfaces_and_life.py \
             system/tests/test_pb17_help_freshness_and_claims.py \
             system/tests/test_persoenlich_dashboard.py \
