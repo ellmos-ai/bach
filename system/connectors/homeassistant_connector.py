@@ -73,6 +73,7 @@ from connectors.base import BaseConnector, ConnectorConfig, ConnectorStatus, Mes
 # (pattern after the MIT-licensed hermes-agent HA tool, Nous Research).
 _NAME_RE = re.compile(r"[a-z0-9_]+")
 _ENTITY_ID_RE = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
+_EVENT_TYPE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 _BLOCKED_DOMAINS = frozenset({
     "shell_command", "command_line", "python_script", "pyscript", "hassio", "rest_command",
 })
@@ -80,6 +81,10 @@ _BLOCKED_DOMAINS = frozenset({
 
 def _valid_name(value) -> bool:
     return isinstance(value, str) and _NAME_RE.fullmatch(value) is not None
+
+
+def _valid_event_type(value) -> bool:
+    return isinstance(value, str) and _EVENT_TYPE_RE.fullmatch(value) is not None
 
 
 def _valid_entity_id(value) -> bool:
@@ -169,7 +174,7 @@ class HomeAssistantConnector(BaseConnector):
 
     def fire_event(self, event_type: str, data: Dict = None) -> bool:
         """Event feuern."""
-        if not _valid_name(event_type):
+        if not _valid_event_type(event_type):
             return False
         result = self._api_call("POST", f"/api/events/{event_type}", data)
         return result is not None
