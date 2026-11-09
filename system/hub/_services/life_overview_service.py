@@ -1,3 +1,4 @@
+# BACH Adapter: life_overview
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """Life Overview & Module Surfaces Aggregator Service (PB-7 / PB-12, #3991, #3995).
