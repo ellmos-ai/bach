@@ -593,6 +593,30 @@ def _guard_real_process_control(monkeypatch):
     monkeypatch.setattr(psutil.Process, "kill", guarded_kill)
 
 
+@pytest.fixture(autouse=True)
+def _guard_real_worker_repo_registry(monkeypatch):
+    """Isolate the host-wide trusted repo registry (~/.bach/worker_repo_registry.v1.json).
+
+    On hosts where a real registry is present (e.g. Mac Studio), tests that exercise
+    unbound tasks or synthesize custom tasks without setting up an explicit repo registry
+    must not fail with repository_unverified against the host file (T-20261107-308602710).
+    Tests that test the registry directly and isolate HOME/USERPROFILE to tmp_path are unaffected.
+    """
+    from hub._services.chat import worker_repo_registry
+
+    orig_reg_path = worker_repo_registry.registry_path
+    real_reg = _HOME_BACH_DIR / "worker_repo_registry.v1.json"
+    fake_reg = Path(os.environ["BACH_RUNTIME_DIR"]) / "isolated_worker_repo_registry.json"
+
+    def safe_registry_path():
+        cur = orig_reg_path()
+        if cur == real_reg and real_reg.exists():
+            return fake_reg
+        return cur
+
+    monkeypatch.setattr(worker_repo_registry, "registry_path", safe_registry_path)
+
+
 @pytest.fixture
 def isolated_runtime(tmp_path, monkeypatch):
     """Yield an isolated BACH runtime directory for a single test.
