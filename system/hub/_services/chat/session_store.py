@@ -540,3 +540,30 @@ class SQLiteChatSessionStore:
             raise ChatSessionStoreError(f"cannot delete chat transcript: {exc}") from exc
         finally:
             conn.close()
+
+
+# ── M1 Seam Adapter: ellmos_chat.store with local SQLiteChatSessionStore fallback ──
+class EllmosChatStoreAdapter:
+    """Seam-Adapter delegating to ellmos_chat.store when available, with backward-compatible fallback to SQLiteChatSessionStore."""
+
+    def __init__(self, db_path: str | Path, *args, **kwargs):
+        self.db_path = Path(db_path)
+        self._delegate = None
+        self.is_seam_active = False
+
+        try:
+            import ellmos_chat.store as ec_store  # type: ignore
+            if hasattr(ec_store, "ChatSessionStore"):
+                self._delegate = ec_store.ChatSessionStore(str(db_path), *args, **kwargs)
+                self.is_seam_active = True
+        except (ImportError, AttributeError, Exception):
+            self._delegate = None
+
+        if self._delegate is None:
+            self._delegate = SQLiteChatSessionStore(db_path, *args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._delegate, name)
+
+
+ChatSessionStoreSeamAdapter = EllmosChatStoreAdapter

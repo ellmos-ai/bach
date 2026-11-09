@@ -380,15 +380,18 @@ def resolve_tool_file(name: str) -> Optional[Path]:
 
 
 def resolve_workflow_file(workflow_name: str) -> Optional[Path]:
-    workflows_dir = SKILLS_DIR / "_workflows"
     safe_name = safe_path_segment(workflow_name, field_name="Workflow-Name")
     candidates = [safe_name]
     if not safe_name.endswith(".md"):
         candidates.insert(0, f"{safe_name}.md")
-    for candidate_name in candidates:
-        candidate = resolve_under_base(workflows_dir, candidate_name, allowed_suffixes={".md"})
-        if candidate.exists() and candidate.is_file():
-            return candidate
+    for base_dir in [SKILLS_DIR / "workflows", SKILLS_DIR / "_workflows"]:
+        for candidate_name in candidates:
+            try:
+                candidate = resolve_under_base(base_dir, candidate_name, allowed_suffixes={".md"})
+                if candidate.exists() and candidate.is_file():
+                    return candidate
+            except HTTPException:
+                continue
     return None
 
 
@@ -14713,8 +14716,52 @@ async def add_usecase(request: Request):
             data.get('expected_output')
         ))
         conn.commit()
+        usecase_id = cursor.lastrowid
         conn.close()
-        return {"success": True, "id": cursor.lastrowid}
+
+        # Automatische Task-Erzeugung fuer Buddha wenn Workflow noch fehlt
+        task_id = None
+        workflow_name = data.get('workflow_name')
+        wf_file = resolve_workflow_file(workflow_name) if workflow_name else None
+        if not wf_file:
+            try:
+                from hub._services.chat.usecase_runner import ensure_buddha_usecase_task
+                task_id, _ = ensure_buddha_usecase_task(
+                    usecase_id=usecase_id,
+                    title=data.get('title') or f"Usecase {usecase_id}",
+                    description=data.get('description'),
+                    workflow_name=workflow_name,
+                )
+            except Exception as task_err:
+                logger.warning(f"Konnte automatischen Buddha-Task fuer Usecase #{usecase_id} nicht anlegen: {task_err}")
+
+        return {"success": True, "id": usecase_id, "task_id": task_id}
+    except Exception as e:
+        return {"success": False, "error": public_error_message()}
+
+
+@app.post("/api/usecases/{usecase_id}/delegate")
+async def delegate_usecase(usecase_id: int):
+    """Usecase zur autonomen Workflow-Erstellung an Buddha delegieren."""
+    try:
+        conn = get_user_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM usecases WHERE id = ?", (usecase_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return {"success": False, "error": "Usecase nicht gefunden"}
+
+        uc = dict(row)
+        from hub._services.chat.usecase_runner import ensure_buddha_usecase_task
+        task_id, created = ensure_buddha_usecase_task(
+            usecase_id=usecase_id,
+            title=uc.get('title') or f"Usecase {usecase_id}",
+            description=uc.get('description'),
+            workflow_name=uc.get('workflow_name'),
+        )
+        msg = f"Task #{task_id} fuer Buddha erstellt" if created else f"Task #{task_id} existiert bereits fuer Buddha"
+        return {"success": True, "task_id": task_id, "created": created, "message": msg}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
