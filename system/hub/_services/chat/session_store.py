@@ -30,6 +30,20 @@ HISTORY_SOURCES = ("user", "buddha", "worker", "system")
 _SLOT_CHAT_RE = re.compile(r"(?:agent:[1-9][0-9]*:)?slot:[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}")
 
 
+def matches_slot_id(chat_id: str, slot_id: str) -> int:
+    cid = str(chat_id or "")
+    if cid == slot_id:
+        return 1
+    prefix = f"slot:{slot_id}:"
+    if cid.startswith(prefix):
+        suffix = cid[len(prefix):]
+        if len(suffix) == 32 and all(c in "0123456789abcdef" for c in suffix):
+            return 1
+    if slot_id == "buddha_chat" and cid in ("gui-web", "talk-buddha"):
+        return 1
+    return 0
+
+
 def chat_source(chat_id: str) -> str:
     """Classify a transcript by who talked: user, buddha, worker or system.
 
@@ -331,7 +345,8 @@ class SQLiteChatSessionStore:
 
     def list_snapshot_page(self, *, limit: int = 25, offset: int = 0,
                            agent_id: int | None = None, archive: str = "all",
-                           source: str = "all", problems: bool = False) -> dict:
+                           source: str = "all", problems: bool = False,
+                           slot_id: str | None = None) -> dict:
         """Read an authenticated viewer's explicit context; filter before paging."""
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 100_000:
             raise ValueError("Invalid transcript page")
@@ -341,6 +356,8 @@ class SQLiteChatSessionStore:
             raise ValueError("Invalid transcript archive filter")
         if source != "all" and source not in HISTORY_SOURCES:
             raise ValueError("Invalid transcript source filter")
+        if slot_id is not None and (not isinstance(slot_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", slot_id)):
+            raise ValueError("Invalid transcript slot filter")
         if not self.db_path.is_file():
             raise ChatSessionStoreError("canonical BACH database is unavailable")
         conn = None
@@ -348,6 +365,7 @@ class SQLiteChatSessionStore:
             conn = self._connect_readonly()
             conn.create_function("profile_chat_id_agent", 1, profile_chat_id_agent, deterministic=True)
             conn.create_function("chat_source", 1, chat_source, deterministic=True)
+            conn.create_function("matches_slot_id", 2, matches_slot_id, deterministic=True)
             conn.execute("BEGIN")
             conditions = ["snapshot_type = ?"]
             args = [CHAT_SNAPSHOT_TYPE]
@@ -363,6 +381,9 @@ class SQLiteChatSessionStore:
             if archive != "all":
                 conditions.append("instr(session_id, ':archived:') " + ("> 0" if archive == "archived" else "= 0"))
             chat_id_sql = "COALESCE(json_extract(snapshot_data,'$.chat_id'),'')"
+            if slot_id is not None:
+                conditions.append("matches_slot_id(" + chat_id_sql + ", ?) = 1")
+                args.append(slot_id)
             failed_sql = ("(SELECT COUNT(*) FROM json_each(snapshot_data,'$.messages') "
                           "WHERE json_extract(value,'$.answer_status') = 'failed')")
             if problems:
@@ -397,10 +418,13 @@ class SQLiteChatSessionStore:
                 item["archived"] = ":archived:" in item["session_id"]
                 item["source"] = chat_source(item["chat_id"])
                 items.append(item)
-            return {"sessions": items, "total": total, "offset": offset, "limit": limit,
-                    "source_filter": source, "problems": problems, "source_counts": counts,
-                    "has_more": offset + len(items) < total,
-                    "save_limits": {"max_messages": self.max_messages, "max_content_chars": self.max_content_chars}}
+            result = {"sessions": items, "total": total, "offset": offset, "limit": limit,
+                      "source_filter": source, "problems": problems, "source_counts": counts,
+                      "has_more": offset + len(items) < total,
+                      "save_limits": {"max_messages": self.max_messages, "max_content_chars": self.max_content_chars}}
+            if slot_id is not None:
+                result["slot_filter"] = slot_id
+            return result
         except (sqlite3.Error, OSError) as exc:
             raise ChatSessionStoreError("cannot read canonical transcript page") from exc
         finally:

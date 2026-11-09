@@ -3773,6 +3773,10 @@ def _resolve_slot_for_chat(chat_id: str) -> dict:
     selected_id = system_slot_chat_id(str_id)
     if str_id.startswith("slot:") and selected_id is None:
         raise WorkerBindingError("Ungültige System-Steckplatz-Chat-ID")
+    if selected_id:
+        for w in cfg.get("dynamic_workers", []):
+            if w.get("id") == selected_id:
+                return {**_project_dynamic_worker_slot(w), "enabled": True}
     if selected_id or str_id in slots:
         selected = get_system_slot(selected_id or str_id)
         if not selected or selected.get("enabled", True) is not True:

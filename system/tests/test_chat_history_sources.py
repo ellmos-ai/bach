@@ -126,3 +126,16 @@ def test_session_detail_names_chat_id_and_source_for_continuing(history):  # noq
     assert worker["source"] == "session_snapshots"  # the data-source field of the detail contract stays untouched
     web = client.get(f"/api/agent-history/sessions/{web_id}").json()
     assert (web["chat_id"], web["chat_source"]) == ("gui-web", "user")
+
+
+def test_slot_id_filter_matches_direct_slot_and_worker_sessions(history):  # noqa: F811
+    store, client, _, _ = history
+    _seed(store)
+    store.save("slot:worker-7:" + HEX, [{"role": "user", "content": "Direkt"}], name="Direkt (worker-7)")
+    data = client.get("/api/agent-history/sessions?slot_id=worker-7").json()
+    assert data["slot_filter"] == "worker-7"
+    assert data["total"] == 3
+    assert {row["chat_id"] for row in data["sessions"]} == {"worker-7", "slot:worker-7:" + HEX}
+    buddha = client.get("/api/agent-history/sessions?slot_id=buddha_chat").json()
+    assert buddha["slot_filter"] == "buddha_chat"
+    assert [row["chat_id"] for row in buddha["sessions"]] == ["gui-web"]
