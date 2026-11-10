@@ -2350,7 +2350,7 @@ async def api_get_tasks(
     assigned_to: str = None,
     assignment_group: str = "all",
     priority: str = None,
-    limit: int = 100,
+    limit: int = 0,
     offset: int = 0,
     q: str = None
 ):
@@ -2452,7 +2452,8 @@ async def api_get_tasks(
             WHEN UPPER(TRIM(priority)) IN ('P3','3','LOW','NIEDRIG','NORMAL') THEN 3
             WHEN UPPER(TRIM(priority)) IN ('P4','4','MINIMAL') THEN 4
             ELSE 5 END ASC, created_at DESC, id DESC LIMIT ? OFFSET ?"""
-        params.extend((limit + 1 if limit > 0 else limit, max(0, offset)))
+        effective = limit if limit > 0 else -1
+        params.extend((effective, max(0, offset)))
         
         rows = conn.execute(query, params).fetchall()
         has_more = limit > 0 and len(rows) > limit
