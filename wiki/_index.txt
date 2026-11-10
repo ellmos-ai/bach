@@ -1,0 +1,32 @@
+# Wiki-Index
+
+* python-agent.txt
+* cloud-integration.txt
+* health-assistant.txt
+* bio-harmonisierung.txt
+* europe-tourism.txt
+* api-gateway.txt
+* knowledge-graph.txt
+* wiki-konventionen.txt
+
+## Fachindex
+
+### bach
+* agentenreflexion.txt
+* fachwissen-agent.txt
+
+### cloud
+* aws-architektur.txt
+* azure-vm.txt
+* gcp-network.txt
+
+### medizin
+* icf.txt
+* labwerte.txt
+* medikamentendosierung.txt
+
+## Neuste Artikel (sortiert absteigend)
+
+* python-agent.txt (2026-10-29)
+* europe-tourism.txt (2026-10-28)
+* api-gateway.txt (2026-10-27)
