@@ -23,24 +23,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch PR base branch
+        if: github.base_ref != ''
+        run: git fetch origin ${{ github.base_ref }}
+
       - name: Prüfe module-gate Status
         id: check_gate
         run: |
-          # Prüfe, ob der module-gate Workflow gelaufen ist
-          # Dies geschieht über die GitHub Actions API
-          echo "Prüfe module-gate Status..."
-          
-          # Lade den Gate-Report, falls vorhanden
-          if [ -f ".gate_report.txt" ]; then
-            echo "Gate-Report gefunden:"
-            cat .gate_report.txt
-            GATE_STATUS=$(grep -oP 'gate_status::\K\w+' .gate_report.txt || echo "UNKNOWN")
-            echo "Gate-Status: $GATE_STATUS"
+          # Der module-gate-Workflow läuft auf einem eigenen Runner; sein
+          # .gate_report.txt existiert in diesem Checkout nie. Deshalb führt
+          # dieser Job dieselbe Prüfung selbst aus und wertet den Exit-Code aus.
+          if python3 .github/workflows/module_gate_check.py; then
+            GATE_STATUS="PASS"
           else
-            echo "Kein Gate-Report gefunden - Gate-Check hat noch nicht gelaufen"
-            GATE_STATUS="UNKNOWN"
+            GATE_STATUS="FAIL"
           fi
-          echo "gate_status=$GATE_STATUS" >> $GITHUB_OUTPUT
+          echo "Gate-Status: $GATE_STATUS"
+          echo "gate_status=$GATE_STATUS" >> "$GITHUB_OUTPUT"
 
       - name: Setze HOLD falls Gate nicht grün
         if: steps.check_gate.outputs.gate_status != 'PASS'
@@ -69,11 +68,13 @@ jobs:
       - name: Entferne HOLD falls Gate grün
         if: steps.check_gate.outputs.gate_status == 'PASS'
         run: |
-          echo "Gate-Status ist grün. Entferne HOLD-Label falls vorhanden."
+          echo "Gate-Status ist grün. Entferne Gate-Labels falls vorhanden."
           
-          curl -s -X DELETE \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/HOLD"
+          for label in HOLD module-gate-fehler; do
+            curl -s -X DELETE \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/$label"
+          done
           
-          echo "HOLD-Label entfernt."
+          echo "Gate-Labels entfernt."
