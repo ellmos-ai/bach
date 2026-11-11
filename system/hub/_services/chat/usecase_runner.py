@@ -18,15 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 
 def get_default_db_path() -> Path:
-    """Resolve default database path."""
-    try:
-        from hub.bach_paths import BACH_DB
-        if BACH_DB.exists():
-            return BACH_DB
-    except Exception:
-        pass
-    fallback = REPO_ROOT / "system" / "hub" / "bach.db"
-    return fallback
+    """Resolve default database path via the central path registry."""
+    from hub.bach_paths import BACH_DB
+
+    return BACH_DB
 
 
 def slugify_workflow_name(name: str) -> str:
