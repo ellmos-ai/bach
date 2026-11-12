@@ -890,3 +890,158 @@ def test_discard_reports_every_stuck_file_after_trying_all(tmp_path, monkeypatch
         discard_own_artifacts(root, stuck, free)
 
     assert stuck.exists() and not free.exists()      # alle Pfade wurden versucht
+
+
+# =============================================================================
+# Revision 4 (R1, P3): Wurzelvergleich ueber die tatsaechliche Dateiidentitaet (case-insensitive APFS),
+# fehlende Dateiidentitaet -> ArtifactCleanupError statt blindem unlink. Echte Mac-Fixtures, keine Mocks
+# fuer das Dateisystemverhalten; nur synthetische Daten.
+# =============================================================================
+
+from hub._services.document.anonymizer_service import ensure_disjoint_roots  # noqa: E402
+
+
+def _is_case_insensitive(directory: Path) -> bool:
+    probe = directory / "CaseProbeAbc"
+    probe.mkdir()
+    try:
+        return (directory / "caseprobeabc").exists()
+    finally:
+        probe.rmdir()
+
+
+@pytest.fixture
+def ci_dir(tmp_path):
+    """tmp_path, aber nur auf einem case-insensitiven Volume (echte Eigenschaft, nicht angenommen)."""
+    if not _is_case_insensitive(tmp_path):
+        pytest.skip("Dateisystem ist case-sensitive; die Gegenprobe steht in den case-sensitive-Tests")
+    return tmp_path
+
+
+@pytest.mark.parametrize("layout", ["same_dir_other_case", "dest_in_src_other_case", "dest_new_parts_other_case",
+                                    "src_in_dest_other_case"])
+def test_folder_roots_differing_only_in_case_are_rejected_before_any_write(ci_dir, monkeypatch, layout):
+    _fake_extractors(monkeypatch)
+    writes = []
+    monkeypatch.setattr(anonymizer_service, "get_key_path", lambda cid: ci_dir / "keys" / f"{cid}.key")
+    monkeypatch.setattr(anonymizer_service, "encrypt_key_file", lambda *a, **k: writes.append(a))
+    holder = ci_dir / "Elt"
+    src = holder / "Quelle"
+    (src / "Sub").mkdir(parents=True)
+    (src / "Notiz.txt").write_text("Max Mustermann war da.", encoding="utf-8")
+    (src / ".profil.json").write_text('{"vorhanden": true}', encoding="utf-8")
+    (src / "Sub" / "Akte.doc").write_bytes(b"synthetic-binary")
+    dest = {"same_dir_other_case": holder / "QUELLE",
+            "dest_in_src_other_case": holder / "quelle" / "SUB" / "neu",
+            "dest_new_parts_other_case": holder / "QUELLE" / "ausgabe" / "tief",
+            "src_in_dest_other_case": ci_dir / "ELT"}[layout]
+    before = _fulltree(ci_dir)
+
+    with pytest.raises(ValueError) as caught:
+        DocumentAnonymizer().anonymize_folder(str(src), _profile(), "pw", output_folder=str(dest))
+
+    assert _fulltree(ci_dir) == before            # Originale, Punktdateien, Verzeichnisse: nichts neu angelegt
+    assert writes == [] and "Quell- und Ausgabeordner" in str(caught.value) and str(ci_dir) not in str(caught.value)
+
+
+@pytest.mark.parametrize("where", ["data_ano_other_case", "inside_other_case", "base_other_case"])
+def test_workflow_roots_differing_only_in_case_do_not_clean_the_originals(ci_dir, monkeypatch, where):
+    _fake_extractors(monkeypatch)
+    service, session = _workflow(ci_dir)
+    base = ci_dir / "base"
+    (base / "data_ano" / "sub").mkdir(parents=True, exist_ok=True)
+    source = {"data_ano_other_case": base / "DATA_ANO", "inside_other_case": base / "Data_Ano" / "sub",
+              "base_other_case": ci_dir / "BASE"}[where]
+    (source / "Notiz.txt").write_text("Max Mustermann war da.", encoding="utf-8")
+    (source / ".versteckt").write_text("bleibt", encoding="utf-8")
+    before = _fulltree(ci_dir)
+
+    with pytest.raises(ValueError):
+        service.anonymize_to_bundles_from_folder(session, str(source), include_extended=True)
+
+    assert _fulltree(ci_dir) == before            # _deep_cleanup(data_ano) hat keine Quelloriginale geloescht
+    assert session.anonymized is False
+
+
+def test_distinct_siblings_with_similar_names_are_still_allowed(tmp_path):
+    (tmp_path / "Quelle").mkdir()
+    (tmp_path / "Quelle2").mkdir()
+    (tmp_path / "ziel").mkdir()
+    ensure_disjoint_roots(tmp_path / "Quelle", tmp_path / "Quelle2")
+    ensure_disjoint_roots(tmp_path / "Quelle", tmp_path / "ziel" / "neu")
+
+
+@pytest.fixture(scope="module")
+def case_sensitive_volume(tmp_path_factory):
+    """Echtes case-sensitive APFS-Volume (Sparse-Image), damit KEINE pauschale casefold-Annahme getestet wird."""
+    import shutil
+    import subprocess
+
+    if sys.platform != "darwin" or not shutil.which("hdiutil"):
+        pytest.skip("hdiutil nicht verfuegbar")
+    base = tmp_path_factory.mktemp("csvol")
+    mount = base / "mnt"
+    mount.mkdir()
+    made = subprocess.run(["hdiutil", "create", "-size", "20m", "-fs", "Case-sensitive APFS", "-volname", "cs4120",
+                           "-type", "SPARSE", str(base / "cs")], capture_output=True, text=True, timeout=120)
+    if made.returncode != 0:
+        pytest.skip("case-sensitive Image nicht anlegbar")
+    attached = subprocess.run(["hdiutil", "attach", str(base / "cs.sparseimage"), "-mountpoint", str(mount),
+                               "-nobrowse"], capture_output=True, text=True, timeout=120)
+    if attached.returncode != 0:
+        pytest.skip("case-sensitive Image nicht einhaengbar")
+    try:
+        yield mount
+    finally:
+        subprocess.run(["hdiutil", "detach", str(mount), "-force"], capture_output=True, text=True, timeout=120)
+
+
+def test_case_sensitive_volume_keeps_differently_cased_directories_distinct(case_sensitive_volume):
+    mount = case_sensitive_volume
+    (mount / "Quelle").mkdir()
+    (mount / "quelle").mkdir()
+    assert not os.path.samefile(mount / "Quelle", mount / "quelle")        # echte Eigenschaft des Volumes
+    ensure_disjoint_roots(mount / "Quelle", mount / "quelle")              # verschieden -> erlaubt
+    ensure_disjoint_roots(mount / "Quelle", mount / "quelle" / "ausgabe")
+    with pytest.raises(ValueError):                                         # gleiche Schreibweise bleibt abgelehnt
+        ensure_disjoint_roots(mount / "Quelle", mount / "Quelle" / "ausgabe")
+
+
+# --- P3: fehlende Dateiidentitaet -> nie blind loeschen -----------------------------
+
+
+def test_missing_identity_after_exclusive_copy_is_a_cleanup_error_not_a_blind_unlink(tmp_path, monkeypatch):
+    import shutil as shutil_module
+
+    src = tmp_path / "quelle.txt"
+    src.write_text("Max Mustermann", encoding="utf-8")
+    dest = tmp_path / "ziel.txt"
+
+    def no_identity(_st):
+        raise OSError("keine Dateiidentitaet")
+
+    def half_copy(reader, writer, *args, **kwargs):
+        writer.write(b"Max")
+        raise OSError("Platte voll")
+
+    monkeypatch.setattr(anonymizer_service, "_file_identity", no_identity)
+    monkeypatch.setattr(shutil_module, "copyfileobj", half_copy)
+    with pytest.raises(ArtifactCleanupError):
+        copy_exclusive(src, dest)
+
+    assert dest.exists()           # nicht blind geloescht: Eigentum ist nicht beweisbar, der Fehler ist laut
+
+
+def test_missing_identity_in_the_converter_is_a_cleanup_error_not_a_blind_unlink(tmp_path, monkeypatch):
+    stage = tmp_path / "Akte.doc"
+    stage.write_bytes(b"synthetic-binary")
+
+    def no_identity(_st):
+        raise OSError("keine Dateiidentitaet")
+
+    monkeypatch.setattr(anonymizer_service, "_file_identity", no_identity)
+    with pytest.raises(ArtifactCleanupError):
+        DocumentAnonymizer._write_converted_txt(stage, "Text")
+        # (fstat scheitert direkt nach der Exklusiverstellung -> identity None)
+    # Der Schreibversuch selbst lief nicht (Exception vor dem Schreiben); Eigentum nicht beweisbar -> TXT bleibt sichtbar
+    assert (tmp_path / "Akte.txt").exists()

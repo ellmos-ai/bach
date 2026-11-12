@@ -1539,7 +1539,10 @@ def _remove_created_file(path: Path, identity: Optional[Tuple[int, int]]) -> Non
         return
     if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
         return
-    if identity is not None and _file_identity(st) != identity:
+    if identity is None:
+        # Eigentum nicht beweisbar (Identitaet des frisch angelegten Handles fehlt): nie blind loeschen.
+        raise ArtifactCleanupError("1 eigene Ausgabe(n) konnten nicht entfernt werden (Dateiidentitaet fehlt)")
+    if _file_identity(st) != identity:
         return
     try:
         path.unlink()
@@ -1572,16 +1575,53 @@ def copy_exclusive(src: Path, dest: Path) -> None:
             raise
 
 
+def _stat_if_exists(path: Path):
+    """os.stat oder None, wenn der Pfad nicht existiert. Andere Fehler -> ValueError (fail-closed)."""
+    try:
+        return os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError:
+        raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen") from None
+
+
 def ensure_disjoint_roots(source: Path, target: Path) -> None:
-    """Lehnt gleiche oder ineinander liegende KANONISCHE Quell-/Zielordner ab (ValueError).
+    """Lehnt gleiche oder ineinander liegende Quell-/Zielordner ab (ValueError).
 
     Muss vor jedem mkdir, Profil-/Schluesselschreiben oder Aufraeumen des Zielordners laufen:
     sonst koennten Originale ueberschrieben oder als 'Ausgabe' geloescht werden. Die Meldung
     enthaelt keine Pfade.
+
+    Zwei Stufen, keine pauschale casefold-Annahme: (1) kanonischer Pfadvergleich (resolve + normcase);
+    (2) tatsaechliche Dateiidentitaet (os.path.samestat) fuer jeden EXISTIERENDEN Vorfahren beider Seiten.
+    Stufe 2 erkennt dasselbe Verzeichnis in anderer Schreibweise auf case-insensitiven Volumes (APFS,
+    NTFS) und Hardlink-/Bind-Konstellationen, ohne etwas ueber das Dateisystem zu raten: auf einem
+    case-sensitiven Volume sind 'Quelle' und 'quelle' verschiedene Verzeichnisse und bleiben erlaubt.
+    Fehlt die Dateiidentitaet (st_ino == 0) oder ist ein Pfad nicht pruefbar, wird abgelehnt.
     """
     src = Path(os.path.normcase(str(source.resolve())))
     dst = Path(os.path.normcase(str(target.resolve())))
     if src == dst or src in dst.parents or dst in src.parents:
+        raise ValueError("Quell- und Ausgabeordner duerfen weder gleich noch ineinander verschachtelt sein")
+
+    src_st, dst_st = _stat_if_exists(src), _stat_if_exists(dst)
+
+    def overlaps(chain_owner: Path, other_st) -> bool:
+        if other_st is None:
+            return False
+        if other_st.st_ino == 0:
+            raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen")
+        for ancestor in (chain_owner, *chain_owner.parents):
+            st = _stat_if_exists(ancestor)
+            if st is None:
+                continue
+            if st.st_ino == 0:
+                raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen")
+            if os.path.samestat(st, other_st):
+                return True
+        return False
+
+    if overlaps(dst, src_st) or overlaps(src, dst_st):
         raise ValueError("Quell- und Ausgabeordner duerfen weder gleich noch ineinander verschachtelt sein")
 
 
