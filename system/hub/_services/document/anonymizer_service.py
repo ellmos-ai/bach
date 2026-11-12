@@ -1440,6 +1440,191 @@ def _replace_in_filename(name: str, sorted_replacements: List[Tuple[str, str]]) 
 # Anonymisierer
 # ═══════════════════════════════════════════════════════════════
 
+CONVERTED_TO_TXT_SUFFIXES = (".doc", ".msg")
+
+
+def claim_output_name(claimed: Dict[str, str], target: Path, source: Path, check_disk: bool = False) -> Path:
+    """
+    Reserviert den ENDGUELTIGEN Ausgabenamen fuer genau eine Quelle (VOR dem Kopieren).
+
+    .doc/.msg werden zu <name>.txt konvertiert; zwei Quellen mit gleichem
+    Basisnamen (Akte.doc + Akte.txt, in beliebiger Reihenfolge, oder gleicher Name
+    aus Unterordnern) wuerden sonst still ueberschreiben. Mit check_disk wird
+    zusaetzlich ein bereits vorhandener fremder Ausgabepfad abgelehnt (bleibt
+    unveraendert). Wirft FileExistsError mit beiden Quellnamen.
+    """
+    final = target.with_suffix(".txt") if target.suffix.lower() in CONVERTED_TO_TXT_SUFFIXES else target
+    key = str(final).casefold()
+    if key in claimed:
+        raise FileExistsError(
+            f"Ausgabename bereits belegt: {final.name} (Quellen: {claimed[key]} / {source.name})"
+        )
+    if check_disk:
+        # Rohkopie-Ziel UND endgueltiger Pfad muessen frei sein; sonst gehoert die Datei nicht
+        # diesem Aufruf (z.B. Ausgabeordner == Quellordner) und wird nie angefasst oder aufgeraeumt.
+        for existing in (target, final):
+            if existing.exists():
+                raise FileExistsError(
+                    f"Ausgabepfad existiert bereits (vorhandene Datei bleibt unveraendert): {existing.name}"
+                )
+    claimed[key] = source.name
+    return final
+
+
+class ArtifactCleanupError(RuntimeError):
+    """Eigene, ggf. unmaskierte oder klarnamige Ausgaben liessen sich nicht entfernen.
+
+    Sicherheitsfehler: Der Lauf darf NICHT als anonymisiert gelten. Die Meldung enthaelt
+    bewusst nur eine Anzahl, keine Datei- oder Personennamen.
+    """
+
+
+def _file_identity(st) -> Tuple[int, int]:
+    return (st.st_dev, st.st_ino)
+
+
+def discard_own_artifacts(root: Path, *paths: Optional[Path]) -> None:
+    """
+    Entfernt NUR Dateien, die dieser Aufruf selbst unter ``root`` angelegt hat.
+
+    Aufrufer uebergeben ausschliesslich Pfade, die dieser Aufruf selbst exklusiv angelegt hat
+    (copy_exclusive bzw. die Konvertierungsausgabe, die der Konverter gemeldet hat). Zusaetzliche
+    Sicherung: nur regulaere Dateien, keine Symlinks, nur strikt unterhalb von ``root``
+    (Originale ausserhalb bleiben unberuehrt); kein Verzeichnis-Aufraeumen.
+
+    Alle Pfade werden versucht. Laesst sich eine eigene Datei nicht entfernen, wird
+    ArtifactCleanupError geworfen (nie still verschluckt): sie koennte unmaskierte Inhalte
+    oder einen Klarnamen tragen.
+    """
+    import stat
+
+    root_resolved = root.resolve()
+    stuck = 0
+    for path in paths:
+        if path is None:
+            continue
+        try:
+            st = path.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            stuck += 1
+            continue
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+            continue
+        try:
+            if root_resolved not in path.resolve().parents:
+                continue
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            stuck += 1
+    if stuck:
+        raise ArtifactCleanupError(f"{stuck} eigene Ausgabe(n) konnten nicht entfernt werden")
+
+
+def _remove_created_file(path: Path, identity: Optional[Tuple[int, int]]) -> None:
+    """Entfernt eine soeben EXKLUSIV angelegte Datei -- nur wenn sie noch dieselbe Datei ist.
+
+    Eine vorherige Abwesenheitspruefung oder Reservierung beweist kein Eigentum; hier zaehlt nur
+    die erfolgreiche Exklusiverstellung (identity = dev/inode des offenen Handles). Wurde der
+    Pfad inzwischen durch eine andere Datei ersetzt, bleibt sie unveraendert.
+    """
+    import stat
+
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        return
+    if identity is None:
+        # Eigentum nicht beweisbar (Identitaet des frisch angelegten Handles fehlt): nie blind loeschen.
+        raise ArtifactCleanupError("1 eigene Ausgabe(n) konnten nicht entfernt werden (Dateiidentitaet fehlt)")
+    if _file_identity(st) != identity:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ArtifactCleanupError("1 eigene Ausgabe(n) konnten nicht entfernt werden") from exc
+
+
+def copy_exclusive(src: Path, dest: Path) -> None:
+    """Kopiert ``src`` nach ``dest`` und legt ``dest`` EXKLUSIV an (O_EXCL, nie ueberschreibend).
+
+    Existiert ``dest`` (auch durch einen zwischen Reservierung und Kopie erschienenen Fremden),
+    wirft FileExistsError, ohne etwas zu veraendern. Bricht der Kopiervorgang nach dem Anlegen ab,
+    wird die Teilkopie entfernt (ArtifactCleanupError, falls das nicht gelingt).
+    """
+    import shutil
+
+    with open(src, "rb") as reader:
+        writer = open(dest, "xb")
+        identity = None
+        try:
+            identity = _file_identity(os.fstat(writer.fileno()))
+            with writer:
+                shutil.copyfileobj(reader, writer)
+            shutil.copystat(src, dest)
+        except BaseException:
+            writer.close()
+            _remove_created_file(dest, identity)
+            raise
+
+
+def _stat_if_exists(path: Path):
+    """os.stat oder None, wenn der Pfad nicht existiert. Andere Fehler -> ValueError (fail-closed)."""
+    try:
+        return os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError:
+        raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen") from None
+
+
+def ensure_disjoint_roots(source: Path, target: Path) -> None:
+    """Lehnt gleiche oder ineinander liegende Quell-/Zielordner ab (ValueError).
+
+    Muss vor jedem mkdir, Profil-/Schluesselschreiben oder Aufraeumen des Zielordners laufen:
+    sonst koennten Originale ueberschrieben oder als 'Ausgabe' geloescht werden. Die Meldung
+    enthaelt keine Pfade.
+
+    Zwei Stufen, keine pauschale casefold-Annahme: (1) kanonischer Pfadvergleich (resolve + normcase);
+    (2) tatsaechliche Dateiidentitaet (os.path.samestat) fuer jeden EXISTIERENDEN Vorfahren beider Seiten.
+    Stufe 2 erkennt dasselbe Verzeichnis in anderer Schreibweise auf case-insensitiven Volumes (APFS,
+    NTFS) und Hardlink-/Bind-Konstellationen, ohne etwas ueber das Dateisystem zu raten: auf einem
+    case-sensitiven Volume sind 'Quelle' und 'quelle' verschiedene Verzeichnisse und bleiben erlaubt.
+    Fehlt die Dateiidentitaet (st_ino == 0) oder ist ein Pfad nicht pruefbar, wird abgelehnt.
+    """
+    src = Path(os.path.normcase(str(source.resolve())))
+    dst = Path(os.path.normcase(str(target.resolve())))
+    if src == dst or src in dst.parents or dst in src.parents:
+        raise ValueError("Quell- und Ausgabeordner duerfen weder gleich noch ineinander verschachtelt sein")
+
+    src_st, dst_st = _stat_if_exists(src), _stat_if_exists(dst)
+
+    def overlaps(chain_owner: Path, other_st) -> bool:
+        if other_st is None:
+            return False
+        if other_st.st_ino == 0:
+            raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen")
+        for ancestor in (chain_owner, *chain_owner.parents):
+            st = _stat_if_exists(ancestor)
+            if st is None:
+                continue
+            if st.st_ino == 0:
+                raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen")
+            if os.path.samestat(st, other_st):
+                return True
+        return False
+
+    if overlaps(dst, src_st) or overlaps(src, dst_st):
+        raise ValueError("Quell- und Ausgabeordner duerfen weder gleich noch ineinander verschachtelt sein")
+
+
 class DocumentAnonymizer:
     """
     Anonymisiert Dokumente durch konsistente Pseudonymisierung.
@@ -1841,6 +2026,28 @@ class DocumentAnonymizer:
 
         Returns:
             (success, replacement_count)
+
+        Konvertierende Formate (.doc, .msg) ersetzen die Datei durch eine
+        gleichnamige .txt; den dabei tatsaechlich entstandenen Pfad liefert
+        anonymize_file_with_output().
+        """
+        success, count, _output = self.anonymize_file_with_output(filepath, profile)
+        return success, count
+
+    def anonymize_file_with_output(
+        self, filepath: str, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
+        """
+        Wie anonymize_file, liefert zusaetzlich den VERBINDLICHEN Ausgabepfad.
+
+        Konvertierende Formate (.doc, .msg -> gleichnamige .txt) entfernen die
+        Eingabedatei. Nachfolgende Schritte (z.B. Dateinamen-Anonymisierung)
+        muessen mit diesem Rueckgabepfad weiterarbeiten, nie mit dem
+        Ursprungspfad. None = es existiert keine Ausgabedatei (fail-closed
+        entfernt).
+
+        Returns:
+            (success, replacement_count, output_path)
         """
         # Direct/loaded profiles do not necessarily pass through the scanner.
         # Complete whole-address mappings before the shared replacement helpers
@@ -1853,11 +2060,28 @@ class DocumentAnonymizer:
             if email not in existing:
                 profile.mappings.setdefault("emails", {})[email] = _generate_fake_email(email)
 
-        return self._apply_profile_to_file(filepath, profile)
+        return self._apply_profile_to_file_with_output(filepath, profile)
 
     def _apply_profile_to_file(self, filepath: str, profile: AnonymProfile) -> tuple[bool, int]:
         """Apply existing mappings only; inverse profiles must never be enriched."""
+        success, count, _output = self._apply_profile_to_file_with_output(filepath, profile)
+        return success, count
+
+    def _apply_profile_to_file_with_output(
+        self, filepath: str, profile: AnonymProfile
+    ) -> tuple[bool, int, Optional[Path]]:
+        """Wie _apply_profile_to_file, mit verbindlichem Ausgabepfad (None = keine Ausgabe)."""
         path = Path(filepath)
+        suffix = path.suffix.lower()
+        if suffix == ".doc":
+            return self._convert_doc_to_txt(path, profile)
+        if suffix == ".msg":
+            return self._convert_msg_to_txt(path, profile)
+        success, count = self._apply_profile_in_place(path, profile)
+        return success, count, (path if path.exists() else None)
+
+    def _apply_profile_in_place(self, path: Path, profile: AnonymProfile) -> tuple[bool, int]:
+        """Formate, die am selben Pfad bleiben (oder fail-closed entfernt werden)."""
         suffix = path.suffix.lower()
 
         if suffix == ".docx":
@@ -1868,12 +2092,8 @@ class DocumentAnonymizer:
             return self._anonymize_pdf(path, profile)
         elif suffix in (".xlsx", ".xls"):
             return self._anonymize_excel(path, profile)
-        elif suffix == ".doc":
-            return self._anonymize_doc(path, profile)
         elif suffix == ".eml":
             return self._anonymize_eml(path, profile)
-        elif suffix == ".msg":
-            return self._anonymize_msg(path, profile)
         else:
             return False, 0
 
@@ -1905,6 +2125,9 @@ class DocumentAnonymizer:
             except ImportError:
                 dest = src.parent.parent / "klienten" / profile.client_id
 
+        # Gleiche/verschachtelte Wurzeln VOR jeder Schreibaktion ablehnen (mkdir, Profil, Schluessel)
+        ensure_disjoint_roots(src, dest)
+
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "output").mkdir(exist_ok=True)
 
@@ -1913,32 +2136,49 @@ class DocumentAnonymizer:
         self._progress = ProgressInfo(total_files=len(files), status="anonymizing")
 
         # Dateien verarbeiten
+        claimed: Dict[str, str] = {}
         for filepath in files:
             self._progress.current_file = filepath.name
             self._progress.processed_files += 1
             result.processed_files += 1
 
+            produced: List[Optional[Path]] = []   # nur was DIESER Aufruf angelegt hat
             try:
                 # Relative Struktur beibehalten
                 rel = filepath.relative_to(src)
                 dest_file = dest / rel
                 dest_file.parent.mkdir(parents=True, exist_ok=True)
 
+                # Endgueltigen Ausgabenamen VOR dem Kopieren reservieren (auch das
+                # .doc/.msg -> .txt-Ziel); Kollision oder vorhandene Datei = laut, nichts kopiert
+                claim_output_name(claimed, dest_file, filepath, check_disk=True)
+
                 # Datei kopieren und anonymisieren
-                import shutil
-                shutil.copy2(filepath, dest_file)
+                produced.append(dest_file)
+                copy_exclusive(filepath, dest_file)
 
-                success, count = self.anonymize_file(str(dest_file), profile)
-                if success:
-                    result.anonymized_files += 1
-                    result.replacements_total += count
-                else:
+                success, count, output_file = self.anonymize_file_with_output(str(dest_file), profile)
+                produced.append(output_file)
+                if not success or output_file is None:
+                    # Nicht anonymisiert: keine Rohkopie im Ziel zuruecklassen
+                    discard_own_artifacts(dest, *produced)
                     result.skipped_files += 1
+                    continue
 
-                # Dateinamen anonymisieren (falls Name enthalten)
-                dest_file = self._anonymize_filename(dest_file, profile)
+                # Dateinamen anonymisieren (falls Name enthalten) -- am
+                # verbindlichen Ausgabepfad, nicht am (ggf. konvertierten) Original
+                self._anonymize_filename(output_file, profile)
+                result.anonymized_files += 1
+                result.replacements_total += count
 
+            except ArtifactCleanupError:
+                try:
+                    discard_own_artifacts(dest, *produced)   # Rest best-effort, Fehler bleibt der erste
+                except ArtifactCleanupError:
+                    pass
+                raise   # Sicherheitsfehler: nie in errors[] verwandeln, Lauf bricht ab
             except Exception as e:
+                discard_own_artifacts(dest, *produced)   # wirft ArtifactCleanupError, wenn etwas bleibt
                 result.errors.append(f"{filepath.name}: {e}")
 
         # Schluessel im lokalen Speicher speichern (NICHT in OneDrive)
@@ -2046,6 +2286,45 @@ class DocumentAnonymizer:
         return True, count
 
     def _anonymize_doc(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """Kompatibilitaets-Wrapper; den Ausgabepfad liefert _convert_doc_to_txt."""
+        success, count, _output = self._convert_doc_to_txt(path, profile)
+        return success, count
+
+    @staticmethod
+    def _write_converted_txt(path: Path, text: str) -> Path:
+        """
+        Schreibt die Konvertierung nach <name>.txt -- exklusiv, nie ueberschreibend.
+
+        Existiert die Zieldatei schon (gleicher Basisname, z.B. foo.doc + foo.txt),
+        wird die unkonvertierte Kopie entfernt (fail-closed, kein Klartext-Rest) und
+        FileExistsError geworfen; die vorhandene Datei bleibt unveraendert.
+        """
+        txt_path = path.with_suffix(".txt")
+        try:
+            handle = txt_path.open("x", encoding="utf-8")
+        except FileExistsError:
+            path.unlink(missing_ok=True)
+            raise FileExistsError(
+                f"Konvertierungsziel existiert bereits (gleicher Basisname): {txt_path.name}"
+            ) from None
+        # Ab hier gehoert txt_path nachweislich diesem Aufruf (Exklusiverstellung). Schlaegt
+        # Schreiben oder das Entfernen der Stage-Kopie fehl, wird genau diese Datei entfernt --
+        # nie ein Pfad, der inzwischen durch eine fremde Datei ersetzt wurde.
+        identity = None
+        try:
+            identity = _file_identity(os.fstat(handle.fileno()))
+            with handle:
+                handle.write(text)
+            path.unlink(missing_ok=True)
+        except BaseException:
+            handle.close()
+            _remove_created_file(txt_path, identity)
+            raise
+        return txt_path
+
+    def _convert_doc_to_txt(
+        self, path: Path, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
         """
         "Anonymisiert" ein altes Word-Binaerdokument (.doc).
 
@@ -2065,7 +2344,7 @@ class DocumentAnonymizer:
             # Extraktion fehlgeschlagen (kein antiword/soffice verfuegbar o.ae.)
             # -- Datei NICHT unveraendert im "anonymisierten" Ordner belassen.
             path.unlink(missing_ok=True)
-            return False, 0
+            return False, 0, None
 
         count = 0
         sorted_replacements = self._sorted_replacements(profile)
@@ -2074,10 +2353,7 @@ class DocumentAnonymizer:
             text, occurrences = _replace_word_boundary(text, old, new)
             count += occurrences
 
-        txt_path = path.with_suffix(".txt")
-        txt_path.write_text(text, encoding="utf-8")
-        path.unlink(missing_ok=True)
-        return True, count
+        return True, count, self._write_converted_txt(path, text)
 
     @staticmethod
     def _sorted_replacements(profile: AnonymProfile) -> List[Tuple[str, str]]:
@@ -2195,6 +2471,13 @@ class DocumentAnonymizer:
         return True, count
 
     def _anonymize_msg(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """Kompatibilitaets-Wrapper; den Ausgabepfad liefert _convert_msg_to_txt."""
+        success, count, _output = self._convert_msg_to_txt(path, profile)
+        return success, count
+
+    def _convert_msg_to_txt(
+        self, path: Path, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
         """
         Anonymisiert eine Outlook-.msg-Datei (Task #802).
 
@@ -2212,15 +2495,12 @@ class DocumentAnonymizer:
         text = _extract_msg_text(str(path))
         if not text:
             path.unlink(missing_ok=True)
-            return False, 0
+            return False, 0, None
 
         sorted_replacements = self._sorted_replacements(profile)
         text, count = _apply_replacements(text, sorted_replacements)
 
-        txt_path = path.with_suffix(".txt")
-        txt_path.write_text(text, encoding="utf-8")
-        path.unlink(missing_ok=True)
-        return True, count
+        return True, count, self._write_converted_txt(path, text)
 
     def _anonymize_excel(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
         """
@@ -2304,6 +2584,9 @@ class DocumentAnonymizer:
 
         if changed:
             new_path = filepath.parent / f"{new_filename}{suffix}"
+            if new_path.exists():
+                # Path.rename ersetzt unter POSIX still; nie eine vorhandene Datei ueberschreiben
+                raise FileExistsError(f"Anonymisierter Dateiname existiert bereits: {new_path.name}")
             filepath.rename(new_path)
             return new_path
         return filepath

@@ -75,6 +75,11 @@ try:
     from .anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
+        ArtifactCleanupError,
+        claim_output_name,
+        copy_exclusive,
+        discard_own_artifacts,
+        ensure_disjoint_roots,
         AnonymProfile,
         _generate_tarnname,
         _detect_gender,
@@ -112,6 +117,11 @@ except ImportError:
     from anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
+        ArtifactCleanupError,
+        claim_output_name,
+        copy_exclusive,
+        discard_own_artifacts,
+        ensure_disjoint_roots,
         AnonymProfile,
         _generate_tarnname,
         _detect_gender,
@@ -1228,7 +1238,31 @@ Interpersonelle Interaktionen:
     # Schritt 4: Anonymisieren und in Bundles sortieren
     # ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _guard_cleanup_failure(session: WorkflowSession, run):
+        """Oeffentliche Workflowgrenze: ein Bereinigungsfehler verhindert jeden Erfolg.
+
+        session.anonymized bleibt falsch; ArtifactCleanupError wird nie als Warnung behandelt.
+        """
+        session.anonymized = False
+        try:
+            return run()
+        except ArtifactCleanupError:
+            session.anonymized = False
+            session.status = "error"
+            session.error_message = "Eigene Ausgaben konnten nicht bereinigt werden; kein anonymisiertes Ergebnis"
+            raise
+
     def anonymize_to_bundles(
+        self,
+        session: WorkflowSession,
+        include_extended: bool = False
+    ) -> CollectorResult:
+        """Anonymisiert data_roh/ nach data_ano/ (Bereinigungsfehler -> ArtifactCleanupError, kein Erfolg)."""
+        return self._guard_cleanup_failure(
+            session, lambda: self._anonymize_to_bundles_impl(session, include_extended))
+
+    def _anonymize_to_bundles_impl(
         self,
         session: WorkflowSession,
         include_extended: bool = False
@@ -1251,6 +1285,9 @@ Interpersonelle Interaktionen:
         data_dir = self.base_path / "data_roh"
         ano_dir = self.base_path / "data_ano"
 
+        # Quelle und Ziel duerfen sich nicht ueberlappen (sonst loescht das Leeren die Originale)
+        ensure_disjoint_roots(data_dir, ano_dir)
+
         # data_ano/ leeren
         self._deep_cleanup(ano_dir)
 
@@ -1268,6 +1305,7 @@ Interpersonelle Interaktionen:
         anonym_profile = session.profile.to_anonym_profile()
 
         # Dateien verarbeiten
+        claimed_outputs: Dict[str, str] = {}
         for doc in result.documents:
             if doc.category == DocumentCategory.SKIP:
                 continue
@@ -1276,26 +1314,28 @@ Interpersonelle Interaktionen:
 
             # Alles nach data_ano/ (keine Trennung core/extended mehr)
             dest_file = ano_dir / doc.path.name
-            shutil.copy2(doc.path, dest_file)
+            claim_output_name(claimed_outputs, dest_file, doc.path, check_disk=True)
+            self._copy_claimed(doc.path, dest_file)
 
-            # Anonymisieren
-            anonymizer.anonymize_file(str(dest_file), anonym_profile)
-
-            # .doc-Dateien werden beim Anonymisieren als .txt neu geschrieben
-            # (python-docx kann das binaere .doc-Format nicht speichern) --
-            # Referenz aktualisieren, bevor der Dateiname anonymisiert wird.
-            if dest_file.suffix.lower() == ".doc" and not dest_file.exists():
-                txt_sibling = dest_file.with_suffix(".txt")
-                if txt_sibling.exists():
-                    dest_file = txt_sibling
-
-            # Dateinamen anonymisieren
-            self._anonymize_filename(dest_file, session.profile)
+            # Anonymisieren + Dateinamen anonymisieren; Fehlschlag/Ausnahme entfernt
+            # die eigenen Kopien (kein Klartext in data_ano). Ausnahmen laufen weiter nach oben.
+            if self._anonymize_copy(anonymizer, anonym_profile, session.profile, dest_file, ano_dir) is None:
+                session.warnings.append(f"Nicht anonymisiert, aus data_ano entfernt: {doc.path.name}")
 
         session.anonymized = True
         return result
 
     def anonymize_to_bundles_from_folder(
+        self,
+        session: WorkflowSession,
+        source_folder: Path,
+        include_extended: bool = False
+    ) -> CollectorResult:
+        """Anonymisiert einen Ordner nach data_ano/ (Bereinigungsfehler -> ArtifactCleanupError, kein Erfolg)."""
+        return self._guard_cleanup_failure(
+            session, lambda: self._anonymize_to_bundles_from_folder_impl(session, source_folder, include_extended))
+
+    def _anonymize_to_bundles_from_folder_impl(
         self,
         session: WorkflowSession,
         source_folder: Path,
@@ -1322,6 +1362,9 @@ Interpersonelle Interaktionen:
 
         ano_dir = self.base_path / "data_ano"
 
+        # Quelle und Ziel duerfen sich nicht ueberlappen (sonst loescht das Leeren die Originale)
+        ensure_disjoint_roots(Path(source_folder), ano_dir)
+
         # data_ano/ leeren
         self._deep_cleanup(ano_dir)
 
@@ -1337,6 +1380,7 @@ Interpersonelle Interaktionen:
 
         # Dateien verarbeiten
         processed = 0
+        claimed_outputs: Dict[str, str] = {}
         for doc in result.documents:
             if doc.category == DocumentCategory.SKIP:
                 continue
@@ -1345,33 +1389,66 @@ Interpersonelle Interaktionen:
 
             # Alles nach data_ano/ (keine Trennung core/extended mehr)
             dest_file = ano_dir / doc.path.name
+            claim_output_name(claimed_outputs, dest_file, doc.path, check_disk=True)
             try:
-                shutil.copy2(doc.path, dest_file)
-                processed += 1
+                self._copy_claimed(doc.path, dest_file)
+            except ArtifactCleanupError:
+                raise   # Sicherheitsfehler: kein Warn-und-weiter
             except Exception as e:
                 print(f"[WARN] Konnte {doc.path.name} nicht kopieren: {e}")
+                session.warnings.append(f"Nicht kopiert: {doc.path.name}")
                 continue
 
-            # Anonymisieren
+            # Anonymisieren + Dateinamen anonymisieren. Fehlschlag oder Ausnahme:
+            # eigene Rohkopie/Zwischenausgabe wird entfernt, die Datei zaehlt nicht als anonymisiert.
             try:
-                anonymizer.anonymize_file(str(dest_file), anonym_profile)
+                final_path = self._anonymize_copy(anonymizer, anonym_profile, session.profile, dest_file, ano_dir)
+            except ArtifactCleanupError:
+                raise   # Sicherheitsfehler: kein Warn-und-weiter
             except Exception as e:
                 print(f"[WARN] Konnte {dest_file.name} nicht anonymisieren: {e}")
-
-            # .doc-Dateien werden beim Anonymisieren als .txt neu geschrieben
-            # (python-docx kann das binaere .doc-Format nicht speichern) --
-            # Referenz aktualisieren, bevor der Dateiname anonymisiert wird.
-            if dest_file.suffix.lower() == ".doc" and not dest_file.exists():
-                txt_sibling = dest_file.with_suffix(".txt")
-                if txt_sibling.exists():
-                    dest_file = txt_sibling
-
-            # Dateinamen anonymisieren
-            self._anonymize_filename(dest_file, session.profile)
+                final_path = None
+            if final_path is None:
+                session.warnings.append(f"Nicht anonymisiert, aus data_ano entfernt: {doc.path.name}")
+            else:
+                processed += 1
 
         print(f"[DEBUG] {processed} Dateien in data_ano/ verarbeitet")
         session.anonymized = True
         return result
+
+    @staticmethod
+    def _copy_claimed(src: Path, dest_file: Path) -> None:
+        """Kopiert EXKLUSIV in das reservierte Ziel (ein erschienenes Fremdziel bleibt unveraendert);
+        ein abgebrochener Kopiervorgang entfernt seine Teildatei, sonst ArtifactCleanupError."""
+        copy_exclusive(src, dest_file)
+
+    def _anonymize_copy(self, anonymizer, anonym_profile, profile: TempAnonymProfile,
+                        dest_file: Path, ano_dir: Path) -> Optional[Path]:
+        """
+        Anonymisiert die bereits kopierte Datei und deren Dateinamen.
+
+        Returns:
+            Endgueltiger Pfad in data_ano, oder None, wenn die Anonymisierung
+            fehlschlug (success=False / kein Ausgabepfad). Dann sind die eigenen
+            Kopien (Rohkopie, Konvertierungsausgabe) entfernt; bei einer Ausnahme
+            (Konverter, Umbenennung) ebenso, bevor sie weitergereicht wird. Entfernt
+            wird nie ein Original und nie ein Pfad, der nicht von diesem Aufruf stammt
+            (Rohkopie: copy_exclusive; Konvertierungsausgabe: vom Konverter gemeldet).
+            Laesst sich eine eigene Datei nicht entfernen, wirft discard_own_artifacts
+            ArtifactCleanupError -- das ist ein Sicherheitsfehler und kein Warnfall.
+        """
+        produced: List[Optional[Path]] = [dest_file]
+        try:
+            ok, _count, output_file = anonymizer.anonymize_file_with_output(str(dest_file), anonym_profile)
+            produced.append(output_file)
+            if ok and output_file is not None:
+                return self._anonymize_filename(output_file, profile)
+        except Exception:
+            discard_own_artifacts(ano_dir, *produced)
+            raise
+        discard_own_artifacts(ano_dir, *produced)
+        return None
 
     def _anonymize_filename(self, filepath: Path, profile: TempAnonymProfile) -> Path:
         """Anonymisiert Dateinamen."""
