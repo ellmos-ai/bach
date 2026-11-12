@@ -559,6 +559,8 @@ class BachDocumentAnonymizerPort:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
         "message/rfc822": ".eml",
     }
+    # Formats the generic anonymizer converts: the staged file is replaced by a file with another suffix.
+    _CONVERTED_SUFFIXES = {".doc": ".txt"}
 
     def __init__(
         self,
@@ -631,19 +633,24 @@ class BachDocumentAnonymizerPort:
             with tempfile.TemporaryDirectory(prefix="bach-report-anonymize-") as directory:
                 target = Path(directory) / ("source" + suffix)
                 target.write_bytes(content)
-                ok, replacement_count = self._service.anonymize_file(str(target), profile)
+                ok, replacement_count, produced = self._anonymize_to_output(target, suffix, profile)
                 if ok is not True or type(replacement_count) is not int or replacement_count < 0:
                     return {"status": "unsupported", "reason_code": "anonymization_unsupported", "source_revision": source_revision}
-                extracted = self._service.extract_text_from_file(str(target))
+                # Converters (.doc -> .txt) drop the staged file: extract, scan, store and bind the file that really exists.
+                actual = self._actual_output(produced, Path(directory), suffix, media_type)
+                if actual is None:
+                    return {"status": "unsupported", "reason_code": "anonymization_unsupported", "source_revision": source_revision}
+                output_path, output_media_type = actual
+                extracted = self._service.extract_text_from_file(str(output_path))
                 if not isinstance(extracted, str):
                     return {"status": "unsupported", "reason_code": "coverage_unavailable", "source_revision": source_revision}
                 residual = self._service.scan_text_for_sensitive_data(extracted)
                 if not isinstance(residual, Mapping) or any(bool(items) for items in residual.values()):
                     return {"status": "unsupported", "reason_code": "residual_data_detected", "source_revision": source_revision}
-                output = target.read_bytes()
+                output = output_path.read_bytes()
             output_sha = hashlib.sha256(output).hexdigest()
             store = _require_port_method(self._artifact_store, "put")
-            stored = _wire(await _resolve(store(safe_run_id, output, media_type)))
+            stored = _wire(await _resolve(store(safe_run_id, output, output_media_type)))
             if set(stored) != {"artifact_ref", "content_sha256"}:
                 return {"status": "unsupported", "reason_code": "artifact_store_unavailable", "source_revision": source_revision}
             artifact_ref = _opaque(stored.get("artifact_ref"), "artifact_ref")
@@ -657,7 +664,7 @@ class BachDocumentAnonymizerPort:
                 "input_sha256": source_sha,
                 "output_sha256": output_sha,
                 "artifact_ref": artifact_ref,
-                "media_type": media_type,
+                "media_type": output_media_type,
                 "profile_id": profile_id,
                 "policy_version": policy_version,
                 "replacement_count": replacement_count,
@@ -688,6 +695,36 @@ class BachDocumentAnonymizerPort:
         except Exception:
             # Never include a source path, PII, plugin exception, or profile in the result.
             return {"status": "unsupported", "reason_code": "anonymization_unavailable", "source_revision": source_revision}
+
+    def _anonymize_to_output(self, target: Path, suffix: str, profile: Any) -> tuple[Any, Any, Path | None]:
+        """Run the anonymizer and report the file that holds the result (converters drop the staged file)."""
+        with_output = getattr(self._service, "anonymize_file_with_output", None)
+        if callable(with_output):
+            ok, count, produced = with_output(str(target), profile)
+            return ok, count, Path(produced) if isinstance(produced, (str, Path)) and produced else None
+        if suffix in self._CONVERTED_SUFFIXES:
+            return False, 0, None  # fail-closed: this service cannot report where the converted output went
+        ok, count = self._service.anonymize_file(str(target), profile)
+        return ok, count, target
+
+    def _actual_output(
+        self, produced: Any, directory: Path, suffix: str, media_type: str
+    ) -> tuple[Path, str] | None:
+        """Path and media type of the produced file; None unless it is a plain file in the work directory."""
+        if produced is None:
+            return None
+        try:
+            if produced.is_symlink() or not produced.is_file() or produced.resolve().parent != directory.resolve():
+                return None
+        except OSError:
+            return None
+        out_suffix = produced.suffix.lower()
+        if out_suffix == suffix:
+            return produced, media_type
+        if self._CONVERTED_SUFFIXES.get(suffix) != out_suffix:
+            return None
+        media_by_suffix = {known: media for media, known in self._SUFFIXES.items()}
+        return (produced, media_by_suffix[out_suffix]) if out_suffix in media_by_suffix else None
 
     async def verify_receipt(
         self,
