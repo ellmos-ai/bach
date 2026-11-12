@@ -458,6 +458,26 @@ def _restore_original_values(text: str, mappings: Dict[str, str]) -> str:
     return pattern.sub(replace, text)
 
 
+_CONVERTED_TO_TXT_SUFFIXES = (".doc", ".msg")
+
+
+def _claim_output_name(claimed: Dict[str, str], target: Path, source: Path) -> None:
+    """
+    Reserviert den Ausgabenamen in data_ano/ fuer genau EINE Quelle.
+
+    .doc/.msg werden zu <name>.txt konvertiert; zwei Quellen mit gleichem
+    Basisnamen (foo.doc + foo.txt, foo.msg + foo.doc, gleicher Name aus
+    verschiedenen Unterordnern) wuerden sonst still ueberschreiben.
+    """
+    final = target.with_suffix(".txt") if target.suffix.lower() in _CONVERTED_TO_TXT_SUFFIXES else target
+    key = str(final).casefold()
+    if key in claimed:
+        raise FileExistsError(
+            f"Ausgabename in data_ano bereits belegt: {final.name} (Quellen: {claimed[key]} / {source.name})"
+        )
+    claimed[key] = source.name
+
+
 @dataclass
 class TempAnonymProfile:
     """
@@ -1268,6 +1288,7 @@ Interpersonelle Interaktionen:
         anonym_profile = session.profile.to_anonym_profile()
 
         # Dateien verarbeiten
+        claimed_outputs: Dict[str, str] = {}
         for doc in result.documents:
             if doc.category == DocumentCategory.SKIP:
                 continue
@@ -1276,21 +1297,18 @@ Interpersonelle Interaktionen:
 
             # Alles nach data_ano/ (keine Trennung core/extended mehr)
             dest_file = ano_dir / doc.path.name
+            _claim_output_name(claimed_outputs, dest_file, doc.path)
             shutil.copy2(doc.path, dest_file)
 
-            # Anonymisieren
-            anonymizer.anonymize_file(str(dest_file), anonym_profile)
-
-            # .doc-Dateien werden beim Anonymisieren als .txt neu geschrieben
-            # (python-docx kann das binaere .doc-Format nicht speichern) --
-            # Referenz aktualisieren, bevor der Dateiname anonymisiert wird.
-            if dest_file.suffix.lower() == ".doc" and not dest_file.exists():
-                txt_sibling = dest_file.with_suffix(".txt")
-                if txt_sibling.exists():
-                    dest_file = txt_sibling
+            # Anonymisieren; .doc/.msg werden dabei als .txt neu geschrieben und
+            # die Kopie entfernt -- ab hier gilt NUR der vom Konverter gemeldete
+            # Ausgabepfad (None = fail-closed entfernt, nichts umzubenennen).
+            _ok, _count, output_file = anonymizer.anonymize_file_with_output(str(dest_file), anonym_profile)
+            if output_file is None:
+                continue
 
             # Dateinamen anonymisieren
-            self._anonymize_filename(dest_file, session.profile)
+            self._anonymize_filename(output_file, session.profile)
 
         session.anonymized = True
         return result
@@ -1337,6 +1355,7 @@ Interpersonelle Interaktionen:
 
         # Dateien verarbeiten
         processed = 0
+        claimed_outputs: Dict[str, str] = {}
         for doc in result.documents:
             if doc.category == DocumentCategory.SKIP:
                 continue
@@ -1345,6 +1364,7 @@ Interpersonelle Interaktionen:
 
             # Alles nach data_ano/ (keine Trennung core/extended mehr)
             dest_file = ano_dir / doc.path.name
+            _claim_output_name(claimed_outputs, dest_file, doc.path)
             try:
                 shutil.copy2(doc.path, dest_file)
                 processed += 1
@@ -1352,22 +1372,18 @@ Interpersonelle Interaktionen:
                 print(f"[WARN] Konnte {doc.path.name} nicht kopieren: {e}")
                 continue
 
-            # Anonymisieren
+            # Anonymisieren; verbindlicher Ausgabepfad (.doc/.msg -> .txt) vom Konverter
+            output_file: Optional[Path] = dest_file if dest_file.exists() else None
             try:
-                anonymizer.anonymize_file(str(dest_file), anonym_profile)
+                _ok, _count, output_file = anonymizer.anonymize_file_with_output(str(dest_file), anonym_profile)
             except Exception as e:
                 print(f"[WARN] Konnte {dest_file.name} nicht anonymisieren: {e}")
-
-            # .doc-Dateien werden beim Anonymisieren als .txt neu geschrieben
-            # (python-docx kann das binaere .doc-Format nicht speichern) --
-            # Referenz aktualisieren, bevor der Dateiname anonymisiert wird.
-            if dest_file.suffix.lower() == ".doc" and not dest_file.exists():
-                txt_sibling = dest_file.with_suffix(".txt")
-                if txt_sibling.exists():
-                    dest_file = txt_sibling
+                output_file = dest_file if dest_file.exists() else None
+            if output_file is None:
+                continue
 
             # Dateinamen anonymisieren
-            self._anonymize_filename(dest_file, session.profile)
+            self._anonymize_filename(output_file, session.profile)
 
         print(f"[DEBUG] {processed} Dateien in data_ano/ verarbeitet")
         session.anonymized = True

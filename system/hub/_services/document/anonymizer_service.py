@@ -1841,6 +1841,28 @@ class DocumentAnonymizer:
 
         Returns:
             (success, replacement_count)
+
+        Konvertierende Formate (.doc, .msg) ersetzen die Datei durch eine
+        gleichnamige .txt; den dabei tatsaechlich entstandenen Pfad liefert
+        anonymize_file_with_output().
+        """
+        success, count, _output = self.anonymize_file_with_output(filepath, profile)
+        return success, count
+
+    def anonymize_file_with_output(
+        self, filepath: str, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
+        """
+        Wie anonymize_file, liefert zusaetzlich den VERBINDLICHEN Ausgabepfad.
+
+        Konvertierende Formate (.doc, .msg -> gleichnamige .txt) entfernen die
+        Eingabedatei. Nachfolgende Schritte (z.B. Dateinamen-Anonymisierung)
+        muessen mit diesem Rueckgabepfad weiterarbeiten, nie mit dem
+        Ursprungspfad. None = es existiert keine Ausgabedatei (fail-closed
+        entfernt).
+
+        Returns:
+            (success, replacement_count, output_path)
         """
         # Direct/loaded profiles do not necessarily pass through the scanner.
         # Complete whole-address mappings before the shared replacement helpers
@@ -1853,11 +1875,28 @@ class DocumentAnonymizer:
             if email not in existing:
                 profile.mappings.setdefault("emails", {})[email] = _generate_fake_email(email)
 
-        return self._apply_profile_to_file(filepath, profile)
+        return self._apply_profile_to_file_with_output(filepath, profile)
 
     def _apply_profile_to_file(self, filepath: str, profile: AnonymProfile) -> tuple[bool, int]:
         """Apply existing mappings only; inverse profiles must never be enriched."""
+        success, count, _output = self._apply_profile_to_file_with_output(filepath, profile)
+        return success, count
+
+    def _apply_profile_to_file_with_output(
+        self, filepath: str, profile: AnonymProfile
+    ) -> tuple[bool, int, Optional[Path]]:
+        """Wie _apply_profile_to_file, mit verbindlichem Ausgabepfad (None = keine Ausgabe)."""
         path = Path(filepath)
+        suffix = path.suffix.lower()
+        if suffix == ".doc":
+            return self._convert_doc_to_txt(path, profile)
+        if suffix == ".msg":
+            return self._convert_msg_to_txt(path, profile)
+        success, count = self._apply_profile_in_place(path, profile)
+        return success, count, (path if path.exists() else None)
+
+    def _apply_profile_in_place(self, path: Path, profile: AnonymProfile) -> tuple[bool, int]:
+        """Formate, die am selben Pfad bleiben (oder fail-closed entfernt werden)."""
         suffix = path.suffix.lower()
 
         if suffix == ".docx":
@@ -1868,12 +1907,8 @@ class DocumentAnonymizer:
             return self._anonymize_pdf(path, profile)
         elif suffix in (".xlsx", ".xls"):
             return self._anonymize_excel(path, profile)
-        elif suffix == ".doc":
-            return self._anonymize_doc(path, profile)
         elif suffix == ".eml":
             return self._anonymize_eml(path, profile)
-        elif suffix == ".msg":
-            return self._anonymize_msg(path, profile)
         else:
             return False, 0
 
@@ -1928,15 +1963,17 @@ class DocumentAnonymizer:
                 import shutil
                 shutil.copy2(filepath, dest_file)
 
-                success, count = self.anonymize_file(str(dest_file), profile)
+                success, count, output_file = self.anonymize_file_with_output(str(dest_file), profile)
                 if success:
                     result.anonymized_files += 1
                     result.replacements_total += count
                 else:
                     result.skipped_files += 1
 
-                # Dateinamen anonymisieren (falls Name enthalten)
-                dest_file = self._anonymize_filename(dest_file, profile)
+                # Dateinamen anonymisieren (falls Name enthalten) -- am
+                # verbindlichen Ausgabepfad, nicht am (ggf. konvertierten) Original
+                if output_file is not None:
+                    dest_file = self._anonymize_filename(output_file, profile)
 
             except Exception as e:
                 result.errors.append(f"{filepath.name}: {e}")
@@ -2046,6 +2083,34 @@ class DocumentAnonymizer:
         return True, count
 
     def _anonymize_doc(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """Kompatibilitaets-Wrapper; den Ausgabepfad liefert _convert_doc_to_txt."""
+        success, count, _output = self._convert_doc_to_txt(path, profile)
+        return success, count
+
+    @staticmethod
+    def _write_converted_txt(path: Path, text: str) -> Path:
+        """
+        Schreibt die Konvertierung nach <name>.txt -- exklusiv, nie ueberschreibend.
+
+        Existiert die Zieldatei schon (gleicher Basisname, z.B. foo.doc + foo.txt),
+        wird die unkonvertierte Kopie entfernt (fail-closed, kein Klartext-Rest) und
+        FileExistsError geworfen; die vorhandene Datei bleibt unveraendert.
+        """
+        txt_path = path.with_suffix(".txt")
+        try:
+            with txt_path.open("x", encoding="utf-8") as handle:
+                handle.write(text)
+        except FileExistsError:
+            path.unlink(missing_ok=True)
+            raise FileExistsError(
+                f"Konvertierungsziel existiert bereits (gleicher Basisname): {txt_path.name}"
+            ) from None
+        path.unlink(missing_ok=True)
+        return txt_path
+
+    def _convert_doc_to_txt(
+        self, path: Path, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
         """
         "Anonymisiert" ein altes Word-Binaerdokument (.doc).
 
@@ -2065,7 +2130,7 @@ class DocumentAnonymizer:
             # Extraktion fehlgeschlagen (kein antiword/soffice verfuegbar o.ae.)
             # -- Datei NICHT unveraendert im "anonymisierten" Ordner belassen.
             path.unlink(missing_ok=True)
-            return False, 0
+            return False, 0, None
 
         count = 0
         sorted_replacements = self._sorted_replacements(profile)
@@ -2074,10 +2139,7 @@ class DocumentAnonymizer:
             text, occurrences = _replace_word_boundary(text, old, new)
             count += occurrences
 
-        txt_path = path.with_suffix(".txt")
-        txt_path.write_text(text, encoding="utf-8")
-        path.unlink(missing_ok=True)
-        return True, count
+        return True, count, self._write_converted_txt(path, text)
 
     @staticmethod
     def _sorted_replacements(profile: AnonymProfile) -> List[Tuple[str, str]]:
@@ -2195,6 +2257,13 @@ class DocumentAnonymizer:
         return True, count
 
     def _anonymize_msg(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """Kompatibilitaets-Wrapper; den Ausgabepfad liefert _convert_msg_to_txt."""
+        success, count, _output = self._convert_msg_to_txt(path, profile)
+        return success, count
+
+    def _convert_msg_to_txt(
+        self, path: Path, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
         """
         Anonymisiert eine Outlook-.msg-Datei (Task #802).
 
@@ -2212,15 +2281,12 @@ class DocumentAnonymizer:
         text = _extract_msg_text(str(path))
         if not text:
             path.unlink(missing_ok=True)
-            return False, 0
+            return False, 0, None
 
         sorted_replacements = self._sorted_replacements(profile)
         text, count = _apply_replacements(text, sorted_replacements)
 
-        txt_path = path.with_suffix(".txt")
-        txt_path.write_text(text, encoding="utf-8")
-        path.unlink(missing_ok=True)
-        return True, count
+        return True, count, self._write_converted_txt(path, text)
 
     def _anonymize_excel(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
         """
@@ -2304,6 +2370,9 @@ class DocumentAnonymizer:
 
         if changed:
             new_path = filepath.parent / f"{new_filename}{suffix}"
+            if new_path.exists():
+                # Path.rename ersetzt unter POSIX still; nie eine vorhandene Datei ueberschreiben
+                raise FileExistsError(f"Anonymisierter Dateiname existiert bereits: {new_path.name}")
             filepath.rename(new_path)
             return new_path
         return filepath
