@@ -75,8 +75,11 @@ try:
     from .anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
+        ArtifactCleanupError,
         claim_output_name,
+        copy_exclusive,
         discard_own_artifacts,
+        ensure_disjoint_roots,
         AnonymProfile,
         _generate_tarnname,
         _detect_gender,
@@ -114,8 +117,11 @@ except ImportError:
     from anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
+        ArtifactCleanupError,
         claim_output_name,
+        copy_exclusive,
         discard_own_artifacts,
+        ensure_disjoint_roots,
         AnonymProfile,
         _generate_tarnname,
         _detect_gender,
@@ -1232,7 +1238,31 @@ Interpersonelle Interaktionen:
     # Schritt 4: Anonymisieren und in Bundles sortieren
     # ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _guard_cleanup_failure(session: WorkflowSession, run):
+        """Oeffentliche Workflowgrenze: ein Bereinigungsfehler verhindert jeden Erfolg.
+
+        session.anonymized bleibt falsch; ArtifactCleanupError wird nie als Warnung behandelt.
+        """
+        session.anonymized = False
+        try:
+            return run()
+        except ArtifactCleanupError:
+            session.anonymized = False
+            session.status = "error"
+            session.error_message = "Eigene Ausgaben konnten nicht bereinigt werden; kein anonymisiertes Ergebnis"
+            raise
+
     def anonymize_to_bundles(
+        self,
+        session: WorkflowSession,
+        include_extended: bool = False
+    ) -> CollectorResult:
+        """Anonymisiert data_roh/ nach data_ano/ (Bereinigungsfehler -> ArtifactCleanupError, kein Erfolg)."""
+        return self._guard_cleanup_failure(
+            session, lambda: self._anonymize_to_bundles_impl(session, include_extended))
+
+    def _anonymize_to_bundles_impl(
         self,
         session: WorkflowSession,
         include_extended: bool = False
@@ -1254,6 +1284,9 @@ Interpersonelle Interaktionen:
 
         data_dir = self.base_path / "data_roh"
         ano_dir = self.base_path / "data_ano"
+
+        # Quelle und Ziel duerfen sich nicht ueberlappen (sonst loescht das Leeren die Originale)
+        ensure_disjoint_roots(data_dir, ano_dir)
 
         # data_ano/ leeren
         self._deep_cleanup(ano_dir)
@@ -1282,7 +1315,7 @@ Interpersonelle Interaktionen:
             # Alles nach data_ano/ (keine Trennung core/extended mehr)
             dest_file = ano_dir / doc.path.name
             claim_output_name(claimed_outputs, dest_file, doc.path, check_disk=True)
-            self._copy_claimed(doc.path, dest_file, ano_dir)
+            self._copy_claimed(doc.path, dest_file)
 
             # Anonymisieren + Dateinamen anonymisieren; Fehlschlag/Ausnahme entfernt
             # die eigenen Kopien (kein Klartext in data_ano). Ausnahmen laufen weiter nach oben.
@@ -1293,6 +1326,16 @@ Interpersonelle Interaktionen:
         return result
 
     def anonymize_to_bundles_from_folder(
+        self,
+        session: WorkflowSession,
+        source_folder: Path,
+        include_extended: bool = False
+    ) -> CollectorResult:
+        """Anonymisiert einen Ordner nach data_ano/ (Bereinigungsfehler -> ArtifactCleanupError, kein Erfolg)."""
+        return self._guard_cleanup_failure(
+            session, lambda: self._anonymize_to_bundles_from_folder_impl(session, source_folder, include_extended))
+
+    def _anonymize_to_bundles_from_folder_impl(
         self,
         session: WorkflowSession,
         source_folder: Path,
@@ -1318,6 +1361,9 @@ Interpersonelle Interaktionen:
             return CollectorResult()
 
         ano_dir = self.base_path / "data_ano"
+
+        # Quelle und Ziel duerfen sich nicht ueberlappen (sonst loescht das Leeren die Originale)
+        ensure_disjoint_roots(Path(source_folder), ano_dir)
 
         # data_ano/ leeren
         self._deep_cleanup(ano_dir)
@@ -1345,7 +1391,9 @@ Interpersonelle Interaktionen:
             dest_file = ano_dir / doc.path.name
             claim_output_name(claimed_outputs, dest_file, doc.path, check_disk=True)
             try:
-                self._copy_claimed(doc.path, dest_file, ano_dir)
+                self._copy_claimed(doc.path, dest_file)
+            except ArtifactCleanupError:
+                raise   # Sicherheitsfehler: kein Warn-und-weiter
             except Exception as e:
                 print(f"[WARN] Konnte {doc.path.name} nicht kopieren: {e}")
                 session.warnings.append(f"Nicht kopiert: {doc.path.name}")
@@ -1355,6 +1403,8 @@ Interpersonelle Interaktionen:
             # eigene Rohkopie/Zwischenausgabe wird entfernt, die Datei zaehlt nicht als anonymisiert.
             try:
                 final_path = self._anonymize_copy(anonymizer, anonym_profile, session.profile, dest_file, ano_dir)
+            except ArtifactCleanupError:
+                raise   # Sicherheitsfehler: kein Warn-und-weiter
             except Exception as e:
                 print(f"[WARN] Konnte {dest_file.name} nicht anonymisieren: {e}")
                 final_path = None
@@ -1368,13 +1418,10 @@ Interpersonelle Interaktionen:
         return result
 
     @staticmethod
-    def _copy_claimed(src: Path, dest_file: Path, ano_dir: Path) -> None:
-        """Kopiert in das reservierte Ziel; ein abgebrochener Kopiervorgang hinterlaesst keine Teildatei."""
-        try:
-            shutil.copy2(src, dest_file)
-        except Exception:
-            discard_own_artifacts(ano_dir, dest_file)
-            raise
+    def _copy_claimed(src: Path, dest_file: Path) -> None:
+        """Kopiert EXKLUSIV in das reservierte Ziel (ein erschienenes Fremdziel bleibt unveraendert);
+        ein abgebrochener Kopiervorgang entfernt seine Teildatei, sonst ArtifactCleanupError."""
+        copy_exclusive(src, dest_file)
 
     def _anonymize_copy(self, anonymizer, anonym_profile, profile: TempAnonymProfile,
                         dest_file: Path, ano_dir: Path) -> Optional[Path]:
@@ -1387,7 +1434,9 @@ Interpersonelle Interaktionen:
             Kopien (Rohkopie, Konvertierungsausgabe) entfernt; bei einer Ausnahme
             (Konverter, Umbenennung) ebenso, bevor sie weitergereicht wird. Entfernt
             wird nie ein Original und nie ein Pfad, der nicht von diesem Aufruf stammt
-            (Namen sind vorab mit claim_output_name belegt).
+            (Rohkopie: copy_exclusive; Konvertierungsausgabe: vom Konverter gemeldet).
+            Laesst sich eine eigene Datei nicht entfernen, wirft discard_own_artifacts
+            ArtifactCleanupError -- das ist ein Sicherheitsfehler und kein Warnfall.
         """
         produced: List[Optional[Path]] = [dest_file]
         try:

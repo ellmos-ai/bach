@@ -1471,24 +1471,118 @@ def claim_output_name(claimed: Dict[str, str], target: Path, source: Path, check
     return final
 
 
+class ArtifactCleanupError(RuntimeError):
+    """Eigene, ggf. unmaskierte oder klarnamige Ausgaben liessen sich nicht entfernen.
+
+    Sicherheitsfehler: Der Lauf darf NICHT als anonymisiert gelten. Die Meldung enthaelt
+    bewusst nur eine Anzahl, keine Datei- oder Personennamen.
+    """
+
+
+def _file_identity(st) -> Tuple[int, int]:
+    return (st.st_dev, st.st_ino)
+
+
 def discard_own_artifacts(root: Path, *paths: Optional[Path]) -> None:
     """
     Entfernt NUR Dateien, die dieser Aufruf selbst unter ``root`` angelegt hat.
 
-    Aufrufer uebergeben ausschliesslich Pfade, die vorher per claim_output_name
-    (check_disk) als bis dahin nicht vorhanden belegt wurden. Zusaetzliche Sicherung:
-    nur regulaere Dateien, keine Symlinks, nur strikt unterhalb von ``root``
+    Aufrufer uebergeben ausschliesslich Pfade, die dieser Aufruf selbst exklusiv angelegt hat
+    (copy_exclusive bzw. die Konvertierungsausgabe, die der Konverter gemeldet hat). Zusaetzliche
+    Sicherung: nur regulaere Dateien, keine Symlinks, nur strikt unterhalb von ``root``
     (Originale ausserhalb bleiben unberuehrt); kein Verzeichnis-Aufraeumen.
+
+    Alle Pfade werden versucht. Laesst sich eine eigene Datei nicht entfernen, wird
+    ArtifactCleanupError geworfen (nie still verschluckt): sie koennte unmaskierte Inhalte
+    oder einen Klarnamen tragen.
     """
+    import stat
+
     root_resolved = root.resolve()
+    stuck = 0
     for path in paths:
         if path is None:
             continue
         try:
-            if path.is_file() and not path.is_symlink() and root_resolved in path.resolve().parents:
-                path.unlink()
+            st = path.lstat()
+        except FileNotFoundError:
+            continue
         except OSError:
-            pass  # Aufraeumen darf den eigentlichen Fehler nicht ueberdecken
+            stuck += 1
+            continue
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+            continue
+        try:
+            if root_resolved not in path.resolve().parents:
+                continue
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            stuck += 1
+    if stuck:
+        raise ArtifactCleanupError(f"{stuck} eigene Ausgabe(n) konnten nicht entfernt werden")
+
+
+def _remove_created_file(path: Path, identity: Optional[Tuple[int, int]]) -> None:
+    """Entfernt eine soeben EXKLUSIV angelegte Datei -- nur wenn sie noch dieselbe Datei ist.
+
+    Eine vorherige Abwesenheitspruefung oder Reservierung beweist kein Eigentum; hier zaehlt nur
+    die erfolgreiche Exklusiverstellung (identity = dev/inode des offenen Handles). Wurde der
+    Pfad inzwischen durch eine andere Datei ersetzt, bleibt sie unveraendert.
+    """
+    import stat
+
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        return
+    if identity is not None and _file_identity(st) != identity:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ArtifactCleanupError("1 eigene Ausgabe(n) konnten nicht entfernt werden") from exc
+
+
+def copy_exclusive(src: Path, dest: Path) -> None:
+    """Kopiert ``src`` nach ``dest`` und legt ``dest`` EXKLUSIV an (O_EXCL, nie ueberschreibend).
+
+    Existiert ``dest`` (auch durch einen zwischen Reservierung und Kopie erschienenen Fremden),
+    wirft FileExistsError, ohne etwas zu veraendern. Bricht der Kopiervorgang nach dem Anlegen ab,
+    wird die Teilkopie entfernt (ArtifactCleanupError, falls das nicht gelingt).
+    """
+    import shutil
+
+    with open(src, "rb") as reader:
+        writer = open(dest, "xb")
+        identity = None
+        try:
+            identity = _file_identity(os.fstat(writer.fileno()))
+            with writer:
+                shutil.copyfileobj(reader, writer)
+            shutil.copystat(src, dest)
+        except BaseException:
+            writer.close()
+            _remove_created_file(dest, identity)
+            raise
+
+
+def ensure_disjoint_roots(source: Path, target: Path) -> None:
+    """Lehnt gleiche oder ineinander liegende KANONISCHE Quell-/Zielordner ab (ValueError).
+
+    Muss vor jedem mkdir, Profil-/Schluesselschreiben oder Aufraeumen des Zielordners laufen:
+    sonst koennten Originale ueberschrieben oder als 'Ausgabe' geloescht werden. Die Meldung
+    enthaelt keine Pfade.
+    """
+    src = Path(os.path.normcase(str(source.resolve())))
+    dst = Path(os.path.normcase(str(target.resolve())))
+    if src == dst or src in dst.parents or dst in src.parents:
+        raise ValueError("Quell- und Ausgabeordner duerfen weder gleich noch ineinander verschachtelt sein")
 
 
 class DocumentAnonymizer:
@@ -1991,6 +2085,9 @@ class DocumentAnonymizer:
             except ImportError:
                 dest = src.parent.parent / "klienten" / profile.client_id
 
+        # Gleiche/verschachtelte Wurzeln VOR jeder Schreibaktion ablehnen (mkdir, Profil, Schluessel)
+        ensure_disjoint_roots(src, dest)
+
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "output").mkdir(exist_ok=True)
 
@@ -1999,7 +2096,6 @@ class DocumentAnonymizer:
         self._progress = ProgressInfo(total_files=len(files), status="anonymizing")
 
         # Dateien verarbeiten
-        import shutil
         claimed: Dict[str, str] = {}
         for filepath in files:
             self._progress.current_file = filepath.name
@@ -2019,7 +2115,7 @@ class DocumentAnonymizer:
 
                 # Datei kopieren und anonymisieren
                 produced.append(dest_file)
-                shutil.copy2(filepath, dest_file)
+                copy_exclusive(filepath, dest_file)
 
                 success, count, output_file = self.anonymize_file_with_output(str(dest_file), profile)
                 produced.append(output_file)
@@ -2035,8 +2131,14 @@ class DocumentAnonymizer:
                 result.anonymized_files += 1
                 result.replacements_total += count
 
+            except ArtifactCleanupError:
+                try:
+                    discard_own_artifacts(dest, *produced)   # Rest best-effort, Fehler bleibt der erste
+                except ArtifactCleanupError:
+                    pass
+                raise   # Sicherheitsfehler: nie in errors[] verwandeln, Lauf bricht ab
             except Exception as e:
-                discard_own_artifacts(dest, *produced)
+                discard_own_artifacts(dest, *produced)   # wirft ArtifactCleanupError, wenn etwas bleibt
                 result.errors.append(f"{filepath.name}: {e}")
 
         # Schluessel im lokalen Speicher speichern (NICHT in OneDrive)
@@ -2159,14 +2261,25 @@ class DocumentAnonymizer:
         """
         txt_path = path.with_suffix(".txt")
         try:
-            with txt_path.open("x", encoding="utf-8") as handle:
-                handle.write(text)
+            handle = txt_path.open("x", encoding="utf-8")
         except FileExistsError:
             path.unlink(missing_ok=True)
             raise FileExistsError(
                 f"Konvertierungsziel existiert bereits (gleicher Basisname): {txt_path.name}"
             ) from None
-        path.unlink(missing_ok=True)
+        # Ab hier gehoert txt_path nachweislich diesem Aufruf (Exklusiverstellung). Schlaegt
+        # Schreiben oder das Entfernen der Stage-Kopie fehl, wird genau diese Datei entfernt --
+        # nie ein Pfad, der inzwischen durch eine fremde Datei ersetzt wurde.
+        identity = None
+        try:
+            identity = _file_identity(os.fstat(handle.fileno()))
+            with handle:
+                handle.write(text)
+            path.unlink(missing_ok=True)
+        except BaseException:
+            handle.close()
+            _remove_created_file(txt_path, identity)
+            raise
         return txt_path
 
     def _convert_doc_to_txt(
