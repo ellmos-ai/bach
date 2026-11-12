@@ -66,7 +66,7 @@ jobs:
           grep -v -E '^(assistant-core|accounts-core|ellmos-chat) @' requirements.txt > requirements-ci.txt
           python -m pip install --upgrade pip
           # Existing optional MCP SDK is required by the real session forwarding regression.
-          python -m pip install -r requirements-ci.txt pytest pytest-timeout "python-telegram-bot>=22,<23" "fastapi>=0.128.0" "starlette>=0.50.0" "httpx>=0.28.1" "uvicorn>=0.40.0" "mcp>=1.0,<2.0"
+          python -m pip install -r requirements-ci.txt pytest pytest-timeout pytest-asyncio==1.4.0 "python-telegram-bot>=22,<23" "fastapi>=0.128.0" "starlette>=0.50.0" "httpx>=0.28.1" "uvicorn>=0.40.0" "mcp>=1.0,<2.0"
 
       - uses: actions/checkout@v4
         with:
@@ -223,7 +223,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_model_socket_callers.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_model_sockets.py system/tests/test_model_socket_callers.py system/tests/test_local_model_catalog.py system/tests/test_local_resource_reserve.py system/tests/test_host_inference_gate.py system/tests/test_report_structured_host.py
 
       - name: Native worker provider errors
         env:
@@ -254,6 +254,7 @@ jobs:
             system/tests/test_backup_handler.py \
             system/tests/test_anonymizer_email.py \
             system/tests/test_anonymizer_whitelist.py \
+            system/tests/test_anonymizer_converter_output_path.py \
             system/tests/test_ati_handler.py \
             system/tests/test_ati_task_scanner.py \
             system/tests/test_auto_mode.py \
@@ -317,6 +318,7 @@ jobs:
             system/tests/test_fs_protection.py \
             system/tests/test_gesundheit_handler.py \
             system/tests/test_github_pr_task_reconciliation.py \
+            system/tests/test_githubbot_hold_ownership.py \
             system/tests/test_gui_handler.py \
             system/tests/test_gui_console.py \
             system/tests/test_agent_history_delivery.py \
@@ -421,6 +423,7 @@ jobs:
             system/tests/test_prosync_race.py \
             system/tests/test_recurring_tasks.py \
             system/tests/test_reflection_handler.py \
+            system/tests/test_report_provider_doc_output.py \
             system/tests/test_restore_handler.py \
             system/tests/test_rheingold_handler.py \
             system/tests/test_routine_handler.py \
