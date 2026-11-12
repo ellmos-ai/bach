@@ -1440,6 +1440,57 @@ def _replace_in_filename(name: str, sorted_replacements: List[Tuple[str, str]]) 
 # Anonymisierer
 # ═══════════════════════════════════════════════════════════════
 
+CONVERTED_TO_TXT_SUFFIXES = (".doc", ".msg")
+
+
+def claim_output_name(claimed: Dict[str, str], target: Path, source: Path, check_disk: bool = False) -> Path:
+    """
+    Reserviert den ENDGUELTIGEN Ausgabenamen fuer genau eine Quelle (VOR dem Kopieren).
+
+    .doc/.msg werden zu <name>.txt konvertiert; zwei Quellen mit gleichem
+    Basisnamen (Akte.doc + Akte.txt, in beliebiger Reihenfolge, oder gleicher Name
+    aus Unterordnern) wuerden sonst still ueberschreiben. Mit check_disk wird
+    zusaetzlich ein bereits vorhandener fremder Ausgabepfad abgelehnt (bleibt
+    unveraendert). Wirft FileExistsError mit beiden Quellnamen.
+    """
+    final = target.with_suffix(".txt") if target.suffix.lower() in CONVERTED_TO_TXT_SUFFIXES else target
+    key = str(final).casefold()
+    if key in claimed:
+        raise FileExistsError(
+            f"Ausgabename bereits belegt: {final.name} (Quellen: {claimed[key]} / {source.name})"
+        )
+    if check_disk:
+        # Rohkopie-Ziel UND endgueltiger Pfad muessen frei sein; sonst gehoert die Datei nicht
+        # diesem Aufruf (z.B. Ausgabeordner == Quellordner) und wird nie angefasst oder aufgeraeumt.
+        for existing in (target, final):
+            if existing.exists():
+                raise FileExistsError(
+                    f"Ausgabepfad existiert bereits (vorhandene Datei bleibt unveraendert): {existing.name}"
+                )
+    claimed[key] = source.name
+    return final
+
+
+def discard_own_artifacts(root: Path, *paths: Optional[Path]) -> None:
+    """
+    Entfernt NUR Dateien, die dieser Aufruf selbst unter ``root`` angelegt hat.
+
+    Aufrufer uebergeben ausschliesslich Pfade, die vorher per claim_output_name
+    (check_disk) als bis dahin nicht vorhanden belegt wurden. Zusaetzliche Sicherung:
+    nur regulaere Dateien, keine Symlinks, nur strikt unterhalb von ``root``
+    (Originale ausserhalb bleiben unberuehrt); kein Verzeichnis-Aufraeumen.
+    """
+    root_resolved = root.resolve()
+    for path in paths:
+        if path is None:
+            continue
+        try:
+            if path.is_file() and not path.is_symlink() and root_resolved in path.resolve().parents:
+                path.unlink()
+        except OSError:
+            pass  # Aufraeumen darf den eigentlichen Fehler nicht ueberdecken
+
+
 class DocumentAnonymizer:
     """
     Anonymisiert Dokumente durch konsistente Pseudonymisierung.
@@ -1948,34 +1999,44 @@ class DocumentAnonymizer:
         self._progress = ProgressInfo(total_files=len(files), status="anonymizing")
 
         # Dateien verarbeiten
+        import shutil
+        claimed: Dict[str, str] = {}
         for filepath in files:
             self._progress.current_file = filepath.name
             self._progress.processed_files += 1
             result.processed_files += 1
 
+            produced: List[Optional[Path]] = []   # nur was DIESER Aufruf angelegt hat
             try:
                 # Relative Struktur beibehalten
                 rel = filepath.relative_to(src)
                 dest_file = dest / rel
                 dest_file.parent.mkdir(parents=True, exist_ok=True)
 
+                # Endgueltigen Ausgabenamen VOR dem Kopieren reservieren (auch das
+                # .doc/.msg -> .txt-Ziel); Kollision oder vorhandene Datei = laut, nichts kopiert
+                claim_output_name(claimed, dest_file, filepath, check_disk=True)
+
                 # Datei kopieren und anonymisieren
-                import shutil
+                produced.append(dest_file)
                 shutil.copy2(filepath, dest_file)
 
                 success, count, output_file = self.anonymize_file_with_output(str(dest_file), profile)
-                if success:
-                    result.anonymized_files += 1
-                    result.replacements_total += count
-                else:
+                produced.append(output_file)
+                if not success or output_file is None:
+                    # Nicht anonymisiert: keine Rohkopie im Ziel zuruecklassen
+                    discard_own_artifacts(dest, *produced)
                     result.skipped_files += 1
+                    continue
 
                 # Dateinamen anonymisieren (falls Name enthalten) -- am
                 # verbindlichen Ausgabepfad, nicht am (ggf. konvertierten) Original
-                if output_file is not None:
-                    dest_file = self._anonymize_filename(output_file, profile)
+                self._anonymize_filename(output_file, profile)
+                result.anonymized_files += 1
+                result.replacements_total += count
 
             except Exception as e:
+                discard_own_artifacts(dest, *produced)
                 result.errors.append(f"{filepath.name}: {e}")
 
         # Schluessel im lokalen Speicher speichern (NICHT in OneDrive)

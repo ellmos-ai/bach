@@ -75,6 +75,8 @@ try:
     from .anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
+        claim_output_name,
+        discard_own_artifacts,
         AnonymProfile,
         _generate_tarnname,
         _detect_gender,
@@ -112,6 +114,8 @@ except ImportError:
     from anonymizer_service import (
         DocumentAnonymizer,
         DocumentDeanonymizer,
+        claim_output_name,
+        discard_own_artifacts,
         AnonymProfile,
         _generate_tarnname,
         _detect_gender,
@@ -456,26 +460,6 @@ def _restore_original_values(text: str, mappings: Dict[str, str]) -> str:
         return original + sfx
 
     return pattern.sub(replace, text)
-
-
-_CONVERTED_TO_TXT_SUFFIXES = (".doc", ".msg")
-
-
-def _claim_output_name(claimed: Dict[str, str], target: Path, source: Path) -> None:
-    """
-    Reserviert den Ausgabenamen in data_ano/ fuer genau EINE Quelle.
-
-    .doc/.msg werden zu <name>.txt konvertiert; zwei Quellen mit gleichem
-    Basisnamen (foo.doc + foo.txt, foo.msg + foo.doc, gleicher Name aus
-    verschiedenen Unterordnern) wuerden sonst still ueberschreiben.
-    """
-    final = target.with_suffix(".txt") if target.suffix.lower() in _CONVERTED_TO_TXT_SUFFIXES else target
-    key = str(final).casefold()
-    if key in claimed:
-        raise FileExistsError(
-            f"Ausgabename in data_ano bereits belegt: {final.name} (Quellen: {claimed[key]} / {source.name})"
-        )
-    claimed[key] = source.name
 
 
 @dataclass
@@ -1297,18 +1281,13 @@ Interpersonelle Interaktionen:
 
             # Alles nach data_ano/ (keine Trennung core/extended mehr)
             dest_file = ano_dir / doc.path.name
-            _claim_output_name(claimed_outputs, dest_file, doc.path)
-            shutil.copy2(doc.path, dest_file)
+            claim_output_name(claimed_outputs, dest_file, doc.path, check_disk=True)
+            self._copy_claimed(doc.path, dest_file, ano_dir)
 
-            # Anonymisieren; .doc/.msg werden dabei als .txt neu geschrieben und
-            # die Kopie entfernt -- ab hier gilt NUR der vom Konverter gemeldete
-            # Ausgabepfad (None = fail-closed entfernt, nichts umzubenennen).
-            _ok, _count, output_file = anonymizer.anonymize_file_with_output(str(dest_file), anonym_profile)
-            if output_file is None:
-                continue
-
-            # Dateinamen anonymisieren
-            self._anonymize_filename(output_file, session.profile)
+            # Anonymisieren + Dateinamen anonymisieren; Fehlschlag/Ausnahme entfernt
+            # die eigenen Kopien (kein Klartext in data_ano). Ausnahmen laufen weiter nach oben.
+            if self._anonymize_copy(anonymizer, anonym_profile, session.profile, dest_file, ano_dir) is None:
+                session.warnings.append(f"Nicht anonymisiert, aus data_ano entfernt: {doc.path.name}")
 
         session.anonymized = True
         return result
@@ -1364,30 +1343,63 @@ Interpersonelle Interaktionen:
 
             # Alles nach data_ano/ (keine Trennung core/extended mehr)
             dest_file = ano_dir / doc.path.name
-            _claim_output_name(claimed_outputs, dest_file, doc.path)
+            claim_output_name(claimed_outputs, dest_file, doc.path, check_disk=True)
             try:
-                shutil.copy2(doc.path, dest_file)
-                processed += 1
+                self._copy_claimed(doc.path, dest_file, ano_dir)
             except Exception as e:
                 print(f"[WARN] Konnte {doc.path.name} nicht kopieren: {e}")
+                session.warnings.append(f"Nicht kopiert: {doc.path.name}")
                 continue
 
-            # Anonymisieren; verbindlicher Ausgabepfad (.doc/.msg -> .txt) vom Konverter
-            output_file: Optional[Path] = dest_file if dest_file.exists() else None
+            # Anonymisieren + Dateinamen anonymisieren. Fehlschlag oder Ausnahme:
+            # eigene Rohkopie/Zwischenausgabe wird entfernt, die Datei zaehlt nicht als anonymisiert.
             try:
-                _ok, _count, output_file = anonymizer.anonymize_file_with_output(str(dest_file), anonym_profile)
+                final_path = self._anonymize_copy(anonymizer, anonym_profile, session.profile, dest_file, ano_dir)
             except Exception as e:
                 print(f"[WARN] Konnte {dest_file.name} nicht anonymisieren: {e}")
-                output_file = dest_file if dest_file.exists() else None
-            if output_file is None:
-                continue
-
-            # Dateinamen anonymisieren
-            self._anonymize_filename(output_file, session.profile)
+                final_path = None
+            if final_path is None:
+                session.warnings.append(f"Nicht anonymisiert, aus data_ano entfernt: {doc.path.name}")
+            else:
+                processed += 1
 
         print(f"[DEBUG] {processed} Dateien in data_ano/ verarbeitet")
         session.anonymized = True
         return result
+
+    @staticmethod
+    def _copy_claimed(src: Path, dest_file: Path, ano_dir: Path) -> None:
+        """Kopiert in das reservierte Ziel; ein abgebrochener Kopiervorgang hinterlaesst keine Teildatei."""
+        try:
+            shutil.copy2(src, dest_file)
+        except Exception:
+            discard_own_artifacts(ano_dir, dest_file)
+            raise
+
+    def _anonymize_copy(self, anonymizer, anonym_profile, profile: TempAnonymProfile,
+                        dest_file: Path, ano_dir: Path) -> Optional[Path]:
+        """
+        Anonymisiert die bereits kopierte Datei und deren Dateinamen.
+
+        Returns:
+            Endgueltiger Pfad in data_ano, oder None, wenn die Anonymisierung
+            fehlschlug (success=False / kein Ausgabepfad). Dann sind die eigenen
+            Kopien (Rohkopie, Konvertierungsausgabe) entfernt; bei einer Ausnahme
+            (Konverter, Umbenennung) ebenso, bevor sie weitergereicht wird. Entfernt
+            wird nie ein Original und nie ein Pfad, der nicht von diesem Aufruf stammt
+            (Namen sind vorab mit claim_output_name belegt).
+        """
+        produced: List[Optional[Path]] = [dest_file]
+        try:
+            ok, _count, output_file = anonymizer.anonymize_file_with_output(str(dest_file), anonym_profile)
+            produced.append(output_file)
+            if ok and output_file is not None:
+                return self._anonymize_filename(output_file, profile)
+        except Exception:
+            discard_own_artifacts(ano_dir, *produced)
+            raise
+        discard_own_artifacts(ano_dir, *produced)
+        return None
 
     def _anonymize_filename(self, filepath: Path, profile: TempAnonymProfile) -> Path:
         """Anonymisiert Dateinamen."""
