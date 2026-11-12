@@ -1045,3 +1045,42 @@ def test_missing_identity_in_the_converter_is_a_cleanup_error_not_a_blind_unlink
         # (fstat scheitert direkt nach der Exklusiverstellung -> identity None)
     # Der Schreibversuch selbst lief nicht (Exception vor dem Schreiben); Eigentum nicht beweisbar -> TXT bleibt sichtbar
     assert (tmp_path / "Akte.txt").exists()
+
+
+def test_folder_preserves_foreign_file_created_after_claim_before_copy(tmp_path, monkeypatch):
+    """Eine Reservierung verleiht kein Eigentum: echtes open(..., xb) muss den Fremden erhalten."""
+    src, dest = _folder_env(tmp_path, monkeypatch)
+    original = src / "Notiz.txt"
+    original.write_text("Max Mustermann übt Gespräche.", encoding="utf-8")
+    original_hash = _sha(original)
+    foreign = dest / original.name
+    sentinel = b"FOREIGN_SENTINEL"
+    actual_claim = anonymizer_service.claim_output_name
+    actual_copy = anonymizer_service.copy_exclusive
+    rejected = []
+
+    def claim_then_foreign(claimed, target, source, check_disk=False):
+        final = actual_claim(claimed, target, source, check_disk=check_disk)
+        assert not target.exists()
+        target.write_bytes(sentinel)  # nach erfolgreicher Reservierung, vor der echten Exklusivkopie
+        return final
+
+    def copy_and_observe_collision(source, target):
+        try:
+            actual_copy(source, target)
+        except FileExistsError:
+            rejected.append(target)
+            raise
+
+    monkeypatch.setattr(anonymizer_service, "claim_output_name", claim_then_foreign)
+    monkeypatch.setattr(anonymizer_service, "copy_exclusive", copy_and_observe_collision)
+
+    result = DocumentAnonymizer().anonymize_folder(
+        str(src), _profile(), "synthetic-password", output_folder=str(dest)
+    )
+
+    assert rejected == [foreign]                     # tatsächlicher Exklusivkopie-Fehlerpfad
+    assert foreign.read_bytes() == sentinel          # Caller-Cleanup darf diesen Pfad nicht besitzen
+    assert _sha(original) == original_hash
+    assert result.processed_files == 1 and result.anonymized_files == 0
+    assert len(result.errors) == 1

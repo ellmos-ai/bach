@@ -2154,8 +2154,8 @@ class DocumentAnonymizer:
                 claim_output_name(claimed, dest_file, filepath, check_disk=True)
 
                 # Datei kopieren und anonymisieren
-                produced.append(dest_file)
                 copy_exclusive(filepath, dest_file)
+                produced.append(dest_file)  # Erst die erfolgreiche Exklusivkopie beweist Eigentum.
 
                 success, count, output_file = self.anonymize_file_with_output(str(dest_file), profile)
                 produced.append(output_file)
