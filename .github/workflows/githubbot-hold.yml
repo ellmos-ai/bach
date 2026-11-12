@@ -14,6 +14,11 @@ permissions:
   pull-requests: write
   contents: read
 
+# Ein Lauf je PR: ein älterer PASS-Lauf darf Labels nicht mehr entfernen, die ein neuerer FAIL-Lauf gerade gesetzt hat.
+concurrency:
+  group: githubbot-hold-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   hold-check:
     runs-on: ubuntu-latest
@@ -65,16 +70,12 @@ jobs:
           
           echo "HOLD-Comment hinzugefügt."
 
-      - name: Entferne HOLD falls Gate grün
+      - name: Entferne Gate-Labels falls Gate grün (nur Bot-eigene Holds)
         if: steps.check_gate.outputs.gate_status == 'PASS'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          echo "Gate-Status ist grün. Entferne Gate-Labels falls vorhanden."
-          
-          for label in HOLD module-gate-fehler; do
-            curl -s -X DELETE \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/$label"
-          done
-          
-          echo "Gate-Labels entfernt."
+          echo "Gate-Status ist grün. Entferne nur Bot-eigene Gate-Labels; manuelle Holds bleiben erhalten."
+          python3 .github/workflows/hold_ownership.py
