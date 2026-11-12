@@ -222,6 +222,35 @@ def unload(args):
                 raise Denied("inference_lock_changed")
             if os.path.lexists(root / "unload-pending.json"):
                 raise Denied("previous_unload_unresolved")
+            owner_path = root / "owner.json"
+            try:
+                if owner_path.is_symlink():
+                    raise ValueError("owner link")
+                def unique(pairs):
+                    record = {}
+                    for key, value in pairs:
+                        if key in record:
+                            raise ValueError("duplicate owner field")
+                        record[key] = value
+                    return record
+                def invalid(_value):
+                    raise ValueError("invalid numeric owner field")
+                try:
+                    raw_owner = owner_path.read_bytes()
+                except FileNotFoundError:
+                    raw_owner = None
+                if raw_owner is not None:
+                    if len(raw_owner) > MAX_RESPONSE:
+                        raise ValueError("owner too large")
+                    owner = json.loads(raw_owner, object_pairs_hook=unique, parse_constant=invalid)
+                    if (type(owner) is not dict or type(owner.get("pid")) is not int
+                            or owner["pid"] <= 0 or type(owner.get("created")) not in (int, float)
+                            or not math.isfinite(owner["created"]) or owner["created"] <= 0):
+                        raise ValueError("invalid owner")
+                    if "dispatch_pending" in owner:
+                        raise Denied("inference_dispatch_unresolved")
+            except (OSError, ValueError, TypeError, UnicodeError):
+                raise Denied("inference_owner_unverified") from None
             check_conditions(args)
             deadline = time.monotonic() + 20
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
