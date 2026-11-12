@@ -227,7 +227,8 @@ def test_client_does_not_hide_a_failing_page(client, tmp_path):
     urls = list(pages)
     pages[urls[1]] = {"success": False, "error": "kaputt"}
     out = _run_client(tmp_path, {"call": "list", "arg": "", "pages": pages})
-    assert out["result"] == {"success": False, "error": "kaputt"}     # Fehler wird weitergereicht, kein Teilerfolg
+    assert "result" not in out
+    assert out["error"] == "Error: Task-Liste konnte nicht vollständig geladen werden: kaputt"
     assert out["requests"] == urls[:2]
 
 
@@ -244,21 +245,25 @@ def test_client_drops_duplicate_ids_between_pages(tmp_path):
     assert [r["id"] for r in out["result"]["tasks"]] == [1, 2, 3, 4, 5]
 
 
-def test_client_stops_at_max_pages_and_marks_incomplete(tmp_path):
+def test_client_rejects_max_pages_exhaustion_as_incomplete(tmp_path):
     page = lambda off: {"success": True, "tasks": [{"id": off + 1}, {"id": off + 2}], "count": 2,  # noqa: E731
                         "total": 99, "has_more": True, "offset": off}
     pages = {f"/api/tasks?limit=2&offset={off}": page(off) for off in range(0, 40, 2)}
     out = _run_client(tmp_path, {"call": "all", "endpoint": "/api/tasks", "pageSize": 2, "maxPages": 3,
                                  "pages": pages})
-    assert len(out["requests"]) == 3 and out["result"]["has_more"] is True and len(out["result"]["tasks"]) == 6
+    assert "result" not in out
+    assert out["error"] == "Error: Task-Liste unvollständig: Nach 3 Seiten meldet der Server weitere Ergebnisse."
+    assert len(out["requests"]) == 3
 
 
-def test_client_stops_on_empty_page_even_if_has_more_stays_true(tmp_path):
+def test_client_rejects_empty_page_that_claims_more(tmp_path):
     pages = {"/api/tasks?limit=5&offset=0": {"success": True, "tasks": [], "count": 0, "total": 3,
                                              "has_more": True, "offset": 0}}
     out = _run_client(tmp_path, {"call": "all", "endpoint": "/api/tasks", "pageSize": 5, "maxPages": 50,
                                  "pages": pages})
-    assert len(out["requests"]) == 1 and out["result"]["tasks"] == []
+    assert "result" not in out
+    assert out["error"] == "Error: Task-Liste unvollständig: Der Server meldet ab Offset 0 weitere Seiten, liefert aber keine Einträge."
+    assert len(out["requests"]) == 1
 
 
 # --- Consumer-Naht: Templates nutzen den Seitenleser ------------------------------
