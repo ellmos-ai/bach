@@ -41,6 +41,39 @@ const API = {
         }
     },
 
+    // Liest ALLE Seiten eines paginierten Listenendpunkts (limit/offset/has_more, wie /api/tasks)
+    // und liefert dieselbe Antwortform zurueck (Liste unter `key`, total, count, has_more=false).
+    // Ein Fehler auf irgendeiner Seite wird unveraendert weitergereicht (kein stiller Teilerfolg);
+    // Doppelte ids (parallele Aenderungen zwischen den Seiten) werden verworfen.
+    // Der Server begrenzt jede Seite selbst (Standard 100); hier gibt es keine eigene Obergrenze
+    // ausser `maxPages` als Schutz vor einer nie endenden has_more-Kette.
+    async getAllPages(endpoint, key = 'tasks', pageSize = 100, maxPages = 1000) {
+        const merged = { success: true, count: 0, total: 0, has_more: false, offset: 0 };
+        merged[key] = [];
+        const seen = new Set();
+        let offset = 0;
+        for (let page = 0; page < maxPages; page++) {
+            const sep = endpoint.includes('?') ? '&' : '?';
+            const data = await this.get(`${endpoint}${sep}limit=${pageSize}&offset=${offset}`);
+            if (!data || data.success === false) return data;
+            const rows = Array.isArray(data[key]) ? data[key] : [];
+            for (const row of rows) {
+                if (row && row.id !== undefined && row.id !== null) {
+                    if (seen.has(row.id)) continue;
+                    seen.add(row.id);
+                }
+                merged[key].push(row);
+            }
+            merged.total = typeof data.total === 'number' ? data.total : merged[key].length;
+            if (data.applied_filters !== undefined) merged.applied_filters = data.applied_filters;
+            merged.count = merged[key].length;
+            if (data.has_more !== true || rows.length === 0) return merged;
+            offset += rows.length;
+        }
+        merged.has_more = true; // maxPages erreicht: Rest ist nicht geladen
+        return merged;
+    },
+
     async post(endpoint, data = {}) {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
@@ -89,7 +122,7 @@ const API = {
     status: () => API.get('/api/status'),
 
     tasks: {
-        list: (status) => API.get('/api/tasks' + (status ? `?status=${status}` : '')),
+        list: (status) => API.getAllPages('/api/tasks' + (status ? `?status=${status}` : '')),
         get: (id) => API.get(`/api/tasks/${id}`),
         create: (data) => API.post('/api/tasks', data),
         update: (id, data) => API.put(`/api/tasks/${id}`, data),

@@ -503,7 +503,7 @@
         // Tasks laden
         async function loadTasks() {
             try {
-                const data = await api.get('/api/tasks?status=all&limit=500');
+                const data = await api.getAllPages('/api/tasks?status=all', 'tasks', 500);
                 allTasks = data.tasks || [];
                 renderTaskList();
                 if (selectedTaskId) showTaskDetail(selectedTaskId);

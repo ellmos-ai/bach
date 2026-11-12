@@ -482,7 +482,7 @@
                 if (assigned) url += `&assigned_to=${encodeURIComponent(assigned)}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
                 if (priority) url += `&priority=${encodeURIComponent(priority)}`;
-                const res = await api.get(url);
+                const res = await api.getAllPages(url);   // alle Seiten (limit/offset/has_more)
                 return res.tasks || [];
             };
 
