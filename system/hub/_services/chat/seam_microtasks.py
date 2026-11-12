@@ -94,14 +94,10 @@ MICRO_TASK_CATALOG: List[Dict[str, Any]] = [
 
 
 def get_default_db_path() -> Path:
-    """Resolve default database path."""
-    try:
-        from hub.bach_paths import BACH_DB
-        if BACH_DB.exists():
-            return BACH_DB
-    except Exception:
-        pass
-    return REPO_ROOT / "system" / "hub" / "bach.db"
+    """Resolve default database path via the central path registry."""
+    from hub.bach_paths import BACH_DB
+
+    return BACH_DB
 
 
 def ensure_seam_microtasks(db_path: Optional[Path] = None) -> Dict[str, Any]:

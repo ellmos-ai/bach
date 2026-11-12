@@ -145,6 +145,8 @@ def test_tray_menu_exposes_three_german_rights_levels_and_dispatches_updates(mon
 
     tray = chat_tray.BACHTray.__new__(chat_tray.BACHTray)
     tray.remote = False
+    tray.host = "127.0.0.1"
+    tray.port = 8081
     tray.idle_enabled = True
     tray.state = {"connected": True, "mode": "safe", "think": True, "fackel_preference": "ollama"}
     tray.models = ["qwen3.8:27b-mlx"]
