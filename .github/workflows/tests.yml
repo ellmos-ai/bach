@@ -317,6 +317,7 @@ jobs:
             system/tests/test_fs_protection.py \
             system/tests/test_gesundheit_handler.py \
             system/tests/test_github_pr_task_reconciliation.py \
+            system/tests/test_githubbot_hold_ownership.py \
             system/tests/test_gui_handler.py \
             system/tests/test_gui_console.py \
             system/tests/test_agent_history_delivery.py \

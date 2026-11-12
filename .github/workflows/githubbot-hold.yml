@@ -14,6 +14,11 @@ permissions:
   pull-requests: write
   contents: read
 
+# Ein Lauf je PR: ein älterer PASS-Lauf darf Labels nicht mehr entfernen, die ein neuerer FAIL-Lauf gerade gesetzt hat.
+concurrency:
+  group: githubbot-hold-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   hold-check:
     runs-on: ubuntu-latest
@@ -23,24 +28,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch PR base branch
+        if: github.base_ref != ''
+        run: git fetch origin ${{ github.base_ref }}
+
       - name: Prüfe module-gate Status
         id: check_gate
         run: |
-          # Prüfe, ob der module-gate Workflow gelaufen ist
-          # Dies geschieht über die GitHub Actions API
-          echo "Prüfe module-gate Status..."
-          
-          # Lade den Gate-Report, falls vorhanden
-          if [ -f ".gate_report.txt" ]; then
-            echo "Gate-Report gefunden:"
-            cat .gate_report.txt
-            GATE_STATUS=$(grep -oP 'gate_status::\K\w+' .gate_report.txt || echo "UNKNOWN")
-            echo "Gate-Status: $GATE_STATUS"
+          # Der module-gate-Workflow läuft auf einem eigenen Runner; sein
+          # .gate_report.txt existiert in diesem Checkout nie. Deshalb führt
+          # dieser Job dieselbe Prüfung selbst aus und wertet den Exit-Code aus.
+          if python3 .github/workflows/module_gate_check.py; then
+            GATE_STATUS="PASS"
           else
-            echo "Kein Gate-Report gefunden - Gate-Check hat noch nicht gelaufen"
-            GATE_STATUS="UNKNOWN"
+            GATE_STATUS="FAIL"
           fi
-          echo "gate_status=$GATE_STATUS" >> $GITHUB_OUTPUT
+          echo "Gate-Status: $GATE_STATUS"
+          echo "gate_status=$GATE_STATUS" >> "$GITHUB_OUTPUT"
 
       - name: Setze HOLD falls Gate nicht grün
         if: steps.check_gate.outputs.gate_status != 'PASS'
@@ -66,14 +70,12 @@ jobs:
           
           echo "HOLD-Comment hinzugefügt."
 
-      - name: Entferne HOLD falls Gate grün
+      - name: Entferne Gate-Labels falls Gate grün (nur Bot-eigene Holds)
         if: steps.check_gate.outputs.gate_status == 'PASS'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          echo "Gate-Status ist grün. Entferne HOLD-Label falls vorhanden."
-          
-          curl -s -X DELETE \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/HOLD"
-          
-          echo "HOLD-Label entfernt."
+          echo "Gate-Status ist grün. Entferne nur Bot-eigene Gate-Labels; manuelle Holds bleiben erhalten."
+          python3 .github/workflows/hold_ownership.py
