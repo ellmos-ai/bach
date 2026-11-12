@@ -2153,9 +2153,12 @@ class DocumentAnonymizer:
                 # .doc/.msg -> .txt-Ziel); Kollision oder vorhandene Datei = laut, nichts kopiert
                 claim_output_name(claimed, dest_file, filepath, check_disk=True)
 
-                # Datei kopieren und anonymisieren
-                produced.append(dest_file)
+                # Datei kopieren und anonymisieren. Eigentum entsteht erst durch die
+                # erfolgreiche Exklusivkopie: scheitert sie (z.B. weil nach der Reservierung
+                # eine fremde Datei am Ziel erschien), raeumt copy_exclusive die eigene
+                # Teilkopie selbst identitaetsgebunden ab, und der Pfad gehoert uns nicht.
                 copy_exclusive(filepath, dest_file)
+                produced.append(dest_file)
 
                 success, count, output_file = self.anonymize_file_with_output(str(dest_file), profile)
                 produced.append(output_file)

@@ -360,6 +360,29 @@ def test_folder_exception_removes_raw_copy_and_reports_error(tmp_path, monkeypat
     assert _tree(src) == original
 
 
+def test_folder_keeps_a_foreign_file_that_appears_between_claim_and_copy(tmp_path, monkeypatch):
+    """Eigentum entsteht erst durch die erfolgreiche Exklusivkopie, nicht durch die Reservierung.
+
+    Erscheint nach claim_output_name eine fremde Datei am Ziel, lehnt copy_exclusive ab
+    (FileExistsError). Der Fehlerpfad darf diese fremde Datei nicht als eigene Ausgabe loeschen.
+    """
+    src, dest = _folder_env(tmp_path, monkeypatch)
+    (src / "Notiz.txt").write_text("Max Mustermann war da.", encoding="utf-8")
+    original = _tree(src)
+
+    def foreign_wins_the_race(source, target):
+        Path(target).write_bytes(b"FOREIGN_SENTINEL")
+        raise FileExistsError(f"[Errno 17] File exists: {Path(target).name}")
+
+    monkeypatch.setattr(anonymizer_service, "copy_exclusive", foreign_wins_the_race)
+    result = DocumentAnonymizer().anonymize_folder(str(src), _profile(), "pw", output_folder=str(dest))
+
+    assert (dest / "Notiz.txt").read_bytes() == b"FOREIGN_SENTINEL"
+    assert len(result.errors) == 1 and result.errors[0].startswith("Notiz.txt:")
+    assert result.anonymized_files == 0
+    assert _tree(src) == original
+
+
 # --- Workflow-Schleifen -------------------------------------------------------
 
 
