@@ -57,7 +57,6 @@ def test_app_fresh_db_path_applies_seeds(tmp_path, monkeypatch):
 def test_fresh_db_is_taken_over_by_seam(tmp_path, monkeypatch):
     pytest.importorskip("memoryhooker.triggers")
     monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
-    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
     monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV, raising=False)
     db = Database(tmp_path / "bach.db", SCHEMA_DIR)
     db.init_schema()
@@ -65,3 +64,4 @@ def test_fresh_db_is_taken_over_by_seam(tmp_path, monkeypatch):
     db.apply_seed_migrations()
     hook = mhp.ExternalMemoryHook(db_path=tmp_path / "bach.db", config_path=tmp_path / "none.toml")
     assert hook.handled_injectors() == frozenset({"strategy", "tool_warn", "between"})
+    assert not hasattr(mhp, "LEGACY_INJECTORS_ENV")

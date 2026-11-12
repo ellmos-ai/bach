@@ -50,6 +50,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "tools"))
 from fs_protection import FSProtection, PathClassifier
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class FSHandler(BaseHandler):
     """Handler fuer bach fs - Filesystem Protection"""
 

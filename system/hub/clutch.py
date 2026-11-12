@@ -29,6 +29,8 @@ except ImportError:
     HAS_CLUTCH = False
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("clutch")
 class ClutchHandler(BaseHandler):
     """Handler fuer --clutch Operationen (clutch-bridge)."""
 

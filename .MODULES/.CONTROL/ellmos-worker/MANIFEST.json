@@ -1,0 +1,20 @@
+{
+  "name": "ellmos-worker",
+  "version": "0.1.0",
+  "description": "Inhaltsschutz vor Werkzeugaufrufen: Prüfkette Quarantäne→Scope→content-guard→Erlaubnis→Ausführung mit Hash-Ledger",
+  "author": "BACH/Ocean Shared Modules",
+  "license": "MIT",
+  "entry_point": "verification_chain.py",
+  "exports": ["Stage", "VerificationChain", "Ledger", "Checker", "QuarantineChecker", "ScopeChecker", "ContentGuardChecker", "PermissionAdapter"],
+  "dependencies": [],
+  "consumers": [
+    {"name": "BACH", "version": ">=1.0", "integration": "adapter"},
+    {"name": "Ocean", "version": ">=1.0", "integration": "adapter"}
+  ],
+  "separation_of_concerns": {
+    "tool_execution": "BACH-Kern (bach.py _try_run_tool)",
+    "permission_profiles": "hub/claude_permissions.py",
+    "module_loading": "Adapter hub/_services/ellmos_worker.py",
+    "ledger_storage": "logs/ellmos-worker-ledger.jsonl"
+  }
+}

@@ -18,6 +18,8 @@ from .base import BaseHandler
 import sqlite3
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-agent-bridge")
 class IntegrationHandler(BaseHandler):
     """Handler für LLM-Partner-Integration (SQ038)"""
 

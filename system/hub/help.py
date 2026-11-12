@@ -48,6 +48,8 @@ TOPIC_ALIASES = {
 }
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class HelpHandler(BaseHandler):
     """Handler fuer --help <topic>"""
 

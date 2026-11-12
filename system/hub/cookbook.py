@@ -46,6 +46,8 @@ from typing import List, Tuple, Optional, Dict
 from hub.base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class CookbookHandler(BaseHandler):
     """Handler fuer Rezeptbuch-basierte Doku-Generierung."""
 

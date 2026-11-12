@@ -74,6 +74,16 @@ def user_skills_root() -> Path:
     return root
 
 
+def _is_macos_tcc_cloudstorage(path: Path) -> bool:
+    """On macOS, unconfigured paths resolving into ~/Library/CloudStorage block launchd daemons in tccd."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        return "/Library/CloudStorage/" in os.path.realpath(path)
+    except OSError:
+        return False
+
+
 def skill_roots() -> list[Path]:
     configured = os.environ.get("BACH_SKILLS_ROOTS")
     if configured is not None:
@@ -85,8 +95,12 @@ def skill_roots() -> list[Path]:
             raise ValueError("Skill-Wurzeln müssen absolut sein")
     else:
         home = Path.home()
-        roots = [home / "OneDrive/.TOPICS/.AI/.SKILLS/skills", home / ".agents/skills",
-                 home / ".claude/skills"]
+        candidates = [
+            home / "OneDrive/.TOPICS/.AI/.SKILLS/skills",
+            home / ".agents/skills",
+            home / ".claude/skills",
+        ]
+        roots = [p for p in candidates if not _is_macos_tcc_cloudstorage(p)]
     return list(dict.fromkeys([user_skills_root(), *roots]))
 
 
@@ -457,7 +471,14 @@ def load_skill_instructions(pins: list[dict], *, roots: list[Path] | None = None
 def check_write_locks(path: Path) -> None:
     """Use the installed canonical scanner, including parent and twin locks."""
     configured = os.environ.get("BACH_LOCK_TOOLS_ROOT")
-    directory = Path(configured).expanduser() if configured else Path.home() / "OneDrive/_scripts"
+    if configured:
+        directory = Path(configured).expanduser()
+    elif os.environ.get("BACH_LOCK_SCAN"):
+        directory = Path(os.environ["BACH_LOCK_SCAN"]).expanduser().parent
+    else:
+        directory = Path.home() / "OneDrive/_scripts"
+        if sys.platform == "darwin" and not (directory / "lock_scan.py").is_file():
+            directory = Path.home() / "services/lock-master/pure-locking"
     scanner = directory / "lock_scan.py"
     config = directory / "lock_roots.json"
     if not scanner.is_file() or not config.is_file():

@@ -24,6 +24,8 @@ from .base import BaseHandler
 from .lang import get_lang, t
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class ToolsHandler(BaseHandler):
     """Handler fuer --tools Operationen"""
 

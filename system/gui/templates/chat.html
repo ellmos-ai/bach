@@ -447,6 +447,142 @@
         .send-btn:active { transform: scale(0.94); }
         .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+        .queue-btn {
+            height: 46px;
+            padding: 0 14px;
+            border-radius: 12px;
+            background: var(--bg-hover, rgba(255,255,255,0.08));
+            border: 1px solid var(--border);
+            color: var(--text-normal, #e0e0e0);
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: background 0.2s, opacity 0.2s;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .queue-btn:hover { background: var(--bg-card); opacity: 0.95; }
+        .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* ── Queue Tray ── */
+        .chat-queue-tray {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px 16px;
+            background: var(--bg-card, #1c1c24);
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.82rem;
+            flex-shrink: 0;
+        }
+        .queue-tray-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            font-weight: 500;
+        }
+        .queue-tray-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .queue-tray-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+        .queue-tray-btn:hover {
+            color: var(--text-normal);
+            background: var(--bg-hover);
+        }
+        .queue-items-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .queue-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 4px 8px;
+            max-width: 280px;
+        }
+        .queue-item-index {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 0.75rem;
+        }
+        .queue-item-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-normal);
+            flex: 1;
+        }
+        .queue-item-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0 3px;
+            font-size: 0.75rem;
+        }
+        .queue-item-btn:hover {
+            color: var(--text-normal);
+        }
+
+        /* ── Quick Prompt Bar ── */
+        .chat-quick-prompt-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+        .quick-prompt-select {
+            flex: 1;
+            background: var(--bg-panel);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            outline: none;
+            max-width: 320px;
+        }
+        .quick-prompt-btn {
+            background: var(--bg-panel);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.76rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .quick-prompt-btn:hover {
+            color: var(--text);
+            border-color: var(--accent);
+        }
+
         /* ── Microphone / Voice Transcription ── */
         .mic-btn {
             width: 46px;
@@ -823,11 +959,32 @@
                 </div>
 
                 <div class="voice-interim" id="voice-interim"></div>
+                <div class="chat-quick-prompt-bar" id="chat-quick-prompt-bar">
+                    <span class="quick-prompt-icon" title="Schnellauswahl Prompt-Bibliothek">⚡</span>
+                    <select id="chat-quick-prompt-select" class="quick-prompt-select" title="Prompt aus Bibliothek oder Favoriten laden">
+                        <option value="">Prompt-Vorlage auswählen…</option>
+                    </select>
+                    <button type="button" class="quick-prompt-btn" id="btn-chat-open-generator" title="Prompt-Generator öffnen">✍ Generator</button>
+                    <button type="button" class="quick-prompt-btn" id="btn-chat-open-library" title="Prompt-Bibliothek öffnen">📚 Bibliothek</button>
+                </div>
+
+                <div class="chat-queue-tray" id="chat-queue-tray" style="display: none;">
+                    <div class="queue-tray-header">
+                        <span id="queue-tray-title">⏳ Warteschlange (0)</span>
+                        <div class="queue-tray-actions">
+                            <button type="button" class="queue-tray-btn" id="btn-toggle-queue-pause" title="Warteschlange pausieren / fortsetzen">⏸️ Pausieren</button>
+                            <button type="button" class="queue-tray-btn" id="btn-clear-queue" title="Alle Nachrichten aus der Warteschlange entfernen">🗑️ Alle leeren</button>
+                        </div>
+                    </div>
+                    <div class="queue-items-list" id="queue-items-list"></div>
+                </div>
+
             <div class="chat-input-area">
-                    <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe" hidden>🎙</button>
+                    <button class="mic-btn" id="mic-btn" title="Sprache eingeben (Transkription)" aria-label="Spracheingabe">🎙</button>
                     <input type="file" id="audio-file-input" accept="audio/*,.ogg,.oga,.opus,.mp3,.m4a,.mp4,.aac,.wav,.flac,.webm" hidden>
                     <button class="mic-btn" id="audio-btn" title="Audio-Datei transkribieren (lokal, Whisper)" aria-label="Audiodatei transkribieren">🎧</button>
                       <textarea id="input" rows="1" placeholder="Nachricht an Buddha…" autofocus></textarea>
+                    <button type="button" class="queue-btn" id="queue-btn" title="Nachricht einreihen (Alt+Enter)">⏳ Einreihen</button>
                     <button class="send-btn" id="send-btn" title="Backend wird geprüft" disabled>&#x27A4;</button>
                 </div>
             </div>
@@ -1219,6 +1376,7 @@
         const emptyState = document.getElementById('empty-state');
         const inputEl = document.getElementById('input');
         const sendBtn = document.getElementById('send-btn');
+        const queueBtn = document.getElementById('queue-btn');
         const typingEl = document.getElementById('typing');
         let sending = false;
         let backendAvailable = false;
@@ -1248,12 +1406,161 @@
         }
 
         function updateComposerAvailability() {
-            sendBtn.disabled = sending || !backendAvailable;
-            sendBtn.title = backendAvailable ? 'Senden' :
+            if (queueBtn) {
+                queueBtn.disabled = !backendAvailable;
+            }
+            sendBtn.disabled = !backendAvailable;
+            sendBtn.title = sending ? 'In Warteschlange einreihen (Antwort wird generiert…)' :
+                (backendAvailable ? 'Senden' :
                 (profileSelectionError ? 'Ungültige Agenten-ID' :
-                profileUnavailable ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar');
+                profileUnavailable ? 'Agentenprofil nicht verfügbar' : 'Backend nicht verfügbar'));
             sendBtn.setAttribute('aria-label', sendBtn.title);
         }
+
+        class ChatQueueManager {
+            constructor() {
+                this.items = [];
+                this.paused = false;
+                this.timer = null;
+            }
+
+            storageKey(chatId) {
+                return 'bach_chat_queue_' + (chatId || currentChatId || 'default');
+            }
+
+            loadFromStorage(chatId) {
+                try {
+                    const raw = localStorage.getItem(this.storageKey(chatId));
+                    this.items = raw ? JSON.parse(raw) : [];
+                    if (!Array.isArray(this.items)) this.items = [];
+                } catch(e) {
+                    this.items = [];
+                }
+                this.render();
+                return this.items;
+            }
+
+            persist(chatId) {
+                try {
+                    localStorage.setItem(this.storageKey(chatId), JSON.stringify(this.items));
+                } catch(e) {}
+            }
+
+            enqueue(text, chatId) {
+                const trimmed = (text || '').trim();
+                if (!trimmed) return;
+                this.items.push(trimmed);
+                this.persist(chatId);
+                this.render();
+            }
+
+            dequeue(chatId) {
+                if (this.items.length === 0) return null;
+                const next = this.items.shift();
+                this.persist(chatId);
+                this.render();
+                return next;
+            }
+
+            remove(index, chatId) {
+                if (index >= 0 && index < this.items.length) {
+                    this.items.splice(index, 1);
+                    this.persist(chatId);
+                    this.render();
+                }
+            }
+
+            reorder(fromIdx, toIdx, chatId) {
+                if (fromIdx >= 0 && fromIdx < this.items.length && toIdx >= 0 && toIdx < this.items.length) {
+                    const item = this.items.splice(fromIdx, 1)[0];
+                    this.items.splice(toIdx, 0, item);
+                    this.persist(chatId);
+                    this.render();
+                }
+            }
+
+            clear(chatId) {
+                this.items = [];
+                this.persist(chatId);
+                this.render();
+            }
+
+            togglePause() {
+                this.paused = !this.paused;
+                this.render();
+                showToast(this.paused ? 'Warteschlange pausiert' : 'Warteschlange fortgesetzt');
+                if (!this.paused && !sending) {
+                    processNextQueuedMessage();
+                }
+            }
+
+            render() {
+                const tray = document.getElementById('chat-queue-tray');
+                const list = document.getElementById('queue-items-list');
+                const title = document.getElementById('queue-tray-title');
+                const pauseBtn = document.getElementById('btn-toggle-queue-pause');
+                if (!tray || !list) return;
+
+                if (this.items.length === 0) {
+                    tray.style.display = 'none';
+                    return;
+                }
+
+                tray.style.display = 'flex';
+                if (title) {
+                    title.textContent = `⏳ Warteschlange (${this.items.length})` + (this.paused ? ' [Pausiert]' : '');
+                }
+                if (pauseBtn) {
+                    pauseBtn.textContent = this.paused ? '▶️ Fortsetzen' : '⏸️ Pausieren';
+                }
+
+                list.innerHTML = '';
+                this.items.forEach((item, idx) => {
+                    const el = document.createElement('div');
+                    el.className = 'queue-item';
+
+                    const idxSpan = document.createElement('span');
+                    idxSpan.className = 'queue-item-index';
+                    idxSpan.textContent = '#' + (idx + 1);
+
+                    const textSpan = document.createElement('span');
+                    textSpan.className = 'queue-item-text';
+                    textSpan.title = item;
+                    textSpan.textContent = item;
+
+                    const upBtn = document.createElement('button');
+                    upBtn.className = 'queue-item-btn';
+                    upBtn.textContent = '▲';
+                    upBtn.title = 'Nach oben';
+                    upBtn.onclick = () => this.reorder(idx, idx - 1, currentChatId);
+                    if (idx === 0) upBtn.disabled = true;
+
+                    const downBtn = document.createElement('button');
+                    downBtn.className = 'queue-item-btn';
+                    downBtn.textContent = '▼';
+                    downBtn.title = 'Nach unten';
+                    downBtn.onclick = () => this.reorder(idx, idx + 1, currentChatId);
+                    if (idx === this.items.length - 1) downBtn.disabled = true;
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'queue-item-btn';
+                    delBtn.textContent = '×';
+                    delBtn.title = 'Entfernen';
+                    delBtn.onclick = () => this.remove(idx, currentChatId);
+
+                    el.appendChild(idxSpan);
+                    el.appendChild(textSpan);
+                    el.appendChild(upBtn);
+                    el.appendChild(downBtn);
+                    el.appendChild(delBtn);
+                    list.appendChild(el);
+                });
+            }
+        }
+
+        const queueManager = new ChatQueueManager();
+        queueManager.loadFromStorage(currentChatId);
+        window.queueManager = queueManager;
 
         if (typeof marked !== 'undefined') {
             marked.setOptions({
@@ -1408,6 +1715,7 @@
             const targetChatId = s.chat_id || ('web-snap-' + s.id);
             currentChatId = targetChatId;
             localStorage.setItem(profileStorageKey, currentChatId);
+            queueManager.loadFromStorage(currentChatId);
             showChatBindingInfo();
 
             const displayTitle = (s.name || 'Chat').replace(/^Web:\s*/i, '');
@@ -1466,6 +1774,7 @@
             if (profileSelectionError) return;
             currentChatId = newProfileChatId();
             localStorage.setItem(profileStorageKey, currentChatId);
+            queueManager.loadFromStorage(currentChatId);
             showChatBindingInfo();
             currentChatTitleEl.textContent = profileAgentId ? 'Agentenprofil #' + profileAgentId + ' · Neuer Chat' : 'Neuer Chat';
 
@@ -1521,11 +1830,19 @@
             }
         }
 
+        let pendingPromptAutorun = false;
+        let draftAgentId = null;
         function loadLibraryDraft() {
             const draft = BachChatDraft.consume();
             if (draft === null) return;
 
             inputEl.value = draft;
+            if (draft && draft.autorun) {
+                pendingPromptAutorun = true;
+            }
+            if (draft && draft.agent_id && !profileAgentId) {
+                draftAgentId = draft.agent_id;
+            }
             autoResize();
             inputEl.focus();
         }
@@ -1569,11 +1886,12 @@
                 addMessage(text, 'user');
                 setTyping(true);
 
+                const effectiveAgent = draftAgentId || profileAgentId;
                 const resp = await fetch(CHAT_API + '/chat', {
                     method: 'POST',
                     headers: controlHeaders('POST', true),
                     body: JSON.stringify({ prompt: text, chat_id: currentChatId,
-                        ...(profileAgentId ? { agent_id: profileAgentId } : {}) })
+                        ...(effectiveAgent ? { agent_id: effectiveAgent } : {}) })
                 });
                 const data = await resp.json();
                 setTyping(false);
@@ -1589,7 +1907,15 @@
                     addMessage(data.answer, 'bot');
                     // Reload sessions in background to update titles and timestamps
                     loadWebSessions();
+                    if (!queueManager.paused && queueManager.items.length > 0) {
+                        setTimeout(processNextQueuedMessage, 600);
+                    }
                 } else {
+                    if (queueManager.items.length > 0 && !queueManager.paused) {
+                        queueManager.paused = true;
+                        queueManager.render();
+                        showToast('Warteschlange wegen Fehler pausiert');
+                    }
                     addMessage(data.ok && profileAgentId ? 'Profilbindung in Antwort nicht bestätigt' :
                         (data.error || data.detail || 'Unbekannter Fehler'), 'error');
                 }
@@ -1599,6 +1925,11 @@
                     inputEl.value = text;
                     autoResize();
                 }
+                if (queueManager.items.length > 0 && !queueManager.paused) {
+                    queueManager.paused = true;
+                    queueManager.render();
+                    showToast('Warteschlange wegen Fehler pausiert');
+                }
                 addMessage('Verbindungsfehler: ' + e.message, 'error');
             } finally {
                 sending = false;
@@ -1607,104 +1938,221 @@
             }
         }
 
-        sendBtn.addEventListener('click', send);
+        async function processNextQueuedMessage() {
+            if (sending || queueManager.paused) return;
+            const nextMsg = queueManager.dequeue(currentChatId);
+            if (!nextMsg) return;
+            inputEl.value = nextMsg;
+            autoResize();
+            await send();
+        }
+        window.processNextQueuedMessage = processNextQueuedMessage;
+
+        async function handleSendOrEnqueue() {
+            const text = inputEl.value.trim();
+            if (!text || !backendAvailable || profileSelectionError) return;
+            if (sending) {
+                queueManager.enqueue(text, currentChatId);
+                inputEl.value = '';
+                autoResize();
+                showToast('Nachricht in Warteschlange eingereiht');
+                return;
+            }
+            await send();
+        }
+
+        function handleEnqueueBtn() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+            queueManager.enqueue(text, currentChatId);
+            inputEl.value = '';
+            autoResize();
+            showToast('Nachricht in Warteschlange eingereiht');
+        }
+
+        sendBtn.addEventListener('click', handleSendOrEnqueue);
+        if (queueBtn) queueBtn.addEventListener('click', handleEnqueueBtn);
+
+        const btnToggleQueuePause = document.getElementById('btn-toggle-queue-pause');
+        if (btnToggleQueuePause) {
+            btnToggleQueuePause.addEventListener('click', () => queueManager.togglePause());
+        }
+        const btnClearQueue = document.getElementById('btn-clear-queue');
+        if (btnClearQueue) {
+            btnClearQueue.addEventListener('click', () => {
+                queueManager.clear(currentChatId);
+                showToast('Warteschlange geleert');
+            });
+        }
 
         inputEl.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send();
+            if (e.key === 'Enter') {
+                if (e.altKey) {
+                    e.preventDefault();
+                    handleEnqueueBtn();
+                } else if (!e.shiftKey) {
+                    e.preventDefault();
+                    handleSendOrEnqueue();
+                }
             }
         });
 
         inputEl.addEventListener('input', autoResize);
 
-        // ── Voice Input (Browser-Mittel / Web Speech API) ──
+        // ── Voice Input & STT Streaming (MediaRecorder + ellmos-voice-io + Web Speech Fallback) ──
         (function initVoiceInput() {
-            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             const micBtn = document.getElementById('mic-btn');
             const interimEl = document.getElementById('voice-interim');
-            if (!SR) {
-                if (micBtn) micBtn.hidden = true; // nicht unterstützt -> Button ausblenden
-                return;
-            }
             if (!micBtn) return;
-            micBtn.hidden = false;
 
-            const rec = new SR();
-            rec.continuous = false;
-            rec.interimResults = true;
-            rec.lang = 'de-DE';
-            let listening = false;
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const hasMediaRecorder = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let stream = null;
+            let recording = false;
+            let srRec = null;
             let baseText = '';
 
-            function setListening(on) {
-                listening = on;
+            function setRecording(on) {
+                recording = on;
                 micBtn.classList.toggle('recording', on);
                 micBtn.textContent = on ? '■' : '🎙';
-                micBtn.title = on ? 'Aufnahme stoppen' : 'Sprache eingeben (Transkription)';
+                micBtn.title = on ? 'Aufnahme stoppen & transkribieren' : 'Sprach-Prompt aufnehmen (ellmos-voice-io)';
                 micBtn.setAttribute('aria-label', micBtn.title);
+                if (on) {
+                    interimEl.textContent = '🎙️ Aufnahme läuft … Bitte sprechen (Klick zum Beenden & Transkribieren)';
+                } else {
+                    interimEl.textContent = '';
+                }
             }
 
-            rec.onstart = function() {
-                baseText = inputEl.value ? inputEl.value + (inputEl.value.trim() ? ' ' : '') : '';
-                setListening(true);
-                showToast('🎙 Höre zu …');
-            };
+            async function startRecording() {
+                if (sending) { showToast('Antwort wird gerade generiert …'); return; }
+                baseText = inputEl.value ? inputEl.value.trim() + ' ' : '';
+                audioChunks = [];
 
-            rec.onresult = function(ev) {
-                let interim = '';
-                let final = '';
-                for (let i = ev.resultIndex; i < ev.results.length; i++) {
-                    const t = ev.results[i][0].transcript;
-                    if (ev.results[i].isFinal) final += t;
-                    else interim += t;
+                if (hasMediaRecorder) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
+                            ? 'audio/webm;codecs=opus'
+                            : ((window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm')) ? 'audio/webm' : 'audio/ogg');
+                        mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
+                        mediaRecorder.ondataavailable = function(e) {
+                            if (e.data && e.data.size > 0) {
+                                audioChunks.push(e.data);
+                            }
+                        };
+                        mediaRecorder.onstop = async function() {
+                            if (stream) {
+                                stream.getTracks().forEach(t => t.stop());
+                                stream = null;
+                            }
+                            if (audioChunks.length === 0) {
+                                setRecording(false);
+                                return;
+                            }
+                            interimEl.textContent = '⏳ Transkribiere mit ellmos-voice-io …';
+                            const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                            const reader = new FileReader();
+                            reader.onloadend = async function() {
+                                try {
+                                    const b64 = (reader.result || '').split(',')[1] || '';
+                                    const ext = (mediaRecorder.mimeType && mediaRecorder.mimeType.includes('ogg')) ? '.ogg' : '.webm';
+                                    const res = await fetch('/api/voice/stt', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ audio_b64: b64, suffix: ext, language: 'de' })
+                                    });
+                                    const data = await res.json();
+                                    if (data && data.text && data.text.trim()) {
+                                        inputEl.value = baseText + data.text.trim();
+                                        autoResize();
+                                        inputEl.focus();
+                                        showToast('🎙️ Transkript eingefügt: „' + data.text.trim().substring(0, 40) + '…“', 3000);
+                                    } else if (data && data.warning) {
+                                        showToast('Hinweis: ' + data.warning, 4000);
+                                    } else {
+                                        showToast('Keine Sprache erkannt', 2500);
+                                    }
+                                } catch (err) {
+                                    showToast('STT-Fehler: ' + err.message, 3500);
+                                } finally {
+                                    setRecording(false);
+                                }
+                            };
+                            reader.readAsDataURL(blob);
+                        };
+                        mediaRecorder.start(250);
+                        setRecording(true);
+                        showToast('🎙️ Sprach-Prompt Aufnahme läuft …');
+                    } catch (err) {
+                        setRecording(false);
+                        showToast('Mikrofon-Zugriff verweigert oder nicht verfügbar: ' + err.message, 4000);
+                        return;
+                    }
                 }
-                if (interim) interimEl.textContent = '„' + baseText + interim + '“';
-                else interimEl.textContent = '';
-                if (final) {
-                    const chunk = baseText + final;
-                    inputEl.value = chunk.trim();
-                    autoResize();
-                    interimEl.textContent = '';
-                    inputEl.focus();
+
+                if (SR) {
+                    try {
+                        srRec = new SR();
+                        srRec.continuous = true;
+                        srRec.interimResults = true;
+                        srRec.lang = 'de-DE';
+                        srRec.onresult = function(ev) {
+                            let interim = '';
+                            for (let i = ev.resultIndex; i < ev.results.length; i++) {
+                                interim += ev.results[i][0].transcript;
+                            }
+                            if (interim) {
+                                interimEl.textContent = '„' + baseText + interim + '“';
+                            }
+                        };
+                        srRec.onerror = function() {};
+                        srRec.start();
+                    } catch (_) {}
                 }
-            };
+            }
 
-            rec.onerror = function(ev) {
-                setListening(false);
-                interimEl.textContent = '';
-                if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed')
-                    showToast('Mikrofon-Zugriff verweigert', 3500);
-                else if (ev.error === 'no-speech')
-                    showToast('Keine Sprache erkannt', 2500);
-                else if (ev.error !== 'aborted')
-                    showToast('Spracherkennungsfehler: ' + ev.error, 3000);
-            };
-
-            rec.onend = function() {
-                setListening(false);
-                interimEl.textContent = '';
-            };
+            function stopRecording() {
+                if (srRec) {
+                    try { srRec.stop(); } catch (_) {}
+                    srRec = null;
+                }
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                } else {
+                    setRecording(false);
+                }
+            }
 
             micBtn.addEventListener('click', function() {
-                if (sending) { showToast('Antwort wird gerade generiert …'); return; }
-                if (listening) {
-                    rec.stop();
+                if (recording) {
+                    stopRecording();
                 } else {
-                    try {
-                        baseText = '';
-                        rec.start();
-                    } catch (e) { /* schon gestartet -> ignorieren */ }
+                    startRecording();
                 }
             });
 
-            // Tab-Shortcut: Tab umschaltet Aufnahme (Shift+Tab lässt Standard-Verhalten)
+            // Tab-Shortcut
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Tab' && !e.shiftKey && e.target === inputEl) {
                     e.preventDefault();
                     micBtn.click();
                 }
             });
+
+            // Tray-Handoff via URL Query ?voice=1
+            try {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('voice') === '1') {
+                    setTimeout(() => {
+                        showToast('🎙️ Sprach-Prompt aus Tray aktiviert — Klicke auf 🎙️ zum Sprechen', 4000);
+                        micBtn.focus();
+                    }, 500);
+                }
+            } catch (_) {}
         })();
 
         // ── Audio-Datei-Transkription (serverseitig, Whisper — Task #1338) ──
@@ -1961,6 +2409,7 @@
                         currentChatId = forkChatId;
                         localStorage.setItem(profileStorageKey, currentChatId);
                     }
+                    queueManager.loadFromStorage(currentChatId);
                     closeProtocols();
                     await loadWebSessions();
                     await loadActiveChat();
@@ -1995,15 +2444,73 @@
             });
         });
 
+        // ── Quick-Prompt Bar Setup ──
+        async function loadChatQuickPrompts() {
+            const selectEl = document.getElementById('chat-quick-prompt-select');
+            if (!selectEl) return;
+            try {
+                const res = await fetch('/api/prompt-library', { headers: controlHeaders('GET') });
+                if (!res.ok) return;
+                const data = await res.json();
+                const prompts = data.prompts || data.items || [];
+                selectEl.innerHTML = '<option value="">⚡ Prompt-Vorlage wählen…</option>';
+                for (const p of prompts) {
+                    const opt = document.createElement('option');
+                    opt.value = p.text || p.content || '';
+                    const fav = p.is_favorite ? '★ ' : '';
+                    opt.textContent = fav + (p.name || p.title || 'Prompt');
+                    selectEl.appendChild(opt);
+                }
+            } catch (err) {
+                console.warn('Quick-Prompts load error:', err);
+            }
+        }
+
+        const quickSelect = document.getElementById('chat-quick-prompt-select');
+        if (quickSelect) {
+            quickSelect.addEventListener('change', () => {
+                const val = quickSelect.value;
+                if (!val) return;
+                inputEl.value = val;
+                autoResize();
+                inputEl.focus();
+                quickSelect.value = '';
+            });
+        }
+        const btnGen = document.getElementById('btn-chat-open-generator');
+        if (btnGen) {
+            btnGen.addEventListener('click', () => window.location.assign('/prompt-generator'));
+        }
+        const btnLib = document.getElementById('btn-chat-open-library');
+        if (btnLib) {
+            btnLib.addEventListener('click', () => window.location.assign('/prompt-library'));
+        }
+
         // ── Init ──
         function loadHistory() {
             return loadActiveChat();
         }
         window.loadHistory = loadHistory;
+        loadChatQuickPrompts();
         loadWebSessions().then(() => {
-            loadHistory().then(loadLibraryDraft);
+            loadHistory().then(loadLibraryDraft).then(() => {
+                if (pendingPromptAutorun) {
+                    setTimeout(() => {
+                        if (inputEl.value.trim() && !sending && backendAvailable && !profileSelectionError) {
+                            send();
+                        }
+                    }, 350);
+                }
+            });
         });
         loadLibraryDraft();
+        if (pendingPromptAutorun) {
+            setTimeout(() => {
+                if (inputEl.value.trim() && !sending && backendAvailable && !profileSelectionError) {
+                    send();
+                }
+            }, 450);
+        }
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

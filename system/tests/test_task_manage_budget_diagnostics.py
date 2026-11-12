@@ -143,7 +143,7 @@ def test_confirmed_self_check_denial_returns_only_fixed_guidance(caplog, monkeyp
     ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parnt": False},
      'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder. ' + TASK_CUT_RULE_SHORT),
     ({"action": "decompose", "task_id": 0, "subtasks": [{"title": "Kind"}], "close_parent": True},
-     'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.'),
+     'Bei decompose close_parent=false verwenden; danach offenen Rest mit submit_result(..., complete=false) zurückgeben.'),
 ])
 def test_bound_local_argument_errors_are_actionable_without_leaking_or_mutation(
     binding, caplog, args, expected,

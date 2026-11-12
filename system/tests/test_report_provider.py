@@ -1011,7 +1011,12 @@ async def test_local_backend_exception_cleans_ephemeral_session(tmp_path, monkey
 
 
 @pytest.mark.asyncio
-async def test_cloud_route_status_has_explicit_nonlocal_mode_and_no_fallback():
+async def test_cloud_route_status_has_explicit_nonlocal_mode_and_no_fallback(monkeypatch):
+    from hub._services.document import anonymizer_service
+
+    # NER-Pflicht des Cloud-Wegs hat eigene Tests (test_report_gui_privacy.py)
+    monkeypatch.setattr(anonymizer_service, "ner_ready", lambda: (True, ""))
+
     class Backend:
         async def chat(self, _messages, *, tools, model):
             assert tools is None
@@ -1074,6 +1079,57 @@ async def test_word_template_port_uses_real_service_and_bound_resolver(tmp_path)
 
     assert rendered["template_revision"] == _TEMPLATE_REVISION
     assert "Synthetic report" in "\n".join(paragraph.text for paragraph in result_doc.paragraphs)
+
+
+@pytest.mark.asyncio
+async def test_word_template_port_fills_nested_report_fields_by_dotted_path(tmp_path):
+    """PB-15: Felder des geschachtelten Berichts (z. B. stammdaten.name) sind adressierbar."""
+    from docx import Document
+
+    from hub._services.document.word_template_service import WordTemplateService
+
+    template_path = tmp_path / "template.docx"
+    document = Document()
+    document.add_heading("Stammdaten", 1)
+    document.add_paragraph("Name: {{stammdaten.name}}")
+    document.add_paragraph("Zeitraum: {{stammdaten.berichtszeitraum}}")
+    document.add_paragraph("Empfehlung: {{empfehlung}}")
+    document.add_paragraph("Ziele: {{foerderziele}}")
+    document.save(template_path)
+    template_bytes = template_path.read_bytes()
+    store = _FileArtifactStore(tmp_path / "artifacts")
+
+    class Resolver:
+        def resolve(self, template_id, *, expected_revision):
+            return {
+                "available": True,
+                "revision": _TEMPLATE_REVISION,
+                "media_type": _DOCX_MEDIA,
+                "content": template_bytes,
+            }
+
+    port = BachWordTemplatePort(store, service=WordTemplateService())
+    port.bind_resolver(Resolver())
+    rendered = await port.render_draft(
+        "foerderplaner.report.v1",
+        {
+            "stammdaten": {"name": "Synthetic Person", "berichtszeitraum": "2026-01-01 bis 2026-06-30"},
+            "empfehlung": "Weiterbewilligung",
+            "foerderziele": [{"icf_code": "d315", "zielformulierung": "Sprechen", "erreicht": False}],
+        },
+        "template-public",
+        _TEMPLATE_REVISION,
+        run_id="run-test",
+    )
+    output_path = tmp_path / "rendered.docx"
+    output_path.write_bytes(store.read("run-test", rendered["artifact_ref"]))
+    body = "\n".join(p.text for p in Document(output_path).paragraphs)
+
+    assert "Name: Synthetic Person" in body
+    assert "Zeitraum: 2026-01-01 bis 2026-06-30" in body
+    assert "Empfehlung: Weiterbewilligung" in body
+    assert "zielformulierung: Sprechen" in body and "erreicht: Nein" in body  # Listen als Text, nicht als JSON
+    assert "{{" not in body and "{" not in body
 
 
 @pytest.mark.asyncio

@@ -47,8 +47,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List, Tuple, Optional
 from hub.base import BaseHandler
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
 
 
+@deprecated_legacy_bach("ellmos_homecontrol.hub.HomeControlHub")
 class SmartHomeHandler(BaseHandler):
 
     FRITZ_URL = "http://fritz.box:49000"

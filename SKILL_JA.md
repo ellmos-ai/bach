@@ -25,6 +25,7 @@ description: >
 - 用意されたSSHアクセスを介してMac Studioに接続すること。独自のアクセス情報は作成しないこと。プロジェクトは `$BACH_ROOT` 配下（Mac Studioでは `~/services/bach`）、Pythonはそのvenvのものを使う。`AGENTS.md` と、自分が作業する部分プロジェクトの指示を読むこと。
 - **モードB（ミックス）** は積極的に協働するエージェントにとっての標準である。**モードA（ライブラリ）** は、タスクの処理のみを行いBACHをセッションとして利用しない場合に十分である。以下のリースの経路はリードサービス経由で動作し、セッション開始を必要としない。モードC（セッション）は明示的な要望がある場合のみ。
 - 最初のタスクの前に、現在の計画 `Desktop\OCEAN\AKTUELLER-PLAN.md` と `MODUL-ZUORDNUNG.md`（構築場所）を読むこと。
+
 ### 2. 空きタスクの検索
 - **ネイティブ:** `TaskLeaseClient.task_candidates(limit=100, offset=…)`（最初のページだけでなく、すべてのページを読む）、その後 `task_snapshot(task_id)` で完全な説明を取得。`bach task list` は同じタスクの閲覧専用。
 - **選択ルール:**
@@ -340,14 +341,6 @@ from bach_api import (
     plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
 
     # Raw-Zugriff (beliebiger Handler)
-    app,         # app().execute("handler", "operation", ["args"])
-)
-```
-
-    # Plugin-API (動的拡張)
-    plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
-
-    # Raw-Zugriff (任意のハンドラ)
     app,         # app().execute("handler", "operation", ["args"])
 )
 ```

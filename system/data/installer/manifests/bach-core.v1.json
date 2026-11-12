@@ -1,0 +1,51 @@
+{
+  "schema": "bach.component-manifest.v1",
+  "manifest_version": 1,
+  "manifest_id": "bach-core.v1",
+  "product": {
+    "name": "BACH",
+    "version": "3.15.0"
+  },
+  "description": "Versioniertes Komponentenmanifest der BACH-Kerninstallation (Sollmenge).",
+  "components": [
+    {
+      "name": "assistant-core"
+    },
+    {
+      "name": "accounts-core"
+    },
+    {
+      "name": "ellmos-scheduler"
+    },
+    {
+      "name": "system-explorer"
+    },
+    {
+      "name": "memoryhooker"
+    },
+    {
+      "name": "workflowhooker"
+    },
+    {
+      "name": "sqlite-transit-sync"
+    },
+    {
+      "name": "web-scraper"
+    },
+    {
+      "name": "doc-services"
+    },
+    {
+      "name": "session-checkpoint"
+    },
+    {
+      "name": "ellmos-chat"
+    },
+    {
+      "name": "taskplan"
+    },
+    {
+      "name": "llmauto"
+    }
+  ]
+}

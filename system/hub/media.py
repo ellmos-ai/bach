@@ -41,6 +41,8 @@ TYPE_ICONS = {
 }
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ai-media-editor")
 class MediaHandler(BaseHandler):
 
     def __init__(self, base_path: Path):

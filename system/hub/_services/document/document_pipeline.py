@@ -508,16 +508,11 @@ class DocumentPipeline:
         """
         bundle = TextBundle()
 
-        # Anonymisierungs-Mappings vorbereiten
+        # Anonymisierungs-Mappings vorbereiten: dieselbe Liste wie beim Anonymisieren der Dateien
+        # (Whitelist, Umschriften), sonst weicht das Bundle vom Dateiweg ab.
         if anonym_profile:
-            all_replacements = {}
-            for category in anonym_profile.mappings.values():
-                all_replacements.update(category)
-            sorted_replacements = sorted(
-                all_replacements.items(),
-                key=lambda x: len(x[0]),
-                reverse=True
-            )
+            from .anonymizer_service import DocumentAnonymizer
+            sorted_replacements = DocumentAnonymizer._sorted_replacements(anonym_profile)
         else:
             sorted_replacements = []
 
@@ -759,15 +754,8 @@ class DocumentPipeline:
         Returns:
             Neues TextBundle mit anonymisiertem Text
         """
-        all_replacements = {}
-        for category in profile.mappings.values():
-            all_replacements.update(category)
-
-        sorted_replacements = sorted(
-            all_replacements.items(),
-            key=lambda x: len(x[0]),
-            reverse=True
-        )
+        from .anonymizer_service import DocumentAnonymizer
+        sorted_replacements = DocumentAnonymizer._sorted_replacements(profile)
 
         def anonymize_text(text: str) -> str:
             from .anonymizer_service import _replace_word_boundary

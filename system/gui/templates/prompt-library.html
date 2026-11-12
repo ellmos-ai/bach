@@ -120,6 +120,31 @@
         .pl-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
         .pl-muted { color: var(--text-muted); font-size: 0.85rem; padding: 1rem; }
         #pl-status { font-size: 0.8rem; color: var(--text-muted); margin-left: auto; }
+
+        .pl-dropzone-active {
+            outline: 2px dashed var(--accent, #3b82f6) !important;
+            background: rgba(59, 130, 246, 0.08) !important;
+        }
+
+        .pl-dropzone-overlay {
+            display: none;
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.85);
+            border: 2px dashed var(--accent, #3b82f6);
+            border-radius: 8px;
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            pointer-events: none;
+        }
+
+        .pl-dropzone-active .pl-dropzone-overlay {
+            display: flex;
+        }
     </style>
 </head>
 
@@ -130,18 +155,25 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
             <h1 style="margin: 0;">Prompt-Bibliothek</h1>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn" onclick="previewPromptBoard()" title="Vorschau der PromptBoard-Library ohne Speichern">PromptBoard-Vorschau</button>
                 <button class="btn" onclick="importPromptBoard()" title="Importiert library.json aus PromptBoard (idempotent)">Import aus PromptBoard</button>
+                <button class="btn" onclick="exportPromptBoard()" title="Prompts aus BACH nach PromptBoard synchronisieren/exportieren">Nach PromptBoard exportieren</button>
+                <button class="btn btn-primary" onclick="syncPromptBoard()" title="Bidirektionaler Zwei-Wege-Sync zwischen BACH und PromptBoard library.json">🔄 Zwei-Wege-Sync</button>
+                <input type="file" id="pl-file-input" accept=".json,application/json" style="display: none;" onchange="handleFileSelect(event)">
+                <button class="btn" onclick="document.getElementById('pl-file-input').click()" title="Externe PromptBoard library.json Datei auswählen">JSON-Datei importieren</button>
                 <button class="btn btn-primary" onclick="startCreate()">Neuer Prompt</button>
             </div>
         </div>
 
-        <div class="pl-layout">
+        <div class="pl-layout" id="pl-drop-area" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)" style="position: relative;">
+            <div class="pl-dropzone-overlay">PromptBoard JSON-Datei hier ablegen (Drag & Drop)</div>
             <div class="pl-panel">
                 <div class="pl-panel-header">
                     <input class="pl-search" id="pl-search" placeholder="Suche (Name, Text, Tags)..." oninput="debouncedLoad()">
-                    <select id="pl-category" class="pl-search" style="flex: 0 1 140px;" onchange="loadList()">
+                    <select id="pl-category" class="pl-search" style="flex: 0 1 130px;" onchange="loadList()">
                         <option value="">Alle Kategorien</option>
                     </select>
+                    <button class="btn" id="pl-fav-filter" onclick="toggleFavoritesOnly()" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" title="Nur Favoriten anzeigen">⭐ Favoriten</button>
                 </div>
                 <div class="pl-panel-content" id="pl-list">
                     <div class="pl-muted">Lade...</div>
@@ -169,10 +201,48 @@
     <script>
         let currentId = null;
         let debounceTimer = null;
+        let favoritesOnly = false;
 
         function debouncedLoad() {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(loadList, 300);
+        }
+
+        function toggleFavoritesOnly() {
+            favoritesOnly = !favoritesOnly;
+            const btn = document.getElementById('pl-fav-filter');
+            if (btn) {
+                if (favoritesOnly) {
+                    btn.style.background = 'var(--accent, #3b82f6)';
+                    btn.style.color = '#fff';
+                    btn.textContent = '⭐ Nur Favoriten (aktiv)';
+                } else {
+                    btn.style.background = '';
+                    btn.style.color = '';
+                    btn.textContent = '⭐ Favoriten';
+                }
+            }
+            loadList();
+        }
+
+        async function toggleFavById(id) {
+            try {
+                const data = await api('/api/prompt-library/' + id + '/favorite', { method: 'POST' });
+                setStatus(data.is_favorite ? 'Als Favorit markiert (⭐)' : 'Favorit entfernt');
+                if (currentId === id) {
+                    openPrompt(id);
+                } else {
+                    loadList();
+                }
+            } catch (e) {
+                setStatus('Fehler beim Ändern des Favoriten-Status: ' + e.message, true);
+            }
+        }
+
+        async function toggleCurrentFavorite() {
+            if (currentId) {
+                await toggleFavById(currentId);
+            }
         }
 
         function setStatus(msg, isError) {
@@ -195,6 +265,7 @@
             const params = new URLSearchParams();
             if (q) params.set('q', q);
             if (cat) params.set('category', cat);
+            if (favoritesOnly) params.set('favorites', '1');
             try {
                 const data = await api('/api/prompt-library?' + params.toString());
                 renderList(data.prompts);
@@ -211,19 +282,43 @@
                 (cats || []).map(c => '<option value="' + escapeHtml(c) + '"' + (c === current ? ' selected' : '') + '>' + escapeHtml(c) + '</option>').join('');
         }
 
+        function filterTag(tag) {
+            const search = document.getElementById('pl-search');
+            if (search) {
+                search.value = tag;
+                loadList();
+            }
+        }
+
         function renderList(prompts) {
             const el = document.getElementById('pl-list');
             if (!prompts || !prompts.length) {
                 el.innerHTML = '<div class="pl-muted">Keine Prompts in der Bibliothek.<br>Tipp: "Import aus PromptBoard" oder "Neuer Prompt".</div>';
                 return;
             }
-            el.innerHTML = prompts.map(p =>
-                '<div class="pl-item' + (p.id === currentId ? ' active' : '') + '" onclick="openPrompt(' + p.id + ')">' +
-                '<div class="pl-item-name">' + escapeHtml(p.name) +
-                (p.category ? '<span class="pl-badge">' + escapeHtml(p.category) + '</span>' : '') + '</div>' +
-                '<div class="pl-item-meta">' + escapeHtml(p.purpose || '') + '</div>' +
-                '</div>'
-            ).join('');
+            el.innerHTML = prompts.map(p => {
+                let tagsHtml = '';
+                if (p.tags) {
+                    try {
+                        const parsed = typeof p.tags === 'string' && p.tags.startsWith('[') ? JSON.parse(p.tags) : p.tags.split(',');
+                        if (Array.isArray(parsed) && parsed.length) {
+                            tagsHtml = '<div style="margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;">' +
+                                parsed.map(t => String(t).trim()).filter(Boolean).map(t =>
+                                    '<span class="pl-badge" style="margin-left:0; font-size: 0.65rem; background: var(--bg-elevated); cursor: pointer;" onclick="event.stopPropagation(); filterTag(\'' + escapeHtml(t) + '\')">' + escapeHtml(t) + '</span>'
+                                ).join('') + '</div>';
+                        }
+                    } catch (e) {}
+                }
+                const favStar = p.is_favorite
+                    ? '<span style="color:#eab308; cursor:pointer; margin-right:4px;" title="Favorit (Klicken zum Entfernen)" onclick="event.stopPropagation(); toggleFavById(' + p.id + ')">⭐</span>'
+                    : '<span style="color:var(--text-muted); opacity:0.4; cursor:pointer; margin-right:4px;" title="Als Favorit markieren" onclick="event.stopPropagation(); toggleFavById(' + p.id + ')">☆</span>';
+                return '<div class="pl-item' + (p.id === currentId ? ' active' : '') + '" onclick="openPrompt(' + p.id + ')">' +
+                    '<div class="pl-item-name">' + favStar + escapeHtml(p.name) +
+                    (p.category ? '<span class="pl-badge">' + escapeHtml(p.category) + '</span>' : '') + '</div>' +
+                    '<div class="pl-item-meta">' + escapeHtml(p.purpose || '') + '</div>' +
+                    tagsHtml +
+                    '</div>';
+            }).join('');
         }
 
         async function openPrompt(id) {
@@ -236,7 +331,7 @@
         }
 
         function renderDetail(p, versions) {
-            document.getElementById('pl-detail-title').textContent = p.name + ' (#' + p.id + ')';
+            document.getElementById('pl-detail-title').textContent = (p.is_favorite ? '⭐ ' : '') + p.name + ' (#' + p.id + ')';
             const vHtml = (versions && versions.length)
                 ? versions.map(v =>
                     '<div class="pl-version"><b>v' + v.version_number + '</b> — ' + escapeHtml(v.created_at || '') +
@@ -244,16 +339,39 @@
                 : '<div class="pl-muted">Noch keine archivierten Versionen.</div>';
             document.getElementById('pl-detail').innerHTML =
                 '<div class="pl-field"><label>Text (Speichern archiviert den alten Stand als Version)</label>' +
-                '<textarea class="pl-textarea" id="pl-text">' + escapeHtml(p.text) + '</textarea></div>' +
+                '<textarea class="pl-textarea" id="pl-text" oninput="updateVariablesUI()">' + escapeHtml(p.text) + '</textarea></div>' +
                 '<div class="pl-field"><label>Tags (kommagetrennt)</label>' +
                 '<input id="pl-tags" value="' + escapeHtml(p.tags || '') + '"></div>' +
+                '<div id="pl-variables-panel" style="display:none; margin:1rem 0; padding:1rem; background:var(--bg-card); border-radius:8px; border:1px solid var(--border);">' +
+                '<h4 style="margin:0 0 0.5rem 0; font-size:0.95rem; display:flex; align-items:center;">Template-Variablen &amp; Live-Vorschau <span id="pl-var-count" class="pl-badge"></span></h4>' +
+                '<div class="pl-muted" style="padding:0; margin-bottom:0.75rem; font-size:0.8rem;">Werte für erkannte Platzhalter eingeben — die Vorschau aktualisiert sich in Echtzeit.</div>' +
+                '<div id="pl-variables-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.6rem; margin-bottom:0.75rem;"></div>' +
+                '<label style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:0.25rem;">Live-Vorschau (aufgelöster Prompt):</label>' +
+                '<div id="pl-preview-box" style="white-space:pre-wrap; font-family:monospace; font-size:0.82rem; background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:0.75rem; max-height:180px; overflow-y:auto; color:var(--text); margin-bottom:0.75rem;"></div>' +
+                '<div class="pl-actions" style="margin-top:0;">' +
+                '<button class="btn btn-primary" onclick="runResolvedInChat()" title="Startet den Chat direkt mit dem aufgelösten Prompt und sendet ihn ab">🚀 Direkt ausführen</button>' +
+                '<button class="btn" onclick="openResolvedInChat()">Mit Variablen im Chat öffnen</button>' +
+                '<button class="btn" onclick="copyResolved()">Vorschau kopieren</button>' +
+                '<button class="btn" onclick="resetVariableValues()">Variablen leeren</button>' +
+                '</div>' +
+                '</div>' +
                 '<div class="pl-actions">' +
                 '<button class="btn btn-primary" onclick="saveCurrent()">Speichern (neue Version)</button>' +
                 '<button class="btn" onclick="copyCurrent()">Text kopieren</button>' +
                 '<button class="btn" onclick="openCurrentInChat()">Im Chat als Entwurf öffnen</button>' +
+                '<label style="font-size:0.8rem; color:var(--text-muted); margin-left:6px; margin-right:2px; display:inline-flex; align-items:center;">Persona:</label>' +
+                '<select id="pl-chat-target" class="btn" style="background:var(--bg-card); color:var(--text); border:1px solid var(--border); padding:4px 6px; font-size:0.8rem;" title="Ziel-Chat oder Persona für Prompt-Ausführung">' +
+                '<option value="">Buddha (Standard)</option>' +
+                '<option value="agent:1">Agent #1 (Buddha Lead)</option>' +
+                '<option value="agent:2">Agent #2 (Rechercheur)</option>' +
+                '<option value="agent:3">Agent #3 (Coder)</option>' +
+                '</select>' +
+                '<button class="btn btn-primary" onclick="runCurrentInChat()" title="Prompt direkt im gewählten Chat/Persona ausführen">🚀 Direkt ausführen</button>' +
+                '<button class="btn" id="pl-btn-fav" onclick="toggleCurrentFavorite()">' + (p.is_favorite ? '⭐ Favorit (entfernen)' : '⭐ Als Favorit markieren') + '</button>' +
                 '<button class="btn" onclick="deleteCurrent()" style="margin-left:auto;">Löschen</button>' +
                 '</div>' +
                 '<h3 style="margin-top:1.25rem;">Versionshistorie</h3>' + vHtml;
+            updateVariablesUI();
         }
 
         function startCreate() {
@@ -315,9 +433,150 @@
             } catch (e) { setStatus(e.message, true); }
         }
 
+        function extractTemplateVariables(str) {
+            if (!str) return [];
+            const re = /\{\{([a-zA-Z0-9_\-]+)\}\}|\{([a-zA-Z0-9_\-]+)\}/g;
+            const vars = [];
+            const seen = new Set();
+            let match;
+            while ((match = re.exec(str)) !== null) {
+                const name = match[1] || match[2];
+                if (name && !seen.has(name)) {
+                    seen.add(name);
+                    vars.push(name);
+                }
+            }
+            return vars;
+        }
+
+        function getSubstitutedPromptText() {
+            const textEl = document.getElementById('pl-text');
+            if (!textEl) return '';
+            let resolved = textEl.value;
+            const inputs = document.querySelectorAll('#pl-variables-grid input[data-var]');
+            inputs.forEach(input => {
+                const varName = input.getAttribute('data-var');
+                const val = input.value;
+                if (val !== '') {
+                    const esc = varName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    resolved = resolved.replace(new RegExp('\\{\\{' + esc + '\\}\\}|\\{' + esc + '\\}', 'g'), val);
+                }
+            });
+            return resolved;
+        }
+
+        function updateVariablePreview() {
+            const previewEl = document.getElementById('pl-preview-box');
+            if (!previewEl) return;
+            const resolved = getSubstitutedPromptText();
+            previewEl.textContent = resolved;
+        }
+
+        function updateVariablesUI() {
+            const textEl = document.getElementById('pl-text');
+            const panel = document.getElementById('pl-variables-panel');
+            const grid = document.getElementById('pl-variables-grid');
+            const countEl = document.getElementById('pl-var-count');
+            if (!textEl || !panel || !grid) return;
+
+            const vars = extractTemplateVariables(textEl.value);
+            if (vars.length === 0) {
+                panel.style.display = 'none';
+                return;
+            }
+
+            const existingValues = {};
+            grid.querySelectorAll('input[data-var]').forEach(inp => {
+                existingValues[inp.getAttribute('data-var')] = inp.value;
+            });
+
+            if (countEl) countEl.textContent = vars.length + ' Platzhalter';
+            panel.style.display = 'block';
+
+            grid.innerHTML = vars.map(v => {
+                const currentVal = existingValues[v] || '';
+                return '<div class="pl-field" style="margin-bottom:0;">' +
+                    '<label style="font-weight:600; font-size:0.75rem; color:var(--accent);">' + escapeHtml('{' + v + '}') + '</label>' +
+                    '<input type="text" data-var="' + escapeHtml(v) + '" placeholder="Wert für ' + escapeHtml(v) + '" value="' + escapeHtml(currentVal) + '" oninput="updateVariablePreview()">' +
+                    '</div>';
+            }).join('');
+
+            updateVariablePreview();
+        }
+
+        function resetVariableValues() {
+            const inputs = document.querySelectorAll('#pl-variables-grid input[data-var]');
+            inputs.forEach(inp => { inp.value = ''; });
+            updateVariablePreview();
+            setStatus('Variablen zurückgesetzt');
+        }
+
+        function copyResolved() {
+            const resolved = getSubstitutedPromptText();
+            if (resolved) {
+                navigator.clipboard.writeText(resolved).then(() => setStatus('Vorschau mit eingesetzten Variablen in Zwischenablage kopiert'));
+            }
+        }
+
+        function openResolvedInChat() {
+            const text = document.getElementById('pl-text');
+            if (!currentId || !text || !text.value.trim()) {
+                setStatus('Bitte zuerst einen nicht leeren Prompt auswählen', true);
+                return;
+            }
+            try {
+                const resolved = getSubstitutedPromptText();
+                BachChatDraft.store(resolved);
+                window.location.assign('/chat');
+            } catch (e) {
+                setStatus('Der Entwurf konnte nicht lokal übergeben werden', true);
+            }
+        }
+
+        function runResolvedInChat() {
+            const text = document.getElementById('pl-text');
+            if (!currentId || !text || !text.value.trim()) {
+                setStatus('Bitte zuerst einen nicht leeren Prompt auswählen', true);
+                return;
+            }
+            try {
+                const resolved = getSubstitutedPromptText();
+                const targetEl = document.getElementById('pl-chat-target');
+                const targetVal = targetEl ? targetEl.value : '';
+                const agentId = targetVal && targetVal.startsWith('agent:') ? Number(targetVal.split(':')[1]) : null;
+                BachChatDraft.store(resolved, null, { autorun: true, agent_id: agentId });
+                window.location.assign('/chat');
+            } catch (e) {
+                setStatus('Der Prompt-Runner konnte nicht gestartet werden', true);
+            }
+        }
+
         function copyCurrent() {
             const text = document.getElementById('pl-text');
             if (text) navigator.clipboard.writeText(text.value).then(() => setStatus('In Zwischenablage kopiert'));
+        }
+
+        function runCurrentInChat() {
+            const text = document.getElementById('pl-text');
+            if (!currentId || !text || !text.value.trim()) {
+                setStatus('Bitte zuerst einen nicht leeren Prompt auswählen', true);
+                return;
+            }
+            try {
+                const vars = extractTemplateVariables(text.value);
+                const hasFilledVars = vars.some(v => {
+                    const inp = document.querySelector('#pl-variables-grid input[data-var="' + v + '"]');
+                    return inp && inp.value.trim().length > 0;
+                });
+                const resolved = hasFilledVars ? getSubstitutedPromptText() : text.value;
+                const targetEl = document.getElementById('pl-chat-target');
+                const targetVal = targetEl ? targetEl.value : '';
+                const agentId = targetVal && targetVal.startsWith('agent:') ? Number(targetVal.split(':')[1]) : null;
+                BachChatDraft.store(resolved, null, { autorun: true, agent_id: agentId });
+                window.location.assign('/chat');
+            } catch (e) {
+                setStatus('Der Prompt-Runner konnte nicht gestartet werden', true);
+            }
         }
 
         function openCurrentInChat() {
@@ -328,11 +587,28 @@
             }
 
             try {
-                BachChatDraft.store(text.value);
+                const vars = extractTemplateVariables(text.value);
+                const hasFilledVars = vars.some(v => {
+                    const inp = document.querySelector('#pl-variables-grid input[data-var="' + v + '"]');
+                    return inp && inp.value.trim().length > 0;
+                });
+                if (hasFilledVars) {
+                    const resolved = getSubstitutedPromptText();
+                    BachChatDraft.store(resolved);
+                } else {
+                    BachChatDraft.store(text.value);
+                }
                 window.location.assign('/chat');
             } catch (e) {
                 setStatus('Der Entwurf konnte nicht lokal übergeben werden', true);
             }
+        }
+
+        async function previewPromptBoard() {
+            try {
+                const data = await api('/api/prompt-library/import-promptboard/preview');
+                setStatus('PromptBoard-Vorschau: ' + data.imported + ' importierbar, ' + data.skipped + ' bereits vorhanden (' + data.source + ')');
+            } catch (e) { setStatus(e.message, true); }
         }
 
         async function importPromptBoard() {
@@ -341,6 +617,90 @@
                 setStatus('Import: ' + data.imported + ' neu, ' + data.skipped + ' vorhanden, ' + data.invalid + ' ungültig (' + data.source + ')');
                 loadList();
             } catch (e) { setStatus(e.message, true); }
+        }
+
+        async function exportPromptBoard() {
+            try {
+                const data = await api('/api/prompt-library/export-promptboard', { method: 'POST' });
+                setStatus('Export nach PromptBoard: ' + data.exported + ' neu hinzugefügt, ' + data.updated + ' aktualisiert (' + data.total + ' Einträge in ' + data.target + ')');
+            } catch (e) { setStatus(e.message, true); }
+        }
+
+        async function syncPromptBoard() {
+            try {
+                const data = await api('/api/prompt-library/sync-promptboard', { method: 'POST' });
+                const updatedTotal = (data.updated_in_bach || 0) + (data.updated_in_promptboard || 0);
+                setStatus('Zwei-Wege-Sync abgeschlossen: ' + data.imported + ' importiert, ' + data.exported + ' exportiert, ' + updatedTotal + ' aktualisiert (' + data.total_promptboard + ' in PromptBoard, ' + data.total_bach + ' in BACH)');
+                loadList();
+            } catch (e) { setStatus('Sync fehlgeschlagen: ' + e.message, true); }
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const area = document.getElementById('pl-drop-area');
+            if (area) area.classList.add('pl-dropzone-active');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const area = document.getElementById('pl-drop-area');
+            if (area) area.classList.remove('pl-dropzone-active');
+        }
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const area = document.getElementById('pl-drop-area');
+            if (area) area.classList.remove('pl-dropzone-active');
+            const files = e.dataTransfer ? e.dataTransfer.files : null;
+            if (files && files.length > 0) {
+                await processJsonFile(files[0]);
+            }
+        }
+
+        async function handleFileSelect(e) {
+            const files = e.target.files;
+            if (files && files.length > 0) {
+                await processJsonFile(files[0]);
+                e.target.value = '';
+            }
+        }
+
+        async function processJsonFile(file) {
+            if (!file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
+                setStatus('Bitte eine .json-Datei auswählen (PromptBoard library.json)', true);
+                return;
+            }
+            try {
+                const text = await file.text();
+                const json = JSON.parse(text);
+                const preview = await api('/api/prompt-library/import-json/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: file.name, payload: json })
+                });
+
+                const confirmMsg = 'Datei "' + file.name + '":\n' +
+                    preview.imported + ' neue Prompts importierbar, ' +
+                    preview.skipped + ' bereits vorhanden, ' +
+                    preview.invalid + ' ungültig.\n\nJetzt importieren?';
+
+                if (confirm(confirmMsg)) {
+                    const result = await api('/api/prompt-library/import-json', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename: file.name, payload: json })
+                    });
+                    setStatus('Import erfolgreich: ' + result.imported + ' neu, ' + result.skipped + ' vorhanden (' + file.name + ')');
+                    loadList();
+                } else {
+                    setStatus('Import abgebrochen (Vorschau: ' + preview.imported + ' neu)');
+                }
+            } catch (err) {
+                setStatus('Fehler beim JSON-Import: ' + err.message, true);
+            }
         }
 
         loadList();

@@ -1042,6 +1042,13 @@ def _stage_controller_worker_fixture(monkeypatch, path, worker):
     monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(path))
 
 
+def _add_test_worker(spec, path):
+    worker_spec = {"rights": "read", **spec}
+    if "allowed_tools" not in worker_spec:
+        worker_spec["allowed_tools"] = []
+    return add_worker(worker_spec, path=str(path))["id"]
+
+
 class TestControlHandlerEndpoints:
     @pytest.fixture(autouse=True)
     def isolated_native_task_authority(self, tmp_path, monkeypatch):
@@ -1050,6 +1057,8 @@ class TestControlHandlerEndpoints:
         database = tmp_path / "canonical-native-tasks.db"
         _create_db(database)
         connection = _connect(database)
+        connection.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.commit()
         _insert(connection, title="Isolated canonical task", assigned_to="BACH")
         connection.close()
         monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
@@ -1637,12 +1646,11 @@ class TestControlHandlerEndpoints:
 
         cfg_file = tmp_path / "revocation_slots.json"
         initialize_slots_config(str(cfg_file))
-        worker = add_worker({
+        worker_id = _add_test_worker({
             "name": "Blocked-TTL-Worker",
             "type": "persistent",
             "ttl_seconds": 60,
-        }, path=str(cfg_file))
-        worker_id = worker["id"]
+        }, cfg_file)
 
         class BlockingRuntime(ChatRuntime):
             def __init__(self):
@@ -1793,9 +1801,8 @@ class TestControlHandlerEndpoints:
 
         cfg_file = tmp_path / "board-authz-slots.json"
         initialize_slots_config(str(cfg_file))
-        worker = add_worker({"name": "Board-E2E", "type": "once",
-                             "task_prompt": "Nur CLOUD_OK"}, path=str(cfg_file))
-        worker_id = worker["id"]
+        worker_id = _add_test_worker({"name": "Board-E2E", "type": "once",
+                                      "task_prompt": "Nur CLOUD_OK"}, cfg_file)
         update_slot(worker_id, {"status": "running"}, path=str(cfg_file))
 
         session = persistent_worker_runtime.get_session(worker_id)
@@ -2122,6 +2129,8 @@ class TestMatchTaskToPickupFilter:
         update_slot("buddha_always_on", {
             "enabled": True,
             "model": "qwen3.8:27b-mlx",
+            "require_assigned_slot": True,
+            "enforce_model_binding": True,
             "pickup_filter": {
                 "enabled": True,
                 "categories": ["INBOX", "WORKER"],
@@ -2202,6 +2211,7 @@ class TestOffeneTasksPickupFilter:
         from hub._services.chat.task_runner import offene_tasks
         db_path = tmp_path / "test_tasks.db"
         with sqlite3.connect(db_path) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             conn.execute(
                 "CREATE TABLE tasks ("
                 "id INTEGER PRIMARY KEY, title TEXT, description TEXT, depends_on TEXT, "
@@ -2247,6 +2257,7 @@ class TestOffeneTasksPickupFilter:
 
         db_path = tmp_path / "bound_tasks.db"
         with sqlite3.connect(db_path) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             conn.execute(
                 "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, description TEXT, "
                 "depends_on TEXT, status TEXT, priority TEXT, project TEXT, "
@@ -2261,9 +2272,9 @@ class TestOffeneTasksPickupFilter:
             )
 
         local = {"id": "buddha_always_on", "enabled": True, "model": "qwen3.8:27b-mlx",
-                 "pickup_filter": {"enabled": False}}
-        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2, 4]
-        assert [t["id"] for t in offene_tasks(str(db_path), "all")] == [4]
+                 "enforce_model_binding": True, "pickup_filter": {"enabled": False}}
+        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot=local)] == [2, 3, 4]
+        assert [t["id"] for t in offene_tasks(str(db_path), "all", slot={"enforce_model_binding": True})] == [3, 4]
         assert not task_matches_slot_binding(
             {"required_model": "kimi-k3:cloud"}, {"id": "cloud-worker"}
         )

@@ -71,12 +71,93 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ellmos-ai/task-master
-          ref: 4a4557524a6c786b72869f3cf5ff5f3119774b9d
+          # PB-1 (#3985): merge of task-master#24 adds taskplan.return_policy (task-returns.v1)
+          ref: 23ddcb3b66bdbff03342872adf5a096333a4a30c
           path: .ci-sources/worker-policy
           persist-credentials: false
 
-      - name: Install pinned shared worker-policy contract
-        run: python -m pip install --no-deps ./.ci-sources/worker-policy
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/ellmos-robotics
+          # PB-13 (#3996, T-20261107-820069419): shared E-Stop path & RoboticsHub
+          ref: f72fe813e6d90f81323fce469d6b33c0450ff4df
+          path: .ci-sources/ellmos-robotics
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ellmos-ai/ellmos-homecontrol
+          # PB-13 (#3996, T-20261107-820069419): Homecontrol Hub & TR-064 escaping
+          ref: 5b65c8379f6fe1177fe18e234dd2e65e12125535
+          path: .ci-sources/ellmos-homecontrol
+          persist-credentials: false
+
+      - name: Install pinned shared worker-policy and PB-13 modules
+        run: python -m pip install --no-deps ./.ci-sources/worker-policy ./.ci-sources/ellmos-robotics ./.ci-sources/ellmos-homecontrol
+
+      - name: Verify installed scheduler provenance and native API coverage
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+          BACH_NO_AUTO_MIGRATE: '1'
+        run: |
+          python - <<'PY'
+          import importlib.metadata
+          import json
+          from pathlib import Path
+          import re
+          import ellmos_scheduler
+
+          lines = [line.strip() for line in Path('requirements.txt').read_text().splitlines()
+                   if line.strip().startswith('ellmos-scheduler ')]
+          assert len(lines) == 1, 'Exactly one scheduler requirement is required'
+          match = re.fullmatch(
+              r'ellmos-scheduler @ git\+(https://github\.com/ellmos-ai/ellmos-scheduler\.git)@([0-9a-f]{40})',
+              lines[0],
+          )
+          assert match, 'Scheduler requirement must use the canonical URL and a full commit SHA'
+          expected_url, expected_sha = match.groups()
+          distribution = importlib.metadata.distribution('ellmos-scheduler')
+          try:
+              direct = json.loads(distribution.read_text('direct_url.json') or '{}')
+              vcs = direct.get('vcs_info', {})
+              valid = (direct.get('url') == expected_url and vcs.get('vcs') == 'git'
+                       and vcs.get('commit_id') == expected_sha
+                       and vcs.get('requested_revision') == expected_sha)
+          except (ValueError, TypeError, AttributeError):
+              raise AssertionError('Scheduler installation provenance is invalid') from None
+          assert valid, 'Scheduler installation does not match the reviewed requirement'
+          expected_origin = Path(distribution.locate_file('ellmos_scheduler/__init__.py')).resolve()
+          assert Path(ellmos_scheduler.__file__).resolve() == expected_origin, 'Scheduler import shadows installed metadata'
+          for name in ('AgentTriggers', 'DefinitionConflict', 'EventTriggers', 'SchedulerStore',
+                       'SchedulerService', 'ExecutionContext', 'create_bach_adapter'):
+              assert callable(getattr(ellmos_scheduler, name, None)), 'Required native scheduler export is missing'
+          assert issubclass(ellmos_scheduler.DefinitionConflict, ValueError)
+          print('Verified installed scheduler commit:', expected_sha)
+          PY
+          python -B -m pytest -q -rA -p no:cacheprovider --timeout=120 -o xfail_strict=true \
+            --junitxml="$RUNNER_TEMP/native-scheduler.xml" \
+            system/tests/test_agent_triggers_api.py \
+            system/tests/test_scheduler_provider.py \
+            system/tests/test_scheduler_provider_wiring.py \
+            system/tests/test_native_scheduler_gate_guard.py
+          python - <<'PY'
+          from collections import Counter
+          import os
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(Path(os.environ['RUNNER_TEMP']) / 'native-scheduler.xml').getroot()
+          counts = Counter()
+          for case in root.iter('testcase'):
+              assert not any(case.find(tag) is not None for tag in ('skipped', 'failure', 'error')), 'Native scheduler case was not successful'
+              counts[case.get('classname', '').rsplit('.', 1)[-1]] += 1
+          baseline = {'test_agent_triggers_api': 56, 'test_scheduler_provider': 2,
+                      'test_scheduler_provider_wiring': 28,
+                      'test_native_scheduler_gate_guard': 24}
+          assert all(counts[name] >= minimum for name, minimum in baseline.items()), 'Native scheduler coverage is incomplete'
+          print('Required native scheduler cases:', dict(counts), 'no skips/failures/errors')
+          PY
 
       - name: Worker completion, settings, independent reviews, provenance and project scope
         env:
@@ -111,7 +192,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_native_sequences.py system/tests/test_worker_lease_binding.py system/tests/test_bound_tool_provider.py system/tests/test_worker_start_admission.py system/tests/test_ocean_marblerun_unavailable.py
+        run: python -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_native_sequences.py system/tests/test_worker_lease_binding.py system/tests/test_bound_tool_provider.py system/tests/test_worker_start_admission.py system/tests/test_ocean_marblerun_unavailable.py system/tests/test_pb1_worker_return_loop.py
 
       - name: Native documentation maintenance and atomic task ownership
         env:
@@ -219,6 +300,7 @@ jobs:
             system/tests/test_db_sync_handler.py \
             system/tests/test_delegation_adapter.py \
             system/tests/test_denkarium_handler.py \
+            system/tests/test_notes_adapter.py \
             system/tests/test_dist_handler.py \
             system/tests/test_dist_type_catchup_migration.py \
             system/tests/test_doc_analysis.py \
@@ -234,6 +316,7 @@ jobs:
             system/tests/test_fs_handler.py \
             system/tests/test_fs_protection.py \
             system/tests/test_gesundheit_handler.py \
+            system/tests/test_github_pr_task_reconciliation.py \
             system/tests/test_gui_handler.py \
             system/tests/test_gui_console.py \
             system/tests/test_agent_history_delivery.py \
@@ -297,6 +380,7 @@ jobs:
             system/tests/test_migration_baseline_check.py \
             system/tests/test_migrate_unify_distribution.py \
             system/tests/test_model_backend.py \
+            system/tests/test_module_gate_check.py \
             system/tests/test_mount_handler.py \
             system/tests/test_multi_host_lease_acceptance.py \
             system/tests/test_n8n_handler.py \
@@ -311,6 +395,17 @@ jobs:
             system/tests/test_partner_handler.py \
             system/tests/test_path_handler.py \
             system/tests/test_path_traversal.py \
+            system/tests/test_pb13_homecontrol_robotics_security.py \
+            system/tests/test_pb24_tool_denial_loop.py \
+            system/tests/test_pb26_buddha_write_default.py \
+            system/tests/test_pb26_dynamic_worker_rights.py \
+            system/tests/test_pb26_rights_levels.py \
+            system/tests/test_pb26_run_cooldown.py \
+            system/tests/test_pb26_stable_prefix_handover.py \
+            system/tests/test_pb4_abort_visibility.py \
+            system/tests/test_pb6_module_automations_api.py \
+            system/tests/test_pb7_pb12_surfaces_and_life.py \
+            system/tests/test_pb17_help_freshness_and_claims.py \
             system/tests/test_persoenlich_dashboard.py \
             system/tests/test_pipeline_handler.py \
             system/tests/test_plugin_security.py \
@@ -399,6 +494,7 @@ jobs:
             system/tests/test_web_parse_handler.py \
             system/tests/test_web_scrape_handler.py \
             system/tests/test_wiki_handler.py \
+            system/tests/test_worker_git_cleanup.py \
             system/tests/test_worker_seam_fixes.py \
             system/tests/test_safe_exec.py \
             system/tests/test_safe_shell_args.py \

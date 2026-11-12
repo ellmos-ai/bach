@@ -1,0 +1,31 @@
+{
+  "name": "agent_process_provider",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BACH Standalone Module: agent_process_provider",
+  "author": "BACH Team",
+  "created_at": "2026-11-03T20:49:04.462831",
+  "selfcontained": true,
+  "entrypoints": {
+    "library": "src/agent_process_provider.py"
+  },
+  "boundaries": {
+    "data": "user-local",
+    "network": "full",
+    "platforms": [
+      "windows",
+      "macos",
+      "linux"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "BACH",
+      "minimum_version": "3.15.0"
+    },
+    {
+      "name": "Ocean",
+      "minimum_version": "1.0.0"
+    }
+  ]
+}

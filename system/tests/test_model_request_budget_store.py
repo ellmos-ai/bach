@@ -168,6 +168,12 @@ def local_task_client(tmp_path, monkeypatch):
             changed_at TEXT NOT NULL
         )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )"""
+    )
     task_lease.ensure_task_lease_schema(conn)
     cursor = conn.execute(
         "INSERT INTO tasks (title, status) VALUES (?, 'open')",

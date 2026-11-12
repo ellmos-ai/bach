@@ -1,0 +1,96 @@
+{
+  "base": "http://127.0.0.1:8000",
+  "generated_at": "2026-11-01T13:31:35Z",
+  "task": "3718",
+  "milestone": "3.15.0",
+  "expected_gui_pin": {
+    "gui_version": "0.2.30",
+    "source_commit": "eb0251ac4b85574087ad934611d19dc3df1f9c4c",
+    "page_count": 39
+  },
+  "kit_summary": {
+    "http_status": 200,
+    "schema": "ellmos-system-gui.kit-manifest.v1",
+    "pinned_source_commit": "eb0251ac4b85574087ad934611d19dc3df1f9c4c",
+    "installed_dist": {
+      "installed": true,
+      "verified": false,
+      "reason_code": "commit_mismatch",
+      "page_count": 375,
+      "source_commit": null
+    }
+  },
+  "routes_plan": {
+    "source": "gui.api.gui_capabilities.PAGE_READS + Legacy 12; Grund: dist-manifest Status=401",
+    "reason": "dist-manifest Status=401; Ziel 39 lt. MILESTONE; ohne Auth pruefbar 38; Differenz dokumentiert",
+    "count": 38,
+    "html_200": 38,
+    "routes_compact": "/,/agenten/blueprints,/agenten/fabrika,/agenten/marblerun,/agenten/running,/agenten/sessions,/agenten/subscription-agents,/artefakte,/ati,/chat,/daemon?tab=chains,/denkarium,/domains,/financial,/gesundheit,/governance,/governance/funk,/governance/logs,/governance/usecases,/help,/inbox,/kontakte,/life,/maintenance,/memory,/persoenlich,/routinen,/settings,/skills,/skills/mcp,/skills/ocean,/skills/plugins,/skills/software,/steuer,/system?tab=ocean,/tasks,/tools,/user-inbox"
+  },
+  "summary": {
+    "entries": 43,
+    "kinds": {
+      "api": 2,
+      "dist_manifest": 1,
+      "routes_plan": 2,
+      "page_root": 1,
+      "page": 35,
+      "tab_alias": 2
+    },
+    "statuses": {
+      "200": 40,
+      "401": 1,
+      "None": 2
+    }
+  },
+  "verdict": "NOT-OK",
+  "verdict_reasons": [
+    "installed_dist abweichend (verified=False, reason_code='commit_mismatch', source_commit=None) — dokumentierte Deploy-Abweichung: Mac-Deploy/Tag v3.15.0 ausstehend (Rest via #3720)",
+    "INFO: Routenziel 39 lt. MILESTONE; ohne Auth pruefbar: 38 dokumentierte Routen (24 PAGE_READS + 12 Legacy + 2 Tab-Aliase); autoritative 39er-Liste nicht lesbar (dist-manifest 401, page-reads.v1.json nicht im Repo) → Differenz dokumentiert"
+  ],
+  "entries": [
+    "{\"bytes\": 53948, \"error\": null, \"kind\": \"api\", \"note\": \"schema='ellmos.gui.capabilities.v1' version=None pages_type=list pages_count=24 top_keys=brand,endpoints,gui,kit,missing_adapters,module_sources,modules,observed_at,pages,schema,schema_version,system\", \"route\": \"/api/gui/capabilities\", \"sha256\": \"4667551bacdfb9cc137f65458c2820fc368463328d1108763a9bb6a68cf3920f\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 696, \"error\": null, \"kind\": \"api\", \"note\": \"pinned_source_commit='eb0251ac4b85574087ad934611d19dc3df1f9c4c' installed_dist={\\\"installed\\\": true, \\\"page_count\\\": 375, \\\"reason_code\\\": \\\"commit_mismatch\\\", \\\"source_commit\\\": null, \\\"verified\\\": false}\", \"route\": \"/api/gui/kit-manifest\", \"sha256\": \"3d742ef007f806a626d286296195f07947b52ea219478abf1960dcc3a5c4f294\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": null, \"error\": \"HTTPError 401\", \"kind\": \"dist_manifest\", \"note\": \"unerwarteter Status 401 (Soft, kein Hard-Fail); autoritative 39er-Liste ohne Auth nicht lesbar\", \"route\": \"/dist-manifest.json\", \"sha256\": null, \"status\": 401, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": null, \"error\": null, \"kind\": \"routes_plan\", \"note\": \"PAGE_READS importiert (gui.api.gui_capabilities.PAGE_READS): 24 Keys; LEGACY_PAGE_FALLBACKS: 12 Pfade; Fallback-Grund: dist-manifest Status=401\", \"route\": \"(plan)\", \"sha256\": null, \"status\": null, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": null, \"error\": null, \"kind\": \"routes_plan\", \"note\": \"Routenplan final: 38 Routen via gui.api.gui_capabilities.PAGE_READS + Legacy 12; Grund: dist-manifest Status=401\", \"route\": \"(plan)\", \"sha256\": null, \"status\": null, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 70512, \"error\": null, \"kind\": \"page_root\", \"note\": \"\", \"route\": \"/\", \"sha256\": \"3759f628791abf82d1688f6a6f4dd690b16086f10888a9fcf6e1324746a432ae\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 83116, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/tasks\", \"sha256\": \"8c8016b134e7b98b5052faeeba95d0be1e447e808b4d017ae94271e1c56d5d0f\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 173240, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/agenten/running\", \"sha256\": \"6fc20459e5e4c9749ba43b904c95f93e61d78633b565008e7676493d1074414b\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 79529, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/agenten/blueprints\", \"sha256\": \"3260ffbf0000795e010c99c98765bfcc4c70f00693da32cd50fd2a076b8147dd\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 68171, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/agenten/subscription-agents\", \"sha256\": \"5b9afa2cb5004b1c082b688bfeca8a8fbf797600bf5be31e8164c652d65ac2ef\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 63625, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/agenten/fabrika\", \"sha256\": \"96f7372e922c6c73e2b9ca9f1ab5ed26171289a1aab03db9449ae4024c821cf9\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 66518, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/agenten/marblerun\", \"sha256\": \"eaa96c3e2372ad8e47ea7d232aa646153a08343dffa3e8e3d953ccfb447c0b8c\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 72023, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/agenten/sessions\", \"sha256\": \"7e77335eaf23eba97ada2d3f7ef5fa0e154d748ff7ace7b3297f327e73d8bdc8\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 67620, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/skills\", \"sha256\": \"ca908845ad82a31a6f7a3040200db7163bbb60085789894cd450fc166524cd6a\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 63678, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/skills/plugins\", \"sha256\": \"2fe242d718a4853500845d85f7fb5b88c90c82e4f751bb8d9676147ad3cafe97\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 65644, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/skills/mcp\", \"sha256\": \"6820ae43c5070bc8f6d8a63fde7b1672ee47b7ac08263cd86ffa4b3bde1d2cff\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 63955, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/skills/software\", \"sha256\": \"97b009d8577eb6abd3fe1f7a679805c8575c936a8a11847964bd679941d44038\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 65600, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/skills/ocean\", \"sha256\": \"fadccda3f46be9e8e84209bd87d60ab73bcb277553aca38720ca16d2dc493739\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 57527, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/user-inbox\", \"sha256\": \"6bab8a4b2d92a787912e730a9ac85b79e9b642f5639b2f6fbea530110b0d6930\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 149604, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/memory\", \"sha256\": \"761650d8dcce6e0058b4988a13a858b49d305703d18b8aa6e9aaa9797784648b\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 63686, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/domains\", \"sha256\": \"af23df2c5d9ab1ba2950c3958aad55cd1cbf06755ac675da781a83240aa6e71a\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 69191, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/routinen\", \"sha256\": \"3131a74fabaaab103a7a127462fc438096a91a301c6d2025b4d65be180647fdc\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 68998, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/artefakte\", \"sha256\": \"9b41757ad1c6fb7825aa3e9f07db7d57008996f427c03f312ed7a3c13e71b077\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 82440, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/governance\", \"sha256\": \"ba3370295cf2a7fbae857507e632cf928029b8108e0d0fa81186c36ca7830c98\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 63563, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/governance/logs\", \"sha256\": \"dfdc97b057a2501b5185fcc7fcadb8e6834ffca6f07bc22249c8705f1b4fccf8\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 64340, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/governance/usecases\", \"sha256\": \"d82c11bbb587a37fb2f4b04a197958bf7850766261abade721fb0cdc1b32527e\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 61225, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/governance/funk\", \"sha256\": \"7abfe87be6a14666b3c6070b7f660ed34ae405882dc20935603e0aa7a2cefc50\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 121262, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/life\", \"sha256\": \"89264395661fd22eb989bd121de8011e433f326433e18fb7d4d011b5ffacaeef\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 121134, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/settings\", \"sha256\": \"ac3c0fda0d38139cab13456bef7b3fc76f7ab37e571af225a188b7f94b538aa6\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 61844, \"error\": null, \"kind\": \"tab_alias\", \"note\": \"\", \"route\": \"/system?tab=ocean\", \"sha256\": \"03f11ef76de6b2844666fb377a857a2e7aefa556ba58edcda124015f61942bee\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 68400, \"error\": null, \"kind\": \"tab_alias\", \"note\": \"\", \"route\": \"/daemon?tab=chains\", \"sha256\": \"c489310447b0bc37afabc05580f9080564b98e94cd955ee3979e2ea413f8d116\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 47694, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/ati\", \"sha256\": \"6c7d172cac2bf417e05cb1bb612494b6ab346064c021f22dbd013a875301d51e\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 87852, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/chat\", \"sha256\": \"20e662a78becde02e996f271a0bc2a609ba4a3d186b6628f4e81e9c57e025364\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 68706, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/denkarium\", \"sha256\": \"36b24f6b4b75c53429d413f7fb0f7336a0ce8daee00db184e91a83ffaf0031a0\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 116610, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/financial\", \"sha256\": \"42e40820e8bbe3b4c0a2062e8f7edc6d5b5c7d808735903c9f636f34b0e763ac\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 7545, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/gesundheit\", \"sha256\": \"662159131e78201eca535606b92e6a958b50716c4ca269aae04094e8f888ee17\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 69736, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/help\", \"sha256\": \"4f090a6e7dadbdc7474ebe65270a3ef446f8e765a8b4b186a48ec8e78bda1cca\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 34709, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/kontakte\", \"sha256\": \"3295e2eaab27143b89b78c0ae1f85130ebced986fc4b5039755b99e674577a5f\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 63681, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/maintenance\", \"sha256\": \"59f4ae77dbd2fd81fdf91308f4c6e2800ea5fd48dc91b203b1d9adcf47d57ba9\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 8979, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/persoenlich\", \"sha256\": \"e65d0bda5d26f01d05910faa1fa902bb1e4670df7ed471f20d93807924aa882e\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 23764, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/steuer\", \"sha256\": \"1085d3f1fcda560fd51816b21a9dd862cc3c06da42b5c2fcce9880188cb42b24\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 66140, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/tools\", \"sha256\": \"caa86f84bf4268b4c456521b0d36686efe7c4d8bdb3dcc1747b133af92b220c2\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}",
+    "{\"bytes\": 62832, \"error\": null, \"kind\": \"page\", \"note\": \"\", \"route\": \"/inbox\", \"sha256\": \"9f6aca9af5446365ecb8d61b7004b1c0b700d6661663a6cb474c37b0d16b67ca\", \"status\": 200, \"ts\": \"2026-11-01T13:31:35Z\"}"
+  ]
+}

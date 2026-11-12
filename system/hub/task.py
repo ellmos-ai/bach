@@ -79,6 +79,8 @@ def _valid_result_service_id(service_id):
     )
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class TaskHandler(BaseHandler):
     """Handler fuer Task-Verwaltung"""
     
@@ -103,6 +105,7 @@ class TaskHandler(BaseHandler):
             "block": t("task_block_desc", default="Task(s) blockieren (Multi-ID)"),
             "unblock": t("task_unblock_desc", default="Task(s) entblocken (Multi-ID)"),
             "reopen": t("task_reopen_desc", default="Task(s) wieder oeffnen (Multi-ID)"),
+            "archive": "Task(s) archivieren (Multi-ID, --reason TEXT)",
             "show": t("task_show_desc", default="Task-Details anzeigen"),
             "delete": t("task_delete_desc", default="Task(s) loeschen (Multi-ID)"),
             "purge-cancelled": "Abgebrochene Worker-Mülltasks löschen und echte Alt-Tasks archivieren (oder --all für Komplettlöschung)",
@@ -242,6 +245,10 @@ class TaskHandler(BaseHandler):
             if dry_run:
                 return True, "[DRY-RUN] Keine Task-Änderung"
             return self._reopen(args)
+        elif operation == "archive":
+            if dry_run:
+                return True, "[DRY-RUN] Keine Task-Änderung"
+            return self._archive(args)
         elif operation == "show":
             return self._show(args)
         elif operation == "delete":
@@ -1205,7 +1212,10 @@ class TaskHandler(BaseHandler):
             "in-progress": "in_progress",
             "completed": "completed",
             "cancelled": "cancelled",
+            "review": "review",
+            "archived": "archived",
         }
+        limit = None  # None = alles; mit --limit wird die Kappung sichtbar gemeldet
         
         i = 0
         while i < len(args):
@@ -1213,6 +1223,20 @@ class TaskHandler(BaseHandler):
             normalized_arg = arg.lower()
             if normalized_arg in status_aliases:
                 status_filter = status_aliases[normalized_arg]
+            elif arg == "--limit" or arg.startswith("--limit="):
+                if "=" in arg:
+                    raw = arg.split("=", 1)[1]
+                else:
+                    raw = args[i + 1] if i + 1 < len(args) else ""
+                    i += 1
+                if not raw.isdigit() or int(raw) < 1:
+                    return False, "--limit muss eine positive Zahl sein"
+                limit = int(raw)
+            elif not arg.startswith("-"):
+                return False, (
+                    f"Unbekannter Status-Filter '{arg}'. Erlaubt: "
+                    + ", ".join(sorted(status_aliases))
+                )
             elif arg.startswith("--filter="):
                 filter_text = arg[9:]
             elif arg == "--filter" and i + 1 < len(args):
@@ -1291,6 +1315,9 @@ class TaskHandler(BaseHandler):
             header_parts.append("unassigned")
         
         lines = [f"\n[TASKS] Tasks ({', '.join(header_parts)}):\n"]
+        total = len(task_list)
+        if limit is not None:
+            task_list = task_list[:limit]
         for t in task_list:
             # Partner-Anzeige
             partner = t['assigned_to'] or t['delegated_to'] or ""
@@ -1315,6 +1342,8 @@ class TaskHandler(BaseHandler):
                     f"{partner_suffix}{due_suffix}{blocked_mark}{invalid_mark}"
                 )
         
+        if total > len(task_list):
+            lines.append(f"\n  ... {total - len(task_list)} weitere (gesamt {total}; --limit erhöhen)")
         return True, "\n".join(lines)
 
     def _sync(self, args: List[str]) -> Tuple[bool, str]:
@@ -1564,7 +1593,7 @@ class TaskHandler(BaseHandler):
         task_id = None
         rest = []
         for arg in args:
-            if task_id is None and not arg.startswith("-"):
+            if task_id is None:
                 try:
                     task_id = int(arg)
                     continue
@@ -2126,7 +2155,8 @@ class TaskHandler(BaseHandler):
 
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
                 apply_task_field_changes(conn, task_id, existing_row, {"status": "blocked"},
-                                          changed_by="cli-task", now=now)
+                                          changed_by="cli-task", now=now,
+                                          block_reason=f"bach task block: {reason or 'ohne Grund'}")
 
                 if reason:
                     conn.execute("""
@@ -2187,8 +2217,9 @@ class TaskHandler(BaseHandler):
         ids, rest = self._parse_ids(args)
 
         if not ids:
-            return False, "Usage: bach task reopen <id> [id2 id3...]"
+            return False, "Usage: bach task reopen <id> [id2 id3...] [--note <text>]"
 
+        note = self._get_note(rest) or self._get_reason(rest)
         results = []
 
         with self._get_db() as conn:
@@ -2203,18 +2234,55 @@ class TaskHandler(BaseHandler):
                 # verschwinden -- clear_fields deckt genau das ab (Erweiterung von
                 # apply_task_field_changes fuer diesen Fall).
                 now = conn.execute("SELECT datetime('now')").fetchone()[0]
-                 # T-20260916-1330: _reopen ist wie _unblock die explizite Operator-
-                 # Aktion (auditiert) -> allow_reopen=True, damit der Terminal-Park-
-                 # Guard den bewussten Reopen nicht falsch blockiert.
-                apply_task_field_changes(conn, task_id, existing_row, {"status": "pending"},
+                fields = {"status": "pending"}
+                if note:
+                    old_desc = (existing_row.get("description") or "").strip()
+                    stamp = f"[REOPEN] {note}"
+                    fields["description"] = f"{old_desc}\n\n{stamp}" if old_desc else stamp
+                # T-20260916-1330: _reopen ist wie _unblock die explizite Operator-
+                # Aktion (auditiert) -> allow_reopen=True, damit der Terminal-Park-
+                # Guard den bewussten Reopen nicht falsch blockiert.
+                apply_task_field_changes(conn, task_id, existing_row, fields,
                                           clear_fields=("completed_at",),
                                           changed_by="cli-task", now=now,
                                           allow_reopen=True)
 
-                results.append(f"[OK] Task {task_id} wieder geoeffnet")
+                results.append(f"[OK] Task {task_id} wieder geoeffnet" + (f" ({note})" if note else ""))
 
             conn.commit()
 
+        return True, "\n".join(results)
+
+    def _archive(self, args: List[str]) -> Tuple[bool, str]:
+        """Task(s) kontrolliert archivieren (Multi-ID, Pflicht --reason/--note)."""
+        ids, rest = self._parse_ids(args)
+        reason = self._get_reason(rest) or self._get_note(rest)
+        if not ids or not reason:
+            return False, "Usage: bach task archive <id> [id2 id3...] --reason <grund>"
+
+        results = []
+        with self._get_db() as conn:
+            for task_id in ids:
+                existing = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+                if not existing:
+                    results.append(f"[WARN] Task {task_id} {t('nicht_gefunden', default='nicht gefunden')}")
+                    continue
+                existing_row = dict(existing)
+                now = conn.execute("SELECT datetime('now')").fetchone()[0]
+                old_desc = (existing_row.get("description") or "").strip()
+                stamp = f"[ARCHIVED] {reason}"
+                new_desc = f"{old_desc}\n\n{stamp}" if old_desc else stamp
+                apply_task_field_changes(
+                    conn,
+                    task_id,
+                    existing_row,
+                    {"status": "archived", "description": new_desc},
+                    clear_fields=("claimed_by", "claimed_at"),
+                    changed_by="cli-task",
+                    now=now,
+                )
+                results.append(f"[OK] Task {task_id} archiviert ({reason})")
+            conn.commit()
         return True, "\n".join(results)
     
     def _delete(self, args: List[str]) -> Tuple[bool, str]:

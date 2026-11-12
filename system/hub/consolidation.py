@@ -26,6 +26,8 @@ from typing import Optional, List, Tuple
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("GARDENER")
 class ConsolidationHandler(BaseHandler):
     """Handler fuer bach consolidate Operationen"""
 

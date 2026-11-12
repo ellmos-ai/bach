@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -25,6 +26,42 @@ CHAT_SESSION_PREFIX = "chat-runtime:v1:"
 _BINDING_FIELDS = ("context_class", "agent_id", "exact_slug", "db_version", "source_version", "profile_sha256")
 _ALLOWED_ROLES = frozenset({"system", "user", "assistant", "tool"})
 _ALLOWED_ANSWER_STATUSES = frozenset({"success", "failed"})
+HISTORY_SOURCES = ("user", "buddha", "worker", "system")
+_SLOT_CHAT_RE = re.compile(r"(?:agent:[1-9][0-9]*:)?slot:[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}")
+
+
+def matches_slot_id(chat_id: str, slot_id: str) -> int:
+    cid = str(chat_id or "")
+    if cid == slot_id:
+        return 1
+    prefix = f"slot:{slot_id}:"
+    if cid.startswith(prefix):
+        suffix = cid[len(prefix):]
+        if len(suffix) == 32 and all(c in "0123456789abcdef" for c in suffix):
+            return 1
+    if slot_id == "buddha_chat" and cid in ("gui-web", "talk-buddha"):
+        return 1
+    return 0
+
+
+def chat_source(chat_id: str) -> str:
+    """Classify a transcript by who talked: user, buddha, worker or system.
+
+    Derived from the chat id only (archive copies keep the id of the original), so a
+    "Archiv [Worker Taskwechsel]" copy of a worker chat stays a worker chat and a
+    24h-reset copy of a Telegram chat stays the user's.
+    """
+    cid = str(chat_id or "")
+    low = cid.lower()
+    if _SLOT_CHAT_RE.fullmatch(cid) or low == "gui-web" or low.startswith(("web", "talk")):
+        return "user"
+    if cid.lstrip("-").isdigit() or low.startswith(("tg:", "telegram", "wa:", "whatsapp", "signal:")):
+        return "user"
+    if low.startswith(("worker-", "idle")):
+        return "worker"
+    if "buddha" in low:
+        return "buddha"
+    return "system"
 
 
 class ChatSessionStoreError(RuntimeError):
@@ -307,7 +344,9 @@ class SQLiteChatSessionStore:
             conn.close()
 
     def list_snapshot_page(self, *, limit: int = 25, offset: int = 0,
-                           agent_id: int | None = None, archive: str = "all") -> dict:
+                           agent_id: int | None = None, archive: str = "all",
+                           source: str = "all", problems: bool = False,
+                           slot_id: str | None = None) -> dict:
         """Read an authenticated viewer's explicit context; filter before paging."""
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 100_000:
             raise ValueError("Invalid transcript page")
@@ -315,12 +354,18 @@ class SQLiteChatSessionStore:
             raise ValueError("Invalid transcript profile")
         if archive not in {"all", "current", "archived"}:
             raise ValueError("Invalid transcript archive filter")
+        if source != "all" and source not in HISTORY_SOURCES:
+            raise ValueError("Invalid transcript source filter")
+        if slot_id is not None and (not isinstance(slot_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", slot_id)):
+            raise ValueError("Invalid transcript slot filter")
         if not self.db_path.is_file():
             raise ChatSessionStoreError("canonical BACH database is unavailable")
         conn = None
         try:
             conn = self._connect_readonly()
             conn.create_function("profile_chat_id_agent", 1, profile_chat_id_agent, deterministic=True)
+            conn.create_function("chat_source", 1, chat_source, deterministic=True)
+            conn.create_function("matches_slot_id", 2, matches_slot_id, deterministic=True)
             conn.execute("BEGIN")
             conditions = ["snapshot_type = ?"]
             args = [CHAT_SNAPSHOT_TYPE]
@@ -335,7 +380,22 @@ class SQLiteChatSessionStore:
                 args.extend([agent_id, agent_id])
             if archive != "all":
                 conditions.append("instr(session_id, ':archived:') " + ("> 0" if archive == "archived" else "= 0"))
+            chat_id_sql = "COALESCE(json_extract(snapshot_data,'$.chat_id'),'')"
+            if slot_id is not None:
+                conditions.append("matches_slot_id(" + chat_id_sql + ", ?) = 1")
+                args.append(slot_id)
+            failed_sql = ("(SELECT COUNT(*) FROM json_each(snapshot_data,'$.messages') "
+                          "WHERE json_extract(value,'$.answer_status') = 'failed')")
+            if problems:
+                conditions.append(failed_sql + " > 0")
             where = " AND ".join(conditions)
+            counts = dict.fromkeys(HISTORY_SOURCES, 0)
+            for name, n in conn.execute("SELECT chat_source(" + chat_id_sql + "), COUNT(*) FROM session_snapshots "
+                                        "WHERE " + where + " GROUP BY 1", args):
+                counts[name] = n
+            if source != "all":
+                where += " AND chat_source(" + chat_id_sql + ") = ?"
+                args = [*args, source]
             total = conn.execute("SELECT COUNT(*) FROM session_snapshots WHERE " + where, args).fetchone()[0]
             rows = conn.execute(
                 "SELECT id, session_id, name, created_at, length(snapshot_data) AS size_bytes, "
@@ -344,7 +404,8 @@ class SQLiteChatSessionStore:
                 "json_extract(snapshot_data,'$.context_class') AS context_class, "
                 "json_extract(snapshot_data,'$.agent_id') AS agent_id, "
                 "json_array_length(snapshot_data,'$.messages') AS stored_message_count, "
-                "json_extract(snapshot_data,'$.version') AS payload_version "
+                "json_extract(snapshot_data,'$.version') AS payload_version, "
+                + failed_sql + " AS failed_count "
                 "FROM session_snapshots WHERE " + where + " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
                 [*args, limit, offset]).fetchall()
             items = []
@@ -355,10 +416,15 @@ class SQLiteChatSessionStore:
                         or any(type(item[key]) is not str for key in ("session_id", "chat_id", "name"))):
                     raise ChatSessionStoreError("stored transcript metadata is invalid")
                 item["archived"] = ":archived:" in item["session_id"]
+                item["source"] = chat_source(item["chat_id"])
                 items.append(item)
-            return {"sessions": items, "total": total, "offset": offset, "limit": limit,
-                    "has_more": offset + len(items) < total,
-                    "save_limits": {"max_messages": self.max_messages, "max_content_chars": self.max_content_chars}}
+            result = {"sessions": items, "total": total, "offset": offset, "limit": limit,
+                      "source_filter": source, "problems": problems, "source_counts": counts,
+                      "has_more": offset + len(items) < total,
+                      "save_limits": {"max_messages": self.max_messages, "max_content_chars": self.max_content_chars}}
+            if slot_id is not None:
+                result["slot_filter"] = slot_id
+            return result
         except (sqlite3.Error, OSError) as exc:
             raise ChatSessionStoreError("cannot read canonical transcript page") from exc
         finally:
@@ -474,3 +540,30 @@ class SQLiteChatSessionStore:
             raise ChatSessionStoreError(f"cannot delete chat transcript: {exc}") from exc
         finally:
             conn.close()
+
+
+# ── M1 Seam Adapter: ellmos_chat.store with local SQLiteChatSessionStore fallback ──
+class EllmosChatStoreAdapter:
+    """Seam-Adapter delegating to ellmos_chat.store when available, with backward-compatible fallback to SQLiteChatSessionStore."""
+
+    def __init__(self, db_path: str | Path, *args, **kwargs):
+        self.db_path = Path(db_path)
+        self._delegate = None
+        self.is_seam_active = False
+
+        try:
+            import ellmos_chat.store as ec_store  # type: ignore
+            if hasattr(ec_store, "ChatSessionStore"):
+                self._delegate = ec_store.ChatSessionStore(str(db_path), *args, **kwargs)
+                self.is_seam_active = True
+        except (ImportError, AttributeError, Exception):
+            self._delegate = None
+
+        if self._delegate is None:
+            self._delegate = SQLiteChatSessionStore(db_path, *args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._delegate, name)
+
+
+ChatSessionStoreSeamAdapter = EllmosChatStoreAdapter

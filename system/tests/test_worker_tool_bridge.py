@@ -322,7 +322,7 @@ def test_missing_formatter_returns_unavailable_before_path_or_file_io(
 
 @pytest.mark.parametrize("formatter_mode", ["fake", "installed"])
 def test_versioned_read_result_survives_bridge_and_mcp(formatter_mode, fenced_readonly_bridge,
-                                                               tmp_path, monkeypatch):
+                                                               tmp_path, monkeypatch, run_mcp_stdio):
     from hub._services.chat import bach_tools
 
     if formatter_mode == "fake":
@@ -422,7 +422,7 @@ def test_versioned_read_result_survives_bridge_and_mcp(formatter_mode, fenced_re
                     assert payload["source_sha256"] is None
                     assert payload["lines"][0]["text"] == "BACH v1 content"
                     assert fenced_readonly_bridge.private_environment()["BACH_WORKER_TOOL_TOKEN"] not in output
-    asyncio.run(run())
+    run_mcp_stdio(run())
     events = fenced_readonly_bridge.binding._client.tool_trace_events(
         fenced_readonly_bridge.binding.task_id,
     )["events"]
@@ -565,7 +565,7 @@ def test_client_lost_response_disables_further_calls_without_retry(bridge, monke
     assert len(bridge.binding._client.task_candidates()["tasks"]) == 2
 
 
-def test_actual_mcp_stdio_subprocess_uses_bound_relay(bridge):
+def test_actual_mcp_stdio_subprocess_uses_bound_relay(bridge, run_mcp_stdio):
     import asyncio
     import sys
     from pathlib import Path
@@ -585,7 +585,7 @@ def test_actual_mcp_stdio_subprocess_uses_bound_relay(bridge):
                 assert answer.content[0].text == f"Task #{bridge.binding.task_id}: Ergebnis gespeichert; Abschlussstatus wird nach Policy ermittelt."
                 assert bridge.binding._ack.lease_id not in str(answer)
                 assert bridge.private_environment()["BACH_WORKER_TOOL_TOKEN"] not in str(answer)
-    asyncio.run(run())
+    run_mcp_stdio(run())
     assert bridge.binding.completed_task_ids == ()
     assert bridge.binding.reviewed_task_ids == (bridge.binding.task_id,)
 

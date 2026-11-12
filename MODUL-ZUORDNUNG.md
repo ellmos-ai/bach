@@ -1,61 +1,38 @@
-# MODUL-ZUORDNUNG
+# Open-Ocean & BACH — Kanonische Modul-Zuordnung & SOLL/IST-Abgleich (Stand: 02.11.2026)
 
-Zuordnung von BACH-Fachlogik zu Fachmodulen und Festlegung der
-kanonischen KERN-GRENZE. In-Repo-Äquivalent zu den OCEAN/OneDrive-
-Dokumenten (AKTUELLER-PLAN.md, ANFORDERUNGEN-DETAIL.md).
-Begleitet OCEAN-TRANSFER-PLAN.md (Rückmodularisierung 13.10.2026).
+Dieses Dokument hält für `open-ocean` und `bach` verbindlich fest, welche der 11 kanonischen Ocean-Module im Plattformkern gebunden sind (`tools/ocean_stack_bridge.py` / `system/hub/_services/ocean_stack_bridge.py`), wie sich **SOLL-Architektur** und **gemessener IST-Zustand** verhalten und in welchen Ocean-Modulen bestehende sowie neu geplante Fähigkeiten (Sprache, Live-Talk, Geräte-Sinne/Sensation, Smart-Home, Robotik, Tray-Permissions) gebaut werden.
 
-## 0. Kanonische Kern-Grenze (Task #2451)
+## 1. SOLL vs. gemessenes IST der 11 Ocean-Modul-Bindungen (`ocean_stack_bridge.py`)
 
-Quelle und verbindliche Definition: `system/core/README.md`.
-Zusammenfassung:
+| Nr. | Modul-ID | Kanonischer Ort (SOLL) | Gemessenes IST in `open-ocean` | Gemessenes IST in `bach` | Status |
+|---|---|---|---|---|---|
+| 1 | `ocean-resources` | `ellmos-ai/ocean-resources` (`ocean_resources/ram_distributor.py`) + `open-ocean/ocean_resources/ram_distributor.py` | Gebunden via `tools/ocean_stack_bridge.py` (`load_ocean_ram_distributor_module`) | Gebunden via `system/hub/_services/ocean_stack_bridge.py` & `ocean_resources_adapter.py` | **ERFÜLLT (`bound: true`)** |
+| 2 | `task-master` | `ellmos-ai/task-master` (`taskplan/lease.py`) + `open-ocean/tools/task_router.py` | Gebunden via `tools/ocean_stack_bridge.py` & `ocean.py task` | Gebunden via `system/hub/_services/ocean_stack_bridge.py` & `taskplan_bridge.py` | **ERFÜLLT (`bound: true`)** |
+| 3 | `ellmos-worker` | `open-ocean/tools/worker_worktree_policy.py` | Eigenständiges Modul + Tests (`tests/test_worker_worktree_policy.py`) | Gebunden via `ocean_stack_bridge.py` | **ERFÜLLT (`bound: true`)** |
+| 4 | `review-policy` | `open-ocean/tools/task_result_review_policy.py` | Eigenständiges Modul + Tests | Gebunden via `ocean_stack_bridge.py` | **ERFÜLLT (`bound: true`)** |
+| 5 | `escalation-ladder` | `open-ocean/tools/escalation_ladder.py` | Eigenständiges Modul (3-Stufen-Autoritäts-Kaskade, Quote-Tunnel, Eskalationsleiter) | Gebunden via `ocean_stack_bridge.py` | **ERFÜLLT (`bound: true`)** |
+| 6 | `persona-routing` | `open-ocean/tools/persona_routing.py` | Eigenständige Moduldatei (`ellmos.persona-routing.v2`, `ModuleDeliveryCatalog`, `project_module_library_and_routines`, `#2447`/`#2448`/`#2452`) | Gebunden via `ocean_stack_bridge.py`, `module_delivery_lifecycle.py` & `module_delivery_projection.py` | **ERFÜLLT (`bound: true`)** |
+| 7 | `learning-loop` | `open-ocean/tools/learning_loop.py` | Eigenständige Moduldatei (`ellmos.skill-keeper.v1`, Skill-Gärtner 2-Stufen-Pipeline, `#2455`) | Gebunden via `ocean_stack_bridge.py` & `skill_keeper_service.py` | **ERFÜLLT (`bound: true`)** |
+| 8 | `agent-library` | `open-ocean/tools/agent_library.py` | Eigenständige Moduldatei (3-Tab-Katalog, `AutomationLifecycleRegistry` `#2329`, Shared Completion `#2259`, Desktop-Harness `#2337`) | Gebunden via `ocean_stack_bridge.py`, `automation_agents_lifecycle.py`, `shared_completion_selection_integration.py`, `desktop_harness_contract.py` | **ERFÜLLT (`bound: true`)** |
+| 9 | `capability-views` | `open-ocean/tools/capability_views.py` | Eigenständige Moduldatei (`software_inventory`, `#2075`) | Gebunden via `ocean_stack_bridge.py` (`ocean_software_inventory`) | **ERFÜLLT (`bound: true`)** |
+| 10 | `governance-bridge` | `open-ocean/tools/governance_bridge.py` | Eigenständige Moduldatei (`task_history_audit`, `task_assignees_view`, `task_result_view`, `#2094`/`#2097`/`#2098`) | Gebunden via `ocean_stack_bridge.py` | **ERFÜLLT (`bound: true`)** |
+| 11 | `doc-keeper` | `ellmos-ai/doc-keeper` (`src/doc_keeper/extractor.py`) + `open-ocean/tools/help_projection.py` | Gebunden via `tools/ocean_stack_bridge.py` (`load_doc_keeper_module`) | Gebunden via `system/hub/_services/ocean_stack_bridge.py` | **ERFÜLLT (`bound: true`)** |
 
-- **KERN** = dünne Infrastruktur, von allen Komponenten genutzt, **keine Fachlogik**:
-  `system/bach.py` (CLI), `adapter.py` (Lead-HTTP-Adapter), `db.py`/`safe_db.py`
-  (`bach.db`-Speicher), `registry.py`, `base.py`, `aliases.py`, `launcher.py`,
-  `network_lock.py`, `provenance.py`, `telemetry.py`, `hooks.py`, `sandbox.py`,
-  `app.py`, `__init__.py`.
-- **NICHTS** Fachlogik/Module im Kern. Fachlogik gehoert in Fachmodule und wird
-  per Rückmodularisierung ausgegliedert.
+## 2. Erweiterte Funktions- & Bauort-Landkarte (inkl. Neuaufnahme 02.11.2026)
 
-### 0.1 Fachlogik-Reste im Kern -> Extraktion
+| Bereich / Fähigkeit | Bestehendes im System (IST) | Kanonischer Bauort (SOLL) | Architektur- & Integrationsvertrag |
+|---|---|---|---|
+| **Universelle Spracheingabe (Voice Transcription / STT) in allen Chat-Eingabefeldern** | `ellmos-ai/ellmos-voice-io` v0.2.1 (59 Tests grün, 100 % Local-First mit Vosk, Whisper, Piper, pyttsx3, openWakeWord) + `bach/system/hub/_services/voice/voice_stt.py` (nur Buddha-Chat `#1338`) | **`modul:ellmos-voice-io`** + UI-Komponente `<VoiceMicButton />` in **`ellmos-system-gui`** | Einheitlicher Mikrofon-/Diktat-Button (Push-to-Talk + Hands-Free + Shortcut) in **allen** Chat- und Texteingabefeldern (Haupt-Chat, Buddha-Chat, Agenten-Run, Task-Anlage, PromptBoard, Setup-Wizard, Tray-Quick-Chat); `voice_stt.py` in BACH wird `@deprecated_legacy_bach("ellmos_voice_io")`. |
+| **Echtzeit-Sprachdialog & Visualisierungs-Fenster (`ellmos-talk`)** | `ellmos-voice-io` (Basis-STT/TTS/Wake-Word) & `open-compute-mcp` (`talk` Push-to-Talk) | **Neues Modul `modul:ellmos-talk`** (`ellmos-ai/ellmos-talk`, baut auf `ellmos-voice-io` auf) | **Dual-Loop-Spracharchitektur (`Fast-Reflex + Deep-Cortex`):** Ein kleines, schnelles Vorlaufmodell (`qwen3:1.7b`/`4b` lokal oder Realtime-Audio) übernimmt sofortiges Turn-Taking (<250 ms), Barge-In (Unterbrechen mitten im Satz) und kurze Zwischenreaktionen, während das Hauptmodell (Buddha 27B, Claude, Gemini, Codex) tief denkt/Werkzeuge ausführt. Eigenes **Visualisierungs-Fenster** (DE/EN, erweiterbar) mit Frequenz-/Mustererzeugung, **Emotions-Farbwechsel**, Emojis und Zuhör-/Wake-Word-Modus, das vom Modell selbst über strukturierte `talk_control`-Direktiven gesteuert wird. |
+| **Geräte-Sinne & Präsenz-Gate (`ellmos-sensation`)** | `open-compute` v0.9.1 (Screen-Capture & Desktop-Steuerung), `music-composer` (Offline-Waveform-Synthese) | **Neues Modul `modul:ellmos-sensation`** (`ellmos-ai/ellmos-sensation`) | Berechtigungs-gesteuerter Geräte-Sinn (Kamera/Webcam, Mikrofon-Umgebungspegel, synthetische Klangerzeugung/Audio-Signale) hinter explizitem Tray-/Policy-Grant. **Präsenz-Gate für `open-compute`:** Prüft lokal (Zero-Egress im RAM) über Input-Idle + optionalen Kamera-Check *„Sitzt der Nutzer gerade am PC?“* — falls ja, wird aktives `open-compute` (Maus-/Tastatur-Steuerung) automatisch blockiert/pausiert oder in den passiven `cowork-protocol`-Vorschlagsmodus geschaltet. |
+| **Smart-Home & Haushaltsgeräte (`ellmos-homecontrol`)** | `bach/system/hub/smarthome.py` (`SmartHomeHandler` für FritzBox TR-064) + `HomeAssistantConnector` in `ellmos-ai/connectors` | **Neues Modul `modul:ellmos-homecontrol`** (`ellmos-ai/ellmos-homecontrol`, inkl. MCP-Server) | Löst den monolithischen `hub/smarthome.py` (`@deprecated_legacy_bach("ellmos_homecontrol")`) ab und bündelt Haushaltsgeräte-Steuerung über **FritzBox TR-064/DECT**, **Home Assistant**, **Matter/Thread** und **MQTT/Zigbee2MQTT/Shelly/Tasmota** mit Safety-Gate (Lesen frei, Schalten nach Geräteklasse/Autoritätsstufe). |
+| **Roboter- & Aktuatoren-Steuerung (`ellmos-robotics`)** | Noch kein Modul im Bestand | **Neues Modul `modul:ellmos-robotics`** (`ellmos-ai/ellmos-robotics`, Standard `ellmos.robotics.mcp.v1`) | Kanonischer MCP-Standard für die Kommunikation von LLMs mit physischen Robotern und Mikrocontrollern (**ROS 2 / Zenoh**, **ESP32 / Arduino / Serial**, **LeRobot / Servo-Arme**, **MAVLink**). Pflicht-Invarianten: Hardware-E-Stop, räumliche Bounding-Box, Simulations-/Dry-Run-Modus und Kopplung an `ellmos-sensation` (Kamera-Kollisionsschutz). |
+| **Tray-Permissions-Flyout & MIT-Gateway-Erweiterungen (`ellmos-tray`, `connectors`)** | `ellmos-tray` v0.1.2, `bach/system/hub/_services/chat/chat_tray.py`, `connectors` v1.2.2, `hermes-agent` (MIT) | **`modul:ellmos-tray`**, **`modul:connectors`**, **`modul:ellmos-installer`** | Verbindet die fachliche Tiefe des BACH-Trays (Buddha-Status, Fackelpriorität, Hintergrundagenten, letzte Tools) mit einem modernen **Permissions-Sub-Flyout nach OpenClaw-Vorbild** (Sofort-Schalter für Camera, Microphone/Wake-Word, Voice TTS/Talk, Speech-to-Text, Screen-Capture/`open-compute`, System-Tools, Browser-Control, SmartHome/Robotics, Ollama), einem **Setup-Welcome-Screen mit Sicherheitshinweis** im Installer sowie MIT-Gateway-Komfortfunktionen aus Hermes/OpenClaw in `connectors` (automatische Voice-Memo-Auto-STT via `ellmos-voice-io`, OpenClaw/Hermes-Config-Import). |
 
-| Heute in core | Fachlogik | Ziel-Fachmodul | Folgetask | module-gate |
-|---------------|-----------|----------------|-----------|-------------|
-| `capabilities.py` | Zugriffskontrolle / Trust-Level / Capability-System | `policy/governance` | Folgetask A: `capabilities`->`policy/governance` | #2445 |
-| `agent_runtime.py` | instanziierbare Agenten / Agent-Laufzeit | `agents` | Folgetask B: `agent_runtime`->`agents` | #2445 |
-| `instance_registry.py` | Instanz-Discovery / Registry | `coordination/messaging` | Folgetask C: `instance_registry`+`instance_messaging`->`coordination/messaging` | #2445 |
-| `instance_messaging.py` | Instanz-Kommunikation / Messaging | `coordination/messaging` | Folgetask C (mit instance_registry) | #2445 |
-| `plugin_api.py` | Laufzeit-Erweiterung / Plugin-System | `plugin-system` | Folgetask D: `plugin_api`->`plugin-system` | #2445 |
+## 3. Verifikation
 
-### 0.2 Extraktionsprinzipien (konsistent mit OCEAN-TRANSFER-PLAN.md)
-
-- Schmale Adapter: Im Kern bleibt nur ein dünner Adapter/Stub (Forwarder ans
-  Fachmodul). Kein zweiter Store/Scheduler/Router im Kern.
-- policy-registry / Capability-Logik = 1. Transfer (Folgetask A).
-- Fachmodul wird das einzige System der Fachlogik; Kern ruft nur ueber Adapter.
-- Nicht mehr genutzte Stubs/Altteile -> `DEPRICATED.md`, nicht still im Kern.
-
-### 0.3 Bindungen
-
-- **module-gate #2445:** Jede Extraktion wird gegen die Kern-Grenze (README A 2)
-  geprueft: Fachlogik verlaesst core, Adapter bleibt duenn.
-- **ocean.py:** Code-Bindung an `ocean.py` (Root) ist in diesem Lauf NICHT
-  durchführbar (Datei ausserhalb Read-Scope / blockiert). Sie ist extern
-  (OneDrive `open-ocean/`). Folgetask E dokumentiert die ocea n.py-Bindung
-  als offen/extern; sie wird im OCEAN-Rueckmodularisierungslauf erledigt.
-
-### 0.4 Folgetasks (per task_manage angelegt, Eltern #2451 bleibt offen / pending)
-
-Bestaetigte Kind-Task-IDs (sequential, Eltern bleibt offen):
-
-- #2611 Folgetask A: `capabilities.py` -> `policy/governance`
-- #2612 Folgetask B: `agent_runtime.py` -> `agents`
-- #2613 Folgetask C: `instance_registry.py` + `instance_messaging.py` -> `coordination/messaging`
-- #2614 Folgetask D: `plugin_api.py` -> `plugin-system`
-- #2615 Folgetask E: module-gate #2445 Bindung (Pruefung aller Extraktionen gegen Kern-Grenze)
-- #2616 Folgetask F: ocean.py-Bindung (extern/blockiert, im OCEAN-Lauf)
-
-Jede Extraktion (A-D) ist an module-gate #2445 + die Kern-Grenze
-`system/core/README.md` A 2 gebunden. ocean.py (#2616) ist extern und in
-diesem Lauf nicht umsetzbar.
+```bash
+python ocean.py stack-status --json
+python tools/generate_api_cli_reference.py
+pytest tests/test_ocean_stack_and_modules.py tests/test_store_readiness.py -q
+```

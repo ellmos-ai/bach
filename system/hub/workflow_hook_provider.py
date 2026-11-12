@@ -69,8 +69,28 @@ _REQUIRED_SYMBOLS = {
     "CompositeStateSource": ("sources", "CompositeStateSource"),
     "FilesStateSource": ("sources", "FilesStateSource"),
     "GitStateSource": ("sources", "GitStateSource"),
-    "_run_active_checks": ("cli", "_run_active_checks"),
 }
+
+
+def _fallback_run_active_checks(resolved: dict):
+    """Kompatibilitäts-Runner, falls workflowhooker.cli noch kein _run_active_checks exportiert."""
+    def _runner(config, project_dir: Path, state):
+        max_msgs = getattr(config.mode, "max_messages_per_session", 0) or 0
+        if max_msgs > 0 and getattr(state, "messages_sent", 0) >= max_msgs:
+            return None
+        source = resolved["CompositeStateSource"](
+            [resolved["FilesStateSource"](project_dir), resolved["GitStateSource"](project_dir)]
+        )
+        runner = resolved["CheckRunner"](resolved["CHECK_REGISTRY"])
+        results = runner.run(list(config.mode.checks), source)
+        messages = [getattr(r, "message", str(r)) for r in (results or []) if getattr(r, "triggered", True) and getattr(r, "message", str(r))]
+        if not messages:
+            return None
+        if hasattr(state, "messages_sent"):
+            state.messages_sent = int(getattr(state, "messages_sent", 0)) + 1
+        return "\n".join(messages)
+
+    return _runner
 
 _INTERCEPTOR_NAME = "external-workflowhooker"
 
@@ -115,6 +135,11 @@ class ExternalWorkflowInterceptor:
             raise RuntimeError(
                 f"workflowhooker-Contract verletzt, fehlende Symbole: {missing}"
             )
+        try:
+            cli_mod = importlib.import_module(f"{WORKFLOWHOOKER_MODULE}.cli")
+            resolved["_run_active_checks"] = getattr(cli_mod, "_run_active_checks")
+        except (ImportError, AttributeError):
+            resolved["_run_active_checks"] = _fallback_run_active_checks(resolved)
         self._mod = resolved
         self._runner = resolved["_run_active_checks"]
 

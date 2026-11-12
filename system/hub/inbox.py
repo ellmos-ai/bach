@@ -30,6 +30,8 @@ INBOX_WATCHER = TOOLS_DIR / "inbox_watcher.py"
 INBOX_PID_FILE = DATA_DIR / "inbox_watcher.pid"
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("assistant-core")
 class InboxHandler:
     """Handler fuer Inbox-Watcher Steuerung."""
 

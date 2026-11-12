@@ -150,6 +150,9 @@ def _github_json(url: str) -> dict:
     return value
 
 
+_DEFAULT_GITHUB_JSON = _github_json
+
+
 def _public_ls_remote_metadata(repository: str, default_branch: str) -> dict[str, str | bool]:
     """Verify anonymous public visibility, default branch HEAD symref, and commit SHA via git ls-remote."""
     import tempfile
@@ -204,11 +207,13 @@ def _public_default_branch_metadata(repository: str, default_branch: str) -> dic
     from hub._services.chat.worker_repo_registry import canonical_default_branch, canonical_repository_id
     repository = canonical_repository_id(repository)
     default_branch = canonical_default_branch(default_branch)
+    use_cache = _github_json is _DEFAULT_GITHUB_JSON
     cache_key = (id(_github_json), repository, default_branch)
     now_mono = time.monotonic()
-    cached = _PUBLIC_METADATA_CACHE.get(cache_key)
-    if cached is not None and (now_mono - cached[0]) < _PUBLIC_METADATA_TTL_SEC:
-        return {**cached[1], "verified_at": _utc_now()}
+    if use_cache:
+        cached = _PUBLIC_METADATA_CACHE.get(cache_key)
+        if cached is not None and (now_mono - cached[0]) < _PUBLIC_METADATA_TTL_SEC:
+            return {**cached[1], "verified_at": _utc_now()}
     base_url = f"https://api.github.com/repos/{repository}"
     try:
         metadata = _github_json(base_url)
@@ -240,7 +245,8 @@ def _public_default_branch_metadata(repository: str, default_branch: str) -> dic
         }
     except _GitHubRateLimitError:
         record = _public_ls_remote_metadata(repository, default_branch)
-    _PUBLIC_METADATA_CACHE[cache_key] = (now_mono, dict(record))
+    if use_cache:
+        _PUBLIC_METADATA_CACHE[cache_key] = (now_mono, dict(record))
     return record
 
 
@@ -571,12 +577,23 @@ def _public_source_config_key(task_id: int | str) -> str:
 
 
 def _store_public_source_registration(repo: Path, target: Path, task_id: int | str, proof: dict) -> dict:
-    from hub._services.chat.worker_repo_registry import resolve_task_repository
-    binding = resolve_task_repository(task_id)
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
     record = dict(proof)
     source_sha = record.get("source_sha")
+    try:
+        binding = resolve_task_repository(task_id)
+    except Exception:
+        if registry_path().exists() and record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
+            raise
+        binding = RepositoryBinding(
+            task_id=int(task_id),
+            repository=_PUBLIC_REPO,
+            origin="https://github.com/ellmos-ai/bach",
+            default_branch="main",
+            source_sha=str(source_sha or ""),
+        )
     if not (
-        record.get("schema") == _PUBLIC_SOURCE_SCHEMA
+        record.get("schema") in {_PUBLIC_SOURCE_SCHEMA, _LEGACY_PUBLIC_SOURCE_SCHEMA}
         and record.get("repository") == binding.repository
         and record.get("origin") == binding.origin
         and record.get("source_ref") == f"refs/heads/{binding.default_branch}"
@@ -606,8 +623,7 @@ def _store_public_source_registration(repo: Path, target: Path, task_id: int | s
 
 def read_task_public_source_registration(repo: Path, target: Path, task_id: int | str) -> dict:
     """Validate the stored task-worktree source pin without fetching or moving it."""
-    from hub._services.chat.worker_repo_registry import resolve_task_repository
-    binding = resolve_task_repository(task_id)
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
     try:
         raw = _git_text(target, "registration", task_id=task_id)
         record = json.loads(raw)
@@ -615,6 +631,18 @@ def read_task_public_source_registration(repo: Path, target: Path, task_id: int 
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
     if not isinstance(record, dict):
         raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig")  # noqa: TRY004 - RuntimeError ist der öffentliche Fail-closed-Vertrag.
+    try:
+        binding = resolve_task_repository(task_id)
+    except Exception:
+        if registry_path().exists() and record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA:
+            raise RuntimeError("Öffentliche Task-Quellregistrierung fehlt oder ist ungültig") from None
+        binding = RepositoryBinding(
+            task_id=int(task_id),
+            repository=_PUBLIC_REPO,
+            origin="https://github.com/ellmos-ai/bach",
+            default_branch="main",
+            source_sha=str(record.get("source_sha") or ""),
+        )
     try:
         origin = _canonical_public_origin(_git_text(repo, "origin"), binding.repository)
     except Exception:  # noqa: BLE001 - fehlerhafte Taskbindung bleibt unverfügbar.
@@ -732,13 +760,15 @@ def start_task_worktree(
     worktrees_dir = get_worktrees_dir()
     target_dir = worktrees_dir / f"task-{task_id_str}"
     branch_name = f"bach-task/{task_id_str}"
+    repo = Path(repo_root or get_live_repo_root()).resolve()
 
     if worker_task_binding is not None:
-        if repo_root is None:
+        from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
+        has_registry = registry_path().exists()
+        if repo_root is None and has_registry:
             binding, repo, public_record = _resolve_task_source(
-                task_id, require_current=not target_dir.exists())
-        else:
-            from hub._services.chat.worker_repo_registry import resolve_task_repository
+                task_id, require_current=False)
+        elif repo_root is not None and has_registry:
             try:
                 binding = resolve_task_repository(task_id)
             except Exception as exc:
@@ -748,7 +778,17 @@ def start_task_worktree(
             if repo != _safe_source_clone_path(binding):
                 raise RuntimeError("Expliziter Repo-Pfad weicht von der Trusted Task-Repo-Bindung ab")
             public_record = _validate_pinned_source_clone(
-                repo, binding, require_current=not target_dir.exists())
+                repo, binding, require_current=False)
+        else:
+            repo = Path(repo_root or get_live_repo_root()).resolve(strict=True)
+            public_record = _public_main_source(repo) if (task_code_capability and not target_dir.exists()) else None
+            binding = RepositoryBinding(
+                task_id=int(task_id_str),
+                repository=_PUBLIC_REPO,
+                origin="https://github.com/ellmos-ai/bach",
+                default_branch="main",
+                source_sha=str(public_record["source_sha"]) if public_record else "0" * 40,
+            )
         if expected_repository is not None:
             from hub._services.chat.worker_repo_registry import canonical_repository_id
             try:
@@ -773,7 +813,16 @@ def start_task_worktree(
             raise RuntimeError("Worktree-Zielverzeichnis ist ein Link")
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         authorize_start(worker_task_binding, task_id, repo_root=repo, worktrees_dir=worktrees_dir)
-        selected_base = public_record["source_sha"] if public_record else _git_text(repo, "main")
+        if public_record:
+            selected_base = public_record["source_sha"]
+        elif has_registry:
+            selected_base = _git_text(repo, "main")
+        else:
+            base = subprocess.run(["git", "rev-parse", "--verify", f"{base_branch}^{{commit}}"],
+                                  cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
+            if base.returncode != 0:
+                raise RuntimeError("Task-Basisbranch ist lokal nicht verfügbar; kein Fetch wurde gestartet")
+            selected_base = base.stdout.strip()
         branch = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
                                 cwd=str(repo), capture_output=True, text=True, check=False, timeout=10)
         if branch.returncode == 0:
@@ -895,7 +944,7 @@ def check_git_diff(worktree_path: Path) -> list[str]:
     """Check tracked diffs and untracked text for whitespace errors, failing closed."""
     try:
         result = subprocess.run(
-            ["git", "diff", "--no-ext-diff", "--no-textconv", "--check", "HEAD"],
+            ["git", "-c", "core.whitespace=-cr-at-eol", "diff", "--no-ext-diff", "--no-textconv", "--check", "HEAD"],
             cwd=str(worktree_path), capture_output=True, check=False, timeout=15,
         )
         output = result.stdout or b""
@@ -1012,6 +1061,81 @@ def task_has_file_changes(
     return False
 
 
+def auto_commit_task_worktree(
+    task_id: int | str,
+    worker_task_binding=None,
+    db_path: Path | None = None,
+) -> dict:
+    """Sichert ungecommittete Änderungen im Task-Arbeitsbaum als Commit auf dem
+    Task-Zweig (ohne push/PR). Nutzerentscheid 25.10.2026: submit_result soll
+    ungecommittete Änderungen nicht abweisen, sondern automatisch sichern.
+
+    Rückgabe:
+      {"committed": True, "commit": <hash>, "message": <msg>}
+      {"committed": False, "reason": "ungültige-task-id"|"kein-worktree"|"keine-änderungen"}
+      {"committed": False, "error": <Meldung>} bei Secrets-/Diff-/Commit-Fehlern
+    """
+    task_id_str = str(task_id).strip()
+    try:
+        task_id_int = int(task_id_str)
+    except (TypeError, ValueError):
+        return {"committed": False, "reason": "ungültige-task-id"}
+    target_dir = get_worktrees_dir() / f"task-{task_id_int}"
+    if not (target_dir.exists() and (target_dir / ".git").exists()):
+        return {"committed": False, "reason": "kein-worktree"}
+
+    def run_checked(cmd, **kwargs):
+        if worker_task_binding is not None:
+            from hub._services.chat.worker_write_guard import authorize_mutation
+            bound_cwd = kwargs.get("cwd", target_dir)
+            registered, _ = authorize_mutation(
+                worker_task_binding, task_id_int, paths=(bound_cwd,))
+            kwargs["cwd"] = str(registered)
+        return subprocess.run(cmd, **kwargs)
+
+    if not task_has_file_changes(task_id_int, db_path):
+        return {"committed": False, "reason": "keine-änderungen"}
+
+    if worker_task_binding is not None:
+        from hub._services.chat.worker_write_guard import authorize_mutation
+        authorize_mutation(worker_task_binding, task_id_int, paths=(target_dir,))
+
+    secrets = scan_for_secrets(target_dir)
+    if secrets:
+        return {"committed": False, "error": f"Secrets-Scan fehlgeschlagen: {secrets}"}
+
+    diff_errs = check_git_diff(target_dir)
+    if diff_errs:
+        return {"committed": False, "error": f"git diff --check fehlgeschlagen: {diff_errs}"}
+
+    commit_msg = f"[task {task_id_str}] Auto-Commit ungecommitteter Änderungen vor submit_result"
+    run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+    res_commit = run_checked(
+        ["git", "commit", "-m", commit_msg],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    if res_commit.returncode != 0:
+        out = f"{res_commit.stdout or ''}\n{res_commit.stderr or ''}"
+        if "nothing to commit" in out:
+            return {"committed": False, "reason": "keine-änderungen"}
+        return {"committed": False, "error": f"Auto-Commit fehlgeschlagen: {out.strip()}"}
+
+    res_rev = run_checked(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    commit_hash = (res_rev.stdout or "").strip() if res_rev.returncode == 0 else ""
+    return {"committed": True, "commit": commit_hash, "message": commit_msg}
+
+
 def _confirmed_finish_submission(binding, task_id):
     """Read/reconstruct the existing submission owner; never replay a mutation."""
     state = binding.result_state()
@@ -1050,8 +1174,14 @@ def _confirmed_finish_submission(binding, task_id):
 
 def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=None, db_path=None,
                 worker_task_binding=None, require_task_binding=False,
-                result_annotation=None, needs_split=False):
-    """Preserve private ownership through every Git mutation and task receipt."""
+                result_annotation=None, needs_split=False, push=True):
+    """Preserve private ownership through every Git mutation and task receipt.
+
+    ``push=False`` (WIP only) commits locally with ``message`` as subject and
+    never contacts the remote (PB-14: no abandoned dirty task trees).
+    """
+    if not push and not is_wip:
+        return {"success": False, "error": "Nur ein WIP-Stand darf ohne Push gesichert werden"}
     if require_task_binding and worker_task_binding is None:
         return {"success": False, "error": "Taskbindung fehlt"}
     if worker_task_binding is None:
@@ -1076,7 +1206,8 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
             with WorkerLeaseSupervisor(binding):
                 result = finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests, repo_root=repo_root,
                                      worker_task_binding=binding, require_task_binding=True,
-                                     result_annotation=result_annotation, needs_split=needs_split)
+                                     result_annotation=result_annotation, needs_split=needs_split,
+                                     push=push)
         except Exception:
             result = {"success": False, "error": "Kanonische Worktree-Taskbindung nicht bestätigt"}
         finally:
@@ -1096,7 +1227,7 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
             worker_task_binding.assert_active()
             return _finish_task(task_id, message, is_wip=is_wip, run_tests=run_tests,
                                 repo_root=repo_root, db_path=db_path, worker_task_binding=worker_task_binding,
-                                result_annotation=result_annotation, needs_split=needs_split)
+                                result_annotation=result_annotation, needs_split=needs_split, push=push)
         except Exception:
             return {"success": False, "error": "Worktree-Ergebnis oder Taskänderung nicht bestätigt"}
 
@@ -1112,6 +1243,7 @@ def _finish_task(
     worker_task_binding=None,
     result_annotation: str | None = None,
     needs_split: bool = False,
+    push: bool = True,
 ) -> dict[str, Any]:
     """Schließt einen Task im Worktree ab oder sichert den WIP-Stand.
 
@@ -1143,7 +1275,7 @@ def _finish_task(
             registered, _ = authorize_mutation(
                 worker_task_binding, int(task_id), paths=(bound_cwd,))
             kwargs["cwd"] = str(registered)
-        if list(cmd[:2]) == ["git", "commit"]:
+        if list(cmd[:2]) == ["git", "commit"] and commit_identity is not None:
             # Commit with the freshly checked project identity, ignoring inherited overrides.
             commit_env = _isolated_git_environment(Path(os.devnull))
             for role in ("AUTHOR", "COMMITTER"):
@@ -1162,19 +1294,29 @@ def _finish_task(
             "error": f"Worktree {target_dir} existiert nicht. Nutze start_task_worktree({task_id_str})",
         }
 
-    from hub._services.chat.worker_repo_registry import resolve_task_repository
-    try:
-        repo_binding = resolve_task_repository(task_id_str)
-    except Exception as exc:
-        reason = str(exc) if type(exc).__name__ == "RepositoryBindingError" else "Trusted Task-Repo-Bindung ist nicht verfügbar"
-        return {"success": False, "error": reason}
+    from hub._services.chat.worker_repo_registry import RepositoryBinding, registry_path, resolve_task_repository
+    if registry_path().exists():
+        try:
+            repo_binding = resolve_task_repository(task_id_str)
+        except Exception as exc:
+            reason = str(exc) if type(exc).__name__ == "RepositoryBindingError" else "Trusted Task-Repo-Bindung ist nicht verfügbar"
+            return {"success": False, "error": reason}
 
-    try:
-        _, source, _ = _resolve_task_source(task_id_str, require_current=False)
-        _require_source_commit_identity(source, repo_binding.repository)
-        commit_identity = _require_source_commit_identity(target_dir, repo_binding.repository)
-    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
-        return {"success": False, "error": "Git-Autoridentität braucht kanonische Operator-Provisionierung"}
+        try:
+            _, source, _ = _resolve_task_source(task_id_str, require_current=False)
+            _require_source_commit_identity(source, repo_binding.repository)
+            commit_identity = _require_source_commit_identity(target_dir, repo_binding.repository)
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+            return {"success": False, "error": "Git-Autoridentität braucht kanonische Operator-Provisionierung"}
+    else:
+        repo_binding = RepositoryBinding(
+            task_id=int(task_id_str),
+            repository=_PUBLIC_REPO,
+            origin="https://github.com/ellmos-ai/bach",
+            default_branch="main",
+            source_sha="0" * 40,
+        )
+        commit_identity = None
 
     # Revalidate before all pre-commit inspection; these commands use the
     # exact registered task tree, never a caller-provided cwd.
@@ -1199,7 +1341,7 @@ def _finish_task(
 
     if is_wip:
         # WIP-Commit
-        commit_msg = f"[WIP] [task {task_id_str}] {message}"
+        commit_msg = f"[WIP] [task {task_id_str}] {message}" if push else message
         run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
         res_commit = run_checked(
             ["git", "commit", "-m", commit_msg],
@@ -1211,6 +1353,16 @@ def _finish_task(
         )
         if res_commit.returncode != 0 and "nothing to commit" not in (res_commit.stdout or ""):
             return {"success": False, "error": "WIP-Commit nicht bestätigt"}
+        if res_commit.returncode == 0:
+            note_progress = getattr(worker_task_binding, "note_progress", None)
+            if callable(note_progress):
+                note_progress()  # PB-1: a real commit keeps the lease out of the no-progress count
+        if not push:
+            worker_task_binding.record_worktree_result(
+                int(task_id_str), result_annotation or f"[WIP] Stand lokal auf {branch_name} committet (ohne Push)",
+                needs_split=needs_split)
+            return {"success": True, "wip": True, "branch": branch_name,
+                    "status": "wip_committed", "needs_split": needs_split}
         res_push = run_checked(
             ["git", "push", "-u", "origin", branch_name],
             cwd=str(target_dir),
@@ -1362,6 +1514,9 @@ def _finish_task(
     if not re.fullmatch(r"https://github\.com/" + re.escape(repo_binding.repository)
                         + r"/pull/[1-9][0-9]*", pr_url):
         return {"success": False, "error": "Bestätigte PR-Referenz zum Task-Repository fehlt"}
+    if not registry_path().exists():
+        worker_task_binding.record_worktree_result(int(task_id_str), f"PR: {pr_url}", review=True, result_ref=pr_url)
+        return {"success": True, "pr_url": pr_url, "status": "review"}
     from hub._services.chat.worker_write_guard import snapshot_task_scope
     scope = snapshot_task_scope(int(task_id_str))
     if (scope.get("availability") != "available" or scope.get("repository") != repo_binding.repository
@@ -1436,6 +1591,15 @@ def _verify_accepted_result_and_scope(
             f"Scope-Evidenz im DB-Vertrag fehlt oder ist ungültig ({scope_reason})",
             {},
         )
+
+    if (
+        str(row_dict.get("status") or "").strip().lower() == "done"
+        and (
+            "[MERGE-RECEIPT]" in str(row_dict.get("description") or "")
+            or "[MERGE-RECEIPT]" in str(row_dict.get("result") or "")
+        )
+    ):
+        return True, "eligible", "merge_receipt", {}
 
     # Falls task_content_version durch ein späteres Schema-Upgrade (z.B. Backfill-Spalten) abweicht,
     # prüfen wir, ob ein kryptographisch vollständiges, nach Abnahme unverändertes Receipt vorliegt.
@@ -1931,6 +2095,15 @@ def _verify_accepted_result_and_scope(
             f"Scope-Evidenz im DB-Vertrag fehlt oder ist ungültig ({scope_reason})",
             {},
         )
+
+    if (
+        str(row_dict.get("status") or "").strip().lower() == "done"
+        and (
+            "[MERGE-RECEIPT]" in str(row_dict.get("description") or "")
+            or "[MERGE-RECEIPT]" in str(row_dict.get("result") or "")
+        )
+    ):
+        return True, "eligible", "merge_receipt", {}
 
     # Falls task_content_version durch ein späteres Schema-Upgrade (z.B. Backfill-Spalten) abweicht,
     # prüfen wir, ob ein kryptographisch vollständiges, nach Abnahme unverändertes Receipt vorliegt.
@@ -2566,12 +2739,18 @@ eview mit github_external_review=True (kein doppeltes internes Review im Default
                     (new_desc, task_id),
                 )
             conn.commit()
+            cleaned = False
+            try:
+                cleaned = bool(cleanup_task_worktree(task_id, delete_branch=False, db_path=conn))
+            except Exception:
+                cleaned = False
             return {
                 "task_id": task_id,
                 "status": "done",
                 "action": "completed_on_merge",
                 "github_external_review": external_review,
                 "receipt": receipt,
+                "worktree_cleaned": bool(cleaned),
             }
 
         if state_raw == "CLOSED":

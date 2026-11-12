@@ -157,6 +157,110 @@ style="background: var(--bg-dark); color: var(--text)">
                 </div>
             </div>
 
+            <!-- Schnell-Prompt & Agenten-Dialog Card -->
+            <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg lg:col-span-2">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-xl font-bold text-gray-200 flex items-center gap-2">
+                        <span>💬</span> Schnell-Prompt & Dialog
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <select id="quick-prompt-select" onchange="selectQuickPromptTemplate()" class="text-xs bg-[#171b28] text-gray-300 border border-[#1e2236] rounded px-2 py-1 focus:border-bach-accent outline-none">
+                            <option value="">-- Vorlage aus Bibliothek wählen --</option>
+                        </select>
+                        <a href="/prompt-library" class="text-xs text-gray-400 hover:text-bach-accent transition-colors" title="Prompt-Bibliothek">Bibliothek ↗</a>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <textarea
+                        id="quick-prompt-input"
+                        rows="3"
+                        placeholder="Nachricht oder Prompt an den Agenten eingeben (z. B. Aufgabenanalyse, Recherche, Code-Review)..."
+                        class="w-full bg-[#171b28] border border-[#1e2236] rounded-lg p-3 text-sm text-gray-200 placeholder-gray-500 focus:border-bach-accent focus:outline-none resize-y transition-all"
+                    ></textarea>
+                    <div class="flex flex-wrap justify-between items-center gap-2">
+                        <div class="flex items-center gap-2">
+                            <label for="quick-prompt-target" class="text-xs text-gray-400">Ziel:</label>
+                            <select id="quick-prompt-target" class="text-xs bg-[#171b28] text-gray-300 border border-[#1e2236] rounded px-2 py-1 focus:border-bach-accent outline-none">
+                                <option value="buddha">Buddha (Persönlicher Assistent)</option>
+                                <option value="idle">Idle / Hintergrund-Worker</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onclick="runQuickPromptInChat()"
+                                class="px-3 py-1.5 text-xs font-semibold bg-[#2a6850] hover:bg-[#348062] text-white rounded-lg transition-all flex items-center gap-1.5 shadow"
+                                title="Prompt direkt an den Chat senden und Antwort generieren"
+                            >
+                                <span>🚀</span> Direkt ausführen
+                            </button>
+                            <button
+                                type="button"
+                                onclick="openQuickPromptInChat()"
+                                class="px-3 py-1.5 text-xs font-semibold bg-bach-accent text-white rounded-lg hover:opacity-90 transition-all flex items-center gap-1.5 shadow"
+                            >
+                                <span>💬</span> Im Buddha-Chat öffnen
+                            </button>
+                            <a
+                                href="/chat"
+                                class="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 border border-[#1e2236] rounded-lg hover:border-gray-500 transition-all"
+                            >
+                                Verlauf & Sessions →
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 📦 Standalone-Module & Update-Zentrale -->
+            <div class="bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg lg:col-span-2">
+                <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-xl font-bold text-gray-200 flex items-center gap-2">
+                            <span>📦</span> Standalone-Module & Update-Zentrale
+                        </h2>
+                        <span id="modules-active-badge" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-900/60 text-emerald-400 border border-emerald-700">
+                            Lade Status...
+                        </span>
+                        <span id="modules-update-badge" class="hidden px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-900/60 text-amber-300 border border-amber-600 animate-pulse">
+                            📦 Updates verfügbar
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            id="modules-update-btn"
+                            type="button"
+                            onclick="triggerModulesUpdate()"
+                            class="px-3 py-1.5 text-xs font-semibold bg-[#1e2236] text-gray-200 border border-[#2a304a] rounded-lg hover:bg-[#252b42] transition-all flex items-center gap-1.5 shadow"
+                        >
+                            <span>📦</span>
+                            <span>Auf Updates prüfen</span>
+                        </button>
+                        <button
+                            id="modules-sync-btn"
+                            type="button"
+                            onclick="triggerModulesLiveSync()"
+                            class="px-3 py-1.5 text-xs font-semibold bg-bach-accent text-white rounded-lg hover:opacity-90 transition-all flex items-center gap-1.5 shadow"
+                        >
+                            <span id="modules-sync-spinner" class="hidden animate-spin">🔄</span>
+                            <span id="modules-sync-icon">🔄</span>
+                            <span>Jetzt synchronisieren (Live-Sync)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <p class="text-xs text-gray-400 mb-3">
+                    Autarke, modularisierte Dienste von BACH & Ocean. Werden bei Updates synchronisiert und hot-wired:
+                </p>
+
+                <!-- Modul-Kacheln Grid -->
+                <div id="modules-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-3">
+                    <!-- Wird dynamisch befüllt -->
+                </div>
+
+                <div id="modules-sync-msg" class="text-xs text-gray-400 mt-2 hidden p-2 bg-[#171b28] rounded border border-[#1e2236]"></div>
+            </div>
+
             <!-- Task Statistik / Scanner Monitor -->
             <div id="scanner-status" class="hidden bg-[#111420] border border-[#1e2236] rounded-xl p-6 shadow-lg"></div>
         </div>
@@ -169,8 +273,77 @@ style="background: var(--bg-dark); color: var(--text)">
     <script src="/static/js/api.js?v=2"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script src="/static/js/app.js?v=2"></script>
+    <script src="/static/js/prompt-chat-draft.js?v=1"></script>
     <script>
         const esc = escapeHtml;
+
+        // Quick-Prompts & Dialog
+        async function loadQuickPromptTemplates() {
+            try {
+                const res = await fetch('/api/prompt-library');
+                if (!res.ok) return;
+                const data = await res.json();
+                const sel = document.getElementById('quick-prompt-select');
+                if (sel && data.items && Array.isArray(data.items)) {
+                    data.items.forEach(item => {
+                        const opt = document.createElement('option');
+                        opt.value = item.id;
+                        opt.textContent = (item.category ? `[${item.category}] ` : '') + item.name;
+                        sel.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.warn('Quick prompts could not be loaded:', e);
+            }
+        }
+
+        async function selectQuickPromptTemplate() {
+            const sel = document.getElementById('quick-prompt-select');
+            const id = sel ? sel.value : null;
+            if (!id) return;
+            try {
+                const res = await fetch(`/api/prompt-library/${id}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.item && data.item.text) {
+                    const textarea = document.getElementById('quick-prompt-input');
+                    if (textarea) {
+                        textarea.value = data.item.text;
+                        textarea.focus();
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load prompt template:', e);
+            }
+        }
+
+        function openQuickPromptInChat() {
+            const input = document.getElementById('quick-prompt-input');
+            const text = input ? input.value.trim() : '';
+            if (!text) {
+                alert('Bitte gib zuerst einen Prompt oder eine Nachricht ein.');
+                return;
+            }
+            if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
+                window.BachChatDraft.store(text);
+            }
+            window.location.assign('/chat');
+        }
+
+        function runQuickPromptInChat() {
+            const input = document.getElementById('quick-prompt-input');
+            const text = input ? input.value.trim() : '';
+            if (!text) {
+                alert('Bitte gib zuerst einen Prompt oder eine Nachricht ein.');
+                return;
+            }
+            const targetEl = document.getElementById('quick-prompt-target');
+            const target = targetEl ? targetEl.value : 'buddha';
+            if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
+                window.BachChatDraft.store(text, null, { autorun: true, slot_id: target === 'idle' ? 'idle_worker' : 'buddha_chat' });
+            }
+            window.location.assign('/chat');
+        }
 
         // Deadlines laden (Task #575)
         async function loadDeadlines() {
@@ -195,8 +368,135 @@ style="background: var(--bg-dark); color: var(--text)">
             } catch (e) { console.error('Deadlines API Fehler:', e); }
         }
 
+        // Standalone-Module & Live-Sync
+        async function loadModulesStatus() {
+            try {
+                const res = await fetch('/api/modules/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                const badge = document.getElementById('modules-active-badge');
+                const grid = document.getElementById('modules-grid');
+                if (badge && data.standalone_count !== undefined) {
+                    badge.textContent = `${data.standalone_count}/${data.modularized_total} aktiv (Standalone)`;
+                }
+                if (grid && data.modularized_services) {
+                    grid.innerHTML = '';
+                    for (const [name, info] of Object.entries(data.modularized_services)) {
+                        const isStand = info.standalone;
+                        const el = document.createElement('div');
+                        el.className = `p-2 rounded border text-xs flex items-center justify-between ${
+                            isStand ? 'bg-[#171b28] border-emerald-800/60 text-gray-200' : 'bg-[#171b28] border-yellow-800/60 text-yellow-300'
+                        }`;
+                        el.innerHTML = `
+                            <span class="truncate font-mono" title="${esc(name)}">${esc(name)}</span>
+                            <span class="inline-block w-2 h-2 rounded-full ${isStand ? 'bg-emerald-400' : 'bg-yellow-400'} ml-1.5 flex-shrink-0" title="${isStand ? 'Standalone Modul aktiv' : 'Legacy Fallback'}"></span>
+                        `;
+                        grid.appendChild(el);
+                    }
+                }
+
+                // Update-Check
+                try {
+                    const updRes = await fetch('/api/modules/update-check');
+                    if (updRes.ok) {
+                        const updData = await updRes.json();
+                        const updBadge = document.getElementById('modules-update-badge');
+                        const updBtn = document.getElementById('modules-update-btn');
+                        if (updBadge) {
+                            if (updData.has_updates && updData.updates_count > 0) {
+                                updBadge.textContent = `📦 ${updData.updates_count} Update(s) verfügbar`;
+                                updBadge.classList.remove('hidden');
+                                if (updBtn) updBtn.classList.add('border-amber-500', 'text-amber-300');
+                            } else {
+                                updBadge.classList.add('hidden');
+                                if (updBtn) updBtn.classList.remove('border-amber-500', 'text-amber-300');
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.debug('Module update check failed:', err);
+                }
+            } catch (e) {
+                console.warn('Failed to load modules status:', e);
+            }
+        }
+
+        async function triggerModulesLiveSync() {
+            const btn = document.getElementById('modules-sync-btn');
+            const spinner = document.getElementById('modules-sync-spinner');
+            const icon = document.getElementById('modules-sync-icon');
+            const msg = document.getElementById('modules-sync-msg');
+            if (btn) btn.disabled = true;
+            if (spinner) spinner.classList.remove('hidden');
+            if (icon) icon.classList.add('hidden');
+            if (msg) {
+                msg.classList.remove('hidden');
+                msg.textContent = 'Synchronisiere Standalone-Module und aktualisiere Hot-Wiring...';
+            }
+            try {
+                const res = await fetch('/api/modules/sync', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    if (msg) {
+                        const switched = data.sync_report ? data.sync_report.total_switched : 'alle';
+                        msg.textContent = `✓ Erfolgreich synchronisiert! ${switched} Standalone-Module aktiv gebunden.`;
+                        msg.className = 'text-xs text-emerald-400 mt-2 p-2 bg-[#171b28] rounded border border-emerald-800/60';
+                    }
+                    await loadModulesStatus();
+                } else {
+                    if (msg) {
+                        msg.textContent = `Fehler beim Synchronisieren: ${data.error || 'Unbekannter Fehler'}`;
+                        msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                    }
+                }
+            } catch (e) {
+                if (msg) {
+                    msg.textContent = `Netzwerkfehler: ${e.message}`;
+                    msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                }
+            } finally {
+                if (btn) btn.disabled = false;
+                if (spinner) spinner.classList.add('hidden');
+                if (icon) icon.classList.remove('hidden');
+            }
+        }
+
+        async function triggerModulesUpdate() {
+            const btn = document.getElementById('modules-update-btn');
+            const msg = document.getElementById('modules-sync-msg');
+            if (btn) btn.disabled = true;
+            if (msg) {
+                msg.classList.remove('hidden');
+                msg.textContent = 'Prüfe Quell-Repositories auf neuere Modulversionen...';
+            }
+            try {
+                const res = await fetch('/api/modules/update?dry_run=true', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    if (msg) {
+                        msg.textContent = data.message || 'Prüfung abgeschlossen.';
+                        msg.className = 'text-xs text-gray-300 mt-2 p-2 bg-[#171b28] rounded border border-[#2a304a] whitespace-pre-wrap font-mono';
+                    }
+                } else {
+                    if (msg) {
+                        msg.textContent = `Fehler: ${data.message || data.error || 'Fehlgeschlagen'}`;
+                        msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                    }
+                }
+            } catch (e) {
+                if (msg) {
+                    msg.textContent = `Netzwerkfehler: ${e.message}`;
+                    msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                }
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             loadDeadlines();
+            loadQuickPromptTemplates();
+            loadModulesStatus();
         });
     </script>
 </body>

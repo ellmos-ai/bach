@@ -25,6 +25,7 @@ description: >
 - 通过提供的 SSH 访问连接 Mac Studio；不要自行设置访问凭据。项目位于 `$BACH_ROOT`（Mac Studio 上为 `~/services/bach`），Python 使用其 venv。阅读 `AGENTS.md` 以及你所工作的子项目的指示。
 - **模式B（混合）** 是主动协作代理的常态。如果你只处理任务、不将 BACH 作为会话使用，**模式A（库）** 就已足够：下面的租约路径通过 lead 服务运行，无需启动会话。模式C（会话）仅在明确要求时使用。
 - 在第一个任务之前阅读当前计划 `Desktop\OCEAN\AKTUELLER-PLAN.md` 和 `MODUL-ZUORDNUNG.md`（构建位置）。
+
 ### 2. 查找空闲任务
 - **原生方式：** `TaskLeaseClient.task_candidates(limit=100, offset=…)`（读取所有页面，而不只第一页），随后用 `task_snapshot(task_id)` 获取完整描述。`bach task list` 仅用于查看同样的任务。
 - **选择规则：**
@@ -51,6 +52,7 @@ client.renew(task_id, lease_id=ack.lease_id, fence=ack.fence)   # rechtzeitig, a
 - 如果 `renew` 被拒绝、租约已过期或fence已变更：**立即停止对该任务的所有写入操作。** 在内容变更得到确认后，更新已保存的任务版本。
 - **不要使用：** `bach task claim`（无fence/租约ID的旧式claim）和 `~/compute/luna-gui/task_tool.py claim`（仅设置 `assigned_to`，无租约）。两者都不是原生认领，无法防止重复处理。`task_tool.py note`（向描述追加文本）和 `list` 可作为临时手段使用，直到出现原生替代方案。
 - 签名必须从 `system/hub/_services/task_lease_client.py` 读取，而不是以本示例为准。
+
 ### 4. 工作
 - **每个任务使用独立工作树**，基于 `origin/main`：`git worktree add ~/services/bach-worktrees/<zweig> -b <zweig> origin/main`。分支名 `<agent>/<task>-<kurz>-<datum>`。主检出 `~/services/bach` 已被占用（他人的未提交更改）：不在那里工作、测量或构建。
 - **构建位置：** 新的业务逻辑应按照 `MODUL-ZUORDNUNG.md` 放入对应的 Ocean 模块仓库，而不是 BACH 核心。
@@ -343,13 +345,6 @@ from bach_api import (
     app,         # app().execute("handler", "operation", ["args"])
 )
 ```
-    # Plugin-API (Dynamische Erweiterung)
-    plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
-
-    # Raw-Zugriff (beliebiger Handler)
-    app,         # app().execute("handler", "operation", ["args"])
-)
-```
 
 ##### 何时使用哪种方式
 
@@ -391,6 +386,51 @@ from bach_api import (
 *仅在模式 B（混合）和 C（会话）中。模式 A 跳过本节。*
 
 ---
+
+### (1) 现在启动 BACH [B/C]
+
+**模式 C（会话/CLI）：**
+
+```bash
+cd system
+python bach.py --startup --partner=claude --mode=silent --watch
+```
+
+**模式 B（混合/API —— 推荐）：**
+
+```python
+from bach_api import session
+session.startup(partner="claude", mode="silent")
+```
+
+**适用于 Gemini：**
+
+```python
+# Modus B (API)
+session.startup(partner="gemini", mode="silent")
+# Modus C (CLI)
+# python bach.py --startup --partner=gemini --mode=silent --watch
+```
+
+---
+
+### (2) 系统：加载你的系统知识 [B/C]
+
+```bash
+bach help cli
+bach help bach_info
+bach help features
+bach help naming
+bach help guidelines
+bach help architecture
+# --> bach help injectors
+```
+
+或 API：`help.run("cli")`、`help.run("features")` 等。
+
+#### Handler 发现与搜索
+
+BACH 在 `hub/` 中有 113+ 个 Handler。**每个 Handler 都是一条 CLI 命令。** 要查找 Handler、工具、Skill 或帮助主题：
 
 ```bash
 # Fuzzy-Suche in Help-Themen (187+ Themen, Fuzzy-Match!)
@@ -622,6 +662,8 @@ bach help practices
 
 **路径：** `system/skills/workflows/`
 
+---
+
 ## 主题包（按需阅读 —— 所有模式）
 
 ### 主题：协作（包：TEAMARBEIT）
@@ -734,48 +776,6 @@ bach help web_scrape
 
 ### 主题：自我扩展（包：SELF-EXTENSION）[B/C]
 
-*何时阅读：* 你缺少某项能力，或想扩展 BACH。
-
-```bash
-bach help self-extension
-bach help hooks
-bach help skills
-```
-
-**创建新能力（5 种类型）：**
-
-```bash
-bach help trash
-bach help migrate
-bach help distribution
-```
-
----
-
-### 主题：读取网页（包：WEB）
-
-*何时阅读：* 你需要抓取网页、提取内容或执行网页分析。
-
-```bash
-bach help web_parse
-bach help web_scrape
-```
-
-**两个 Handler，用于不同目的：**
-
-| Handler | 命令 | 目的 | 技术 |
-|---------|--------|-------|---------|
-| `web_parse` | `bach web-parse url/clean <url>` | **内容提取**（正文作为 Markdown） | trafilatura/html2text |
-| `web_scrape` | `bach web-scrape get/links/forms/headers <url>` | **结构分析**（链接、表单、Headers） | requests + Regex |
-
-**建议：** 文本内容用 `web-parse clean <url>`（移除 Nav/Header/Footer）。原始数据或链接列表用 `web-scrape`。两者都使用 HTTP 请求 —— JS 渲染的页面只会返回服务端 HTML 部分。
-
-**技能：** `skills/workflows/webseiten-lesen.md` —— 带决策树的详细流程。
-
----
-
-### 主题：自我扩展（包：SELF-EXTENSION）[B/C]
-
 *何时阅读：* 你缺少某项能力，或者想扩展 BACH。
 
 ```bash
@@ -834,7 +834,6 @@ plugins.load_plugin("plugins/mein-plugin/plugin.json")
 ```bash
 # CLI: Plugin-Verwaltung
 bach plugins list          # Geladene Plugins
-```
 bach plugins create name   # Plugin scaffolden
 bach plugins load pfad     # Plugin laden
 bach plugins unload name   # Plugin entladen

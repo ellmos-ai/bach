@@ -47,6 +47,136 @@ BACH использует Codex и как полноценный бэкенд в
 
 **BACH** — текстовая операционная система, которая позволяет большим языковым моделям (LLM) автономно работать, учиться и самоорганизовываться. Как часть семейства **ellmos** (операционных систем для сверхбольших языковых моделей), BACH предоставляет комплексную инфраструктуру для управления задачами и знаниями, автоматизации и оркестрации LLM.
 
+## 🧭 Базовое управление: идентичность и поток полномочий, модель документации 3 причин и прозрачные правила обработки решений
+
+BACH и Ocean управляют своим автономным поведением с помощью **прозрачных, проверяемых и настраиваемых пользователем правил обработки решений (`decision_processing_rules`)**. Каждая проверка полномочий, классификация расхождений документации и ветвление действий формирует детерминированную квитанцию аудита (`decision_rule_trace`).
+
+### 1. Идентичность, 3-уровневое туннелирование полномочий и защита от «пустыни полномочий»
+
+- **Идентичность против полномочий:** **Идентичность** привязана к учетной записи ОС и зарегистрированному устройству/каналу (секреты остаются скрытыми в локальной связке ключей). **Полномочия** исходят от пользователя через **каналы оператора** (консоль, Telegram, чат GUI системы) к назначенным субагентам и фоновым воркерам.
+- **Природа (автоматическая эрозия и дрейф) против терраформирования (намеренное изменение):** Эрозия и дрейф происходят естественным образом в ходе использования системы (сжатие контекста, смена сессий, течение времени) — искусственные cron-задачи не аннулируют действующие решения. Намеренные правки в `DECISIONS.md`, `AKTUELLER-PLAN.md`, `USER.md` или коде представляют собой **терраформирование**: устаревшие записи помечаются как `superseded` непосредственно в источнике.
+- **3-уровневое туннелирование полномочий и каскад внутрь (Inward-First) (`open-ocean/tools/escalation_ladder.py`):**
+  1. **Уровень 1 — Семантическое туннелирование полномочий (~80% повседневной обратимой работы):** Быстрое исполнение в рамках активной цели/плана (`authority_ref`, `active_goal_or_plan_id`), предотвращающее избыточные запросы к пользователю (**`error_authority_desert` / пустыня полномочий**).
+  2. **Уровень 2 — Детерминированный туннель подтверждения цитатой (~15% пороговых переходов, `ellmos-authority-evidence`):** Заимствован из `evidence.py` проекта NemoFold; проверяет менее чем за 1 мс (`validate_quote_tunnel_evidence`), присутствует ли приведенная точная цитата (`literal_quote`) **дословно** и без статуса `superseded` в исходном документе (`DECISIONS.md`, `transcript.jsonl`, `AKTUELLER-PLAN.md`).
+  3. **Уровень 3 — Жесткие криптографические и блокирующие барьеры (~5% необратимых или высокорисковых действий):** Обеспечиваются через `lock_status.py` (`LOCK.user.*`), секретный вопрос с солью (`ellmos-installer`) и сертификаты Ed25519 `capability-grant.v1`.
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. Источник: Природа (дрейф) против терраформирования (намеренно)"]
+        U["Пользователь в канале оператора
+(Консоль, Telegram, GUI-чат)"]:::userLayer
+        TF["Терраформирование (намеренное формирование)
+DECISIONS.md, План, USER.md, policy-registry"]:::userLayer
+        NAT["Природа и тектоника (автоматический дрейф)
+Сжатие контекста, смена сессий, время"]
+        U -->|"Формирует"| TF
+    end
+
+    subgraph L1["2. Когнитивная система и 3-уровневое туннелирование полномочий"]
+        COG["Когнитивная система + WorkflowHookers
+(Метапознание, цели, планы, навыки -> Желание действовать)"]:::cogLayer
+        T1["Уровень 1 (~80% Обратимо)
+Семантическое туннелирование полномочий"]:::tunnelLayer
+        T2["Уровень 2 (~15% Пороги)
+Детерминированный туннель цитат (<1мс дословная проверка)"]:::tunnelLayer
+        T3["Уровень 3 (~5% Необратимо)
+Жесткий барьер (LOCK.user / Хэш безопасности / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"Дословное совпадение"| T2
+        NAT -.->|"Эродированная цитата отклоняется"| T2
+    end
+
+    subgraph L2["3. Проверка полномочий, каскад внутрь и рефлексия"]
+        CHK{"Проверка полномочий:
+Разрешено действовать?"}:::tunnelLayer
+        ACT["ДА: Немедленно выполнить"]:::cogLayer
+        ASK["НЕТ: Каскад внутрь (Inward-First)
+1. Цель/Контекст -> 2. DECISIONS/USER.md
+-> 3. Родительский оркестратор -> 4. Барьер пользователя"]:::tunnelLayer
+        REF["Последействие и обучение
+Предотвращает пустыню полномочий (error_authority_desert)"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"Да"| ACT
+        CHK -->|"Нет"| ASK
+        ASK -->|"Разрешено"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. Модель документации 3 причин и настраиваемые правила обработки решений (`system/tools/llmauto/config.json`)
+
+Когда автоматическая верификация документации (`ellmos-doc-keeper` + проверка утверждений NemoFold) выявляет несоответствие между документацией (`system/docs/help/*.txt`, `README.md`, `SKILL.md`, GUI `/help`) и реальным состоянием кода, она **никогда слепо не перезаписывает целевую архитектуру**. Вместо этого `classify_doc_reality_diff()` классифицирует расхождение по **3 детерминированным причинам**, а `resolve_doc_machine_dispatch()` направляет его в соответствии с прозрачными и комбинируемыми **правилами обработки решений**:`
+
+| Причина (`classify_doc_reality_diff`) | Значение | Прозрачные ветви действий (`selected_branches` — отдельно или в комбинации) |
+|---|---|---|
+| **1. `unintended_erosion`** *(Непреднамеренная эрозия / дрейф)* | Документация описывает требуемое поведение, но код или сервис непреднамеренно сломался или отклонился. | **Сохранить SOLL (цель) в документации** + добавить предупреждение IST (факт) + отправить **`["local_taskplan", "user_notification"]`** (создает задачу исправления P1 для фонового воркера и уведомляет пользователя; опционально комбинируется с `local_genie_marblerun` или `gitlab_wishes_come_true`). |
+| **2. `planned_terraforming_pending`** *(Запланированное терраформирование в ожидании)* | Документация описывает запланированную целевую архитектуру (SOLL) из дорожной карты/`DECISIONS.md`, которая еще не завершена в коде. | Проверить/скорректировать существующую задачу или создать задачу реализации P2 через **`["local_taskplan"]`** + четко разделить в документации **SOLL (с идентификатором задачи)** и **IST**. |
+| **3. `completed_terraforming_doc_lag`** *(Завершенное терраформирование, отставание документации)* | Код был намеренно обновлен (подтверждено commit/PR/`task_status=done`), документация отстает. | Выполнить **`["local_doc_update"]`**: автоматически локально обновить справку CLI в формате `.txt`, документацию `.md`, справочники CLI/API и переводы (`de/en/es/ja/ru/zh`). |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. Проверка утверждений и классификация 3 причин"]
+        CLAIM["Извлечь утверждения документации (docs/help/*.txt, README, SKILL.md, GUI /help)
+и проверить реальность кода/CLI/тестов"]:::probe
+        CLS{"Классификатор 3 причин
+(classify_doc_reality_diff)"}:::probe
+        U1["Причина 1: Непреднамеренная эрозия
+(Код/сервис непреднамеренно сломался или отклонился)"]:::c1
+        U2["Причина 2: Запланированное терраформирование
+(Документация — SOLL, код еще не завершен)"]:::c2
+        U3["Причина 3: Завершенное терраформирование
+(Код намеренно обновлен, документация отстает)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. Прозрачные и комбинируемые правила обработки решений (config.json)"]
+        RULE{"Движок правил решений
+(resolve_doc_machine_dispatch)
+По причине, триггеру или явному переопределению"}:::probe
+        B1["Ветвь A: local_taskplan (По умолчанию)
+Создать задачу P1/P2 исправления или сборки в taskplan
+для фонового воркера (Buddha / Cloud)"]:::c3
+        B2["Ветвь B: local_genie_marblerun
+Запустить локальную цепочку MarbleRun
+(chains/wishes-come-true-local.json)"]:::c2
+        B3["Ветвь C: gitlab_wishes_come_true
+Функция разработчика (wishes_redirect в config.json)
+к local-genie / wishes-come-true"]:::probe
+        B4["Ветвь D: user_notification
+Уведомить оператора через входящие GUI / Telegram"]:::c1
+        B5["Ветвь E: local_doc_update
+Обновить документацию .txt/.md, ссылки CLI/API и i18n"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"Комбинируемо"| B1
+        RULE -->|"Комбинируемо"| B2
+        RULE -->|"Комбинируемо (ocean-dev)"| B3
+        RULE -->|"Комбинируемо"| B4
+    end
+```
+
 ## Контекст идентификации проекта
 
 Точнее всего BACH описывает определение **локальной операционной системы для LLM**: это постоянная рабочая среда Python/SQLite для автономных агентов, структурированной памяти, автоматизации под управлением планировщика, цепочек промптов, интеграции серверов MCP и многоязычных интерфейсов оператора. Это не оболочка для чат-бота, не размещённый SaaS для агентов, не фреймворк модульного тестирования Bash, не музыкальный проект и не библиотека конвейеров в стиле LangChain.
@@ -286,13 +416,54 @@ print(f"BACH status: {status.state} (Active handlers: {status.handlers_count})")
 ### 2. Система знаний
 Структурированная память с фактами, уроками и автоматическим объединением (6 типов памяти, более 210 таблиц БД).
 
-### 3. Платформа агентов
-11 агентов-руководителей координируют 22 экспертов для сложных задач. CLI агентов позволяет напрямую запускать, останавливать и перечислять агентов через `bach agent`, а также поддерживает очереди инструкций перед запуском, кооперативные запросы паузы и явные подтверждения безопасных контрольных точек через `bach agent checkpoint`. Очередные подсказки внедряются при запуске в созданный сеанс `CLAUDE.md`; `OPERATOR_NOTES.md` отражает управление, паузу и контрольные точки, а текущие поверхности состояния JSON предоставляют вложенный снимок `operator_control` для панелей.
+### 3. Платформа агентов — Роли Ocean, двойная маршрутизация и гибкие сокеты провайдеров (`ellmos.role-socket-catalog.v1`)
+В архитектуре Ocean/BACH проверенные **босс-агенты (координаторы)** и **отраслевые эксперты** BACH полностью сохранены, функционируя как **независимые от провайдеров роли Ocean (`roles[]`)**, подключенные к **гибким сокетам провайдеров (`model_sockets` через `clutch` + `agents-heart`)**:`
+
+- **Двойная маршрутизация (семантическая + детерминированная):**
+  - **Семантическая маршрутизация:** Зонтичные навыки (`projekt-pipeline-umbrella`, `therapie-umbrella`, `selbstmanagement` и др.) и `semantic-persona-routing` (`persona_router.py`) динамически направляют задачи и активируют соответствующий набор навыков и контекст роли.
+  - **Детерминированная маршрутизация:** `ellmos-controlcenter-mcp` (`controlcenter_resolve_semantic_route`, `controlcenter_switch_profile`, `controlcenter_find_skill`) обеспечивает строгое безизбыточное переключение профилей и маршрутизацию по правилам без галлюцинаций.
+- **Гибкие сокеты провайдеров (`reasoning_coordinator`, `domain_specialist`, `fast_worker`):** Роли никогда жестко не привязываются к конкретному поставщику. Каждая роль подключается к стандартизированному сокету, который во время выполнения связывается с **Claude (`claude`)**, **OpenAI/Codex (`codex`)**, **Gemini/Antigravity (`agy`)**, **Kimi (`kimi`)**, **локальной Ollama (`ollama`)** или **OpenRouter (`openrouter`)**.`
+- **Библиотека агентов с 3 вкладками (`/agenten/bibliothek`, `ellmos.agent-library.v1`):** Функция `discover_ocean_agent_library_templates()` автоматически заполняет шаблоны библиотеки агентов в GUI и CLI из каталога координаторов и экспертов BACH (`ati`, `bueroassistent`, `finanz-assistent`, `gesundheitsassistent`, `persoenlicher-assistent`, `produktivitaet` + 22 эксперта) и **17 явных ролей модулей (`roles[]`)**, объявленных в 9 репозиториях модулей Ocean (`task-master`, `ticket-master`, `MarbleRun`, `system-auditor`, `compare-race`, `ellmos-installer`, `foerderplaner`, `ai-media-editor`, `clip-storyboard-director`).`
+- **Управление оператора:** Команда `bach agent start/stop/list/pause/resume/checkpoint/steer` управляет активными запусками, инструкциями перед стартом (`OPERATOR_NOTES.md`) и подтверждениями безопасных контрольных точек.`
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>На иллюстрации показаны пять первоначальных агентов-руководителей BACH: ati, officeassistant, finance-assistant, health-assistant, personal-assistant. В текущей системе доступны 11 агентов-руководителей и 22 эксперта.</i>
+  <i>На иллюстрации показаны исходные роли координаторов BACH (ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent), работающие на гибких сокетах провайдеров Ocean наряду с 17 ролями из манифестов модулей.</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. Уровень двойной маршрутизации (Семантическая vs Детерминированная)"]
+        SEM["Семантическая маршрутизация
+Зонтичные навыки (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["Детерминированная маршрутизация
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. Роли Ocean и библиотека агентов с 3 вкладками (ellmos.agent-library.v1)"]
+        COORD["6 ролей координаторов (ранее боссы BACH)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["22+ эксперта предметных областей и 17 ролей модулей (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. Гибкие сокеты провайдеров (model_sockets + clutch + agents-heart)"]
+        SOCK["Стандартизированные сокеты моделей
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["Подключаемые поставщики LLM
+Claude | Codex/GPT | Gemini/AGY | Kimi | Локальная Ollama | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. Система промптов
 Централизованное управление шаблонами промптов, коллекциями досок и полным версионированием (`bach prompt`).

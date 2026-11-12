@@ -36,7 +36,7 @@ NEUTRAL_REASON_CODES = PROVIDER_REASON_CODES | frozenset({
     "anonymization_unavailable", "anonymization_unsupported", "artifact_cleanup_partial",
     "artifact_store_unavailable", "cloud_consent_unavailable", "cloud_route_unverified",
     "coverage_unavailable", "coverage_unverified", "host_port_unavailable",
-    "hybrid_policy_unavailable", "local_route_unverified", "provider_ambiguous",
+    "hybrid_policy_unavailable", "local_route_unverified", "ner_unavailable", "provider_ambiguous",
     "provider_invalid", "provider_missing", "receipt_unavailable", "request_blocked",
     "receipt_required", "residual_data_detected", "route_policy_mismatch", "route_unavailable",
     "source_extraction_incomplete", "source_revision_changed", "unsupported_source",

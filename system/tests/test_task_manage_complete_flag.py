@@ -179,3 +179,76 @@ def test_invalid_result_names_only_the_fixed_public_reason():
     reply, calls = _run({"action": "submit_result", "task_id": 7, "result": "erledigt", "complete": True})
     assert "Erledigungsbestätigung ist kein fachliches Ergebnis" in reply and calls == []
     assert str(bach_tools._invalid_result_text(ValueError("private /Users/x path"))) == "Taskergebnis ist ungültig."
+
+
+@pytest.mark.parametrize("result", [
+    "Die Pflichtarbeit ist unvollständig erfüllt; der Pflichtteil ist noch offen.",
+    "Die Aufgabe ist unvollständig.",
+    "The required work is not yet complete.",
+    '{"status":"incomplete","complete":false}',
+    "No required work is incomplete. The required work remains incomplete.",
+])
+def test_complete_true_rejects_explicit_incomplete_result(result):
+    reply, calls = _run({"action": "submit_result", "task_id": 7, "result": result, "complete": True})
+    assert isinstance(reply, bach_tools.ToolErrorText)
+    assert reply._code == "invalid_task_result"
+    assert reply == bach_tools._INCOMPLETE_RESULT_HINT
+    assert calls == []
+
+
+@pytest.mark.parametrize("result", [
+    "All required work is complete.",
+    "No required work remains incomplete.",
+    "Die Pflichtarbeit ist nicht unvollständig.",
+])
+def test_complete_true_accepts_non_incomplete_and_explicit_negation(result):
+    reply, calls = _run({"action": "submit_result", "task_id": 7, "result": result, "complete": True})
+    assert reply == "ok"
+    assert calls == [{"action": "submit_result", "task_id": 7, "result": result}]
+
+
+def test_decomposed_parent_rejects_complete_true_in_tool_and_cli():
+    from hub._services.chat.bound_task_command import bound_task_command
+    binding = _Binding()
+    binding.decomposition_receipt = {"task_id": 7, "created_ids": [8, 9]}
+    reply = bach_tools.exec_tool(
+        "task_manage",
+        {"action": "submit_result", "task_id": 7, "result": "Zerlegt in #8 und #9", "complete": True},
+        "safe",
+        worker_task_binding=binding,
+        allowed_tools=["task_manage"],
+    )
+    assert isinstance(reply, bach_tools.ToolErrorText)
+    assert reply._code == "invalid_task_arguments"
+    assert "Zerlegung ist kein Abschluss" in str(reply)
+    assert binding.calls == []
+    with pytest.raises(ValueError, match="Zerlegung ist kein Abschluss"):
+        bound_task_command("done", ["7", "--complete=true", "--result", "Zerlegt in #8 und #9"], binding)
+
+
+def test_bach_command_done_surfaces_complete_hint_and_self_check_error():
+    from hub._services.chat.bound_task_command import bound_task_command
+    from hub._services.task_lease_client import LeaseSelfCheckRequiredError
+    binding = _Binding()
+    binding.execute_task_command = lambda op, a: bound_task_command(op, a, binding)
+    reply = bach_tools.exec_tool(
+        "bach_command",
+        {"handler": "task", "operation": "done", "args": ["7", "--result", "Fertig"]},
+        "safe",
+        worker_task_binding=binding,
+    )
+    assert "BLOCKIERT" in reply and "--complete=true" in reply
+
+    def _raise_self_check(op, a):
+        raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message)
+
+    binding.execute_task_command = _raise_self_check
+    reply2 = bach_tools.exec_tool(
+        "bach_command",
+        {"handler": "task", "operation": "done", "args": ["7", "--complete=true", "--result", "Fertig"]},
+        "safe",
+        worker_task_binding=binding,
+    )
+    assert isinstance(reply2, bach_tools.ToolErrorText)
+    assert reply2._code == "invalid_task_result"
+    assert reply2 == LeaseSelfCheckRequiredError.user_message

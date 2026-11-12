@@ -20,6 +20,8 @@ from hub.base import BaseHandler
 from hub._services.cloud.cloud_manager import get_cloud_manager
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class CloudHandler(BaseHandler):
     """Handler fuer Cloud-Sync Operationen."""
 

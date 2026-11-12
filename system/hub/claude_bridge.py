@@ -52,6 +52,8 @@ from typing import Tuple, List
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class ClaudeBridgeHandler(BaseHandler):
     """CLI-Handler fuer den Claude Telegram Bridge Daemon."""
 

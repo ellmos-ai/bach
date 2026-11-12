@@ -35,6 +35,7 @@ bach update migrations     Ausstehende Migrationen anzeigen/ausfuehren
 """
 
 import json
+import os
 import importlib
 import importlib.util
 import subprocess
@@ -79,6 +80,8 @@ def _parse_migration_run_args(args) -> tuple[list[str] | None, bool]:
     return selected or None, dry_run
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class UpdateHandler(BaseHandler):
     """Handler fuer bach update Operationen."""
 
@@ -111,6 +114,9 @@ class UpdateHandler(BaseHandler):
             "rollback": t("update_rollback_desc", default="Rollback zum letzten Pre-Update-Backup"),
             "verify": t("update_verify_desc", default="System-Integritaet pruefen"),
             "migrations": t("update_migrations_desc", default="Migrationen anzeigen/ausfuehren"),
+            "skills": t("update_skills_desc", default="Skills-Versionen pruefen und synchronisieren (bach update skills [--apply])"),
+            "modules": t("update_modules_desc", default="Module- und Adapter-Status pruefen und synchronisieren (bach update modules [--sync])"),
+            "all": t("update_all_desc", default="Gesamtes System pruefen: Core, Skills und Module"),
         }
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -124,6 +130,12 @@ class UpdateHandler(BaseHandler):
             return self._rollback(args, dry_run)
         elif operation == "verify":
             return self._verify()
+        elif operation == "skills":
+            return self._update_skills(args, dry_run)
+        elif operation == "modules":
+            return self._update_modules(args, dry_run)
+        elif operation == "all":
+            return self._update_all(args, dry_run)
         elif operation == "migrations":
             sub = args[0] if args else "list"
             if sub == "run":
@@ -733,3 +745,472 @@ class UpdateHandler(BaseHandler):
             changed = len([ln for ln in status.strip().split("\n") if ln.strip()])
             info["Geaenderte Dateien"] = str(changed)
         return info if info else None
+
+    # ──────────────────────────────────────────────
+    # Skills & Modules Update/Sync (v3.15+)
+    # ──────────────────────────────────────────────
+
+    def _update_skills(self, args: list, dry_run: bool = False) -> tuple:
+        """Prüft und aktualisiert Skills aus registrierten Quellen und zentraler Bibliothek."""
+        apply_changes = ("--apply" in args or "-a" in args) and not dry_run
+        from hub.skills import SkillsHandler, parse_version
+
+        skills_handler = SkillsHandler(self.base_path)
+        sources_file = self.base_path / "data" / "skill_sources.json"
+
+        lines = ["=== SKILL UPDATE & SYNC ===", ""]
+        if not sources_file.exists():
+            lines.append(f"Keine skill_sources.json unter {sources_file} gefunden.")
+            return True, "\n".join(lines)
+
+        try:
+            registry = json.loads(sources_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return False, f"Fehler beim Lesen von skill_sources.json: {exc}"
+
+        version_sources = registry.get("version_sources", {})
+        if not version_sources:
+            lines.append("Keine version_sources in skill_sources.json registriert.")
+            return True, "\n".join(lines)
+
+        checked = 0
+        up_to_date = 0
+        needs_update = []
+        updated = 0
+
+        for skill_name, cfg in sorted(version_sources.items()):
+            checked += 1
+            # Ermittle lokale Version
+            local_skill_path = skills_handler._find_skill(skill_name)
+            local_ver = "0.0.0"
+            if local_skill_path and local_skill_path.exists():
+                skill_md = local_skill_path / "SKILL.md" if local_skill_path.is_dir() else local_skill_path
+                if skill_md.exists():
+                    header = skills_handler._extract_yaml_header(skill_md)
+                    local_ver = header.get("version") or "0.0.0"
+
+            # Ermittle zentrale Version
+            central_ver = None
+            central_source_path = None
+            for src in cfg.get("canonical", []):
+                ver, p = skills_handler._get_registered_version(src, registry_dir=str(sources_file.parent))
+                if ver:
+                    central_ver = ver
+                    central_source_path = p
+                    break
+
+            if not central_ver:
+                lines.append(f"  ? {skill_name}: keine zentrale Version ermittelbar (lokal: v{local_ver})")
+                continue
+
+            loc_tuple = parse_version(local_ver)
+            cen_tuple = parse_version(central_ver)
+
+            if cen_tuple > loc_tuple:
+                needs_update.append((skill_name, local_ver, central_ver, central_source_path, local_skill_path))
+                lines.append(f"  ! {skill_name}: Update verfuegbar (v{local_ver} -> v{central_ver})")
+            else:
+                up_to_date += 1
+                lines.append(f"  ✓ {skill_name}: aktuell (v{local_ver})")
+
+        lines.append("")
+        lines.append(f"Geprueft: {checked} Skills | Aktuell: {up_to_date} | Updates verfuegbar: {len(needs_update)}")
+
+        if needs_update and apply_changes:
+            lines.append("")
+            lines.append("WENDE UPDATES AN:")
+            lines.append("-" * 40)
+            backups_dir = self.backups_dir / "skills"
+            backups_dir.mkdir(parents=True, exist_ok=True)
+            for s_name, old_v, new_v, src_p, loc_p in needs_update:
+                if not src_p or not src_p.exists():
+                    lines.append(f"  [WARNUNG] Quelldatei fuer {s_name} existiert nicht: {src_p}")
+                    continue
+                # Backup erstellen
+                if loc_p and loc_p.exists():
+                    backup_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    if loc_p.is_dir():
+                        b_dest = backups_dir / f"{s_name}_backup_v{old_v}_{backup_ts}"
+                        shutil.copytree(loc_p, b_dest)
+                    else:
+                        b_dest = backups_dir / f"{loc_p.stem}_backup_v{old_v}_{backup_ts}{loc_p.suffix}"
+                        shutil.copy2(loc_p, b_dest)
+                # Aktualisieren
+                if src_p.is_dir():
+                    dest_dir = loc_p if loc_p else (self.base_path / "skills" / s_name)
+                    if dest_dir.exists():
+                        shutil.rmtree(dest_dir)
+                    shutil.copytree(src_p, dest_dir)
+                else:
+                    target_file = loc_p if loc_p else (self.base_path / "skills" / f"{s_name}.md")
+                    target_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_p, target_file)
+                updated += 1
+                lines.append(f"  + {s_name}: v{old_v} -> v{new_v} aktualisiert")
+            lines.append(f"Erfolgreich aktualisiert: {updated} Skill(s)")
+
+        # Multi-Device / Agent Copies spiegeln (z.B. ~/.claude/skills, ~/.codex/skills)
+        sync_copies = ("--sync-copies" in args or "--all-targets" in args) or (apply_changes and "--no-copies" not in args)
+        if sync_copies and not dry_run:
+            copy_lines = []
+            for s_name, cfg in sorted(version_sources.items()):
+                for cp in cfg.get("copies", []):
+                    if not isinstance(cp, dict):
+                        continue
+                    path_str = cp.get("path")
+                    if not path_str:
+                        continue
+                    target_p = Path(os.path.expandvars(path_str)).expanduser()
+                    source_skill = skills_handler._find_skill(s_name)
+                    if not source_skill or not source_skill.exists():
+                        for src in cfg.get("canonical", []):
+                            _, p = skills_handler._get_registered_version(src, registry_dir=str(sources_file.parent))
+                            if p and p.exists():
+                                source_skill = p
+                                break
+                    if not source_skill or not source_skill.exists():
+                        continue
+                    src_file = source_skill / "SKILL.md" if source_skill.is_dir() else source_skill
+                    if not src_file.exists():
+                        continue
+                    try:
+                        # Bei optionalen Kopien nur anlegen wenn Elternordner (z.B. ~/.claude/skills) existiert
+                        if cp.get("optional", False) and not (target_p.parent.exists() or target_p.parent.parent.exists()):
+                            continue
+                        target_p.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_file, target_p)
+                        copy_lines.append(f"  → Kopie synchronisiert ({cp.get('source')}): {target_p}")
+                    except Exception as cp_err:
+                        copy_lines.append(f"  [WARNUNG] Kopie an {target_p} fehlgeschlagen: {cp_err}")
+            if copy_lines:
+                lines.append("")
+                lines.append("SYNCHRONISIERTE KOPIEN & AGENTEN-FLOTTE:")
+                lines.append("-" * 40)
+                lines.extend(copy_lines)
+        elif needs_update and not apply_changes:
+            lines.append("")
+            lines.append("Hinweis: Nutze 'bach update skills --apply' zum Einspielen der Updates.")
+
+        return True, "\n".join(lines)
+
+    def _copy_tree_safe(self, src: Path, dst: Path):
+        """Kopiert ein Verzeichnis rekursiv ohne .git und Caches."""
+        import shutil
+        if not dst.exists():
+            dst.mkdir(parents=True, exist_ok=True)
+        for item in src.rglob("*"):
+            if item.is_dir():
+                continue
+            if any(part in (".git", "__pycache__", ".pytest_cache") for part in item.parts):
+                continue
+            rel = item.relative_to(src)
+            target = dst / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+
+    def _sync_dir_contents(self, src: Path, dst: Path) -> int:
+        """Gleicht Manifeste und Kern-Dateien von src nach dst ab, ignoriert .git und Caches."""
+        import shutil
+        count = 0
+        if not src.exists() or not dst.exists():
+            return count
+        allowed_names = {"MANIFEST.json", "ellmos-module.v2.json", "pyproject.toml", "LICENSE", "NOTICE", "README.md"}
+        for item in src.iterdir():
+            if item.is_dir():
+                continue
+            if item.name not in allowed_names and not item.name.endswith(".py"):
+                continue
+            target = dst / item.name
+            if not target.exists() or target.stat().st_mtime < item.stat().st_mtime:
+                shutil.copy2(item, target)
+                count += 1
+        return count
+
+    def _update_modules(self, args: list, dry_run: bool = False) -> tuple:
+        """Prüft und synchronisiert geteilte Module in .MODULES/ und Plan D Repos."""
+        sync_mode = any(a in ("--sync", "--install", "--apply") for a in args)
+        is_dry_run = dry_run or any(a in ("--dry-run", "-n") for a in args)
+
+        lines = ["=== MODULE & ADAPTER STATUS ===", ""]
+        modules_dir = self.base_path.parent / ".MODULES"
+        if not modules_dir.exists():
+            modules_dir = self.base_path / ".MODULES"
+
+        if not modules_dir.exists():
+            lines.append("Kein .MODULES-Verzeichnis gefunden.")
+            return True, "\n".join(lines)
+
+        module_count = 0
+        manifests = list(modules_dir.glob("**/MANIFEST.json")) + list(modules_dir.glob("**/ellmos-module.v2.json"))
+
+        lines.append(f"Gefundene Modul-Manifeste in {modules_dir}:")
+        lines.append("-" * 50)
+        for m_path in sorted(manifests):
+            try:
+                data = json.loads(m_path.read_text(encoding="utf-8"))
+                name = data.get("name") or data.get("display_name") or m_path.parent.name
+                version = data.get("version", "?")
+                desc = (data.get("description") or "")[:50]
+                entry = data.get("entry_point") or (data.get("entrypoints", {}).get("library") if isinstance(data.get("entrypoints"), dict) else "?")
+                lines.append(f"  • {name:<25} v{version:<8} [{entry}]")
+                if desc:
+                    lines.append(f"    {desc}")
+                module_count += 1
+            except (OSError, ValueError):
+                continue
+
+        lines.append("-" * 50)
+        lines.append(f"Gesamt: {module_count} geteilte(s) Modul(e) registriert.")
+        lines.append("Alle Module sind self-contained und interoperabel mit BACH und Ocean.")
+
+        # Standalone / Ocean Repositories aus Katalog oder .CONTROL synchronisieren
+        catalog_path = None
+        for candidate in (
+            modules_dir / "modules.catalog.json",
+            Path.home() / "OneDrive" / ".TOPICS" / ".AI" / ".MODULES" / "modules.catalog.json",
+            self.base_path / "data" / "modules.catalog.json",
+            self.base_path.parent / ".MODULES" / "modules.catalog.json",
+        ):
+            if candidate.exists():
+                catalog_path = candidate
+                break
+
+        standalone_modules = []
+        if catalog_path:
+            try:
+                c_data = json.loads(catalog_path.read_text(encoding="utf-8"))
+                c_mods = c_data.get("modules", {})
+                if isinstance(c_mods, dict):
+                    for mod_id, mod_info in c_mods.items():
+                        if isinstance(mod_info, dict) and (mod_info.get("source_of_truth") or mod_info.get("runtime_source")):
+                            info = dict(mod_info)
+                            info.setdefault("id", mod_id)
+                            standalone_modules.append(info)
+                elif isinstance(c_mods, list):
+                    for mod_info in c_mods:
+                        if isinstance(mod_info, dict) and (mod_info.get("source_of_truth") or mod_info.get("runtime_source")):
+                            standalone_modules.append(mod_info)
+            except Exception:
+                pass
+
+        if not standalone_modules:
+            standalone_modules = [
+                {
+                    "id": "ocean-resources",
+                    "display_name": "ocean-resources",
+                    "version": "0.2.0",
+                    "runtime_source": str(Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos")) / "ocean-resources"),
+                    "source_of_truth": {"repository": "https://github.com/ellmos-ai/ocean-resources.git"},
+                    "resolved_source": ".CONTROL/ocean-resources"
+                },
+                {
+                    "id": "agents-heart",
+                    "display_name": "agents-heart",
+                    "version": "0.2.0",
+                    "runtime_source": str(Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos")) / "agents-heart"),
+                    "source_of_truth": {"repository": "https://github.com/ellmos-ai/agents-heart.git"},
+                    "resolved_source": ".CONTROL/agents-heart"
+                }
+            ]
+
+        local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
+
+        tier_arg = None
+        for a in args:
+            if a.startswith("--tier="):
+                tier_arg = a.split("=", 1)[1].strip().lower()
+                break
+            if a.startswith("--bundle="):
+                tier_arg = a.split("=", 1)[1].strip().lower()
+                break
+        if not tier_arg:
+            for idx, a in enumerate(args):
+                if a in ("--tier", "--bundle") and idx + 1 < len(args):
+                    tier_arg = args[idx + 1].strip().lower()
+                    break
+
+        TIER_BUNDLES = {
+            "rinnsal": [
+                "open-ocean",
+                "task-master",
+                "agents-heart",
+                "condition-gates",
+            ],
+            "bach": [
+                "open-ocean",
+                "ocean-resources",
+                "agents-heart",
+                "gardener",
+                "anonymizer",
+                "doc-keeper",
+                "task-master",
+                "condition-gates",
+                "foerderplaner",
+                "ellmos-system-gui",
+                "law-checker",
+                "worksheet-generator",
+            ],
+            "meer": None,
+        }
+
+        if tier_arg:
+            if tier_arg not in TIER_BUNDLES:
+                return False, f"[FEHLER] Unbekannter Tier: '{tier_arg}'. Gültige Tiers: rinnsal, bach, meer"
+            target_ids = TIER_BUNDLES[tier_arg]
+            if target_ids is not None:
+                existing_ids = {m.get("id") for m in standalone_modules}
+                for t_id in target_ids:
+                    if t_id not in existing_ids:
+                        standalone_modules.append({
+                            "id": t_id,
+                            "display_name": t_id,
+                            "version": "latest",
+                            "runtime_source": str(local_dev / t_id),
+                            "source_of_truth": {"repository": f"https://github.com/ellmos-ai/{t_id}.git"},
+                            "resolved_source": f".CONTROL/{t_id}"
+                        })
+                standalone_modules = [m for m in standalone_modules if m.get("id") in target_ids]
+
+        target_filters = []
+        skip_next = False
+        for a in args:
+            if skip_next:
+                skip_next = False
+                continue
+            if a in ("--tier", "--bundle"):
+                skip_next = True
+                continue
+            if a.startswith("--tier=") or a.startswith("--bundle="):
+                continue
+            if not a.startswith("--") and not a.startswith("-") and a != "modules":
+                target_filters.append(a)
+
+        if target_filters:
+            filtered = [
+                m for m in standalone_modules
+                if any(t in (m.get("id"), m.get("name"), m.get("display_name")) for t in target_filters)
+            ]
+            if filtered:
+                standalone_modules = filtered
+
+        lines.append("")
+        lines.append("=== STANDALONE REPOSITORIEN & OCEAN-MODULE ===")
+        lines.append(f"Katalog: {catalog_path if catalog_path else 'Standard (ocean-resources, agents-heart)'}")
+        if tier_arg:
+            lines.append(f"Tier:    {tier_arg.upper()} ({len(standalone_modules)} Module aufgelöst)")
+        lines.append("-" * 50)
+
+        for s_mod in standalone_modules:
+            mod_id = s_mod.get("id") or s_mod.get("name") or "unknown"
+            r_source = s_mod.get("runtime_source")
+            repo_path = Path(r_source) if r_source else (local_dev / mod_id)
+            repo_exists = repo_path.exists()
+            git_url = None
+            sot = s_mod.get("source_of_truth")
+            if isinstance(sot, dict):
+                git_url = sot.get("repository")
+            res_source = s_mod.get("resolved_source") or f".CONTROL/{mod_id}"
+            control_dir = modules_dir / res_source if not Path(res_source).is_absolute() else Path(res_source)
+
+            status_label = "INSTALLIERT" if repo_exists else "NICHT GEKLONT"
+            lines.append(f"  • {mod_id:<22} [{status_label}] -> {repo_path}")
+
+            if sync_mode:
+                if not repo_exists:
+                    if is_dry_run:
+                        lines.append(f"    [DRY-RUN] Würde klonen von {git_url or control_dir} nach {repo_path}")
+                    else:
+                        cloned = False
+                        if git_url:
+                            try:
+                                import subprocess
+                                proc = subprocess.run(
+                                    ["git", "clone", git_url, str(repo_path)],
+                                    capture_output=True, text=True, timeout=60
+                                )
+                                if proc.returncode == 0:
+                                    cloned = True
+                                    lines.append(f"    [OK] Geklont von {git_url}")
+                            except Exception as exc:
+                                lines.append(f"    [WARNUNG] Git-Clone fehlgeschlagen: {exc}")
+                        if not cloned and control_dir.exists():
+                            try:
+                                self._copy_tree_safe(control_dir, repo_path)
+                                lines.append(f"    [OK] Initialisiert aus {control_dir}")
+                            except Exception as exc:
+                                lines.append(f"    [FEHLER] Kopieren fehlgeschlagen: {exc}")
+                else:
+                    if is_dry_run:
+                        lines.append(f"    [DRY-RUN] Würde Repo {repo_path} und .CONTROL abgleichen")
+                    else:
+                        if control_dir.exists():
+                            copied = self._sync_dir_contents(repo_path, control_dir)
+                            lines.append(f"    [OK] Synchronisiert mit {control_dir} ({copied} Dateien abgeglichen)")
+
+        if not sync_mode:
+            lines.append("")
+            lines.append("Hinweis: Nutze 'bach update modules --sync' zum Klonen und Synchronisieren der Modul-Repos.")
+
+        # Standalone-Modul Re-Import & Hot-Wiring (#3719, Task -23)
+        reimport_mode = sync_mode or any(a in ("--reimport", "--hotwire", "--hot-wire") for a in args)
+        if reimport_mode:
+            lines.append("")
+            lines.append("=== RE-IMPORT & HOT-WIRING (Standalone Module) ===")
+            candidate_exports = [
+                self.base_path / "exports" / "modules",
+                self.base_path / "system" / "exports" / "modules",
+            ]
+            from hub.skills import verify_selfcontained_module
+            from hub._services.ocean_stack_bridge import invalidate_module_cache
+
+            reimported_count = 0
+            seen_module_names = set()
+            for exports_dir in candidate_exports:
+                if not exports_dir.exists():
+                    continue
+                for exp_dir in sorted(exports_dir.glob("*_export")):
+                    if not exp_dir.is_dir():
+                        continue
+                    m_valid, m_errs, _, meta = verify_selfcontained_module(exp_dir)
+                    if m_valid:
+                        m_name = meta.get("name", exp_dir.name.replace("_export", ""))
+                        if m_name in seen_module_names:
+                            continue
+                        seen_module_names.add(m_name)
+                        m_ver = meta.get("version", "1.0.0")
+                        target_mod_dir = modules_dir / m_name
+                        if is_dry_run:
+                            lines.append(f"  • {m_name:<22} [DRY-RUN] Re-Import v{m_ver} nach {target_mod_dir}")
+                        else:
+                            self._copy_tree_safe(exp_dir, target_mod_dir)
+                            reimported_count += 1
+                            lines.append(f"  • {m_name:<22} [RE-IMPORTIERT] v{m_ver} -> {target_mod_dir} [OK]")
+                    else:
+                        lines.append(f"  • {exp_dir.name:<22} [WARNUNG] Nicht valide: {', '.join(m_errs)}")
+
+            if not is_dry_run and reimported_count > 0:
+                invalidate_module_cache()
+                lines.append(f"\n[OK] {reimported_count} Standalone-Modul(e) re-importiert und ueber ocean_stack_bridge hot-wired.")
+
+        # Module-Update-Scan über ModulesHandler
+        try:
+            from hub.modules import ModulesHandler
+            mod_handler = ModulesHandler(self.base_path)
+            _, mod_update_msg = mod_handler.handle("update", args, dry_run=is_dry_run)
+            lines.append("")
+            lines.append(mod_update_msg)
+        except Exception as exc:
+            lines.append(f"\n[WARNUNG] ModulesHandler update fehlgeschlagen: {exc}")
+
+        return True, "\n".join(lines)
+
+    def _update_all(self, args: list, dry_run: bool = False) -> tuple:
+        """Führt Core-Check, Skills-Check und Modules-Status zusammen aus."""
+        sections = []
+        ok1, msg1 = self._check()
+        sections.append(msg1)
+        ok2, msg2 = self._update_skills(args, dry_run=dry_run)
+        sections.append(msg2)
+        ok3, msg3 = self._update_modules(args, dry_run=dry_run)
+        sections.append(msg3)
+        return (ok1 and ok2 and ok3), "\n\n".join(sections)

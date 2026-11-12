@@ -67,10 +67,28 @@ class TestProperties:
         assert "list" in ops
         assert "info" in ops
 
-    def test_context_injector_uses_real_user_restore_command(self):
-        from tools.injectors import ContextInjector
+    def test_context_injector_uses_real_user_restore_command(self, tmp_path):
+        import sqlite3
+        from pathlib import Path
 
-        hint = ContextInjector.CONTEXT_TRIGGERS["backup"]
+        schema_dir = Path(__file__).resolve().parent.parent / "data" / "schema"
+        db = tmp_path / "s.db"
+        conn = sqlite3.connect(db)
+        conn.execute(
+            "CREATE TABLE context_triggers (id INTEGER PRIMARY KEY, trigger_phrase TEXT,"
+            " hint_text TEXT, source TEXT, agent_id TEXT DEFAULT 'default', is_active INTEGER DEFAULT 1,"
+            " updated_at TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO context_triggers (trigger_phrase, hint_text, source) VALUES ("
+            "'backup', 'Backup: bach backup create [--to-nas] | bach backup list | bach restore backup latest', 'manual')"
+        )
+        sql = (schema_dir / "migrations" / "045_context_triggers_sichtung.sql").read_text(encoding="utf-8")
+        conn.executescript(sql)
+        hint = conn.execute(
+            "SELECT hint_text FROM context_triggers WHERE trigger_phrase='backup'"
+        ).fetchone()[0]
+        conn.close()
         assert "backup_manager.py restore backup latest" in hint
         assert "bach restore backup latest" not in hint
 

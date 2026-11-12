@@ -88,3 +88,17 @@ hub/startup.py Обработчик запуска (инициализация �
 обработчик завершения работыhub/shutdown.py (завершение сеанса)
 обработчик задачhub/task.py (управление задачами)
 схема базы данных data/bach.db
+
+ПАРТНЁР И СТРУКТУРИРОВАННЫЙ ИДЕНТИФИКАТОР
+==========================================
+  bach session start --partner=codex --mode=silent --json
+  bach session status --partner=codex --session=ID --json
+  bach session check --partner=codex --session=ID
+По умолчанию start использует user и повторно использует только открытую
+сессию этого партнёра. --startup заменяет его сессию. Неоднозначный выбор
+отклоняется. --session требует --partner; чужие, закрытые и отсутствующие
+ID отклоняются. --startup --json возвращает зарегистрированные session_id
+и partner_id. Сессия, присутствие и ссылка активности записываются атомарно.
+API: info = session.startup(partner="codex", structured=True)
+     session.current("codex", session_id=info["session_id"])
+Текст остаётся форматом по умолчанию; предупреждения выводятся в stderr.

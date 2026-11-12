@@ -1453,3 +1453,129 @@ def test_worker_configuration_projects_pickup_filter_only_as_selection_policy(tm
     assert worker_status_adapter._project_configuration(
         {"ok": True, **changed}, worker_id
     )["selection_policy"]["pickup_filter"] == pickup_filter
+
+
+def test_tray_promptboard_library_and_chat_actions(tmp_path):
+    with patch.dict('sys.modules', {
+        'pystray': MagicMock(),
+        'PIL': MagicMock(),
+        'PIL.Image': MagicMock(),
+        'PIL.ImageDraw': MagicMock(),
+        'PIL.ImageFont': MagicMock(),
+    }):
+        from hub._services.chat.chat_tray import BACHTray
+        tray = BACHTray(host="testhost", port=9999, gui_port=8000)
+        tray.icon = MagicMock()
+
+        # Test _open_prompt_library
+        with patch("webbrowser.open") as mock_open:
+            tray._open_prompt_library()
+            mock_open.assert_called_once_with("http://testhost:8000/prompt-library")
+
+        # Test _make_prompt_open_chat_action
+        with patch.object(tray, "_copy_to_clipboard") as mock_copy, patch("webbrowser.open") as mock_open:
+            action = tray._make_prompt_open_chat_action("Test Prompt Content")
+            action()
+            mock_copy.assert_called_once_with("Test Prompt Content")
+            mock_open.assert_called_once_with("http://testhost:8000/chat")
+            tray.icon.notify.assert_called_with("Prompt kopiert & Chat geöffnet", "BACH Prompt")
+
+        # Test _open_promptboard with exe on win32
+        exe_path = tmp_path / "PromptBoard-1.1.1-win64.exe"
+        exe_path.write_text("", encoding="utf-8")
+        with patch.object(tray, "_promptboard_app_path", return_value=exe_path), \
+             patch("sys.platform", "win32"), \
+             patch("os.startfile", create=True) as mock_startfile:
+            tray._open_promptboard()
+            mock_startfile.assert_called_once_with(str(exe_path))
+
+        # Test _import_promptboard_action
+        with patch("hub.prompt.PromptHandler") as mock_handler_cls:
+            mock_inst = MagicMock()
+            mock_inst.handle.return_value = (True, json.dumps({"imported": 3, "skipped": 1}))
+            mock_handler_cls.return_value = mock_inst
+            tray._import_promptboard_action()
+            tray.icon.notify.assert_called_with("PromptBoard-Import: 3 neu, 1 bestehend.", "BACH PromptBoard")
+
+        # Test _export_promptboard_action
+        with patch("hub.prompt.PromptHandler") as mock_handler_cls:
+            mock_inst = MagicMock()
+            mock_inst.handle.return_value = (True, json.dumps({"exported": 2, "updated": 1, "total": 5}))
+            mock_handler_cls.return_value = mock_inst
+            tray._export_promptboard_action()
+            tray.icon.notify.assert_called_with("PromptBoard-Export: 2 neu, 1 aktualisiert (5 gesamt).", "BACH PromptBoard")
+
+        # Test _sync_promptboard_action
+        with patch("hub.prompt.PromptHandler") as mock_handler_cls:
+            mock_inst = MagicMock()
+            mock_inst.handle.return_value = (True, json.dumps({"imported": 2, "exported": 1, "updated_in_bach": 1, "updated_in_promptboard": 0, "total_promptboard": 6}))
+            mock_handler_cls.return_value = mock_inst
+            tray._sync_promptboard_action()
+            tray.icon.notify.assert_called_with("PromptBoard Zwei-Wege-Sync: 2 importiert, 1 exportiert, 1 aktualisiert (6 gesamt).", "BACH PromptBoard")
+
+        # Test _record_audio_prompt_action fallback when STT missing
+        with patch("hub._services.ocean_stack_bridge.load_voice_io_module") as mock_voice_mod, \
+             patch("webbrowser.open") as mock_open:
+            mock_voice_inst = MagicMock()
+            mock_voice_inst.VoiceIO.return_value.stt.available.return_value = (False, "none")
+            mock_voice_mod.return_value = mock_voice_inst
+            tray._record_audio_prompt_action()
+            import time
+            time.sleep(0.1)
+            mock_open.assert_called_with("http://testhost:8000/talk")
+
+
+def test_tray_modular_status_and_menu():
+    from hub._services.chat.chat_tray import BACHTray
+    tray = BACHTray(host="testhost", port=8081, gui_port=8000)
+    snap = tray.modular_status_smoke_snapshot()
+    assert "standalone_count" in snap
+    assert snap["standalone_count"] >= 11
+    assert snap["total_modularized"] >= 12
+    assert snap["auto_update_ready"] is True
+
+    # Test menu building contains modular item
+    menu = tray._build_menu()
+    labels = [getattr(item, "text", "") for item in menu]
+    mod_item = next((item for item in menu if "📦 Standalone-Module" in getattr(item, "text", "")), None)
+    assert mod_item is not None, f"Modular status item missing from menu: {labels}"
+    assert f"{snap['standalone_count']}/{snap['total_modularized']} aktiv" in mod_item.text
+
+    # Test sub-items of modular status
+    sub_menu = mod_item.submenu
+    assert sub_menu is not None
+    sub_labels = [getattr(sub, "text", "") for sub in sub_menu]
+    assert any("Status:" in l and "aktiv" in l for l in sub_labels)
+    assert any("Modul-Sync ausführen" in l for l in sub_labels)
+    assert any("token_budget" in l for l in sub_labels)
+    assert any("rate_limit_policy" in l for l in sub_labels)
+    assert any("audit_logger" in l for l in sub_labels)
+
+
+def test_api_modules_status_and_sync():
+    from starlette.testclient import TestClient
+    from gui.server import app
+    client = TestClient(app)
+
+    res = client.get("/api/modules/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ok"
+    assert data["standalone_count"] >= 18
+    assert data["modularized_total"] >= 18
+    assert "token_budget" in data["modularized_services"]
+    assert "rate_limit_policy" in data["modularized_services"]
+    assert "audit_logger" in data["modularized_services"]
+    assert "telemetry" in data["modularized_services"]
+    assert "limits" in data["modularized_services"]
+    assert "worker_policy" in data["modularized_services"]
+    assert "prompt" in data["modularized_services"]
+    assert "message_delivery" in data["modularized_services"]
+    assert "conversation_store" in data["modularized_services"]
+    assert data["auto_update_ready"] is True
+
+    sync_res = client.post("/api/modules/sync")
+    assert sync_res.status_code == 200
+    sync_data = sync_res.json()
+    assert sync_data["status"] == "ok"
+    assert "sync_report" in sync_data

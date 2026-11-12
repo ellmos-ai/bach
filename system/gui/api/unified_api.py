@@ -99,6 +99,12 @@ def _get_conn(timeout: float = 30.0) -> sqlite3.Connection:
 
 def _find_existing_path(candidates: List[Path]) -> Optional[Path]:
     for p in candidates:
+        if sys.platform == "darwin":
+            try:
+                if "/Library/CloudStorage/" in os.path.realpath(p):
+                    continue
+            except OSError:
+                continue
         if p.exists():
             return p
     return None
@@ -359,11 +365,17 @@ async def list_agent_blueprints(
             SELECT * FROM agent_blueprints
             ORDER BY is_template DESC, name ASC
         """).fetchall()
+        from hub._services.skill_source_service import source_catalog, skill_roots
+        source_skills = await asyncio.to_thread(lambda: source_catalog(skill_roots()))
         blueprints = []
         templates = []
         for r in rows:
             item = dict(r)
             item.setdefault("color", None)
+            try:
+                item["derived_from"] = json.loads(item.get("derived_from_json") or "null")
+            except (ValueError, TypeError):
+                item["derived_from"] = None
             item["kind"] = item.get("kind") or "agent"
             item["version"] = item.get("version") or "1.0.0"
             item["start_prompt"] = item.get("start_prompt") or ""
@@ -371,7 +383,9 @@ async def list_agent_blueprints(
                 item["skills"] = json.loads(item.get("skills_json") or "[]")
             except Exception:
                 item["skills"] = []
-            item["skills_validation"] = svc_validate_blueprint_skills(item["skills"])
+            item["skills_validation"] = svc_validate_blueprint_skills(
+                item["skills"], source_skills=source_skills
+            )
             try:
                 item["contractus"] = json.loads(item.get("contractus_json") or "{}")
             except Exception:
@@ -423,6 +437,7 @@ async def list_agent_blueprints(
             "total_blueprints": len(blueprints),
             "total": len(templates) + len(blueprints),
             "configuration_version": slots["configuration_version"],
+            "blueprint_revision_contract": "bach.blueprint-revisions.v1",
         }
     finally:
         conn.close()
@@ -495,6 +510,90 @@ async def save_agent_blueprint(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         conn.close()
+
+
+def _blueprint_revision_error(exc):
+    if isinstance(exc, KeyError):
+        return HTTPException(404, "Blueprint oder aufgezeichnete Revision nicht gefunden")
+    if isinstance(exc, (RuntimeError, PermissionError)):
+        return HTTPException(409, "Revision oder Quellbindung wurde geändert; neu laden")
+    if isinstance(exc, (ValueError, TypeError)):
+        return HTTPException(422, "Ungültige Revisionsanfrage oder nicht mehr gültige Konfiguration")
+    return HTTPException(503, "Blueprint-Revisionen sind derzeit nicht verfügbar")
+
+
+async def _blueprint_revision_read(request, operation):
+    await asyncio.to_thread(_require_memory_device, request)
+    def read():
+        conn = _get_agent_studio_ro_conn()
+        try:
+            conn.execute("BEGIN")
+            return operation(conn)
+        finally:
+            conn.close()
+    try:
+        return await asyncio.to_thread(read)
+    except (KeyError, RuntimeError, PermissionError, ValueError, TypeError, sqlite3.Error) as exc:
+        raise _blueprint_revision_error(exc) from None
+
+
+@router.get("/agent-studio/blueprints/{blueprint_id}/revisions")
+async def blueprint_revision_history(blueprint_id: int, request: Request,
+                                     limit: int = Query(50, ge=1, le=100),
+                                     before_version: Optional[int] = Query(None, ge=1)):
+    from hub._services.blueprint_revisions import history
+    return await _blueprint_revision_read(request, lambda conn: history(
+        conn, blueprint_id, limit=limit, before_version=before_version))
+
+
+@router.get("/agent-studio/blueprints/{blueprint_id}/revisions/diff")
+async def blueprint_revision_diff(blueprint_id: int, request: Request,
+                                 from_version: int = Query(..., ge=1),
+                                 to_version: int = Query(..., ge=1)):
+    from hub._services.blueprint_revisions import diff_revisions
+    return await _blueprint_revision_read(request, lambda conn: diff_revisions(
+        conn, blueprint_id, from_version, to_version))
+
+
+@router.get("/agent-studio/blueprints/{blueprint_id}/revisions/{version}")
+async def blueprint_revision_content(blueprint_id: int, version: int, request: Request):
+    from hub._services.blueprint_revisions import revision
+    return await _blueprint_revision_read(request, lambda conn: revision(conn, blueprint_id, version))
+
+
+async def _blueprint_revision_write(request, operation):
+    await asyncio.to_thread(_require_memory_device, request)
+    def write():
+        conn = _get_conn()
+        try:
+            return operation(conn)
+        finally:
+            conn.close()
+    try:
+        return await asyncio.to_thread(write)
+    except (KeyError, RuntimeError, PermissionError, ValueError, TypeError, sqlite3.Error) as exc:
+        raise _blueprint_revision_error(exc) from None
+
+
+@router.post("/agent-studio/blueprints/{blueprint_id}/revisions/{version}/restore")
+async def blueprint_revision_restore(blueprint_id: int, version: int, request: Request,
+                                     payload: Dict[str, Any] = Body(...)):
+    if set(payload) != {"expected_version"}:
+        raise HTTPException(422, "Nur die aktuelle expected_version angeben")
+    from hub._services.blueprint_revisions import restore_revision
+    return await _blueprint_revision_write(request, lambda conn: restore_revision(
+        conn, blueprint_id, version, expected_version=payload["expected_version"]))
+
+
+@router.post("/agent-studio/blueprints/{blueprint_id}/clone")
+async def blueprint_revision_clone(blueprint_id: int, request: Request,
+                                   payload: Dict[str, Any] = Body(...)):
+    if set(payload) != {"name", "expected_version", "source_sha256"}:
+        raise HTTPException(422, "Name und exakte Quellversion mit Inhaltshash angeben")
+    from hub._services.blueprint_revisions import clone_blueprint
+    return await _blueprint_revision_write(request, lambda conn: clone_blueprint(
+        conn, blueprint_id, name=payload["name"], expected_version=payload["expected_version"],
+        source_sha256=payload["source_sha256"]))
 
 
 @router.post("/agent-studio/bootstrap")
@@ -1236,6 +1335,37 @@ async def list_governance_locks():
             "error": snapshot["error"]}
 
 
+@router.post("/governance/locks/prune")
+async def prune_stale_governance_locks(request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Prüft oder bereinigt abgelaufene Locks via prune_stale_locks.py (TEILPLAN-GUI-ANBINDUNG §3.1)."""
+    _require_memory_device(request)
+    apply_changes = bool(payload.get("apply", False))
+    scripts_dir = _find_existing_path([
+        Path("C:/Users/User/OneDrive/_scripts"),
+        Path(os.path.expanduser("~/OneDrive/_scripts")),
+    ])
+    if not scripts_dir or not (scripts_dir / "prune_stale_locks.py").is_file():
+        raise HTTPException(503, "prune_stale_locks.py auf diesem Host nicht gefunden")
+    import subprocess
+    import sys
+    cmd = [sys.executable, str(scripts_dir / "prune_stale_locks.py"), "--json"]
+    if not apply_changes:
+        cmd.append("--dry-run")
+    done = await asyncio.to_thread(
+        subprocess.run, cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30
+    )
+    try:
+        report = json.loads(done.stdout) if done.stdout.strip() else {}
+    except ValueError:
+        report = {"raw_output": done.stdout[:2000]}
+    return {
+        "ok": done.returncode == 0,
+        "dry_run": not apply_changes,
+        "exit_code": done.returncode,
+        "report": report,
+    }
+
+
 @router.get("/governance/decisions")
 async def list_governance_decisions():
     """Canonical decision pointers. DecisionClicker adoption remains a separate action."""
@@ -1262,8 +1392,8 @@ async def list_governance_policies():
 async def get_knowledge_digest():
     """List configured knowledge roots; indexing requires a separate feed."""
     watched_paths = [
-        ("Research", Path(os.path.expanduser("~/OneDrive/.TOPICS/.RESEARCH"))),
-        ("Umbruch", Path(os.path.expanduser("~/OneDrive/.TOPICS/.UMBRUCH"))),
+        ("Research", _find_existing_path([Path(os.path.expanduser("~/OneDrive/.TOPICS/.RESEARCH"))])),
+        ("Umbruch", _find_existing_path([Path(os.path.expanduser("~/OneDrive/.TOPICS/.UMBRUCH"))])),
         ("Domains", DOMAINS_ROOT),
         ("Tools", TOOLS_ROOT),
         ("Bach Docs", Path(_SYSTEM_ROOT / "docs")),
@@ -3014,6 +3144,41 @@ def toggle_domain_pin_endpoint(domain_id: str, request: Request, payload: Dict[s
     return _domain_pin_call(save)
 
 
+@router.get("/domains/modules")
+async def get_domains_modules():
+    """Return canonical Ocean & BACH modules with documentation metadata for /help and /skills/ocean."""
+    from hub._services.ocean_stack_bridge import ocean_stack_status
+
+    def _load() -> Dict[str, Any]:
+        status = ocean_stack_status()
+        modules_list = []
+        for mod_id, info in status.get("modules", {}).items():
+            modules_list.append({
+                "id": mod_id,
+                "name": mod_id,
+                "version": "1.0.0",
+                "bound": bool(info.get("bound")),
+                "module": info.get("module"),
+                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
+            })
+        for ext_id, info in status.get("capability_extensions", {}).items():
+            modules_list.append({
+                "id": ext_id,
+                "name": ext_id,
+                "version": "0.1.0",
+                "bound": bool(info.get("bound")),
+                "module": info.get("module"),
+                "docs": {"entry": "README.md", "languages": ["de", "en", "world"]},
+            })
+        return {
+            "schema": "bach.domains.modules.v1",
+            "count": len(modules_list),
+            "modules": modules_list,
+        }
+
+    return await asyncio.to_thread(_load)
+
+
 @router.get("/domains/{domain_id}")
 async def get_domain_detail_endpoint(domain_id: str):
     """Liefert Detail-Manifest, Zustände und Konfiguration einer Domäne."""
@@ -3826,3 +3991,104 @@ async def beseelen_marblerun_chain(chain_id: int, payload: Dict[str, Any] = Body
         return {"ok": True, "chain_id": chain_id, "steps": steps}
     finally:
         conn.close()
+
+
+@router.get("/ocean/stack-bindings")
+async def get_ocean_stack_bindings():
+    """Return live status of all Ocean modules consumed by BACH (`bach.ocean-stack-bindings.v1`)."""
+    from hub._services.ocean_stack_bridge import ocean_stack_status
+
+    return await asyncio.to_thread(ocean_stack_status)
+
+
+@router.get("/agenten/library")
+async def get_ocean_agent_library():
+    """Return the 3-tab Agent-Library catalog (`ellmos.agent-library.v1`) and flexible provider sockets (`ellmos.role-socket-catalog.v1`)."""
+    from hub._services.ocean_stack_bridge import (
+        discover_ocean_agent_library_templates,
+        get_ocean_role_routing_catalog,
+    )
+
+    def _load() -> Dict[str, Any]:
+        catalog = discover_ocean_agent_library_templates()
+        sockets = get_ocean_role_routing_catalog()
+        return {
+            **catalog,
+            "role_socket_catalog": sockets,
+        }
+
+    return await asyncio.to_thread(_load)
+
+
+@router.get("/governance/decision-rules")
+async def get_governance_decision_rules():
+    """Return transparent Decision Processing Rules (`doc_machine.config.json`) and 3-Tier Authority Tunnel metadata."""
+    from hub._services.ocean_stack_bridge import (
+        _load_module_from_repo,
+        load_escalation_ladder_module,
+    )
+
+    def _load() -> Dict[str, Any]:
+        hp_mod = _load_module_from_repo(
+            "ocean_help_projection",
+            "tools.help_projection",
+            "open-ocean",
+            "tools/help_projection.py",
+        )
+        esc_mod = load_escalation_ladder_module()
+        cfg = hp_mod.load_doc_machine_config()
+        return {
+            "schema": "ellmos.governance.decision-rules-and-tunneling.v1",
+            "authority_tunnel_tiers": list(getattr(esc_mod, "AUTHORITY_TUNNEL_TIERS", ())),
+            "inward_first_cascade": list(getattr(esc_mod, "INWARD_FIRST_AUTHORITY_CASCADE", ())),
+            "available_decision_branches": list(getattr(hp_mod, "AVAILABLE_DECISION_BRANCHES", ())),
+            "doc_machine_config": cfg,
+        }
+
+    return await asyncio.to_thread(_load)
+
+
+@router.get("/help/doc-audit")
+async def get_help_doc_audit():
+    """Return the latest 3-Cause Documentation Audit report (`ellmos.doc-keeper-audit-report.v1`) and CLI/API parity check."""
+    from hub._services.ocean_stack_bridge import _load_module_from_repo
+
+    def _load() -> Dict[str, Any]:
+        hp_mod = _load_module_from_repo(
+            "ocean_help_projection",
+            "tools.help_projection",
+            "open-ocean",
+            "tools/help_projection.py",
+        )
+        ocean_root = Path(hp_mod.__file__).resolve().parents[1]
+        report_path = ocean_root / "config" / "doc_audit_report.json"
+        if report_path.is_file():
+            try:
+                return json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                pass
+        parity = hp_mod.verify_cli_api_reference_parity(ocean_root)
+        return {
+            "schema": "ellmos.doc-keeper-audit-report.v1",
+            "chain_id": "doc-keeper-machine",
+            "parity_check": parity,
+            "findings": [],
+        }
+
+    return await asyncio.to_thread(_load)
+
+
+@router.get("/ocean/transfer-contracts")
+async def get_ocean_transfer_contracts():
+    """Return the machine-verifiable 7-step module transfer contracts (#3716, #1854-#1916)."""
+    from tools.module_transfer_contract import list_all_transfer_contracts
+
+    return await asyncio.to_thread(list_all_transfer_contracts)
+
+
+@router.get("/ocean/deploy-preflight")
+async def get_ocean_deploy_preflight():
+    """Run the deployment and rollback boundary preflight check (#3717)."""
+    from tools.deploy_rollback_preflight import run_deploy_preflight
+
+    return await asyncio.to_thread(run_deploy_preflight, require_clean_git=False)

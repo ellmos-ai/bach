@@ -11,6 +11,8 @@ from ._services.chat import slots_config
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class ModelSocketsHandler(BaseHandler):
     def __init__(self, base_path_or_app):
         # BaseHandler's legacy hasattr(app, "db") triggers App.db and its

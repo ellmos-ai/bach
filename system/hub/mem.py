@@ -25,6 +25,8 @@ from .base import BaseHandler
 from .memory import MemoryHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("GARDENER")
 class MemHandler(BaseHandler):
     """Handler für Memory-Verwaltung (Working, Facts, Lessons)"""
 

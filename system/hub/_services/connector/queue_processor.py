@@ -366,14 +366,18 @@ def route_incoming() -> Dict[str, Any]:
         if not rows:
             return result
 
-        # ContextInjector laden (optional)
+        # InjectorSystem-Adapter laden (optional)
         injector_hint_fn = None
         try:
-            from tools.injectors import ContextInjector
-            ContextInjector.base_path = SYSTEM_DIR
-            injector_hint_fn = ContextInjector.check
-        except ImportError:
-            logger.debug("ContextInjector nicht verfuegbar")
+            from tools.injectors import InjectorSystem
+            _inj_sys = InjectorSystem(SYSTEM_DIR)
+            injector_hint_fn = lambda text: next(
+                (h for h in _inj_sys.process(text, skip={"strategy", "tool_warn", "time"})
+                 if h.startswith("[KONTEXT]")),
+                None,
+            )
+        except Exception:
+            logger.debug("InjectorSystem nicht verfuegbar")
 
         now = _now_iso()
 

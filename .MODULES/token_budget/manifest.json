@@ -1,0 +1,31 @@
+{
+  "name": "token_budget",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BACH Standalone Module: token_budget",
+  "author": "BACH Team",
+  "created_at": "2026-11-03T21:24:02.119741",
+  "selfcontained": true,
+  "entrypoints": {
+    "library": "src/token_budget.py"
+  },
+  "boundaries": {
+    "data": "user-local",
+    "network": "full",
+    "platforms": [
+      "windows",
+      "macos",
+      "linux"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "BACH",
+      "minimum_version": "3.15.0"
+    },
+    {
+      "name": "Ocean",
+      "minimum_version": "1.0.0"
+    }
+  ]
+}

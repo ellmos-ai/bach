@@ -21,6 +21,8 @@ from typing import Tuple, List, Dict, Any
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("KnowledgeDigest")
 class SourcesHandler(BaseHandler):
     """Handler fuer --sources Operationen."""
     

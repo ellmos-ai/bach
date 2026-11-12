@@ -1,0 +1,42 @@
+=== MODELL- & RAM-CLAIMING (RAM-DISTRIBUTOR & MODELL-RUNTIME) ===
+
+Kurzfassung:
+  In BACH und Ocean gibt es keine starren Modell-Slots mehr. Alle Agenten
+  ("Deine Agenten") sind direkt an ein Primärmodell + Fallback-Kette gebunden.
+  Zur Laufzeit erfolgt ein zweistufiges Claiming:
+    1. RAM-Claim (Hauptfackel / RAMDistributor): Wer darf physischen RAM/VRAM
+       belegen (lokales 27B-Modell vs. Compute-Pipelines)?
+    2. Modell-Runtime-Claim (Modellfackel / HostInferenceGate): Wer bekommt den
+       nächsten Inferenz-Turn auf dem geladenen Modell nach 4 Nutzernähe-Klassen?
+
+DIE 4 PRIORITÄTSKLASSEN NACH NUTZERNÄHE (UserProximity):
+  Klasse 1 (DIRECT_INTERACTIVE)    : Nutzer wartet direkt (Chat, Funkgerät/Talk)
+  Klasse 2 (DELEGATED_FOREGROUND)  : Vom Nutzer/Chat aktiv beauftragter Experte
+  Klasse 3 (SCHEDULED_ROUTINE)     : Fälliger Termin- oder Routine-Agent
+  Klasse 4 (AUTONOMOUS_BACKGROUND) : Hintergrund-Worker (Buddha Always-On)
+
+FALL A: ANDERER PROZESS BRAUCHT RAM / VRAM (COMPUTE / EIGENES MODELL)
+  1. Im System-Tray (ellmos-tray) oder GUI (/agenten/running):
+     "🔥 RAM-Distributor & Modell-Claim" ->
+     "🔓 Modell & RAM jetzt für andere Prozesse freigeben"
+  2. Per HTTP-API / CLI:
+     curl -X POST http://127.0.0.1:8081/api/fackel -H "Content-Type: application/json" -d '{"preference":"compute"}'
+     curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"qwen3.8:27b-mlx","keep_alive":0}'
+  3. Über Compute-Lock (~/.memwatchdog/compute_active.lock):
+     Trage {"active_compute_jobs": [{"pid": <PID>, "name": "<job>"}]} ein.
+
+FALL B: ANDERER PROZESS WILL DAS LOKALE MODELL CLAIMEN / NUTZEN
+  1. Kooperativ in Python über HostInferenceGate (verdrängt Hintergrund-Worker):
+     from hub._services.chat.host_inference_gate import HostInferenceGate
+     async with HostInferenceGate().turn("mein-prozess", "foreground"):
+         ...
+  2. Direkt über die BACH Control API (:8081/api/chat):
+     curl -X POST http://127.0.0.1:8081/api/chat -H "Content-Type: application/json" \
+       -d '{"prompt": "...", "chat_id": "mein-prozess"}'
+  3. Modellbindungen prüfen & verwalten:
+     bach model-sockets list --json
+     bach model-sockets catalog --json
+
+Vollständige Dokumentation (SOLL & IST):
+  docs/architecture/MODEL-AND-RAM-CLAIMING.md
+  ocean-resources/README.md

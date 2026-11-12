@@ -2,21 +2,24 @@
 from datetime import datetime, timezone
 
 from hub._services.gui_contract_service import CAPABILITIES_SCHEMA
+from hub._services.gui_page_reads import normalize, page_status, unavailable
 
 PREFIXES = ("/api/user-inbox", "/api/tasks", "/api/task-assignees", "/api/agent-studio/", "/api/system/core-",
             "/api/system/workers", "/api/system/worker-policy", "/api/system/cluster-cockpit", "/api/system/fackel",
             "/api/marblerun/", "/api/capabilities", "/api/governance/", "/api/memory/",
             "/api/domains/", "/api/artifacts", "/api/artefakte", "/api/agent-history", "/api/calendar/", "/api/gui/",
-            "/api/skills-board/hierarchy")
+            "/api/skills-board/hierarchy", "/api/ocean/", "/api/talk/", "/api/chat/")
 # Exact "METHOD /path" pairs for single reads whose path or parent path also holds routes that are not page reads (GET+PUT on
 # /api/settings/theme, /api/agents/runtime, PUT /api/agents/{agent_id}/toggle, POST /api/system/external-artifacts/import):
 # a prefix or a path-only comparison would catalog those as well.
-EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme", "GET /api/setup/ocean-map",
-               "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates", "GET /api/system/external-artifacts",
-               "GET /api/task-capabilities", "GET /api/routines")
+EXACT_READS = ("GET /api/agents", "GET /api/assignees", "GET /api/settings/theme", "GET /api/settings/ui",
+               "GET /api/setup/ocean-map", "GET /api/learning/nemofold/stats", "GET /api/learning/nemofold/candidates",
+               "GET /api/system/external-artifacts", "GET /api/task-capabilities", "GET /api/routines",
+               "GET /api/permissions", "GET /api/talk/state")
+EXACT_WRITES = ("PUT /api/settings/ui", "POST /api/permissions")
 # Reads of src/layouts/BachLayout.astro -> src/components/Header.astro:242,280 and src/lib/domain-pins.mjs:46 (domain menu): every
 # page makes them. Only the pages checked so far list them; completeness for all pages is a task of the GUI manifest (#2087).
-LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins"]
+LAYOUT_READS = ["/api/gui/brand", "/api/gui/backend-origin", "/api/domains/pins", "/api/talk/config"]
 # Page -> endpoints the ellmos-system-gui page actually reads (pinned to the GUI51 page-reads manifest in tests):
 # "/" src/pages/index.astro:227 (SystemClusterStatus is only included by settings.astro:4,253); "/agenten/sessions" src/lib/agent-history.mjs:77,89,92
 # (loaded by src/pages/agenten/sessions.astro:90), inbox tab src/scripts/user-inbox-tab.mjs:28, TaskCreateForm.astro:118,183 and
@@ -28,9 +31,9 @@ PAGE_READS = {
     "/": ["/api/agent-studio/blueprints", "/api/tasks"],
     "/tasks": ["/api/tasks", "/api/task-assignees"],
     "/agenten/running": ["/api/system/core-agents", "/api/system/core-agents/timeline"],
-    "/agenten/blueprints": ["/api/agent-studio/blueprints", "/api/capabilities/skills/library"],
+    "/agenten/blueprints": ["/api/agent-studio/blueprints"],
     "/agenten/subscription-agents": ["/api/agent-studio/blueprints", "/api/capabilities/skills/library"],
-    "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills/library"],
+    "/agenten/fabrika": ["/api/agent-studio/blueprints", "/api/capabilities/skills"],
     "/agenten/marblerun": ["/api/marblerun/catalog", "/api/marblerun/chains"],
     "/agenten/sessions": ["/api/agent-history/sessions", "/api/agent-history/tasks", "/api/memory/sessions",
                          "/api/agent-history/sessions/{snapshot_id}", "/api/agents"],
@@ -49,17 +52,24 @@ PAGE_READS = {
     "/governance": ["/api/governance/policy-registry", "/api/governance/locks"],
     "/governance/logs": ["/api/governance/audit"],
     "/governance/usecases": [], "/governance/funk": [],
+    "/denkarium": [], "/help": [], "/maintenance": [], "/tools": [],
+    "/chat": [],
+    "/connectors": [],
+    "/modules": ["/api/ocean/stack-bindings"],
+    "/sensation": [],
+    "/sessions": [],
+    "/talk": [],
     "/life": ["/api/calendar/events"], "/settings": ["/api/gui/backend-origin", "/api/setup/ocean-map", "/api/settings/theme",
-                 "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
+                 "/api/settings/ui", "/api/learning/nemofold/stats", "/api/learning/nemofold/candidates", "/api/system/external-artifacts"],
 }
 # Required actions retain their HTTP method; compose is a preview POST, never a GET.
-# Shared GUI 0.2.29 ships pages for these paths that only announce the missing conversion (Task #2468 fallback notice).
+# Shared GUI 0.2.31 ships pages for these paths that only announce the missing conversion (Task #2468 fallback notice).
 # BACH keeps serving its own working page there; each entry is a reasoned fallback, not a silent legacy render (#2626).
 _NOTICE_ONLY = "shared release ships only a conversion notice; the BACH page keeps the working function"
 LEGACY_PAGE_FALLBACKS = {
     path: _NOTICE_ONLY
-    for path in ("/ati", "/chat", "/denkarium", "/financial", "/gesundheit", "/help", "/kontakte", "/maintenance",
-                 "/persoenlich", "/steuer", "/tools")
+    for path in ("/ati", "/financial", "/gesundheit", "/kontakte",
+                 "/persoenlich", "/steuer")
 }
 LEGACY_PAGE_FALLBACKS["/inbox"] = (_NOTICE_ONLY + "; it holds the file inbox including the Förderplaner "
                                    "quarantine/anonymisation tab")
@@ -83,37 +93,44 @@ PAGE_OPTIONAL_READS = {
 }
 
 
-def declaration(routes, kit, brand, modules, *, public_paths=(), module_sources=()):
+def declaration(routes, kit, brand, modules, *, public_paths=(), module_sources=(), page_reads=None):
     observed = datetime.now(timezone.utc).isoformat()
+    info = page_reads if isinstance(page_reads, dict) else unavailable()
+    if kit.get("verified") is not True:
+        info = unavailable("gui_kit_not_verified")
+    declared = {method + " " + normalize(path) for item in info.get("declared", [])
+                for method, _, path in [item.partition(" ")]}
     endpoints = []
     registered = set()
-    for route in routes:
+    flat_routes = []
+    for _r in routes:
+        if hasattr(_r, "effective_route_contexts"):
+            flat_routes.extend(_r.effective_route_contexts())
+        else:
+            flat_routes.append(_r)
+    for route in flat_routes:
         path = getattr(route, "path", "")
         by_prefix = path.startswith(PREFIXES)
         for method in sorted(getattr(route, "methods", ()) or ()):
             if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                 continue
-            if not by_prefix and f"{method} {path}" not in EXACT_READS:
-                continue
             registered.add(f"{method} {path}")
+            if (not by_prefix and f"{method} {path}" not in EXACT_READS and f"{method} {path}" not in EXACT_WRITES
+                    and f"{method} {normalize(path)}" not in declared):
+                continue
             endpoints.append({"method": method, "path": path,
                 "kind": "read" if method == "GET" else "write" if method in {"PUT", "PATCH", "DELETE"} else "action",
                 "available": True, "runtime_verified": False, "verification_scope": "adapter",
                 "provider": {"id": "bach", "version": None},
                 "auth": "none" if method == "GET" and path in public_paths else "device-token",
                 "reason": "route_registered_runtime_not_probed"})
-    pages = []
-    for path, reads in PAGE_READS.items():
-        required = ["GET " + read for read in reads] + PAGE_ACTIONS.get(path, [])
-        missing = [read for read in required if read not in registered]
-        pages.append({"id": path.strip("/").replace("/", ".") or "home", "path": path,
-            "status": "unavailable" if missing else "configured",
-            "requires": required, "missing": missing,
-            "todo": ["Runtime und Bedienung am aktiven Provider prüfen"]})
+    pages = page_status(info, registered)
     return {"schema": CAPABILITIES_SCHEMA, "schema_version": 1,
         "system": {"id": "bach", "adapter_version": "1"},
         "observed_at": observed, "kit": kit, "brand": brand, "modules": modules,
         "gui": {"status": "verified" if kit.get("verified") else "unverified",
-                "source_commit": kit.get("revision"), "archive_sha256": kit.get("archive_sha256")},
+                "source_commit": kit.get("revision"), "archive_sha256": kit.get("archive_sha256"),
+                "page_reads": {key: info.get(key) for key in
+                               ("state", "schema", "reason_code", "sha256")}},
         "pages": pages, "endpoints": endpoints, "module_sources": list(module_sources),
         "missing_adapters": [key for key, item in modules.items() if not item.get("adapter_registered")]}

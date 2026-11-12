@@ -1,8 +1,34 @@
 """Module/managed tool providers must preserve the private native task context."""
+import json
 import pytest
 
 from system.tests.test_worker_lease_binding import binding, mem_db
 from hub._services.chat import bach_tools
+
+
+@pytest.fixture(autouse=True)
+def _isolated_empty_repo_registry(tmp_path, monkeypatch):
+    """Provide a valid empty repo registry for non-repository tool provider tests."""
+    home = tmp_path / "home"
+    local_bach = home / ".bach"
+    local_bach.mkdir(parents=True, exist_ok=True)
+    local_bach.chmod(0o700)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("BACH_LOCAL_DIR", str(local_bach))
+    reg_file = local_bach / "worker_repo_registry.v1.json"
+    reg_file.write_text(json.dumps({
+        "schema": "bach.worker-repo-registry.v1",
+        "repositories": {
+            "ellmos-ai/bach": {
+                "origin": "https://github.com/ellmos-ai/bach",
+                "default_branch": "main",
+                "visibility": "public",
+            }
+        },
+        "tasks": {},
+    }), encoding="utf-8")
+    reg_file.chmod(0o600)
 
 
 class NoLegacyTaskApp:

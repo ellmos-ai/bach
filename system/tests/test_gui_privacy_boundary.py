@@ -27,7 +27,8 @@ def _request(path, headers=(), method="GET", query=b""):
 
 @pytest.mark.parametrize("path", ["/api/tasks", "/api/status", "/api/capabilities",
                                    "/api/artifacts/content", "/api/artifacts/download",
-                                   "/api/devices", "/api/marblerun/chains"])
+                                   "/api/devices", "/api/marblerun/chains",
+                                   "/dist-manifest.json"])
 @pytest.mark.parametrize("configured", [True, False])
 def test_private_api_denies_loopback_without_credentials(path, configured):
     called = []
@@ -237,7 +238,7 @@ def test_public_allowlist_is_explicit_and_unauthenticated_shells_load(client):
 def test_every_registered_non_api_route_is_classified():
     """Fails when a route is added without deciding whether it may be public."""
     public = server.DeviceAuthMiddleware.PUBLIC_PAGE_PATHS
-    protected = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/ws", "/control", "/static", "/_astro"}
+    protected = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/ws", "/control", "/static", "/_astro", "/dist-manifest.json"}
     for route in server.app.routes:
         path = getattr(route, "path", None)
         if path and not path.startswith("/api/") and "_perimeter_dummy" not in path:

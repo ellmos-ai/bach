@@ -27,6 +27,27 @@ def binding(tmp_path, monkeypatch):
     from hub._services import task_lease_client
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
+    home = tmp_path / "home"
+    local_bach = home / ".bach"
+    local_bach.mkdir(parents=True, exist_ok=True)
+    local_bach.chmod(0o700)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("BACH_LOCAL_DIR", str(local_bach))
+    reg_file = local_bach / "worker_repo_registry.v1.json"
+    reg_file.write_text(json.dumps({
+        "schema": "bach.worker-repo-registry.v1",
+        "repositories": {
+            "ellmos-ai/bach": {
+                "origin": "https://github.com/ellmos-ai/bach",
+                "default_branch": "main",
+                "visibility": "public",
+            }
+        },
+        "tasks": {},
+    }), encoding="utf-8")
+    reg_file.chmod(0o600)
+
     database = tmp_path / "canonical.db"
     _create_db(database)
     conn = _connect(database)
@@ -447,3 +468,161 @@ def test_trace_rejects_open_caller_transaction_without_ending_it(binding):
     finally:
         conn.close()
         observer.close()
+
+
+# --- #2660: a restart after a backend error builds on what earlier leases already did -----------
+def _restart(binding, generation):
+    """Backend error path: the lease is returned, the next run acquires a fresh one."""
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+    assert binding.return_lease()
+    return WorkerLeaseBinding.acquire(
+        binding._client, binding.task_id, worker_id="trace-worker@HOST", host="HOST",
+        generation=generation, is_current=lambda: True, stop_event=threading.Event(),
+    )
+
+
+def _protocol_following_run(binding, title):
+    """Stand-in for the model: adds the subtask unless the restart context reports task_manage as done."""
+    from hub._services.chat.telegram_chat import _bound_worker_prompt
+
+    content = json.loads(_bound_worker_prompt(binding, "Basis").splitlines()[-1])
+    if not any(effect["tool"] == "task_manage" for effect in content.get("prior_effects", [])):
+        with _relay(binding) as relay:
+            assert _ack(relay, _call(relay, {"action": "add", "title": title}))["acknowledged"] is True
+    return content
+
+
+def _tasks_titled(tmp_path, title):
+    with closing(sqlite3.connect(tmp_path / "canonical.db")) as conn:
+        return conn.execute("SELECT COUNT(*) FROM tasks WHERE title=?", (title,)).fetchone()[0]
+
+
+def test_restart_after_backend_error_reports_the_created_subtask_instead_of_recreating_it(binding, tmp_path):
+    first = _protocol_following_run(binding, "Kind A")
+    assert "prior_effects" not in first
+    restarted = _restart(binding, "trace-generation-2")
+    try:
+        from hub._services.chat.telegram_chat import _bound_worker_prompt
+
+        prompt = _bound_worker_prompt(restarted, "Basis")
+        content = _protocol_following_run(restarted, "Kind A")
+        assert "Wirkungsprotokoll" in prompt and "wiederhole sie nicht" in prompt
+        assert [effect["tool"] for effect in content["prior_effects"]] == ["task_manage"]
+        assert content["prior_effects"][0]["completed_at"]
+        assert "Teilaufgaben zerlegt" in content["description"]
+        assert _tasks_titled(tmp_path, "Kind A") == 1
+        # Names and times only: no arguments, results or the private lease id reach the prompt.
+        assert "arguments" not in json.dumps(content["prior_effects"])
+        assert restarted._ack.lease_id not in prompt and binding._ack.lease_id not in prompt
+    finally:
+        if restarted._active:
+            restarted.return_lease()
+
+
+def test_without_the_effect_log_the_restart_repeats_the_call_and_only_the_guard_prevents_a_duplicate(
+        binding, tmp_path, monkeypatch):
+    from hub._services.chat import telegram_chat
+
+    monkeypatch.setattr(telegram_chat, "_prior_effect_log", lambda binding: ([], 0))
+    _protocol_following_run(binding, "Kind B")
+    restarted = _restart(binding, "trace-generation-2")
+    try:
+        _protocol_following_run(restarted, "Kind B")
+        acknowledged = [event["tool_name"] for event in _events(restarted) if event["phase"] == "acknowledged"]
+        assert acknowledged.count("task_manage") == 2
+        assert _tasks_titled(tmp_path, "Kind B") == 1
+    finally:
+        if restarted._active:
+            restarted.return_lease()
+
+
+class _TraceOnly:
+    def __init__(self, events, generation="current"):
+        self.task_id, self.generation = 7, generation
+        self._client = type("Client", (), {"tool_trace_events": lambda _self, task_id, limit, offset: {
+            "events": events[offset:offset + limit]}})()
+
+
+def _chain(generation, request_id, *, tool="task_manage", receipt="r1", ack_receipt="r1", phases=("started", "returned", "acknowledged")):
+    receipts = {"started": None, "returned": receipt, "acknowledged": ack_receipt, "failed": None}
+    return [{"event_id": hash((generation, request_id, phase)) % 10**6, "generation": generation,
+             "request_id": request_id, "source": "normal-loop", "phase": phase, "tool_name": tool,
+             "receipt_id": receipts[phase], "occurred_at": "2026-10-26T08:00:00Z", "fence": 1}
+            for phase in phases]
+
+
+def test_effect_log_counts_only_fully_acknowledged_calls_of_earlier_runs():
+    from hub._services.chat.telegram_chat import _prior_effect_log
+
+    events = (_chain("old", "a" * 32, tool="task_manage")
+              + _chain("old", "b" * 32, tool="exec_command", phases=("started", "returned"))
+              + _chain("old", "c" * 32, tool="write_file", ack_receipt="other")
+              + _chain("old", "d" * 32, tool="fetch_url", phases=("started", "failed"))
+              + _chain("current", "e" * 32, tool="read_file"))
+    effects, omitted = _prior_effect_log(_TraceOnly(events))
+    assert [effect["tool"] for effect in effects] == ["task_manage"] and omitted == 0
+
+
+def test_effect_log_is_bounded_and_fails_closed_on_unreadable_trace():
+    from hub._services.chat.telegram_chat import _PRIOR_EFFECT_LIMIT, _prior_effect_log
+
+    events = [event for index in range(_PRIOR_EFFECT_LIMIT + 5)
+              for event in _chain("old", f"{index:032x}")]
+    for position, event in enumerate(events):
+        event["event_id"] = position
+    effects, omitted = _prior_effect_log(_TraceOnly(events))
+    assert len(effects) == _PRIOR_EFFECT_LIMIT and omitted == 5
+    broken = _TraceOnly([])
+    broken._client = type("Client", (), {"tool_trace_events": lambda *_args, **_kwargs: {"events": None}})()
+    with pytest.raises(RuntimeError, match="Wirkungsprotokoll"):
+        _prior_effect_log(broken)
+
+
+# --- #2660 follow-up: an open sibling with the same normalized title is reused, not re-created ----
+import re  # noqa: E402
+
+
+def _add(binding, title):
+    with _relay(binding) as relay:
+        result = _call(relay, {"action": "add", "title": title})
+        assert _ack(relay, result)["acknowledged"] is True
+    return int(re.search(r"Task #(\d+)", result["result"]).group(1)), result["result"]
+
+
+def test_duplicate_subtask_title_returns_the_open_sibling(binding, tmp_path):
+    first, _ = _add(binding, "Kind C")
+    again, message = _add(binding, "  kind   C ")
+    assert again == first and "besteht bereits" in message
+    assert _tasks_titled(tmp_path, "Kind C") == 1 and _tasks_titled(tmp_path, "  kind   C ") == 0
+    assert "nicht erneut angelegt" in binding.task_snapshot()["description"]
+
+
+def test_different_subtask_title_creates_a_new_sibling(binding, tmp_path):
+    first, _ = _add(binding, "Kind D")
+    second, message = _add(binding, "Kind E")
+    assert second != first and "erstellt" in message
+    assert _tasks_titled(tmp_path, "Kind D") == _tasks_titled(tmp_path, "Kind E") == 1
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_closed_sibling_is_not_reused(binding, tmp_path, status):
+    first, _ = _add(binding, "Kind F")
+    with closing(sqlite3.connect(tmp_path / "canonical.db")) as conn:
+        conn.execute("UPDATE tasks SET status=? WHERE id=?", (status, first))
+        conn.commit()
+    second, message = _add(binding, "Kind F")
+    assert second != first and "erstellt" in message
+    assert _tasks_titled(tmp_path, "Kind F") == 2
+
+
+def test_restart_that_ignores_the_effect_log_still_gets_the_existing_subtask(binding, tmp_path):
+    first, _ = _add(binding, "Kind G")
+    restarted = _restart(binding, "trace-generation-2")
+    try:
+        again, message = _add(restarted, "Kind G")
+        assert again == first and "besteht bereits" in message
+        assert _tasks_titled(tmp_path, "Kind G") == 1
+    finally:
+        if restarted._active:
+            restarted.return_lease()

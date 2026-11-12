@@ -46,6 +46,8 @@ from hub.base import BaseHandler
 __version__ = "1.0.0"
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("component-registry-resolver")
 class ExtensionsHandler(BaseHandler):
     """Handler fuer BACH Extensions."""
 

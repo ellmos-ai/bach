@@ -73,6 +73,52 @@ _COMPLETE_FLAG_HINT = (
     "complete fehlt: complete=true nur, wenn die Pflichtarbeit vollständig erledigt ist; "
     "sonst complete=false mit dem bisherigen Teilstand als result (die Task geht offen zurück)."
 )
+_INCOMPLETE_RESULT_HINT = (
+    "Ergebnis nennt offene Pflichtarbeit; complete=true wurde abgewiesen. "
+    "Melde complete=false und den Teilstand, solange Pflichtarbeit offen ist."
+)
+_INCOMPLETE_RESULT_PATTERNS = (
+    re.compile(
+        r"\b(?:(?:die\s+)?pflichtarbeit|(?:die\s+)?aufgabe)\s+(?:ist|bleibt)\s+(?:noch\s+)?"
+        r"(?:unvollständig|unfertig|unerledigt|offen|nicht\s+(?:vollständig\s+)?"
+        r"(?:erledigt|abgeschlossen|fertig))(?:\s+erfüllt)?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:the\s+)?(?:required|mandatory|requested)\s+work\s+"
+        r"(?:is|was|remains?|remain)\s+(?:(?:still|not\s+yet)\s+)?"
+        r"(?:incomplete|unfinished|open|outstanding|not\s+(?:yet\s+)?"
+        r"(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:task|tasks|deliverable|deliverables)\s+"
+        r"(?:is|are|remains?|remain)\s+(?:still\s+)?"
+        r"(?:incomplete|unfinished|not\s+(?:yet\s+)?(?:complete|completed|finished|done))\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[\n{,])\s*[\"']?(?:completion[_ -]?status|status)[\"']?\s*[:=]\s*"
+        r"[\"']?(?:incomplete|unfinished|partial|blocked|in_progress)[\"']?\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[{,])\s*[\"']?(?:complete|completed|finished|done)[\"']?\s*:\s*false\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _result_explicitly_incomplete(result: str) -> bool:
+    """Detect direct, structured self-reports that required work remains open."""
+    text = result.casefold()
+    for pattern in _INCOMPLETE_RESULT_PATTERNS:
+        for match in pattern.finditer(text):
+            prefix = text[max(0, match.start() - 24):match.start()]
+            if re.search(r"\b(?:no|not|never|kein(?:e|en|er)?|nicht)\s*$", prefix):
+                continue
+            return True
+    return False
 
 
 _PARTIAL_STATE_MARK = "\n\nTeilstand (Worker, "
@@ -156,6 +202,20 @@ def _log_bound_task_manage_denial(stage, binding, args, exc=None):
 
 _READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
 _READ_EVIDENCE_READ_ONLY_TOOLS = frozenset({"read_file", "search_text", "task_manage"})
+# Weitere fuer read-evidence zulaessige Werkzeuge ohne den exakten
+# 3-Werkzeug-Match: Zusatzlesewerkzeuge plus Datei-Mutationswerkzeuge.
+# read-evidence heisst "kein Ausfuehrungs-/Delegationsrecht", nicht
+# "nur lesen".
+_READ_EVIDENCE_EXTRA_READ_TOOLS = frozenset({
+    "list_directory",
+    "get_datetime",
+    "write_file",
+    "edit_file",
+    "create_directory",
+    "move_file",
+    "copy_file",
+    "recycle",
+})
 _READ_EVIDENCE_REASONS = frozenset({
     "formatter_capability_unverified",
     "reviewer_profile_required",
@@ -165,17 +225,30 @@ _READ_EVIDENCE_REASONS = frozenset({
 
 
 def _read_evidence_readonly_worker_enabled(worker_task_binding, allowed_tools) -> bool:
-    """Require an active fenced binding and the exact current read-only tool profile."""
+    """Read-evidence: aktive Fence-Bindung, Werkzeuge ohne Ausfuehrungsrecht.
+
+    Entkoppelt vom exakten 3-Werkzeug-Match: read_file muss enthalten sein,
+    jeder andere Name muss in _READ_EVIDENCE_READ_ONLY_TOOLS oder
+    _READ_EVIDENCE_EXTRA_READ_TOOLS liegen. Datei-Mutationswerkzeuge
+    (write_file, edit_file, create_directory, move_file, copy_file,
+    recycle) sind zulaessig: read-evidence meint "kein Ausfuehrungs-/
+    Delegationsrecht" (kein execute_command, kein delegate, kein
+    worktree-Abschluss), nicht "nur lesen".
+    """
     if not isinstance(worker_task_binding, WorkerLeaseBinding):
         return False
     if not isinstance(allowed_tools, (set, frozenset, tuple, list)):
         return False
-    if len(allowed_tools) != len(_READ_EVIDENCE_READ_ONLY_TOOLS):
-        return False
     try:
         if any(type(tool) is not str for tool in allowed_tools):
             return False
-        if frozenset(allowed_tools) != _READ_EVIDENCE_READ_ONLY_TOOLS:
+        grants = frozenset(allowed_tools)
+        if not grants:
+            return False
+        if not {"read_file", "task_manage"}.issubset(grants):
+            return False
+        if not grants.issubset(
+                _READ_EVIDENCE_READ_ONLY_TOOLS | _READ_EVIDENCE_EXTRA_READ_TOOLS):
             return False
         # The runtime supplies allowed_tools only after its live worker-profile
         # reader has refreshed the session. The lease check binds this tool
@@ -619,6 +692,8 @@ def check_safe_shell_args(tokens: list) -> Optional[str]:
     return None
 
 CMD_TIMEOUT = limit("BACH_CMD_TIMEOUT")
+SEARCH_TIMEOUT = limit("BACH_SEARCH_TIMEOUT", 15)
+SEARCH_MAX_BYTES = limit("BACH_SEARCH_MAX_BYTES", 8_388_608)
 
 
 def is_blocked(cmd: str) -> bool:
@@ -887,8 +962,12 @@ def run_shell(cmd: str, timeout: int = CMD_TIMEOUT) -> str:
         return _tool_effect_unconfirmed()
 
 
+from hub._services.chat.worker_write_guard import build_execute_command_env
+
+
 def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
-                          allowed: Optional[FrozenSet[str]] = None) -> str:
+                          allowed: Optional[FrozenSet[str]] = None,
+                          *, env: Optional[dict[str, str]] = None) -> str:
     """Fuehrt cmd fail-closed aus - IMMER shell=False (hub/safe_exec.py).
 
     Fuer safe_shell/execute_command: cmd kommt direkt aus einem
@@ -906,12 +985,18 @@ def run_shell_restricted(cmd: str, timeout: int = CMD_TIMEOUT,
         argv = safe_exec.resolve_executable(cmd, allowed)
     except safe_exec.CommandRejected as e:
         return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
+    base_env = (
+        build_execute_command_env()
+        if env is None and allowed is None
+        else (os.environ if env is None else env)
+    )
+    child_env = {**base_env, "PYTHONIOENCODING": "utf-8"}
     try:
         r = subprocess.run(
             argv, shell=False, capture_output=True, text=True,
             encoding='utf-8', errors='replace',
             timeout=timeout, stdin=subprocess.DEVNULL,
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env=child_env,
         )
         if r.returncode != 0:
             return _tool_effect_unconfirmed()
@@ -1038,14 +1123,14 @@ TOOLS_SAFE = [
         "query": {"type": "string", "description": "Suchanfrage"},
         "max_results": {"type": "integer", "description": "Maximale Ergebnisse (Standard 5, max 10)"},
     }, ["query"]),
-    _tool("task_manage", "BACH-Tasks verwalten: anlegen, zerlegen, auflisten, aktualisieren, Status ändern", {
+    _tool("task_manage", "BACH-Tasks verwalten (Status, Zerlegung, Ergebnis)", {
         "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
-                   "description": "Bei gebundener Task: list ohne task_id; update-Status (pending/open/blocked) ohne Inhaltsfelder; decompose mit subtasks=[{\"title\":\"Kind\",\"description\":\"Arbeit\"}], close_parent=false. Ergebnis nur mit submit_result (done als Alias) und complete=true/false abgeben. Abschluss nach konfiguriertem Modus."},
+                   "description": "list (bei Bindung ohne task_id), add, detail, update (nur Status), decompose, submit_result/done (result + complete)"},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Fertiges Worker-Ergebnis bei submit_result/done, höchstens 3000 Zeichen. Im einfachen Modus ohne vorgegebenen Vertrag genügt ein konkreter Ergebnistext als ausdrückliche Fertigmeldung; tatsächliche Arbeit und Prüfung nennen. Ein negativer oder unvollständiger JSON-Selbstcheck ist keine Fertigmeldung. Offene Pflichtarbeit oder Teilstand: submit_result mit complete=false (Teilstand wird gespeichert, Task bleibt offen). Andere Modi folgen ihrer Review-Regel."},
-        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done einer gebundenen Task: true nur, wenn die Pflichtarbeit vollständig erledigt ist; false speichert result als Teilstand in der Task und gibt sie offen zurück (pending)."},
+        "result": {"type": "string", "description": "Fertiges Ergebnis bei submit_result/done (max. 3000 Zeichen). Werkzeugbeleg Pflicht; complete=false: Teilstand, Task bleibt offen."},
+        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done; true nur mit bestätigtem Werkzeugbeleg."},
         "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
@@ -1245,6 +1330,44 @@ def on_demand_tools(tools, requested_groups) -> list:
     return result
 
 
+#: Benannte Toolset-Profile fuer Slots (slot.tool_profile). Namen statt
+#: freier allowed_tools-Listen: weniger fehleranfaellig, ohne Write-Lock
+#: aenderbar; Wechsel greift beim naechsten start_local.
+_TOOL_PROFILE_READONLY = frozenset({
+    "read_file", "search_text", "task_manage", "list_directory", "get_datetime",
+})
+_TOOL_PROFILE_FILES = _TOOL_PROFILE_READONLY | frozenset({
+    "file_info", "write_file", "edit_file", "create_directory",
+    "move_file", "copy_file", "recycle",
+})
+_TOOL_PROFILE_CODE_DELIVERY = _TOOL_PROFILE_READONLY | frozenset({
+    "file_info", "write_file", "edit_file", "execute_command",
+    "start_task_worktree", "finish_task",
+})
+
+#: name -> frozenset der Werkzeugnamen.
+TOOL_PROFILES = {
+    "standard": frozenset(t["function"]["name"] for t in TOOLS_SAFE) | _TOOL_PROFILE_FILES,
+    "readonly": _TOOL_PROFILE_READONLY,
+    "files": _TOOL_PROFILE_FILES,
+    "code_delivery": _TOOL_PROFILE_CODE_DELIVERY,
+    "all": frozenset(t["function"]["name"] for t in TOOLS_FULL),
+}
+
+
+def resolve_tool_profile(name: str, *, bound_worker: bool = False):
+    """Werkzeugnamen eines benannten Profils als sortierte Liste; None bei
+    unbekanntem Namen. Mit bound_worker werden delegate und
+    cleanup_task_worktree herausgefiltert (wie in tools_for_mode).
+    """
+    grants = TOOL_PROFILES.get(name)
+    if grants is None:
+        return None
+    if bound_worker:
+        grants = grants - {"delegate", "cleanup_task_worktree"}
+    return sorted(grants)
+
+
 # --- Delegation ---
 
 def _delegate_claude_api(prompt: str, api_key: str,
@@ -1346,8 +1469,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
               require_task_binding: bool = False, agent_operations=None,
               allowed_tools=None) -> str:
     allowed_tools = _review_tool_grants(worker_task_binding, allowed_tools)
+
+    def capability_denial(code, text):
+        # PB-1: the bound run remembers it, so it cannot file a "Rest:" task for it.
+        record = getattr(worker_task_binding, "record_capability_denial", None)
+        if callable(record):
+            record(code)
+        return _tool_policy_denial(code, text)
+
     if allowed_tools is not None and name not in allowed_tools:
-        return _tool_policy_denial("tool_not_authorized", "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben.")
+        return capability_denial("tool_not_authorized", "BLOCKIERT: Werkzeug ist für diesen Agenten nicht freigegeben.")
     if require_task_binding and worker_task_binding is None:
         return ToolErrorText("Taskbindung fehlt; Werkzeug nicht ausgeführt.", code="task_binding_required")
     if worker_task_binding is not None:
@@ -1360,9 +1491,9 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             try:
                 worker_write_guard.require_write_grant(name, allowed_tools)
             except worker_write_guard.WorkerWriteGuardError as exc:
-                return _tool_policy_denial("write_grant_denied", "BLOCKIERT: Schreibfreigabe ist für diesen Worker nicht vorhanden.")
+                return capability_denial("write_grant_denied", "BLOCKIERT: Schreibfreigabe ist für diesen Worker nicht vorhanden.")
         if name not in {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=True)}:
-            return _tool_policy_denial("mode_not_authorized", "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar.")
+            return capability_denial("mode_not_authorized", "BLOCKIERT: Werkzeug ist in diesem Worker-Modus nicht verfügbar.")
         # Shared by the chat loop and the managed CLI bridge. Preserve proof
         # before dispatch, including reads and uncertain tool outcomes.
         mark_dispatch = getattr(worker_task_binding, "mark_tool_dispatch", None)
@@ -1619,11 +1750,13 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     resolved.glob("*") if resolved.is_dir() else [resolved]
                 )
             hits = []
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + SEARCH_TIMEOUT
             bytes_read = 0
+            truncated = False
             for n, f in enumerate(files):
                 if time.monotonic() >= deadline:
-                    return _tool_effect_unconfirmed()
+                    truncated = True
+                    break
                 if n >= 5000:
                     break
                 fr = f if task_scope is not None else _resolve(f)
@@ -1649,18 +1782,32 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         while line := fh.readline(65536):
                             i += 1
                             bytes_read += len(line.encode("utf-8"))
+                            if bytes_read > SEARCH_MAX_BYTES:
+                                truncated = True
+                                break
                             remaining = deadline - time.monotonic()
-                            if bytes_read > 8_388_608 or remaining <= 0:
-                                return _tool_effect_unconfirmed()
+                            if remaining <= 0:
+                                truncated = True
+                                break
                             if rx.search(line, timeout=min(.05, remaining), concurrent=True):
                                 hits.append(f"{f}:{i}:{line.rstrip()}")
                                 if len(hits) >= 200:
                                     break
+                        if truncated:
+                            break
                 except TimeoutError:
-                    return _tool_effect_unconfirmed()
+                    if task_scope is not None:
+                        return _tool_effect_unconfirmed()
+                    continue
                 except OSError:
                     continue
-            return ("\n".join(hits) or "(keine Treffer)")[:4000]
+            result = "\n".join(hits) or "(keine Treffer)"
+            if truncated:
+                result += (
+                    f"\n… Teilabbruch nach {SEARCH_TIMEOUT}s bzw. "
+                    f"{SEARCH_MAX_BYTES} Bytes – bisherige Treffer sind gültig."
+                )
+            return result[:4000]
 
         if name == "system_status":
             values = [
@@ -1695,7 +1842,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if worker_task_binding is not None and args.get("handler") == "task":
                 try:
                     return worker_task_binding.execute_task_command(args.get("operation", ""), args.get("args", []))
-                except ValueError:
+                except LeaseSelfCheckRequiredError:
+                    return ToolErrorText(LeaseSelfCheckRequiredError.user_message, code="invalid_task_result")
+                except ValueError as exc:
+                    if str(exc).startswith("--complete="):
+                        return ToolErrorText(f"BLOCKIERT: {exc}", code="invalid_task_arguments")
                     return _tool_policy_denial("worker_context_denied", "BLOCKIERT: Taskbefehl für gebundene Task nicht freigegeben.")
                 except Exception:
                     return _tool_effect_unconfirmed()
@@ -1759,12 +1910,19 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if is_blocked(cmd):
                 return _tool_policy_denial("command_not_authorized", "BLOCKIERT: Befehl ist aus Sicherheitsgründen gesperrt.")
             if worker_task_binding is not None:
-                from hub._services.chat.worker_write_guard import run_bound_check, WorkerCheckPolicyRejected
+                from hub._services.chat.worker_write_guard import (
+                    run_bound_check, WorkerCheckPolicyRejected, WorkerWriteGuardError,
+                )
                 try:
                     result = run_bound_check(worker_task_binding, cmd, args.get("cwd"), t, return_result=True)
                     return _bound_check_text(result, t)
                 except WorkerCheckPolicyRejected as exc:
                     return _tool_policy_denial(exc.policy_reason, str(exc))
+                except WorkerWriteGuardError as e:
+                    # run_bound_check ist fail-closed: jede Exception entsteht VOR
+                    # sandbox.run_isolated(...) — der Prozess wurde nie gestartet.
+                    # Also keine unbekannte Wirkung, sondern eine saubere Ablehnung.
+                    return _tool_policy_denial("bound_check_denied", f"BLOCKIERT: {e}")
                 except Exception as e:
                     return _tool_effect_unconfirmed()
             from hub.worker_git import is_live_path_blocked
@@ -1921,6 +2079,15 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     if type(complete) is not bool:
                         _log_bound_task_manage_denial("completion_flag", worker_task_binding, args)
                         return ToolErrorText(_COMPLETE_FLAG_HINT, code="invalid_task_arguments")
+                    if complete and getattr(worker_task_binding, "decomposition_receipt", None) is not None:
+                        _log_bound_task_manage_denial("completion_flag", worker_task_binding, args)
+                        return ToolErrorText(
+                            "Zerlegung ist kein Abschluss: Gib für einen zerlegten Eltern-Task complete=false mit dem Teilstand an.",
+                            code="invalid_task_arguments",
+                        )
+                    if complete and _result_explicitly_incomplete(str(args.get("result") or "")):
+                        _log_bound_task_manage_denial("submission_validation", worker_task_binding, args)
+                        return ToolErrorText(_INCOMPLETE_RESULT_HINT, code="invalid_task_result")
                     partial = complete is False
                     if partial and action == "update":
                         # The done alias skipped the public result check above.

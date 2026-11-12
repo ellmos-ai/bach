@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -32,7 +33,13 @@ for _p in (_system_dir, _root_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from hub.bach_paths import BACH_DB
 from hub._services.chat.control_auth import get_control_api_auth_header
+from hub._services.chat.slots_config import (
+    ALWAYS_ON_RIGHTS_TRAY_ITEMS,
+    effective_worker_rights,
+    worker_rights_level_to_mode_rights,
+)
 from hub._services.chat.tray_worker_execution import NativeWorkerObserver, WORKER_ID
 
 try:
@@ -256,6 +263,7 @@ class BACHTray:
                  activity_url=None, gui_url=None, brand="bach", execution_state_path=None):
         self.brand = (brand or "bach").lower()
         self.host = host
+        self.port = port
         self.remote = remote
         self.base_url = f"http://{host}:{port}"
         self.control_api_auth_header = get_control_api_auth_header()
@@ -286,6 +294,7 @@ class BACHTray:
             "fackel_preference": "compute",
             "current_tool": "",
             "last_tools": [],
+            "ram_claiming": {"loaded_models": [], "claimed_gib": 0.0},
         }
         self.backends = {}
         self.models = []
@@ -295,6 +304,24 @@ class BACHTray:
         self._stop = threading.Event()
 
         self.services = {"gui": False, "control": False, "ollama": False}
+        self.permissions = {
+            "system_tools": True,
+            "browser_control": True,
+            "camera": False,
+            "microphone": False,
+            "screen_capture": False,
+            "voice_tts": True,
+            "speech_to_text": True,
+            "smarthome_robotics": False,
+            "ollama": True,
+        }
+        self.talk_config = {
+            "persona": "buddha",
+            "operating_mode": "ptt",
+            "primary_model": "qwen3.8:27b-mlx",
+            "fast_relay_model": "smollm2:360m",
+            "summon_policy": "knock",
+        }
 
         # Idle-Worker ist per Default aktiv (deaktivierbar via BACH_IDLE_WORKER=0)
         self.idle_enabled = not remote and os.environ.get("BACH_IDLE_WORKER", "1").strip().lower() not in ("0", "false", "no", "off")
@@ -313,6 +340,14 @@ class BACHTray:
         self.max_status_failures = 3
         self._failed_status_count = 0
         self.prompt_source = "defaults"
+        self.favorite_prompts = {}
+        self.modular_status = {}
+        self.modular_standalone_count = 0
+        self.module_updates = {"has_updates": False, "count": 0, "updates": []}
+        self._last_module_update_check = 0.0
+        self._notified_module_update_count = 0
+        self._reload_modular_status()
+        self._check_module_updates(force=True)
         self.prompts = self._load_prompts()
 
     # --- API ---
@@ -705,6 +740,12 @@ class BACHTray:
         self.services["control"] = self.state["connected"]
         self.services["gui"] = self._check_url(self.gui_url + "/")
         self.services["ollama"] = self._check_url(self.ollama_url + "/api/tags")
+        if self.services["ollama"]:
+            ps_resp = self._api("GET", "/api/ps", base=self.ollama_url, timeout=2)
+            models_ps = ps_resp.get("models", []) if isinstance(ps_resp, dict) else []
+            names_ps = [str(m.get("name") or m.get("model") or "").strip() for m in models_ps if isinstance(m, dict) and (m.get("name") or m.get("model"))]
+            bytes_ps = sum(int(m.get("size_vram") or m.get("size") or 0) for m in models_ps if isinstance(m, dict) and isinstance(m.get("size_vram") or m.get("size"), (int, float)))
+            self.state["ram_claiming"] = {"loaded_models": names_ps, "claimed_gib": round(bytes_ps / (1024 ** 3), 1) if bytes_ps > 0 else 0.0}
 
         if not self.remote and ("fackel_preference" not in self.state or not self.state.get("fackel_preference")):
             try:
@@ -720,22 +761,44 @@ class BACHTray:
                     self.state["fackel_preference"] = pref
             except Exception:
                 pass
+        self._check_module_updates(force=False)
 
     # --- PromptBoard ---
 
-    def _promptboard_project_dir(self):
+    def _promptboard_project_dirs(self):
+        dirs = []
+        # 1. Plan D canonical local dev repos
+        local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
+        for repo_name in (
+            "promptboard",
+            "PromptBoard",
+            "REL-PUB_PromptBoard-tasksolver-1136-1137",
+            "REL-PUB_PromptBoard",
+        ):
+            p = local_dev / repo_name
+            if p.exists() and p not in dirs:
+                dirs.append(p)
+
+        # 2. OneDrive software directories
         user_profile = os.environ.get("USERPROFILE")
-        if not user_profile:
-            return None
-        project_dir = (
-            Path(user_profile)
-            / "OneDrive"
-            / ".TOPICS"
-            / ".SOFTWARE"
-            / "LLM"
-            / "REL-PUB_PromptBoard"
-        )
-        return project_dir if project_dir.exists() else None
+        if user_profile:
+            for sub in ("DATA", "LLM"):
+                for folder in ("REL-PUB_PromptBoard", "PromptBoard"):
+                    p = (
+                        Path(user_profile)
+                        / "OneDrive"
+                        / ".TOPICS"
+                        / ".SOFTWARE"
+                        / sub
+                        / folder
+                    )
+                    if p.exists() and p not in dirs:
+                        dirs.append(p)
+        return dirs
+
+    def _promptboard_project_dir(self):
+        dirs = self._promptboard_project_dirs()
+        return dirs[0] if dirs else None
 
     def _promptboard_library_candidates(self):
         candidates = []
@@ -749,12 +812,14 @@ class BACHTray:
         if appdata:
             candidates.append(Path(appdata) / "PromptBoard" / "library.json")
 
-        project_dir = self._promptboard_project_dir()
-        if project_dir:
-            candidates.extend([
+        for project_dir in self._promptboard_project_dirs():
+            for sub in (
                 project_dir / "library.json",
                 project_dir / "data" / "library.json",
-            ])
+                project_dir / "_tmp_accessibility_check" / "library.json",
+            ):
+                if sub not in candidates:
+                    candidates.append(sub)
 
         return candidates
 
@@ -764,8 +829,7 @@ class BACHTray:
         if env_path:
             candidates.append(Path(env_path).expanduser())
 
-        project_dir = self._promptboard_project_dir()
-        if project_dir:
+        for project_dir in self._promptboard_project_dirs():
             dist_dir = project_dir / "dist"
             if dist_dir.exists():
                 candidates.extend(
@@ -775,9 +839,28 @@ class BACHTray:
                         reverse=True,
                     )
                 )
+            releases_dir = project_dir / "releases"
+            if releases_dir.exists():
+                candidates.extend(
+                    sorted(
+                        releases_dir.glob("**/PromptBoard-*-win64.exe"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                )
+            store_dir = project_dir / "store_package"
+            if store_dir.exists():
+                candidates.extend(
+                    sorted(
+                        store_dir.glob("**/PromptBoard-*-win64.exe"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                )
             candidates.extend([
                 project_dir / "start.bat",
                 project_dir / "releases" / "PromptBoard.msix",
+                project_dir / "src" / "promptboard.py",
             ])
         return candidates
 
@@ -830,21 +913,213 @@ class BACHTray:
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
 
+    def _make_prompt_preview(self, text: str, max_len: int = 70) -> str:
+        """Create a clean, single-line preview string for prompt menus."""
+        cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+        if len(cleaned) > max_len:
+            return cleaned[:max_len - 3] + "..."
+        return cleaned
+
+    def _load_db_prompts(self):
+        """Load curated prompts and favorites from BACH's canonical database (prompt_templates)."""
+        db_path = BACH_DB
+        if not db_path.is_file():
+            return {}
+        try:
+            with sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name, text, category, tags FROM prompt_templates WHERE text IS NOT NULL AND text != ''"
+                )
+                db_prompts = {}
+                fav_prompts = {}
+                for name, text, category, tags in cursor.fetchall():
+                    cat = (category.strip() if category and category.strip() else "BACH")
+                    name_str = str(name).strip()
+                    text_str = str(text).strip()
+                    db_prompts.setdefault(cat, {})[name_str] = text_str
+                    tags_lower = (str(tags) if tags else "").lower()
+                    if any(f in tags_lower for f in ("favorite", "favorit", "star", "pinned")):
+                        fav_prompts[name_str] = {
+                            "text": text_str,
+                            "category": cat,
+                            "preview": self._make_prompt_preview(text_str),
+                        }
+                if fav_prompts:
+                    self.favorite_prompts = fav_prompts
+                return db_prompts
+        except Exception:
+            return {}
+
+    def _ensure_initial_favorites(self, prompts):
+        """Seed favorites from available prompts if no explicit favorites are marked yet."""
+        if self.favorite_prompts:
+            return
+        favs = {}
+        for cat, p_map in prompts.items():
+            for name, text in p_map.items():
+                favs[name] = {
+                    "text": text,
+                    "category": cat,
+                    "preview": self._make_prompt_preview(text),
+                }
+                if len(favs) >= 4:
+                    break
+            if len(favs) >= 4:
+                break
+        self.favorite_prompts = favs
+
     def _load_prompts(self):
         config_dir = os.path.expanduser("~/.config/bach")
         prompts_path = Path(config_dir) / "prompts.json"
         prompts = self._read_prompt_file(prompts_path)
         if prompts:
             self.prompt_source = str(prompts_path)
+            self._ensure_initial_favorites(prompts)
             return prompts
 
         for candidate in self._promptboard_library_candidates():
             prompts = self._read_prompt_file(candidate)
             if prompts:
                 self.prompt_source = str(candidate)
+                self._ensure_initial_favorites(prompts)
                 return prompts
+
+        db_prompts = self._load_db_prompts()
+        if db_prompts:
+            self.prompt_source = "bach_db"
+            self._ensure_initial_favorites(db_prompts)
+            return db_prompts
+
         self.prompt_source = "defaults"
+        self._ensure_initial_favorites(DEFAULT_PROMPTS)
         return DEFAULT_PROMPTS
+
+    def _reload_prompts(self, *_):
+        self.favorite_prompts = {}
+        self.prompts = self._load_prompts()
+        if self.icon:
+            fav_count = len(self.favorite_prompts)
+            total_count = sum(len(p) for p in self.prompts.values())
+            self.icon.notify(f"{fav_count} Favoriten, {total_count} Prompts geladen", "BACH Prompts")
+            self._update_icon()
+
+    def _reload_modular_status(self):
+        try:
+            from hub._services.ocean_stack_bridge import ocean_modularized_services_status
+            self.modular_status = ocean_modularized_services_status()
+            self.modular_standalone_count = sum(1 for v in self.modular_status.values() if v.get("standalone"))
+        except Exception:
+            self.modular_status = {}
+            self.modular_standalone_count = 0
+
+    def _check_module_updates(self, force: bool = False):
+        now = time.time()
+        if not force and (now - getattr(self, "_last_module_update_check", 0.0) < 60):
+            return
+        self._last_module_update_check = now
+        try:
+            from hub.modules import ModulesHandler
+            handler = ModulesHandler(_root_dir)
+            check = handler.check_for_updates()
+            has_upd = bool(check.get("has_updates"))
+            count = int(check.get("updates_count", 0))
+            updates = list(check.get("updates", []))
+            self.module_updates = {
+                "has_updates": has_upd,
+                "count": count,
+                "updates": updates,
+            }
+            prev_notified = getattr(self, "_notified_module_update_count", 0)
+            if has_upd and count > prev_notified:
+                self._notified_module_update_count = count
+                if self.icon:
+                    names = ", ".join(u["name"] for u in updates[:3])
+                    if len(updates) > 3:
+                        names += "..."
+                    self.icon.notify(
+                        f"{count} Modul-Update(s) verfügbar: {names}",
+                        "BACH Modul-Manager"
+                    )
+                    self.icon.menu = self._build_menu()
+        except Exception:
+            pass
+
+    def _trigger_modules_update_action(self, icon=None, item=None):
+        try:
+            from hub.modules import ModulesHandler
+            handler = ModulesHandler(_root_dir)
+            ok, msg = handler.handle("update", [])
+            self._reload_modular_status()
+            self._check_module_updates(force=True)
+            if self.icon:
+                self.icon.menu = self._build_menu()
+                if ok:
+                    self.icon.notify("Alle Module erfolgreich aktualisiert und hot-wired!", "BACH Modul-Manager")
+                else:
+                    self.icon.notify(f"Update-Fehler: {msg}", "BACH Modul-Manager")
+        except Exception as exc:
+            if self.icon:
+                self.icon.notify(f"Update-Fehler: {exc}", "BACH Modul-Manager")
+
+    def _manual_check_module_updates(self, icon=None, item=None):
+        self._check_module_updates(force=True)
+        if self.icon:
+            self.icon.menu = self._build_menu()
+            if self.module_updates.get("has_updates"):
+                c = self.module_updates["count"]
+                self.icon.notify(f"{c} Modul-Update(s) verfügbar!", "BACH Modul-Manager")
+            else:
+                self.icon.notify("Alle Module sind auf dem aktuellen Stand.", "BACH Modul-Manager")
+
+    def _trigger_modules_sync(self, icon=None, item=None):
+        try:
+            from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
+            auto_switch_to_standalone_modules()
+            self._reload_modular_status()
+            self._check_module_updates(force=True)
+            if self.icon:
+                self.icon.menu = self._build_menu()
+                self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", "BACH Module")
+        except Exception:
+            pass
+
+    def _build_modular_status_menu_items(self):
+        items = []
+        count = self.modular_standalone_count
+        total = max(12, len(self.modular_status))
+        items.append(pystray.MenuItem(f"Status: {count}/{total} aktiv (Standalone-Modus)", None, enabled=False))
+
+        if self.module_updates.get("has_updates"):
+            upd_count = self.module_updates["count"]
+            items.append(pystray.MenuItem(f"⚡ {upd_count} Modul-Update(s) verfügbar!", self._trigger_modules_update_action))
+            for u in self.module_updates["updates"][:5]:
+                items.append(pystray.MenuItem(f"  • {u['name']} (v{u['current_version']} -> v{u['new_version']})", None, enabled=False))
+            items.append(pystray.MenuItem("📦 Alle Module jetzt aktualisieren", self._trigger_modules_update_action))
+        else:
+            items.append(pystray.MenuItem("📦 Auf Modul-Updates prüfen", self._manual_check_module_updates))
+
+        items.append(pystray.MenuItem("🔄 Modul-Sync ausführen (bach update modules --sync)", self._trigger_modules_sync))
+        items.append(pystray.Menu.SEPARATOR)
+        if self.modular_status:
+            for mod_name, info in sorted(self.modular_status.items()):
+                status_icon = "✅" if info.get("standalone") else "⚠️"
+                st = "standalone" if info.get("standalone") else info.get("status", "legacy")
+                items.append(pystray.MenuItem(f"{status_icon} {mod_name} ({st})", None, enabled=False))
+        else:
+            items.append(pystray.MenuItem("(Keine Modul-Daten)", None, enabled=False))
+        return items
+
+    def modular_status_smoke_snapshot(self):
+        return {
+            "standalone_count": self.modular_standalone_count,
+            "total_modularized": len(self.modular_status),
+            "modules": {k: v.get("status") for k, v in self.modular_status.items()},
+            "auto_update_ready": True,
+            "has_updates": self.module_updates.get("has_updates", False),
+            "updates_count": self.module_updates.get("count", 0),
+            "updates": self.module_updates.get("updates", []),
+        }
 
     def promptboard_smoke_snapshot(self):
         app_path = self._promptboard_app_path()
@@ -866,9 +1141,12 @@ class BACHTray:
             "using_default_prompts": self.prompt_source == "defaults",
             "prompt_categories": list(self.prompts.keys()),
             "prompt_count": prompt_count,
+            "favorite_count": len(self.favorite_prompts),
+            "modular_standalone_count": self.modular_standalone_count,
+            "quick_insert_supported": True,
         }
 
-    def _copy_to_clipboard(self, text):
+    def _copy_to_clipboard(self, text, notify: bool = True):
         try:
             if sys.platform == "darwin":
                 subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
@@ -877,10 +1155,46 @@ class BACHTray:
             else:
                 subprocess.run(["xclip", "-selection", "clipboard"],
                                input=text.encode("utf-8"), check=False)
-            if self.icon:
+            if notify and self.icon:
                 self.icon.notify("In Zwischenablage kopiert", "BACH Prompt")
         except FileNotFoundError:
             pass
+
+    def _simulate_paste(self):
+        """Simuliert Tastenkombination zum direkten Einfügen in das aktive Eingabefeld."""
+        time.sleep(0.12)
+        if sys.platform == "win32":
+            import ctypes
+            VK_CONTROL = 0x11
+            VK_V = 0x56
+            KEYEVENTF_KEYUP = 0x0002
+            user32 = ctypes.windll.user32
+            user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            user32.keybd_event(VK_V, 0, 0, 0)
+            time.sleep(0.02)
+            user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
+            user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+        elif sys.platform == "darwin":
+            subprocess.run([
+                "osascript", "-e",
+                'tell application "System Events" to keystroke "v" using command down'
+            ], check=False)
+        else:
+            subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], check=False)
+
+    def _make_prompt_quick_insert_action(self, text):
+        def action(*_):
+            self._copy_to_clipboard(text, notify=False)
+            def do_paste():
+                try:
+                    self._simulate_paste()
+                    if self.icon:
+                        self.icon.notify("Prompt direkt eingefügt!", "BACH Quick-Insert")
+                except Exception:
+                    if self.icon:
+                        self.icon.notify("In Zwischenablage kopiert (Strg+V)", "BACH Quick-Insert")
+            threading.Thread(target=do_paste, daemon=True).start()
+        return action
 
     def _send_prompt(self, prompt):
         result = self._api("POST", "/api/chat", {
@@ -906,6 +1220,15 @@ class BACHTray:
     def _make_prompt_send_action(self, text):
         def action(*_):
             threading.Thread(target=self._send_prompt, args=(text,), daemon=True).start()
+        return action
+
+    def _make_prompt_open_chat_action(self, text):
+        def action(*_):
+            self._copy_to_clipboard(text)
+            import webbrowser
+            webbrowser.open(f"{self.gui_url}/chat")
+            if self.icon:
+                self.icon.notify("Prompt kopiert & Chat geöffnet", "BACH Prompt")
         return action
 
     # --- Idle Worker ---
@@ -1013,23 +1336,63 @@ class BACHTray:
 
     @property
     def _icon_image(self):
-        if self._always_on_runtime_label(self.slots.get(WORKER_ID, {})).startswith("Running"):
-            return self._make_icon((90, 120, 220, 255))  # actual native inference
-        if self.state["connected"]:
-            if self.state.get("mode") == "full":
-                return self._make_icon((255, 165, 0, 255))  # orange = full
-            return self._make_icon((0, 200, 100, 255))  # green = connected safe
-        return self._make_icon((180, 40, 40, 255))  # red = disconnected
+        if not self.state.get("connected"):
+            return self._make_icon((180, 40, 40, 255))  # red = disconnected
+        ws = self.state.get("worker_status")
+        if ws == "working" or self._always_on_runtime_label(self.slots.get(WORKER_ID, {})).startswith("Running"):
+            return self._make_icon((90, 120, 220, 255))  # actual native inference / working
+        if ws == "paused":
+            return self._make_icon((150, 150, 150, 255))  # grey = paused
+        if self.state.get("mode") == "full":
+            return self._make_icon((255, 165, 0, 255))  # orange = full
+        return self._make_icon((0, 200, 100, 255))  # green = connected safe
 
     # --- Menu ---
+
+    def _toggle_server_worker(self, *_):
+        """Send pause/toggle signal to the server worker instead of running tasks locally."""
+        try:
+            self._api("POST", "/api/worker/toggle", body={"worker_id": WORKER_ID})
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Worker-Signal fehlgeschlagen: {e}", "BACH System")
+        self._refresh()
+        self._update_icon()
 
     def _build_menu(self):
         items = []
         always_status_str = self._always_on_runtime_label(
             self.slots.get("buddha_always_on", {})
         )
-        target_label = "Ziel: Server (Tunnel)" if self.remote else "Ziel: Lokal"
+        # ── WP4: Transparente Server-Zielanzeige im Menuekopf ──
+        if self.remote or (self.host not in ("127.0.0.1", "localhost")):
+            host_name = "Mac Studio" if ("100.119.69" in self.host or "mac" in self.host.lower()) else self.host
+            target_label = f"Verbunden mit: {host_name} ({self.host}:{self.port})"
+        else:
+            target_label = f"Verbunden mit: Lokal ({self.host}:{self.port})"
         items.append(pystray.MenuItem(target_label, None, enabled=False))
+
+        # ── WP2: Buddha Server-Worker-Status Display ──
+        ws = self.state.get("worker_status", "idle")
+        tid = self.state.get("task_id")
+        ttitle = self.state.get("task_title")
+        if ws == "working":
+            buddha_label = f"🔵 Buddha: Rechnet an Task #{tid}" if tid else "🔵 Buddha: Rechnet"
+            if ttitle:
+                buddha_label += f" ({ttitle[:30]})"
+        elif ws == "paused":
+            buddha_label = "⏸️ Buddha: Pausiert"
+        elif self.state.get("active_sessions", 0) > 0:
+            buddha_label = "⚪ Buddha: Chat aktiv"
+        else:
+            buddha_label = "🟢 Buddha: Bereit (Leerlauf)"
+        items.append(pystray.MenuItem(buddha_label, None, enabled=False))
+
+        # ── WP3: Remote-Pause-Schalter (Hintergrundarbeit erlauben [✔ / ❌]) ──
+        is_allowed = (ws != "paused")
+        toggle_label = f"Hintergrundarbeit erlauben [{'✔' if is_allowed else '❌'}]"
+        items.append(pystray.MenuItem(toggle_label, self._toggle_server_worker))
+        items.append(pystray.Menu.SEPARATOR)
 
         # ── Status ──
         if self.state["connected"]:
@@ -1054,21 +1417,36 @@ class BACHTray:
             always_backend = always_slot.get("backend") or "ollama"
             always_rounds = always_slot.get("max_tool_rounds", 25)
             always_mode = always_slot.get("mode", "full")
+            always_rights = effective_worker_rights(always_slot)
             always_status_str = self._always_on_runtime_label(always_slot)
 
             conn_model = conn_slot.get("model") or "qwen3.8:27b-mlx"
             conn_backend = conn_slot.get("backend") or "ollama"
             conn_rounds = conn_slot.get("max_tool_rounds", 10)
 
-            # Slot 1: Buddha Chat
-            chat_subitems = []
+            # Deine Agenten (Direkte Modell-Bindung & Claim-Klassen 1-4)
+            items.append(
+                pystray.MenuItem(
+                    "🤖 Deine Agenten (Modell-Bindung & Claim)",
+                    None,
+                    enabled=False,
+                )
+            )
+            # Agent 1: Buddha Chat (Klasse 1 = Interaktiv)
+            chat_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 1 · Direkt interaktiv (höchster Modell-Vorrang)",
+                    None,
+                    enabled=False,
+                )
+            ]
             if self.models:
                 chat_model_items = [
                     pystray.MenuItem(m, self._make_slot_model_action("buddha_chat", m),
                                      checked=lambda item, m=m, s=chat_model: m == s)
                     for m in self.models[:15]
                 ]
-                chat_subitems.append(pystray.MenuItem(f"Modell: {chat_model}", pystray.Menu(*chat_model_items)))
+                chat_subitems.append(pystray.MenuItem(f"Modell-Bindung: {chat_model}", pystray.Menu(*chat_model_items)))
 
             chat_backend_items = [
                 pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_chat", name),
@@ -1091,17 +1469,23 @@ class BACHTray:
                                                   checked=lambda item, cm=chat_mode: cm == "full"))
             chat_subitems.append(pystray.MenuItem("Denkmodus", lambda *_: self._toggle_slot_think("buddha_chat"),
                                                   checked=lambda item, ct=chat_think: ct))
-            items.append(pystray.MenuItem(f"💬 Buddha Chat: {chat_model}", pystray.Menu(*chat_subitems)))
+            items.append(pystray.MenuItem(f"💬 Buddha Chat [Klasse 1]: {chat_model}", pystray.Menu(*chat_subitems)))
 
-            # Slot 2: Buddha Always-On (Hintergrundworker)
-            always_subitems = []
+            # Agent 2: Buddha Always-On (Klasse 4 = Autonomer Hintergrund)
+            always_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 4 · Autonomer Hintergrund (pausiert für Klassen 1–3)",
+                    None,
+                    enabled=False,
+                )
+            ]
             if self.models:
                 always_model_items = [
                     pystray.MenuItem(m, self._make_slot_model_action("buddha_always_on", m),
                                      checked=lambda item, m=m, s=always_model: m == s)
                     for m in self.models[:15]
                 ]
-                always_subitems.append(pystray.MenuItem(f"Modell: {always_model}", pystray.Menu(*always_model_items)))
+                always_subitems.append(pystray.MenuItem(f"Modell-Bindung: {always_model}", pystray.Menu(*always_model_items)))
 
             always_backend_items = [
                 pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_always_on", name),
@@ -1118,23 +1502,34 @@ class BACHTray:
                 for v in [10, 20, 25, 30, 50, 0]
             ]
             always_subitems.append(pystray.MenuItem(f"Max Turns: {'Unbegrenzt' if always_rounds == 0 else always_rounds}", pystray.Menu(*always_round_items)))
-            always_subitems.append(pystray.MenuItem("Full-Modus (Schreibrechte)", self._make_slot_mode_action("buddha_always_on", "full"),
-                                                    checked=lambda item, am=always_mode: am == "full"))
-            always_subitems.append(pystray.MenuItem("Safe-Modus", self._make_slot_mode_action("buddha_always_on", "safe"),
-                                                    checked=lambda item, am=always_mode: am == "safe"))
+            for rights_level, rights_label in ALWAYS_ON_RIGHTS_TRAY_ITEMS:
+                always_subitems.append(
+                    pystray.MenuItem(
+                        rights_label,
+                        self._make_slot_rights_action("buddha_always_on", rights_level),
+                        checked=lambda item, rl=rights_level, ar=always_rights: ar == rl,
+                        radio=True,
+                    )
+                )
             act_text = self.idle_task_name or always_slot.get("current_activity") or "Wartet auf Leerlauf"
             always_subitems.append(pystray.MenuItem(f"Aktivität: {act_text[:35]}", None, enabled=False))
-            items.append(pystray.MenuItem(f"⚡ Buddha Always-On [{always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
+            items.append(pystray.MenuItem(f"⚡ Buddha Always-On [Klasse 4 · {always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
 
-            # Slot 3: Buddha Connector (Messaging)
-            conn_subitems = []
+            # Agent 3: Buddha Connector (Klasse 2 = Delegierter Vordergrund / Messaging)
+            conn_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 2 · Delegierter Auftrag / Messaging",
+                    None,
+                    enabled=False,
+                )
+            ]
             if self.models:
                 conn_model_items = [
                     pystray.MenuItem(m, self._make_slot_model_action("buddha_connector", m),
                                      checked=lambda item, m=m, s=conn_model: m == s)
                     for m in self.models[:15]
                 ]
-                conn_subitems.append(pystray.MenuItem(f"Modell: {conn_model}", pystray.Menu(*conn_model_items)))
+                conn_subitems.append(pystray.MenuItem(f"Modell-Bindung: {conn_model}", pystray.Menu(*conn_model_items)))
 
             conn_backend_items = [
                 pystray.MenuItem(name.capitalize(), self._make_slot_backend_action("buddha_connector", name),
@@ -1151,7 +1546,107 @@ class BACHTray:
             ]
             conn_subitems.append(pystray.MenuItem(f"Max Turns: {conn_rounds}", pystray.Menu(*conn_round_items)))
             conn_subitems.append(pystray.MenuItem("Telegram öffnen", self._open_telegram))
-            items.append(pystray.MenuItem(f"📱 Buddha Connector: {conn_model}", pystray.Menu(*conn_subitems)))
+            items.append(pystray.MenuItem(f"📱 Buddha Connector [Klasse 2]: {conn_model}", pystray.Menu(*conn_subitems)))
+
+            # Agent 4: Buddha Talk / Funkgerät (Klasse 1 = Interaktiv · ellmos-talk Live-Stimme & Modell-Summon)
+            tcfg = getattr(self, "talk_config", {}) or {}
+            talk_persona = tcfg.get("persona", "buddha")
+            talk_op_mode = tcfg.get("operating_mode", "ptt")
+            talk_primary_model = tcfg.get("primary_model") or chat_model
+            talk_summon = tcfg.get("summon_policy", "knock")
+            op_labels = {
+                "ptt": "Funkgerät · PTT",
+                "duplex": "Live-Duplex",
+                "wake_word": "Wake-Word",
+                "off": "Aus",
+            }
+            talk_mode_str = op_labels.get(talk_op_mode, "Funkgerät · PTT")
+            talk_subitems = [
+                pystray.MenuItem(
+                    "Claim-Klasse: 1 · Direkt interaktiv (Sprachkanal)",
+                    None,
+                    enabled=False,
+                ),
+                pystray.MenuItem("🎙️ Begleitfenster öffnen (Companion)", self._open_talk_companion),
+                pystray.MenuItem("⚡ In Living & Running konfigurieren...", self._open_talk_running),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    f"Betriebsart: {talk_mode_str}",
+                    pystray.Menu(
+                        pystray.MenuItem(
+                            "📻 Funkgerät (Push-to-Talk)",
+                            self._make_talk_config_action("operating_mode", "ptt"),
+                            checked=lambda item, m=talk_op_mode: m == "ptt",
+                        ),
+                        pystray.MenuItem(
+                            "🎙️ Live-Duplex (Freisprechen)",
+                            self._make_talk_config_action("operating_mode", "duplex"),
+                            checked=lambda item, m=talk_op_mode: m == "duplex",
+                        ),
+                        pystray.MenuItem(
+                            "👂 Wake-Word („Hey Buddha“)",
+                            self._make_talk_config_action("operating_mode", "wake_word"),
+                            checked=lambda item, m=talk_op_mode: m == "wake_word",
+                        ),
+                        pystray.MenuItem(
+                            "⏸️ Aus",
+                            self._make_talk_config_action("operating_mode", "off"),
+                            checked=lambda item, m=talk_op_mode: m == "off",
+                        ),
+                    ),
+                ),
+                pystray.MenuItem(
+                    f"Persona / Agenten-Bindung: {talk_persona.capitalize()}",
+                    pystray.Menu(
+                        pystray.MenuItem(
+                            "🧘 Buddha (Lokal)",
+                            self._make_talk_config_action("persona", "buddha"),
+                            checked=lambda item, p=talk_persona: p == "buddha",
+                        ),
+                        pystray.MenuItem(
+                            "🟣 Claude (Opus / Sonnet)",
+                            self._make_talk_config_action("persona", "claude"),
+                            checked=lambda item, p=talk_persona: p == "claude",
+                        ),
+                        pystray.MenuItem(
+                            "🔵 Gemini (Antigravity)",
+                            self._make_talk_config_action("persona", "gemini"),
+                            checked=lambda item, p=talk_persona: p == "gemini",
+                        ),
+                        pystray.MenuItem(
+                            "🟢 Codex (GPT)",
+                            self._make_talk_config_action("persona", "codex"),
+                            checked=lambda item, p=talk_persona: p == "codex",
+                        ),
+                    ),
+                ),
+                pystray.MenuItem(
+                    f"Modell-Eigenstart: {talk_summon}",
+                    pystray.Menu(
+                        pystray.MenuItem(
+                            "🔔 Funkgerät-Anklopfen (Header-Signal)",
+                            self._make_talk_config_action("summon_policy", "knock"),
+                            checked=lambda item, sp=talk_summon: sp == "knock",
+                        ),
+                        pystray.MenuItem(
+                            "⚡ Auto-Popup (bei Präsenz via Sensation)",
+                            self._make_talk_config_action("summon_policy", "auto_popup"),
+                            checked=lambda item, sp=talk_summon: sp == "auto_popup",
+                        ),
+                        pystray.MenuItem(
+                            "🔕 Stumm (Kein Modell-Anruf)",
+                            self._make_talk_config_action("summon_policy", "muted"),
+                            checked=lambda item, sp=talk_summon: sp == "muted",
+                        ),
+                    ),
+                ),
+            ]
+            items.append(
+                pystray.MenuItem(
+                    f"📻 Buddha Talk [{talk_mode_str}]: {talk_primary_model}",
+                    pystray.Menu(*talk_subitems),
+                )
+            )
 
             # Dynamic Workers Submenu
             workers_subitems = []
@@ -1194,9 +1689,28 @@ class BACHTray:
 
             items.append(pystray.Menu.SEPARATOR)
 
-            # Fackel (Ressourcen-Priorität)
+            # RAM-Distributor & Modell-Runtime (Ressourcen-Priorität)
             fackel_label = self._fackel_runtime_label()
+            ram_claim = self.state.get("ram_claiming") or {}
+            loaded_models = ram_claim.get("loaded_models") or []
+            claimed_gib = ram_claim.get("claimed_gib") or 0.0
+            ram_line = (
+                f"RAM-Belegung: {len(loaded_models)} Modell(e) ({', '.join(loaded_models[:2])}) · {claimed_gib:.1f} GiB"
+                if loaded_models
+                else "RAM-Belegung: 0 Modelle im Speicher (0.0 GiB belegt)"
+            )
             fackel_items = [
+                pystray.MenuItem(
+                    ram_line,
+                    None,
+                    enabled=False,
+                ),
+                pystray.MenuItem(
+                    "Claim-Klassen: 1 Interaktiv → 2 Auftrag → 3 Termin → 4 Hintergrund",
+                    None,
+                    enabled=False,
+                ),
+                pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
                     "Ollama / Chat & Worker bevorzugen",
                     lambda *_: self._set_fackel("ollama"),
@@ -1207,12 +1721,17 @@ class BACHTray:
                     lambda *_: self._set_fackel("compute"),
                     checked=lambda item: self.state.get("fackel_preference", "compute") == "compute",
                 ),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    "🔓 Modell & RAM jetzt für andere Prozesse freigeben (Compute-Vorrang + Unload)",
+                    self._release_model_for_compute,
+                ),
+                pystray.MenuItem(
+                    "📖 Doku: Modell- & RAM-Claiming öffnen (/help)",
+                    self._open_claiming_docs,
+                ),
             ]
             items.append(pystray.MenuItem(fackel_label, pystray.Menu(*fackel_items)))
-
-            # Laufende Agenten & Werkstatt
-            items.append(pystray.MenuItem("📊 Laufende Agenten & Worker...", self._open_running))
-            items.append(pystray.MenuItem("🛠 Agentenvorlagen & Blueprints...", self._open_blueprints))
 
             # Tool-Aktivität
             ct = self.state.get("current_tool", "")
@@ -1248,23 +1767,91 @@ class BACHTray:
             ))
         items.append(pystray.MenuItem("Services", pystray.Menu(*svc_items)))
 
+        # ── Berechtigungen (Permissions Sub-Flyout, #3768) ──
+        perm_labels = (
+            ("system_tools", "System-Tools (Shell & Skripte)"),
+            ("browser_control", "Browser-Steuerung"),
+            ("camera", "Kamera (ellmos-sensation Präsenz)"),
+            ("microphone", "Mikrofon (Wake-Word & Ambiente)"),
+            ("screen_capture", "Bildschirmaufnahme (Open-Compute)"),
+            ("voice_tts", "Sprachausgabe (Voice TTS / Talk)"),
+            ("speech_to_text", "Spracheingabe (Diktat / STT)"),
+            ("smarthome_robotics", "SmartHome & Robotik-Steuerung"),
+            ("ollama", "Lokale Ollama-Modelle"),
+        )
+        perm_items = [
+            pystray.MenuItem(
+                label,
+                self._make_permission_toggle_action(pkey),
+                checked=lambda item, pkey=pkey: bool(self.permissions.get(pkey, False)),
+            )
+            for pkey, label in perm_labels
+        ]
+        items.append(pystray.MenuItem("🛡️ Berechtigungen (Permissions)", pystray.Menu(*perm_items)))
+
+        # ── ⭐ Favoriten-Prompts (Schnellzugriff & Auto-Vorschau) ──
+        fav_items = []
+        if self.favorite_prompts:
+            for fav_name, fav_data in self.favorite_prompts.items():
+                f_text = fav_data["text"] if isinstance(fav_data, dict) else str(fav_data)
+                f_preview = fav_data.get("preview") if isinstance(fav_data, dict) else self._make_prompt_preview(f_text)
+                sub_items = [
+                    pystray.MenuItem(f"🔍 \"{f_preview}\"", None, enabled=False),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(f"⚡ Direkt einfügen", self._make_prompt_quick_insert_action(f_text)),
+                    pystray.MenuItem(f"📋 Kopieren", self._make_prompt_copy_action(f_text)),
+                    pystray.MenuItem(f"▶ Direkt senden", self._make_prompt_send_action(f_text)),
+                    pystray.MenuItem(f"💬 Im Chat öffnen (Entwurf)", self._make_prompt_open_chat_action(f_text)),
+                ]
+                fav_items.append(pystray.MenuItem(f"⭐ {fav_name}", pystray.Menu(*sub_items)))
+        else:
+            fav_items.append(pystray.MenuItem("(Keine Favoriten — in Bibliothek als ⭐ markieren)", None, enabled=False))
+
+        fav_items.append(pystray.Menu.SEPARATOR)
+        fav_items.append(pystray.MenuItem("📚 Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
+        fav_items.append(pystray.MenuItem("🔄 Prompts neu laden", self._reload_prompts))
+        items.append(pystray.MenuItem(f"⭐ Favoriten-Prompts ({len(self.favorite_prompts)})", pystray.Menu(*fav_items)))
+
+        # ── 📦 Standalone-Module & Auto-Update Status ──
+        mod_items = self._build_modular_status_menu_items()
+        items.append(pystray.MenuItem(f"📦 Standalone-Module ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", pystray.Menu(*mod_items)))
+
         # ── PromptBoard ──
         prompt_items = []
         app_path = self._promptboard_app_path()
         if app_path:
             prompt_items.append(pystray.MenuItem("PromptBoard App öffnen", self._open_promptboard))
-            prompt_items.append(pystray.Menu.SEPARATOR)
+        prompt_items.append(pystray.MenuItem("Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
+        prompt_items.append(pystray.MenuItem("PromptBoard in BACH importieren", self._import_promptboard_action))
+        prompt_items.append(pystray.MenuItem("Prompts nach PromptBoard exportieren", self._export_promptboard_action))
+        prompt_items.append(pystray.MenuItem("🔄 PromptBoard Zwei-Wege-Sync", self._sync_promptboard_action))
+        prompt_items.append(pystray.MenuItem("⭐ Favoriten synchronisieren", self._sync_favorites_action))
+        prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
             for name, text in prompts.items():
-                cat_items.append(pystray.MenuItem(
-                    f"\U0001F4CB {name}",
-                    self._make_prompt_copy_action(text),
-                ))
-                cat_items.append(pystray.MenuItem(
-                    f"▶ Senden: {name}",
-                    self._make_prompt_send_action(text),
-                ))
+                preview = self._make_prompt_preview(text)
+                prompt_subitems = [
+                    pystray.MenuItem(f"🔍 \"{preview}\"", None, enabled=False),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        f"⚡ Einfügen: {name}",
+                        self._make_prompt_quick_insert_action(text),
+                    ),
+                    pystray.MenuItem(
+                        f"\U0001F4CB {name}",
+                        self._make_prompt_copy_action(text),
+                    ),
+                    pystray.MenuItem(
+                        f"▶ Senden: {name}",
+                        self._make_prompt_send_action(text),
+                    ),
+                    pystray.MenuItem(
+                        f"💬 Im Chat öffnen: {name}",
+                        self._make_prompt_open_chat_action(text),
+                    ),
+                ]
+                cat_items.append(pystray.MenuItem(name, pystray.Menu(*prompt_subitems)))
             prompt_items.append(pystray.MenuItem(category, pystray.Menu(*cat_items)))
         if prompt_items:
             items.append(pystray.MenuItem("PromptBoard", pystray.Menu(*prompt_items)))
@@ -1297,10 +1884,17 @@ class BACHTray:
         gui_label = "Ocean Dashboard" if getattr(self, "brand", "bach") == "ocean" else "GUI Dashboard"
         items.append(pystray.MenuItem(gui_label, self._open_gui, default=True))
         chat_label = "Ocean Chat" if getattr(self, "brand", "bach") == "ocean" else "Buddha Chat"
-        items.append(pystray.MenuItem(chat_label, self._open_webchat))
-        items.append(pystray.MenuItem("Laufende Agenten", self._open_running))
-        items.append(pystray.MenuItem("Agenten-Blueprints", self._open_blueprints))
-        items.append(pystray.MenuItem("Telegram", self._open_telegram))
+        quick_items = [
+            pystray.MenuItem(f"💬 {chat_label}", self._open_webchat),
+            pystray.MenuItem("🎙️ ELLMOS Talk (Live-Stimme)", self._open_talk),
+            pystray.MenuItem("🎙️ Sprach-Prompt aufnehmen (Chat-Handoff)", self._record_audio_prompt_action),
+            pystray.MenuItem("⚡ Agenten · Running und Verlauf", self._open_running),
+            pystray.MenuItem("📚 Agenten-Bibliothek · Vorlagen", self._open_blueprints),
+            pystray.MenuItem("📖 Hilfe & Claim-Doku", self._open_claiming_docs),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("📱 Telegram", self._open_telegram),
+        ]
+        items.append(pystray.MenuItem("🧭 Direktzugriff (Seiten & Kanäle)", pystray.Menu(*quick_items)))
 
         items.append(pystray.Menu.SEPARATOR)
         items.append(pystray.MenuItem("Beenden", self._quit))
@@ -1308,6 +1902,41 @@ class BACHTray:
         return pystray.Menu(*items)
 
     # --- Actions ---
+
+    def _make_permission_toggle_action(self, key: str):
+        def action(*_):
+            new_val = not bool(self.permissions.get(key, False))
+            result = self._api("POST", "/api/permissions", {"key": key, "enabled": new_val}, base=self.gui_url)
+            confirmed = result.get("permissions") if isinstance(result, dict) else None
+            if not isinstance(confirmed, dict) or confirmed.get(key) is not new_val:
+                self._notify_error("Berechtigungsänderung")
+                return
+            self.permissions[key] = confirmed[key]
+            self._update_icon()
+        return action
+
+    def _open_talk(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/talk")
+
+    def _open_talk_companion(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/talk?companion=1")
+
+    def _open_talk_running(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/agenten/running#talk-slot")
+
+    def _make_talk_config_action(self, key: str, value: str):
+        def action(*_):
+            result = self._api("POST", "/api/talk/config", {key: value}, base=self.gui_url)
+            cfg = result.get("config") if isinstance(result, dict) else None
+            if isinstance(cfg, dict):
+                self.talk_config.update(cfg)
+            else:
+                self.talk_config[key] = value
+            self._update_icon()
+        return action
 
     def _notify_error(self, action_name):
         if self.icon:
@@ -1451,6 +2080,23 @@ class BACHTray:
         import webbrowser
         webbrowser.open(f"{self.gui_url}/agenten/blueprints")
 
+    def _open_claiming_docs(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/help?topic=claiming")
+
+    def _release_model_for_compute(self, *_):
+        self._set_fackel("compute")
+        self._api("POST", "/api/slots", {"slot_id": "buddha_always_on", "updates": {"enabled": False}})
+        loaded = (self.state.get("ram_claiming") or {}).get("loaded_models") or []
+        target_models = list(dict.fromkeys([*loaded, self.state.get("model")]))
+        for m in target_models:
+            if m and m != "?":
+                self._api("POST", "/api/generate", {"model": m, "keep_alive": 0}, base=self.ollama_url, timeout=3)
+        self._refresh()
+        self._update_icon()
+        if self.icon:
+            self.icon.notify("Modell & RAM für externe Prozesse freigegeben", "BACH")
+
     def _make_slot_model_action(self, slot_id, model):
         def action(*_):
             res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"model": model}})
@@ -1478,14 +2124,21 @@ class BACHTray:
             self._update_icon()
         return action
 
-    def _make_slot_mode_action(self, slot_id, mode):
+    def _make_slot_mode_action(self, slot_id, mode, rights=None):
         def action(*_):
-            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"mode": mode}})
+            updates = {"mode": mode}
+            if rights is not None:
+                updates["rights"] = rights
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": updates})
             if res is None or res.get("error"):
                 self._notify_error(f"{slot_id} Modus → {mode}")
             self._refresh()
             self._update_icon()
         return action
+
+    def _make_slot_rights_action(self, slot_id, level):
+        mode, rights = worker_rights_level_to_mode_rights(level)
+        return self._make_slot_mode_action(slot_id, mode, rights=rights)
 
     def _toggle_slot_think(self, slot_id):
         slot = self.slots.get(slot_id, {})
@@ -1550,6 +2203,10 @@ class BACHTray:
         # the working chat is the GUI page (plan item 1.1.6).
         webbrowser.open(f"{self.gui_url}/chat")
 
+    def _open_prompt_library(self, *_):
+        import webbrowser
+        webbrowser.open(f"{self.gui_url}/prompt-library")
+
     def _open_promptboard(self, *_):
         app_path = self._promptboard_app_path()
         if not app_path:
@@ -1557,8 +2214,13 @@ class BACHTray:
                 self.icon.notify("PromptBoard-App nicht gefunden", "BACH PromptBoard")
             return
         try:
-            if sys.platform == "win32" and app_path.suffix.lower() in {".bat", ".msix"}:
+            if sys.platform == "win32" and app_path.suffix.lower() in {".bat", ".msix", ".exe"}:
                 os.startfile(str(app_path))
+            elif app_path.suffix.lower() == ".py":
+                subprocess.Popen(
+                    [sys.executable, str(app_path)],
+                    cwd=str(app_path.parent.parent if app_path.parent.name == "src" else app_path.parent),
+                )
             else:
                 subprocess.Popen(
                     [str(app_path)],
@@ -1569,6 +2231,107 @@ class BACHTray:
         except OSError:
             if self.icon:
                 self.icon.notify("PromptBoard-Start fehlgeschlagen", "BACH PromptBoard")
+
+    def _import_promptboard_action(self, *_):
+        """Imports prompts from PromptBoard library.json into BACH DB."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            _, result = handler.handle("import-promptboard", [])
+            data = json.loads(result) if isinstance(result, str) and result.strip().startswith("{") else {}
+            imported = data.get("imported", 0)
+            skipped = data.get("skipped", 0)
+            if self.icon:
+                self.icon.notify(
+                    f"PromptBoard-Import: {imported} neu, {skipped} bestehend.",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Import fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _export_promptboard_action(self, *_):
+        """Exports prompts from BACH DB into PromptBoard library.json."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            _, result = handler.handle("export-promptboard", [])
+            data = json.loads(result) if isinstance(result, str) and result.strip().startswith("{") else {}
+            exported = data.get("exported", 0)
+            updated = data.get("updated", 0)
+            total = data.get("total", 0)
+            if self.icon:
+                self.icon.notify(
+                    f"PromptBoard-Export: {exported} neu, {updated} aktualisiert ({total} gesamt).",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Export fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _sync_promptboard_action(self, *_):
+        """Bidirectionally synchronizes prompts between PromptBoard library.json and BACH DB."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            _, result = handler.handle("sync-promptboard", [])
+            data = json.loads(result) if isinstance(result, str) else result
+            if self.icon:
+                imported = data.get("imported", 0)
+                exported = data.get("exported", 0)
+                updated_bach = data.get("updated_in_bach", 0)
+                updated_pb = data.get("updated_in_promptboard", 0)
+                total = data.get("total_promptboard", 0)
+                self.icon.notify(
+                    f"PromptBoard Zwei-Wege-Sync: {imported} importiert, {exported} exportiert, "
+                    f"{updated_bach + updated_pb} aktualisiert ({total} gesamt).",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Sync fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _sync_favorites_action(self, *_):
+        """Synchronizes PromptBoard library and updates favorite prompts in tray."""
+        self._sync_promptboard_action()
+        self._reload_prompts()
+        if self.icon:
+            self.icon.notify(
+                f"Favoriten abgeglichen ({len(self.favorite_prompts)} aktiv).",
+                "BACH Favoriten"
+            )
+
+    def _record_audio_prompt_action(self, *_):
+        """Triggers audio prompt recording via ellmos-voice-io or speech interface handoff."""
+        def record_worker():
+            try:
+                from hub._services.ocean_stack_bridge import load_voice_io_module
+                mod = load_voice_io_module()
+                voice = mod.VoiceIO()
+                stt_ok, engine = voice.stt.available()
+                if not stt_ok:
+                    if self.icon:
+                        self.icon.notify("Kein STT-Modul (Whisper/Vosk) installiert. Öffne Talk Web-GUI...", "BACH Sprach-Prompt")
+                    import webbrowser
+                    webbrowser.open(f"{self.gui_url}/talk")
+                    return
+                if self.icon:
+                    self.icon.notify(f"STT aktiv ({engine}). Öffne Spracheingabe im Chat...", "BACH Sprach-Prompt")
+                import webbrowser
+                webbrowser.open(f"{self.gui_url}/chat?voice=1")
+            except Exception as e:
+                if self.icon:
+                    self.icon.notify(f"Sprach-Interface: Öffne Talk ({e})...", "BACH Sprach-Prompt")
+                import webbrowser
+                webbrowser.open(f"{self.gui_url}/talk")
+
+        threading.Thread(target=record_worker, daemon=True).start()
 
     def _open_telegram(self, *_):
         import webbrowser
@@ -1590,7 +2353,7 @@ class BACHTray:
             for w in getattr(self, "dynamic_workers", [])
         )
         slot_sig = tuple(
-            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("enabled"), v.get("current_activity"))
+            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("rights"), v.get("enabled"), v.get("current_activity"))
             for k, v in sorted(getattr(self, "slots", {}).items())
         )
         return (
@@ -1605,6 +2368,9 @@ class BACHTray:
             len(getattr(self, "models", [])),
             getattr(self, "idle_task_name", None),
             getattr(self, "active_tool", None),
+            self.state.get("worker_status"),
+            self.state.get("task_id"),
+            self.state.get("task_title"),
             worker_sig,
             slot_sig,
         )
@@ -1619,7 +2385,6 @@ class BACHTray:
             if new_sig != old_sig:
                 self._update_icon()
                 old_sig = new_sig
-            self._idle_tick()
             self._stop.wait(self.POLL_INTERVAL)
 
     # --- Run ---
@@ -1656,6 +2421,11 @@ def main():
         action="store_true",
         help="Print PromptBoard tray detection smoke data and exit",
     )
+    parser.add_argument(
+        "--smoke-modules",
+        action="store_true",
+        help="Print modular core update-check smoke data and exit",
+    )
     args = parser.parse_args()
 
     tray = BACHTray(host=args.host, port=args.port, gui_port=args.gui_port,
@@ -1664,6 +2434,10 @@ def main():
                     brand=args.brand)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
+        return
+    if args.smoke_modules:
+        tray._check_module_updates(force=True)
+        print(json.dumps(tray.modular_status_smoke_snapshot(), ensure_ascii=False, indent=2))
         return
     lock_file = Path.home() / ".bach" / f"{args.brand}_tray.lock" if args.brand != "bach" else TRAY_LOCK_FILE
     lock = acquire_single_instance_lock(lock_file)

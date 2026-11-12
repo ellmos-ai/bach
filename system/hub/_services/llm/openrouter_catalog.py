@@ -31,17 +31,17 @@ _cached_admission: dict[str, str | None] = {}
 
 _SAFE_MESSAGES = {
     "catalog_timeout": "OpenRouter-Katalog: Zeitlimit beim Abruf.",
-    "catalog_transport_error": "OpenRouter-Katalog: Verbindung nicht verfÃ¼gbar.",
-    "catalog_http_transient": "OpenRouter-Katalog: Dienst vorÃ¼bergehend nicht verfÃ¼gbar.",
+    "catalog_transport_error": "OpenRouter-Katalog: Verbindung nicht verfügbar.",
+    "catalog_http_transient": "OpenRouter-Katalog: Dienst vorübergehend nicht verfügbar.",
     "catalog_http_error": "OpenRouter-Katalog: Anfrage abgelehnt.",
     "catalog_auth_rejected": "OpenRouter-Katalog: Authentifizierung abgelehnt.",
-    "catalog_invalid_schema": "OpenRouter-Katalog: Antwortformat ungÃ¼ltig.",
-    "model_not_listed": "OpenRouter-Modell ist im bestÃ¤tigten Katalog nicht aufgefÃ¼hrt.",
-    "model_price_missing": "OpenRouter-Katalog enthÃ¤lt keinen vollstÃ¤ndigen Preisnachweis.",
-    "model_price_invalid": "OpenRouter-Katalog enthÃ¤lt einen ungÃ¼ltigen Preisnachweis.",
+    "catalog_invalid_schema": "OpenRouter-Katalog: Antwortformat ungültig.",
+    "model_not_listed": "OpenRouter-Modell ist im bestätigten Katalog nicht aufgeführt.",
+    "model_price_missing": "OpenRouter-Katalog enthält keinen vollständigen Preisnachweis.",
+    "model_price_invalid": "OpenRouter-Katalog enthält einen ungültigen Preisnachweis.",
     "model_price_nonzero": "OpenRouter-Katalog weist mindestens einen nicht kostenlosen Preis aus.",
-    "model_not_free_variant": "OpenRouter-Modell ist keine ausdrÃ¼cklich ausgewiesene :free-Variante.",
-    "model_ambiguous": "OpenRouter-Katalog enthÃ¤lt mehrere EintrÃ¤ge fÃ¼r dieses Modell.",
+    "model_not_free_variant": "OpenRouter-Modell ist keine ausdrücklich ausgewiesene :free-Variante.",
+    "model_ambiguous": "OpenRouter-Katalog enthält mehrere Einträge für dieses Modell.",
 }
 
 
@@ -162,6 +162,26 @@ def _price_rejection(pricing: Any) -> str | None:
     return None
 
 
+def _tools_rejection(model: dict[str, Any]) -> str | None:
+    """Reject free models that cannot serve tool calls.
+
+    ``supported_parameters`` is optional in the OpenRouter payload. A missing,
+    empty or unreadable value is treated as *unknown* and therefore admitted;
+    only a published parameter list without ``tools`` denies admission. This
+    keeps the free-catalog contract stable for providers that do not publish
+    the field (and for existing fixtures).
+    """
+    supported = model.get("supported_parameters")
+    if not isinstance(supported, (list, tuple, set)):
+        return None
+    normalized = {str(item).strip().lower() for item in supported if isinstance(item, str)}
+    if not normalized:
+        return None
+    if "tools" in normalized:
+        return None
+    return "model_tools_unsupported"
+
+
 def _model_admission_rejection(model: dict[str, Any]) -> str | None:
     model_id = model.get("id")
     if not isinstance(model_id, str) or not model_id.strip():
@@ -174,7 +194,7 @@ def _model_admission_rejection(model: dict[str, Any]) -> str | None:
         return price_rejection
     if not model_id.endswith(":free"):
         return "model_not_free_variant"
-    return None
+    return _tools_rejection(model)
 
 
 def _model_record(model: dict[str, Any]) -> dict[str, Any] | None:

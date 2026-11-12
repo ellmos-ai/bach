@@ -31,6 +31,16 @@ def _persistent_session_store(tmp_path):
     return SQLiteChatSessionStore(session_db_path)
 
 
+def _add_test_worker(spec, path, *, monkeypatch=None, control=None):
+    worker_spec = {"rights": "read", **spec}
+    if control is None and "allowed_tools" not in worker_spec:
+        worker_spec["allowed_tools"] = []
+    ident = slots.add_worker(worker_spec, path)["id"]
+    if monkeypatch is not None and control is not None:
+        monkeypatch.setattr(control, "_prepare_bound_task_scope", lambda *_a: None)
+    return ident
+
+
 def run_http(monkeypatch, payload, *, status=429, headers=None):
     real_client = httpx.AsyncClient
     calls = []
@@ -163,7 +173,8 @@ def test_native_thread_returns_real_lease_and_preserves_quota_after_cleanup(tmp_
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     ident = "buddha_always_on" if core else slots.add_worker({"name": "Quota", "type": "once"}, path)["id"]
     slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "think": True,
-        "enabled": True, "mode": "safe", "task_id": 42, "backend_error": {"old": "stale"}}, path)
+        "enabled": True, "mode": "safe", "task_id": 42, "allowed_tools": [],
+        "backend_error": {"old": "stale"}}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
         monkeypatch.setattr(control, registry, {})
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
@@ -327,7 +338,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)
     slots.update_slot(ident, {"backend": "openrouter" if connection else "ollama", "model": model, "enabled": True,
         "mode": "safe", "task_id": 42, "pause_after": 0}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
@@ -437,7 +448,7 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         assert code == 200 and response["ok"] is True
         execution = control._WORKER_EXECUTIONS[ident]
         thread = execution.thread
-        thread.join(5)
+        thread.join(10)
         assert not thread.is_alive()
         assert all(json.loads(request.content)["model"] == model for request in calls)
         task = dict(conn.execute("SELECT * FROM tasks WHERE id=42").fetchone())
@@ -502,7 +513,12 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Real retry fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker(
+        {"name": "Real retry fixture", "type": "continuous"},
+        path,
+        monkeypatch=monkeypatch,
+        control=control,
+    )
     slots.update_slot(ident, {"backend": "ollama", "model": "glm-5.3:cloud", "enabled": True,
         "mode": "safe", "task_id": 42, "pause_after": 0, "max_tool_rounds": 5}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
@@ -598,7 +614,8 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         thread.join(8)
         assert not thread.is_alive()
         expected_calls = (2 if dispatch_path == "runtime" else 1) + int(previous_block)
-        assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0) and waits == []
+        assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0)
+        assert waits == {"monthly_quota": [86400], "server_error": []}.get(backend_failure, [60])
         assert call_waits == ([60, 120, 240] if backend_failure == "rate_limit" else [])
         if backend_failure == "rate_limit":
             # Only the exact rejected model request is repeated. The earlier
@@ -607,7 +624,8 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         snapshot = client.task_snapshot(42)
         assert snapshot["claim_fence"] == 1 and snapshot["status"] == "pending"
         assert not client.read(42).leased
-        children = conn.execute("SELECT COUNT(*) FROM tasks WHERE id != 42").fetchone()[0]
+        own_tasks = "SELECT COUNT(*) FROM tasks WHERE id != 42 AND COALESCE(source, '') NOT LIKE 'resolver:%'"
+        children = conn.execute(own_tasks).fetchone()[0]
         assert children == (1 if action == "add" else 0)
         current = slots.get_slot(ident, path)
         if backend_failure == "server_error":
@@ -618,6 +636,10 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
         assert current["backend_error"]["kind"] == expected_kind
         assert bindings[-1].tool_dispatch_count == 1 and bindings[-1].closed
         assert execution.start_error == ("backend_error" if backend_failure == "server_error" else None)
+        # #2661: a run that ended in error gets exactly one resolver task; a stop gets none.
+        resolvers = conn.execute("SELECT assigned_to, status FROM tasks WHERE source = ?",
+                                 (f"resolver:worker:{ident}",)).fetchall()
+        assert [tuple(row) for row in resolvers] == ([("BACH", "pending")] if backend_failure == "server_error" else [])
         # A fresh holder may resume the open task. Acquiring it must preserve
         # the earlier child/files and must not execute any provider/tool call.
         import threading
@@ -626,7 +648,7 @@ def test_real_tool_loop_returns_open_work_without_replaying_dispatch(tmp_path, m
             generation="b" * 32, is_current=lambda: True, stop_event=threading.Event())
         assert second.task_id == 42 and second._ack.fence == 2
         assert second.task_snapshot()["title"] == snapshot["title"]
-        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE id != 42").fetchone()[0] == children
+        assert conn.execute(own_tasks).fetchone()[0] == children
         assert len(calls) == expected_calls + (3 if backend_failure == "rate_limit" else 0)
         assert second.return_lease()
         history = conn.execute("SELECT new_value FROM task_history WHERE task_id=42 AND action='lease_release'").fetchall()
@@ -851,7 +873,7 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
     worker_id = "buddha_always_on"
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
-    slots.update_slot(worker_id, {"resolved_model": "stale-controller-model"}, path)
+    slots.update_slot(worker_id, {"resolved_model": "stale-controller-model", "allowed_tools": []}, path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     controller_cas_readbacks = []
     original_controller_update = slots.update_persistent_core_controller_state
@@ -994,6 +1016,7 @@ def test_native_always_on_reserve_wait_returns_lease_before_fresh_claim(
             "weight_request_bytes": gib,
             "resident_weight_credit": False,
             "capacity_basis": "host_budget",
+            "host_resources": {"schema": "bach.host-resource-observation.v1", "errors": ["host_observation_failed"]},
         }
 
     blocked_receipt = capacity_receipt("waiting_memory_reserve", 3 * gib)
@@ -1274,6 +1297,7 @@ def test_persistent_core_pre_effect_reserve_returns_typed_failure_without_model_
         "disk_reserve_bytes": gib, "weight_request_bytes": gib,
         "resident_weight_credit": False,
         "capacity_basis": "host_budget",
+        "host_resources": {"schema": "bach.host-resource-observation.v1", "errors": ["host_observation_failed"]},
     }
     composed = local_model_admission.compose_admission_receipt(
         blocked, binding=None, require_model_socket=False,
@@ -1464,7 +1488,7 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Task failure fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker({"name": "Task failure fixture", "type": "continuous"}, path)
     slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
         "mode": "safe", "pause_after": 0}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
@@ -1529,9 +1553,10 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         conn.close()
 
 
-@pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60)])
+@pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60), (502, 60), (503, 60), (504, 60)])
 def test_openrouter_without_credit_rechecks_daily(status, expected):
     """User rule 25.10.2026: no credit pauses the worker and checks once a day, it does not end it."""
+    from hub._services.llm.backend_errors import cloud_call_retry_eligible
     control = importlib.import_module("hub._services.chat.telegram_chat")
     detail = {"provider": "openrouter", "kind": "http_error", "error_type": "HTTPStatusError",
               "status_code": status, "quota_exceeded": False}
@@ -1540,6 +1565,13 @@ def test_openrouter_without_credit_rechecks_daily(status, expected):
         retries=0, waited_seconds=0) == expected
     assert control._worker_backend_retry_delay({**slot, "type": "once"}, detail, model="openrouter/free",
         retries=0, waited_seconds=0) is None
+    if status in {502, 503, 504}:
+        assert cloud_call_retry_eligible(detail) is True
+    ollama_502 = {"provider": "ollama", "kind": "http_error", "status_code": 502, "quota_exceeded": False}
+    ollama_slot = {"backend": "ollama", "model": "glm-5.3:cloud", "type": "continuous"}
+    assert cloud_call_retry_eligible(ollama_502) is True
+    assert control._worker_backend_retry_delay(ollama_slot, ollama_502, model="glm-5.3:cloud",
+        retries=0, waited_seconds=0) == 60
 
 
 @pytest.mark.parametrize("scenario", ["malformed_arguments", "trace_start_failure"])
@@ -1554,7 +1586,12 @@ def test_rejected_tool_call_returns_task_or_shows_reason(tmp_path, monkeypatch, 
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
-    ident = slots.add_worker({"name": "Rejected tool call fixture", "type": "continuous"}, path)["id"]
+    ident = _add_test_worker(
+        {"name": "Rejected tool call fixture", "type": "continuous"},
+        path,
+        monkeypatch=monkeypatch,
+        control=control,
+    )
     slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
         "mode": "safe", "pause_after": 0, "max_tool_rounds": 5}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):

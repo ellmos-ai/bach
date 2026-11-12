@@ -61,15 +61,11 @@ def test_consumer_catalog_preserves_modules_and_does_not_claim_readiness():
     route = SimpleNamespace(path="/api/tasks", methods={"GET", "POST"})
     result = declaration([route], {"verified": False}, {}, {"tasks": {"adapter_registered": True}})
     assert result["schema"] == "ellmos.gui.capabilities.v1" and isinstance(result["modules"], dict)
-    assert len(result["pages"]) == 24 and result["gui"]["status"] == "unverified"
+    assert result["pages"] == [] and result["gui"]["status"] == "unverified"
+    assert result["gui"]["page_reads"]["state"] == "unavailable"
+    assert result["gui"]["page_reads"]["reason_code"] == "gui_kit_not_verified"
     assert all(e["verification_scope"] == "adapter" and not e["runtime_verified"] for e in result["endpoints"])
-    tasks = next(p for p in result["pages"] if p["path"] == "/tasks")
-    assert tasks["status"] == "unavailable" and tasks["missing"] == ["GET /api/task-assignees"]
     assert result["module_sources"] == []
-    subscription = next(p for p in result["pages"] if p["path"] == "/agenten/subscription-agents")
-    assert subscription["status"] == "unavailable"
-    assert "POST /api/agent-studio/subscription-agents/compose" in subscription["requires"]
-    assert "POST /api/agent-studio/subscription-agents/compose" in subscription["missing"]
 
 
 
@@ -97,20 +93,20 @@ def test_gui_consumer_and_kit_pin_bind_same_029_release():
     assert consumer["schema"] == "ellmos.bach.gui-consumer.v1"
     assert consumer["id"] == "ellmos-system-gui"
     assert consumer["status"] == "pinned_release"
-    assert consumer["version"] == "0.2.30"
+    assert consumer["version"] == "0.2.40"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "eb0251ac4b85574087ad934611d19dc3df1f9c4c",
-        "archive_sha256": "ff07b55656349da60cb18b5ead867da3f03d43d81e6964bc6448212d7412b188",
+        "commit": "d83b9ceff9ec00add08d4a194d6a7d7c43734203",
+        "archive_sha256": "13260580c608b6f0fbe696383b2b22a03b6d062795f142247f12c661a689f8ec",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }
     assert kit["verified"] is True  # Identity metadata only; installed bytes are verified separately.
     assert kit["version"] == consumer["version"]
     assert kit["pinned_source_commit"] == consumer["source"]["commit"]
     assert kit["release_archive_sha256"] == consumer["source"]["archive_sha256"]
-    assert kit["release_archive"] == "ellmos-system-gui-0.2.30-eb0251ac4b85.zip"
+    assert kit["release_archive"] == "ellmos-system-gui-0.2.40-d83b9ceff9ec.zip"
     assert kit["dist_manifest_schema"] == "ellmos-system-gui.dist.v1"
-    assert kit["expected_page_count"] == 39
+    assert kit["expected_page_count"] == 51
     assert "installed" not in kit
     assert consumer["required_backend_routes"] == [
         "/api/gui/brand",

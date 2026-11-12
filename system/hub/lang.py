@@ -56,15 +56,21 @@ KNOWN_LANGUAGE_LABELS = {
     "de": "Deutsch",
     "en": "English",
     "es": "Spanish",
-    "ru": "Russian",
-    "ja": "Japanese",
+    "fr": "French",
     "zh": "Chinese",
+    "ja": "Japanese",
+    "ru": "Russian",
+    "ar": "Arabic",
+    "pt": "Portuguese",
+    "hi": "Hindi",
 }
 
 DEFAULT_SOURCE_LANGUAGE = "de"
 DEFAULT_TARGET_LANGUAGE = "en"
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class LangHandler(BaseHandler):
     """Handler fuer Mehrsprachigkeit und Uebersetzungen."""
 

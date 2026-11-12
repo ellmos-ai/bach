@@ -102,7 +102,7 @@ human first names + character descriptions in the database.
 
   Persona Injection:
     When the agent starts, the persona is injected as a system prompt:
-    "Your name is \"Theodor\". Your character: penile tax advisor..."
+    "Your name is \"Theodor\". Your character: meticulous tax advisor..."
     See: hub/agent_launcher.py (_get_persona_info)
 
 
@@ -119,7 +119,7 @@ human first names + character descriptions in the database.
   Expert Personas:
 
     System name | Persona | Character
-    tax agent | Theodore | Penile tax advisor
+    tax agent | Theodore | Meticulous tax advisor
     financial_mail | Frieda | Mail detective
     subscription service | Anton | Cancellation King
     healthcare administrator | Gustav | Archivist of findings
@@ -263,6 +263,20 @@ Anthropic compatibility:
   - New skill: bach skills create <name> --format anthropic
 
   See: bach help skill_standards
+
+
+OCEAN ROLES, DUAL ROUTING & FLEXIBLE PROVIDER SOCKETS (ellmos.role-socket-catalog.v1)
+-------------------------------------------------------------------------------------
+
+  In the Ocean/BACH architecture, all 6 Coordinators (formerly Boss Agents),
+  22+ Domain Experts, and 19 module roles (roles[] in ellmos-module.v2.json)
+  run on pluggable provider sockets (model_sockets via clutch + agents-heart):
+
+  1. Semantic Routing: Umbrella Skills (*-umbrella) + semantic-persona-routing
+  2. Deterministic Routing: ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)
+  3. Flexible Provider Sockets: reasoning_coordinator | domain_specialist | fast_worker
+     -> Runtime binding to: claude, codex, agy, kimi, ollama, openrouter
+  4. 3-Tab Agent Library (/agenten/bibliothek): templates | prompt_agents | chains
 
 
 SEE ALSO

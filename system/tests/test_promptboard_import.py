@@ -217,3 +217,186 @@ def test_imported_ambiguous_tags_keep_boundaries_on_gui_text_save(gui_client, ha
                               json={"text": "Only the text changed", "tags": prompt["tags"]})
     assert response.status_code == 200
     assert json.loads(rows(prompt_env)[0][2]) == tags
+
+
+def test_import_promptboard_with_direct_payload(handler, prompt_env):
+    payload = {
+        "items": [
+            {"name": "PayloadPrompt", "content": "Direkt aus JSON-Payload", "category": "Test"},
+            {"name": "PayloadPrompt", "content": "Duplikat wird uebersprungen"}
+        ]
+    }
+    preview = handler.import_promptboard(payload=payload, dry_run=True)
+    assert preview["ok"] is True
+    assert preview["dry_run"] is True
+    assert preview["imported"] == 1
+    assert preview["skipped"] == 1
+    assert rows(prompt_env) == []
+
+    result = handler.import_promptboard(payload=payload, dry_run=False)
+    assert result["ok"] is True
+    assert result["dry_run"] is False
+    assert result["imported"] == 1
+    assert result["skipped"] == 1
+    assert rows(prompt_env)[0][0] == "PayloadPrompt"
+
+
+def test_import_promptboard_with_list_payload(handler, prompt_env):
+    payload = [
+        {"name": "ListPrompt1", "content": "Inhalt 1"},
+        {"name": "ListPrompt2", "content": "Inhalt 2", "tags": ["tag1", "tag2"]}
+    ]
+    result = handler.import_promptboard(payload=payload, dry_run=False)
+    assert result["ok"] is True
+    assert result["imported"] == 2
+    assert len(rows(prompt_env)) == 2
+
+
+def test_export_promptboard_creates_new_library_file(handler, prompt_env, tmp_path):
+    handler.handle("add", ["PromptA", "Inhalt von Prompt A", "--category", "Entwicklung", "--tags", "python,cli"])
+    target = tmp_path / "exported_library.json"
+
+    # Dry-Run
+    preview = handler.export_promptboard(target, dry_run=True)
+    assert preview["ok"] is True
+    assert preview["dry_run"] is True
+    assert preview["exported"] == 1
+    assert preview["updated"] == 0
+    assert not target.exists()
+
+    # Tatsächlicher Export
+    res = handler.export_promptboard(target, dry_run=False)
+    assert res["ok"] is True
+    assert res["dry_run"] is False
+    assert res["exported"] == 1
+    assert target.exists()
+
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert "items" in data
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    assert item["name"] == "PromptA"
+    assert item["content"] == "Inhalt von Prompt A"
+    assert item["category"] == "Entwicklung"
+    assert item["tags"] == ["python", "cli"]
+    assert item["item_type"] == "PROMPT"
+
+
+def test_export_promptboard_updates_modified_prompts(handler, prompt_env, tmp_path):
+    target = tmp_path / "existing_library.json"
+    target.write_text(json.dumps({
+        "items": [
+            {"id": "123", "item_type": "PROMPT", "name": "PromptA", "content": "Alter Inhalt", "tags": ["alt"]},
+            {"id": "456", "item_type": "PROMPT", "name": "Unberührt", "content": "Bleibt erhalten", "tags": []}
+        ]
+    }), encoding="utf-8")
+
+    handler.handle("add", ["PromptA", "Neuer Inhalt aus BACH", "--tags", "neu,v2"])
+    res = handler.export_promptboard(target, dry_run=False)
+    assert res["ok"] is True
+    assert res["exported"] == 0
+    assert res["updated"] == 1
+    assert res["total"] == 2
+
+    data = json.loads(target.read_text(encoding="utf-8"))
+    items = {it["name"]: it for it in data["items"]}
+    assert items["PromptA"]["content"] == "Neuer Inhalt aus BACH"
+    assert items["PromptA"]["tags"] == ["neu", "v2"]
+    assert items["PromptA"]["id"] == "123"  # ID beibehalten
+    assert items["Unberührt"]["content"] == "Bleibt erhalten"
+
+
+def test_export_promptboard_cli_operation(handler, prompt_env, tmp_path):
+    handler.handle("add", ["PromptCLI", "CLI Test"])
+    target = tmp_path / "cli_library.json"
+    ok, msg = handler.handle("export-promptboard", [str(target)])
+    assert ok
+    data = json.loads(msg)
+    assert data["exported"] == 1
+    assert target.exists()
+
+
+def test_sync_promptboard_bidirectional(handler, prompt_env, tmp_path):
+    target = tmp_path / "sync_library.json"
+    target.write_text(json.dumps({
+        "items": [
+            {"id": "pb1", "item_type": "PROMPT", "name": "OnlyInPB", "content": "Text from PB", "tags": ["pb"], "updated_at": "2026-11-04T10:00:00"},
+            {"id": "pb2", "item_type": "PROMPT", "name": "Shared", "content": "Updated in PB", "tags": ["shared", "pb_tag"], "updated_at": "2026-11-04T15:00:00"},
+        ]
+    }), encoding="utf-8")
+
+    # Add items to BACH
+    handler.handle("add", ["OnlyInBACH", "Text from BACH", "--tags", "bach"])
+    handler.handle("add", ["Shared", "Old BACH text", "--tags", "shared,bach_tag"])
+
+    # Update updated_at of Shared in BACH to be older than PB's 15:00:00
+    with sqlite3.connect(prompt_env[1]) as conn:
+        conn.execute("UPDATE prompt_templates SET updated_at = '2026-11-04T12:00:00' WHERE name = 'Shared'")
+
+    # Dry-Run test
+    preview = handler.sync_promptboard(target, dry_run=True)
+    assert preview["ok"] is True
+    assert preview["dry_run"] is True
+    assert preview["imported"] == 1
+    assert preview["exported"] == 1
+    assert preview["updated_in_bach"] == 1
+
+    # Actual sync
+    res = handler.sync_promptboard(target, dry_run=False)
+    assert res["ok"] is True
+    assert res["dry_run"] is False
+    assert res["imported"] == 1
+    assert res["exported"] == 1
+    assert res["updated_in_bach"] == 1
+
+    # Verify BACH database
+    with sqlite3.connect(prompt_env[1]) as conn:
+        conn.row_factory = sqlite3.Row
+        bach_rows = {r["name"]: r for r in conn.execute("SELECT * FROM prompt_templates").fetchall()}
+        assert "OnlyInPB" in bach_rows
+        assert bach_rows["OnlyInPB"]["text"] == "Text from PB"
+        assert "OnlyInBACH" in bach_rows
+        assert "Shared" in bach_rows
+        assert bach_rows["Shared"]["text"] == "Updated in PB"
+
+        # Check archived version of Shared
+        versions = conn.execute("SELECT * FROM prompt_versions WHERE prompt_id = ?", (bach_rows["Shared"]["id"],)).fetchall()
+        assert len(versions) == 1
+        assert versions[0]["text"] == "Old BACH text"
+
+    # Verify PromptBoard library
+    data = json.loads(target.read_text(encoding="utf-8"))
+    items_map = {it["name"]: it for it in data["items"]}
+    assert "OnlyInBACH" in items_map
+    assert items_map["OnlyInBACH"]["content"] == "Text from BACH"
+    assert items_map["OnlyInPB"]["content"] == "Text from PB"
+    assert items_map["Shared"]["content"] == "Updated in PB"
+
+
+def test_sync_promptboard_gui_endpoints(gui_client, handler, prompt_env, tmp_path, monkeypatch):
+    target = tmp_path / "gui_sync_library.json"
+    target.write_text(json.dumps({
+        "items": [
+            {"id": "g1", "item_type": "PROMPT", "name": "GuiPrompt", "content": "From GUI test"}
+        ]
+    }), encoding="utf-8")
+    monkeypatch.setenv("BACH_PROMPTBOARD_LIBRARY", str(target))
+
+    # Preview endpoint
+    resp_prev = gui_client.get("/api/prompt-library/sync-promptboard/preview")
+    assert resp_prev.status_code == 200
+    assert resp_prev.json()["dry_run"] is True
+    assert resp_prev.json()["imported"] == 1
+
+    # Post endpoint
+    resp_sync = gui_client.post("/api/prompt-library/sync-promptboard", json={"target_path": str(target)})
+    assert resp_sync.status_code == 200
+    assert resp_sync.json()["dry_run"] is False
+    assert resp_sync.json()["imported"] == 1
+
+    # DB verified
+    with sqlite3.connect(prompt_env[1]) as conn:
+        names = [r[0] for r in conn.execute("SELECT name FROM prompt_templates").fetchall()]
+        assert "GuiPrompt" in names
+
+

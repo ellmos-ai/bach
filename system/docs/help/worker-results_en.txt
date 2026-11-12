@@ -3,9 +3,14 @@ Worker results and personal acceptance
 ========================================
 
 Native workers store a concrete professional result with task_manage,
-action=submit_result. Their completion aliases also lead to result submission.
-A mere completion acknowledgment is not sufficient. The task then waits
-in Review; the task lease is released. A submission does not complete the task.
+action=submit_result and the mandatory complete=true/false flag (or
+--complete=true/false for CLI completion commands). Their completion aliases
+also lead to result submission. A mere completion acknowledgment is not
+sufficient. With complete=true, the result is stored as a submission, the
+task lease is released, and the completion status is determined according to
+the configured policy (Review or direct completion). With complete=false, the
+partial state is sealed into the task description and the task is returned
+open as pending (for example after decomposing a parent task into subtasks).
 
 A task expressly assigned to a system slot is taken on regardless of that
 slot's general category and priority selection. Tag filters, in particular

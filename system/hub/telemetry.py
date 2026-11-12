@@ -19,6 +19,8 @@ from pathlib import Path
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class TelemetryHandler(BaseHandler):
     """Handler fuer bach telemetry"""
 
@@ -42,9 +44,14 @@ class TelemetryHandler(BaseHandler):
 
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
         try:
-            from core.telemetry import report, status, reset
-        except Exception as e:
-            return False, f"Telemetrie-Modul nicht verfuegbar: {e}"
+            from hub._services.ocean_stack_bridge import load_telemetry_module
+            tel = load_telemetry_module()
+            report, status, reset = tel.report, tel.status, tel.reset
+        except Exception:
+            try:
+                from core.telemetry import report, status, reset
+            except Exception as e:
+                return False, f"Telemetrie-Modul nicht verfuegbar: {e}"
 
         if operation == "report" or not operation:
             days = 7

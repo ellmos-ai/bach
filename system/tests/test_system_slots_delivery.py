@@ -833,3 +833,37 @@ def test_gemini_role_portraits_roundtrip_core_and_worker_configuration(config_fi
     projected=adapter._project_configuration({'ok': True, **ack}, worker['id'])
     assert projected['configuration']['avatar'] == preset
     assert slots.get_worker_slot(worker['id'])['status'] == 'idle'
+
+
+def test_interface_system_slot_categories_and_two_stage_role_resolution(config_file):
+    snap = slots.core_system_agents_snapshot()
+    assert "buddha_chat" in snap["interface_system_slot_ids"]
+    assert "buddha_connector" in snap["interface_system_slot_ids"]
+    assert "buddha_talk" in snap["interface_system_slot_ids"]
+    assert "buddha_always_on" in snap["interface_system_slot_ids"]
+    assert "buddha_boss" in snap["legacy_preconfigured_role_slot_ids"]
+    assert "ticket-master" in snap["primary_interface_integrated_roles"]
+    assert len(snap["optional_hardware_interface_slots"]) >= 3
+
+    by_id = {item["id"]: item for item in snap["agents"]}
+    assert by_id["buddha_chat"]["slot_category"] == "interface_system_slot"
+    assert "ticket-master" in by_id["buddha_chat"]["integrated_roles"]
+    assert by_id["buddha_boss"]["slot_category"] == "preconfigured_role_agent"
+
+    # Stage 1: ticket-master runs dynamically on buddha_chat when no Living agent pins ticket-master
+    res_stage1 = slots.resolve_role_execution_slot("ticket-master", config_file, interface_slot_id="buddha_chat")
+    assert res_stage1["resolution_stage"] == "dynamic_persona_routing"
+    assert res_stage1["slot_id"] == "buddha_chat"
+    assert res_stage1["integrated_in_interface"] is True
+
+    # Stage 2: creating an active Living agent for ticket-master gives it priority over buddha_chat
+    created = slots.create_system_slot(
+        {"name": "Dedicated Ticket-Master", "backend": "ollama", "model": "qwen3:8b", "enabled": True},
+        snap["configuration_version"],
+        preset="ticket_master",
+        path=config_file,
+    )
+    res_stage2 = slots.resolve_role_execution_slot("ticket-master", config_file, interface_slot_id="buddha_chat")
+    assert res_stage2["resolution_stage"] == "pinned_living_agent"
+    assert res_stage2["slot_id"] == created["slot_id"]
+    assert res_stage2["model"] == "qwen3:8b"

@@ -16,6 +16,8 @@ from .bach_paths import BACKUPS_DIR
 from .lang import t
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("cloud-safe-exporter")
 class BackupHandler(BaseHandler):
     """Handler fuer --backup Operationen"""
     

@@ -39,6 +39,8 @@ from .scheduler_provider import (
 )
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-scheduler")
 class SchedulerHandler(BaseHandler):
     """Handler fuer scheduler Operationen (ehemals DaemonHandler)."""
 

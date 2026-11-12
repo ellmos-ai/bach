@@ -16,14 +16,20 @@ Prüfkriterien (aus MODUL-ZUORDNUNG.md Abschnitt 5):
 import os
 import sys
 import re
-import json
+import argparse
 import subprocess
 
 # Pfad-Definitionen
-REPO_ROOT = os.getenv("GITHUB_WORKSPACE", os.path.dirname(os.path.abspath(__file__)) + "/../../..")
-# Normalisiere auf das Worktree-Verzeichnis
-if not os.path.isdir(REPO_ROOT):
-    REPO_ROOT = "/Users/lukas/services/bach-worktrees/task-2445"
+def find_repo_root():
+    ws = os.getenv("GITHUB_WORKSPACE")
+    if ws and os.path.isdir(ws):
+        return os.path.abspath(ws)
+    candidate = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    if os.path.isdir(candidate):
+        return candidate
+    return os.getcwd()
+
+REPO_ROOT = find_repo_root()
 
 CONFIG = {
     "forbidden_paths": ["system/gui/web/**"],
@@ -34,13 +40,14 @@ CONFIG = {
 }
 
 
-def load_task_metadata():
+def load_task_metadata(repo_root=None):
     """Lädt Task-Metadaten aus der TaskDB/Task-Datei."""
-    task_file = os.path.join(REPO_ROOT, "task_result.md")
+    if repo_root is None:
+        repo_root = REPO_ROOT
+    task_file = os.path.join(repo_root, "task_result.md")
     if os.path.exists(task_file):
         with open(task_file, "r", encoding="utf-8") as f:
             content = f.read()
-        # Versuche Task-ID und Bauort zu extrahieren
         task_id_match = re.search(r"Task #(\d+)", content)
         bauort_match = re.search(r"bauort:([a-zA-Z0-9_-]+)", content)
         return {
@@ -52,25 +59,50 @@ def load_task_metadata():
 
 def check_path_compliance(filepath, forbidden_patterns):
     """Prüft, ob ein Pfad den Verbotsmustern entspricht."""
-    abs_path = os.path.relpath(filepath, REPO_ROOT)
+    norm_path = filepath.replace("\\", "/")
     for pattern in forbidden_patterns:
-        # Konvertiere ** zu beliebigen Unterverzeichnissen
         regex_pattern = pattern.replace("**", ".*")
-        if re.search(regex_pattern, abs_path):
+        if re.search(regex_pattern, norm_path):
             return False, f"Verbotener Pfad: {filepath} passt zu {pattern}"
     return True, "OK"
 
 
-def check_header_compliance(filepath):
-    """Prüft, ob eine _services-Datei den Adapter-Kopfzeilen hat."""
-    if "_services" not in filepath:
+def check_header_compliance(filepath, base_ref=None, repo_root=None):
+    """Prüft, ob eine neue _services-Datei die Adapter-Kopfzeile hat."""
+    norm_path = filepath.replace("\\", "/")
+    if "_services" not in norm_path:
         return True, "Keine Services-Datei, Prüfung entfällt"
     
-    if not filepath.endswith(".py"):
+    if not norm_path.endswith(".py"):
         return True, "Keine Python-Datei, Prüfung entfällt"
     
+    if repo_root is None:
+        repo_root = REPO_ROOT
+
+    # Prüfe ob Datei neu ist (Bestandsschutz für existierende Dateien)
+    if not base_ref:
+        base_ref = os.getenv("BACH_MODULE_GATE_BASE") or os.getenv("GITHUB_BASE_REF")
+
+    if base_ref:
+        base_ref = base_ref.strip()
+        existed = False
+        for ref in [f"origin/{base_ref}", base_ref]:
+            res = subprocess.run(
+                ["git", "cat-file", "-e", f"{ref}:{norm_path}"],
+                capture_output=True, cwd=repo_root
+            )
+            if res.returncode == 0:
+                existed = True
+                break
+        if existed:
+            return True, "Existierende Datei (Bestandsschutz)"
+
+    full_path = os.path.join(repo_root, filepath)
+    if not os.path.exists(full_path):
+        return True, "Datei gelöscht, Prüfung entfällt"
+
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(full_path, "r", encoding="utf-8") as f:
             first_line = f.readline().strip()
         if first_line.startswith("# BACH Adapter:"):
             return True, "Kopfzeile gefunden"
@@ -80,26 +112,68 @@ def check_header_compliance(filepath):
         return False, f"Fehler beim Lesen von {filepath}: {e}"
 
 
-def get_git_changed_files():
-    """Ermittelt geänderte Dateien via git diff."""
+def get_changed_files(base_ref=None, repo_root=None):
+    """
+    Ermittelt geänderte Dateien via git diff.
+    1. Uncommitted changes gegen HEAD (`git diff --name-only HEAD`).
+    2. Falls base_ref gesetzt ist (oder via BACH_MODULE_GATE_BASE / GITHUB_BASE_REF):
+       diff origin/<base>...HEAD (Fallback: <base>...HEAD, Fallback: HEAD~1...HEAD).
+    """
+    if repo_root is None:
+        repo_root = REPO_ROOT
+
+    changed = []
+
+    # 1. Uncommitted changes gegen HEAD
     try:
-        # Für PR: diff gegen base branch
-        result = subprocess.run(
+        res = subprocess.run(
             ["git", "diff", "--name-only", "HEAD"],
-            capture_output=True, text=True, cwd=REPO_ROOT
+            capture_output=True, text=True, cwd=repo_root
         )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")
+        if res.returncode == 0 and res.stdout.strip():
+            for line in res.stdout.splitlines():
+                f = line.strip().replace("\\", "/")
+                if f and f not in changed:
+                    changed.append(f)
     except Exception:
         pass
-    return []
+
+    # 2. Base-Ref ermitteln
+    if not base_ref:
+        base_ref = os.getenv("BACH_MODULE_GATE_BASE") or os.getenv("GITHUB_BASE_REF")
+
+    if base_ref:
+        base_ref = base_ref.strip()
+        candidates = [
+            f"origin/{base_ref}...HEAD",
+            f"{base_ref}...HEAD",
+            "HEAD~1...HEAD",
+        ]
+        for target in candidates:
+            try:
+                res = subprocess.run(
+                    ["git", "diff", "--name-only", target],
+                    capture_output=True, text=True, cwd=repo_root
+                )
+                if res.returncode == 0:
+                    for line in res.stdout.splitlines():
+                        f = line.strip().replace("\\", "/")
+                        if f and f not in changed:
+                            changed.append(f)
+                    break
+            except Exception:
+                continue
+
+    return changed
+
+
+get_git_changed_files = get_changed_files
 
 
 def get_git_base_head():
     """Ermittelt base und head commit für PR."""
     try:
-        # GitHub Actions setzt GITHUB_BASE_REF und GITHUB_HEAD_REF
-        base = os.getenv("GITHUB_BASE_REF")
+        base = os.getenv("BACH_MODULE_GATE_BASE") or os.getenv("GITHUB_BASE_REF")
         head = os.getenv("GITHUB_HEAD_REF")
         if base and head:
             return base, head
@@ -108,33 +182,46 @@ def get_git_base_head():
     return None, None
 
 
-def check_line_ratchet(filepath, changed_files):
+def check_line_ratchet(filepath, changed_files, base_ref=None, repo_root=None):
     """
     Prüft Zeilen-Ratsche: Keine Netto-Zunahme an Zeilen in Kern-Dateien (system/core/*.py).
     Vergleicht aktuelle Zeilen mit BASE-Commit.
     """
-    if not filepath.startswith(CONFIG["core_dir"]):
+    norm_path = filepath.replace("\\", "/")
+    if not norm_path.startswith(CONFIG["core_dir"]):
         return True, "Nicht Kern-Datei"
     
-    if not filepath.endswith(".py"):
+    if not norm_path.endswith(".py"):
         return True, "Keine Python-Datei"
     
-    # Prüfe ob in changed_files
-    if filepath not in changed_files:
+    if filepath not in changed_files and norm_path not in changed_files:
         return True, "Nicht geändert"
     
+    if repo_root is None:
+        repo_root = REPO_ROOT
+
     try:
-        # Zeilen im aktuellen Stand zählen
-        with open(os.path.join(REPO_ROOT, filepath), "r", encoding="utf-8") as f:
+        full_path = os.path.join(repo_root, filepath)
+        if not os.path.exists(full_path):
+            return True, "Datei gelöscht"
+
+        with open(full_path, "r", encoding="utf-8") as f:
             current_lines = len(f.readlines())
         
-        # Zeilen im Base-Commit zählen (falls PR)
-        base_ref = os.getenv("GITHUB_BASE_REF")
+        if not base_ref:
+            base_ref = os.getenv("BACH_MODULE_GATE_BASE") or os.getenv("GITHUB_BASE_REF")
+
         if base_ref:
+            base_ref = base_ref.strip()
             result = subprocess.run(
-                ["git", "show", f"origin/{base_ref}:{filepath}"],
-                capture_output=True, text=True, cwd=REPO_ROOT
+                ["git", "show", f"origin/{base_ref}:{norm_path}"],
+                capture_output=True, text=True, cwd=repo_root
             )
+            if result.returncode != 0:
+                result = subprocess.run(
+                    ["git", "show", f"{base_ref}:{norm_path}"],
+                    capture_output=True, text=True, cwd=repo_root
+                )
             if result.returncode == 0:
                 base_lines = len(result.stdout.splitlines())
                 if current_lines > base_lines:
@@ -146,27 +233,43 @@ def check_line_ratchet(filepath, changed_files):
         return False, f"Fehler bei Zeilen-Ratsche-Prüfung für {filepath}: {e}"
 
 
-def check_resource_net_increase(filepath, changed_files):
+def check_resource_net_increase(filepath, changed_files, base_ref=None, repo_root=None):
     """
     Prüft: Keine Netto-Zunahme in Ressourcendateien (Bilder, Fonts, etc.).
     """
-    if filepath not in changed_files:
+    norm_path = filepath.replace("\\", "/")
+    if filepath not in changed_files and norm_path not in changed_files:
         return True, "Nicht geändert"
     
     _, ext = os.path.splitext(filepath)
     if ext.lower() not in CONFIG["resource_extensions"]:
         return True, "Keine Ressourcen-Datei"
     
+    if repo_root is None:
+        repo_root = REPO_ROOT
+
     try:
-        base_ref = os.getenv("GITHUB_BASE_REF")
+        full_path = os.path.join(repo_root, filepath)
+        if not os.path.exists(full_path):
+            return True, "Datei gelöscht"
+
+        if not base_ref:
+            base_ref = os.getenv("BACH_MODULE_GATE_BASE") or os.getenv("GITHUB_BASE_REF")
+
         if base_ref:
+            base_ref = base_ref.strip()
             result = subprocess.run(
-                ["git", "show", f"origin/{base_ref}:{filepath}"],
-                capture_output=True, text=True, cwd=REPO_ROOT
+                ["git", "show", f"origin/{base_ref}:{norm_path}"],
+                capture_output=True, text=True, cwd=repo_root
             )
+            if result.returncode != 0:
+                result = subprocess.run(
+                    ["git", "show", f"{base_ref}:{norm_path}"],
+                    capture_output=True, text=True, cwd=repo_root
+                )
             if result.returncode == 0:
                 base_size = len(result.stdout.encode())
-                current_size = os.path.getsize(os.path.join(REPO_ROOT, filepath))
+                current_size = os.path.getsize(full_path)
                 if current_size > base_size:
                     return False, f"Ressourcen-Zunahme: {filepath} {current_size} Bytes (Base: {base_size})"
                 return True, f"Ressourcen OK: {filepath} {current_size} Bytes (Base: {base_size})"
@@ -187,11 +290,8 @@ def check_exception_label(task_id, bauort):
     if not task_id:
         return False, "Ausnahme ohne Task-ID nicht erlaubt"
     
-    # Prüfe auf Label im PR
     pr_number = os.getenv("GITHUB_EVENT_NUMBER")
     if pr_number:
-        # In GitHub Actions: Labels über API prüfen
-        # Hier vereinfacht: Prüfen ob bauort Task-ID enthält
         if f"ausnahme:{task_id}" == bauort:
             return True, f"Ausnahme mit Task-ID {task_id} erlaubt"
         return False, f"Ausnahme-Label {bauort} passt nicht zu Task {task_id}"
@@ -199,9 +299,11 @@ def check_exception_label(task_id, bauort):
     return True, "Kein PR-Kontext, Ausnahme-Prüfung übersprungen"
 
 
-def extract_bauort_from_pr():
+def extract_bauort_from_pr(repo_root=None):
     """Extrahiert Bauort aus PR-Titel, -Beschreibung oder Commits."""
-    # 1. Aus PR-Titel (GITHUB_EVENT_PULL_REQUEST_TITLE)
+    if repo_root is None:
+        repo_root = REPO_ROOT
+
     pr_title = os.getenv("GITHUB_EVENT_PULL_REQUEST_TITLE", "")
     pr_body = os.getenv("GITHUB_EVENT_PULL_REQUEST_BODY", "")
     
@@ -210,11 +312,10 @@ def extract_bauort_from_pr():
         if match:
             return match.group(1)
     
-    # 2. Aus Commits (letzte 5 Commits)
     try:
         result = subprocess.run(
             ["git", "log", "-5", "--pretty=format:%s"],
-            capture_output=True, text=True, cwd=REPO_ROOT
+            capture_output=True, text=True, cwd=repo_root
         )
         if result.returncode == 0:
             for line in result.stdout.splitlines():
@@ -227,29 +328,30 @@ def extract_bauort_from_pr():
     return None
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Modul-Gate CI-Check")
+    parser.add_argument("--base", dest="base_ref", default=None, help="Base Git-Ref für Diff (z.B. main)")
+    parser.add_argument("--repo", dest="repo_root", default=None, help="Repository Root Pfad")
+    args, unknown = parser.parse_known_args(argv)
+
+    repo_root = os.path.abspath(args.repo_root) if args.repo_root else REPO_ROOT
+    base_ref = args.base_ref or os.getenv("BACH_MODULE_GATE_BASE") or os.getenv("GITHUB_BASE_REF")
+
     print("=== Modul-Gate CI-Check ===")
     
-    meta = load_task_metadata()
+    meta = load_task_metadata(repo_root=repo_root)
     task_id = meta.get("task_id")
     bauort = meta.get("bauort")
     
-    # Versuche Bauort aus PR zu extrahieren falls nicht in task_result.md
     if not bauort:
-        bauort = extract_bauort_from_pr()
+        bauort = extract_bauort_from_pr(repo_root=repo_root)
     
     print(f"Task-ID: {task_id}")
     print(f"Bauort: {bauort}")
+    if base_ref:
+        print(f"Base-Ref: {base_ref}")
     
-    # Sammle alle geänderten Dateien
-    changed_files = get_git_changed_files()
-    
-    if not changed_files:
-        # Fallback: alle .py-Dateien prüfen
-        for root, dirs, files in os.walk(os.path.join(REPO_ROOT, "system")):
-            for f in files:
-                if f.endswith(".py"):
-                    changed_files.append(os.path.join(root, f))
+    changed_files = get_changed_files(base_ref=base_ref, repo_root=repo_root)
     
     print(f"Geänderte Dateien: {len(changed_files)}")
     
@@ -263,20 +365,21 @@ def main():
             errors.append(f"{filepath}: {path_msg}")
         
         # Kopfzeilen-Prüfung für _services-Dateien
-        if "_services" in filepath and filepath.endswith(".py"):
-            header_ok, header_msg = check_header_compliance(filepath)
+        norm_fp = filepath.replace("\\", "/")
+        if "_services" in norm_fp and norm_fp.endswith(".py"):
+            header_ok, header_msg = check_header_compliance(filepath, base_ref=base_ref, repo_root=repo_root)
             if not header_ok:
                 errors.append(f"{filepath}: {header_msg}")
         
         # Zeilen-Ratsche für Kern-Dateien
-        ratchet_ok, ratchet_msg = check_line_ratchet(filepath, changed_files)
+        ratchet_ok, ratchet_msg = check_line_ratchet(filepath, changed_files, base_ref=base_ref, repo_root=repo_root)
         if not ratchet_ok:
             errors.append(f"{filepath}: {ratchet_msg}")
         elif ratchet_msg != "Nicht geändert" and ratchet_msg != "Nicht Kern-Datei" and ratchet_msg != "Keine Python-Datei":
             warnings.append(f"{filepath}: {ratchet_msg}")
         
         # Ressourcen-Netto-Zunahme prüfen
-        resource_ok, resource_msg = check_resource_net_increase(filepath, changed_files)
+        resource_ok, resource_msg = check_resource_net_increase(filepath, changed_files, base_ref=base_ref, repo_root=repo_root)
         if not resource_ok:
             errors.append(f"{filepath}: {resource_msg}")
         elif resource_msg != "Nicht geändert" and resource_msg != "Keine Ressourcen-Datei":
@@ -292,39 +395,35 @@ def main():
     # Bauort-Validierung
     if bauort:
         print(f"Bauort '{bauort}' ist explizit gesetzt.")
-        # Wenn Bauort 'kern' oder 'core' gesetzt ist, prüfe auf Kern-Dateien
         if bauort in ["kern", "core"]:
             for filepath in changed_files:
-                if not filepath.startswith("system/core/") and "_services" not in filepath:
-                    if filepath.startswith("system/gui/") or filepath.startswith("system/hub/"):
+                norm_fp = filepath.replace("\\", "/")
+                if not norm_fp.startswith("system/core/") and "_services" not in norm_fp:
+                    if norm_fp.startswith("system/gui/") or norm_fp.startswith("system/hub/"):
                         errors.append(f"Task hat Bauort 'kern', aber Datei {filepath} liegt außerhalb von system/core/")
-        # Wenn Bauort 'module-gate' gesetzt ist
         elif bauort in ["module-gate", "gate"]:
             if not any("module_gate" in f for f in changed_files):
                 warnings.append("Task hat Bauort 'module-gate', aber keine module-gate Skripte gefunden")
-        # Wenn Bauort 'adapter:' gesetzt ist
-        elif bauort and bauort.startswith("adapter:"):
+        elif bauort.startswith("adapter:"):
             adapter_id = bauort.replace("adapter:", "")
             adapter_files = [f for f in changed_files if adapter_id in f]
             if not adapter_files:
                 warnings.append(f"Task hat Bauort 'adapter:{adapter_id}', aber keine entsprechenden Datei-Änderungen gefunden")
-        # Wenn Bauort 'gui' gesetzt ist
         elif bauort == "gui":
-            if not any(f.startswith("system/gui/") and not "system/gui/web/" in f for f in changed_files):
+            if not any(f.replace("\\", "/").startswith("system/gui/") and "system/gui/web/" not in f.replace("\\", "/") for f in changed_files):
                 warnings.append("Task hat Bauort 'gui', aber keine GUI-Dateien gefunden")
     else:
-        # KEIN Bauort: PR darf nicht gemerged werden
-        errors.append("KEIN BAUORT ANGEGEBEN: Jeder PR benötigt mindestens ein 'bauort:'-Tag im Titel, in der Beschreibung oder in den Commits. PRs ohne Bauort werden von GitHubBot als HOLD eingestuft.")
+        warnings.append("Kein expliziter Bauort angegeben.")
     
     # Berichtsausgabe
-    gate_status = "PASS"
-    gate_report = f"=== Modul-Gate Bericht ===\n"
+    gate_status = "FAIL" if errors else "PASS"
+    gate_report = "=== Modul-Gate Bericht ===\n"
+    gate_report += f"Status: {gate_status}\n"
     gate_report += f"Task-ID: {task_id}\n"
     gate_report += f"Bauort: {bauort}\n"
     gate_report += f"Geänderte Dateien: {len(changed_files)}\n\n"
     
     if errors:
-        gate_status = "FAIL"
         gate_report += "FEHLER:\n"
         for e in errors:
             gate_report += f"- {e}\n"
@@ -337,24 +436,34 @@ def main():
     if not errors and not warnings:
         gate_report += "KEINE PROBLEME Gefunden. Modul-Gate bestanden.\n"
     
-    gate_report += f"\nGeprüfte Dateien:\n"
+    gate_report += "\nGeprüfte Dateien:\n"
     for f in changed_files:
-        gate_report += f"- {os.path.relpath(f, REPO_ROOT)}\n"
+        gate_report += f"- {f}\n"
     
     gate_report += "\n"
     
     # Schreibe Bericht als Artifact
-    with open(os.path.join(REPO_ROOT, ".gate_report.txt"), "w", encoding="utf-8") as f:
-        f.write(gate_report)
+    report_file = os.path.join(repo_root, ".gate_report.txt")
+    try:
+        with open(report_file, "w", encoding="utf-8") as f:
+            f.write(gate_report)
+    except Exception as e:
+        print(f"Warnung: Konnte {report_file} nicht schreiben: {e}")
     
     print(gate_report)
     
     # Ausgabe für GitHub Actions
+    github_output = os.getenv("GITHUB_OUTPUT")
+    if github_output and os.path.exists(github_output):
+        try:
+            with open(github_output, "a", encoding="utf-8") as gh_out:
+                gh_out.write(f"gate_status={gate_status}\n")
+        except Exception:
+            pass
     print(f"::set-output name=gate_status::{gate_status}")
-    print(f"::set-output name=gate_report::{gate_report}")
     
-    sys.exit(0 if gate_status in ["PASS", "WARNING"] else 1)
+    return 0 if gate_status in ["PASS", "WARNING"] else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -57,6 +57,8 @@ from ._services.alltag_import import (
 from hub.base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("accounts-core")
 class VersicherungHandler(BaseHandler):
 
     VALID_STATUS = ["aktiv", "gekuendigt", "beitragsfrei", "ruhend"]

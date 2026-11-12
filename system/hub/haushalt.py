@@ -47,6 +47,8 @@ def _write_private_text(path: Path, content: str):
         f.write(content)
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("assistant-core")
 class HaushaltHandler(BaseHandler):
 
     WEEKDAYS_DE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]

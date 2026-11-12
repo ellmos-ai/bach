@@ -25,6 +25,8 @@ from typing import Dict, List, Optional, Tuple
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("receipt-validator")
 class TuevHandler(BaseHandler):
     """Handler fuer bach tuev - Workflow-TUeV"""
 

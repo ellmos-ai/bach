@@ -48,6 +48,8 @@ LEGACY_WRITE_SUBOPS = frozenset({
 })
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("GARDENER")
 class SharedMemoryHandler(BaseHandler):
     """Handler für Shared Memory (Multi-Agent Memory)"""
 

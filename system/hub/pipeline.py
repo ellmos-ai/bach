@@ -32,6 +32,8 @@ from hub.bach_paths import BACH_DB
 from hub.base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class PipelineCoordinationHandler(BaseHandler):
     """Discoverable read-only Ocean surface; legacy pipeline execution stays separate."""
 

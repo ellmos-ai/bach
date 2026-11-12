@@ -47,6 +47,136 @@ README ドキュメントは 11 言語で利用できます。実行時翻訳の
 
 **BACH**は、Large Language Models（LLM）が自律的に作業し、学習し、自らを組織化できるテキストベースのオペレーティングシステム。**ellmos**（Extra Large Language Model Operating Systems）ファミリーの一員として、タスク管理、ナレッジ管理、自動化、LLMオーケストレーションのための包括的な基盤を提供する。
 
+## 🧭 コアガバナンス：アイデンティティと権限フロー、3要因ドキュメントモデル、透明な意思決定処理ルール
+
+BACHとOceanは、**透明で検査可能、ユーザー設定可能な意思決定処理ルール（`decision_processing_rules`）**を通じて自律的な挙動を統治します。すべての権限チェック、ドキュメント乖離の分類、およびアクション分岐は、決定論的な監査レシート（`decision_rule_trace`）を出力します。
+
+### 1. アイデンティティ、3層権限トンネリング、および「権限の砂漠」からの保護
+
+- **アイデンティティ vs 権限：** **アイデンティティ**はOSアカウントと登録されたデバイス/チャネルに固定されます（秘密情報はローカルキーリング内に保持され不可視）。**権限**は、**オペレーターチャネル**（コンソール、Telegram、システムGUIチャット）を通じてユーザーから委任されたサブエージェントおよびバックグラウンドワーカーへと流れます。
+- **自然（自動侵食とドリフト）vs テラフォーミング（意図的な変更）：** 侵食とドリフトはシステムの通常利用（コンテキスト圧縮、セッション境界、コードの進化）によって自然に発生します。有効な決定を期限切れにする人工的なCronジョブはありません。`DECISIONS.md`、`AKTUELLER-PLAN.md`、`USER.md`、またはコードに対する意図的な編集は**テラフォーミング**であり、古いエントリは元のソース内で直接 `superseded` とマークされます。
+- **3層権限トンネリングと内向き優先カスケード（`open-ocean/tools/escalation_ladder.py`）：**
+  1. **第1層 — セマンティック権限トンネリング（日常の可逆的な作業の約80%）：** アクティブな目標/計画（`authority_ref`, `active_goal_or_plan_id`）の範囲内で迅速に実行し、不必要なユーザー確認を防ぎます（**`error_authority_desert` / 権限の砂漠**）。
+  2. **第2層 — 決定論的引用証拠トンネル（閾値移行の約15%、`ellmos-authority-evidence`）：** NemoFoldの `evidence.py` に由来し、渡された `literal_quote` が元のソース（`DECISIONS.md`, `transcript.jsonl`, `AKTUELLER-PLAN.md`）に**一字一句違わず**かつ `superseded` されていない状態で存在するかを1ミリ秒未満（`validate_quote_tunnel_evidence`）で検証します。
+  3. **第3層 — ハードな暗号化およびロックゲート（不可逆または高リスクなアクションの約5%）：** `lock_status.py`（`LOCK.user.*`）、ソルト付き秘密の質問（`ellmos-installer`）、およびEd25519 `capability-grant.v1` 証明書によって強制されます。
+
+```mermaid
+flowchart TD
+    classDef userLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef cogLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef tunnelLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef errorLayer fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+
+    subgraph L0["1. 起源：自然（ドリフト）vs テラフォーミング（意図的）"]
+        U["オペレーターチャネルのユーザー
+(コンソール、Telegram、GUIチャット)"]:::userLayer
+        TF["テラフォーミング（意図的な形成）
+DECISIONS.md, Plan, USER.md, policy-registry"]:::userLayer
+        NAT["自然と地殻変動（自動ドリフト）
+コンテキスト圧縮、セッション移行、時間経過"]
+        U -->|"形成"| TF
+    end
+
+    subgraph L1["2. 認知システムと3層権限トンネリング"]
+        COG["認知システム + WorkflowHookers
+(メタ認知、目標、計画、スキル -> 行動への意欲)"]:::cogLayer
+        T1["第1層 (~80% 可逆的)
+セマンティック権限トンネリング"]:::tunnelLayer
+        T2["第2層 (~15% 閾値)
+決定論的引用トンネル (<1ms 一字一句検証)"]:::tunnelLayer
+        T3["第3層 (~5% 不可逆)
+ハードゲート (LOCK.user / セキュリティハッシュ / Ed25519)"]:::tunnelLayer
+        U --> COG
+        TF --> COG
+        COG --> T1
+        COG --> T2
+        COG --> T3
+        TF -.->|"一字一句一致"| T2
+        NAT -.->|"侵食された引用は失敗"| T2
+    end
+
+    subgraph L2["3. 権限チェッカー、内向き優先カスケードと内省"]
+        CHK{"権限チェッカー:
+行動が許可されているか？"}:::tunnelLayer
+        ACT["YES: 即座に実行する"]:::cogLayer
+        ASK["NO: 内向き優先カスケード (Inward-First)
+1. 目標/コンテキスト -> 2. DECISIONS/USER.md
+-> 3. 親オーケストレーター -> 4. ユーザーゲート"]:::tunnelLayer
+        REF["アクション後の内省と学習
+権限の砂漠 (error_authority_desert) を防止"]:::errorLayer
+
+        T1 --> CHK
+        T2 --> CHK
+        T3 --> CHK
+        CHK -->|"Yes"| ACT
+        CHK -->|"No"| ASK
+        ASK -->|"解決済"| ACT
+        ACT --> REF
+    end
+```
+
+### 2. 3要因ドキュメントモデルと設定可能な意思決定処理ルール（`system/tools/llmauto/config.json`）
+
+自動ドキュメント検証（`ellmos-doc-keeper` + NemoFoldクレーム検証）がドキュメント（`system/docs/help/*.txt`, `README.md`, `SKILL.md`, GUI `/help`）と測定されたコード実態との乖離を検出した際、**望まれる設計仕様を盲目的に上書きすることは決してありません**。代わりに、`classify_doc_reality_diff()` が乖離を**3つの決定論的要因**に分類し、`resolve_doc_machine_dispatch()` が透明で組み合わせ可能な**意思決定処理ルール**に従ってルーティングします：
+
+| 要因 (`classify_doc_reality_diff`) | 意味 | 透明なアクション分岐（`selected_branches` — 単独または組み合わせ） |
+|---|---|---|
+| **1. `unintended_erosion`** *(意図しない侵食 / ドリフト)* | ドキュメントは本来の挙動を示しているが、コードやサービスが意図せず破損またはドリフトした。 | **ドキュメントのSOLL（あるべき姿）を維持** + IST（現状）警告を付与 + **`["local_taskplan", "user_notification"]`** をディスパッチ（バックグラウンドワーカー向けP1修復タスクを作成しユーザーに通知。必要に応じて `local_genie_marblerun` や `gitlab_wishes_come_true` と組み合わせ可能）。 |
+| **2. `planned_terraforming_pending`** *(計画されたテラフォーミング未完了)* | ドキュメントはロードマップや `DECISIONS.md` からの計画された目標設計（SOLL）を記述しているが、コードがまだ未完成。 | 既存タスクを確認・調整、または **`["local_taskplan"]`** でP2実装タスクを作成 + ドキュメント内で **SOLL（タスクID付き）** と **IST** を明確に分離。 |
+| **3. `completed_terraforming_doc_lag`** *(テラフォーミング完了とドキュメント遅延)* | コードは意図的に進められたが（コミット/PR/`task_status=done` で検証済み）、ドキュメントの更新が遅れている。 | **`["local_doc_update"]`** を実行：`.txt` CLIヘルプ、`.md` ドキュメント、CLI/APIリファレンス、および多言語翻訳（`de/en/es/ja/ru/zh`）をローカルで自動更新。 |
+
+```mermaid
+flowchart TD
+    classDef probe fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+    classDef c1 fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#991b1b
+    classDef c2 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef c3 fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+
+    subgraph S1["1. クレーム検証と3要因分類"]
+        CLAIM["ドキュメントの主張を抽出 (docs/help/*.txt, README, SKILL.md, GUI /help)
+& コード/CLI/テストの実態をプローブ"]:::probe
+        CLS{"3要因クラシファイア
+(classify_doc_reality_diff)"}:::probe
+        U1["要因1: 意図しない侵食
+(コードが意図せず破損/ドリフト)"]:::c1
+        U2["要因2: 計画されたテラフォーミング未完了
+(ドキュメントはSOLL、コードは未完成)"]:::c2
+        U3["要因3: テラフォーミング完了
+(コードは意図的に更新済、ドキュメント遅延)"]:::c3
+        CLAIM --> CLS
+        CLS --> U1
+        CLS --> U2
+        CLS --> U3
+    end
+
+    subgraph S2["2. 透明で組み合わせ可能な意思決定処理ルール (config.json)"]
+        RULE{"意思決定ルールエンジン
+(resolve_doc_machine_dispatch)
+要因、トリガー、または明示的な上書き"}:::probe
+        B1["分岐A: local_taskplan (デフォルト)
+バックグラウンドワーカー (Buddha / Cloud) 向けに
+ローカルtaskplanにP1/P2修復・構築タスクを作成"]:::c3
+        B2["分岐B: local_genie_marblerun
+ローカルMarbleRunチェーンを実行
+(chains/wishes-come-true-local.json)"]:::c2
+        B3["分岐C: gitlab_wishes_come_true
+開発者機能 (config.jsonのwishes_redirect)
+local-genie / wishes-come-true へ"]:::probe
+        B4["分岐D: user_notification
+GUI受信トレイ / Telegramでオペレーターに通知"]:::c1
+        B5["分岐E: local_doc_update
+.txt/.mdドキュメント、CLI/APIリファレンス、i18nを更新"]:::c3
+
+        U1 --> RULE
+        U2 --> RULE
+        U3 --> B5
+        RULE -->|"組み合わせ可能"| B1
+        RULE -->|"組み合わせ可能"| B2
+        RULE -->|"組み合わせ可能 (ocean-dev)"| B3
+        RULE -->|"組み合わせ可能"| B4
+    end
+```
+
 ## プロジェクトの識別情報
 
 BACHは**ローカルファーストのLLMオペレーティングシステム**として説明するのが最適。自律エージェント向けの永続的なPython/SQLiteワークベンチ、構造化メモリ、スケジューラー駆動の自動化、プロンプトチェーン、MCPサーバー連携、多言語のオペレーター向けインターフェースを備える。チャットボットのラッパー、ホスト型エージェントSaaS、Bashユニットテストフレームワーク、音楽プロジェクト、LangChain風のパイプラインライブラリではない。
@@ -286,13 +416,54 @@ print(f"BACH status: {status.state} (Active handlers: {status.handlers_count})")
 ### 2. ナレッジシステム
 事実、教訓、自動統合機能を備えた構造化メモリシステム（6種類のメモリ、210以上のDBテーブル）。
 
-### 3. エージェントフレームワーク
-11のボスエージェントが22人の専門家を統括し、複雑なタスクに取り組む。エージェントCLIでは`bach agent`を使ってエージェントを直接起動・停止・一覧表示できるほか、`bach agent checkpoint`による起動前の指示キュー、協調的一時停止要求、明示的な安全チェックポイント確認もサポートする。キュー内のヒントは起動時に生成されたセッションの`CLAUDE.md`へ注入され、`OPERATOR_NOTES.md`は指示・一時停止・チェックポイントの状態を反映する。ライブJSONステータスサーフェスは、ダッシュボード向けにネストされた`operator_control`スナップショットを公開する。
+### 3. エージェントフレームワーク — Oceanロール、デュアルルーティング、柔軟なプロバイダーソケット (`ellmos.role-socket-catalog.v1`)
+Ocean/BACHアーキテクチャでは、実績のあるBACHの**ボスエージェント（コーディネーター）**と**ドメインエキスパート**が完全に維持されつつ、**柔軟なプロバイダーソケット（`clutch` + `agents-heart` 経由の `model_sockets`）**に接続された**プロバイダー非依存のOceanロール（`roles[]`）**として動作します：
+
+- **デュアルルーティング（セマンティック + 決定論的）：**
+  - **セマンティックルーティング：** アンブレラスキル（`projekt-pipeline-umbrella`, `therapie-umbrella`, `selbstmanagement` など）と `semantic-persona-routing`（`persona_router.py`）がタスクを動的にルーティングし、適切なスキルバンドルとペルソナコンテキストをアクティブ化します。
+  - **決定論的ルーティング：** `ellmos-controlcenter-mcp`（`controlcenter_resolve_semantic_route`, `controlcenter_switch_profile`, `controlcenter_find_skill`）が、ハルシネーションのない厳格なルールベースのルーティングとプロファイル切り替えを提供します。
+- **柔軟なプロバイダーソケット（`reasoning_coordinator`, `domain_specialist`, `fast_worker`）：** ロールが特定のベンダーに固定されることはありません。各ロールは標準化されたソケットに接続され、実行時に **Claude (`claude`)**、**OpenAI/Codex (`codex`)**、**Gemini/Antigravity (`agy`)**、**Kimi (`kimi`)**、**ローカルOllama (`ollama`)**、または **OpenRouter (`openrouter`)** に解決されます。
+- **3タブエージェントライブラリ（`/agenten/bibliothek`, `ellmos.agent-library.v1`）：** `discover_ocean_agent_library_templates()` が、BACHコーディネーター/エキスパートカタログ（`ati`, `bueroassistent`, `finanz-assistent`, `gesundheitsassistent`, `persoenlicher-assistent`, `produktivitaet` + 22エキスパート）および9つのOceanモジュールリポジトリ（`task-master`, `ticket-master`, `MarbleRun`, `system-auditor`, `compare-race`, `ellmos-installer`, `foerderplaner`, `ai-media-editor`, `clip-storyboard-director`）で宣言された**17の明示的モジュールロール（`roles[]`）**から、GUIとCLIのエージェントライブラリを自動的に構成します。
+- **オペレーター制御：** `bach agent start/stop/list/pause/resume/checkpoint/steer` により、ライブ実行の管理、起動前の事前指示（`OPERATOR_NOTES.md`）、安全なチェックポイント確認を制御できます。
 
 <p align="center">
   <img src="sketch_bach_boss_agents.jpg" alt="BACH Boss Agents" width="600"><br>
-  <i>このイラストは、BACHに当初搭載されていた5人のボスエージェント（ati、officeassistant、finance-assistant、health-assistant、personal-assistant）を示す。現行システムには11のボスエージェントと22人の専門家が含まれる。</i>
+  <i>イラストは、BACHの元のコーディネーターロール（ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent）が、17のモジュールマニフェストロールとともにOceanの柔軟なプロバイダーソケット上で動作している様子を示しています。</i>
 </p>
+
+```mermaid
+flowchart TD
+    classDef routeLayer fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    classDef roleLayer fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#065f46
+    classDef socketLayer fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#92400e
+
+    subgraph R1["1. デュアルルーティング層 (セマンティック vs 決定論的)"]
+        SEM["セマンティックルーティング
+アンブレラスキル (*-umbrella) + semantic-persona-routing"]:::routeLayer
+        DET["決定論的ルーティング
+ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)"]:::routeLayer
+    end
+
+    subgraph R2["2. Oceanロール & 3タブエージェントライブラリ (ellmos.agent-library.v1)"]
+        COORD["6つのコーディネーターロール (旧BACHボス)
+ati, bueroassistent, finanz-assistent, gesundheitsassistent, persoenlicher-assistent, produktivitaet"]:::roleLayer
+        EXP["22以上のドメインエキスパート & 17のモジュールロール (roles[])
+tasksolver, ticket-master, ticket-writer, marble-controller, doc-keeper, race-starter, foerderplaner-expert, media-creator, storyboard-director"]:::roleLayer
+        SEM --> COORD
+        DET --> COORD
+        COORD --> EXP
+    end
+
+    subgraph R3["3. 柔軟なプロバイダーソケット (model_sockets + clutch + agents-heart)"]
+        SOCK["標準化されたモデルソケット
+reasoning_coordinator | domain_specialist | fast_worker"]:::socketLayer
+        PROV["プラグ可能LLMプロバイダー
+Claude | Codex/GPT | Gemini/AGY | Kimi | ローカルOllama | OpenRouter"]:::socketLayer
+        COORD --> SOCK
+        EXP --> SOCK
+        SOCK --> PROV
+    end
+```
 
 ### 4. プロンプトシステム
 ボードコレクションと完全なバージョン管理を備えた、プロンプトテンプレートの一元管理（`bach prompt`）。

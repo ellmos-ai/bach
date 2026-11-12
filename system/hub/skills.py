@@ -24,6 +24,7 @@ import sqlite3
 import subprocess
 import sys
 import zipfile
+import shutil
 import re
 try:
     import yaml
@@ -31,10 +32,205 @@ except ImportError:
     yaml = None  # Optional dependency for YAML frontmatter parsing
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple, Union
 from .base import BaseHandler
 from .lang import t
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+
+
+def parse_version(v: str) -> tuple:
+    """Version in Tupel umwandeln für Vergleich (z.B. 'v3.10.0' -> (3, 10, 0))."""
+    if not v:
+        return (0, 0, 0)
+    try:
+        clean = str(v).strip().lstrip('v')
+        parts = clean.split('.')
+        nums = []
+        for p in parts[:3]:
+            digits = ""
+            for c in p:
+                if c.isdigit():
+                    digits += c
+                else:
+                    break
+            nums.append(int(digits) if digits else 0)
+        while len(nums) < 3:
+            nums.append(0)
+        return tuple(nums)
+    except (ValueError, AttributeError):
+        return (0, 0, 0)
+
+
+def verify_selfcontained_module(source_path: Union[str, Path]) -> Tuple[bool, List[str], List[str], dict]:
+    """
+    Validiert ein exportiertes oder selfcontained Modul/Skill-Paket vor Re-Import.
+
+    Prüfungen:
+    1. Existenz & Archiv-Integrität (ZIP-Slip, Pfad-Traversal-Schutz).
+    2. Manifest (manifest.json, ellmos-module.v2.json oder MANIFEST.json) vorhanden & valides JSON.
+    3. Pflichtfelder: Name/ID, Version (SemVer), Typ/Kind.
+    4. Entrypoints: deklarierte Hauptdateien (SKILL.md, Handler, etc.) existieren im Paket.
+    5. Boundaries: Deklaration von data, network, platforms auf erlaubte Werte prüfen.
+    6. Hygiene & Sicherheit: Keine .git-Ordner, .env Secrets oder absolute Host-Pfade.
+
+    Returns:
+        (is_valid, errors, warnings, metadata)
+    """
+    import zipfile
+    import tempfile
+    import shutil
+
+    path = Path(source_path)
+    if not path.exists():
+        return False, [f"Pfad existiert nicht: {path}"], [], {}
+
+    errors = []
+    warnings = []
+    metadata = {}
+    temp_dir = None
+
+    try:
+        manifest_dir = None
+        is_zip = path.suffix.lower() == ".zip"
+
+        if is_zip:
+            try:
+                with zipfile.ZipFile(path, "r") as zf:
+                    for member in zf.infolist():
+                        norm_name = member.filename.replace("\\", "/")
+                        if norm_name.startswith("/") or ".." in norm_name.split("/"):
+                            errors.append(f"Unsichere Pfad-Traversal-Sequenz in ZIP: {member.filename}")
+                    if errors:
+                        return False, errors, warnings, metadata
+
+                    temp_dir = Path(tempfile.mkdtemp(prefix="bach_mod_verify_"))
+                    zf.extractall(temp_dir)
+                    manifest_dir = temp_dir
+            except zipfile.BadZipFile as bzf:
+                return False, [f"Ungültige oder beschädigte ZIP-Datei: {bzf}"], warnings, metadata
+            except Exception as exc:
+                return False, [f"Fehler beim Öffnen des ZIP-Archivs: {exc}"], warnings, metadata
+        else:
+            manifest_dir = path
+
+        # 1. Manifest suchen
+        manifest_candidates = ["manifest.json", "ellmos-module.v2.json", "MANIFEST.json"]
+        manifest_file = None
+        for candidate in manifest_candidates:
+            cand_p = manifest_dir / candidate
+            if cand_p.exists() and cand_p.is_file():
+                manifest_file = cand_p
+                break
+
+        if not manifest_file:
+            return False, ["Keine Manifest-Datei (manifest.json, ellmos-module.v2.json oder MANIFEST.json) gefunden"], warnings, metadata
+
+        metadata["manifest"] = manifest_file.name
+
+        try:
+            manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except Exception as j_err:
+            return False, [f"Manifest ist kein valides JSON: {j_err}"], warnings, metadata
+
+        if not isinstance(manifest_data, dict):
+            return False, ["Manifest-Inhalt ist kein JSON-Objekt"], warnings, metadata
+
+        # 2. Name / ID prüfen
+        name = manifest_data.get("name") or manifest_data.get("id") or manifest_data.get("display_name")
+        if not name or not isinstance(name, str) or not name.strip():
+            errors.append("Pflichtfeld 'name' oder 'id' fehlt im Manifest")
+        else:
+            name = name.strip()
+            metadata["name"] = name
+            if not re.match(r"^[a-zA-Z0-9_\-\.]+$", name):
+                errors.append(f"Ungültiger Modulname '{name}'. Nur Buchstaben, Ziffern, Bindestrich, Unterstrich und Punkt erlaubt.")
+
+        # 3. Version prüfen
+        version = manifest_data.get("version")
+        if not version or not isinstance(version, str) or not version.strip():
+            errors.append("Pflichtfeld 'version' fehlt im Manifest")
+        else:
+            version = version.strip()
+            metadata["version"] = version
+            if not re.match(r"^\d+(\.\d+)*(-[a-zA-Z0-9_\-\.]+)?$", version):
+                errors.append(f"Ungültiges Versionsformat '{version}'. Erwartet wird SemVer (z.B. 1.0.0).")
+
+        # 4. Typ / Kind
+        mtype = manifest_data.get("type") or manifest_data.get("kind") or manifest_data.get("schema") or "skill"
+        metadata["type"] = mtype
+
+        # 5. Dateien im Paket ermitteln
+        skill_sub = manifest_dir / "skill"
+        search_dirs = [skill_sub, manifest_dir] if skill_sub.exists() and skill_sub.is_dir() else [manifest_dir]
+
+        all_files = []
+        for s_dir in search_dirs:
+            for item in s_dir.rglob("*"):
+                if item.is_file():
+                    all_files.append(item)
+        metadata["files_count"] = len(all_files)
+
+        def _target_file_exists(target_rel_path: str) -> bool:
+            clean_rel = target_rel_path.replace("\\", "/").strip().lstrip("/")
+            for s_dir in search_dirs:
+                if (s_dir / clean_rel).exists():
+                    return True
+                for f in all_files:
+                    if f.name == clean_rel:
+                        return True
+                    try:
+                        if str(f.relative_to(s_dir)).replace("\\", "/") == clean_rel:
+                            return True
+                    except ValueError:
+                        pass
+            return False
+
+        # 6. Entrypoints prüfen
+        entry_points = manifest_data.get("entry_points") or manifest_data.get("entrypoints") or manifest_data.get("entry_point")
+        if isinstance(entry_points, dict):
+            for ep_key, ep_target in entry_points.items():
+                if ep_target and isinstance(ep_target, str) and ep_target != "?":
+                    if not _target_file_exists(ep_target):
+                        errors.append(f"Deklarierter Entrypoint '{ep_key}: {ep_target}' wurde nicht im Modulpaket gefunden")
+        elif isinstance(entry_points, str) and entry_points != "?":
+            if not _target_file_exists(entry_points):
+                errors.append(f"Deklarierter Entrypoint '{entry_points}' wurde nicht im Modulpaket gefunden")
+
+        # 7. Boundaries prüfen
+        boundaries = manifest_data.get("boundaries")
+        if boundaries and isinstance(boundaries, dict):
+            metadata["boundaries"] = boundaries
+            data_b = boundaries.get("data")
+            if data_b and data_b not in ("user-local", "isolated", "shared", "ephemeral", "readonly", "none"):
+                warnings.append(f"Ungewöhnliche Data-Boundary '{data_b}'")
+            net_b = boundaries.get("network")
+            if net_b and net_b not in ("none", "loopback", "outbound", "full"):
+                warnings.append(f"Ungewöhnliche Network-Boundary '{net_b}'")
+
+        # 8. Hygiene & Sicherheitsprüfung
+        for f in all_files:
+            rel = str(f.relative_to(manifest_dir)).replace("\\", "/")
+            if "/.git/" in f"/{rel}/" or rel.startswith(".git/"):
+                errors.append(f"Verbotenes Versionskontroll-Verzeichnis (.git) im Exportpaket gefunden: {rel}")
+            if f.name in (".env", ".env.local", "secrets.json"):
+                errors.append(f"Sicherheitsrisiko: Sensible Konfigurationsdatei im Modulpaket: {rel}")
+            if f.suffix in (".pem", ".key", ".pfx") and not f.name.startswith("public"):
+                warnings.append(f"Potentieller privater Schlüssel oder Zertifikat im Paket: {rel}")
+
+        is_valid = len(errors) == 0
+        return is_valid, errors, warnings, metadata
+
+    finally:
+        if temp_dir and temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+
+
+@deprecated_legacy_bach("capability-views")
 class SkillsHandler(BaseHandler):
     """Handler fuer --skills Operationen"""
     
@@ -60,9 +256,13 @@ class SkillsHandler(BaseHandler):
             "reload": t("skills_reload_desc", default="Handler-Registry + Tools neu laden (Hot-Reload, v2.1)"),
             "export": t("skills_export_desc", default="Skill exportieren - autarkes Paket (v2.0, --format agent fuer Claude Code Agent)"),
             "export-agent": t("skills_export_agent_desc", default="Skill als Claude Code Agent exportieren (.md Datei)"),
+            "export-module": t("skills_export_module_desc", default="Legacy-Hub-Dienst oder Seam als Standalone-Modul exportieren"),
+            "verify": t("skills_verify_desc", default="Exportiertes/Self-contained Modul oder Skill validieren"),
+            "lint": t("skills_lint_desc", default="Alias für verify"),
             "install": t("skills_install_desc", default="Skill aus ZIP/Verzeichnis importieren"),
             "hierarchy": t("skills_hierarchy_desc", default="Hierarchie aus DB anzeigen (v1.1.73)"),
-            "version": t("skills_version_desc", default="Versions-Check: lokal vs zentral (v2.0)")
+            "version": t("skills_version_desc", default="Versions-Check: lokal vs zentral (v2.0)"),
+            "audit": t("skills_audit_desc", default="Modularisierungs-Audit: Analyse monolithischer Hub-Dienste mit Export-Empfehlungen")
         }
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -103,6 +303,15 @@ class SkillsHandler(BaseHandler):
             clean_args = [a for a in args if not a.startswith('--')]
             output_dir = clean_args[1] if len(clean_args) > 1 else None
             return self._export(clean_args[0], output_dir, dry_run, fmt="agent")
+        elif operation == "export-module" and args:
+            clean_args = [a for a in args if not a.startswith('--')]
+            output_dir = clean_args[1] if len(clean_args) > 1 else None
+            return self._export_module(clean_args[0], output_dir, dry_run)
+        elif operation in ("verify", "lint"):
+            clean_args = [a for a in args if not a.startswith('--')]
+            if not clean_args:
+                return False, "Usage: bach skills verify <pfad_zu_zip_oder_verzeichnis>"
+            return self._verify_module(clean_args[0])
         elif operation == "install" and args:
             return self._install(args[0], dry_run)
         elif operation == "hierarchy":
@@ -110,6 +319,8 @@ class SkillsHandler(BaseHandler):
             return self._hierarchy(type_filter)
         elif operation == "version" and args:
             return self._version_check(args[0])
+        elif operation in ("audit", "export-audit", "modularization-audit"):
+            return self._modularization_audit(args)
         else:
             return self._list()
     
@@ -208,6 +419,19 @@ class SkillsHandler(BaseHandler):
             for skill_file in self.skills_dir.rglob(f"*{suffix}"):
                 if name_lower in skill_file.stem.lower():
                     return skill_file
+
+        # 4. Hub-Dienste, Handler und geteilte Module
+        hub_services = self.base_path / "hub" / "_services"
+        hub_dir = self.base_path / "hub"
+        for s_dir in [hub_services, hub_dir]:
+            if s_dir.exists():
+                candidate_dir = s_dir / name
+                if candidate_dir.exists() and candidate_dir.is_dir():
+                    return candidate_dir
+                for py_suffix in [".py", ".pyw"]:
+                    candidate_file = s_dir / f"{name}{py_suffix}"
+                    if candidate_file.exists() and candidate_file.is_file():
+                        return candidate_file
         
         return None
     
@@ -397,6 +621,36 @@ class SkillsHandler(BaseHandler):
             manifest_file.write_text(manifest_content, encoding='utf-8')
             readme_file = export_path / "README.md"
             readme_file.write_text(readme_content, encoding='utf-8')
+
+            # Ungepackte selfcontained Verzeichnisstruktur in export_path / "skill" bereitstellen
+            skill_dir = export_path / "skill"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            for file_path in files_to_export:
+                if is_directory:
+                    try:
+                        rel = file_path.relative_to(skill_path)
+                    except ValueError:
+                        rel = Path(file_path.name)
+                else:
+                    rel = Path(file_path.name)
+                dest = skill_dir / rel
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(file_path, dest)
+            if tools:
+                tools_dest = skill_dir / "tools"
+                tools_dest.mkdir(parents=True, exist_ok=True)
+                for tool_path, rel_name in tools:
+                    dest = tools_dest / Path(rel_name).name
+                    if not dest.exists():
+                        shutil.copy2(tool_path, dest)
+            if workflows:
+                wf_dest = skill_dir / "workflows"
+                wf_dest.mkdir(parents=True, exist_ok=True)
+                for wf_path, rel_name in workflows:
+                    dest = wf_dest / Path(rel_name).name
+                    if not dest.exists():
+                        shutil.copy2(wf_path, dest)
+            results.append(f"  + Ungepacktes selfcontained Paket: {skill_dir}")
 
         except Exception as e:
             return False, f"ZIP-Erstellung fehlgeschlagen: {e}"
@@ -739,7 +993,389 @@ Weitere Informationen: https://github.com/anthropics/skills
                 "handler": f"hub/handlers/{name}.py" if (self.base_path / "hub" / "handlers" / f"{name}.py").exists() else None
             }
 
+        manifest["selfcontained"] = True
+        manifest["consumers"] = [
+            {"name": "BACH", "version": ">=3.0", "integration": "adapter"},
+            {"name": "Ocean", "version": ">=1.0", "integration": "adapter"},
+            {"name": "Standalone", "version": "*", "integration": "direct"},
+        ]
+
         return manifest
+
+    def _export_module(self, name: str, output_dir: str = None, dry_run: bool = False) -> tuple:
+        """
+        Exportiert einen Dienst, Handler oder Modul als eigenständiges, self-contained Modul.
+
+        Erzeugt:
+          - manifest.json (SemVer, entrypoints.library, selfcontained: true, consumers: [BACH, Ocean])
+          - src/ (Hauptcode)
+          - tests/ (Boilerplate Testsuite)
+          - README.md (Nutzungsanleitung)
+          - .zip Archiv
+
+        Führt vor Abschluss verify_selfcontained_module() aus.
+        """
+        import zipfile
+        results = [f"MODUL EXPORT GENERATOR: {name}", "=" * 50]
+
+        target_path = None
+        # 1. Direkter Pfad
+        cand_direct = Path(name)
+        if cand_direct.exists():
+            target_path = cand_direct
+        else:
+            # 2. In hub/_services/
+            hub_services = self.base_path / "hub" / "_services"
+            for sub in (name, f"{name}.py"):
+                p = hub_services / sub
+                if p.exists():
+                    target_path = p
+                    break
+            # 3. In hub/
+            if not target_path:
+                hub_dir = self.base_path / "hub"
+                for sub in (name, f"{name}.py"):
+                    p = hub_dir / sub
+                    if p.exists():
+                        target_path = p
+                        break
+            # 4. In .MODULES/
+            if not target_path:
+                for m_dir in (self.base_path.parent / ".MODULES", self.base_path / ".MODULES"):
+                    p = m_dir / name
+                    if p.exists():
+                        target_path = p
+                        break
+            # 5. Fallback via _find_skill
+            if not target_path:
+                target_path = self._find_skill(name)
+
+        if not target_path or not target_path.exists():
+            return False, f"Modul oder Dienst '{name}' nicht gefunden. Pfade geprüft: hub/_services, hub, .MODULES"
+
+        mod_name = target_path.stem if target_path.is_file() else target_path.name
+        is_dir = target_path.is_dir()
+
+        # Output-Pfad
+        if output_dir:
+            export_path = Path(output_dir)
+        else:
+            export_path = self.base_path / "exports" / "modules" / f"{mod_name}_export"
+
+        results.append(f"Quelle: {target_path}")
+        results.append(f"Ziel:   {export_path}")
+
+        # Version extrahieren oder Fallback
+        version = "1.0.0"
+        files_to_copy = []
+        if is_dir:
+            for f in target_path.rglob("*"):
+                if f.is_file() and not any(p in str(f) for p in ("__pycache__", ".git", ".pytest_cache")):
+                    files_to_copy.append(f)
+        else:
+            files_to_copy.append(target_path)
+
+        for f in files_to_copy:
+            if f.suffix == ".py":
+                try:
+                    text = f.read_text(encoding="utf-8", errors="ignore")
+                    m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', text)
+                    if m:
+                        version = m.group(1)
+                        break
+                except Exception:
+                    pass
+
+        entry_file_name = files_to_copy[0].name if files_to_copy else f"{mod_name}.py"
+
+        manifest = {
+            "name": mod_name,
+            "version": version,
+            "type": "module",
+            "description": f"BACH Standalone Module: {mod_name}",
+            "author": "BACH Team",
+            "created_at": datetime.now().isoformat(),
+            "selfcontained": True,
+            "entrypoints": {
+                "library": f"src/{entry_file_name}"
+            },
+            "boundaries": {
+                "data": "user-local",
+                "network": "full",
+                "platforms": ["windows", "macos", "linux"]
+            },
+            "consumers": [
+                {"name": "BACH", "minimum_version": "3.15.0"},
+                {"name": "Ocean", "minimum_version": "1.0.0"}
+            ]
+        }
+
+        results.append(f"Version: {version}")
+        results.append(f"Dateien gesammelt: {len(files_to_copy)}")
+        results.append("")
+        results.append("MANIFEST.JSON:")
+        results.append(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+        if dry_run:
+            results.append("")
+            results.append("[DRY-RUN] Keine Dateien geschrieben.")
+            return True, "\n".join(results)
+
+        try:
+            export_path.mkdir(parents=True, exist_ok=True)
+            src_dir = export_path / "src"
+            tests_dir = export_path / "tests"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            tests_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy files into src/
+            for f in files_to_copy:
+                if is_dir:
+                    rel = f.relative_to(target_path)
+                    dest = src_dir / rel
+                else:
+                    dest = src_dir / f.name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, dest)
+
+            # manifest.json
+            manifest_json = json.dumps(manifest, indent=2, ensure_ascii=False)
+            (export_path / "manifest.json").write_text(manifest_json, encoding="utf-8")
+
+            # README.md
+            readme_text = f"""# {mod_name} — Standalone Module
+
+> **Version:** {version}  
+> **Typ:** Standalone Module / Seam  
+> **Kompatibilität:** BACH ≥ 3.15.0, Ocean ≥ 1.0.0  
+
+## Installation & Re-Import in BACH
+
+```bash
+# Validieren
+bach skills verify {export_path}
+
+# In BACH importieren
+bach skills install {export_path}
+```
+
+## Struktur
+- `src/`: Quellcode des Moduls
+- `tests/`: Testsuite
+- `manifest.json`: Offizielles Modul-Manifest
+"""
+            (export_path / "README.md").write_text(readme_text, encoding="utf-8")
+
+            # tests/test_{mod_name}.py
+            test_text = f"""# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: MIT
+\"\"\"Smoke test for {mod_name} module.\"\"\"
+from pathlib import Path
+import json
+
+def test_manifest_validity():
+    manifest_p = Path(__file__).resolve().parent.parent / "manifest.json"
+    assert manifest_p.exists()
+    data = json.loads(manifest_p.read_text(encoding="utf-8"))
+    assert data["name"] == "{mod_name}"
+    assert data["selfcontained"] is True
+"""
+            (tests_dir / f"test_{mod_name}.py").write_text(test_text, encoding="utf-8")
+
+            # ZIP erstellen
+            zip_filename = f"{mod_name}_v{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+            zip_path = export_path.parent / zip_filename
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("manifest.json", manifest_json)
+                zf.writestr("README.md", readme_text)
+                for root_dir, _, fs in os.walk(src_dir):
+                    for file_name in fs:
+                        full_p = Path(root_dir) / file_name
+                        rel_in_zip = f"src/{full_p.relative_to(src_dir).as_posix()}"
+                        zf.write(full_p, rel_in_zip)
+                for root_dir, _, fs in os.walk(tests_dir):
+                    for file_name in fs:
+                        full_p = Path(root_dir) / file_name
+                        rel_in_zip = f"tests/{full_p.relative_to(tests_dir).as_posix()}"
+                        zf.write(full_p, rel_in_zip)
+
+            results.append("")
+            results.append(f"  + Ungepacktes Standalone-Modul: {export_path}")
+            results.append(f"  + ZIP-Archiv: {zip_path}")
+
+            # Abschließende Verifikation mit verify_selfcontained_module
+            is_valid, errs, warns, _ = verify_selfcontained_module(export_path)
+            if not is_valid:
+                results.append(f"[WARNUNG] Verifikation meldete Fehler: {', '.join(errs)}")
+            else:
+                results.append(f"[OK] Standalone-Modul erfolgreich verifiziert und exportiert!")
+
+            return True, "\n".join(results)
+        except Exception as exc:
+            return False, f"Modul-Export fehlgeschlagen: {exc}"
+
+    def _verify_module(self, path: str) -> tuple:
+        """
+        Validiert ein exportiertes Modul oder Skill-Paket vor Re-Import.
+        """
+        source_p = Path(path)
+        if not source_p.is_absolute() and not source_p.exists():
+            for prefix in (Path.cwd(), self.base_path.parent, self.base_path):
+                cand = prefix / path
+                if cand.exists():
+                    source_p = cand
+                    break
+
+        is_valid, errors, warnings, meta = verify_selfcontained_module(source_p)
+
+        lines = ["=== MODUL- & SKILL-LIFECYCLE VALIDIERUNG ===", ""]
+        lines.append(f"Quelle:       {source_p}")
+        lines.append(f"Format:       {'ZIP-Archiv' if source_p.suffix.lower() == '.zip' else 'Verzeichnis'}")
+        if meta.get("name"):
+            lines.append(f"Modul:        {meta.get('name')} v{meta.get('version', '?')} ({meta.get('type', 'skill')})")
+        if meta.get("manifest"):
+            lines.append(f"Manifest:     {meta.get('manifest')} [OK]")
+        if meta.get("files_count") is not None:
+            lines.append(f"Dateien:      {meta.get('files_count')} geprüft")
+        if meta.get("boundaries"):
+            lines.append(f"Boundaries:   {meta.get('boundaries')}")
+
+        lines.append("")
+        if is_valid:
+            lines.append("[GÜLTIG] Das Modul ist self-contained und bereit für den Re-Import.")
+            if warnings:
+                lines.append(f"Hinweise ({len(warnings)}):")
+                for w in warnings:
+                    lines.append(f"  [WARNUNG] {w}")
+            return True, "\n".join(lines)
+        else:
+            lines.append("[ABGELEHNT] Das Modul erfüllt nicht die Lifecycle-Kriterien:")
+            for err in errors:
+                lines.append(f"  [FEHLER] {err}")
+            if warnings:
+                lines.append(f"Hinweise ({len(warnings)}):")
+                for w in warnings:
+                    lines.append(f"  [WARNUNG] {w}")
+            return False, "\n".join(lines)
+
+    def _modularization_audit(self, args: list) -> tuple:
+        """
+        Analysiert verbleibende monolithische Hub-Dienste in system/hub/
+        und berechnet Entflechtungsgrad, Kopplung und Export-Empfehlungen.
+        """
+        import re
+        hub_dir = self.base_path / "hub"
+        if not hub_dir.exists():
+            alt_hub = Path(__file__).resolve().parent
+            if alt_hub.exists() and alt_hub.name == "hub":
+                hub_dir = alt_hub
+            elif (self.base_path / "system" / "hub").exists():
+                hub_dir = self.base_path / "system" / "hub"
+            else:
+                return False, f"Hub-Verzeichnis nicht gefunden: {hub_dir}"
+
+        local_dev = Path(os.environ.get("LOCAL_DEV_REPOS", r"C:\_Local_DEV\repos"))
+        modules_dir = self.base_path.parent / ".MODULES"
+        if not modules_dir.exists():
+            modules_dir = self.base_path / ".MODULES"
+
+        # Check existing standalone repos and modules
+        known_repos = set()
+        if local_dev.exists():
+            for p in local_dev.iterdir():
+                if p.is_dir() and (p / ".git").exists():
+                    known_repos.add(p.name.lower())
+        if modules_dir.exists():
+            for p in modules_dir.glob("**/MANIFEST.json"):
+                try:
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    name = data.get("name") or p.parent.name
+                    known_repos.add(str(name).lower())
+                except Exception:
+                    pass
+
+        # Scan python files in hub
+        services = []
+        for py_file in sorted(hub_dir.glob("*.py")):
+            if py_file.name in ("__init__.py", "base.py", "canonical_seam.py"):
+                continue
+            if py_file.is_file():
+                try:
+                    content = py_file.read_text(encoding="utf-8", errors="ignore")
+                    lines_count = len(content.splitlines())
+
+                    dep_match = re.search(r'@deprecated_legacy_bach\(["\']([^"\']+)["\']\)', content)
+                    replacement = dep_match.group(1) if dep_match else None
+
+                    classes = re.findall(r'class\s+([A-Za-z0-9_]+)\s*\(([^)]*BaseHandler[^)]*)\):', content)
+                    class_names = [c[0] for c in classes]
+
+                    internal_imports = re.findall(r'(?:from\s+(?:hub|core)\.([A-Za-z0-9_]+)|import\s+(?:hub|core)\.([A-Za-z0-9_]+))', content)
+                    unique_internals = {i[0] or i[1] for i in internal_imports if (i[0] or i[1])}
+
+                    is_bound = False
+                    if replacement:
+                        if replacement.lower() in known_repos or (replacement.replace("-", "_").lower() in known_repos):
+                            is_bound = True
+
+                    services.append({
+                        "file": py_file.name,
+                        "stem": py_file.stem,
+                        "lines": lines_count,
+                        "replacement": replacement,
+                        "is_bound": is_bound,
+                        "classes": class_names,
+                        "coupling_count": len(unique_internals),
+                        "internals": sorted(unique_internals),
+                    })
+                except Exception:
+                    pass
+
+        total_services = len(services)
+        bound_services = [s for s in services if s["is_bound"]]
+        deprecated_unbound = [s for s in services if s["replacement"] and not s["is_bound"]]
+        monolithic = [s for s in services if not s["replacement"]]
+        export_ready = [s for s in monolithic if s["coupling_count"] <= 3]
+        deep_coupled = [s for s in monolithic if s["coupling_count"] > 3]
+
+        decoupled_pct = round((len(bound_services) / total_services * 100), 1) if total_services else 0.0
+
+        lines = [
+            "=== BACH MODULARISIERUNGS- & ENTFLECHTUNGS-AUDIT ===",
+            "",
+            f"Analysierter Hub-Pfad:      {hub_dir}",
+            f"Gefundene Hub-Dienste:      {total_services}",
+            f"Bereits entflochten (Seams):{len(bound_services)} ({decoupled_pct}%)",
+            f"Verbleibende Monolithen:    {len(monolithic)} ({round(100 - decoupled_pct, 1)}%)",
+            f"  • Export-Bereit (gering gekoppelt, <=3 deps): {len(export_ready)}",
+            f"  • Tief gekoppelt (>3 deps):                    {len(deep_coupled)}",
+            "",
+            "--- EMPFOHLENE EXPORT-KANDIDATEN (High Readiness) ---",
+        ]
+
+        if export_ready:
+            for s in sorted(export_ready, key=lambda x: (x["coupling_count"], x["lines"]))[:10]:
+                classes_str = ", ".join(s["classes"]) if s["classes"] else "Dienst"
+                deps_str = ", ".join(s["internals"][:3]) or "keine internen Abhängigkeiten"
+                lines.append(f"  • {s['stem']:<22} ({s['lines']} Zeilen, {classes_str})")
+                lines.append(f"    Abhängigkeiten: {deps_str}")
+                lines.append(f"    Befehl:         bach skills export-module {s['stem']}")
+        else:
+            lines.append("  (Keine weiteren Dienste mit geringer Koppelung gefunden)")
+
+        lines.append("")
+        lines.append("--- BEREITS ENTFLECHTETE DIENSTE & SEAMS (Auszug) ---")
+        for s in bound_services[:8]:
+            lines.append(f"  • {s['stem']:<22} -> Modul: {s['replacement']:<24} [GEBUNDEN]")
+
+        lines.append("")
+        lines.append("--- NÄCHSTE SCHRITTE ---")
+        lines.append("1. Führe 'bach skills export-module <name>' für die Top-Kandidaten aus.")
+        lines.append("2. Die erzeugten Module in C:\\_Local_DEV\\repos\\ bereitstellen.")
+        lines.append("3. In ocean_stack_bridge.py als kanonisches Modul verdrahten.")
+        lines.append("4. Mit 'bach update modules --sync' laufzeitaktuell halten.")
+
+        return True, "\n".join(lines)
     
     def _install(self, path: str, dry_run: bool = False) -> tuple:
         """
@@ -757,6 +1393,12 @@ Weitere Informationen: https://github.com/anthropics/skills
         
         results = [f"SKILL INSTALL", "=" * 50]
         source_path = Path(path)
+        if not source_path.is_absolute() and not source_path.exists():
+            for prefix in (Path.cwd(), self.base_path.parent, self.base_path):
+                cand = prefix / path
+                if cand.exists():
+                    source_path = cand
+                    break
         
         # 1. Quelle pruefen
         if not source_path.exists():
@@ -783,17 +1425,39 @@ Weitere Informationen: https://github.com/anthropics/skills
             else:
                 results.append("Typ: Verzeichnis")
                 manifest_dir = source_path
+
+            # 3. Vorab-Integritätsprüfung (Task -15)
+            is_valid, v_errors, v_warnings, v_meta = verify_selfcontained_module(manifest_dir)
+            if not is_valid:
+                results.append("")
+                results.append("MODUL-VALIDIERUNG: [ABGELEHNT]")
+                for err in v_errors:
+                    results.append(f"  - {err}")
+                return False, "\n".join(results)
+            elif v_warnings:
+                results.append("")
+                results.append(f"MODUL-VALIDIERUNG: [OK] ({len(v_warnings)} Hinweis(e))")
+                for warn in v_warnings[:5]:
+                    results.append(f"  - [WARNUNG] {warn}")
             
-            # 3. Manifest lesen
-            manifest_path = manifest_dir / "manifest.json"
-            if not manifest_path.exists():
+            # 4. Manifest lesen
+            manifest_candidates = ["manifest.json", "ellmos-module.v2.json", "MANIFEST.json"]
+            manifest_path = None
+            for cand in manifest_candidates:
+                cp = manifest_dir / cand
+                if cp.exists():
+                    manifest_path = cp
+                    break
+            if not manifest_path:
                 return False, f"Keine manifest.json gefunden in: {manifest_dir}"
             
             manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
             results.append("")
             results.append("MANIFEST:")
-            results.append(f"  Name: {manifest.get('name', 'unbekannt')}")
-            results.append(f"  Version: {manifest.get('version', '?')}")
+            results.append(f"  Name: {manifest.get('name', v_meta.get('name', 'unbekannt'))}")
+            results.append(f"  Version: {manifest.get('version', v_meta.get('version', '?'))}")
+            results.append(f"  Typ: {manifest.get('type', v_meta.get('type', 'skill'))}")
+            results.append(f"  Beschreibung: {manifest.get('description', '-')[:60]}")
             results.append(f"  Typ: {manifest.get('type', 'skill')}")
             results.append(f"  Beschreibung: {manifest.get('description', '-')[:60]}")
             
@@ -808,6 +1472,8 @@ Weitere Informationen: https://github.com/anthropics/skills
                 target_path = self.base_path / "agents" / "_experts" / skill_name
             elif skill_type == 'service':
                 target_path = self.skills_dir / "_services" / skill_name
+            elif skill_type in ('protocol', 'workflow'):
+                target_path = self.skills_dir / "workflows" / skill_name
             else:
                 target_path = self.skills_dir / skill_name
             
@@ -824,6 +1490,14 @@ Weitere Informationen: https://github.com/anthropics/skills
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(target_path), str(backup_path))
                     results.append(f"    Backup erstellt: {backup_path}")
+            elif (target_path.with_suffix('.md')).exists():
+                results.append(f"[!] Legacy Single-File Skill existiert: {target_path.with_suffix('.md')}")
+                if not dry_run:
+                    backup_name = f"{skill_name}_legacy_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                    backup_path = self.base_path / "exports" / "_backups" / backup_name
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(target_path.with_suffix('.md')), str(backup_path))
+                    results.append(f"    Legacy Backup erstellt: {backup_path}")
             
             # 6. Skill-Dateien finden
             skill_source = manifest_dir / "skill"
@@ -1648,14 +2322,6 @@ anthropic_compatible: true
         # 4. Versionen vergleichen
         results.append("")
         results.append("-" * 40)
-
-        def parse_version(v: str) -> tuple:
-            """Version in Tupel umwandeln für Vergleich."""
-            try:
-                parts = v.replace('v', '').split('.')
-                return tuple(int(p) for p in parts[:3])
-            except (ValueError, AttributeError):
-                return (0, 0, 0)
 
         local_tuple = parse_version(local_version)
         central_tuple = parse_version(central_version) if central_version else (0, 0, 0)

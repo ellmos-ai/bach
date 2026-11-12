@@ -19,6 +19,8 @@ from pathlib import Path
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class SettingsHandler(BaseHandler):
     """Handler fuer bach settings Operationen."""
 

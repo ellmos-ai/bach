@@ -50,8 +50,11 @@ Ausgangsbefund 24./25.10.: 98,7 % aller Rückgaben ohne Ergebnis, 76 % in unter 
 | Grund | Bedeutung |
 |---|---|
 | `backend_error:<anbieter>:<art>[:<status>]` | Anbieterfehler, z. B. `backend_error:ollama:quota_exceeded:429` |
+| `backend_error:transient:httpx_connect_error` | Anbieter nicht erreichbar (Verbindungsaufbau gescheitert); Cloud-Dauerworker warten mit Backoff, blockiert nie die Task |
 | `model_failure:<code>` | Fehler im Lauf, z. B. `model_failure:completion_reserve_context_exhausted` |
 | `task_scope_unavailable` | Task-Arbeitsbaum nicht bestätigt (oft eine Sperre, Abschnitt 7) |
+| `host_precondition:<code>` | Der Host, nicht die Task, ist nicht bereit (z. B. `twin_status_unknown`); Worker wartet mit Backoff (Abschnitt 7) |
+| `repeated_return:<grund>` | Fünfte gleiche taskeigene Rückgabe in Folge; Task steht auf `blocked` (Abschnitt 7) |
 | `worker_returned_open` / `worker_blocked` | Das Modell gibt selbst zurück (Teilstand) bzw. blockiert |
 | `worker_stopped` / `worker_ended` | Worker wurde gestoppt bzw. endete |
 
@@ -136,6 +139,17 @@ Nächste Verbesserungen (nach Nutzen): Übergabezettel mit gelesenen Pfaden/Zeil
 ## 7. Sperren (Locks) und warum sie Buddha stilllegen können
 
 Der Mac-Scanner (`BACH_LOCK_SCAN`) prüft das Live-Repo samt OneDrive-Zwilling und Vorfahren, wertet aber `scope`/`protected_paths` nicht aus. **Jede** Sperre auf `.TOPICS/.AI/.OS/BACH` oder darüber sperrt damit das ganze Repo: Die Schreibwache verweigert jeden Task-Arbeitsbaum, Buddha gibt alles mit `task_scope_unavailable` zurück, Rollouts brechen ab. Belege 25.10.: eigene Sperre 05:00, fremde `LOCK.templates-health.txt` 11:03. Bis zur Behebung (Task #2537): keine Sperren auf dem BACH-Zwilling setzen, wenn Buddha laufen soll; Arbeit in eigenen Worktrees braucht dort keine.
+
+**Host-Voraussetzung statt Taskfehler (PB-1, #3985, ab 06.11.2026).** Am 06.11. war der BACH-Pointer im OneDrive-Zwilling auf dem Mac dehydriert (`EDEADLK`). Der Scanner meldete `index-unresolved`, die Schreibwache „Twin-Sperrstatus ist unbekannt“, und zwei Worker gaben 159 Tasks rund 557-mal pro Stunde zurück (seit 25.10. etwa 65 000-mal). Seitdem gilt:
+
+- **Erkennung:** Die festen Meldungen der Schreibwache, die jede Task treffen (Twin unbekannt oder nicht bestätigt, Scanner fehlt, Scan unvollständig oder fehlgeschlagen, Projektsperre), heißen jetzt Host-Voraussetzung (`_HOST_PRECONDITION_CODES` in `telegram_chat.py`). Der Rückgabegrund lautet `host_precondition:<code>`.
+- **Backoff statt nächster Task:** Der Worker holt keine weitere Task. Er wartet ohne Lease 60 s und verdoppelt bis höchstens 15 min. Der nächste Erwerb nach der Wartezeit ist die Probe. Nach einer erfolgreichen Vorbereitung ist der Zähler wieder 0.
+- **Eskalation:** Nach dem vierten Fehlschlag (etwa 15 min) legt der Worker eine Resolver-Task an. Sie schließt sich selbst, sobald der Worker wieder läuft, auch nach einem zweiten Ausfall im selben Lauf.
+- **Taskeigene Wiederholungen** (`task_scope_unavailable`, `model_failure:*` außer `model_failure:local_reserve_*`, `model_failure:temporary_*` und `model_failure:cloud_call_retry_exhausted`, `worker_returned_open`) blockieren die Task ab der fünften gleichen Rückgabe in Folge (`blocked`, Grund `repeated_return:<grund>`, mit dem üblichen Sperr-Resolver). Host-, Anbieter- und Stoppgründe blockieren nie. Die Regel liegt im Taskkern (`taskplan.return_policy`, `task-returns.v1`), BACH liest nur `task_history` (`hub/_services/task_return_stats.py`).
+- **Anzeige:** `GET /api/tasks/{id}/returns` und `GET /api/task-returns?ids=…` liefern `return_count`, `last_return_reason`, `last_return_at`, `consecutive_identical`, `flapping` und `host_scoped` (`gui/api/task_returns.py`). Ohne Kern liefern sie `available: false`.
+- **Folgetasks:** Wurde im Lauf ein Werkzeug mangels Freigabe abgelehnt (`write_grant_denied`, `tool_not_authorized`, `mode_not_authorized`), lehnt `task_manage(action="add")` ab (`followup_capability_missing`). Das Modell soll dann mit `complete=false` zurückgeben. Ohne solche Ablehnung bleiben mehrere Folgetasks je Lauf erlaubt (gleicher Titel wird wiederverwendet); eine Kaskade endet spätestens an der Regel „fünfte gleiche Rückgabe → blocked“.
+- **`allowed_tools: None`** bedeutet im gebundenen Lauf nur lesen. Schreibwerkzeuge werden nicht mehr angeboten, weil sie ohne ausdrückliche Freigabe ohnehin abgelehnt würden. Achtung: Bekommt `buddha_always_on` wieder Schreibwerkzeuge, braucht er einen Arbeitsbaum und damit einen lesbaren Zwilling.
+- **Fehlerfortsetzung:** Ein `ConnectError` oder `ConnectTimeout` vor der Anfrage (`transient_failure = httpx_connect_error`) wartet bei Cloud-Slots wie ein Rate-Limit, statt den Worker nach drei Fehlern anzuhalten (#3777). Retry-After wird über den #2994-Helfer auf höchstens 3600 s begrenzt; ein gültiger Header hätte vorher bis zu 68 Jahre Wartezeit erlaubt.
 
 ## 8. Review und Abnahme
 

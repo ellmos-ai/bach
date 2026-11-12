@@ -14,6 +14,8 @@ import os
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("system-explorer")
 class LogsHandler(BaseHandler):
     """Handler fuer --logs Operationen"""
     

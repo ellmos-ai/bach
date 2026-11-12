@@ -27,6 +27,8 @@ from .base import BaseHandler
 from .lang import get_lang, t
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("doc-keeper")
 class DocsHandler(BaseHandler):
     """Handler für Hauptdokumentation (Markdown + Legacy-Support)"""
 

@@ -3,83 +3,54 @@
 # SPDX-License-Identifier: MIT
 """
 Tool: injectors
-Version: 1.0.0
+Version: 2.0.0
 Author: BACH Team
 Created: 2026-02-04
-Updated: 2026-02-04
+Updated: 2026-10-31
 Anthropic-Compatible: True
 
-VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version injectors
-
 Description:
-    [Beschreibung hinzufügen]
+    Duenner Injektor-Adapter ueber den memoryhooker-Seam (hub/memory_hook_provider.py)
+    und TimeManager.timebeat() (S3-Nachlauf T-20260926-537523074).
 
-Usage:
-    python injectors.py [args]
+    Oeffentliches API (InjectorSystem, InjectorConfig, TimeInjector, ToolInjector.get_startup_reminder,
+    TaskAssigner) bleibt fuer bach_api.injector und hub/inject.py unveraendert;
+    Strategy, Context, Tool-Warn und Between laufen ausschliesslich ueber context_triggers
+    in der BACH-DB und den memoryhooker-Seam.
 """
 
-__version__ = "1.0.0"
+from __future__ import annotations
+
+__version__ = "2.0.0"
 __author__ = "BACH Team"
 
-"""
-Injector System - Automatische Hilfe und Kontext
-================================================
-
-Injektoren die Claude kognitiv entlasten:
-- StrategyInjector: Hilfreiche Gedanken bei Trigger-Wörtern
-- ContextInjector: Auto-Kontext bei Stichwörtern
-- TimeInjector: Regelmäßige Zeit-Updates
-- BetweenInjector: Auto-Erinnerungen nach Task-Done
-
-v1.1.75: Cooldown-Feature - Injektoren werden nach Anzeige X Min stumm geschaltet
-"""
-import logging
-import os
-import re
 import json
-import sqlite3
-from datetime import datetime, timedelta
+import logging
+import re
+import sys
+import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
-#: Schalter fuer den reparierten DB-Pfad des ContextInjectors (S3).
-CONTEXT_TRIGGERS_DB_ENV = "BACH_CONTEXT_TRIGGERS_DB"
-_ON_VALUES = {"1", "true", "yes", "on"}
+from typing import List, Optional, Tuple
 
 log = logging.getLogger(__name__)
-_warned: set = set()
-
-
-def _warn_once(where: str, exc: Exception) -> None:
-    """Fail-soft bleibt, aber nie mehr lautlos: je Stelle eine Warnung pro Prozess.
-
-    Ein geschluckter NameError hat den DB-Pfad des ContextInjectors monatelang
-    versteckt (S3 von T-20260920-823767362).
-    """
-    if where in _warned:
-        return
-    _warned.add(where)
-    log.warning("ContextInjector %s fehlgeschlagen (%s: %s) -- Hardcode/ohne Zaehler weiter",
-                where, type(exc).__name__, exc)
 
 
 class InjectorConfig:
-    """Konfiguration für Injektoren."""
-    
+    """Konfiguration fuer Injektoren (config.json -> 'injectors')."""
+
     def __init__(self, config_file: Path):
         self.config_file = config_file
         self.config = self._load()
-    
+
     def _load(self) -> dict:
-        """Lädt Konfiguration."""
         default = {
-            "strategy_injector": True,    # AN - mit Selbst-Deaktivierungs-Hinweis
-            "context_injector": True,     # Default AN - hilft bei Konventionen
-            "time_injector": True,        # Default AN - Zeitgefuehl ermoeglichen
-            "between_injector": True,     # Default AN - sehr nuetzlich
-            "timebeat_interval": 60,      # Sekunden (1 Min)
+            "strategy_injector": True,
+            "context_injector": True,
+            "time_injector": True,
+            "between_injector": True,
+            "timebeat_interval": 60,
         }
-        
+
         if self.config_file.exists():
             try:
                 with open(self.config_file, "r", encoding="utf-8") as f:
@@ -87,545 +58,41 @@ class InjectorConfig:
                     default.update(loaded.get("injectors", {}))
             except (json.JSONDecodeError, OSError):
                 pass
-        
+
         return default
-    
-    def save(self):
-        """Speichert Konfiguration."""
+
+    def save(self) -> None:
         try:
             full_config = {}
             if self.config_file.exists():
                 with open(self.config_file, "r", encoding="utf-8") as f:
                     full_config = json.load(f)
-            
+
             full_config["injectors"] = self.config
-            
+
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(full_config, f, ensure_ascii=False, indent=2)
         except (json.JSONDecodeError, OSError):
             pass
-    
+
     def toggle(self, injector: str) -> bool:
-        """Schaltet Injektor um."""
         if injector in self.config:
             self.config[injector] = not self.config[injector]
             self.save()
             return self.config[injector]
         return False
-    
+
     def is_enabled(self, injector: str) -> bool:
-        """Prüft ob Injektor aktiv."""
         return self.config.get(injector, False)
 
 
-class StrategyInjector:
-    """
-    Injiziert hilfreiche Gedanken basierend auf Trigger-Wörtern.
-    
-    Beispiele:
-    - "Fehler" + entspannte Situation → "Fehler sind wichtige Informationen"
-    - "komplex" → "In kleine Schritte zerlegen"
-    - "blockiert" → "Überspringen und später zurückkommen"
-    """
-    
-    # Strategie-Map: Trigger → Hilfreicher Gedanke
-    STRATEGIES = {
-        # Fehler-Handling
-        ("fehler", "error", "bug", "kaputt"): [
-            "Fehler sind wertvolle Informationen, nicht Versagen.",
-            "Erst verstehen, dann fixen.",
-        ],
-        
-        # Komplexität
-        ("komplex", "kompliziert", "schwierig", "gross"): [
-            "In kleine Schritte zerlegen (~5 Min pro Schritt).",
-            "Was ist der kleinste erste Schritt?",
-        ],
-        
-        # Blockade
-        ("blockiert", "blocked", "stuck", "komme nicht weiter"): [
-            "Überspringen und später zurückkommen ist OK.",
-            "Frage an User in chat.json notieren.",
-        ],
-        
-        # Zeit-Druck
-        ("wenig zeit", "schnell", "eilt", "dringend"): [
-            "Qualität vor Geschwindigkeit.",
-            "Lieber weniger aber richtig.",
-        ],
-        
-        # Unsicherheit
-        ("unsicher", "weiss nicht", "vielleicht", "unklar"): [
-            "Bei Unklarheit: Nachfragen statt raten.",
-            "Annahmen explizit dokumentieren.",
-        ],
-        
-        # Erfolg
-        ("fertig", "geschafft", "done", "erledigt"): [
-            "Gut gemacht! Kurz durchatmen.",
-            "Between-Tasks Check nicht vergessen.",
-        ],
-    }
-    
-    @classmethod
-    def check(cls, text: str, context: dict = None) -> Optional[str]:
-        """
-        Prüft Text auf Trigger und gibt passende Strategie zurück.
-        
-        Args:
-            text: Zu prüfender Text
-            context: Optional - Zusätzlicher Kontext (Zeit, Memory-Status, etc.)
-        
-        Returns:
-            Hilfreicher Gedanke oder None
-        """
-        text_lower = text.lower()
-        
-        for triggers, strategies in cls.STRATEGIES.items():
-            if any(t in text_lower for t in triggers):
-                # Kontext-abhängige Auswahl
-                if context and context.get("time_remaining", 999) > 5:
-                    # Viel Zeit übrig → entspanntere Strategie
-                    msg = strategies[0]
-                else:
-                    msg = strategies[-1]
-                return f"[STRATEGIE] {msg}"
-
-        return None
-
-
-class ContextInjector:
-    """
-    Erkennt Stichwörter und bietet Kontext-Suche an.
-
-    Nicht aggressiv - nur Hinweis dass Kontext verfügbar ist.
-    """
-
-    # Triggers aus DB (v1.1.80)
-    _cache = None
-    _last_load = None
-    _ttl_sec = 300
-    base_path = None
-    _session_triggered = set() # v1.1.82: IDs der Themen-Pakete die bereits gefeuert haben
-
-    # Trigger-Woerter die Kontext-Suche vorschlagen (Hardcoded Fallback)
-    CONTEXT_TRIGGERS = {
-        # === SYSTEM-KONTEXT ===
-        "encoding": "Encoding-Probleme? bach c_encoding_fixer <datei>",
-        "pfad": "Pfad-Fragen? --help dirs",
-        "json": "JSON-Probleme? bach c_json_repair <datei>",
-        "memory": "Memory-Fragen? --help memory",
-        "task": "Task-System? --help tasks",
-        "fehler": "Bekannte Fehler? --help lessons",
-        "letzte session": "Letzte Session? --context recent 1",
-
-        # === DOMAIN-TOOLS (Die Haende der LLMs) ===
-
-        # OCR & Dokumenten-Verarbeitung
-        "ocr": "OCR-Tools: tools/c_ocr_engine.py (Tesseract+PyMuPDF), skills/_services/document/ocr_service.py",
-        "texterkennung": "OCR-Tools: tools/c_ocr_engine.py (Tesseract+PyMuPDF), skills/_services/document/ocr_service.py",
-        "pdf text": "PDF-Text: tools/c_ocr_engine.py --pdf <datei> | skills/_services/document/pdf_service.py",
-        "bild text": "Bild-OCR: tools/c_ocr_engine.py <bild> (Tesseract)",
-        "scan": "Scanner: tools/folder_diff_scanner.py | skills/_services/document/scanner_service.py",
-        "dokument suche": "Dokument-Suche: tools/doc_search.py --search <begriff>",
-        "dokument finden": "Dokument-Suche: tools/doc_search.py --search <begriff>",
-        "datei suchen": "Dokument-Suche: tools/doc_search.py --search <begriff> | --folders (registrierte Ordner)",
-
-        # Daten-Import & Export
-        "import": "Data-Import: tools/data_importer.py --csv/--json <datei> --table <tabelle> (Schema-Erkennung, Duplikate, Rollback)",
-        "csv import": "CSV-Import: tools/data_importer.py --csv <datei> --table <tabelle> --dry-run",
-        "json import": "JSON-Import: tools/data_importer.py --json <datei> --table <tabelle>",
-        "daten importieren": "Data-Import: tools/data_importer.py (--list-tables, --describe, --csv, --json, --history, --rollback)",
-        "export": "Exporte: bach steuer export --format vorsorge | tools/data_importer.py --history",
-        "ordner ueberwachen": "Folder-Scanner: tools/folder_diff_scanner.py <ordner> (Diff-Erkennung, Hash-Vergleich)",
-        "neue dateien": "Folder-Scanner: tools/folder_diff_scanner.py <ordner> --unprocessed",
-
-        # Versicherungen & Finanzen
-        "versicherung": "Versicherungs-Verwaltung: bach versicherung status | bach versicherung list/check/fristen",
-        "insurance": "Versicherungs-Verwaltung: bach versicherung status | bach versicherung list/check/fristen",
-        "fixkosten": "Fixkosten: bach haushalt fixkosten | bach.db fin_contracts",
-        "abo": "Abo-Verwaltung: bach abo list/check/export",
-        "steuer": "Steuer-Tools: bach steuer status/beleg/posten/export | Steuer-Workflow",
-
-        # Gesundheit
-        "gesundheit": "Gesundheit: bach gesundheit diagnosen/medikamente/labor/termine | bach.db health_*",
-        "arzt": "Gesundheit: bach gesundheit termine --upcoming | diagnosen",
-        "medikament": "Medikamente: bach gesundheit medikamente | bach.db health_medications",
-
-        # Kontakte
-        "kontakt": "Kontakte: bach contact list/search/add | bach.db contacts",
-        "kontakte": "Kontakte: bach contact list/search/add/birthday | bach.db contacts",
-
-        # Haushalt
-        "haushalt": "Haushalt: bach haushalt due/routinen/kalender/fixkosten/insurance-check/einkauf",
-        "routine": "Routinen: bach haushalt due (faellige Aufgaben) | routinen (alle)",
-        "einkauf": "Einkaufsliste: bach haushalt einkauf",
-
-        # Lebenslauf
-        "lebenslauf": "CV-Generator: tools/cv_generator.py (ASCII-CV aus Ordnerstruktur + DB)",
-        "cv": "CV-Generator: tools/cv_generator.py (ASCII-CV aus Ordnerstruktur + DB)",
-        "bewerbung": "CV-Generator: tools/cv_generator.py | user/bewerbungsexperte/",
-
-        # MCP
-        "mcp": "MCP-Server: tools/mcp_server.py (6 Tools, 5 Resources fuer IDE-Integration)",
-
-        # === CODE-TOOLS ===
-
-        # Python-Bearbeitung
-        "python bearbeiten": "Python-Editor: bach python_cli_editor <datei> --show-all",
-        "python editieren": "Python-Editor: bach python_cli_editor <datei> --show-all",
-        "klasse bearbeiten": "Python-Editor: bach python_cli_editor <datei> --show-all",
-        "methode bearbeiten": "Python-Editor: bach python_cli_editor <datei> --show-all",
-        "funktion bearbeiten": "Python-Editor: bach python_cli_editor <datei> --show-all",
-        "code struktur": "Python-Editor: bach python_cli_editor <datei> --show-all",
-        "imports anzeigen": "Python-Editor: bach python_cli_editor <datei> --show-imports",
-
-        # Code-Analyse
-        "code analysieren": "Code-Analyse: bach code_analyzer <datei>",
-        "analyse code": "Code-Analyse: bach code_analyzer <datei>",
-        "dead code": "Code-Analyse: bach code_analyzer <datei>",
-
-        # Encoding/Formatierung
-        "encoding problem": "Encoding-Fix: bach c_encoding_fixer <datei>",
-        "umlaute kaputt": "Encoding-Fix: bach c_encoding_fixer <datei>",
-        "utf-8": "Encoding-Fix: bach c_encoding_fixer <datei>",
-        "emoji": "Emoji-Scanner: bach c_emoji_scanner <datei>",
-        "einrueckung": "Indent-Check: bach c_indent_checker <datei>",
-        "indent": "Indent-Check: bach c_indent_checker <datei>",
-
-        # Import-Handling
-        "imports sortieren": "Import-Organizer: bach c_import_organizer <datei>",
-        "import problem": "Import-Diagnose: bach c_import_diagnose <datei>",
-        "import fehlt": "Import-Diagnose: bach c_import_diagnose <datei>",
-
-        # Datei-Operationen
-        "datei aufteilen": "Python-Cutter: bach c_pycutter <datei>",
-        "datei splitten": "Python-Cutter: bach c_pycutter <datei>",
-        "zu gross": "Python-Cutter: bach c_pycutter <datei> (fuer Python-Dateien)",
-        "sqlite anzeigen": "SQLite-Viewer: bach c_sqlite_viewer <db>",
-        "datenbank anzeigen": "SQLite-Viewer: bach c_sqlite_viewer <db>",
-        "datenbank": "DB-Tools: tools/data_importer.py (Import) | bach c_sqlite_viewer (View) | bach db query (SQL)",
-
-        # Konvertierung
-        "markdown zu pdf": "MD-to-PDF: bach c_md_to_pdf <datei>",
-        "md to pdf": "MD-to-PDF: bach c_md_to_pdf <datei>",
-        "format konvertieren": "Konverter: bach c_universal_converter <datei>",
-        "konvertieren": "Konverter: bach c_universal_converter <datei>",
-
-        # Suche & Discovery
-        "tool finden": "Tool-Empfehlung: bach tool suggest 'beschreibung'",
-        "welches tool": "Tool-Empfehlung: bach tool suggest 'beschreibung'",
-        "tool suchen": "Tool-Suche: bach tools search <begriff>",
-        "gibt es ein tool": "Tool-Suche: bach tools search <begriff> | bach tool suggest 'beschreibung'",
-
-        # === ERSTELLUNG & KONVENTIONEN ===
-
-        # Tool-Erstellung
-        "neues tool": "ERST PRUEFEN: bach tools search <begriff> | Tool-Benennung: --help naming",
-        "tool erstellen": "ERST PRUEFEN: bach tools search <begriff> | Tool-Benennung: --help naming",
-        "python tool": "ERST PRUEFEN: bach tools search <begriff> | Tool-Benennung: --help naming",
-        "neues script": "ERST PRUEFEN: bach tools search <begriff> | Tool-Benennung: --help naming",
-
-        # Konzept-Erstellung
-        "konzept": "Konzepte lokal ablegen! --help practices (ARCHITEKTUR-PRINZIPIEN)",
-        "concept": "Konzepte lokal ablegen! --help practices (ARCHITEKTUR-PRINZIPIEN)",
-        "entwurf": "Konzepte lokal ablegen! --help practices (ARCHITEKTUR-PRINZIPIEN)",
-
-        # Datei-Erstellung
-        "neue datei": "Namenskonventionen: --help naming + --help formats",
-        "datei erstellen": "Namenskonventionen: --help naming + --help formats",
-
-        # Agent-Erstellung
-        "neuer agent": "Agent-Konzept in agents/ ablegen! --help practices",
-        "agent erstellen": "Agent-Konzept in agents/ ablegen! --help practices",
-
-        # Architektur
-        "architektur": "Diagramme: docs/ARCHITECTURE_DIAGRAMS.md | --help practices",
-        "prinzipien": "Architektur-Prinzipien: --help practices",
-        "regeln": "Regelwerk-Index: --help practices",
-
-        # === SKILLS & STRATEGIE ===
-
-        # Förderplaner
-        "foerderplan": "Förderplaner: agents/_experts/foerderplaner/ | GUI: /bericht",
-        "bericht status": "Bericht-Status: agents/_experts/foerderplaner/ | GUI: /bericht",
-        
-        # System-Analyse
-        "system analyse": "Analyze-System: skills/_services/analyze-system.md (System Thinking, Bottlenecks)",
-        "bottleneck": "Analyze-System: skills/_services/analyze-system.md (System Thinking, Bottlenecks)",
-        
-        # Brainstorming/Entscheidung
-        "brainstorm": "Brainstorming: skills/_services/brainstorm.md (Methoden: SCAMPER, 6-Hats)",
-        "ideen finden": "Brainstorming: skills/_services/brainstorm.md | bach tool suggest 'kreativ'",
-        "entscheidung": "Decision-Support: skills/_services/decide.md (Matrix, SWOT, RICE)",
-        "dilemma": "Decision-Support: skills/_services/decide.md",
-
-        # Wiki & Lernen
-        "quiz": "Wiki-Quizzer: agents/_experts/wikiquizzer | Interaktives Lernen aus Wiki",
-        "lernen": "Wiki-Quizzer: agents/_experts/wikiquizzer | Interaktives Lernen",
-
-        # Prompting
-        "prompt erstellen": "Prompt-Generator: skills/_services/prompt_generator/ | Meta-Prompts",
-        "system prompt": "Prompt-Generator: skills/_services/prompt_generator/ | Optimierung",
-
-        # === PARTNER & KOMMUNIKATION ===
-        "partner": "Partner: bach partner list/status/delegate | bach msg send <partner> <text>",
-        "nachricht": "Nachrichten: bach msg ping --from <partner> | bach msg send <partner> <text>",
-        "gemini": "Gemini-Partner: bach msg send gemini <text> | partners/gemini/outbox/",
-        "claude": "Claude-Partner: bach msg send claude <text> | partners/claude/outbox/",
-        "delegation": "Delegation: bach partner delegate 'Task' --to=<partner>",
-
-        # === BACKUP & WARTUNG ===
-        "backup": "Backup: bach backup create [--to-nas] | bach backup list | python system/tools/backup_manager.py restore backup latest",
-        "wartung": "Wartung: bach --maintain heal/registry/skills/docs",
-
-        # === WORKFLOWS (Metakognition: WANN/WIE koordinieren) ===
-
-        # System-Workflows
-        "bug": "Bugfix-Workflow: skills/workflows/bugfix-protokoll.md (strukturierte Fehlerkorrektur)",
-        "fehlerkorrektur": "Bugfix-Workflow: skills/workflows/bugfix-protokoll.md",
-        "cli befehl": "CLI-Aenderung: skills/workflows/cli-aenderung-checkliste.md",
-        "neues projekt": "Projekt-Aufnahme: skills/workflows/projekt-aufnahme.md",
-        "integration": "Anschluss-Analyse: skills/workflows/system-anschlussanalyse.md",
-        "aufraeumen": "System-Cleanup: skills/workflows/system-aufraeumen.md",
-        "kartieren": "System-Mapping: skills/workflows/system-mapping.md",
-        "synopse": "System-Synopse: skills/workflows/system-synopse.md",
-        "testverfahren": "Test-Workflow: skills/workflows/system-testverfahren.md",
-        "ordner flachen": "Ordner-Flattening: skills/workflows/ordner-flattening.md",
-
-        # Dokumentations-Workflows
-        "doku analyse": "Docs-Analyse: skills/workflows/docs-analyse.md",
-        "help pruefen": "Help-Forensic: skills/workflows/help-forensic.md (Recurring: 14d)",
-        "wiki schreiben": "Wiki-Author: skills/workflows/wiki-author.md (Recurring: 21d)",
-        "umbenennen": "Rename-Workflow: skills/workflows/migrate-rename.md (sichere Umbenennung mit Wrapper)",
-
-        # Partner-Workflows
-        "gemini delegieren": "Delegation: skills/workflows/gemini-delegation.md",
-        "google drive": "Google-Drive: skills/workflows/google-drive.md",
-
-        # Analyse-Workflows
-        "skill abdeckung": "Skill-Coverage: skills/workflows/skill-abdeckungsanalyse.md",
-        "dokumente zusammenfuehren": "Synthese: skills/workflows/synthese.md",
-
-        # Steuer-Workflows
-        "beleg scan": "Steuer-Beleg-Scan: skills/workflows/steuer-beleg-scan.md",
-        "fahrtkosten": "Fahrtkosten+Homeoffice: skills/workflows/steuer-fahrtkosten-homeoffice.md",
-        "homeoffice": "Fahrtkosten+Homeoffice: skills/workflows/steuer-fahrtkosten-homeoffice.md",
-        "finanzamt": "Finanzamt-Export: skills/workflows/steuer-finanzamt-export.md",
-        "sonderausgaben": "Sonderausgaben: skills/workflows/steuer-sonderausgaben-erfassen.md",
-        "werbungskosten": "Werbungskosten: skills/workflows/steuer-werbungskosten-erfassen.md",
-
-        # Entwicklungszyklus & Usecases
-        "entwicklung": "Dev-Zyklus: skills/workflows/dev-zyklus.md (8 Phasen) | --help dev",
-        "dev zyklus": "Dev-Zyklus: skills/workflows/dev-zyklus.md (8 Phasen) | --help dev",
-        "feature wunsch": "Dev-Zyklus Phase 1: Feature-Wuensche -> --help dev",
-        "usecase": "Usecases: --help usecase (Feature-Tests + Anforderungen) | Phase 8 Dev-Zyklus",
-        "feature test": "Usecases: --help usecase (End-to-End Validierung)",
-
-        # Workflow-Suche
-        "workflow": "Workflows: --help workflow (25 verfuegbar) | skills/workflows/",
-        "ablauf": "Workflows: --help workflow (25 verfuegbar) | skills/workflows/",
-        "prozess": "Workflows: --help workflow (25 verfuegbar) | skills/workflows/",
-    }
-    
-    @classmethod
-    def _compile_trigger(cls, trigger: str) -> Optional[re.Pattern]:
-        """Kompiliert Trigger-Phrase mit Wortgrenzen (verhindert falsche Substring-Treffer).
-
-        Kurze Trigger (<= 3 Zeichen), englische Kollisionen ('import', 'export')
-        sowie Mehrwort-Phrasen fordern Wortgrenzen an beiden Enden (z. B. 'abo' trifft
-        nicht 'labor' oder 'about', 'import' trifft nicht 'important').
-        Fuer laengere deutsche Woerter genuegt die Wortgrenze am Beginn, um Komposita
-        und Beugungen wie 'Steuererklärung', 'Arzttermin' oder 'Medikamenten' zu erfassen.
-        """
-        if not trigger:
-            return None
-        alts = [a.strip() for a in trigger.split('|') if a.strip()]
-        if not alts:
-            return None
-        parts = []
-        for a in alts:
-            escaped = re.escape(a)
-            if len(a) <= 3 or a.lower() in ('import', 'export') or ' ' in a:
-                parts.append(rf'\b{escaped}\b')
-            else:
-                parts.append(rf'\b{escaped}')
-        return re.compile('|'.join(parts), re.IGNORECASE)
-
-    @classmethod
-    def check(cls, text: str, cli_hints: bool = True) -> Optional[str]:
-        """Prüft ob Kontext-Hinweis hilfreich wäre."""
-        text_lower = text.lower()
-
-        # Cache-Logik (v1.1.80)
-        now = datetime.now()
-        if cls._cache is None or cls._last_load is None or (now - cls._last_load).total_seconds() > cls._ttl_sec:
-            cls._refresh_cache()
-
-        for trigger, data in cls._cache.items():
-            pattern = data.get('pattern')
-            matched = bool(pattern.search(text)) if pattern else (trigger in text_lower)
-            if matched:
-                hint = data['hint']
-                if not cli_hints:
-                    from hub.context_hints import CLI_PATTERN, neutral_manual_hint
-                    if data.get('source') == 'manual':
-                        hint = neutral_manual_hint(hint, Path(__file__).resolve().parent.parent)
-                    if CLI_PATTERN.search(hint):
-                        continue
-                # v1.1.82: Themen-Pakete nur einmal pro Session
-                if data.get('source') == 'theme':
-                    if data['id'] in cls._session_triggered:
-                        continue
-                    cls._session_triggered.add(data['id'])
-                    # Wir speichern den Session-Status NICHT persistent, 
-                    # da bach.py pro Aufruf neu startet.
-                    # TODO: Fuer dauerhafte Prozesse (GUI/Daemon) ist das OK.
-                    # Fuer CLI-Aufrufe brauchen wir ein File-basiertes Tracking.
-                    cls._mark_session_usage(data['id'])
-
-                # v1.1.81: Usage tracking
-                if data.get('id'):
-                    cls._mark_usage(data['id'])
-
-                return f"[KONTEXT] {hint}"
-
-        return None
-
-    @classmethod
-    def _refresh_cache(cls):
-        """Lädt Triggers aus DB oder nutzt hardcoded Fallback."""
-        cls._last_load = datetime.now()
-
-        # Fallback laden (v1.1.82: Mit ID und Source)
-        cls._cache = {
-            t: {
-                'id': None,
-                'hint': h,
-                'source': 'manual',
-                'pattern': cls._compile_trigger(t),
-            }
-            for t, h in cls.CONTEXT_TRIGGERS.items()
-        }
-
-        if not cls.base_path:
-            return
-
-        # Bis S3 (T-20260920-823767362) fehlte hier `import sqlite3`: der
-        # NameError wurde unten geschluckt, context_triggers also nie gelesen,
-        # und der Pfad zeigte auf system/data/bach.db statt auf BACH_DB. Der
-        # reparierte DB-Pfad ist das beabsichtigte Verhalten, bleibt aber bis
-        # zur Freigabe hinter BACH_CONTEXT_TRIGGERS_DB=1 (Default aus = Hardcode).
-        if os.environ.get(CONTEXT_TRIGGERS_DB_ENV, "").strip().lower() not in _ON_VALUES:
-            cls._load_session_usage()
-            return
-
-        db_path = cls._db_path()
-        if not db_path.exists():
-            return
-
-        try:
-            conn = sqlite3.connect(str(db_path))
-            conn.row_factory = sqlite3.Row
-            # Triggers aus DB laden (Leseregel wie memoryhooker.triggers)
-            rows = conn.execute(
-                "SELECT id, trigger_phrase, hint_text, source FROM context_triggers"
-                " WHERE is_active = 1 AND source <> 'strategy'"
-                " AND COALESCE(status, 'unknown') <> 'blocked'"
-                " AND (expires_at IS NULL OR expires_at > datetime('now', 'localtime'))"
-                " AND agent_id = 'default' ORDER BY id"
-            ).fetchall()
-            if rows:
-                # Wenn DB Daten hat, nutzen wir diese
-                cls._cache = {
-                    r['trigger_phrase']: {
-                        'id': r['id'],
-                        'hint': r['hint_text'],
-                        'source': r['source'],
-                        'pattern': cls._compile_trigger(r['trigger_phrase']),
-                    }
-                    for r in rows
-                }
-            conn.close()
-        except Exception as e:
-            _warn_once("context_triggers lesen", e)
-
-        # v1.1.82: Session-Usage laden
-        cls._load_session_usage()
-
-    @classmethod
-    def _db_path(cls) -> Path:
-        """Kanonische BACH-DB (hub/bach_paths.py), sonst Notfall-Fallback."""
-        try:
-            from hub.bach_paths import BACH_DB
-            return Path(BACH_DB)
-        except Exception:
-            return Path.home() / ".bach" / "bach.db"
-
-    @classmethod
-    def _mark_usage(cls, trigger_id: int):
-        """Aktualisiert usage_count und last_used in der DB (v1.1.81)."""
-        if not cls.base_path:
-            return
-        db_path = cls._db_path()
-        try:
-            conn = sqlite3.connect(str(db_path))
-            conn.execute("""
-                UPDATE context_triggers 
-                SET usage_count = usage_count + 1, 
-                    last_used = datetime('now')
-                WHERE id = ?
-            """, (trigger_id,))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            _warn_once("usage_count schreiben", e)
-
-    @classmethod
-    def _load_session_usage(cls):
-        """Lädt bereits gefeuerte Themen-Pakete der aktuellen Session (v1.1.82)."""
-        if not cls.base_path: return
-        import json
-        session_file = cls.base_path / "data" / ".session_themes"
-        if session_file.exists():
-            try:
-                # Wir löschen das File wenn es älter als 12 Stunden ist (neue Session)
-                mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
-                if (datetime.now() - mtime).total_seconds() > 12 * 3600:
-                    session_file.unlink()
-                    cls._session_triggered = set()
-                    return
-                
-                cls._session_triggered = set(json.loads(session_file.read_text()))
-            except (OSError, ValueError, json.JSONDecodeError):
-                cls._session_triggered = set()
-
-    @classmethod
-    def _mark_session_usage(cls, trigger_id: int):
-        """Speichert gefeuertes Themen-Paket persistent (v1.1.82)."""
-        if not cls.base_path: return
-        import json
-        cls._session_triggered.add(trigger_id)
-        session_file = cls.base_path / "data" / ".session_themes"
-        try:
-            session_file.write_text(json.dumps(list(cls._session_triggered), ensure_ascii=False))
-        except OSError:
-            pass
-
-        
-        # v1.1.82: Session-Usage laden
-        cls._load_session_usage()
-
-
 class ToolInjector:
-    """
-    Erinnert an verfuegbare Tools bei Session-Start und Task-Beginn.
+    """Erinnert an verfuegbare Tools bei Session-Start.
 
-    Tools sind die Haende der LLMs - ohne Erinnerung werden sie vergessen
-    und unnoetig neu erstellt.
+    Die fruehere Duplikat-Warnung (check_before_create) laeuft seit S3 ueber
+    context_triggers (source='tool_warn', Seed: Migration 046) im memoryhooker-Seam.
     """
 
-    # Tool-Kategorien mit wichtigsten Tools
     TOOL_CATEGORIES = {
         "OCR & Dokumente": [
             "tools/c_ocr_engine.py - Tesseract + PyMuPDF OCR",
@@ -652,14 +119,9 @@ class ToolInjector:
 
     @classmethod
     def get_startup_reminder(cls, base_path: Path = None) -> str:
-        """Gibt Tool-Uebersicht fuer Session-Start zurueck.
-
-        Liest registrierte Tools aus bach.db und ergaenzt mit Kategorien.
-        Tool-Hilfe: docs/help/tools/<toolname>.txt
-        """
+        """Gibt Tool-Uebersicht fuer Session-Start zurueck."""
         lines = ["[VERFUEGBARE TOOLS - Deine Haende]"]
 
-        # Versuche aktuelle Tool-Anzahl aus DB zu lesen
         tool_count = 0
         try:
             import sqlite3
@@ -698,328 +160,168 @@ class ToolInjector:
         lines.append("  Empfehlung:   bach tool suggest '<beschreibung>'")
         return "\n".join(lines)
 
-    @classmethod
-    def check_before_create(cls, text: str) -> Optional[str]:
-        """Warnt bevor ein neues Tool erstellt wird das evtl. schon existiert."""
-        text_lower = text.lower()
-        create_signals = ["erstelle", "create", "neues tool", "schreibe ein script",
-                          "baue ein", "implementiere ein tool", "write a tool",
-                          "new script", "neues script"]
-        if any(s in text_lower for s in create_signals):
-            return ("[TOOL-CHECK] Bevor du ein neues Tool erstellst:\n"
-                    "  1. bach tools search <begriff>  (DB-Suche)\n"
-                    "  2. bach tool suggest '<beschreibung>'  (Empfehlung)\n"
-                    "  3. Pruefe tools/ und skills/_services/ Ordner\n"
-                    "  Tools sind die Haende der LLMs - Duplikate vermeiden!")
-        return None
-
-
-class BetweenInjector:
-    """
-    Automatische Between-Tasks Erinnerung nach Task-Done.
-    
-    Erkennt:
-    - Task wurde als done markiert
-    - Session-Ende (dann KEINE Erinnerung)
-    """
-    
-    @classmethod
-    def check_task_done(cls, last_command: str, session_ending: bool = False) -> Optional[str]:
-        """
-        Prüft ob Between-Tasks Erinnerung nötig.
-        
-        Args:
-            last_command: Letzter ausgeführter Befehl
-            session_ending: True wenn Session bald endet
-        
-        Returns:
-            Erinnerung oder None
-        """
-        # Task done erkannt?
-        if "done" not in last_command.lower():
-            return None
-        
-        # Session endet? Dann keine Erinnerung
-        if session_ending:
-            return None
-        
-        return """[BETWEEN-TASKS]
-1. Zeit-Check: Noch im Limit?
-2. Memory OK? (--memory size)
-3. Nächste Aufgabe oder Shutdown?
-
-Tipp: --status für Übersicht"""
-
 
 class TimeInjector:
-    """
-    Regelmäßige Zeit-Updates (Timebeat).
-
-    Delegiert nun an tools.time_system.TimeManager (TIME-07 Migration).
-    Ergänzt den Timebeat um ungelesene Nachrichten.
-    """
+    """Regelmaessige Zeit-Updates (Timebeat) via tools.time_system.TimeManager."""
 
     def __init__(self, interval: int = 60, base_path: Path = None):
         self.interval = interval
         self.base_path = base_path
-        
-        # TIME-07: Nutzung des TimeManagers
         self.manager = None
         if base_path:
             try:
                 from tools.time_system import TimeManager
                 self.manager = TimeManager(base_path)
-                # Sync Interval aus InjectorConfig
                 self.manager.set_interval(interval)
             except (ImportError, AttributeError):
                 pass
 
     def check(self) -> Optional[str]:
-        """Timebeat, falls faellig -- die Logik lebt in TimeManager.timebeat()
-        (E5 von T-20260920-823767362: Time ist BACH-Zeit-/Nachrichtenfunktion,
-        kein Gedaechtnis-Injektor)."""
+        """Timebeat, falls faellig (TimeManager.timebeat())."""
         if not self.manager:
             return None
         return self.manager.timebeat()
 
 
 class TaskAssigner:
-    """
-    Automatische Aufgaben-Zuweisung.
-    
-    "Gib mir eine Aufgabe für X Minuten" → Passende Aufgabe
-    """
-    
+    """Automatische Aufgaben-Zuweisung."""
+
     def __init__(self, tasks_file: Path):
         self.tasks_file = tasks_file
-    
+
     def assign(self, max_minutes: int = 5) -> Optional[dict]:
-        """
-        Weist passende Aufgabe zu.
-        
-        Args:
-            max_minutes: Maximale geschätzte Zeit
-        
-        Returns:
-            Task-Dict oder None
-        """
         if not self.tasks_file.exists():
             return None
-        
+
         try:
             with open(self.tasks_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
+
             tasks = data.get("tasks", [])
             open_tasks = [t for t in tasks if t.get("status") == "open"]
-            
+
             if not open_tasks:
                 return None
-            
-            # Nach Priorität sortieren
+
             prio_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-            sorted_tasks = sorted(open_tasks, 
-                                 key=lambda t: prio_order.get(t.get("priority", "medium"), 2))
-            
-            # Zeit-Schätzung (grob nach Beschreibungslänge)
+            sorted_tasks = sorted(
+                open_tasks,
+                key=lambda t: prio_order.get(t.get("priority", "medium"), 2),
+            )
+
             for task in sorted_tasks:
                 desc_len = len(task.get("description", task.get("task", "")))
                 estimated_min = max(2, min(15, desc_len / 50))
-                
+
                 if estimated_min <= max_minutes:
                     task["estimated_minutes"] = estimated_min
                     return task
-            
-            # Fallback: Erste Aufgabe
+
             sorted_tasks[0]["estimated_minutes"] = max_minutes
             return sorted_tasks[0]
 
         except (json.JSONDecodeError, OSError):
             return None
-    
+
     def decompose(self, task: dict) -> List[dict]:
-        """
-        Zerlegt große Aufgabe in Teilschritte.
-        
-        Returns:
-            Liste von Sub-Tasks
-        """
         description = task.get("description", task.get("task", ""))
-        
-        # Einfache Heuristik: Nach Punkten/Schritten aufteilen
         steps = []
-        
-        # Suche nach nummerierten Schritten
-        numbered = re.findall(r'\d+[.)]\s*([^.!?\n]+)', description)
+        numbered = re.findall(r"\d+[.)]\s*([^.!?\n]+)", description)
         if numbered:
             for i, step in enumerate(numbered, 1):
                 steps.append({
                     "step": i,
                     "description": step.strip(),
-                    "estimated_minutes": 3
+                    "estimated_minutes": 3,
                 })
         else:
-            # Fallback: In 3 generische Schritte teilen
             steps = [
                 {"step": 1, "description": "Verstehen & Planen", "estimated_minutes": 2},
                 {"step": 2, "description": "Implementieren", "estimated_minutes": 5},
                 {"step": 3, "description": "Testen & Dokumentieren", "estimated_minutes": 3},
             ]
-        
         return steps
 
 
-class CooldownManager:
-    """
-    Verwaltet Cooldowns fuer Injektoren.
-
-    Nach Anzeige wird ein Injektor fuer X Minuten stumm geschaltet.
-    Default: 2 Minuten (konfigurierbar pro Injektor)
-
-    v1.1.75: Neu eingefuehrt
-    """
-
-    # Default-Cooldowns in Sekunden
-    DEFAULT_COOLDOWNS = {
-        "strategy": 120,   # 2 Min - Strategien sollen nicht nerven
-        "context": 60,     # 1 Min - Kontext-Hinweise etwas oefter OK
-        "between": 180,    # 3 Min - Between-Checks seltener
-        "tool_warn": 300,  # 5 Min - Tool-Warnung selten
-    }
-
-    def __init__(self, base_path: Path):
-        self.base_path = base_path
-        self._state_file = base_path / "data" / ".injector_cooldowns"
-        self._cooldowns = self._load_state()
-
-    def _load_state(self) -> dict:
-        """Laedt Cooldown-State aus Datei."""
-        if self._state_file.exists():
-            try:
-                return json.loads(self._state_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
-        return {}
-
-    def _save_state(self) -> None:
-        """Speichert Cooldown-State."""
-        try:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
-            self._state_file.write_text(
-                json.dumps(self._cooldowns, indent=2, ensure_ascii=False),
-                encoding="utf-8"
-            )
-        except OSError:
-            pass
-
-    def is_on_cooldown(self, injector_name: str) -> bool:
-        """
-        Prueft ob Injektor noch im Cooldown ist.
-
-        Args:
-            injector_name: Name des Injektors (strategy, context, between, tool_warn)
-
-        Returns:
-            True wenn Cooldown aktiv (= nicht anzeigen)
-        """
-        last_shown = self._cooldowns.get(injector_name)
-        if not last_shown:
-            return False
-
-        try:
-            last_dt = datetime.fromisoformat(last_shown)
-            cooldown_sec = self.DEFAULT_COOLDOWNS.get(injector_name, 120)
-            return datetime.now() < last_dt + timedelta(seconds=cooldown_sec)
-        except (ValueError, TypeError):
-            return False
-
-    def mark_shown(self, injector_name: str) -> None:
-        """
-        Markiert Injektor als gerade angezeigt (startet Cooldown).
-
-        Args:
-            injector_name: Name des Injektors
-        """
-        self._cooldowns[injector_name] = datetime.now().isoformat()
-        self._save_state()
-
-    def get_remaining(self, injector_name: str) -> int:
-        """
-        Gibt verbleibende Cooldown-Zeit in Sekunden zurueck.
-
-        Returns:
-            Sekunden oder 0 wenn kein Cooldown
-        """
-        last_shown = self._cooldowns.get(injector_name)
-        if not last_shown:
-            return 0
-
-        try:
-            last_dt = datetime.fromisoformat(last_shown)
-            cooldown_sec = self.DEFAULT_COOLDOWNS.get(injector_name, 120)
-            remaining = (last_dt + timedelta(seconds=cooldown_sec) - datetime.now()).total_seconds()
-            return max(0, int(remaining))
-        except (ValueError, TypeError):
-            return 0
-
-
-# Haupt-Interface
 class InjectorSystem:
-    """Zentrales Interface für alle Injektoren."""
-    
-    def __init__(self, base_path: Path):
-        self.base_path = base_path
-        ContextInjector.base_path = base_path  # Kontext für DB-Zugriff
-        self.config = InjectorConfig(base_path / "config.json")
-        self.time_injector = TimeInjector(self.config.config.get("timebeat_interval", 60), base_path)
-        self.task_assigner = TaskAssigner(base_path / "DATA" / "tasks.json")
-        self.cooldown = CooldownManager(base_path)  # v1.1.75: Cooldown-Management
+    """Duenner Adapter fuer alle Injektoren (Seam + TimeManager)."""
+
+    def __init__(self, base_path: Path, db_path: Optional[Path] = None):
+        self.base_path = Path(base_path)
+        self.db_path = Path(db_path) if db_path else None
+        self.config = InjectorConfig(self.base_path / "config.json")
+        self.time_injector = TimeInjector(self.config.config.get("timebeat_interval", 60), self.base_path)
+        self.task_assigner = TaskAssigner(self.base_path / "DATA" / "tasks.json")
         self._tool_reminder_shown = False
+        self._hook = None
+        self._state = None
+
+    def _resolve_db_path(self) -> Path:
+        if self.db_path is not None:
+            return Path(self.db_path)
+        system_root = Path(__file__).resolve().parent.parent
+        if str(system_root) not in sys.path:
+            sys.path.insert(0, str(system_root))
+        try:
+            from hub.bach_paths import BACH_DB
+            db = Path(BACH_DB)
+        except Exception:
+            db = Path.home() / ".bach" / "bach.db"
+        if self.base_path:
+            local_db = self.base_path / "data" / "bach.db"
+            if local_db.exists() and self.base_path.resolve() not in (system_root, system_root.parent):
+                return local_db
+        return db
+
+    def _get_seam(self):
+        system_root = Path(__file__).resolve().parent.parent
+        if str(system_root) not in sys.path:
+            sys.path.insert(0, str(system_root))
+        from hub.memory_hook_provider import ExternalMemoryHook, external_memoryhooker_available
+
+        if not external_memoryhooker_available():
+            return None, None
+        db_path = self._resolve_db_path()
+        if self._hook is None or self._hook.backend.db_path != db_path:
+            try:
+                self._hook = ExternalMemoryHook(
+                    db_path=db_path,
+                    config_path=self.base_path / "data" / "memoryhooker.toml",
+                )
+                self._state = self._hook._mod["SessionState"]()
+            except Exception as exc:
+                log.warning("InjectorSystem Seam-Initialisierung fehlgeschlagen: %s", exc)
+                return None, None
+        return self._hook, self._state
+
+    def _disabled_injectors(self) -> frozenset:
+        from hub.memory_hook_provider import INJECTOR_SWITCHES
+        return frozenset(
+            key for key, switch in INJECTOR_SWITCHES.items()
+            if not self.config.is_enabled(switch)
+        )
 
     def process(self, text: str, context: dict = None, skip=(), cli_hints: bool = True) -> List[str]:
-        """
-        Verarbeitet Text durch alle aktiven Injektoren.
+        """Verarbeitet Text durch den memoryhooker-Seam + TimeManager."""
+        injections: List[str] = []
+        skip_set = set(skip or ())
 
-        skip: Injektor-Namen, die ein externer Pfad uebernimmt (memoryhooker-
-              Seam, S3 von T-20260920-823767362), z.B. {"strategy"}.
+        hook, state = self._get_seam()
+        if hook is not None and state is not None:
+            from hub.memory_hook_provider import CLI_ONLY_INJECTORS
+            active_keys = hook.handled_injectors() - self._disabled_injectors() - skip_set - CLI_ONLY_INJECTORS
+            if active_keys:
+                try:
+                    injections.extend(
+                        hook._trigger_hints(text, state, active_keys, cli_hints=cli_hints)
+                    )
+                except Exception as exc:
+                    log.warning("InjectorSystem Seam-Aufruf fehlgeschlagen: %s", exc)
 
-        v1.1.75: Mit Cooldown-Pruefung - Injektoren werden nach Anzeige
-                 fuer X Minuten stumm geschaltet.
-
-        Returns:
-            Liste von Injektionen (kann leer sein)
-        """
-        injections = []
-
-        # Strategy Injector (Cooldown: 2 Min)
-        if self.config.is_enabled("strategy_injector") and "strategy" not in skip:
-            if not self.cooldown.is_on_cooldown("strategy"):
-                strategy = StrategyInjector.check(text, context)
-                if strategy:
-                    injections.append(strategy)
-                    self.cooldown.mark_shown("strategy")
-
-        # Context Injector (Cooldown: 1 Min)
-        if self.config.is_enabled("context_injector") and "context" not in skip:
-            if not self.cooldown.is_on_cooldown("context"):
-                ctx = ContextInjector.check(text, cli_hints=cli_hints)
-                if ctx:
-                    injections.append(ctx)
-                    self.cooldown.mark_shown("context")
-
-        # Tool Injector - warnt vor Tool-Duplikaten (Cooldown: 5 Min)
-        if self.config.is_enabled("context_injector") and "tool_warn" not in skip:
-            if not self.cooldown.is_on_cooldown("tool_warn"):
-                tool_warn = ToolInjector.check_before_create(text)
-                if tool_warn:
-                    injections.append(tool_warn)
-                    self.cooldown.mark_shown("tool_warn")
-
-        # Time Injector (hat eigenen Intervall-Mechanismus, kein extra Cooldown)
-        if self.config.is_enabled("time_injector"):
-            time = self.time_injector.check()
-            if time:
-                injections.append(time)
+        if self.config.is_enabled("time_injector") and "time" not in skip_set:
+            time_msg = self.time_injector.check()
+            if time_msg:
+                injections.append(time_msg)
 
         return injections
 
@@ -1029,24 +331,63 @@ class InjectorSystem:
             self._tool_reminder_shown = True
             return ToolInjector.get_startup_reminder(self.base_path)
         return None
-    
+
     def check_between(self, last_command: str, session_ending: bool = False) -> Optional[str]:
-        """Prüft Between-Tasks Erinnerung (mit Cooldown: 3 Min)."""
-        if self.config.is_enabled("between_injector"):
-            if not self.cooldown.is_on_cooldown("between"):
-                result = BetweenInjector.check_task_done(last_command, session_ending)
-                if result:
-                    self.cooldown.mark_shown("between")
-                return result
-        return None
-    
+        """Prueft Between-Tasks Erinnerung ueber den memoryhooker-Seam (Cooldown: 3 Min)."""
+        if session_ending or not self.config.is_enabled("between_injector"):
+            return None
+        hook, state = self._get_seam()
+        if hook is None or state is None:
+            return None
+        if "between" not in hook.handled_injectors():
+            return None
+        try:
+            hints = hook._trigger_hints(last_command or "", state, {"between"}, cli_hints=True)
+            return hints[0] if hints else None
+        except Exception as exc:
+            log.warning("InjectorSystem Between-Aufruf fehlgeschlagen: %s", exc)
+            return None
+
+    def is_on_cooldown(self, injector_name: str) -> bool:
+        """Prueft ob ein Injektor im aktuellen Seam-State im Cooldown ist."""
+        return self._cooldown_remaining(injector_name) > 0
+
+    def _cooldown_remaining(self, cd_key: str) -> int:
+        system_root = Path(__file__).resolve().parent.parent
+        if str(system_root) not in sys.path:
+            sys.path.insert(0, str(system_root))
+        from hub.memory_hook_provider import HOOKER_INJECTORS, _CLI_STATE_FILENAME
+
+        cooldown_sec = HOOKER_INJECTORS.get(cd_key, 120)
+        last_ts = None
+        if self._state is not None:
+            last_ts = self._state.trigger_last_ts.get(cd_key)
+        if last_ts is None:
+            state_file = self._resolve_db_path().parent / _CLI_STATE_FILENAME
+            if state_file.exists():
+                try:
+                    data = json.loads(state_file.read_text(encoding="utf-8"))
+                    last_ts = (data.get("trigger_last_ts") or {}).get(cd_key)
+                except (OSError, ValueError, json.JSONDecodeError):
+                    pass
+        if last_ts is None:
+            return 0
+        try:
+            import memoryhooker.triggers as mht
+            now_ts = mht.time.time()
+        except Exception:
+            now_ts = time.time()
+        try:
+            remaining = cooldown_sec - (now_ts - float(last_ts))
+            return max(0, int(remaining))
+        except (TypeError, ValueError):
+            return 0
+
     def assign_task(self, max_minutes: int = 5) -> Tuple[bool, str]:
-        """Weist Aufgabe zu."""
         task = self.task_assigner.assign(max_minutes)
-        
         if not task:
             return False, "Keine passende Aufgabe gefunden."
-        
+
         result = f"""[AUFGABE ZUGEWIESEN]
 ID: {task.get('id', '?')}
 Task: {task.get('task', '')[:60]}
@@ -1054,57 +395,48 @@ Priorität: {task.get('priority', 'medium')}
 Geschätzt: ~{task.get('estimated_minutes', '?')} Min
 
 Zu komplex? Nutze: --task decompose {task.get('id', '')}"""
-        
+
         return True, result
-    
+
     def decompose_task(self, task_id: str) -> Tuple[bool, str]:
-        """Zerlegt Aufgabe."""
-        # Task laden
         tasks_file = self.base_path / "DATA" / "tasks.json"
         if not tasks_file.exists():
             return False, "Keine Tasks-Datei"
-        
+
         try:
             with open(tasks_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
+
             task = None
             for t in data.get("tasks", []):
                 if t.get("id") == task_id:
                     task = t
                     break
-            
+
             if not task:
                 return False, f"Task {task_id} nicht gefunden"
-            
+
             steps = self.task_assigner.decompose(task)
-            
             result = f"[AUFGABE ZERLEGT: {task_id}]\n\n"
             for step in steps:
                 result += f"  {step['step']}. {step['description']} (~{step['estimated_minutes']} Min)\n"
-            
+
             return True, result
-            
+
         except Exception as e:
             return False, f"Fehler: {e}"
-    
+
     def toggle(self, injector: str) -> Tuple[bool, str]:
-        """Schaltet Injektor um."""
         valid = ["strategy_injector", "context_injector", "time_injector", "between_injector"]
-        
         if injector not in valid:
             return False, f"Unbekannter Injektor. Verfügbar: {', '.join(valid)}"
-        
+
         new_state = self.config.toggle(injector)
         status = "AN" if new_state else "AUS"
-        
         return True, f"{injector}: {status}"
-    
-    def status(self) -> str:
-        """Zeigt Status aller Injektoren inkl. Cooldown-Info."""
-        lines = ["[INJEKTOR-STATUS]", ""]
 
-        # Mapping: config key -> cooldown key
+    def status(self) -> str:
+        lines = ["[INJEKTOR-STATUS]", ""]
         cooldown_map = {
             "strategy_injector": "strategy",
             "context_injector": "context",
@@ -1116,10 +448,9 @@ Zu komplex? Nutze: --task decompose {task.get('id', '')}"""
                 status = "AN" if value else "AUS"
                 name = key.replace("_injector", "").title()
 
-                # Cooldown-Info hinzufuegen
                 cd_key = cooldown_map.get(key)
                 if cd_key:
-                    remaining = self.cooldown.get_remaining(cd_key)
+                    remaining = self._cooldown_remaining(cd_key)
                     if remaining > 0:
                         status += f" (Cooldown: {remaining}s)"
 
@@ -1128,5 +459,4 @@ Zu komplex? Nutze: --task decompose {task.get('id', '')}"""
         lines.append("")
         lines.append("Toggle: --inject toggle <name>")
         lines.append("Cooldowns: strategy=2min, context=1min, between=3min")
-
         return "\n".join(lines)

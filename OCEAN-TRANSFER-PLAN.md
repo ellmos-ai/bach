@@ -1,6 +1,38 @@
 # Ocean–BACH-Transferplan
 
-Stand: 13. Oktober 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur und Abnahmeregeln.
+Stand: 02. November 2026. Dieser Plan beschreibt die laufende Integration und die offiziell gestartete Rückmodularisierung. Laufzustand und Bearbeitung liegen in der TaskDB; dieses Dokument enthält die Architektur, die verbindliche SOLL/IST-Trennung und die Abnahmeregeln.
+
+## SOLL/IST-Abgleich des Transferplans (Stand 2026-11-02)
+
+| Bereich | SOLL (Zielbild) | IST (Verifizierter Stand 2026-11-02) |
+|---|---|---|
+| **Ocean-Stack-Bridge (`system/hub/_services/ocean_stack_bridge.py`)** | 11 kanonische Ocean-Module konfliktfrei geladen (`GET /api/ocean/stack-bindings`) | **11 / 11 Module aktiv gebunden** (`ocean-resources`, `task-master`, `ellmos-worker`, `review-policy`, `escalation-ladder`, `persona-routing`, `learning-loop`, `agent-library`, `capability-views`, `governance-bridge`, `doc-keeper`) |
+| **Eigenständige Ziel-Repos (`ocean-resources`, `agents-heart`)** | Private GitHub-Repos unter `ellmos-ai/*`, lokal geklont und in `.MODULES/modules.catalog.json` registriert | **`ellmos-ai/ocean-resources` (`06aa475`)** und **`ellmos-ai/agents-heart` (`a4ec348`)** gepusht, auf Windows & Mac Studio geklont und im Modulkatalog (`48` Module) registriert |
+| **Gemeinsame GUI (`ellmos-system-gui`)** | Gepinntes Release-Archiv inkl. 4-Stufen-Onboarding (`SET-02`) | **`v0.2.30` (`1277f0afc6e5`, `42` Seiten)** veröffentlicht und in `kit_manifest.json` / `gui-consumer.v1.json` gepinnt |
+| **API-/CLI-Referenz (`#2556`)** | Automatisch aus Code generierte Referenz mit Drift-Test | **`system/tools/generate_api_cli_reference.py`** + `docs/api/*` + `test_api_cli_reference_drift.py` aktiv |
+| **Verbleibende `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`)** | Vollständige 3-Stufen-Abarbeitung aller 64 Schnitte | **11 Kernschnitte produktiv gebunden**, verbleibende Transfers werden einzeln mit Commit-/PR-Beleg abgearbeitet |
+
+## Meilenstein `v3.15.0-ocean-stack-m1` – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31 / 2026-11-02)
+
+Ab Commit `0dab1a8fa1` (Tag `v3.15.0-ocean-stack-m1`, ausgebaut am 2026-11-02 auf 11/11 gebundene Module) ist das verbindliche Architekturmuster für die schrittweise Umwandlung von BACH in einen gebrandeten Teil-OS-Stack von Ocean produktiv im Code verankert:
+
+1. **Zentrale Ocean-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):**
+   - Lädt die kanonischen Ocean-Module (`ocean-resources`, `task-master/taskplan`, `doc-keeper`, `open-ocean/tools/*`) konfliktfrei neben `bach/system/tools` und stellt den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings` (`stack_role: "branded_partial_os_stack_of_ocean"`) bereit.
+   - Aktuell **11 produktiv angebundene Modul-Seams**:
+     1. `ocean-resources`: `ocean_resources.ram_distributor.RAMDistributor` & `WatchdogHysteresisPolicy` (über `ocean_resources_adapter.evaluate_ocean_ram_admission`)
+     2. `task-master`: `taskplan.lease.TaskLeaseManager` (über `taskplan_bridge.execute_taskplan_lease`)
+     3. `ellmos-worker`: Multi-Repo-Arbeitsbaum- und Schreibschutzvertrag (`open-ocean/tools/worker_worktree_policy.py`)
+     4. `review-policy`: Konfigurierbare Modell-Review-Regeln & Auto-Accept für Text-Ergebnisse ohne Code-Scope (`open-ocean/tools/task_result_review_policy.py`)
+     5. `escalation-ladder`: 5-stufige Autoritäts- und Eskalationsleiter (`open-ocean/tools/escalation_ladder.py`)
+     6. `persona-routing`: Rollen- und Wartungsmanifest-Prüfung (`open-ocean/tools/persona_routing.py`)
+     7. `learning-loop`: Skill-Gärtner-Kandidatenvertrag (`open-ocean/tools/learning_loop.py` & `skill_keeper_service.py`)
+     8. `agent-library`: Einheitliche Agenten-Bibliothek (`open-ocean/tools/agent_library.py`)
+     9. `capability-views`: Software-Inventar `/api/capabilities/software` (`open-ocean/tools/capability_views.py`)
+     10. `governance-bridge`: Governance-Audit, Assignees & Task-Result-Projektion (`open-ocean/tools/governance_bridge.py`)
+     11. `doc-keeper`: Dokumentations-Qualitätswächter (`doc_keeper`)
+2. **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach("<canonical-ocean-module>")`):**
+   - Jede durch ein Ocean-Modul abgelöste BACH-Altklasse oder -Altfunktion wird mit `@deprecated_legacy_bach(...)` dekoriert (`__bach_deprecated__ = True`, `__ocean_replacement__ = "<modul>"`, `DeprecationWarning` beim Aufruf) und in [`DEPRICATED.md`](DEPRICATED.md) registriert.
+   - Die verbleibenden 54 `OCEAN-TRANSFER`-Tasks (`#1854`–`#1916`) werden Modul für Modul nach genau diesem 3-Stufen-Verfahren abgearbeitet: **(1) Ocean-Modul über Seam/Adapter anbinden → (2) BACH-Altcode mit `@deprecated_legacy_bach` markieren → (3) Altcode nach Paritätsabnahme entfernen.**
 
 ## Rückmodularisierung: Start und Entwicklungsregel
 
@@ -42,9 +74,25 @@ Lesepfade:
 
 Fehlendes Paket, falsche Provenienz oder fehlende Registry ergeben einen Fehler; es gibt keinen stillen Rückfall auf feste Beispielpolicies. Die GUI erhält freigegebene Metadaten und Quellenprüfstände, keine privaten absoluten Pfade oder Regelvolltexte.
 
-Beim ersten Mac-Readback am 8. Oktober wurden fünf vorhandene Entscheidungsquellen mit dem nativen Adapter registriert: vier bestätigte Dateihashes und ein vorhandener Verzeichniszeiger. Am 9. Oktober scheiterte ein erneuter Readback am Betriebssystemfehler EAGAIN einer Quelldatei. Der native Provider 0.2.4 weist solche Quellen einzeln als `unreadable` aus und prüft die übrigen Zeiger weiter. Dieser Stand ist ein Quellenprüfzustand; er bestätigt keine Durchsetzung der Policy. Das produktive Readback nach Installation des neuen Pins bleibt eine getrennte Abnahme. Die vollständige Policy-Adoption des Macs und der menschliche DecisionClicker-Schreibpfad sind ebenfalls noch nicht abgenommen.
+Beim ersten Mac-Readback am 8. Oktober wurden fünf vorhandene Entscheidungsquellen mit dem nativen Adapter registriert: vier bestätigte Dateihashes und ein vorhandener Verzeichniszeiger. Am 9. Oktober scheiterte ein erneuter Readback am Betriebssystemfehler EAGAIN einer Quelldatei. Der native Provider 0.2.4 weist solche Quellen einzeln als `unreadable` aus und prüft die übrigen Zeiger weiter. Am 02. November 2026 (`#3714`) wurde das produktive Mac-Readback unter `/Users/lukas/.venvs/bach/bin/python` gegen `policy-registry==0.2.4` (Pin `2c4896b70cb39e2e24748b384d5d0cc7fcd15a16`) sowie die Delegation von `core.capabilities` auf `policy.governance` (`13` identische Capabilities) und die beiden Lesepfade `GET /api/governance/policy-registry` (`count: 5`, `verified: true`) und `GET /api/governance/effective-policy?scope=global` (`interaction_mode: "governance-bound"`, `governance_binding: true`) verifiziert. Die 4 OneDrive-CloudStorage-Quellen werden auf macOS erwartungsgemäß als `unreadable` ausgewiesen, während der Verzeichniszeiger `decision-location:host-file-pattern` als `present` bestätigt wird. Der maschinell prüfbare 7-Schritte-Vertrag (`system/tools/module_transfer_contract.py`, `#3716`) und das Deployment-/Rollback-Preflight-Werkzeug (`system/tools/deploy_rollback_preflight.py`, `#3717`) sichern die Abnahme- und Rollback-Grenzen technisch ab.
 
-## Installer und Paketgrenzen
+## Installer, Nutzer-Einstieg, Editions-Branding und Paketgrenzen
+
+1. **Nutzer-Einstieg, Betriebssystem-Installer & Hermes-inspirierte 4-Stufen-Menüführung:**
+   - Normale Nutzer landen bei der Suche auf `open-ocean` oder `bach` und werden von der jeweiligen README direkt zum **Installer für ihr Betriebssystem** geleitet (**Windows `.exe`/`.msi`**, **macOS `.dmg`/`.pkg`**, **Linux `.AppImage`/`.deb`**; die App-Stores wie der Windows Store sind ein zusätzlicher Komfort-Service).
+   - **Menüführung im Installer (streng geordnet von wichtig zu unwichtiger, `ellmos-installer onboarding`):**
+     1. **Modelle, Subscriptions & API-Keys:** Lokale Modelle (Ollama) sowie Subscriptions und API-Keys (Claude, Codex/OpenAI, Gemini, OpenRouter, Ollama Cloud, Kimi) hinterlegen.
+     2. **Wichtige System-MCPs, Berechtigungs- & Autoritätseinstellungen:** `ellmos-filecommander` und `ellmos-controlcenter-mcp` konfigurieren; Zugriffsbereich (`sandbox | ocean | free`), Review-Modus und 5-stufige Eskalationsleiter einstellen.
+     3. **Connectoren:** Telegram, WhatsApp, Discord, E-Mail-Bridge verbinden.
+     4. **Ausdehnung (`Rinnsal ↔ BACH ↔ Meer`), Plugins, weitere MCPs & Skills:** Optionale Erweiterungen auswählen; jede Stufe und jedes Modul kann **später jederzeit einzeln nachinstalliert, umkonfiguriert oder deinstalliert** werden.
+   - **SOLL/IST-Dokumentationspflicht:** Alle Transfer- und Architekturdokumente weisen SOLL-Zielbild und belegten IST-Stand explizit getrennt aus.
+2. **Eintrittsweg bestimmt das Branding (`open-ocean` vs. `bach`):**
+   - **Einstieg über `bach`:** Aktiviert das **BACH-Branding**, bei dem **ebenfalls Ocean im Vordergrund der GUI steht**, BACH aber als kuratierte Versions-/Ausprägungsform von Ocean dargestellt wird (*„BACH — eine Edition von Ocean“*).
+   - **Einstieg über `open-ocean`:** Reines **Ocean-Branding** (das BACH-Branding entfällt).
+3. **Berechtigungs- & Systemstufen (`full-ocean` · `ocean-dev` · `ocean-admin`):**
+   - **`full-ocean`:** An den `ellmos-installer` gebundenes Zugangskonzept — erfüllt das Versprechen des Zugangs zum vollen Ocean-Katalog, soweit der Nutzer dazu berechtigt ist.
+   - **`ocean-dev`:** Entwickler-, Diagnose- und Prüfmodule (teilweise öffentlich, aber für normale Endnutzer optional).
+   - **`ocean-admin`:** Das Betreiber-/Maintainer-Gesamtsystem von Lukas mit dem Mac Studio als Leader und allen privaten/unveröffentlichten Fach- und Forschungsmodulen.
 
 Ein Installer verwendet Produktprofile und versionierte Komponentenmanifeste. BACH und Ocean erhalten dasselbe GUI-Paket, aber eigene Backend-Adapter und Betriebszustände. Nutzerdaten, Zugangsdaten, TaskDB, lokale Rollen und OneDrive-Steuerdokumente bleiben außerhalb der Codearchive.
 

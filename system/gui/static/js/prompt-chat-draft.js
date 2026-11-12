@@ -8,18 +8,31 @@
         return storage || global.sessionStorage;
     }
 
-    function store(text, storage) {
+    function store(text, storage, options) {
+        let actualText = text;
+        let meta = options || {};
         if (typeof text !== 'string') {
-            throw new TypeError('Chat draft must be a string');
+            if (text && typeof text === 'object' && typeof text.text === 'string') {
+                actualText = text.text;
+                meta = text;
+            } else {
+                throw new TypeError('Chat draft must be a string');
+            }
         }
-        if (text.length > MAX_DRAFT_LENGTH) {
+        if (actualText.length > MAX_DRAFT_LENGTH) {
             throw new RangeError('Chat draft is too large');
         }
 
-        resolveStorage(storage).setItem(STORAGE_KEY, JSON.stringify({
-            text: text,
+        const payload = {
+            text: actualText,
+            autorun: !!meta.autorun,
+            agent_id: meta.agent_id ? Number(meta.agent_id) || null : null,
+            slot_id: meta.slot_id ? String(meta.slot_id) : null,
+            persona: meta.persona ? String(meta.persona) : null,
             createdAt: Date.now()
-        }));
+        };
+
+        resolveStorage(storage).setItem(STORAGE_KEY, JSON.stringify(payload));
     }
 
     function consume(storage) {
@@ -34,6 +47,15 @@
             const payload = JSON.parse(raw);
             if (!payload || typeof payload.text !== 'string') return null;
             if (payload.text.length > MAX_DRAFT_LENGTH) return null;
+
+            if (payload.autorun || payload.agent_id || payload.slot_id || payload.persona) {
+                const wrapped = new String(payload.text);
+                wrapped.autorun = !!payload.autorun;
+                wrapped.agent_id = payload.agent_id || null;
+                wrapped.slot_id = payload.slot_id || null;
+                wrapped.persona = payload.persona || null;
+                return wrapped;
+            }
             return payload.text;
         } catch (error) {
             return null;

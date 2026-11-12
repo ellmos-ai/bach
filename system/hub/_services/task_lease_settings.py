@@ -17,6 +17,10 @@ from hub._services import worker_policy_settings as _store
 
 log = logging.getLogger(__name__)
 
+# Same failure contract as the worker policy, so CLI handlers catch two types.
+PolicyUnavailable = _store.PolicyUnavailable
+PolicyConflict = _store.PolicyConflict
+
 KEY = "task_lease_creator_priority.v1"
 SCHEMA = "bach.task-lease-creator-priority.v1"
 DEFAULT_WINDOW_SECONDS = 2 * 60

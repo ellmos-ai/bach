@@ -1,5 +1,26 @@
 # BACH Changelog
 
+## [3.15.0-ocean-stack-m1] – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31)
+
+- **Zentrale Ocean-Stack-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):** Verbindet BACH direkt mit den herausgelösten und neuen Ocean-Modulen (`ocean-resources` `RAMDistributor`, `task-master` `TaskLeaseManager`, `open-ocean` `worker_worktree_policy`, `task_result_review_policy`, `escalation_ladder`, `persona_routing`, `learning_loop`, `agent_library`, `capability_views`, `governance_bridge`) und exponiert den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings`.
+- **Verbindlicher Deprecation-Mechanismus (`@deprecated_legacy_bach`):** BACH-interne Alt-Implementierungen (`OceanRamDistributor` in `ocean_resources_adapter.py`, `BundledTaskPlanClient` in `taskplan_bridge.py`) sind mit `@deprecated_legacy_bach("<canonical-ocean-module>")` dekoriert (`__bach_deprecated__ = True`, `DeprecationWarning`) und in `DEPRICATED.md` dokumentiert.
+- **Vertragstests (`system/tests/test_ocean_stack_consumption.py`):** 8/8 Tests prüfen alle 10 produktiven Ocean-Seams, Lease-Lifecycle, RAM-Admission, konfigurierbare Review-Regeln, Eskalationsleiter und Deprecation-Signale.
+
+## Unreleased — Sicherheit Homecontrol/Robotik (PB-13, #3996)
+
+- Lese-Routen `/api/homecontrol/*` und `/api/robotics/*` bleiben ohne Grant erreichbar (Antworten tragen `demo`). Schreibende/aktorische Routen folgen der Rechtematrix (`smarthome_robotics`, Standard aus): ohne Grant HTTP 403 mit `{"error": "permission_required", "permission": "smarthome_robotics", "hint": ...}` statt fest verdrahtetem `True`.
+- `POST /api/robotics/estop` setzt einen persistenten E-Stop (`~/.bach/robotics_estop.json`, überlebt Requests und Neustarts; kein Grant nötig). Solange er aktiv ist, lehnt die Robotik jede Aktorik/Navigation ab. Freigabe nur über das neue `POST /api/robotics/estop/reset` (Geräteanmeldung + Grant). Voraussetzung: `ellmos-robotics` mit `state_path` (PB-13-PR).
+- Antworten mit Demo-Daten tragen `demo: true` (Nutzerentscheidung E3).
+- `HomeAssistantConnector` (BACH-Kopie): `domain`/`service`/`entity_id`/`event_type` per Allowlist validiert, gefährliche Domains (`shell_command`, `hassio`, `rest_command`, ...) gesperrt – kein Pfad-Traversal/SSRF über die HA-REST-URL.
+
+## Unreleased — Task-Leases: Ersteller-Vorrang konfigurierbar
+
+- Neue Einstellung `task_lease_creator_priority.v1` (Schema `bach.task-lease-creator-priority.v1`) steuert einen befristeten Ersteller-Vorrang auf Task-Leases. Der Vorrang ist standardmäßig **aus**; ist er aktiv, gilt ein Fenster von 120 Sekunden (`DEFAULT_WINDOW_SECONDS`, Obergrenze 86400).
+- Bedienung über den Handler `task-lease` mit den Operationen `task-lease.status` und `task-lease.set` (mit `dry_run`); Schreibvorgänge laufen als CAS über `configuration_version` und verlangen einen `actor`.
+- Sequenzschritte behalten ihren Schutz von 600 Sekunden unverändert: für Tasks aus der Sequenzplanung (`created_by == "user"`) greift kein Ersteller-Fenster, es gilt weiterhin der Sequenzschritt.
+- Die Umgebungsvariable `BACH_TASK_LEASE_CREATOR_WINDOW` bleibt als Override erhalten und wird von `LeaseConfig.from_env()` nur bei expliziter Angabe gelesen; ohne Env bleibt `creator_window_seconds` `None`.
+- Verweigerungen im Ersteller-Vorrang werden als `creator_priority` mit HTTP 409 gemeldet; Ersteller selbst, `grant`-Delegationen und `review_authorized` sind ausgenommen.
+
 ## [3.15.0] – BACH fließt ins Meer – gemeinsame GUI (2026-10-31)
 
 - Gemeinsame Frontendquelle: ellmos-system-gui; BACH behält seine nativen APIs und privaten Daten. GUI-Pin 0.2.29/a42adda6 ist über den Verbraucher-PR angebunden (`pinned_release`, gepinnt am 2026-10-26).
@@ -16,6 +37,104 @@ Alle wichtigen Änderungen an BACH werden hier dokumentiert.
 Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
+
+- **Modul-Paketmanager & Modularer Core Export (session, cache, scheduler) (Tasks #-36 & #-37, 2026-11-05):**
+  - **Modularer Core Standalone-Export (Task #-36):**
+    - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
+      - `session` (`.MODULES/session/`): Eigenständiges Session-Lifecycle-Management, Dauer-Berechnung und Coaching-Nudges für Zwischen-Task-Prüfungen (`between_task_check`).
+      - `cache` (`.MODULES/cache/`): Multi-Tier Key-Value Store mit TTL-Ablauf, Namespace-Isolation (`cache.namespace("...")`), `@cached` Funktionsdekorator mit Hash-Keys, Hit/Miss/Eviction-Telemetrie und JSON-Persistenz.
+      - `scheduler` (`.MODULES/scheduler/`): Standalone periodische Job-Scheduling-Engine mit Intervallsteuerung, Error-Containment, Quittungs-Historie und Einzellauf-Erzwingung (`run_job`).
+    - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_session_module()`, `load_cache_module()`, `load_scheduler_module()`; Alias-Mapping und In-Tree-Detection aktualisiert.
+    - Standalone-Zähler in `ocean_modularized_services_status()` auf 24/24 gebundene Dienste erweitert (100.0% Standalone-Betrieb).
+    - 10/10 Modultests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - **Modularer Core & Update-Zentrale Modul-Paketmanager (Task #-37):**
+    - Neuer CLI/API Handler `ModulesHandler` (`system/hub/modules.py`):
+      - CLI-Operationen: `bach modules list`, `bach modules status`, `bach modules check [name]`, `bach modules install <path|zip>`, `bach modules update [--dry-run]`, `bach modules export <name>`, `bach modules wire`, `bach modules help`.
+      - SemVer-basierter Update-Scan gegen lokale Quellen und Checkouts.
+    - Integration in `system/hub/update.py`: `bach update modules [--dry-run]` triggert automatisch den Modul-Update-Scan.
+    - Web-GUI (`system/gui/server.py` & `system/gui/templates/index.html`):
+      - Neue API-Endpunkte: `GET /api/modules/list`, `POST /api/modules/update`, `POST /api/modules/wire`.
+      - Dashboard-Erweiterung: Neuer Button `📦 Auf Updates prüfen` mit Live-Feedback.
+    - Testabdeckung: 7/7 Tests in `system/tests/test_modules_handler.py` erfolgreich durchgeführt.
+
+- **Prompt-Runner mit Persona-Binding & Modularer Core Export (inbox, email_bridge, notify) (Tasks #-34 & #-35, 2026-11-05):**
+  - **GUI & Web-Chat Prompt-Runner (Task #-35):**
+    - `prompt-chat-draft.js`: Payload-Erweiterung für `store()` und `consume()` mit Metadaten (`autorun`, `agent_id`, `slot_id`, `persona`) bei voller Rückwärtskompatibilität zu String-Verbrauchern und unverletzter Einweg-Sicherheit.
+    - Web-GUI (`prompt-library.html` & `index.html`): Neue Prompt-Runner-Aktionen `🚀 Direkt ausführen` in der Prompt-Bibliothek (für aufgelöste und rohe Templates) sowie im Dashboard Schnell-Prompt mit Ziel- und Persona-Vorauswahl (`#pl-chat-target`).
+    - Chat-GUI (`chat.html`): Dynamische Bindung von `draftAgentId` an den Chat-Request (`/api/chat-control/chat`) und automatische Ausführung (`pendingPromptAutorun`) mit Composer-Freigabeprüfung.
+    - Testabdeckung: 17/17 Tests in `test_prompt_chat_draft.py` erfolgreich durchgeführt.
+  - **Modularer Core Standalone-Export (Task #-34):**
+    - 3 autarke Standalone-Module in `.MODULES/` erstellt:
+      - `inbox`: Eigenständiges Verzeichnis-Scanning, sichere Ausschlussfilter (Locks, temporäre Dateien, versteckte Verzeichnisse) und atomare Dateiaufnahme.
+      - `email_bridge`: Two-Phase-Commit Entwurfssicherheit (Draft-First), Adressvalidierung und Outbox-Statusprüfung.
+      - `notify`: Multi-Channel Benachrichtigungsrouter (Desktop, Console, Queue, Webhook), Tag-Präfixe und asynchrone Warteschlange.
+    - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_inbox_module()`, `load_email_bridge_module()`, `load_notify_module()`; Alias-Mapping und Pfade integriert.
+    - Standalone-Zähler in `ocean_modularized_services_status()` auf 21/21 gebundene Module erweitert (100% autarker Betrieb).
+    - 16/16 Modultests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+
+- **PromptBoard Zwei-Wege-Sync & Modularer Core Export (prompt, message_delivery, conversation_store) (Tasks #-32 & #-33, 2026-11-04):**
+  - **PromptBoard Zwei-Wege-Sync (Two-Way-Sync) (Task #-33):**
+    - `PromptHandler` (`system/hub/prompt.py`): Neue Methode `sync_promptboard(library_path, category, dry_run)` und CLI-Operation `bach prompt sync-promptboard [library.json] [--dry-run]` implementiert (bidirektionaler Abgleich von Templates, Versionsarchivierung bei Aktualisierung, Tag-Merging und atomare Speicherung).
+    - Web-GUI (`system/gui/server.py` & `prompt-library.html`): Neue Endpunkte `GET /api/prompt-library/sync-promptboard/preview` und `POST /api/prompt-library/sync-promptboard` sowie Button `🔄 Zwei-Wege-Sync` mit Feedback-Handling und dynamischem List-Reload.
+    - Tray-App (`chat_tray.py`): Neuer Menüeintrag `🔄 PromptBoard Zwei-Wege-Sync` mit Benachrichtigung im PromptBoard-Submenü integriert.
+    - Testabdeckung: 36/36 Tests in `test_promptboard_import.py` und erweiterte Tray-Aktionstests in `test_connectors_and_tray.py` erfolgreich durchgeführt.
+  - **Modularer Core Standalone-Export (Task #-32):**
+    - 3 autarke Standalone-Module in `.MODULES/` erstellt:
+      - `prompt`: Template- und Board-Verwaltung, Tag-Serialisierung und Zwei-Wege-PromptBoard-Synchronisation.
+      - `message_delivery`: Atomare Nachrichtenzustellung, Multi-Partner-Routing (User, Claude, Gemini, Codex, Ollama) und Archivierung.
+      - `conversation_store`: Transcript-Speicherung mit gehashten Session-IDs (`chat-runtime:v1:<sha256>`), Rollenvalidierung und Begrenzung von Max-Messages / Max-Content-Chars.
+    - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_prompt_module()`, `load_message_delivery_module()`, `load_conversation_store_module()`; Alias-Mapping und Pfade in `detect_legacy_in_tree_services()` integriert.
+    - Standalone-Zähler in `ocean_modularized_services_status()` auf 18/18 gebundene Module erweitert (100% autarker Betrieb).
+    - 7/7 Modultests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+
+- **Modularer Core: Export Dienstgruppe (telemetry, limits, worker_policy) & GUI Dashboard Update-Zentrale (Tasks #-30 & #-31, 2026-11-04):**
+  - **Modularer Core Standalone-Export (Task #-30):**
+    - 3 autarke Standalone-Module für `telemetry` (Low-Cardinality Counter Engine & SQLite/In-Memory Adapter), `limits` (Laufzeit-Limits & Timeout-Registry) und `worker_policy` (Fail-Soft Worker Review & Execution Policy) via `bach skills export-module` exportiert und validiert.
+    - Synchronisation nach `.MODULES/` via `bach update modules --sync` und Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py` (`load_telemetry_module()`, `load_limits_module()`, `load_worker_policy_module()`).
+    - Delegation in `system/hub/telemetry.py` und `system/hub/worker_policy.py` auf Standalone-Loader umgestellt; `system/hub/update.py` sucht Modul-Exporte in `exports/modules` und `system/exports/modules`.
+    - `ocean_modularized_services_status()` auf 15/15 gebundene Standalone-Module erweitert (100% Standalone-Betrieb).
+    - 8/8 Tests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - **GUI Dashboard Modul-Installations- & Update-Zentrale mit Live-Sync Button (Task #-31):**
+    - Web-GUI (`system/gui/templates/index.html`): Neue interaktive Dashboard-Card „📦 Standalone-Module & Update-Zentrale“ integriert (Live-Badge `15/15 aktiv (Standalone)`, 15-Modul-Statusgrid mit Echtzeit-Indikatoren, 1-Click `🔄 Jetzt synchronisieren (Live-Sync)` via `POST /api/modules/sync` mit dynamischem Reload).
+    - Tray-App (`chat_tray.py`): Dynamische Zählung aktiver Standalone-Module (`📦 Standalone-Module (15/15 aktiv)`) im Kontextmenü und bei Status-Benachrichtigungen.
+    - 124/124 Tests in `test_connectors_and_tray.py` und `test_ocean_stack_consumption.py` vollständig grün.
+
+- **Modularer Core: Export Dienstgruppe (token_budget, rate_limit_policy, audit_logger) & GUI/Tray Live-Status (Tasks #-28 & #-29, 2026-11-03):**
+  - **Modularer Core Standalone-Export (Task #-28):**
+    - 3 autarke Standalone-Module für `token_budget` (Token-Quota, Burn-Rate-Status & Soft-Gate), `rate_limit_policy` (429 Cooldowns, Retry-After Header Parser & Exponential Backoff) und `audit_logger` (Strukturierte Audit-Events & Fail-Soft System-Health Audit) via `bach skills export-module` exportiert und validiert.
+    - Synchronisation nach `.MODULES/` via `bach update modules --sync` und Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py` (`load_token_budget_module()`, `load_rate_limit_policy_module()`, `load_audit_logger_module()`).
+    - `ocean_modularized_services_status()` auf 12/12 gebundene Standalone-Module erweitert (100% Standalone-Betrieb).
+    - Relative-Import-Fix in `session_checkpoint_adapter.py` zur nahtlosen autarken Ausführung.
+  - **GUI & Tray Auto-Update Check & Status-Indikator (Task #-29):**
+    - Neuer API-Endpunkt `GET /api/modules/status` (exponiert Standalone-Count 12, Gesamtübersicht, verbleibende Monolithen und Auto-Update-Bereitschaft) und `POST /api/modules/sync` in `system/gui/server.py` implementiert; `GET /api/status` um `modular_services` erweitert; Pfade in `EXEMPT_API_PATHS` registriert.
+    - Tray-App (`chat_tray.py`): Neuer Menüeintrag `📦 Standalone-Module (12/12 aktiv)` mit Submenü (Status-Indikatoren aller 12 Module, 1-Click `🔄 Modul-Sync ausführen`, Smoke-Snapshot-Verdrahtung).
+    - 8/8 Tests in `test_ocean_stack_consumption.py`, 116/116 Tests in `test_connectors_and_tray.py`, 30/30 in `test_skills_handler.py` und 61/61 in `test_update_handler.py` bestanden (Gesamtsuite 100% grün).
+
+- **Tray & GUI Favoriten-Prompts Schnellzugriff, Auto-Vorschau und Modularer Core Auto-Detect (Tasks #-26 & #-27, 2026-11-03):**
+  - **Favoriten-Prompts & Schnellzugriff (Task #-26):**
+    - Neuer Endpunkt `POST /api/prompt-library/{prompt_id}/favorite` und Eigenschaft `is_favorite` in `server.py` implementiert; Filter `?favorites=1` hinzugefügt.
+    - CLI & SDK Handler: `bach prompt favorite <id_oder_name> [--list]` in `system/hub/prompt.py` verankert.
+    - Web-GUI (`prompt-library.html`): Schnellfilter `⭐ Favoriten`, 1-Click Inline-Favoritenstern in der Prompt-Liste und Favorit-Button in den Detailaktionen integriert.
+    - Tray-App (`chat_tray.py`): Neuer Menübereich `⭐ Favoriten-Prompts (Schnellzugriff)` mit Auto-Vorschau (`🔍 "..."`), Text-Kopieren, Direkt-Senden und Chat-Entwurf.
+    - 16/16 Tests in `test_prompt_chat_draft.py` und 114/114 Tests in `test_connectors_and_tray.py` erfolgreich durchgeführt.
+  - **Modularer Core: Auto-Erkennung & Standalone-Umschaltung (Task #-27):**
+    - `detect_legacy_in_tree_services()`: Automatischer Abgleich aller 151 In-Tree Hub-Dienste gegen Standalone-Pakete in `exports/modules/`, `.MODULES/` und Repositories implementiert.
+    - `get_service_or_standalone()` & `auto_switch_to_standalone_modules()`: Dynamischer Resolver und automatisches Hot-Wiring verfügbarer Standalone-Module mit `@deprecated_legacy_bach` Fallback.
+    - Export der nächsten 3 High-Readiness Module (`agent_process_provider`, `session_checkpoint_provider`, `db_sync_readiness`) via `bach skills export-module` und Hot-Wiring in `ocean_modularized_services_status()` (jetzt 9/9 Standalone-Module gebunden).
+    - 8/8 Tests in `test_ocean_stack_consumption.py` und 61/61 Tests in `test_update_handler.py` erfolgreich durchgeführt.
+
+- **Modularisierung: Export der Standalone-Module `domain_writer_gate`, `scheduler_provider` und `db_sync_adapter` (Task #-25, 2026-11-03):**
+  - Standalone-Module für `domain_writer_gate`, `scheduler_provider` und `db_sync_adapter` mit `manifest.json`, `src/`, `tests/`, `README.md` und ZIP-Archiven via `bach skills export-module` exportiert und validiert.
+  - Dynamische Seam-Loader (`load_domain_writer_gate_module()`, `load_scheduler_provider_module()`, `load_db_sync_adapter_module()`) und `ocean_modularized_services_status()` in `system/hub/_services/ocean_stack_bridge.py` verankert (6/6 Standalone-Module gebunden).
+  - Smoke- und Validierungstests in allen drei Modulen sowie Integrationstests in `system/tests/test_ocean_stack_consumption.py` erfolgreich durchgeführt (100% grün).
+
+- **PromptBoard Tray- & GUI-Integration, Modularer Skill-Export/Import und Update-Engine (`bach update`) (2026-11-02):**
+  - **PromptBoard & Tray-App (Task #-6 & #-9):** Tray-Menü (`chat_tray.py`) um PromptBoard Web-Zugang und Chat-Draft-Aktion ("💬 Im Chat öffnen" mit Zwischenablage-Puffer und Weiterleitung an `/chat`) erweitert; Windows `.exe`-Starts via `os.startfile` entkoppelt; GET-Endpoint `/api/prompt-library/import-promptboard/preview` für Dry-Run Vorschau sowie Klick-Filterung via Tag-Pills in `prompt-library.html` hinzugefügt.
+  - **Self-contained Modul- & Skill-Export/-Import (Task #-5):** `skills export` (`hub/skills.py`) exportiert nun strukturierte Verzeichnisse mit `manifest.json` (`selfcontained: true`), Tools und Workflows; `skills install` erlaubt In-Place-Upgrade bestehender Single-File-Skills mit automatischem Backup in `exports/_backups/`.
+  - **Update-Engine & Multi-Agent Skill-Sync (Task #-7 & #-10):** `bach update` (`hub/update.py`) implementiert mit Subbefehlen `skills` (Versionsabgleich gegen `data/skill_sources.json`, Backup & In-Place-Update, `--sync-copies` für `~/.claude/skills` und `~/.codex/skills`), `modules` (Inventarisierung geteilter Module unter `.MODULES/.CONTROL/`) und `all` (gebündelter Check).
+
+
+- **Gebundene Ergebnisabgabe, `complete=true/false` und Remote-Selbstcheck-Symmetrie (T-20261018-781567022, Task #2211):** Gebundene Worker-Ergebnisabgaben (`task_manage(action='submit_result'|'done')` und `bach_command task done|submit_result`) verlangen ausdrücklich `complete=true/false`, weisen `complete=true` nach einer Zerlegung im selben Lauf („Zerlegung ist kein Abschluss") sowie bei expliziter Selbstmeldung offener Pflichtarbeit im Ergebnistext ab und geben bei fehlendem `--complete` bzw. fehlendem Selbstcheck im CLI-Pfad gezielte Hinweise zurück. `TaskLeaseClient` behandelt HTTP 422 im Remote-Modus symmetrisch zum lokalen Pfad (`LeaseSelfCheckRequiredError` / `LeaseRequestRejectedError`), ohne die aktive Lease fälschlich zu deaktivieren. `_is_terminal_parked` prüft Nicht-Mapping-Eingaben fail-closed (`True`).
 
 - **Dokumentation, Discoverability & Pfad B Marketing (Stand 2026-10-18):** GitHub-Repo-Beschreibung auf v3.15.0 synchronisiert; vollständige zweisprachige README-Parität (`README.md` & `README.de.md`) mit aktuellen Verifikations-Badges (Last Checked 2026-10-18, § 521 BGB Haftung, duale 48h Security Response SLA); zwei syntax-validierte Mermaid-Diagramme (System-Topologie und Zero-Egress Ausführungssequenz); programmatischer Python-Schnelleinstieg (`bach_api`); aktualisierter RAG-Kontext in `llms.txt` (Stand 2026-10-18); initiales lokales `MARKETING-LOG.txt` mit Pfad-B-Revisionsbericht und Handlungsempfehlungen; 5 neue automatisierte Vertragstests in `system/tests/test_marketing_metadata.py` (Version 3.15.0 eingefroren per T-20260920-167562623).
 
@@ -1073,6 +1192,25 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ---
 
 ## [Unreleased]
+
+- **Modul-Paketmanager & Modularer Core Export (session, cache, scheduler) (Tasks #-36 & #-37, 2026-11-05):**
+  - **Modularer Core Standalone-Export (Task #-36):**
+    - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
+      - `session` (`.MODULES/session/`): Eigenständiges Session-Lifecycle-Management, Dauer-Berechnung und Coaching-Nudges für Zwischen-Task-Prüfungen (`between_task_check`).
+      - `cache` (`.MODULES/cache/`): Multi-Tier Key-Value Store mit TTL-Ablauf, Namespace-Isolation (`cache.namespace("...")`), `@cached` Funktionsdekorator mit Hash-Keys, Hit/Miss/Eviction-Telemetrie und JSON-Persistenz.
+      - `scheduler` (`.MODULES/scheduler/`): Standalone periodische Job-Scheduling-Engine mit Intervallsteuerung, Error-Containment, Quittungs-Historie und Einzellauf-Erzwingung (`run_job`).
+    - Hot-Wiring in `system/hub/_services/ocean_stack_bridge.py`: `load_session_module()`, `load_cache_module()`, `load_scheduler_module()`; Alias-Mapping und In-Tree-Detection aktualisiert.
+    - Standalone-Zähler in `ocean_modularized_services_status()` auf 24/24 gebundene Dienste erweitert (100.0% Standalone-Betrieb).
+    - 10/10 Modultests in `.MODULES/*/tests/` und 8/8 Tests in `test_ocean_stack_consumption.py` erfolgreich durchgeführt.
+  - **Modularer Core & Update-Zentrale Modul-Paketmanager (Task #-37):**
+    - Neuer CLI/API Handler `ModulesHandler` (`system/hub/modules.py`):
+      - CLI-Operationen: `bach modules list`, `bach modules status`, `bach modules check [name]`, `bach modules install <path|zip>`, `bach modules update [--dry-run]`, `bach modules export <name>`, `bach modules wire`, `bach modules help`.
+      - SemVer-basierter Update-Scan gegen lokale Quellen und Checkouts.
+    - Integration in `system/hub/update.py`: `bach update modules [--dry-run]` triggert automatisch den Modul-Update-Scan.
+    - Web-GUI (`system/gui/server.py` & `system/gui/templates/index.html`):
+      - Neue API-Endpunkte: `GET /api/modules/list`, `POST /api/modules/update`, `POST /api/modules/wire`.
+      - Dashboard-Erweiterung: Neuer Button `📦 Auf Updates prüfen` mit Live-Feedback.
+    - Testabdeckung: 7/7 Tests in `system/tests/test_modules_handler.py` erfolgreich durchgeführt.
 
 ### Added
 

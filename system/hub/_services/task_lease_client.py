@@ -397,6 +397,7 @@ class LeaseDecomposeAck:
     fence: int
     task_version: str
     server_now: str
+    reused_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -466,8 +467,9 @@ class TaskLeaseClient:
         if self._conn is not None:
             return self._conn
         path = self._db_path or Path.home() / ".bach" / "bach.db"
-        conn = sqlite3.connect(str(path), timeout=10.0)
+        conn = sqlite3.connect(str(path), timeout=30.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 30000")
         return conn
 
     def _task_policy_snapshot(self, task_id):
@@ -486,6 +488,48 @@ class TaskLeaseClient:
             if self._conn is None:
                 conn.close()
 
+    def close_worker_resolver(self, worker_id):
+        """Local controller only: close the worker's open resolver once it runs again."""
+        if self.mode != "local":
+            return None
+        from hub.task_audit import close_worker_error_resolver
+        conn = self._get_local_connection()
+        try:
+            if conn.in_transaction:
+                return None
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                closed = close_worker_error_resolver(conn, worker_id)
+                conn.commit()
+                return closed
+            except BaseException:
+                conn.rollback()
+                raise
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def ensure_worker_resolver(self, worker_id, error_code):
+        """Local controller only: one open resolver task for a worker that ended in error."""
+        if self.mode != "local":
+            return None
+        from hub.task_audit import ensure_worker_error_resolver
+        conn = self._get_local_connection()
+        try:
+            if conn.in_transaction:
+                return None
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                resolver = ensure_worker_error_resolver(conn, worker_id, error_code)
+                conn.commit()
+                return resolver
+            except BaseException:
+                conn.rollback()
+                raise
+        finally:
+            if self._conn is None:
+                conn.close()
+
     def _model_execution_call(self, operation, binding, *args, **kwargs):
         """Private controller path; HTTP workers cannot self-attest model calls."""
         if self.mode != "local" or getattr(binding, "_client", None) is not self:
@@ -499,11 +543,13 @@ class TaskLeaseClient:
                 conn.close()
 
     def _start_model_execution(self, binding, *, backend_id, requested_model, slot_id,
-                               request_sha256, route_sha256=None):
+                               request_sha256, route_sha256=None, pinned_model=None):
         kwargs = {"backend_id": backend_id, "requested_model": requested_model,
                   "slot_id": slot_id, "request_sha256": request_sha256}
         if route_sha256 is not None:
             kwargs["route_sha256"] = route_sha256
+        if pinned_model is not None:
+            kwargs["pinned_model"] = pinned_model
         return self._model_execution_call("start_execution", binding, **kwargs)
 
     def _finish_model_execution(self, binding, handle, *, result=None, failed=False, route_sha256=None,
@@ -758,6 +804,12 @@ class TaskLeaseClient:
             suffix = {"acquire": "", "read": "", "renew": "/renew", "release": "/release", "decompose": "/decompose", "update": "/update"}[name]
             status, data = self._http_request("GET" if name == "read" else "POST",
                                              f"/api/tasks/{task_id}/lease{suffix}", payload, headers)
+            if status == 422:
+                detail = data.get("detail") if isinstance(data, dict) else None
+                if detail == "Vollständiger Selbstcheck erforderlich" or (
+                        isinstance(detail, dict) and detail.get("code") == "self_check_required"):
+                    raise LeaseSelfCheckRequiredError(LeaseSelfCheckRequiredError.user_message) from None
+                raise LeaseRequestRejectedError(LeaseRequestRejectedError.user_message) from None
         else:
             conn = self._get_local_connection()
             try:
@@ -1607,6 +1659,10 @@ class TaskLeaseClient:
                 or len(set(ids)) != len(ids) or type(data.get("created_count")) is not int
                 or data["created_count"] != len(ids)):
             raise LeaseProtocolError("Zerlegungs-ACK passt nicht zur Anfrage")
+        reused = data.get("reused_ids", [])  # absent on older authorities: nothing reused
+        if (not isinstance(reused, list) or len(set(reused)) != len(reused)
+                or any(type(i) is not int or i not in ids for i in reused)):
+            raise LeaseProtocolError("Zerlegungs-ACK passt nicht zur Anfrage")
         version = _version(data.get("task_version"), required=True)
         if version == task_version:
             raise LeaseProtocolError("Zerlegungs-ACK hat keine neue Inhaltsversion")
@@ -1615,7 +1671,8 @@ class TaskLeaseClient:
             self._held.pop(task_id, None)
         elif previous:
             self._held[task_id] = replace(previous, task_version=version)
-        return LeaseDecomposeAck(task_id, tuple(ids), len(ids), close_parent, fence, version, data["server_now"])
+        return LeaseDecomposeAck(task_id, tuple(ids), len(ids), close_parent, fence, version, data["server_now"],
+                                 tuple(reused))
 
     def _raise_denied(self, task_id, payload):
         raw_reason = payload.get("reason") if isinstance(payload, dict) else None

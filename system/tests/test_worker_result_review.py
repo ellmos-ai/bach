@@ -64,7 +64,7 @@ def _request_hash(value):
 
 
 def _review_settings(conn, monkeypatch):
-    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
     values = settings._defaults()
     values["policy"]["reviewers"] = [
         {"reviewer_id": AUTHOR, "tier": "standard"},
@@ -304,57 +304,59 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
     assert review.record_review(world["conn"], child, **_paths(world)) is None
 
 
-def test_author_can_review_in_fresh_run_without_accepting_own_result(review_world):
+def test_same_model_and_slot_review_own_result_in_fresh_run(review_world):
+    # User decision 2026-10-24: the run, not the model or agent slot, is the
+    # independence unit; the author's model may review in its own new run.
     world = review_world
     prepared = _prepare(world)
-    task_id = prepared["review_task_id"]
-    author = world["binding"]
-    worker_id = author._ack.worker_id
-    generation = "author-review-fresh-generation"
-    stop = threading.Event()
-    route = {"backend_id": "ollama", "route_sha256": AUTHOR_ROUTE}
-    grant = review.issue_review_grant(
-        world["conn"], task_id, worker_id=worker_id, host="HOST",
-        generation=generation, slot_id=AUTHOR_SLOT, route=route,
-        requested_model=AUTHOR_MODEL, is_current=lambda: True,
-        stop_event=stop, clock=lambda: T0, **_paths(world))
+    grant, stop, current = _grant(world, prepared["review_task_id"], slot=AUTHOR_SLOT,
+                                  route=AUTHOR_ROUTE, requested=AUTHOR_MODEL)
     assert grant is not None
-    child = WorkerLeaseBinding.acquire(
-        world["client"], task_id, worker_id=worker_id, host="HOST",
-        generation=generation, is_current=lambda: True, stop_event=stop,
-        clock=lambda: T0,
-        slot={"id": AUTHOR_SLOT, "model": AUTHOR_MODEL, "backend": "ollama"},
-        automatic=True, _review_grant=grant)
-    assert review.guard_review_dispatch(
-        world["conn"], child, route=route, requested_model=AUTHOR_MODEL,
-        **_paths(world)) is True
-
-    verdict = json.dumps({"status": "approved", "summary": "Eigene Arbeit im neuen Lauf kritisch geprüft.",
+    child = _acquire_review(world, prepared["review_task_id"], grant, stop, current,
+                            slot=AUTHOR_SLOT, model=AUTHOR_MODEL)
+    verdict = json.dumps({"status": "approved", "summary": "Frische Prüfung bestanden.",
                           "task_contract_met": True}, ensure_ascii=False)
-    answer = _response(AUTHOR_OBSERVED, verdict=(child.task_id, verdict))
     handle = child.begin_model_execution(
         backend_id="ollama", requested_model=AUTHOR_MODEL, slot_id=AUTHOR_SLOT,
-        request_sha256=_request_hash("fresh-context self-review"), route_sha256=AUTHOR_ROUTE)
+        request_sha256=_request_hash("fresh review prompt"), route_sha256=AUTHOR_ROUTE)
     assert handle is not None
     assert child.finish_model_execution(
-        handle, result=answer, route_sha256=AUTHOR_ROUTE) is True
+        handle, result=_response(AUTHOR_OBSERVED, verdict=(child.task_id, verdict)),
+        route_sha256=AUTHOR_ROUTE) is True
     assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
         "action": "submit_result", "task_id": child.task_id, "result": verdict})
-
     evidence = review.record_review(world["conn"], child, **_paths(world))
     assert evidence["availability"] == "recorded"
     assert evidence["reviewer_id"] == AUTHOR
-    assert evidence["independent"] is False
-    assert evidence["policy_eligible"] is False
-    assert read_result(world["conn"], task_id)["status"] == "done"
+    assert evidence["independent"] is True
+
+
+def test_author_run_never_reviews_and_model_ban_is_a_rule(review_world):
+    # The author's own run is always excluded. Excluding the author's model is
+    # an explicit operator rule; an independent model stays eligible.
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    author_generation = world["binding"].generation
+    assert _grant(world, task_id, route=AUTHOR_ROUTE, requested=AUTHOR_MODEL,
+                  generation=author_generation)[0] is None
+    _ban_author_model(world)
+    assert _grant(world, task_id, route=AUTHOR_ROUTE, requested=AUTHOR_MODEL)[0] is None
+    assert _grant(world, task_id, route=AUTHOR_ALIAS_ROUTE,
+                  requested=AUTHOR_ALIAS_MODEL)[0] is None
     parent = read_result(world["conn"], world["task_id"])
     assert parent["status"] == "review"
     assert parent["result"]["accepted"] is False
+    assert _grant(world, task_id)[0] is not None
 
-    from hub._services.worker_completion_policy import evaluate_current_result
-    evaluation = evaluate_current_result(world["conn"], world["task_id"], **_paths(world))
-    assert evaluation["decision"]["completion_allowed"] is False
-    assert evaluation["decision"]["worker_may_claim_next"] is True
+
+def test_unreadable_independence_setting_fails_closed_to_the_model_ban(review_world):
+    world = review_world
+    task_id = _prepare(world)["review_task_id"]
+    world["conn"].execute("INSERT INTO system_config(key,value) VALUES (?,?)",
+                          (settings.INDEPENDENCE_KEY, "{not json"))
+    world["conn"].commit()
+    assert _grant(world, task_id, route=AUTHOR_ROUTE, requested=AUTHOR_MODEL)[0] is None
+    assert _grant(world, task_id)[0] is not None
 
 
 @pytest.mark.parametrize("failure", ["no_return", "backend_error", "extra_call", "invalid_json",
@@ -680,7 +682,7 @@ def test_review_task_requires_a_private_fresh_run_grant(review_world):
         world["client"].acquire(task_id, worker_id="review-worker@HOST", host="HOST",
             task_version=snapshot["task_version"], result_generation=REVIEW_GENERATION,
             now=T0)
-    assert _grant(world, task_id, slot=AUTHOR_SLOT)[0] is not None
+    # Only the author's run is a fixed exclusion; slot and model are no criterion.
     assert _grant(world, task_id, generation=world["binding"].generation)[0] is None
     assert _grant(world, task_id, slot=AUTHOR_SLOT)[0] is not None
     assert _grant(world, task_id, route=AUTHOR_ALIAS_ROUTE,

@@ -52,6 +52,12 @@ def _init_db(conn: sqlite3.Connection) -> None:
             changed_at TEXT NOT NULL
         )"""
     )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )"""
+    )
     ensure_task_lease_schema(conn)
 
 
@@ -187,3 +193,34 @@ def test_client_local_deadline_guard():
         local_receive_time=t_recv,
     )
     assert ack.local_deadline == t_recv + timedelta(seconds=60)
+
+
+def test_remote_422_self_check_and_validation_raise_symmetric_errors(monkeypatch):
+    from hub._services.task_lease_client import (
+        LeaseRequestRejectedError,
+        LeaseSelfCheckRequiredError,
+        TaskLeaseClient,
+    )
+
+    client = TaskLeaseClient(lead_url="http://127.0.0.1:8000", device_token="t")
+    monkeypatch.setattr(
+        client,
+        "_http_request",
+        lambda method, path, payload=None, headers=None: (
+            422,
+            {"detail": {"code": "self_check_required", "message": "Vollständiger Selbstcheck erforderlich"}},
+        ),
+    )
+    with pytest.raises(LeaseSelfCheckRequiredError):
+        client._call("release", 7, {"outcome": "done"})
+
+    monkeypatch.setattr(
+        client,
+        "_http_request",
+        lambda method, path, payload=None, headers=None: (
+            422,
+            {"detail": "Ungültige Eingabe"},
+        ),
+    )
+    with pytest.raises(LeaseRequestRejectedError):
+        client._call("update", 7, {"changes": {"tags": "bad"}})

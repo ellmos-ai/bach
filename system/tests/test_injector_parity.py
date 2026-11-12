@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Paritaet alt gegen neu fuer Injektoren, die an memoryhooker wandern.
+"""Seam- und Adapter-Tests fuer Injektoren ueber memoryhooker (S3-Nachlauf T-20260926-537523074).
 
-S3 von T-20260920-823767362 (Gemeinsames Gedaechtnis BACH = OCEAN): ein
-BACH-Injektor wird erst abgeschaltet, wenn der memoryhooker-Pfad auf
-identischen Eingaben dasselbe liefert. Einheit 1: StrategyInjector.
-
-alt = tools/injectors.py (StrategyInjector / InjectorSystem mit Cooldown)
-neu = memoryhooker.triggers.evaluate_triggers ueber BachMemoryBackend auf einer
-      Temp-DB mit Vertrags-DDL (memory_union) und Seed-Migration 044.
+Nach Ablauf der Beobachtungsfrist bis 2026-10-10 ohne Rueckweg-Nutzung auf Laptop
+und Mac ist tools/injectors.py ein duenner Adapter ueber hub/memory_hook_provider.py
+und TimeManager. Die Altklassen StrategyInjector, ContextInjector,
+ToolInjector.check_before_create und BetweenInjector sowie BACH_LEGACY_INJECTORS
+sind entfernt; die bisherigen Paritaetstests pruefen nun direkt den Seam und den
+InjectorSystem-Adapter.
 """
 import importlib.util
 from dataclasses import replace
@@ -30,6 +29,15 @@ SCHEMA_DIR = SYSTEM_DIR / "data" / "schema"
 sys.path.insert(0, str(SYSTEM_DIR / "tools"))
 import injectors  # noqa: E402
 
+EXPECTED_STRATEGIES = [
+    ("fehler|error|bug|kaputt", "[STRATEGIE] Erst verstehen, dann fixen."),
+    ("komplex|kompliziert|schwierig|gross", "[STRATEGIE] Was ist der kleinste erste Schritt?"),
+    ("blockiert|blocked|stuck|komme nicht weiter", "[STRATEGIE] Frage an User in chat.json notieren."),
+    ("wenig zeit|schnell|eilt|dringend", "[STRATEGIE] Lieber weniger aber richtig."),
+    ("unsicher|weiss nicht|vielleicht|unklar", "[STRATEGIE] Annahmen explizit dokumentieren."),
+    ("fertig|geschafft|done|erledigt", "[STRATEGIE] Between-Tasks Check nicht vergessen."),
+]
+
 PROMPTS = [
     "Ich habe einen Fehler im Code",
     "ERROR beim Build",
@@ -51,7 +59,6 @@ PROMPTS = [
     "",
     "Überspringen? Nein, schwierig.",
 ]
-PROMPTS += [phrase for group in injectors.StrategyInjector.STRATEGIES for phrase in group]
 
 
 def _union_module():
@@ -67,9 +74,6 @@ def seeded_db(tmp_path):
     db = tmp_path / "bach.db"
     conn = sqlite3.connect(db)
     _union_module().create_union_schema(conn)
-    # gleichlautende manual-Trigger duerfen den Seed nicht verdraengen
-    conn.execute("INSERT INTO context_triggers (trigger_phrase, hint_text) VALUES ('fehler', 'x')")
-    conn.execute("INSERT INTO context_triggers (trigger_phrase, hint_text) VALUES ('bug', 'y')")
     seed = (SCHEMA_DIR / "migrations" / "044_strategy_triggers.sql").read_text(encoding="utf-8")
     conn.executescript(seed)
     conn.executescript(seed)  # idempotent
@@ -83,28 +87,42 @@ def _neu(db, cooldown=0):
     return config, mhp.BachMemoryBackend(db_path=db)
 
 
-def test_seed_matches_legacy_strategies(seeded_db):
+def test_legacy_classes_and_flags_removed():
+    """S3-Nachlauf: Altklassen und BACH_LEGACY_INJECTORS sind abgebaut."""
+    for removed in ("StrategyInjector", "ContextInjector", "BetweenInjector", "CooldownManager"):
+        assert not hasattr(injectors, removed), removed
+    assert not hasattr(injectors.ToolInjector, "check_before_create")
+    assert not hasattr(mhp, "LEGACY_INJECTORS_ENV")
+
+
+def test_seed_matches_expected_strategies(seeded_db):
     conn = sqlite3.connect(seeded_db)
     rows = conn.execute(
         "SELECT trigger_phrase, hint_text FROM context_triggers WHERE source='strategy' ORDER BY id"
     ).fetchall()
     conn.close()
-    expected = [("|".join(group), f"[STRATEGIE] {msgs[-1]}")
-                for group, msgs in injectors.StrategyInjector.STRATEGIES.items()]
-    assert rows == expected
+    assert rows == EXPECTED_STRATEGIES
 
 
-@pytest.mark.parametrize("prompt", PROMPTS)
-def test_strategy_parity_per_prompt(seeded_db, prompt):
-    alt = injectors.StrategyInjector.check(prompt)
-    config, backend = _neu(seeded_db)
-    neu = evaluate_triggers(prompt, config, backend, SessionState(), now=0)
-    assert neu == ([alt] if alt else [])
+@pytest.mark.parametrize("phrase,expected", EXPECTED_STRATEGIES)
+def test_strategy_seam_and_adapter_per_group(seeded_db, tmp_path, phrase, expected):
+    base = tmp_path / "bachbase"
+    (base / "data").mkdir(parents=True)
+    (base / "config.json").write_text(
+        '{"injectors": {"context_injector": false, "time_injector": false,'
+        ' "between_injector": false, "strategy_injector": true}}', encoding="utf-8")
+    for token in phrase.split("|"):
+        config, backend = _neu(seeded_db)
+        neu = evaluate_triggers(token, config, backend, SessionState(), now=0)
+        assert neu == [expected]
+        system = injectors.InjectorSystem(base, db_path=seeded_db)
+        assert system.process(token) == [expected]
 
 
-def test_strategy_parity_cooldown_sequence(seeded_db, tmp_path, monkeypatch):
-    """Gleiche Prompt-Folge, feste Uhr: alt (CooldownManager) == neu (je Quelle)."""
-    assert injectors.CooldownManager.DEFAULT_COOLDOWNS["strategy"] == mhp.HOOKER_INJECTORS["strategy"]
+def test_strategy_cooldown_sequence(seeded_db, tmp_path, monkeypatch):
+    """Gleiche Prompt-Folge mit fester Uhr ueber Seam und InjectorSystem-Adapter."""
+    import memoryhooker.triggers as mht
+
     base = tmp_path / "bachbase"
     (base / "data").mkdir(parents=True)
     (base / "config.json").write_text(
@@ -112,32 +130,27 @@ def test_strategy_parity_cooldown_sequence(seeded_db, tmp_path, monkeypatch):
         ' "between_injector": false, "strategy_injector": true}}', encoding="utf-8")
 
     clock = {"now": datetime(2026, 9, 26, 12, 0, 0)}
+    monkeypatch.setattr(mht.time, "time", lambda: clock["now"].timestamp())
 
-    class _Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return clock["now"]
-
-    monkeypatch.setattr(injectors, "datetime", _Clock)
-    system = injectors.InjectorSystem(base)
+    system = injectors.InjectorSystem(base, db_path=seeded_db)
     config, backend = _neu(seeded_db, cooldown=mhp.HOOKER_INJECTORS["strategy"])
     state = SessionState()
     start = clock["now"]
     for offset, prompt in [(0, "fehler"), (30, "blockiert"), (119, "komplex"), (120, "komplex"),
                            (121, "nichts"), (130, "unsicher"), (400, "done")]:
         clock["now"] = start + timedelta(seconds=offset)
-        alt = system.process(prompt)
+        adapted = system.process(prompt)
         neu = evaluate_triggers(prompt, config, backend, state,
                                 now=clock["now"].timestamp())
-        assert neu == alt, (offset, prompt)
+        assert adapted == neu, (offset, prompt)
 
 
-def test_legacy_skip_removes_only_strategy(tmp_path):
+def test_adapter_skip_removes_only_strategy(seeded_db, tmp_path):
     base = tmp_path / "bachbase"
     (base / "data").mkdir(parents=True)
     (base / "config.json").write_text(
         '{"injectors": {"context_injector": false, "time_injector": false}}', encoding="utf-8")
-    system = injectors.InjectorSystem(base)
+    system = injectors.InjectorSystem(base, db_path=seeded_db)
     assert system.process("fehler", skip={"strategy"}) == []
     assert system.process("fehler") == ["[STRATEGIE] Erst verstehen, dann fixen."]
 
@@ -147,7 +160,6 @@ class TestSeamTakeover:
     @pytest.fixture(autouse=True)
     def _env(self, monkeypatch):
         monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
-        monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
         monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV, raising=False)
 
     def test_handled_and_injected_once(self, seeded_db):
@@ -157,15 +169,13 @@ class TestSeamTakeover:
         assert "[STRATEGIE] Frage an User in chat.json notieren." in first
         assert "[STRATEGIE]" not in (hook.hook_context("ich bin blockiert", "chat-1") or "")
 
-    @pytest.mark.parametrize("env,value", [("LEGACY", "strategy"), ("ROLLBACK", "0")])
-    def test_rueckweg(self, seeded_db, monkeypatch, env, value):
-        name = mhp.LEGACY_INJECTORS_ENV if env == "LEGACY" else mhp.ROLLBACK_ENV
-        monkeypatch.setenv(name, value)
+    def test_rueckweg_rollback_env(self, seeded_db, monkeypatch):
+        monkeypatch.setenv(mhp.ROLLBACK_ENV, "0")
         hook = mhp.ExternalMemoryHook(db_path=seeded_db, config_path=seeded_db.parent / "none.toml")
         assert hook.handled_injectors() == frozenset()
         assert "[STRATEGIE]" not in (hook.hook_context("ich bin blockiert", "chat-2") or "")
 
-    def test_without_seed_bach_keeps_legacy(self, tmp_path):
+    def test_without_seed_seam_stays_quiet(self, tmp_path):
         db = tmp_path / "bach.db"
         conn = sqlite3.connect(db)
         _union_module().create_union_schema(conn)
@@ -175,8 +185,20 @@ class TestSeamTakeover:
 
 
 # ---------------------------------------------------------------------------
-# Einheit 2b: ContextInjector (Paritaetsbasis = DB-Trigger, Flag an)
+# Einheit 2b: Context via Seam und InjectorSystem-Adapter (DB ist Quelle)
 # ---------------------------------------------------------------------------
+
+SAMPLE_CONTEXT_TRIGGERS = {
+    "fehler": "Bekannte Fehler? --help lessons",
+    "steuer": "Steuer-Tools: bach steuer status/beleg/posten/export | Steuer-Workflow",
+    "arzt": "Gesundheit: bach gesundheit termine --upcoming | diagnosen",
+    "medikament": "Medikamente: bach gesundheit medikamente | bach.db health_medications",
+    "import": "Data-Import: tools/data_importer.py --csv/--json <datei> --table <tabelle>",
+    "encoding": "Encoding-Probleme? bach c_encoding_fixer <datei>",
+    "backup": "Backup: bach backup create [--to-nas] | bach backup list | python system/tools/backup_manager.py restore backup latest",
+    "ocr": "OCR-Tools: tools/c_ocr_engine.py (Tesseract+PyMuPDF), skills/_services/document/ocr_service.py",
+    "partner": "Partner: bach partner list/status/delegate | bach msg send <partner> <text>",
+}
 
 CONTEXT_PROMPTS = PROMPTS + [
     "Kannst du mir helfen, meine Steuererklärung vorzubereiten?",
@@ -192,8 +214,7 @@ CONTEXT_PROMPTS = PROMPTS + [
 def _context_db(path):
     conn = sqlite3.connect(path)
     _union_module().create_union_schema(conn)
-    rows = [(phrase, hint, "manual") for phrase, hint in
-            injectors.ContextInjector.CONTEXT_TRIGGERS.items()]
+    rows = [(phrase, hint, "manual") for phrase, hint in SAMPLE_CONTEXT_TRIGGERS.items()]
     rows += [("wartung", "[THEMA-PAKET: Wartung] help maintain", "theme"),
              ("shutdown", "[THEMA-PAKET: Shutdown] help shutdown", "theme"),
              ("teamarbeit", "[THEMA-PAKET: Zusammenarbeit] help partners", "theme"),
@@ -212,24 +233,26 @@ needs_groups = pytest.mark.skipif(
 
 @pytest.fixture
 def context_pair(tmp_path, monkeypatch):
-    """Zwei identische DBs: alt (ContextInjector) und neu (Seam)."""
-    alt, neu = tmp_path / "alt.db", tmp_path / "neu.db"
-    _context_db(alt)
-    _context_db(neu)
+    """Zwei identische DBs: Adapter (InjectorSystem) und direkter Seam (ExternalMemoryHook)."""
+    adapter_db, seam_db = tmp_path / "adapter.db", tmp_path / "seam.db"
+    _context_db(adapter_db)
+    _context_db(seam_db)
     base = tmp_path / "base"
     (base / "data").mkdir(parents=True)
-    ci = injectors.ContextInjector
-    monkeypatch.setattr(ci, "base_path", base)
-    monkeypatch.setattr(ci, "_cache", None)
-    monkeypatch.setattr(ci, "_session_triggered", set())
-    monkeypatch.setattr(ci, "_db_path", classmethod(lambda cls: alt))
-    monkeypatch.setenv(mhp.CONTEXT_TRIGGERS_DB_ENV, "1")
+    (base / "config.json").write_text(
+        '{"injectors": {"time_injector": false, "strategy_injector": true, "context_injector": true}}',
+        encoding="utf-8",
+    )
     monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
-    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
-    hook = mhp.ExternalMemoryHook(db_path=neu, config_path=tmp_path / "none.toml")
+    monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV, raising=False)
+    system = injectors.InjectorSystem(base, db_path=adapter_db)
+    sys_hook, _ = system._get_seam()
+    sys_hook._config = replace(sys_hook._config, triggers=replace(
+        sys_hook._config.triggers, cooldowns={"strategy": 0, "context": 0}))
+    hook = mhp.ExternalMemoryHook(db_path=seam_db, config_path=tmp_path / "none.toml")
     hook._config = replace(hook._config, triggers=replace(
         hook._config.triggers, cooldowns={"strategy": 0, "context": 0}))
-    return alt, neu, hook
+    return adapter_db, seam_db, system, hook
 
 
 def _kontext(message):
@@ -244,68 +267,61 @@ def _usage(db):
 
 
 @needs_groups
-def test_context_parity_sequence(context_pair):
-    """Eine Sitzung, alle Prompts: alt == neu je Prompt, Themen einmal, gleiche Zaehler."""
-    alt, neu, hook = context_pair
+def test_context_seam_and_adapter_sequence(context_pair):
+    """Eine Sitzung, alle Prompts: Adapter == Seam je Prompt, Themen einmal, gleiche Zaehler."""
+    adapter_db, seam_db, system, hook = context_pair
     assert hook.handled_injectors() == frozenset({"strategy", "context"})
     for prompt in CONTEXT_PROMPTS + CONTEXT_PROMPTS:
-        old = injectors.ContextInjector.check(prompt)
+        adapted = [line for line in system.process(prompt) if line.startswith("[KONTEXT]")]
         new = _kontext(hook.hook_context(prompt, "sitzung"))
-        assert new == ([old] if old else []), prompt
-    assert _usage(alt) == _usage(neu)
+        assert new == adapted, prompt
+    assert _usage(adapter_db) == _usage(seam_db)
 
 
 @needs_groups
 def test_context_api_renders_manual_document_before_selection(context_pair):
-    """Der direkte CLI-Altpfad wird gefiltert; Chat zeigt jetzt das Hilfedokument."""
-    _, _, hook = context_pair
+    """Chat im API-Modus zeigt das neutrale Hilfedokument vor der Auswahl."""
+    _, _, _, hook = context_pair
     prompt = "fehler bei der ocr"
-    from system import bach_api
-    proxy = bach_api._InjectorProxy()
-    proxy.set_mode("api")
-    alt = proxy._filter_cli([injectors.ContextInjector.check(prompt)])
-    assert alt == []  # alt verwirft
     new = _kontext(hook.hook_context(prompt, "api", cli_hints=False))
     from hub.context_hints import neutral_manual_hint
-    assert new == ["[KONTEXT] " + neutral_manual_hint(
-        injectors.ContextInjector.CONTEXT_TRIGGERS["fehler"], SYSTEM_DIR)]
+    assert new == ["[KONTEXT] " + neutral_manual_hint(SAMPLE_CONTEXT_TRIGGERS["fehler"], SYSTEM_DIR)]
     from system import bach_api
     assert mhp._CLI_PATTERN.pattern == bach_api._CLI_PATTERN.pattern
 
 
 @needs_groups
-def test_context_needs_flag_and_legacy_env(context_pair, monkeypatch):
-    _, _, hook = context_pair
-    monkeypatch.setenv(mhp.LEGACY_INJECTORS_ENV, "context")
-    assert hook.handled_injectors() == frozenset({"strategy"})
-    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV)
-    monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV)
+def test_context_default_on_and_explicit_off(context_pair, monkeypatch):
+    _, _, _, hook = context_pair
+    assert hook.handled_injectors() == frozenset({"strategy", "context"})
+    monkeypatch.setenv(mhp.CONTEXT_TRIGGERS_DB_ENV, "0")
     assert hook.handled_injectors() == frozenset({"strategy"})
     assert _kontext(hook.hook_context("backup", "ohne-flag")) == []
 
 
 @needs_groups
 def test_context_not_handled_with_old_memoryhooker(context_pair):
-    _, _, hook = context_pair
+    _, _, _, hook = context_pair
     hook._groups_supported = False
     assert hook.handled_injectors() == frozenset({"strategy"})
 
 
 # ---------------------------------------------------------------------------
-# Einheit 3: Tool-Warn (ToolInjector.check_before_create, Seed 046)
+# Einheit 3: Tool-Warn (Seed 046)
 # ---------------------------------------------------------------------------
 
-TOOL_PROMPTS = PROMPTS + [
-    "Erstelle mir bitte eine Übersicht",
-    "create a new report",
-    "Ich möchte ein neues Tool bauen",
-    "schreibe ein Script für den Import",
-    "baue ein Dashboard",
-    "implementiere ein tool zum Zählen",
-    "please write a tool",
-    "new script needed",
-    "Ein neues Script für OCR",
-    "Wie spät ist es?",
+TOOL_PROMPTS = [
+    ("Erstelle mir bitte eine Übersicht", True),
+    ("create a new report", True),
+    ("Ich möchte ein neues Tool bauen", True),
+    ("schreibe ein Script für den Import", True),
+    ("baue ein Dashboard", True),
+    ("implementiere ein tool zum Zählen", True),
+    ("please write a tool", True),
+    ("new script needed", True),
+    ("Ein neues Script für OCR", True),
+    ("Wie spät ist es?", False),
+    ("ein ganz normaler Satz ohne Stichwort", False),
 ]
 
 
@@ -337,39 +353,42 @@ def _toolcheck(message):
 @pytest.fixture
 def seam_env(monkeypatch):
     monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
-    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
     monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV, raising=False)
 
 
-@pytest.mark.parametrize("prompt", TOOL_PROMPTS)
-def test_tool_warn_parity_per_prompt(tool_db, seam_env, prompt):
-    alt = injectors.ToolInjector.check_before_create(prompt)
+@pytest.mark.parametrize("prompt,should_fire", TOOL_PROMPTS)
+def test_tool_warn_seam_and_adapter(tool_db, seam_env, tmp_path, prompt, should_fire):
     neu = _toolcheck(_tool_hook(tool_db).hook_context(prompt, "p"))
-    assert neu == ([alt] if alt else [])
+    base = tmp_path / "bachbase"
+    (base / "data").mkdir(parents=True, exist_ok=True)
+    (base / "config.json").write_text(
+        '{"injectors": {"strategy_injector": false, "time_injector": false, "context_injector": true}}',
+        encoding="utf-8",
+    )
+    adapted = injectors.InjectorSystem(base, db_path=tool_db).process(prompt)
+    assert bool(neu) is should_fire
+    assert adapted == neu
 
 
-def test_tool_warn_parity_cooldown_and_api_mode(tool_db, seam_env, tmp_path, monkeypatch):
-    """Cooldown 300 s wie CooldownManager; im api-Modus zeigt auch der Altpfad
-    den [TOOL-CHECK] (Praefix-Ausnahme in _filter_cli) -- kein Vorfilter."""
-    assert injectors.CooldownManager.DEFAULT_COOLDOWNS["tool_warn"] == mhp.HOOKER_INJECTORS["tool_warn"]
+def test_tool_warn_cooldown_and_api_mode(tool_db, seam_env, tmp_path, monkeypatch):
+    """Cooldown 300 s; im api-Modus zeigt auch der Adapter den [TOOL-CHECK]."""
+    import memoryhooker.triggers as mht
+
     base = tmp_path / "bachbase"
     (base / "data").mkdir(parents=True)
     (base / "config.json").write_text(
-        '{"injectors": {"strategy_injector": false, "time_injector": false}}', encoding="utf-8")
-    monkeypatch.setattr(injectors.ContextInjector, "base_path", None)
-    monkeypatch.setattr(injectors.ContextInjector, "_cache", {})
+        '{"injectors": {"strategy_injector": false, "time_injector": false, "context_injector": true}}',
+        encoding="utf-8",
+    )
     clock = {"now": datetime(2026, 9, 26, 12, 0, 0)}
+    monkeypatch.setattr(mht.time, "time", lambda: clock["now"].timestamp())
 
-    class _Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return clock["now"]
-
-    monkeypatch.setattr(injectors, "datetime", _Clock)
-    system = injectors.InjectorSystem(base)
+    system = injectors.InjectorSystem(base, db_path=tool_db)
     from system import bach_api
     proxy = bach_api._InjectorProxy()
+    proxy._system = system
     proxy.set_mode("api")
+
     config = _tool_hook(tool_db, cooldown=300)._config
     backend = mhp.BachMemoryBackend(db_path=tool_db)
     state = SessionState()
@@ -377,11 +396,11 @@ def test_tool_warn_parity_cooldown_and_api_mode(tool_db, seam_env, tmp_path, mon
     for offset, prompt in [(0, "neues tool"), (100, "create x"), (299, "baue ein"),
                            (300, "neues script"), (310, "nichts"), (700, "erstelle")]:
         clock["now"] = start + timedelta(seconds=offset)
-        alt = proxy._filter_cli(system.process(prompt))
+        adapted = proxy.process(prompt)
         neu = evaluate_triggers(prompt, replace(config, triggers=replace(
             config.triggers, sources=["tool_warn"])), backend, state,
             now=clock["now"].timestamp())
-        assert neu == alt, (offset, prompt)
+        assert adapted == neu, (offset, prompt)
 
 
 def test_tool_warn_api_mode_not_prefiltered(tool_db, seam_env):
@@ -426,13 +445,12 @@ def test_handled_injectors_warns_once(tool_db, seam_env, caplog):
         assert hook.handled_injectors() == frozenset()
         hook.handled_injectors()
     msgs = [r.getMessage() for r in caplog.records if "nicht lesbar" in r.getMessage()]
-    assert len(msgs) == len(mhp.HOOKER_INJECTORS) - 1  # context ohne Flag gar nicht abgefragt
+    assert len(msgs) == len(mhp.HOOKER_INJECTORS)
     assert all("OperationalError" in m for m in msgs)
 
 
 # ---------------------------------------------------------------------------
-# Einheit 4: Between + CLI-Pfad bach.py _run_injectors (Planabweichung:
-# memoryhooker statt workflowhooker, Entscheid team-lead 2026-09-26)
+# Einheit 4: Between + CLI-Pfad bach.py _run_injectors
 # ---------------------------------------------------------------------------
 
 CLI_STEPS = [  # (Sekunde, Befehls-AUSGABE, '<command> <operation>')
@@ -456,15 +474,25 @@ def _cli_db(path):
     conn.close()
 
 
-def test_between_seed_matches_legacy(tmp_path):
+def test_between_seed_and_adapter(tmp_path, seam_env):
     db = tmp_path / "b.db"
     _cli_db(db)
     conn = sqlite3.connect(db)
     phrase, hint = conn.execute(
         "SELECT trigger_phrase, hint_text FROM context_triggers WHERE source='between'").fetchone()
     conn.close()
-    assert hint == injectors.BetweenInjector.check_task_done("task done")
     assert phrase == "done|task done"
+    assert "[BETWEEN-TASKS]" in hint
+
+    base = tmp_path / "base"
+    (base / "data").mkdir(parents=True, exist_ok=True)
+    (base / "config.json").write_text('{"injectors": {"time_injector": false}}', encoding="utf-8")
+    system = injectors.InjectorSystem(base, db_path=db)
+    assert system.check_between("task add") is None
+    assert system.check_between("task done", session_ending=True) is None
+    assert system.check_between("task done") == hint
+    assert system.check_between("task done") is None  # Cooldown 180s aktiv
+    assert "Cooldown:" in system.status()
 
 
 def _cli_run(monkeypatch, capsys, system, hook, clock, steps):
@@ -483,46 +511,34 @@ def _cli_run(monkeypatch, capsys, system, hook, clock, steps):
 
 
 @needs_groups
-def test_cli_path_parity_sequence(tmp_path, monkeypatch, capsys):
-    """Gleiche CLI-Folge (Ausgabe + Befehl, feste Uhr, neuer Prozess je Aufruf
-    ueber Zustandsdatei): alt (reiner Altpfad) == neu (Seam), gleiche usage_count."""
-    alt_db, neu_db = tmp_path / "alt.db", tmp_path / "neu.db"
-    _cli_db(alt_db)
+def test_cli_path_seam_sequence(tmp_path, monkeypatch, capsys):
+    """CLI-Folge ueber den Seam: Between feuert mit Cooldown ueber Prozessgrenzen."""
+    neu_db = tmp_path / "neu.db"
     _cli_db(neu_db)
     clock = {"now": datetime(2026, 9, 26, 12, 0, 0)}
 
-    class _Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return clock["now"]
-
-    monkeypatch.setattr(injectors, "datetime", _Clock)
-    ci = injectors.ContextInjector
-    monkeypatch.setattr(ci, "_session_triggered", set())
-    monkeypatch.setenv(mhp.CONTEXT_TRIGGERS_DB_ENV, "1")
     monkeypatch.delenv(mhp.ROLLBACK_ENV, raising=False)
-    monkeypatch.delenv(mhp.LEGACY_INJECTORS_ENV, raising=False)
+    monkeypatch.delenv(mhp.CONTEXT_TRIGGERS_DB_ENV, raising=False)
 
-    def system_for(name, db):
-        base = tmp_path / name
-        (base / "data").mkdir(parents=True)
-        (base / "config.json").write_text('{"injectors": {"time_injector": false}}', encoding="utf-8")
-        monkeypatch.setattr(ci, "_cache", None)
-        monkeypatch.setattr(ci, "_db_path", classmethod(lambda cls: db))
-        return injectors.InjectorSystem(base)
+    base = tmp_path / "neu"
+    (base / "data").mkdir(parents=True)
+    (base / "config.json").write_text('{"injectors": {"time_injector": false}}', encoding="utf-8")
+    system = injectors.InjectorSystem(base, db_path=neu_db)
 
-    alt = _cli_run(monkeypatch, capsys, system_for("alt", alt_db), None, clock, CLI_STEPS)
     hook = mhp.ExternalMemoryHook(db_path=neu_db, config_path=tmp_path / "none.toml")
     assert hook.handled_injectors() == frozenset({"strategy", "context", "tool_warn", "between"})
-    neu = _cli_run(monkeypatch, capsys, system_for("neu", neu_db), hook, clock, CLI_STEPS)
-    assert any("[BETWEEN-TASKS]" in o for o in alt)
-    assert neu == alt
-    assert _usage(alt_db) == _usage(neu_db)
+    neu = _cli_run(monkeypatch, capsys, system, hook, clock, CLI_STEPS)
+    assert "[BETWEEN-TASKS]" in neu[0]
+    assert "[KONTEXT]" in neu[1]
+    assert "[KONTEXT]" not in neu[2]        # 20s < 10s + 60s Context-Cooldown
+    assert "[BETWEEN-TASKS]" not in neu[3]  # 100s < 180s Between-Cooldown
+    assert "[BETWEEN-TASKS]" in neu[4]      # 181s >= 180s Between-Cooldown
+    assert "[TOOL-CHECK]" in neu[4]
+    assert "[KONTEXT]" in neu[6]            # 330s >= Context-Cooldown
 
 
 def test_task_done_runs_injectors(monkeypatch):
-    """T-20260926-620619287: 'bach task done' lief am INLINE_COMMANDS-Sonderpfad
-    _handle_task, der _run_injectors nie aufrief -- Between feuerte fuer Tasks nie."""
+    """T-20260926-620619287: 'bach task done' ruft _run_injectors auf."""
     from system import bach as bach_cli
 
     class _FakeHandler:

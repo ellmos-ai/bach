@@ -21,14 +21,18 @@ Stand: 2026-01-24
 import sqlite3
 import json
 import random
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Optional
 from .base import BaseHandler
 from ._services.task_schema import inspect_task_dependencies
 from ._services.user_config_store import load_user_config, update_user_config
+from ._services.session_scope import parse_scope, select_session
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class SessionHandler(BaseHandler):
     """Handler fuer Session-Verwaltung (SESSION_001-006)"""
 
@@ -77,37 +81,39 @@ class SessionHandler(BaseHandler):
             lambda current: {**current, **patch},
         )
 
-    def _get_current_session(self) -> Optional[dict]:
-        """Holt aktuelle Session (nicht beendet)."""
-        with self._get_db() as conn:
-            row = conn.execute("""
-                SELECT * FROM memory_sessions
-                WHERE ended_at IS NULL
-                ORDER BY id DESC LIMIT 1
-            """).fetchone()
+    def _get_current_session(self, **scope) -> Optional[dict]:
+        """Read one unambiguous open session in a single database snapshot."""
+        with closing(self._get_db()) as conn, conn:
+            conn.execute("BEGIN")
+            selected = select_session(conn, **scope)
+            row = conn.execute("SELECT * FROM memory_sessions WHERE id = ?", (selected[0],)).fetchone() if selected else None
             return dict(row) if row else None
 
-    def _get_last_session(self) -> Optional[dict]:
+    def _get_last_session(self, partner_id=None) -> Optional[dict]:
         """Holt letzte beendete Session."""
-        with self._get_db() as conn:
-            row = conn.execute("""
-                SELECT * FROM memory_sessions
-                WHERE ended_at IS NOT NULL
-                ORDER BY id DESC LIMIT 1
-            """).fetchone()
+        with closing(self._get_db()) as conn:
+            where = "ended_at IS NOT NULL"
+            params = []
+            if partner_id is not None:
+                where += " AND LOWER(partner_id) = ?"
+                params.append(partner_id.lower())
+            row = conn.execute("SELECT * FROM memory_sessions WHERE " + where + " ORDER BY id DESC LIMIT 1", params).fetchone()
             return dict(row) if row else None
 
     def handle(self, operation: str, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Haupteinstiegspunkt"""
 
-        if operation in ["start", ""]:
-            return self._start(args, dry_run)
-        elif operation == "status":
-            return self._status(args)
+        if operation in ("start", "", "status", "check"):
+            try:
+                if operation in ("start", ""):
+                    return self._start(args, dry_run)
+                if operation == "status":
+                    return self._status(args)
+                return self._check(args, dry_run)
+            except ValueError as exc:
+                return False, f"[ERROR] {exc}"
         elif operation == "end":
             return self._end(args, dry_run)
-        elif operation == "check":
-            return self._check(args)
         elif operation == "next":
             return self._next(args)
         elif operation == "help":
@@ -122,8 +128,12 @@ class SessionHandler(BaseHandler):
     def _start(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
         """Session starten - delegiert an StartupHandler"""
         # Pruefen ob bereits Session aktiv
-        current = self._get_current_session()
+        _, scope = parse_scope(args)
+        scope.setdefault("partner_id", "user")
+        current = self._get_current_session(**scope)
         if current:
+            if "--json" in args:
+                return True, json.dumps({"session_id": current["session_id"], "partner_id": current["partner_id"], "created": False})
             return True, f"[INFO] Session bereits aktiv: {current['session_id']}\n" + \
                         f"       Gestartet: {current['started_at']}\n" + \
                         f"       --> bach session status fuer Details"
@@ -131,7 +141,8 @@ class SessionHandler(BaseHandler):
         # An StartupHandler delegieren
         from .startup import StartupHandler
         startup = StartupHandler(self.base_path)
-        return startup.handle("run", args, dry_run)
+        startup.db_path = self.db_path
+        return startup.handle("ensure", args, dry_run)
 
     def _end(self, args: List[str], dry_run: bool) -> Tuple[bool, str]:
         """Session beenden - delegiert an ShutdownHandler"""
@@ -145,6 +156,10 @@ class SessionHandler(BaseHandler):
 
     def _status(self, args: List[str]) -> Tuple[bool, str]:
         """Session-Status mit Denkanstoessen anzeigen"""
+        _, scope = parse_scope(args)
+        current = self._get_current_session(**scope)
+        if "--json" in args:
+            return True, json.dumps({"session": current}, ensure_ascii=False)
         results = []
 
         # Header
@@ -153,7 +168,6 @@ class SessionHandler(BaseHandler):
         results.append("=" * 50)
 
         # Aktuelle Session
-        current = self._get_current_session()
         if current:
             started = current['started_at']
             session_id = current['session_id']
@@ -179,7 +193,7 @@ class SessionHandler(BaseHandler):
             results.append(" --> bach session start zum Starten")
 
             # Letzte Session anzeigen
-            last = self._get_last_session()
+            last = self._get_last_session(scope.get("partner_id"))
             if last:
                 results.append("")
                 results.append("[LETZTE SESSION]")
@@ -306,30 +320,42 @@ class SessionHandler(BaseHandler):
     # SESSION_004: Duration-Check
     # =========================================================================
 
-    def _check(self, args: List[str]) -> Tuple[bool, str]:
+    def _check(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         """Zeitberechnung und Status-Check"""
+        _, scope = parse_scope(args)
+        current = self._get_current_session(**scope)
         results = []
 
         # --duration Flag pruefen
         show_duration = "--duration" in args or "-d" in args
 
         # Geplante Sitzungsdauer holen/setzen
-        duration_minutes = 120  # Default: 2 Stunden
-        for i, arg in enumerate(args):
+        for arg in args:
             if arg.startswith("--set-duration="):
+                raw_val = arg.split("=", 1)[1].strip()
                 try:
-                    duration_minutes = int(arg.split("=")[1])
-                    self._save_user_config({"session_duration_minutes": duration_minutes})
-                    results.append(f"[OK] Sitzungsdauer auf {duration_minutes} Minuten gesetzt")
-                except (ValueError, IndexError, OSError):
-                    pass
+                    parsed_val = int(raw_val)
+                    if parsed_val <= 0:
+                        return False, f"[FEHLER] Ungueltige Sitzungsdauer '{raw_val}'. Bitte eine positive Minutenzahl angeben (z. B. --set-duration=120)."
+                except (ValueError, TypeError):
+                    return False, f"[FEHLER] Ungueltige Sitzungsdauer '{raw_val}'. Bitte eine positive ganzzahlige Minutenzahl angeben (z. B. --set-duration=120)."
+
+                if dry_run:
+                    results.append(f"[DRY-RUN] Wuerde Sitzungsdauer auf {parsed_val} Minuten setzen")
+                else:
+                    self._save_user_config({"session_duration_minutes": parsed_val})
+                    results.append(f"[OK] Sitzungsdauer auf {parsed_val} Minuten gesetzt")
 
         config = self._load_user_config()
         duration_minutes = config.get("session_duration_minutes", 120)
+        if not isinstance(duration_minutes, int) or duration_minutes <= 0:
+            duration_minutes = 120
 
-        current = self._get_current_session()
         if not current:
-            return True, "[INFO] Keine aktive Session\n--> bach session start zum Starten"
+            msg = "[INFO] Keine aktive Session\n--> bach session start zum Starten"
+            if results:
+                return True, "\n".join(results) + "\n\n" + msg
+            return True, msg
 
         # Zeitberechnungen
         try:
@@ -494,6 +520,11 @@ Befehle:
 
 Optionen:
   --set-duration=MINUTEN       Geplante Sitzungsdauer setzen
+  --partner=NAME              Eigene Sitzung wählen; start nutzt standardmäßig user
+  --session=ID                Explizite offene ID; erfordert --partner
+  --json                      Strukturierte Start-ID oder Statusausgabe
+
+Ohne Partner wird bei mehreren offenen Sitzungen kein Status geraten.
 
 Beispiele:
   bach session start

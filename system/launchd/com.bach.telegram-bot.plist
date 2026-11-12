@@ -14,6 +14,8 @@
   <dict>
     <key>BACH_CONTROL_HOST</key>
     <string>127.0.0.1</string>
+    <key>BACH_CONTEXT_TRIGGERS_DB</key>
+    <string>1</string>
     <key>BACH_DEFAULT_MODE</key>
     <string>full</string>
     <key>BACH_LLM_IDLE_TIMEOUT</key>

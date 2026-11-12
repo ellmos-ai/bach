@@ -41,6 +41,7 @@ from datetime import datetime, date
 
 from typing import Optional, List, Union
 
+import contextlib
 from contextlib import asynccontextmanager
 
 # BACH imports
@@ -379,15 +380,18 @@ def resolve_tool_file(name: str) -> Optional[Path]:
 
 
 def resolve_workflow_file(workflow_name: str) -> Optional[Path]:
-    workflows_dir = SKILLS_DIR / "_workflows"
     safe_name = safe_path_segment(workflow_name, field_name="Workflow-Name")
     candidates = [safe_name]
     if not safe_name.endswith(".md"):
         candidates.insert(0, f"{safe_name}.md")
-    for candidate_name in candidates:
-        candidate = resolve_under_base(workflows_dir, candidate_name, allowed_suffixes={".md"})
-        if candidate.exists() and candidate.is_file():
-            return candidate
+    for base_dir in [SKILLS_DIR / "workflows", SKILLS_DIR / "_workflows"]:
+        for candidate_name in candidates:
+            try:
+                candidate = resolve_under_base(base_dir, candidate_name, allowed_suffixes={".md"})
+                if candidate.exists() and candidate.is_file():
+                    return candidate
+            except HTTPException:
+                continue
     return None
 
 
@@ -427,6 +431,13 @@ class TaskCreate(BaseModel):
 class ThemeUpdate(BaseModel):
     theme: str
     custom: Optional[dict[str, str]] = None
+
+
+class UIUpdate(BaseModel):
+    preset: Optional[str] = None
+    nav_scope: Optional[str] = None
+    icon_style: Optional[str] = None
+    density: Optional[str] = None
 
 
 
@@ -647,7 +658,7 @@ class ConnectionManager:
 
     """Verwaltet aktive WebSocket-Verbindungen fuer Real-time Updates."""
 
-    
+
 
     def __init__(self):
 
@@ -656,7 +667,7 @@ class ConnectionManager:
         # Values are hashes; explicit bearer/subprotocol clients stay independent.
         self._cookie_hashes: dict[WebSocket, str] = {}
 
-    
+
 
     async def connect(self, websocket: WebSocket, *, cookie_token: str = ""):
 
@@ -719,7 +730,7 @@ class ConnectionManager:
 
         return all(await asyncio.gather(*(close_transport(connection) for connection in targets)))
 
-    
+
 
     def disconnect(self, websocket: WebSocket):
 
@@ -732,7 +743,7 @@ class ConnectionManager:
 
         print(f"[WEBSOCKET] Client getrennt. Aktive: {len(self.active_connections)}")
 
-    
+
 
     async def broadcast(self, message: dict):
 
@@ -1198,7 +1209,7 @@ async def lifespan(app: FastAPI):
 
         print(f"[BACH GUI] Financial-Tabellen nicht initialisiert: {type(exc).__name__}")
 
-    
+
 
     # File Watcher für Live-Updates (Phase 4.3)
 
@@ -1220,7 +1231,7 @@ async def lifespan(app: FastAPI):
 
             loop = asyncio.get_running_loop()
 
-            
+
 
             def combined_callback(event_type: str, path: str, file_type: str):
 
@@ -1228,13 +1239,13 @@ async def lifespan(app: FastAPI):
 
                 print(f"[FILE-WATCHER] {event_type}: {path} ({file_type})")
 
-                
+
 
                 # 1. DB Sync (Task #439)
 
                 on_file_change(event_type, path, file_type)
 
-                
+
 
                 # 2. WebSocket-Broadcast (GUI_003b)
 
@@ -1258,7 +1269,7 @@ async def lifespan(app: FastAPI):
 
                     asyncio.run_coroutine_threadsafe(
 
-                        ws_manager.broadcast(message), 
+                        ws_manager.broadcast(message),
 
                         loop
 
@@ -1268,7 +1279,7 @@ async def lifespan(app: FastAPI):
 
                     print(f"[FILE-WATCHER] Broadcast-Fehler: {e}")
 
-            
+
 
             file_watcher = init_watcher(combined_callback)
 
@@ -1280,11 +1291,11 @@ async def lifespan(app: FastAPI):
 
         print(f"[BACH GUI] File-Watcher Fehler: {e}")
 
-    
+
 
     yield
 
-    
+
 
     # Cleanup
 
@@ -1298,7 +1309,21 @@ async def lifespan(app: FastAPI):
 
 
 
-app = FastAPI(
+class _BachFastAPI(FastAPI):
+    @property
+    def routes(self):
+        flat = []
+        for r in self.router.routes:
+            if hasattr(r, "effective_route_contexts"):
+                for ctx in r.effective_route_contexts():
+                    orig = getattr(ctx, "original_route", ctx)
+                    flat.append(orig if getattr(orig, "path", None) == getattr(ctx, "path", None) else ctx)
+            else:
+                flat.append(r)
+        return flat
+
+
+app = _BachFastAPI(
 
     title="BACH Dashboard API",
 
@@ -1520,7 +1545,7 @@ def _redact_ws_tokens(text: str) -> str:
 
 
 def _install_log_redaction():
-    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens."""
+    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens or PII."""
     import logging
     previous = logging.getLogRecordFactory()
     if getattr(previous, "_bach_redacts", False):
@@ -1529,10 +1554,21 @@ def _install_log_redaction():
     def factory(*args, **kwargs):
         record = previous(*args, **kwargs)
         try:
-            if record.name.startswith(_REDACT_LOGGERS):
-                message = record.getMessage()
-                if "bach.token." in message:
-                    record.msg, record.args = _redact_ws_tokens(message), ()
+            message = record.getMessage()
+            changed = False
+            if "bach.token." in message:
+                message = _redact_ws_tokens(message)
+                changed = True
+            try:
+                from hub._services.life_overview_service import sanitize_pii
+                sanitized = sanitize_pii(message)
+                if sanitized != message:
+                    message = sanitized
+                    changed = True
+            except Exception:
+                pass
+            if changed:
+                record.msg, record.args = message, ()
         except Exception:  # logging must never break the request
             pass
         return record
@@ -1610,6 +1646,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/ocean",
         "/",
         "/agenten/fabrika",
+        "/agenten/bibliothek",
         "/agenten/blueprints",
         "/agenten/subscription-agents",
         "/agenten/running",
@@ -1618,6 +1655,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/governance/funk",
         "/governance/usecases",
         "/governance/logs",
+        "/governance/hooks",
+        "/governance/rechte",
+        "/governance/regeln",
+        "/governance/sperren",
         "/life",
         "/domains",
         "/artefakte",
@@ -1635,6 +1676,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/settings",
         "/system",
         "/system/ocean",
+        "/system/installation-updates",
         "/wiki",
         "/agents",
         "/agents/ati",
@@ -1674,11 +1716,16 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/foerderplaner",
         "/steuer-assistent",
         "/workflow-tuev",
+        "/talk",
+        "/modules",
+        "/sensation",
+        "/connectors",
+        "/sessions",
         "/favicon.ico",
         "/device-fetch.js",
     })
     # Static assets (JS/CSS/images/fonts) without data.
-    PUBLIC_STATIC_PREFIXES = ("/static/", "/_astro/")
+    PUBLIC_STATIC_PREFIXES = ("/static/", "/_astro/", "/assets/")
 
     EXEMPT_API_PATHS = {
         "/api/health",
@@ -1702,6 +1749,30 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/chat/compare-race/buddha",
         "/api/domains/installed",
         "/api/domains/pins",
+        "/api/voice/status",
+        "/api/voice/stt",
+        "/api/voice/tts",
+        "/api/talk/status",
+        "/api/talk/reflex",
+        "/api/talk/state",
+        "/api/talk/config",
+        "/api/talk/summon",
+        "/api/talk/summon/ack",
+        "/api/talk/turn",
+        "/api/talk/directive",
+        "/api/sensation/status",
+        "/api/homecontrol/devices",
+        "/api/homecontrol/energy",
+        "/api/robotics/capabilities",
+        "/api/robotics/telemetry",
+        "/api/modules/status",
+        "/api/modules/sync",
+        "/api/modules/update-check",
+        "/api/modules/list",
+        "/api/modules/surfaces",
+        "/api/financial/summary",
+        "/api/life/overview",
+        "/api/automations",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -1728,7 +1799,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                          or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
                 response = await call_next(request)
                 if (request.method == "GET"
-                        and (path in self.PUBLIC_PAGE_PATHS or path in ("/device-fetch.js", "/static/js/device-fetch.js"))
+                        # Nur echte Browser-Navigationen mint eine Sitzung; Unterressourcen (device-fetch.js)
+                        # und cookielose Nicht-Browser-Clients (Probes, curl) hinterliessen sonst je Aufruf eine Zeile.
+                        and path in self.PUBLIC_PAGE_PATHS
+                        and request.headers.get("sec-fetch-dest") == "document"
                         and _hostname(request.headers.get("host", "")) in LOOPBACK_HOSTS
                         and request.cookies.get("bach_manual_logout") != "1"):
                     existing_cookie = request.cookies.get("bach_device_token", "").strip()
@@ -1762,7 +1836,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=403, content={"detail": "Cross-origin API request denied"})
 
         # 2. Status & probe endpoints pass through
-        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/domains/pins", "/api/gui/capabilities"} and request.method == "GET"):
+        if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/domains/pins", "/api/gui/capabilities"} and request.method == "GET") or (path == "/api/permissions" and request.method in {"GET", "HEAD"}):
             return await call_next(request)
 
         # The browser authenticates as a registered device. The proxy supplies
@@ -1819,15 +1893,18 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/artifacts" or path.startswith("/api/artifacts/")
                 or path == "/api/artefakte"
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path == "/api/agent-triggers" or path.startswith("/api/agent-triggers/")
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
                 or path == "/api/system/task-lease-settings"
+                or path == "/api/system/task-resolver-settings"
                 or path == "/api/tasks/leases/by-worker"
                 or (path.startswith("/api/tasks/") and path.endswith("/worker-policy"))
                 or path == "/api/governance/audit"
                 or path == "/api/daemon" or path.startswith("/api/daemon/")
-                or (path == "/api/settings/theme" and request.method == "PUT")):
+                or (path == "/api/settings/theme" and request.method == "PUT")
+                or (path == "/api/settings/ui" and request.method == "PUT")):
             private_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else request.cookies.get("bach_device_token")
             if not private_token:
                 return JSONResponse(status_code=401, content={"error": "Geräteanmeldung erforderlich"})
@@ -1883,14 +1960,35 @@ class SharedGUIReleaseMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if os.environ.get("ELLMOS_SYSTEM_GUI_DIST") and request.method in {"GET", "HEAD"}:
-            from gui.api.gui_capabilities import PAGE_READS
             page = request.url.path.rstrip("/") or "/"
-            if page in PAGE_READS:
-                filename = "index.html" if page == "/" else page.lstrip("/") + ".html"
-                target = ASTRO_DIST_DIR / filename
-                if not target.is_file() or target.is_symlink():
+            from starlette.routing import Match
+
+            # Route metadata survives a missing manifest. Redirect aliases and
+            # separately mounted applications retain their own routing.
+            matched = next((route for route in request.app.routes
+                            if route.matches(request.scope)[0] is Match.FULL), None)
+            if "shared-gui" in (getattr(matched, "tags", None) or []):
+                from hub._services.gui_contract_service import (
+                    get_pinned_kit_manifest,
+                    verify_installed_dist,
+                )
+                kit = get_pinned_kit_manifest()
+                dist = verify_installed_dist(ASTRO_DIST_DIR, expected_commit=kit.get("pinned_source_commit"),
+                                             requested_page=page)
+                trusted = (kit.get("verified") is True and dist.get("verified") is True
+                           and type(kit.get("expected_page_count")) is int
+                           and dist.get("page_count") == kit["expected_page_count"])
+                info = dist.get("page_reads", {})
+                if (not trusted or info.get("state") != "available"
+                        or page not in info.get("pages", {}) or page not in dist.get("page_paths", [])
+                        or not isinstance(dist.get("page_payload"), bytes)):
                     return JSONResponse({"detail": "Configured shared GUI page is unavailable",
                                          "reason_code": "shared_gui_page_missing"}, status_code=503)
+                # Serve exactly the bytes hashed above, never a handler's legacy
+                # fallback or a second, mutable filesystem read.
+                headers = {"Cache-Control": "no-cache, no-store, must-revalidate",
+                           "Pragma": "no-cache", "Expires": "0"} if page == "/" else None
+                return Response(content=dist["page_payload"], media_type="text/html", headers=headers)
         return await call_next(request)
 
 
@@ -1941,6 +2039,11 @@ except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
 
+# The trigger router has no eager optional-provider imports. Keep it registered
+# even when the provider is missing so callers receive a truthful 503 contract.
+from gui.api.agent_triggers import router as agent_triggers_router
+app.include_router(agent_triggers_router)
+
 try:
     from gui.api.subscription_agents_transport import (
         router as subscription_agents_transport_router,
@@ -1966,6 +2069,8 @@ try:
     app.include_router(prompt_router)
     from gui.api.task_assignment import router as task_assignment_router
     app.include_router(task_assignment_router)
+    from gui.api.task_returns import router as task_returns_router
+    app.include_router(task_returns_router)
     from gui.api.governance_registry import router as governance_registry_router
     app.include_router(governance_registry_router)
     from gui.api.catalog_projection import router as catalog_projection_router
@@ -2075,7 +2180,8 @@ async def get_gui_capabilities():
     modules.update(provider_modules)
     return declaration(app.routes, kit_status, read_gui_brand(), modules,
                        public_paths=DeviceAuthMiddleware.EXEMPT_API_PATHS,
-                       module_sources=[policy, *provider_sources])
+                       module_sources=[policy, *provider_sources],
+                       page_reads=dist_info.get("page_reads"))
 
 
 @app.get("/api/gui/kit-manifest")
@@ -2208,6 +2314,18 @@ async def get_status():
     except (OSError, sqlite3.Error):
         pass
 
+    modular_info = {}
+    try:
+        from hub._services.ocean_stack_bridge import ocean_modularized_services_status
+        m_status = ocean_modularized_services_status()
+        modular_info = {
+            "total": len(m_status),
+            "standalone_count": sum(1 for v in m_status.values() if v.get("standalone")),
+            "auto_update_ready": True,
+        }
+    except Exception:
+        pass
+
     return {
 
         "status": "online",
@@ -2230,9 +2348,106 @@ async def get_status():
             "last_scan": last_scan[0] if last_scan else None
 
         },
-        "system": system_info
+        "system": system_info,
+        "modular_services": modular_info
 
     }
+
+
+@app.get("/api/modules/status")
+async def get_modules_status():
+    """Return status of all modularized core services, standalone detection, and auto-update readiness."""
+    try:
+        from hub._services.ocean_stack_bridge import (
+            detect_legacy_in_tree_services,
+            ocean_modularized_services_status,
+            ocean_stack_status,
+        )
+        mod_status = ocean_modularized_services_status()
+        detection = detect_legacy_in_tree_services()
+        stack = ocean_stack_status()
+        standalone_count = sum(1 for v in mod_status.values() if v.get("standalone"))
+        return {
+            "status": "ok",
+            "schema": "bach.modules-status.v1",
+            "standalone_count": standalone_count,
+            "modularized_total": len(mod_status),
+            "modularized_services": mod_status,
+            "legacy_services_remaining": detection.get("legacy_in_tree_only_count", 0),
+            "standalone_modules_available": detection.get("standalone_modules_available", 0),
+            "stack_role": stack.get("stack_role", "branded-partial-os-stack-of-ocean"),
+            "auto_update_ready": True,
+        }
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/surfaces")
+async def get_modules_surfaces():
+    """Return canonical module surfaces and integration status matrix (PB-7 / #3991)."""
+    try:
+        from hub._services.life_overview_service import get_module_surfaces_matrix
+        return get_module_surfaces_matrix()
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
+@app.post("/api/modules/sync")
+async def trigger_modules_sync():
+    """Run auto-update sync across standalone modules."""
+    try:
+        from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
+        report = auto_switch_to_standalone_modules()
+        return {"status": "ok", "sync_report": report}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/list")
+async def get_modules_list():
+    """Return list of all standalone modules in .MODULES/ with metadata."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {"status": "ok", "modules": handler.get_modules_data()}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/update-check")
+async def get_modules_update_check():
+    """Check for available updates for standalone modules in .MODULES/."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        check = handler.check_for_updates()
+        return {"status": "ok", **check}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/update")
+async def trigger_modules_update(dry_run: bool = False):
+    """Trigger check and update of modules from available source repos."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("update", dry_run=dry_run)
+        return {"status": "ok" if ok else "error", "message": msg, "dry_run": dry_run}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/wire")
+async def trigger_modules_wire():
+    """Trigger hot-wiring of all available standalone modules."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("wire")
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
 
 
 
@@ -2290,25 +2505,25 @@ async def api_tasks_export():
 
         conn.close()
 
-        
+
 
         export_dir = BACH_DIR / "user" / "exports"
 
         export_dir.mkdir(parents=True, exist_ok=True)
 
-        
+
 
         filename = f"tasks_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
         export_path = export_dir / filename
 
-        
+
 
         with open(export_path, "w", encoding="utf-8") as f:
 
             json.dump(tasks, f, indent=2, ensure_ascii=False)
 
-            
+
 
         return {"success": True, "path": str(export_path), "count": len(tasks)}
 
@@ -2350,7 +2565,7 @@ async def api_get_tasks(
     assigned_to: str = None,
     assignment_group: str = "all",
     priority: str = None,
-    limit: int = 0,
+    limit: int = 100,
     offset: int = 0,
     q: str = None
 ):
@@ -2368,7 +2583,7 @@ async def api_get_tasks(
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
         if status and status.lower() == "nonterminal":
-            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate', 'archived')"
         elif status and status.lower() != "all":
             requested = [s.strip().lower() for s in status.split(",") if s.strip()]
             normalized = set()
@@ -2452,9 +2667,8 @@ async def api_get_tasks(
             WHEN UPPER(TRIM(priority)) IN ('P3','3','LOW','NIEDRIG','NORMAL') THEN 3
             WHEN UPPER(TRIM(priority)) IN ('P4','4','MINIMAL') THEN 4
             ELSE 5 END ASC, created_at DESC, id DESC LIMIT ? OFFSET ?"""
-        effective = limit if limit > 0 else -1
-        params.extend((effective, max(0, offset)))
-        
+        params.extend((limit + 1 if limit > 0 else limit, max(0, offset)))
+
         rows = conn.execute(query, params).fetchall()
         has_more = limit > 0 and len(rows) > limit
         if has_more:
@@ -2911,6 +3125,38 @@ async def reconcile_task_result(task_id: int, body: TaskResultReconcileRequest, 
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
+@app.get("/api/tasks/{task_id}/legacy-review/eligibility")
+async def legacy_review_reopen_eligibility_read(task_id: int, request: Request):
+    """Correction-owner-only observation; the reopen writer still rechecks all gates."""
+    from hub._services.legacy_review_reopen import legacy_review_reopen_eligibility
+    from hub._services.task_result_service import ResultConflict, ResultPermissionDenied
+
+    operator_token = request.headers.get("X-BACH-Result-Operator", "")
+
+    def run():
+        conn = get_bach_db()
+        try:
+            return legacy_review_reopen_eligibility(conn, task_id, operator_token=operator_token)
+        finally:
+            conn.close()
+
+    try:
+        import asyncio
+        return await asyncio.to_thread(run)
+    except ResultPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail={
+            "code": "result_operator_correction_scope_required", "message": str(exc),
+        }) from None
+    except ResultConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "legacy_review_eligibility_unavailable", "message": str(exc),
+        }) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "legacy_review_request_invalid", "message": str(exc),
+        }) from None
+
+
 @app.post("/api/tasks/{task_id}/legacy-review/reopen")
 async def reopen_legacy_review_task(
         task_id: int, body: LegacyReviewReopenRequest, request: Request):
@@ -2947,12 +3193,14 @@ async def reopen_legacy_review_task(
 
 
 def _run_lease_op(op, *args, **kwargs):
-    from hub._services.task_lease import LeaseValidationError, TaskNotFound
+    from hub._services.task_lease import LeaseSelfCheckRequired, LeaseValidationError, TaskNotFound
     conn = get_bach_db()
     try:
         result = op(conn, *args, **kwargs)
     except TaskNotFound:
         raise HTTPException(status_code=404, detail="Task nicht gefunden")
+    except LeaseSelfCheckRequired as exc:
+        raise HTTPException(status_code=422, detail={"code": "self_check_required", "message": str(exc)})
     except LeaseValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     finally:
@@ -3291,8 +3539,8 @@ async def list_assignees():
     try:
         # Get latest status for each partner (assuming id increases with time)
         rows = conn.execute("""
-            SELECT partner_name, status 
-            FROM partner_presence 
+            SELECT partner_name, status
+            FROM partner_presence
             WHERE id IN (SELECT MAX(id) FROM partner_presence GROUP BY partner_name)
         """).fetchall()
         for r in rows:
@@ -3448,7 +3696,7 @@ async def api_list_agents():
 
         conn = get_bach_db()
 
-        
+
 
         # Agenten laden
 
@@ -3456,7 +3704,7 @@ async def api_list_agents():
 
         agents = rows_to_list(agents_rows)
 
-        
+
 
         # Experten laden
 
@@ -3500,7 +3748,7 @@ async def api_list_agents():
                 elif agent['name'] in ['ati', 'developer-assistent']:
                     agent["dashboard"] = "/agents/ati"
 
-        
+
 
         conn.close()
 
@@ -3587,7 +3835,7 @@ async def api_toggle_agent(agent_id: int):
 
             raise HTTPException(status_code=404, detail="Agent nicht gefunden")
 
-        
+
 
         new_state = 0 if current["is_active"] else 1
 
@@ -3789,7 +4037,7 @@ async def api_list_mounts():
 
         success, output = handler._list_mounts()
 
-        
+
 
         mounts = []
 
@@ -4863,13 +5111,13 @@ async def get_token_usage():
 
         conn = get_bach_db()
 
-        
+
 
         # Gesamtverbrauch last 30 days
 
         usage = conn.execute("""
 
-            SELECT 
+            SELECT
 
                 SUM(tokens_total) as total_tokens,
 
@@ -4883,25 +5131,25 @@ async def get_token_usage():
 
         """).fetchone()
 
-        
+
 
         # Top Modell
 
         top_model_row = conn.execute("""
 
-            SELECT model, SUM(tokens_total) as val 
+            SELECT model, SUM(tokens_total) as val
 
-            FROM monitor_tokens 
+            FROM monitor_tokens
 
             WHERE model IS NOT NULL
 
-            GROUP BY model 
+            GROUP BY model
 
             ORDER BY val DESC LIMIT 1
 
         """).fetchone()
 
-        
+
 
         # Wechselkurs & Datum
 
@@ -4911,11 +5159,11 @@ async def get_token_usage():
 
         rate_date = rate_row['timestamp'].split('T')[0] if rate_row and rate_row['timestamp'] else datetime.now().strftime("%Y-%m-%d")
 
-        
+
 
         conn.close()
 
-        
+
 
         return {
 
@@ -5011,7 +5259,7 @@ async def run_scanner(background_tasks: BackgroundTasks):
 
             print(f"[ERROR] Scan fehlgeschlagen: {e}")
 
-    
+
 
     background_tasks.add_task(do_scan)
 
@@ -5121,23 +5369,23 @@ async def get_ati_stats():
             "sessions_today": 0,
             "completed_today": 0
         }
-        
+
         # Grundstatistiken
         stats["total_tasks"] = conn.execute("SELECT COUNT(*) FROM ati_tasks").fetchone()[0]
         stats["open_tasks"] = conn.execute("SELECT COUNT(*) FROM ati_tasks WHERE status = 'offen'").fetchone()[0]
         stats["tools_scanned"] = conn.execute("SELECT COUNT(DISTINCT tool_name) FROM ati_tasks").fetchone()[0]
-        
+
         # Tages-Zähler (Sessions)
         today = datetime.now().strftime("%Y-%m-%d")
         stats["sessions_today"] = conn.execute(
             "SELECT COUNT(*) FROM memory_sessions WHERE started_at LIKE ?", (f"{today}%",)
         ).fetchone()[0]
-        
+
         # Tages-Zähler (Erledigt) - nutze last_modified statt updated_at
         stats["completed_today"] = conn.execute(
             "SELECT COUNT(*) FROM ati_tasks WHERE status = 'erledigt' AND last_modified LIKE ?", (f"{today}%",)
         ).fetchone()[0]
-        
+
         conn.close()
         return stats
     except Exception as e:
@@ -5748,6 +5996,40 @@ async def update_gui_theme(payload: ThemeUpdate):
         raise HTTPException(status_code=503, detail="Theme-Speicherung nicht verfügbar") from exc
 
 
+@app.get("/api/settings/ui")
+async def get_gui_ui():
+    """Return the user-neutral GUI style preferences (preset, nav_scope, icon_style, density)."""
+    try:
+        return {"success": True, **ThemeHandler(BACH_DIR).get_ui()}
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=public_error_message()) from exc
+
+
+@app.put("/api/settings/ui")
+async def update_gui_ui(payload: UIUpdate):
+    """Validate and persist the GUI style settings in user_config.json."""
+    try:
+        handler = ThemeHandler(BACH_DIR)
+        result = handler.set_ui(
+            payload.preset,
+            payload.nav_scope,
+            payload.icon_style,
+            payload.density,
+        )
+        persisted = handler.get_ui()
+        mismatch = any(
+            persisted.get(field) != result.get(field)
+            for field in ("preset", "nav_scope", "icon_style", "density")
+        )
+        if mismatch:
+            raise HTTPException(status_code=503, detail="UI-Speicherung nicht bestätigt")
+        return {"success": True, **persisted}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OSError, TimeoutError) as exc:
+        raise HTTPException(status_code=503, detail="UI-Speicherung nicht verfügbar") from exc
+
+
 # ═══════════════════════════════════════════════════════════════
 
 # STATIC FILES & TEMPLATES
@@ -5765,6 +6047,9 @@ if STATIC_DIR.exists():
 
 if (ASTRO_DIST_DIR / "_astro").exists():
     app.mount("/_astro", StaticFiles(directory=ASTRO_DIST_DIR / "_astro"), name="astro_assets")
+
+if (ASTRO_DIST_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=ASTRO_DIST_DIR / "assets"), name="astro_public_assets")
 
 
 # Operator-Konsole bleibt standardmaessig aus. Bei expliziter Aktivierung
@@ -5785,7 +6070,7 @@ async def unified_ocean_dashboard():
     raise HTTPException(status_code=404, detail="unified_dashboard.html nicht gefunden")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse, tags=["shared-gui"])
 async def index():
     """Startseite (Astro v5 Modular GUI mit Legacy-Fallback)."""
     astro_index = ASTRO_DIST_DIR / "index.html"
@@ -5805,7 +6090,7 @@ async def favicon():
     raise HTTPException(status_code=404, detail="favicon.ico nicht gefunden")
 
 
-@app.get("/agenten/fabrika", response_class=HTMLResponse)
+@app.get("/agenten/fabrika", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_fabrika_page():
     p = ASTRO_DIST_DIR / "agenten" / "fabrika.html"
     if p.exists():
@@ -5816,7 +6101,7 @@ async def agenten_fabrika_page():
     raise HTTPException(status_code=404, detail="Fabrika-Seite nicht gefunden")
 
 
-@app.get("/agenten/blueprints", response_class=HTMLResponse)
+@app.get("/agenten/blueprints", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_blueprints_page():
     p = ASTRO_DIST_DIR / "agenten" / "blueprints.html"
     if p.exists():
@@ -5827,7 +6112,7 @@ async def agenten_blueprints_page():
     raise HTTPException(status_code=404, detail="Blueprints-Seite nicht gefunden")
 
 
-@app.get("/agenten/subscription-agents", response_class=HTMLResponse)
+@app.get("/agenten/subscription-agents", response_class=HTMLResponse, tags=["shared-gui"])
 async def subscription_agents_page():
     page = ASTRO_DIST_DIR / "agenten" / "subscription-agents.html"
     if not page.is_file() or page.is_symlink():
@@ -5835,7 +6120,7 @@ async def subscription_agents_page():
     return FileResponse(page)
 
 
-@app.get("/agenten/running", response_class=HTMLResponse)
+@app.get("/agenten/running", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_running_page():
     p = ASTRO_DIST_DIR / "agenten" / "running.html"
     if p.exists():
@@ -5843,7 +6128,7 @@ async def agenten_running_page():
     raise HTTPException(status_code=404, detail="Living & Running Seite nicht gefunden")
 
 
-@app.get("/agenten/marblerun", response_class=HTMLResponse)
+@app.get("/agenten/marblerun", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_marblerun_page():
     p = ASTRO_DIST_DIR / "agenten" / "marblerun.html"
     if p.exists():
@@ -5851,7 +6136,7 @@ async def agenten_marblerun_page():
     raise HTTPException(status_code=404, detail="MarbleRun Seite nicht gefunden")
 
 
-@app.get("/governance", response_class=HTMLResponse)
+@app.get("/governance", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_page():
     for candidate in [ASTRO_DIST_DIR / "governance.html", ASTRO_DIST_DIR / "governance" / "index.html"]:
         if candidate.exists():
@@ -5859,7 +6144,7 @@ async def governance_page():
     raise HTTPException(status_code=404, detail="Governance Seite nicht gefunden")
 
 
-@app.get("/governance/funk", response_class=HTMLResponse)
+@app.get("/governance/funk", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_funk_page():
     p = ASTRO_DIST_DIR / "governance" / "funk.html"
     if p.exists():
@@ -5867,7 +6152,23 @@ async def governance_funk_page():
     return await governance_page()
 
 
-@app.get("/governance/usecases", response_class=HTMLResponse)
+def _governance_sub_page(name: str):
+    async def page():
+        p = ASTRO_DIST_DIR / "governance" / f"{name}.html"
+        if p.exists():
+            return FileResponse(p)
+        return await governance_page()
+    page.__name__ = f"governance_{name}_page"
+    return page
+
+
+# Governance sub-routes of the area navigation (ellmos-system-gui#125, GUI 0.2.36).
+for _governance_name in ("hooks", "rechte", "regeln", "sperren"):
+    app.add_api_route(f"/governance/{_governance_name}", _governance_sub_page(_governance_name),
+                      methods=["GET"], response_class=HTMLResponse, tags=["shared-gui"])
+
+
+@app.get("/governance/usecases", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_usecases_page():
     p = ASTRO_DIST_DIR / "governance" / "usecases.html"
     if p.exists():
@@ -5878,7 +6179,7 @@ async def governance_usecases_page():
     raise HTTPException(status_code=404, detail="Governance Use Cases nicht gefunden")
 
 
-@app.get("/governance/logs", response_class=HTMLResponse)
+@app.get("/governance/logs", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_logs_page():
     p = ASTRO_DIST_DIR / "governance" / "logs.html"
     if p.exists():
@@ -5890,7 +6191,7 @@ async def governance_logs_page():
 
 
 
-@app.get("/life", response_class=HTMLResponse)
+@app.get("/life", response_class=HTMLResponse, tags=["shared-gui"])
 async def life_page():
     p = ASTRO_DIST_DIR / "life.html"
     if p.exists():
@@ -5902,6 +6203,21 @@ async def life_page():
     if pers_file.exists():
         return FileResponse(pers_file)
     raise HTTPException(status_code=404, detail="Life-Seite nicht gefunden")
+
+
+@app.get("/api/health")
+async def get_api_health():
+    """Kanonischer Health-Endpunkt für Shared-GUI-Runtime und Smoke-Tests (#3744)."""
+    return {"status": "ok"}
+
+
+@app.get("/dist-manifest.json")
+async def get_dist_manifest():
+    """Liefert das dist-manifest.json aus dem konfigurierten Shared-GUI-Build (#3744)."""
+    manifest_file = ASTRO_DIST_DIR / "dist-manifest.json"
+    if manifest_file.exists():
+        return FileResponse(manifest_file, media_type="application/json")
+    raise HTTPException(status_code=404, detail="dist-manifest.json nicht gefunden")
 
 
 @app.get("/api/life/providers")
@@ -5936,7 +6252,55 @@ async def get_life_providers():
     }
 
 
-@app.get("/domains", response_class=HTMLResponse)
+@app.get("/api/life/overview")
+async def get_life_overview_endpoint():
+    """Aggregate local-only measured overview across finance, routines, health, and tasks (PB-12 / #3995)."""
+    try:
+        from hub._services.life_overview_service import get_life_overview
+        return get_life_overview(BACH_DB)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
+@app.get("/api/financial/summary")
+async def get_financial_summary_endpoint():
+    """Return fail-closed current period financial summary snapshot (PB-12 / #3995)."""
+    try:
+        from hub._services.life_overview_service import get_financial_summary
+        return get_financial_summary(BACH_DB)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
+@app.get("/api/automations")
+async def get_automations(source: Optional[str] = None):
+    """Return available module automations from automation-master adapter (PB-6 / T-20261107-206833979)."""
+    try:
+        from hub._services.automation_master_adapter import list_module_automations
+        items = list_module_automations(BACH_DB)
+        if source:
+            items = [item for item in items if item.get("source") == source]
+        return {
+            "ok": True,
+            "source": "automation-master",
+            "automations": items,
+            "items": items,
+            "count": len(items),
+        }
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Failed to list module automations: %s", exc)
+        return {
+            "ok": False,
+            "error": public_error_message(),
+            "source": "automation-master",
+            "automations": [],
+            "items": [],
+            "count": 0,
+        }
+
+
+@app.get("/domains", response_class=HTMLResponse, tags=["shared-gui"])
 async def domains_page():
     p = ASTRO_DIST_DIR / "domains.html"
     if p.exists():
@@ -5980,7 +6344,7 @@ async def anonymizer_fachseite_page():
     return RedirectResponse("/domains")
 
 
-@app.get("/artefakte", response_class=HTMLResponse)
+@app.get("/artefakte", response_class=HTMLResponse, tags=["shared-gui"])
 async def artefakte_page():
     p = ASTRO_DIST_DIR / "artefakte.html"
     if p.exists():
@@ -5991,7 +6355,7 @@ async def artefakte_page():
     raise HTTPException(status_code=404, detail="Artefakte-Seite nicht gefunden")
 
 
-@app.get("/agenten/sessions", response_class=HTMLResponse)
+@app.get("/agenten/sessions", response_class=HTMLResponse, tags=["shared-gui"])
 async def agenten_sessions_page():
     p = ASTRO_DIST_DIR / "agenten" / "sessions.html"
     if p.exists():
@@ -6002,7 +6366,7 @@ async def agenten_sessions_page():
     raise HTTPException(status_code=503, detail="Sessions-Seite noch nicht gebaut")
 
 
-    
+
 
     # Fallback: Einfache Status-Seite
 
@@ -6028,7 +6392,7 @@ async def agenten_sessions_page():
 
 
 
-@app.get("/inbox", response_class=HTMLResponse)
+@app.get("/inbox", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def inbox_page():
 
@@ -6048,15 +6412,17 @@ async def inbox_page():
 
 
 
-@app.get("/daemon", response_class=HTMLResponse)
+@app.get("/daemon", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def daemon_page(request: Request):
 
-    """Daemon & Dienste Seite; liefert die gemeinsame Astro-Ansicht (inkl. ?tab=chains)."""
+    """Daemon & Dienste Seite; ?tab=chains liefert die gebaute Astro-Seite."""
 
-    astro_page = ASTRO_DIST_DIR / "daemon.html"
-    if astro_page.is_file():
-        return FileResponse(astro_page)
+    tabs = request.query_params.getlist("tab")
+    if len(tabs) == 1 and tabs[0].lower() == "chains":
+        astro_page = ASTRO_DIST_DIR / "daemon.html"
+        if astro_page.is_file():
+            return FileResponse(astro_page)
 
     daemon_file = TEMPLATES_DIR / "daemon.html"
 
@@ -6068,7 +6434,7 @@ async def daemon_page(request: Request):
 
 
 
-@app.get("/tasks", response_class=HTMLResponse)
+@app.get("/tasks", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def tasks_page():
 
@@ -6089,7 +6455,7 @@ async def tasks_page():
 
 
 
-@app.get("/user-inbox", response_class=HTMLResponse)
+@app.get("/user-inbox", response_class=HTMLResponse, tags=["shared-gui"])
 async def user_inbox_page():
     """Nachrichten an den Nutzer; Chats und Läufe haben eigene Ansichten."""
     page = ASTRO_DIST_DIR / "user-inbox.html"
@@ -6114,7 +6480,7 @@ async def reports_page():
 
 
 
-@app.get("/help", response_class=HTMLResponse)
+@app.get("/help", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def help_page():
 
@@ -6136,7 +6502,7 @@ async def help_page():
 
 
 
-@app.get("/maintenance", response_class=HTMLResponse)
+@app.get("/maintenance", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def maintenance_page():
 
@@ -6169,6 +6535,8 @@ async def maintenance_page():
 @app.get("/logs", response_class=HTMLResponse)
 async def logs_page():
     """Logs Anzeige Seite."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/governance/logs")
     astro_log = ASTRO_DIST_DIR / "governance" / "logs.html"
     if astro_log.exists():
         return FileResponse(astro_log)
@@ -6179,7 +6547,7 @@ async def logs_page():
 
 
 
-@app.get("/chat", response_class=HTMLResponse)
+@app.get("/chat", response_class=HTMLResponse, tags=["shared-gui"])
 async def chat_page():
     """Buddha Chat Seite."""
     chat_file = TEMPLATES_DIR / "chat.html"
@@ -6253,7 +6621,7 @@ async def chat_control_proxy(control_path: str, request: Request):
     )
 
 
-@app.get("/settings", response_class=HTMLResponse)
+@app.get("/settings", response_class=HTMLResponse, tags=["shared-gui"])
 async def settings_page():
     """Zentrale GUI-Einstellungen."""
     astro_settings = ASTRO_DIST_DIR / "settings.html"
@@ -6265,9 +6633,34 @@ async def settings_page():
     raise HTTPException(status_code=404, detail="Template settings.html nicht gefunden")
 
 
+@app.get("/system/ocean", response_class=HTMLResponse, tags=["shared-gui"])
+async def system_ocean_page():
+    """Serve the shared static Ocean page; API data retains device protection."""
+    page = ASTRO_DIST_DIR / "system" / "ocean.html"
+    if not page.is_file() or page.is_symlink():
+        raise HTTPException(status_code=503, detail="Gemeinsame Ocean-Seite nicht verfügbar")
+    return FileResponse(page)
+
+
+@app.get("/agenten/bibliothek", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/system/installation-updates", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/modules", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/sensation", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/connectors", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/sessions", response_class=HTMLResponse, tags=["shared-gui"])
+async def shared_gui_extension_page(request: Request):
+    """Static GUI shells only; private data and actions retain device protection."""
+    page = ASTRO_DIST_DIR / (request.url.path.lstrip("/") + ".html")
+    if not page.is_file() or page.is_symlink():
+        raise HTTPException(status_code=503, detail="Gemeinsame GUI-Seite nicht verfügbar")
+    return FileResponse(page)
+
+
 @app.get("/system", response_class=HTMLResponse)
 async def system_page(request: Request):
     """System-Route leitet auf Einstellungen/Setup weiter; ?tab=ocean liefert die gebaute Ocean-Seite."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/system/ocean" if request.query_params.get("tab") == "ocean" else "/settings")
     if request.query_params.get("tab") == "ocean":
         ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
         if ocean_page.is_file():
@@ -6275,7 +6668,7 @@ async def system_page(request: Request):
     return await settings_page()
 
 
-@app.get("/system/ocean", response_class=HTMLResponse)
+@app.get("/system/ocean", response_class=HTMLResponse, tags=["shared-gui"])
 async def system_ocean_page():
     """Betrieb › Systeme (Ocean-Systemkarten & Sync-Netzbild)."""
     ocean_page = ASTRO_DIST_DIR / "system" / "ocean.html"
@@ -6311,7 +6704,7 @@ async def agents_page():
         return FileResponse(agents_file)
     raise HTTPException(status_code=404, detail="Template agents.html nicht gefunden")
 
-@app.get("/ati", response_class=HTMLResponse)
+@app.get("/ati", response_class=HTMLResponse, tags=["shared-gui"])
 @app.get("/agents/ati", response_class=HTMLResponse)
 async def ati_agent_page():
     """ATI Agent Dashboard Seite."""
@@ -6401,7 +6794,7 @@ async def skills_board_page(request: Request):
     return RedirectResponse(target, status_code=307)
 
 
-@app.get("/skills")
+@app.get("/skills", tags=["shared-gui"])
 async def skills_page():
     """Current Skill-Zentrale with the actual SKILL.md editor."""
     p = ASTRO_DIST_DIR / "skills.html"
@@ -6413,10 +6806,10 @@ async def skills_page():
     return RedirectResponse("/agents-board")
 
 
-@app.get("/skills/plugins")
-@app.get("/skills/mcp")
-@app.get("/skills/software")
-@app.get("/skills/ocean")
+@app.get("/skills/plugins", tags=["shared-gui"])
+@app.get("/skills/mcp", tags=["shared-gui"])
+@app.get("/skills/software", tags=["shared-gui"])
+@app.get("/skills/ocean", tags=["shared-gui"])
 async def capability_board_page(request: Request):
     """Separate static boards; all host inventories require device authentication."""
     name = request.url.path.rsplit("/", 1)[-1]
@@ -6431,15 +6824,15 @@ async def capability_board_page(request: Request):
 async def finanzen_redirect():
     return RedirectResponse("/financial")
 
-@app.get("/steuer")
+@app.get("/steuer", tags=["shared-gui"])
 async def steuer_redirect():
     return RedirectResponse("/agents/steuer")
 
-@app.get("/gesundheit")
+@app.get("/gesundheit", tags=["shared-gui"])
 async def gesundheit_redirect():
     return RedirectResponse("/agents/gesundheit")
 
-@app.get("/persoenlich")
+@app.get("/persoenlich", tags=["shared-gui"])
 async def persoenlich_redirect():
     return RedirectResponse("/agents/persoenlich")
 
@@ -6449,8 +6842,8 @@ async def routines_redirect():
 
 
 
-@app.get("/denkarium", response_class=HTMLResponse)
-@app.get("/notizen", response_class=HTMLResponse)
+@app.get("/denkarium", response_class=HTMLResponse, tags=["shared-gui"])
+@app.get("/notizen", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def denkarium_page():
 
@@ -6470,9 +6863,96 @@ async def denkarium_page():
 
 
 
+from hub._services import notes_adapter  # PB-11 (#3994): llm-note als Notiz-Engine
+
+
+@contextlib.contextmanager
+def _notes_http_errors():
+    """Map adapter errors to HTTP status codes (404 unknown id, 400 bad input, 503 engine missing)."""
+    try:
+        yield
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0] if exc.args else exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except notes_adapter.NotesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+class _JsonBody:
+    """Minimal request stand-in so the notes routes can reuse the legacy handlers before the migration."""
+
+    def __init__(self, data):
+        self._data = data
+
+    async def json(self):
+        return self._data
+
+
+@app.get("/api/notes")
+async def notes_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None,
+                     include_archived: bool = False):
+    """Notizen aus llm-note (PB-11, #3994). Vor der Migration: Altbestand, `pending_migration: true`."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.list_notes(entry_type=entry_type, category=category, limit=limit, search=search,
+                                            include_archived=include_archived, legacy_db=USER_DB)
+    legacy = await denkarium_list(notes_adapter.legacy_type(entry_type), category, limit, search, not include_archived)
+    return notes_adapter.from_denkarium_list(legacy, USER_DB)
+
+
+@app.post("/api/notes")
+async def notes_create(request: Request):
+    data = await request.json()
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return {"ok": True, "entry": notes_adapter.create_note(data)}
+    # before the migration the legacy table stays the only store; the idempotent migration picks the row up
+    body = {**data, "entry_type": notes_adapter.legacy_type(data.get("entry_type") or "note")}
+    created = await denkarium_create(_JsonBody(body))
+    if isinstance(created, JSONResponse):
+        return created
+    return {"ok": True, "entry": {"id": created["id"]}, "pending_migration": True}
+
+
+@app.post("/api/notes/{entry_id}/archive")
+async def notes_archive(entry_id: int, request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_archive_direct(entry_id, _JsonBody(data))
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
+    with _notes_http_errors():
+        reason = data.get("reason") if isinstance(data, dict) else None
+        return {"ok": True, "entry": notes_adapter.archive_note(entry_id, reason)}
+
+
+@app.post("/api/notes/{entry_id}/unarchive")
+async def notes_unarchive(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_unarchive_direct(entry_id)
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
+    with _notes_http_errors():
+        return {"ok": True, "entry": notes_adapter.unarchive_note(entry_id)}
+
+
+@app.delete("/api/notes/{entry_id}")
+async def notes_delete(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        return await denkarium_delete(entry_id)
+    with _notes_http_errors():
+        notes_adapter.delete_note(entry_id)
+    return {"ok": True}
+
+
 @app.get("/api/denkarium")
 async def denkarium_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None, exclude_archived: bool = True):
-    """Denkarium-Einträge abrufen (GUX-043)."""
+    """Denkarium-Einträge abrufen (GUX-043). Alias auf llm-note, sobald migriert (PB-11)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_list(entry_type, category, limit, search, exclude_archived)
     conn = sqlite3.connect(str(USER_DB))
     try:
         ensure_denkarium_schema(conn)
@@ -6533,6 +7013,10 @@ async def denkarium_create(request: Request):
 
     data = await request.json()
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_create(data)
+
     content = data.get("content", "").strip()
 
     if not content:
@@ -6589,6 +7073,11 @@ async def denkarium_delete(entry_id: int):
 
     """Denkarium-Eintrag löschen."""
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            notes_adapter.delete_note(entry_id)
+        return {"ok": True}
+
     conn = sqlite3.connect(str(USER_DB))
 
     try:
@@ -6616,6 +7105,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
     except Exception:
         data = {}
     reason = data.get("reason", "wrong_agent_dump") if isinstance(data, dict) else "wrong_agent_dump"
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_archive(entry_id, reason)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return archive_denkarium_entry(entry_id, reason=reason, conn=conn)
@@ -6628,6 +7120,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
 @app.post("/api/denkarium/{entry_id}/unarchive")
 async def denkarium_unarchive_direct(entry_id: int):
     """Archivierten Denkarium-Eintrag wiederherstellen (GUX-043)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_unarchive(entry_id)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return unarchive_denkarium_entry(entry_id, conn=conn)
@@ -6646,6 +7141,24 @@ async def denkarium_promote(entry_id: int, request: Request):
     data = await request.json()
 
     target = data.get("target", "task")
+
+    if notes_adapter.use_llm_note(USER_DB):
+        if target != "task":
+            raise HTTPException(status_code=400, detail=f"Unbekanntes Ziel: {target}. Erlaubt: task")
+        with _notes_http_errors():
+            note = notes_adapter.get_note(entry_id)
+        conn = sqlite3.connect(str(USER_DB))
+        try:
+            cur = conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)",
+                (note["title"] or note["content"][:50] or "Denkarium-Eintrag", note["content"]))
+            conn.commit()
+            promoted_id = cur.lastrowid
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
+        finally:
+            conn.close()
+        notes_adapter.mark_promoted(entry_id, target, promoted_id)
+        return {"ok": True, "promoted_id": promoted_id}
 
     conn = sqlite3.connect(str(USER_DB))
 
@@ -6898,6 +7411,8 @@ async def api_logout_device(request: Request):
 @app.get("/tasks-board", response_class=HTMLResponse)
 async def tasks_board_api():
     """Tasks Board Seite."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/tasks")
 
     astro_tasks = ASTRO_DIST_DIR / "tasks.html"
     if astro_tasks.exists():
@@ -6962,13 +7477,13 @@ async def api_ai_headless_run(payload: dict = Body(...)):
     from threading import Thread
     from tools.headless_agent import run_headless_query
 
-    
+
 
     prompt = str(payload.get("prompt") or "")
 
     partner = safe_partner_name(payload.get("partner", "claude"))
 
-    
+
 
     if not prompt:
 
@@ -7022,7 +7537,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
     python_tools = []
 
-    
+
 
     categories_map = {
 
@@ -7042,11 +7557,11 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
     }
 
-    
+
 
     found_categories = set()
 
-    
+
 
     if TOOLS_DIR.exists():
 
@@ -7056,7 +7571,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
                 continue
 
-                
+
 
             name = tool_file.stem
 
@@ -7074,11 +7589,11 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
                     break
 
-            
+
 
             found_categories.add(category)
 
-            
+
 
             # Docstring extrahieren
 
@@ -7098,7 +7613,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
                 pass
 
-                
+
 
             python_tools.append({
 
@@ -7116,7 +7631,7 @@ async def api_save_inbox_config(payload: dict = Body(...)):
 
             })
 
-            
+
 
     # Mock DB tools if none exist (or load from real DB if available)
 
@@ -7166,9 +7681,9 @@ async def api_steuer_unlinked_docs(username: str = "user", jahr: int = 2025):
 
         rows = conn.execute("""
 
-            SELECT id, dateiname, status, posten_anzahl, hochgeladen_am 
+            SELECT id, dateiname, status, posten_anzahl, hochgeladen_am
 
-            FROM steuer_dokumente 
+            FROM steuer_dokumente
 
             WHERE username = ? AND steuerjahr = ? AND posten_anzahl = 0
 
@@ -7200,7 +7715,7 @@ async def api_steuer_link_posten(posten_id: int, payload: dict = Body(...)):
 
         return {"success": False, "error": "Keine dokument_id angegeben"}
 
-        
+
 
     try:
 
@@ -7210,13 +7725,13 @@ async def api_steuer_link_posten(posten_id: int, payload: dict = Body(...)):
 
         conn.execute("UPDATE steuer_posten SET dokument_id = ? WHERE id = ?", (doc_id, posten_id))
 
-        
+
 
         # 2. Dokumentenzähler aktualisieren
 
         conn.execute("UPDATE steuer_dokumente SET posten_anzahl = posten_anzahl + 1, status = 'ERFASST' WHERE id = ?", (doc_id,))
 
-        
+
 
         conn.commit()
 
@@ -7249,13 +7764,13 @@ async def api_steuer_match_bank(payload: dict = Body(...)):
     if jahr < 2000 or jahr > 2100:
         raise HTTPException(status_code=400, detail="Ungueltiges Jahr")
 
-    
+
 
     if not camt_file:
 
         return {"success": False, "error": "CAMT Datei fehlt"}
 
-        
+
 
     normalized_camt = camt_file.replace("\\", "/")
     if "/" in normalized_camt:
@@ -7297,7 +7812,7 @@ async def api_get_tool_detail(name: str):
 
     tool_file = resolve_tool_file(name)
 
-            
+
 
     if tool_file and tool_file.exists():
 
@@ -7311,7 +7826,7 @@ async def api_get_tool_detail(name: str):
 
             docstring = docstring_match.group(1).strip()
 
-            
+
 
         return {
 
@@ -7327,7 +7842,7 @@ async def api_get_tool_detail(name: str):
 
         }
 
-        
+
 
     # 2. In DB suchen
 
@@ -7365,18 +7880,18 @@ async def api_run_tool(name: str, payload: dict = Body(...)):
 
     import sys
 
-    
+
 
     name = safe_tool_name(name)
     tool_file = resolve_tool_file(name)
 
-            
+
 
     if not tool_file or not tool_file.exists():
 
         raise HTTPException(status_code=404, detail="Tool nicht gefunden oder nicht ausführbar")
 
-        
+
 
     args = payload.get("args", [])
     if args:
@@ -8279,13 +8794,13 @@ async def search_help(term: str):
 
         return {"results": [], "count": 0}
 
-    
+
 
     results = []
 
     term_lower = term.lower()
 
-    
+
 
     for help_file in HELP_DIR.glob("*.txt"):
 
@@ -8317,7 +8832,7 @@ async def search_help(term: str):
 
                             break
 
-                
+
 
                 results.append({
 
@@ -8333,13 +8848,13 @@ async def search_help(term: str):
 
             pass
 
-    
+
 
     # Nach Anzahl Treffer sortieren
 
     results.sort(key=lambda x: x['match_count'], reverse=True)
 
-    
+
 
     return {
 
@@ -8557,7 +9072,7 @@ def save_financial_data_json():
 
 
 
-@app.get("/financial", response_class=HTMLResponse)
+@app.get("/financial", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def financial_page():
 
@@ -10056,13 +10571,13 @@ def get_extrapolated_session_count(start_time_str: str, interval_min: int) -> in
 
         safety_buffer_min = 0.75  # 45 Sek Initial-Verzögerung
 
-        
+
 
         if elapsed_min < safety_buffer_min:
 
             return 0
 
-            
+
 
         return math.floor((elapsed_min - safety_buffer_min) / interval_min)
 
@@ -10092,7 +10607,7 @@ def get_next_session_seconds(start_time_str: str, interval_min: int) -> int:
 
         elapsed_sec = (now - start_time).total_seconds()
 
-        
+
 
         # Modulo ergibt vergangene Zeit im aktuellen Intervall
 
@@ -10142,7 +10657,7 @@ def is_quiet_time(quiet_start: str, quiet_end: str) -> bool:
 
         end = datetime.strptime(quiet_end, "%H:%M").time()
 
-        
+
 
         if start <= end:
 
@@ -10174,7 +10689,7 @@ async def update_daemon_config(request: Request):
 
         data = await request.json()
 
-        
+
 
         # Bestehende Config laden oder neu erstellen
 
@@ -10186,7 +10701,7 @@ async def update_daemon_config(request: Request):
 
                 config = json.load(f)
 
-        
+
 
         # Aktualierungen anwenden
 
@@ -10198,13 +10713,13 @@ async def update_daemon_config(request: Request):
 
             config["max_sessions"] = int(val) if val and int(val) > 0 else 0
 
-        
+
 
         if "interval_minutes" in data:
 
             config["interval_minutes"] = int(data["interval_minutes"])
 
-        
+
 
         # Speichern
 
@@ -10214,7 +10729,7 @@ async def update_daemon_config(request: Request):
 
             json.dump(config, f, indent=2)
 
-        
+
 
         return {"status": "ok", "config": config}
 
@@ -10245,7 +10760,7 @@ async def get_recurring_tasks():
 
         raise HTTPException(status_code=503, detail="Recurring Tasks Modul nicht verfuegbar")
 
-    
+
 
     try:
 
@@ -10277,7 +10792,7 @@ async def check_recurring():
 
         raise HTTPException(status_code=503, detail="Recurring Tasks Modul nicht verfuegbar")
 
-    
+
 
     try:
 
@@ -10309,7 +10824,7 @@ async def trigger_recurring(task_id: str):
 
         raise HTTPException(status_code=503, detail="Recurring Tasks Modul nicht verfuegbar")
 
-    
+
 
     try:
 
@@ -10341,7 +10856,7 @@ async def trigger_recurring(task_id: str):
 
 
 
-@app.get("/memory", response_class=HTMLResponse)
+@app.get("/memory", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def memory_page():
 
@@ -10882,7 +11397,7 @@ async def get_memory_db_stats():
 
             cursor = conn.cursor()
 
-            
+
 
             # Alle Tabellen laden
 
@@ -10890,7 +11405,7 @@ async def get_memory_db_stats():
 
             tables = [row['name'] for row in cursor.fetchall()]
 
-            
+
 
             stats = []
 
@@ -10900,7 +11415,7 @@ async def get_memory_db_stats():
 
                 count = cursor.fetchone()[0]
 
-                
+
 
                 # Letztes Update (falls Spalte existiert)
 
@@ -10922,7 +11437,7 @@ async def get_memory_db_stats():
 
                     last_update = cursor.fetchone()[0]
 
-                
+
 
                 stats.append({
 
@@ -10934,7 +11449,7 @@ async def get_memory_db_stats():
 
                 })
 
-            
+
 
             return {"success": True, "tables": stats, "count": len(stats)}
 
@@ -10958,7 +11473,7 @@ async def memory_maintenance_cleanup():
 
             results = {}
 
-            
+
 
             # 1. Orphans in memory_consolidation (Source existiert nicht mehr)
 
@@ -10966,15 +11481,15 @@ async def memory_maintenance_cleanup():
 
             cursor = conn.cursor()
 
-            
+
 
             # Zu loeschende Consolidation-Eintraege finden
 
             cursor.execute("""
 
-                DELETE FROM memory_consolidation 
+                DELETE FROM memory_consolidation
 
-                WHERE source_table = 'memory_working' 
+                WHERE source_table = 'memory_working'
 
                 AND source_id NOT IN (SELECT id FROM memory_working)
 
@@ -10982,13 +11497,13 @@ async def memory_maintenance_cleanup():
 
             results["orphans_working_removed"] = cursor.rowcount
 
-            
+
 
             cursor.execute("""
 
-                DELETE FROM memory_consolidation 
+                DELETE FROM memory_consolidation
 
-                WHERE source_table = 'memory_lessons' 
+                WHERE source_table = 'memory_lessons'
 
                 AND source_id NOT IN (SELECT id FROM memory_lessons)
 
@@ -10996,7 +11511,7 @@ async def memory_maintenance_cleanup():
 
             results["orphans_lessons_removed"] = cursor.rowcount
 
-            
+
 
             # 2. Inaktive Eintraege endgueltig loeschen (optional, je nach Policy)
 
@@ -11006,7 +11521,7 @@ async def memory_maintenance_cleanup():
 
             results["inactive_working_count"] = cursor.fetchone()[0]
 
-            
+
 
             conn.commit()
 
@@ -11032,7 +11547,7 @@ async def get_session_detail(session_id: str):
 
             conn.row_factory = sqlite3.Row
 
-            
+
 
             if session_id.isdigit():
 
@@ -11042,23 +11557,23 @@ async def get_session_detail(session_id: str):
 
                 row = conn.execute("SELECT * FROM memory_sessions WHERE session_id = ?", (session_id,)).fetchone()
 
-            
+
 
             if not row:
 
                 raise HTTPException(status_code=404, detail="Session nicht gefunden")
 
-            
+
 
             session_data = dict(row)
 
-            
+
 
             # Optional: Zugehoerige Tasks laden
 
             # row['tasks_completed'] usw. sind schon drin
 
-            
+
 
             return {"success": True, "session": session_data}
 
@@ -11088,7 +11603,7 @@ TOOLS_DIR = BACH_DIR / "tools"
 
 
 
-@app.get("/tools", response_class=HTMLResponse)
+@app.get("/tools", response_class=HTMLResponse, tags=["shared-gui"])
 
 async def tools_page():
 
@@ -11439,10 +11954,13 @@ class PromptUpdateRequest(BaseModel):
 
 
 def _prompt_library_row(row):
-    """Keep tags editable without losing boundaries in existing JSON lists."""
+    """Keep tags editable without losing boundaries in existing JSON lists and expose favorite status."""
     from hub.prompt import prompt_tags_edit_text
     result = row_to_dict(row)
-    result["tags"] = prompt_tags_edit_text(result.get("tags"))
+    tags_str = prompt_tags_edit_text(result.get("tags"))
+    result["tags"] = tags_str
+    tags_lower = (tags_str or "").lower()
+    result["is_favorite"] = any(f in tags_lower for f in ("favorite", "favorit", "star", "pinned"))
     return result
 
 
@@ -11452,7 +11970,7 @@ def _promptboard_library_paths():
     return promptboard_library_paths()
 
 
-@app.get("/prompt-library", response_class=HTMLResponse)
+@app.get("/prompt-library", response_class=HTMLResponse, tags=["shared-gui"])
 async def prompt_library_page():
     """Prompt-Bibliothek (BACH-DB) als GUI-Seite; gebaute Dist-Seite zuerst, Legacy-Template als Rückweg."""
     astro_page = ASTRO_DIST_DIR / "prompt-library.html"
@@ -11464,21 +11982,9 @@ async def prompt_library_page():
     return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
 
 
-@app.get("/governance", response_class=HTMLResponse)
-async def governance_page():
-    """Governance & Control als GUI-Seite: Erlaubnisse für Außenwirkung, Policy-Registry, Sperren, Hooks & Guards, Logs & Audit."""
-    astro_page = ASTRO_DIST_DIR / "governance.html"
-    if astro_page.is_file():
-        return FileResponse(astro_page)
-    template = TEMPLATES_DIR / "governance.html"
-    if template.exists():
-        return HTMLResponse(content=template.read_text(encoding="utf-8"))
-    return HTMLResponse(content="<h1>Template governance.html fehlt</h1>", status_code=404)
-
-
 @app.get("/api/prompt-library")
-async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None):
-    """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie)."""
+async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None, favorites: Optional[bool] = None):
+    """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie/Favoriten)."""
     from hub.prompt import prompt_tags_text
     conn = get_bach_db()
     try:
@@ -11492,6 +11998,8 @@ async def list_prompt_library(q: Optional[str] = None, category: Optional[str] =
         if category:
             clauses.append("category = ?")
             params.append(category)
+        if favorites:
+            clauses.append("(tags LIKE '%favorite%' OR tags LIKE '%favorit%' OR tags LIKE '%star%' OR tags LIKE '%pinned%')")
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY name"
@@ -11503,6 +12011,39 @@ async def list_prompt_library(q: Optional[str] = None, category: Optional[str] =
             "prompts": [_prompt_library_row(r) for r in rows],
             "categories": [c["category"] for c in cats],
         }
+    finally:
+        conn.close()
+
+
+@app.post("/api/prompt-library/{prompt_id}/favorite")
+async def toggle_prompt_favorite(prompt_id: int):
+    """Favoriten-Status eines Prompt-Templates umschalten."""
+    from hub.prompt import serialize_prompt_tags, prompt_tags_edit_text
+    conn = get_bach_db()
+    try:
+        row = conn.execute("SELECT id, tags FROM prompt_templates WHERE id = ?", (prompt_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Prompt nicht gefunden")
+        raw_tags = row["tags"]
+        tags_text = prompt_tags_edit_text(raw_tags) or ""
+        tags_list = [t.strip() for t in tags_text.split(",") if t.strip()]
+
+        is_fav = any(t.lower() in ("favorite", "favorit", "star", "pinned") for t in tags_list)
+        if is_fav:
+            tags_list = [t for t in tags_list if t.lower() not in ("favorite", "favorit", "star", "pinned")]
+            new_is_fav = False
+        else:
+            tags_list.append("favorite")
+            new_is_fav = True
+
+        new_tags = ", ".join(tags_list) if tags_list else None
+        now = datetime.now().isoformat()
+        conn.execute(
+            "UPDATE prompt_templates SET tags = ?, updated_at = ? WHERE id = ?",
+            (serialize_prompt_tags(new_tags), now, prompt_id),
+        )
+        conn.commit()
+        return {"ok": True, "id": prompt_id, "is_favorite": new_is_fav, "tags": new_tags or ""}
     finally:
         conn.close()
 
@@ -11596,6 +12137,30 @@ async def delete_prompt_library_entry(prompt_id: int):
         conn.close()
 
 
+def _prompt_import_connection():
+    """Keep infrastructure failures distinct from invalid uploaded libraries."""
+    try:
+        return get_bach_db()
+    except (OSError, sqlite3.Error):
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
+
+
+@app.get("/api/prompt-library/import-promptboard/preview")
+async def preview_promptboard_library():
+    """Preview PromptBoard import items and counts without changing the database."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    library_path = next((p for p in candidates if p.exists()), None)
+    if library_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path, dry_run=True)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
+
+
 @app.post("/api/prompt-library/import-promptboard")
 async def import_promptboard_library():
     """Import through the same handler used by CLI and library API."""
@@ -11605,9 +12170,127 @@ async def import_promptboard_library():
     if library_path is None:
         raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path)
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
+
+
+@app.post("/api/prompt-library/import-json/preview")
+async def preview_prompt_json_upload(req: Request):
+    """Preview uploaded PromptBoard JSON items without changing the database."""
+    from hub.prompt import PromptHandler
+    try:
+        body = await req.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
+    try:
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
+        payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
+        res = handler.import_promptboard(payload=payload, dry_run=True)
+        if isinstance(body, dict) and "filename" in body:
+            res["source"] = str(body["filename"])
+        return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
+
+
+@app.post("/api/prompt-library/import-json")
+async def import_prompt_json_upload(req: Request):
+    """Import uploaded PromptBoard JSON items directly into the library."""
+    from hub.prompt import PromptHandler
+    try:
+        body = await req.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
+    try:
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
+        payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
+        res = handler.import_promptboard(payload=payload, dry_run=False)
+        if isinstance(body, dict) and "filename" in body:
+            res["source"] = str(body["filename"])
+        return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
+
+
+@app.post("/api/prompt-library/export-promptboard")
+async def export_promptboard_library(req: Request = None):
+    """Export and sync prompt templates from BACH to external PromptBoard library.json."""
+    from hub.prompt import PromptHandler
+    candidates = _promptboard_library_paths()
+    target_path = next((p for p in candidates if p.exists()), None)
+    if target_path is None and candidates:
+        target_path = candidates[0]
+    category = None
+    dry_run = False
+    if req is not None:
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                category = body.get("category")
+                dry_run = bool(body.get("dry_run", False))
+                if body.get("target_path"):
+                    target_path = Path(body["target_path"])
+        except Exception:
+            pass
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).export_promptboard(
+            target_path, category=category, dry_run=dry_run
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Export fehlgeschlagen: {exc}") from exc
+
+
+@app.get("/api/prompt-library/sync-promptboard/preview")
+async def preview_sync_promptboard_library():
+    """Preview PromptBoard two-way synchronization counts without changing the database or library."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    library_path = next((p for p in candidates if p.exists()), None)
+    if library_path is None and candidates:
+        library_path = candidates[0]
+    if library_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(library_path, dry_run=True)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync Vorschau fehlgeschlagen: {exc}") from exc
+
+
+@app.post("/api/prompt-library/sync-promptboard")
+async def sync_promptboard_library(req: Request = None):
+    """Bidirectionally synchronize prompt templates between BACH and PromptBoard library.json."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    target_path = next((p for p in candidates if p.exists()), None)
+    if target_path is None and candidates:
+        target_path = candidates[0]
+    category = None
+    dry_run = False
+    if req is not None:
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                category = body.get("category")
+                dry_run = bool(body.get("dry_run", False))
+                if body.get("target_path"):
+                    target_path = Path(body["target_path"])
+        except Exception:
+            pass
+    if target_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(
+            target_path, category=category, dry_run=dry_run
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync fehlgeschlagen: {exc}") from exc
 
 
 @app.get("/api/prompt-generator/templates")
@@ -13653,7 +14336,7 @@ async def get_insurances():
 
         conn.close()
 
-        
+
 
         # Stats berechnen
 
@@ -13663,7 +14346,7 @@ async def get_insurances():
 
         yearly += sum(float(i.get('beitrag', 0) or 0) for i in insurances if i.get('zahlweise') == 'jaehrlich')
 
-        
+
 
         return {"success": True, "insurances": insurances, "count": total, "yearly_cost": yearly}
 
@@ -13689,7 +14372,7 @@ async def get_financial_deadlines():
 
         cursor = conn.cursor()
 
-        
+
 
         deadlines = []
 
@@ -13713,7 +14396,7 @@ async def get_financial_deadlines():
 
                 frist_datum = ablauf - timedelta(days=frist_tage)
 
-                
+
 
                 if frist_datum <= warning_limit:
 
@@ -13751,7 +14434,7 @@ async def get_financial_deadlines():
 
                 frist_datum = ablauf - timedelta(days=frist_tage)
 
-                
+
 
                 if frist_datum <= warning_limit:
 
@@ -13779,7 +14462,7 @@ async def get_financial_deadlines():
 
         deadlines.sort(key=lambda x: x['days_left'])
 
-        
+
 
         return {"success": True, "deadlines": deadlines, "count": len(deadlines)}
 
@@ -13887,6 +14570,8 @@ async def delete_insurance(ins_id: int):
 @app.get("/usecases", response_class=HTMLResponse)
 async def usecases_page():
     """Usecase Verwaltung."""
+    if os.environ.get("ELLMOS_SYSTEM_GUI_DIST"):
+        return RedirectResponse("/governance/usecases")
     astro_uc = ASTRO_DIST_DIR / "governance" / "usecases.html"
     if astro_uc.exists():
         return FileResponse(astro_uc)
@@ -13897,9 +14582,72 @@ async def usecases_page():
 
 
 
+_USECASE_COLUMNS = (
+    "id", "title", "description", "workflow_path", "workflow_name", "test_input", "expected_output",
+    "last_tested", "test_result", "test_score", "tuev_valid_until", "created_by", "created_at", "updated_at",
+)
+
+
+def _load_ellmos_tests_usecases(usecase_id: int | None = None) -> dict | None:
+    """Read canonical usecases from ellmos-tests/usecases.json (#2122, #2487) when present."""
+    if os.environ.get("BACH_USECASES_DB_ONLY") == "1":
+        return None
+    env_file = os.environ.get("BACH_ELLMOS_TESTS_USECASES")
+    candidates = [Path(env_file)] if env_file else [
+        Path("C:/_Local_DEV/repos/ellmos-tests/usecases.json"),
+        Path.home() / "services" / "ellmos-tests" / "usecases.json",
+        Path.home() / "_Local_DEV" / "repos" / "ellmos-tests" / "usecases.json",
+    ]
+    target = next((p for p in candidates if p.is_file()), None)
+    if target is None:
+        return None
+    try:
+        document = json.loads(target.read_bytes().decode("utf-8-sig"))
+        items = document.get("usecases") if isinstance(document, dict) else None
+        meta = document.get("_meta") if isinstance(document, dict) else {}
+        if not isinstance(items, list):
+            return None
+        rows = []
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("id"), int):
+                continue
+            row = dict.fromkeys(_USECASE_COLUMNS)
+            row.update({k: item.get(k) for k in ("id", "title", "description", "last_tested", "test_score")})
+            score = item.get("test_score")
+            if isinstance(score, int) and not isinstance(score, bool):
+                row["test_result"] = "pass" if score >= 75 else ("fail" if score > 0 else "pending")
+            row.update({k: item.get(k) for k in ("module", "covering_skill", "coverage_status")})
+            rows.append(row)
+        if usecase_id is not None:
+            found = next((r for r in rows if r["id"] == usecase_id), None)
+            return {"success": True, "usecase": found} if found else {"success": False, "error": "Nicht gefunden"}
+        rows.sort(key=lambda r: ((r.get("title") or "").encode("utf-8"), r["id"]))
+        passed = sum(1 for r in rows if r["test_result"] == "pass")
+        failed = sum(1 for r in rows if r["test_result"] == "fail")
+        meta = meta if isinstance(meta, dict) else {}
+        return {
+            "success": True,
+            "usecases": rows,
+            "stats": {"total": len(rows), "pass": passed, "fail": failed, "pending": len(rows) - passed - failed},
+            "source": {
+                "id": "ellmos-tests",
+                "file": "usecases.json",
+                "read_only": True,
+                "generated_at": meta.get("generated_at"),
+                "source_db": meta.get("source_db"),
+                "derived": ["test_result", "stats"],
+            },
+        }
+    except Exception:
+        return None
+
+
 @app.get("/api/usecases")
 async def get_usecases():
-    """Alle Usecases laden mit Stats."""
+    """Alle Usecases laden mit Stats (vorrangig aus ellmos-tests/usecases.json · #2122, #2487)."""
+    adapter_result = _load_ellmos_tests_usecases()
+    if adapter_result is not None:
+        return adapter_result
     try:
         conn = get_user_db()
         conn.row_factory = sqlite3.Row
@@ -13932,7 +14680,10 @@ async def get_usecases():
 
 @app.get("/api/usecases/{usecase_id}")
 async def get_usecase(usecase_id: int):
-    """Einzelnen Usecase laden."""
+    """Einzelnen Usecase laden (vorrangig aus ellmos-tests/usecases.json · #2122, #2487)."""
+    adapter_result = _load_ellmos_tests_usecases(usecase_id=usecase_id)
+    if adapter_result is not None:
+        return adapter_result
     try:
         conn = get_user_db()
         conn.row_factory = sqlite3.Row
@@ -13965,8 +14716,52 @@ async def add_usecase(request: Request):
             data.get('expected_output')
         ))
         conn.commit()
+        usecase_id = cursor.lastrowid
         conn.close()
-        return {"success": True, "id": cursor.lastrowid}
+
+        # Automatische Task-Erzeugung fuer Buddha wenn Workflow noch fehlt
+        task_id = None
+        workflow_name = data.get('workflow_name')
+        wf_file = resolve_workflow_file(workflow_name) if workflow_name else None
+        if not wf_file:
+            try:
+                from hub._services.chat.usecase_runner import ensure_buddha_usecase_task
+                task_id, _ = ensure_buddha_usecase_task(
+                    usecase_id=usecase_id,
+                    title=data.get('title') or f"Usecase {usecase_id}",
+                    description=data.get('description'),
+                    workflow_name=workflow_name,
+                )
+            except Exception as task_err:
+                logger.warning(f"Konnte automatischen Buddha-Task fuer Usecase #{usecase_id} nicht anlegen: {task_err}")
+
+        return {"success": True, "id": usecase_id, "task_id": task_id}
+    except Exception as e:
+        return {"success": False, "error": public_error_message()}
+
+
+@app.post("/api/usecases/{usecase_id}/delegate")
+async def delegate_usecase(usecase_id: int):
+    """Usecase zur autonomen Workflow-Erstellung an Buddha delegieren."""
+    try:
+        conn = get_user_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM usecases WHERE id = ?", (usecase_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return {"success": False, "error": "Usecase nicht gefunden"}
+
+        uc = dict(row)
+        from hub._services.chat.usecase_runner import ensure_buddha_usecase_task
+        task_id, created = ensure_buddha_usecase_task(
+            usecase_id=usecase_id,
+            title=uc.get('title') or f"Usecase {usecase_id}",
+            description=uc.get('description'),
+            workflow_name=uc.get('workflow_name'),
+        )
+        msg = f"Task #{task_id} fuer Buddha erstellt" if created else f"Task #{task_id} existiert bereits fuer Buddha"
+        return {"success": True, "task_id": task_id, "created": created, "message": msg}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -14194,7 +14989,7 @@ async def execute_usecase(usecase_id: int, request: Request):
 # API ROUTES - CONTACTS (v1.1.84 - Task 789)
 # ═══════════════════════════════════════════════════════════════
 
-@app.get("/kontakte", response_class=HTMLResponse)
+@app.get("/kontakte", response_class=HTMLResponse, tags=["shared-gui"])
 async def kontakte_page():
     """Kontakte Verwaltung."""
     kontakte_file = TEMPLATES_DIR / "kontakte.html"
@@ -14409,7 +15204,7 @@ async def export_contacts():
 # API ROUTES - ROUTINES (v1.1.84 - Task 788)
 # ═══════════════════════════════════════════════════════════════
 
-@app.get("/routinen", response_class=HTMLResponse)
+@app.get("/routinen", response_class=HTMLResponse, tags=["shared-gui"])
 async def routinen_page():
     """Routinen Dashboard: shared GUI page first; the BACH template only without a shared release page."""
     astro_routinen = ASTRO_DIST_DIR / "routinen.html"
@@ -15427,13 +16222,13 @@ async def sort_inbox_file(data: dict):
 
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        
+
 
         final_name = safe_path_segment(new_name, field_name="Zieldateiname") if new_name else source_path.name
 
         target_path = resolve_child_file(target_dir, final_name)
 
-        
+
 
         # Falls Zieldatei existiert, Zeitstempel anhaengen
 
@@ -15453,7 +16248,7 @@ async def sort_inbox_file(data: dict):
 
         shutil.move(str(source_path), str(target_path))
 
-        
+
 
         return {"success": True, "moved_to": str(target_path)}
 
@@ -15475,13 +16270,13 @@ async def get_inbox_preview(filename: str):
 
         config = json.loads(INBOX_CONFIG_FILE.read_text(encoding='utf-8'))
 
-    
+
 
     unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
     file_path = resolve_child_file(unsorted_dir, filename, must_exist=True)
 
-    
+
 
     # MIME Type bestimmen
 
@@ -15489,7 +16284,7 @@ async def get_inbox_preview(filename: str):
 
     mime, _ = mimetypes.guess_type(str(file_path))
 
-    
+
 
     return FileResponse(file_path, media_type=mime)
 
@@ -15507,13 +16302,13 @@ async def analyze_inbox_file(filename: str):
 
         config = json.loads(INBOX_CONFIG_FILE.read_text(encoding='utf-8'))
 
-    
+
 
     unsorted_dir = resolve_configured_dir(config, 'unsorted_dir', BACH_DIR / 'user' / 'inbox' / 'unsortiert')
 
     file_path = resolve_child_file(unsorted_dir, filename)
 
-    
+
 
     if not file_path.exists():
 
@@ -15541,17 +16336,17 @@ async def analyze_inbox_file(filename: str):
 
     target_suggestion = None
 
-    
+
 
     if file_path.suffix.lower() == '.txt':
 
         content = file_path.read_text(encoding='utf-8', errors='ignore')
 
-    
+
 
     # TODO: PDF OCR integration hier falls noetig
 
-    
+
 
     for r in rules:
 
@@ -15563,11 +16358,11 @@ async def analyze_inbox_file(filename: str):
 
             break
 
-            
+
 
     return {
 
-        "success": True, 
+        "success": True,
 
         "filename": filename,
 
@@ -15627,7 +16422,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     WebSocket-Endpoint fuer Real-time GUI-Updates.
 
-    
+
 
     Clients verbinden sich hier und erhalten:
 
@@ -15639,7 +16434,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     - daemon_event: Daemon-Job Status
 
-    
+
 
     Usage (JavaScript):
 
@@ -15787,9 +16582,9 @@ async def upload_anon_file(file: Request):
 
     Upload file for quarantine.
 
-    Expects multipart/form-data via Request body parsing manually 
+    Expects multipart/form-data via Request body parsing manually
 
-    or simpler: just raw bytes if single file. 
+    or simpler: just raw bytes if single file.
 
     For now, placeholder logic.
 
@@ -15815,6 +16610,41 @@ def get_report_workflow_service():
         from hub._services.document.report_workflow_service import ReportWorkflowService
         _report_workflow_service = ReportWorkflowService()
     return _report_workflow_service
+
+
+def _report_error_response(exc: Exception) -> dict:
+    """Datenschutz-Sperre mit maschinenlesbarem Grund (Meldung und Code ohne Werte), sonst neutral."""
+    try:
+        from hub._services.document.report_workflow_service import PromptPrivacyError
+    except Exception:
+        PromptPrivacyError = ()  # isinstance(x, ()) ist immer False
+    if isinstance(exc, PromptPrivacyError):
+        return {"success": False, "privacy_block": True, "error_code": exc.code, "error": str(exc)}
+    return {"success": False, "error": public_error_message()}
+
+
+@app.get("/api/report/readiness")
+async def report_readiness(session_id: Optional[str] = None):
+    """Ob der Cloud-Weg laufen darf (Namenserkennung bereit); sonst Grund maschinenlesbar, ohne Werte.
+
+    Mit ?session_id= zusaetzlich die Session: Profil, lesbares Geburtsdatum, Akten-Scan nach dem
+    letzten Import (R7-F5)."""
+    try:
+        from hub._services.document.report_workflow_service import PromptPrivacyError, require_cloud_ner
+        session = None
+        if session_id is not None:
+            session = get_report_workflow_service().get_session(session_id)
+            if not session:
+                return {"success": False, "error": "Session nicht gefunden"}
+        try:
+            require_cloud_ner()
+            if session is not None:
+                get_report_workflow_service().require_cloud_session(session)
+        except PromptPrivacyError as e:
+            return {"success": True, "cloud_ready": False, "error_code": e.code, "error": str(e)}
+        return {"success": True, "cloud_ready": True, "error_code": None, "error": None}
+    except Exception:
+        return {"success": False, "error": public_error_message()}
 
 
 @app.post("/api/report/session/start")
@@ -15876,12 +16706,14 @@ async def import_files_to_session(session_id: str, data: dict = Body(...)):
 @app.post("/api/report/session/{session_id}/profile")
 async def create_session_profile(session_id: str, data: dict = Body(...)):
     """
-    Erstellt ein temporaeres Anonymisierungsprofil.
+    Erstellt das Pseudonymisierungsprofil fuer den Cloud-Weg (wie die Pipeline: Namenserkennung
+    Pflicht, Scan der importierten Akte). Ohne spaCy/NER: privacy_block mit error_code.
 
     Body: {
         "client_name": "Max Mustermann",
         "geburtsdatum": "15.03.2016",
-        "additional_terms": ["Term1", "Term2"]  / optional
+        "additional_terms": ["Term1", "Term2"],  / optional
+        "parent_names": ["..."], "client_address": "...", "whitelist": ["..."]  / optional
     }
     """
     try:
@@ -15894,11 +16726,12 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
         if not client_name:
             return {"success": False, "error": "client_name erforderlich"}
 
-        geburtsdatum = data.get("geburtsdatum", "01.01.2010")
-        additional_terms = data.get("additional_terms", [])
-
-        profile = service.create_temp_profile(
-            session, client_name, geburtsdatum, additional_terms
+        profile = service.create_cloud_profile(
+            session, client_name, data.get("geburtsdatum") or "",  # kein Platzhalter: fehlt -> Sperre (R7-F1)
+            additional_terms=data.get("additional_terms") or [],
+            whitelist=data.get("whitelist") or None,
+            parent_names=data.get("parent_names") or None,
+            client_address=data.get("client_address") or None,
         )
 
         return {
@@ -15909,7 +16742,7 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": public_error_message()}
+        return _report_error_response(e)
 
 
 @app.post("/api/report/session/{session_id}/anonymize")
@@ -15942,7 +16775,8 @@ async def anonymize_session_documents(session_id: str, data: dict = Body(default
 @app.post("/api/report/session/{session_id}/prompt")
 async def generate_session_prompt(session_id: str, data: dict = Body(default={})):
     """
-    Generiert den LLM-Prompt.
+    Generiert den Cloud-Prompt (Kopieren in ein Cloud-Modell): nur mit Pseudonymisierungsprofil
+    und hinter derselben Datenschutz-Sperre wie die Pipeline; Sperre -> privacy_block + error_code.
 
     Body: {
         "berichtszeitraum": "01.01.2025 - 31.12.2025",
@@ -15964,7 +16798,8 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
             session,
             include_wissensdatenbank=include_kb,
             berichtszeitraum=berichtszeitraum,
-            custom_instructions=custom
+            custom_instructions=custom,
+            cloud=True,
         )
 
         return {
@@ -15974,7 +16809,7 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": public_error_message()}
+        return _report_error_response(e)
 
 
 @app.post("/api/report/session/{session_id}/generate")
@@ -16000,6 +16835,22 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
         auto_deanonymize = data.get("auto_deanonymize", True)
 
         output_path = service.generate_report(session, llm_response, auto_deanonymize)
+
+        if not output_path or not Path(output_path).is_file():
+            # generate_report() returns None and sets session.error_message on failure. Only a
+            # finite reason leaves here: the session text can carry case data.
+            detail = str(getattr(session, "error_message", "") or "")
+            reason = next((r for prefix, r in (
+                ("Vorlage nicht gefunden", "template_missing"),
+                ("Generator-Fehler", "generator_failed"),
+                ("python-docx", "docx_missing")) if detail.startswith(prefix)), "unknown")
+            return {
+                "success": False,
+                "code": "report_not_generated",
+                "reason": reason,
+                "error": "Der Bericht wurde nicht erzeugt.",
+                "status": session.status,
+            }
 
         return {
             "success": True,
@@ -16303,8 +17154,1208 @@ async def get_workflow_content(path: str):
 
 
 # ═══════════════════════════════════════════════════════════════
+# MULTIMODAL & EMBODIED CAPABILITIES (#3763–#3768 / Ocean #533–#538)
+#   - ellmos-voice-io: Universal STT/TTS API (`/api/voice/*`)
+#   - ellmos-talk: Live Dual-Loop Voice & Visualizer (`/talk`, `/api/talk/*`)
+#   - ellmos-sensation: Fail-Closed Camera/Mic/Sound & Open-Compute Gate (`/api/sensation/*`)
+#   - ellmos-homecontrol: FritzBox/HA/Matter/Shelly SmartHome Hub (`/api/homecontrol/*`)
+#   - ellmos-robotics: MCP Standard `ellmos.robotics.mcp.v1` (`/api/robotics/*`)
+#   - Capability Permissions Matrix (`/api/permissions`)
+# ═══════════════════════════════════════════════════════════════
 
-# UNIFIED GUI (optionales externes Modul ellmos-unified-gui)
+_CAPABILITY_PERMISSIONS_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "capability_permissions.json"
+_CAPABILITY_PERMISSIONS_LOCK = threading.RLock()
+_TALK_SESSION_SINGLETON = None
+# Persisted E-Stop of the robotics hub: every request builds a fresh hub, so the stop must live on disk.
+_ROBOTICS_ESTOP_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "robotics_estop.json"
+
+
+def _load_capability_permissions() -> dict[str, bool]:
+    defaults = {
+        "system_tools": True,
+        "browser_control": True,
+        "camera": False,
+        "microphone": False,
+        "screen_capture": False,
+        "voice_tts": True,
+        "speech_to_text": True,
+        "smarthome_robotics": False,
+        "ollama": True,
+    }
+    try:
+        saved = json.loads(_CAPABILITY_PERMISSIONS_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return defaults
+    except (OSError, ValueError):
+        return dict.fromkeys(defaults, False)
+    if not isinstance(saved, dict) or any(type(v) is not bool for k, v in saved.items() if k in defaults):
+        return dict.fromkeys(defaults, False)
+    defaults.update({k: v for k, v in saved.items() if k in defaults})
+    return defaults
+
+
+def _save_capability_permissions(perms: dict[str, bool]) -> dict[str, bool]:
+    import tempfile
+
+    with _CAPABILITY_PERMISSIONS_LOCK:
+        current = _load_capability_permissions()
+        if not perms or any(k not in current or type(v) is not bool for k, v in perms.items()):
+            raise ValueError("Ungültige Berechtigungsänderung")
+        current.update(perms)
+        target = _CAPABILITY_PERMISSIONS_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staged = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent,
+                                             prefix=".capability-permissions-", delete=False) as stream:
+                staged = Path(stream.name)
+                stream.write(json.dumps(current, indent=2, ensure_ascii=False) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(staged, target)
+            try:
+                confirmed = json.loads(target.read_text(encoding="utf-8"))
+            except ValueError:
+                raise OSError("Berechtigungsänderung nicht bestätigt") from None
+            if confirmed != current:
+                raise OSError("Berechtigungsänderung nicht bestätigt")
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
+        return current
+
+
+_TALK_CONFIG_FILE = Path.home() / ".bach" / "talk_config.json"
+_TALK_HISTORY: dict[str, list[dict[str, str]]] = {}
+
+_TALK_PERSONA_SYSTEM_PROMPTS = {
+    "buddha": (
+        "Du bist Buddha, der zentrale KI-Orchestrator und ruhige Begleiter im BACH/Ocean-System von Lukas. "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+    "claude": (
+        "Du bist Claude im BACH/Ocean-Team von Lukas (Fokus: präzise Analyse, Architektur, Sorgfalt). "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+    "gemini": (
+        "Du bist Gemini (Antigravity) im BACH/Ocean-Team von Lukas (Fokus: schnelle Umsetzung, UI/Design, System-Integration). "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+    "codex": (
+        "Du bist Codex / GPT im BACH/Ocean-Team von Lukas (Fokus: Code, Infrastruktur, präzise Technik). "
+        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
+    ),
+}
+
+
+def _strip_talk_control_tags(text: str) -> str:
+    """Remove both well-formed and truncated <talk_control ...> tags from spoken text."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"<talk_control\b[^>]*/>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^>]*>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^\n]*", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _infer_talk_control_tag(spoken: str) -> str:
+    """Synthesize a well-formed <talk_control ... /> directive from spoken content."""
+    lower = spoken.lower()
+    if "?" in spoken:
+        return '<talk_control {"emotion": "curious", "pattern": "rings", "emoji_overlay": "✨"} />'
+    if any(w in lower for w in ("achtung", "warnung", "fehler", "problem", "warning", "error")):
+        return '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "⚠️"} />'
+    if any(w in lower for w in ("super", "klasse", "perfekt", "gerne", "freut", "great", "glad")):
+        return '<talk_control {"emotion": "joyful", "pattern": "orb", "emoji_overlay": "😊"} />'
+    return '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} />'
+
+
+def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str = "de") -> str:
+    """Route ELLMOS Talk turns to a live LLM (Ollama fast path or BACH Chat-Control API)."""
+    norm_persona = (persona or "buddha").strip().lower()
+    norm_lang = (language or "de").strip().lower()
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        if norm_lang == "en":
+            return (
+                '<talk_control {"emotion": "curious", "pattern": "wave", "emoji_overlay": "✨"} /> '
+                f"[{norm_persona.capitalize()}] I heard you clearly. How would you like to proceed?"
+            )
+        return (
+            '<talk_control {"emotion": "curious", "pattern": "wave", "emoji_overlay": "✨"} /> '
+            f"[{norm_persona.capitalize()}] Ich habe dich klar verstanden. Wie wollen wir weitermachen?"
+        )
+
+    role_intro = _TALK_PERSONA_SYSTEM_PROMPTS.get(norm_persona, _TALK_PERSONA_SYSTEM_PROMPTS["buddha"])
+    lang_hint = "Antworte auf Englisch (English)." if norm_lang == "en" else "Antworte auf Deutsch."
+    sys_instruction = (
+        f"{role_intro} {lang_hint} "
+        "WICHTIG für das Funkgerät: Antworte natürlich, direkt und gesprochen-prägnant in 1 bis maximal 3 kurzen Sätzen "
+        "(reiner Fließtext zum direkten Vorlesen per Sprachausgabe, ohne XML/HTML-Tags, ohne Markdown-Tabellen, ohne Codeblöcke)."
+    )
+
+    raw_history = _TALK_HISTORY.setdefault(norm_persona, [])
+    history = [
+        {"role": h.get("role", "user"), "content": _strip_talk_control_tags(str(h.get("content") or ""))}
+        for h in raw_history
+        if _strip_talk_control_tags(str(h.get("content") or ""))
+    ]
+    _TALK_HISTORY[norm_persona] = history
+    messages = [{"role": "system", "content": sys_instruction}]
+    messages.extend(history[-6:])
+    messages.append({"role": "user", "content": prompt})
+
+    reply_text = ""
+
+    # 1. Fast path: local Ollama /api/chat (no multi-round tool loop latency)
+    ollama_base = os.environ.get("BACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    try:
+        with httpx.Client(timeout=90.0) as client:
+            tags_resp = client.get(f"{ollama_base}/api/tags")
+            if tags_resp.status_code == 200:
+                installed = [
+                    str(m.get("name") or "")
+                    for m in (tags_resp.json().get("models") or [])
+                    if isinstance(m, dict) and m.get("name")
+                ]
+                configured_primary = ""
+                if _TALK_SESSION_SINGLETON is not None:
+                    configured_primary = str(getattr(_TALK_SESSION_SINGLETON.state, "primary_model", "") or "").strip()
+                preferred_order = [
+                    m
+                    for m in [
+                        configured_primary,
+                        "qwen3.8:27b-mlx",
+                        "gpt-oss:120b-cloud",
+                        "qwen3:1.7b",
+                    ]
+                    if m
+                ]
+                candidates: list[str] = []
+                for m in preferred_order + installed:
+                    if m in installed and m not in candidates and "smollm2" not in m:
+                        candidates.append(m)
+                for chosen_model in candidates[:3]:
+                    try:
+                        think_param: bool | str = "low" if "gpt-oss" in chosen_model.lower() else False
+                        chat_resp = client.post(
+                            f"{ollama_base}/api/chat",
+                            json={
+                                "model": chosen_model,
+                                "stream": False,
+                                "think": think_param,
+                                "messages": messages,
+                                "options": {"num_predict": 800, "temperature": 0.5},
+                            },
+                        )
+                        if chat_resp.status_code == 200:
+                            msg_obj = chat_resp.json().get("message") or {}
+                            content = str(msg_obj.get("content") or "").strip()
+                            if "<think>" in content:
+                                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                            content = _strip_talk_control_tags(content)
+                            if len(content) >= 2:
+                                reply_text = content
+                                break
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+
+    # 2. Fallback: BACH Chat-Control API (/api/chat on port 8081)
+    if not reply_text:
+        base_url = _chat_control_base_url()
+        auth_header = get_control_api_auth_header()
+        if base_url and auth_header:
+            try:
+                compact_prompt = (
+                    f"[ELLMOS Talk Funkgerät · Persona: {norm_persona.capitalize()} · {lang_hint} "
+                    "Antworte direkt in 1-3 kurzen gesprochenen Sätzen ohne Tool-Aufrufe] "
+                    f"{prompt}"
+                )
+                with httpx.Client(timeout=25.0) as client:
+                    ctrl_resp = client.post(
+                        f"{base_url}/chat",
+                        headers={"Authorization": auth_header},
+                        json={"prompt": compact_prompt, "chat_id": "gui-web"},
+                    )
+                    if ctrl_resp.status_code == 200:
+                        payload = ctrl_resp.json()
+                        ans = _strip_talk_control_tags(str(payload.get("answer") or payload.get("response") or ""))
+                        if len(ans) >= 2:
+                            reply_text = ans
+            except Exception:
+                pass
+
+    if reply_text:
+        history.append({"role": "user", "content": prompt})
+        history.append({"role": "assistant", "content": reply_text})
+        if len(history) > 12:
+            del history[:-12]
+        from hub._services.chat.talk_history import record_talk_turn
+        record_talk_turn(norm_persona, prompt, reply_text)  # PB-2: Talk-Verlauf erscheint in der Verlaufsliste
+        ctrl_tag = _infer_talk_control_tag(reply_text)
+        return f"{ctrl_tag} {reply_text}"
+
+    if norm_lang == "en":
+        return (
+            '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "📡"} /> '
+            f"[{norm_persona.capitalize()}] Radio link active, but no language model backend responded."
+        )
+    return (
+        '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "📡"} /> '
+        f"[{norm_persona.capitalize()}] Funkkanal steht, aber aktuell antwortet kein Sprachmodell-Backend."
+    )
+
+
+def _get_talk_session():
+    global _TALK_SESSION_SINGLETON
+    if _TALK_SESSION_SINGLETON is None:
+        from hub._services.ocean_stack_bridge import load_talk_module
+
+        talk_mod = load_talk_module()
+        cortex = talk_mod.DeepCortexLoop(responder=_talk_cortex_responder)
+        engine = talk_mod.TalkEngine(cortex=cortex)
+        if _TALK_CONFIG_FILE.is_file():
+            try:
+                persisted = json.loads(_TALK_CONFIG_FILE.read_text(encoding="utf-8"))
+                if isinstance(persisted, dict):
+                    engine.update_visual_state(persisted)
+            except Exception:
+                pass
+        _TALK_SESSION_SINGLETON = engine
+    return _TALK_SESSION_SINGLETON
+
+
+def _save_talk_config(updates: dict) -> dict:
+    engine = _get_talk_session()
+    state = engine.update_visual_state(updates)
+    snapshot = state.as_dict()
+    persistable = {
+        k: snapshot.get(k)
+        for k in (
+            "persona",
+            "language",
+            "operating_mode",
+            "bound_slot",
+            "primary_model",
+            "fast_relay_model",
+            "summon_policy",
+            "wake_word",
+            "wake_word_enabled",
+            "pattern",
+            "emotion",
+            "input_device_id",
+            "output_device_id",
+            "camera_device_id",
+            "client_runtime",
+        )
+        if k in snapshot
+    }
+    try:
+        _TALK_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _TALK_CONFIG_FILE.write_text(json.dumps(persistable, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return snapshot
+
+
+@app.get("/api/permissions")
+async def api_get_capability_permissions():
+    """Return the unified hardware & agent capability permissions matrix (#3768)."""
+    perms = _load_capability_permissions()
+    return {
+        "schema": "ellmos.capability-permissions.v1",
+        "permissions": perms,
+    }
+
+
+@app.post("/api/permissions")
+async def api_update_capability_permissions(payload: dict = Body(...)):
+    """Update one or more capability permissions (#3768)."""
+    updates: dict[str, bool] = {}
+    if set(payload) == {"key", "enabled"} and type(payload["key"]) is str:
+        updates[payload["key"]] = payload["enabled"]
+    elif set(payload) == {"permissions"} and isinstance(payload["permissions"], dict):
+        updates = payload["permissions"]
+    try:
+        perms = _save_capability_permissions(updates)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültige Berechtigungsänderung") from None
+    except OSError:
+        raise HTTPException(status_code=503, detail="Berechtigungsänderung konnte nicht bestätigt werden") from None
+    return {
+        "schema": "ellmos.capability-permissions.v1",
+        "updated": list(updates.keys()),
+        "permissions": perms,
+    }
+
+
+_VOICE_IO_SINGLETON = None
+
+
+def _ensure_audio_tools_path() -> None:
+    cur_path = os.environ.get("PATH", "")
+    for extra in ("/opt/homebrew/bin", "/usr/local/bin"):
+        if extra not in cur_path and os.path.isdir(extra):
+            cur_path = f"{extra}{os.pathsep}{cur_path}" if cur_path else extra
+    os.environ["PATH"] = cur_path
+
+
+def _synthesize_os_native_wav(text: str, language: str = "de") -> tuple[bytes, str] | None:
+    """Synthesize speech to WAV using OS-native engines (macOS /usr/bin/say or Windows SAPI)."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    clean_text = re.sub(r"<talk_control[^>]*/>", "", text or "").strip()
+    if not clean_text:
+        clean_text = text.strip()
+    if not clean_text:
+        return None
+
+    if sys.platform == "darwin":
+        say_bin = shutil.which("say") or ("/usr/bin/say" if os.path.isfile("/usr/bin/say") else None)
+        if say_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                cmd = [say_bin, "-o", str(out_wav), "--data-format=LEI16@22050", clean_text]
+                try:
+                    subprocess.run(cmd, check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "macos-say"
+                except Exception:
+                    pass
+    elif sys.platform == "win32":
+        ps_bin = shutil.which("powershell") or shutil.which("pwsh")
+        if ps_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                escaped_text = clean_text.replace("'", "''")
+                escaped_path = str(out_wav).replace("'", "''")
+                ps_script = (
+                    "Add-Type -AssemblyName System.Speech; "
+                    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                    f"$s.SetOutputToWaveFile('{escaped_path}'); "
+                    f"$s.Speak('{escaped_text}'); "
+                    "$s.Dispose();"
+                )
+                try:
+                    subprocess.run([ps_bin, "-NoProfile", "-Command", ps_script], check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "windows-sapi"
+                except Exception:
+                    pass
+    return None
+
+
+def _get_voice_io_service():
+    global _VOICE_IO_SINGLETON
+    _ensure_audio_tools_path()
+    if _VOICE_IO_SINGLETON is None:
+        from hub._services.ocean_stack_bridge import load_voice_io_module
+
+        voice_mod = load_voice_io_module()
+        local_whisper = Path.home() / ".cache" / "whisper" / "base.pt"
+        stt_kwargs = {"allow_model_download": True}
+        if local_whisper.is_file():
+            stt_kwargs["model_path"] = local_whisper
+        try:
+            stt_engine = voice_mod.SpeechToText(**stt_kwargs)
+            _VOICE_IO_SINGLETON = voice_mod.VoiceIO(stt=stt_engine)
+        except Exception:
+            _VOICE_IO_SINGLETON = voice_mod.VoiceIO()
+    return _VOICE_IO_SINGLETON
+
+
+@app.get("/api/voice/status")
+async def api_voice_status():
+    """Return status of `ellmos-voice-io` STT/TTS engines (#3763)."""
+    import shutil
+
+    perms = _load_capability_permissions()
+    svc = _get_voice_io_service()
+    st_dict = svc.status().as_dict()
+    if not st_dict.get("tts_available"):
+        if sys.platform == "darwin" and (shutil.which("say") or os.path.isfile("/usr/bin/say")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "macos-say"
+        elif sys.platform == "win32" and (shutil.which("powershell") or shutil.which("pwsh")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "windows-sapi"
+    return {
+        "schema": "ellmos.voice-io.status.v1",
+        "stt_permission": perms.get("speech_to_text", True),
+        "tts_permission": perms.get("voice_tts", True),
+        "status": st_dict,
+    }
+
+
+@app.post("/api/voice/stt")
+async def api_voice_stt(payload: dict = Body(...)):
+    """Universal chat input transcription endpoint backed by `ellmos-voice-io` (#3763)."""
+    import base64
+    import shutil
+    import subprocess
+    import tempfile
+
+    _ensure_audio_tools_path()
+    perms = _load_capability_permissions()
+    if not perms.get("speech_to_text", True):
+        raise HTTPException(status_code=403, detail="Spracheingabe (STT) ist in den Berechtigungen deaktiviert")
+    audio_b64 = str(payload.get("audio_b64") or "").strip()
+    suffix = str(payload.get("suffix") or ".wav").strip()
+    if not suffix.startswith("."):
+        suffix = f".{suffix}"
+    language = str(payload.get("language") or "de").strip()
+    if not audio_b64:
+        raise HTTPException(status_code=400, detail="audio_b64 fehlt")
+    try:
+        raw_bytes = base64.b64decode(audio_b64)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
+
+    # Convert browser MediaRecorder container (.webm/.ogg/.mp4) to 16kHz mono PCM .wav if ffmpeg is available
+    if suffix.lower() in {".webm", ".ogg", ".mp4", ".m4a"} and shutil.which("ffmpeg"):
+        try:
+            with tempfile.TemporaryDirectory(prefix="ellmos_stt_") as tmp_dir:
+                in_file = Path(tmp_dir) / f"in{suffix}"
+                out_file = Path(tmp_dir) / "out.wav"
+                in_file.write_bytes(raw_bytes)
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(in_file), "-ar", "16000", "-ac", "1", str(out_file)],
+                    check=True,
+                    timeout=12,
+                    capture_output=True,
+                )
+                if out_file.is_file() and out_file.stat().st_size > 44:
+                    raw_bytes = out_file.read_bytes()
+                    suffix = ".wav"
+        except Exception:
+            pass
+
+    try:
+        svc = _get_voice_io_service()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Sprachmodul nicht verfügbar") from None
+    try:
+        text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
+    except Exception as exc:
+        return {
+            "schema": "ellmos.voice-io.stt.v1",
+            "text": "",
+            "warning": f"STT-Engine (Whisper/Vosk) nicht verfügbar oder Audio-Fehler: {exc}",
+            "language": language,
+        }
+    return {
+        "schema": "ellmos.voice-io.stt.v1",
+        "text": str(text or "").strip(),
+        "backend": svc.status().stt_engine,
+        "language": language,
+    }
+
+
+@app.post("/api/voice/tts")
+async def api_voice_tts(payload: dict = Body(...)):
+    """Universal speech synthesis endpoint backed by `ellmos-voice-io` + OS-native fallback (#3763)."""
+    import base64
+    from hub._services.ocean_stack_bridge import load_voice_io_module
+
+    perms = _load_capability_permissions()
+    if not perms.get("voice_tts", True):
+        raise HTTPException(status_code=403, detail="Sprachausgabe (TTS) ist in den Berechtigungen deaktiviert")
+    text = str(payload.get("text") or "").strip()
+    language = str(payload.get("language") or "de").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text fehlt")
+    voice_mod = load_voice_io_module()
+    svc = voice_mod.VoiceIO()
+    backend_used = "ellmos-voice-io"
+    try:
+        wav_bytes = svc.synthesize_bytes(text)
+    except Exception as exc:
+        native_res = _synthesize_os_native_wav(text, language=language)
+        if native_res is not None:
+            wav_bytes, backend_used = native_res
+        else:
+            raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
+    return {
+        "schema": "ellmos.voice-io.tts.v1",
+        "language": language,
+        "backend": backend_used,
+        "audio_b64": base64.b64encode(wav_bytes).decode("ascii"),
+        "mime_type": "audio/wav",
+    }
+
+
+@app.get("/api/talk/status")
+@app.get("/api/talk/state")
+async def api_talk_status():
+    """Return current live state of `ellmos-talk` Dual-Loop & Visualizer (#3764)."""
+    engine = _get_talk_session()
+    return engine.state.as_dict()
+
+
+@app.get("/api/talk/config")
+async def api_get_talk_config():
+    """Return the unified `ellmos-talk` operating mode, model binding, and summon configuration."""
+    engine = _get_talk_session()
+    perms = _load_capability_permissions()
+    return {
+        "schema": "ellmos.talk.config.v1",
+        "config": engine.state.as_dict(),
+        "permissions": {
+            "voice_tts": bool(perms.get("voice_tts", True)),
+            "speech_to_text": bool(perms.get("speech_to_text", True)),
+            "microphone": bool(perms.get("microphone", False)),
+            "camera": bool(perms.get("camera", False)),
+        },
+        "available_operating_modes": [
+            {"id": "ptt", "label_de": "📻 Funkgerät (Push-to-Talk)", "label_en": "📻 Walkie-Talkie (Push-to-Talk)"},
+            {"id": "duplex", "label_de": "🎙️ Live-Duplex (Freisprechen)", "label_en": "🎙️ Live Duplex (Hands-Free)"},
+            {"id": "wake_word", "label_de": "👂 Wake-Word („Hey Buddha“ / „Hey Ocean“)", "label_en": "👂 Wake-Word ('Hey Buddha' / 'Hey Ocean')"},
+            {"id": "off", "label_de": "⏸️ Aus", "label_en": "⏸️ Off"},
+        ],
+        "available_summon_policies": [
+            {"id": "knock", "label_de": "🔔 Funkgerät-Anklopfen (Banner & Signal im Header)", "label_en": "🔔 Walkie-Talkie Knock (Header Alert)"},
+            {"id": "auto_popup", "label_de": "⚡ Auto-Popup (Sofort sprechen, wenn anwesend via Sensation)", "label_en": "⚡ Auto-Popup (Speak when present via Sensation)"},
+            {"id": "muted", "label_de": "🔕 Stumm (Kein eigenständiger Modell-Start)", "label_en": "🔕 Muted (No model-initiated summon)"},
+        ],
+        "supported_runtimes": ["browser", "tauri", "mobile", "companion"],
+        "required_models": {
+            "fast_relay_default": "smollm2:360m",
+            "fast_relay_alternatives": ["smollm2:360m", "qwen3-0.6b-voice", "gemma4-e2b"],
+            "stt_default": "faster-whisper-base",
+            "tts_default": ["piper-de_DE-thorsten-high", "piper-en_US-lessac-medium", "kokoro-82m-v1.0"],
+            "vad_wake_default": ["silero-vad-v5", "openwakeword-hey-buddha"],
+        },
+    }
+
+
+@app.post("/api/talk/config")
+async def api_update_talk_config(payload: dict = Body(...)):
+    """Update `ellmos-talk` operating mode, primary/fast model bindings, wake-word, or summon policy."""
+    allowed_keys = {
+        "persona",
+        "language",
+        "operating_mode",
+        "bound_slot",
+        "primary_model",
+        "fast_relay_model",
+        "summon_policy",
+        "wake_word",
+        "wake_word_enabled",
+        "pattern",
+        "emotion",
+        "mode",
+        "emoji_overlay",
+        "input_device_id",
+        "output_device_id",
+        "camera_device_id",
+        "client_runtime",
+    }
+    updates = {k: v for k, v in payload.items() if k in allowed_keys}
+    try:
+        snapshot = _save_talk_config(updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "schema": "ellmos.talk.config.v1",
+        "updated": list(updates.keys()),
+        "config": snapshot,
+    }
+
+
+@app.post("/api/talk/summon")
+async def api_talk_summon(payload: dict = Body(...)):
+    """Allow a model (Buddha, Claude, Gemini, Codex) to summon the user via Funkgerät / Talk window."""
+    engine = _get_talk_session()
+    perms = _load_capability_permissions()
+    caller = str(payload.get("caller") or payload.get("persona") or engine.state.persona or "buddha").strip()
+    message = str(payload.get("message") or payload.get("text") or "Ich habe ein kurzes Update für dich.").strip()
+    emotion = str(payload.get("emotion") or "focused").strip()
+    pattern = str(payload.get("pattern") or "pulse").strip()
+    emoji_overlay = str(payload.get("emoji_overlay") or "📻").strip()
+    presence_verified = bool(payload.get("presence_verified", True))
+    voice_allowed = bool(perms.get("voice_tts", True))
+    if hasattr(engine, "summon_by_model"):
+        return engine.summon_by_model(
+            caller,
+            message,
+            emotion=emotion,
+            pattern=pattern,
+            emoji_overlay=emoji_overlay,
+            presence_verified=presence_verified,
+            voice_allowed=voice_allowed,
+        )
+    state = engine.update_visual_state({"persona": caller, "emotion": emotion, "pattern": pattern, "emoji_overlay": emoji_overlay})
+    return {"schema": "ellmos.talk.summon.v1", "accepted": True, "delivery": "knock", "visual_state": state.as_dict()}
+
+
+@app.post("/api/talk/summon/ack")
+async def api_talk_summon_ack(payload: dict = Body(default={})):
+    """Acknowledge or dismiss a model-initiated Funkgerät summon."""
+    engine = _get_talk_session()
+    start_listening = bool(payload.get("start_listening", True))
+    if hasattr(engine, "acknowledge_summon"):
+        return engine.acknowledge_summon(start_listening=start_listening)
+    state = engine.update_visual_state({"mode": "listening" if start_listening else "idle"})
+    return {"schema": "ellmos.talk.summon-ack.v1", "visual_state": state.as_dict()}
+
+
+@app.post("/api/talk/reflex")
+async def api_talk_reflex(payload: dict = Body(...)):
+    """Stage-1 Sub-250ms FastReflexLoop backchannel & visualizer transition prior to DeepCortex completion (#3764)."""
+    from dataclasses import asdict
+
+    engine = _get_talk_session()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
+    persona = str(payload.get("persona") or "").strip().lower() or None
+    language = str(payload.get("language") or "").strip().lower() or None
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        engine.update_visual_state({"mode": "listening"})
+    if hasattr(engine, "preview_reflex"):
+        return engine.preview_reflex(user_utterance, persona=persona, language=language)
+    decision = engine.reflex.evaluate_utterance(
+        user_utterance,
+        current_mode=engine.state.mode,
+        language=language or engine.state.language,
+        wake_word=engine.state.wake_word,
+        wake_word_enabled=engine.state.wake_word_enabled,
+    )
+    state = engine.update_visual_state({"mode": "thinking", "emotion": decision.emotion_hint, "pattern": "wave"})
+    ack_text = decision.backchannel_text or ("Einen kurzen Moment, ich schaue mir das an." if (language or engine.state.language) != "en" else "One moment, let me check that.")
+    return {
+        "schema": "ellmos.talk.reflex.v1",
+        "reflex": {
+            **asdict(decision),
+            "ack_text": ack_text,
+            "latency_target_ms": decision.latency_budget_ms,
+            "fast_model": getattr(engine.reflex, "model_name", "smollm2:360m"),
+        },
+        "visual_state": state.as_dict(),
+    }
+
+
+@app.post("/api/talk/turn")
+async def api_talk_turn(payload: dict = Body(...)):
+    """Process a live conversational turn through `ellmos-talk` (FastReflexLoop + DeepCortexLoop, #3764)."""
+    from dataclasses import asdict
+
+    engine = _get_talk_session()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
+    model_response = payload.get("model_response")
+    persona = str(payload.get("persona") or "").strip().lower()
+    language = str(payload.get("language") or "").strip().lower()
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
+    directive: dict = {}
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        directive["mode"] = "listening"
+    if persona in {"buddha", "gemini", "claude", "codex"}:
+        directive["persona"] = persona
+    if language in {"de", "en", "es", "fr", "zh", "ja", "ru", "ar", "pt", "hi", "it"}:
+        directive["language"] = language
+    if directive:
+        engine.update_visual_state(directive)
+    res = engine.process_turn(
+        user_utterance=user_utterance,
+        model_response=str(model_response) if model_response else None,
+    )
+    reflex_dict = asdict(res.reflex)
+    reflex_dict.setdefault("ack_text", res.reflex.backchannel_text or ("Verstanden." if engine.state.language != "en" else "Got it."))
+    reflex_dict.setdefault("latency_target_ms", res.reflex.latency_budget_ms)
+    reflex_dict.setdefault("fast_model", getattr(engine.reflex, "model_name", "smollm2:360m"))
+    clean_spoken = _strip_talk_control_tags(res.spoken_text)
+    clean_sentences = [s for s in (_strip_talk_control_tags(c) for c in (res.sentence_chunks or [])) if s]
+    return {
+        "spoken_text": clean_spoken,
+        "sentences": clean_sentences,
+        "reflex": reflex_dict,
+        "visual_state": res.visual_state,
+        "applied_directives": res.applied_directives,
+    }
+
+
+@app.post("/api/talk/directive")
+async def api_talk_directive(payload: dict = Body(...)):
+    """Allow the active LLM or operator to directly mutate the `ellmos-talk` visualizer state (#3764)."""
+    engine = _get_talk_session()
+    state = engine.update_visual_state(payload)
+    return {"visual_state": state.as_dict()}
+
+
+@app.get("/api/sensation/status")
+async def api_sensation_status():
+    """Return status & permission state of `ellmos-sensation` (#3765)."""
+    from hub._services.ocean_stack_bridge import load_sensation_module
+
+    perms = _load_capability_permissions()
+    sens_mod = load_sensation_module()
+    sp = sens_mod.SensationPermissions(
+        camera=bool(perms.get("camera", False)),
+        microphone=bool(perms.get("microphone", False)),
+        sound_output=bool(perms.get("voice_tts", True)),
+    )
+    gate = sens_mod.OpenComputePresenceGate()
+    return {
+        "schema": "ellmos.sensation.status.v1",
+        "permissions": sp.as_dict(),
+        "open_compute_gate": gate.evaluate(sp, idle_seconds=300.0),
+    }
+
+
+@app.post("/api/sensation/open-compute-gate")
+async def api_sensation_open_compute_gate(payload: dict = Body(...)):
+    """Evaluate whether `open-compute` is allowed to take over desktop input (#3765)."""
+    from hub._services.ocean_stack_bridge import load_sensation_module
+
+    perms = _load_capability_permissions()
+    sens_mod = load_sensation_module()
+    sp = sens_mod.SensationPermissions(
+        camera=bool(payload.get("camera_permission", perms.get("camera", False))),
+        microphone=bool(payload.get("microphone_permission", perms.get("microphone", False))),
+        sound_output=True,
+    )
+    gate = sens_mod.OpenComputePresenceGate()
+    return gate.evaluate(sp, idle_seconds=float(payload.get("idle_seconds", 0.0)))
+
+
+def _smarthome_robotics_denied() -> JSONResponse | None:
+    """Machine-readable 403 for write/actuating routes unless the capability matrix grants
+    `smarthome_robotics` (default: denied). Read routes stay open (demo data, marked `demo`)."""
+    if _load_capability_permissions().get("smarthome_robotics", False):
+        return None
+    return JSONResponse(status_code=403, content={
+        "error": "permission_required",
+        "permission": "smarthome_robotics",
+        "hint": "Freigabe unter /api/permissions bzw. Einstellungen → Rechte",
+    })
+
+
+def _robotics_hub(*, granted: bool):
+    from hub._services.ocean_stack_bridge import load_robotics_module
+
+    try:
+        return load_robotics_module().RoboticsHub(robotics_permission=granted, state_path=_ROBOTICS_ESTOP_FILE)
+    except TypeError:  # ellmos-robotics without persistent E-Stop: refuse instead of running without it
+        raise HTTPException(status_code=503, detail="ellmos-robotics ohne persistenten E-Stop (Update nötig)") from None
+
+
+@app.get("/api/homecontrol/devices")
+async def api_homecontrol_devices():
+    """List SmartHome devices via `ellmos-homecontrol` (#3766)."""
+    from hub._services.ocean_stack_bridge import load_homecontrol_module
+
+    hc_mod = load_homecontrol_module()
+    hub = hc_mod.HomeControlHub(smarthome_permission=True)
+    devices = hub.hc_list_devices()
+    return {"total_devices": len(devices), "devices": devices, "demo": getattr(hub, "demo", True)}
+
+
+@app.get("/api/homecontrol/energy")
+async def api_homecontrol_energy():
+    """Return SmartHome power & energy telemetry via `ellmos-homecontrol` (#3766)."""
+    from hub._services.ocean_stack_bridge import load_homecontrol_module
+
+    hc_mod = load_homecontrol_module()
+    hub = hc_mod.HomeControlHub(smarthome_permission=True)
+    return hub.hc_energy_status()
+
+
+@app.get("/api/robotics/capabilities")
+async def api_robotics_capabilities():
+    """Return canonical MCP `ellmos.robotics.mcp.v1` robot capabilities (#3767)."""
+    return _robotics_hub(granted=True).robot_capabilities()  # read-only: no grant needed
+
+
+@app.get("/api/robotics/telemetry")
+async def api_robotics_telemetry():
+    """Return robot pose, battery, and safety envelope telemetry (#3767)."""
+    return _robotics_hub(granted=True).robot_telemetry()  # read-only: no grant needed
+
+
+@app.post("/api/robotics/estop")
+async def api_robotics_estop(payload: dict = Body(default={})):
+    """Trigger immediate fail-closed E-Stop across the robotics hub (#3767)."""
+    # Stopping never needs a grant (fail-closed); the stop is persisted and blocks all actuation.
+    reason = str(payload.get("reason") or "operator_e_stop")
+    return _robotics_hub(granted=False).robot_stop_emergency(reason)
+
+
+@app.post("/api/robotics/estop/reset")
+async def api_robotics_estop_reset():
+    """Release the persisted E-Stop. Needs the `smarthome_robotics` grant (#3996)."""
+    denied = _smarthome_robotics_denied()
+    if denied is not None:
+        return denied
+    return _robotics_hub(granted=True).reset_emergency_stop()
+
+
+@app.get("/talk", response_class=HTMLResponse, tags=["shared-gui"])
+async def talk_visualizer_companion_page(request: Request = None):
+    """ELLMOS Talk Studio & Standalone Live Voice / Emotion Visualizer Companion Window (#3764)."""
+    companion_mode = False
+    if request is not None and hasattr(request, "query_params"):
+        companion_mode = request.query_params.get("companion") == "1" or request.query_params.get("standalone") == "1"
+    if not companion_mode and ASTRO_DIST_DIR is not None:
+        for rel in ("talk/index.html", "talk.html"):
+            cand = ASTRO_DIST_DIR / rel
+            if cand.is_file():
+                return HTMLResponse(content=cand.read_text(encoding="utf-8"))
+    html = """<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ELLMOS Talk — Live Voice & Visualizer</title>
+  <style>
+    :root {
+      --primary: #38bdf8;
+      --secondary: #1e293b;
+      --glow: #0284c7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at center, var(--secondary) 0%, #090d16 100%);
+      color: #f8fafc;
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px;
+      transition: background 0.6s ease;
+    }
+    header {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      padding: 12px 18px;
+      border-radius: 14px;
+      backdrop-filter: blur(12px);
+    }
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    select, button, input[type="text"] {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button.primary { background: var(--primary); color: #090d16; font-weight: 600; border: none; }
+    .stage {
+      position: relative;
+      width: 320px;
+      height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    canvas { width: 320px; height: 320px; }
+    .emoji-badge {
+      position: absolute;
+      font-size: 44px;
+      pointer-events: none;
+      filter: drop-shadow(0 0 16px var(--glow));
+    }
+    .dialog-box {
+      width: 100%;
+      max-width: 760px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .status-bar { font-size: 13px; color: #94a3b8; display: flex; justify-content: space-between; }
+    .input-row { display: flex; gap: 8px; }
+    .input-row input { flex: 1; cursor: text; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>🎙️ ELLMOS Talk</strong>
+      <span id="personaLabel" style="margin-left:8px;font-size:13px;color:#94a3b8;">Persona: buddha (DE)</span>
+    </div>
+    <div class="controls">
+      <select id="personaSelect" aria-label="Persona">
+        <option value="buddha">Buddha (Local MLX/Ollama)</option>
+        <option value="gemini">Gemini</option>
+        <option value="claude">Claude</option>
+        <option value="codex">Codex / GPT</option>
+      </select>
+      <select id="langSelect" aria-label="Sprache">
+        <option value="de">Deutsch (DE)</option>
+        <option value="en">English (EN)</option>
+      </select>
+      <select id="patternSelect" aria-label="Muster">
+        <option value="orb">Orb</option>
+        <option value="wave">Wave</option>
+        <option value="rings">Rings</option>
+        <option value="constellation">Constellation</option>
+        <option value="pulse">Pulse</option>
+      </select>
+      <select id="emotionSelect" aria-label="Emotion">
+        <option value="calm">Calm</option>
+        <option value="curious">Curious</option>
+        <option value="joyful">Joyful</option>
+        <option value="focused">Focused</option>
+        <option value="empathetic">Empathetic</option>
+        <option value="alert">Alert</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="stage">
+    <canvas id="vizCanvas" width="320" height="320"></canvas>
+    <div class="emoji-badge" id="emojiBadge">✨</div>
+  </div>
+
+  <div class="dialog-box">
+    <div class="status-bar">
+      <span id="reflexStatus">FastReflexLoop (&lt;250ms): bereit · Wake-Word: „Hey Buddha“</span>
+      <span id="listeningState">Modus: listening</span>
+    </div>
+    <div id="transcriptBox" style="min-height:48px;font-size:15px;line-height:1.5;color:#e2e8f0;">
+      Sprich oder tippe eine Nachricht – das Modell steuert Farben, Muster und Emotionen live über &lt;talk_control /&gt;.
+    </div>
+    <div class="input-row">
+      <input type="text" id="utteranceInput" placeholder="Sage etwas zu Buddha, Gemini, Claude oder Codex..." />
+      <button id="micBtn" title="Mikrofon-Spracheingabe starten">🎤</button>
+      <button class="primary" id="sendBtn">Sprechen</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('vizCanvas');
+    const ctx = canvas.getContext('2d');
+    let vizState = {
+      pattern: 'orb',
+      emotion: 'calm',
+      palette: { primary: '#38bdf8', secondary: '#1e293b', glow: '#0284c7' },
+      emoji: '✨',
+      pulse_hz: 1.2,
+      listening_mode: 'listening',
+      active_persona: 'buddha'
+    };
+    let tick = 0;
+
+    function applyVisualState(vs) {
+      if (!vs) return;
+      vizState = Object.assign(vizState, vs);
+      if (vs.palette) {
+        document.documentElement.style.setProperty('--primary', vs.palette.primary);
+        document.documentElement.style.setProperty('--secondary', vs.palette.secondary);
+        document.documentElement.style.setProperty('--glow', vs.palette.glow);
+      }
+      document.getElementById('emojiBadge').textContent = vs.emoji || '✨';
+      document.getElementById('listeningState').textContent = 'Modus: ' + (vs.listening_mode || 'listening');
+      document.getElementById('personaLabel').textContent = 'Persona: ' + (vs.active_persona || 'buddha');
+      document.getElementById('patternSelect').value = vs.pattern || 'orb';
+      document.getElementById('emotionSelect').value = vs.emotion || 'calm';
+    }
+
+    function drawVisualizer() {
+      tick += 0.04 * (vizState.pulse_hz || 1.2);
+      ctx.clearRect(0, 0, 320, 320);
+      const cx = 160, cy = 160;
+      const primary = (vizState.palette && vizState.palette.primary) || '#38bdf8';
+      const glow = (vizState.palette && vizState.palette.glow) || '#0284c7';
+      ctx.strokeStyle = primary;
+      ctx.fillStyle = primary;
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = 24;
+
+      if (vizState.pattern === 'wave') {
+        ctx.beginPath();
+        for (let x = 20; x <= 300; x += 4) {
+          const y = cy + Math.sin((x * 0.04) + tick * 2) * 36 * Math.sin(tick);
+          if (x === 20) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      } else if (vizState.pattern === 'rings') {
+        for (let i = 1; i <= 4; i++) {
+          ctx.beginPath();
+          const r = 28 * i + Math.sin(tick + i) * 8;
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+      } else if (vizState.pattern === 'constellation') {
+        const pts = [];
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2 + tick * 0.3;
+          const rad = 85 + Math.sin(tick + i * 1.7) * 20;
+          pts.push([cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad]);
+        }
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < pts.length; i++) {
+          const [x1, y1] = pts[i];
+          const [x2, y2] = pts[(i + 1) % pts.length];
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x1, y1, 5, 0, Math.PI * 2); ctx.fill();
+        }
+      } else {
+        const r = 78 + Math.sin(tick * 2) * (vizState.pattern === 'pulse' ? 24 : 12);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.globalAlpha = 0.25;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      requestAnimationFrame(drawVisualizer);
+    }
+    requestAnimationFrame(drawVisualizer);
+
+    async function sendTurn() {
+      const input = document.getElementById('utteranceInput');
+      const text = input.value.trim();
+      if (!text) return;
+      const persona = document.getElementById('personaSelect').value;
+      const language = document.getElementById('langSelect').value;
+      const res = await fetch('/api/talk/turn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_utterance: text, persona, language })
+      });
+      const data = await res.json();
+      if (data.visual_state) applyVisualState(data.visual_state);
+      if (data.reflex) {
+        document.getElementById('reflexStatus').textContent =
+          'FastReflexLoop (' + data.reflex.latency_target_ms + 'ms): ' + (data.reflex.ack_text || 'ack');
+      }
+      const sentences = data.spoken_text || (data.sentences || []).join(' ');
+      document.getElementById('transcriptBox').textContent = sentences || text;
+      input.value = '';
+      if (sentences) {
+        let playedLocal = false;
+        try {
+          const ttsRes = await fetch('/api/voice/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: sentences, language })
+          });
+          if (ttsRes.ok) {
+            const ttsData = await ttsRes.json();
+            if (ttsData && ttsData.audio_b64) {
+              const audio = new Audio('data:' + (ttsData.mime_type || 'audio/wav') + ';base64,' + ttsData.audio_b64);
+              await audio.play();
+              playedLocal = true;
+            }
+          }
+        } catch (_) {}
+        if (!playedLocal && 'speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(sentences);
+          utter.lang = language === 'en' ? 'en-US' : 'de-DE';
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+        }
+      }
+    }
+
+    document.getElementById('sendBtn').addEventListener('click', sendTurn);
+    document.getElementById('utteranceInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendTurn();
+    });
+
+    async function pushDirective() {
+      const pattern = document.getElementById('patternSelect').value;
+      const emotion = document.getElementById('emotionSelect').value;
+      const persona = document.getElementById('personaSelect').value;
+      const res = await fetch('/api/talk/directive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pattern, emotion, persona })
+      });
+      const data = await res.json();
+      if (data.visual_state) applyVisualState(data.visual_state);
+    }
+    document.getElementById('patternSelect').addEventListener('change', pushDirective);
+    document.getElementById('emotionSelect').addEventListener('change', pushDirective);
+    document.getElementById('personaSelect').addEventListener('change', pushDirective);
+
+    document.getElementById('micBtn').addEventListener('click', async () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const lang = document.getElementById('langSelect').value || 'de';
+      if (SR) {
+        const rec = new SR();
+        rec.lang = lang === 'en' ? 'en-US' : 'de-DE';
+        rec.onresult = (ev) => {
+          const t = ev.results[0][0].transcript;
+          document.getElementById('utteranceInput').value = t;
+          sendTurn();
+        };
+        rec.start();
+        return;
+      }
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function' && typeof window.MediaRecorder === 'function') {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const chunks = [];
+          const recorder = new MediaRecorder(stream);
+          recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+          recorder.onstop = async () => {
+            stream.getTracks().forEach((t) => t.stop());
+            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+            const b64 = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(String(reader.result || '').split(',')[1] || '');
+              reader.readAsDataURL(blob);
+            });
+            if (!b64) return;
+            const r = await fetch('/api/voice/stt', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ audio_b64: b64, suffix: '.webm', language: lang })
+            });
+            if (r.ok) {
+              const d = await r.json();
+              if (d && d.text) {
+                document.getElementById('utteranceInput').value = d.text;
+                sendTurn();
+              }
+            }
+          };
+          recorder.start();
+          setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 3500);
+        } catch (_) {}
+      }
+    });
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
 # Operator-Konsole als Sub-App unter /control — Panels erscheinen
 # capability-driven je nach erreichbaren Backends. Fehlt das Paket,
 # laeuft BACH unveraendert (bewusst weiches Optional).
@@ -16372,6 +18423,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    
+
 
     run_server(args.host, args.port)

@@ -27,6 +27,8 @@ from typing import List, Optional, Tuple
 from .base import BaseHandler
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class RestoreHandler(BaseHandler):
     """Handler fuer Datei-Wiederherstellung."""
 

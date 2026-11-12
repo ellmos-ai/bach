@@ -223,6 +223,22 @@ def _json_value(value: Any) -> str:
     return encoded
 
 
+def _readable_value(value: Any) -> str:
+    """Platzhaltertext fuer Word: Listen/Felder zeilenweise lesbar, nie als JSON-Block."""
+    _json_value(value)  # Validierung und Groessengrenze bleiben wie bisher
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "Ja" if value else "Nein"
+    if isinstance(value, Mapping):
+        return "\n".join(
+            f"{k}: {_readable_value(v)}" for k, v in value.items() if v not in ("", None, [], {})
+        )
+    if isinstance(value, (list, tuple)):
+        return "\n".join(_readable_value(v) for v in value)
+    return "" if value is None else str(value)
+
+
 def _artifact_ref_list(raw: Any) -> tuple[str, ...]:
     if not isinstance(raw, (list, tuple)) or len(raw) > 256:
         raise ReportContractError("invalid_artifact_refs")
@@ -346,10 +362,20 @@ class BachWordTemplatePort:
             raise ReportHostPortError("invalid_report_data")
         content, revision, content_sha = await self._template_snapshot(template_id, expected_revision)
         placeholders: dict[str, str] = {}
-        for key, value in report.items():
-            if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", key):
-                raise ReportHostPortError("invalid_report_data")
-            placeholders["{{" + key + "}}"] = value if isinstance(value, str) else _json_value(value)
+
+        def collect(mapping: Mapping[str, Any], prefix: str) -> None:
+            # Geschachtelte Felder sind zusaetzlich als {{stammdaten.name}} adressierbar.
+            for key, value in mapping.items():
+                if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", key):
+                    raise ReportHostPortError("invalid_report_data")
+                path = prefix + key
+                placeholders["{{" + path + "}}"] = _readable_value(value)
+                if isinstance(value, Mapping):
+                    collect(value, path + ".")
+                if len(placeholders) > 512:
+                    raise ReportHostPortError("invalid_report_data")
+
+        collect(report, "")
 
         try:
             with tempfile.TemporaryDirectory(prefix="bach-report-render-") as directory:
@@ -949,6 +975,13 @@ class BachModelRoutePort:
             }
         if not callable(self._cloud_attestor):
             return {"available": False, "cloud_route": False, "fallback_disabled": True}
+        # Gleiche NER-Pflicht wie Pipeline und GUI/API: ohne Namenserkennung ist die
+        # Pseudonymisierung unvollstaendig, also kein Cloud-Weg (pin_route und generate pruefen hier).
+        from hub._services.document import anonymizer_service
+
+        if not anonymizer_service.ner_ready()[0]:
+            return {"available": False, "mode": "cloud", "cloud_route": False, "local_only": False,
+                    "fallback_disabled": True, "reason_code": "ner_unavailable"}
         try:
             raw = await _resolve(self._cloud_attestor(self._backend, model))
             data = _wire(raw)

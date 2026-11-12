@@ -25,6 +25,7 @@ description: >
 - Доступ к Mac Studio через предоставленный SSH-доступ; собственные учётные данные не создавай. Проект в `$BACH_ROOT` (на Mac Studio `~/services/bach`), Python из его venv. Прочитай `AGENTS.md` и инструкции подпроекта, в котором ты работаешь.
 - **Режим B (Смешанный)** — нормальный случай для агентов, которые активно соучаствуют. **Режима A (Библиотека)** достаточно, если ты только обрабатываешь задачи и не используешь BACH как сессию: путь аренды ниже идёт через lead-службу и не требует запуска сессии. Режим C (Сессия) — только по явной просьбе.
 - Перед первой задачей прочитай текущий план `Desktop\OCEAN\AKTUELLER-PLAN.md` и `MODUL-ZUORDNUNG.md` (места сборки).
+
 ### 2. Поиск свободных задач
 - **Нативно:** `TaskLeaseClient.task_candidates(limit=100, offset=…)` (читай все страницы, а не только первую), затем `task_snapshot(task_id)` для полного описания. `bach task list` показывает те же задачи только для просмотра.
 - **Правило выбора:**
@@ -336,13 +337,6 @@ from bach_api import (
     # Hook-Framework
     hooks,       # on(), off(), emit(), status(), list_events()
 
-    # Plugin-API (Dynamische Erweiterung)
-    plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
-
-    # Raw-Zugriff (beliebiger Handler)
-    app,         # app().execute("handler", "operation", ["args"])
-)
-```
     # Plugin-API (Dynamische Erweiterung)
     plugins,     # register_tool(), register_hook(), register_handler(), load_plugin()
 
@@ -716,8 +710,6 @@ bach llm status                 # У кого какие Locks?
 bach help operatoren
 bach help planning
 bach help problemloesung
-```
-
 bach help strategien
 ```
 

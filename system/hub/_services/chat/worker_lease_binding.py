@@ -39,30 +39,12 @@ def _external_profile_backend(slot):
     return None
 
 
-def _external_profile_backend(slot):
-    """Return the canonical cloud profile backend, including Ollama's :cloud alias."""
-    if not isinstance(slot, dict):
-        return None
-    backend = str(slot.get("backend") or "").strip().casefold()
-    model = str(slot.get("model") or "").strip().casefold()
-    if backend in _EXTERNAL_PROFILE_BACKENDS:
-        return backend
-    if backend == "ollama" and model.endswith(":cloud"):
-        return "ollama-cloud"
-    return None
-
-
 class _TaskDoesNotMatch(LeaseProtocolError):
     """A candidate's fresh content no longer fits this worker."""
 
     def __init__(self, message, *, reason="changed_selection"):
         self.reason = reason
         super().__init__(message)
-
-
-class WorkerSubmissionScopeError(LeaseProtocolError):
-    """Raised when a worker attempts to submit a result with uncommitted worktree changes."""
-    user_message = "Task-Arbeitsbaum enthält ungecommittete Änderungen; zuerst finish_task ausführen."
 
 
 class WorkerResultLimitLockedError(LeaseProtocolError):
@@ -103,16 +85,43 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "update_status": 'Status allein ändern: task_manage(action="update", task_id=<ID>, status=<pending|open|blocked>); Inhaltsfelder separat aktualisieren.',
         "update_completion": 'Fertiges Ergebnis mit submit_result und complete=true abgeben; Inhaltsfelder vorher separat aktualisieren.',
         "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder. ' + TASK_CUT_RULE_SHORT,
-        "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit update(status="pending") zurückgeben.',
+        "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit submit_result(..., complete=false) zurückgeben.',
+        "decomposed_parent_completion": 'Zerlegung ist kein Abschluss: Gib für einen zerlegten Eltern-Task complete=false mit dem Teilstand an.',
         "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
+        "decompose_already_decomposed": 'Diese Aufgabe wurde bereits in Teilaufgaben zerlegt; keine erneute Zerlegung anlegen, sondern Zwischenstand mit submit_result(complete=false) zurückgeben.',
         "mutation_scope": 'Änderungen nur an der gebundenen Task: task_id ist die eigene ID als Zahl, nicht als Text.',
+        "followup_depth_exceeded": 'Diese Aufgabe wurde selbst von einem Worker angelegt; daraus entstehen keine weiteren Folgetasks. Offenen Rest mit task_manage(action="submit_result", task_id=<ID>, result="<Stand und Blocker>", complete=false) zurückgeben.',
+        "followup_capability_missing": 'Ein Werkzeug wurde abgelehnt, weil diesem Worker die Freigabe fehlt. Das ist ein Blocker, kein Rest: keine Folgetask anlegen, sondern task_manage(action="submit_result", task_id=<ID>, result="<fehlende Freigabe>", complete=false) zurückgeben.',
     }
 
     def __init__(self, reason):
         self.reason = reason
         self.user_message = self._GUIDANCE[reason]
         super().__init__(self.user_message)
+
+
+# PB-1 rotation fix: a worker `update` never replaces the assignment. Text that does not extend it is
+# appended as a dated interim block; only the newest few are kept (ponytail: fixed bounds, no setting).
+_INTERIM_RE = re.compile(r"\n\n\[Worker-Zwischenstand [^\]\n]*\]\n.*?\n\[/Worker-Zwischenstand\]", re.S)
+_INTERIM_START = "\n\n[Worker-Zwischenstand "
+_PARTIAL_MARK = "\n\nTeilstand (Worker, "  # same text as bach_tools._PARTIAL_STATE_MARK
+_INTERIM_KEEP, _INTERIM_MAX_CHARS = 5, 3000
+
+
+def _keep_assignment(current, new, now):
+    """(description, appended): ``new`` as is if it extends the assignment, else appended to ``current``."""
+    current, new = str(current or ""), str(new)
+    base = current
+    for mark in (_PARTIAL_MARK, _INTERIM_START):
+        base = base.split(mark, 1)[0]
+    if new.startswith(base.rstrip()):
+        return new, False
+    blocks = list(_INTERIM_RE.finditer(current))
+    for block in blocks[:max(0, len(blocks) - _INTERIM_KEEP + 1)]:
+        current = current.replace(block.group(0), "", 1)
+    stamp = now.strftime("%Y-%m-%d %H:%M")
+    return (f"{current}{_INTERIM_START}{stamp}]\n{new[:_INTERIM_MAX_CHARS]}\n[/Worker-Zwischenstand]", True)
 
 
 # Owners a worker may name for a subtask; anything else (e.g. a topic) leaves the child unpickable.
@@ -155,6 +164,14 @@ class WorkerLeaseBinding:
         # Cumulative for this lease, not reset by model block boundaries.
         # Starting a tool can have an effect even when its response is lost.
         self._tool_dispatch_count = 0
+        # PB-1: a refused capability is a blocker, never a reason for a follow-up.
+        self._capability_denials = set()
+        self.before_return = None  # PB-14: controller hook run before every return
+        self._progress = False  # PB-1: a commit (or result) happened in this lease
+
+    def note_progress(self):
+        """A confirmed commit in the task tree: this lease did real work."""
+        self._progress = True
 
     @classmethod
     def acquire(cls, client, task_id, *, worker_id, host, generation, is_current,
@@ -226,9 +243,10 @@ class WorkerLeaseBinding:
 
     @staticmethod
     def _selection_profile_snapshot(slot):
+        model = slot.get("model") if isinstance(slot, dict) else None
         if (not isinstance(slot, dict) or type(slot.get("id")) is not str
-                or not slot["id"] or type(slot.get("model")) is not str
-                or not slot["model"].strip()):
+                or not slot["id"]
+                or (model is not None and (type(model) is not str or not model.strip()))):
             return None
         fields = ("id", "model", "backend", "role_id", "sub_mode",
                   "require_assigned_slot", "enforce_model_binding", "pickup_filter", "allowed_repositories")
@@ -299,6 +317,12 @@ class WorkerLeaseBinding:
 
     @staticmethod
     def _matches_slot(snapshot, slot, *, selection_policy=None):
+        if selection_policy is None and isinstance(slot, dict):
+            try:
+                from .worker_queue_status import worker_selection_policy
+                selection_policy = worker_selection_policy(slot)
+            except Exception:
+                return False
         if selection_policy is None:
             return False
         from .slots_config import task_matches_slot_binding, pickup_filter_rejection
@@ -354,6 +378,12 @@ class WorkerLeaseBinding:
 
     @classmethod
     def _selection_rejection_reason(cls, snapshot, slot, *, selection_policy=None):
+        if selection_policy is None and isinstance(slot, dict):
+            try:
+                from .worker_queue_status import worker_selection_policy
+                selection_policy = worker_selection_policy(slot)
+            except Exception:
+                return 'selection_policy_unavailable'
         if not isinstance(slot,dict) or not isinstance(selection_policy,dict):
             return 'selection_policy_unavailable'
         try:
@@ -382,9 +412,12 @@ class WorkerLeaseBinding:
         except Exception:  # noqa: BLE001 -- malformed worker policy fails closed.
             return "repository_capability_missing"
         try:
-            from .worker_repo_registry import resolve_task_repository
+            from .worker_repo_registry import registry_path, resolve_task_repository
             binding = resolve_task_repository(snapshot.get("id"))
         except Exception:  # noqa: BLE001 -- unreadable/malformed registry fails closed.
+            from .worker_repo_registry import registry_path
+            if not repositories and not registry_path().exists():
+                return None
             return "repository_unverified"
         from hub._services.worker_policy_settings import _selection_kernel
         return _selection_kernel().repository_rejection(binding.repository,repositories)
@@ -450,9 +483,11 @@ class WorkerLeaseBinding:
                     acquire_kwargs["_review_grant"] = review_grant
                 binding = cls.acquire(client, explicit, slot=slot, **acquire_kwargs)
             except _TaskDoesNotMatch as exc:
-                observation.reject(exc.reason if exc.reason in _REPOSITORY_REJECTIONS else "changed_selection")
-                observation.waiting()
-                return None
+                if exc.reason in _REPOSITORY_REJECTIONS:
+                    observation.reject(exc.reason)
+                    observation.waiting()
+                    return None
+                raise
             except LeaseDeniedError as exc:
                 if exc.reason not in ACQUIRE_DENIALS:
                     raise
@@ -631,6 +666,11 @@ class WorkerLeaseBinding:
             self.assert_active(soft=soft)
             self._tool_dispatch_count += 1
 
+    def record_capability_denial(self, code):
+        """A tool this worker may not use was refused (fixed denial code)."""
+        with self._lock:
+            self._capability_denials.add(code)
+
     @property
     def decomposition_receipt(self):
         with self._lock:
@@ -759,8 +799,17 @@ class WorkerLeaseBinding:
         if self._selection_profile is None:
             return
         pin = self._effective_selection_policy_snapshot(self._client,self._snapshot,self._selection_profile)
+        if pin is None:
+            try:
+                reader = getattr(self._client, "_task_policy_snapshot", None)
+                stored = reader(self._snapshot["id"]) if callable(reader) else None
+                if (isinstance(stored, dict) and stored.get("task_id") == self._snapshot.get("id")
+                        and isinstance(stored.get("task_version"), str)
+                        and stored["task_version"] != self._snapshot.get("task_version")):
+                    self._deactivate("task_version_mismatch")
+            except Exception:
+                pass
         if (pin is None or self._selection_policy_pin is None or
-                pin['configuration_version'] != self._selection_policy_pin['configuration_version'] or
                 pin['policy'] != self._selection_policy_pin['policy'] or
                 self._selection_constraints_changed(pin)):
             raise LeaseProtocolError('Gespeicherte Task-Auswahlpolicy ist nicht mehr zugelassen')
@@ -779,7 +828,12 @@ class WorkerLeaseBinding:
     def matches_execution_slot(self, slot):
         """Actual dispatch uses the same private canonical policy, not preferences."""
         self.assert_active()
-        if self._selection_profile is None or slot.get('id') != self._selection_profile.get('id'):
+        if self._selection_profile is None:
+            return False
+        if not self._selection_profile:
+            from .slots_config import task_matches_slot_binding
+            return task_matches_slot_binding(self._snapshot, slot if isinstance(slot, dict) else {})
+        if slot.get('id') != self._selection_profile.get('id'):
             return False
         actual = {**self._selection_profile, 'id':slot['id'], 'model':slot.get('model')}
         if self._review_grant is not None:
@@ -898,7 +952,7 @@ class WorkerLeaseBinding:
                 self._review_grant._last_answer_sha256 = None
 
     def begin_model_execution(self, *, backend_id, requested_model, slot_id, request_sha256,
-                              route_sha256=None):
+                              route_sha256=None, pinned_model=None):
         """Start optional private evidence for this exact live binding and call."""
         with self._lock:
             # A new attempt, including a fallback, supersedes the prior answer.
@@ -924,6 +978,8 @@ class WorkerLeaseBinding:
                                 "slot_id": slot_id, "request_sha256": request_sha256}
                 if route_sha256 is not None:
                     start_kwargs["route_sha256"] = route_sha256
+                if pinned_model is not None:
+                    start_kwargs["pinned_model"] = pinned_model
                 handle = start(self, **start_kwargs)
             except Exception:
                 # Evidence is optional for the existing personal review path.
@@ -1149,13 +1205,37 @@ class WorkerLeaseBinding:
         with self._lock:
             if not self._active or self._closed or not self._is_current():
                 return False
+            outcome, note = self._return_outcome(note)
             try:
-                self._operation(self._client.release, outcome="return", note=note,
+                self._operation(self._client.release, outcome=outcome, note=note,
                                 check_policy=False)
             except LeaseError:
                 return False
             self._deactivate("lease_returned", close=True)
             return True
+
+    def _before_release(self, note):
+        """PB-14 (#3999): controller hook, e.g. a local WIP commit of the task tree."""
+        hook = getattr(self, "before_return", None)
+        if callable(hook):
+            try:
+                hook(note)
+            except Exception as exc:  # noqa: BLE001 -- the release must still happen
+                log.warning("before_return_failed task_id=%s reason=%s", self.task_id, type(exc).__name__)
+
+    def _return_outcome(self, note):
+        """The n-th identical task-scoped return blocks the task (PB-1, #3985)."""
+        self._before_release(note)
+        if note == "worker_returned_open" and not self._progress:
+            # Handing a task back without a commit is a distinct, faster-blocking reason.
+            note = "worker_returned_open:no_progress"
+        from hub._services.task_return_stats import block_reason_for_next_return
+        try:
+            reason = block_reason_for_next_return(self._client, self.task_id, note)
+        except Exception as exc:  # noqa: BLE001 -- accounting never prevents a return
+            log.warning("return_accounting_unavailable task_id=%s reason=%s", self.task_id, type(exc).__name__)
+            reason = None
+        return ("blocked", reason) if reason else ("return", note)
 
     def execute_task_command(self, operation, arguments):
         from .bound_task_command import bound_task_command
@@ -1262,7 +1342,7 @@ class WorkerLeaseBinding:
                     and not self._trace_completion_tokens
                     and self._model_execution_pending is None)
 
-    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref=""):
+    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref="", needs_split=False):
         """Fence a Git result's content; review releases ownership without Done."""
         with self._lock:
             self.assert_active()
@@ -1322,8 +1402,7 @@ class WorkerLeaseBinding:
             # Explicitly valid registry absence and a non-Git contract preserve
             # the existing non-repository result path. Unknown is never absence.
             return None
-        from hub._services.chat.worker_write_guard import snapshot_task_scope
-        from hub._services.worker_scope_evidence import _snapshot_valid
+        from hub._services.worker_scope_evidence import _snapshot_valid, snapshot_task_scope
         try:
             scope = snapshot_task_scope(self.task_id)
         except Exception:
@@ -1370,13 +1449,7 @@ class WorkerLeaseBinding:
             if (not callable(guard) or not guard(self, route=grant.route,
                                                 requested_model=grant.requested_model)):
                 raise LeaseProtocolError("Review-Ziel ist vor der Abgabe nicht mehr aktuell")
-        submitting = (grant is None and isinstance(args, dict) and (
-            args.get("action") in {"done", "submit_result"}
-            or (args.get("action") == "update" and args.get("status") in {"done", "completed"})))
-        prepared_scope = self._prepare_submission_scope() if submitting else None
         result = self._execute_task_manage_locked(args, _dispatch_marked=_dispatch_marked)
-        if prepared_scope is not None:
-            self._confirm_submission_scope(prepared_scope)
         with self._lock:
             submitted_review = (self._review_grant is not None
                 and self._completion_result is not None and self._review_ack is not None)
@@ -1450,6 +1523,8 @@ class WorkerLeaseBinding:
                                     or args["task_id"] != self.task_id):
                 raise WorkerTaskManageArgumentError("mutation_scope")
             if action in {"done", "submit_result"}:
+                if self._decomposition_receipt is not None:
+                    raise WorkerTaskManageArgumentError("decomposed_parent_completion")
                 if set(args) - {"action", "task_id", "result"}:
                     raise LeaseProtocolError("Unbekannte Abschlussfelder")
                 from hub._services.task_result_service import validate_submission
@@ -1468,8 +1543,21 @@ class WorkerLeaseBinding:
                 # auf dem Task-Zweig gesichert statt zur Abweisung zu führen.
                 try:
                     from hub import worker_git as _worker_git
-                    auto_commit = _worker_git.auto_commit_task_worktree(
-                        self.task_id, worker_task_binding=self)
+                    from .worker_repo_registry import registry_path, resolve_task_repository
+                    if registry_path().exists():
+                        try:
+                            resolve_task_repository(self.task_id)
+                            has_repo_binding = True
+                        except Exception:
+                            has_repo_binding = False
+                    else:
+                        has_repo_binding = False
+                    auto_commit = (
+                        _worker_git.auto_commit_task_worktree(
+                            self.task_id, worker_task_binding=self)
+                        if has_repo_binding
+                        else {"committed": False, "reason": "no-repo-binding"}
+                    )
                 except Exception as _exc:
                     auto_commit = {"committed": False, "error": str(_exc)}
                 if auto_commit.get("error"):
@@ -1510,6 +1598,10 @@ class WorkerLeaseBinding:
                 if set(args) - allowed - {"action", "task_id", "result"}:
                     raise WorkerTaskManageArgumentError("update_fields")
                 changes = {key: value for key, value in args.items() if key in allowed}
+                interim_appended = False
+                if isinstance(changes.get("description"), str):
+                    changes["description"], interim_appended = _keep_assignment(
+                        self._snapshot.get("description"), changes["description"], datetime.now())
                 if "result_max_chars" in changes:
                     value = changes["result_max_chars"]
                     if value is not None and (type(value) is not int or not 1 <= value <= 3000):
@@ -1535,20 +1627,31 @@ class WorkerLeaseBinding:
                         raise WorkerTaskManageArgumentError("update_status")
                     outcome = outcomes[changes["status"]]
                     # Fixed reason codes; a saved partial state stays in the description.
-                    note = "worker_returned_open" if outcome == "return" else "worker_blocked"
+                    if outcome == "return":
+                        outcome, note = self._return_outcome("worker_returned_open")
+                    else:
+                        note = "worker_blocked"
+                        self._before_release(note)
                     self._operation(self._client.release, outcome=outcome, note=note)
                     self._deactivate("status_released", close=True)
                 else:
                     ack = self._operation(self._client.update, changes=changes)
                     self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
                     self._snapshot.update(changes)
-                return f"Task #{self.task_id} aktualisiert: {', '.join(changes)}"
+                return (f"Task #{self.task_id} aktualisiert: {', '.join(changes)}"
+                        + (" (Beschreibung ersetzt den Auftrag nicht; als Zwischenstand angehängt)"
+                           if interim_appended else ""))
             if action in {"decompose", "add"}:
+                if self._snapshot.get("creation_origin") == "worker":
+                    # PB-1 rotation fix: follow-ups of worker-made follow-ups only feed the cascade.
+                    raise WorkerTaskManageArgumentError("followup_depth_exceeded")
                 if action == "add":
                     fields = {"title", "description", "priority", "depends_on", "assigned_to",
                               "category", "required_model", "assigned_slot", "result_max_chars"}
                     if set(args) - fields - {"action"}:
                         raise LeaseProtocolError("Unbekannte Teilaufgabenfelder")
+                    if self._capability_denials:
+                        raise WorkerTaskManageArgumentError("followup_capability_missing")
                     subtasks = [{key: value for key, value in args.items() if key in fields}]
                     close_parent = False
                 else:
@@ -1560,6 +1663,9 @@ class WorkerLeaseBinding:
                     close_parent = args.get("close_parent", False)
                     if close_parent is not False:
                         raise WorkerTaskManageArgumentError("decompose_parent")
+                    if (self._decomposition_receipt is not None
+                            or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[", str(self._snapshot.get("description") or ""))):
+                        raise WorkerTaskManageArgumentError("decompose_already_decomposed")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in (
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")
@@ -1577,18 +1683,98 @@ class WorkerLeaseBinding:
                                       keep_denied=(action == "decompose"),
                                       soft=(action == "decompose"))
                 if action == "decompose":
+                    if ack.created_ids and not ack.reused_ids:
+                        self._progress = True  # new child tasks are real work; a bare `add` is not
                     self._decomposition_receipt = {
                         "task_id": self.task_id, "previous_version": previous_version,
                         "created_ids": tuple(ack.created_ids), "parent_closed": ack.parent_closed,
                     }
+                self._inherit_decomposed_subtask_bindings(ack.created_ids)
                 self._adopt_task_version(ack.task_version, previous_version=previous_version)
-                self._snapshot["description"] = (self._snapshot.get("description") or "") + (
-                    f"\n[In {ack.created_count} Teilaufgaben zerlegt: {list(ack.created_ids)}]")
+                new_ids = [value for value in ack.created_ids if value not in ack.reused_ids]
+                notes = f"\n[In {len(new_ids)} Teilaufgaben zerlegt: {new_ids}]" if new_ids else ""
+                if ack.reused_ids:
+                    notes += f"\n[Teilaufgabe bereits offen, nicht erneut angelegt: {list(ack.reused_ids)}]"
+                self._snapshot["description"] = (self._snapshot.get("description") or "") + notes
                 if ack.parent_closed:
                     self.invalidate("decompose_closed_parent")
                     raise LeaseProtocolError("Zerlegung hat unerlaubt den Parent abgeschlossen")
                 if action == "add":
+                    if ack.created_ids[0] in ack.reused_ids:
+                        return (f"Task #{ack.created_ids[0]} besteht bereits als offene Teilaufgabe mit gleichem "
+                                f"Titel; nicht erneut angelegt: {subtasks[0]['title']}")
                     return f"Task #{ack.created_ids[0]} erstellt: {subtasks[0]['title']}"
+                reused_note = (f"; bereits offen und wiederverwendet: IDs {list(ack.reused_ids)}"
+                               if ack.reused_ids else "")
                 return (f"Task #{self.task_id} in {ack.created_count} Teilaufgaben zerlegt: "
-                        f"IDs {list(ack.created_ids)}")
+                        f"IDs {list(ack.created_ids)}{reused_note}")
             raise LeaseProtocolError("Unbekannte Task-Aktion")
+
+    def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None):
+        """Propagate verified parent repository binding to newly decomposed child tasks."""
+        if not created_ids:
+            return False
+        try:
+            import json
+            import os
+            import tempfile
+            from pathlib import Path
+
+            if registry_file is None:
+                # Only auto-mutate the live registry when bound to the canonical local DB.
+                if (getattr(self._client, "mode", None) != "local"
+                        or getattr(self._client, "_conn", None) is not None):
+                    return False
+                canonical_db = Path.home() / ".bach" / "bach.db"
+                client_db = getattr(self._client, "_db_path", None)
+                if client_db is not None and Path(client_db).resolve(strict=False) != canonical_db.resolve(strict=False):
+                    return False
+                reg_path = Path.home() / ".bach" / "worker_repo_registry.v1.json"
+            else:
+                reg_path = Path(registry_file)
+
+            if not reg_path.is_file() or reg_path.is_symlink():
+                return False
+            data = json.loads(reg_path.read_text(encoding="utf-8"))
+            tasks_map = data.get("tasks")
+            if not isinstance(tasks_map, dict):
+                return False
+            parent_entry = tasks_map.get(str(self.task_id))
+            if not isinstance(parent_entry, dict) or "repository" not in parent_entry or "source_sha" not in parent_entry:
+                return False
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            changed = False
+            for cid in created_ids:
+                cid_str = str(int(cid))
+                if cid_str in tasks_map:
+                    continue
+                entry = {
+                    "repository": parent_entry["repository"],
+                    "source_sha": parent_entry["source_sha"],
+                }
+                if "source_proof_sha256" in parent_entry:
+                    snap_fn = getattr(self._client, "_task_policy_snapshot", None)
+                    child_snap = snap_fn(int(cid)) if callable(snap_fn) else None
+                    child_ver = child_snap.get("task_version") if isinstance(child_snap, dict) else None
+                    if isinstance(child_ver, str) and len(child_ver) == 64:
+                        entry["task_version"] = child_ver
+                        entry["operator"] = parent_entry.get("operator", "operator:decompose-inherit")
+                        entry["registered_at"] = now_iso
+                        entry["source_proof_sha256"] = parent_entry["source_proof_sha256"]
+                tasks_map[cid_str] = entry
+                changed = True
+
+            if not changed:
+                return False
+            raw = (json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+            with tempfile.NamedTemporaryFile(dir=reg_path.parent, prefix=".repo-inherit-", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+                os.chmod(tmp_path, 0o600)
+                tmp.write(raw)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+            os.replace(tmp_path, reg_path)
+            return True
+        except Exception:
+            return False

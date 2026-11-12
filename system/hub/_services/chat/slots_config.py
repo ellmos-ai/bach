@@ -168,8 +168,10 @@ DEFAULT_ROLE_PROMPTS: dict[str, str] = {
         "Du agierst als autonomer Hintergrundworker für das BACH-System.\n"
         "Deine Hauptaufgabe ist es, zugewiesene oder offene Aufgaben fokussiert abzuarbeiten.\n"
         "Arbeite nach dem 4-Stufen-Protokoll: 1. Direkt lösen bei klaren, überschaubaren Aufgaben.\n"
-        "2. Wenn eine Anforderung komplex oder vielschichtig ist: Zerlege sie eigenständig in 3-5 handhabbare Teilaufgaben\n"
-        "(nutze `task_manage(action='decompose', subtasks=[...], sequential=True)` oder lege konkrete Sub-Tasks an).\n"
+        "2. Bei Teilerfolg (z. B. 50 % erledigt): Lege nur für den noch offenen Rest eine neue Folgetask an\n"
+        "(`task_manage(action='add', title='Rest: ...', description='...')`), begrenze die aktuelle Task per\n"
+        "`task_manage(action='update', task_id=<ID>, description='...')` auf das Geschaffte und schließe sie mit\n"
+        "`submit_result(complete=true)` ab. Bei Blockern/Unmachbarkeit direkt ohne Zerlegung mit `submit_result(complete=false)` zurückgeben.\n"
         "3. Bei Mehrdeutigkeit präzise Auswahlfrage als TO-DECIDE Task einstellen. 4. Bei Modellgrenzen an Claude/Codex übergeben.\n"
         "Lies nur Dateien, die zwingend nötig sind, führe Änderungen präzise aus, teste sorgfältig und schließe mit FERTIG ab."
     ),
@@ -277,12 +279,116 @@ for _core_id, _core_defaults in DEFAULT_CORE_SLOTS.items():
     }.get(_core_id, "task_worker"))
     _core_defaults.setdefault("sub_mode", "task_worker" if _core_id == "buddha_always_on" else "expert_role")
 
+VALID_WORKER_RIGHTS = ("read", "write", "execute")
+
+#: Standardfreigaben des Hintergrundworkers, wenn der Slot keine ausdrückliche Liste trägt.
+#: Lesen/Aufgaben-Werkzeuge immer; Schreiben nur im Full-Modus und nur über den gesicherten
+#: Pfad (Task-Arbeitsbaum, Lease, Sperrscan, Draft-PR; worker_write_guard).
+BACKGROUND_WORKER_READ_TOOLS = (
+    "read_file", "list_directory", "search_text", "file_info", "get_datetime", "task_manage",
+    "skill_create", "agent_manage", "bach_command", "maintain", "system_status", "ollama_info",
+    "weather", "foerderbericht", "web_search", "web_fetch",
+)
+BACKGROUND_WORKER_WRITE_ONLY_TOOLS = (
+    "safe_shell", "start_task_worktree", "write_file", "edit_file", "finish_task",
+)
+BACKGROUND_WORKER_EXECUTE_TOOLS = (
+    "execute_command",
+)
+BACKGROUND_WORKER_WRITE_TOOLS = BACKGROUND_WORKER_WRITE_ONLY_TOOLS + BACKGROUND_WORKER_EXECUTE_TOOLS
+
+ALWAYS_ON_RIGHTS_TRAY_ITEMS = (
+    ("read", "Stufe I: nur lesen"),
+    ("write", "Stufe II: lesen + schreiben"),
+    ("execute", "Stufe III: schreiben + Befehle ausführen"),
+)
+_RIGHTS_LEVEL_TO_MODE_RIGHTS = {
+    "read": ("safe", "read"),
+    "write": ("full", "write"),
+    "execute": ("full", "execute"),
+    "I": ("safe", "read"),
+    "II": ("full", "write"),
+    "III": ("full", "execute"),
+    "Stufe I: nur lesen": ("safe", "read"),
+    "Stufe II: lesen + schreiben": ("full", "write"),
+    "Stufe III: schreiben + Befehle ausführen": ("full", "execute"),
+}
+
+
+def effective_worker_rights(mode_or_slot: Any, rights: Any = None) -> str:
+    """Return effective background-worker rights ('read', 'write', or 'execute')."""
+    if isinstance(mode_or_slot, dict):
+        mode = mode_or_slot.get("mode", "full")
+        if rights is None:
+            rights = mode_or_slot.get("rights")
+    else:
+        mode = mode_or_slot
+    if mode != "full":
+        return "read"
+    if rights in VALID_WORKER_RIGHTS:
+        return rights
+    return "execute"
+
+
+def worker_rights_level_to_mode_rights(level: str) -> tuple[str, str]:
+    """Map a tray rights level identifier or label to (mode, rights)."""
+    if not isinstance(level, str) or level not in _RIGHTS_LEVEL_TO_MODE_RIGHTS:
+        raise ValueError(f"Unbekannte Rechte-Stufe: {level!r}")
+    return _RIGHTS_LEVEL_TO_MODE_RIGHTS[level]
+
+
+def background_worker_default_tools(mode: Any, rights: Any = None) -> list[str]:
+    """Standard-``allowed_tools`` für Hintergrundworker je nach Modus und Rechte-Stufe."""
+    level = effective_worker_rights(mode, rights)
+    if level == "read":
+        return list(BACKGROUND_WORKER_READ_TOOLS)
+    if level == "write":
+        return list(BACKGROUND_WORKER_READ_TOOLS + BACKGROUND_WORKER_WRITE_ONLY_TOOLS)
+    return list(BACKGROUND_WORKER_READ_TOOLS + BACKGROUND_WORKER_WRITE_TOOLS)
+
+
 SYSTEM_SLOT_PRESETS = {
     "boss": {"name": "Boss · Koordination", "role_id": "boss_routing", "sub_mode": "boss_routing", "icon": "🧭"},
     "developer": {"name": "Experte · Entwicklung", "role_id": "entwickler", "icon": "🛠️"},
     "research": {"name": "Experte · Recherche", "role_id": "recherche", "icon": "🔎"},
     "assistant": {"name": "Persönlicher Assistent", "role_id": "personal-assistant", "icon": "💬"},
+    "talk": {"name": "ELLMOS-Talk · Funkgerät", "role_id": "personal-assistant", "icon": "🎙️"},
+    "ticket_master": {"name": "Ticket-Master (Living)", "role_id": "ticket-master", "icon": "🎫"},
+    "foerderplaner": {"name": "Förderplaner (Living)", "role_id": "foerderplaner", "icon": "📋"},
 }
+
+INTERFACE_SYSTEM_SLOT_IDS = ("buddha_chat", "buddha_connector", "buddha_talk", "buddha_always_on")
+LEGACY_PRECONFIGURED_ROLE_SLOT_IDS = ("buddha_boss", "buddha_developer", "buddha_research")
+PRIMARY_INTERFACE_INTEGRATED_ROLES = ("personal-assistant", "ticket-master", "boss-coordinator")
+OPTIONAL_HARDWARE_INTERFACE_SLOTS = (
+    {
+        "id": "interface_sensation",
+        "name": "Sensation & Open-Compute",
+        "icon": "👁️",
+        "surface": "sensation",
+        "module_id": "ellmos-sensation",
+        "description": "Kamera-/Präsenz-Gate & Desktop-Steuerung (inaktiv, wenn unbesetzt)",
+        "allow_unassigned": True,
+    },
+    {
+        "id": "interface_homecontrol",
+        "name": "SmartHome · HomeControl",
+        "icon": "🏠",
+        "surface": "homecontrol",
+        "module_id": "ellmos-homecontrol",
+        "description": "Haushaltsgeräte & Smart-Home-Schnittstelle (inaktiv, wenn unbesetzt)",
+        "allow_unassigned": True,
+    },
+    {
+        "id": "interface_robotics",
+        "name": "Robotik · ELLMOS Robotics",
+        "icon": "🦾",
+        "surface": "robotics",
+        "module_id": "ellmos-robotics",
+        "description": "ROS2 / LeRobot / Hardware-Aktoren (inaktiv, wenn unbesetzt)",
+        "allow_unassigned": True,
+    },
+)
 
 AGENT_AVATAR_PRESETS = frozenset({"preset:companion", "preset:guardian", "preset:connector",
                                 "preset:coordinator", "preset:engineer", "preset:researcher",
@@ -656,6 +762,13 @@ def pickup_filter_rejection(task: dict[str, Any], slot: dict[str, Any], *, selec
             return "pickup_priority"
 
     raw_tags = task.get("tags") or []
+    if isinstance(raw_tags, str) and raw_tags.lstrip().startswith("["):
+        # The native write path (task_audit.normalize_task_tags) stores a JSON
+        # array; comma-splitting it made every exclude tag ineffective (PB-1).
+        try:
+            raw_tags = json.loads(raw_tags)
+        except ValueError:
+            raw_tags = []
     if isinstance(raw_tags, str):
         task_tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
     elif isinstance(raw_tags, (list, tuple, set)):
@@ -773,6 +886,17 @@ def get_slot(slot_id: str, path: str | None = None) -> dict[str, Any]:
     return {}
 
 
+def _project_dynamic_worker_slot(worker: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(worker)
+    if projected.get("allowed_tools") is None and projected.get("rights") is not None:
+        projected["allowed_tools"] = background_worker_default_tools(
+            projected.get("mode"), projected.get("rights")
+        )
+    if projected.get("rights") is not None:
+        projected["rights_effective"] = effective_worker_rights(projected)
+    return projected
+
+
 def get_worker_slot(worker_id: str, path: str | None = None) -> dict[str, Any]:
     """Return only a unique dynamic worker; ambiguity fails closed."""
     cfg = load_slots_config(path, strict=True)
@@ -829,7 +953,14 @@ def _always_on_execution_slot_from_config(config: dict[str, Any]) -> dict[str, A
             or any(not isinstance(worker, dict) for worker in config["dynamic_workers"])
             or any(worker.get("id") == "buddha_always_on" for worker in config["dynamic_workers"])):
         raise ValueError("Always-On-Slot fehlt oder ist nicht eindeutig")
-    return {**slot, "type": "continuous", "sub_mode": slot.get("sub_mode") or "task_worker"}
+    projected = {**slot, "type": "continuous", "sub_mode": slot.get("sub_mode") or "task_worker"}
+    if projected.get("allowed_tools") is None:
+        # Seit #327 heißt None "keine Schreibfreigabe", der Tray-Schalter setzt aber ``mode``/``rights``.
+        projected["allowed_tools"] = background_worker_default_tools(
+            projected.get("mode"), projected.get("rights")
+        )
+    projected["rights_effective"] = effective_worker_rights(projected)
+    return projected
 
 
 @_serialized_mutation
@@ -853,7 +984,7 @@ def update_slot(slot_id: str, updates: dict[str, Any], path: str | None = None) 
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     if MATERIALIZE_OWNED_FIELDS & set(updates):
         raise ValueError("Blueprint-Bindung wird nur beim Materialisieren gesetzt")
-    capability_edits = {key: updates[key] for key in ("allowed_tools", "skill_refs", "allowed_repositories") if key in updates}
+    capability_edits = {key: updates[key] for key in ("rights", "allowed_tools", "skill_refs", "allowed_repositories", "tool_profile") if key in updates}
     if capability_edits:
         updates = {**updates, **_validated_core_edits(capability_edits)}
     cfg = load_slots_config(path, strict=True)
@@ -913,13 +1044,14 @@ CORE_SYSTEM_AGENT_ICONS = {
     "buddha_chat": "💬",
     "buddha_always_on": "⚡",
     "buddha_connector": "📱",
+    "buddha_talk": "🎙️",
 }
 CORE_EDITABLE_FIELDS = frozenset({
-    "name", "icon", "symbol", "backend", "model", "mode", "think",
+    "name", "icon", "symbol", "backend", "model", "mode", "rights", "think",
     "max_tool_rounds", "pause_after", "pause_minutes", "pause_basis",
     "enabled", "description", "include_system_prompt", "custom_system_prompt",
-    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs",
-    "memory_hook_opt_in", "model_fallbacks", "allowed_repositories",
+    "custom_role_prompt", "role_id", "sub_mode", "avatar", "allow_tools", "allowed_tools", "skill_refs", "tool_profile",
+    "memory_hook_opt_in", "model_fallbacks", "allowed_repositories", "color_override",
 })
 CORE_KNOWN_BACKENDS = frozenset({
     "ollama", "ollama-cloud", "lmstudio", "hermes", "openrouter",
@@ -1107,6 +1239,18 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "running": None,
             "worker_active": None,
             "runtime_reason_code": "runtime_not_probed",
+            "slot_category": (
+                "interface_system_slot"
+                if (slot_id in INTERFACE_SYSTEM_SLOT_IDS or str(slot_id).startswith("interface_"))
+                else "preconfigured_role_agent"
+            ),
+            "integrated_roles": (
+                list(PRIMARY_INTERFACE_INTEGRATED_ROLES)
+                if slot_id in ("buddha_chat", "buddha_connector", "buddha_talk")
+                else ["hintergrund_worker"]
+                if slot_id == "buddha_always_on"
+                else [slot.get("role_id", defaults["role_id"])]
+            ),
         })
     return {
         "schema": "bach.core-system-agents.v1",
@@ -1114,6 +1258,10 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
         "configuration_version": version,
         "updated_at": config.get("updated_at"),
         "agents": public_slots,
+        "interface_system_slot_ids": list(INTERFACE_SYSTEM_SLOT_IDS),
+        "legacy_preconfigured_role_slot_ids": list(LEGACY_PRECONFIGURED_ROLE_SLOT_IDS),
+        "primary_interface_integrated_roles": list(PRIMARY_INTERFACE_INTEGRATED_ROLES),
+        "optional_hardware_interface_slots": [dict(item) for item in OPTIONAL_HARDWARE_INTERFACE_SLOTS],
         "supported_backend_ids": sorted(CORE_KNOWN_BACKENDS),
         "role_ids": list(DEFAULT_ROLE_PROMPTS),
         "slot_presets": SYSTEM_SLOT_PRESETS,
@@ -1122,6 +1270,61 @@ def _core_snapshot_from_bytes(raw: bytes) -> dict[str, Any]:
             "roles": {role: prompts.get("role_" + role, text)
                       for role, text in DEFAULT_ROLE_PROMPTS.items()},
         },
+    }
+
+
+def resolve_role_execution_slot(
+    role_id: str,
+    path: str | None = None,
+    *,
+    interface_slot_id: str = "buddha_chat",
+) -> dict[str, Any]:
+    """2-Stufen-Rollenmodell (Nutzerentscheidung 04.11.2026):
+    Prüft vorrangig, ob ein aktiver Living-Agent außerhalb der Schnittstellen-Systemplätze
+    die Rolle `role_id` mit eigener Modellbindung besetzt (Stufe 2: `pinned_living_agent`).
+    Andernfalls übernimmt der angegebene Schnittstellen-Systemplatz (`buddha_chat`,
+    `buddha_connector`, `buddha_talk`) die Rolle dynamisch (Stufe 1: `dynamic_persona_routing`).
+    """
+    snapshot = core_system_agents_snapshot(path)
+    normalized_role = str(role_id or "").strip()
+    if not normalized_role:
+        raise ValueError("role_id darf nicht leer sein")
+    for agent in snapshot["agents"]:
+        if agent.get("slot_category") == "interface_system_slot":
+            continue
+        if agent.get("enabled") is not True:
+            continue
+        model = str(agent.get("model") or "").strip()
+        if agent.get("role_id") == normalized_role and model:
+            return {
+                "role_id": normalized_role,
+                "resolution_stage": "pinned_living_agent",
+                "slot_id": agent["id"],
+                "name": agent.get("name", agent["id"]),
+                "backend": agent.get("backend", "ollama"),
+                "model": model,
+                "model_fallbacks": list(agent.get("model_fallbacks") or []),
+            }
+    iface = next(
+        (a for a in snapshot["agents"] if a["id"] == interface_slot_id),
+        next((a for a in snapshot["agents"] if a["id"] == "buddha_chat"), None),
+    )
+    if not iface or iface.get("enabled") is not True or not str(iface.get("model") or "").strip():
+        return {
+            "role_id": normalized_role,
+            "resolution_stage": "interface_unassigned",
+            "slot_id": interface_slot_id,
+            "active": False,
+        }
+    return {
+        "role_id": normalized_role,
+        "resolution_stage": "dynamic_persona_routing",
+        "slot_id": iface["id"],
+        "name": iface.get("name", iface["id"]),
+        "backend": iface.get("backend", "ollama"),
+        "model": str(iface.get("model") or ""),
+        "model_fallbacks": list(iface.get("model_fallbacks") or []),
+        "integrated_in_interface": normalized_role in (iface.get("integrated_roles") or PRIMARY_INTERFACE_INTEGRATED_ROLES),
     }
 
 
@@ -1252,6 +1455,13 @@ def _validated_core_edits(
                     or any(not isinstance(name, str) or name not in known for name in value)
                     or len(set(value)) != len(value))):
                 raise ValueError("Toolfreigabe enthält unbekannte oder doppelte Werkzeuge")
+        elif field == "tool_profile":
+            # Gueltige Namen: Schluessel von TOOL_PROFILES
+            # (standard/readonly/files/code_delivery/all);
+            # None = keine Toolset-Einschraenkung.
+            from .bach_tools import TOOL_PROFILES
+            if value is not None and (not isinstance(value, str) or value not in TOOL_PROFILES):
+                raise ValueError(f"Unbekanntes Toolset-Profil: {value}")
         elif field == "avatar":
             value = validate_agent_avatar(value)
         elif field == "symbol":
@@ -1266,7 +1476,7 @@ def _validated_core_edits(
         elif field == "sub_mode":
             if value not in {"expert_role", "boss_routing", "task_worker", "hintergrund_worker"}:
                 raise ValueError("Unbekannter Rollenmodus")
-        elif field in {"name", "icon", "backend", "model", "mode"}:
+        elif field in {"name", "icon", "backend", "model", "mode", "rights"}:
             limit = 8 if field == "icon" else 120
             if (not isinstance(value, str) or not value.strip()
                     or len(value) > limit or any(ord(c) < 32 for c in value)):
@@ -1276,6 +1486,8 @@ def _validated_core_edits(
                 raise ValueError("Backend-ID ist im vorhandenen Control-Katalog nicht bekannt")
             if field == "mode" and value not in {"safe", "full"}:
                 raise ValueError("Modus muss safe oder full sein")
+            if field == "rights" and value not in VALID_WORKER_RIGHTS:
+                raise ValueError("Rechte-Stufe muss read, write oder execute sein")
         elif field in {"think", "enabled", "include_system_prompt", "allow_tools", "memory_hook_opt_in"}:
             if type(value) is not bool:
                 raise ValueError(f"{field} muss wahr oder falsch sein")
@@ -1464,7 +1676,7 @@ def system_worker_at_version(slot_id: str, expected_version: str,
                 worker.get("persistent_opt_in") is not True
                 or worker.get("persistent_opt_in_id") != persistent_intent_id):
             raise RuntimeError("persistent_intent_conflict")
-        return dict(worker)
+        return worker
     if version_scope == "worker_profile" and slot_id == "buddha_always_on":
         worker = _always_on_execution_slot_from_config(config)
         if (worker.get("persistent_opt_in") is not True
@@ -1792,6 +2004,11 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     backend = worker_data.get("backend", "ollama")
     model = worker_data.get("model", "qwen3.8:27b-mlx")
     mode = worker_data.get("mode", "full")
+    if mode not in {"safe", "full"}:
+        raise ValueError("Modus muss safe oder full sein")
+    rights = worker_data.get("rights", "write")
+    if rights not in VALID_WORKER_RIGHTS:
+        raise ValueError("Rechte-Stufe muss read, write oder execute sein")
     think = bool(worker_data.get("think", True))
     max_tool_rounds = int(worker_data.get("max_tool_rounds", 20))
     max_model_requests = worker_data.get("max_model_requests")
@@ -1802,7 +2019,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
     if not isinstance(allow_tools, bool):
         raise ValueError("allow_tools muss ein JSON-Boolean sein")
     capability_edits = {key: worker_data[key] for key in
-                        ("allowed_tools", "skill_refs", "allowed_repositories") if key in worker_data}
+                        ("allowed_tools", "skill_refs", "allowed_repositories", "tool_profile") if key in worker_data}
     capabilities = _validated_core_edits(capability_edits) if capability_edits else {}
     task_id = worker_data.get("task_id")
     category = worker_data.get("category", "")
@@ -1846,6 +2063,7 @@ def add_worker(worker_data: dict[str, Any], path: str | None = None) -> dict[str
         "model": model,
         "resolved_model": worker_data.get("resolved_model") or "",
         "mode": mode,
+        "rights": rights,
         "think": think,
         "max_tool_rounds": max_tool_rounds,
         "max_model_requests": max_model_requests,
@@ -2039,9 +2257,8 @@ def record_activity(
 
 WORKER_EDITABLE_POLICY_FIELDS = frozenset({"pickup_filter"})
 WORKER_EDITABLE_FIELDS = frozenset({
-    "name", "avatar", "symbol", "backend", "model", "mode", "think", "max_tool_rounds", "max_model_requests", "allow_tools",
+    "name", "avatar", "symbol", "backend", "model", "mode", "rights", "think", "max_tool_rounds", "max_model_requests", "allow_tools",
     "memory_hook_opt_in", "model_fallbacks",
-    "allowed_tools", "skill_refs",
     "allowed_tools", "skill_refs", "persistent_opt_in",
     "task_prompt", "sub_mode", "include_system_prompt", "role_id", "multi_role",
     "max_experts", "expert_models", "task_id", "pause_after", "pause_minutes", "pause_basis",
@@ -2107,6 +2324,8 @@ def _worker_profile_version(worker: dict[str, Any]) -> str:
         # Old unbudgeted profile versions, including persistent opt-in grants,
         # keep their established digest until a budget is explicitly set.
         fields = fields - {"max_model_requests"}
+    if worker.get("rights") is None:
+        fields = fields - {"rights"}
     profile = {field: worker.get(field) for field in sorted(fields)}
     policy = worker_selection_policy(worker)
     raw = json.dumps({"id": worker["id"], **profile, "selection_policy": policy},
@@ -2130,8 +2349,19 @@ def _controller_run_worker(config: dict[str, Any], worker_id: str) -> dict[str, 
     return _model_request_worker(config, worker_id)
 
 
+def _validated_model_name(model: Any) -> Any:
+    if (type(model) is not str
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}", model) is None):
+        raise ModelRequestBudgetError("budget_model_invalid")
+    return model
+
+
 def _validated_model_request_record(record: Any) -> dict[str, Any]:
-    if (type(record) is not dict or set(record) != _MODEL_REQUEST_RUN_FIELDS
+    if (type(record) is not dict
+            or set(record) - _MODEL_REQUEST_RUN_FIELDS not in (set(), {"model"})
+            or _MODEL_REQUEST_RUN_FIELDS - set(record)
+            or record.get("model") is not None
+            and _validated_model_name(record["model"]) != record["model"]
             or record.get("schema") != _MODEL_REQUEST_RUN_SCHEMA
             or any(type(record.get(key)) is not str or
                    re.fullmatch(r"[0-9a-f]{32}", record[key]) is None
@@ -2239,6 +2469,7 @@ def reserve_model_request(worker_id: str, *, service_instance: str,
                           start_request_id: str, generation: str, task_id: int,
                           task_version: str, configuration_version: str,
                           confirmed_version_transitions: tuple = (),
+                          model: str | None = None,
                           path: str | None = None) -> dict[str, Any]:
     """Persist one non-refundable backend attempt before provider dispatch."""
     config = load_slots_config(path, strict=True)
@@ -2271,6 +2502,8 @@ def reserve_model_request(worker_id: str, *, service_instance: str,
         raise ModelRequestBudgetError(
             f"Modellanfragenbudget ausgeschöpft: Run {start_request_id}, "
             f"{record['reserved_count']}/{record['limit']}, verbleibend 0")
+    if model is not None:
+        record["model"] = _validated_model_name(model)
     record["task_version"] = task_version
     record["reserved_count"] += 1
     record["sequence"] += 1
@@ -2430,14 +2663,9 @@ def _persistent_core_capacity_observation(
     receipt: Any, *, worker: dict[str, Any], expected_state: str,
 ) -> dict[str, str] | None:
     """Validate a fresh local-reserve probe receipt under the current policy."""
-    fields = {
-        "schema", "state", "admitted", "enforced", "retryable", "checked_at",
-        "policy_version", "model", "wait_seconds", "poll_seconds",
-        "memory_total_bytes", "memory_available_bytes", "memory_required_bytes",
-        "disk_free_bytes", "disk_reserve_bytes", "weight_request_bytes",
-        "resident_weight_credit", "capacity_basis",
-    }
-    if not isinstance(receipt, dict) or set(receipt) != fields:
+    from hub._services.chat import local_resource_reserve
+
+    if not local_resource_reserve.valid_capacity_receipt_shape(receipt):
         return None
     if (receipt.get("schema") != "bach.local-resource-reserve.v1"
             or receipt.get("state") != expected_state
@@ -3340,7 +3568,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
             low, high = ranges[field]
             if type(value) is not int or not low <= value <= high:
                 raise ValueError(f"{field} liegt außerhalb des erlaubten Bereichs")
-        if field in {"name", "backend", "model", "mode", "sub_mode", "role_id", "pause_basis", "task_prompt"}:
+        if field in {"name", "backend", "model", "mode", "rights", "sub_mode", "role_id", "pause_basis", "task_prompt"}:
             maximum = 20000 if field == "task_prompt" else 180
             if not isinstance(value, str) or len(value) > maximum or "\x00" in value:
                 raise ValueError(f"{field} ist ungültig")
@@ -3370,6 +3598,7 @@ def change_worker_configuration(worker_id: str, expected_version: str, changes: 
         updated.pop(PERSISTENT_WORKER_CONTROLLER_CHECKPOINT_FIELD, None)
     if (updated.get("backend") not in {"ollama", "ollama-cloud", "openrouter"}
             or updated.get("mode") not in {"safe", "full"}
+            or updated.get("rights", "write") not in VALID_WORKER_RIGHTS
             or updated.get("pause_basis") not in {"runs", "tasks"}
             or updated.get("sub_mode") not in {"hintergrund_worker", "task_worker", "boss_routing", "expert_role"}):
         raise ValueError("Worker-Modus oder Provider ist ungültig")

@@ -6,6 +6,8 @@ from .base import BaseHandler
 from ._services.learning_source_service import LearningSourceService, _read, MAX_REQUEST_BYTES
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("ellmos-core")
 class LearningHandler(BaseHandler):
     @property
     def profile_name(self):

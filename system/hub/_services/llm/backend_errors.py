@@ -40,7 +40,7 @@ def _normalize_request_error(raw):
         result["status_code"] = status
         message += f" HTTP {status}."
     retry = raw.get("retry_after_seconds")
-    if status in {429, 504} and type(retry) is int and 0 <= retry <= 2_147_483_647:
+    if status in {429, 502, 503, 504} and type(retry) is int and 0 <= retry <= 2_147_483_647:
         result["retry_after_seconds"] = retry
         message += f" Retry-After: {retry} Sekunden bis zu einem neuen Versuch."
     result["message"] = message
@@ -148,9 +148,13 @@ def cloud_call_retry_eligible(detail):
             and (error["provider"], error["kind"]) in {
                 ("ollama", "rate_limited"), ("openrouter", "http_error")}):
         return True
+    if (error["provider"] == "ollama"
+            and error["kind"] == "http_error"
+            and error.get("status_code") in {502, 504}):
+        return True
     if (error["provider"] == "openrouter"
             and error["kind"] == "http_error"
-            and error.get("status_code") == 504):
+            and error.get("status_code") in {502, 503, 504}):
         return True
     return (error["provider"] == "openrouter"
             and error["kind"] in {
@@ -217,7 +221,7 @@ class BackendRequestFailure(RuntimeError):
                   "error_type": _REQUEST_ERROR_KINDS[kind][0], "quota_exceeded": False}
         if status is not None:
             detail["status_code"] = status
-        if status in {429, 504}:
+        if status in {429, 502, 503, 504}:
             retry = parse_retry_after(exc.response.headers.get("retry-after"))
             if retry is not None:
                 detail["retry_after_seconds"] = retry

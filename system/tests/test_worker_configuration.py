@@ -1,5 +1,6 @@
 import pytest
 from hub._services.chat import slots_config as slots
+from system.tests.test_worker_lease_binding import selection_registry, mem_db, _base_mem_db
 
 
 def _worker(tmp_path):
@@ -88,7 +89,7 @@ def test_pickup_filter_update_adapter_reads_back_selection_policy(tmp_path, monk
     assert slots.get_worker_slot(worker_id, path=path)["pickup_filter"] == pickup_filter
 
 
-def test_edited_pickup_filter_preserves_owner_gate_and_explicit_user_route(tmp_path):
+def test_edited_pickup_filter_keeps_preferences_open_and_saved_filter_binding(tmp_path, mem_db):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
 
     path, worker_id = _worker(tmp_path)
@@ -101,14 +102,19 @@ def test_edited_pickup_filter_preserves_owner_gate_and_explicit_user_route(tmp_p
     )
     slot = slots.get_worker_slot(worker_id, path=path)
 
-    foreign_owner = {"category": "BACH", "priority": "P1", "assigned_to": "other-agent"}
-    assert WorkerLeaseBinding._selection_rejection_reason(foreign_owner, slot) == "ownership"
-    personal_unrouted = {"category": "BACH", "priority": "P1", "assigned_to": "user"}
-    assert WorkerLeaseBinding._selection_rejection_reason(personal_unrouted, slot) == "ownership"
-    explicit_user_route = {
-        "category": "GUI", "priority": "P3", "assigned_to": "user", "assigned_slot": worker_id,
-    }
-    assert WorkerLeaseBinding._selection_rejection_reason(explicit_user_route, slot) is None
+    from system.tests.test_task_lease_client import _insert_task
+    from hub._services.task_lease_client import TaskLeaseClient
+    client = TaskLeaseClient(conn=mem_db)
+    for owner in ("other-agent", "user"):
+        tid = _insert_task(mem_db)
+        mem_db.execute("UPDATE tasks SET category='BACH', priority='P1', assigned_to=? WHERE id=?", (owner, tid))
+        mem_db.commit()
+        task = client.task_snapshot(tid)
+        pin = WorkerLeaseBinding._effective_selection_policy_snapshot(client, task, slot)
+        assert pin is not None
+        assert WorkerLeaseBinding._selection_rejection_reason(task, slot, selection_policy=pin["policy"]) is None
+    task = {**task, "category": "GUI", "priority": "P3", "assigned_slot": worker_id}
+    assert WorkerLeaseBinding._selection_rejection_reason(task, slot, selection_policy=pin["policy"]) == "pickup_category"
 
 
 @pytest.mark.parametrize("pickup_filter", [

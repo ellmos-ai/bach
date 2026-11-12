@@ -116,6 +116,48 @@ def _project_active_execution(raw: Any, worker_id: str) -> dict[str, Any] | None
             "lease_worker_id": holder, "heartbeat_at": heartbeat}
 
 
+def _project_resolved_execution(raw: Any, active_execution: dict[str, Any] | None = None,
+                               *, require_active_execution: bool = False) -> dict[str, Any]:
+    """Expose a target only when a live turn and its correlation evidence agree."""
+    if (not isinstance(raw, dict) or raw.get("runtime_verified") is not True
+            or raw.get("running") is not True):
+        return {}
+    if require_active_execution and active_execution is None:
+        return {}
+    target = _text(raw.get("resolved_execution_target"), limit=320)
+    host = _text(raw.get("resolved_execution_host"), limit=160) or "unknown"
+    locality = raw.get("resolved_execution_locality")
+    evidence = raw.get("resolved_execution_evidence")
+    if (target is None or locality not in {"local", "external", "unknown"}
+            or not isinstance(evidence, dict)
+            or evidence.get("schema") != "bach.resolved-execution.v1"
+            or evidence.get("state") != "active"
+            or not isinstance(evidence.get("session_hash"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", evidence["session_hash"])
+            or not isinstance(evidence.get("observed_at"), str)):
+        return {}
+    try:
+        datetime.fromisoformat(evidence["observed_at"].replace("Z", "+00:00"))
+    except ValueError:
+        return {}
+    if active_execution is not None:
+        generation = evidence.get("generation")
+        task_id = evidence.get("task_id")
+        if (active_execution.get("state") != "running"
+                or generation != active_execution.get("generation")
+                or task_id != active_execution.get("active_task_id")):
+            return {}
+    return {"resolved_execution_target": target,
+            "resolved_execution_host": host,
+            "resolved_execution_locality": locality,
+            "resolved_execution_evidence": {
+                "schema": evidence["schema"], "state": evidence["state"],
+                "session_hash": evidence["session_hash"], "observed_at": evidence["observed_at"],
+                **({"generation": evidence["generation"]} if active_execution is not None else {}),
+                **({"task_id": evidence["task_id"]} if active_execution is not None else {}),
+            }}
+
+
 def _project_worker(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise WorkerStatusUnavailable("Workerantwort enthält einen ungültigen Eintrag")
@@ -132,6 +174,10 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     queue_status = project_queue_status(raw.get("queue_status"))
     if queue_status is not None:
         item["queue_status"] = queue_status
+    from hub._services.chat.worker_queue_status import project_precondition_wait
+    precondition_wait = project_precondition_wait(raw.get("precondition_wait"))
+    if precondition_wait is not None:
+        item["precondition_wait"] = precondition_wait
     from hub._services.chat.slots_config import validate_agent_avatar
     from hub._services.display_assets import validate_symbol
     for field, validator in (("avatar", validate_agent_avatar), ("symbol", validate_symbol)):
@@ -184,6 +230,9 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     execution = _project_active_execution(raw.get("execution"), worker_id)
     if execution is not None:
         item["execution"] = execution
+    resolved = _project_resolved_execution(raw, execution, require_active_execution=True)
+    if resolved:
+        item.update(resolved)
     capabilities = raw.get("action_capabilities")
     if isinstance(capabilities, dict):
         item["action_capabilities"] = {
@@ -742,10 +791,29 @@ def _configured_task_prompt(worker_id: str) -> str | None:
     return prompt.strip() or None
 
 
-def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> dict[str, Any]:
+def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0,
+                 expected_worker_configuration_version: str | None = None) -> dict[str, Any]:
     """Preflight one existing worker, explicitly start it, then read back state."""
     if not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id):
         raise WorkerActionRejected("Worker-ID ist ungültig", 400)
+    bound_source = None
+    bound_prompt = None
+    if expected_worker_configuration_version is not None:
+        if (not isinstance(expected_worker_configuration_version, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", expected_worker_configuration_version)):
+            raise WorkerActionRejected("Bestätigte Worker-Konfigurationsversion erforderlich", 400)
+        # Read the complete admission revision before rechecking the acknowledged
+        # worker profile. A later write is rejected by the controller's atomic CAS.
+        bound_source = _request_control_api("GET", "system-slots", device_token=device_token,
+                                            timeout=timeout)
+        instance, version = bound_source.get("service_instance"), bound_source.get("configuration_version")
+        if (not isinstance(instance, str) or not _RUN_ID.fullmatch(instance)
+                or not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version)):
+            raise WorkerStatusUnavailable("Control-Instanz oder Konfiguration nicht verifizierbar")
+        acknowledged = read_worker_configuration(worker_id, device_token=device_token, timeout=timeout)
+        if acknowledged["configuration_version"] != expected_worker_configuration_version:
+            raise WorkerActionRejected("Worker-Konfiguration hat sich seit der Bestätigung geändert", 409)
+        bound_prompt = acknowledged["configuration"].get("task_prompt")
     current = read_worker_status(device_token=device_token, timeout=timeout)
     worker = next((item for item in current["workers"] if item["id"] == worker_id), None)
     if worker is None:
@@ -767,8 +835,8 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
                 or not 3 <= worker["max_model_requests"] <= 256
                 or type(worker.get("task_id")) is not int or worker["task_id"] <= 0):
             raise WorkerActionRejected("Budgetierter Taskworker ist nicht verifizierbar", 409)
-        source = _request_control_api("GET", "system-slots", device_token=device_token,
-                                      timeout=timeout)
+        source = (bound_source if bound_source is not None else
+                  _request_control_api("GET", "system-slots", device_token=device_token, timeout=timeout))
         instance, version = source.get("service_instance"), source.get("configuration_version")
         if (type(instance) is not str or not _RUN_ID.fullmatch(instance)
                 or type(version) is not str or re.fullmatch(r"[0-9a-f]{64}", version) is None):
@@ -776,7 +844,7 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
         request_id = uuid.uuid4().hex
         body = {"id": worker_id, "start_request_id": request_id,
                 "expected_service_instance": instance, "configuration_version": version}
-        prompt = _configured_task_prompt(worker_id)
+        prompt = bound_prompt if bound_source is not None else _configured_task_prompt(worker_id)
         if prompt:
             body["prompt"] = prompt
         accepted = _request_control_api("POST", "workers/run", device_token=device_token,
@@ -805,7 +873,11 @@ def start_worker(worker_id: str, *, device_token: str, timeout: float = 8.0) -> 
                 "runtime_readback": "available", "worker": projected}
 
     start_payload: dict[str, Any] = {"id": worker_id}
-    task_prompt = _configured_task_prompt(worker_id)
+    if bound_source is not None:
+        start_payload.update({"configuration_version": bound_source["configuration_version"],
+                              "expected_service_instance": bound_source["service_instance"],
+                              "start_request_id": uuid.uuid4().hex})
+    task_prompt = bound_prompt if bound_source is not None else _configured_task_prompt(worker_id)
     if task_prompt:
         start_payload["prompt"] = task_prompt
     accepted = worker_action("start", start_payload, device_token=device_token, timeout=timeout)

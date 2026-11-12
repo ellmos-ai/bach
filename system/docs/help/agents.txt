@@ -103,7 +103,7 @@ menschliche Vornamen + Charakter-Beschreibungen in der Datenbank.
 
   Persona-Injektion:
     Beim Agent-Start wird die Persona als System-Prompt injiziert:
-    "Dein Name ist \"Theodor\". Dein Charakter: Peniler Steuerberater..."
+    "Dein Name ist \"Theodor\". Dein Charakter: Penibler Steuerberater..."
     Siehe: hub/agent_launcher.py (_get_persona_info)
 
 
@@ -120,7 +120,7 @@ menschliche Vornamen + Charakter-Beschreibungen in der Datenbank.
   Experten Personas:
 
     System-Name               | Persona     | Charakter
-    steuer-agent              | Theodor     | Peniler Steuerberater
+    steuer-agent              | Theodor     | Penibler Steuerberater
     financial_mail            | Frieda      | Mail-Detektivin
     aboservice                | Anton       | Kündigungskönig
     gesundheitsverwalter      | Gustav      | Archivar der Befunde
@@ -276,6 +276,20 @@ Claude-Code-Agent-Export (Persona-System Phase 2):
   gemeldet; vorhandene Dateien werden nicht überschrieben.
 
   Siehe: bach help skill_standards
+
+
+OCEAN-ROLLEN, DUAL-ROUTING & FLEXIBLE ANBIETER-SOCKEL (ellmos.role-socket-catalog.v1)
+-------------------------------------------------------------------------------------
+
+  Im Ocean/BACH-System arbeiten alle 6 Koordinatoren (ehem. Boss-Agenten),
+  22+ Domaenen-Experten und 19 Modul-Rollen (roles[] in ellmos-module.v2.json)
+  auf tauschbaren Anbieter-Sockeln (model_sockets via clutch + agents-heart):
+
+  1. Semantisches Routing: Umbrella-Skills (*-umbrella) + semantic-persona-routing
+  2. Deterministisches Routing: ellmos-controlcenter-mcp (resolve_semantic_route / switch_profile)
+  3. Flexible Anbieter-Sockel: reasoning_coordinator | domain_specialist | fast_worker
+     -> Laufzeit-Aufloesung auf: claude, codex, agy, kimi, ollama, openrouter
+  4. 3-Tab-Agenten-Bibliothek (/agenten/bibliothek): templates | prompt_agents | chains
 
 
 SIEHE AUCH

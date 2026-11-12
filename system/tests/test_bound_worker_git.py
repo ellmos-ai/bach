@@ -132,7 +132,9 @@ def test_bound_finish_uses_real_bound_python_pytest_parser(bridge, git_run, monk
 
     def capture(argv, *, limits, cwd, shell, env=None):
         isolated.append((list(argv), limits, cwd, shell, dict(env or {})))
-        return SandboxResult(returncode=0, stdout="1 passed", stderr="")
+        return SandboxResult(returncode=0, stdout="1 passed", stderr="",
+                             cleanup_confirmed=True, watchdog_joined=True,
+                             cleanup_scope="owned_posix_process_group")
 
     monkeypatch.setattr(sandbox, "run_isolated", capture)
     result = worker_git.finish_task(
@@ -147,8 +149,13 @@ def test_bound_finish_uses_real_bound_python_pytest_parser(bridge, git_run, monk
     assert argv[1:4] == ["-m", "pytest", "-q"]
     state = target / ".cache" / ".worker-check"
     separator = argv.index("--")
-    assert argv[4:separator] == [
-        "--basetemp", str(state / "pytest-temp"),
+    assert argv[4] == "--basetemp"
+    basetemp = Path(argv[5])
+    if os.name == "nt":
+        assert basetemp == state / "pytest-temp"
+    else:
+        assert basetemp.parent == state / "pytest-temp" and basetemp.name.startswith("run-")
+    assert argv[6:separator] == [
         "-o", "cache_dir=" + str(state / "pytest-cache"),
         "-o", "addopts=",
         "-o", "log_file=",

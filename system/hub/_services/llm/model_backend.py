@@ -26,7 +26,6 @@ import sys
 import threading
 import time
 from abc import ABC, abstractmethod
-from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
@@ -35,88 +34,6 @@ from hub._services.model_provenance import reported_model
 
 
 log = logging.getLogger(__name__)
-
-_OLLAMA_STREAM_CANCELLED = object()
-_OLLAMA_STREAM_TOTAL_TIMEOUT = object()
-
-
-async def _await_ollama_stream_line(iterator, *, cancel_event=None, total_timeout=None):
-    """Wait for one stream line, one exact worker-stop event, or the active total deadline."""
-    if cancel_event is not None:
-        if not isinstance(cancel_event, asyncio.Event):
-            raise TypeError("cancel_event muss ein asyncio.Event sein")
-        if cancel_event.is_set():
-            return _OLLAMA_STREAM_CANCELLED
-    read_task = asyncio.create_task(iterator.__anext__())
-    cancel_task = asyncio.create_task(cancel_event.wait()) if cancel_event is not None else None
-    waiters = {read_task}
-    if cancel_task is not None:
-        waiters.add(cancel_task)
-    try:
-        done, _pending = await asyncio.wait(
-            waiters, timeout=total_timeout, return_when=asyncio.FIRST_COMPLETED,
-        )
-        if cancel_task is not None and cancel_task in done and cancel_event.is_set():
-            read_task.cancel()
-            await asyncio.gather(read_task, return_exceptions=True)
-            return _OLLAMA_STREAM_CANCELLED
-        if read_task in done:
-            return await read_task
-        read_task.cancel()
-        await asyncio.gather(read_task, return_exceptions=True)
-        return _OLLAMA_STREAM_TOTAL_TIMEOUT
-    except BaseException:
-        if not read_task.done():
-            read_task.cancel()
-        await asyncio.gather(read_task, return_exceptions=True)
-        raise
-    finally:
-        if cancel_task is not None:
-            if not cancel_task.done():
-                cancel_task.cancel()
-            await asyncio.gather(cancel_task, return_exceptions=True)
-
-
-async def _await_ollama_stream_operation(operation, *, cancel_event=None, total_timeout=None):
-    """Bound one exact Ollama transport operation by its worker stop and total deadline."""
-    if cancel_event is not None:
-        if not isinstance(cancel_event, asyncio.Event):
-            raise TypeError("cancel_event muss ein asyncio.Event sein")
-        if cancel_event.is_set():
-            return _OLLAMA_STREAM_CANCELLED
-    if total_timeout is not None and total_timeout <= 0:
-        return _OLLAMA_STREAM_TOTAL_TIMEOUT
-
-    operation_task = asyncio.create_task(operation())
-    cancel_task = asyncio.create_task(cancel_event.wait()) if cancel_event is not None else None
-    waiters = {operation_task}
-    if cancel_task is not None:
-        waiters.add(cancel_task)
-    try:
-        done, _pending = await asyncio.wait(
-            waiters, timeout=total_timeout, return_when=asyncio.FIRST_COMPLETED,
-        )
-        # If headers and Stop arrive together, keep the response so its
-        # AsyncExitStack can close it before the request returns.
-        if operation_task in done:
-            return await operation_task
-        if cancel_task is not None and cancel_task in done and cancel_event.is_set():
-            operation_task.cancel()
-            await asyncio.gather(operation_task, return_exceptions=True)
-            return _OLLAMA_STREAM_CANCELLED
-        operation_task.cancel()
-        await asyncio.gather(operation_task, return_exceptions=True)
-        return _OLLAMA_STREAM_TOTAL_TIMEOUT
-    except BaseException:
-        if not operation_task.done():
-            operation_task.cancel()
-        await asyncio.gather(operation_task, return_exceptions=True)
-        raise
-    finally:
-        if cancel_task is not None:
-            if not cancel_task.done():
-                cancel_task.cancel()
-            await asyncio.gather(cancel_task, return_exceptions=True)
 
 
 def _probe_model_api(
@@ -236,6 +153,18 @@ class OllamaBackend(ModelBackend):
         """Return the same context cap that is sent to Ollama as ``num_ctx``."""
         return self.num_ctx
 
+    def unload(self, model: str | None = None, timeout: float = 5.0) -> bool:
+        """Entlädt das Modell sofort (keep_alive 0); der nächste Aufruf lädt es neu."""
+        import httpx
+
+        try:
+            with httpx.Client(timeout=timeout, trust_env=False) as client:
+                response = client.post(f"{self.base_url}/api/generate",
+                                       json={"model": model or self.default_model, "keep_alive": 0})
+            return response.is_success
+        except httpx.HTTPError:
+            return False
+
     async def _lebt(self, client, model: str) -> bool:
         """Prüfe billig, ob Ollama und das ausgewählte Modell noch leben."""
         try:
@@ -254,8 +183,7 @@ class OllamaBackend(ModelBackend):
         log.warning("Ollama hält %s statt %s - unser Modell wurde verdrängt", geladen, model)
         return False
 
-    async def chat(self, messages, tools=None, think=True, model=None, *, cancel_event=None,
-                   lifecycle_observer=None):
+    async def chat(self, messages, tools=None, think=True, model=None, *, cancel_event=None, lifecycle_observer=None):
         import httpx
 
         try:
@@ -265,19 +193,6 @@ class OllamaBackend(ModelBackend):
             effective_ka = self.keep_alive
 
         selected_model = model or self.default_model
-        if lifecycle_observer is not None and not callable(lifecycle_observer):
-            raise TypeError("lifecycle_observer muss callable sein")
-
-        def notify(phase, reason=None):
-            if lifecycle_observer is None:
-                return
-            try:
-                lifecycle_observer(phase, reason=reason)
-            except BaseException:
-                # Telemetry must never change cancellation, transport cleanup or
-                # the caller's lease/finally behavior.
-                return
-
         # Mac Studio live probe (2026-09-15): GLM 5.3 Cloud puts untagged
         # reasoning in message.content with think=false. Only literal True
         # was verified to separate message.thinking from the answer. Do not
@@ -312,172 +227,51 @@ class OllamaBackend(ModelBackend):
         done_reason = None
         chunk_count = 0
         started = time.time()
-        total_started = time.monotonic()
         last_activity = started
         probes = 0
         completed = False
         reported_models: set[str] = set()
         reported_model_invalid = False
 
-        def aborted(error: str, *, backend_error=None, transient_failure=None,
-                    discard_tool_calls=False, provider_request_aborted=None) -> dict:
-            if provider_request_aborted in {"worker_stop", "total_deadline"}:
-                notify("request_aborted", provider_request_aborted)
-            elif error:
-                safe_reason = (
-                    "httpx_read_timeout" if transient_failure == "httpx_read_timeout"
-                    else "provider_error"
-                )
-                notify("request_failed", safe_reason)
+        def aborted(error: str, *, backend_error=None, transient_failure=None) -> dict:
             content = "".join(content_parts)
             raw_message = dict(last_message or {"role": "assistant"})
             raw_message["content"] = content
             if thinking_parts:
                 raw_message["thinking"] = "".join(thinking_parts)
-            if discard_tool_calls:
-                raw_message.pop("tool_calls", None)
-            elif tool_calls:
+            if tool_calls:
                 raw_message["tool_calls"] = list(tool_calls)
             return {
                 "content": content,
-                "tool_calls": None if discard_tool_calls else (list(tool_calls) or None),
+                "tool_calls": list(tool_calls) or None,
                 "raw_message": raw_message,
                 "prompt_tokens": prompt_tokens,
                 "error": error,
                 "provider_reported_model": None,
-                **({"provider_request_aborted": provider_request_aborted}
-                   if provider_request_aborted in {"worker_stop", "total_deadline"} else {}),
                 **({"backend_error": backend_error} if backend_error else {}),
                 **({"transient_failure": transient_failure}
                    if transient_failure == "httpx_read_timeout" else {}),
             }
 
-        async def probe_liveness(client):
-            remaining_total = None
-            if total_cap > 0:
-                remaining_total = max(
-                    0.0, float(total_cap) - (time.monotonic() - total_started),
-                )
-                if remaining_total <= 0:
-                    return _OLLAMA_STREAM_TOTAL_TIMEOUT
-            return await _await_ollama_stream_operation(
-                lambda: self._lebt(client, selected_model),
-                cancel_event=cancel_event,
-                total_timeout=remaining_total,
-            )
-
-        if cancel_event is not None and not isinstance(cancel_event, asyncio.Event):
-            raise TypeError("cancel_event muss ein asyncio.Event sein")
-        if cancel_event is not None and cancel_event.is_set():
-            return aborted("Worker-Request wurde vor dem Providerstart gestoppt",
-                           discard_tool_calls=True, provider_request_aborted="worker_stop")
-
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
         timeouts = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
-        class _ObservedAsyncClient:
-            def __init__(self, client):
-                self._client = client
-
-            async def __aenter__(self):
-                client = await self._client.__aenter__()
-                notify("transport_open")
-                return client
-
-            async def __aexit__(self, *exc):
-                result = await self._client.__aexit__(*exc)
-                notify("client_cleanup_complete")
-                return result
-
-        async with _ObservedAsyncClient(httpx.AsyncClient(timeout=timeouts)) as client:
+        async with httpx.AsyncClient(timeout=timeouts) as client:
             try:
-                stream_manager = client.stream(
+                async with client.stream(
                     "POST", f"{self.base_url}/api/chat", json=payload
-                )
-                remaining_total = None
-                if total_cap > 0:
-                    remaining_total = max(0.0, float(total_cap) - (time.monotonic() - total_started))
-                    if remaining_total <= 0:
-                        return aborted(f"Gesamtdeckel {total_cap}s erreicht",
-                                       discard_tool_calls=True, provider_request_aborted="total_deadline")
-                notify("awaiting_response_headers")
-                response = await _await_ollama_stream_operation(
-                    stream_manager.__aenter__, cancel_event=cancel_event,
-                    total_timeout=remaining_total,
-                )
-                if response is _OLLAMA_STREAM_CANCELLED:
-                    return aborted("Worker-Request generationsgebunden gestoppt",
-                                   discard_tool_calls=True, provider_request_aborted="worker_stop")
-                if response is _OLLAMA_STREAM_TOTAL_TIMEOUT:
-                    return aborted(f"Gesamtdeckel {total_cap}s erreicht",
-                                   discard_tool_calls=True, provider_request_aborted="total_deadline")
-                notify("response_headers_received")
-                async with AsyncExitStack() as stream_stack:
-                    async def close_response(*exc):
-                        result = await stream_manager.__aexit__(*exc)
-                        notify("response_cleanup_complete")
-                        return result
-
-                    stream_stack.push_async_exit(close_response)
+                ) as response:
                     if response.status_code >= 400:
                         from hub._services.llm.backend_errors import classify_ollama_error, read_error_payload
-                        remaining_total = None
-                        if total_cap > 0:
-                            remaining_total = max(0.0, float(total_cap) - (time.monotonic() - total_started))
-                            if remaining_total <= 0:
-                                return aborted(
-                                    f"Gesamtdeckel {total_cap}s erreicht",
-                                    discard_tool_calls=True,
-                                    provider_request_aborted="total_deadline",
-                                )
-                        error_payload = await _await_ollama_stream_operation(
-                            lambda: read_error_payload(response, timeout_seconds=read_timeout),
-                            cancel_event=cancel_event,
-                            total_timeout=remaining_total,
-                        )
-                        if error_payload is _OLLAMA_STREAM_CANCELLED:
-                            return aborted(
-                                "Worker-Request generationsgebunden gestoppt",
-                                discard_tool_calls=True,
-                                provider_request_aborted="worker_stop",
-                            )
-                        if error_payload is _OLLAMA_STREAM_TOTAL_TIMEOUT:
-                            return aborted(
-                                f"Gesamtdeckel {total_cap}s erreicht",
-                                discard_tool_calls=True,
-                                provider_request_aborted="total_deadline",
-                            )
-                        if (total_cap > 0
-                                and time.monotonic() - total_started >= total_cap):
-                            return aborted(
-                                f"Gesamtdeckel {total_cap}s erreicht",
-                                discard_tool_calls=True,
-                                provider_request_aborted="total_deadline",
-                            )
-                        detail = classify_ollama_error(
-                            error_payload,
+                        error_budget = min(read_timeout, max(0, total_cap - (time.time() - started))) if total_cap > 0 else read_timeout
+                        detail = classify_ollama_error(await read_error_payload(response, timeout_seconds=error_budget),
                             status_code=response.status_code,
-                            retry_after=response.headers.get("Retry-After"),
-                        )
+                            retry_after=response.headers.get("Retry-After"))
                         return aborted("HTTPStatusError: " + detail["message"], backend_error=detail)
                     response.raise_for_status()
                     lines = response.aiter_lines().__aiter__()
                     while True:
-                        remaining_total = None
-                        if total_cap > 0:
-                            remaining_total = max(0.0, float(total_cap) - (time.monotonic() - total_started))
-                            if remaining_total <= 0:
-                                return aborted(f"Gesamtdeckel {total_cap}s erreicht",
-                                               discard_tool_calls=True, provider_request_aborted="total_deadline")
                         try:
-                            line = await _await_ollama_stream_line(
-                                lines, cancel_event=cancel_event, total_timeout=remaining_total,
-                            )
-                            if line is _OLLAMA_STREAM_CANCELLED:
-                                return aborted("Worker-Request generationsgebunden gestoppt",
-                                               discard_tool_calls=True, provider_request_aborted="worker_stop")
-                            if line is _OLLAMA_STREAM_TOTAL_TIMEOUT:
-                                return aborted(f"Gesamtdeckel {total_cap}s erreicht",
-                                               discard_tool_calls=True, provider_request_aborted="total_deadline")
+                            line = await lines.__anext__()
                         except StopAsyncIteration:
                             break
                         except httpx.ReadTimeout as exc:
@@ -491,24 +285,16 @@ class OllamaBackend(ModelBackend):
                             # begrenzt ueber /api/ps ausgewertet; fortsetzen
                             # laesst sich der abgebrochene Response-Stream nicht.
                             while probes < grace:
-                                liveness = await probe_liveness(client)
-                                if liveness is _OLLAMA_STREAM_CANCELLED:
-                                    return aborted(
-                                        "Worker-Request generationsgebunden gestoppt",
-                                        discard_tool_calls=True,
-                                        provider_request_aborted="worker_stop",
-                                    )
-                                if liveness is _OLLAMA_STREAM_TOTAL_TIMEOUT:
+                                now = time.time()
+                                if total_cap > 0 and (now - started) > total_cap:
                                     return aborted(
                                         f"{timeout_error}; Gesamtdeckel "
-                                        f"{total_cap}s erreicht",
-                                        discard_tool_calls=True,
-                                        provider_request_aborted="total_deadline",
+                                        f"{total_cap}s erreicht"
                                     )
-                                if not liveness:
+                                if not await self._lebt(client, selected_model):
                                     break
                                 probes += 1
-                                last_activity = time.time()
+                                last_activity = now
                                 log.info(
                                     "Ollama-Stream ReadTimeout, Modell lebt "
                                     "(%d/%d Grace-Pruefungen)",
@@ -518,12 +304,7 @@ class OllamaBackend(ModelBackend):
                             return aborted(timeout_error, transient_failure="httpx_read_timeout")
 
                         now = time.time()
-                        if total_cap > 0 and (time.monotonic() - total_started) >= total_cap:
-                            return aborted(f"Gesamtdeckel {total_cap}s erreicht",
-                                           discard_tool_calls=True, provider_request_aborted="total_deadline")
                         if line.strip():
-                            if chunk_count == 0:
-                                notify("first_stream_chunk_received")
                             chunk_count = min(chunk_count + 1, 1_000_000)
                             last_activity = now
                             probes = 0
@@ -556,36 +337,17 @@ class OllamaBackend(ModelBackend):
                             if chunk.get("eval_count") is not None:
                                 eval_tokens = chunk["eval_count"]
                             if chunk.get("done"):
-                                notify("response_completed")
                                 done_reason = chunk.get("done_reason")
                                 completed = True
                                 break
 
-                        if total_cap > 0 and (time.monotonic() - total_started) >= total_cap:
-                            return aborted(
-                                f"Gesamtdeckel {total_cap}s erreicht",
-                                discard_tool_calls=True,
-                                provider_request_aborted="total_deadline",
-                            )
+                        if total_cap > 0 and (now - started) > total_cap:
+                            return aborted(f"Gesamtdeckel {total_cap}s erreicht")
                         if (now - last_activity) > idle:
-                            if probes < grace:
-                                liveness = await probe_liveness(client)
-                                if liveness is _OLLAMA_STREAM_CANCELLED:
-                                    return aborted(
-                                        "Worker-Request generationsgebunden gestoppt",
-                                        discard_tool_calls=True,
-                                        provider_request_aborted="worker_stop",
-                                    )
-                                if liveness is _OLLAMA_STREAM_TOTAL_TIMEOUT:
-                                    return aborted(
-                                        f"Gesamtdeckel {total_cap}s erreicht",
-                                        discard_tool_calls=True,
-                                        provider_request_aborted="total_deadline",
-                                    )
-                                if liveness:
-                                    probes += 1
-                                    last_activity = time.time()
-                                    continue
+                            if probes < grace and await self._lebt(client, selected_model):
+                                probes += 1
+                                last_activity = now
+                                continue
                             return aborted(
                                 f"Ollama antwortet seit {idle}s nicht und meldet "
                                 "unser Modell nicht mehr"
@@ -598,12 +360,6 @@ class OllamaBackend(ModelBackend):
                     ),
                 )
 
-        if total_cap > 0 and time.monotonic() - total_started >= total_cap:
-            return aborted(
-                f"Gesamtdeckel {total_cap}s erreicht",
-                discard_tool_calls=True,
-                provider_request_aborted="total_deadline",
-            )
         if not completed:
             return aborted("Ollama-Stream endete ohne Abschlussmarker (done=true)")
 
@@ -1153,9 +909,14 @@ class HermesBackend(OpenAIBackend):
 class OpenRouterBackend(HermesBackend):
     """OpenRouter provider with explicit model IDs and a safe free router default.
 
-    openrouter/free is sent to OpenRouter unchanged. The provider, rather
-    than this client, chooses a free model for each request. In particular,
-    this class never substitutes a locally selected model for that router ID.
+    openrouter/free is normally sent to OpenRouter unchanged and the
+    provider, rather than this class, chooses a free model per request.
+    Exception: with a ``run_id`` the backend pins one tool-capable free
+    catalog model per run (stable across all calls of that run, rotating
+    between runs; see hub._services.llm.free_model_pin) and substitutes
+    that pinned model for the router ID. Without a ``run_id``, or when the
+    catalog is stale or has no free candidates, it falls back to the
+    ``openrouter/free`` router ID unchanged.
     """
 
     def __init__(
@@ -1165,11 +926,15 @@ class OpenRouterBackend(HermesBackend):
         default_model: str = "openrouter/free",
         site_url: str = "https://github.com/ellmos-ai/bach",
         app_name: str = "BACH Agent",
+        run_id: str | None = None,
     ):
         if not api_key:
             from hub._services.llm.openrouter_catalog import read_openrouter_api_key
 
             api_key = read_openrouter_api_key()
+        self.run_id = str(run_id) if run_id is not None else ""
+        self.last_free_pin_decision = None
+        self._free_pin_model: str | None = None
         super().__init__(
             base_url=base_url or "https://openrouter.ai/api/v1",
             api_key=api_key,
@@ -1199,17 +964,65 @@ class OpenRouterBackend(HermesBackend):
                 code if isinstance(code, str) else "catalog_invalid_schema"
             )
 
+    def _pin_free_router_model(self) -> str:
+        """Pin one free catalog model for this run, else fall back to the router ID.
+
+        The decision (including the fallback to the router ID) is made once
+        per backend instance, i.e. once per run, and cached afterwards. A
+        catalog refresh between two calls of the same run therefore cannot
+        swap the model mid-run. Rotation between runs is preserved because
+        every run gets its own backend instance with its own cache.
+        """
+        if self._free_pin_model is not None:
+            return self._free_pin_model
+        from hub._services.llm.free_model_pin import pick_free_model
+
+        decision = pick_free_model(self.run_id)
+        self.last_free_pin_decision = decision
+        pinned_model = decision.get("model") if isinstance(decision, dict) else None
+        if (
+            isinstance(decision, dict)
+            and decision.get("pinned") is True
+            and isinstance(pinned_model, str)
+            and pinned_model.strip()
+        ):
+            pinned_model = pinned_model.strip()
+        else:
+            pinned_model = "openrouter/free"
+        self._free_pin_model = pinned_model
+        return pinned_model
+
     async def chat(self, messages, tools=None, think=True, model=None, *, retry_transient=True):
-        target_model = str(model or self.default_model).strip()
+        requested_model = str(model or self.default_model).strip()
+        target_model = requested_model
+        if target_model == "openrouter/free":
+            target_model = self._pin_free_router_model()
         if target_model != "openrouter/free":
             self._require_catalog_selection(target_model)
-        return await super().chat(
+        self.last_resolved_model = target_model
+        result = await super().chat(
             messages=messages,
             tools=tools,
             think=think,
             model=target_model,
             retry_transient=retry_transient,
         )
+        if (
+            requested_model == "openrouter/free"
+            and target_model != "openrouter/free"
+            and isinstance(result, dict)
+            and result.get("error")
+        ):
+            self._free_pin_model = "openrouter/free"
+            self.last_resolved_model = "openrouter/free"
+            result = await super().chat(
+                messages=messages,
+                tools=tools,
+                think=think,
+                model="openrouter/free",
+                retry_transient=retry_transient,
+            )
+        return result
 
     def availability(
         self,
@@ -1219,6 +1032,8 @@ class OpenRouterBackend(HermesBackend):
         if not str(self.api_key or "").strip():
             return False, "Key fehlt"
         target_model = str(model or self.default_model).strip()
+        if target_model == "openrouter/free":
+            target_model = self._pin_free_router_model()
         if target_model != "openrouter/free":
             try:
                 self._require_catalog_selection(target_model)
@@ -2001,6 +1816,7 @@ def create_backend(config: dict) -> ModelBackend:
         'default_model': '...',  # optional
         'permission_mode': '...',  # optional (CLI backends: restricted/full)
         'free_only': True,         # optional OpenRouter free-catalog guard
+        'run_id': '...',           # optional (openrouter free: pins one free model per run)
     }
     """
     backend_type = config.get("type", "ollama").lower()
@@ -2038,7 +1854,14 @@ def create_backend(config: dict) -> ModelBackend:
         )
         if not default_model and backend_class is OpenRouterBackend:
             default_model = "openrouter/free"
-        return backend_class(
+        if backend_class is OpenRouterBackend:
+            return OpenRouterBackend(
+                base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
+                api_key=config.get("api_key", ""),
+                default_model=default_model,
+                run_id=config.get("run_id"),
+            )
+        return HermesBackend(
             base_url=config.get("base_url", "https://openrouter.ai/api/v1"),
             api_key=config.get("api_key", ""),
             default_model=default_model or "nousresearch/hermes-3-llama-3.1-8b",

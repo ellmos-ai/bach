@@ -44,6 +44,8 @@ from hub.base import BaseHandler
 sys.path.insert(0, str(Path(__file__).parent.parent / "agents" / "reflection"))
 
 
+from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+@deprecated_legacy_bach("build-your-users-mind")
 class ReflectionHandler(BaseHandler):
 
     def __init__(self, base_path_or_app):
