@@ -117,6 +117,14 @@ class ModelBackend(ABC):
         return False, "nicht prüfbar"
 
 
+class _StructuredRequestRejected(RuntimeError):
+    """A bounded, completely consumed direct Ollama 4xx error envelope."""
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+        super().__init__("structured_request_rejected")
+
+
 class OllamaBackend(ModelBackend):
     """Ollama API Backend für lokale Modelle (Qwen, Llama, Mistral, etc.)."""
 
@@ -228,7 +236,6 @@ class OllamaBackend(ModelBackend):
             raise ValueError("nonfinite_structured_response")
 
         async with client.stream(method, url, **({"json": payload} if payload is not None else {})) as response:
-            response.raise_for_status()
             data = bytearray()
             async for chunk in response.aiter_bytes():
                 data.extend(chunk)
@@ -237,6 +244,13 @@ class OllamaBackend(ModelBackend):
         result = json.loads(data.decode("utf-8"), object_pairs_hook=unique, parse_constant=nonfinite)
         if type(result) is not dict:
             raise ValueError("invalid_structured_response")
+        # Ollama v0.33.3 GenerateHandler returns a single {"error": string}
+        # object for a terminal non-streaming rejection. Status alone, headers,
+        # malformed JSON or a partially consumed body are no end attestation.
+        if (400 <= response.status_code < 500 and set(result) == {"error"}
+                and type(result["error"]) is str and result["error"].strip()):
+            raise _StructuredRequestRejected(response.status_code)
+        response.raise_for_status()
         return result
 
     async def structured_metadata(self, model):
@@ -261,7 +275,11 @@ class OllamaBackend(ModelBackend):
             handle = owner.begin_dispatch(digest, target)
             # Any timeout, disconnect, cancellation, ambiguous or incomplete
             # response deliberately leaves the durable intent in owner.json.
-            result = await self._structured_json(client, "POST", self.base_url + "/api/generate", payload=payload)
+            try:
+                result = await self._structured_json(client, "POST", self.base_url + "/api/generate", payload=payload)
+            except _StructuredRequestRejected:
+                owner.finish_dispatch(handle)
+                raise
             allowed = {"model", "created_at", "response", "thinking", "done", "done_reason", "context",
                        "total_duration", "load_duration", "prompt_eval_count", "prompt_eval_duration",
                        "eval_count", "eval_duration", "logprobs"}

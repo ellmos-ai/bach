@@ -71,6 +71,8 @@ def fixture(tmp_path, monkeypatch, *, reply=None, release=None, metadata=None):
             raise reply
         if isinstance(reply, bytes):
             return httpx.Response(200, content=reply)
+        if isinstance(reply, httpx.Response):
+            return reply
         if type(reply) is int:
             return httpx.Response(reply, json={"error": "synthetic failure"})
         return httpx.Response(200, json=reply if reply is not None else completion(model))
@@ -315,3 +317,36 @@ async def test_reused_gate_waiter_cannot_mutate_or_inherit_dispatch_owner(tmp_pa
         assert (gate.root / "owner.json").read_bytes() == original
         gate.finish_dispatch(handle)
     assert not gate.status()["active"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 404, 422, 429])
+async def test_complete_ollama_4xx_rejection_clears_own_dispatch(tmp_path, monkeypatch, status):
+    f = fixture(tmp_path, monkeypatch, reply=httpx.Response(status, json={"error": "input length exceeds context window"}))
+    with pytest.raises(ReportHostPortError):
+        await invoke(f)
+    assert len(f.owned) == 1 and not HostInferenceGate().status()["active"]
+    assert not HostInferenceGate().status()["dispatch_pending"] and not f.runtime.sessions
+
+
+@pytest.mark.asyncio
+async def test_4xx_body_abort_retains_dispatch(tmp_path, monkeypatch):
+    class InterruptedBody(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'{"error":"rejected"}'
+            raise httpx.ReadError("synthetic body interrupted before complete consumption")
+    f = fixture(tmp_path, monkeypatch, reply=httpx.Response(400, stream=InterruptedBody()))
+    with pytest.raises(ReportHostPortError):
+        await invoke(f)
+    assert HostInferenceGate().status()["dispatch_pending"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [b'{"error":"one","error":"two"}', b'{"error":NaN}',
+    b'{"error":"rejected"} {}', b'{"error":"rejected","unexpected":true}',
+    b'{"error":""}', b'not JSON', b'{"error":"'+b'x'*2_000_000+b'"}'])
+async def test_ambiguous_or_over_cap_4xx_retains_dispatch(tmp_path, monkeypatch, body):
+    f = fixture(tmp_path, monkeypatch, reply=httpx.Response(400, content=body))
+    with pytest.raises(ReportHostPortError):
+        await invoke(f)
+    assert HostInferenceGate().status()["dispatch_pending"]
