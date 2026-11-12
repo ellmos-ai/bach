@@ -41,12 +41,10 @@ const API = {
         }
     },
 
-    // Liest ALLE Seiten eines paginierten Listenendpunkts (limit/offset/has_more, wie /api/tasks)
-    // und liefert dieselbe Antwortform zurueck (Liste unter `key`, total, count, has_more=false).
-    // Ein Fehler auf irgendeiner Seite wird unveraendert weitergereicht (kein stiller Teilerfolg);
-    // Doppelte ids (parallele Aenderungen zwischen den Seiten) werden verworfen.
-    // Der Server begrenzt jede Seite selbst (Standard 100); hier gibt es keine eigene Obergrenze
-    // ausser `maxPages` als Schutz vor einer nie endenden has_more-Kette.
+    // Liest alle Seiten eines paginierten Listenendpunkts (limit/offset/has_more, wie /api/tasks).
+    // count ist die Zahl eindeutiger zurückgegebener Zeilen; total stammt von der letzten Serverseite.
+    // offset bleibt der Startoffset (hier 0). Änderungen während des Ladens können Seiten verschieben:
+    // die Liste wird live seitenweise gelesen und ist kein atomarer Snapshot.
     async getAllPages(endpoint, key = 'tasks', pageSize = 100, maxPages = 1000) {
         const merged = { success: true, count: 0, total: 0, has_more: false, offset: 0 };
         merged[key] = [];
@@ -54,9 +52,25 @@ const API = {
         let offset = 0;
         for (let page = 0; page < maxPages; page++) {
             const sep = endpoint.includes('?') ? '&' : '?';
-            const data = await this.get(`${endpoint}${sep}limit=${pageSize}&offset=${offset}`);
-            if (!data || data.success === false) return data;
+            const pageUrl = endpoint + sep + 'limit=' + pageSize + '&offset=' + offset;
+            let data;
+            try {
+                data = await this.get(pageUrl);
+            } catch (error) {
+                const detail = error && error.message ? error.message : String(error);
+                throw new Error('Task-Liste konnte nicht vollständig geladen werden: ' + detail);
+            }
+            if (!data || data.success !== true) {
+                const detail = data && typeof data.error === 'string' ? data.error.trim() : '';
+                throw new Error('Task-Liste konnte nicht vollständig geladen werden' +
+                    (detail ? ': ' + detail : ': Ungültige Antwort vom Server.'));
+            }
+
             const rows = Array.isArray(data[key]) ? data[key] : [];
+            if (data.has_more === true && rows.length === 0) {
+                throw new Error('Task-Liste unvollständig: Der Server meldet ab Offset ' +
+                    offset + ' weitere Seiten, liefert aber keine Einträge.');
+            }
             for (const row of rows) {
                 if (row && row.id !== undefined && row.id !== null) {
                     if (seen.has(row.id)) continue;
@@ -67,13 +81,14 @@ const API = {
             merged.total = typeof data.total === 'number' ? data.total : merged[key].length;
             if (data.applied_filters !== undefined) merged.applied_filters = data.applied_filters;
             merged.count = merged[key].length;
-            if (data.has_more !== true || rows.length === 0) return merged;
+            if (data.has_more !== true) return merged;
+
+            // Advance by raw rows from the server, including duplicate IDs filtered above.
             offset += rows.length;
         }
-        merged.has_more = true; // maxPages erreicht: Rest ist nicht geladen
-        return merged;
+        throw new Error('Task-Liste unvollständig: Nach ' + maxPages +
+            ' Seiten meldet der Server weitere Ergebnisse.');
     },
-
     async post(endpoint, data = {}) {
         try {
             const response = await fetch(this.baseUrl + endpoint, {
@@ -123,6 +138,19 @@ const API = {
 
     tasks: {
         list: (status) => API.getAllPages('/api/tasks' + (status ? `?status=${status}` : '')),
+        summary: async (status = 'all') => {
+            const data = await API.get('/api/tasks?status=' +
+                encodeURIComponent(status || 'all') + '&limit=0');
+            if (!data || data.success !== true) {
+                const detail = data && typeof data.error === 'string' ? data.error.trim() : '';
+                throw new Error('Task-Statistik konnte nicht geladen werden' +
+                    (detail ? ': ' + detail : ': Ungültige Antwort vom Server.'));
+            }
+            if (!Number.isInteger(data.total) || data.total < 0) {
+                throw new Error('Task-Statistik konnte nicht geladen werden: Ungültige Gesamtzahl.');
+            }
+            return data;
+        },
         get: (id) => API.get(`/api/tasks/${id}`),
         create: (data) => API.post('/api/tasks', data),
         update: (id, data) => API.put(`/api/tasks/${id}`, data),

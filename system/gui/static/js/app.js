@@ -135,7 +135,8 @@ async function loadRecentTasks() {
         }
     } catch (error) {
         console.error('[BACH] Tasks-Fehler:', error);
-        container.innerHTML = '<p class="loading">Fehler beim Laden</p>';
+        const detail = error && error.message ? error.message : String(error);
+        container.textContent = 'Fehler beim Laden der Aufgaben: ' + detail;
     }
 }
 
@@ -143,16 +144,18 @@ async function loadSystemInfo() {
     const container = document.getElementById('scanner-status');
 
     try {
-        // Lade Task-Statistiken (alle Status-Typen)
-        const pending = await API.tasks.list('pending');
-        const open = await API.tasks.list('open');
-        const inProgress = await API.tasks.list('in_progress');
-        const done = await API.tasks.list('done');
+        // Lade nur die gefilterten Gesamtzahlen; erledigte Historie wird nicht als Task-Liste geladen.
+        const [pending, open, inProgress, done] = await Promise.all([
+            API.tasks.summary('pending'),
+            API.tasks.summary('open'),
+            API.tasks.summary('in_progress'),
+            API.tasks.summary('done')
+        ]);
 
-        const pendingCount = pending.tasks ? pending.tasks.length : 0;
-        const openCount = open.tasks ? open.tasks.length : 0;
-        const inProgressCount = inProgress.tasks ? inProgress.tasks.length : 0;
-        const doneCount = done.tasks ? done.tasks.length : 0;
+        const pendingCount = pending.total;
+        const openCount = open.total;
+        const inProgressCount = inProgress.total;
+        const doneCount = done.total;
 
         // Gesamt offen = pending + open + in_progress (konsistent mit /api/status)
         const totalOpen = pendingCount + openCount + inProgressCount;
@@ -183,7 +186,8 @@ async function loadSystemInfo() {
         `;
     } catch (error) {
         console.error('[BACH] System-Info Fehler:', error);
-        container.innerHTML = '<p class="loading">Fehler beim Laden</p>';
+        const detail = error && error.message ? error.message : String(error);
+        container.textContent = 'Fehler beim Laden der Task-Statistik: ' + detail;
     }
 }
 
