@@ -66,7 +66,13 @@ const API = {
                     (detail ? ': ' + detail : ': Ungültige Antwort vom Server.'));
             }
 
-            const rows = Array.isArray(data[key]) ? data[key] : [];
+            if (!Array.isArray(data[key])) {
+                throw new Error('Task-Liste unvollständig: Der Server lieferte keine gültige Aufgabenliste.');
+            }
+            if (typeof data.has_more !== 'boolean') {
+                throw new Error('Task-Liste unvollständig: Der Server lieferte keinen gültigen has_more-Wert.');
+            }
+            const rows = data[key];
             if (data.has_more === true && rows.length === 0) {
                 throw new Error('Task-Liste unvollständig: Der Server meldet ab Offset ' +
                     offset + ' weitere Seiten, liefert aber keine Einträge.');

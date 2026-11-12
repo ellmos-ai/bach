@@ -144,6 +144,7 @@ async function loadSystemInfo() {
     const container = document.getElementById('scanner-status');
 
     try {
+        // Parallele Count-Antworten sind keine atomare Momentaufnahme.
         // Lade nur die gefilterten Gesamtzahlen; erledigte Historie wird nicht als Task-Liste geladen.
         const [pending, open, inProgress, done] = await Promise.all([
             API.tasks.summary('pending'),

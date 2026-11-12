@@ -477,43 +477,40 @@
             tasksData = [];
 
             try {
-                // Helper to fetch
                 const fetch = async (status) => {
                     let url = '/api/tasks?status=' + status;
                     if (assigned) url += '&assigned_to=' + encodeURIComponent(assigned);
                     if (category) url += '&category=' + encodeURIComponent(category);
                     if (priority) url += '&priority=' + encodeURIComponent(priority);
-                    const res = await api.getAllPages(url);   // alle Seiten (limit/offset/has_more)
+                    const res = await api.getAllPages(url);
                     return res.tasks || [];
                 };
 
-                // 1. Pending, Open & Blocked (Backend löst Aliase auf)
+                // Alle Gruppen vollständig laden, bevor Liste und Zähler veröffentlicht werden.
                 const pendingGroup = await fetch('pending,open,blocked');
                 const blocked = pendingGroup.filter(t => String(t.status || '').toLowerCase() === 'blocked');
                 blocked.forEach(t => { t.is_blocked_status = true; });
-                const allPending = pendingGroup; // blocked bleibt hier sichtbar mit Badge
-                tasksData.push(...allPending);
+                const allPending = pendingGroup;
+                const inProgress = await fetch('in_progress,progress');
+                const done = await fetch('done,completed,closed');
+
+                tasksData = [...allPending, ...inProgress, ...done];
                 renderList('pending', allPending);
                 document.getElementById('count-pending').textContent = allPending.length;
-
-                // 2. In Progress (inkl. Alias "progress")
-                const inProgress = await fetch('in_progress,progress');
-                tasksData.push(...inProgress);
                 renderList('in_progress', inProgress);
                 document.getElementById('count-in_progress').textContent = inProgress.length;
-
-                // 3. Done (inkl. Aliase completed/closed)
-                const done = await fetch('done,completed,closed');
-                tasksData.push(...done);
                 renderList('done', done);
                 document.getElementById('count-done').textContent = done.length;
             } catch (error) {
                 console.error('[BACH] Task-Board-Fehler:', error);
                 const detail = error && error.message ? error.message : String(error);
                 const message = 'Fehler beim Laden der Aufgaben: ' + detail;
+                tasksData = [];
                 ['pending', 'in_progress', 'done'].forEach((state) => {
                     const list = document.getElementById('list-' + state);
+                    const count = document.getElementById('count-' + state);
                     if (list) list.textContent = message;
+                    if (count) count.textContent = 'Fehler';
                 });
             }
         }
