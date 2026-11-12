@@ -117,6 +117,14 @@ class ModelBackend(ABC):
         return False, "nicht prüfbar"
 
 
+class _StructuredRequestRejected(RuntimeError):
+    """A bounded, completely consumed direct Ollama 4xx error envelope."""
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+        super().__init__("structured_request_rejected")
+
+
 class OllamaBackend(ModelBackend):
     """Ollama API Backend für lokale Modelle (Qwen, Llama, Mistral, etc.)."""
 
@@ -158,6 +166,12 @@ class OllamaBackend(ModelBackend):
         import httpx
 
         try:
+            from hub._services.chat.host_inference_gate import HostInferenceGate
+            if HostInferenceGate().status().get("dispatch_pending"):
+                return False
+        except Exception:
+            return False
+        try:
             with httpx.Client(timeout=timeout, trust_env=False) as client:
                 response = client.post(f"{self.base_url}/api/generate",
                                        json={"model": model or self.default_model, "keep_alive": 0})
@@ -182,6 +196,101 @@ class OllamaBackend(ModelBackend):
             return True
         log.warning("Ollama hält %s statt %s - unser Modell wurde verdrängt", geladen, model)
         return False
+
+    @staticmethod
+    def structured_request(request, *, model, num_ctx):
+        """Closed local Ollama contract; preserve the complete schema/prompt."""
+        import hashlib
+        fields = {"model", "prompt", "stream", "format", "options", "truncate", "shift", "keep_alive"}
+        if (type(request) is not dict or set(request) != fields
+                or request["model"] != model or type(request["prompt"]) is not str
+                or not request["prompt"] or type(request["format"]) is not dict
+                or request["format"].get("type") != "object"
+                or request["stream"] is not False or request["truncate"] is not False
+                or request["shift"] is not False or request["keep_alive"] != "0s"):
+            raise ValueError("invalid_structured_request")
+        options = request["options"]
+        if (type(options) is not dict or set(options) != {"temperature", "num_ctx", "num_predict"}
+                or type(options["temperature"]) is not int or options["temperature"] != 0
+                or type(options["num_ctx"]) is not int or options["num_ctx"] != num_ctx
+                or type(options["num_predict"]) is not int
+                or not 1 <= options["num_predict"] <= min(8192, num_ctx // 2)):
+            raise ValueError("invalid_structured_options")
+        raw = json.dumps(request, sort_keys=True, ensure_ascii=False, allow_nan=False)
+        if len(raw.encode()) > 2_000_000:
+            raise ValueError("structured_request_resource_cap")
+        return json.loads(raw), hashlib.sha256(raw.encode()).hexdigest()
+
+    @staticmethod
+    async def _structured_json(client, method, url, *, payload=None):
+        """Bounded strict JSON, with redirects/proxies disabled by the client."""
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate_structured_response_key")
+                result[key] = value
+            return result
+
+        def nonfinite(_value):
+            raise ValueError("nonfinite_structured_response")
+
+        async with client.stream(method, url, **({"json": payload} if payload is not None else {})) as response:
+            data = bytearray()
+            async for chunk in response.aiter_bytes():
+                data.extend(chunk)
+                if len(data) > 2_000_000:
+                    raise ValueError("structured_response_resource_cap")
+        result = json.loads(data.decode("utf-8"), object_pairs_hook=unique, parse_constant=nonfinite)
+        if type(result) is not dict:
+            raise ValueError("invalid_structured_response")
+        # Ollama v0.33.3 GenerateHandler returns a single {"error": string}
+        # object for a terminal non-streaming rejection. Status alone, headers,
+        # malformed JSON or a partially consumed body are no end attestation.
+        if (400 <= response.status_code < 500 and set(result) == {"error"}
+                and type(result["error"]) is str and result["error"].strip()):
+            raise _StructuredRequestRejected(response.status_code)
+        response.raise_for_status()
+        return result
+
+    async def structured_metadata(self, model):
+        import httpx
+        from hub._services.chat.local_resource_reserve import observe_ollama
+        async with httpx.AsyncClient(timeout=2, follow_redirects=False, trust_env=False) as client:
+            version = await self._structured_json(client, "GET", self.base_url + "/api/version")
+        if set(version) != {"version"} or version["version"] != "0.33.3":
+            raise ValueError("structured_server_version_unverified")
+        observed = await observe_ollama(self, model)
+        if observed.get("external") is not False:
+            raise ValueError("structured_local_model_unverified")
+        return {"server_version": version["version"], "digest": observed["digest"]}
+
+    async def generate_structured(self, request, *, target):
+        """Concrete transport under an actual native turn, no callback/grant API."""
+        import httpx
+        from hub._services.chat.host_inference_gate import HostInferenceGate
+        payload, digest = self.structured_request(request, model=target["model"], num_ctx=self.num_ctx)
+        owner = HostInferenceGate.current_owner()
+        async with httpx.AsyncClient(timeout=self.request_timeout, follow_redirects=False, trust_env=False) as client:
+            handle = owner.begin_dispatch(digest, target)
+            # Any timeout, disconnect, cancellation, ambiguous or incomplete
+            # response deliberately leaves the durable intent in owner.json.
+            try:
+                result = await self._structured_json(client, "POST", self.base_url + "/api/generate", payload=payload)
+            except _StructuredRequestRejected:
+                owner.finish_dispatch(handle)
+                raise
+            allowed = {"model", "created_at", "response", "thinking", "done", "done_reason", "context",
+                       "total_duration", "load_duration", "prompt_eval_count", "prompt_eval_duration",
+                       "eval_count", "eval_duration", "logprobs"}
+            if (not set(result) <= allowed or result.get("model") != target["model"]
+                    or result.get("done") is not True or result.get("done_reason") not in {"stop", "length"}
+                    or type(result.get("response")) is not str
+                    or any(type(result.get(key)) is not int or result[key] < 1
+                           for key in ("prompt_eval_count", "eval_count"))):
+                raise ValueError("structured_completion_unconfirmed")
+            owner.finish_dispatch(handle)
+            return result
 
     async def chat(self, messages, tools=None, think=True, model=None, *, cancel_event=None, lifecycle_observer=None):
         import httpx

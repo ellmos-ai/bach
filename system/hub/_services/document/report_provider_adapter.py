@@ -7,6 +7,8 @@ inside BACH's chat event loop do not nest loops or create hidden worker threads.
 """
 from __future__ import annotations
 
+import asyncio
+
 import importlib.metadata
 import hashlib
 import inspect
@@ -903,7 +905,7 @@ class BachModelRoutePort:
         self._runtime = runtime
         self._agent_id = agent_id
         self._execution_profile_reader = execution_profile_reader
-        self._pins: dict[tuple[str, str, str], tuple[str, str, str, dict[str, Any] | None]] = {}
+        self._pins: dict[tuple[str, str, str], tuple] = {}
 
     def _local_route_snapshot(self) -> dict[str, Any] | None:
         """Bind one configured slot, local model and real BACH dispatcher."""
@@ -986,6 +988,26 @@ class BachModelRoutePort:
             # Do not project native configuration, metadata, or runtime errors.
             return None
 
+    def _structured_target(self, snapshot):
+        """The target uses the SAME configured reserve budget and backend context."""
+        from hub._services.chat.local_resource_reserve import read_policy
+        from hub._services.llm.model_backend import OllamaBackend
+        try:
+            policy, version = read_policy()
+            budget = policy["models"][self._model]
+            if (snapshot is None or type(self._backend) is not OllamaBackend
+                    or policy["enabled"] is not True
+                    or type(version) is not str or not re.fullmatch(r"[0-9a-f]{64}", version)
+                    or type(budget["num_ctx"]) is not int or budget["num_ctx"] != self._backend.num_ctx
+                    or not re.fullmatch(r"[0-9a-f]{64}", budget["digest"])):
+                return None
+            return {"backend": "ollama", "base_url": self._backend.base_url,
+                    "model": self._model, "model_digest": budget["digest"],
+                    "num_ctx": self._backend.num_ctx, **{key: snapshot["binding"][key]
+                    for key in ("socket_id", "binding_id", "agent_id", "priority")}}
+        except (KeyError, TypeError, ValueError, OSError):
+            return None
+
     def _signature(self) -> tuple[str, str, str]:
         from hub._services.llm.model_backend import backend_identifier
 
@@ -999,10 +1021,13 @@ class BachModelRoutePort:
         if self._mode == "local":
             snapshot = self._local_route_snapshot()
             local = snapshot is not None
+            target = self._structured_target(snapshot) if local else None
             return {
                 "available": local,
                 "mode": "local",
                 "verified_local": local,
+                **({"structured_contract": "bach.report-structured-local.v1", "target": target}
+                   if target is not None else {}),
                 "cloud_route": False,
                 "local_only": True,
                 "fallback_disabled": True,
@@ -1077,7 +1102,7 @@ class BachModelRoutePort:
             local_binding = None
         route_ref = secrets.token_urlsafe(24).replace("-", "x").replace("_", "y")
         self._pins[(safe_run_id, self._mode, request_mode)] = (
-            route_id, route_ref, signature[2], local_binding,
+            route_id, route_ref, signature[2], local_binding, status.get("target"),
         )
         return {
             "verified": True,
@@ -1090,6 +1115,8 @@ class BachModelRoutePort:
             "cloud_route": self._mode == "cloud",
             "local_only": local_flag,
             "fallback_disabled": True,
+            **({"structured_contract": status["structured_contract"], "target": dict(status["target"])}
+               if "structured_contract" in status else {}),
         }
 
     async def generate(
@@ -1171,12 +1198,65 @@ class BachModelRoutePort:
             "route_ref": safe_route_ref,
         }
 
+    async def generate_structured(self, request, *, run_id, request_mode, route_id,
+                                  route_ref, expected_model_digest, required_server_version):
+        """Use the existing native dispatcher; never fall back to direct HTTP."""
+        from hub._services.llm.model_backend import OllamaBackend
+        if request_mode != "local":
+            raise ReportHostPortError("structured_route_unverified")
+        key = (_opaque(run_id, "run_id"), self._mode, request_mode)
+        pin = self._pins.get(key)
+        status = await self.route_status()
+        if (self._mode != "local" or request_mode != "local" or pin is None
+                or len(pin) != 5 or pin[:3] != (route_id, route_ref, self._signature()[2])
+                or status.get("available") is not True
+                or status.get("structured_contract") != "bach.report-structured-local.v1"
+                or status.get("target") != pin[4] or status.get("route_id") != route_id
+                or pin[4]["model_digest"] != expected_model_digest
+                or required_server_version != "0.33.3" or type(self._backend) is not OllamaBackend):
+            raise ReportHostPortError("structured_route_unverified")
+        try:
+            payload, digest = self._backend.structured_request(request, model=self._model,
+                                                                num_ctx=self._backend.num_ctx)
+        except (TypeError, ValueError, RecursionError):
+            raise ReportHostPortError("invalid_structured_request") from None
+        # Consume one pin before scheduling; concurrent callers cannot replay it.
+        if self._pins.pop(key, None) is not pin:
+            raise ReportHostPortError("structured_route_unverified")
+        operation = asyncio.create_task(self._generate_local(
+            [{"role": "user", "content": payload["prompt"]}], expected_route_id=route_id,
+            expected_binding=pin[3], structured_request=payload, structured_target=pin[4]))
+        cancelled = False
+        while True:
+            try:
+                completion = await asyncio.shield(operation)
+                break
+            except asyncio.CancelledError:
+                if operation.done():
+                    if not operation.cancelled():
+                        operation.exception()
+                    raise
+                cancelled = True
+            except Exception:
+                if cancelled:
+                    raise asyncio.CancelledError() from None
+                raise
+        if cancelled:
+            raise asyncio.CancelledError()
+        return {"contract": "bach.report-structured-local.v1", "run_id": run_id,
+                "request_mode": "local", "mode": "local", "route_id": route_id,
+                "route_ref": route_ref, "request_sha256": digest,
+                "server_version": required_server_version, "target": dict(pin[4]),
+                "completion": completion}
+
     async def _generate_local(
         self,
         messages: list[dict[str, str]],
         *,
         expected_route_id: str,
         expected_binding: dict[str, Any],
+        structured_request: dict | None = None,
+        structured_target: dict | None = None,
     ) -> Any:
         """Use the owning ChatRuntime gates and re-attest at backend dispatch."""
         from hub._services.chat import slots_config
@@ -1243,6 +1323,13 @@ class BachModelRoutePort:
                 raise
             except Exception:
                 raise ReportHostPortError("provider_route_unverified") from None
+            if structured_request is not None:
+                from hub._services.chat.local_resource_reserve import read_policy
+                expected_policy_version = read_policy()[1]
+                metadata = await self._backend.structured_metadata(self._model)
+                if (metadata.get("server_version") != "0.33.3"
+                        or metadata.get("digest") != structured_target["model_digest"]):
+                    raise ReportHostPortError("structured_metadata_changed")
             try:
                 receipt, binding = await runtime.prepare_inference_call(
                     guarded_backend,
@@ -1266,6 +1353,12 @@ class BachModelRoutePort:
             if (current is None or current.get("route_id") != expected_route_id
                     or current.get("binding") != expected_binding):
                 raise ReportHostPortError("provider_route_unverified")
+            if structured_request is not None:
+                if (self._structured_target(current) != structured_target
+                        or receipt.get("policy_version") != expected_policy_version
+                        or read_policy()[1] != expected_policy_version):
+                    raise ReportHostPortError("structured_target_changed")
+                return await self._backend.generate_structured(structured_request, target=structured_target)
             return await self._backend.chat(*args, **kwargs)
 
         guarded_backend = _make_guarded_backend(self._backend, dispatch)
