@@ -93,3 +93,28 @@ class TestHandle:
         ok, msg = handler.handle("generate", [])
         assert ok is False
         assert "No articles" in msg
+
+
+def test_desktop_dir_falls_back_to_home_desktop_outside_windows(monkeypatch):
+    from hub._services.newspaper import newspaper_generator as gen
+
+    monkeypatch.setattr(gen.sys, "platform", "linux")
+    assert gen._desktop_dir() == Path.home() / "Desktop"
+
+
+def test_desktop_placeholder_and_empty_value_resolve_to_the_visible_desktop(monkeypatch, tmp_path):
+    from hub._services.newspaper import newspaper_generator as gen
+
+    monkeypatch.setattr(gen, "_desktop_dir", lambda: tmp_path)
+    # config.json ships "{USER_HOME}/Desktop/", which was used literally as a relative path.
+    assert gen._resolve_desktop_path("{USER_HOME}/Desktop/") == str(tmp_path)
+    assert gen._resolve_desktop_path(None) == str(tmp_path)
+    assert gen._resolve_desktop_path("") == str(tmp_path)
+    assert gen._resolve_desktop_path("/srv/news") == "/srv/news"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="SHGetKnownFolderPath is Windows-only")
+def test_desktop_dir_uses_an_existing_known_folder_on_windows():
+    from hub._services.newspaper import newspaper_generator as gen
+
+    assert gen._desktop_dir().is_dir()
