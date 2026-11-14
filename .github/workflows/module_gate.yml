@@ -23,4 +23,9 @@ jobs:
         run: git fetch origin ${{ github.base_ref }}
 
       - name: Modul-Gate-Prüfung
+        env:
+          # The check reads the bauort from these first. Without them it fell back to the last five
+          # commit subjects of the PR merge ref, which are usually commits from main (bach#651).
+          GITHUB_EVENT_PULL_REQUEST_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_EVENT_PULL_REQUEST_BODY: ${{ github.event.pull_request.body }}
         run: python3 .github/workflows/module_gate_check.py
