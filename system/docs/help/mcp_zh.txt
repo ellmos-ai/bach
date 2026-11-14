@@ -1,0 +1,39 @@
+BACH MCP 服务器
+============
+
+说明
+--
+
+内置的 BACH MCP 服务器通过 Model Context Protocol 提供 BACH 资源、工具和
+提示词。它使用 stdio 和现有的 Handler-API。
+
+用法
+--
+
+  bach mcp serve
+      通过 MCP stdio 传输启动服务器。
+
+  bach mcp serve --dry-run
+      在不启动服务器的情况下检查 CLI 路由。
+
+  bach --help mcp
+      显示此帮助主题。
+
+依赖
+--
+
+  pip install -r requirements-optional.txt
+
+MCP 配置文件
+--------
+
+  {
+    "mcpServers": {
+      "bach": {
+        "command": "bach",
+        "args": ["mcp", "serve"]
+      }
+    }
+  }
+
+配置文件条目也会通过 `bach setup mcp` 安装。

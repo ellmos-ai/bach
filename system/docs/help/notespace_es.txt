@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+NOTE-SPACE (NoteSpaceLLM propio de BACH)
+=========================================
+
+bach notespace   - Clon privado de NotebookLM para análisis de documentos (integrado)
+
+
+DESCRIPCIÓN
+===========
+
+Módulo fijo incluido en BACH: un clon privado de NotebookLM para el análisis
+de documentos y la generación de informes. Versión independiente de BACH,
+autónoma respecto al proyecto fuente interno (prueba de vendoring:
+tools/notespace/PROVENANCE.md).
+
+Vinculación:
+- LLM/Embeddings: configuración global de Ollama de BACH (data/ollama_config.json)
+- Datos (proyectos/BD vectorial/salida): data/notespace/ (gitignored)
+
+
+COMANDOS
+========
+
+bach notespace status        Estado del módulo, vínculo con Ollama, ruta de datos, dependencias
+bach notespace gui           Iniciar GUI de escritorio (PySide6, sistema local)
+bach notespace cli "pregunta" Consulta RAG sin interfaz gráfica (Fase 2, aún no implementada)
+
+
+FUENTE
+======
+
+Controlador: hub/notespace.py (NoteSpaceHandler)

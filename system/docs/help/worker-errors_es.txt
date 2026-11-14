@@ -1,0 +1,147 @@
+Errores de worker y límites de proveedor
+========================================
+
+Los errores de Ollama se guardan adicionalmente como backend_error y se
+proyectan mediante la API autenticada de estado del worker. El contrato solo
+contiene campos verificados: provider, kind, status_code (cuando existe
+realmente), quota_exceeded, quota_period=month (cuando se informa
+explícitamente un límite mensual), retry_after_seconds (cuando existe una
+cabecera Retry-After válida) y un message generado a partir de textos fijos.
+Los cuerpos del proveedor, URL, claves y demás cabeceras no forman parte de
+este contrato. Los cuerpos de error se evalúan como máximo hasta 16 KiB. La
+lectura respeta además el presupuesto total restante BACH_LLM_TOTAL_CAP y el
+tiempo de espera de lectura existente. Los cuerpos ilegibles, entregados con
+demasiada lentitud o más grandes no generan ninguna suposición de cuota; el
+estado HTTP realmente recibido se conserva. Las instantáneas de ranura del
+sistema también contienen exclusivamente los campos de error normalizados.
+
+HTTP 429 por sí solo no demuestra un límite mensual. Sin un aviso concreto de
+límite mensual aparece un límite de solicitudes. Retry-After acepta segundos
+enteros no negativos o una fecha HTTP con zona horaria; la fecha se evalúa en
+relación con el instante actual. Las cabeceras no válidas o ausentes no
+generan tiempo de espera. Un Retry-After no es una promesa sobre el
+restablecimiento de un cupo mensual.
+
+FailedAnswer conserva el contrato verificado también al guardar y volver a
+cargar un historial de chat. Estos metadatos no se envían de vuelta a un
+modelo. Ante errores graves del proveedor, el worker finaliza, devuelve de
+forma confirmada su lease de tarea actual y conserva el texto de error. El
+evento correlacionado assignment_ended se conserva por separado en el
+historial; no sobrescribe ninguna causa de error. Un nuevo inicio confirmado
+elimina el error de la generación anterior.
+
+Un worker continuo de Ollama Cloud ya iniciado explícitamente puede
+reanudarse en la misma ejecución tras un HTTP 429 transitorio, siempre que
+para el lease de tarea actual esté demostrado que aún no se inició ninguna
+herramienta. Esta prueba también es válida a través de varios bloques de
+modelo y para herramientas mediante la pasarela CLI. El trabajo de
+herramientas ya iniciado o una prueba ausente o no válida suprimen la
+reanudación automática. Tras un ACK de cuarentena confirmado, la tarea queda
+bloqueada con el estado nativo blocked para su revisión y su lease se libera;
+la indicación de error se conserva. Otro worker no puede asumir
+automáticamente esta cuarentena confirmada. Si falta el ACK de cuarentena o no
+es válido, el reintento permanece suprimido; el estado real de la tarea y el
+lease deben comprobarse mediante la API canónica de tareas. Un ACK faltante
+puede producirse antes o después del commit y, por tanto, no demuestra ni
+blocked ni una liberación. El worker no retrocede a Return-to-pending. Antes
+de una nueva liberación deben comprobarse los efectos de herramientas ya
+producidos. La regla de reintento no garantiza un trabajo de herramientas
+idempotente.
+Antes de la fase de espera se finaliza el hilo Lease-Renew, se devuelve la
+tarea de forma confirmada y se cierra el assignment. Sin devolución
+confirmada no se espera ni se vuelve a trabajar. Durante la espera el worker
+está activo, pero no procesa ninguna tarea: worker_active=true, running=false,
+active_task_id=null.
+
+La regla de reanudación local permite como máximo tres reanudaciones
+consecutivas con un tiempo de espera planificado total de como máximo 900
+segundos. Sin un Retry-After válido más largo, los tiempos de espera son 60,
+120 y 240 segundos. Un Retry-After más largo realmente presente se respeta;
+si supera el presupuesto de espera restante, el worker finaliza. Estos valores
+son reglas del programa, no tiempos observados de restablecimiento de cupo.
+Solo una respuesta exitosa del backend reinicia el contador y elimina la
+antigua indicación de error. Un límite mensual, errores de autenticación,
+errores desconocidos y ejecuciones únicas no se reintentan.
+
+Detención, desactivación, pausa, tiempo de expiración y un cambio de
+generación interrumpen la espera. Después se vuelven a comprobar ranura,
+modelo, versión de tarea, dependencias, leases ajenos y el periodo de gracia
+de Creator. No hay ninguna nueva autorización de inicio, ningún cambio de
+modelo ni ningún arranque automático en la nube mediante esta reanudación.
+
+Las tarjetas existentes de la GUI compartida muestran current_activity. Por
+ello, el texto de error legible sigue siendo utilizable también para versiones
+de la GUI que aún no evalúan backend_error. Los errores antiguos sin contrato
+guardado no se muestran retroactivamente como límite mensual. No hay arranques
+automáticos en la nube, ni reintentos ilimitados ni un cambio de modelo de
+pago. Los workers en la nube los inicia el usuario.
+
+
+Ante un pin de versión total obsoleto de la ranura de worker, la
+comprobación previa rechaza el inicio con HTTP 409 y
+error_code=configuration_version_conflict. La respuesta contiene
+admission.admitted=false; no se crea ninguna generación ni hilo. Vuelve a
+leer el estado actual de configuración de system-slots y envía una solicitud
+de inicio conscientemente nueva. Otros errores de ranura o admisión no
+verificables permanecen como HTTP 503 con error_code=worker_slot_unavailable.
+
+
+Errores de transporte de OpenRouter/Hermes
+------------------------------------------
+El contrato existente también admite provider=openrouter y provider=hermes.
+OpenRouter solo se denomina así para el host realmente configurado
+openrouter.ai; otros destinos Hermes compatibles con OpenAI reciben el
+identificador de adaptador hermes. error_type procede de familias de clases
+HTTPX fijas: ConnectTimeout, ReadTimeout, WriteTimeout, PoolTimeout,
+TimeoutException, ConnectError, RequestError o HTTPStatusError. Otras
+subclases de RequestError solo se clasifican como familia general
+RequestError; sus nombres de clase arbitrarios no se adoptan. Por ello, los
+textos de excepción vacíos no pierden la clase de error segura. El estado HTTP
+solo se adopta de la respuesta de error HTTP realmente existente. Textos de
+excepción, URL, cuerpos sin procesar, claves y cabeceras no se muestran ni se
+registran. Los cuerpos HTTP no se leen para esto. quota_exceeded=false no
+significa aquí clasificación de cuota, ni prueba de un cupo libre.
+
+El portador compatible con RuntimeError sigue siendo una excepción.
+FailedAnswer vuelve a normalizar sus metadatos; los chats guardados, el estado
+de ranura y la GUI utilizan el mismo contrato. Incluso tras finalizar el
+assignment se conserva la causa segura. Los metadatos manipulados no ofrecen
+ninguna causa verificada ni adoptan ningún texto de excepción arbitrario.
+
+Los intentos de transporte de Hermes permanecen limitados a cuatro con el
+mismo tiempo de espera y los tiempos de espera existentes. Estos metadatos no
+permiten ni un fallback de modelo adicional ni la reanudación de Ollama
+Cloud. Modelos, vinculación de precio gratuito, cuarentena de herramientas,
+lease y puertas de resultado permanecen sin cambios. Un efecto de herramienta
+ya iniciado o desconocido no se repite automáticamente.
+
+Para el intento histórico #2169 no está acreditada la clase de error de
+transporte real. El nuevo contrato solo clasifica excepciones capturadas
+realmente en el futuro; no atribuye a errores antiguos ni ConnectTimeout ni
+cuota de proveedor.
+
+
+Comprobación del catálogo gratuito de OpenRouter
+------------------------------------------------
+Antes de seleccionar una variante gratuita concreta de OpenRouter, el worker
+comprueba el catálogo de modelos actual. La caché del catálogo es válida
+durante 300 segundos. Un GET de catálogo se realiza como máximo dos veces: un
+único reintento solo está permitido ante un error de red, tiempo de espera o
+HTTP 408, 425, 429, 500, 502, 503 o 504. Por cada llamada HTTPX se establece
+un tiempo de espera de solicitud de 6 segundos; esto no es un límite de tiempo
+total garantizado para ambas llamadas. Los errores de autenticación 401/403 y
+otros errores HTTP no se vuelven a solicitar. Esta regla de catálogo no repite
+ni llamadas de inferencia ni efectos de herramientas.
+
+Una variante `:free` concreta solo se admite si está listada de forma
+inequívoca y todos los campos de precio publicados están presentes, son
+finitos y numéricamente cero. Precios ausentes, no válidos o distintos de
+cero, así como modelos no listados o ambiguos conservan causas de selección
+separadas: `model_price_missing`, `model_price_invalid`,
+`model_price_nonzero`, `model_not_listed` y `model_ambiguous` son motivos de
+modelo separados; `model_not_free_variant` también sigue siendo independiente.
+Los errores de catálogo conservan códigos como `catalog_timeout`,
+`catalog_transport_error`, `catalog_http_transient`, `catalog_http_error`,
+`catalog_auth_rejected` y `catalog_invalid_schema`. Ante errores de catálogo
+solo se emiten códigos de error fijos e indicaciones de estado seguras; textos
+del proveedor, URL, cuerpos, claves y cabeceras no se adoptan.

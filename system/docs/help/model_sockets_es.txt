@@ -1,0 +1,86 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-21
+# Sources: hub/model_sockets.py, hub/_services/chat/model_sockets.py, hub/_services/chat/local_model_catalog.py, core/registry.py
+
+RANURAS DE MODELO PARA MODELOS LOCALES
+======================================
+
+Abrir ayuda
+-----------
+bach help model-sockets
+
+La CLI gestiona ofertas de modelos locales y vínculos entre perfiles de
+agentes existentes y ranuras de modelo. La configuración reside en la
+configuración existente de ranuras de BACH. Los comandos no cargan ni inician
+ningún modelo ni inician ningún worker.
+
+COMANDOS
+--------
+bach model-sockets list
+    Lee la configuración y muestra, entre otros, configuration_version,
+    migration_required, IDs de ranuras y de vínculos. El acceso de lectura no
+    guarda ninguna migración. En una configuración antigua, list puede mostrar
+    una proyección provisional.
+
+bach model-sockets catalog
+    Lee metadatos limitados de proveedores locales configurados. El adaptador de
+    metadatos actual lee Ollama; para LM Studio, el catálogo informa
+    capability_adapter_pending. Una entrada de catálogo no demuestra una
+    inferencia exitosa ni residencia del modelo ni capacidad disponible. La
+    llamada no descarga, carga ni inicia ningún modelo.
+
+bach model-sockets migrate --version VERSION_AUS_AKTUELLEM_LIST
+    Ejecuta explícitamente la migración cuando list informa
+    migration_required=true. La migración añade una sola vez el registro de
+    ranuras de modelo y conserva perfiles existentes, progreso y campos de
+    configuración desconocidos.
+
+bach model-sockets configure --backend BACKEND --model MODELL --version VERSION_AUS_AKTUELLEM_LIST
+    Registra o modifica una oferta de modelo local. BACKEND es ollama o
+    lmstudio. Opcional: --enabled true|false, --max-active-slots NÚMERO
+    (1 a 1000) y --residency-policy exclusive|shared. Los modelos en la nube
+    no son ranuras de modelo locales.
+
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+    Vincula un perfil de agente existente a una ranura existente.
+    Opcional: --enabled true|false, --priority foreground|background y
+    --context-tokens NÚMERO (1 a 1.048.576).
+
+bach model-sockets unbind --binding BINDUNGS_ID --version VERSION_AUS_AKTUELLEM_LIST
+    Elimina el vínculo especificado.
+
+REGLAS DE VERSIÓN Y ESCRITURA
+-----------------------------
+Antes de cada operación de escritura, ejecuta primero bach model-sockets list.
+Pasa sin cambios el valor actual de configuration_version como --version. La
+mutación utiliza Compare-and-Swap y comprueba bloqueos de escritura. Ante un
+conflicto de versión, vuelve a ejecutar list y concilia el cambio con el
+estado actual; la CLI no repite por sí sola una mutación rechazada.
+
+El controlador posee un parámetro interno dry_run, pero el despachador CLI
+actual de BACH no ofrece ningún modificador dry-run utilizable para
+model-sockets. --dry-run y -n se reenvían al analizador de operaciones y allí
+se rechazan. Por ello, todos los comandos de mutación requieren --version.
+
+Las mutaciones reales exitosas solo confirman el guardado de la configuración:
+worker_started=false y runtime_verified=false. No confirman ningún inicio de
+worker, ningún uso de modelo ni ninguna comprobación en tiempo de ejecución.
+
+Los valores de configuración como max_active_slots y residency_policy no son
+mediciones. Esta CLI no determina la ocupación en tiempo de ejecución ni la
+residencia real del modelo. Las respuestas exitosas son JSON; --json puede
+indicarse adicionalmente.
+
+FLUJO DE EJEMPLO
+----------------
+Sustituye los marcadores de posición por valores de tu propio entorno.
+
+bach model-sockets list
+bach model-sockets configure --backend ollama --model MODELLNAME --version VERSION_AUS_AKTUELLEM_LIST
+bach model-sockets list
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+
+AYUDA RELACIONADA
+-----------------
+bach help ollama
+bach help agent_launcher

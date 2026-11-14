@@ -1,0 +1,41 @@
+=== 模型与 RAM 声明（RAM-DISTRIBUTOR 与模型运行时）===
+
+摘要：
+  在 BACH 和 Ocean 中不再有固定的模型槽位。所有代理（“你的代理”）都直接绑
+  定到主模型 + 回退链。在运行时会进行两阶段声明（Claiming）：
+    1. RAM 声明（主火炬 / RAMDistributor）：谁可以占用物理 RAM/VRAM（本地
+       27B 模型还是计算流水线）？
+    2. 模型运行时声明（模型火炬 / HostInferenceGate）：根据 4 个用户接近度
+       等级，谁获得已加载模型上的下一个推理轮次？
+
+按用户接近度划分的 4 个优先级类别（UserProximity）：
+  类别 1 (DIRECT_INTERACTIVE)    : 用户直接等待中（Chat、对讲/Talk）
+  类别 2 (DELEGATED_FOREGROUND)  : 由用户/Chat 主动委托的专家
+  类别 3 (SCHEDULED_ROUTINE)     : 到期的定时或例行代理
+  类别 4 (AUTONOMOUS_BACKGROUND) : 后台 Worker（Buddha Always-On）
+
+情况 A：其他进程需要 RAM / VRAM（计算 / 自有模型）
+  1. 在系统托盘（ellmos-tray）或 GUI（/agenten/running）中：
+     "🔥 RAM-Distributor & Modell-Claim" ->
+     "🔓 Modell & RAM jetzt für andere Prozesse freigeben"
+  2. 通过 HTTP-API / CLI：
+     curl -X POST http://127.0.0.1:8081/api/fackel -H "Content-Type: application/json" -d '{"preference":"compute"}'
+     curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"qwen3.8:27b-mlx","keep_alive":0}'
+  3. 通过计算锁（~/.memwatchdog/compute_active.lock）：
+     填入 {"active_compute_jobs": [{"pid": <PID>, "name": "<job>"}]}。
+
+情况 B：其他进程想要声明 / 使用本地模型
+  1. 在 Python 中通过 HostInferenceGate 协作方式（抢占后台 Worker）：
+     from hub._services.chat.host_inference_gate import HostInferenceGate
+     async with HostInferenceGate().turn("mein-prozess", "foreground"):
+         ...
+  2. 直接通过 BACH Control API（:8081/api/chat）：
+     curl -X POST http://127.0.0.1:8081/api/chat -H "Content-Type: application/json" \
+       -d '{"prompt": "...", "chat_id": "mein-prozess"}'
+  3. 检查并管理模型绑定：
+     bach model-sockets list --json
+     bach model-sockets catalog --json
+
+完整文档（目标与现状）：
+  docs/architecture/MODEL-AND-RAM-CLAIMING.md
+  ocean-resources/README.md

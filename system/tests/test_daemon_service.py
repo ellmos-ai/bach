@@ -862,3 +862,25 @@ class TestDaemonStatusAPI:
         }
         assert data["last_runs"] == []
         assert not db_path.exists()
+
+
+class TestModularCoreAutoUpdateJob:
+    def test_modular_core_auto_update_job_loading_and_schedule(self, tmp_path):
+        from hub.modules import ensure_scheduler_auto_update_job
+
+        db_path = _create_test_db(tmp_path)
+        res = ensure_scheduler_auto_update_job(conn_or_db_path=db_path, interval_hours=6)
+        assert res["created"] is True
+
+        service = DaemonService()
+        service.db_path = db_path
+        service.load_jobs()
+
+        assert res["job_id"] in service.jobs
+        job = service.jobs[res["job_id"]]
+        assert job.name == "Modular Core Auto-Update"
+        assert job.job_type == "interval"
+        assert job.schedule == "6h"
+        assert job.is_active is True
+        assert job.next_run is not None
+        assert job.next_run > datetime.now()

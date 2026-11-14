@@ -1,0 +1,74 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-21
+# Sources: hub/model_sockets.py, hub/_services/chat/model_sockets.py, hub/_services/chat/local_model_catalog.py, core/registry.py
+
+本地模型的模型槽位
+=========
+
+打开帮助
+----
+bach help model-sockets
+
+CLI 管理本地模型供应以及现有代理配置文件与模型槽位之间的绑定。配置位于现有
+的 BACH 槽位配置中。这些命令不会加载或启动任何模型，也不会启动任何 Worker。
+
+命令
+--
+bach model-sockets list
+    读取配置并输出 configuration_version、migration_required、槽位 ID 和
+    绑定 ID 等信息。读取访问不会保存迁移。对于旧配置，list 可能会显示临时投
+    影。
+
+bach model-sockets catalog
+    读取已配置本地提供商的有限元数据。当前的元数据适配器读取 Ollama；对于
+    LM Studio，目录会报告 capability_adapter_pending。目录条目既不证明成
+    功推理，也不证明模型驻留或可用容量。该调用不会拉取、加载或启动任何模
+    型。
+
+bach model-sockets migrate --version VERSION_AUS_AKTUELLEM_LIST
+    当 list 报告 migration_required=true 时显式执行迁移。迁移会一次性添
+    加模型槽位注册表，并保留现有配置文件、进度和未知配置字段。
+
+bach model-sockets configure --backend BACKEND --model MODELL --version VERSION_AUS_AKTUELLEM_LIST
+    注册或更改本地模型供应。BACKEND 为 ollama 或 lmstudio。可选：
+    --enabled true|false、--max-active-slots 数字（1 到 1000）以及
+    --residency-policy exclusive|shared。云模型不是本地模型槽位。
+
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+    将现有代理配置文件绑定到现有槽位。可选：--enabled true|false、
+    --priority foreground|background 以及 --context-tokens 数字（1 到
+    1,048,576）。
+
+bach model-sockets unbind --binding BINDUNGS_ID --version VERSION_AUS_AKTUELLEM_LIST
+    删除指定的绑定。
+
+版本与写入规则
+-------
+每次写入操作前，请先执行 bach model-sockets list。将当前的
+configuration_version 值原封不动地作为 --version 传入。变更使用
+Compare-and-Swap 并检查写入锁。遇到版本冲突时，重新执行 list 并将更改与
+当前状态对齐；CLI 不会自行重试被拒绝的变更。
+
+处理器具有内部 dry_run 参数，但当前的 BACH CLI 分发器未为 model-sockets
+提供可用的 dry-run 开关。--dry-run 和 -n 会被传递给操作解析器并在那里被
+拒绝。因此所有变更命令都需要 --version。
+
+成功的真实变更仅确认配置已保存：worker_started=false 和
+runtime_verified=false。它们不确认 Worker 启动、模型使用或运行时检查。
+
+max_active_slots 和 residency_policy 等配置值不是测量值。此 CLI 不会确定
+运行时占用情况和实际模型驻留状态。成功响应为 JSON；也可以额外指定 --json。
+
+示例流程
+----
+请将占位符替换为自己环境中的值。
+
+bach model-sockets list
+bach model-sockets configure --backend ollama --model MODELLNAME --version VERSION_AUS_AKTUELLEM_LIST
+bach model-sockets list
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+
+相关帮助
+----
+bach help ollama
+bach help agent_launcher

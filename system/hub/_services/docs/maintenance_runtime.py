@@ -61,7 +61,16 @@ TRUSTED_LOCK_TOOLS = {
         "5f3f961bfc3975a30bc4e9403115570a64bb08147a0188cab1a24435b6fa7ce4",
         "b46f8110311d134f9c229e05d3f6a897033cf32ff94b5773a09ba966373f7363",
     ),
+    # Frozen read-only lock-master c1e3e68265a4 host copy (Mac: ~/.local/share/ocean-lock-tools/
+    # lock-master-c1e3e68265a4-2368-host-v3/pure-locking), the canonical scanner of the GUI, Telegram
+    # and chat-tray services. Pointing lock_tools_root there keeps the pin valid across lock-master pulls.
+    (
+        "75e190e00a665d66bdefa71e291dcc0441705f4bb3527fd15ef81a4946878557",
+        "f2b5db618ba8560fcbd81648771788ad2d9f86552c8967f5eab3b2cb98d8c929",
+    ),
 }
+# Measured 14.11.2026 on the Mac: services/bach 1.4 s, ~/.bach 2.8 s per scan; 6 s was too tight.
+LOCK_SCAN_BUDGET_SECONDS = 20
 
 
 def _safe_scalar(key, value):
@@ -183,10 +192,15 @@ class CanonicalLockGuard:
                 raise PermissionError("maintenance_lock_source_unverified")
         except OSError:
             raise PermissionError("maintenance_lock_source_unverified") from None
-        deadline = time.monotonic() + 6
+        deadline = time.monotonic() + LOCK_SCAN_BUDGET_SECONDS
+        proven_twins = set()  # twins of roots[0], confirmed by the scanner itself
         for path in dict.fromkeys([*self.roots, target]):
             existing = path
             while not existing.exists() and existing != existing.parent:
+                existing = existing.parent
+            if existing.is_file():
+                # The scanner checks directories only ("target-not-found" for files);
+                # locks of the file's directory and its ancestors still apply.
                 existing = existing.parent
             try:
                 result = subprocess.run(
@@ -212,11 +226,16 @@ class CanonicalLockGuard:
                 value = json.loads(result.stdout)
             except (OSError, ValueError, subprocess.SubprocessError):
                 raise PermissionError("maintenance_lock_unverified") from None
+            twin_status = value.get("twin_status")
+            # A OneDrive pointer folder cannot resolve its own twin ("pointer-unresolved", exit 1).
+            # Accept that only for the folder the roots[0] scan already proved to be its twin;
+            # its own locks must still be empty.
+            known_pointer = twin_status == "pointer-unresolved" and existing.resolve() in proven_twins
             if (
-                result.returncode != 0
+                (result.returncode != 0 and not known_pointer)
                 or len(result.stdout.encode("utf-8")) > 65536
                 or value.get("locks") != []
-                or value.get("twin_status") not in {"ok", "not-applicable"}
+                or (twin_status not in {"ok", "not-applicable"} and not known_pointer)
             ):
                 raise PermissionError("maintenance_locked_or_unknown")
             if Path(value.get("checked", "")).resolve() != existing.resolve():
@@ -233,6 +252,7 @@ class CanonicalLockGuard:
                     )
                 ):
                     raise PermissionError("maintenance_project_twin_unverified")
+                proven_twins = {Path(twin).resolve() for twin in twins}
 
 
 @contextmanager

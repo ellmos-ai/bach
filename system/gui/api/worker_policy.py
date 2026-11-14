@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from fastapi import APIRouter, Body, HTTPException, Request, Query
 
+from hub._services import abort_notices
 from hub._services import task_lease_settings as lease_settings
 from hub._services import task_resolver_settings as resolver_settings
 from hub._services import worker_policy_settings as service
@@ -108,6 +109,18 @@ async def get_task_resolver_settings(request: Request):
 async def put_task_resolver_settings(request: Request, payload: dict = Body(...)):
     actor = _actor(request)
     return await _call(resolver_settings.write_setting, payload, actor=actor)
+
+
+@router.get("/system/abort-notice-settings")
+async def get_abort_notice_settings(request: Request):
+    _actor(request)
+    return await _call(abort_notices.read_setting)
+
+
+@router.put("/system/abort-notice-settings")
+async def put_abort_notice_settings(request: Request, payload: dict = Body(...)):
+    actor = _actor(request)
+    return await _call(abort_notices.write_setting, payload, actor=actor)
 
 
 @router.get("/tasks/{task_id}/worker-policy")

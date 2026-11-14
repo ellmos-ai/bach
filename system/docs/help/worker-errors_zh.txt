@@ -1,0 +1,100 @@
+Worker 错误与提供商限制
+==============
+
+Ollama 错误会额外保存为 backend_error，并通过经过身份验证的 Worker 状态
+API 进行投影。该契约仅包含经过验证的字段：provider、kind、status_code
+（如果实际存在）、quota_exceeded、quota_period=month（在明确报告月度限额
+时）、retry_after_seconds（如果存在有效的 Retry-After 请求头）以及由固定
+文本生成的 message。提供商响应体、URL、密钥和其他请求头不属于此契约。错
+误响应体最多只解析到 16 KiB。读取同时遵守剩余总预算 BACH_LLM_TOTAL_CAP 和
+现有的读取超时。无法读取、传输过慢或更大的响应体不会产生配额假设；实际收到
+的 HTTP 状态会保留。系统槽位快照也仅包含规范化后的错误字段。
+
+仅凭 HTTP 429 不能证明月度限额。在没有具体的月度限额通知时，会显示请求限
+制。Retry-After 接受非负整数秒或带时区的 HTTP 日期；该日期相对于当前时间点
+进行评估。无效或缺失的请求头不会产生等待时间。Retry-After 不是关于月度配额
+重置的承诺。
+
+FailedAnswer 在保存和重新加载聊天记录时也会保留经过验证的契约。这些元数据
+不会发送回模型。发生严重提供商错误时，Worker 会终止，确认归还其当前任务租
+约并保留错误文本。关联的 assignment_ended 事件会单独保留在历史记录中；它
+不会覆盖任何错误原因。确认的新启动会清除上一代际的错误。
+
+已显式启动的持续性 Ollama-Cloud Worker 在短暂的 HTTP 429 后可以在同一次运
+行中恢复，前提是能够证明当前任务租约尚未启动任何工具。该证明也适用于跨越多个
+模型块以及通过 CLI 桥接的工具。已经开始的工具工作或缺失/无效的证明会抑制自
+动恢复。在确认的隔离 ACK 之后，任务会以原生状态 blocked 锁定以供审查，其
+租约会被释放；错误显示会保留。其他 Worker 不能自动重新接管此已确认的隔离任
+务。如果缺少隔离 ACK 或其无效，重试仍会被抑制；实际任务状态和租约必须通过
+规范的任务 API 进行检查。缺失的 ACK 可能发生在提交之前或之后，因此既不证明
+blocked 也不证明释放。Worker 不会回退到 Return-to-pending。在重新释放之
+前，必须检查已经产生的工具效果。重试规则不保证幂等的工具工作。
+在等待阶段之前，Lease-Renew 线程会终止，任务会被确认归还，Assignment 会被
+关闭。没有确认归还就不会等待或重新工作。等待期间 Worker 处于活动状态，但不
+处理任何任务：worker_active=true、running=false、active_task_id=null。
+
+本地恢复规则允许最多连续三次恢复，计划总等待时间不超过 900 秒。在没有更长
+的有效 Retry-After 时，等待时间为 60、120 和 240 秒。实际存在的更长
+Retry-After 会被遵守；如果超过剩余等待预算，Worker 会终止。这些值是程序
+规则，而不是观测到的配额重置时间。只有成功的后端响应才会重置计数器并清除旧
+的错误显示。月度限额、身份验证错误、未知错误和单次运行不会重试。
+
+停止、停用、暂停、过期时间和代际切换会中断等待。之后会重新检查槽位、模型、任
+务版本、依赖项、他人租约和 Creator 宽限期。此次恢复不会产生新的启动批准、
+模型切换或云端自动启动。
+
+现有的共享 GUI 卡片显示 current_activity。因此，可读的错误文本对于尚未解析
+backend_error 的 GUI 版本也仍然可用。没有已保存契约的旧错误不会被事后输出
+为月度限额。不存在云端自动启动、无限重试或付费模型切换。云端 Worker 由用户
+启动。
+
+
+对于过时的 Worker 槽位总版本锁定，预检查会以 HTTP 409 和
+error_code=configuration_version_conflict 拒绝启动。响应包含
+admission.admitted=false；在此过程中不会创建代际或线程。请重新读取当前的
+system-slots 配置状态并发送明确的新启动请求。其他无法验证的槽位或准入错误
+保持为 HTTP 503 和 error_code=worker_slot_unavailable。
+
+
+OpenRouter/Hermes 传输错误
+------------------------
+现有契约也接纳 provider=openrouter 和 provider=hermes。OpenRouter 仅针
+对实际配置的主机 openrouter.ai 命名；其他兼容 OpenAI 的 Hermes 目标获得适
+配器标识 hermes。error_type 来自固定的 HTTPX 类族：ConnectTimeout、
+ReadTimeout、WriteTimeout、PoolTimeout、TimeoutException、ConnectError、
+RequestError 或 HTTPStatusError。其他 RequestError 子类仅归类为通用
+RequestError 族；不采用其任意类名。因此空的异常文本不会丢失安全的错误类别。
+HTTP 状态仅从实际存在的 HTTP 错误响应中获取。异常文本、URL、原始响应体、密
+钥和请求头既不显示也不记录。为此不会读取 HTTP 响应体。此处的
+quota_exceeded=false 表示没有配额分类，而非空闲配额的证明。
+
+兼容 RuntimeError 的载体仍然是一个异常。FailedAnswer 会重新规范化其元数
+据；已保存的聊天、槽位状态和 GUI 使用相同的契约。即使在 Assignment 结束后，
+安全原因也会保留。被篡改的元数据不会提供经过验证的原因，也不会采用任何任意
+异常文本。
+
+Hermes 传输尝试仍限制为四次，保持不变的超时和现有等待时间。这些元数据既不
+允许额外的模型回退，也不允许 Ollama-Cloud 恢复。模型、免费价格绑定、工具隔
+离、租约和结果门控保持不变。已经开始或未知的工具效果不会自动重试。
+
+对于历史尝试 #2169，实际的传输错误类别未被证实。新契约仅对今后实际捕获的异
+常进行分类；它既不向旧错误归因 ConnectTimeout，也不归因提供商配额。
+
+
+OpenRouter 免费目录检查
+-----------------
+在选择具体的 OpenRouter 免费变体之前，Worker 会检查当前模型目录。目录缓存
+有效期为 300 秒。目录 GET 最多执行两次：仅在网络错误、超时或 HTTP 408、
+425、429、500、502、503 或 504 时允许单次重试。每次 HTTPX 调用设置了 6
+秒的请求超时；这不是两次调用的保证总时间限制。身份验证错误 401/403 和其他
+HTTP 错误不会重新请求。此目录规则既不重复推理调用，也不重复工具效果。
+
+具体的 `:free` 变体仅在明确列出且所有已发布的价格字段均存在、有限且数值为
+零时才被允许。缺失、无效或非零的价格以及未列出或有歧义的模型保留各自的选择原
+因：`model_price_missing`、`model_price_invalid`、`model_price_nonzero`、
+`model_not_listed` 和 `model_ambiguous` 是各自独立的模型原因；
+`model_not_free_variant` 也同样保持独立。目录错误保留诸如
+`catalog_timeout`、`catalog_transport_error`、`catalog_http_transient`、
+`catalog_http_error`、`catalog_auth_rejected` 和 `catalog_invalid_schema`
+之类的代码。发生目录错误时仅输出固定错误代码和安全状态说明；不采用提供商文
+本、URL、响应体、密钥和请求头。

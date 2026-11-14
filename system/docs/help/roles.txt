@@ -17,7 +17,7 @@ BUDDHA ALS UNIVERSELLER WORKER
   und Experten aus der Task-Queue ab.
 - Session-Isolation: Jede Aufgabe startet in einer isolierten
   Session (idle-<rolle>-<task_id>), ohne Kontext-Kontamination.
-- Persona-Praegung: Das Modell schlaepft in die Persona der jeweiligen
+- Persona-Praegung: Das Modell schluepft in die Persona der jeweiligen
   Rolle (Identitaet, Tonfall, Aufgabenprofil aus system/agents/personas/).
 
 UEBERSICHT DER ROLLEN & PERSONAS

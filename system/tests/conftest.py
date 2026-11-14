@@ -33,6 +33,7 @@ import warnings
 from pathlib import Path
 
 import pytest
+from tests._test_process_guard.native_scheduler_gate import guard_native_gate
 
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
@@ -506,6 +507,20 @@ def _reset_lang_cache():
 
 
 @pytest.fixture(autouse=True)
+def _guard_real_model_unload(monkeypatch):
+    """PB-26: the suite runs next to a live Ollama on the Mac; no test may unload its model."""
+    from hub._services.llm.model_backend import OllamaBackend
+    monkeypatch.setattr(OllamaBackend, "unload", lambda self, model=None, timeout=5.0: False)
+
+
+@pytest.fixture(autouse=True)
+def _guard_real_run_cooldown(monkeypatch):
+    """PB-26: no test samples the host's swap or waits for the RAM distributor's cooldown."""
+    from hub._services.chat import run_cooldown
+    monkeypatch.setattr(run_cooldown, "open_gate", lambda backend, model: None)
+
+
+@pytest.fixture(autouse=True)
 def _guard_real_process_control(monkeypatch):
     """Do not let unit/integration tests terminate real host processes."""
     real_run = subprocess.run
@@ -521,11 +536,12 @@ def _guard_real_process_control(monkeypatch):
 
     class GuardedPopen(real_popen):
         def __init__(self, args, *popenargs, **kwargs):
+            guarded_gate = guard_native_gate(args, kwargs) if not popenargs else None
             reason = _destructive_process_reason(args)
-            if reason:
+            if reason and guarded_gate is None:
                 raise RuntimeError(f"real {reason} blocked in test: {args!r}")
             kwargs["env"] = _protected_subprocess_env(kwargs.get("env"))
-            super().__init__(args, *popenargs, **kwargs)
+            super().__init__(guarded_gate if guarded_gate is not None else args, *popenargs, **kwargs)
 
     def is_own_test_process(pid):
         if pid == os.getpid():
@@ -577,6 +593,30 @@ def _guard_real_process_control(monkeypatch):
     monkeypatch.setattr(psutil.Process, "kill", guarded_kill)
 
 
+@pytest.fixture(autouse=True)
+def _guard_real_worker_repo_registry(monkeypatch):
+    """Isolate the host-wide trusted repo registry (~/.bach/worker_repo_registry.v1.json).
+
+    On hosts where a real registry is present (e.g. Mac Studio), tests that exercise
+    unbound tasks or synthesize custom tasks without setting up an explicit repo registry
+    must not fail with repository_unverified against the host file (T-20261107-308602710).
+    Tests that test the registry directly and isolate HOME/USERPROFILE to tmp_path are unaffected.
+    """
+    from hub._services.chat import worker_repo_registry
+
+    orig_reg_path = worker_repo_registry.registry_path
+    real_reg = _HOME_BACH_DIR / "worker_repo_registry.v1.json"
+    fake_reg = Path(os.environ["BACH_RUNTIME_DIR"]) / "isolated_worker_repo_registry.json"
+
+    def safe_registry_path():
+        cur = orig_reg_path()
+        if cur == real_reg and real_reg.exists():
+            return fake_reg
+        return cur
+
+    monkeypatch.setattr(worker_repo_registry, "registry_path", safe_registry_path)
+
+
 @pytest.fixture
 def isolated_runtime(tmp_path, monkeypatch):
     """Yield an isolated BACH runtime directory for a single test.
@@ -598,3 +638,18 @@ def isolated_runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("BACH_RUNTIME_DIR", str(runtime_dir))
     monkeypatch.setenv("BACH_RUNTIME", str(runtime_dir))
     yield runtime_dir
+
+
+@pytest.fixture
+def run_mcp_stdio():
+    """Run a coroutine that drives a stdio MCP child; fail instead of hanging.
+
+    A child that lives but never answers made the Mac suite wait forever
+    (T-20261107-512211369). ``asyncio.TimeoutError`` is raised after ``timeout`` seconds.
+    """
+    import asyncio
+
+    def run(coro, timeout=180):
+        return asyncio.run(asyncio.wait_for(coro, timeout))
+
+    return run

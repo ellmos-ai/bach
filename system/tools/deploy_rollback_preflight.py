@@ -188,11 +188,18 @@ def run_deploy_preflight(
     *,
     require_clean_git: bool = False,
     artifact_output: Path | None = None,
+    gui_dist: Path | None = None,
 ) -> dict[str, Any]:
     """Execute deployment preflight and rollback boundary verification (#3717)."""
     root = repo_root or _bach_root()
     git_state = check_git_state(root)
     pin_parity = verify_pin_parity(root)
+    configured_dist = gui_dist if gui_dist is not None else os.environ.get("ELLMOS_SYSTEM_GUI_DIST")
+    installed_dist = {"checked": False, "verified": False, "reason_code": "source_only"}
+    if configured_dist is not None:
+        from hub._services.gui_contract_service import verify_installed_dist
+        installed_dist = {"checked": True, **verify_installed_dist(
+            Path(configured_dist), expected_commit=pin_parity.get("source_commit"))}
 
     file_hashes: dict[str, str | None] = {}
     for rel in CRITICAL_HASH_FILES:
@@ -219,6 +226,7 @@ def run_deploy_preflight(
     preflight_ok = (
         git_ok
         and pin_parity.get("pins_identical") is True
+        and (not installed_dist["checked"] or installed_dist.get("verified") is True)
         and all(v is not None for v in file_hashes.values())
         and rollback_boundary_self_test["ok"] is True
         and forbidden_probe["ok"] is False
@@ -231,6 +239,7 @@ def run_deploy_preflight(
         "preflight_ok": preflight_ok,
         "git_state": git_state,
         "pin_parity": pin_parity,
+        "installed_dist": installed_dist,
         "file_hashes": file_hashes,
         "service_snapshot": service_snapshot,
         "rollback_boundary": {
@@ -262,6 +271,7 @@ def run_deploy_preflight(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="BACH Deployment Preflight & Rollback Boundary Tool (#3717).")
     parser.add_argument("--require-clean-git", action="store_true", help="Fail if git worktree has uncommitted files")
+    parser.add_argument("--gui-dist", type=Path, help="Verify installed GUI bytes against the pinned source commit")
     parser.add_argument("--output", type=Path, help="Write JSON preflight receipt to file")
     parser.add_argument("--check-rollback-path", action="append", default=[], help="Validate candidate rollback path")
     parser.add_argument("--json", action="store_true", help="Print full JSON receipt")
@@ -274,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
 
     receipt = run_deploy_preflight(
         require_clean_git=args.require_clean_git,
+        gui_dist=args.gui_dist,
         artifact_output=args.output,
     )
     if args.json:

@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+テレメトリ (OPS-TELEM-001)
+====================
+
+bach telemetry   - 低カーディナリティ、プライバシー優先カウンタ
+
+
+説明
+==
+
+検証済みラベルを持つ集計カウンタを記録します。
+Counter: agent_starts / model_calls / tool_calls
+Outcome: ok / error / dummy / timeout
+
+プライバシー: 集計カウンタのみが保存されます --
+ペイロード、プロンプト、パス、ユーザーデータは保存されません。
+Opt-Out: BACH_TELEMETRY_DISABLED=1
+
+
+コマンド
+====
+
+bach telemetry report [days]      過去 N 日間のカウンタ (デフォルト 7)
+bach telemetry status              収集/スキーマステータス
+bach telemetry reset --confirm    すべてのカウンタを削除
+
+
+ソース
+===
+
+ハンドラ: hub/telemetry.py (TelemetryHandler, v1.0.0)
+導入: OPS-TELEM-001, ROADMAP Security-Prio-1, Task #1315

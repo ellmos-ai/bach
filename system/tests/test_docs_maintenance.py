@@ -470,6 +470,80 @@ def test_arbitrary_scanner_cannot_grant_lock_authority(tmp_path, monkeypatch):
         CanonicalLockGuard(config(tmp_path))(tmp_path)
 
 
+def _guard_with_fake_scanner(tmp_path, monkeypatch, answer):
+    """Trusted fake scanner: answer(dir) -> (returncode, fields); records the checked dirs."""
+    from hub._services.docs import maintenance_runtime as runtime
+
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "lock_scan.py").write_text("# fake scanner", encoding="utf-8")
+    (tools / "lock_utils.py").write_text("# fake utils", encoding="utf-8")
+    pair = tuple(
+        hashlib.sha256((tools / name).read_bytes()).hexdigest()
+        for name in ("lock_scan.py", "lock_utils.py")
+    )
+    monkeypatch.setattr(runtime, "TRUSTED_LOCK_TOOLS", {pair})
+    checked = []
+
+    def fake_run(command, **_options):
+        target = Path(command[command.index("--check-dir") + 1])
+        checked.append(target)
+        returncode, fields = answer(target)
+        return SimpleNamespace(
+            returncode=returncode, stdout=json.dumps({"checked": str(target), "locks": [], **fields})
+        )
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    project, twin, home = tmp_path / "project", tmp_path / "twin", tmp_path / "home"
+    for folder in (project, twin, home / "maintenance"):
+        folder.mkdir(parents=True)
+    data = config(tmp_path)
+    data["lock_tools_root"] = str(tools)
+    data["protected_roots"] = [str(project), str(home), str(twin)]
+    return CanonicalLockGuard(data), checked, project, twin, home
+
+
+def test_guard_checks_file_targets_by_directory_and_accepts_proven_pointer_twin(tmp_path, monkeypatch):
+    def answer(target):
+        if target.name == "project":
+            return 0, {"twin_status": "ok", "twins_checked": [str(tmp_path / "twin")]}
+        if target.name == "twin":
+            return 1, {"twin_status": "pointer-unresolved", "twins_checked": []}
+        return 0, {"twin_status": "not-applicable"}
+
+    guard, checked, project, twin, home = _guard_with_fake_scanner(tmp_path, monkeypatch, answer)
+    owner = home / "maintenance" / "owner.lock"
+    owner.write_bytes(b"")
+    guard(owner)
+    assert checked == [project, home, twin, home / "maintenance"]
+
+
+def test_guard_rejects_pointer_status_for_unproven_folder(tmp_path, monkeypatch):
+    def answer(target):
+        if target.name == "project":
+            return 0, {"twin_status": "ok", "twins_checked": [str(tmp_path / "twin")]}
+        if target.name == "home":
+            return 1, {"twin_status": "pointer-unresolved", "twins_checked": []}
+        return 0, {"twin_status": "not-applicable"}
+
+    guard, _checked, _project, _twin, home = _guard_with_fake_scanner(tmp_path, monkeypatch, answer)
+    with pytest.raises(PermissionError, match="locked_or_unknown"):
+        guard(home / "maintenance")
+
+
+def test_guard_rejects_locks_in_the_proven_pointer_twin(tmp_path, monkeypatch):
+    def answer(target):
+        if target.name == "project":
+            return 0, {"twin_status": "ok", "twins_checked": [str(tmp_path / "twin")]}
+        if target.name == "twin":
+            return 1, {"twin_status": "pointer-unresolved", "locks": [{"path": "LOCK.txt"}]}
+        return 0, {"twin_status": "not-applicable"}
+
+    guard, _checked, _project, _twin, home = _guard_with_fake_scanner(tmp_path, monkeypatch, answer)
+    with pytest.raises(PermissionError, match="locked_or_unknown"):
+        guard(home / "maintenance")
+
+
 def _exact_delta_review_row(dispatcher, *, task_id=77):
     files = ["system/hub/_services/chat/worker.py"]
     root_id = hashlib.sha256(str(dispatcher.root.resolve()).encode()).hexdigest()[:8]
@@ -706,6 +780,76 @@ def test_invalid_owner_config_blocks_only_doc_legacy(tmp_path):
     assert delegated_to_maintenance(tmp_path / "bach.db", "backup_check") is False
 
 
+def _unverifiable_reader(_task_id):
+    from hub._services.task_lease_client import LeaseProtocolError
+
+    raise LeaseProtocolError("Aktuelle kanonische Abnahme nicht bestätigt")
+
+
+def test_closed_task_without_accepted_result_reports_native_status(tmp_path):
+    class ShowTasks(FakeTasks):
+        def show(self, task_id):
+            return {"id": task_id, "status": "done"}
+
+    dispatcher = DocumentationDispatcher(
+        tmp_path, tmp_path / "state.json", ShowTasks(), _unverifiable_reader, lambda _: None
+    )
+    state = dispatcher._task_state({"task_id": 2244})
+    assert state["task_status"] == "done"
+    assert state["result_accepted"] is False and state["last_review_success"] is None
+
+
+def test_unverifiable_task_without_show_still_fails_closed(tmp_path):
+    from hub._services.task_lease_client import LeaseProtocolError
+
+    dispatcher = DocumentationDispatcher(
+        tmp_path, tmp_path / "state.json", FakeTasks(), _unverifiable_reader, lambda _: None
+    )
+    with pytest.raises(LeaseProtocolError):
+        dispatcher._task_state({"task_id": 2244})
+
+
+def _fake_git(monkeypatch, delta_names):
+    from hub._services.docs import maintenance_dispatch
+
+    def run(command, **_options):
+        args = command[1:]
+        if args[0] == "rev-parse":
+            out = "b" * 40 + "\n"
+        elif args[0] == "diff" and "-z" in args:
+            out = "\x00".join(delta_names)
+        else:  # clean-tree checks: diff --name-only HEAD, ls-files --others
+            out = ""
+        return SimpleNamespace(stdout=out.encode("utf-8"))
+
+    monkeypatch.setattr(maintenance_dispatch.subprocess, "run", run)
+    return maintenance_dispatch
+
+
+def test_long_outage_delta_is_filtered_before_the_file_budget(tmp_path, monkeypatch):
+    # 14.11.2026: 26 days of downtime left 1112 changed files, 830 outside tests/data.
+    relevant = [f"system/hub/_services/mod{i}.py" for i in range(830)]
+    tests = [f"system/tests/test_{i}.py" for i in range(282)]
+    dispatch = _fake_git(monkeypatch, relevant + tests)
+    revision, names = dispatch.git_snapshot(tmp_path, "a" * 40)
+    assert revision == "b" * 40
+    assert names == relevant
+
+
+def test_delta_above_the_ceiling_still_fails_closed(tmp_path, monkeypatch):
+    dispatch = _fake_git(
+        monkeypatch, [f"docs/page{i}.md" for i in range(dispatch_ceiling() + 1)]
+    )
+    with pytest.raises(ValueError, match="file budget"):
+        dispatch.git_snapshot(tmp_path, "a" * 40)
+
+
+def dispatch_ceiling():
+    from hub._services.docs.maintenance_dispatch import MAX_DELTA_FILES
+
+    return MAX_DELTA_FILES
+
+
 def test_launch_plan_is_portable_and_has_no_side_effect(tmp_path):
     import plistlib
     import sys
@@ -737,6 +881,31 @@ def test_launch_plan_is_portable_and_has_no_side_effect(tmp_path):
         for key in ("StandardOutPath", "StandardErrorPath")
     )
     assert not runtime.exists()
+
+
+def test_launch_plan_puts_the_found_git_before_the_launchd_default_path(tmp_path, monkeypatch):
+    import plistlib
+    import sys
+
+    from hub._services.docs import maintenance_launch
+
+    monkeypatch.setattr(
+        maintenance_launch.shutil, "which", lambda name: "/opt/homebrew/bin/git" if name == "git" else None
+    )
+    root, local = tmp_path / "repo", tmp_path / "local"
+    script = root / "system/tools/maintenance/scheduler_maintenance.py"
+    script.parent.mkdir(parents=True)
+    script.touch()
+    local.mkdir()
+    runtime = local / "maintenance"
+    data = maintenance_launch.launch_plan(
+        root, Path(sys.executable).resolve(), local / "bach.db", runtime, runtime / "config.json"
+    )
+    plist = plistlib.loads(data["launch_agent"].encode("utf-8"))
+    assert plist["EnvironmentVariables"]["PATH"] == "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    monkeypatch.setattr(maintenance_launch.shutil, "which", lambda name: None)
+    assert maintenance_launch.service_path() == "/usr/bin:/bin:/usr/sbin:/sbin"
 
 
 def test_cli_launch_plan_preserves_virtual_environment_interpreter(tmp_path, monkeypatch):

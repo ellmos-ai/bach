@@ -76,6 +76,7 @@ their versions (as tested), and their respective licenses.
 | `anthropic` | 0.79.0 | MIT | Claude API (primary LLM) |
 | `ollama` | 0.6.1 | MIT (see metadata) | Ollama local LLM |
 | `openai-whisper` | 20250625 | MIT | Speech-to-text (Whisper) |
+| `hermes-agent` / `Hermes` | pattern ref | MIT | HA Connector safety pattern & URL validation (`system/connectors/homeassistant_connector.py`) |
 
 ### Data Analysis / Market
 
@@ -156,6 +157,7 @@ These are referenced in the source code but not currently installed
 | `whisper` | `openai-whisper` | Already listed above |
 | `telegram` | `python-telegram-bot` | Telegram connector |
 | `textract` | `textract` | Document text extraction |
+| `hermes-agent` (`Hermes`) | Nous Research | MIT | HA Connector REST-API safety pattern (`system/connectors/homeassistant_connector.py`) |
 
 ---
 

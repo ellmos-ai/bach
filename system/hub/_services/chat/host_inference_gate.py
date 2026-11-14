@@ -16,6 +16,8 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
@@ -26,6 +28,15 @@ _QUEUE_STATE_SCHEMA = "bach.local-inference-queue-state.v1"
 _MAX_CONSECUTIVE_FOREGROUND = 3
 _TICKET_ID = re.compile(r"[0-9a-f]{32}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_OWNED_TURN = ContextVar("bach_host_inference_owner", default=None)
+
+
+@dataclass
+class _HeldTurn:
+    gate: object
+    record: dict
+    task: object
+    dispatch_handle: object = None
 
 
 class HostInferenceGate:
@@ -64,11 +75,23 @@ class HostInferenceGate:
 
     @staticmethod
     def _read(path):
+        def unique(pairs):
+            record = {}
+            for key, value in pairs:
+                if key in record:
+                    raise ValueError("duplicate coordination field")
+                record[key] = value
+            return record
+        def invalid(_value):
+            raise ValueError("invalid coordination number")
         try:
-            result = json.loads(path.read_text(encoding="utf-8"))
+            if path.is_symlink():
+                raise ValueError("coordination link")
+            result = json.loads(path.read_text(encoding="utf-8"),
+                                object_pairs_hook=unique, parse_constant=invalid)
         except FileNotFoundError:
             return None
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except (OSError, UnicodeError, ValueError):
             raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg") from None
         if not isinstance(result, dict):
             raise RuntimeError("Ungültiger Inferenz-Koordinationsbeleg")
@@ -80,7 +103,15 @@ class HostInferenceGate:
         try:
             with temporary.open("x", encoding="utf-8") as handle:
                 json.dump(record, handle, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(temporary, path)
+            if os.name != "nt":
+                directory = os.open(path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -293,11 +324,62 @@ class HostInferenceGate:
                 + legacy_foreground
             )
 
+    @classmethod
+    def current_owner(cls):
+        """Only the actual held turn, never a caller-provided admission dict."""
+        held = _OWNED_TURN.get()
+        if type(held) is not _HeldTurn or type(held.gate) is not cls:
+            raise RuntimeError("Native Inferenzautorität fehlt")
+        held.gate._check_owned_record()
+        return held.gate
+
+    def _check_owned_record(self):
+        held = _OWNED_TURN.get()
+        if (type(held) is not _HeldTurn or held.gate is not self
+                or held.task is not asyncio.current_task()
+                or self._read(self.root / "owner.json") != held.record):
+            raise RuntimeError("Inferenz-Ownerbindung geändert")
+        return held
+
+    def begin_dispatch(self, request_sha256, target):
+        """Durable intent under the existing OS owner, containing no prompt."""
+        held = self._check_owned_record()
+        if (not isinstance(request_sha256, str) or not _SHA256.fullmatch(request_sha256)
+                or "dispatch_pending" in held.record
+                or not isinstance(target, dict)
+                or any(target.get(k) != v for k, v in held.record.get("model_target", {}).items())
+                or not held.record.get("model_target")):
+            raise RuntimeError("Ungültige Inferenz-Dispatchbindung")
+        handle = object()
+        record = {**held.record, "dispatch_pending": {
+            "id": uuid.uuid4().hex, "request_sha256": request_sha256,
+            "target_sha256": hashlib.sha256(json.dumps(target, sort_keys=True,
+                ensure_ascii=False, allow_nan=False).encode()).hexdigest(),
+        }}
+        # Set the in-memory pending state before IO: a partial write must never
+        # cause finally to erase a successfully persisted intent.
+        held.record = record
+        held.dispatch_handle = handle
+        self._write(self.root / "owner.json", record)
+        return handle
+
+    def finish_dispatch(self, handle):
+        """Transport calls this only after a complete, validated terminal reply."""
+        held = self._check_owned_record()
+        if handle is not held.dispatch_handle or handle is None:
+            raise RuntimeError("Inferenz-Endbestätigung gehört zu anderem Dispatch")
+        record = dict(held.record)
+        del record["dispatch_pending"]
+        self._write(self.root / "owner.json", record)
+        held.record = record
+        held.dispatch_handle = None
+
     def status(self):
         record = self._read(self.root / "owner.json")
-        active = bool(record and self._alive(record))
+        active = bool(record and ("dispatch_pending" in record or self._alive(record)))
         return {
             "active": active,
+            "dispatch_pending": bool(record and "dispatch_pending" in record),
             "holder": "BACH" if active else None,
             "chat_id": record.get("chat_id") if active else None,
             "priority": record.get("priority") if active else None,
@@ -320,6 +402,8 @@ class HostInferenceGate:
         identity = self._identity()
         ticket_path = marker = None
         acquired = None
+        context_token = None
+        held = None
         try:
             if check_ready is not None:
                 check_ready()
@@ -341,6 +425,11 @@ class HostInferenceGate:
                     # must not admit a model call while that effect is unknown.
                     if os.path.lexists(self.root / "unload-pending.json"):
                         raise RuntimeError("Lokaler Modell-Unload noch ungeklärt")
+                    previous_owner = self._read(self.root / "owner.json")
+                    if previous_owner is not None and "dispatch_pending" in previous_owner:
+                        raise RuntimeError("Lokaler Inferenzdispatch noch ungeklärt")
+                    if previous_owner is not None:
+                        self._alive(previous_owner)  # Validate even a dead, non-pending owner.
                     admitted = self._admit_if_next(ticket_id)
                 except TimeoutError:
                     candidate.__exit__(None, None, None)
@@ -354,10 +443,12 @@ class HostInferenceGate:
                     await asyncio.sleep(.025)
                     continue
                 acquired = candidate
-            self._write(self.root / "owner.json", {
+            held = _HeldTurn(self, {
                 **identity, "chat_id": str(chat_id), "priority": priority, "started_at": time.time(),
                 **({"model_target": dict(model_target)} if model_target is not None else {}),
-            })
+            }, asyncio.current_task())
+            self._write(self.root / "owner.json", held.record)
+            context_token = _OWNED_TURN.set(held)
             yield
         finally:
             try:
@@ -366,6 +457,11 @@ class HostInferenceGate:
             finally:
                 if acquired is not None:
                     try:
-                        (self.root / "owner.json").unlink(missing_ok=True)
+                        record = self._read(self.root / "owner.json")
+                        if (held is not None and record == held.record
+                                and "dispatch_pending" not in record):
+                            (self.root / "owner.json").unlink(missing_ok=True)
                     finally:
+                        if context_token is not None:
+                            _OWNED_TURN.reset(context_token)
                         acquired.__exit__(None, None, None)
