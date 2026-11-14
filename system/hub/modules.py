@@ -30,6 +30,7 @@ import sys
 import time
 import zipfile
 import urllib.request
+import urllib.parse
 import urllib.error
 from datetime import datetime
 from pathlib import Path
@@ -125,10 +126,10 @@ class ModulesHandler(BaseHandler):
             "pack": "Modul als Standalone-Bundle mit Prüfsumme packen (bach modules pack <name> [--out DIR] [--bundle-deps])",
             "scaffold": "Neues autarkes Modul mit Manifest, Code und Testsuite erstellen (bach modules scaffold <name> [--type TYPE])",
             "reconcile": "Reconciliation zwischen Feeds, Lockfile und Version-Pins durchführen (bach modules reconcile)",
-            "telemetry": "Telemetrie-, Lockfile-Checksum- und Dependency-Drift-Bericht anzeigen (bach modules telemetry)",
-            "drift": "Alias für 'telemetry': Prüft Checksum-, Versions- und Dependency-Drift",
-            "auto-export": "Auto-Export & Multi-Repo-Sync für geänderte Standalone-Module (bach modules auto-export [--apply] [--bundle-deps] [--out DIR])",
-            "sync-repos": "Alias für 'auto-export': Synchronisiert und exportiert Module + Manifest-Feed",
+            "telemetry": "Telemetrie-, Lockfile-Checksum- und Dependency-Drift-Bericht anzeigen (bach modules telemetry [--strict] [--refresh])",
+            "drift": "Alias für 'telemetry': Prüft Checksum-, Versions- und Dependency-Drift (mit --strict als CI-Gate)",
+            "auto-export": "Auto-Export & Multi-Repo-Sync für geänderte Standalone-Module (bach modules auto-export [--apply] [--pull-newer] [--bundle-deps] [--out DIR])",
+            "sync-repos": "Alias für 'auto-export': Synchronisiert und exportiert Module + Manifest-Feed (mit --pull-newer auch Import neuerer Repo-Stände)",
             "schedule": "Auto-Update-Job im Daemon Scheduler registrieren/konfigurieren (bach modules schedule [--interval-hours N])",
             "wire": "Hot-Wiring für alle Standalone-Module ausführen",
             "help": "Hilfe anzeigen",
@@ -150,14 +151,16 @@ class ModulesHandler(BaseHandler):
         elif op in ("auto-update", "auto_update"):
             apply_updates = any(a in ("--apply", "-a", "--force") for a in args)
             is_dry = dry_run or any(a in ("--dry-run", "-n") for a in args)
-            return self._auto_update_cycle(apply_updates=apply_updates, dry_run=is_dry)
+            respect_lock = any(a in ("--respect-lock", "--locked") for a in args)
+            return self._auto_update_cycle(apply_updates=apply_updates, dry_run=is_dry, respect_lock=respect_lock)
         elif op == "install":
             if not args:
                 return False, "Fehler: Pfad oder ZIP-Datei erforderlich: bach modules install <pfad_oder_zip>"
             return self._install_module(args[0], dry_run=dry_run)
         elif op == "update":
             is_dry = dry_run or any(a in ("--dry-run", "-n") for a in args)
-            return self._update_modules(dry_run=is_dry)
+            respect_lock = any(a in ("--respect-lock", "--locked") for a in args)
+            return self._update_modules(dry_run=is_dry, respect_lock=respect_lock)
         elif op == "export":
             if not args:
                 return False, "Fehler: Modulname erforderlich: bach modules export <name>"
@@ -246,7 +249,7 @@ class ModulesHandler(BaseHandler):
         elif op in ("reconcile", "reconciliation"):
             return self._reconcile_cli()
         elif op in ("telemetry", "drift", "drift-check"):
-            return self._telemetry_cli()
+            return self._telemetry_cli(args)
         elif op in ("auto-export", "auto_export", "sync-repos", "sync_repos"):
             return self._auto_export_cli(args, dry_run=dry_run)
         elif op == "help":
@@ -490,6 +493,18 @@ class ModulesHandler(BaseHandler):
         self.save_feeds(feeds)
         return True, f"[OK] Feed '{feed_id_or_url}' entfernt."
 
+    @staticmethod
+    def _resolve_local_source_path(url_or_path: str) -> Path:
+        """Löst lokale Pfade sowie file://-URIs betriebssystemunabhängig zu Path auf."""
+        raw = str(url_or_path).strip()
+        if raw.lower().startswith("file://"):
+            parsed = urllib.parse.urlparse(raw)
+            local_p = urllib.request.url2pathname(parsed.path or "")
+            if parsed.netloc and parsed.netloc not in ("", "localhost"):
+                local_p = f"//{parsed.netloc}{local_p}"
+            return Path(local_p)
+        return Path(raw)
+
     def sync_feeds(self, force: bool = False) -> Dict[str, Any]:
         """Holt Manifest-Feeds ab und speichert die Moduldefinitionen im Feed-Cache."""
         feeds = self.get_feeds()
@@ -515,7 +530,9 @@ class ModulesHandler(BaseHandler):
                         else:
                             err = f"HTTP {resp.status}"
                 else:
-                    lp = Path(url)
+                    lp = self._resolve_local_source_path(url)
+                    if lp.is_dir():
+                        lp = lp / "manifest_feed.json"
                     if lp.is_file():
                         payload = json.loads(lp.read_text(encoding="utf-8"))
                     else:
@@ -838,7 +855,7 @@ class ModulesHandler(BaseHandler):
                     download_tmp.unlink(missing_ok=True)
                 return False, f"Fehler beim Herunterladen von {source_path_str}: {dl_err}"
         else:
-            source = Path(source_path_str)
+            source = self._resolve_local_source_path(source_path_str)
             if not source.exists():
                 return False, f"Quelldatei oder -verzeichnis existiert nicht: {source}"
 
@@ -1086,6 +1103,7 @@ class ModulesHandler(BaseHandler):
         apply_updates: bool = False,
         dry_run: bool = False,
         sync_feeds_first: bool = True,
+        respect_lock: bool = False,
     ) -> Tuple[bool, str]:
         """Führt einen automatisierten Prüf- und Aktualisierungszyklus aus."""
         if sync_feeds_first:
@@ -1094,7 +1112,7 @@ class ModulesHandler(BaseHandler):
             except Exception:
                 pass
 
-        check = self.check_for_updates(cache_ttl_sec=0)
+        check = self.check_for_updates(cache_ttl_sec=0, enforce_lock=respect_lock)
         has_upd = bool(check.get("has_updates"))
         upd_count = int(check.get("updates_count", 0))
         blocked = check.get("blocked_by_pins", [])
@@ -1130,14 +1148,19 @@ class ModulesHandler(BaseHandler):
 
         lines.append("")
         lines.append("Starte automatisches Modul-Update...")
-        ok_upd, msg_upd = self._update_modules(dry_run=dry_run)
+        ok_upd, msg_upd = self._update_modules(dry_run=dry_run, respect_lock=respect_lock)
         lines.append(msg_upd)
         return ok_upd, "\n".join(lines)
 
-    def _update_modules(self, dry_run: bool = False) -> Tuple[bool, str]:
+    def _update_modules(
+        self,
+        dry_run: bool = False,
+        respect_lock: bool = False,
+        refresh_lockfile: bool = True,
+    ) -> Tuple[bool, str]:
         """Sucht nach neueren Modulversionen in allen Quellpfaden & Feeds und aktualisiert sie."""
         global _MODULES_UPDATE_CACHE
-        check_res = self.check_for_updates(cache_ttl_sec=0)
+        check_res = self.check_for_updates(cache_ttl_sec=0, enforce_lock=respect_lock)
         updates_found: List[Dict[str, Any]] = check_res.get("updates", [])
 
         lines = [
@@ -1153,7 +1176,7 @@ class ModulesHandler(BaseHandler):
         lines.append(f"Verfügbare Updates: {len(updates_found)}")
         success_count = 0
         for upd in updates_found:
-            if upd.get("locked") or upd.get("pinned"):
+            if upd.get("pinned") or (respect_lock and upd.get("locked")):
                 reason = "Pin-Schutz" if upd.get("pinned") else "modules.lock.json Schutz"
                 lines.append(f"  🔒 {upd['name']:<24} v{upd['current_version']} [ÜBERSPRUNGEN: {reason}]")
                 continue
@@ -1172,6 +1195,10 @@ class ModulesHandler(BaseHandler):
             _MODULES_UPDATE_CACHE = {"data": None, "timestamp": 0.0}
             invalidate_module_cache()
             wire_res = auto_switch_to_standalone_modules()
+            if success_count > 0 and refresh_lockfile:
+                lockfile = self._resolve_lockfile()
+                if lockfile.is_file():
+                    self._generate_lockfile(lockfile)
             lines.append("")
             lines.append(f"[OK] {success_count} von {len(updates_found)} Modul(en) erfolgreich aktualisiert und hot-wired ({wire_res['total_switched']} aktiv).")
         else:
@@ -1821,10 +1848,81 @@ class ModulesHandler(BaseHandler):
                 return c
         return self.modules_dir / "modules.lock.json"
 
+    def refresh_lockfile(
+        self,
+        custom_path: Optional[str] = None,
+        skip_tests: bool = False,
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Auditiert Module mit Drift/Fehlern und aktualisiert modules.lock.json bei Erfolg."""
+        lockfile = self._resolve_lockfile(custom_path)
+        rep = self.get_telemetry_and_drift_report()
+        installed_by_name = {m["name"]: m for m in self.get_modules_data()}
+        candidates = [
+            it["name"]
+            for it in rep.get("items", [])
+            if it.get("drift_status") != "intact" or not rep.get("lockfile_exists")
+        ]
+        audited: List[Dict[str, Any]] = []
+        failed: List[Dict[str, Any]] = []
+
+        for name in candidates:
+            m_info = installed_by_name.get(name)
+            if not m_info:
+                continue
+            mod_dir = Path(m_info["path"])
+            is_valid, err_msg = self._verify_module(mod_dir)
+            test_count = 0
+            if is_valid and not skip_tests and m_info.get("has_tests"):
+                test_ok, test_summary, test_count, _ = self._run_single_module_tests(mod_dir, timeout_sec=30)
+                if not test_ok:
+                    is_valid = False
+                    err_msg = f"Tests fehlgeschlagen: {test_summary}"
+            entry = {
+                "name": name,
+                "version": m_info.get("version", "1.0.0"),
+                "passed": is_valid,
+                "tests_count": test_count,
+                "error": "" if is_valid else err_msg,
+            }
+            if is_valid:
+                audited.append(entry)
+            else:
+                failed.append(entry)
+
+        if failed:
+            return False, {
+                "ok": False,
+                "lockfile": str(lockfile),
+                "audited": audited,
+                "failed": failed,
+                "message": "Checksum-Audit fehlgeschlagen; Lockfile wurde nicht aktualisiert.",
+            }
+
+        ok_lock, msg_lock = self._generate_lockfile(lockfile)
+        if not ok_lock:
+            return False, {
+                "ok": False,
+                "lockfile": str(lockfile),
+                "audited": audited,
+                "failed": [],
+                "message": msg_lock,
+            }
+        post_rep = self.get_telemetry_and_drift_report()
+        return True, {
+            "ok": True,
+            "lockfile": str(lockfile),
+            "audited": audited,
+            "failed": [],
+            "message": msg_lock,
+            "summary": post_rep.get("summary", {}),
+        }
+
     def bootstrap_core(self, args: List[str] = None) -> Tuple[bool, str]:
         """Core Installations-Bootstrap und Dependency-Lockfile (TASK -49)."""
         args = list(args or [])
         generate = any(a in ("--generate-lockfile", "--generate", "--lock", "-g") for a in args)
+        refresh = any(a in ("--refresh-lockfile", "--refresh-lock", "--refresh") for a in args)
+        skip_tests = any(a in ("--skip-tests",) for a in args)
         verify_only = any(a in ("--verify", "--check", "-c") for a in args)
         minimal = any(a in ("--minimal", "-m") for a in args)
         dry_run = any(a in ("--dry-run", "-n") for a in args)
@@ -1837,6 +1935,20 @@ class ModulesHandler(BaseHandler):
                 lock_path_str = args[args.index(a) + 1]
 
         lockfile = self._resolve_lockfile(lock_path_str)
+
+        if refresh:
+            ok_ref, ref_res = self.refresh_lockfile(custom_path=str(lockfile), skip_tests=skip_tests)
+            lines = [
+                "=== BACH LOCKFILE AUTO-REFRESH & CHECKSUM-AUDIT ===",
+                f"Lockfile: {ref_res.get('lockfile')}",
+                f"Auditiert: {len(ref_res.get('audited', []))} | Fehlgeschlagen: {len(ref_res.get('failed', []))}",
+            ]
+            for a_item in ref_res.get("audited", []):
+                lines.append(f"  [PASS] {a_item['name']} v{a_item['version']} ({a_item['tests_count']} Tests)")
+            for f_item in ref_res.get("failed", []):
+                lines.append(f"  [FAIL] {f_item['name']} v{f_item['version']}: {f_item['error']}")
+            lines.append(ref_res.get("message", ""))
+            return ok_ref, "\n".join(lines)
 
         if generate:
             return self._generate_lockfile(lockfile)
@@ -2112,7 +2224,17 @@ class ModulesHandler(BaseHandler):
             "items": items,
         }
 
-    def _telemetry_cli(self) -> Tuple[bool, str]:
+    def _telemetry_cli(self, args: List[str] = None) -> Tuple[bool, str]:
+        args = list(args or [])
+        strict = any(a in ("--strict", "--ci", "--fail-on-drift") for a in args)
+        refresh = any(a in ("--refresh", "--refresh-lockfile", "--refresh-lock") for a in args)
+        skip_tests = any(a in ("--skip-tests",) for a in args)
+
+        if refresh:
+            ok_ref, ref_res = self.refresh_lockfile(skip_tests=skip_tests)
+            if not ok_ref:
+                return False, f"[FAIL] {ref_res.get('message')} ({len(ref_res.get('failed', []))} Fehler)"
+
         rep = self.get_telemetry_and_drift_report()
         s = rep["summary"]
         lines = [
@@ -2141,10 +2263,10 @@ class ModulesHandler(BaseHandler):
         has_critical_drift = s["drift_count"] > 0 or s["missing_deps_count"] > 0
         lines.append("")
         if has_critical_drift:
-            lines.append("[WARNUNG] Drift oder fehlende Dependencies erkannt. Mit 'bach modules bootstrap --generate-lockfile' Lockfile aktualisieren.")
+            lines.append("[WARNUNG] Drift oder fehlende Dependencies erkannt. Mit 'bach modules bootstrap --refresh-lockfile' prüfen & aktualisieren.")
         else:
             lines.append("[OK] Telemetrie sauber. Kein Checksum-, Versions- oder Dependency-Drift.")
-        return True, "\n".join(lines)
+        return (not has_critical_drift if strict else True), "\n".join(lines)
 
     # -------------------------------------------------------------------------
     # AUTO-EXPORT & MULTI-REPO SYNC PIPELINE (TASK -55)
@@ -2184,8 +2306,10 @@ class ModulesHandler(BaseHandler):
         out_dir: Optional[Union[str, Path]] = None,
         bundle_deps: bool = False,
         modules: Optional[List[str]] = None,
+        pull_newer: bool = False,
+        sibling_repos_override: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     ) -> Dict[str, Any]:
-        """Prüft .MODULES/ & Multi-Repo-Quellen und exportiert geänderte Pakete + manifest_feed.json."""
+        """Prüft .MODULES/ & Multi-Repo-Quellen, importiert optional neuere Repo-Stände und exportiert geänderte Pakete + manifest_feed.json."""
         dest_dir = Path(out_dir) if out_dir else (self.base_path / "exports" / "modules")
         feed_file = dest_dir / "manifest_feed.json"
 
@@ -2204,8 +2328,9 @@ class ModulesHandler(BaseHandler):
         if filter_set:
             installed = [m for m in installed if m["name"].lower() in filter_set]
 
-        sibling_repos = self._discover_sibling_repo_modules()
+        sibling_repos = sibling_repos_override if sibling_repos_override is not None else self._discover_sibling_repo_modules()
         exported: List[Dict[str, Any]] = []
+        imported: List[Dict[str, Any]] = []
         skipped: List[Dict[str, Any]] = []
         errors: List[Dict[str, Any]] = []
         repo_drift: List[Dict[str, Any]] = []
@@ -2215,9 +2340,9 @@ class ModulesHandler(BaseHandler):
             name = m["name"]
             mod_dir = Path(m["path"])
             cur_ver = m["version"]
-            live_sha, _ = self._compute_module_sha256(mod_dir)
 
             siblings = sibling_repos.get(name, [])
+            best_import_sib: Optional[Dict[str, Any]] = None
             for sib in siblings:
                 sib_ver = sib.get("version", "1.0.0")
                 if parse_semver(sib_ver) != parse_semver(cur_ver):
@@ -2229,6 +2354,50 @@ class ModulesHandler(BaseHandler):
                         "repo_path": sib["repo_path"],
                         "direction": direction,
                     })
+                    if direction == "import_newer_from_repo":
+                        if best_import_sib is None or parse_semver(sib_ver) > parse_semver(best_import_sib.get("version", "1.0.0")):
+                            best_import_sib = sib
+
+            if pull_newer and best_import_sib is not None:
+                sib_ver = best_import_sib.get("version", "1.0.0")
+                pin = self.is_module_pinned(name)
+                if pin and pin == cur_ver:
+                    skipped.append({"name": name, "version": cur_ver, "reason": f"Pull-Sync blockiert (Pin v{pin})"})
+                elif self.is_version_quarantined(name, sib_ver):
+                    skipped.append({"name": name, "version": cur_ver, "reason": f"Pull-Sync blockiert (Quarantäne v{sib_ver})"})
+                elif dry_run:
+                    imported.append({
+                        "name": name,
+                        "from_version": cur_ver,
+                        "to_version": sib_ver,
+                        "repo_path": best_import_sib["repo_path"],
+                        "status": "would_import",
+                    })
+                else:
+                    ok_imp, msg_imp = self._install_module(best_import_sib["repo_path"], dry_run=False)
+                    if ok_imp:
+                        imported.append({
+                            "name": name,
+                            "from_version": cur_ver,
+                            "to_version": sib_ver,
+                            "repo_path": best_import_sib["repo_path"],
+                            "status": "imported",
+                        })
+                        cur_ver = sib_ver
+                        m_file = mod_dir / "manifest.json"
+                        if m_file.is_file():
+                            try:
+                                meta = json.loads(m_file.read_text(encoding="utf-8"))
+                                m["version"] = meta.get("version", cur_ver)
+                                m["description"] = meta.get("description", m.get("description", ""))
+                                m["entrypoint"] = meta.get("entrypoints", {}).get("library", m.get("entrypoint"))
+                                cur_ver = m["version"]
+                            except Exception:
+                                pass
+                    else:
+                        errors.append({"name": name, "version": sib_ver, "error": msg_imp})
+
+            live_sha, _ = self._compute_module_sha256(mod_dir)
 
             prev_entry = existing_feed_entries.get(name, {})
             prev_ver = prev_entry.get("version")
@@ -2310,19 +2479,27 @@ class ModulesHandler(BaseHandler):
             feed_file.write_text(json.dumps(feed_payload, indent=2, ensure_ascii=False), encoding="utf-8")
             feed_written = True
 
+        if not dry_run and any(item.get("status") == "imported" for item in imported):
+            lockfile = self._resolve_lockfile()
+            if lockfile.is_file():
+                self._generate_lockfile(lockfile)
+
         return {
             "schema": "bach.modules-auto-export.v1",
             "timestamp": datetime.now().isoformat(),
             "dry_run": dry_run,
+            "pull_newer": pull_newer,
             "out_dir": str(dest_dir),
             "feed_file": str(feed_file),
             "feed_written": feed_written,
             "total_evaluated": len(installed),
             "exported_count": len(exported),
+            "imported_count": len(imported),
             "skipped_count": len(skipped),
             "errors_count": len(errors),
             "repo_drift_count": len(repo_drift),
             "exported": exported,
+            "imported": imported,
             "skipped": skipped,
             "errors": errors,
             "repo_drift": repo_drift,
@@ -2330,6 +2507,7 @@ class ModulesHandler(BaseHandler):
 
     def _auto_export_cli(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
         apply_flag = any(a in ("--apply", "-a", "--force") for a in args)
+        pull_newer = any(a in ("--pull-newer", "--import-newer") for a in args)
         is_dry = dry_run or (not apply_flag) or any(a in ("--dry-run", "-n") for a in args)
         bundle_deps = any(a in ("--bundle-deps", "--bundle", "-b") for a in args)
         out_dir = None
@@ -2352,15 +2530,21 @@ class ModulesHandler(BaseHandler):
             out_dir=out_dir,
             bundle_deps=bundle_deps,
             modules=mod_filter or None,
+            pull_newer=pull_newer,
         )
         lines = [
             "=== BACH AUTO-EXPORT & MULTI-REPO SYNC PIPELINE ===",
             f"Modus:         {'DRY-RUN (mit --apply exportieren)' if res['dry_run'] else 'APPLY (Live-Export)'}",
             f"Zielordner:    {res['out_dir']}",
             f"Manifest-Feed: {res['feed_file']}",
-            f"Evaluiert:     {res['total_evaluated']} | Exportiert/Geplant: {res['exported_count']} | Unverändert: {res['skipped_count']} | Multi-Repo-Drift: {res['repo_drift_count']}",
+            f"Evaluiert:     {res['total_evaluated']} | Exportiert/Geplant: {res['exported_count']} | Pull-Importiert: {res['imported_count']} | Unverändert: {res['skipped_count']} | Multi-Repo-Drift: {res['repo_drift_count']}",
             "",
         ]
+        if res["imported"]:
+            lines.append("Pull-Sync aus Sibling-Repos:")
+            for im in res["imported"]:
+                lines.append(f"  ↓ {im['name']:<24} v{im['from_version']} -> v{im['to_version']} [{im['status']}] ({im['repo_path']})")
+            lines.append("")
         if res["repo_drift"]:
             lines.append("Multi-Repo Versionsdifferenzen:")
             for rd in res["repo_drift"]:

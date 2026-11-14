@@ -238,3 +238,147 @@ def test_gui_templates_telemetry_and_board_elements():
     assert "toggleTagMatrixChip" in pl_html
     assert "renderBoardView" in pl_html
     assert "movePromptCategory" in pl_html
+
+    chat_html = (templates_dir / "chat.html").read_text(encoding="utf-8")
+    assert "params.get('prompt')" in chat_html
+    assert "params.get('autorun')" in chat_html
+
+
+def _make_mini_module(root: Path, name: str, version: str, body_val: str = "ok", test_ok: bool = True) -> Path:
+    mod_dir = root / name
+    (mod_dir / "tests").mkdir(parents=True, exist_ok=True)
+    (mod_dir / "manifest.json").write_text(
+        json.dumps({
+            "name": name,
+            "version": version,
+            "selfcontained": True,
+            "description": f"Test module {name}",
+            "entrypoints": {"library": "mod.py"},
+        }),
+        encoding="utf-8",
+    )
+    (mod_dir / "mod.py").write_text(f"def get_val():\n    return {body_val!r}\n", encoding="utf-8")
+    assert_expr = "True" if test_ok else "False"
+    (mod_dir / "tests" / f"test_{name}.py").write_text(
+        f"def test_ok():\n    assert {assert_expr}\n",
+        encoding="utf-8",
+    )
+    return mod_dir
+
+
+def test_lockfile_auto_refresh_checksum_audit_and_strict_gate(tmp_path: Path):
+    from hub.modules import ModulesHandler
+
+    base_dir = tmp_path / "sys"
+    mods_dir = tmp_path / ".MODULES"
+    base_dir.mkdir()
+    mods_dir.mkdir()
+    _make_mini_module(mods_dir, "demo_audit", "1.0.0", body_val="v1", test_ok=True)
+
+    handler = ModulesHandler(base_dir)
+    handler._resolve_modules_dir = lambda: mods_dir
+    handler.modules_dir = mods_dir
+    lockfile = mods_dir / "modules.lock.json"
+    handler._resolve_lockfile = lambda custom=None: Path(custom) if custom else lockfile
+    handler.get_status_data = lambda: {"total_services": 1, "standalone_bound": 1, "coverage_percent": 100.0}
+
+    ok_init, _ = handler._generate_lockfile(lockfile)
+    assert ok_init is True
+    ok_strict_clean, msg_clean = handler.handle("drift", ["--strict"])
+    assert ok_strict_clean is True
+    assert "0 Checksum-Drift" in msg_clean
+
+    # Mutate module code -> strict gate must fail
+    (mods_dir / "demo_audit" / "mod.py").write_text("def get_val():\n    return 'v1-patched'\n", encoding="utf-8")
+    ok_strict_drift, msg_drift = handler.handle("drift", ["--strict"])
+    assert ok_strict_drift is False
+    assert "checksum_drift" in msg_drift
+
+    # Refresh lockfile via bootstrap --refresh-lockfile -> passes audit and clears drift
+    ok_refresh, msg_refresh = handler.handle("bootstrap", ["--refresh-lockfile"])
+    assert ok_refresh is True
+    assert "Auditiert: 1 | Fehlgeschlagen: 0" in msg_refresh
+    ok_strict_after, _ = handler.handle("drift", ["--strict"])
+    assert ok_strict_after is True
+
+    # Failing tests must block lockfile refresh (fail-closed)
+    (mods_dir / "demo_audit" / "tests" / "test_demo_audit.py").write_text(
+        "def test_ok():\n    assert False\n", encoding="utf-8"
+    )
+    ok_fail_refresh, msg_fail = handler.handle("bootstrap", ["--refresh-lockfile"])
+    assert ok_fail_refresh is False
+    assert "Checksum-Audit fehlgeschlagen" in msg_fail
+
+
+def test_feed_roundtrip_auto_export_sync_update_and_pull_newer(tmp_path: Path):
+    from unittest.mock import patch
+    from hub.modules import ModulesHandler
+
+    # Producer workspace has v1.1.0
+    src_sys = tmp_path / "producer" / "sys"
+    src_mods = tmp_path / "producer" / ".MODULES"
+    src_sys.mkdir(parents=True)
+    src_mods.mkdir(parents=True)
+    _make_mini_module(src_mods, "roundtrip_mod", "1.1.0", body_val="new-feed-v110")
+
+    feed_dir = tmp_path / "shared_feed"
+    src_handler = ModulesHandler(src_sys)
+    src_handler._resolve_modules_dir = lambda: src_mods
+    src_handler.modules_dir = src_mods
+    src_handler._discover_sibling_repo_modules = lambda: {}
+
+    export_res = src_handler.sync_repos(dry_run=False, out_dir=feed_dir)
+    assert export_res["exported_count"] == 1
+    assert export_res["feed_written"] is True
+    feed_json = Path(export_res["feed_file"])
+    assert feed_json.is_file()
+
+    # Consumer workspace starts at v1.0.0 with lockfile present
+    dst_sys = tmp_path / "consumer" / "sys"
+    dst_mods = tmp_path / "consumer" / ".MODULES"
+    dst_sys.mkdir(parents=True)
+    dst_mods.mkdir(parents=True)
+    _make_mini_module(dst_mods, "roundtrip_mod", "1.0.0", body_val="old-v100")
+
+    dst_handler = ModulesHandler(dst_sys)
+    dst_handler._resolve_modules_dir = lambda: dst_mods
+    dst_handler.modules_dir = dst_mods
+    dst_handler._resolve_source_dirs = lambda: [dst_mods]
+    dst_handler._resolve_lockfile = lambda custom=None: Path(custom) if custom else (dst_mods / "modules.lock.json")
+    dst_handler._resolve_feeds_file = lambda: dst_mods / ".feeds.json"
+    dst_handler._resolve_feed_cache_file = lambda: dst_mods / ".feed_cache.json"
+    dst_handler.get_status_data = lambda: {"total_services": 1, "standalone_bound": 1, "coverage_percent": 100.0}
+    dst_handler._generate_lockfile(dst_mods / "modules.lock.json")
+
+    with patch("hub.modules.auto_switch_to_standalone_modules", return_value={"total_switched": 1}), \
+         patch("hub.modules.invalidate_module_cache"):
+        ok_add, _ = dst_handler.add_feed(feed_json.as_uri(), name="SharedLocalFeed")
+        assert ok_add is True
+        sync_res = dst_handler.sync_feeds()
+        assert sync_res["modules_count"] == 1
+
+        ok_upd, msg_upd = dst_handler.handle("auto-update", ["--apply"])
+        assert ok_upd is True
+        assert "1.0.0 -> v1.1.0" in msg_upd or "v1.1.0" in msg_upd
+        installed_manifest = json.loads((dst_mods / "roundtrip_mod" / "manifest.json").read_text(encoding="utf-8"))
+        assert installed_manifest["version"] == "1.1.0"
+
+        # Now simulate sibling repo having v1.2.0 and run pull_newer sync
+        sib_dir = tmp_path / "sibling_repo"
+        sib_dir.mkdir()
+        _make_mini_module(sib_dir, "roundtrip_mod", "1.2.0", body_val="sibling-v120")
+        pull_res = dst_handler.sync_repos(
+            dry_run=False,
+            out_dir=feed_dir,
+            pull_newer=True,
+            sibling_repos_override={
+                "roundtrip_mod": [{"version": "1.2.0", "repo_path": str(sib_dir / "roundtrip_mod")}]
+            },
+        )
+        assert pull_res["imported_count"] == 1
+        assert pull_res["imported"][0]["to_version"] == "1.2.0"
+        installed_manifest2 = json.loads((dst_mods / "roundtrip_mod" / "manifest.json").read_text(encoding="utf-8"))
+        assert installed_manifest2["version"] == "1.2.0"
+        # Lockfile auto-refreshed to 1.2.0 with 0 drift
+        rep_after = dst_handler.get_telemetry_and_drift_report()
+        assert rep_after["summary"]["drift_count"] == 0

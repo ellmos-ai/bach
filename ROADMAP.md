@@ -1,6 +1,6 @@
 # BACH ROADMAP - Strategische Vision
 
-**Stand:** 2026-11-14 | **Version:** 4.4.7 (`v3.15.0-ocean-stack-m7`) | **Review:** 2026-11-14 (Tasks -55..-57: Modularer Core Telemetrie- & Drift-Dashboard, Auto-Export & Multi-Repo Sync Pipeline, GUI PromptBoard Live Tag-Filter-Matrix & Multi-Category Board)
+**Stand:** 2026-11-14 | **Version:** 4.4.7 (`v3.15.0-ocean-stack-m7`) | **Review:** 2026-11-14 (Tasks -58..-60: Lockfile Auto-Refresh & Checksum-Audit, Tray Gespeicherte Boards & Direkt-Run im Chat, Feed-Roundtrip Auto-Export -> Feed-Sync -> Auto-Update + Pull-Sync)
 
 ## SOLL/IST-Übersicht der Meilenstein-Linie (Stand 2026-11-02)
 
@@ -86,6 +86,28 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Phasen | [→ ## Abgeschlossene Phasen (BACH-internes Entwicklungsprotokoll)](#abgeschlossene-phasen-bach-internes-entwicklungsprotokoll) |
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
+
+## Review 2026-11-14 (Mittags-Lauf: BACH TASKS UND DEV - Gemini 4 Hydrogen)
+
+Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:
+
+- **Modularer Core: Lockfile Auto-Refresh & Checksum-Audit fuer `.MODULES/prompt` (Task #-58, Erledigt):**
+  - `ModulesHandler.refresh_lockfile()` in `system/hub/modules.py` ergänzt: auditiert vor Lockfile-Regenerierung Manifest, Syntax und Modultests aller gedrifteten Module (fail-closed bei Testfehlern).
+  - CLI `bach modules bootstrap --refresh-lockfile` sowie strikter CI-Drift-Gate `bach modules drift --strict` implementiert (`EXIT 1` bei aktivem Drift/fehlenden Dependencies).
+  - Live-Audit für `.MODULES/prompt` (`3/3` Tests grün) durchgeführt und `.MODULES/modules.lock.json` aktualisiert: `bach modules drift --strict` bestätigt **30/30 intakt | 0 Checksum-Drift** (`EXIT 0`).
+
+- **Tray & PromptBoard: Gespeicherte `prompt_boards` im System Tray Submenu (Task #-59, Erledigt):**
+  - `BACHTray._load_db_prompt_boards()` in `system/hub/_services/chat/chat_tray.py` implementiert (lädt `prompt_boards` + `prompt_board_items` read-only aus `BACH_DB`).
+  - Menüstruktur um `📋 Gespeicherte Boards (<N>)` im `PromptBoard`-Submenu sowie vereinheitlichten `_build_prompt_action_items()`-Builder inkl. `▶💬 Im Web-Chat ausführen` (`_make_prompt_run_in_chat_action` mit `?prompt=...&autorun=1`) erweitert; `system/gui/templates/chat.html` (`loadLibraryDraft()`) wertet Query-Drafts inkl. sauberem `history.replaceState` aus.
+  - `promptboard_smoke_snapshot()` erweitert um `prompt_boards_count`, `prompt_boards` und `prompt_board_submenu_ready: true`.
+
+- **Modularer Core: Feed-Roundtrip (`Auto-Export -> Feed-Sync -> Auto-Update`) & Pull-Sync (Task #-60, Erledigt):**
+  - Einheitliche `file://`-URI- und Verzeichnisauflösung (`_resolve_local_source_path`) in `sync_feeds()` und `_install_module()`, sodass lokale/geteilte Feeds ohne Umwege synchronisierbar sind.
+  - Ungepinnte Upgrades in `_auto_update_cycle()` / `_update_modules()` lassen `modules.lock.json` bei regulären Updates durchlässig (Pins in `.version_pins.json` und Quarantäne bleiben strikt blockierend; `--respect-lock` optional verfügbar) und aktualisieren das Lockfile nach erfolgreichem Upgrade automatisch.
+  - Kontrollierter Sibling Pull-Sync in `sync_repos(..., pull_newer=True)` / CLI `bach modules auto-export|sync-repos --pull-newer` für `import_newer_from_repo` (inkl. Pin-/Quarantäne-Prüfung, Backup/Smoke-Test/Auto-Rollback und Feed-/Lockfile-Aktualisierung).
+
+- **Verifikation:** 147/147 Tests (`test_modular_core_telemetry_and_sync.py`, `test_modules_handler.py`, `test_modular_core_ci_and_bootstrap.py`, `test_modules_feed_and_auto_heal.py`, `test_connectors_and_tray.py`), 30/30 Standalone-Module (67 Modultests in `bach modules test`), `bach modules drift --strict` (EXIT 0) und `chat_tray.py --smoke-promptboard` erfolgreich.
+- **Neue Folge-Aufgaben angelegt:** `Task #-61` (Board-Runner Sequenz-/Batch-Ausführung & Live-Tray-Refresh), `Task #-62` (Einheitliche `bach update stack` Self-Update-Orchestrierung), `Task #-63` (Legacy-Kandidaten-Audit `permissions/config/backup/connector`).
 
 ## Review 2026-11-07 (Mittags-Lauf: BACH TASKS UND DEV - Gemini 3.8 Flash)
 

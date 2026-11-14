@@ -1,6 +1,6 @@
 {
   "schema": "bach.modules-lock.v1",
-  "generated_at": "2026-11-08T12:46:56.960440",
+  "generated_at": "2026-11-14T12:34:37.021213",
   "total_modules": 30,
   "modules": {
     "agent_process_provider": {
@@ -151,7 +151,7 @@
       "name": "prompt",
       "version": "1.0.0",
       "entrypoint": "src/prompt.py",
-      "sha256": "5153eff9a5ff6263d285b2685e71f0e24f6061f6c66d85ecb7de6d873727a8ac",
+      "sha256": "c61463c0204d956006cc9c7af23ee12002319c7d0cca1cbee466561954df0893",
       "files_count": 4,
       "selfcontained": true
     },

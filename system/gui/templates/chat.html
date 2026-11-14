@@ -1570,17 +1570,38 @@
         let draftAgentId = null;
         function loadLibraryDraft() {
             const draft = BachChatDraft.consume();
-            if (draft === null) return;
+            if (draft !== null) {
+                inputEl.value = draft;
+                if (draft && draft.autorun) {
+                    pendingPromptAutorun = true;
+                }
+                if (draft && draft.agent_id && !profileAgentId) {
+                    draftAgentId = draft.agent_id;
+                }
+                autoResize();
+                inputEl.focus();
+                return;
+            }
 
-            inputEl.value = draft;
-            if (draft && draft.autorun) {
-                pendingPromptAutorun = true;
-            }
-            if (draft && draft.agent_id && !profileAgentId) {
-                draftAgentId = draft.agent_id;
-            }
-            autoResize();
-            inputEl.focus();
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const queryPrompt = params.get('prompt');
+                if (queryPrompt && queryPrompt.trim()) {
+                    inputEl.value = queryPrompt;
+                    if (params.get('autorun') === '1' || params.get('autorun') === 'true') {
+                        pendingPromptAutorun = true;
+                    }
+                    params.delete('prompt');
+                    params.delete('autorun');
+                    const qs = params.toString();
+                    const cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + (window.location.hash || '');
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState(null, '', cleanUrl);
+                    }
+                    autoResize();
+                    inputEl.focus();
+                }
+            } catch (_) {}
         }
 
         async function send() {
