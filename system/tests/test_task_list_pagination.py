@@ -180,7 +180,7 @@ def _run_client(tmp_path, spec):
     spec_file = tmp_path / "spec.json"
     spec_file.write_text(json.dumps(spec), encoding="utf-8")
     proc = subprocess.run([NODE, str(runner), str(API_JS), str(spec_file)],
-                          capture_output=True, text=True, timeout=60)
+                          capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
 
