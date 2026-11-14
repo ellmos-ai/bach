@@ -206,7 +206,25 @@ class DocumentationDispatcher:
             raise ValueError("Invalid documentation worker binding")
 
     def _task_state(self, item: dict) -> dict:
-        observed = self.result_reader(item["task_id"])
+        from hub._services.task_lease_client import LeaseProtocolError
+
+        try:
+            observed = self.result_reader(item["task_id"])
+        except LeaseProtocolError:
+            # A closed task without a canonically accepted result (e.g. closed by an audit,
+            # measured 14.11.2026 for three old delta tasks) must not stop the whole delta.
+            # Dispatch only needs to know whether the task is still open; never report an
+            # accepted review from this path.
+            show = getattr(self.tasks, "show", None)
+            if show is None:
+                raise
+            return {
+                "task_status": str(show(item["task_id"]).get("status") or "unknown"),
+                "result_accepted": False,
+                "result_id": None,
+                "last_review_success": None,
+                "last_repair_success": None,
+            }
         if (
             not isinstance(observed, dict)
             or observed.get("verified") is not True
