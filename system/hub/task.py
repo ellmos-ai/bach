@@ -1212,7 +1212,10 @@ class TaskHandler(BaseHandler):
             "in-progress": "in_progress",
             "completed": "completed",
             "cancelled": "cancelled",
+            "review": "review",
+            "archived": "archived",
         }
+        limit = None  # None = alles; mit --limit wird die Kappung sichtbar gemeldet
         
         i = 0
         while i < len(args):
@@ -1220,6 +1223,20 @@ class TaskHandler(BaseHandler):
             normalized_arg = arg.lower()
             if normalized_arg in status_aliases:
                 status_filter = status_aliases[normalized_arg]
+            elif arg == "--limit" or arg.startswith("--limit="):
+                if "=" in arg:
+                    raw = arg.split("=", 1)[1]
+                else:
+                    raw = args[i + 1] if i + 1 < len(args) else ""
+                    i += 1
+                if not raw.isdigit() or int(raw) < 1:
+                    return False, "--limit muss eine positive Zahl sein"
+                limit = int(raw)
+            elif not arg.startswith("-"):
+                return False, (
+                    f"Unbekannter Status-Filter '{arg}'. Erlaubt: "
+                    + ", ".join(sorted(status_aliases))
+                )
             elif arg.startswith("--filter="):
                 filter_text = arg[9:]
             elif arg == "--filter" and i + 1 < len(args):
@@ -1298,6 +1315,9 @@ class TaskHandler(BaseHandler):
             header_parts.append("unassigned")
         
         lines = [f"\n[TASKS] Tasks ({', '.join(header_parts)}):\n"]
+        total = len(task_list)
+        if limit is not None:
+            task_list = task_list[:limit]
         for t in task_list:
             # Partner-Anzeige
             partner = t['assigned_to'] or t['delegated_to'] or ""
@@ -1322,6 +1342,8 @@ class TaskHandler(BaseHandler):
                     f"{partner_suffix}{due_suffix}{blocked_mark}{invalid_mark}"
                 )
         
+        if total > len(task_list):
+            lines.append(f"\n  ... {total - len(task_list)} weitere (gesamt {total}; --limit erhöhen)")
         return True, "\n".join(lines)
 
     def _sync(self, args: List[str]) -> Tuple[bool, str]:

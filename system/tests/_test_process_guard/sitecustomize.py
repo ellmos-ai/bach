@@ -4,6 +4,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from native_scheduler_gate import guard_native_gate
+
 _GUARD_DIR = Path(__file__).resolve().parent
 
 
@@ -86,12 +88,13 @@ if os.environ.get("BACH_TEST_MODE") == "1":
 
     class _GuardedPopen(_real_popen):
         def __init__(self, args, *popenargs, **kwargs):
-            if _dangerous_command(args):
+            guarded_gate = guard_native_gate(args, kwargs) if not popenargs else None
+            if _dangerous_command(args) and guarded_gate is None:
                 raise RuntimeError(
                     f"host process control blocked in test child: {args!r}"
                 )
             kwargs["env"] = _protected_env(kwargs.get("env"))
-            super().__init__(args, *popenargs, **kwargs)
+            super().__init__(guarded_gate if guarded_gate is not None else args, *popenargs, **kwargs)
 
     def _guarded_os_kill(pid, sig):
         if sig != 0 and not _is_own_child(pid):
@@ -123,3 +126,5 @@ if os.environ.get("BACH_TEST_MODE") == "1":
 
         psutil.Process.terminate = _guarded_terminate
         psutil.Process.kill = _guarded_kill
+
+    _BACH_TEST_GUARD_INSTALLED = True

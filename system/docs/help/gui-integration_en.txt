@@ -1,0 +1,73 @@
+Shared GUI, Agents, and Ocean Transfer
+======================================
+
+The UI source resides in ellmos-system-gui. BACH consumes a verified release
+archive; system/gui/kit_manifest.json pins source commit and archive hash.
+
+VIEWS
+/agenten/running       Living slots and actually observed runs
+/agenten/blueprints    Templates, roles, and blueprint instances
+/agenten/marblerun     Native agent chains and ordered skill chains
+/tasks                 Tasks and available typed assignment targets
+/skills                Current skill sources and version history
+/skills/plugins        Plugin board
+/skills/mcp            MCP board
+/skills/software       Software board
+
+The three cards for creation, ready-made agents, and ready-made teams form a
+shared group with blue accents. In light mode their surfaces are white;
+the two Living sections remain collapsed when first opened.
+
+The former URLs /agents-board and /skills-board are redirects.
+Fabrika leads to the consolidated blueprint editor.
+
+PORTRAIT SELECTION
+70 images: six original portraits, 19 previous Gemini images, and three new
+series of ten (comic agents, Gemini roles, cute workshop robots), plus
+ten monsters and five slime balls. The selection is available in the Agent
+Workshop and the agent configuration dialogs.
+The additional images use 256-pixel PNGs within the existing image contract.
+The image content is stored; new backend preset IDs are not required for this.
+Provenance and source hashes reside in the shared GUI repository under
+src/assets/agent-portraits-20261010/provenance.json.
+
+INSPECTION
+GET /api/gui/backend-origin   Actual backend and instance binding
+GET /api/gui/capabilities     Registered adapters and open acceptances
+GET /api/gui/kit-manifest     GUI pin and installed file check
+GET /api/task-assignees       Actual assignment targets and configuration version
+
+A registered adapter is not proof of a productive run.
+Living means available; Running requires an observed run.
+The model name alone does not confirm successful inference.
+A locally started worker shares actual compute ownership.
+Cloud workers are started explicitly.
+The enabled fixed Always-On worker can be resumed on the lead after a control
+start with a proven local model. Manual pause and stop are preserved; see
+always-on-startup.txt. This local resumption is not a cloud autostart.
+
+ASSIGNMENT
+Native assignments use assigned_slot, assigned_to, and required_model.
+Changes including releasing a previous native assignment require the current
+assignment_configuration_version. A conflict requires re-reading; there is no
+silent retry or automatic start.
+
+Dynamic worker profiles are also typed assignment targets. Their stored
+provider, model, and authenticated status proof must match. Paused, failed,
+expired, or private relay profiles cannot be selected.
+Assign task in Living/Running opens the task form with the profile; saving
+binds the task to its actual ID. The global configuration version is checked
+after the status fetch and immediately before the task commit.
+An assignment does not start a worker and does not acquire a task lease.
+
+GOVERNANCE
+BACH_POLICY_REGISTRY_ENABLED=1 enables the optional canonical reader.
+The registry is found by the provider via POLICY_REGISTRY_PATH or its own
+default. Missing registry or wrong provenance results in an error.
+Read: /api/governance/policy-registry and /api/governance/effective-policy.
+The DecisionClicker write path is a separately enabled capability.
+
+FURTHER READING
+Root: OCEAN-TRANSFER-PLAN.md, DEPRICATED.md, and TODO.md.
+Task status is maintained in TaskDB.
+Concrete worker results and separate acceptance: worker-results.txt.

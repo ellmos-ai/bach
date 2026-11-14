@@ -41,3 +41,22 @@ def test_deploy_preflight_receipt_and_artifact(tmp_path: Path):
     assert receipt["scope_boundary"]["preflight_replaces_browser_acceptance"] is False
     assert receipt["scope_boundary"]["preflight_replaces_tray_acceptance"] is False
     assert out_file.is_file()
+
+def test_installed_gui_missing_and_wrong_commit_fail_preflight(tmp_path, monkeypatch):
+    import json
+    monkeypatch.delenv('ELLMOS_SYSTEM_GUI_DIST', raising=False)
+    missing = run_deploy_preflight(gui_dist=tmp_path / 'missing')
+    assert missing['preflight_ok'] is False
+    assert missing['installed_dist']['reason_code'] == 'dist_directory_missing'
+    dist = tmp_path / 'dist'
+    dist.mkdir()
+    (dist / 'dist-manifest.json').write_text(json.dumps({
+        'schema': 'ellmos-system-gui.dist.v1',
+        'source_commit': '0' * 40,
+        'files': {'index.html': '0' * 64},
+    }), encoding='utf-8')
+    mismatch = run_deploy_preflight(gui_dist=dist)
+    assert mismatch['preflight_ok'] is False
+    assert mismatch['installed_dist']['reason_code'] == 'commit_mismatch'
+    monkeypatch.setenv('ELLMOS_SYSTEM_GUI_DIST', str(dist))
+    assert run_deploy_preflight()['preflight_ok'] is False

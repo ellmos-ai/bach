@@ -174,6 +174,10 @@ def _project_worker(raw: Any) -> dict[str, Any]:
     queue_status = project_queue_status(raw.get("queue_status"))
     if queue_status is not None:
         item["queue_status"] = queue_status
+    from hub._services.chat.worker_queue_status import project_precondition_wait
+    precondition_wait = project_precondition_wait(raw.get("precondition_wait"))
+    if precondition_wait is not None:
+        item["precondition_wait"] = precondition_wait
     from hub._services.chat.slots_config import validate_agent_avatar
     from hub._services.display_assets import validate_symbol
     for field, validator in (("avatar", validate_agent_avatar), ("symbol", validate_symbol)):

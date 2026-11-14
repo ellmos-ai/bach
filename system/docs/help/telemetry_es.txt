@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+TELEMETRÍA (OPS-TELEM-001)
+==========================
+
+bach telemetry   - Contadores de baja cardinalidad y privacidad ante todo
+
+
+DESCRIPCIÓN
+===========
+
+Registra contadores agregados con etiquetas validadas.
+Counter: agent_starts / model_calls / tool_calls
+Outcome: ok / error / dummy / timeout
+
+Privacidad: SOLO se guardan contadores agregados --
+sin payloads, prompts, rutas ni datos de usuario.
+Opt-Out: BACH_TELEMETRY_DISABLED=1
+
+
+COMANDOS
+========
+
+bach telemetry report [days]      Contadores de los últimos N días (predeterminado 7)
+bach telemetry status              Estado de registro y esquema
+bach telemetry reset --confirm    Eliminar todos los contadores
+
+
+FUENTE
+======
+
+Controlador: hub/telemetry.py (TelemetryHandler, v1.0.0)
+Introducción: OPS-TELEM-001, ROADMAP Security-Prio-1, Task #1315

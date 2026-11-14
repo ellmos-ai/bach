@@ -86,7 +86,12 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
             or type(limit) is not int or not 1 <= limit <= MAX_ITEMS
             or type(offset) is not int or not 0 <= offset <= 100_000):
         raise ValueError("Ungültige Vorschauanfrage")
-    slot = copy.deepcopy(slot)
+    from .slots_config import (
+        VALID_WORKER_RIGHTS,
+        _project_dynamic_worker_slot,
+        effective_worker_rights,
+    )
+    slot = _project_dynamic_worker_slot(copy.deepcopy(slot))
     budget = _ObservationBudget(client)
     deferred = dict(deferred_versions or {})
     explicit = slot.get("task_id")
@@ -173,7 +178,7 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
         items.append({"task_id": task["id"], "selection": selection,
                       "selection_reason": reason, "observations": observations})
     budget.check()
-    return {
+    result = {
         "schema": SCHEMA, "worker_id": slot["id"],
         "configuration_version": configuration_version,
         "execution_profile_version": execution_profile_version,
@@ -188,10 +193,26 @@ def preview_worker_selection(client, slot, *, configuration_version, execution_p
         "claimability": "not_checked", "unchecked_gates": list(UNCHECKED),
         "snapshot_atomic": False, "configuration_saved": False,
     }
+    if slot.get("rights") in VALID_WORKER_RIGHTS:
+        result["rights"] = slot["rights"]
+    if slot.get("rights_effective") in VALID_WORKER_RIGHTS:
+        result["rights_effective"] = slot["rights_effective"]
+    elif slot.get("rights") in VALID_WORKER_RIGHTS:
+        result["rights_effective"] = effective_worker_rights(slot)
+    if "allowed_tools" in slot and (
+        slot["allowed_tools"] is None
+        or (isinstance(slot["allowed_tools"], list)
+            and all(isinstance(tool, str) for tool in slot["allowed_tools"]))
+    ):
+        result["allowed_tools"] = (
+            list(slot["allowed_tools"]) if isinstance(slot["allowed_tools"], list) else None
+        )
+    return result
 
 
 def project_selection_preview(raw, worker_id):
     """Strict secret-free transport boundary; never forward arbitrary data."""
+    from .slots_config import VALID_WORKER_RIGHTS
     if (not isinstance(raw, dict) or raw.get("schema") != SCHEMA
             or raw.get("worker_id") != worker_id
             or not isinstance(worker_id, str) or not _SAFE_ID.fullmatch(worker_id)
@@ -207,7 +228,13 @@ def project_selection_preview(raw, worker_id):
             or not isinstance(raw.get("configuration_version"), str)
             or not _VERSION.fullmatch(raw["configuration_version"])
             or not isinstance(raw.get("execution_profile_version"), str)
-            or not _VERSION.fullmatch(raw["execution_profile_version"])):
+            or not _VERSION.fullmatch(raw["execution_profile_version"])
+            or ("rights" in raw and raw["rights"] not in VALID_WORKER_RIGHTS)
+            or ("rights_effective" in raw and raw["rights_effective"] not in VALID_WORKER_RIGHTS)
+            or ("allowed_tools" in raw and raw["allowed_tools"] is not None and (
+                not isinstance(raw["allowed_tools"], list)
+                or any(not isinstance(tool, str) for tool in raw["allowed_tools"])
+            ))):
         return None
     for field in ("offset", "limit", "candidate_count", "reported_total", "matched_count"):
         if type(raw.get(field)) is not int or raw[field] < 0:
@@ -270,5 +297,14 @@ def project_selection_preview(raw, worker_id):
             "observed_at", "mode", "offset", "limit", "candidate_count", "reported_total",
             "has_more", "next_offset", "matched_count", "claimability", "snapshot_atomic",
             "configuration_saved")
-    return {**{k: raw[k] for k in keys}, "items": items,
-            "reason_counts": dict(counts), "unchecked_gates": list(UNCHECKED)}
+    projected = {**{k: raw[k] for k in keys}, "items": items,
+                 "reason_counts": dict(counts), "unchecked_gates": list(UNCHECKED)}
+    if "rights" in raw:
+        projected["rights"] = raw["rights"]
+    if "rights_effective" in raw:
+        projected["rights_effective"] = raw["rights_effective"]
+    if "allowed_tools" in raw:
+        projected["allowed_tools"] = (
+            list(raw["allowed_tools"]) if isinstance(raw["allowed_tools"], list) else None
+        )
+    return projected

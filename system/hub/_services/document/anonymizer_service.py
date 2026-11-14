@@ -48,7 +48,9 @@ import os
 import re
 import secrets
 import string
+import unicodedata
 from dataclasses import dataclass, field
+from functools import lru_cache
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -237,15 +239,197 @@ TARN_NACHNAMEN = [
     "Keller", "Bauer", "Schuster", "Hofmann", "Albrecht", "Steiner"
 ]
 
+# Tarnadressen sind bewusst KEINE echten Orte (PB-15, Zweitpruefung O2): Frueher standen hier
+# echte Orte des Landkreises Waldshut; wohnte ein Klient dort, blieb sein Ort mit 1/6 stehen.
+# PLZ 00xxx gibt es in Deutschland nicht, "Tarn..." ist als Pseudonym erkennbar.
 TARN_STRASSEN = [
-    "Waldweg", "Birkenallee", "Sonnenstr.", "Gartenweg", "Lindenstr.",
-    "Bergstr.", "Rosenweg", "Eichenstr.", "Parkstr.", "Wiesenweg"
+    "Tarnweg", "Tarnallee", "Tarnstraße", "Tarnring", "Tarnpfad", "Tarngasse",
 ]
 
-TARN_STAEDTE = [
-    "79800 Tiengen", "79761 Waldshut", "79725 Laufenburg",
-    "79780 Stühlingen", "79807 Lottstetten", "79737 Herrischried"
-]
+TARN_STAEDTE = [f"{101 + i:05d} Tarnort {chr(65 + i)}" for i in range(12)]
+
+_MONATE = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
+           "September", "Oktober", "November", "Dezember")
+# Schreibweisen eines Datums (d, m, y als int); gleiche Formatfunktion fuer echt und Tarn,
+# damit die Rueckuebersetzung die Schreibweise erhaelt.
+_DATE_FORMATS = (
+    lambda d, m, y: f"{d:02d}.{m:02d}.{y}",
+    lambda d, m, y: f"{d}.{m}.{y}",
+    lambda d, m, y: f"{d}.{m:02d}.{y}",
+    lambda d, m, y: f"{d:02d}.{m}.{y}",
+    lambda d, m, y: f"{d:02d}.{m:02d}.{y % 100:02d}",
+    lambda d, m, y: f"{d}.{m}.{y % 100:02d}",
+    lambda d, m, y: f"{d}. {_MONATE[m - 1]} {y}",
+    lambda d, m, y: f"{d:02d}. {_MONATE[m - 1]} {y}",
+    lambda d, m, y: f"{d}.{_MONATE[m - 1]} {y}",
+    lambda d, m, y: f"{d}. {_MONATE[m - 1].replace('ä', 'ae')} {y}",
+    lambda d, m, y: f"{y}-{m:02d}-{d:02d}",
+)
+
+
+# Kurzformen je Monat (Mai hat keine); Stil der echten Form bestimmt die Tarn-Schreibweise.
+_MONAT_KURZ = (("Jan",), ("Feb",), ("Mär", "Mrz", "Mar"), ("Apr",), (), ("Jun",), ("Jul",), ("Aug",),
+               ("Sep", "Sept"), ("Okt",), ("Nov",), ("Dez",))
+# Englische Monatsnamen (R7-F6: "July 3, 2014" in englischen Befunden)
+_MONTHS_EN = ("January", "February", "March", "April", "May", "June", "July", "August", "September",
+              "October", "November", "December")
+
+
+def _month_forms(m: int) -> List[Tuple[str, str]]:
+    """(Stil, Schreibweise) eines Monatsnamens: voll, mit ae, Kuerzel mit und ohne Punkt, englisch, auch klein
+    ("14 mai 2017"; zwischen Ziffern ist das unbedenklich, anders als bei Namen)."""
+    full = _MONATE[m - 1]
+    forms = [("full", full)] + ([("full_ae", full.replace("ä", "ae"))] if "ä" in full else [])
+    for short in _MONAT_KURZ[m - 1]:
+        forms += [("short_dot", short + "."), ("short", short)]
+    en = _MONTHS_EN[m - 1]
+    forms += [("en", en), ("en_short_dot", en[:3] + "."), ("en_short", en[:3])]
+    return forms + [(style, name.lower()) for style, name in forms]
+
+
+def _month_in_style(m: int, style: str) -> str:
+    full = _MONATE[m - 1]
+    short = _MONAT_KURZ[m - 1][0] if _MONAT_KURZ[m - 1] else full
+    en = _MONTHS_EN[m - 1]
+    return {"full": full, "full_ae": full.replace("ä", "ae"), "short": short,
+            "short_dot": short + "." if _MONAT_KURZ[m - 1] else full,
+            "en": en, "en_short": en[:3], "en_short_dot": en[:3] + "."}[style]
+
+
+_MONTH_BY_NAME = {name.rstrip(".").casefold(): m for m in range(1, 13) for _, name in _month_forms(m)}
+_MONTH_BY_NAME.update({"marz": 3, "maerz": 3})
+_DSEP = r"(?:\s*[./\-]\s*|\s+)"
+_ORD = r"(?:st|nd|rd|th)?"
+_DATE_INPUTS = (  # (Regex, Reihenfolge der Gruppen): Tag/Monat/Jahr; Monat als Zahl oder Name
+    (re.compile(rf"(\d{{4}}){_DSEP}(\d{{1,2}}){_DSEP}(\d{{1,2}})"), "ymd"),
+    (re.compile(rf"(\d{{1,2}}){_DSEP}(\d{{1,2}}){_DSEP}'?(\d{{4}}|\d{{2}})"), "dmy"),
+    (re.compile(r"(\d{2})(\d{2})(\d{4}|\d{2})"), "dmy"),
+    (re.compile(r"(\d{4})(\d{2})(\d{2})"), "ymd"),
+    (re.compile(rf"(\d{{1,2}}){_ORD}\.?\s*([^\W\d_]+)\.?,?\s*'?(\d{{4}}|\d{{2}})"), "dmy"),
+    # (?!\d): "Juli 2014" ist Monat+Jahr, nie "Juli 20 14" (erfundener Tag im Geburtsdatum, R8-a)
+    (re.compile(rf"([^\W\d_]+)\.?\s*(\d{{1,2}})(?!\d){_ORD}\.?,?\s*'?(\d{{4}}|\d{{2}})"), "mdy"),
+)
+
+
+def _parse_date(value: str) -> Optional[Tuple[int, int, int]]:
+    """(Tag, Monat, Jahr) aus jeder gaengigen Eingabeform (R7-F1): 03.07.2014, 3.7.14, 2014-07-03, 03/07/2014,
+    03072014, 20140703, 3. Juli 2014, July 3, 2014, 3.7.'14. Nicht lesbar oder kein gueltiges Datum: None.
+
+    Zweistellige Jahre: bis zum laufenden Jahr 20xx, sonst 19xx (Geburtsdaten). Zahlenformen gelten als
+    Tag vor Monat (deutsche Akten).
+    """
+    text = unicodedata.normalize("NFC", str(value or "")).strip().rstrip(".").strip()
+    for regex, order in _DATE_INPUTS:
+        match = regex.fullmatch(text)
+        if not match:
+            continue
+        a, b, c = match.groups()
+        d, m, y = {"dmy": (a, b, c), "ymd": (c, b, a), "mdy": (b, a, c)}[order]
+        m = int(m) if m.isdigit() else _MONTH_BY_NAME.get(m.casefold())
+        if m is None:
+            continue
+        year = int(y)
+        if len(y) == 2:
+            year += 2000 if 2000 + year <= datetime.now().year else 1900
+        try:
+            dt = datetime(year, m, int(d))
+        except ValueError:
+            continue
+        if 1900 <= dt.year <= 2100:
+            return dt.day, dt.month, dt.year
+    return None
+
+
+def normalize_date(value: str) -> str:
+    """Datum in der Hauptform TT.MM.JJJJ, oder "" wenn nicht lesbar."""
+    parsed = _parse_date(value)
+    return f"{parsed[0]:02d}.{parsed[1]:02d}.{parsed[2]}" if parsed else ""
+
+
+def _generated_date_forms(r, f):
+    """Systematische Schreibweisen (R6-2): Trenner . / - Leerzeichen, fuehrende Null, Jahr 4/2-stellig,
+    Reihenfolge TMJ, JMT und (nur eindeutig, Tag > 12) MTJ, Monatsname und -kuerzel."""
+    (rd, rm, ry), (fd, fm, fy) = r, f
+    days = (lambda d: f"{d:02d}", str)
+    years = (str, lambda y: f"{y % 100:02d}")
+    for sep in (".", "/", "-", " ", ". ", " / ", " - "):
+        for D in days:
+            for M in days:
+                for Y in years:
+                    yield f"{D(rd)}{sep}{M(rm)}{sep}{Y(ry)}", f"{D(fd)}{sep}{M(fm)}{sep}{Y(fy)}"
+                    if rd > 12 and sep in ("/", "-"):
+                        yield f"{M(rm)}{sep}{D(rd)}{sep}{Y(ry)}", f"{M(fm)}{sep}{D(fd)}{sep}{Y(fy)}"
+    for sep in ("-", "/", "."):
+        for M in days:
+            for D in days:
+                yield f"{ry}{sep}{M(rm)}{sep}{D(rd)}", f"{fy}{sep}{M(fm)}{sep}{D(fd)}"
+    for style, name in _month_forms(rm):
+        fake_name = _month_in_style(fm, style)
+        for D in days:
+            for dsep in (". ", " ", "."):
+                for ysep in (" ", "."):
+                    if ysep == "." and name.endswith("."):
+                        continue
+                    for Y in years:
+                        yield (f"{D(rd)}{dsep}{name}{ysep}{Y(ry)}",
+                               f"{D(fd)}{dsep}{fake_name}{ysep if not fake_name.endswith('.') else ' '}{Y(fy)}")
+            # Monat vorn ("July 3, 2014", "Juli 3 2014") und englische Ordnungszahl ("3rd July 2014", R7-F6)
+            for ysep in (", ", " "):
+                yield f"{name} {D(rd)}{ysep}{ry}", f"{fake_name} {D(fd)}{ysep}{fy}"
+                yield (f"{name} {D(rd)}{_ordinal(rd)}{ysep}{ry}", f"{fake_name} {D(fd)}{_ordinal(fd)}{ysep}{fy}")
+            yield f"{D(rd)}{_ordinal(rd)} {name} {ry}", f"{D(fd)}{_ordinal(fd)} {fake_name} {fy}"
+    # Ohne Trenner (030714, 03072014, 20140703) und Jahr mit Apostroph (3.7.'14), R7-F6
+    yield f"{rd:02d}{rm:02d}{ry % 100:02d}", f"{fd:02d}{fm:02d}{fy % 100:02d}"
+    yield f"{rd:02d}{rm:02d}{ry}", f"{fd:02d}{fm:02d}{fy}"
+    yield f"{ry}{rm:02d}{rd:02d}", f"{fy}{fm:02d}{fd:02d}"
+    for sep in (".", "/", "-"):
+        for D in days:
+            for M in days:
+                yield f"{D(rd)}{sep}{M(rm)}{sep}'{ry % 100:02d}", f"{D(fd)}{sep}{M(fm)}{sep}'{fy % 100:02d}"
+
+
+def _ordinal(d: int) -> str:
+    return "th" if 10 <= d % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+
+
+def _date_variant_pairs(real: str, fake: str) -> List[Tuple[str, str]]:
+    """(echte Schreibweise, Tarn-Schreibweise) fuer alle Formen; leer, wenn kein dd.mm.yyyy.
+
+    Zuerst die bisherigen _DATE_FORMATS (Reihenfolge bestimmt bei gleicher Tarnform die Rueckuebersetzung),
+    dann die systematisch erzeugten. Was keine Form trifft, faengt date_pattern() in der Sperre.
+    """
+    r, f = _parse_date(real), _parse_date(fake)
+    if not (r and f):
+        return []
+    pairs: Dict[str, str] = {}
+    for fmt in _DATE_FORMATS:
+        pairs.setdefault(fmt(*r), fmt(*f))
+    for real_form, fake_form in _generated_date_forms(r, f):
+        pairs.setdefault(real_form, fake_form)
+    return list(pairs.items())
+
+
+@lru_cache(maxsize=64)
+def date_pattern(value: str) -> Optional["re.Pattern"]:
+    """Regex fuer ein Datum (dd.mm.yyyy) in jeder Schreibweise, fuer die Datenschutz-Sperre (R6-2).
+
+    Beliebige Trenner (. / -, Leerzeichen, auch gemischt), fuehrende Null, Jahr vier- oder zweistellig,
+    Reihenfolge TMJ und JMT, MTJ nur wenn eindeutig (Tag > 12), Monatsname oder -kuerzel davor/danach.
+    """
+    parsed = _parse_date(value)
+    if not parsed:
+        return None
+    d, m, y = parsed
+    day, mon, year = rf"0?{d}{_ORD}", rf"0?{m}", rf"(?:{y}|'?{y % 100:02d})"
+    name = "(?:" + "|".join(re.escape(n.rstrip(".")) for _, n in _month_forms(m)) + r")\.?"
+    sep = r"(?:\s*[./\-]\s*|\s+)"
+    parts = [rf"{day}{sep}{mon}{sep}{year}", rf"{y}{sep}{mon}{sep}{day}",
+             rf"{day}\.?\s*{name}\s*[.,]?\s*{year}", rf"{name}\s*{day}\.?,?\s*{year}",
+             # ohne Trenner (R7-F6): 030714, 03072014, 20140703
+             rf"{d:02d}{m:02d}(?:{y}|{y % 100:02d})", rf"{y}{m:02d}{d:02d}"]
+    if d > 12:
+        parts.append(rf"{mon}{sep}{day}{sep}{year}")
+    return re.compile(r"(?<!\d)(?:" + "|".join(parts) + r")(?!\d)", re.IGNORECASE)
 
 
 def _detect_gender(vorname: str) -> str:
@@ -336,14 +520,13 @@ def _generate_tarnname(
 def _shift_date(date_str: str, days_offset: int) -> str:
     """
     Verschiebt ein Datum um eine feste Anzahl Tage.
-    Akzeptiert dd.mm.yyyy Format.
+    Akzeptiert jede Eingabeform von _parse_date, liefert TT.MM.JJJJ.
     """
-    try:
-        dt = datetime.strptime(date_str.strip(), "%d.%m.%Y")
-        shifted = dt + timedelta(days=days_offset)
-        return shifted.strftime("%d.%m.%Y")
-    except ValueError:
+    parsed = _parse_date(date_str)
+    if not parsed:
         return date_str
+    shifted = datetime(parsed[2], parsed[1], parsed[0]) + timedelta(days=days_offset)
+    return shifted.strftime("%d.%m.%Y")
 
 
 def _generate_fake_date_same_age(real_date: str) -> Tuple[str, int]:
@@ -365,10 +548,11 @@ def _generate_fake_phone() -> str:
     return f"{prefix}/{number}"
 
 
-def _generate_fake_email(original: str = None) -> str:
-    """Generiert eine falsche E-Mail-Adresse."""
-    vorname = secrets.choice(TARN_VORNAMEN).lower()
-    nachname = secrets.choice(TARN_NACHNAMEN).lower()
+def _generate_fake_email(original: str = None, excluded_name_parts: Optional[Iterable[str]] = None) -> str:
+    """Generiert eine falsche E-Mail-Adresse ohne echte Namensteile (sonst traefe die Sperre den Tarnwert)."""
+    banned = {w.casefold() for part in (excluded_name_parts or []) for w in str(part).split()}
+    vorname = secrets.choice([v for v in TARN_VORNAMEN if v.casefold() not in banned] or ["tarn"]).lower()
+    nachname = secrets.choice([n for n in TARN_NACHNAMEN if n.casefold() not in banned] or ["person"]).lower()
     domain = secrets.choice(["beispiel.de", "muster.org", "test-mail.de", "privat.net"])
     return f"{vorname}.{nachname}@{domain}"
 
@@ -404,6 +588,36 @@ def _generate_fake_institution(original: str) -> str:
     return f"{prefix}{found_suffix} {stadt}"
 
 
+# Beugungsendungen hinter Namen und Orten: Genitiv/Plural (-s, -es, -n, -en, -ns), weibliche Form
+# (-in, -innen), Herkunft (-er, -ern, -ers: "Freiburger", -erin: "Freiburgerin"), Ableitung (-sche: "die
+# Berghofersche Villa", R7-F3). Gross/klein egal ("MUELLERS"). Komposita ("Berghoferhaus") ersetzt die
+# Ersetzung bewusst nicht ("Kleinkind" bei Familie Klein); die Sperre faengt sie als Wortanfang.
+INFLECTION_SUFFIX = r"(?i:erinnen|erin|innen|ern|ers|es|en|er|in|ns|s|n|sche[nmrs]?)"
+
+_UMLAUT_AE = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss"})
+_UMLAUT_PLAIN = str.maketrans({"ä": "a", "ö": "o", "ü": "u", "Ä": "A", "Ö": "O", "Ü": "U", "ß": "ss"})
+
+
+@lru_cache(maxsize=8192)
+def _term_pattern(old: str) -> "re.Pattern":
+    """Fundstellen von `old` als ganzes Wort ("_" zaehlt als Trenner), bei Woertern mit Beugungsendung."""
+    left = r"(?<![^\W_])" if re.match(r"\w", old[0]) else ""
+    right = r"(?![^\W_])" if re.match(r"\w", old[-1]) else ""
+    sfx = f"(?P<sfx>{INFLECTION_SUFFIX})?" if old[-1].isalpha() and len(old) >= 3 else "(?P<sfx>)"
+    return re.compile(left + re.escape(old) + sfx + right)
+
+
+def _spelling_variants(term: str) -> List[str]:
+    """Andere Schreibweisen desselben Begriffs (R6-3): ae/oe/ue/ss, ohne Umlautpunkte, zerlegte Umlaute (NFD)."""
+    if term.isascii():
+        return []
+    ae = term.translate(_UMLAUT_AE)
+    out = {ae.upper() if term.isupper() else ae, term.translate(_UMLAUT_PLAIN),
+           unicodedata.normalize("NFD", term), unicodedata.normalize("NFC", term)}
+    out.discard(term)
+    return sorted(out)
+
+
 def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
     """
     Ersetzt `old` in `text` NUR an Wortgrenzen (nicht als blinder Teilstring).
@@ -416,10 +630,12 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
     an Stellen, wo derselbe Teilstring OHNE Wortgrenze auftaucht.
 
     Python-`\\b` behandelt deutsche Umlaute/ß korrekt als Wortzeichen.
+    "_" trennt dabei Woerter (Dateinamen wie "Bericht_Mueller_2025"), und gebeugte Formen
+    ("Muellers", "Muellerin", "Freiburger") werden mit ersetzt; die Endung bleibt erhalten (R6-1/R6-3).
     """
     if not old:
         return text, 0
-    pattern = re.compile(r'\b' + re.escape(old) + r'\b')
+    pattern = _term_pattern(old)
     # Addresses are replaced as whole identities. Replacing a name component
     # inside an allowed address corrupts it and can break the reverse mapping.
     email_spans = [m.span("email") for m in EMAIL_PATTERN.finditer(text)] if "@" not in old else []
@@ -430,7 +646,7 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
         if any(start <= match.start() and match.end() <= end for start, end in email_spans):
             return match.group(0)
         count += 1
-        return new
+        return new + (match.group("sfx") or "")
 
     text = pattern.sub(replace, text)
     return text, count
@@ -441,14 +657,28 @@ def _replace_word_boundary(text: str, old: str, new: str) -> Tuple[str, int]:
 # ═══════════════════════════════════════════════════════════════
 
 # Telefonnummern (deutsch): 07761/123456, +49 7761 123456, 0049-7761-123456, 0761 12345678,
-# 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert)
+# 07627-92 44 123 (Rufnummernblock durch Leerzeichen gruppiert), +49 (0)761 1234567, (0761) 1234567 (R7-F2)
 PHONE_PATTERN = re.compile(
     r'(?<!\w)(?:'
     r'(?:\+49|0049)(?:[ \t]*/[ \t]*|[ \t\-/]{1,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){1,3}|'
-    r'0\d{2,4}(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}'
+    r'(?:\+49|0049)[ \t]*\((?:0|\d{2,5})\)[ \t\-/]*\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,3}|'
+    r'0\d{2,4}(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}|'
+    r'\(0\d{2,4}\)[ \t\-/]*\d{2,4}(?:(?:[ \t]*/[ \t]*|[ \t\-/]{0,3})\d{2,4}){0,2}'
     r')(?!\w)',
     re.IGNORECASE
 )
+
+# Konto- und Kennnummern (R7-F2): IBAN kompakt oder in Vierergruppen, BIC (DE/AT/CH), Steuer-
+# Identifikationsnummer, Krankenversicherten- und Rentenversicherungsnummer. Ersatz: KENNUNG_nn.
+ID_PATTERNS = (
+    re.compile(r'(?<![A-Za-z0-9])[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?(?![A-Za-z0-9])'),
+    re.compile(r'(?<![A-Za-z0-9])[A-Z]{4}(?:DE|AT|CH)[A-Z0-9]{2}(?:[A-Z0-9]{3})?(?![A-Za-z0-9])'),
+    re.compile(r'(?<!\d)[1-9]\d(?: ?\d{3}){3}(?!\d)'),
+    re.compile(r'(?<![A-Za-z0-9])[A-Z]\d{9}(?![A-Za-z0-9])'),
+    re.compile(r'(?<!\d)\d{2} ?\d{6} ?[A-Z] ?\d{3}(?!\d)'),
+)
+# Was die Sperre in der Akte zusaetzlich als Muster sucht (Treffer, die kein Tarnwert sind, sperren).
+CASE_NUMBER_PATTERNS = (PHONE_PATTERN, *ID_PATTERNS)
 
 # E-Mail-Adressen
 EMAIL_PATTERN = re.compile(
@@ -601,6 +831,9 @@ _NER_COMMON_WORDS = {
     "alltag", "anziehen", "ausziehen", "zuständig", "zustaendig", "situationen",
     "freizeit", "verhalten", "essen", "spielen", "lernen", "schlafen", "waschen",
     "wahrnehmung", "kommunikation", "sprache", "schule", "kindergarten", "beispiele",
+    # Fachbegriffe aus Foerderberichten (PB-15): sonst werden sie zu "Person00X" und das Cloud-Modell
+    # bekommt kaum Fachinhalt
+    "fortschritte", "feinmotorik", "grobmotorik", "motorik", "sozialverhalten",
 }
 # Endungen/Kopfwoerter typischer Gattungsbegriffe aus Foerderberichten. Bewusst
 # KEIN "-lich"/"-ig" (Nachnamen wie Ehrlich, Hennig).
@@ -608,6 +841,7 @@ _NER_COMMON_SUFFIXES = ("ung", "ungen", "heit", "keit", "schaft", "tion", "tione
 _NER_COMMON_HEADS = (
     "bericht", "protokoll", "gespräch", "plan", "zeitraum", "therapie",
     "diagnostik", "gutachten", "bescheid", "antrag", "verlauf",
+    "gespraech", "situation", "situationen",
 )
 
 # Anrede/Titel + Name: deterministisch, unabhaengig vom NER-Modell (NER verfehlt
@@ -733,6 +967,20 @@ def _get_spacy_model(model_name: str):
         nlp = None
     _spacy_model_cache[model_name] = nlp
     return nlp
+
+
+def ner_ready() -> Tuple[bool, str]:
+    """(True, "") nur wenn spaCy und ALLE NER_MODELS laden; sonst (False, Grund).
+
+    Voraussetzung fuer den Cloud-Modus: ohne NER bleiben Namen Dritter, Strassen und Orte im
+    Freitext stehen, ohne dass es jemand merkt (PB-15, Zweitpruefung O2).
+    """
+    if not SPACY_AVAILABLE:
+        return False, "spaCy ist nicht installiert"
+    missing = [name for name in NER_MODELS if _get_spacy_model(name) is None]
+    if missing:
+        return False, "spaCy-Modelle fehlen: " + ", ".join(missing)
+    return True, ""
 
 
 def detect_person_names_ner(text: str, whitelist: Optional[List[str]] = None) -> List[str]:
@@ -1192,6 +1440,191 @@ def _replace_in_filename(name: str, sorted_replacements: List[Tuple[str, str]]) 
 # Anonymisierer
 # ═══════════════════════════════════════════════════════════════
 
+CONVERTED_TO_TXT_SUFFIXES = (".doc", ".msg")
+
+
+def claim_output_name(claimed: Dict[str, str], target: Path, source: Path, check_disk: bool = False) -> Path:
+    """
+    Reserviert den ENDGUELTIGEN Ausgabenamen fuer genau eine Quelle (VOR dem Kopieren).
+
+    .doc/.msg werden zu <name>.txt konvertiert; zwei Quellen mit gleichem
+    Basisnamen (Akte.doc + Akte.txt, in beliebiger Reihenfolge, oder gleicher Name
+    aus Unterordnern) wuerden sonst still ueberschreiben. Mit check_disk wird
+    zusaetzlich ein bereits vorhandener fremder Ausgabepfad abgelehnt (bleibt
+    unveraendert). Wirft FileExistsError mit beiden Quellnamen.
+    """
+    final = target.with_suffix(".txt") if target.suffix.lower() in CONVERTED_TO_TXT_SUFFIXES else target
+    key = str(final).casefold()
+    if key in claimed:
+        raise FileExistsError(
+            f"Ausgabename bereits belegt: {final.name} (Quellen: {claimed[key]} / {source.name})"
+        )
+    if check_disk:
+        # Rohkopie-Ziel UND endgueltiger Pfad muessen frei sein; sonst gehoert die Datei nicht
+        # diesem Aufruf (z.B. Ausgabeordner == Quellordner) und wird nie angefasst oder aufgeraeumt.
+        for existing in (target, final):
+            if existing.exists():
+                raise FileExistsError(
+                    f"Ausgabepfad existiert bereits (vorhandene Datei bleibt unveraendert): {existing.name}"
+                )
+    claimed[key] = source.name
+    return final
+
+
+class ArtifactCleanupError(RuntimeError):
+    """Eigene, ggf. unmaskierte oder klarnamige Ausgaben liessen sich nicht entfernen.
+
+    Sicherheitsfehler: Der Lauf darf NICHT als anonymisiert gelten. Die Meldung enthaelt
+    bewusst nur eine Anzahl, keine Datei- oder Personennamen.
+    """
+
+
+def _file_identity(st) -> Tuple[int, int]:
+    return (st.st_dev, st.st_ino)
+
+
+def discard_own_artifacts(root: Path, *paths: Optional[Path]) -> None:
+    """
+    Entfernt NUR Dateien, die dieser Aufruf selbst unter ``root`` angelegt hat.
+
+    Aufrufer uebergeben ausschliesslich Pfade, die dieser Aufruf selbst exklusiv angelegt hat
+    (copy_exclusive bzw. die Konvertierungsausgabe, die der Konverter gemeldet hat). Zusaetzliche
+    Sicherung: nur regulaere Dateien, keine Symlinks, nur strikt unterhalb von ``root``
+    (Originale ausserhalb bleiben unberuehrt); kein Verzeichnis-Aufraeumen.
+
+    Alle Pfade werden versucht. Laesst sich eine eigene Datei nicht entfernen, wird
+    ArtifactCleanupError geworfen (nie still verschluckt): sie koennte unmaskierte Inhalte
+    oder einen Klarnamen tragen.
+    """
+    import stat
+
+    root_resolved = root.resolve()
+    stuck = 0
+    for path in paths:
+        if path is None:
+            continue
+        try:
+            st = path.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            stuck += 1
+            continue
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+            continue
+        try:
+            if root_resolved not in path.resolve().parents:
+                continue
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            stuck += 1
+    if stuck:
+        raise ArtifactCleanupError(f"{stuck} eigene Ausgabe(n) konnten nicht entfernt werden")
+
+
+def _remove_created_file(path: Path, identity: Optional[Tuple[int, int]]) -> None:
+    """Entfernt eine soeben EXKLUSIV angelegte Datei -- nur wenn sie noch dieselbe Datei ist.
+
+    Eine vorherige Abwesenheitspruefung oder Reservierung beweist kein Eigentum; hier zaehlt nur
+    die erfolgreiche Exklusiverstellung (identity = dev/inode des offenen Handles). Wurde der
+    Pfad inzwischen durch eine andere Datei ersetzt, bleibt sie unveraendert.
+    """
+    import stat
+
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        return
+    if identity is None:
+        # Eigentum nicht beweisbar (Identitaet des frisch angelegten Handles fehlt): nie blind loeschen.
+        raise ArtifactCleanupError("1 eigene Ausgabe(n) konnten nicht entfernt werden (Dateiidentitaet fehlt)")
+    if _file_identity(st) != identity:
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise ArtifactCleanupError("1 eigene Ausgabe(n) konnten nicht entfernt werden") from exc
+
+
+def copy_exclusive(src: Path, dest: Path) -> None:
+    """Kopiert ``src`` nach ``dest`` und legt ``dest`` EXKLUSIV an (O_EXCL, nie ueberschreibend).
+
+    Existiert ``dest`` (auch durch einen zwischen Reservierung und Kopie erschienenen Fremden),
+    wirft FileExistsError, ohne etwas zu veraendern. Bricht der Kopiervorgang nach dem Anlegen ab,
+    wird die Teilkopie entfernt (ArtifactCleanupError, falls das nicht gelingt).
+    """
+    import shutil
+
+    with open(src, "rb") as reader:
+        writer = open(dest, "xb")
+        identity = None
+        try:
+            identity = _file_identity(os.fstat(writer.fileno()))
+            with writer:
+                shutil.copyfileobj(reader, writer)
+            shutil.copystat(src, dest)
+        except BaseException:
+            writer.close()
+            _remove_created_file(dest, identity)
+            raise
+
+
+def _stat_if_exists(path: Path):
+    """os.stat oder None, wenn der Pfad nicht existiert. Andere Fehler -> ValueError (fail-closed)."""
+    try:
+        return os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError:
+        raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen") from None
+
+
+def ensure_disjoint_roots(source: Path, target: Path) -> None:
+    """Lehnt gleiche oder ineinander liegende Quell-/Zielordner ab (ValueError).
+
+    Muss vor jedem mkdir, Profil-/Schluesselschreiben oder Aufraeumen des Zielordners laufen:
+    sonst koennten Originale ueberschrieben oder als 'Ausgabe' geloescht werden. Die Meldung
+    enthaelt keine Pfade.
+
+    Zwei Stufen, keine pauschale casefold-Annahme: (1) kanonischer Pfadvergleich (resolve + normcase);
+    (2) tatsaechliche Dateiidentitaet (os.path.samestat) fuer jeden EXISTIERENDEN Vorfahren beider Seiten.
+    Stufe 2 erkennt dasselbe Verzeichnis in anderer Schreibweise auf case-insensitiven Volumes (APFS,
+    NTFS) und Hardlink-/Bind-Konstellationen, ohne etwas ueber das Dateisystem zu raten: auf einem
+    case-sensitiven Volume sind 'Quelle' und 'quelle' verschiedene Verzeichnisse und bleiben erlaubt.
+    Fehlt die Dateiidentitaet (st_ino == 0) oder ist ein Pfad nicht pruefbar, wird abgelehnt.
+    """
+    src = Path(os.path.normcase(str(source.resolve())))
+    dst = Path(os.path.normcase(str(target.resolve())))
+    if src == dst or src in dst.parents or dst in src.parents:
+        raise ValueError("Quell- und Ausgabeordner duerfen weder gleich noch ineinander verschachtelt sein")
+
+    src_st, dst_st = _stat_if_exists(src), _stat_if_exists(dst)
+
+    def overlaps(chain_owner: Path, other_st) -> bool:
+        if other_st is None:
+            return False
+        if other_st.st_ino == 0:
+            raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen")
+        for ancestor in (chain_owner, *chain_owner.parents):
+            st = _stat_if_exists(ancestor)
+            if st is None:
+                continue
+            if st.st_ino == 0:
+                raise ValueError("Quell- und Ausgabeordner lassen sich nicht sicher vergleichen")
+            if os.path.samestat(st, other_st):
+                return True
+        return False
+
+    if overlaps(dst, src_st) or overlaps(src, dst_st):
+        raise ValueError("Quell- und Ausgabeordner duerfen weder gleich noch ineinander verschachtelt sein")
+
+
 class DocumentAnonymizer:
     """
     Anonymisiert Dokumente durch konsistente Pseudonymisierung.
@@ -1235,6 +1668,7 @@ class DocumentAnonymizer:
         """
         found = {
             "phones": [],
+            "ids": [],
             "emails": [],
             "addresses": [],
             "institutions": [],
@@ -1248,6 +1682,9 @@ class DocumentAnonymizer:
             cleaned = phone.strip()
             if cleaned and cleaned not in found["phones"]:
                 found["phones"].append(cleaned)
+
+        # Konto- und Kennnummern (IBAN, BIC, Steuer-ID, Versichertennummern), R7-F2
+        found["ids"] = list(dict.fromkeys(m.group(0) for regex in ID_PATTERNS for m in regex.finditer(text)))
 
         # Adressen finden
         addresses = STREET_PATTERN.findall(text)
@@ -1401,7 +1838,7 @@ class DocumentAnonymizer:
             if "telefon" in weitere_daten:
                 mappings["phones"][weitere_daten["telefon"]] = _generate_fake_phone()
             if "email" in weitere_daten:
-                mappings["emails"][weitere_daten["email"]] = _generate_fake_email()
+                mappings["emails"][weitere_daten["email"]] = _generate_fake_email(excluded_name_parts=excluded_name_parts)
             # Restliche als misc
             for key, val in weitere_daten.items():
                 if key not in ("adresse", "telefon", "email") and val:
@@ -1414,10 +1851,14 @@ class DocumentAnonymizer:
                 if phone not in mappings["phones"]:
                     mappings["phones"][phone] = _generate_fake_phone()
 
+            # Konto- und Kennnummern
+            for value in scanned_data.get("ids", []):
+                mappings["misc"].setdefault(value, "[KENNUNG_ANON]")
+
             # E-Mail-Adressen
             for email in scanned_data.get("emails", []):
                 if email not in mappings["emails"]:
-                    mappings["emails"][email] = _generate_fake_email(email)
+                    mappings["emails"][email] = _generate_fake_email(email, excluded_name_parts=excluded_name_parts)
 
             # Straßenadressen
             for addr in scanned_data.get("addresses", []):
@@ -1548,6 +1989,7 @@ class DocumentAnonymizer:
         """
         combined = {
             "phones": [],
+            "ids": [],
             "emails": [],
             "addresses": [],
             "table_row_names": [],
@@ -1584,6 +2026,28 @@ class DocumentAnonymizer:
 
         Returns:
             (success, replacement_count)
+
+        Konvertierende Formate (.doc, .msg) ersetzen die Datei durch eine
+        gleichnamige .txt; den dabei tatsaechlich entstandenen Pfad liefert
+        anonymize_file_with_output().
+        """
+        success, count, _output = self.anonymize_file_with_output(filepath, profile)
+        return success, count
+
+    def anonymize_file_with_output(
+        self, filepath: str, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
+        """
+        Wie anonymize_file, liefert zusaetzlich den VERBINDLICHEN Ausgabepfad.
+
+        Konvertierende Formate (.doc, .msg -> gleichnamige .txt) entfernen die
+        Eingabedatei. Nachfolgende Schritte (z.B. Dateinamen-Anonymisierung)
+        muessen mit diesem Rueckgabepfad weiterarbeiten, nie mit dem
+        Ursprungspfad. None = es existiert keine Ausgabedatei (fail-closed
+        entfernt).
+
+        Returns:
+            (success, replacement_count, output_path)
         """
         # Direct/loaded profiles do not necessarily pass through the scanner.
         # Complete whole-address mappings before the shared replacement helpers
@@ -1596,11 +2060,28 @@ class DocumentAnonymizer:
             if email not in existing:
                 profile.mappings.setdefault("emails", {})[email] = _generate_fake_email(email)
 
-        return self._apply_profile_to_file(filepath, profile)
+        return self._apply_profile_to_file_with_output(filepath, profile)
 
     def _apply_profile_to_file(self, filepath: str, profile: AnonymProfile) -> tuple[bool, int]:
         """Apply existing mappings only; inverse profiles must never be enriched."""
+        success, count, _output = self._apply_profile_to_file_with_output(filepath, profile)
+        return success, count
+
+    def _apply_profile_to_file_with_output(
+        self, filepath: str, profile: AnonymProfile
+    ) -> tuple[bool, int, Optional[Path]]:
+        """Wie _apply_profile_to_file, mit verbindlichem Ausgabepfad (None = keine Ausgabe)."""
         path = Path(filepath)
+        suffix = path.suffix.lower()
+        if suffix == ".doc":
+            return self._convert_doc_to_txt(path, profile)
+        if suffix == ".msg":
+            return self._convert_msg_to_txt(path, profile)
+        success, count = self._apply_profile_in_place(path, profile)
+        return success, count, (path if path.exists() else None)
+
+    def _apply_profile_in_place(self, path: Path, profile: AnonymProfile) -> tuple[bool, int]:
+        """Formate, die am selben Pfad bleiben (oder fail-closed entfernt werden)."""
         suffix = path.suffix.lower()
 
         if suffix == ".docx":
@@ -1611,12 +2092,8 @@ class DocumentAnonymizer:
             return self._anonymize_pdf(path, profile)
         elif suffix in (".xlsx", ".xls"):
             return self._anonymize_excel(path, profile)
-        elif suffix == ".doc":
-            return self._anonymize_doc(path, profile)
         elif suffix == ".eml":
             return self._anonymize_eml(path, profile)
-        elif suffix == ".msg":
-            return self._anonymize_msg(path, profile)
         else:
             return False, 0
 
@@ -1648,6 +2125,9 @@ class DocumentAnonymizer:
             except ImportError:
                 dest = src.parent.parent / "klienten" / profile.client_id
 
+        # Gleiche/verschachtelte Wurzeln VOR jeder Schreibaktion ablehnen (mkdir, Profil, Schluessel)
+        ensure_disjoint_roots(src, dest)
+
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "output").mkdir(exist_ok=True)
 
@@ -1656,32 +2136,49 @@ class DocumentAnonymizer:
         self._progress = ProgressInfo(total_files=len(files), status="anonymizing")
 
         # Dateien verarbeiten
+        claimed: Dict[str, str] = {}
         for filepath in files:
             self._progress.current_file = filepath.name
             self._progress.processed_files += 1
             result.processed_files += 1
 
+            produced: List[Optional[Path]] = []   # nur was DIESER Aufruf angelegt hat
             try:
                 # Relative Struktur beibehalten
                 rel = filepath.relative_to(src)
                 dest_file = dest / rel
                 dest_file.parent.mkdir(parents=True, exist_ok=True)
 
+                # Endgueltigen Ausgabenamen VOR dem Kopieren reservieren (auch das
+                # .doc/.msg -> .txt-Ziel); Kollision oder vorhandene Datei = laut, nichts kopiert
+                claim_output_name(claimed, dest_file, filepath, check_disk=True)
+
                 # Datei kopieren und anonymisieren
-                import shutil
-                shutil.copy2(filepath, dest_file)
+                copy_exclusive(filepath, dest_file)
+                produced.append(dest_file)  # Erst die erfolgreiche Exklusivkopie beweist Eigentum.
 
-                success, count = self.anonymize_file(str(dest_file), profile)
-                if success:
-                    result.anonymized_files += 1
-                    result.replacements_total += count
-                else:
+                success, count, output_file = self.anonymize_file_with_output(str(dest_file), profile)
+                produced.append(output_file)
+                if not success or output_file is None:
+                    # Nicht anonymisiert: keine Rohkopie im Ziel zuruecklassen
+                    discard_own_artifacts(dest, *produced)
                     result.skipped_files += 1
+                    continue
 
-                # Dateinamen anonymisieren (falls Name enthalten)
-                dest_file = self._anonymize_filename(dest_file, profile)
+                # Dateinamen anonymisieren (falls Name enthalten) -- am
+                # verbindlichen Ausgabepfad, nicht am (ggf. konvertierten) Original
+                self._anonymize_filename(output_file, profile)
+                result.anonymized_files += 1
+                result.replacements_total += count
 
+            except ArtifactCleanupError:
+                try:
+                    discard_own_artifacts(dest, *produced)   # Rest best-effort, Fehler bleibt der erste
+                except ArtifactCleanupError:
+                    pass
+                raise   # Sicherheitsfehler: nie in errors[] verwandeln, Lauf bricht ab
             except Exception as e:
+                discard_own_artifacts(dest, *produced)   # wirft ArtifactCleanupError, wenn etwas bleibt
                 result.errors.append(f"{filepath.name}: {e}")
 
         # Schluessel im lokalen Speicher speichern (NICHT in OneDrive)
@@ -1789,6 +2286,45 @@ class DocumentAnonymizer:
         return True, count
 
     def _anonymize_doc(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """Kompatibilitaets-Wrapper; den Ausgabepfad liefert _convert_doc_to_txt."""
+        success, count, _output = self._convert_doc_to_txt(path, profile)
+        return success, count
+
+    @staticmethod
+    def _write_converted_txt(path: Path, text: str) -> Path:
+        """
+        Schreibt die Konvertierung nach <name>.txt -- exklusiv, nie ueberschreibend.
+
+        Existiert die Zieldatei schon (gleicher Basisname, z.B. foo.doc + foo.txt),
+        wird die unkonvertierte Kopie entfernt (fail-closed, kein Klartext-Rest) und
+        FileExistsError geworfen; die vorhandene Datei bleibt unveraendert.
+        """
+        txt_path = path.with_suffix(".txt")
+        try:
+            handle = txt_path.open("x", encoding="utf-8")
+        except FileExistsError:
+            path.unlink(missing_ok=True)
+            raise FileExistsError(
+                f"Konvertierungsziel existiert bereits (gleicher Basisname): {txt_path.name}"
+            ) from None
+        # Ab hier gehoert txt_path nachweislich diesem Aufruf (Exklusiverstellung). Schlaegt
+        # Schreiben oder das Entfernen der Stage-Kopie fehl, wird genau diese Datei entfernt --
+        # nie ein Pfad, der inzwischen durch eine fremde Datei ersetzt wurde.
+        identity = None
+        try:
+            identity = _file_identity(os.fstat(handle.fileno()))
+            with handle:
+                handle.write(text)
+            path.unlink(missing_ok=True)
+        except BaseException:
+            handle.close()
+            _remove_created_file(txt_path, identity)
+            raise
+        return txt_path
+
+    def _convert_doc_to_txt(
+        self, path: Path, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
         """
         "Anonymisiert" ein altes Word-Binaerdokument (.doc).
 
@@ -1808,7 +2344,7 @@ class DocumentAnonymizer:
             # Extraktion fehlgeschlagen (kein antiword/soffice verfuegbar o.ae.)
             # -- Datei NICHT unveraendert im "anonymisierten" Ordner belassen.
             path.unlink(missing_ok=True)
-            return False, 0
+            return False, 0, None
 
         count = 0
         sorted_replacements = self._sorted_replacements(profile)
@@ -1817,10 +2353,7 @@ class DocumentAnonymizer:
             text, occurrences = _replace_word_boundary(text, old, new)
             count += occurrences
 
-        txt_path = path.with_suffix(".txt")
-        txt_path.write_text(text, encoding="utf-8")
-        path.unlink(missing_ok=True)
-        return True, count
+        return True, count, self._write_converted_txt(path, text)
 
     @staticmethod
     def _sorted_replacements(profile: AnonymProfile) -> List[Tuple[str, str]]:
@@ -1844,6 +2377,11 @@ class DocumentAnonymizer:
                 if k.strip().lower() not in wl_lower
                 and not ("@" in k and k.rsplit("@", 1)[-1].lower() in wl_lower)
             }
+        # Umschriften (Mueller, Muller, zerlegte Umlaute) bekommen denselben Tarnwert (R6-3).
+        for key, value in list(all_replacements.items()):
+            for variant in _spelling_variants(key):
+                if variant.strip().lower() not in wl_lower:
+                    all_replacements.setdefault(variant, value)
         return sorted(all_replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
     def _anonymize_eml(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
@@ -1933,6 +2471,13 @@ class DocumentAnonymizer:
         return True, count
 
     def _anonymize_msg(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
+        """Kompatibilitaets-Wrapper; den Ausgabepfad liefert _convert_msg_to_txt."""
+        success, count, _output = self._convert_msg_to_txt(path, profile)
+        return success, count
+
+    def _convert_msg_to_txt(
+        self, path: Path, profile: AnonymProfile
+    ) -> Tuple[bool, int, Optional[Path]]:
         """
         Anonymisiert eine Outlook-.msg-Datei (Task #802).
 
@@ -1950,15 +2495,12 @@ class DocumentAnonymizer:
         text = _extract_msg_text(str(path))
         if not text:
             path.unlink(missing_ok=True)
-            return False, 0
+            return False, 0, None
 
         sorted_replacements = self._sorted_replacements(profile)
         text, count = _apply_replacements(text, sorted_replacements)
 
-        txt_path = path.with_suffix(".txt")
-        txt_path.write_text(text, encoding="utf-8")
-        path.unlink(missing_ok=True)
-        return True, count
+        return True, count, self._write_converted_txt(path, text)
 
     def _anonymize_excel(self, path: Path, profile: AnonymProfile) -> Tuple[bool, int]:
         """
@@ -2042,6 +2584,9 @@ class DocumentAnonymizer:
 
         if changed:
             new_path = filepath.parent / f"{new_filename}{suffix}"
+            if new_path.exists():
+                # Path.rename ersetzt unter POSIX still; nie eine vorhandene Datei ueberschreiben
+                raise FileExistsError(f"Anonymisierter Dateiname existiert bereits: {new_path.name}")
             filepath.rename(new_path)
             return new_path
         return filepath
@@ -2157,6 +2702,8 @@ class DocumentDeanonymizer:
 
         for category, mapping in profile.mappings.items():
             reverse_profile.mappings[category] = {v: k for k, v in mapping.items()}
+            if category == "dates":  # Datumsvarianten mit gleicher Tarnform: Hauptform (erste) gewinnt
+                reverse_profile.mappings[category] = {v: k for k, v in reversed(list(mapping.items()))}
 
         # Anonymizer mit umgekehrten Mappings nutzen
         anon = DocumentAnonymizer()

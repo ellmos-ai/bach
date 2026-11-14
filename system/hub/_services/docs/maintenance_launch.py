@@ -2,8 +2,25 @@
 
 from __future__ import annotations
 
+import os
 import plistlib
+import shutil
 from pathlib import Path
+
+LAUNCHD_DEFAULT_PATH = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
+
+
+def service_path() -> str:
+    """PATH for the LaunchAgent.
+
+    launchd starts agents with /usr/bin:/bin:/usr/sbin:/sbin. On macOS /usr/bin/git is the
+    Xcode shim, which exits non-zero until the Xcode license is accepted; the documentation
+    dispatcher then fails with CalledProcessError (measured on the Mac Studio 14.11.2026).
+    The directory of the git found when the plan is generated goes first.
+    """
+    git = shutil.which("git")
+    first = [os.path.dirname(git)] if git else []
+    return ":".join(dict.fromkeys([*first, *LAUNCHD_DEFAULT_PATH]))
 
 
 def launch_plan(root: Path, python: Path, task_db: Path, runtime: Path, config: Path):
@@ -41,6 +58,7 @@ def launch_plan(root: Path, python: Path, task_db: Path, runtime: Path, config: 
         "ThrottleInterval": 60,
         "EnvironmentVariables": {
             "BACH_DB": str(task_db),
+            "PATH": service_path(),
             "PYTHONIOENCODING": "utf-8",
             "PYTHONDONTWRITEBYTECODE": "1",
         },

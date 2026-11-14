@@ -13,6 +13,7 @@ from hub.worker_git import (
     cleanup_task_worktree,
     gc_completed_task_worktrees,
     inspect_task_worktree_cleanup,
+    reconcile_github_pr_task_state,
     start_task_worktree,
 )
 
@@ -52,7 +53,9 @@ class TestCompletedWorktreeCleanupAndGC:
                 status TEXT DEFAULT 'pending',
                 claimed_by TEXT,
                 claim_id TEXT,
-                claim_fence INTEGER DEFAULT 1
+                claim_fence INTEGER DEFAULT 1,
+                completed_at TEXT,
+                result TEXT
             );
         """)
         conn.commit()
@@ -458,3 +461,96 @@ class TestCompletedWorktreeCleanupAndGC:
         )
         assert diag_after_edit["eligible"] is False
         assert diag_after_edit["reason"] == "missing_result_acceptance"
+
+    def test_merge_receipt_and_reconcile_pr_cleans_worktree_keeping_branch(self, tmp_path, monkeypatch):
+        from hub._services.chat import worker_write_guard
+        import hub.worker_git as wg
+        monkeypatch.setattr(worker_write_guard, "_fresh_locks", lambda *a, **k: None)
+        fake_repo, fake_worktrees = self._init_repo(tmp_path)
+        monkeypatch.setenv("BACH_ROOT", str(fake_repo))
+        monkeypatch.setenv("BACH_WORKTREES_DIR", str(fake_worktrees))
+        monkeypatch.setattr(wg, "get_live_repo_root", lambda: fake_repo)
+        monkeypatch.setattr(wg, "get_worktrees_dir", lambda: fake_worktrees)
+        conn, db_file = self._init_db(tmp_path)
+
+        tid = 700
+        start_task_worktree(tid, base_branch="main", repo_root=fake_repo)
+        target_wt = fake_worktrees / f"task-{tid}"
+        assert target_wt.exists()
+
+        main_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(fake_repo), check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, description, status) VALUES (?, ?, ?, ?)",
+            (tid, f"Task {tid}", "PR ready for merge", "review"),
+        )
+        conn.commit()
+
+        # Stub read_result to simulate that worker result is not yet accepted in worker_task_results table
+        self._stub_read_result(monkeypatch, {
+            tid: {
+                "schema": "bach.task-result-readback.v1",
+                "task_id": tid,
+                "status": "done",
+                "result": None,
+            }
+        })
+
+        reconcile_res = reconcile_github_pr_task_state(
+            tid,
+            {
+                "state": "MERGED",
+                "merged": True,
+                "number": 700,
+                "merge_commit_sha": main_sha,
+                "merged_by": "octocat",
+                "url": "https://github.com/ellmos-ai/bach/pull/700",
+            },
+            db_path=conn,
+        )
+
+        assert reconcile_res["status"] == "done"
+        assert reconcile_res["action"] == "completed_on_merge"
+        assert reconcile_res["worktree_cleaned"] is True
+
+        # Worktree is removed
+        assert not target_wt.exists()
+
+        # Branch refs/heads/bach-task/700 is kept intact
+        branch_check = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/bach-task/{tid}"],
+            cwd=str(fake_repo), capture_output=True, text=True, check=False,
+        )
+        assert branch_check.returncode == 0
+        assert branch_check.stdout.strip() == main_sha
+
+        # Verify inspect_task_worktree_cleanup reports eligible via merge_receipt on an existing worktree
+        tid2 = 701
+        start_task_worktree(tid2, base_branch="main", repo_root=fake_repo)
+        target_wt2 = fake_worktrees / f"task-{tid2}"
+        assert target_wt2.exists()
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, description, status) VALUES (?, ?, ?, ?)",
+            (tid2, f"Task {tid2}", "Merged PR\n[MERGE-RECEIPT] GitHub PR #701 merged (merge_sha=123)", "done"),
+        )
+        conn.commit()
+
+        diag2 = inspect_task_worktree_cleanup(tid2, db_path=conn, repo_root=fake_repo, worktrees_dir=fake_worktrees)
+        assert diag2["eligible"] is True
+        assert diag2["reason"] == "eligible"
+
+        cleaned2 = cleanup_task_worktree(
+            tid2, delete_branch=False, db_path=conn, repo_root=fake_repo, worktrees_dir=fake_worktrees
+        )
+        assert cleaned2 is True
+        assert not target_wt2.exists()
+
+        branch_check2 = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/bach-task/{tid2}"],
+            cwd=str(fake_repo), capture_output=True, text=True, check=False,
+        )
+        assert branch_check2.returncode == 0
+        conn.close()

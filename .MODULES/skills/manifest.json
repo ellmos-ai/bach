@@ -1,0 +1,31 @@
+{
+  "name": "skills",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BACH Standalone Module: selfcontained skill catalog discovery, frontmatter metadata parsing, indexing, and execution bridge",
+  "author": "BACH Team",
+  "created_at": "2026-11-07T12:00:00.000000",
+  "selfcontained": true,
+  "entrypoints": {
+    "library": "src/skills.py"
+  },
+  "boundaries": {
+    "data": "user-local",
+    "network": "none",
+    "platforms": [
+      "windows",
+      "macos",
+      "linux"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "BACH",
+      "minimum_version": "3.15.0"
+    },
+    {
+      "name": "Ocean",
+      "minimum_version": "1.0.0"
+    }
+  ]
+}

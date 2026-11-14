@@ -1264,3 +1264,26 @@ def test_hermes_error_identity_does_not_relabel_other_endpoints(base_url, provid
     backend = HermesBackend(api_key="synthetic", base_url=base_url)
     assert backend._error_provider() == provider
     assert backend.base_url == base_url
+
+
+# --- OpenRouter/Hermes tool arguments (OCEAN 14.11.: worker-fdb98a89 stopped on non-object arguments) ---
+
+from hub._services.llm.model_backend import _decode_tool_arguments  # noqa: E402
+
+
+@pytest.mark.parametrize("raw", [None, "", "   ", "null", '"null"'])
+def test_tool_arguments_empty_forms_become_empty_object(raw):
+    assert _decode_tool_arguments(raw) == {}
+
+
+def test_tool_arguments_json_string_and_double_encoding_become_object():
+    assert _decode_tool_arguments('{"id": 7}') == {"id": 7}
+    assert _decode_tool_arguments('"{\\"id\\": 7}"') == {"id": 7}
+    args = {"query": "x"}
+    assert _decode_tool_arguments(args) is args
+
+
+@pytest.mark.parametrize("raw", ['{"id": 7', "[1, 2]", "42", '"text"', [1, 2]])
+def test_tool_arguments_invalid_forms_stay_non_object(raw):
+    # The runtime rejects these as invalid_tool_call; nothing is guessed.
+    assert not isinstance(_decode_tool_arguments(raw), dict)

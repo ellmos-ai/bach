@@ -1,0 +1,21 @@
+Agent Colors
+============
+
+A blueprint color is optional. Allowed values are null or six hex digits
+preceded by #, for example #12abef. Uppercase letters are converted to
+lowercase. Other CSS values are invalid.
+
+When saving without a color field, the previous color is retained. null deletes
+it. Changes require the current blueprint version.
+
+When materializing, the instance inherits the blueprint color. An explicitly
+set instance override takes precedence. null for the instance override means
+inheriting again. Re-materializing updates the blueprint color but preserves
+the instance override. Both steps require the respective current configuration
+version. An instance reset deletes the override; an existing blueprint color
+is inherited.
+
+Without a stored color, the API reports color=null and color_source=default.
+The UI then uses its default theme. Reading old profiles does not save new
+color fields. The color grants no permissions and does not start any worker,
+provider, or model call.

@@ -1,0 +1,68 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-09
+
+BUDDHA CHAT 与会话协议
+======================
+
+说明
+--
+Buddha Chat 是 BACH 的交互式助手界面，可通过 Web-GUI
+（http://localhost:8000/chat）以及作为 Telegram 机器人访问。Buddha 回答
+问题、规划工作、执行 BACH 工具，并通过 bach.db 中的规范快照管理其上下文。
+
+访问途径
+----
+1. Web-Chat:     http://localhost:8000/chat
+                 使用固定的会话 ID "gui-web"。即使重新加载页面，消息也会保
+                 留（自动恢复）。
+2. Telegram 机器人: @BachBuddhaBot（或已配置的 Token）
+                 每个 Telegram 聊天都有自己独立的数字聊天 ID。
+3. 系统托盘:     带有模型/模式选择和快速访问的状态栏。
+
+会话生命周期与自动重置
+-----------
+为了防止陈旧且早已完成的主题永久停留在思考上下文中，每个聊天会话都遵循以
+下生命周期：
+1. 24 小时不活动重置（TTL）：
+- 如果一个聊天超过 24 小时未被使用（last_active > 86400s），在下次收到消
+  息时会自动归档并重置为空状态。
+- 用户第二天会自动以全新的状态开始。
+
+2. 手动重置：
+- Telegram:  命令 /clear
+- Web-GUI:   状态栏中的按钮 [ ➕ Neuer Chat ]
+- 两种方式在清空前都会完整归档先前的历史记录。
+
+3. Zero-Data-Loss 保证：
+- 任何消息历史都不会被不可恢复地删除。
+- 所有会话都会作为永久转录本（类型：chat-transcript.v1）保存在中央
+  bach.db 的 session_snapshots 表中。
+
+协议与分叉（重新激活）
+-----------
+在 Web-GUI（http://localhost:8000/chat）中有按钮 [ 📉 Protokolle ]：
+1. 归档概览：
+- 按时间顺序显示来自 Web、Telegram 和 Worker 的所有已记录会话。
+- 可按 "Alle"、"Web"、"Telegram" 和 "Archiv" 筛选。
+
+2. 转录本检查：
+- 点击某一条目会打开完整转录本，包括带时间戳和格式的所有用户与助手消息。
+
+3. 在 Web-Chat 中继续（Fork）：
+- 通过按钮 [ 🔑 Im Web-Chat fortsetzen (Fork) ]，可以将任何历史会话（无论
+  来自 Telegram 还是更早的 Web 会话）加载到当前的 Web-Chat 中并直接继续讨
+  论。
+- 现有的 Web 会话在此之前会自动备份。
+
+安全模式
+----
+  - safe:  仅限只读查询（ls、cat、grep、git status 等）。
+  - full:  也允许写入工具（创建文件、执行命令）。
+           在 Telegram 中：通过 /mode full 确认
+           在 Web-GUI 中：通过 Control-Dashboard / API
+
+另请参阅
+----
+  help bach_chat           聊天服务的完整技术规范
+  help session             面向开发者的工作会话（bach session）

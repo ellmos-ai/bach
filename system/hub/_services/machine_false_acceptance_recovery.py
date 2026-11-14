@@ -169,7 +169,7 @@ def repair_correction_matches(conn, row, detail):
             source, historical["submission"]["receipt_sha256"])
         historical["execution"] = read_execution_evidence(conn, historical)
         historical["scope"] = read_scope_evidence(conn, historical)
-        review = read_review_evidence(conn, historical)
+        review = read_review_evidence(conn, historical, allow_historical_identity=True)
         return (review.get("availability") == "recorded"
             and review.get("independent") is True
             and review.get("status") in {"findings", "rejected"}

@@ -41,6 +41,7 @@ from datetime import datetime, date
 
 from typing import Optional, List, Union
 
+import contextlib
 from contextlib import asynccontextmanager
 
 # BACH imports
@@ -379,15 +380,18 @@ def resolve_tool_file(name: str) -> Optional[Path]:
 
 
 def resolve_workflow_file(workflow_name: str) -> Optional[Path]:
-    workflows_dir = SKILLS_DIR / "_workflows"
     safe_name = safe_path_segment(workflow_name, field_name="Workflow-Name")
     candidates = [safe_name]
     if not safe_name.endswith(".md"):
         candidates.insert(0, f"{safe_name}.md")
-    for candidate_name in candidates:
-        candidate = resolve_under_base(workflows_dir, candidate_name, allowed_suffixes={".md"})
-        if candidate.exists() and candidate.is_file():
-            return candidate
+    for base_dir in [SKILLS_DIR / "workflows", SKILLS_DIR / "_workflows"]:
+        for candidate_name in candidates:
+            try:
+                candidate = resolve_under_base(base_dir, candidate_name, allowed_suffixes={".md"})
+                if candidate.exists() and candidate.is_file():
+                    return candidate
+            except HTTPException:
+                continue
     return None
 
 
@@ -1541,7 +1545,7 @@ def _redact_ws_tokens(text: str) -> str:
 
 
 def _install_log_redaction():
-    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens."""
+    """Wrap the LogRecord factory so server/WebSocket-library records never carry tokens or PII."""
     import logging
     previous = logging.getLogRecordFactory()
     if getattr(previous, "_bach_redacts", False):
@@ -1550,10 +1554,21 @@ def _install_log_redaction():
     def factory(*args, **kwargs):
         record = previous(*args, **kwargs)
         try:
-            if record.name.startswith(_REDACT_LOGGERS):
-                message = record.getMessage()
-                if "bach.token." in message:
-                    record.msg, record.args = _redact_ws_tokens(message), ()
+            message = record.getMessage()
+            changed = False
+            if "bach.token." in message:
+                message = _redact_ws_tokens(message)
+                changed = True
+            try:
+                from hub._services.life_overview_service import sanitize_pii
+                sanitized = sanitize_pii(message)
+                if sanitized != message:
+                    message = sanitized
+                    changed = True
+            except Exception:
+                pass
+            if changed:
+                record.msg, record.args = message, ()
         except Exception:  # logging must never break the request
             pass
         return record
@@ -1640,6 +1655,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/governance/funk",
         "/governance/usecases",
         "/governance/logs",
+        "/governance/hooks",
+        "/governance/rechte",
+        "/governance/regeln",
+        "/governance/sperren",
         "/life",
         "/domains",
         "/artefakte",
@@ -1748,6 +1767,12 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/robotics/telemetry",
         "/api/modules/status",
         "/api/modules/sync",
+        "/api/modules/update-check",
+        "/api/modules/list",
+        "/api/modules/surfaces",
+        "/api/financial/summary",
+        "/api/life/overview",
+        "/api/automations",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -1774,7 +1799,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                          or path.startswith(self.PUBLIC_STATIC_PREFIXES)))):
                 response = await call_next(request)
                 if (request.method == "GET"
-                        and (path in self.PUBLIC_PAGE_PATHS or path in ("/device-fetch.js", "/static/js/device-fetch.js"))
+                        # Nur echte Browser-Navigationen mint eine Sitzung; Unterressourcen (device-fetch.js)
+                        # und cookielose Nicht-Browser-Clients (Probes, curl) hinterliessen sonst je Aufruf eine Zeile.
+                        and path in self.PUBLIC_PAGE_PATHS
+                        and request.headers.get("sec-fetch-dest") == "document"
                         and _hostname(request.headers.get("host", "")) in LOOPBACK_HOSTS
                         and request.cookies.get("bach_manual_logout") != "1"):
                     existing_cookie = request.cookies.get("bach_device_token", "").strip()
@@ -1865,6 +1893,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/artifacts" or path.startswith("/api/artifacts/")
                 or path == "/api/artefakte"
                 or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path == "/api/agent-triggers" or path.startswith("/api/agent-triggers/")
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
                 or path == "/api/system/worker-policy"
@@ -2010,6 +2039,11 @@ except Exception as e:
     import logging
     logging.getLogger(__name__).warning("Unified API Router konnte nicht geladen werden: %s", e)
 
+# The trigger router has no eager optional-provider imports. Keep it registered
+# even when the provider is missing so callers receive a truthful 503 contract.
+from gui.api.agent_triggers import router as agent_triggers_router
+app.include_router(agent_triggers_router)
+
 try:
     from gui.api.subscription_agents_transport import (
         router as subscription_agents_transport_router,
@@ -2035,6 +2069,8 @@ try:
     app.include_router(prompt_router)
     from gui.api.task_assignment import router as task_assignment_router
     app.include_router(task_assignment_router)
+    from gui.api.task_returns import router as task_returns_router
+    app.include_router(task_returns_router)
     from gui.api.governance_registry import router as governance_registry_router
     app.include_router(governance_registry_router)
     from gui.api.catalog_projection import router as catalog_projection_router
@@ -2346,6 +2382,16 @@ async def get_modules_status():
         return {"status": "error", "error": public_error_message()}
 
 
+@app.get("/api/modules/surfaces")
+async def get_modules_surfaces():
+    """Return canonical module surfaces and integration status matrix (PB-7 / #3991)."""
+    try:
+        from hub._services.life_overview_service import get_module_surfaces_matrix
+        return get_module_surfaces_matrix()
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
 @app.post("/api/modules/sync")
 async def trigger_modules_sync():
     """Run auto-update sync across standalone modules."""
@@ -2353,6 +2399,53 @@ async def trigger_modules_sync():
         from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
         report = auto_switch_to_standalone_modules()
         return {"status": "ok", "sync_report": report}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/list")
+async def get_modules_list():
+    """Return list of all standalone modules in .MODULES/ with metadata."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {"status": "ok", "modules": handler.get_modules_data()}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/update-check")
+async def get_modules_update_check():
+    """Check for available updates for standalone modules in .MODULES/."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        check = handler.check_for_updates()
+        return {"status": "ok", **check}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/update")
+async def trigger_modules_update(dry_run: bool = False):
+    """Trigger check and update of modules from available source repos."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("update", dry_run=dry_run)
+        return {"status": "ok" if ok else "error", "message": msg, "dry_run": dry_run}
+    except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/wire")
+async def trigger_modules_wire():
+    """Trigger hot-wiring of all available standalone modules."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.handle("wire")
+        return {"status": "ok" if ok else "error", "message": msg}
     except Exception as exc:
         return {"status": "error", "error": public_error_message()}
 
@@ -2490,7 +2583,7 @@ async def api_get_tasks(
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
         if status and status.lower() == "nonterminal":
-            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate')"
+            query += " AND LOWER(TRIM(COALESCE(status, ''))) NOT IN ('done', 'completed', 'closed', 'cancelled', 'canceled', 'duplicate', 'archived')"
         elif status and status.lower() != "all":
             requested = [s.strip().lower() for s in status.split(",") if s.strip()]
             normalized = set()
@@ -6059,6 +6152,22 @@ async def governance_funk_page():
     return await governance_page()
 
 
+def _governance_sub_page(name: str):
+    async def page():
+        p = ASTRO_DIST_DIR / "governance" / f"{name}.html"
+        if p.exists():
+            return FileResponse(p)
+        return await governance_page()
+    page.__name__ = f"governance_{name}_page"
+    return page
+
+
+# Governance sub-routes of the area navigation (ellmos-system-gui#125, GUI 0.2.36).
+for _governance_name in ("hooks", "rechte", "regeln", "sperren"):
+    app.add_api_route(f"/governance/{_governance_name}", _governance_sub_page(_governance_name),
+                      methods=["GET"], response_class=HTMLResponse, tags=["shared-gui"])
+
+
 @app.get("/governance/usecases", response_class=HTMLResponse, tags=["shared-gui"])
 async def governance_usecases_page():
     p = ASTRO_DIST_DIR / "governance" / "usecases.html"
@@ -6141,6 +6250,54 @@ async def get_life_providers():
             "message": "In Arbeit. Für persönliche Balancewerte fehlen eine freiwillige Eingabe, ein nachvollziehbares Bewertungsverfahren und eine geschützte Speicherung. Es werden keine Prozentwerte geschätzt."
         }
     }
+
+
+@app.get("/api/life/overview")
+async def get_life_overview_endpoint():
+    """Aggregate local-only measured overview across finance, routines, health, and tasks (PB-12 / #3995)."""
+    try:
+        from hub._services.life_overview_service import get_life_overview
+        return get_life_overview(BACH_DB)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
+@app.get("/api/financial/summary")
+async def get_financial_summary_endpoint():
+    """Return fail-closed current period financial summary snapshot (PB-12 / #3995)."""
+    try:
+        from hub._services.life_overview_service import get_financial_summary
+        return get_financial_summary(BACH_DB)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": public_error_message()})
+
+
+@app.get("/api/automations")
+async def get_automations(source: Optional[str] = None):
+    """Return available module automations from automation-master adapter (PB-6 / T-20261107-206833979)."""
+    try:
+        from hub._services.automation_master_adapter import list_module_automations
+        items = list_module_automations(BACH_DB)
+        if source:
+            items = [item for item in items if item.get("source") == source]
+        return {
+            "ok": True,
+            "source": "automation-master",
+            "automations": items,
+            "items": items,
+            "count": len(items),
+        }
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Failed to list module automations: %s", exc)
+        return {
+            "ok": False,
+            "error": public_error_message(),
+            "source": "automation-master",
+            "automations": [],
+            "items": [],
+            "count": 0,
+        }
 
 
 @app.get("/domains", response_class=HTMLResponse, tags=["shared-gui"])
@@ -6706,9 +6863,96 @@ async def denkarium_page():
 
 
 
+from hub._services import notes_adapter  # PB-11 (#3994): llm-note als Notiz-Engine
+
+
+@contextlib.contextmanager
+def _notes_http_errors():
+    """Map adapter errors to HTTP status codes (404 unknown id, 400 bad input, 503 engine missing)."""
+    try:
+        yield
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0] if exc.args else exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except notes_adapter.NotesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+class _JsonBody:
+    """Minimal request stand-in so the notes routes can reuse the legacy handlers before the migration."""
+
+    def __init__(self, data):
+        self._data = data
+
+    async def json(self):
+        return self._data
+
+
+@app.get("/api/notes")
+async def notes_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None,
+                     include_archived: bool = False):
+    """Notizen aus llm-note (PB-11, #3994). Vor der Migration: Altbestand, `pending_migration: true`."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.list_notes(entry_type=entry_type, category=category, limit=limit, search=search,
+                                            include_archived=include_archived, legacy_db=USER_DB)
+    legacy = await denkarium_list(notes_adapter.legacy_type(entry_type), category, limit, search, not include_archived)
+    return notes_adapter.from_denkarium_list(legacy, USER_DB)
+
+
+@app.post("/api/notes")
+async def notes_create(request: Request):
+    data = await request.json()
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return {"ok": True, "entry": notes_adapter.create_note(data)}
+    # before the migration the legacy table stays the only store; the idempotent migration picks the row up
+    body = {**data, "entry_type": notes_adapter.legacy_type(data.get("entry_type") or "note")}
+    created = await denkarium_create(_JsonBody(body))
+    if isinstance(created, JSONResponse):
+        return created
+    return {"ok": True, "entry": {"id": created["id"]}, "pending_migration": True}
+
+
+@app.post("/api/notes/{entry_id}/archive")
+async def notes_archive(entry_id: int, request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_archive_direct(entry_id, _JsonBody(data))
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
+    with _notes_http_errors():
+        reason = data.get("reason") if isinstance(data, dict) else None
+        return {"ok": True, "entry": notes_adapter.archive_note(entry_id, reason)}
+
+
+@app.post("/api/notes/{entry_id}/unarchive")
+async def notes_unarchive(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        await denkarium_unarchive_direct(entry_id)
+        return {"ok": True, "entry": {"id": entry_id}, "pending_migration": True}
+    with _notes_http_errors():
+        return {"ok": True, "entry": notes_adapter.unarchive_note(entry_id)}
+
+
+@app.delete("/api/notes/{entry_id}")
+async def notes_delete(entry_id: int):
+    if not notes_adapter.use_llm_note(USER_DB):
+        return await denkarium_delete(entry_id)
+    with _notes_http_errors():
+        notes_adapter.delete_note(entry_id)
+    return {"ok": True}
+
+
 @app.get("/api/denkarium")
 async def denkarium_list(entry_type: str = None, category: str = None, limit: int = 50, search: str = None, exclude_archived: bool = True):
-    """Denkarium-Einträge abrufen (GUX-043)."""
+    """Denkarium-Einträge abrufen (GUX-043). Alias auf llm-note, sobald migriert (PB-11)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_list(entry_type, category, limit, search, exclude_archived)
     conn = sqlite3.connect(str(USER_DB))
     try:
         ensure_denkarium_schema(conn)
@@ -6769,6 +7013,10 @@ async def denkarium_create(request: Request):
 
     data = await request.json()
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_create(data)
+
     content = data.get("content", "").strip()
 
     if not content:
@@ -6825,6 +7073,11 @@ async def denkarium_delete(entry_id: int):
 
     """Denkarium-Eintrag löschen."""
 
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            notes_adapter.delete_note(entry_id)
+        return {"ok": True}
+
     conn = sqlite3.connect(str(USER_DB))
 
     try:
@@ -6852,6 +7105,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
     except Exception:
         data = {}
     reason = data.get("reason", "wrong_agent_dump") if isinstance(data, dict) else "wrong_agent_dump"
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_archive(entry_id, reason)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return archive_denkarium_entry(entry_id, reason=reason, conn=conn)
@@ -6864,6 +7120,9 @@ async def denkarium_archive_direct(entry_id: int, request: Request):
 @app.post("/api/denkarium/{entry_id}/unarchive")
 async def denkarium_unarchive_direct(entry_id: int):
     """Archivierten Denkarium-Eintrag wiederherstellen (GUX-043)."""
+    if notes_adapter.use_llm_note(USER_DB):
+        with _notes_http_errors():
+            return notes_adapter.denkarium_unarchive(entry_id)
     conn = sqlite3.connect(str(USER_DB))
     try:
         return unarchive_denkarium_entry(entry_id, conn=conn)
@@ -6882,6 +7141,24 @@ async def denkarium_promote(entry_id: int, request: Request):
     data = await request.json()
 
     target = data.get("target", "task")
+
+    if notes_adapter.use_llm_note(USER_DB):
+        if target != "task":
+            raise HTTPException(status_code=400, detail=f"Unbekanntes Ziel: {target}. Erlaubt: task")
+        with _notes_http_errors():
+            note = notes_adapter.get_note(entry_id)
+        conn = sqlite3.connect(str(USER_DB))
+        try:
+            cur = conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)",
+                (note["title"] or note["content"][:50] or "Denkarium-Eintrag", note["content"]))
+            conn.commit()
+            promoted_id = cur.lastrowid
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
+            return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
+        finally:
+            conn.close()
+        notes_adapter.mark_promoted(entry_id, target, promoted_id)
+        return {"ok": True, "promoted_id": promoted_id}
 
     conn = sqlite3.connect(str(USER_DB))
 
@@ -11860,6 +12137,14 @@ async def delete_prompt_library_entry(prompt_id: int):
         conn.close()
 
 
+def _prompt_import_connection():
+    """Keep infrastructure failures distinct from invalid uploaded libraries."""
+    try:
+        return get_bach_db()
+    except (OSError, sqlite3.Error):
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
+
+
 @app.get("/api/prompt-library/import-promptboard/preview")
 async def preview_promptboard_library():
     """Preview PromptBoard import items and counts without changing the database."""
@@ -11869,7 +12154,9 @@ async def preview_promptboard_library():
     if library_path is None:
         raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path, dry_run=True)
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path, dry_run=True)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
@@ -11883,7 +12170,9 @@ async def import_promptboard_library():
     if library_path is None:
         raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
     try:
-        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).import_promptboard(library_path)
+        return PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection).import_promptboard(library_path)
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard library.json nicht lesbar: {exc}") from exc
 
@@ -11897,12 +12186,14 @@ async def preview_prompt_json_upload(req: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
     try:
-        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
         payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
         res = handler.import_promptboard(payload=payload, dry_run=True)
         if isinstance(body, dict) and "filename" in body:
             res["source"] = str(body["filename"])
         return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
 
@@ -11916,12 +12207,14 @@ async def import_prompt_json_upload(req: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from exc
     try:
-        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        handler = PromptHandler(BACH_DIR, connection_factory=_prompt_import_connection)
         payload = body.get("payload") if isinstance(body, dict) and "payload" in body else body
         res = handler.import_promptboard(payload=payload, dry_run=False)
         if isinstance(body, dict) and "filename" in body:
             res["source"] = str(body["filename"])
         return res
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="Prompt-Datenbank nicht verfügbar") from None
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard JSON nicht verarbeitbar: {exc}") from exc
 
@@ -11952,6 +12245,52 @@ async def export_promptboard_library(req: Request = None):
         )
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=f"PromptBoard-Export fehlgeschlagen: {exc}") from exc
+
+
+@app.get("/api/prompt-library/sync-promptboard/preview")
+async def preview_sync_promptboard_library():
+    """Preview PromptBoard two-way synchronization counts without changing the database or library."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    library_path = next((p for p in candidates if p.exists()), None)
+    if library_path is None and candidates:
+        library_path = candidates[0]
+    if library_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(library_path, dry_run=True)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync Vorschau fehlgeschlagen: {exc}") from exc
+
+
+@app.post("/api/prompt-library/sync-promptboard")
+async def sync_promptboard_library(req: Request = None):
+    """Bidirectionally synchronize prompt templates between BACH and PromptBoard library.json."""
+    from hub.prompt import PromptHandler, promptboard_library_not_found
+    candidates = _promptboard_library_paths()
+    target_path = next((p for p in candidates if p.exists()), None)
+    if target_path is None and candidates:
+        target_path = candidates[0]
+    category = None
+    dry_run = False
+    if req is not None:
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                category = body.get("category")
+                dry_run = bool(body.get("dry_run", False))
+                if body.get("target_path"):
+                    target_path = Path(body["target_path"])
+        except Exception:
+            pass
+    if target_path is None:
+        raise HTTPException(status_code=404, detail=promptboard_library_not_found(candidates))
+    try:
+        return PromptHandler(BACH_DIR, connection_factory=get_bach_db).sync_promptboard(
+            target_path, category=category, dry_run=dry_run
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"PromptBoard-Sync fehlgeschlagen: {exc}") from exc
 
 
 @app.get("/api/prompt-generator/templates")
@@ -14377,8 +14716,52 @@ async def add_usecase(request: Request):
             data.get('expected_output')
         ))
         conn.commit()
+        usecase_id = cursor.lastrowid
         conn.close()
-        return {"success": True, "id": cursor.lastrowid}
+
+        # Automatische Task-Erzeugung fuer Buddha wenn Workflow noch fehlt
+        task_id = None
+        workflow_name = data.get('workflow_name')
+        wf_file = resolve_workflow_file(workflow_name) if workflow_name else None
+        if not wf_file:
+            try:
+                from hub._services.chat.usecase_runner import ensure_buddha_usecase_task
+                task_id, _ = ensure_buddha_usecase_task(
+                    usecase_id=usecase_id,
+                    title=data.get('title') or f"Usecase {usecase_id}",
+                    description=data.get('description'),
+                    workflow_name=workflow_name,
+                )
+            except Exception as task_err:
+                logger.warning(f"Konnte automatischen Buddha-Task fuer Usecase #{usecase_id} nicht anlegen: {task_err}")
+
+        return {"success": True, "id": usecase_id, "task_id": task_id}
+    except Exception as e:
+        return {"success": False, "error": public_error_message()}
+
+
+@app.post("/api/usecases/{usecase_id}/delegate")
+async def delegate_usecase(usecase_id: int):
+    """Usecase zur autonomen Workflow-Erstellung an Buddha delegieren."""
+    try:
+        conn = get_user_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM usecases WHERE id = ?", (usecase_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return {"success": False, "error": "Usecase nicht gefunden"}
+
+        uc = dict(row)
+        from hub._services.chat.usecase_runner import ensure_buddha_usecase_task
+        task_id, created = ensure_buddha_usecase_task(
+            usecase_id=usecase_id,
+            title=uc.get('title') or f"Usecase {usecase_id}",
+            description=uc.get('description'),
+            workflow_name=uc.get('workflow_name'),
+        )
+        msg = f"Task #{task_id} fuer Buddha erstellt" if created else f"Task #{task_id} existiert bereits fuer Buddha"
+        return {"success": True, "task_id": task_id, "created": created, "message": msg}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
@@ -16229,6 +16612,41 @@ def get_report_workflow_service():
     return _report_workflow_service
 
 
+def _report_error_response(exc: Exception) -> dict:
+    """Datenschutz-Sperre mit maschinenlesbarem Grund (Meldung und Code ohne Werte), sonst neutral."""
+    try:
+        from hub._services.document.report_workflow_service import PromptPrivacyError
+    except Exception:
+        PromptPrivacyError = ()  # isinstance(x, ()) ist immer False
+    if isinstance(exc, PromptPrivacyError):
+        return {"success": False, "privacy_block": True, "error_code": exc.code, "error": str(exc)}
+    return {"success": False, "error": public_error_message()}
+
+
+@app.get("/api/report/readiness")
+async def report_readiness(session_id: Optional[str] = None):
+    """Ob der Cloud-Weg laufen darf (Namenserkennung bereit); sonst Grund maschinenlesbar, ohne Werte.
+
+    Mit ?session_id= zusaetzlich die Session: Profil, lesbares Geburtsdatum, Akten-Scan nach dem
+    letzten Import (R7-F5)."""
+    try:
+        from hub._services.document.report_workflow_service import PromptPrivacyError, require_cloud_ner
+        session = None
+        if session_id is not None:
+            session = get_report_workflow_service().get_session(session_id)
+            if not session:
+                return {"success": False, "error": "Session nicht gefunden"}
+        try:
+            require_cloud_ner()
+            if session is not None:
+                get_report_workflow_service().require_cloud_session(session)
+        except PromptPrivacyError as e:
+            return {"success": True, "cloud_ready": False, "error_code": e.code, "error": str(e)}
+        return {"success": True, "cloud_ready": True, "error_code": None, "error": None}
+    except Exception:
+        return {"success": False, "error": public_error_message()}
+
+
 @app.post("/api/report/session/start")
 async def start_report_session():
     """Startet eine neue Report-Workflow-Session."""
@@ -16288,12 +16706,14 @@ async def import_files_to_session(session_id: str, data: dict = Body(...)):
 @app.post("/api/report/session/{session_id}/profile")
 async def create_session_profile(session_id: str, data: dict = Body(...)):
     """
-    Erstellt ein temporaeres Anonymisierungsprofil.
+    Erstellt das Pseudonymisierungsprofil fuer den Cloud-Weg (wie die Pipeline: Namenserkennung
+    Pflicht, Scan der importierten Akte). Ohne spaCy/NER: privacy_block mit error_code.
 
     Body: {
         "client_name": "Max Mustermann",
         "geburtsdatum": "15.03.2016",
-        "additional_terms": ["Term1", "Term2"]  / optional
+        "additional_terms": ["Term1", "Term2"],  / optional
+        "parent_names": ["..."], "client_address": "...", "whitelist": ["..."]  / optional
     }
     """
     try:
@@ -16306,11 +16726,12 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
         if not client_name:
             return {"success": False, "error": "client_name erforderlich"}
 
-        geburtsdatum = data.get("geburtsdatum", "01.01.2010")
-        additional_terms = data.get("additional_terms", [])
-
-        profile = service.create_temp_profile(
-            session, client_name, geburtsdatum, additional_terms
+        profile = service.create_cloud_profile(
+            session, client_name, data.get("geburtsdatum") or "",  # kein Platzhalter: fehlt -> Sperre (R7-F1)
+            additional_terms=data.get("additional_terms") or [],
+            whitelist=data.get("whitelist") or None,
+            parent_names=data.get("parent_names") or None,
+            client_address=data.get("client_address") or None,
         )
 
         return {
@@ -16321,7 +16742,7 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": public_error_message()}
+        return _report_error_response(e)
 
 
 @app.post("/api/report/session/{session_id}/anonymize")
@@ -16354,7 +16775,8 @@ async def anonymize_session_documents(session_id: str, data: dict = Body(default
 @app.post("/api/report/session/{session_id}/prompt")
 async def generate_session_prompt(session_id: str, data: dict = Body(default={})):
     """
-    Generiert den LLM-Prompt.
+    Generiert den Cloud-Prompt (Kopieren in ein Cloud-Modell): nur mit Pseudonymisierungsprofil
+    und hinter derselben Datenschutz-Sperre wie die Pipeline; Sperre -> privacy_block + error_code.
 
     Body: {
         "berichtszeitraum": "01.01.2025 - 31.12.2025",
@@ -16376,7 +16798,8 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
             session,
             include_wissensdatenbank=include_kb,
             berichtszeitraum=berichtszeitraum,
-            custom_instructions=custom
+            custom_instructions=custom,
+            cloud=True,
         )
 
         return {
@@ -16386,7 +16809,7 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
             "status": session.status
         }
     except Exception as e:
-        return {"success": False, "error": public_error_message()}
+        return _report_error_response(e)
 
 
 @app.post("/api/report/session/{session_id}/generate")
@@ -16412,6 +16835,22 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
         auto_deanonymize = data.get("auto_deanonymize", True)
 
         output_path = service.generate_report(session, llm_response, auto_deanonymize)
+
+        if not output_path or not Path(output_path).is_file():
+            # generate_report() returns None and sets session.error_message on failure. Only a
+            # finite reason leaves here: the session text can carry case data.
+            detail = str(getattr(session, "error_message", "") or "")
+            reason = next((r for prefix, r in (
+                ("Vorlage nicht gefunden", "template_missing"),
+                ("Generator-Fehler", "generator_failed"),
+                ("python-docx", "docx_missing")) if detail.startswith(prefix)), "unknown")
+            return {
+                "success": False,
+                "code": "report_not_generated",
+                "reason": reason,
+                "error": "Der Bericht wurde nicht erzeugt.",
+                "status": session.status,
+            }
 
         return {
             "success": True,
@@ -16727,6 +17166,8 @@ async def get_workflow_content(path: str):
 _CAPABILITY_PERMISSIONS_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "capability_permissions.json"
 _CAPABILITY_PERMISSIONS_LOCK = threading.RLock()
 _TALK_SESSION_SINGLETON = None
+# Persisted E-Stop of the robotics hub: every request builds a fresh hub, so the stop must live on disk.
+_ROBOTICS_ESTOP_FILE = Path(os.environ.get("BACH_LOCAL_DIR") or Path.home() / ".bach") / "robotics_estop.json"
 
 
 def _load_capability_permissions() -> dict[str, bool]:
@@ -16807,6 +17248,28 @@ _TALK_PERSONA_SYSTEM_PROMPTS = {
 }
 
 
+def _strip_talk_control_tags(text: str) -> str:
+    """Remove both well-formed and truncated <talk_control ...> tags from spoken text."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"<talk_control\b[^>]*/>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^>]*>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<talk_control\b[^\n]*", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _infer_talk_control_tag(spoken: str) -> str:
+    """Synthesize a well-formed <talk_control ... /> directive from spoken content."""
+    lower = spoken.lower()
+    if "?" in spoken:
+        return '<talk_control {"emotion": "curious", "pattern": "rings", "emoji_overlay": "✨"} />'
+    if any(w in lower for w in ("achtung", "warnung", "fehler", "problem", "warning", "error")):
+        return '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "⚠️"} />'
+    if any(w in lower for w in ("super", "klasse", "perfekt", "gerne", "freut", "great", "glad")):
+        return '<talk_control {"emotion": "joyful", "pattern": "orb", "emoji_overlay": "😊"} />'
+    return '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} />'
+
+
 def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str = "de") -> str:
     """Route ELLMOS Talk turns to a live LLM (Ollama fast path or BACH Chat-Control API)."""
     norm_persona = (persona or "buddha").strip().lower()
@@ -16827,13 +17290,16 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
     sys_instruction = (
         f"{role_intro} {lang_hint} "
         "WICHTIG für das Funkgerät: Antworte natürlich, direkt und gesprochen-prägnant in 1 bis maximal 3 kurzen Sätzen "
-        "(ohne Markdown-Tabellen, ohne Codeblöcke, ideal zum direkten Vorlesen per Sprachausgabe). "
-        "Beginne deine Antwort optional mit genau einem Steuer-Tag im Format "
-        '<talk_control {"emotion": "calm|curious|joyful|focused|empathetic|alert", "pattern": "orb|wave|rings|constellation|pulse", "emoji_overlay": "🎙️"} /> '
-        "passend zur Stimmung deiner Antwort."
+        "(reiner Fließtext zum direkten Vorlesen per Sprachausgabe, ohne XML/HTML-Tags, ohne Markdown-Tabellen, ohne Codeblöcke)."
     )
 
-    history = _TALK_HISTORY.setdefault(norm_persona, [])
+    raw_history = _TALK_HISTORY.setdefault(norm_persona, [])
+    history = [
+        {"role": h.get("role", "user"), "content": _strip_talk_control_tags(str(h.get("content") or ""))}
+        for h in raw_history
+        if _strip_talk_control_tags(str(h.get("content") or ""))
+    ]
+    _TALK_HISTORY[norm_persona] = history
     messages = [{"role": "system", "content": sys_instruction}]
     messages.extend(history[-6:])
     messages.append({"role": "user", "content": prompt})
@@ -16843,7 +17309,7 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
     # 1. Fast path: local Ollama /api/chat (no multi-round tool loop latency)
     ollama_base = os.environ.get("BACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
     try:
-        with httpx.Client(timeout=18.0) as client:
+        with httpx.Client(timeout=90.0) as client:
             tags_resp = client.get(f"{ollama_base}/api/tags")
             if tags_resp.status_code == 200:
                 installed = [
@@ -16851,30 +17317,47 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                     for m in (tags_resp.json().get("models") or [])
                     if isinstance(m, dict) and m.get("name")
                 ]
+                configured_primary = ""
+                if _TALK_SESSION_SINGLETON is not None:
+                    configured_primary = str(getattr(_TALK_SESSION_SINGLETON.state, "primary_model", "") or "").strip()
                 preferred_order = [
-                    "glm-5.3-flash:cloud",
-                    "kimi-k2.7-code:cloud",
-                    "deepseek-v4.1-flash:cloud",
-                    "gemma4:e2b",
-                    "qwen3.8:27b-mlx",
-                    "qwen3.8:27b-q4_K_M",
+                    m
+                    for m in [
+                        configured_primary,
+                        "qwen3.8:27b-mlx",
+                        "gpt-oss:120b-cloud",
+                        "qwen3:1.7b",
+                    ]
+                    if m
                 ]
-                chosen_model = next((m for m in preferred_order if m in installed), installed[0] if installed else "")
-                if chosen_model:
-                    chat_resp = client.post(
-                        f"{ollama_base}/api/chat",
-                        json={
-                            "model": chosen_model,
-                            "stream": False,
-                            "messages": messages,
-                            "options": {"num_predict": 220, "temperature": 0.5},
-                        },
-                    )
-                    if chat_resp.status_code == 200:
-                        msg_obj = chat_resp.json().get("message") or {}
-                        content = str(msg_obj.get("content") or "").strip()
-                        if content:
-                            reply_text = content
+                candidates: list[str] = []
+                for m in preferred_order + installed:
+                    if m in installed and m not in candidates and "smollm2" not in m:
+                        candidates.append(m)
+                for chosen_model in candidates[:3]:
+                    try:
+                        think_param: bool | str = "low" if "gpt-oss" in chosen_model.lower() else False
+                        chat_resp = client.post(
+                            f"{ollama_base}/api/chat",
+                            json={
+                                "model": chosen_model,
+                                "stream": False,
+                                "think": think_param,
+                                "messages": messages,
+                                "options": {"num_predict": 800, "temperature": 0.5},
+                            },
+                        )
+                        if chat_resp.status_code == 200:
+                            msg_obj = chat_resp.json().get("message") or {}
+                            content = str(msg_obj.get("content") or "").strip()
+                            if "<think>" in content:
+                                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                            content = _strip_talk_control_tags(content)
+                            if len(content) >= 2:
+                                reply_text = content
+                                break
+                    except Exception:
+                        continue
     except Exception:
         pass
 
@@ -16897,23 +17380,21 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
                     )
                     if ctrl_resp.status_code == 200:
                         payload = ctrl_resp.json()
-                        ans = str(payload.get("answer") or payload.get("response") or "").strip()
-                        if ans:
+                        ans = _strip_talk_control_tags(str(payload.get("answer") or payload.get("response") or ""))
+                        if len(ans) >= 2:
                             reply_text = ans
             except Exception:
                 pass
 
     if reply_text:
-        if "<talk_control" not in reply_text:
-            reply_text = (
-                '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} /> '
-                + reply_text
-            )
         history.append({"role": "user", "content": prompt})
         history.append({"role": "assistant", "content": reply_text})
         if len(history) > 12:
             del history[:-12]
-        return reply_text
+        from hub._services.chat.talk_history import record_talk_turn
+        record_talk_turn(norm_persona, prompt, reply_text)  # PB-2: Talk-Verlauf erscheint in der Verlaufsliste
+        ctrl_tag = _infer_talk_control_tag(reply_text)
+        return f"{ctrl_tag} {reply_text}"
 
     if norm_lang == "en":
         return (
@@ -17012,8 +17493,64 @@ async def api_update_capability_permissions(payload: dict = Body(...)):
 _VOICE_IO_SINGLETON = None
 
 
+def _ensure_audio_tools_path() -> None:
+    cur_path = os.environ.get("PATH", "")
+    for extra in ("/opt/homebrew/bin", "/usr/local/bin"):
+        if extra not in cur_path and os.path.isdir(extra):
+            cur_path = f"{extra}{os.pathsep}{cur_path}" if cur_path else extra
+    os.environ["PATH"] = cur_path
+
+
+def _synthesize_os_native_wav(text: str, language: str = "de") -> tuple[bytes, str] | None:
+    """Synthesize speech to WAV using OS-native engines (macOS /usr/bin/say or Windows SAPI)."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    clean_text = re.sub(r"<talk_control[^>]*/>", "", text or "").strip()
+    if not clean_text:
+        clean_text = text.strip()
+    if not clean_text:
+        return None
+
+    if sys.platform == "darwin":
+        say_bin = shutil.which("say") or ("/usr/bin/say" if os.path.isfile("/usr/bin/say") else None)
+        if say_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                cmd = [say_bin, "-o", str(out_wav), "--data-format=LEI16@22050", clean_text]
+                try:
+                    subprocess.run(cmd, check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "macos-say"
+                except Exception:
+                    pass
+    elif sys.platform == "win32":
+        ps_bin = shutil.which("powershell") or shutil.which("pwsh")
+        if ps_bin:
+            with tempfile.TemporaryDirectory(prefix="ellmos_tts_") as tmp_dir:
+                out_wav = Path(tmp_dir) / "speech.wav"
+                escaped_text = clean_text.replace("'", "''")
+                escaped_path = str(out_wav).replace("'", "''")
+                ps_script = (
+                    "Add-Type -AssemblyName System.Speech; "
+                    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                    f"$s.SetOutputToWaveFile('{escaped_path}'); "
+                    f"$s.Speak('{escaped_text}'); "
+                    "$s.Dispose();"
+                )
+                try:
+                    subprocess.run([ps_bin, "-NoProfile", "-Command", ps_script], check=True, timeout=15, capture_output=True)
+                    if out_wav.is_file() and out_wav.stat().st_size > 44:
+                        return out_wav.read_bytes(), "windows-sapi"
+                except Exception:
+                    pass
+    return None
+
+
 def _get_voice_io_service():
     global _VOICE_IO_SINGLETON
+    _ensure_audio_tools_path()
     if _VOICE_IO_SINGLETON is None:
         from hub._services.ocean_stack_bridge import load_voice_io_module
 
@@ -17033,13 +17570,23 @@ def _get_voice_io_service():
 @app.get("/api/voice/status")
 async def api_voice_status():
     """Return status of `ellmos-voice-io` STT/TTS engines (#3763)."""
+    import shutil
+
     perms = _load_capability_permissions()
     svc = _get_voice_io_service()
+    st_dict = svc.status().as_dict()
+    if not st_dict.get("tts_available"):
+        if sys.platform == "darwin" and (shutil.which("say") or os.path.isfile("/usr/bin/say")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "macos-say"
+        elif sys.platform == "win32" and (shutil.which("powershell") or shutil.which("pwsh")):
+            st_dict["tts_available"] = True
+            st_dict["tts_engine"] = "windows-sapi"
     return {
         "schema": "ellmos.voice-io.status.v1",
         "stt_permission": perms.get("speech_to_text", True),
         "tts_permission": perms.get("voice_tts", True),
-        "status": svc.status().as_dict(),
+        "status": st_dict,
     }
 
 
@@ -17047,12 +17594,18 @@ async def api_voice_status():
 async def api_voice_stt(payload: dict = Body(...)):
     """Universal chat input transcription endpoint backed by `ellmos-voice-io` (#3763)."""
     import base64
+    import shutil
+    import subprocess
+    import tempfile
 
+    _ensure_audio_tools_path()
     perms = _load_capability_permissions()
     if not perms.get("speech_to_text", True):
         raise HTTPException(status_code=403, detail="Spracheingabe (STT) ist in den Berechtigungen deaktiviert")
     audio_b64 = str(payload.get("audio_b64") or "").strip()
     suffix = str(payload.get("suffix") or ".wav").strip()
+    if not suffix.startswith("."):
+        suffix = f".{suffix}"
     language = str(payload.get("language") or "de").strip()
     if not audio_b64:
         raise HTTPException(status_code=400, detail="audio_b64 fehlt")
@@ -17060,7 +17613,30 @@ async def api_voice_stt(payload: dict = Body(...)):
         raw_bytes = base64.b64decode(audio_b64)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Ungültiges Base64-Audio") from exc
-    svc = _get_voice_io_service()
+
+    # Convert browser MediaRecorder container (.webm/.ogg/.mp4) to 16kHz mono PCM .wav if ffmpeg is available
+    if suffix.lower() in {".webm", ".ogg", ".mp4", ".m4a"} and shutil.which("ffmpeg"):
+        try:
+            with tempfile.TemporaryDirectory(prefix="ellmos_stt_") as tmp_dir:
+                in_file = Path(tmp_dir) / f"in{suffix}"
+                out_file = Path(tmp_dir) / "out.wav"
+                in_file.write_bytes(raw_bytes)
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(in_file), "-ar", "16000", "-ac", "1", str(out_file)],
+                    check=True,
+                    timeout=12,
+                    capture_output=True,
+                )
+                if out_file.is_file() and out_file.stat().st_size > 44:
+                    raw_bytes = out_file.read_bytes()
+                    suffix = ".wav"
+        except Exception:
+            pass
+
+    try:
+        svc = _get_voice_io_service()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Sprachmodul nicht verfügbar") from None
     try:
         text = svc.transcribe_bytes(raw_bytes, suffix=suffix, language=language)
     except Exception as exc:
@@ -17072,7 +17648,7 @@ async def api_voice_stt(payload: dict = Body(...)):
         }
     return {
         "schema": "ellmos.voice-io.stt.v1",
-        "text": text,
+        "text": str(text or "").strip(),
         "backend": svc.status().stt_engine,
         "language": language,
     }
@@ -17080,7 +17656,7 @@ async def api_voice_stt(payload: dict = Body(...)):
 
 @app.post("/api/voice/tts")
 async def api_voice_tts(payload: dict = Body(...)):
-    """Universal speech synthesis endpoint backed by `ellmos-voice-io` (#3763)."""
+    """Universal speech synthesis endpoint backed by `ellmos-voice-io` + OS-native fallback (#3763)."""
     import base64
     from hub._services.ocean_stack_bridge import load_voice_io_module
 
@@ -17093,13 +17669,19 @@ async def api_voice_tts(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="text fehlt")
     voice_mod = load_voice_io_module()
     svc = voice_mod.VoiceIO()
+    backend_used = "ellmos-voice-io"
     try:
         wav_bytes = svc.synthesize_bytes(text)
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
+        native_res = _synthesize_os_native_wav(text, language=language)
+        if native_res is not None:
+            wav_bytes, backend_used = native_res
+        else:
+            raise HTTPException(status_code=503, detail=f"TTS-Synthese nicht verfügbar: {exc}") from exc
     return {
         "schema": "ellmos.voice-io.tts.v1",
         "language": language,
+        "backend": backend_used,
         "audio_b64": base64.b64encode(wav_bytes).decode("ascii"),
         "mime_type": "audio/wav",
     }
@@ -17226,9 +17808,20 @@ async def api_talk_reflex(payload: dict = Body(...)):
     from dataclasses import asdict
 
     engine = _get_talk_session()
-    user_utterance = str(payload.get("user_utterance") or "").strip()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
     persona = str(payload.get("persona") or "").strip().lower() or None
     language = str(payload.get("language") or "").strip().lower() or None
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        engine.update_visual_state({"mode": "listening"})
     if hasattr(engine, "preview_reflex"):
         return engine.preview_reflex(user_utterance, persona=persona, language=language)
     decision = engine.reflex.evaluate_utterance(
@@ -17258,11 +17851,22 @@ async def api_talk_turn(payload: dict = Body(...)):
     from dataclasses import asdict
 
     engine = _get_talk_session()
-    user_utterance = str(payload.get("user_utterance") or "").strip()
+    user_utterance = str(
+        payload.get("user_utterance")
+        or payload.get("text")
+        or payload.get("prompt")
+        or payload.get("message")
+        or ""
+    ).strip()
     model_response = payload.get("model_response")
     persona = str(payload.get("persona") or "").strip().lower()
     language = str(payload.get("language") or "").strip().lower()
+    is_explicit_stop = bool(
+        re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
+    )
     directive: dict = {}
+    if not is_explicit_stop and getattr(engine.state, "mode", "") == "speaking":
+        directive["mode"] = "listening"
     if persona in {"buddha", "gemini", "claude", "codex"}:
         directive["persona"] = persona
     if language in {"de", "en", "es", "fr", "zh", "ja", "ru", "ar", "pt", "hi", "it"}:
@@ -17277,9 +17881,11 @@ async def api_talk_turn(payload: dict = Body(...)):
     reflex_dict.setdefault("ack_text", res.reflex.backchannel_text or ("Verstanden." if engine.state.language != "en" else "Got it."))
     reflex_dict.setdefault("latency_target_ms", res.reflex.latency_budget_ms)
     reflex_dict.setdefault("fast_model", getattr(engine.reflex, "model_name", "smollm2:360m"))
+    clean_spoken = _strip_talk_control_tags(res.spoken_text)
+    clean_sentences = [s for s in (_strip_talk_control_tags(c) for c in (res.sentence_chunks or [])) if s]
     return {
-        "spoken_text": res.spoken_text,
-        "sentences": res.sentence_chunks,
+        "spoken_text": clean_spoken,
+        "sentences": clean_sentences,
         "reflex": reflex_dict,
         "visual_state": res.visual_state,
         "applied_directives": res.applied_directives,
@@ -17330,6 +17936,27 @@ async def api_sensation_open_compute_gate(payload: dict = Body(...)):
     return gate.evaluate(sp, idle_seconds=float(payload.get("idle_seconds", 0.0)))
 
 
+def _smarthome_robotics_denied() -> JSONResponse | None:
+    """Machine-readable 403 for write/actuating routes unless the capability matrix grants
+    `smarthome_robotics` (default: denied). Read routes stay open (demo data, marked `demo`)."""
+    if _load_capability_permissions().get("smarthome_robotics", False):
+        return None
+    return JSONResponse(status_code=403, content={
+        "error": "permission_required",
+        "permission": "smarthome_robotics",
+        "hint": "Freigabe unter /api/permissions bzw. Einstellungen → Rechte",
+    })
+
+
+def _robotics_hub(*, granted: bool):
+    from hub._services.ocean_stack_bridge import load_robotics_module
+
+    try:
+        return load_robotics_module().RoboticsHub(robotics_permission=granted, state_path=_ROBOTICS_ESTOP_FILE)
+    except TypeError:  # ellmos-robotics without persistent E-Stop: refuse instead of running without it
+        raise HTTPException(status_code=503, detail="ellmos-robotics ohne persistenten E-Stop (Update nötig)") from None
+
+
 @app.get("/api/homecontrol/devices")
 async def api_homecontrol_devices():
     """List SmartHome devices via `ellmos-homecontrol` (#3766)."""
@@ -17338,7 +17965,7 @@ async def api_homecontrol_devices():
     hc_mod = load_homecontrol_module()
     hub = hc_mod.HomeControlHub(smarthome_permission=True)
     devices = hub.hc_list_devices()
-    return {"total_devices": len(devices), "devices": devices}
+    return {"total_devices": len(devices), "devices": devices, "demo": getattr(hub, "demo", True)}
 
 
 @app.get("/api/homecontrol/energy")
@@ -17354,32 +17981,30 @@ async def api_homecontrol_energy():
 @app.get("/api/robotics/capabilities")
 async def api_robotics_capabilities():
     """Return canonical MCP `ellmos.robotics.mcp.v1` robot capabilities (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
-    return hub.robot_capabilities()
+    return _robotics_hub(granted=True).robot_capabilities()  # read-only: no grant needed
 
 
 @app.get("/api/robotics/telemetry")
 async def api_robotics_telemetry():
     """Return robot pose, battery, and safety envelope telemetry (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
-    return hub.robot_telemetry()
+    return _robotics_hub(granted=True).robot_telemetry()  # read-only: no grant needed
 
 
 @app.post("/api/robotics/estop")
 async def api_robotics_estop(payload: dict = Body(default={})):
     """Trigger immediate fail-closed E-Stop across the robotics hub (#3767)."""
-    from hub._services.ocean_stack_bridge import load_robotics_module
-
-    rob_mod = load_robotics_module()
-    hub = rob_mod.RoboticsHub(robotics_permission=True)
+    # Stopping never needs a grant (fail-closed); the stop is persisted and blocks all actuation.
     reason = str(payload.get("reason") or "operator_e_stop")
-    return hub.robot_stop_emergency(reason)
+    return _robotics_hub(granted=False).robot_stop_emergency(reason)
+
+
+@app.post("/api/robotics/estop/reset")
+async def api_robotics_estop_reset():
+    """Release the persisted E-Stop. Needs the `smarthome_robotics` grant (#3996)."""
+    denied = _smarthome_robotics_denied()
+    if denied is not None:
+        return denied
+    return _robotics_hub(granted=True).reset_emergency_stop()
 
 
 @app.get("/talk", response_class=HTMLResponse, tags=["shared-gui"])

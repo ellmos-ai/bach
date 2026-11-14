@@ -1,0 +1,31 @@
+{
+  "name": "prompt",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BACH Standalone Module: prompt template and board management with PromptBoard two-way synchronization",
+  "author": "BACH Team",
+  "created_at": "2026-11-04T19:38:00.000000",
+  "selfcontained": true,
+  "entrypoints": {
+    "library": "src/prompt.py"
+  },
+  "boundaries": {
+    "data": "user-local",
+    "network": "none",
+    "platforms": [
+      "windows",
+      "macos",
+      "linux"
+    ]
+  },
+  "consumers": [
+    {
+      "name": "BACH",
+      "minimum_version": "3.15.0"
+    },
+    {
+      "name": "Ocean",
+      "minimum_version": "1.0.0"
+    }
+  ]
+}

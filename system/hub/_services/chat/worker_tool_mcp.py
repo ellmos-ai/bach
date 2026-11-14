@@ -42,7 +42,17 @@ async def serve():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(serve())
+        # Not asyncio.run(): its shutdown joins executor threads, and a thread sitting in
+        # a relay HTTP call (timeout 130 s) kept this shim alive long after the parent
+        # closed stdin (bach-suite hang on the Mac, T-20261107-512211369).
+        asyncio.new_event_loop().run_until_complete(serve())
     except Exception:
         print("Privater Worker-Werkzeugtransport konnte nicht gestartet werden", file=sys.stderr)
         raise SystemExit(2) from None
+    # stdio_server already closed stdout; interpreter exit would still join the executor
+    # thread, so leave without it (stdin closed means there is nothing left to clean up).
+    try:
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(0)

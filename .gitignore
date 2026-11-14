@@ -388,3 +388,4 @@ LOCK*.guard
 /tests_tmp_gardener/
 .MODULES/.CONTROL/
 
+desktop-installers/

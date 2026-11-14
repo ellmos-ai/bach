@@ -327,6 +327,7 @@
             </div>
 
             <button class="btn btn-success" onclick="executeUsecase()">Ausfuehren</button>
+            <button type="button" class="btn btn-warning" onclick="delegateCurrentToBuddha()" title="Erstellt einen [Usecase-Builder] Task fuer Buddha">An Buddha zur Umsetzung übergeben</button>
 
             <div class="run-output" id="run-output" style="display: none;">
                 <strong>Ausgabe:</strong>
@@ -390,6 +391,7 @@
                             <td>
                                 <button class="btn btn-success btn-sm" onclick="showRunModal(${uc.id})" title="Usecase mit Input ausfuehren und Output pruefen">Ausfuehren</button>
                                 <button class="btn btn-primary btn-sm" onclick="runTest(${uc.id})" title="Prueft: Workflow vorhanden? Datei existiert? Input/Output definiert?">Pruefen</button>
+                                <button class="btn btn-warning btn-sm" onclick="delegateToBuddha(${uc.id})" title="An Buddha zur Umsetzung übergeben">Buddha</button>
                                 <button class="btn btn-secondary btn-sm" onclick="editUsecase(${uc.id})" title="Usecase-Definition bearbeiten">Edit</button>
                                 <button class="btn btn-danger btn-sm" onclick="deleteUsecase(${uc.id})" title="Usecase loeschen">X</button>
                             </td>
@@ -554,6 +556,27 @@
 
             } catch (e) {
                 document.getElementById('run-result').textContent = 'Fehler: ' + e.message;
+            }
+        }
+
+        async function delegateToBuddha(id) {
+            try {
+                const res = await fetch(`${API_BASE}/${id}/delegate`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert(data.message || `Task #${data.task_id} erfolgreich an Buddha übergeben!`);
+                    loadUsecases();
+                } else {
+                    alert('Fehler beim Übergeben: ' + (data.error || 'Unbekannt'));
+                }
+            } catch (e) {
+                alert('Netzwerkfehler: ' + e.message);
+            }
+        }
+
+        function delegateCurrentToBuddha() {
+            if (currentRunId) {
+                delegateToBuddha(currentRunId);
             }
         }
     </script>
