@@ -352,8 +352,8 @@ def _doc_placeholders(doc) -> set:
 class PromptPrivacyError(ValueError):
     """Datenschutz-Sperre: Der Cloud-Prompt wird nicht gebaut.
 
-    ``code`` ist maschinenlesbar (identity_terms_in_prompt, ner_unavailable, document_scan_missing,
-    profile_missing, birth_date_invalid); Meldung und Code enthalten nie Werte des Falls (sie landen in
+    ``code`` ist maschinenlesbar (identity_terms_in_prompt, ner_unavailable, runtime_stale,
+    document_scan_missing, profile_missing, birth_date_invalid); Meldung und Code enthalten nie Werte des Falls (sie landen in
     GUI-Antworten).
     """
 
@@ -362,11 +362,34 @@ class PromptPrivacyError(ValueError):
         self.code = code
 
 
+def require_runtime_identity() -> None:
+    """Cloud-Modus nur mit Code auf dem kanonischen Stand (fail-closed bei veraltetem Spiegel).
+
+    Ein veralteter gitloser Spiegel kann die neueren Sperren (NER, Kennungen) gar nicht kennen
+    (T-20261111-107529991). Nur ``stale`` sperrt; ``checkout``/``unverified`` siehe report_runtime_identity.
+    """
+    try:
+        from . import report_runtime_identity as _identity
+    except ImportError:  # CLI-Modus, wie die Imports oben
+        import report_runtime_identity as _identity
+    ident = _identity.runtime_identity()
+    if ident["status"] == "stale":
+        raise PromptPrivacyError(
+            f"Cloud-Modus verweigert: Der ausgefuehrte Berichtscode weicht vom kanonischen Stand ab "
+            f"({len(ident['differing'])} Datei(en), Spiegel-Commit {ident['source_commit'][:9] or '?'}, kanonisch "
+            f"{ident['canonical_commit'][:9] or '?'}). Spiegel mit repo_mirror.py --apply nachziehen und den Prozess "
+            "neu starten (Pruefung: python report_runtime_identity.py). Es wurde nichts gesendet.",
+            code="runtime_stale",
+        )
+
+
 def require_cloud_ner() -> None:
     """Cloud-Modus nur mit vollstaendiger Namenserkennung (fail-closed).
 
     Ohne spaCy/NER-Modelle blieben Namen Dritter, Strassen und Orte im Freitext stehen.
+    Prueft zuerst die Laufzeit-Identitaet: alle Cloud-Wege laufen hier durch.
     """
+    require_runtime_identity()
     ready, reason = _anon.ner_ready()
     if not ready:
         raise PromptPrivacyError(
