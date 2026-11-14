@@ -780,6 +780,35 @@ def test_invalid_owner_config_blocks_only_doc_legacy(tmp_path):
     assert delegated_to_maintenance(tmp_path / "bach.db", "backup_check") is False
 
 
+def _unverifiable_reader(_task_id):
+    from hub._services.task_lease_client import LeaseProtocolError
+
+    raise LeaseProtocolError("Aktuelle kanonische Abnahme nicht bestätigt")
+
+
+def test_closed_task_without_accepted_result_reports_native_status(tmp_path):
+    class ShowTasks(FakeTasks):
+        def show(self, task_id):
+            return {"id": task_id, "status": "done"}
+
+    dispatcher = DocumentationDispatcher(
+        tmp_path, tmp_path / "state.json", ShowTasks(), _unverifiable_reader, lambda _: None
+    )
+    state = dispatcher._task_state({"task_id": 2244})
+    assert state["task_status"] == "done"
+    assert state["result_accepted"] is False and state["last_review_success"] is None
+
+
+def test_unverifiable_task_without_show_still_fails_closed(tmp_path):
+    from hub._services.task_lease_client import LeaseProtocolError
+
+    dispatcher = DocumentationDispatcher(
+        tmp_path, tmp_path / "state.json", FakeTasks(), _unverifiable_reader, lambda _: None
+    )
+    with pytest.raises(LeaseProtocolError):
+        dispatcher._task_state({"task_id": 2244})
+
+
 def _fake_git(monkeypatch, delta_names):
     from hub._services.docs import maintenance_dispatch
 
