@@ -187,6 +187,12 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
           BACH_NO_AUTO_MIGRATE: '1'
         run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_gui_release_integrity.py system/tests/test_gui_gux_shared_contract.py
+      - name: BACH task list pagination (bach#702, task 4129)
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONDONTWRITEBYTECODE: '1'
+          BACH_NO_AUTO_MIGRATE: '1'
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_task_list_pagination.py
 
       - name: Native MarbleRun and task result authority
         env:
