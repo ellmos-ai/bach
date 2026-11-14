@@ -813,6 +813,31 @@ def test_launch_plan_is_portable_and_has_no_side_effect(tmp_path):
     assert not runtime.exists()
 
 
+def test_launch_plan_puts_the_found_git_before_the_launchd_default_path(tmp_path, monkeypatch):
+    import plistlib
+    import sys
+
+    from hub._services.docs import maintenance_launch
+
+    monkeypatch.setattr(
+        maintenance_launch.shutil, "which", lambda name: "/opt/homebrew/bin/git" if name == "git" else None
+    )
+    root, local = tmp_path / "repo", tmp_path / "local"
+    script = root / "system/tools/maintenance/scheduler_maintenance.py"
+    script.parent.mkdir(parents=True)
+    script.touch()
+    local.mkdir()
+    runtime = local / "maintenance"
+    data = maintenance_launch.launch_plan(
+        root, Path(sys.executable).resolve(), local / "bach.db", runtime, runtime / "config.json"
+    )
+    plist = plistlib.loads(data["launch_agent"].encode("utf-8"))
+    assert plist["EnvironmentVariables"]["PATH"] == "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    monkeypatch.setattr(maintenance_launch.shutil, "which", lambda name: None)
+    assert maintenance_launch.service_path() == "/usr/bin:/bin:/usr/sbin:/sbin"
+
+
 def test_cli_launch_plan_preserves_virtual_environment_interpreter(tmp_path, monkeypatch):
     from hub._services.docs import maintenance_cli
 
