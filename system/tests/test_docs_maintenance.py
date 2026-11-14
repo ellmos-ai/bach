@@ -470,6 +470,80 @@ def test_arbitrary_scanner_cannot_grant_lock_authority(tmp_path, monkeypatch):
         CanonicalLockGuard(config(tmp_path))(tmp_path)
 
 
+def _guard_with_fake_scanner(tmp_path, monkeypatch, answer):
+    """Trusted fake scanner: answer(dir) -> (returncode, fields); records the checked dirs."""
+    from hub._services.docs import maintenance_runtime as runtime
+
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    (tools / "lock_scan.py").write_text("# fake scanner", encoding="utf-8")
+    (tools / "lock_utils.py").write_text("# fake utils", encoding="utf-8")
+    pair = tuple(
+        hashlib.sha256((tools / name).read_bytes()).hexdigest()
+        for name in ("lock_scan.py", "lock_utils.py")
+    )
+    monkeypatch.setattr(runtime, "TRUSTED_LOCK_TOOLS", {pair})
+    checked = []
+
+    def fake_run(command, **_options):
+        target = Path(command[command.index("--check-dir") + 1])
+        checked.append(target)
+        returncode, fields = answer(target)
+        return SimpleNamespace(
+            returncode=returncode, stdout=json.dumps({"checked": str(target), "locks": [], **fields})
+        )
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+    project, twin, home = tmp_path / "project", tmp_path / "twin", tmp_path / "home"
+    for folder in (project, twin, home / "maintenance"):
+        folder.mkdir(parents=True)
+    data = config(tmp_path)
+    data["lock_tools_root"] = str(tools)
+    data["protected_roots"] = [str(project), str(home), str(twin)]
+    return CanonicalLockGuard(data), checked, project, twin, home
+
+
+def test_guard_checks_file_targets_by_directory_and_accepts_proven_pointer_twin(tmp_path, monkeypatch):
+    def answer(target):
+        if target.name == "project":
+            return 0, {"twin_status": "ok", "twins_checked": [str(tmp_path / "twin")]}
+        if target.name == "twin":
+            return 1, {"twin_status": "pointer-unresolved", "twins_checked": []}
+        return 0, {"twin_status": "not-applicable"}
+
+    guard, checked, project, twin, home = _guard_with_fake_scanner(tmp_path, monkeypatch, answer)
+    owner = home / "maintenance" / "owner.lock"
+    owner.write_bytes(b"")
+    guard(owner)
+    assert checked == [project, home, twin, home / "maintenance"]
+
+
+def test_guard_rejects_pointer_status_for_unproven_folder(tmp_path, monkeypatch):
+    def answer(target):
+        if target.name == "project":
+            return 0, {"twin_status": "ok", "twins_checked": [str(tmp_path / "twin")]}
+        if target.name == "home":
+            return 1, {"twin_status": "pointer-unresolved", "twins_checked": []}
+        return 0, {"twin_status": "not-applicable"}
+
+    guard, _checked, _project, _twin, home = _guard_with_fake_scanner(tmp_path, monkeypatch, answer)
+    with pytest.raises(PermissionError, match="locked_or_unknown"):
+        guard(home / "maintenance")
+
+
+def test_guard_rejects_locks_in_the_proven_pointer_twin(tmp_path, monkeypatch):
+    def answer(target):
+        if target.name == "project":
+            return 0, {"twin_status": "ok", "twins_checked": [str(tmp_path / "twin")]}
+        if target.name == "twin":
+            return 1, {"twin_status": "pointer-unresolved", "locks": [{"path": "LOCK.txt"}]}
+        return 0, {"twin_status": "not-applicable"}
+
+    guard, _checked, _project, _twin, home = _guard_with_fake_scanner(tmp_path, monkeypatch, answer)
+    with pytest.raises(PermissionError, match="locked_or_unknown"):
+        guard(home / "maintenance")
+
+
 def _exact_delta_review_row(dispatcher, *, task_id=77):
     files = ["system/hub/_services/chat/worker.py"]
     root_id = hashlib.sha256(str(dispatcher.root.resolve()).encode()).hexdigest()[:8]
