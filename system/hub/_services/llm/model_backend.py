@@ -78,6 +78,26 @@ def _probe_model_api(
     return True, "bereit"
 
 
+def _decode_tool_arguments(raw):
+    """Decode OpenAI-style string arguments, repairing forms that carry no extra information.
+
+    Free OpenRouter models send ``""``/``"null"`` for argument-less calls or JSON
+    encoded twice; those become the object they mean. Truncated JSON, lists and
+    scalars stay as they are, so the runtime still rejects them as ``invalid_tool_call``.
+    """
+    value = raw
+    for _ in range(3):  # wire string, plus one level of double encoding
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return {}
+        if not isinstance(value, str):
+            return value
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return raw
+    return raw
+
+
 class ModelBackend(ABC):
     """Abstrakte Basis für LLM-Backends."""
 
@@ -909,12 +929,7 @@ class HermesBackend(OpenAIBackend):
         if "tool_calls" in msg and msg["tool_calls"]:
             for idx, tc in enumerate(msg["tool_calls"]):
                 fn = tc.get("function", {})
-                args = fn.get("arguments", "{}")
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except Exception:
-                        pass
+                args = _decode_tool_arguments(fn.get("arguments", "{}"))
                 cid = tc.get("id") or f"call_{idx}_{int(time.time())}"
                 tc["id"] = cid
                 tool_calls.append(
@@ -932,7 +947,7 @@ class HermesBackend(OpenAIBackend):
                 try:
                     parsed = json.loads(raw_json)
                     fn_name = parsed.get("name", "")
-                    fn_args = parsed.get("arguments", {})
+                    fn_args = _decode_tool_arguments(parsed.get("arguments", {}))
                     if fn_name:
                         cid = f"hermes_call_{idx}_{int(time.time())}"
                         tool_calls.append(
