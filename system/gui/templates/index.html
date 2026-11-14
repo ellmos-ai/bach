@@ -188,6 +188,14 @@ style="background: var(--bg-dark); color: var(--text)">
                         <div class="flex items-center gap-2">
                             <button
                                 type="button"
+                                onclick="runQuickPromptInChat()"
+                                class="px-3 py-1.5 text-xs font-semibold bg-[#2a6850] hover:bg-[#348062] text-white rounded-lg transition-all flex items-center gap-1.5 shadow"
+                                title="Prompt direkt an den Chat senden und Antwort generieren"
+                            >
+                                <span>🚀</span> Direkt ausführen
+                            </button>
+                            <button
+                                type="button"
                                 onclick="openQuickPromptInChat()"
                                 class="px-3 py-1.5 text-xs font-semibold bg-bach-accent text-white rounded-lg hover:opacity-90 transition-all flex items-center gap-1.5 shadow"
                             >
@@ -214,8 +222,20 @@ style="background: var(--bg-dark); color: var(--text)">
                         <span id="modules-active-badge" class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-900/60 text-emerald-400 border border-emerald-700">
                             Lade Status...
                         </span>
+                        <span id="modules-update-badge" class="hidden px-2.5 py-0.5 text-xs font-semibold rounded-full bg-amber-900/60 text-amber-300 border border-amber-600 animate-pulse">
+                            📦 Updates verfügbar
+                        </span>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button
+                            id="modules-update-btn"
+                            type="button"
+                            onclick="triggerModulesUpdate()"
+                            class="px-3 py-1.5 text-xs font-semibold bg-[#1e2236] text-gray-200 border border-[#2a304a] rounded-lg hover:bg-[#252b42] transition-all flex items-center gap-1.5 shadow"
+                        >
+                            <span>📦</span>
+                            <span>Auf Updates prüfen</span>
+                        </button>
                         <button
                             id="modules-sync-btn"
                             type="button"
@@ -310,6 +330,21 @@ style="background: var(--bg-dark); color: var(--text)">
             window.location.assign('/chat');
         }
 
+        function runQuickPromptInChat() {
+            const input = document.getElementById('quick-prompt-input');
+            const text = input ? input.value.trim() : '';
+            if (!text) {
+                alert('Bitte gib zuerst einen Prompt oder eine Nachricht ein.');
+                return;
+            }
+            const targetEl = document.getElementById('quick-prompt-target');
+            const target = targetEl ? targetEl.value : 'buddha';
+            if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
+                window.BachChatDraft.store(text, null, { autorun: true, slot_id: target === 'idle' ? 'idle_worker' : 'buddha_chat' });
+            }
+            window.location.assign('/chat');
+        }
+
         // Deadlines laden (Task #575)
         async function loadDeadlines() {
             try {
@@ -359,6 +394,28 @@ style="background: var(--bg-dark); color: var(--text)">
                         grid.appendChild(el);
                     }
                 }
+
+                // Update-Check
+                try {
+                    const updRes = await fetch('/api/modules/update-check');
+                    if (updRes.ok) {
+                        const updData = await updRes.json();
+                        const updBadge = document.getElementById('modules-update-badge');
+                        const updBtn = document.getElementById('modules-update-btn');
+                        if (updBadge) {
+                            if (updData.has_updates && updData.updates_count > 0) {
+                                updBadge.textContent = `📦 ${updData.updates_count} Update(s) verfügbar`;
+                                updBadge.classList.remove('hidden');
+                                if (updBtn) updBtn.classList.add('border-amber-500', 'text-amber-300');
+                            } else {
+                                updBadge.classList.add('hidden');
+                                if (updBtn) updBtn.classList.remove('border-amber-500', 'text-amber-300');
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.debug('Module update check failed:', err);
+                }
             } catch (e) {
                 console.warn('Failed to load modules status:', e);
             }
@@ -401,6 +458,38 @@ style="background: var(--bg-dark); color: var(--text)">
                 if (btn) btn.disabled = false;
                 if (spinner) spinner.classList.add('hidden');
                 if (icon) icon.classList.remove('hidden');
+            }
+        }
+
+        async function triggerModulesUpdate() {
+            const btn = document.getElementById('modules-update-btn');
+            const msg = document.getElementById('modules-sync-msg');
+            if (btn) btn.disabled = true;
+            if (msg) {
+                msg.classList.remove('hidden');
+                msg.textContent = 'Prüfe Quell-Repositories auf neuere Modulversionen...';
+            }
+            try {
+                const res = await fetch('/api/modules/update?dry_run=true', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    if (msg) {
+                        msg.textContent = data.message || 'Prüfung abgeschlossen.';
+                        msg.className = 'text-xs text-gray-300 mt-2 p-2 bg-[#171b28] rounded border border-[#2a304a] whitespace-pre-wrap font-mono';
+                    }
+                } else {
+                    if (msg) {
+                        msg.textContent = `Fehler: ${data.message || data.error || 'Fehlgeschlagen'}`;
+                        msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                    }
+                }
+            } catch (e) {
+                if (msg) {
+                    msg.textContent = `Netzwerkfehler: ${e.message}`;
+                    msg.className = 'text-xs text-bach-error mt-2 p-2 bg-[#171b28] rounded border border-bach-error';
+                }
+            } finally {
+                if (btn) btn.disabled = false;
             }
         }
 

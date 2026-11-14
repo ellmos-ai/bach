@@ -62,6 +62,41 @@ HUB_DIR = SERVICES_DIR.parent
 BACH_DIR = HUB_DIR.parent
 
 
+def _desktop_dir() -> Path:
+    """Visible desktop. With OneDrive folder backup on Windows, Path.home()/"Desktop" is an
+    old hidden folder; the real one comes from SHGetKnownFolderPath(FOLDERID_Desktop)."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            import uuid
+            from ctypes import wintypes
+
+            class _Guid(ctypes.Structure):
+                _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                            ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+            folder = uuid.UUID("{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}")
+            guid = _Guid(folder.fields[0], folder.fields[1], folder.fields[2],
+                         (ctypes.c_ubyte * 8)(*folder.bytes[8:]))
+            path = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(path)) == 0:
+                try:
+                    if path.value:
+                        return Path(path.value)
+                finally:
+                    ctypes.windll.ole32.CoTaskMemFree(path)
+        except (OSError, AttributeError, ValueError):
+            pass
+    return Path.home() / "Desktop"
+
+
+def _resolve_desktop_path(value) -> str:
+    """Empty or the shipped placeholder ({USER_HOME}/Desktop/ in config.json) means the visible desktop."""
+    if not value or "{USER_HOME}" in str(value):
+        return str(_desktop_dir())
+    return str(value)
+
+
 def load_config() -> dict:
     """Laedt Newspaper-Konfiguration."""
     if CONFIG_FILE.exists():
@@ -75,7 +110,7 @@ def load_config() -> dict:
         "max_items_per_category": 10,
         "delivery": {
             "desktop_copy": True,
-            "desktop_path": str(Path.home() / "Desktop"),
+            "desktop_path": str(_desktop_dir()),
             "email": False,
             "telegram": True,
         }
@@ -173,7 +208,7 @@ def deliver_newspaper(result: dict, config: dict = None) -> list:
 
     # Desktop-Kopie
     if delivery_config.get("desktop_copy", True):
-        desktop_path = delivery_config.get("desktop_path", str(Path.home() / "Desktop"))
+        desktop_path = _resolve_desktop_path(delivery_config.get("desktop_path"))
         pdf_path = result.get("pdf_path") or result.get("html_path")
         if pdf_path and Path(pdf_path).exists():
             try:

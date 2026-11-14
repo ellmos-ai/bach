@@ -1816,7 +1816,7 @@ def _unavailable(reason):
     return {"schema": _READ_SCHEMA, "availability": "unavailable", "reason": reason}
 
 
-def read_review_evidence(conn, record):
+def read_review_evidence(conn, record, *, allow_historical_identity=False):
     """Pure DB/history readback; outer projection checks current full revision."""
     if (not isinstance(record, dict) or type(record.get("task_id")) is not int
             or type(record.get("result_id")) is not int or record["result_id"] <= 0
@@ -1886,7 +1886,15 @@ def read_review_evidence(conn, record):
                 ("task_contract_met", "reviewer_asserted_task_contract_met")))):
             return _unavailable("review_evidence_invalid")
         authority = _target_authority(conn, record)
-        if (authority is None or (not hashbound and authority["author_id"] != receipt["author_id"])
+        if allow_historical_identity and (
+            authority is None
+            or authority["policy_version"] != receipt["policy_version"]
+            or authority["identity_version"] != receipt["identity_version"]
+        ):
+            if (child["execution"].get("model_principal_id") != receipt["reviewer_id"]
+                    or (not hashbound and receipt.get("reviewer_id") == receipt.get("author_id"))):
+                return _unavailable("review_identity_not_current")
+        elif (authority is None or (not hashbound and authority["author_id"] != receipt["author_id"])
                 or authority["policy_version"] != receipt["policy_version"]
                 or authority["identity_version"] != receipt["identity_version"]
                 or identity.principal_for_execution(authority["identity"],
@@ -1915,8 +1923,9 @@ def read_review_evidence(conn, record):
                 "status": receipt["status"], "summary": receipt["summary"],
                 "reviewer_asserted_task_contract_met": receipt["reviewer_asserted_task_contract_met"],
                 "independent": (receipt.get("review_generation") != receipt.get("author_generation", record.get("generation"))
-                    and not _author_model_blocked(authority, receipt["reviewer_id"])),
-                "policy_eligible": receipt["reviewer_id"] in authority["eligible"],
+                    and (receipt.get("reviewer_id") != receipt.get("author_id") if authority is None
+                         else not _author_model_blocked(authority, receipt["reviewer_id"]))),
+                "policy_eligible": (True if authority is None else receipt["reviewer_id"] in authority["eligible"]),
                 "event_id": row["event_id"],
                 # Lets the scope projection re-observe the reviewed tree package.
                 **({"target_kind": "submission",

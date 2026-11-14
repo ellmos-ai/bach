@@ -1,0 +1,43 @@
+=== RECLAMO DE MODELO Y RAM (DISTRIBUIDOR DE RAM Y RUNTIME DE MODELO) ===
+
+Resumen:
+  En BACH y Ocean ya no existen ranuras de modelo rígidas. Todos los agentes
+  ("Tus agentes") están vinculados directamente a un modelo primario + cadena
+  de respaldo. En tiempo de ejecución se produce un reclamo en dos etapas:
+    1. Reclamo de RAM (Antorcha principal / RAMDistributor): ¿Quién puede ocupar
+       RAM/VRAM física (modelo local 27B frente a pipelines de cómputo)?
+    2. Reclamo de runtime de modelo (Antorcha de modelo / HostInferenceGate):
+       ¿Quién obtiene el siguiente turno de inferencia en el modelo cargado
+       según 4 clases de proximidad al usuario?
+
+LAS 4 CLASES DE PRIORIDAD SEGÚN PROXIMIDAD AL USUARIO (UserProximity):
+  Clase 1 (DIRECT_INTERACTIVE)    : El usuario espera directamente (Chat, Talk)
+  Clase 2 (DELEGATED_FOREGROUND)  : Experto encargado activamente por Usuario/Chat
+  Clase 3 (SCHEDULED_ROUTINE)     : Agente programado o de rutina pendiente
+  Clase 4 (AUTONOMOUS_BACKGROUND) : Worker en segundo plano (Buddha Always-On)
+
+CASO A: OTRO PROCESO NECESITA RAM / VRAM (CÓMPUTO / MODELO PROPIO)
+  1. En la bandeja del sistema (ellmos-tray) o GUI (/agenten/running):
+     "🔥 RAM-Distributor & Modell-Claim" ->
+     "🔓 Modell & RAM jetzt für andere Prozesse freigeben"
+  2. Por HTTP-API / CLI:
+     curl -X POST http://127.0.0.1:8081/api/fackel -H "Content-Type: application/json" -d '{"preference":"compute"}'
+     curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"qwen3.8:27b-mlx","keep_alive":0}'
+  3. Mediante bloqueo de cómputo (~/.memwatchdog/compute_active.lock):
+     Introduce {"active_compute_jobs": [{"pid": <PID>, "name": "<job>"}]}.
+
+CASO B: OTRO PROCESO QUIERE RECLAMAR / USAR EL MODELO LOCAL
+  1. De forma cooperativa en Python mediante HostInferenceGate (desplaza a workers en segundo plano):
+     from hub._services.chat.host_inference_gate import HostInferenceGate
+     async with HostInferenceGate().turn("mein-prozess", "foreground"):
+         ...
+  2. Directamente a través de BACH Control API (:8081/api/chat):
+     curl -X POST http://127.0.0.1:8081/api/chat -H "Content-Type: application/json" \
+       -d '{"prompt": "...", "chat_id": "mein-prozess"}'
+  3. Comprobar y gestionar vínculos de modelos:
+     bach model-sockets list --json
+     bach model-sockets catalog --json
+
+Documentación completa (OBJETIVO Y REAL):
+  docs/architecture/MODEL-AND-RAM-CLAIMING.md
+  ocean-resources/README.md

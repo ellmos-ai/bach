@@ -1,0 +1,51 @@
+# Portability: SYSTEM
+# Last validated: 2026-09-08
+# Next review: 2027-03-08
+
+TORCH - Dos modos de chat y asignación de recursos
+==================================================
+
+DESCRIPCIÓN
+El concepto TORCH regula la asignación de memoria de modelo (antorchas) en
+Apple Silicon y define los dos modos de trabajo fundamentales para el diálogo
+entre el usuario y Buddha.
+
+LOS DOS MODOS DE CHAT
+---------------------
+1. Modo Chat (predeterminado)
+   - Propósito: Preguntas rápidas, notas, apuntes de Denkarium, descarga de
+     temas más grandes a la cola de tareas de BACH.
+   - Contexto: 8k tokens (rápido, ligero, minimiza la necesidad de VRAM).
+   - Enfriamiento: Libera antorchas / VRAM tras 10 minutos de inactividad.
+
+2. Modo de trabajo interactivo (construcción en vivo y pair programming)
+   - Propósito: Construcción conjunta, programación interactiva, resolución de
+     errores y acompañamiento directo de proyectos con Lukas en el chat.
+   - Sin descarga forzada: Buddha ejecuta herramientas (read_file, edit_file,
+     execute_command, safe_shell) EN VIVO en el diálogo.
+   - Sin delegación prematura: El chat es en sí mismo la instancia ejecutora y
+     no se interrumpe antes de tiempo.
+   - Contexto: 32k tokens (ventana completa para contexto profundo de código y
+     documentación).
+   - Enfriamiento: Hasta 1 hora sin mensaje y sin señal de trabajo.
+     Evita el aleteo del modelo (la recarga de 35s de 17 GiB de VRAM).
+   - Señal de trabajo: Las llamadas a herramientas en curso y el flujo de
+     tokens cuentan como actividad (incluso cuando el usuario está leyendo y no
+     escribe).
+
+REGLAS BÁSICAS Y PRIORIDADES
+----------------------------
+1. El usuario prevalece sobre todo: Las instrucciones directas en el chat
+   tienen la máxima prioridad frente a todos los procesos en segundo plano.
+2. Reposo inmediato en segundo plano: En cuanto llega un mensaje de chat, el
+   Idle-Worker se detiene tras el paso en curso para liberar la GPU para la
+   interacción del usuario.
+3. Distribución de antorchas: Diez antorchas por sistema (una antorcha = 2,50
+   GiB). Chat 8k = 8,4 antorchas; Working 32k = 11,2 antorchas (sobreasignación
+   en la zona de confort de Metal).
+
+VÉASE TAMBIÉN
+-------------
+  docs/TORCH-KONZEPT.md           Derivación arquitectónica completa
+  bach --help roles               Modelo de roles, jefes y expertos
+  bach --help daemon              Planificador y mantenimiento en segundo plano

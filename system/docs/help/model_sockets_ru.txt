@@ -1,0 +1,85 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-21
+# Sources: hub/model_sockets.py, hub/_services/chat/model_sockets.py, hub/_services/chat/local_model_catalog.py, core/registry.py
+
+СЛОТЫ МОДЕЛЕЙ ДЛЯ ЛОКАЛЬНЫХ МОДЕЛЕЙ
+===================================
+
+Открыть справку
+---------------
+bach help model-sockets
+
+CLI управляет предложениями локальных моделей и привязками между существующими
+профилями агентов и слотами моделей. Конфигурация хранится в существующей
+конфигурации слотов BACH. Команды не загружают и не запускают модель и не
+запускают воркер.
+
+КОМАНДЫ
+-------
+bach model-sockets list
+    Читает конфигурацию и выводит среди прочего configuration_version,
+    migration_required, ID слотов и привязок. Доступ на чтение не сохраняет
+    миграцию. При старой конфигурации list может показывать предварительную
+    проекцию.
+
+bach model-sockets catalog
+    Читает ограниченные метаданные настроенных локальных провайдеров. Текущий
+    адаптер метаданных читает Ollama; для LM Studio каталог сообщает
+    capability_adapter_pending. Запись каталога не доказывает ни успешный
+    инференс, ни резидентность модели, ни доступную ёмкость. Вызов не скачивает,
+    не загружает и не запускает модель.
+
+bach model-sockets migrate --version VERSION_AUS_AKTUELLEM_LIST
+    Явно выполняет миграцию, когда list сообщает migration_required=true.
+    Миграция однократно добавляет реестр слотов моделей и сохраняет
+    существующие профили, прогресс и неизвестные поля конфигурации.
+
+bach model-sockets configure --backend BACKEND --model MODELL --version VERSION_AUS_AKTUELLEM_LIST
+    Регистрирует или изменяет предложение локальной модели. BACKEND — это
+    ollama или lmstudio. Необязательно: --enabled true|false, --max-active-slots
+    ЧИСЛО (от 1 до 1000) и --residency-policy exclusive|shared. Облачные модели
+    не являются локальными слотами моделей.
+
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+    Привязывает существующий профиль агента к существующему слоту.
+    Необязательно: --enabled true|false, --priority foreground|background и
+    --context-tokens ЧИСЛО (от 1 до 1.048.576).
+
+bach model-sockets unbind --binding BINDUNGS_ID --version VERSION_AUS_AKTUELLEM_LIST
+    Удаляет указанную привязку.
+
+ПРАВИЛА ВЕРСИЙ И ЗАПИСИ
+-----------------------
+Перед каждой операцией записи сначала выполни bach model-sockets list.
+Передай текущее значение configuration_version без изменений как --version.
+Мутация использует Compare-and-Swap и проверяет блокировки записи. При
+конфликте версий снова выполни list и сверь изменение с текущим состоянием;
+CLI сама не повторяет отклонённую мутацию.
+
+У обработчика есть внутренний параметр dry_run, но текущий диспетчер CLI
+BACH не предоставляет пригодного переключателя dry-run для model-sockets.
+--dry-run и -n передаются парсеру операций и там отклоняются. Поэтому все
+команды мутации требуют --version.
+
+Успешные реальные мутации подтверждают только сохранение конфигурации:
+worker_started=false и runtime_verified=false. Они не подтверждают ни запуск
+воркера, ни использование модели, ни проверку времени выполнения.
+
+Значения конфигурации, такие как max_active_slots и residency_policy, не
+являются измеренными величинами. Занятость во время выполнения и фактическая
+резидентность модели этой CLI не определяются. Успешные ответы имеют формат
+JSON; --json можно указать дополнительно.
+
+ПРИМЕР ПРОЦЕССА
+---------------
+Замени заполнители значениями из собственной среды.
+
+bach model-sockets list
+bach model-sockets configure --backend ollama --model MODELLNAME --version VERSION_AUS_AKTUELLEM_LIST
+bach model-sockets list
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+
+СВЯЗАННАЯ СПРАВКА
+-----------------
+bach help ollama
+bach help agent_launcher

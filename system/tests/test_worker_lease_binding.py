@@ -1024,7 +1024,8 @@ def test_model_status_return_carries_a_fixed_reason(mem_db):
     bound.execute_task_manage({"action": "update", "task_id": first, "status": "pending"})
     row = mem_db.execute("SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release' "
                          "ORDER BY id DESC LIMIT 1", (first,)).fetchone()
-    assert json.loads(row[0])["note"] == "worker_returned_open"
+    # No commit/decomposition in this lease: the reason names the missing progress (PB-1 follow-up).
+    assert json.loads(row[0])["note"] == "worker_returned_open:no_progress"
 
 
 def test_foreign_detail_names_the_bound_scope_and_keeps_the_binding(binding):

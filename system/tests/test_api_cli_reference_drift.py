@@ -27,6 +27,6 @@ def test_reference_manifest_counts_and_canonical_modules():
     data = json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert data["cli_handler_count"] >= 80
     assert data["http_route_count"] >= 200
-    assert data["canonical_module_count"] == 11
+    assert data["canonical_module_count"] == 12  # + agents-heart (docs were stale at 11)
     assert "ocean-resources" in data["canonical_modules"]
     assert "doc-keeper" in data["canonical_modules"]

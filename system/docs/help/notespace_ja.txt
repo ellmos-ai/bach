@@ -1,0 +1,34 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+NOTE-SPACE (BACH 独自の NoteSpaceLLM)
+===================================
+
+bach notespace   - ドキュメント分析用プライベート NotebookLM クローン (内蔵)
+
+
+説明
+==
+
+BACH に標準搭載された固定モジュール: ドキュメント分析およびレポート生成のための
+プライベート NotebookLM クローン。内部のソースプロジェクトから独立した BACH 独
+自のバージョン (ベンダリング証明: tools/notespace/PROVENANCE.md)。
+
+バインディング:
+- LLM/Embeddings: BACH のグローバル Ollama 設定 (data/ollama_config.json)
+- データ (プロジェクト/ベクター DB/出力): data/notespace/ (gitignored)
+
+
+コマンド
+====
+
+bach notespace status        モジュール状態、Ollama バインディング、データパス、依存関係
+bach notespace gui           デスクトップ GUI を起動 (PySide6、ローカルシステム)
+bach notespace cli "質問"     ヘッドレス RAG クエリ (フェーズ 2、未実装)
+
+
+ソース
+===
+
+ハンドラ: hub/notespace.py (NoteSpaceHandler)

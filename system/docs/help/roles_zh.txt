@@ -1,0 +1,73 @@
+# Portability: SYSTEM
+# Last validated: 2026-09-08
+# Next review: 2027-03-08
+
+代理角色、Boss 与多提供商委派
+=================
+
+说明
+BACH 采用基于角色的专家和 Boss 代理模型。
+Buddha（本地 Ollama 模型 qwen3.8:27b-mlx）作为通用的一线 Worker
+（Tier-1），可以在空闲时自主承担所有角色。
+
+BUDDHA 作为通用 WORKER
+------------------
+- Idle Worker 在后台从任务队列中为所有 Boss 和专家提取任务。
+- 会话隔离：每个任务都在隔离的会话（idle-<rolle>-<task_id>）中启动，避免
+  上下文污染。
+- 人格塑造：模型进入相应角色的人格（来自 system/agents/personas/ 的身份、
+  语气和任务配置文件）。
+
+角色与人格概览
+-------
+Boss：
+  persoenlich (Paul)       日常和工作组织、日程、备忘录
+  bueroassistent (Clara)   文档管理、归档、往来信函
+  gesundheit (Helena)      健康档案、化验指标、生命体征数据
+  finanzen (Felix)         预算、票据、账户概览
+  ati (Atlas)              任务、工具和代码扫描器
+
+专家：
+  aboservice (Anton)       订阅、合同、定期费用
+  bewerbung (Benjamin)     简历、求职信、应聘材料
+  data-analysis (Diana)    数据分析、统计、评估
+  decision (Dietrich)      决策提案、结构化简报
+  foerderplaner (Florian)  支持报告、ICF 需求、教育学
+  haushalt (Martha)        家务日常、库存、组织
+  steuer (Theodor)         纳税申报、票据分配
+  transkript (Tristan)     音频/会议转录
+  wiki (Wilhelm)           Wiki 知识条目与研究
+
+附加角色
+----
+  ticket-master            无归属/未分配工单的分流；自动将其分配给匹配的人
+                           格。
+  task-divider             主动拆解专家；在待办事项中搜寻复杂的大型任务并提
+                           前拆分。
+
+4 级升级协议（适用于每个角色！）
+-----------------
+每个角色必须严格按照以下四个优先级工作：
+
+  第 1 级 - 直接解决：
+    可掌控的任务立即在代码/系统中实现、测试并在本地提交。
+
+  第 2 级 - 自我拆解：
+    如果任务复杂，角色自主将任务拆解为 3-5 个原子子任务（task_manage
+    action='decompose'）。
+
+  第 3 级 - 歧义处理：
+    最小侵入原则。遇到开放选择问题时：创建精确的选项 [A] / [B] 选择作为
+    TO-DECIDE 任务。
+
+  第 4 级 - 委派给 Tier-2 提供商：
+    如果任务超出本地模型能力上限（深度算法、跨仓库重构）：
+    通过以下方式清晰移交给 Claude Code 或 Codex：
+      delegate(target='claude', prompt='...', context='...')
+      delegate(target='codex', prompt='...', context='...')
+
+另请参阅
+----
+  bach --help torch               交互式工作模式 vs. 聊天模式
+  bach --help daemon              调度器与后台作业
+  hub/agent_router.py             语义角色路由

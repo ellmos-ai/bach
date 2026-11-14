@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+SECURITY
+========
+
+bach security   - BACH 用静的セキュリティスキャン
+
+
+説明
+==
+
+BACH 独自のコードパスで危険なパターンをスキャンし、分類されたレポートを生成しま
+す。実際のパターン検出にはケイパビリティシステム (core.capabilities) を使用し
+ます。
+
+デフォルトパス: tools, skills, hub, core, scripts, bin
+最新レポート: security_scan_latest.json
+
+
+コマンド
+====
+
+bach security scan                デフォルトパスをスキャン
+bach security scan tools/         特定のディレクトリをスキャン
+bach security scan --json         JSON レポート
+bach security scan --dry-run      スキャン対象を表示
+bach security status              最新レポートを表示
+
+
+ソース
+===
+
+ハンドラ: hub/security.py (SecurityHandler)

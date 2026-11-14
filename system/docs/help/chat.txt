@@ -25,7 +25,7 @@ SESSION-LIFECYCLE & AUTOMATISCHER RESET
 ---------------------------------------
 Um zu verhindern, dass alte, längst erledigte Themen dauerhaft im Denk-Kontext
 verbleiben, unterliegt jede Chat-Session folgendem Lebenszyklus:
-1. 24-Stunden-Inaktivitäts-Reset (TTLc:
+1. 24-Stunden-Inaktivitäts-Reset (TTL):
 - Wenn ein Chat länger als 24 Stunden nicht genutzt wurde (last_active > 86400s),
   wird er beim nächsten Nachrichtenempfang automatisch archiviert und auf einen
   leeren Zustand zurückgesetzt.
@@ -33,7 +33,7 @@ verbleiben, unterliegt jede Chat-Session folgendem Lebenszyklus:
 
 2. Manueller Reset:
 - Telegram:  Befehl /clear
-- Web-GUIp  Button [ ➕ Neuer Chat ] in der Statusleiste
+- Web-GUI:  Button [ ➕ Neuer Chat ] in der Statusleiste
 - Beide Wege archivieren den bisherigen Verlauf vor dem Leeren vollständig.
 
 3. Zero-Data-Loss Garantie:
@@ -43,24 +43,24 @@ verbleiben, unterliegt jede Chat-Session folgendem Lebenszyklus:
 
 PROTOKOLLE & FORKING (WIEDERBELEBUNG)
 -------------------------------------
-Under der Web-GUI (http://localhost:8000/chat) befindet sich der Button [ 📉 Protokolle ]:
+Unter der Web-GUI (http://localhost:8000/chat) befindet sich der Button [ 📉 Protokolle ]:
 1. Archiv-Übersicht:
 - Zeigt chronologisch alle aufgezeichneten Sessions aus Web, Telegram und Worker.
-- Filterbaz nach "Alle", "Web", "Telegram" und "Archiv".
+- Filterbar nach "Alle", "Web", "Telegram" und "Archiv".
 
 2. Transkript-Inspektion:
 - Klick auf einen Eintrag öffnet das vollständige Transkript inklusive aller
   User- und Assistant-Nachrichten mit Zeitstempeln und Formatierung.
 
 3. Im Web-Chat fortsetzen (Fork):
-- ßber den Button [ 🔑 Im Web-Chat fortsetzen (Fork) ] kann jede historische
+- Über den Button [ 🔑 Im Web-Chat fortsetzen (Fork) ] kann jede historische
   Sitzung (egal ob aus Telegram oder einer früheren Web-Session) in den aktuellen
   Web-Chat geladen und direkt weiterdiskutiert werden.
 - Die bestehende Web-Session wird dabei zuvor automatisch gesichert.
 
 SICHERHEITSMODI
 ---------------
-  - safe:  Nur lesende Afragen (ls, cat, grep, git status, etc.).
+  - safe:  Nur lesende Anfragen (ls, cat, grep, git status, etc.).
   - full:  Auch schreibende Werkzeuge (Dateien erstellen, Kommandos ausführen).
            In Telegram: /mode full bestätigt
            In Web-GUI:  Über Control-Dashboard / API

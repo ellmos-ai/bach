@@ -1,0 +1,21 @@
+Colores de agentes
+==================
+
+Un color de blueprint es opcional. Se permiten null o seis dígitos
+hexadecimales precedidos por #, por ejemplo #12abef. Las letras mayúsculas
+se convierten a minúsculas. Otros valores CSS no son válidos.
+
+Al guardar sin campo de color, se conserva el color anterior. null lo elimina.
+Los cambios requieren la versión actual del blueprint.
+
+Al materializar, la instancia hereda el color del blueprint. Una anulación de
+instancia establecida explícitamente tiene prioridad. null en la anulación de
+instancia significa volver a heredar. Volver a materializar actualiza el color
+del blueprint, pero conserva la anulación de instancia. Ambos pasos requieren
+la versión de configuración actual correspondiente. Un restablecimiento de
+instancia elimina la anulación; se hereda un color de blueprint existente.
+
+Sin un color guardado, la API devuelve color=null y color_source=default.
+La interfaz utiliza entonces su tema predeterminado. La lectura de perfiles
+antiguos no guarda nuevos campos de color. El color no otorga permisos y no
+inicia ningún worker, proveedor ni llamada a modelo.

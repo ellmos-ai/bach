@@ -1,0 +1,62 @@
+Revisión independiente de resultados por modelos
+================================================
+
+Un resultado de worker entregado permanece inicialmente en el estado review.
+Una revisión por modelo es una tarea adicional en la misma base de datos y
+cola de tareas. Las tareas normales adecuadas se asumen primero. No hay
+ningún planificador adicional ni aprovisionamiento automático de modelos.
+
+Requisitos previos
+------------------
+El controlador local necesita una ruta de backend HTTP confirmada, un retorno
+real del modelo, una entrega de resultado válida y una prueba actual de copia
+de trabajo Git. Una persona autorizada por separado asigna alias de modelo a
+una identidad de modelo y determina los revisores admitidos junto con su
+nivel en los ajustes de worker existentes. El registro general de dispositivo
+no basta para estos derechos. Los cambios utilizan la versión de configuración
+existente y se rechazan ante modificaciones paralelas.
+
+Una designación de modelo planificada o etiqueta de ranura no demuestra
+ninguna identidad. La ruta real y la asignación de alias válida durante la
+llamada se registran en la prueba de ejecución. Las pruebas antiguas no
+reciben identidad de modelo retroactivamente. Una prueba ausente o modificada
+no permite ninguna revisión independiente. Las claves API permanecen en el
+proceso y no aparecen ni como texto ni como hash de clave en estas pruebas.
+
+Flujo
+-----
+Tras una entrega válida, si la asunción de revisión está activada, se crea
+exactamente una tarea de revisión para la revisión completa concreta del
+resultado. La tarea objetivo permanece en review. La tarea de revisión no
+depende del Done de la tarea objetivo. El controlador otorga un Grant privado
+e intransferible para otra identidad de modelo, otra ranura y otra generación
+de ejecución. Los claims públicos o externos no obtienen por ello derechos
+adicionales.
+
+La revisión pasa por las comprobaciones existentes de modelo, recursos, lease
+y detención. Puede leer el encargo objetivo y el resultado y solo entregar su
+propio resultado de revisión. El controlador vincula el último retorno real
+del modelo exactamente a esta llamada Submit. Las indicaciones del modelo
+sobre identidad o independencia no se adoptan como autorización.
+
+El veredicto estructurado contiene status (approved, findings o rejected),
+summary y task_contract_met. Un approved requiere task_contract_met=true. Una
+prueba de revisión ausente debe permanecer visible como hallazgo. El review
+registrado solo cierra la tarea de revisión ejecutada. La tarea original
+permanece en review y puede aceptarse personalmente o devolverse para
+corrección. Una aprobación personal no es sustituida por este review.
+
+Actualidad y límites
+--------------------
+La vista de lectura confirma un review registrado solo tras volver a comparar
+la revisión completa actual de Git/resultados. Los cambios en el encargo,
+resultado, ruta, asignación de modelo, política o copia de trabajo impiden
+una reutilización sin comprobar. Las tareas de revisión no generan más tareas
+de revisión. Las llamadas de lectura no crean tablas ni inician ningún
+modelo.
+
+Este componente conecta la segunda llamada de modelo con una prueba de
+revisión trazable. La decisión completa de cierre automático, incluidas todas
+las reglas de usuario, GitHub, contrato y corrección, sigue siendo un paso de
+integración abierto propio. Un cambio en el código fuente por sí solo no
+activa ninguna instalación nativa.

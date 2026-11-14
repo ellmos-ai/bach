@@ -52,6 +52,7 @@ Verwendung:
 """
 
 import os
+import re
 import sys
 import json
 import urllib.request
@@ -66,6 +67,34 @@ if sys.stderr:
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from connectors.base import BaseConnector, ConnectorConfig, ConnectorStatus, Message
+
+
+# URL-path safety (PB-13, #3996); same rules as the canonical `connectors` repo
+# (pattern after the MIT-licensed hermes-agent HA tool, Nous Research).
+_NAME_RE = re.compile(r"[a-z0-9_]+")
+_ENTITY_ID_RE = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
+_EVENT_TYPE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_BLOCKED_DOMAINS = frozenset({
+    "shell_command", "command_line", "python_script", "pyscript", "hassio", "rest_command",
+})
+
+
+def _valid_name(value) -> bool:
+    return isinstance(value, str) and _NAME_RE.fullmatch(value) is not None
+
+
+def _valid_event_type(value) -> bool:
+    return isinstance(value, str) and _EVENT_TYPE_RE.fullmatch(value) is not None
+
+
+def _valid_entity_id(value) -> bool:
+    return isinstance(value, str) and _ENTITY_ID_RE.fullmatch(value) is not None
+
+
+def _valid_entity_ids(value) -> bool:
+    if isinstance(value, list):
+        return bool(value) and all(_valid_entity_id(v) for v in value)
+    return _valid_entity_id(value)
 
 
 class HomeAssistantConnector(BaseConnector):
@@ -100,7 +129,8 @@ class HomeAssistantConnector(BaseConnector):
     def send_message(self, recipient: str, content: str,
                      attachments: Optional[List[str]] = None) -> bool:
         """Notification an HA senden."""
-        return self.call_service("notify", recipient, {"message": content})
+        return self.call_service("notify", recipient.removeprefix("notify."),
+                                 {"message": content})
 
     def get_messages(self, since: Optional[str] = None,
                      limit: int = 50) -> List[Message]:
@@ -118,17 +148,25 @@ class HomeAssistantConnector(BaseConnector):
 
     def get_state(self, entity_id: str) -> Optional[Dict]:
         """Status einer Entity abrufen."""
+        if not _valid_entity_id(entity_id):
+            return None
         return self._api_call("GET", f"/api/states/{entity_id}")
 
     def call_service(self, domain: str, service: str,
                      data: Dict[str, Any] = None) -> bool:
-        """Service aufrufen (z.B. light.turn_on)."""
+        """Service aufrufen (z.B. light.turn_on); ungueltige Namen/gesperrte Domains -> False."""
+        if not (_valid_name(domain) and _valid_name(service)) or domain in _BLOCKED_DOMAINS:
+            return False
+        if isinstance(data, dict) and "entity_id" in data and not _valid_entity_ids(data["entity_id"]):
+            return False
         result = self._api_call("POST", f"/api/services/{domain}/{service}", data)
         return result is not None
 
     def get_history(self, entity_id: str, hours: int = 24) -> List:
         """Historie einer Entity abrufen."""
         from datetime import datetime, timedelta, timezone
+        if not _valid_entity_id(entity_id):
+            return []
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
         result = self._api_call("GET",
                                 f"/api/history/period/{since}?filter_entity_id={entity_id}")
@@ -136,6 +174,8 @@ class HomeAssistantConnector(BaseConnector):
 
     def fire_event(self, event_type: str, data: Dict = None) -> bool:
         """Event feuern."""
+        if not _valid_event_type(event_type):
+            return False
         result = self._api_call("POST", f"/api/events/{event_type}", data)
         return result is not None
 

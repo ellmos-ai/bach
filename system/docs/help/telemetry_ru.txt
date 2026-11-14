@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+ТЕЛЕМЕТРИЯ (OPS-TELEM-001)
+==========================
+
+bach telemetry   - Счётчики с низкой кардинальностью и приоритетом приватности
+
+
+ОПИСАНИЕ
+========
+
+Собирает агрегированные счётчики с валидированными метками.
+Counter: agent_starts / model_calls / tool_calls
+Outcome: ok / error / dummy / timeout
+
+Приватность: сохраняются ТОЛЬКО агрегированные счётчики --
+никаких payload, промптов, путей или данных пользователя.
+Opt-Out: BACH_TELEMETRY_DISABLED=1
+
+
+КОМАНДЫ
+=======
+
+bach telemetry report [days]      Счётчики за последние N дней (по умолчанию 7)
+bach telemetry status              Статус сбора/схемы
+bach telemetry reset --confirm    Удалить все счётчики
+
+
+ИСТОЧНИК
+========
+
+Обработчик: hub/telemetry.py (TelemetryHandler, v1.0.0)
+Внедрение: OPS-TELEM-001, ROADMAP Security-Prio-1, Task #1315

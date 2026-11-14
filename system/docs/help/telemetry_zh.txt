@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+遥测（OPS-TELEM-001）
+==================
+
+bach telemetry   - 低基数、隐私优先的计数器
+
+
+说明
+==
+
+使用经过验证的标签记录聚合计数器。
+Counter: agent_starts / model_calls / tool_calls
+Outcome: ok / error / dummy / timeout
+
+隐私：仅保存聚合计数器 --
+不保存 Payload、提示词、路径或用户数据。
+Opt-Out: BACH_TELEMETRY_DISABLED=1
+
+
+命令
+==
+
+bach telemetry report [days]      最近 N 天的计数器（默认 7）
+bach telemetry status              采集/架构状态
+bach telemetry reset --confirm    删除所有计数器
+
+
+来源
+==
+
+处理器：hub/telemetry.py (TelemetryHandler, v1.0.0)
+引入：OPS-TELEM-001, ROADMAP Security-Prio-1, Task #1315

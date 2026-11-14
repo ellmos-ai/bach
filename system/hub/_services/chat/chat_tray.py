@@ -33,7 +33,13 @@ for _p in (_system_dir, _root_dir):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from hub.bach_paths import BACH_DB
 from hub._services.chat.control_auth import get_control_api_auth_header
+from hub._services.chat.slots_config import (
+    ALWAYS_ON_RIGHTS_TRAY_ITEMS,
+    effective_worker_rights,
+    worker_rights_level_to_mode_rights,
+)
 from hub._services.chat.tray_worker_execution import NativeWorkerObserver, WORKER_ID
 
 try:
@@ -257,6 +263,7 @@ class BACHTray:
                  activity_url=None, gui_url=None, brand="bach", execution_state_path=None):
         self.brand = (brand or "bach").lower()
         self.host = host
+        self.port = port
         self.remote = remote
         self.base_url = f"http://{host}:{port}"
         self.control_api_auth_header = get_control_api_auth_header()
@@ -336,7 +343,11 @@ class BACHTray:
         self.favorite_prompts = {}
         self.modular_status = {}
         self.modular_standalone_count = 0
+        self.module_updates = {"has_updates": False, "count": 0, "updates": []}
+        self._last_module_update_check = 0.0
+        self._notified_module_update_count = 0
         self._reload_modular_status()
+        self._check_module_updates(force=True)
         self.prompts = self._load_prompts()
 
     # --- API ---
@@ -750,6 +761,7 @@ class BACHTray:
                     self.state["fackel_preference"] = pref
             except Exception:
                 pass
+        self._check_module_updates(force=False)
 
     # --- PromptBoard ---
 
@@ -848,6 +860,7 @@ class BACHTray:
             candidates.extend([
                 project_dir / "start.bat",
                 project_dir / "releases" / "PromptBoard.msix",
+                project_dir / "src" / "promptboard.py",
             ])
         return candidates
 
@@ -909,19 +922,11 @@ class BACHTray:
 
     def _load_db_prompts(self):
         """Load curated prompts and favorites from BACH's canonical database (prompt_templates)."""
-        db_path = None
-        for cand in (
-            Path.home() / ".bach" / "bach.db",
-            Path(_root_dir) / "data" / "bach.db",
-            Path(_system_dir) / "data" / "bach.db",
-        ):
-            if cand.exists():
-                db_path = cand
-                break
-        if not db_path:
+        db_path = BACH_DB
+        if not db_path.is_file():
             return {}
         try:
-            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            with sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT name, text, category, tags FROM prompt_templates WHERE text IS NOT NULL AND text != ''"
@@ -1008,11 +1013,71 @@ class BACHTray:
             self.modular_status = {}
             self.modular_standalone_count = 0
 
+    def _check_module_updates(self, force: bool = False):
+        now = time.time()
+        if not force and (now - getattr(self, "_last_module_update_check", 0.0) < 60):
+            return
+        self._last_module_update_check = now
+        try:
+            from hub.modules import ModulesHandler
+            handler = ModulesHandler(_root_dir)
+            check = handler.check_for_updates()
+            has_upd = bool(check.get("has_updates"))
+            count = int(check.get("updates_count", 0))
+            updates = list(check.get("updates", []))
+            self.module_updates = {
+                "has_updates": has_upd,
+                "count": count,
+                "updates": updates,
+            }
+            prev_notified = getattr(self, "_notified_module_update_count", 0)
+            if has_upd and count > prev_notified:
+                self._notified_module_update_count = count
+                if self.icon:
+                    names = ", ".join(u["name"] for u in updates[:3])
+                    if len(updates) > 3:
+                        names += "..."
+                    self.icon.notify(
+                        f"{count} Modul-Update(s) verfügbar: {names}",
+                        "BACH Modul-Manager"
+                    )
+                    self.icon.menu = self._build_menu()
+        except Exception:
+            pass
+
+    def _trigger_modules_update_action(self, icon=None, item=None):
+        try:
+            from hub.modules import ModulesHandler
+            handler = ModulesHandler(_root_dir)
+            ok, msg = handler.handle("update", [])
+            self._reload_modular_status()
+            self._check_module_updates(force=True)
+            if self.icon:
+                self.icon.menu = self._build_menu()
+                if ok:
+                    self.icon.notify("Alle Module erfolgreich aktualisiert und hot-wired!", "BACH Modul-Manager")
+                else:
+                    self.icon.notify(f"Update-Fehler: {msg}", "BACH Modul-Manager")
+        except Exception as exc:
+            if self.icon:
+                self.icon.notify(f"Update-Fehler: {exc}", "BACH Modul-Manager")
+
+    def _manual_check_module_updates(self, icon=None, item=None):
+        self._check_module_updates(force=True)
+        if self.icon:
+            self.icon.menu = self._build_menu()
+            if self.module_updates.get("has_updates"):
+                c = self.module_updates["count"]
+                self.icon.notify(f"{c} Modul-Update(s) verfügbar!", "BACH Modul-Manager")
+            else:
+                self.icon.notify("Alle Module sind auf dem aktuellen Stand.", "BACH Modul-Manager")
+
     def _trigger_modules_sync(self, icon=None, item=None):
         try:
             from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
             auto_switch_to_standalone_modules()
             self._reload_modular_status()
+            self._check_module_updates(force=True)
             if self.icon:
                 self.icon.menu = self._build_menu()
                 self.icon.notify(f"Module synchronisiert ({self.modular_standalone_count}/{len(self.modular_status)} aktiv)", "BACH Module")
@@ -1024,6 +1089,16 @@ class BACHTray:
         count = self.modular_standalone_count
         total = max(12, len(self.modular_status))
         items.append(pystray.MenuItem(f"Status: {count}/{total} aktiv (Standalone-Modus)", None, enabled=False))
+
+        if self.module_updates.get("has_updates"):
+            upd_count = self.module_updates["count"]
+            items.append(pystray.MenuItem(f"⚡ {upd_count} Modul-Update(s) verfügbar!", self._trigger_modules_update_action))
+            for u in self.module_updates["updates"][:5]:
+                items.append(pystray.MenuItem(f"  • {u['name']} (v{u['current_version']} -> v{u['new_version']})", None, enabled=False))
+            items.append(pystray.MenuItem("📦 Alle Module jetzt aktualisieren", self._trigger_modules_update_action))
+        else:
+            items.append(pystray.MenuItem("📦 Auf Modul-Updates prüfen", self._manual_check_module_updates))
+
         items.append(pystray.MenuItem("🔄 Modul-Sync ausführen (bach update modules --sync)", self._trigger_modules_sync))
         items.append(pystray.Menu.SEPARATOR)
         if self.modular_status:
@@ -1041,6 +1116,9 @@ class BACHTray:
             "total_modularized": len(self.modular_status),
             "modules": {k: v.get("status") for k, v in self.modular_status.items()},
             "auto_update_ready": True,
+            "has_updates": self.module_updates.get("has_updates", False),
+            "updates_count": self.module_updates.get("count", 0),
+            "updates": self.module_updates.get("updates", []),
         }
 
     def promptboard_smoke_snapshot(self):
@@ -1065,9 +1143,10 @@ class BACHTray:
             "prompt_count": prompt_count,
             "favorite_count": len(self.favorite_prompts),
             "modular_standalone_count": self.modular_standalone_count,
+            "quick_insert_supported": True,
         }
 
-    def _copy_to_clipboard(self, text):
+    def _copy_to_clipboard(self, text, notify: bool = True):
         try:
             if sys.platform == "darwin":
                 subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=False)
@@ -1076,10 +1155,46 @@ class BACHTray:
             else:
                 subprocess.run(["xclip", "-selection", "clipboard"],
                                input=text.encode("utf-8"), check=False)
-            if self.icon:
+            if notify and self.icon:
                 self.icon.notify("In Zwischenablage kopiert", "BACH Prompt")
         except FileNotFoundError:
             pass
+
+    def _simulate_paste(self):
+        """Simuliert Tastenkombination zum direkten Einfügen in das aktive Eingabefeld."""
+        time.sleep(0.12)
+        if sys.platform == "win32":
+            import ctypes
+            VK_CONTROL = 0x11
+            VK_V = 0x56
+            KEYEVENTF_KEYUP = 0x0002
+            user32 = ctypes.windll.user32
+            user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            user32.keybd_event(VK_V, 0, 0, 0)
+            time.sleep(0.02)
+            user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
+            user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+        elif sys.platform == "darwin":
+            subprocess.run([
+                "osascript", "-e",
+                'tell application "System Events" to keystroke "v" using command down'
+            ], check=False)
+        else:
+            subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+v"], check=False)
+
+    def _make_prompt_quick_insert_action(self, text):
+        def action(*_):
+            self._copy_to_clipboard(text, notify=False)
+            def do_paste():
+                try:
+                    self._simulate_paste()
+                    if self.icon:
+                        self.icon.notify("Prompt direkt eingefügt!", "BACH Quick-Insert")
+                except Exception:
+                    if self.icon:
+                        self.icon.notify("In Zwischenablage kopiert (Strg+V)", "BACH Quick-Insert")
+            threading.Thread(target=do_paste, daemon=True).start()
+        return action
 
     def _send_prompt(self, prompt):
         result = self._api("POST", "/api/chat", {
@@ -1221,23 +1336,63 @@ class BACHTray:
 
     @property
     def _icon_image(self):
-        if self._always_on_runtime_label(self.slots.get(WORKER_ID, {})).startswith("Running"):
-            return self._make_icon((90, 120, 220, 255))  # actual native inference
-        if self.state["connected"]:
-            if self.state.get("mode") == "full":
-                return self._make_icon((255, 165, 0, 255))  # orange = full
-            return self._make_icon((0, 200, 100, 255))  # green = connected safe
-        return self._make_icon((180, 40, 40, 255))  # red = disconnected
+        if not self.state.get("connected"):
+            return self._make_icon((180, 40, 40, 255))  # red = disconnected
+        ws = self.state.get("worker_status")
+        if ws == "working" or self._always_on_runtime_label(self.slots.get(WORKER_ID, {})).startswith("Running"):
+            return self._make_icon((90, 120, 220, 255))  # actual native inference / working
+        if ws == "paused":
+            return self._make_icon((150, 150, 150, 255))  # grey = paused
+        if self.state.get("mode") == "full":
+            return self._make_icon((255, 165, 0, 255))  # orange = full
+        return self._make_icon((0, 200, 100, 255))  # green = connected safe
 
     # --- Menu ---
+
+    def _toggle_server_worker(self, *_):
+        """Send pause/toggle signal to the server worker instead of running tasks locally."""
+        try:
+            self._api("POST", "/api/worker/toggle", body={"worker_id": WORKER_ID})
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Worker-Signal fehlgeschlagen: {e}", "BACH System")
+        self._refresh()
+        self._update_icon()
 
     def _build_menu(self):
         items = []
         always_status_str = self._always_on_runtime_label(
             self.slots.get("buddha_always_on", {})
         )
-        target_label = "Ziel: Server (Tunnel)" if self.remote else "Ziel: Lokal"
+        # ── WP4: Transparente Server-Zielanzeige im Menuekopf ──
+        if self.remote or (self.host not in ("127.0.0.1", "localhost")):
+            host_name = "Mac Studio" if ("100.119.69" in self.host or "mac" in self.host.lower()) else self.host
+            target_label = f"Verbunden mit: {host_name} ({self.host}:{self.port})"
+        else:
+            target_label = f"Verbunden mit: Lokal ({self.host}:{self.port})"
         items.append(pystray.MenuItem(target_label, None, enabled=False))
+
+        # ── WP2: Buddha Server-Worker-Status Display ──
+        ws = self.state.get("worker_status", "idle")
+        tid = self.state.get("task_id")
+        ttitle = self.state.get("task_title")
+        if ws == "working":
+            buddha_label = f"🔵 Buddha: Rechnet an Task #{tid}" if tid else "🔵 Buddha: Rechnet"
+            if ttitle:
+                buddha_label += f" ({ttitle[:30]})"
+        elif ws == "paused":
+            buddha_label = "⏸️ Buddha: Pausiert"
+        elif self.state.get("active_sessions", 0) > 0:
+            buddha_label = "⚪ Buddha: Chat aktiv"
+        else:
+            buddha_label = "🟢 Buddha: Bereit (Leerlauf)"
+        items.append(pystray.MenuItem(buddha_label, None, enabled=False))
+
+        # ── WP3: Remote-Pause-Schalter (Hintergrundarbeit erlauben [✔ / ❌]) ──
+        is_allowed = (ws != "paused")
+        toggle_label = f"Hintergrundarbeit erlauben [{'✔' if is_allowed else '❌'}]"
+        items.append(pystray.MenuItem(toggle_label, self._toggle_server_worker))
+        items.append(pystray.Menu.SEPARATOR)
 
         # ── Status ──
         if self.state["connected"]:
@@ -1262,6 +1417,7 @@ class BACHTray:
             always_backend = always_slot.get("backend") or "ollama"
             always_rounds = always_slot.get("max_tool_rounds", 25)
             always_mode = always_slot.get("mode", "full")
+            always_rights = effective_worker_rights(always_slot)
             always_status_str = self._always_on_runtime_label(always_slot)
 
             conn_model = conn_slot.get("model") or "qwen3.8:27b-mlx"
@@ -1346,10 +1502,15 @@ class BACHTray:
                 for v in [10, 20, 25, 30, 50, 0]
             ]
             always_subitems.append(pystray.MenuItem(f"Max Turns: {'Unbegrenzt' if always_rounds == 0 else always_rounds}", pystray.Menu(*always_round_items)))
-            always_subitems.append(pystray.MenuItem("Full-Modus (Schreibrechte)", self._make_slot_mode_action("buddha_always_on", "full"),
-                                                    checked=lambda item, am=always_mode: am == "full"))
-            always_subitems.append(pystray.MenuItem("Safe-Modus", self._make_slot_mode_action("buddha_always_on", "safe"),
-                                                    checked=lambda item, am=always_mode: am == "safe"))
+            for rights_level, rights_label in ALWAYS_ON_RIGHTS_TRAY_ITEMS:
+                always_subitems.append(
+                    pystray.MenuItem(
+                        rights_label,
+                        self._make_slot_rights_action("buddha_always_on", rights_level),
+                        checked=lambda item, rl=rights_level, ar=always_rights: ar == rl,
+                        radio=True,
+                    )
+                )
             act_text = self.idle_task_name or always_slot.get("current_activity") or "Wartet auf Leerlauf"
             always_subitems.append(pystray.MenuItem(f"Aktivität: {act_text[:35]}", None, enabled=False))
             items.append(pystray.MenuItem(f"⚡ Buddha Always-On [Klasse 4 · {always_status_str}]: {always_model}", pystray.Menu(*always_subitems)))
@@ -1637,6 +1798,7 @@ class BACHTray:
                 sub_items = [
                     pystray.MenuItem(f"🔍 \"{f_preview}\"", None, enabled=False),
                     pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(f"⚡ Direkt einfügen", self._make_prompt_quick_insert_action(f_text)),
                     pystray.MenuItem(f"📋 Kopieren", self._make_prompt_copy_action(f_text)),
                     pystray.MenuItem(f"▶ Direkt senden", self._make_prompt_send_action(f_text)),
                     pystray.MenuItem(f"💬 Im Chat öffnen (Entwurf)", self._make_prompt_open_chat_action(f_text)),
@@ -1662,6 +1824,8 @@ class BACHTray:
         prompt_items.append(pystray.MenuItem("Prompt-Bibliothek (Web) öffnen", self._open_prompt_library))
         prompt_items.append(pystray.MenuItem("PromptBoard in BACH importieren", self._import_promptboard_action))
         prompt_items.append(pystray.MenuItem("Prompts nach PromptBoard exportieren", self._export_promptboard_action))
+        prompt_items.append(pystray.MenuItem("🔄 PromptBoard Zwei-Wege-Sync", self._sync_promptboard_action))
+        prompt_items.append(pystray.MenuItem("⭐ Favoriten synchronisieren", self._sync_favorites_action))
         prompt_items.append(pystray.Menu.SEPARATOR)
         for category, prompts in self.prompts.items():
             cat_items = []
@@ -1670,6 +1834,10 @@ class BACHTray:
                 prompt_subitems = [
                     pystray.MenuItem(f"🔍 \"{preview}\"", None, enabled=False),
                     pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(
+                        f"⚡ Einfügen: {name}",
+                        self._make_prompt_quick_insert_action(text),
+                    ),
                     pystray.MenuItem(
                         f"\U0001F4CB {name}",
                         self._make_prompt_copy_action(text),
@@ -1956,14 +2124,21 @@ class BACHTray:
             self._update_icon()
         return action
 
-    def _make_slot_mode_action(self, slot_id, mode):
+    def _make_slot_mode_action(self, slot_id, mode, rights=None):
         def action(*_):
-            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": {"mode": mode}})
+            updates = {"mode": mode}
+            if rights is not None:
+                updates["rights"] = rights
+            res = self._api("POST", "/api/slots", {"slot_id": slot_id, "updates": updates})
             if res is None or res.get("error"):
                 self._notify_error(f"{slot_id} Modus → {mode}")
             self._refresh()
             self._update_icon()
         return action
+
+    def _make_slot_rights_action(self, slot_id, level):
+        mode, rights = worker_rights_level_to_mode_rights(level)
+        return self._make_slot_mode_action(slot_id, mode, rights=rights)
 
     def _toggle_slot_think(self, slot_id):
         slot = self.slots.get(slot_id, {})
@@ -2041,6 +2216,11 @@ class BACHTray:
         try:
             if sys.platform == "win32" and app_path.suffix.lower() in {".bat", ".msix", ".exe"}:
                 os.startfile(str(app_path))
+            elif app_path.suffix.lower() == ".py":
+                subprocess.Popen(
+                    [sys.executable, str(app_path)],
+                    cwd=str(app_path.parent.parent if app_path.parent.name == "src" else app_path.parent),
+                )
             else:
                 subprocess.Popen(
                     [str(app_path)],
@@ -2093,6 +2273,40 @@ class BACHTray:
             if self.icon:
                 self.icon.notify(f"Export fehlgeschlagen: {e}", "BACH PromptBoard")
 
+    def _sync_promptboard_action(self, *_):
+        """Bidirectionally synchronizes prompts between PromptBoard library.json and BACH DB."""
+        try:
+            from hub.prompt import PromptHandler
+            handler = PromptHandler(_root_dir)
+            _, result = handler.handle("sync-promptboard", [])
+            data = json.loads(result) if isinstance(result, str) else result
+            if self.icon:
+                imported = data.get("imported", 0)
+                exported = data.get("exported", 0)
+                updated_bach = data.get("updated_in_bach", 0)
+                updated_pb = data.get("updated_in_promptboard", 0)
+                total = data.get("total_promptboard", 0)
+                self.icon.notify(
+                    f"PromptBoard Zwei-Wege-Sync: {imported} importiert, {exported} exportiert, "
+                    f"{updated_bach + updated_pb} aktualisiert ({total} gesamt).",
+                    "BACH PromptBoard"
+                )
+            self.prompts = self._load_prompts()
+            self._update_icon()
+        except Exception as e:
+            if self.icon:
+                self.icon.notify(f"Sync fehlgeschlagen: {e}", "BACH PromptBoard")
+
+    def _sync_favorites_action(self, *_):
+        """Synchronizes PromptBoard library and updates favorite prompts in tray."""
+        self._sync_promptboard_action()
+        self._reload_prompts()
+        if self.icon:
+            self.icon.notify(
+                f"Favoriten abgeglichen ({len(self.favorite_prompts)} aktiv).",
+                "BACH Favoriten"
+            )
+
     def _record_audio_prompt_action(self, *_):
         """Triggers audio prompt recording via ellmos-voice-io or speech interface handoff."""
         def record_worker():
@@ -2139,7 +2353,7 @@ class BACHTray:
             for w in getattr(self, "dynamic_workers", [])
         )
         slot_sig = tuple(
-            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("enabled"), v.get("current_activity"))
+            (k, v.get("model"), v.get("backend"), v.get("max_tool_rounds"), v.get("mode"), v.get("rights"), v.get("enabled"), v.get("current_activity"))
             for k, v in sorted(getattr(self, "slots", {}).items())
         )
         return (
@@ -2154,6 +2368,9 @@ class BACHTray:
             len(getattr(self, "models", [])),
             getattr(self, "idle_task_name", None),
             getattr(self, "active_tool", None),
+            self.state.get("worker_status"),
+            self.state.get("task_id"),
+            self.state.get("task_title"),
             worker_sig,
             slot_sig,
         )
@@ -2168,7 +2385,6 @@ class BACHTray:
             if new_sig != old_sig:
                 self._update_icon()
                 old_sig = new_sig
-            self._idle_tick()
             self._stop.wait(self.POLL_INTERVAL)
 
     # --- Run ---
@@ -2205,6 +2421,11 @@ def main():
         action="store_true",
         help="Print PromptBoard tray detection smoke data and exit",
     )
+    parser.add_argument(
+        "--smoke-modules",
+        action="store_true",
+        help="Print modular core update-check smoke data and exit",
+    )
     args = parser.parse_args()
 
     tray = BACHTray(host=args.host, port=args.port, gui_port=args.gui_port,
@@ -2213,6 +2434,10 @@ def main():
                     brand=args.brand)
     if args.smoke_promptboard:
         print(json.dumps(tray.promptboard_smoke_snapshot(), ensure_ascii=False, indent=2))
+        return
+    if args.smoke_modules:
+        tray._check_module_updates(force=True)
+        print(json.dumps(tray.modular_status_smoke_snapshot(), ensure_ascii=False, indent=2))
         return
     lock_file = Path.home() / ".bach" / f"{args.brand}_tray.lock" if args.brand != "bach" else TRAY_LOCK_FILE
     lock = acquire_single_instance_lock(lock_file)

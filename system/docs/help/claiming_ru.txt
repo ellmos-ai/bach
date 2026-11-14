@@ -1,0 +1,44 @@
+=== ЗАХВАТ МОДЕЛИ И RAM (RAM-DISTRIBUTOR И RUNTIME МОДЕЛИ) ===
+
+Кратко:
+  В BACH и Ocean больше нет жёстких слотов моделей. Все агенты («Ваши
+  агенты») напрямую привязаны к основной модели + цепочке fallback. Во время
+  выполнения происходит двухэтапный захват (claiming):
+    1. RAM-Claim (Главный факел / RAMDistributor): Кто может занимать
+       физическую RAM/VRAM (локальная модель 27B против вычислительных
+       пайплайнов)?
+    2. Model-Runtime-Claim (Факел модели / HostInferenceGate): Кто получает
+       следующий ход инференса на загруженной модели по 4 классам близости к
+       пользователю?
+
+4 КЛАССА ПРИОРИТЕТА ПО БЛИЗОСТИ К ПОЛЬЗОВАТЕЛЮ (UserProximity):
+  Класс 1 (DIRECT_INTERACTIVE)    : Пользователь ждёт напрямую (Chat, Talk)
+  Класс 2 (DELEGATED_FOREGROUND)  : Эксперт, активно вызванный Пользователем/Чатом
+  Класс 3 (SCHEDULED_ROUTINE)     : Подошедший по расписанию или рутинный агент
+  Класс 4 (AUTONOMOUS_BACKGROUND) : Фоновый воркер (Buddha Always-On)
+
+СЛУЧАЙ A: ДРУГОЙ ПРОЦЕСС НУЖДАЕТСЯ В RAM / VRAM (COMPUTE / СВОЯ МОДЕЛЬ)
+  1. В системном трее (ellmos-tray) или GUI (/agenten/running):
+     "🔥 RAM-Distributor & Modell-Claim" ->
+     "🔓 Modell & RAM jetzt für andere Prozesse freigeben"
+  2. Через HTTP-API / CLI:
+     curl -X POST http://127.0.0.1:8081/api/fackel -H "Content-Type: application/json" -d '{"preference":"compute"}'
+     curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"qwen3.8:27b-mlx","keep_alive":0}'
+  3. Через Compute-Lock (~/.memwatchdog/compute_active.lock):
+     Укажи {"active_compute_jobs": [{"pid": <PID>, "name": "<job>"}]}.
+
+СЛУЧАЙ B: ДРУГОЙ ПРОЦЕСС ХОЧЕТ ЗАХВАТИТЬ / ИСПОЛЬЗОВАТЬ ЛОКАЛЬНУЮ МОДЕЛЬ
+  1. Кооперативно в Python через HostInferenceGate (вытесняет фоновых воркеров):
+     from hub._services.chat.host_inference_gate import HostInferenceGate
+     async with HostInferenceGate().turn("mein-prozess", "foreground"):
+         ...
+  2. Напрямую через BACH Control API (:8081/api/chat):
+     curl -X POST http://127.0.0.1:8081/api/chat -H "Content-Type: application/json" \
+       -d '{"prompt": "...", "chat_id": "mein-prozess"}'
+  3. Проверить и управлять привязками моделей:
+     bach model-sockets list --json
+     bach model-sockets catalog --json
+
+Полная документация (ЦЕЛЕВОЕ И ТЕКУЩЕЕ СОСТОЯНИЕ):
+  docs/architecture/MODEL-AND-RAM-CLAIMING.md
+  ocean-resources/README.md
