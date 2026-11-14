@@ -16,6 +16,7 @@ from pathlib import Path
 STATE_SCHEMA = "bach.docs-maintenance.v1"
 WORKFLOWS = ("help-forensic", "help-expert-review", "root-docs-review", "docs-analyse")
 REVISION = re.compile(r"[a-f0-9]{40}")
+MAX_DELTA_FILES = 2048
 PACKAGES = {
     "workers": ("system/hub/_services/chat/", "system/gui/api/worker_"),
     "scheduler": (
@@ -149,12 +150,16 @@ def git_snapshot(root: Path, previous: str | None) -> tuple[str, list[str]]:
                 revision,
             ]
         )
-    names = [name for name in files.split("\x00") if name]
-    if len(names) > 256:
-        raise ValueError("Documentation delta exceeds file budget")
     names = [
-        name for name in names if not name.startswith(("system/data/", "system/tests/"))
+        name
+        for name in files.split("\x00")
+        if name and not name.startswith(("system/data/", "system/tests/"))
     ]
+    # ponytail: generous ceiling. dispatch() hands out one package per tick and each task lists
+    # at most six files, so a long outage must not block the delta job (14.11.2026: 897 commits,
+    # 830 relevant files after 26 days). The 64 KiB output budget of run() stays the hard bound.
+    if len(names) > MAX_DELTA_FILES:
+        raise ValueError("Documentation delta exceeds file budget")
     return revision, names
 
 

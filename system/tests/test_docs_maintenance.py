@@ -780,6 +780,47 @@ def test_invalid_owner_config_blocks_only_doc_legacy(tmp_path):
     assert delegated_to_maintenance(tmp_path / "bach.db", "backup_check") is False
 
 
+def _fake_git(monkeypatch, delta_names):
+    from hub._services.docs import maintenance_dispatch
+
+    def run(command, **_options):
+        args = command[1:]
+        if args[0] == "rev-parse":
+            out = "b" * 40 + "\n"
+        elif args[0] == "diff" and "-z" in args:
+            out = "\x00".join(delta_names)
+        else:  # clean-tree checks: diff --name-only HEAD, ls-files --others
+            out = ""
+        return SimpleNamespace(stdout=out.encode("utf-8"))
+
+    monkeypatch.setattr(maintenance_dispatch.subprocess, "run", run)
+    return maintenance_dispatch
+
+
+def test_long_outage_delta_is_filtered_before_the_file_budget(tmp_path, monkeypatch):
+    # 14.11.2026: 26 days of downtime left 1112 changed files, 830 outside tests/data.
+    relevant = [f"system/hub/_services/mod{i}.py" for i in range(830)]
+    tests = [f"system/tests/test_{i}.py" for i in range(282)]
+    dispatch = _fake_git(monkeypatch, relevant + tests)
+    revision, names = dispatch.git_snapshot(tmp_path, "a" * 40)
+    assert revision == "b" * 40
+    assert names == relevant
+
+
+def test_delta_above_the_ceiling_still_fails_closed(tmp_path, monkeypatch):
+    dispatch = _fake_git(
+        monkeypatch, [f"docs/page{i}.md" for i in range(dispatch_ceiling() + 1)]
+    )
+    with pytest.raises(ValueError, match="file budget"):
+        dispatch.git_snapshot(tmp_path, "a" * 40)
+
+
+def dispatch_ceiling():
+    from hub._services.docs.maintenance_dispatch import MAX_DELTA_FILES
+
+    return MAX_DELTA_FILES
+
+
 def test_launch_plan_is_portable_and_has_no_side_effect(tmp_path):
     import plistlib
     import sys
