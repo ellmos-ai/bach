@@ -1572,6 +1572,8 @@ def test_api_modules_status_and_sync():
     assert "prompt" in data["modularized_services"]
     assert "message_delivery" in data["modularized_services"]
     assert "conversation_store" in data["modularized_services"]
+    assert data["modularized_services"]["worker_policy"]["bound"] is True
+    assert data["modularized_services"]["worker_policy"]["standalone"] is False
     assert data["auto_update_ready"] is True
 
     sync_res = client.post("/api/modules/sync")

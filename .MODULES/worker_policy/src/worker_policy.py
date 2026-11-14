@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
-"""CLI/library access to worker review & execution settings (Standalone-Modul)."""
+"""Native BACH policy compatibility adapter, without independent storage authority."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 __version__ = "1.0.0"
 
@@ -21,72 +21,37 @@ class PolicyConflict(ValueError):
 try:
     from hub._services import worker_policy_settings as _service
 except ImportError:
-    try:
-        import worker_policy_settings as _service
-    except ImportError:
-        _service = None
+    _service = None
+else:
+    # Keep the native error identity: callers must observe real CAS/readiness failures.
+    PolicyUnavailable = _service.PolicyUnavailable
+    PolicyConflict = _service.PolicyConflict
+
+
+def _native():
+    if _service is None:
+        raise PolicyUnavailable("Nativer Worker-Policydienst nicht verfügbar")
+    return _service
 
 
 def read_global_policy(db_path: Path | str | None = None) -> dict[str, Any]:
-    if _service is not None and hasattr(_service, "read_global_policy"):
-        try:
-            return _service.read_global_policy(db_path=db_path)
-        except Exception:
-            pass
-    return {
-        "schema": GLOBAL_SCHEMA,
-        "contract": CONTRACT,
-        "policy": {
-            "policy_version": "1.0.0",
-            "default_mode": "require_review",
-            "reviewers": [{"reviewer_id": "buddha", "tier": "standard"}],
-            "allow_review_task_pickup": True,
-            "review_expiry_seconds": 86400,
-            "github_external_review": False,
-        },
-        "selection": {
-            "resume_bound_task_first": True,
-            "decompose_when_idle": False,
-            "normal_task_order": "priority_then_created",
-        },
-    }
+    return _native().read_global_policy(db_path=db_path)
 
 
 def write_global_policy(
     policy: dict[str, Any],
     actor: str = "local:worker-policy",
     db_path: Path | str | None = None,
+    *,
+    operator_token: str | None = None,
 ) -> dict[str, Any]:
-    if _service is not None and hasattr(_service, "write_global_policy"):
-        try:
-            return _service.write_global_policy(policy, actor=actor, db_path=db_path)
-        except Exception:
-            pass
-    return {
-        "schema": GLOBAL_SCHEMA,
-        "contract": CONTRACT,
-        "saved": True,
-        "actor": actor,
-        "policy": policy,
-    }
+    return _native().write_global_policy(
+        policy, actor=actor, db_path=db_path, operator_token=operator_token
+    )
 
 
 def read_task_policy(task_id: int, db_path: Path | str | None = None) -> dict[str, Any]:
-    if _service is not None and hasattr(_service, "read_task_policy"):
-        try:
-            return _service.read_task_policy(task_id, db_path=db_path)
-        except Exception:
-            pass
-    return {
-        "schema": TASK_SCHEMA,
-        "task_id": task_id,
-        "override": {
-            "mode": None,
-            "require_user_review": False,
-            "github_external_review": None,
-            "allow_review_task_pickup": None,
-        },
-    }
+    return _native().read_task_policy(task_id, db_path=db_path)
 
 
 def write_task_policy(
@@ -95,18 +60,7 @@ def write_task_policy(
     actor: str = "local:worker-policy",
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    if _service is not None and hasattr(_service, "write_task_policy"):
-        try:
-            return _service.write_task_policy(task_id, policy, actor=actor, db_path=db_path)
-        except Exception:
-            pass
-    return {
-        "schema": TASK_SCHEMA,
-        "task_id": task_id,
-        "saved": True,
-        "actor": actor,
-        "override": policy,
-    }
+    return _native().write_task_policy(task_id, policy, actor=actor, db_path=db_path)
 
 
 class WorkerPolicyHandler:
@@ -127,7 +81,7 @@ class WorkerPolicyHandler:
             "task_set": "Taskregeln speichern: ID JSON",
         }
 
-    def handle(self, operation: str, args: list, dry_run: bool = False) -> Tuple[bool, str]:
+    def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple[bool, str]:
         try:
             if operation in {"", "status"} and not args:
                 result = read_global_policy()
@@ -145,5 +99,5 @@ class WorkerPolicyHandler:
             else:
                 return False, "Erwartet: status | task_show ID | set JSON | task_set ID JSON"
             return True, json.dumps(result, ensure_ascii=False, sort_keys=True)
-        except (PolicyUnavailable, PolicyConflict, ValueError, TypeError, KeyError) as exc:
+        except (PolicyUnavailable, PolicyConflict, PermissionError, ValueError, TypeError, KeyError) as exc:
             return False, str(exc)
