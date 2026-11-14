@@ -1,0 +1,75 @@
+Resultados de workers y aceptación personal
+===========================================
+
+Los workers nativos guardan un resultado técnico concreto con task_manage,
+action=submit_result y el indicador obligatorio complete=true/false (o
+--complete=true/false en comandos de cierre CLI). Sus alias de cierre
+también conducen a la entrega de resultados. Una mera confirmación de
+finalización no basta. Con complete=true, el resultado se guarda como entrega,
+se libera el lease de tarea y el estado de cierre se determina según la
+política configurada (review o cierre directo). Con complete=false, el estado
+parcial actual se anota sellado en la descripción de la tarea y la tarea se
+devuelve abierta como pending (p. ej. tras una descomposición en subtareas).
+
+Una tarea asignada explícitamente a una ranura del sistema se asume con
+independencia de su selección general de categoría y prioridad. Los filtros
+de etiquetas, en especial las etiquetas excluidas como waiting o delegated,
+siguen siendo vinculantes. La ranura asignada y required_model deben
+coincidir con la ocupación real. Las dependencias, el periodo de gracia de
+Creator y los leases de tarea existentes siguen siendo vinculantes. Para
+tareas sin asignación explícita de ranura rigen los filtros habituales de
+cola y asignatario.
+
+Un filtro de recogida activado exige todos los grupos de filtros configurados:
+categoría (category, project o categories), prioridad, al menos una etiqueta
+positiva y ninguna etiqueta excluida. Los grupos vacíos no restringen. Sin un
+filtro activado y sin asignación explícita de ranura, la cola general se
+limita a assigned_to BACH, Buddha, Ollama o el propio Worker-ID, rol o
+sub_mode. Un filtro activado es una configuración de selección explícita, no
+una autorización general de tareas ajenas.
+
+La proyección queue_status obtenida en vivo indica candidatos, coincidencias de
+selección, intentos de asunción, fuente, tiempo y cifras separadas de
+exclusión para categoría, prioridad, etiquetas positivas o excluidas y
+límites nativos de asunción. Una coincidencia de selección aún no es un lease
+confirmado. current_activity muestra las cifras más importantes también en
+tarjetas de GUI más antiguas. La consulta autenticada de configuración
+entrega selection_policy por separado de los campos editables. Esta
+visualización no modifica, inicia ni reclama nada; sus valores de selección
+están integrados en la versión de configuración.
+
+Para la comprobación operativa son determinantes la configuración y las
+pruebas de ejecución del servicio de control en ejecución. Una CLI recién
+iniciada puede leer otro archivo de configuración de ranuras debido a otras
+variables de entorno y, por tanto, no demuestra por sí sola qué tareas puede
+seleccionar el worker que realmente está en ejecución.
+
+En los detalles de la tarea, Review muestra el texto de resultado guardado. El
+usuario lo comprueba y acepta con una clave de operador propia. La aceptación
+vincula el resultado exacto, su SHA-256, la versión de contenido de la tarea y
+la revisión de estado. Una consulta reciente confirma la aceptación realmente
+guardada.
+
+El operador se configura exclusivamente de forma local en el backend canónico:
+gui.device_auth.create_task_result_operator(name). La función crea una nueva
+credencial de dispositivo; las claves existentes de bandeja, worker y
+dispositivo general no obtienen por ello derechos de aceptación. La clave
+propia se transmite de forma privada al usuario y se deposita en la pestaña
+actual del navegador. Olvidar la elimina de esa pestaña. No pertenece ni a
+repositorios ni a tickets, registros, contexto del modelo ni SYNC.
+
+GET /api/tasks/{id}/result lee la entrega y la aceptación actual.
+POST /api/tasks/{id}/result/accept exige además X-BACH-Result-Operator. La
+autenticación general de dispositivo por sí sola no permite esta aceptación.
+Se rechazan dispositivos de operador revocados, resultados modificados,
+contenidos de tarea o revisiones de estado. Los resultados históricos se
+conservan para su consulta sin contar como aceptación confirmada actual.
+
+Un relevo espera tras el fin físico del worker a esta aceptación separada. Si
+la fuente de resultado no está confirmada, mantiene la misma vinculación de
+paso y espera. Solo la aceptación actual confirmada permite la entrega al
+paso siguiente. Una detención explícita sigue siendo posible incluso al
+esperar una fuente ausente.
+
+Instalación y pin de GUI: gui-integration.txt.
+Errores de proveedor, límite mensual y limpieza de tareas: worker-errors.txt.

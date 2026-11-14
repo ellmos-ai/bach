@@ -1,0 +1,52 @@
+# Reanudación nativa Always-On
+
+La Control-API inicia su propia comprobación de arranque tras enlazar
+correctamente su puerto configurado. Solo se tiene en cuenta la ranura
+guardada buddha_always_on en un lead canónico. Otras ranuras y los workers
+dinámicos no reciben un arranque automático.
+
+La comprobación no asume valores predeterminados como aprobación del usuario ni
+derechos de Creator. Enabled debe ser explícitamente true. Los estados
+pausados manualmente, detenidos, desactivados, expirados y finalizados se
+conservan. Una detención normal de este worker fijo guardará en el futuro
+paused; un estado objetivo solicitado explícitamente sigue siendo efectivo.
+Una pausa de enfriamiento automática previa puede continuarse; la comprobación
+de arranque espera la cuenta atrás existente antes de una admisión. Un inicio
+de pausa ilegible no permite el arranque.
+
+Ollama y LM Studio solo se tienen en cuenta tras una comprobación real del
+modelo local. Los proveedores en la nube y los modelos :cloud quedan
+excluidos; un endpoint loopback por sí solo no demuestra un modelo local. Si
+el servidor de modelos local aún no está listo, la comprobación de arranque
+espera 30 segundos y vuelve a leer la configuración actual. La comprobación
+finaliza con una admisión confirmada o una admisión nativa existente y se
+detiene al cerrar el servidor. Su señal de cancelación está vinculada
+atómicamente a su propia generación reservada. De este modo, una admisión de
+rol que aún esté esperando durante el cierre no puede iniciar un worker con
+posterioridad; una generación ajena posterior no recibe ninguna detención.
+
+La comprobación del modelo local y el arranque utilizan una versión de
+configuración común e inalterada. La admisión nativa existente vuelve a
+comprobar esta versión, la instancia de control actual y el estado Enabled
+guardado. Los intentos paralelos reservan como máximo una generación por
+controlador. Un arranque físico no confirmado no se repite como conflicto CAS.
+
+El lease normal de tarea, la versión de contenido, el periodo de gracia de
+Creator de 600 segundos, la antorcha y el control de inferencia local se
+utilizan sin cambios. Solo la aceptación de tarea realmente confirmada permite
+una ronda de modelo. Una cola vacía mantiene disponible al worker continuo
+admitido. Tras un fallo inesperado, la propia reanudación espera a los
+conflictos de held, Creator y contenido sin omitir el lease confirmado. Un
+estado de tarea antiguo canónicamente terminal solo permite eliminar
+condicionalmente el puntero de tarea inalterado; nunca se emite como tarea
+propia completada ni como resultado propio. Los punteros de tarea reasignados
+mientras tanto se conservan.
+
+## Aceptación
+
+Este documento describe el contrato de origen. La aceptación productiva
+requiere un nuevo proceso de control, una nueva instancia de servicio,
+exactamente una generación física Always-On y una tarea real con lease y
+resultado confirmado. Una mera actualización de código fuente o una selección
+de pruebas en verde no demuestra esta aceptación. Los workers en la nube
+siguen sin reiniciarse automáticamente tras un reinicio del control.

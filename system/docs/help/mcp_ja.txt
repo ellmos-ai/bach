@@ -1,0 +1,39 @@
+BACH MCP サーバー
+=============
+
+説明
+--
+
+組み込みの BACH MCP サーバーは、Model Context Protocol を介して BACH リソース、
+ツール、およびプロンプトを提供します。stdio と既存のハンドラ API を使用します。
+
+使用方法
+----
+
+  bach mcp serve
+      MCP stdio トランスポート経由でサーバーを起動します。
+
+  bach mcp serve --dry-run
+      サーバーを起動せずに CLI ルーティングを確認します。
+
+  bach --help mcp
+      このヘルプトピックを表示します。
+
+依存関係
+----
+
+  pip install -r requirements-optional.txt
+
+MCP プロファイル
+---------
+
+  {
+    "mcpServers": {
+      "bach": {
+        "command": "bach",
+        "args": ["mcp", "serve"]
+      }
+    }
+  }
+
+プロファイルエントリは `bach setup mcp` によってもインストールされます。

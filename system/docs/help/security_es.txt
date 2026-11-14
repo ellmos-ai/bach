@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+SEGURIDAD
+=========
+
+bach security   - Escaneo de seguridad estático para BACH
+
+
+DESCRIPCIÓN
+===========
+
+Escanea las rutas de código propias de BACH en busca de patrones peligrosos y
+genera un informe categorizado. Utiliza el sistema de capacidades
+(core.capabilities) para la detección real de patrones.
+
+Rutas predeterminadas: tools, skills, hub, core, scripts, bin
+Último informe: security_scan_latest.json
+
+
+COMANDOS
+========
+
+bach security scan                Escanea las rutas predeterminadas
+bach security scan tools/         Escanea un directorio específico
+bach security scan --json         Informe en JSON
+bach security scan --dry-run      Muestra qué se escanearía
+bach security status              Muestra el último informe
+
+
+FUENTE
+======
+
+Controlador: hub/security.py (SecurityHandler)

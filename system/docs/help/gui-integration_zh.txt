@@ -1,0 +1,66 @@
+共享 GUI、代理与 Ocean 迁移
+==================
+
+界面源码位于 ellmos-system-gui。BACH 使用经过验证的发布归档；
+system/gui/kit_manifest.json 绑定了源提交和归档哈希。
+
+视图
+/agenten/running       Living 槽位和实际观测到的运行
+/agenten/blueprints    模板、角色和蓝图实例
+/agenten/marblerun     原生代理链和有序技能链
+/tasks                 任务和可用的类型化分配目标
+/skills                当前技能源和版本历史
+/skills/plugins        插件面板
+/skills/mcp            MCP 面板
+/skills/software       软件面板
+
+用于创建、现成代理和现成团队的三张卡片构成一个带有蓝色强调色的共享组。在浅
+色模式下，它们的表面为白色；两个 Living 区域在首次打开时保持折叠状态。
+
+以前的 URL /agents-board 和 /skills-board 为重定向。
+Fabrika 通往整合后的蓝图编辑器。
+
+头像选择
+70 张图像：6 张原始头像、19 张以前的 Gemini 图像以及 3 套新的十张系列（漫
+画代理、Gemini 角色、可爱车间机器人），外加 10 个怪物和 5 个史莱姆球。该选
+择可在代理车间和代理配置对话框中使用。新增图像在现有图像契约内使用 256 像
+素的 PNG。保存的是图像内容；为此不需要新的后端预设 ID。来源和源哈希位于共
+享 GUI 仓库的 src/assets/agent-portraits-20261010/provenance.json 下。
+
+检查
+GET /api/gui/backend-origin   实际后端和实例绑定
+GET /api/gui/capabilities     已注册的适配器和未完成的验收
+GET /api/gui/kit-manifest     GUI 锁定和已安装文件检查
+GET /api/task-assignees       实际分配目标和配置版本
+
+已注册的适配器不能证明生产运行。
+Living 表示可用；Running 需要一次观测到的运行。
+仅凭模型名称不能确认成功的推理。
+本地启动的 Worker 共享实际的计算所有权。
+云端 Worker 需要显式启动。
+已启用的固定 Always-On Worker 可以在具有已证明本地模型的 Control 启动后在
+主节点（Lead）上恢复。手动暂停和停止会保留；参见 always-on-startup.txt。
+这种本地恢复不是云端自动启动。
+
+分配
+原生分配使用 assigned_slot、assigned_to 和 required_model。包括释放先前原
+生分配在内的更改需要当前的 assignment_configuration_version。发生冲突需
+要重新读取；不存在静默重试或自动启动。
+
+动态 Worker 配置文件也是类型化的分配目标。其已保存的提供商、模型和已认证
+的状态证明必须匹配。暂停、出错、过期或私有接力配置文件不可选择。在
+Living/Running 中分配任务会打开带有该配置文件的任务表单；保存会将任务绑
+定到其实际 ID。全局配置版本会在状态获取之后、任务提交之前立即检查。分配不
+会启动 Worker，也不会获取任务租约。
+
+治理
+BACH_POLICY_REGISTRY_ENABLED=1 启用可选的规范读取器。提供商通过
+POLICY_REGISTRY_PATH 或其自身默认值查找注册表。缺少注册表或来源错误会导
+致报错。读取：/api/governance/policy-registry 和
+/api/governance/effective-policy。DecisionClicker 写入路径是一项需要单独
+启用的功能。
+
+延伸阅读
+根目录：OCEAN-TRANSFER-PLAN.md、DEPRICATED.md 和 TODO.md。
+任务状态保存在 TaskDB 中。
+具体的 Worker 结果和独立验收：worker-results.txt。

@@ -1,0 +1,78 @@
+GUI compartida, agentes y transferencia de Ocean
+================================================
+
+La fuente de la interfaz reside en ellmos-system-gui. BACH consume un archivo
+de lanzamiento verificado; system/gui/kit_manifest.json fija el commit de
+origen y el hash del archivo.
+
+VISTAS
+/agenten/running       Ranuras Living y ejecuciones realmente observadas
+/agenten/blueprints    Plantillas, roles e instancias de blueprint
+/agenten/marblerun     Cadenas nativas de agentes y cadenas ordenadas de skills
+/tasks                 Tareas y destinos de asignación tipados disponibles
+/skills                Fuentes actuales de skills e historial de versiones
+/skills/plugins        Tablero de plugins
+/skills/mcp            Tablero de MCP
+/skills/software       Tablero de software
+
+Las tres tarjetas para creación, agentes listos y equipos listos forman un
+grupo común con acentos azules. En modo claro sus superficies son blancas; las
+dos áreas Living permanecen contraídas al abrirlas por primera vez.
+
+Las antiguas URL /agents-board y /skills-board son redirecciones.
+Fabrika lleva al editor de blueprints consolidado.
+
+SELECCIÓN DE RETRATOS
+70 imágenes: seis retratos originales, 19 imágenes anteriores de Gemini y tres
+nuevas series de diez (agentes de cómic, roles de Gemini, simpáticos robots de
+taller), además de diez monstruos y cinco bolas slime. La selección está
+disponible en el taller de agentes y en los diálogos de configuración de
+agentes. Las imágenes adicionales usan PNG de 256 píxeles dentro del contrato
+de imagen existente. Se guarda el contenido de la imagen; para ello no son
+necesarios nuevos identificadores preestablecidos en el backend. La procedencia
+y los hashes de origen se encuentran en el repositorio compartido de la GUI en
+src/assets/agent-portraits-20261010/provenance.json.
+
+COMPROBACIÓN
+GET /api/gui/backend-origin   Backend real y enlace de instancia
+GET /api/gui/capabilities     Adaptadores registrados y aceptaciones abiertas
+GET /api/gui/kit-manifest     Pin de la GUI y comprobación de archivos instalados
+GET /api/task-assignees       Destinos de asignación reales y versión de configuración
+
+Un adaptador registrado no es prueba de una ejecución productiva.
+Living significa disponible; Running requiere una ejecución observada.
+La designación del modelo por sí sola no confirma una inferencia exitosa.
+Un worker iniciado localmente comparte la propiedad real del cómputo.
+Los workers en la nube se inician explícitamente.
+El worker fijo Always-On activado puede reanudarse en el lead tras un inicio
+de control con un modelo local demostrado. La pausa y detención manuales se
+conservan; véase always-on-startup.txt. Esta reanudación local no es un
+arranque automático en la nube.
+
+ASIGNACIÓN
+Las asignaciones nativas usan assigned_slot, assigned_to y required_model.
+Los cambios, incluida la liberación de una asignación nativa anterior,
+requieren la assignment_configuration_version actual. Un conflicto exige una
+nueva lectura; no hay reintentos silenciosos ni arranque automático.
+
+Los perfiles de worker dinámicos también son destinos de asignación tipados.
+Su proveedor guardado, su modelo y la prueba de estado autenticada deben
+coincidir. Los perfiles de relevo pausados, con errores, expirados o privados
+no son seleccionables. Asignar tarea en Living/Running abre el formulario de
+tarea con el perfil; guardar vincula la tarea a su ID real. La versión global
+de configuración se comprueba tras la consulta de estado e inmediatamente antes
+del commit de la tarea. Una asignación no inicia ningún worker ni adquiere
+ningún lease de tarea.
+
+GOBERNANZA
+BACH_POLICY_REGISTRY_ENABLED=1 activa el lector canónico opcional.
+El proveedor encuentra el registro mediante POLICY_REGISTRY_PATH o su propio
+valor predeterminado. Un registro faltante o una procedencia incorrecta
+provoca un error. Lectura: /api/governance/policy-registry y
+/api/governance/effective-policy. La ruta de escritura de DecisionClicker es
+una capacidad que debe habilitarse por separado.
+
+LECTURA ADICIONAL
+Raíz: OCEAN-TRANSFER-PLAN.md, DEPRICATED.md y TODO.md.
+El estado de las tareas se gestiona en TaskDB.
+Resultados concretos de workers y aceptación separada: worker-results.txt.

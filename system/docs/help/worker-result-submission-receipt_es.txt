@@ -1,0 +1,81 @@
+Prueba de una entrega de resultado de worker
+============================================
+
+Este componente de #2210 complementa el servicio de resultados existente.
+Registra qué resultado se entregó bajo qué versión de tarea, generación de
+worker y fence, y qué política de worker estaba guardada en ese momento. La
+gestión de tareas, resultados y correcciones permanece en el almacén BACH
+habitual.
+
+Declaración de la prueba
+------------------------
+
+El servicio de lease comprueba el lease de trabajo válido bajo su transacción
+de escritura. Resultado, cambio de estado a review, liberación del lease y
+prueba de historial pertenecen a la misma Transaktion. La prueba posterior no
+exige un Claim-ID todavía activo: el lease se devolvió conscientemente en la
+entrega. Un fence superior, un encargo modificado o una nueva ronda de
+corrección invalida el estado de resultado actual antiguo.
+
+La prueba vincula tarea y resultado con generación, fence, versión de tarea,
+resumen de resultado, nombre histórico del titular, hora de entrega, evento de
+estado y evento de liberación. El nombre del titular procede de la solicitud
+de lease. No confirma ninguna identidad de modelo ni otorga derechos de
+revisor.
+
+La política global y las anulaciones de tarea disponibles en el momento de la
+entrega se registran junto con la versión de configuración. Un cambio
+posterior de los ajustes no reescribe esta configuración histórica. Si falta
+el contrato común opcional de política o el almacén de configuración, esto
+permanece reconocible explícitamente en la prueba como no disponible. La
+entrega de resultados sigue siendo posible.
+
+Límite respecto al cierre de la tarea
+-------------------------------------
+
+Una prueba de entrega confirma la entrega guardada y su historial. Para un
+cierre técnico siguen faltando fuentes separadas para el alcance y el estado
+del proyecto, huella del worktree, bloqueos actuales, cumplimiento del
+contrato, revisión de modelo independiente autenticada y, en su caso,
+aceptación de GitHub. Una dirección de PR por sí sola no confirma ningún Head
+actual, comprobaciones superadas ni aprobación.
+
+La política guardada aún no es una decisión de política aplicada. Este
+componente no genera ningún done automático ni sustituye ninguna aceptación
+de usuario obligatoria. El payload de entrega existente sigue conteniendo
+exclusivamente generation y result; el worker no puede establecer sus propios
+indicadores de integridad. La liberación confirmada permanece en review con
+accepted=false.
+
+Compatibilidad y operación
+--------------------------
+
+Las filas de resultados más antiguas siguen siendo legibles como Legacy. Las
+nuevas entregas llevan su propio identificador de versión; la ausencia de
+campos de prueba no las convierte en datos antiguos. No reciben ninguna
+prueba de entrega completa inventada retroactivamente. Las nuevas pruebas se
+comprueban frente a la fila de resultado canónica y los eventos de historial
+asociados. Las pruebas dañadas o mal asignadas no deben permitir ninguna
+aceptación actual de resultados.
+
+Las ampliaciones de esquema se realizan en las rutas explícitas de escritura
+de esquema existentes para entrega y corrección. Los GET de resultados no
+modifican ni el esquema ni los datos. Esta documentación no ejecuta ni
+autoriza ninguna instalación o migración productiva.
+
+Readback e integración adicional
+--------------------------------
+
+GET /api/tasks/{id}/result entrega bajo result.submission la disponibilidad
+de la prueba de entrega: available, unavailable o legacy_release_only. El
+hash submission_revision vincula la prueba histórica de entrega. Aún no es
+una result_revision completa para el contrato de cierre común; para ello
+faltan las pruebas mencionadas de alcance, proyecto y estado de trabajo.
+
+La disponibilidad de la política congelada figura por separado bajo
+result.submission.policy.availability. Los metadatos de política opcionales no
+disponibles no bloquean en este componente ni una entrega válida ni la vía
+habitual de aceptación personal y corrección. Por el contrario, una prueba de
+entrega dañada bloquea la aceptación. Sobre el comportamiento adicional de
+cierre automático aún no se guarda ni ejecuta aquí ninguna decisión de
+política.

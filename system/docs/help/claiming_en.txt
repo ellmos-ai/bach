@@ -1,0 +1,42 @@
+=== MODEL & RAM CLAIMING (RAM DISTRIBUTOR & MODEL RUNTIME) ===
+
+Summary:
+  In BACH and Ocean, there are no longer rigid model slots. All agents
+  ("Your Agents") are bound directly to a primary model + fallback chain.
+  At runtime, a two-stage claiming process takes place:
+    1. RAM Claim (Main Torch / RAMDistributor): Who may occupy physical
+       RAM/VRAM (local 27B model vs. compute pipelines)?
+    2. Model Runtime Claim (Model Torch / HostInferenceGate): Who gets the
+       next inference turn on the loaded model according to 4 user-proximity classes?
+
+THE 4 PRIORITY CLASSES BY USER PROXIMITY (UserProximity):
+  Class 1 (DIRECT_INTERACTIVE)    : User is waiting directly (Chat, Radio/Talk)
+  Class 2 (DELEGATED_FOREGROUND)  : Expert actively commissioned by User/Chat
+  Class 3 (SCHEDULED_ROUTINE)     : Due scheduled or routine agent
+  Class 4 (AUTONOMOUS_BACKGROUND) : Background worker (Buddha Always-On)
+
+CASE A: ANOTHER PROCESS NEEDS RAM / VRAM (COMPUTE / OWN MODEL)
+  1. In System Tray (ellmos-tray) or GUI (/agenten/running):
+     "🔥 RAM-Distributor & Modell-Claim" ->
+     "🔓 Modell & RAM jetzt für andere Prozesse freigeben"
+  2. Via HTTP API / CLI:
+     curl -X POST http://127.0.0.1:8081/api/fackel -H "Content-Type: application/json" -d '{"preference":"compute"}'
+     curl -X POST http://127.0.0.1:11434/api/generate -d '{"model":"qwen3.8:27b-mlx","keep_alive":0}'
+  3. Via Compute Lock (~/.memwatchdog/compute_active.lock):
+     Enter {"active_compute_jobs": [{"pid": <PID>, "name": "<job>"}]}.
+
+CASE B: ANOTHER PROCESS WANTS TO CLAIM / USE THE LOCAL MODEL
+  1. Cooperatively in Python via HostInferenceGate (preempts background workers):
+     from hub._services.chat.host_inference_gate import HostInferenceGate
+     async with HostInferenceGate().turn("mein-prozess", "foreground"):
+         ...
+  2. Directly via the BACH Control API (:8081/api/chat):
+     curl -X POST http://127.0.0.1:8081/api/chat -H "Content-Type: application/json" \
+       -d '{"prompt": "...", "chat_id": "mein-prozess"}'
+  3. Check & manage model bindings:
+     bach model-sockets list --json
+     bach model-sockets catalog --json
+
+Complete documentation (TARGET & ACTUAL):
+  docs/architecture/MODEL-AND-RAM-CLAIMING.md
+  ocean-resources/README.md

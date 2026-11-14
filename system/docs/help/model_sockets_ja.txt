@@ -1,0 +1,82 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-21
+# Sources: hub/model_sockets.py, hub/_services/chat/model_sockets.py, hub/_services/chat/local_model_catalog.py, core/registry.py
+
+ローカルモデル用モデルスロット
+==============
+
+ヘルプを開く
+------
+bach help model-sockets
+
+CLI はローカルモデルの提供状況および既存のエージェントプロファイルとモデルスロッ
+ト間のバインディングを管理します。設定は既存の BACH スロット設定に保存されます。
+コマンドはモデルをロードまたは起動せず、ワーカーも起動しません。
+
+コマンド
+----
+bach model-sockets list
+    設定を読み取り、configuration_version、migration_required、スロット ID、バ
+    インディング ID などを出力します。読み取りアクセスはマイグレーションを保存し
+    ません。古い設定では、list は暫定的なプロジェクションを表示する場合があります。
+
+bach model-sockets catalog
+    設定済みローカルプロバイダの限定的なメタデータを読み取ります。現在のメタデー
+    タアダプタは Ollama を読み取り、LM Studio に対してはカタログは
+    capability_adapter_pending を報告します。カタログエントリは推論の成功、モ
+    デルの常駐 (Residency)、または利用可能なキャパシティを証明するものではありま
+    せん。呼び出しはモデルの取得、ロード、または起動を行いません。
+
+bach model-sockets migrate --version VERSION_AUS_AKTUELLEM_LIST
+    list が migration_required=true を報告した場合にマイグレーションを明示的に
+    実行します。マイグレーションはモデルスロットレジストリを一度だけ追加し、既存
+    のプロファイル、進捗、および未知の設定フィールドを保持します。
+
+bach model-sockets configure --backend BACKEND --model MODELL --version VERSION_AUS_AKTUELLEM_LIST
+    ローカルモデルの提供を登録または変更します。BACKEND は ollama または
+    lmstudio です。オプション: --enabled true|false、--max-active-slots 数値
+    (1 から 1000)、および --residency-policy exclusive|shared。クラウドモデル
+    はローカルモデルスロットではありません。
+
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+    既存のエージェントプロファイルを既存のスロットにバインドします。
+    オプション: --enabled true|false、--priority foreground|background、および
+    --context-tokens 数値 (1 から 1,048,576)。
+
+bach model-sockets unbind --binding BINDUNGS_ID --version VERSION_AUS_AKTUELLEM_LIST
+    指定されたバインディングを削除します。
+
+バージョンと書き込みルール
+-------------
+書き込み操作を行う前に、まず bach model-sockets list を実行してください。
+現在の configuration_version の値を変更せずに --version として渡します。ミュー
+テーションは Compare-and-Swap を使用し、書き込みロックを確認します。バージョン
+競合が発生した場合は、list を再実行して現在の状態と変更を調整してください。CLI
+は拒否されたミューテーションを自動的に再試行しません。
+
+ハンドラには内部の dry_run パラメータがありますが、現在の BACH CLI ディスパッ
+チャは model-sockets に対して利用可能な dry-run スイッチを提供していません。
+--dry-run および -n は操作パーサーに渡されてそこで拒否されます。したがって、す
+べてのミューテーションコマンドには --version が必要です。
+
+成功した実際のミューテーションは設定の保存のみを確認します:
+worker_started=false および runtime_verified=false。ワーカーの起動、モデルの使
+用、またはランタイムチェックは確認しません。
+
+max_active_slots や residency_policy などの設定値は測定値ではありません。ランタ
+イムの占有状況や実際のモデル常駐はこの CLI では判定されません。成功した応答は
+JSON であり、--json を追加で指定することもできます。
+
+実行例
+---
+プレースホルダを自身の環境の値に置き換えてください。
+
+bach model-sockets list
+bach model-sockets configure --backend ollama --model MODELLNAME --version VERSION_AUS_AKTUELLEM_LIST
+bach model-sockets list
+bach model-sockets bind --agent AGENTEN_ID --socket STECKPLATZ_ID --version VERSION_AUS_AKTUELLEM_LIST
+
+関連ヘルプ
+-----
+bach help ollama
+bach help agent_launcher
