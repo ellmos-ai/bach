@@ -1120,7 +1120,7 @@ def blueprint_slot_changes(bp: dict, execution: dict, parents: list[dict] = ()) 
     prompt = bp["persona_prompt"]
     from .skill_source_service import pin_skills
     skill_refs = pin_skills(skills)
-    changes = {key: execution[key] for key in ("backend", "model", "mode", "think", "avatar", "symbol",
+    changes = {key: execution[key] for key in ("backend", "model", "model_fallbacks", "mode", "think", "avatar", "symbol",
         "include_system_prompt", "custom_system_prompt", "pause_after", "pause_minutes", "pause_basis") if key in execution}
     changes.update({"name": bp["title"] or bp["name"], "description": bp.get("description") or "",
         "role_id": role, "sub_mode": "boss_routing" if role == "boss_routing" else "expert_role",
