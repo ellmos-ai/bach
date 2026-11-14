@@ -1,0 +1,71 @@
+# Portability: UNIVERSAL
+# Last validated: 2026-10-15
+# Next review: 2027-04-15
+# Sources: hub/worker_policy.py, hub/_services/worker_policy_settings.py, gui/api/worker_policy.py
+
+WORKER 规则：配置与租约显示
+===============
+
+前提条件
+必须安装公共 Task-Master 契约 taskplan.worker_policy：
+worker-review-policy.v1alpha1。如果缺失或其版本未知，则 Worker 规则不可用。
+不存在第二个 BACH 策略回退。
+
+从 BACH 根目录显式安装可选包：
+python -m pip install -e ".[worker-policy]"
+
+该 Extra 将公共核心锁定到经过验证的 Task-Master 提交
+5924b71b2a93e59e625b5c9afaa6e84966bf49d3。仅凭通用版本号 taskplan==0.7.0
+无法标识此状态。此安装路径与旧的 setup.py --extras 分离。安装后请独立读取
+status。安装不会启动任何 Worker，也不会替代用户验收。
+
+通过 CLI 和库访问
+bach worker-policy status
+bach worker-policy task_show 41
+
+from bach_api import worker_policy
+ok, text = worker_policy.raw("status")
+ok, text = worker_policy.raw("task_show", 41)
+
+set 接受包含 configuration_version、policy 和 selection 的 JSON 对象。
+task_set 接受任务 ID 以及包含 task_id、task_version、configuration_version
+和 override 的 JSON。无写入操作示例：
+
+import json
+ok, text = worker_policy.raw("status")
+snapshot = json.loads(text) if ok else None
+
+始终重新读取版本值；遇到冲突时重新加载并有意识地对齐更改。被拒绝的变更不会自
+动重试。
+
+GUI-API
+GET/PUT /api/system/worker-policy
+GET/PUT /api/tasks/{id}/worker-policy
+
+所有四次访问都需要一个活动的已注册设备。Token 应放在现有的 Authorization 请
+求头或设备 Cookie 中，而不是放在 URL 中。本地/原生库使用相同的配置服务。
+
+规则与存储
+全局策略和绑定任务的覆盖保存在规范 BACH 数据库的现有 system_config 存储中。
+修订版本和 CAS 与任务内容及状态分离。重置（Reset）会增加配置修订版本；即使
+改回相同的值也会使旧的写入状态失效。读取操作既不修改架构也不修改配置。缺失存
+储不等同于空的合法默认值。
+
+mode=null 继承模式。布尔覆盖区分 null、false 和 true。已设置的用户审查义务
+不能通过 false 或重置来移除。已保存的规则不授予审查权限。
+
+保存确认不会启动任何 Worker，也不会验收任何结果。在没有经过验证的结果完整性
+时，任务视图会明确报告 not_evaluated。结果服务、选择和实际执行必须单独应用这
+些规则。此配置投影不是生产验收或用户验收。
+
+租约显示
+现有的 Worker/Core-Agent 状态路径可以从已确认的控制器绑定和规范任务绑定中
+投影出活动的任务租约。代际、任务版本、持有者、Fence、心跳和过期时间必须一致。
+仅凭已保存的任务 ID 或配置文件状态不能证明存在活动租约。
+
+此状态投影中的 lease_id 是一个公开的观察引用 sha256:<digest>，通过
+lease_id_kind=observation_sha256 和 source=native_task_db 标识。私有
+Claim-ID 保留在租约客户端。观察引用不授予 Claim、Renew 或 Release 权限。
+
+倒计时和排序是可选显示项。它们既不改变任务租约也不改变轮次预算，不延长运行时
+间，也不启动任何工作。

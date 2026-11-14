@@ -1,0 +1,35 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-17
+
+БЕЗОПАСНОСТЬ
+============
+
+bach security   - Статическое сканирование безопасности для BACH
+
+
+ОПИСАНИЕ
+========
+
+Сканирует собственные пути кода BACH на наличие опасных паттернов и формирует
+категоризированный отчёт. Использует систему возможностей (core.capabilities)
+для непосредственного распознавания паттернов.
+
+Пути по умолчанию: tools, skills, hub, core, scripts, bin
+Последний отчёт: security_scan_latest.json
+
+
+КОМАНДЫ
+=======
+
+bach security scan                Сканирует пути по умолчанию
+bach security scan tools/         Сканирует указанный каталог
+bach security scan --json         Отчёт в формате JSON
+bach security scan --dry-run      Показывает, что будет просканировано
+bach security status              Показать последний отчёт
+
+
+ИСТОЧНИК
+========
+
+Обработчик: hub/security.py (SecurityHandler)

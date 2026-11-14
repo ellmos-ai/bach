@@ -1,0 +1,62 @@
+Worker 原生执行证明
+=============
+
+执行证明将实际调用的模型后端与随后同一任务绑定的已确认结果提交关联起来。它既
+不替代专业审查，也不替代单独验收。
+
+记录
+--
+原生控制器直接在 backend.chat 或 backend.chat_bound 的现有调用边界处记录每
+次尝试。资源和任务检查仍前置执行。回退会获得自己的独立尝试。失败的首选路由不
+会因此变为成功。
+
+保存的内容包括后端标识、请求的模型、可选的由提供商实际返回的模型标识、槽位、
+代际、Fence、时间戳以及请求和响应的 SHA-256。提示词、响应、工具参数、端点
+URL 和私有租约标识不会被保存。没有返回模型标识的模型在此字段中保持未知。
+
+provider_reported_model 与 model 和 last_resolved_model 分离。现有的两个
+显示字段可能会回退到请求的模型，因此不是 observed_model 的来源。只有来自当
+前提供商响应的有效标识才会导致 model_provenance=provider_reported。缺失或
+无效的说明会产生 observed_model=null 和 model_provenance=unknown。完全结
+束的 Ollama 流至少需要一个有效且一致的模型说明；相互矛盾或无效的现有说明保
+持未知。CLI 输出文本不提供此类模型元数据来源。即使没有已知的模型标识，有效
+响应仍然是执行证明。
+
+私有进程句柄仅保留在控制器中，并绑定到具体的 Binding 对象。不存在可供
+Worker 自身声称模型身份或成功执行的公共端点。远程任务客户端目前不提供此类证
+明；它们也不会为此切换到其他本地数据库。
+
+提交与进程结束
+-------
+关联既需要实际返回的有效响应，也需要带有当前规范证明的已确认 Submit-ACK。当
+ACK 丢失时，最新的规范结果获取可以确认自身精确关联的提交；猜测对此是不够的。
+对于 CLI 代理，提交可能发生在进程结束之前。在这种情况下，只有在从
+chat_bound 确认返回后才会进行关联。中止、错误、停止、过时代际或变更的绑定不
+会提供正向执行证明。新一轮模型调用会使前一个候选失效。
+
+自身已确认的任务更改可能会在请求和提交之间更改内容版本。因此
+input_task_version 和 submission_task_version 会分开显示。此关联并不确认
+响应在专业上考虑了所有更改。
+
+获取
+--
+现有的结果获取会在 result.execution 中补充 schema
+bach.worker-execution-evidence.v2。availability 为 available 或
+unavailable。为 available 时，证明包含 execution_revision 和关联的执行元数
+据。为 unavailable 时，reason 说明缺失或无效的依据。获取操作不会创建表，也
+不会迁移数据库。
+
+新保存的回执使用带有明确模型来源的 bach.worker-model-execution.v2。旧的
+v1 回执及其历史保持不变。其执行证明可能仍然有效；但在获取时其原有的模型说明
+会显示为 observed_model=null 且 model_provenance=legacy_unknown。它不会在
+事后被确认为提供商说明。execution_revision 保持绑定到未变更的已保存证明。
+
+附加表 worker_model_executions 使用相同的任务数据库。启动、终态返回和结果关
+联具有关联的 task_history 条目。更改的内容、Fence 或提交证明会使当前的正向
+关联失效；不会产生第二个任务队列。
+
+限制
+--
+这些证明不授予审查者角色、模型级别、独立性、用户批准或自动完成的任务状态。缺
+少可选记录不妨碍以往的个人操作员验收。范围（Scope）、任务契约、工作树和完整
+的完成策略必须单独检查。此组件不会启用 Auto-Done。

@@ -1,0 +1,15 @@
+BACH GUI テーマ
+===========
+
+テーマの表示:
+  bach theme status
+
+テーマの設定:
+  bach theme set dark
+  bach theme set light
+  bach theme set warm
+  bach theme set custom --accent=#ff6b8a --bg_dark=#140e28
+
+選択内容は data/user_config.json の gui.theme に保存され、CLI、ライブラリ
+API、および Web-GUI で共有されます。カスタムカラーは #RRGGBB 形式の値のみを受け
+付けます。Dry-Run では設定を書き込みません。

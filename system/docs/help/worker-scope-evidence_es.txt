@@ -1,0 +1,67 @@
+WORKER-SCOPE-EVIDENCE — Pruebas de proyecto y worktree para resultados
+======================================================================
+
+Un resultado enviado puede recibir una prueba de alcance inmutable. El primer
+adaptador utiliza el registro existente de un worktree limpio de tarea de
+BACH en bach-task/<Task-ID>. Otros proyectos necesitan una conexión propia con
+su autoridad real de repositorio/alcance. La falta de pruebas no impide la
+aceptación personal o corrección habitual.
+
+El controlador privado registra el resultado canónico, su versión de tarea,
+generación, fence y revisión de entrega, así como repositorio, rama, Head y
+árbol Git. Las rutas locales resueltas solo se guardan como SHA-256. Se
+comprueba un pin de fuente público existente; su ausencia no se emite como
+procedencia confirmada públicamente. Prompts, respuestas, ID de lease
+privados y credenciales no forman parte de esta prueba.
+
+El alcance Git definido abarca el índice, los archivos registrados y los
+archivos nuevos no ignorados. Los cambios staged/unstaged/untracked, así como
+assume-unchanged y skip-worktree, impiden una prueba positiva. Los submódulos
+y los filtros de archivos Git configurados siguen sin estar disponibles en el
+primer adaptador; esta comprobación de alcance no ejecuta programas de
+filtrado. Los archivos ignorados quedan explícitamente fuera de este alcance
+Git. Un commit limpio no demuestra el cumplimiento técnico del encargo.
+
+Git y SQLite no poseen ninguna transacción común. Git y los bloqueos actuales
+se registran fuera del bloqueo de escritura de SQLite; dentro del bloqueo de
+escritura se vuelve a comprobar la vinculación canónica de resultado. La
+prueba describe un estado observado. No demuestra exclusividad permanente ni
+inmutabilidad entre dos consultas.
+
+read_result() comprueba exclusivamente pruebas e historial guardados dentro de
+una instantánea de lectura de SQLite. result.scope.availability=recorded
+significa: prueba histórica válida, worktree actual aún no vuelto a confirmar.
+result.result_revision permanece en null. La consulta local del SDK y el GET
+de la API vuelven a comprobar después Git/registro/bloqueos. La API ejecuta
+esta comprobación tras cerrar la conexión fuera de su bucle de eventos. Un
+snapshot de SQLite ya abierto por el llamador no es cerrado por el SDK; dentro
+de ese snapshot se omite la proyección Git adicional.
+
+Solo cuando el alcance se confirma sin cambios aparece availability=available.
+Un Head modificado, un árbol sucio o un servicio Git/de bloqueo no disponible
+devuelve unavailable y ninguna revisión de resultado completa. Una prueba de
+resultado existente nunca se sobrescribe con un estado más reciente del
+worktree. Un nuevo envío requiere una nueva generación de resultado.
+
+La result_revision completa vincula la revisión de entrega, la revisión de
+ejecución realmente confirmada y el resumen/evento de historial de la prueba
+de alcance. Si falta la prueba de ejecución, permanece en null. En ejecuciones
+CLI, el alcance puede existir ya tras Submit; no obstante, la revisión solo
+surge tras el retorno real del modelo y la vinculación de ejecución
+confirmada. Los Submit-ACK perdidos solo pueden reconstruirse mediante la
+lectura canónica exacta de la propia entrega privada esperada.
+
+La captura local privada utiliza TaskLeaseClient._capture_task_scope y
+WorkerLeaseBinding.capture_confirmed_scope. El despachador las llama tras la
+operación de tarea confirmada fuera del bloqueo de vinculación. Los
+llamadores locales directos pueden invocarlas explícitamente; result_state
+reconstruye primero si es necesario el Submit real. Se evita en el Binding la
+captura repetida exitosa del mismo ID de resultado. Las consultas públicas
+actuales siguen volviendo a comprobar su alcance. Los clientes remotos no
+reciben ningún endpoint de autodeclaración ni ningún fallback local de BD.
+
+Una revisión válida no otorga derechos de revisión ni Done. La identidad de
+autor y revisor, el nivel de modelo, la independencia, el contrato técnico de
+la tarea, la obligación de usuario y las puertas de GitHub deben aportar sus
+propias pruebas autorizadas. Una aprobación posterior debe volver a comprobar
+el estado vigente en ese momento.

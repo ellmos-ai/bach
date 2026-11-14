@@ -1,0 +1,15 @@
+ТЕМЫ GUI BACH
+=============
+
+Показать тему:
+  bach theme status
+
+Установить тему:
+  bach theme set dark
+  bach theme set light
+  bach theme set warm
+  bach theme set custom --accent=#ff6b8a --bg_dark=#140e28
+
+Выбор сохраняется в data/user_config.json в разделе gui.theme и совместно
+используется CLI, библиотечным API и Web-GUI. Пользовательские цвета принимают
+только значения в формате #RRGGBB. Dry-Run не записывает конфигурацию.

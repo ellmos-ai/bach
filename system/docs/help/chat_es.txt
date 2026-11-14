@@ -1,0 +1,75 @@
+# Portability: UNIVERSAL
+# Version: 1.0.0
+# Last validated: 2026-09-09
+
+BUDDHA CHAT Y PROTOCOLOS DE SESIÓN
+==================================
+
+DESCRIPCIÓN
+-----------
+Buddha Chat es la interfaz de asistencia interactiva de BACH, accesible a
+través de la Web-GUI (http://localhost:8000/chat) así como mediante un bot de
+Telegram. Buddha responde preguntas, planifica trabajos, ejecuta herramientas
+de BACH y gestiona su contexto mediante instantáneas canónicas en bach.db.
+
+VÍAS DE ACCESO
+--------------
+1. Web-Chat:     http://localhost:8000/chat
+                 Utiliza el ID de sesión fijo "gui-web". Los mensajes se
+                 conservan incluso al recargar la página (recuperación
+                 automática).
+2. Bot Telegram: @BachBuddhaBot (o el token configurado)
+                 Cada chat de Telegram posee su propio ID numérico de chat.
+3. Bandeja del sistema: Barra de estado con selección de modelo/modo y acceso
+                 rápido.
+
+CICLO DE VIDA DE LA SESIÓN Y REINICIO AUTOMÁTICO
+------------------------------------------------
+Para evitar que temas antiguos y ya finalizados permanezcan de forma
+permanente en el contexto de pensamiento, cada sesión de chat está sujeta al
+siguiente ciclo de vida:
+1. Reinicio por inactividad de 24 horas (TTL):
+- Si un chat no se ha utilizado durante más de 24 horas (last_active > 86400s),
+  al recibir el siguiente mensaje se archiva automáticamente y se restablece a
+  un estado vacío.
+- El usuario comienza automáticamente al día siguiente con la mente despejada.
+
+2. Reinicio manual:
+- Telegram:  Comando /clear
+- Web-GUI:   Botón [ ➕ Neuer Chat ] en la barra de estado
+- Ambas vías archivan por completo el historial previo antes de vaciarlo.
+
+3. Garantía Zero-Data-Loss:
+- Ningún historial de mensajes se elimina de forma irrecuperable.
+- Todas las sesiones se guardan como transcripción permanente (tipo:
+  chat-transcript.v1) en la tabla session_snapshots de la bach.db central.
+
+PROTOCOLOS Y FORKING (REACTIVACIÓN)
+-----------------------------------
+En la Web-GUI (http://localhost:8000/chat) se encuentra el botón [ 📉 Protokolle ]:
+1. Vista general del archivo:
+- Muestra cronológicamente todas las sesiones registradas de Web, Telegram y
+  Worker.
+- Filtrable por "Alle", "Web", "Telegram" y "Archiv".
+
+2. Inspección de transcripciones:
+- Al hacer clic en una entrada se abre la transcripción completa, incluidos
+  todos los mensajes de usuario y asistente con marcas de tiempo y formato.
+
+3. Continuar en el Web-Chat (Fork):
+- Mediante el botón [ 🔑 Im Web-Chat fortsetzen (Fork) ], cualquier sesión
+  histórica (ya sea de Telegram o de una sesión Web anterior) puede cargarse
+  en el Web-Chat actual y seguir debatiéndose directamente.
+- La sesión Web existente se respalda automáticamente antes.
+
+MODOS DE SEGURIDAD
+------------------
+  - safe:  Solo consultas de lectura (ls, cat, grep, git status, etc.).
+  - full:  También herramientas de escritura (crear archivos, ejecutar comandos).
+           En Telegram: confirmado mediante /mode full
+           En Web-GUI:  A través de Control-Dashboard / API
+
+VÉASE TAMBIÉN
+-------------
+  help bach_chat           Especificación técnica completa del servicio de chat
+  help session             Sesiones de trabajo para desarrolladores (bach session)

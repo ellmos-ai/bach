@@ -1,0 +1,78 @@
+# Portability: SYSTEM
+# Last validated: 2026-09-08
+# Next review: 2027-03-08
+
+ROLES DE AGENTES, JEFES Y DELEGACIÓN MULTI-PROVEEDOR
+====================================================
+
+DESCRIPCIÓN
+BACH utiliza un modelo de agentes expertos y jefes basado en roles.
+Buddha (modelo local de Ollama qwen3.8:27b-mlx) actúa como worker universal de
+primera línea (Tier-1) que puede asumir todos los roles de forma autónoma en
+inactividad.
+
+BUDDHA COMO WORKER UNIVERSAL
+----------------------------
+- El Idle Worker recoge tareas en segundo plano para todos los jefes y
+  expertos desde la cola de tareas.
+- Aislamiento de sesión: Cada tarea comienza en una sesión aislada
+  (idle-<rolle>-<task_id>), sin contaminación de contexto.
+- Impronta de persona: El modelo adopta la persona del rol correspondiente
+  (identidad, tono, perfil de tareas de system/agents/personas/).
+
+RESUMEN DE ROLES Y PERSONAS
+---------------------------
+Jefes:
+  persoenlich (Paul)       Organización diaria y laboral, citas, notas
+  bueroassistent (Clara)   Gestión documental, archivo, correspondencia
+  gesundheit (Helena)      Historiales médicos, valores de laboratorio, datos vitales
+  finanzen (Felix)         Presupuesto, recibos, resúmenes de cuentas
+  ati (Atlas)              Escáner de tareas, herramientas y código
+
+Expertos:
+  aboservice (Anton)       Suscripciones, contratos, costes recurrentes
+  bewerbung (Benjamin)     Currículums, cartas de presentación, solicitudes
+  data-analysis (Diana)    Análisis de datos, estadísticas, evaluaciones
+  decision (Dietrich)      Propuestas de decisión, informes estructurados
+  foerderplaner (Florian)  Informes de apoyo, necesidades ICF, pedagogía
+  haushalt (Martha)        Rutinas domésticas, existencias, organización
+  steuer (Theodor)         Declaración de impuestos, asignación de recibos
+  transkript (Tristan)     Transcripción de audio/reuniones
+  wiki (Wilhelm)           Artículos de conocimiento wiki e investigación
+
+ROLES ADICIONALES
+-----------------
+  ticket-master            Triaje de tickets sin hogar / sin asignar;
+                           los asigna automáticamente a la persona adecuada.
+  task-divider             Experto en descomposición proactiva; busca tareas
+                           grandes y complejas en el backlog y las divide por
+                           adelantado.
+
+EL PROTOCOLO DE ESCALACIÓN EN 4 NIVELES (¡Para CADA rol!)
+---------------------------------------------------------
+Cada rol trabaja obligatoriamente según las siguientes cuatro prioridades:
+
+  Nivel 1 - Resolución directa:
+    Implementar tareas abarcables de inmediato en el código/sistema, probar y
+    hacer commit localmente.
+
+  Nivel 2 - Autodescomposición:
+    Si la tarea es compleja, el rol la descompone por sí mismo en 3-5
+    subtareas atómicas (task_manage action='decompose').
+
+  Nivel 3 - Ambigüedad:
+    Mandato de mínima invasividad. Ante una pregunta abierta de elección: crear
+    una selección precisa de opción [A] / [B] como tarea TO-DECIDE.
+
+  Nivel 4 - Delegación a proveedor Tier-2:
+    Si la tarea supera los límites del modelo local (algoritmos profundos,
+    refactorizaciones multi-repositorio):
+    Entrega limpia a Claude Code o Codex mediante:
+      delegate(target='claude', prompt='...', context='...')
+      delegate(target='codex', prompt='...', context='...')
+
+VÉASE TAMBIÉN
+-------------
+  bach --help torch               Modo interactivo de trabajo frente a modo chat
+  bach --help daemon              Planificador y trabajos en segundo plano
+  hub/agent_router.py             Enrutamiento semántico de roles

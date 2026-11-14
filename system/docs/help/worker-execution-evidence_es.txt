@@ -1,0 +1,86 @@
+Pruebas nativas de ejecución para workers
+=========================================
+
+Una prueba de ejecución vincula un backend de modelo realmente invocado con
+la entrega de resultado confirmada posteriormente de la misma vinculación de
+tarea. No sustituye ni una revisión técnica ni la aceptación por separado.
+
+Registro
+--------
+El controlador nativo registra cada intento directamente en el límite de
+llamada existente de backend.chat o backend.chat_bound. Las comprobaciones de
+recursos y tareas permanecen antes. Un fallback recibe su propio intento. Una
+primera ruta fallida no pasa por ello a ser exitosa.
+
+Se guardan el identificador del backend, el modelo solicitado, opcionalmente
+el identificador de modelo realmente devuelto por el proveedor, ranura,
+generación, fence, marcas de tiempo así como SHA-256 de la solicitud y la
+respuesta. Prompt, respuesta, argumentos de herramientas, URL de endpoint e
+identificador privado de lease no se guardan. Un modelo sin identificador de
+modelo devuelto permanece desconocido en este campo.
+
+provider_reported_model está separado de model y last_resolved_model. Los dos
+campos de visualización existentes pueden recurrir al modelo solicitado y, por
+tanto, no son fuente para observed_model. Solo un identificador válido de la
+respuesta actual del proveedor conduce a model_provenance=provider_reported.
+Indicaciones ausentes o no válidas dan observed_model=null y
+model_provenance=unknown. Un flujo de Ollama completamente finalizado
+requiere al menos una indicación de modelo válida y coherente; indicaciones
+existentes contradictorias o no válidas permanecen desconocidas. El texto de
+salida de la CLI no aporta ninguna fuente de metadatos de modelo de este
+tipo. Una respuesta válida sigue siendo una prueba de ejecución incluso sin
+identificador de modelo conocido.
+
+El handle privado del proceso permanece exclusivamente en el controlador y está
+vinculado al objeto Binding concreto. No existe ningún endpoint público con el
+que los propios workers puedan afirmar una identidad de modelo o una ejecución
+exitosa. Los clientes de tareas remotos actualmente no entregan tal prueba;
+tampoco cambian por ello a otra base de datos local.
+
+Entrega y fin de proceso
+------------------------
+La vinculación requiere tanto una respuesta válida realmente devuelta como el
+Submit-ACK confirmado con prueba canónica actual. Ante un ACK perdido, la
+consulta canónica reciente de resultados puede confirmar la propia entrega
+exactamente correlacionada; una suposición no basta para ello. En agentes CLI,
+la entrega puede producirse antes del fin del proceso. En ese caso solo se
+vincula tras el retorno confirmado de chat_bound. Cancelación, error,
+detención, generación superada o vinculación cambiante no entregan ninguna
+prueba de ejecución positiva. Una nueva ronda de modelo invalida al candidato
+anterior.
+
+Los cambios propios confirmados en la tarea pueden modificar la versión de
+contenido entre solicitud y entrega. Por ello se muestran por separado
+input_task_version y submission_task_version. Esta correlación no confirma
+que una respuesta haya tenido en cuenta técnicamente todos los cambios.
+
+Consulta
+--------
+La consulta de resultados existente añade result.execution con el esquema
+bach.worker-execution-evidence.v2. availability es available o unavailable.
+Con available, la prueba contiene una execution_revision y los metadatos de
+ejecución correlacionados. Con unavailable, reason indica la base ausente o
+no válida. La consulta no crea tablas ni migra bases de datos.
+
+Los nuevos recibos guardados utilizan bach.worker-model-execution.v2 con
+procedencia de modelo explícita. Los antiguos recibos v1 y su historial
+permanecen sin cambios. Su prueba de ejecución puede seguir siendo válida; sin
+embargo, su indicación de modelo anterior se muestra en la consulta como
+observed_model=null con model_provenance=legacy_unknown. No se confirma
+retroactivamente como indicación del proveedor. execution_revision permanece
+vinculada a la prueba guardada inalterada.
+
+La tabla aditiva worker_model_executions utiliza la misma base de datos de
+tareas. Inicio, retorno terminal y vinculación de resultados poseen entradas
+correlacionadas en task_history. Contenidos modificados, fence o pruebas de
+entrega invalidan la vinculación actual positiva; no se origina una segunda
+cola de tareas.
+
+Límites
+-------
+Las pruebas no otorgan roles de revisor ni niveles de modelo, independencia,
+aprobación del usuario ni un estado de tarea completado automáticamente. Un
+registro opcional ausente no impide la aceptación personal habitual del
+operador. El alcance, el contrato de la tarea, el worktree y la directiva
+completa de finalización deben comprobarse por separado. Este componente no
+activa ningún Auto-Done.

@@ -83,14 +83,10 @@ def test_pb17_help_inventory_detects_untranslated_and_complete_topics() -> None:
         else:
             complete_topics.append(topic)
 
-    # Core invariant: vast majority of topics have full 6-language coverage
-    assert len(complete_topics) >= 170, f"Expected >= 170 complete 6-language topics, got {len(complete_topics)}"
-    # Known topics with missing translations are correctly flagged
-    assert len(untranslated_topics) > 0, "Inventory must accurately detect missing translations"
-    for known_partial in ("agent-colors", "chat", "gui-integration"):
-        if known_partial in base_topics:
-            assert known_partial in untranslated_topics, f"Expected {known_partial} to be flagged as untranslated"
-            assert "en" in untranslated_topics[known_partial] or len(untranslated_topics[known_partial]) > 0
+    # Since 14.11.2026 every help topic exists in all six languages; a new German topic
+    # needs its five translations in the same change (OCEAN PB-17, T-20261114-272745152).
+    assert len(complete_topics) >= 200, f"Expected >= 200 complete 6-language topics, got {len(complete_topics)}"
+    assert untranslated_topics == {}, f"Help topics with missing translations: {untranslated_topics}"
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,77 @@
+# Portability: SYSTEM
+# Last validated: 2026-09-08
+# Next review: 2027-03-08
+
+AGENT ROLES, BOSSES & MULTI-PROVIDER DELEGATION
+===============================================
+
+DESCRIPTION
+BACH uses a role-based expert and boss agent model.
+Buddha (local Ollama model qwen3.8:27b-mlx) acts as a
+universal first-line worker (Tier-1) that can autonomously take on
+all roles when idle.
+
+BUDDHA AS UNIVERSAL WORKER
+--------------------------
+- The Idle Worker picks up tasks for all bosses and experts from
+  the task queue in the background.
+- Session isolation: Each task starts in an isolated session
+  (idle-<rolle>-<task_id>), without context contamination.
+- Persona shaping: The model slips into the persona of the respective
+  role (identity, tone, task profile from system/agents/personas/).
+
+OVERVIEW OF ROLES & PERSONAS
+----------------------------
+Bosses:
+  persoenlich (Paul)       Daily and work organization, appointments, memos
+  bueroassistent (Clara)   Document management, filing, correspondence
+  gesundheit (Helena)      Health dossiers, lab values, vital data
+  finanzen (Felix)         Budget, receipts, account overviews
+  ati (Atlas)              Task, tool, and code scanner
+
+Experts:
+  aboservice (Anton)       Subscriptions, contracts, recurring costs
+  bewerbung (Benjamin)     Resumes, cover letters, application documents
+  data-analysis (Diana)    Data analysis, statistics, evaluations
+  decision (Dietrich)      Decision templates, structured briefings
+  foerderplaner (Florian)  Support reports, ICF needs, pedagogy
+  haushalt (Martha)        Household routines, supplies, organization
+  steuer (Theodor)         Tax return, receipt assignment
+  transkript (Tristan)     Transcription of audio/meetings
+  wiki (Wilhelm)           Wiki knowledge articles and research
+
+ADDITIONAL ROLES
+----------------
+  ticket-master            Triage of homeless / unassigned tickets;
+                           automatically assigns them to the matching persona.
+  task-divider             Proactive decomposition expert; searches for complex
+                           large tasks in the backlog and splits them up front.
+
+THE 4-STAGE ESCALATION PROTOCOL (For EVERY Role!)
+-------------------------------------------------
+Every role works mandatorily according to the following four priorities:
+
+  Stage 1 - Direct Resolution:
+    Implement manageable tasks immediately in code/system, test,
+    and commit locally.
+
+  Stage 2 - Self-Decomposition:
+    If the task is complex, the role independently decomposes the task
+    into 3-5 atomic sub-tasks (task_manage action='decompose').
+
+  Stage 3 - Ambiguity:
+    Minimal-invasiveness principle. For open choice questions: create a
+    precise option [A] / [B] selection as a TO-DECIDE task.
+
+  Stage 4 - Delegation to Tier-2 Provider:
+    If the task exceeds local model limits (deep algorithms,
+    multi-repo refactorings):
+    Clean handover to Claude Code or Codex via:
+      delegate(target='claude', prompt='...', context='...')
+      delegate(target='codex', prompt='...', context='...')
+
+SEE ALSO
+--------
+  bach --help torch               Interactive working vs. chat mode
+  bach --help daemon              Scheduler and background jobs
+  hub/agent_router.py             Semantic role routing
