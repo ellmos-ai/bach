@@ -146,6 +146,102 @@
             display: flex;
         }
 
+        /* ── Live Tag-Filter-Matrix & Multi-Category Board (Task -56) ── */
+        .pl-tag-matrix {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.6rem 0.85rem;
+            margin-bottom: 0.9rem;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .pl-tag-matrix-label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-right: 0.25rem;
+        }
+
+        .pl-tag-chip {
+            background: var(--bg-card);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.2rem 0.65rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .pl-tag-chip:hover {
+            border-color: var(--accent, #3b82f6);
+            color: var(--text);
+        }
+
+        .pl-tag-chip.active {
+            background: var(--accent, #3b82f6);
+            color: #fff;
+            border-color: var(--accent, #3b82f6);
+        }
+
+        .pl-board-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+            gap: 1rem;
+            align-items: start;
+        }
+
+        .pl-board-col {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 250px);
+        }
+
+        .pl-board-col-header {
+            padding: 0.7rem 0.9rem;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .pl-board-col-body {
+            padding: 0.65rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+        }
+
+        .pl-board-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent, #3b82f6);
+            border-radius: 6px;
+            padding: 0.65rem 0.75rem;
+        }
+
+        .pl-board-card-actions {
+            display: flex;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-top: 0.5rem;
+        }
+
         /* ── Spotlight / Quick-Switcher & Keyboard Modal (Task -53) ── */
         .pl-modal-backdrop {
             display: none;
@@ -277,6 +373,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
             <h1 style="margin: 0;">Prompt-Bibliothek</h1>
             <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <button class="btn" id="pl-view-toggle" onclick="toggleBoardView()" title="Zwischen Listen-Ansicht und Multi-Category Board wechseln">🗂️ Category-Board</button>
                 <button class="btn" onclick="openQuickSwitcher()" title="Spotlight Quick-Switcher für Prompts & Favoriten (Strg+K)"><span style="color:#eab308;">⚡</span> Quick-Switcher (Strg+K)</button>
                 <button class="btn" onclick="toggleShortcutsModal()" title="Tastatur-Kurzbefehle anzeigen (?)">⌨️ Shortcuts (?)</button>
                 <button class="btn" onclick="previewPromptBoard()" title="Vorschau der PromptBoard-Library ohne Speichern">PromptBoard-Vorschau</button>
@@ -326,6 +423,18 @@
             </div>
         </div>
 
+        <!-- Live Tag-Filter-Matrix & Board-Filter (Task -56) -->
+        <div class="pl-tag-matrix" id="pl-tag-matrix-bar">
+            <span class="pl-tag-matrix-label">🏷️ Tag-Matrix:</span>
+            <div id="pl-tag-matrix" style="display:flex; flex-wrap:wrap; gap:0.35rem; flex:1;">
+                <span style="font-size:0.75rem; color:var(--text-muted);">Lade Tags...</span>
+            </div>
+            <select id="pl-board-filter" class="pl-search" style="flex: 0 1 170px; font-size:0.78rem; padding:0.25rem 0.5rem;" onchange="loadList()" title="Nach gespeichertem Prompt-Board filtern">
+                <option value="">Alle Boards</option>
+            </select>
+            <button class="btn" id="pl-tag-reset" onclick="clearTagMatrix()" style="display:none; padding:0.2rem 0.55rem; font-size:0.75rem;">Filter zurücksetzen</button>
+        </div>
+
         <div class="pl-layout" id="pl-drop-area" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)" style="position: relative;">
             <div class="pl-dropzone-overlay">PromptBoard JSON-Datei hier ablegen (Drag & Drop)</div>
             <div class="pl-panel">
@@ -356,6 +465,9 @@
                 </div>
             </div>
         </div>
+
+        <!-- Multi-Category Board Ansicht (Task -56) -->
+        <div id="pl-board-view" class="pl-board-grid" style="display: none;"></div>
     </main>
 
     <script src="/static/js/prompt-chat-draft.js?v=1"></script>
@@ -363,6 +475,9 @@
         let currentId = null;
         let debounceTimer = null;
         let favoritesOnly = false;
+        let selectedTags = new Set();
+        let isBoardView = false;
+        let knownCategories = [];
 
         function debouncedLoad() {
             clearTimeout(debounceTimer);
@@ -428,18 +543,189 @@
         async function loadList() {
             const q = document.getElementById('pl-search').value.trim();
             const cat = document.getElementById('pl-category').value;
+            const boardEl = document.getElementById('pl-board-filter');
+            const boardVal = boardEl ? boardEl.value : '';
             const params = new URLSearchParams();
             if (q) params.set('q', q);
             if (cat) params.set('category', cat);
             if (favoritesOnly) params.set('favorites', '1');
+            if (selectedTags.size > 0) params.set('tags', Array.from(selectedTags).join(','));
+            if (boardVal) params.set('board', boardVal);
             try {
                 const data = await api('/api/prompt-library?' + params.toString());
                 allPromptsCache = data.prompts || [];
+                knownCategories = data.categories || [];
                 renderList(data.prompts);
                 renderCategories(data.categories, cat);
+                renderTagMatrix(data.tag_counts || []);
+                renderBoardFilter(data.boards || [], boardVal);
                 updateQuickChips(data.categories);
+                if (isBoardView) {
+                    renderBoardView(allPromptsCache, knownCategories);
+                }
             } catch (e) {
                 document.getElementById('pl-list').innerHTML = '<div class="pl-muted">Fehler: ' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        function toggleTagMatrixChip(tag) {
+            const low = String(tag || '').trim().toLowerCase();
+            if (!low) return;
+            if (selectedTags.has(low)) {
+                selectedTags.delete(low);
+            } else {
+                selectedTags.add(low);
+            }
+            loadList();
+        }
+
+        function clearTagMatrix() {
+            selectedTags.clear();
+            const boardEl = document.getElementById('pl-board-filter');
+            if (boardEl) boardEl.value = '';
+            loadList();
+        }
+
+        function renderTagMatrix(tagCounts) {
+            const container = document.getElementById('pl-tag-matrix');
+            const resetBtn = document.getElementById('pl-tag-reset');
+            if (!container) return;
+            if (resetBtn) {
+                const boardEl = document.getElementById('pl-board-filter');
+                const hasFilter = selectedTags.size > 0 || (boardEl && boardEl.value);
+                resetBtn.style.display = hasFilter ? 'inline-block' : 'none';
+            }
+            if (!tagCounts || !tagCounts.length) {
+                container.innerHTML = '<span style="font-size:0.75rem; color:var(--text-muted);">Keine Tags vorhanden</span>';
+                return;
+            }
+            container.innerHTML = tagCounts.slice(0, 24).map(tc => {
+                const low = String(tc.tag || '').toLowerCase();
+                const isAct = selectedTags.has(low);
+                return '<button type="button" class="pl-tag-chip ' + (isAct ? 'active' : '') + '" ' +
+                    'data-tag="' + escapeHtml(tc.tag) + '" onclick="toggleTagMatrixChip(this.dataset.tag)">' +
+                    '<span>' + escapeHtml(tc.tag) + '</span>' +
+                    '<span style="opacity:0.75; font-size:0.68rem;">(' + tc.count + ')</span>' +
+                    '</button>';
+            }).join('');
+        }
+
+        function renderBoardFilter(boards, selectedBoard) {
+            const sel = document.getElementById('pl-board-filter');
+            if (!sel) return;
+            const cur = selectedBoard || sel.value;
+            sel.innerHTML = '<option value="">Alle Boards</option>' +
+                (boards || []).map(b =>
+                    '<option value="' + escapeHtml(String(b.id)) + '"' + (String(b.id) === String(cur) ? ' selected' : '') + '>' +
+                    escapeHtml(b.title) + ' (' + (b.item_count || 0) + ')</option>'
+                ).join('');
+        }
+
+        function toggleBoardView() {
+            isBoardView = !isBoardView;
+            const layoutEl = document.getElementById('pl-drop-area');
+            const boardEl = document.getElementById('pl-board-view');
+            const toggleBtn = document.getElementById('pl-view-toggle');
+            if (isBoardView) {
+                if (layoutEl) layoutEl.style.display = 'none';
+                if (boardEl) boardEl.style.display = 'grid';
+                if (toggleBtn) {
+                    toggleBtn.textContent = '📋 Listen-Ansicht';
+                    toggleBtn.classList.add('btn-primary');
+                }
+                renderBoardView(allPromptsCache, knownCategories);
+            } else {
+                if (layoutEl) layoutEl.style.display = 'grid';
+                if (boardEl) boardEl.style.display = 'none';
+                if (toggleBtn) {
+                    toggleBtn.textContent = '🗂️ Category-Board';
+                    toggleBtn.classList.remove('btn-primary');
+                }
+            }
+        }
+
+        function renderBoardView(prompts, categories) {
+            const boardEl = document.getElementById('pl-board-view');
+            if (!boardEl) return;
+            if (!prompts || !prompts.length) {
+                boardEl.innerHTML = '<div class="pl-muted">Keine passenden Prompts für diese Filterkombination.</div>';
+                return;
+            }
+            const groups = {};
+            const colOrder = [];
+            (categories || []).forEach(c => {
+                if (c && !groups[c]) {
+                    groups[c] = [];
+                    colOrder.push(c);
+                }
+            });
+            prompts.forEach(p => {
+                const catName = (p.category && p.category.trim()) ? p.category.trim() : 'Ohne Kategorie';
+                if (!groups[catName]) {
+                    groups[catName] = [];
+                    colOrder.push(catName);
+                }
+                groups[catName].push(p);
+            });
+            const nonEmptyCols = colOrder.filter(c => groups[c] && groups[c].length > 0);
+            boardEl.innerHTML = nonEmptyCols.map(catName => {
+                const cardsHtml = groups[catName].map(p => {
+                    const favIcon = p.is_favorite ? '⭐' : '☆';
+                    const catOpts = ['<option value="">-- Kategorie verschieben --</option>']
+                        .concat((categories || []).map(c =>
+                            '<option value="' + escapeHtml(c) + '"' + (c === p.category ? ' selected' : '') + '>' + escapeHtml(c) + '</option>'
+                        )).join('');
+                    return '<div class="pl-board-card">' +
+                        '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.4rem;">' +
+                        '<strong style="font-size:0.86rem;">' + escapeHtml(p.name) + '</strong>' +
+                        '<button type="button" class="btn" style="padding:0.1rem 0.35rem; font-size:0.75rem;" onclick="toggleFavById(' + p.id + ')">' + favIcon + '</button>' +
+                        '</div>' +
+                        (p.purpose ? '<div class="pl-item-meta">' + escapeHtml(p.purpose) + '</div>' : '') +
+                        (p.tags ? '<div class="pl-item-meta" style="margin-top:0.25rem;">🏷️ ' + escapeHtml(p.tags) + '</div>' : '') +
+                        '<div class="pl-board-card-actions">' +
+                        '<button type="button" class="btn" style="padding:0.2rem 0.5rem; font-size:0.74rem;" onclick="openPromptFromBoard(' + p.id + ')">Öffnen</button>' +
+                        '<button type="button" class="btn btn-primary" style="padding:0.2rem 0.5rem; font-size:0.74rem;" onclick="runPromptDirectById(' + p.id + ')">🚀 Ausführen</button>' +
+                        '<select class="pl-search" style="font-size:0.72rem; padding:0.15rem 0.35rem; min-width:110px;" onchange="movePromptCategory(' + p.id + ', this.value)">' + catOpts + '</select>' +
+                        '</div></div>';
+                }).join('');
+                return '<div class="pl-board-col">' +
+                    '<div class="pl-board-col-header"><span>' + escapeHtml(catName) + '</span><span class="pl-badge">' + groups[catName].length + '</span></div>' +
+                    '<div class="pl-board-col-body">' + cardsHtml + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        async function openPromptFromBoard(id) {
+            if (isBoardView) toggleBoardView();
+            await openPrompt(id);
+        }
+
+        async function movePromptCategory(promptId, newCategory) {
+            if (!newCategory) return;
+            try {
+                await api('/api/prompt-library/boards/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt_id: promptId, category: newCategory })
+                });
+                setStatus('Kategorie aktualisiert: ' + newCategory);
+                await loadList();
+            } catch (e) {
+                setStatus('Fehler beim Verschieben: ' + e.message, true);
+            }
+        }
+
+        async function runPromptDirectById(id) {
+            try {
+                const data = await api('/api/prompt-library/' + id);
+                if (data && data.prompt && data.prompt.text) {
+                    if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
+                        window.BachChatDraft.store(data.prompt.text, data.prompt.name || null, { autorun: true });
+                    }
+                    window.location.assign('/chat');
+                }
+            } catch (e) {
+                setStatus('Ausführen fehlgeschlagen: ' + e.message, true);
             }
         }
 
@@ -703,11 +989,7 @@
         }
 
         function filterTag(tag) {
-            const search = document.getElementById('pl-search');
-            if (search) {
-                search.value = tag;
-                loadList();
-            }
+            toggleTagMatrixChip(tag);
         }
 
         function renderList(prompts) {

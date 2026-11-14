@@ -125,6 +125,10 @@ class ModulesHandler(BaseHandler):
             "pack": "Modul als Standalone-Bundle mit Prüfsumme packen (bach modules pack <name> [--out DIR] [--bundle-deps])",
             "scaffold": "Neues autarkes Modul mit Manifest, Code und Testsuite erstellen (bach modules scaffold <name> [--type TYPE])",
             "reconcile": "Reconciliation zwischen Feeds, Lockfile und Version-Pins durchführen (bach modules reconcile)",
+            "telemetry": "Telemetrie-, Lockfile-Checksum- und Dependency-Drift-Bericht anzeigen (bach modules telemetry)",
+            "drift": "Alias für 'telemetry': Prüft Checksum-, Versions- und Dependency-Drift",
+            "auto-export": "Auto-Export & Multi-Repo-Sync für geänderte Standalone-Module (bach modules auto-export [--apply] [--bundle-deps] [--out DIR])",
+            "sync-repos": "Alias für 'auto-export': Synchronisiert und exportiert Module + Manifest-Feed",
             "schedule": "Auto-Update-Job im Daemon Scheduler registrieren/konfigurieren (bach modules schedule [--interval-hours N])",
             "wire": "Hot-Wiring für alle Standalone-Module ausführen",
             "help": "Hilfe anzeigen",
@@ -241,6 +245,10 @@ class ModulesHandler(BaseHandler):
             return self._scaffold_cli(args)
         elif op in ("reconcile", "reconciliation"):
             return self._reconcile_cli()
+        elif op in ("telemetry", "drift", "drift-check"):
+            return self._telemetry_cli()
+        elif op in ("auto-export", "auto_export", "sync-repos", "sync_repos"):
+            return self._auto_export_cli(args, dry_run=dry_run)
         elif op == "help":
             return self._help()
         else:
@@ -1352,6 +1360,12 @@ class ModulesHandler(BaseHandler):
             "  bach modules reconcile",
             "      Führt einen vollständigen Abgleich zwischen Feeds, Lockfile und Version-Pins durch.",
             "",
+            "  bach modules telemetry | drift",
+            "      Zeigt Lockfile-Checksum-Drift, Dependency-Status, Pins und Quarantäne an.",
+            "",
+            "  bach modules auto-export [--apply] [--bundle-deps] [--out DIR]",
+            "      Prüft Modul-Änderungen & Quell-Repos und exportiert ZIP-Bundles + manifest_feed.json.",
+            "",
             "  bach modules wire",
             "      Führt Hot-Wiring aller Standalone-Module in die laufende Bridge aus.",
             "",
@@ -1832,8 +1846,24 @@ class ModulesHandler(BaseHandler):
 
         return self._apply_bootstrap(lockfile, verify_only=verify_only, minimal=minimal, dry_run=dry_run)
 
-    def _generate_lockfile(self, lockfile: Path) -> Tuple[bool, str]:
+    def _compute_module_sha256(self, mod_dir: Path) -> Tuple[str, int]:
+        """Berechnet deterministische SHA-256-Prüfsumme über Quell-, Manifest- und Doku-Dateien eines Moduls."""
         import hashlib
+        hasher = hashlib.sha256()
+        file_count = 0
+        for r, _, files in sorted(os.walk(mod_dir)):
+            # Versteckte temporäre Pack-/Pycache-Ordner ignorieren
+            rel_parts = Path(r).relative_to(mod_dir).parts
+            if any(part.startswith(".") or part == "__pycache__" for part in rel_parts):
+                continue
+            for f in sorted(files):
+                if f.endswith((".py", ".json", ".md")):
+                    p = Path(r) / f
+                    hasher.update(p.read_bytes())
+                    file_count += 1
+        return hasher.hexdigest(), file_count
+
+    def _generate_lockfile(self, lockfile: Path) -> Tuple[bool, str]:
         from datetime import datetime
         modules = self.get_modules_data()
         lock_data = {
@@ -1845,19 +1875,12 @@ class ModulesHandler(BaseHandler):
         for m in sorted(modules, key=lambda x: x["name"]):
             name = m["name"]
             mod_dir = Path(m["path"])
-            hasher = hashlib.sha256()
-            file_count = 0
-            for r, _, files in sorted(os.walk(mod_dir)):
-                for f in sorted(files):
-                    if f.endswith((".py", ".json", ".md")):
-                        p = Path(r) / f
-                        hasher.update(p.read_bytes())
-                        file_count += 1
+            digest, file_count = self._compute_module_sha256(mod_dir)
             lock_data["modules"][name] = {
                 "name": name,
                 "version": m["version"],
                 "entrypoint": m.get("entrypoint"),
-                "sha256": hasher.hexdigest(),
+                "sha256": digest,
                 "files_count": file_count,
                 "selfcontained": True,
             }
@@ -1925,6 +1948,441 @@ class ModulesHandler(BaseHandler):
         lines.append(f"[OK] Re-Assembly & Hot-Wiring ausgeführt ({wire_res['total_switched']} Module verdrahtet).")
         lines.append("BACH Core ist autark und betriebsbereit.")
         return True, "\n".join(lines)
+
+    # -------------------------------------------------------------------------
+    # TELEMETRIE & DEPENDENCY-DRIFT-DASHBOARD (TASK -57)
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_declared_dependencies(manifest_data: Dict[str, Any]) -> List[str]:
+        """Extrahiert Modul- und Paket-Abhängigkeiten einheitlich aus manifest.json."""
+        raw_deps = manifest_data.get("dependencies")
+        deps: List[str] = []
+        if isinstance(raw_deps, dict):
+            deps = [str(k).strip() for k in raw_deps.keys() if str(k).strip()]
+        elif isinstance(raw_deps, list):
+            for entry in raw_deps:
+                if isinstance(entry, dict) and entry.get("name"):
+                    deps.append(str(entry["name"]).strip())
+                elif isinstance(entry, str) and entry.strip():
+                    deps.append(entry.strip())
+        internal_mods = manifest_data.get("required_modules") or manifest_data.get("module_dependencies")
+        if isinstance(internal_mods, list):
+            for item in internal_mods:
+                name = str(item).strip()
+                if name and name not in deps:
+                    deps.append(name)
+        return deps
+
+    def get_telemetry_and_drift_report(self) -> Dict[str, Any]:
+        """Erstellt den vollständigen Telemetrie-, Lockfile-Drift- und Dependency-Bericht."""
+        installed_list = self.get_modules_data()
+        installed = {m["name"]: m for m in installed_list}
+        status_data = self.get_status_data()
+
+        lockfile = self._resolve_lockfile()
+        lock_data: Dict[str, Any] = {}
+        if lockfile.is_file():
+            try:
+                lock_data = json.loads(lockfile.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        locked_mods = lock_data.get("modules", {})
+
+        pins_data = self.get_version_pins()
+        pins = pins_data.get("pins", {})
+        quarantined = pins_data.get("quarantined", {})
+        feeds = self.get_feeds()
+        feed_modules = self.get_feed_modules()
+
+        feed_by_name: Dict[str, List[Dict[str, Any]]] = {}
+        for fm in feed_modules:
+            n = fm.get("name")
+            if n:
+                feed_by_name.setdefault(n, []).append(fm)
+
+        items: List[Dict[str, Any]] = []
+        dependencies_graph: List[Dict[str, Any]] = []
+        intact_count = 0
+        checksum_drift_count = 0
+        version_drift_count = 0
+        unlocked_count = 0
+        missing_deps_count = 0
+
+        for name, m_info in sorted(installed.items()):
+            mod_dir = Path(m_info["path"])
+            cur_ver = m_info["version"]
+            live_sha, files_count = self._compute_module_sha256(mod_dir)
+
+            manifest_data: Dict[str, Any] = {}
+            manifest_file = mod_dir / "manifest.json"
+            if manifest_file.is_file():
+                try:
+                    manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            declared_deps = self._extract_declared_dependencies(manifest_data)
+            missing_deps = [
+                d for d in declared_deps
+                if d in locked_mods and d not in installed
+            ]
+            # Falls explizite required_modules deklariert sind, fehlende Modul-Abhängigkeiten ebenfalls melden
+            req_mods = manifest_data.get("required_modules") or manifest_data.get("module_dependencies") or []
+            if isinstance(req_mods, list):
+                for req in req_mods:
+                    req_name = str(req).strip()
+                    if req_name and req_name not in installed and req_name not in missing_deps:
+                        missing_deps.append(req_name)
+
+            missing_deps_count += len(missing_deps)
+            if declared_deps or missing_deps:
+                dependencies_graph.append({
+                    "name": name,
+                    "depends_on": declared_deps,
+                    "missing_dependencies": missing_deps,
+                })
+
+            lock_spec = locked_mods.get(name)
+            locked_ver = lock_spec.get("version") if isinstance(lock_spec, dict) else None
+            locked_sha = lock_spec.get("sha256") if isinstance(lock_spec, dict) else None
+
+            checksum_match: Optional[bool] = None
+            if lock_spec is None:
+                drift_status = "unlocked"
+                unlocked_count += 1
+            elif locked_ver != cur_ver:
+                drift_status = "version_drift"
+                version_drift_count += 1
+                checksum_match = bool(locked_sha and locked_sha == live_sha)
+            elif locked_sha and locked_sha != live_sha:
+                drift_status = "checksum_drift"
+                checksum_drift_count += 1
+                checksum_match = False
+            else:
+                drift_status = "intact"
+                intact_count += 1
+                checksum_match = True if locked_sha else None
+
+            fms = feed_by_name.get(name, [])
+            latest_feed_ver = max((fm.get("version", "0.0.0") for fm in fms), key=parse_semver) if fms else None
+            pin_ver = pins.get(name, {}).get("pinned_version") if isinstance(pins.get(name), dict) else None
+            mod_quarantined = quarantined.get(name, [])
+
+            items.append({
+                "name": name,
+                "version": cur_ver,
+                "locked_version": locked_ver,
+                "live_sha256": live_sha,
+                "locked_sha256": locked_sha,
+                "files_count": files_count,
+                "pinned_version": pin_ver,
+                "latest_feed_version": latest_feed_ver,
+                "drift_status": drift_status,
+                "checksum_match": checksum_match,
+                "dependencies": declared_deps,
+                "missing_dependencies": missing_deps,
+                "quarantined_versions": [q.get("version") for q in mod_quarantined if isinstance(q, dict)],
+                "has_tests": bool(m_info.get("has_tests")),
+            })
+
+        total_drift = checksum_drift_count + version_drift_count
+        return {
+            "schema": "bach.modules-telemetry.v1",
+            "timestamp": datetime.now().isoformat(),
+            "lockfile_exists": lockfile.is_file(),
+            "lockfile_path": str(lockfile),
+            "summary": {
+                "total_installed": len(installed),
+                "standalone_bound": status_data.get("standalone_bound_count", 0),
+                "standalone_total": status_data.get("modularized_services_total", 0),
+                "coverage_percent": status_data.get("coverage_percent", 0.0),
+                "intact_count": intact_count,
+                "drift_count": total_drift,
+                "checksum_drift_count": checksum_drift_count,
+                "version_drift_count": version_drift_count,
+                "unlocked_count": unlocked_count,
+                "pinned_count": len(pins),
+                "quarantined_count": sum(len(v) for v in quarantined.values() if isinstance(v, list)),
+                "feeds_count": len(feeds),
+                "missing_deps_count": missing_deps_count,
+            },
+            "dependencies_graph": dependencies_graph,
+            "quarantined": quarantined,
+            "items": items,
+        }
+
+    def _telemetry_cli(self) -> Tuple[bool, str]:
+        rep = self.get_telemetry_and_drift_report()
+        s = rep["summary"]
+        lines = [
+            "=== BACH MODUL TELEMETRIE & DEPENDENCY-DRIFT ===",
+            f"Stand:             {rep['timestamp']}",
+            f"Lockfile:          {rep['lockfile_path']} ({'vorhanden' if rep['lockfile_exists'] else 'FEHLT'})",
+            f"Installiert/Bound: {s['total_installed']} Module | {s['standalone_bound']}/{s['standalone_total']} Standalone ({s['coverage_percent']}%)",
+            f"Integrität:        {s['intact_count']} intakt | {s['checksum_drift_count']} Checksum-Drift | {s['version_drift_count']} Version-Drift | {s['unlocked_count']} ungelockt",
+            f"Governance:        {s['pinned_count']} Pins | {s['quarantined_count']} Quarantäne | {s['missing_deps_count']} fehlende Dependencies",
+            "",
+            f"  {'MODUL':<26} {'VER':<9} {'LOCK':<9} {'DRIFT-STATUS':<16} {'SHA256 (LIVE -> LOCK)'}",
+            "  " + "-" * 84,
+        ]
+        for it in rep["items"]:
+            l_ver = f"v{it['locked_version']}" if it["locked_version"] else "-"
+            live_short = (it["live_sha256"] or "-")[:10]
+            lock_short = (it["locked_sha256"] or "-")[:10]
+            tags = [it["drift_status"]]
+            if it["pinned_version"]:
+                tags.append(f"pin=v{it['pinned_version']}")
+            if it["missing_dependencies"]:
+                tags.append(f"missing_deps={','.join(it['missing_dependencies'])}")
+            lines.append(
+                f"  {it['name']:<26} v{it['version']:<8} {l_ver:<9} {it['drift_status']:<16} {live_short} -> {lock_short}  ({', '.join(tags)})"
+            )
+        has_critical_drift = s["drift_count"] > 0 or s["missing_deps_count"] > 0
+        lines.append("")
+        if has_critical_drift:
+            lines.append("[WARNUNG] Drift oder fehlende Dependencies erkannt. Mit 'bach modules bootstrap --generate-lockfile' Lockfile aktualisieren.")
+        else:
+            lines.append("[OK] Telemetrie sauber. Kein Checksum-, Versions- oder Dependency-Drift.")
+        return True, "\n".join(lines)
+
+    # -------------------------------------------------------------------------
+    # AUTO-EXPORT & MULTI-REPO SYNC PIPELINE (TASK -55)
+    # -------------------------------------------------------------------------
+
+    def _discover_sibling_repo_modules(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Findet korrespondierende Modul-Quellpfade in bekannten Multi-Repo-Verzeichnissen."""
+        discovered: Dict[str, List[Dict[str, Any]]] = {}
+        for s_dir in self._resolve_source_dirs():
+            if not s_dir.is_dir():
+                continue
+            try:
+                for cand in s_dir.iterdir():
+                    if not cand.is_dir():
+                        continue
+                    for m_file in (cand / "manifest.json", cand / "src" / "manifest.json"):
+                        if m_file.is_file():
+                            try:
+                                meta = json.loads(m_file.read_text(encoding="utf-8"))
+                                m_name = meta.get("name")
+                                if m_name:
+                                    discovered.setdefault(m_name, []).append({
+                                        "repo_path": str(cand),
+                                        "manifest_path": str(m_file),
+                                        "version": meta.get("version", "1.0.0"),
+                                    })
+                                    break
+                            except Exception:
+                                pass
+            except OSError:
+                pass
+        return discovered
+
+    def sync_repos(
+        self,
+        dry_run: bool = True,
+        out_dir: Optional[Union[str, Path]] = None,
+        bundle_deps: bool = False,
+        modules: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Prüft .MODULES/ & Multi-Repo-Quellen und exportiert geänderte Pakete + manifest_feed.json."""
+        dest_dir = Path(out_dir) if out_dir else (self.base_path / "exports" / "modules")
+        feed_file = dest_dir / "manifest_feed.json"
+
+        existing_feed_entries: Dict[str, Dict[str, Any]] = {}
+        if feed_file.is_file():
+            try:
+                old_feed = json.loads(feed_file.read_text(encoding="utf-8"))
+                for entry in old_feed.get("modules", []):
+                    if isinstance(entry, dict) and entry.get("name"):
+                        existing_feed_entries[entry["name"]] = entry
+            except Exception:
+                pass
+
+        installed = self.get_modules_data()
+        filter_set = {m.strip().lower() for m in (modules or []) if m and m.strip()}
+        if filter_set:
+            installed = [m for m in installed if m["name"].lower() in filter_set]
+
+        sibling_repos = self._discover_sibling_repo_modules()
+        exported: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, Any]] = []
+        errors: List[Dict[str, Any]] = []
+        repo_drift: List[Dict[str, Any]] = []
+        new_feed_modules: Dict[str, Dict[str, Any]] = dict(existing_feed_entries)
+
+        for m in sorted(installed, key=lambda x: x["name"]):
+            name = m["name"]
+            mod_dir = Path(m["path"])
+            cur_ver = m["version"]
+            live_sha, _ = self._compute_module_sha256(mod_dir)
+
+            siblings = sibling_repos.get(name, [])
+            for sib in siblings:
+                sib_ver = sib.get("version", "1.0.0")
+                if parse_semver(sib_ver) != parse_semver(cur_ver):
+                    direction = "import_newer_from_repo" if parse_semver(sib_ver) > parse_semver(cur_ver) else "export_newer_to_feed"
+                    repo_drift.append({
+                        "module": name,
+                        "installed_version": cur_ver,
+                        "repo_version": sib_ver,
+                        "repo_path": sib["repo_path"],
+                        "direction": direction,
+                    })
+
+            prev_entry = existing_feed_entries.get(name, {})
+            prev_ver = prev_entry.get("version")
+            prev_src_sha = prev_entry.get("source_sha256")
+            pkg_file = prev_entry.get("package_file")
+            pkg_exists = bool(pkg_file and (dest_dir / pkg_file).is_file())
+
+            needs_export = (
+                not prev_entry
+                or prev_ver != cur_ver
+                or prev_src_sha != live_sha
+                or not pkg_exists
+            )
+
+            if not needs_export:
+                skipped.append({"name": name, "version": cur_ver, "reason": "unverändert im Feed"})
+                continue
+
+            if dry_run:
+                exported.append({
+                    "name": name,
+                    "version": cur_ver,
+                    "source_sha256": live_sha,
+                    "status": "would_export",
+                })
+                continue
+
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            ok_pack, pack_msg = self._pack_module(name, out_dir=str(dest_dir), bundle_deps=bundle_deps)
+            if not ok_pack:
+                errors.append({"name": name, "version": cur_ver, "error": pack_msg})
+                continue
+
+            # Jüngstes ZIP & SHA256 für dieses Modul ermitteln
+            bundle_tag = "bundle" if bundle_deps else "pkg"
+            zips = sorted(
+                dest_dir.glob(f"{name}_v{cur_ver}_{bundle_tag}_*.zip"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            latest_zip = zips[0] if zips else None
+            zip_sha = ""
+            if latest_zip:
+                sha_p = dest_dir / f"{latest_zip.name}.sha256"
+                if sha_p.is_file():
+                    zip_sha = sha_p.read_text(encoding="utf-8").split()[0].strip()
+
+            entry_data = {
+                "name": name,
+                "version": cur_ver,
+                "description": m.get("description", ""),
+                "entrypoint": m.get("entrypoint"),
+                "selfcontained": bool(m.get("selfcontained", True)),
+                "package_file": latest_zip.name if latest_zip else "",
+                "download_url": str(latest_zip) if latest_zip else "",
+                "sha256": zip_sha,
+                "source_sha256": live_sha,
+                "exported_at": datetime.now().isoformat(),
+            }
+            new_feed_modules[name] = entry_data
+            exported.append({
+                "name": name,
+                "version": cur_ver,
+                "package_file": entry_data["package_file"],
+                "sha256": zip_sha,
+                "source_sha256": live_sha,
+                "status": "exported",
+            })
+
+        feed_written = False
+        if not dry_run and not errors or (not dry_run and exported):
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            feed_payload = {
+                "schema": "bach.manifest-feed.v1",
+                "generated_at": datetime.now().isoformat(),
+                "total_modules": len(new_feed_modules),
+                "modules": [new_feed_modules[k] for k in sorted(new_feed_modules.keys())],
+            }
+            feed_file.write_text(json.dumps(feed_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            feed_written = True
+
+        return {
+            "schema": "bach.modules-auto-export.v1",
+            "timestamp": datetime.now().isoformat(),
+            "dry_run": dry_run,
+            "out_dir": str(dest_dir),
+            "feed_file": str(feed_file),
+            "feed_written": feed_written,
+            "total_evaluated": len(installed),
+            "exported_count": len(exported),
+            "skipped_count": len(skipped),
+            "errors_count": len(errors),
+            "repo_drift_count": len(repo_drift),
+            "exported": exported,
+            "skipped": skipped,
+            "errors": errors,
+            "repo_drift": repo_drift,
+        }
+
+    def _auto_export_cli(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
+        apply_flag = any(a in ("--apply", "-a", "--force") for a in args)
+        is_dry = dry_run or (not apply_flag) or any(a in ("--dry-run", "-n") for a in args)
+        bundle_deps = any(a in ("--bundle-deps", "--bundle", "-b") for a in args)
+        out_dir = None
+        mod_filter: List[str] = []
+        skip_next = False
+        for i, a in enumerate(args):
+            if skip_next:
+                skip_next = False
+                continue
+            if a == "--out" and i + 1 < len(args):
+                out_dir = args[i + 1]
+                skip_next = True
+            elif a.startswith("--out="):
+                out_dir = a.split("=", 1)[1]
+            elif not a.startswith("-"):
+                mod_filter.append(a)
+
+        res = self.sync_repos(
+            dry_run=is_dry,
+            out_dir=out_dir,
+            bundle_deps=bundle_deps,
+            modules=mod_filter or None,
+        )
+        lines = [
+            "=== BACH AUTO-EXPORT & MULTI-REPO SYNC PIPELINE ===",
+            f"Modus:         {'DRY-RUN (mit --apply exportieren)' if res['dry_run'] else 'APPLY (Live-Export)'}",
+            f"Zielordner:    {res['out_dir']}",
+            f"Manifest-Feed: {res['feed_file']}",
+            f"Evaluiert:     {res['total_evaluated']} | Exportiert/Geplant: {res['exported_count']} | Unverändert: {res['skipped_count']} | Multi-Repo-Drift: {res['repo_drift_count']}",
+            "",
+        ]
+        if res["repo_drift"]:
+            lines.append("Multi-Repo Versionsdifferenzen:")
+            for rd in res["repo_drift"]:
+                lines.append(
+                    f"  ⇄ {rd['module']:<24} BACH=v{rd['installed_version']} vs Repo=v{rd['repo_version']} ({rd['direction']})"
+                )
+            lines.append("")
+        if res["exported"]:
+            lines.append("Export-Kandidaten / Pakete:")
+            for ex in res["exported"]:
+                pkg = f" -> {ex['package_file']}" if ex.get("package_file") else ""
+                lines.append(f"  • {ex['name']:<24} v{ex['version']:<9} [{ex['status']}]{pkg}")
+        else:
+            lines.append("[OK] Alle evaluierten Module sind bereits aktuell im Export-Feed.")
+
+        if res["errors"]:
+            lines.append("")
+            lines.append("Fehler:")
+            for err in res["errors"]:
+                lines.append(f"  ! {err['name']}: {err['error']}")
+
+        return res["errors_count"] == 0, "\n".join(lines)
 
 
 def run_modules_auto_update_runner(

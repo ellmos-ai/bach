@@ -38,6 +38,11 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Modularer Core Telemetrie/Drift, Auto-Export Pipeline & GUI PromptBoard Board/Tag-Matrix (Tasks #-57, #-56, #-55, 2026-11-14):**
+  - **Telemetrie- & Dependency-Drift-Dashboard (Task #-57):** `ModulesHandler.get_telemetry_and_drift_report()` inkl. geteiltem Deterministik-Hasher `_compute_module_sha256()`, CLI `bach modules telemetry|drift`, API `GET /api/modules/telemetry` und Live-Telemetrie-Leiste in `index.html`. Fixt zudem den Quick-Prompt-API-Contract (`data.prompts || data.items`) auf dem Dashboard.
+  - **Live Tag-Filter-Matrix & Multi-Category Board (Task #-56):** `GET /api/prompt-library` um Multi-Tag-Filter (`tags`), Board-Filter (`board`), `tag_counts` und `boards` erweitert; neue Board-Endpunkte `GET /api/prompt-library/boards` & `POST /api/prompt-library/boards/assign` sowie klickbare Tag-Matrix und Kategorie-Board-Ansicht mit Direkt-Ausführung in `prompt-library.html`.
+  - **Auto-Export & Multi-Repo Sync Pipeline (Task #-55):** `ModulesHandler.sync_repos()` inkl. Sibling-Repo-Drifterkennung, Bundle-/SHA-256-Export nach `exports/modules/manifest_feed.json`, CLI `bach modules auto-export|sync-repos` und API `POST /api/modules/auto-export`.
+
 - **Modul-Paketmanager & Modularer Core Export (session, cache, scheduler) (Tasks #-36 & #-37, 2026-11-05):**
   - **Modularer Core Standalone-Export (Task #-36):**
     - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
@@ -1192,6 +1197,11 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ---
 
 ## [Unreleased]
+
+- **Modularer Core Telemetrie/Drift, Auto-Export Pipeline & GUI PromptBoard Board/Tag-Matrix (Tasks #-57, #-56, #-55, 2026-11-14):**
+  - **Telemetrie- & Dependency-Drift-Dashboard (Task #-57):** `ModulesHandler.get_telemetry_and_drift_report()` inkl. geteiltem Deterministik-Hasher `_compute_module_sha256()`, CLI `bach modules telemetry|drift`, API `GET /api/modules/telemetry` und Live-Telemetrie-Leiste in `index.html`. Fixt zudem den Quick-Prompt-API-Contract (`data.prompts || data.items`) auf dem Dashboard.
+  - **Live Tag-Filter-Matrix & Multi-Category Board (Task #-56):** `GET /api/prompt-library` um Multi-Tag-Filter (`tags`), Board-Filter (`board`), `tag_counts` und `boards` erweitert; neue Board-Endpunkte `GET /api/prompt-library/boards` & `POST /api/prompt-library/boards/assign` sowie klickbare Tag-Matrix und Kategorie-Board-Ansicht mit Direkt-Ausführung in `prompt-library.html`.
+  - **Auto-Export & Multi-Repo Sync Pipeline (Task #-55):** `ModulesHandler.sync_repos()` inkl. Sibling-Repo-Drifterkennung, Bundle-/SHA-256-Export nach `exports/modules/manifest_feed.json`, CLI `bach modules auto-export|sync-repos` und API `POST /api/modules/auto-export`.
 
 - **Modul-Paketmanager & Modularer Core Export (session, cache, scheduler) (Tasks #-36 & #-37, 2026-11-05):**
   - **Modularer Core Standalone-Export (Task #-36):**
