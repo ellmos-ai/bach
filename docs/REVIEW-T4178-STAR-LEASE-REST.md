@@ -84,7 +84,13 @@ Regressionsbild.
 ## Prüfstand Lauf 4, 2026-11-15
 
 Erneuter Testlauf im Worktree `task-4178` auf unverändertem Bestand, gefolgt von
-der PR-Anlage über `finish_task` mit kurzem, einzeiligem message-Text.
+der PR-Anlage über `finish_task` mit kurzem, einzeiligem message-Text:
+
+    python -m pytest -q -- system/tests/test_resource_lease.py
+    48 passed, 1 warning in 10.67s   (Exitcode 0)
+
+Warnung wieder nur `PytestConfigWarning: Unknown config option: confcutdir`; kein
+Regressionsbild gegenüber den Läufen 1-3 (10.20s / 10.71s).
 
 Ergebnis der Vorprüfung in diesem Lauf: `system/tests/` enthält keinen Treffer für
 `star_lease`/`StarLease`/`star lease`; der Lease-Testbestand bleibt damit
