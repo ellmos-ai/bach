@@ -1030,6 +1030,43 @@ class HermesBackend(OpenAIBackend):
         )
 
 
+_FREE_MODEL_OUTCOMES_LOCK = threading.Lock()
+_FREE_MODEL_OUTCOMES: dict[str, tuple[int, int]] = {}
+
+
+def record_free_model_outcome(model_id: str, *, ok: bool) -> None:
+    """Record runtime turn outcome for a pinned OpenRouter free model."""
+    key = str(model_id or "").strip()
+    if not key or key == "openrouter/free":
+        return
+    with _FREE_MODEL_OUTCOMES_LOCK:
+        succ, fail = _FREE_MODEL_OUTCOMES.get(key, (0, 0))
+        if ok:
+            _FREE_MODEL_OUTCOMES[key] = (succ + 1, fail)
+        else:
+            _FREE_MODEL_OUTCOMES[key] = (succ, fail + 1)
+
+
+def reset_free_model_outcomes() -> None:
+    """Clear recorded runtime outcomes for deterministic tests."""
+    with _FREE_MODEL_OUTCOMES_LOCK:
+        _FREE_MODEL_OUTCOMES.clear()
+
+
+def free_model_success_rates():
+    """Return an optimistic-prior reliability lookup when failures exist, else None."""
+    with _FREE_MODEL_OUTCOMES_LOCK:
+        if not any(fail > 0 for _, fail in _FREE_MODEL_OUTCOMES.values()):
+            return None
+        snapshot = dict(_FREE_MODEL_OUTCOMES)
+
+    def _rate(model_id: str) -> float:
+        succ, fail = snapshot.get(str(model_id or "").strip(), (0, 0))
+        return (succ + 1.0) / (succ + fail + 1.0)
+
+    return _rate
+
+
 class OpenRouterBackend(HermesBackend):
     """OpenRouter provider with explicit model IDs and a safe free router default.
 
@@ -1101,7 +1138,10 @@ class OpenRouterBackend(HermesBackend):
             return self._free_pin_model
         from hub._services.llm.free_model_pin import pick_free_model
 
-        decision = pick_free_model(self.run_id)
+        decision = pick_free_model(
+            self.run_id,
+            success_rates=free_model_success_rates(),
+        )
         self.last_free_pin_decision = decision
         pinned_model = decision.get("model") if isinstance(decision, dict) else None
         if (
@@ -1137,6 +1177,7 @@ class OpenRouterBackend(HermesBackend):
             and isinstance(result, dict)
             and result.get("error")
         ):
+            record_free_model_outcome(target_model, ok=False)
             self._free_pin_model = "openrouter/free"
             self.last_resolved_model = "openrouter/free"
             result = await super().chat(

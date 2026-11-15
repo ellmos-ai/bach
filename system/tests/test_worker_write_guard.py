@@ -1196,3 +1196,42 @@ def test_cleanup_pytest_current_links_removes_nested_symlinks(tmp_path, monkeypa
     payload = guard._scan_locks(worktree)
     assert payload.get("descendants_complete") is True
 
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX per-invocation run-<uuid> basetemp cleanup")
+def test_bound_check_removes_owned_pytest_run_tree_and_fixture_locks(bridge, tmp_path, monkeypatch):
+    from hub import safe_exec
+
+    repo = tmp_path / "repo"
+    root = tmp_path / "worktrees"
+    target = root / f"task-{bridge.binding.task_id}"
+    repo.mkdir()
+    target.mkdir(parents=True)
+    monkeypatch.setattr(guard, "_paths", lambda *a, **k: (repo, root))
+    monkeypatch.setattr(guard, "_registered_tree", lambda *a, **k: target)
+    monkeypatch.setattr(guard, "_fresh_locks", lambda *a, **k: None)
+
+    (target / "test_lock_fixture.py").write_text(
+        "import os\n"
+        "def test_creates_lock_and_readonly_dir(tmp_path):\n"
+        "    (tmp_path / 'LOCK.txt').write_text('fixture lock', encoding='utf-8')\n"
+        "    ro = tmp_path / 'ro_dir'\n"
+        "    ro.mkdir()\n"
+        "    f = ro / 'LOCK.user.test.txt'\n"
+        "    f.write_text('nested lock', encoding='utf-8')\n"
+        "    os.chmod(f, 0o400)\n"
+        "    os.chmod(ro, 0o500)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PYTHONPATH", str(Path(pytest.__file__).resolve().parents[1]))
+    monkeypatch.setattr(safe_exec, "resolve_executable", lambda *_a, **_kw: [sys.executable])
+    result = guard.run_bound_check(
+        bridge.binding, "python -m pytest -q -- test_lock_fixture.py", target,
+        timeout=30, return_result=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    pytest_temp = target / ".cache" / ".worker-check" / "pytest-temp"
+    assert pytest_temp.is_dir()
+    assert list(pytest_temp.iterdir()) == []
+    scan = guard._scan_locks(target)
+    assert scan["locks"] == []
+    assert scan["descendants_complete"] is True

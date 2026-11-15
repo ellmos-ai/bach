@@ -67,12 +67,45 @@ def _sysctl_bytes(name: str) -> int:
         return 0
 
 
+def _metal_ctypes_bytes() -> int:
+    """Direkte Metal-Abfrage per ctypes/libobjc ohne swift/Xcode-Lizenzpflicht."""
+    if sys.platform != "darwin":
+        return 0
+    try:
+        import ctypes
+
+        metal = ctypes.CDLL("/System/Library/Frameworks/Metal.framework/Metal")
+        objc = ctypes.CDLL("/usr/lib/libobjc.A.dylib")
+        create_dev = ctypes.CFUNCTYPE(ctypes.c_void_p)(
+            ("MTLCreateSystemDefaultDevice", metal)
+        )
+        sel_reg = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p)(
+            ("sel_registerName", objc)
+        )
+        msg_send_u64 = ctypes.CFUNCTYPE(
+            ctypes.c_uint64, ctypes.c_void_p, ctypes.c_void_p
+        )(("objc_msgSend", objc))
+        release_obj = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(
+            ("objc_release", objc)
+        )
+        dev = create_dev()
+        if not dev:
+            return 0
+        try:
+            sel = sel_reg(b"recommendedMaxWorkingSetSize")
+            value = int(msg_send_u64(dev, sel))
+            return value if value > 0 else 0
+        finally:
+            release_obj(dev)
+    except Exception:
+        return 0
+
+
 def _metal_bytes() -> int:
     """Metals empfohlene Arbeitsmenge (Apple Silicon), 0 wenn nicht ermittelbar.
 
-    Gemessen statt erinnert: pyobjc fehlt hier, aber die CommandLineTools
-    bringen swift mit. Das Ergebnis wird gemerkt - es aendert sich zur
-    Laufzeit nicht, und ein Subprozess je Abfrage waere Verschwendung.
+    Zuerst direkt über Metal/libobjc (ctypes) ohne Xcode-Lizenzabhängigkeit;
+    bei Fehlschlag Fallback auf swift. Das Ergebnis wird gemerkt.
     """
     global _metal_cache
     if sys.platform != "darwin":
@@ -80,6 +113,10 @@ def _metal_bytes() -> int:
     if _metal_cache is not None:
         return _metal_cache
     _metal_cache = 0
+    direkt = _metal_ctypes_bytes()
+    if direkt > 0:
+        _metal_cache = direkt
+        return _metal_cache
     quelle = ("import Metal\n"
               "print(MTLCreateSystemDefaultDevice()?"
               ".recommendedMaxWorkingSetSize ?? 0)\n")

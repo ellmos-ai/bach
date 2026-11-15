@@ -498,3 +498,65 @@ def test_reserve_model_request_persists_pinned_model(tmp_path, monkeypatch):
     with pytest.raises(slots_config.ModelRequestBudgetError):
         invalid = dict(match); invalid["model"] = " bad"
         slots_config.reserve_model_request("worker-free-pin", **invalid)
+
+
+def test_openrouter_backend_demotes_failed_free_model_and_rotates_healthy(monkeypatch):
+    from hub._services.llm import model_backend as mb
+
+    mb.reset_free_model_outcomes()
+    try:
+        catalog = _catalog("alpha:free", "beta:free", "cohere/north-mini-code:free")
+        monkeypatch.setattr(pin, "get_openrouter_catalog", lambda *a, **kw: catalog)
+
+        assert mb.free_model_success_rates() is None
+        mb.record_free_model_outcome("cohere/north-mini-code:free", ok=False)
+        rates = mb.free_model_success_rates()
+        assert callable(rates)
+        assert rates("alpha:free") == 1.0
+        assert rates("beta:free") == 1.0
+        assert rates("cohere/north-mini-code:free") < 1.0
+
+        chosen = set()
+        for idx in range(12):
+            backend = mb.OpenRouterBackend(api_key="testkey", run_id=f"task-run-{idx}")
+            pinned = backend._pin_free_router_model()
+            assert pinned != "cohere/north-mini-code:free"
+            chosen.add(pinned)
+        assert chosen == {"alpha:free", "beta:free"}
+
+        mb.record_free_model_outcome("alpha:free", ok=True)
+        chosen_after_success = {
+            mb.OpenRouterBackend(api_key="testkey", run_id=f"next-run-{idx}")._pin_free_router_model()
+            for idx in range(12)
+        }
+        assert chosen_after_success == {"alpha:free", "beta:free"}
+    finally:
+        mb.reset_free_model_outcomes()
+
+
+def test_apply_slot_to_session_rotates_openrouter_free_per_session(monkeypatch):
+    from types import SimpleNamespace
+    from hub._services.chat import telegram_chat as tc
+
+    monkeypatch.setattr(tc, "_load_api_key_with_ref", lambda _key: ("test-key", "test-ref"))
+    monkeypatch.setattr(
+        "hub._services.llm.controller_route.bind_controller_backend",
+        lambda *_a, **_kw: None,
+    )
+    slot = {
+        "id": "worker-fdb98a89",
+        "enabled": True,
+        "backend": "openrouter",
+        "model": "openrouter/free",
+        "allow_tools": True,
+    }
+    s1 = SimpleNamespace(messages=[], model="", mode="safe", think=True, allow_tools=True)
+    b1_first, _ = tc._apply_slot_to_session("worker-fdb98a89", s1, slot=slot)
+    b1_second, _ = tc._apply_slot_to_session("worker-fdb98a89", s1, slot=slot)
+    assert b1_first is b1_second
+    assert b1_first.run_id
+
+    s2 = SimpleNamespace(messages=[], model="", mode="safe", think=True, allow_tools=True)
+    b2, _ = tc._apply_slot_to_session("worker-fdb98a89", s2, slot=slot)
+    assert b2 is not b1_first
+    assert b2.run_id != b1_first.run_id

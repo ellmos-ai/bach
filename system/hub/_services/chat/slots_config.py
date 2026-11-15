@@ -1821,6 +1821,32 @@ def reconcile_workers(
                             "model_request_run_unsettled" if pending_budget else "thread_lost")
                 dirty = True
 
+    if active_worker_ids is not None and "buddha_always_on" not in active_worker_ids:
+        b_slot = cfg.get("slots", {}).get("buddha_always_on")
+        if (
+            isinstance(b_slot, dict)
+            and b_slot.get("status") == "running"
+            and b_slot.get("persistent_opt_in") is not True
+            and b_slot.get("_persistent_core_recovery") is None
+        ):
+            run = (
+                _model_request_runs(b_slot)["current"]
+                if _MODEL_REQUEST_RUNS_FIELD in b_slot
+                else None
+            )
+            pending_budget = run is not None and run["phase"] != "terminal"
+            b_slot["status"] = "error" if pending_budget else "idle"
+            b_slot["current_activity"] = (
+                "Modellanfragenlauf unbestätigt; Wiederaufnahme gesperrt"
+                if pending_budget
+                else "Bereit (wiederhergestellt)"
+            )
+            log.warning(
+                "worker_stopped worker_id=buddha_always_on reason=%s",
+                "model_request_run_unsettled" if pending_budget else "thread_lost",
+            )
+            dirty = True
+
     if dirty:
         save_slots_config(cfg, path)
     return workers

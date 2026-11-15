@@ -101,6 +101,7 @@ def queue_waiting_activity(raw):
         "repository_unverified": "Repo-Bindung ungeprüft",
         "repository_not_allowed": "Repo nicht freigegeben",
         "repository_changed": "Repo änderte sich vor Claim",
+        "unresolved_tool_trace": "offene Werkzeugspur",
     }
     reasons = ", ".join(f"{labels[key]}: {count}" for key, count in report["rejected_counts"].items())
     prefix = "Keine offenen Kandidaten" if report["reason"] == "empty_queue" else "Keine übernehmbare Aufgabe"
