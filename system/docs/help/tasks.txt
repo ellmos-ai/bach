@@ -34,8 +34,8 @@ BACH hat ZWEI parallele Zugangswege - beide nutzen dieselben Handler + DB:
 
 CLI-BEFEHLE (bach task)
 -----------------------
-  add <titel>       Erstellt Task (--priority P1-P4, --description, --category,
-                    --due YYYY-MM-DD)
+  add <titel>       Erstellt Task (--priority WERT, Default P3, keine
+                    P1-P4-Validierung; --description, --category, --due YYYY-MM-DD)
   list [status]     Gefilterte Übersicht (pending/open/in_progress/done/blocked/all)
   list --filter     Nach Begriff im Titel filtern
   list --assigned   Tasks für einen bestimmten Partner
