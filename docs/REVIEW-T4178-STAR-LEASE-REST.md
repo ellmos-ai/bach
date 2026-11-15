@@ -80,3 +80,17 @@ Eigenständiger Wiederholungslauf im Worktree `task-4178` nach Resume:
 Warnung erneut nur `PytestConfigWarning: Unknown config option: confcutdir`
 (unerheblich). Der Beleg bestätigt den Erstlauf (10.20s); kein Abweichungs- oder
 Regressionsbild.
+
+## Prüfstand Lauf 4, 2026-11-15
+
+Erneuter Testlauf im Worktree `task-4178` auf unverändertem Bestand, gefolgt von
+der PR-Anlage über `finish_task` mit kurzem, einzeiligem message-Text.
+
+Ergebnis der Vorprüfung in diesem Lauf: `system/tests/` enthält keinen Treffer für
+`star_lease`/`StarLease`/`star lease`; der Lease-Testbestand bleibt damit
+`system/tests/test_resource_lease.py`. `system/hub/` enthält weiterhin keine
+`writer.py` und keine `star_lease_INTEGRATION.md` — Punkt 3 (Integration) bleibt
+offener Folgeschritt (Polarstern-Freigabe + reale Quelle aus #3743).
+
+Keine Änderung an Lease-Kernmodulen, Migrationen, Schemata oder Laufzeitpfaden;
+diese Datei ist weiterhin der einzige inhaltliche Beitrag des Tasks.
