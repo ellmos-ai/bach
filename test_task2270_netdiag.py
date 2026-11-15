@@ -9,6 +9,7 @@ Zweck: Unterscheiden, WARUM der Host nicht antwortet:
 Reine Beweissammlung (Evidence), keine Bewertung. Alle Checks geben aus,
 fehlende Erreichbarkeit ist hier KEIN Blocker-Green-Flip.
 """
+import os
 import re
 import subprocess
 
@@ -29,9 +30,16 @@ except OSError:
 
 
 def _append_log(label, rc, text):
+    # Zeileninterne Tabs/Spaces am Zeilenende strippen (git diff --check
+    # blockt sonst auf trailing whitespace aus ifconfig-Output) und am
+    # Dateiende keine leere Zeile hinterlassen ("new blank line at EOF").
+    clean = "\n".join(line.rstrip() for line in text.strip().splitlines())
+    sep = ""
+    if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 0:
+        sep = "\n"
     try:
         with open(LOG_PATH, "a", encoding="utf-8") as fh:
-            fh.write("%s\nrc=%s\n%s\n\n" % (label, rc, text.strip()))
+            fh.write(sep + "%s\nrc=%s\n%s\n" % (label, rc, clean))
     except OSError:
         pass
 
