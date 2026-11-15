@@ -279,3 +279,22 @@ Mehrsprachige Injection-Erkennung und Content-Markierung mit fail-closed Prüfwe
 | `pruefe_kettenuebergabe` | Modulfunktion: Prüfung von Kettenübergaben. |
 
 Tests: `test_content_guard.py` (10 Tests; Defaults, Fail-closed HIGH→`ContentBlockedError`, Ollama-Fehler→Finding `ollama_error` (high), medium-single→allow, medium-double→mark_untrusted, Toolcall/Kettenübergabe/Wrapper, content_hash 64 hex). Integration: Geplante Anbindung über einen BACH-Adapter analog zum agents-heart-Muster.
+
+---
+
+## 13. Moduldefinition: foerderplaner_provider
+
+**Pfad:** `.MODULES/foerderplaner_provider/` · **Version:** v0.2.0
+
+Self-contained Provider-Seam (Secure Forward-Only) zur Anbindung eines externen Förderplaner-Moduls: Der Rollback-Schalter `BACH_USE_EXTERNAL_FOERDERPLANER` (Werte `0/false/no/off` erzwingen den internen Legacy-Pfad, MODULRUECKTRANSFER-PLAN Abschnitt 4 Regel 1), `load_external_foerderplaner` lädt das private Bundle (foerderplaner 0.2.0, Quelle `Source7d7c8c9`, isoliert unter `/Users/lukas/foerderplaner-private`, network=none) ausschließlich per `importlib.import_module` ohne Silent-Fallback, und `create_external_foerderplaner_adapter` ist die einzige Adapter-Quelle und fails closed (fehlender `create_foerderplaner_adapter`-Export → „foerderplaner >= 0.3 with the BACH adapter contract is required"; native Fehler maskiert als `foerderplaner_dispatch_failed`). Boundaries: data=user-local, network=none (windows/macos/linux); Consumers: BACH ≥ 3.15.0, Ocean ≥ 1.0.0.
+
+| Symbol | Rolle |
+|--------|-------|
+| `FoerderplanerProvider` | Frozen Dataclass: name, external, module, reason. |
+| `probe_foerderplaner_provider()` | Beschreibt Verfügbarkeit ohne Import (rollback→legacy, `find_spec`→external, sonst legacy). |
+| `load_external_foerderplaner()` | Lädt das private Modul ausschließlich per `importlib.import_module`, kein Silent-Fallback. |
+| `create_external_foerderplaner_adapter(state_db, **options)` | Einzige Adapter-Quelle; fail-closed ohne `create_foerderplaner_adapter`-Export. |
+| `create_documentation_foerderplaner(state_db, executor, *, worker_id)` | Validiert `probe().external` (sonst RuntimeError „External foerderplaner unavailable or rollback requested"); baut `ExecutorRegistry(include_standard=False)` mit `bach-doc`-execute-Wrapper (Executor-Ergebnis → `ExecutionResult("succeeded", exit_code=0, output=json)`, Exception → maskiert `ExecutionResult("failed", error="foerderplaner_dispatch_failed")`) und delegiert an `create_external_foerderplaner_adapter`. |
+| `BACH_USE_EXTERNAL_FOERDERPLANER` | Rollback-Schalter: `0/false/no/off` erzwingt internen Legacy-Pfad. |
+
+Tests: `test_foerderplaner_provider.py` (4 Tests). Integration: Anbindung via `bach skills verify`/`install`; BACH-Adapter-Vertrag foerderplaner ≥ 0.3.
