@@ -389,3 +389,7 @@ LOCK*.guard
 .MODULES/.CONTROL/
 
 desktop-installers/
+
+# Task #4134: Schreib-/Verifikationsproben im Task-Worktree aus dem Commit halten
+/foerderplaner_provider/VERIFY_PROBE.txt
+/.write_probe.txt
