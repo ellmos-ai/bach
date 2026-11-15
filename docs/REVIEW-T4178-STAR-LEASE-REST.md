@@ -69,3 +69,14 @@ Restpunkte:
    #3743-Umfeld sowie die Polarstern-Freigabe voraus und bleibt offener Folgeschritt.
 
 Keine Änderung an Lease-Kernmodulen, Migrationen, Schemata oder Laufzeitpfaden.
+
+## Prüfstand 2. Lauf, 2026-11-15 (Resume-Beleg, Worktree bestätigt)
+
+Eigenständiger Wiederholungslauf im Worktree `task-4178` nach Resume:
+
+    python -m pytest -q -- system/tests/test_resource_lease.py
+    48 passed, 1 warning in 10.71s   (Exitcode 0)
+
+Warnung erneut nur `PytestConfigWarning: Unknown config option: confcutdir`
+(unerheblich). Der Beleg bestätigt den Erstlauf (10.20s); kein Abweichungs- oder
+Regressionsbild.
