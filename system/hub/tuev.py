@@ -397,6 +397,10 @@ class UsecaseHandler(BaseHandler):
                     continue
                 seen.add(normalized)
                 candidates.append(self.base_path / variant)
+                lowered = normalized.lower()
+                if lowered != normalized and lowered not in seen:
+                    seen.add(lowered)
+                    candidates.append(self.base_path / Path(lowered))
 
         add_candidate(row["workflow_path"])
 
