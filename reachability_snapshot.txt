@@ -1,5 +1,15 @@
-Zeit: 2026-11-15T11:32:32.818257  Host: 192.168.9.129
-  Port 22: CLOSED(TimeoutError:timed out)
-  Port 445: CLOSED(TimeoutError:timed out)
-  Port 3389: CLOSED(OSError:[Errno 64] Host is down)
-  Port 5985: CLOSED(OSError:[Errno 64] Host is down)
+Reachability-Evidenz Task #2270 - WORKSTATION-LG (192.168.9.129)
+Lauf: juengster Re-Verifikationslauf im Worktree task-2270
+(pytest -q -s test_task2270_reachability.py)
+
+PING: 3 Pakete gesendet, 0 empfangen, 100.0% Paketverlust (rc=2)
+Port 22 (OpenSSH):  NICHT erreichbar (TimeoutError: timed out)
+Port 445 (SMB):     NICHT erreichbar (OSError: [Errno 64] Host is down)
+Port 3389 (RDP):    NICHT erreichbar (OSError: [Errno 64] Host is down)
+Port 5985 (WinRM):  NICHT erreichbar (OSError: [Errno 64] Host is down)
+
+Netdiagnose im selben Lauf (pytest -q test_task2270_netdiag.py): 6 passed
+Lokale Netzwerkstrecke funktionsfaehig; Ausfall liegt am Zielhost bzw. dessen Segment.
+
+Bewertung: Host NICHT online. Damit ist weder Option A (RDP-Credentials)
+noch Option B (aktivierter OpenSSH-Server) verifizierbar. Kein Green-Flip.
