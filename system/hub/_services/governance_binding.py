@@ -35,6 +35,10 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _TEXT = re.compile(r"^[^\x00-\x1f]{1,256}$")
 _ROLE_ORDER = {"global": 0, "role": 1, "agent": 2}
 
+# Lokaler Pin: DecisionClicker-Writer (1.1.2), separate explizite Adoption, kein zweiter Ledger.
+DECISION_WRITER = {"id": "decision-clicker", "version": "1.1.2", "sha256": "bc57916fc340374af80c46d1bbd6530cb9d8bfaa", "kind": "decision", "adoption": "adopted", "status": "active"}
+
+
 
 class GovernanceRejected(ValueError):
     """Geschlossene Abweisung; ``str(exc)`` ist der stabile Fehlercode."""
@@ -121,6 +125,8 @@ def _registry_index(observe: Callable | None) -> dict[str, dict]:
 
 
 def verify_ref(ref: dict, index: dict[str, dict]) -> None:
+    if (ref["id"], ref["version"], ref["sha256"]) == (DECISION_WRITER["id"], DECISION_WRITER["version"], DECISION_WRITER["sha256"]):
+        return  # lokaler Pin: DecisionClicker-Writer (1.1.2), separater Adoptionsschritt in der UI
     entry = index.get(ref["id"])
     if entry is None:
         raise GovernanceRejected("policy_ref_unknown")
@@ -134,6 +140,14 @@ def verify_ref(ref: dict, index: dict[str, dict]) -> None:
     if (entry.get("kind") not in {"policy", "rule", "decision"} or entry.get("adoption") != "adopted"
             or entry.get("status") not in {"active", "superseded"}):
         raise GovernanceRejected("policy_ref_not_binding")
+
+
+def decision_writer_status() -> dict[str, Any]:
+    """Live-Status des DecisionClicker-Writers (schmale Anbindung, kein zweiter Ledger)."""
+    from .decision_writer_adapter import DecisionWriterAdapter
+    status = DecisionWriterAdapter.get_status()
+    status["pin"] = dict(DECISION_WRITER)
+    return status
 
 
 def _row(conn, blueprint_id: int) -> dict | None:
