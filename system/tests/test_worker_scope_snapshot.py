@@ -48,11 +48,12 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypat
     base_head = _git(["rev-parse", "HEAD"], repo).stdout.strip()
 
     target = worktrees / f"task-{task_id}"
-    _git(["worktree", "add", str(target), "-b", f"bach-task/{task_id}", base_head], repo)
+    if not pinned:
+        _git(["worktree", "add", str(target), "-b", f"bach-task/{task_id}", base_head], repo)
 
     from hub import worker_git
     reg_data = {
-        "schema": "bach.task-public-source.v1",
+        "schema": "bach.task-public-source.v2",
         "task_id": task_id,
         "repository": "ellmos-ai/bach",
         "origin": ORIGIN,
@@ -67,9 +68,40 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypat
             "ref_verified": True,
             "verified_at": "2026-10-15T12:00:00+00:00",
         })
+        local_bach = base / "home" / ".bach"
+        registry_file = local_bach / "worker_repo_registry.v1.json"
+        registry_file.write_text(json.dumps({
+            "schema": "bach.worker-repo-registry.v1",
+            "repositories": {
+                "ellmos-ai/bach": {
+                    "origin": ORIGIN,
+                    "default_branch": "main",
+                    "visibility": "public",
+                }
+            },
+            "tasks": {
+                str(task_id): {
+                    "repository": "ellmos-ai/bach",
+                    "source_sha": base_head,
+                }
+            },
+        }), encoding="utf-8")
+        registry_file.chmod(0o600)
+
+        sources_root = local_bach / "task-repo-sources"
+        sha_dir = sources_root / "ellmos-ai" / "bach" / base_head
+        sha_dir.parent.mkdir(parents=True, exist_ok=True)
+        for p in (local_bach, sources_root, sources_root / "ellmos-ai", sources_root / "ellmos-ai" / "bach"):
+            p.chmod(0o700)
+        _git(["clone", "--quiet", str(repo), str(sha_dir)], local_bach)
+        _git(["remote", "set-url", "origin", ORIGIN + ".git"], sha_dir)
+        sha_dir.chmod(0o700)
+        _git(["worktree", "add", str(target), "-b", f"bach-task/{task_id}", base_head], sha_dir)
+
         worker_git._store_public_source_registration(repo, target, task_id, reg_data)
     return {
         "repo": repo,
+        "trusted_source": sha_dir if pinned else repo,
         "worktrees": worktrees,
         "target": target,
         "base_head": base_head,
@@ -156,7 +188,7 @@ def test_optional_verified_public_source_pin_is_projected_without_extra_claims(
     snapshot = _snapshot(tree)
 
     pin = snapshot["source_pin"]
-    assert pin["schema"] == "bach.task-public-source.v1"
+    assert pin["schema"] == "bach.task-public-source.v2"
     assert pin["source_ref"] == "refs/heads/main"
     assert pin["source_sha"] == tree["base_head"]
     assert pin["verified_at"] == "2026-10-15T12:00:00+00:00"

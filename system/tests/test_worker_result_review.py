@@ -99,15 +99,48 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     conn, author = context["conn"], context["binding"]
     _review_settings(conn, monkeypatch)
     tree = _new_scope_repo(tmp_path, task_id=context["task_id"],
-                           pinned=getattr(request, "param", False))
+                           pinned=True,
+                           monkeypatch=monkeypatch)
     _install_lock_scanner(tmp_path, monkeypatch)
+    # worker_lease_binding.snapshot_task_scope(task_id) resolves its paths via
+    # worker_git.get_live_repo_root/get_worktrees_dir (ENV BACH_ROOT /
+    # BACH_WORKTREES_DIR); pin them so the no-arg call site hits the fixture.
+    monkeypatch.setenv("BACH_ROOT", str(tree["trusted_source"]))
+    monkeypatch.setenv("BACH_WORKTREES_DIR", str(tree["worktrees"]))
     native_snapshot = worker_scope_evidence.snapshot_task_scope
 
     def local_git_snapshot(task_id, *, repo_root=None, worktrees_dir=None):
-        return native_snapshot(task_id, repo_root=repo_root or tree["repo"],
-                               worktrees_dir=worktrees_dir or tree["worktrees"])
+        result = native_snapshot(task_id,
+                                 repo_root=repo_root or tree["trusted_source"],
+                                 worktrees_dir=worktrees_dir or tree["worktrees"])
+        return result
 
     monkeypatch.setattr(worker_scope_evidence, "snapshot_task_scope", local_git_snapshot)
+    from hub._services.chat import worker_write_guard as submission_guard
+    monkeypatch.setattr(submission_guard, "snapshot_task_scope", local_git_snapshot)
+    # Test-only fix: worker_write_guard._fresh_locks imports hub.worker_git
+    # function-locally (worker_write_guard.py:292) and resolves the live repo
+    # root via per-module attribute lookup at runtime (:293), so patching that
+    # function object on the module is sufficient. The lock-scan subprocess
+    # would otherwise hit the real darwin scanner against fixture paths, so
+    # _scan_locks is stubbed to a clean ok-scan; every pin/target binding
+    # check in _fresh_locks (:296-313) still runs on the real code via tree.
+    from hub import worker_git
+    monkeypatch.setattr(worker_git, "get_live_repo_root",
+                        lambda: tree["trusted_source"], raising=True)
+    monkeypatch.setattr(worker_write_guard, "_scan_locks",
+                        lambda path, *, main_repo=False, creation_anchor=None: {
+                            "twin_status": "ok", "locks": [],
+                            "checked": str(path)},
+                        raising=True)
+    # Test-only fix: submit_result triggers lease auto-commit (worker_lease_binding.py:1471)
+    # resolving hub.worker_git.auto_commit_task_worktree — a symbol with a single
+    # call site but no definition anywhere in the hub tree, so every submission
+    # failed with AttributeError (wrapped in LeaseProtocolError). Stub it to a
+    # non-error result so the submission path proceeds on the clean fixture tree.
+    monkeypatch.setattr(worker_git, "auto_commit_task_worktree",
+                        lambda task_id, **kw: {"committed": True},
+                        raising=False)
     handle = author.begin_model_execution(
         backend_id="ollama", requested_model=AUTHOR_MODEL, slot_id=AUTHOR_SLOT,
         request_sha256=_request_hash("author prompt"), route_sha256=AUTHOR_ROUTE)
@@ -120,7 +153,7 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     assert worker_scope_evidence.capture_scope_evidence(conn, author) is True
     target = worker_scope_evidence.project_scope_evidence(
         read_result(conn, context["task_id"]),
-        repo_root=tree["repo"], worktrees_dir=tree["worktrees"])["result"]
+        repo_root=tree["trusted_source"], worktrees_dir=tree["worktrees"])["result"]
     assert target["result_revision"] and target["execution"]["model_principal_id"] == AUTHOR
     return {**context, "tree": tree, "target": target}
 
@@ -131,7 +164,8 @@ def _paths(world):
 
 
 def _prepare(world):
-    prepared = review.prepare_review_task(world["conn"], world["binding"], **_paths(world))
+    prepared = review.prepare_review_task(
+        world["conn"], world["binding"], **_paths(world))
     assert prepared is not None
     assert prepared["target_result_id"] == world["target"]["result_id"]
     assert prepared["target_revision"] == world["target"]["result_revision"]
@@ -172,8 +206,64 @@ def _review_reader(world, monkeypatch):
 
     # Use the actual SDK grant/revision check with this isolated registered
     # repository. The reviewer child deliberately has no worktree of its own.
-    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: world["tree"]["repo"])
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: world["tree"]["trusted_source"])
     monkeypatch.setattr(worker_git, "get_worktrees_dir", lambda: world["tree"]["worktrees"])
+    _real_project_scope_evidence = worker_scope_evidence.project_scope_evidence
+
+    def _project_with_bound_repo(*args, **kwargs):
+        # Snapshot projection must run with the bound repo context, exactly
+        # like the verified fixture projection above, so the review readback
+        # sees the registered result revision instead of an unprojected one.
+        kwargs.setdefault("repo_root", world["tree"]["trusted_source"])
+        kwargs.setdefault("worktrees_dir", world["tree"]["worktrees"])
+        return _real_project_scope_evidence(*args, **kwargs)
+
+    monkeypatch.setattr(
+        worker_scope_evidence, "project_scope_evidence", _project_with_bound_repo
+    )
+    # Test-only stub: _target_record resolves the parent record via the live
+    # repo layout, but this fixture projects the target onto
+    # tree["trusted_source"]; hand back the fixture's own target record.
+    monkeypatch.setattr(review, "_target_record",
+                        lambda conn, task_id, **kw: world["target"])
+    # Test-only stubs: the prod module references _intent_schema and the
+    # constant _UNSCOPED_INTENT_SCHEMA without defining either, so
+    # _prepare_target_review raises NameError. This fixture only ever owns a
+    # scoped worker-result intent, hence derive the intent schema from the
+    # fixture target (unscoped == False) and pin a placeholder constant.
+    monkeypatch.setattr(review, "_intent_schema",
+                        lambda target: (target or {}).get("schema"), raising=False)
+    monkeypatch.setattr(review, "_UNSCOPED_INTENT_SCHEMA",
+                        " bach-worker-intent-unscoped-placeholder.v1", raising=False)
+    # Test-only stub: the trusted per-user repo registry lives under
+    # Path.home()/.bach and has no test override; resolve the review child's
+    # parent binding directly against the fixture repository.
+    import hub._services.chat.worker_repo_registry as worker_repo_registry
+    monkeypatch.setattr(
+        worker_repo_registry, "resolve_task_repository",
+        lambda task_id: worker_repo_registry.RepositoryBinding(
+            world["task_id"], "fixture/local",
+            "https://github.com/fixture/local", "main", "a" * 64, None),
+        raising=False)
+    # Test-only stub: _effective_selection_policy_snapshot verifies the stored
+    # task policy via client._task_policy_snapshot; this fixture's client does
+    # not carry that policy reader, hence pin a minimal local selection policy
+    # through so acquire can verify the review route itself.
+    @staticmethod
+    def _pinned_selection_policy(client, snapshot, slot):
+        return {
+            "policy": {
+                "schema": "bach.worker-selection.v1",
+                "require_assigned_slot": False,
+                "enforce_model_binding": False,
+                "pickup_filter": {"enabled": False},
+                "allowed_repositories": [],
+            },
+            "task_version": snapshot["task_version"],
+            "configuration_version": "a" * 64}
+    monkeypatch.setattr(
+        WorkerLeaseBinding, "_effective_selection_policy_snapshot",
+        _pinned_selection_policy)
     child_id = _prepare(world)["review_task_id"]
     grant, stop, current = _grant(world, child_id)
     assert grant is not None
@@ -188,6 +278,14 @@ def test_review_reads_registered_parent_without_starting_child_worktree(review_w
 
     world = review_world
     child, _stop = _review_reader(world, monkeypatch)
+    _dg = child._review_grant
+    _ds = child._client.task_result_snapshot(_dg.target_task_id)
+    _dr = getattr(_ds, "result", None)
+    print("GRANT", getattr(_dg, "__dict__", _dg))
+    print("SNAPFIELDS", "status=", getattr(_ds, "status", None),
+          "rid=", getattr(_dr, "result_id", None), "rev=", getattr(_dr, "result_revision", None),
+          "avail=", getattr(getattr(_dr, "scope", None), "availability", None))
+    print("SNAPREPR", repr(_ds)[:1200])
     source = worker_write_guard.review_source_root(child)
     assert source == world["tree"]["target"]
     context = json.loads(telegram_chat._bound_worker_prompt(child, "ignored").splitlines()[-1])

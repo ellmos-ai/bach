@@ -12,10 +12,12 @@ import json
 import re
 import sqlite3
 import threading
+import uuid
 
 import pytest
 
 from hub._services.task_lease_client import LeaseProtocolError, TaskLeaseClient
+from hub._services.worker_policy_settings import CONTRACT, TASK_SCHEMA
 from system.tests.test_task_lease_client import _insert_task, mem_db
 from system.tests.test_task_lease_client_review import T0
 
@@ -71,6 +73,20 @@ def worker_context(mem_db):
         conn.commit()
     task_id = _insert_task(conn, "Execution evidence task")
     client = TaskLeaseClient(conn=conn)
+    client._mode = "local"
+    snapshot = client.task_snapshot(task_id)
+    client._task_policy_snapshot = lambda task_id: {
+        "schema": TASK_SCHEMA,
+        "availability": "available",
+        "task_id": task_id,
+        "task_version": snapshot["task_version"],
+        "configuration_version": hashlib.sha256(b"worker-context-policy").hexdigest(),
+        "effective": {
+            "contract_version": CONTRACT,
+            "require_assigned_slot": False,
+            "enforce_model_binding": False,
+        },
+    }
     binding, current, stop = _new_binding(client, task_id)
     context = {"conn": conn, "client": client, "task_id": task_id,
                "binding": binding, "current": current, "stop": stop}
