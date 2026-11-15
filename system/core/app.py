@@ -156,7 +156,7 @@ class App:
         """Aktiviert Inter-Instanz-Messaging komplett.
 
         Registriert diese Instanz, verbindet Messaging mit Hooks.
-        Sollte beim Startup aufgerufen werden.
+        Altteil (BACH #4147): kein Aufrufer, nicht neu verdrahten (DEPRICATED.md).
 
         Args:
             source: Quelle dieser Instanz ("cli", "telegram", "claude", "gui")

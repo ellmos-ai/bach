@@ -67,11 +67,11 @@ MAX_ARCHIVE_PER_DAY = 1000
 
 
 class InstanceMessaging:
-    """File-basiertes Inter-Instanz-Messaging.
+    """File-basiertes Inter-Instanz-Messaging (JSON-Dateien, nach dem Lesen ins Archiv).
 
-    Nachrichten werden als JSON-Dateien geschrieben und vom Empfaenger
-    gelesen und ins Archiv verschoben.
-    """
+    Altteil (BACH #4147): nie aktiviert, App.enable_messaging hat keinen Aufrufer; DEPRICATED.md."""
+    __ocean_deprecated__ = True  # Marker wie @deprecated_legacy_bach, ohne hub-Import (~0,8 s)
+    __ocean_replacement__ = "memoryhooker.inbox / ticket-master host receipts"
 
     def __init__(self, data_dir: Path, instance_id: str):
         """Initialisiert das Messaging-System.
