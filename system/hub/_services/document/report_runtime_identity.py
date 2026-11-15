@@ -93,7 +93,7 @@ def check_identity(root: Path = _ROOT) -> dict:
     root = Path(root)
     pointer = _pointer(root)
     result = {"status": "unverified", "root": str(root), "canonical_commit": "", "differing": [],
-              "has_pointer": bool(pointer),
+              "has_pointer": (root / "REPO.pointer.json").exists(),  # Marker "Projektion", auch wenn unlesbar/kaputt
               "source_commit": pointer.get("onedrive_mirror", {}).get("source_commit", "")}
     if _is_checkout(root):
         repo, ref, is_checkout = root, "HEAD", True
