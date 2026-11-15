@@ -51,9 +51,11 @@ class DecisionWriterAdapter:
 
     @staticmethod
     def post_proposal(payload: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
-        """Sendet einen neuen Vorschlag an DecisionClicker.
-        Erwartet ein JSON-Payload; gibt die Antwort zurück.
-        Wird für KI-Vorschläge über BACH/Ocean verwendet.
+        """Reicht einen VORSCHLAG an DecisionClicker ein — ausdrücklich KEINE Freigabe.
+
+        Der Aufruf schreibt über /api/new ausschließlich einen neuen Vorschlag.
+        Entscheidungen/Approve erfolgen ausschließlich durch Menschen in der UI;
+        ein KI-Approve-Endpunkt existiert nicht und darf hier nicht entstehen.
         """
         try:
             resp = httpx.post(PROPOSAL_URL, json=payload, timeout=timeout)
@@ -63,3 +65,16 @@ class DecisionWriterAdapter:
             return {"error": "http_status", "detail": str(e)}
         except Exception as exc:
             return {"error": "request_failed", "detail": str(exc)}
+
+
+# Modul-Ebene Fassade: der Policy-Registry-Adapter nutzt diese drei Funktionen.
+def is_available(timeout: float = 2.0) -> tuple[bool, str]:
+    return DecisionWriterAdapter.is_available(timeout=timeout)
+
+
+def get_status() -> dict[str, Any]:
+    return DecisionWriterAdapter.get_status()
+
+
+def post_proposal(payload: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
+    return DecisionWriterAdapter.post_proposal(payload, timeout=timeout)

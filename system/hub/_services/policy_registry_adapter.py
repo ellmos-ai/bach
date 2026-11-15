@@ -124,7 +124,7 @@ def observe(*, scope=None, consumer=None, query="", kind=None, effective=False):
             "source_verification_complete": bool(entries) and all(
                 checks.get(e["id"], {}).get("state") == "ok" and bool((e.get("hash") or {}).get("value"))
                 for e in entries),
-            "decision_writer": decision_writer_adapter.get_status(),
+            "decision_writer": decision_writer_adapter.get_status()}
         if resolved is not None:
             selected = resolved.get("selected")
             result["effective"] = {"status": resolved["status"], "reason": resolved["reason"],
