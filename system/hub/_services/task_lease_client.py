@@ -653,7 +653,11 @@ class TaskLeaseClient:
         finally:
             if self._conn is None:
                 conn.close()
-        if isinstance(evidence, dict) and evidence.get("availability") == "recorded":
+        # A review submission must never complete its target task: the evidence
+        # belongs to the reviewed parent, whose completion is decided by the
+        # author submission, not by the review child.
+        if (isinstance(evidence, dict) and evidence.get("availability") == "recorded"
+                and getattr(binding, "_review_grant", None) is None):
             try:
                 self._reconcile_task_completion(evidence["task_id"])
             except Exception:

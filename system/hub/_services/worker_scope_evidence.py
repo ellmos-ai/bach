@@ -308,8 +308,8 @@ def _project_scope_record(data, *, repo_root=None, worktrees_dir=None) -> dict:
     try:
         current = snapshot_task_scope(data["task_id"], repo_root=repo_root,
                                       worktrees_dir=worktrees_dir)
-    except Exception:
-        return _unavailable("current_git_unavailable")
+    except Exception as _e4171:
+        return _unavailable("current_git_unavailable:" + repr(_e4171))
     if not isinstance(current, dict):
         return _unavailable("current_git_unavailable")
     if current.get("availability") != "available":

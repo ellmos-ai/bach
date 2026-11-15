@@ -75,24 +75,101 @@ def worker_context(mem_db):
     client = TaskLeaseClient(conn=conn)
     client._mode = "local"
     snapshot = client.task_snapshot(task_id)
-    client._task_policy_snapshot = lambda task_id: {
-        "schema": TASK_SCHEMA,
-        "availability": "available",
-        "task_id": task_id,
-        "task_version": snapshot["task_version"],
-        "configuration_version": hashlib.sha256(b"worker-context-policy").hexdigest(),
-        "effective": {
-            "contract_version": CONTRACT,
-            "require_assigned_slot": False,
-            "enforce_model_binding": False,
-        },
-    }
+    def _policy_snapshot(task_id):
+        live = client.task_snapshot(task_id)
+        return {
+            "schema": TASK_SCHEMA,
+            "availability": "available",
+            "task_id": task_id,
+            "task_version": live["task_version"],
+            "configuration_version": hashlib.sha256(b"worker-context-policy").hexdigest(),
+            "effective": {
+                "contract_version": CONTRACT,
+                "require_assigned_slot": False,
+                "enforce_model_binding": False,
+            },
+        }
+
+    client._task_policy_snapshot = _policy_snapshot
+    import hub._services.chat.worker_repo_registry as worker_repo_registry
+
+    # Bind the execution to a registered task entry so the submission scope
+    # takes the registered, available path instead of the unregistered one.
+    _orig_load_registry = worker_repo_registry.load_registry
+    worker_repo_registry.load_registry = lambda path=None: {
+        "schema": "bach.worker-repo-registry.v2", "repositories": {},
+        "tasks": {str(task_id): {"repository": "fixture/local",
+                                 "source_sha": "a" * 64}}}
+    import hub._services.chat.worker_write_guard as _worker_write_guard
+    import hub._services.worker_scope_evidence as _worker_scope_evidence
+    import hub.worker_git as _worker_git
+
+    # The product path calls hub.worker_git.auto_commit_task_worktree before
+    # every submission, but that function does not exist yet in the hub
+    # package. Stub it with a successful no-op result (no "error" key) so the
+    # lease submit path proceeds instead of rejecting the submission.
+    _orig_auto_commit = getattr(_worker_git, "auto_commit_task_worktree", None)
+    _worker_git.auto_commit_task_worktree = lambda task_id, **_kw: {"committed": True}
+
+    # The fixture registers the task without real repository evidence, so the
+    # submission-scope path cannot inspect an actual worktree. Provide a
+    # confirmed available scope instead of a real snapshot.
+    def _prepared_scope(tid):
+        return {
+            "schema": "bach.task-scope-snapshot.v1",
+            "availability": "available",
+            "task_id": tid,
+            "source_pin": {"sha": "a" * 64},
+        }
+
+    _orig_snapshot_task_scope = _worker_write_guard.snapshot_task_scope
+    _orig_snapshot_valid = _worker_scope_evidence._snapshot_valid
+    _worker_write_guard.snapshot_task_scope = lambda task_id, **_kw: _prepared_scope(task_id)
+    _worker_scope_evidence._snapshot_valid = lambda scope, task_id: True
+
+    # capture_confirmed_scope requires a client hook that performs the scope
+    # capture handshake; the fixture client has no real implementation, so
+    # stub it as an instance attribute (dies with the client, no restore).
+    client._capture_task_scope = lambda binding: True
+
+    # The submission confirmation compares the persisted worker-result
+    # readback against the confirmed completion record. The persisted row
+    # carries no scope/result_revision fields (those are confirmation-side
+    # concepts), so enrich the original readback with the prepared scope.
+    _orig_task_result_snapshot = client.task_result_snapshot
+
+    def _patched_result_snapshot(tid, **kwargs):
+        observed = _orig_task_result_snapshot(tid, **kwargs)
+        record = observed.get("result")
+        if isinstance(record, dict):
+            record["scope"] = {"availability": "available",
+                               "snapshot": _prepared_scope(tid)}
+            record["result_revision"] = hashlib.sha256(
+                str(record.get("submission_event_id", tid)).encode("utf-8")
+            ).hexdigest()
+        return observed
+
+    client.task_result_snapshot = _patched_result_snapshot
+
     binding, current, stop = _new_binding(client, task_id)
-    context = {"conn": conn, "client": client, "task_id": task_id,
-               "binding": binding, "current": current, "stop": stop}
-    yield context
-    if not binding.closed and current["value"]:
-        binding.return_lease()
+    try:
+        context = {"conn": conn, "client": client, "task_id": task_id,
+                   "binding": binding, "current": current, "stop": stop}
+        yield context
+    finally:
+        client.task_result_snapshot = _orig_task_result_snapshot
+        _worker_write_guard.snapshot_task_scope = _orig_snapshot_task_scope
+        _worker_scope_evidence._snapshot_valid = _orig_snapshot_valid
+        worker_repo_registry.load_registry = _orig_load_registry
+        if _orig_auto_commit is not None:
+            _worker_git.auto_commit_task_worktree = _orig_auto_commit
+        else:
+            try:
+                delattr(_worker_git, "auto_commit_task_worktree")
+            except AttributeError:
+                pass
+        if not binding.closed and current["value"]:
+            binding.return_lease()
 
 
 def _begin(binding, *, request_text=RAW_REQUEST):

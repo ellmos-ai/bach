@@ -1,0 +1,89 @@
+{
+  "parent_scope": {
+    "schema": "bach.worker-scope-evidence.v1",
+    "availability": "recorded",
+    "task_id": 1,
+    "result_id": 1,
+    "submission_revision": "sha256:bc2807eb32b2532629ec357b1b067e4c32e10fb0b3280fc793c96882a450eba2",
+    "task_scope_version": "a2693d50835bbf588e9fe82cd35f2f5bba725d3cc33f169cc9de602592f645a5",
+    "scope_receipt_sha256": "e80f8c4e5c53de2d8ea33eaac6f7e5b8616265e6d5ab71de33045f95a921f4af",
+    "scope_event_id": 7,
+    "snapshot": {
+      "availability": "available",
+      "branch": "refs/heads/bach-task/1",
+      "clean_scope": "porcelain-v1-z-all-untracked-no-ignored",
+      "common_dir_sha256": "d1b40ad2677240dfc24b7cb9996c512ae8f87450484b7dd6845b8476b6bfb9ce",
+      "head_oid": "530cb96fedc4e760bd13be6539ea33d132df47dd",
+      "index_sha256": "9b1abc4b0d9ec6367fd2248bb5721665db7f0187f276a40ac4b409f37274fe3c",
+      "origin": "https://github.com/ellmos-ai/bach",
+      "project_state_ref": "ae469cac91451cfe073d9de9b7edd6691ff5247f044e4fd72e236ae7ca0b9e84",
+      "repo_path_sha256": "d58f2317282bcff7cefc58f41436e9538c1947603f07b2d4c347eacff644002b",
+      "repository": "ellmos-ai/bach",
+      "schema": "bach.task-scope-snapshot.v1",
+      "source_pin": {
+        "schema": "bach.task-public-source.v2",
+        "source_ref": "refs/heads/main",
+        "source_sha": "530cb96fedc4e760bd13be6539ea33d132df47dd",
+        "verified_at": "2026-10-15T12:00:00+00:00"
+      },
+      "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "task_id": 1,
+      "tree_oid": "4b739bee50a4fde04ae26e4cdfa9c42447eb6c54",
+      "workspace_fingerprint": "a02d717b6b947b49fbb906c82be4ade2856b2a6a771c8743da42611703b42d30",
+      "worktree_path_sha256": "086f42893c0fc1d833d2a7a1ee36cb79e84253e6f5c64d44d3808674f8a3034e"
+    },
+    "execution_revision": "372dc8038d0bd21fa07f49cb922735bfd1aece10924394dce4d9beaced832ebe",
+    "result_revision": null
+  },
+  "parent_subrev": "sha256:bc2807eb32b2532629ec357b1b067e4c32e10fb0b3280fc793c96882a450eba2",
+  "parent_mr": {
+    "schema": "bach.worker-result-review-evidence.v1",
+    "availability": "recorded",
+    "task_id": 1,
+    "result_id": 1,
+    "result_revision": "3e9e4ecba0540eddc9dcba8fb93f57c460b0755322b7d168f822444bdb2b6d10",
+    "review_task_id": 2,
+    "child_result_id": 2,
+    "reviewer_id": "principal:reviewer",
+    "status": "approved",
+    "summary": "Prüfung der Zielarbeit bestanden.",
+    "reviewer_asserted_task_contract_met": true,
+    "independent": true,
+    "policy_eligible": true,
+    "event_id": 15
+  },
+  "parent_task_id": 1,
+  "proj_scope": {
+    "schema": "bach.worker-scope-evidence.v1",
+    "availability": "unavailable",
+    "reason": "current_git_unavailable",
+    "result_revision": null
+  },
+  "proj_subrev": "sha256:bc2807eb32b2532629ec357b1b067e4c32e10fb0b3280fc793c96882a450eba2",
+  "proj_mr": {
+    "schema": "bach.worker-result-review-evidence.v1",
+    "availability": "unavailable",
+    "task_id": 1,
+    "result_id": 1,
+    "result_revision": "3e9e4ecba0540eddc9dcba8fb93f57c460b0755322b7d168f822444bdb2b6d10",
+    "review_task_id": 2,
+    "child_result_id": 2,
+    "reviewer_id": "principal:reviewer",
+    "status": "approved",
+    "summary": "Prüfung der Zielarbeit bestanden.",
+    "reviewer_asserted_task_contract_met": true,
+    "independent": true,
+    "policy_eligible": true,
+    "event_id": 15,
+    "reason": "review_scope_not_current"
+  },
+  "paths": {
+    "repo_root": "/Users/lukas/services/bach-worktrees/task-4171/.cache/.worker-check/pytest-temp/run-d67b978a814440deab5eb860bb049198/test_real_git_author_submissio0/repo",
+    "worktrees_dir": "/Users/lukas/services/bach-worktrees/task-4171/.cache/.worker-check/pytest-temp/run-d67b978a814440deab5eb860bb049198/test_real_git_author_submissio0/worktrees"
+  },
+  "stub_probe": {},
+  "direct_scope": {
+    "exception": "KeyError('trusted_source')"
+  },
+  "direct_scope_env": null
+}

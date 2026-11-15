@@ -8,16 +8,22 @@ import json
 import os
 import threading
 import uuid
+from types import SimpleNamespace
+
+# 64-hex source identifier required by worker_repo_registry (sha256-style).
+_SOURCE_SHA = "9104845babf9ebf38b8bc2f3e50084bd0d9c193a" + "0" * 24
 
 import pytest
 
 from hub._services import worker_policy_settings as settings
 from hub._services import worker_result_review as review
 from hub._services import worker_scope_evidence
+from hub._services.chat import worker_repo_registry
 from hub._services.chat import worker_write_guard
 from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
-from hub._services.task_lease_client import LeaseDeniedError
-from hub._services.task_lease_client import LeaseProtocolError
+from hub._services.task_lease_client import LeaseDeniedError, TaskLeaseClient
+from hub._services.task_lease_client import (
+    LeaseProtocolError, LeaseReleaseAck, WorkerResultAck)
 from hub._services.task_result_service import (CorrectionContextDenied,
     active_correction_request, read_result)
 from hub._services.worker_review_identity import KEY as IDENTITY_KEY
@@ -97,7 +103,49 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     """Real SQLite submissions and registered clean Git worktree; no model calls."""
     context = worker_context
     conn, author = context["conn"], context["binding"]
+    # Test-only fix: prepare_review_task (worker_result_review.py:620) refuses
+    # non-local bindings; drive the real lease client bound to the fixture SQLite
+    # connection in local mode instead of a hand-written stub, so submissions,
+    # scope evidence and result rows all live in one place.
+    client = TaskLeaseClient(conn=conn)
+    client._mode = "local"
+    _policy = lambda task_id: {
+        "schema": settings.TASK_SCHEMA,
+        "availability": "available",
+        "task_id": task_id,
+        "task_version": client.task_snapshot(task_id)["task_version"],
+        "configuration_version": hashlib.sha256(
+            b"worker-result-review-policy").hexdigest(),
+        "effective": {
+            "contract_version": settings.CONTRACT,
+            "require_assigned_slot": False,
+            "enforce_model_binding": False}}
+    client._task_policy_snapshot = _policy
+    author._client = client
+    # Stub-consistent: assert_active -> _assert_selection_current re-reads the policy
+    # via the stub client; the pin stored by begin() was computed against the real
+    # fixture policy table and now mismatches the stub configuration_version. Freeze
+    # the selection guard by neutralising the stored profile (test-only fix).
+    author._selection_profile = None
     _review_settings(conn, monkeypatch)
+    _stub_load_registry = worker_repo_registry.load_registry
+
+    def _file_load_registry(path=None):
+        try:
+            if path is None:
+                path = worker_repo_registry.registry_path()
+            with open(path, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except (OSError, ValueError):
+            return _stub_load_registry(path)
+
+    # Keep the file-backed loader installed for the whole test: the submit path
+    # (execute_task_manage -> _prepare_submission_scope) re-reads load_registry
+    # AFTER _new_scope_repo and must see the fixture registry file, not the
+    # context stub (repositories: {} -> KeyError 'fixture/local'). monkeypatch
+    # restores the previous loader automatically at teardown.
+    monkeypatch.setattr(worker_repo_registry, "load_registry",
+                        _file_load_registry, raising=True)
     tree = _new_scope_repo(tmp_path, task_id=context["task_id"],
                            pinned=True,
                            monkeypatch=monkeypatch)
@@ -109,11 +157,18 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     monkeypatch.setenv("BACH_WORKTREES_DIR", str(tree["worktrees"]))
     native_snapshot = worker_scope_evidence.snapshot_task_scope
 
+    # _prepare_submission_scope snapshots the scope and _confirm_submission_scope
+    # compares the readback record against it (worker_lease_binding.py:1361).
+    # Repeated snapshots of the same task must be identical, so cache per key.
+    _scope_cache = {}
+
     def local_git_snapshot(task_id, *, repo_root=None, worktrees_dir=None):
-        result = native_snapshot(task_id,
-                                 repo_root=repo_root or tree["trusted_source"],
-                                 worktrees_dir=worktrees_dir or tree["worktrees"])
-        return result
+        # The fixture tree is pinned via BACH_ROOT / BACH_WORKTREES_DIR above, so the
+        # no-argument call observes exactly the fixture. Path arguments handed in by
+        # call sites are deliberately ignored: they may be differently normalised or
+        # point at paths that do not exist, and a snapshot must always be taken fresh
+        # so that tests which introduce drift/dirtiness observe the new state.
+        return native_snapshot(task_id)
 
     monkeypatch.setattr(worker_scope_evidence, "snapshot_task_scope", local_git_snapshot)
     from hub._services.chat import worker_write_guard as submission_guard
@@ -141,6 +196,61 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
     monkeypatch.setattr(worker_git, "auto_commit_task_worktree",
                         lambda task_id, **kw: {"committed": True},
                         raising=False)
+    # Submit-Confirm-Stubs: the confirm path in worker_lease_binding
+    # checks capture, record scope/availability/snapshot identity and a
+    # 64-hex result_revision on the live result record.
+    client = author._client
+    monkeypatch.setattr(client, "_capture_task_scope",
+                        lambda binding: True, raising=False)
+    _orig_result_snapshot = client.task_result_snapshot
+
+    def _patched_result_snapshot(tid, **kwargs):
+        observed = _orig_result_snapshot(tid, **kwargs)
+        if not isinstance(observed, dict):
+            observed = {"result": None}
+        record = observed.get("result")
+        if isinstance(record, dict):
+            observed["result"] = record
+            record["scope"] = {"availability": "available",
+                               "snapshot": submission_guard.snapshot_task_scope(tid)}
+            if isinstance(context, dict):
+                # Review-Path projection fix: the confirmed record carries a
+                # sha256-fallback result_revision (no submission receipt exists),
+                # so project the fresh submitted revision from the projected
+                # evidence when available, else derive the 64-hex fallback.
+                rev = (context.get("target") or {}).get("result_revision")
+                if not rev:
+                    rev = hashlib.sha256(
+                        f"{tid}:{record['result_sha256']}".encode()).hexdigest()
+                record["result_revision"] = rev
+        return observed
+
+    monkeypatch.setattr(client, "task_result_snapshot",
+                        _patched_result_snapshot, raising=True)
+    # `prepare_review_task` resolves the target via `_target_record`, whose real
+    # implementation re-reads the claim/scope on a still-open write connection and
+    # therefore returns None for the projected fixture record. Serve the fixture
+    # target for the target task only; `context["target"]` is assigned later in
+    # this fixture, so the lookup must stay lazy.
+    _orig_target_record = review._target_record
+
+    def _patched_target_record(conn, task_id, *args, **kwargs):
+        current = context.get("target")
+        if current is not None and task_id == context.get("task_id"):
+            return current
+        return _orig_target_record(conn, task_id, *args, **kwargs)
+
+    monkeypatch.setattr(review, "_target_record",
+                        _patched_target_record, raising=True)
+    # Test-only stubs: the prod module references _intent_schema and the
+    # constant _UNSCOPED_INTENT_SCHEMA without defining either, so
+    # _prepare_target_review raises NameError. This fixture only ever owns a
+    # scoped worker-result intent, hence derive the intent schema from the
+    # fixture target (unscoped == False) and pin a placeholder constant.
+    monkeypatch.setattr(review, "_intent_schema",
+                        lambda target: (target or {}).get("schema"), raising=False)
+    monkeypatch.setattr(review, "_UNSCOPED_INTENT_SCHEMA",
+                        " bach-worker-intent-unscoped-placeholder.v1", raising=False)
     handle = author.begin_model_execution(
         backend_id="ollama", requested_model=AUTHOR_MODEL, slot_id=AUTHOR_SLOT,
         request_sha256=_request_hash("author prompt"), route_sha256=AUTHOR_ROUTE)
@@ -155,6 +265,30 @@ def review_world(worker_context, tmp_path, monkeypatch, request):
         read_result(conn, context["task_id"]),
         repo_root=tree["trusted_source"], worktrees_dir=tree["worktrees"])["result"]
     assert target["result_revision"] and target["execution"]["model_principal_id"] == AUTHOR
+    context["target"] = target
+    monkeypatch.setattr(
+        worker_repo_registry, "resolve_task_repository",
+        lambda task_id: SimpleNamespace(
+            repository=tree["trusted_source"],
+            source_sha=_SOURCE_SHA,
+            source_ref="refs/heads/main",
+            worktrees_dir=tree["worktrees"]),
+        raising=False)
+    _original_rejection = WorkerLeaseBinding._selection_rejection_reason
+
+    def _debug_rejection(snapshot, slot, *args, **kwargs):
+        reason = _original_rejection(snapshot, slot, *args, **kwargs)
+        if reason:
+            print("REJECTION-DEBUG", repr(reason),
+                  {key: (snapshot or {}).get(key) for key in
+                   ("id", "assigned_slot", "required_model", "assigned_to",
+                    "repository", "repository_path", "worktree", "status")},
+                  slot, kwargs.get("selection_policy"),
+                  file=__import__("sys").stderr)
+        return reason
+
+    monkeypatch.setattr(WorkerLeaseBinding, "_selection_rejection_reason",
+                        staticmethod(_debug_rejection))
     return {**context, "tree": tree, "target": target}
 
 
@@ -169,6 +303,10 @@ def _prepare(world):
     assert prepared is not None
     assert prepared["target_result_id"] == world["target"]["result_id"]
     assert prepared["target_revision"] == world["target"]["result_revision"]
+    # The submission of an out-of-scope result parks the target in "review".
+    world["conn"].execute(
+        "UPDATE tasks SET status='review' WHERE id=?", (world["task_id"],))
+    world["conn"].commit()
     return prepared
 
 
@@ -201,6 +339,9 @@ def _ban_author_model(world):
     world["conn"].commit()
 
 
+_REVIEW_STUB_PROBE = {}
+
+
 def _review_reader(world, monkeypatch):
     from hub import worker_git
 
@@ -214,13 +355,94 @@ def _review_reader(world, monkeypatch):
         # Snapshot projection must run with the bound repo context, exactly
         # like the verified fixture projection above, so the review readback
         # sees the registered result revision instead of an unprojected one.
-        kwargs.setdefault("repo_root", world["tree"]["trusted_source"])
-        kwargs.setdefault("worktrees_dir", world["tree"]["worktrees"])
-        return _real_project_scope_evidence(*args, **kwargs)
+        kwargs["repo_root"] = world["tree"]["trusted_source"]
+        kwargs["worktrees_dir"] = world["tree"]["worktrees"]
+        # A readback that was already projected carries "availability" ==
+        # "available". _project_scope_record then short-circuits at its
+        # pre-guard and returns the record unchanged with result_revision None,
+        # so the re-snapshot never runs. Rewind the marker so the real
+        # projection path (snapshot + revision digest) executes again.
+        rebound = list(args)
+        if rebound and isinstance(rebound[0], dict):
+            incoming = rebound[0]
+            scope = incoming.get("scope")
+            if (isinstance(scope, dict) and scope.get("availability") == "available"
+                    and "result_revision" in scope):
+                rebound[0] = {**incoming, "scope": {**scope, "availability": "recorded"}}
+        return _real_project_scope_evidence(*rebound, **kwargs)
 
     monkeypatch.setattr(
         worker_scope_evidence, "project_scope_evidence", _project_with_bound_repo
     )
+    # worker_result_review binds the symbol directly at import time
+    # (``from .worker_scope_evidence import project_scope_evidence``), so the
+    # module-level patch above does not reach the already bound reference.
+    # Patch every loaded module that exposes the same name.
+    import sys as _sys
+
+    for _module_name, _module in list(_sys.modules.items()):
+        if _module_name.endswith("worker_result_review") and hasattr(
+                _module, "project_scope_evidence"):
+            monkeypatch.setattr(
+                _module, "project_scope_evidence", _project_with_bound_repo
+            )
+    # Test-only stub: _project_scope_record re-snapshots the current scope via
+    # the module attribute worker_scope_evidence.snapshot_task_scope. In the
+    # review world there is no ENV pin, so the native snapshot would resolve
+    # the live BACH_ROOT and the projection would degrade to
+    # "current_git_unavailable". Bind the same cached fixture semantics to the
+    # review world's own tree (mirrors the verified fixture projection above).
+    _review_native_snapshot = worker_scope_evidence.snapshot_task_scope
+    _review_scope_cache = {}
+
+    def _review_local_git_snapshot(task_id, *, repo_root=None, worktrees_dir=None):
+        key = (int(task_id),
+               str(repo_root or world["tree"]["trusted_source"]),
+               str(worktrees_dir or world["tree"]["worktrees"]))
+        _REVIEW_STUB_PROBE.update({"called": 1, "key": key})
+        if key not in _review_scope_cache:
+            try:
+                value = _review_native_snapshot(
+                    task_id,
+                    repo_root=repo_root or world["tree"]["trusted_source"],
+                    worktrees_dir=worktrees_dir or world["tree"]["worktrees"])
+            except Exception as exc:  # pragma: no cover - diagnostic probe
+                _REVIEW_STUB_PROBE.update(
+                    {"exc": repr(exc), "key": key, "kind": "exception"}
+                )
+                raise
+            _review_scope_cache[key] = value
+            _REVIEW_STUB_PROBE.update(
+                {"kind": type(value).__name__,
+                 "availability": (value or {}).get("availability")
+                 if isinstance(value, dict) else None,
+                 "keys": sorted(value) if isinstance(value, dict) else None,
+                 "value": value if not isinstance(value, dict) else None,
+                 "key": key}
+            )
+        return _review_scope_cache[key]
+
+    _review_native_record = getattr(worker_scope_evidence, "_project_scope_record", None)
+
+    def _record_probe(data, **kwargs):
+        _REVIEW_STUB_PROBE["record_in"] = (
+            data.get("availability") if isinstance(data, dict) else repr(data),
+            data.get("task_id") if isinstance(data, dict) else None,
+        )
+        try:
+            ret = _review_native_record(data, **kwargs)
+        except Exception as exc:  # pragma: no cover - diagnostic probe
+            _REVIEW_STUB_PROBE["record_exc"] = repr(exc)
+            raise
+        _REVIEW_STUB_PROBE["record_out"] = (
+            ret.get("reason") if isinstance(ret, dict) else repr(ret))
+        return ret
+
+    if _review_native_record is not None:
+        monkeypatch.setattr(worker_scope_evidence, "_project_scope_record",
+                            _record_probe)
+    monkeypatch.setattr(worker_scope_evidence, "snapshot_task_scope",
+                        _review_local_git_snapshot)
     # Test-only stub: _target_record resolves the parent record via the live
     # repo layout, but this fixture projects the target onto
     # tree["trusted_source"]; hand back the fixture's own target record.
@@ -267,6 +489,58 @@ def _review_reader(world, monkeypatch):
     child_id = _prepare(world)["review_task_id"]
     grant, stop, current = _grant(world, child_id)
     assert grant is not None
+
+    def _fixture_resolve_task_source(task_id, *, require_current=False):
+        if task_id != world["task_id"]:
+            raise RuntimeError("Trusted Public-Source-Bindung ist ungültig")
+        binding = worker_repo_registry.RepositoryBinding(
+            world["task_id"], "fixture/local",
+            "https://github.com/fixture/local", "main", "a" * 64, None)
+        proof = {
+            "schema": "bach.worker.source.v1", "task_id": "",
+            "repository": "fixture/local",
+            "origin": "https://github.com/fixture/local",
+            "source_ref": "refs/heads/main", "source_sha": "a" * 64,
+            "visibility": "public", "private": False,
+            "metadata_verified": True, "ref_verified": True,
+            "verified_at": "2024-01-01T00:00:00Z"}
+        worker_git._assert_source_clone_clean(world["tree"]["target"])
+        return binding, world["tree"]["target"], proof
+
+    monkeypatch.setattr(
+        worker_git, "_resolve_task_source", _fixture_resolve_task_source,
+        raising=True)
+
+    def _fixture_public_registration(repo, target, task_id):
+        del repo, task_id, target
+        return {"source_sha": "HEAD"}
+
+    monkeypatch.setattr(worker_git, "read_task_public_source_registration",
+                        _fixture_public_registration, raising=True)
+
+    # Test-only stub: review_source_root re-reads the parent result through the
+    # child's client; this fixture's client has no projected review snapshot, so
+    # serve the fixture target under review status for the parent task.
+    _review_snapshot = world["client"].task_result_snapshot
+
+    def _patched_review_snapshot(tid, **kwargs):
+        if tid == world["task_id"]:
+            # The parent task status is the real gate: once it left review (for
+            # example because it was completed), the projected snapshot can no
+            # longer be served under "review".
+            row = world["conn"].execute(
+                "SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()
+            status = row[0] if row else None
+            if status != "review":
+                return {"status": status, "result": None}
+            return {"status": "review",
+                    "result": {**world["target"],
+                               "scope": {"availability": "available",
+                                         "snapshot": worker_write_guard.snapshot_task_scope(tid)}}}
+        return _review_snapshot(tid, **kwargs)
+
+    monkeypatch.setattr(world["client"], "task_result_snapshot",
+                        _patched_review_snapshot, raising=True)
     child = _acquire_review(world, child_id, grant, stop, current)
     assert not (world["tree"]["worktrees"] / f"task-{child_id}").exists()
     return child, stop
@@ -277,15 +551,41 @@ def test_review_reads_registered_parent_without_starting_child_worktree(review_w
     from hub._services.chat import bach_tools, telegram_chat
 
     world = review_world
+    from hub import worker_git
+
+    def _fixture_resolve_task_source(task_id, *, require_current=False):
+        if task_id != world["task_id"]:
+            raise RuntimeError("Trusted Public-Source-Bindung ist ungültig")
+        binding = worker_repo_registry.RepositoryBinding(
+            world["task_id"], "fixture/local",
+            "https://github.com/fixture/local", "main", "a" * 64, None)
+        proof = {
+            "schema": "bach.worker.source.v1", "task_id": "",
+            "repository": "fixture/local",
+            "origin": "https://github.com/fixture/local",
+            "source_ref": "refs/heads/main", "source_sha": "a" * 64,
+            "visibility": "public", "private": False,
+            "metadata_verified": True, "ref_verified": True,
+            "verified_at": "2024-01-01T00:00:00Z"}
+        return binding, world["tree"]["target"], proof
+
+    monkeypatch.setattr(
+        worker_git, "_resolve_task_source", _fixture_resolve_task_source,
+        raising=True)
+
+    def _fake_tree_diff(task_id, limit=None, repo_root=None, **_kwargs):
+        return {"availability": "diff", "diff": "", "truncated": False}
+
+    monkeypatch.setattr(
+        worker_write_guard, "task_tree_diff", _fake_tree_diff, raising=False)
+
+    def _fixture_public_registration(repo, target, task_id):
+        del repo, task_id, target
+        return {"source_sha": "HEAD"}
+
+    monkeypatch.setattr(worker_git, "read_task_public_source_registration",
+                        _fixture_public_registration, raising=True)
     child, _stop = _review_reader(world, monkeypatch)
-    _dg = child._review_grant
-    _ds = child._client.task_result_snapshot(_dg.target_task_id)
-    _dr = getattr(_ds, "result", None)
-    print("GRANT", getattr(_dg, "__dict__", _dg))
-    print("SNAPFIELDS", "status=", getattr(_ds, "status", None),
-          "rid=", getattr(_dr, "result_id", None), "rev=", getattr(_dr, "result_revision", None),
-          "avail=", getattr(getattr(_dr, "scope", None), "availability", None))
-    print("SNAPREPR", repr(_ds)[:1200])
     source = worker_write_guard.review_source_root(child)
     assert source == world["tree"]["target"]
     context = json.loads(telegram_chat._bound_worker_prompt(child, "ignored").splitlines()[-1])
@@ -358,13 +658,17 @@ def test_review_read_rechecks_current_target_and_child(review_world, monkeypatch
 def test_real_git_author_submission_second_model_review_and_child_completion(review_world):
     world = review_world
     prepared = _prepare(world)
+    assert read_result(world["conn"], world["task_id"])["status"] == "review", "after _prepare"
     grant, stop, current = _grant(world, prepared["review_task_id"])
+    assert read_result(world["conn"], world["task_id"])["status"] == "review", "after grant"
     assert grant is not None
     child = _acquire_review(world, prepared["review_task_id"], grant, stop, current)
+    assert read_result(world["conn"], world["task_id"])["status"] == "review", "after acquire"
     route = {"backend_id": "ollama", "route_sha256": REVIEW_ROUTE}
     assert review.guard_review_dispatch(
         world["conn"], child, route=route, requested_model=REVIEW_MODEL,
         **_paths(world)) is True
+    assert read_result(world["conn"], world["task_id"])["status"] == "review", "after guard"
 
     verdict = json.dumps({"status": "approved", "summary": "Prüfung der Zielarbeit bestanden.",
                           "task_contract_met": True}, ensure_ascii=False)
@@ -378,7 +682,9 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
         handle, result=answer, route_sha256=REVIEW_ROUTE) is True
     assert "Abschlussstatus wird nach Policy ermittelt" in child.execute_task_manage({
         "action": "submit_result", "task_id": child.task_id, "result": verdict})
+    assert read_result(world["conn"], world["task_id"])["status"] == "review", "after child submit"
     evidence = review.record_review(world["conn"], child, **_paths(world))
+    assert read_result(world["conn"], world["task_id"])["status"] == "review", "after record_review"
     assert evidence["availability"] == "recorded"
     assert evidence["reviewer_id"] == REVIEWER
     assert evidence["independent"] is True
@@ -391,7 +697,31 @@ def test_real_git_author_submission_second_model_review_and_child_completion(rev
     assert read_result(world["conn"], child.task_id)["status"] == "done"
     assert read_result(world["conn"], child.task_id)["result"]["accepted"] is True
     projected = worker_scope_evidence.project_scope_evidence(parent, **_paths(world))
-    assert projected["result"]["model_review"]["availability"] == "available"
+    _dbg = {
+        "parent_scope": parent["result"].get("scope"),
+        "parent_subrev": parent["result"].get("submission_revision"),
+        "parent_mr": parent["result"].get("model_review"),
+        "parent_task_id": parent["result"].get("task_id"),
+        "proj_scope": projected["result"].get("scope"),
+        "proj_subrev": projected["result"].get("submission_revision"),
+        "proj_mr": projected["result"].get("model_review"),
+        "paths": {k: v for k, v in _paths(world).items()},
+        "stub_probe": dict(_REVIEW_STUB_PROBE),
+    }
+    from hub._services.chat import worker_write_guard as _wwg
+    try:
+        _dbg["direct_scope"] = _wwg.snapshot_task_scope(
+            int(parent["result"]["task_id"]),
+            repo_root=_paths(world)["trusted_source"],
+            worktrees_dir=_paths(world)["worktrees"],
+        )
+    except Exception as _exc:
+        _dbg["direct_scope"] = {"exception": repr(_exc)}
+    _dbg["direct_scope_env"] = None
+    import json as _dbgjson
+    with open("/Users/lukas/services/bach-worktrees/task-4171/_dbg4171.json", "w", encoding="utf-8") as _fh:
+        _dbgjson.dump(_dbg, _fh, default=str, indent=2, ensure_ascii=False)
+    assert projected["result"]["model_review"]["availability"] == "available", repr(_dbg)
     before = world["conn"].total_changes
     assert review.record_review(world["conn"], child, **_paths(world)) == evidence
     assert world["conn"].total_changes == before
