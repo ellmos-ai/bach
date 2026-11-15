@@ -35,6 +35,28 @@ Migrationsnachsatz; S6 ist im Migrationsschatz nicht belegt.
 - `046`: `ToolInjector.check_before_create` als `context_triggers`-Zeilen (`source='tool_warn'`).
 - `047`: Between-Trigger (analoge idempotente Kopfzeile, `(S3 von T-20260920-823767362)`).
 
+## Prüfverfahren (reproduzierbar, Stand 15.11.2026)
+
+1. Stufenmarker in Migrationsköpfen:
+   `grep -rn "S[0-9] von T-20260920-823767362" system/data/schema/migrations/`
+   → nur `044`–`047` (S3) sowie `043_memory_union.py` (S2-Statuszeile).
+2. Stufenreferenzen in Doku/CI:
+   `grep -rn "S[0-9]" CHANGELOG.md ROADMAP.md system/CHANGELOG.md system/ROADMAP.md .github/workflows/tests.yml`
+   → `CHANGELOG.md:38` (S2), `:63` (S1), `:64` (S2a), `:92` (PR #176 S7, PR #178 S4),
+   `ROADMAP.md:155` (dito), `.github/workflows/tests.yml:3` („S2/S3 von T-20260920-823767362“).
+3. Abgleich Ticket-/Planreferenzen: `grep -rn "T-20260920-823767362" .` → 4 Treffer (CI-Kommentar,
+   `CHANGELOG.md` ×2, `043`/`044`-Headerbereich). Kein Treffer nennt S4/S6/S7 als Migrationsstufe.
+4. Volltextsuche bewusst nur in `system/`, `docs/`, `*.md`: eine Repo-weite Suche bricht in
+   Binärassets (`assets/*.png`) ab und liefert dort keine Stufenmarker.
+
+## Entscheidung
+
+Es werden **keine** neuen Migrationsdateien angelegt: S3 ist vollständig vorhanden, S4 und S7 sind
+Code-/Policy-Änderungen ohne Schemafolge, und für S6 existiert keine Spezifikation, die eine
+Migration definieren würde. Diese Datei dokumentiert den Ist-Stand und die Belegstellen; eine
+Erweiterung erfolgt erst, wenn der Ticket-/Planabgleich einen konkreten Schemaanteil für S4/S6/S7
+benennt.
+
 ## Nicht dem Planabgleich zugeordnet
 
 Migrationen mit eigenen Tickets/Namensräumen, keine S-Stufenmarker:
