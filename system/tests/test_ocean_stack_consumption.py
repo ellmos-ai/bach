@@ -217,6 +217,22 @@ def test_bach_consumes_configurable_review_worktree_and_escalation(tmp_path: Pat
     assert getattr(SmartHomeHandler, "__ocean_deprecated__", False) is True
 
 
+def test_instance_messaging_is_marked_as_legacy_and_has_no_caller():
+    """BACH #4147: InstanceMessaging/-Registry sind stillgelegt und werden nirgends aktiviert."""
+    from pathlib import Path
+
+    from core.instance_messaging import InstanceMessaging
+    from core.instance_registry import InstanceRegistry
+
+    for cls in (InstanceMessaging, InstanceRegistry):
+        assert getattr(cls, "__ocean_deprecated__", False) is True
+        assert "memoryhooker" in cls.__ocean_replacement__
+    system = Path(__file__).resolve().parents[1]
+    callers = [p for p in system.rglob("*.py")
+               if "tests" not in p.parts and ".enable_messaging(" in p.read_text(encoding="utf-8", errors="ignore")]
+    assert callers == [], f"enable_messaging ist stillgelegt, neu verdrahtet in: {callers}"
+
+
 def test_bach_multimodal_and_embodied_gui_endpoints(tmp_path, monkeypatch):
     import asyncio
     import json

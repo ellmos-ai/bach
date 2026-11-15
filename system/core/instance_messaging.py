@@ -71,7 +71,16 @@ class InstanceMessaging:
 
     Nachrichten werden als JSON-Dateien geschrieben und vom Empfaenger
     gelesen und ins Archiv verschoben.
+
+    Altteil (BACH #4147, 2026-11-15): nie aktiviert, ``App.enable_messaging`` hat keinen
+    Aufrufer, und am Mac-Lead existiert kein ``data/messages``. Nachrichten an laufende
+    Sitzungen: SendMessage bzw. memoryhooker-Inbox; dauerhaft: Tickets mit Host-Receipt.
+    Entscheidung: .USR/docs/bach-und-ocean/ocean-berichte/AGENTEN-KOMMUNIKATION_ANALYSE_2026-11-15.md, Abschnitt 9.
     """
+
+    # Marker wie @deprecated_legacy_bach, aber ohne dessen Import (siehe instance_registry.py).
+    __ocean_deprecated__ = True
+    __ocean_replacement__ = "memoryhooker.inbox / ticket-master host receipts"
 
     def __init__(self, data_dir: Path, instance_id: str):
         """Initialisiert das Messaging-System.

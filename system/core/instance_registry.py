@@ -60,7 +60,15 @@ class InstanceRegistry:
 
     Jede Instanz registriert sich mit einer JSON-Datei.
     Stale-Detection via PID-Check.
+
+    Altteil (BACH #4147, 2026-11-15): nie aktiviert, ``App.enable_messaging`` hat keinen
+    Aufrufer, und am Mac-Lead existiert kein ``data/instances``. Siehe DEPRICATED.md.
     """
+
+    # Marker wie @deprecated_legacy_bach, aber ohne dessen Import: ``import hub`` kostet beim
+    # Laden von core/app.py rund 0,8 s. ponytail: ohne DeprecationWarning, bis zur Entfernung.
+    __ocean_deprecated__ = True
+    __ocean_replacement__ = "memoryhooker.inbox / ticket-master host receipts"
 
     def __init__(self, data_dir: Path, source: str = "cli"):
         """Initialisiert die Registry.
