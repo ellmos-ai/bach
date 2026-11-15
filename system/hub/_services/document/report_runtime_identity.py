@@ -1,3 +1,4 @@
+# BACH Adapter: report_runtime_identity
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """Laufzeit-Identitaet der Berichtspipeline: laeuft der ausgefuehrte Code auf dem kanonischen Stand?
@@ -13,13 +14,16 @@ Sperren) Datei fuer Datei als Git-Blob-ID (CRLF wie LF) gegen den kanonischen St
   HEAD; Abweichung ist Absicht und sperrt nicht.
 - ``ok``/``stale``: Gitloser Spiegel; kanonisch ist ``origin/<default_branch>`` des Klons, gefunden ueber
   ``BACH_CANONICAL_CLONE`` oder den Pointer. ``stale`` sperrt den Cloud-Weg (siehe report_workflow_service).
-- ``unverified``: Kein Klon auffindbar oder Git nicht nutzbar. Wird gemeldet, sperrt nicht (z. B. Release
-  ohne Klon).
+- ``unverified``: Kein Klon auffindbar, Git oder ein Dateilesen schlaegt fehl. Mit ``REPO.pointer.json``
+  (bekannter Spiegel, ``has_pointer``) sperrt das fail-closed (``runtime_unverified``); ohne Pointer
+  (Release ohne Klon) bleibt es durchlaessig.
 
 Ausgabe: ``python report_runtime_identity.py`` (Exit 1 nur bei ``stale``).
 
-ponytail: Der Klon-Ref wird nicht per fetch aufgefrischt (offline), und das Ergebnis gilt je Prozess ab
-dem ersten Aufruf. Ein dauerhaft laufender Server prueft also den beim ersten Aufruf geladenen Stand.
+ponytail: Der Klon-Ref wird nicht per fetch aufgefrischt (offline), und ein Live-Checkout, der hinter
+origin/main liegt, wird nie erkannt. ``ok``/``stale``/``checkout`` gelten je Prozess ab dem ersten Aufruf
+(ein laufender Server prueft den beim ersten Aufruf geladenen Stand); ``unverified`` wird bewusst NICHT
+zwischengespeichert, damit ein voruebergehender Git-/OneDrive-Fehler nicht die ganze Laufzeit sperrt.
 """
 from __future__ import annotations
 
@@ -27,7 +31,6 @@ import hashlib
 import json
 import os
 import subprocess
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -90,6 +93,7 @@ def check_identity(root: Path = _ROOT) -> dict:
     root = Path(root)
     pointer = _pointer(root)
     result = {"status": "unverified", "root": str(root), "canonical_commit": "", "differing": [],
+              "has_pointer": bool(pointer),
               "source_commit": pointer.get("onedrive_mirror", {}).get("source_commit", "")}
     if _is_checkout(root):
         repo, ref, is_checkout = root, "HEAD", True
@@ -114,9 +118,17 @@ def check_identity(root: Path = _ROOT) -> dict:
     return result
 
 
-@lru_cache(maxsize=1)
+_cached: Optional[dict] = None
+
+
 def runtime_identity() -> dict:
-    return check_identity()
+    global _cached
+    if _cached is not None:
+        return _cached
+    result = check_identity()
+    if result["status"] != "unverified":
+        _cached = result
+    return result
 
 
 if __name__ == "__main__":

@@ -119,3 +119,44 @@ def test_conflict_copy_is_not_an_extra_module(tmp_path, clone, monkeypatch):
     mirror = _mirror(tmp_path, clone, monkeypatch)
     (mirror / REL / "gate-WORKSTATION-LG.py").write_text("# Konfliktkopie\n", encoding="utf-8")
     assert rid.check_identity(mirror)["status"] == "ok"
+
+
+def test_known_mirror_that_cannot_be_checked_is_refused(monkeypatch):
+    monkeypatch.setattr(rid, "runtime_identity", lambda: {
+        "status": "unverified", "has_pointer": True, "differing": [], "source_commit": "29eb713"})
+    with pytest.raises(rws.PromptPrivacyError) as exc:
+        rws.require_runtime_identity()
+    assert exc.value.code == "runtime_unverified"
+
+
+def test_release_without_pointer_stays_open(monkeypatch):
+    monkeypatch.setattr(rid, "runtime_identity", lambda: {
+        "status": "unverified", "has_pointer": False, "differing": [], "source_commit": ""})
+    rws.require_runtime_identity()  # wirft nicht
+
+
+def test_check_identity_reports_pointer_without_clone(tmp_path, clone, monkeypatch):
+    mirror = _mirror(tmp_path, clone, monkeypatch)
+    monkeypatch.setenv("BACH_CANONICAL_CLONE", str(tmp_path / "nirgends"))
+    assert rid.check_identity(mirror)["has_pointer"] is True
+    bare = tmp_path / "release"
+    shutil.copytree(clone / REL, bare / REL)
+    assert rid.check_identity(bare) == {**rid.check_identity(bare), "status": "unverified", "has_pointer": False}
+
+
+def test_unreadable_file_is_unverified_with_pointer(tmp_path, clone, monkeypatch):
+    mirror = _mirror(tmp_path, clone, monkeypatch)
+    real = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", lambda self: (_ for _ in ()).throw(OSError("Platzhalter"))
+                        if self.name == "gate.py" else real(self))
+    result = rid.check_identity(mirror)
+    assert result["status"] == "unverified" and result["has_pointer"] is True
+
+
+def test_unverified_is_not_cached_but_ok_is(monkeypatch):
+    results = iter([{"status": "unverified"}, {"status": "ok"}, {"status": "stale"}])
+    monkeypatch.setattr(rid, "_cached", None)
+    monkeypatch.setattr(rid, "check_identity", lambda: next(results))
+    assert rid.runtime_identity()["status"] == "unverified"
+    assert rid.runtime_identity()["status"] == "ok"  # zweiter Versuch, jetzt zwischengespeichert
+    assert rid.runtime_identity()["status"] == "ok"

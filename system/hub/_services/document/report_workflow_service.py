@@ -352,7 +352,7 @@ def _doc_placeholders(doc) -> set:
 class PromptPrivacyError(ValueError):
     """Datenschutz-Sperre: Der Cloud-Prompt wird nicht gebaut.
 
-    ``code`` ist maschinenlesbar (identity_terms_in_prompt, ner_unavailable, runtime_stale,
+    ``code`` ist maschinenlesbar (identity_terms_in_prompt, ner_unavailable, runtime_stale, runtime_unverified,
     document_scan_missing, profile_missing, birth_date_invalid); Meldung und Code enthalten nie Werte des Falls (sie landen in
     GUI-Antworten).
     """
@@ -366,13 +366,22 @@ def require_runtime_identity() -> None:
     """Cloud-Modus nur mit Code auf dem kanonischen Stand (fail-closed bei veraltetem Spiegel).
 
     Ein veralteter gitloser Spiegel kann die neueren Sperren (NER, Kennungen) gar nicht kennen
-    (T-20261111-107529991). Nur ``stale`` sperrt; ``checkout``/``unverified`` siehe report_runtime_identity.
+    (T-20261111-107529991). ``stale`` sperrt; ``unverified`` nur bei bekanntem Spiegel (Pointer), sonst
+    (Release ohne Klon) und bei ``checkout`` bleibt es offen, siehe report_runtime_identity.
     """
     try:
         from . import report_runtime_identity as _identity
     except ImportError:  # CLI-Modus, wie die Imports oben
         import report_runtime_identity as _identity
     ident = _identity.runtime_identity()
+    if ident["status"] == "unverified" and ident.get("has_pointer"):
+        raise PromptPrivacyError(
+            "Cloud-Modus verweigert: Der ausgefuehrte Berichtscode ist ein bekannter gitloser Spiegel, sein Stand "
+            "liess sich aber nicht gegen den kanonischen Klon pruefen (Klon fehlt, Git- oder Lesefehler). "
+            "BACH_CANONICAL_CLONE auf den Klon setzen oder den Spiegel mit repo_mirror.py --apply nachziehen "
+            "(Pruefung: python report_runtime_identity.py). Es wurde nichts gesendet.",
+            code="runtime_unverified",
+        )
     if ident["status"] == "stale":
         raise PromptPrivacyError(
             f"Cloud-Modus verweigert: Der ausgefuehrte Berichtscode weicht vom kanonischen Stand ab "
