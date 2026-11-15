@@ -6,7 +6,7 @@ destination: 192.168.9.129
   interface: en0
       flags: <UP,HOST,REJECT,DONE,LLINFO,WASCLONED,IFSCOPE,IFREF>
  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
-       0         0         0         0         0         0      1500        -9
+       0         0         0         0         0         0      1500       -16
 
 $ /sbin/ifconfig
 rc=0
@@ -182,22 +182,22 @@ destination: default
 $ /sbin/ping -c 2 -t 5 1.1.1.1
 rc=0
 PING 1.1.1.1 (1.1.1.1): 56 data bytes
-64 bytes from 1.1.1.1: icmp_seq=0 ttl=56 time=594.613 ms
-64 bytes from 1.1.1.1: icmp_seq=1 ttl=56 time=422.636 ms
+64 bytes from 1.1.1.1: icmp_seq=0 ttl=56 time=32.603 ms
+64 bytes from 1.1.1.1: icmp_seq=1 ttl=56 time=56.230 ms
 
 --- 1.1.1.1 ping statistics ---
 2 packets transmitted, 2 packets received, 0.0% packet loss
-round-trip min/avg/max/stddev = 422.636/508.625/594.613/85.989 ms
+round-trip min/avg/max/stddev = 32.603/44.416/56.230/11.813 ms
 
 $ /sbin/ping -c 2 -t 3 192.168.9.1
 rc=0
 PING 192.168.9.1 (192.168.9.1): 56 data bytes
-64 bytes from 192.168.9.1: icmp_seq=0 ttl=64 time=1.351 ms
-64 bytes from 192.168.9.1: icmp_seq=1 ttl=64 time=1.091 ms
+64 bytes from 192.168.9.1: icmp_seq=0 ttl=64 time=1.797 ms
+64 bytes from 192.168.9.1: icmp_seq=1 ttl=64 time=0.942 ms
 
 --- 192.168.9.1 ping statistics ---
 2 packets transmitted, 2 packets received, 0.0% packet loss
-round-trip min/avg/max/stddev = 1.091/1.221/1.351/0.130 ms
+round-trip min/avg/max/stddev = 0.942/1.369/1.797/0.428 ms
 
 $ /sbin/ping -c 2 -t 3 192.168.9.254
 rc=2
