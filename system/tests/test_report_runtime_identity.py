@@ -175,6 +175,22 @@ def test_broken_pointer_still_marks_a_mirror(tmp_path, clone, monkeypatch):
     assert exc.value.code == "runtime_unverified"
 
 
+@pytest.mark.parametrize("content", ["null", "[]", "42", '"text"',
+                                     '{"onedrive_mirror": "x", "local_locator": [1], "default_branch": 7}'])
+def test_pointer_json_without_object_shape_blocks_cleanly(tmp_path, clone, monkeypatch, content):
+    """Gültiges JSON, aber kein Objekt bzw. falsch geformte Felder: sauber gesperrt statt AttributeError."""
+    mirror = _mirror(tmp_path, clone, monkeypatch)
+    (mirror / "REPO.pointer.json").write_text(content, encoding="utf-8")
+    monkeypatch.setenv("BACH_CANONICAL_CLONE", str(tmp_path / "nirgends"))
+    result = rid.check_identity(mirror)
+    assert result["status"] == "unverified" and result["has_pointer"] is True
+    assert isinstance(result["source_commit"], str)
+    monkeypatch.setattr(rid, "runtime_identity", lambda: result)
+    with pytest.raises(rws.PromptPrivacyError) as exc:
+        rws.require_runtime_identity()
+    assert exc.value.code == "runtime_unverified"
+
+
 def test_no_pointer_file_is_a_release_and_stays_open(tmp_path, clone, monkeypatch):
     release = tmp_path / "release"
     shutil.copytree(clone / REL, release / REL)

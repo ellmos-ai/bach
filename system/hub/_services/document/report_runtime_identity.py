@@ -61,9 +61,14 @@ def _runtime_files(root: Path) -> dict:
             if p.is_file() and "__pycache__" not in p.parts and p.suffix in _SUFFIXES}
 
 
+def _obj(value) -> dict:
+    """Nur ein JSON-Objekt zaehlt; ``null``, Listen, Zahlen oder Text gelten als kaputt."""
+    return value if isinstance(value, dict) else {}
+
+
 def _pointer(root: Path) -> dict:
     try:
-        return json.loads((root / "REPO.pointer.json").read_text("utf-8"))
+        return _obj(json.loads((root / "REPO.pointer.json").read_text("utf-8")))
     except (OSError, ValueError):
         return {}
 
@@ -71,7 +76,7 @@ def _pointer(root: Path) -> dict:
 def _find_clone(pointer: dict) -> Optional[Path]:
     candidates = [os.environ.get("BACH_CANONICAL_CLONE", "")]
     if os.name == "nt":
-        candidates.append(str(pointer.get("local_locator", {}).get("windows_default", "")))
+        candidates.append(str(_obj(pointer.get("local_locator")).get("windows_default", "")))
     return next((Path(c) for c in candidates if c and (Path(c) / ".git").exists()), None)
 
 
@@ -94,14 +99,15 @@ def check_identity(root: Path = _ROOT) -> dict:
     pointer = _pointer(root)
     result = {"status": "unverified", "root": str(root), "canonical_commit": "", "differing": [],
               "has_pointer": (root / "REPO.pointer.json").exists(),  # Marker "Projektion", auch wenn unlesbar/kaputt
-              "source_commit": pointer.get("onedrive_mirror", {}).get("source_commit", "")}
+              "source_commit": str(_obj(pointer.get("onedrive_mirror")).get("source_commit", ""))}
     if _is_checkout(root):
         repo, ref, is_checkout = root, "HEAD", True
     else:
         repo = _find_clone(pointer)
         if repo is None:
             return result
-        ref, is_checkout = f"origin/{pointer.get('default_branch') or 'main'}", False
+        branch = pointer.get("default_branch")
+        ref, is_checkout = f"origin/{branch if isinstance(branch, str) and branch else 'main'}", False
     try:
         try:
             result["canonical_commit"] = _git(repo, "rev-parse", "--verify", ref).strip()
