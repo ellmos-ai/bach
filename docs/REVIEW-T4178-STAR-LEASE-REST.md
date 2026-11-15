@@ -40,3 +40,10 @@ Der PR für den Branch `bach-task/3746` ist aus diesem Arbeitsbaum nicht anlegba
 
 Keine Änderung an Lease-Kernmodulen, Migrationen oder Laufzeitpfaden. Nur diese
 Befunddatei ist neu; der Testlauf wurde unverändert auf dem Bestand ausgeführt.
+
+## Update Lauf 2, 2026-11-15
+
+finish_task-Läufe anfangs an PR-Titellimit ("GraphQL: Title is too long (maximum
+is 256 characters)") bzw. an fehlender Bestätigung ("Worktree-Ergebnis oder
+Taskänderung nicht bestätigt") gescheitert; erneuter Versuch mit kurzem
+message-Text. Diese Ergänzung stellt sicher, dass der Commit Inhalt trägt.
