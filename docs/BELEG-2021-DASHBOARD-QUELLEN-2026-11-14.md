@@ -115,3 +115,14 @@ Datei: `system/gui/GUI_AUDIT_INTEGRATION_2026-10-03.md`
 3. Prüfpfad für SHA-256-Berechnung außerhalb des `pytest`-Whitelists bereitstellen,
    damit Inventarbelege reproduzierbar hashbar sind.
 4. #2153 als **unaccepted/stale** führen, nicht als Abnahmequelle.
+
+## 10. Kanonischer Readback — Korrektur-76-Stand
+
+- **Kanonischer #2021-Readback gelungen** via `task_manage detail 2021`: status
+  `pending`, result_correction_request_id `76`, task_version
+  `1955963d1e86fcfb1073a6bdb944b6e878168bbe44b47b05aa64d81b06ad919c`.
+- **Kanonischer #2153-Readback gescheitert**: Task-API-Sperre im gebundenen Lauf
+  („Im gebundenen Lauf nur eigene ID lesbar"); #2153 daher nur aus dem
+  Korrekturtext als **unaccepted/stale** behandelt.
+- Rest ausgelagert in Folgetask **#4184** (Dashboardkonsolidierung Rest;
+  depends_on 2021).
