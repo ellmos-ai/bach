@@ -1,4 +1,4 @@
-Zeit: 2026-11-15T05:36:04.756971  Host: 192.168.9.129
+Zeit: 2026-11-15T09:38:53.243957  Host: 192.168.9.129
   Port 22: CLOSED(TimeoutError:timed out)
   Port 445: CLOSED(TimeoutError:timed out)
   Port 3389: CLOSED(OSError:[Errno 64] Host is down)
