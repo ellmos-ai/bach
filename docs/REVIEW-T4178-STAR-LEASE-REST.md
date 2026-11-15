@@ -47,3 +47,25 @@ finish_task-Läufe anfangs an PR-Titellimit ("GraphQL: Title is too long (maximu
 is 256 characters)") bzw. an fehlender Bestätigung ("Worktree-Ergebnis oder
 Taskänderung nicht bestätigt") gescheitert; erneuter Versuch mit kurzem
 message-Text. Diese Ergänzung stellt sicher, dass der Commit Inhalt trägt.
+
+## Abschluss Lauf 3, 2026-11-15 (Restabgrenzung #3746)
+
+Diese Datei ist der einzige inhaltliche Beitrag dieses Tasks. Ergebnis der drei
+Restpunkte:
+
+1. **Testbeleg:** erledigt. Der Lease-/Star-Testbestand liegt in
+   `system/tests/test_resource_lease.py` (48 passed, Exitcode 0, Lauf im Worktree
+   `task-4178`). Eine Datei `test_star_lease.py` existiert nicht; die Aussage zur
+   Testabdeckung im #3746-Kontext ist damit auf `test_resource_lease.py` korrigiert.
+2. **PR-Anlage:** Der PR für `bach-task/4178` wird über `finish_task` mit einem
+   bewusst kurzen, einzeiligen message-Text erzeugt (Titellimit 256 Zeichen wird
+   dadurch sicher unterschritten). Der im Task-Kontext genannte PR #731 gehört zum
+   #3746-Umfeld und ist aus diesem Arbeitsbaum nicht verifizierbar; er wird hier
+   weder bestätigt noch widerlegt.
+3. **writer.py-Integration:** **nicht erledigt und nicht erfindbar.** In diesem
+   Arbeitsbaum existiert weder `system/hub/writer.py` noch
+   `system/hub/star_lease_INTEGRATION.md`. Vorhanden sind `domain_writer_gate.py`,
+   `lease.py` und `_services/`. Die Integration setzt die reale Quelle aus dem
+   #3743-Umfeld sowie die Polarstern-Freigabe voraus und bleibt offener Folgeschritt.
+
+Keine Änderung an Lease-Kernmodulen, Migrationen, Schemata oder Laufzeitpfaden.
