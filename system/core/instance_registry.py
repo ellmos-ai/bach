@@ -56,18 +56,10 @@ from typing import Optional
 
 
 class InstanceRegistry:
-    """Verwaltet aktive BACH-Instanzen via Filesystem.
+    """Verwaltet aktive BACH-Instanzen via Filesystem (JSON je Instanz, Stale per PID-Check).
 
-    Jede Instanz registriert sich mit einer JSON-Datei.
-    Stale-Detection via PID-Check.
-
-    Altteil (BACH #4147, 2026-11-15): nie aktiviert, ``App.enable_messaging`` hat keinen
-    Aufrufer, und am Mac-Lead existiert kein ``data/instances``. Siehe DEPRICATED.md.
-    """
-
-    # Marker wie @deprecated_legacy_bach, aber ohne dessen Import: ``import hub`` kostet beim
-    # Laden von core/app.py rund 0,8 s. ponytail: ohne DeprecationWarning, bis zur Entfernung.
-    __ocean_deprecated__ = True
+    Altteil (BACH #4147): nie aktiviert, App.enable_messaging hat keinen Aufrufer; DEPRICATED.md."""
+    __ocean_deprecated__ = True  # Marker wie @deprecated_legacy_bach, ohne hub-Import (~0,8 s)
     __ocean_replacement__ = "memoryhooker.inbox / ticket-master host receipts"
 
     def __init__(self, data_dir: Path, source: str = "cli"):

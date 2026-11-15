@@ -199,7 +199,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           PYTHONDONTWRITEBYTECODE: '1'
           BACH_NO_AUTO_MIGRATE: '1'
-        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_ocean_stack_consumption.py -k instance_messaging
+        run: python -B -m pytest -q -p no:cacheprovider --timeout=120 system/tests/test_instance_messaging_retired.py
 
       - name: Native MarbleRun and task result authority
         env:
