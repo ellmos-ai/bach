@@ -160,3 +160,26 @@ def test_unverified_is_not_cached_but_ok_is(monkeypatch):
     assert rid.runtime_identity()["status"] == "unverified"
     assert rid.runtime_identity()["status"] == "ok"  # zweiter Versuch, jetzt zwischengespeichert
     assert rid.runtime_identity()["status"] == "ok"
+
+
+def test_broken_pointer_still_marks_a_mirror(tmp_path, clone, monkeypatch):
+    """Pointer vorhanden, aber nicht parsebar (z. B. OneDrive-Platzhalter): gilt als Projektion, gesperrt."""
+    mirror = _mirror(tmp_path, clone, monkeypatch)
+    (mirror / "REPO.pointer.json").write_text("{kaputt", encoding="utf-8")
+    monkeypatch.setenv("BACH_CANONICAL_CLONE", str(tmp_path / "nirgends"))
+    result = rid.check_identity(mirror)
+    assert result["status"] == "unverified" and result["has_pointer"] is True
+    monkeypatch.setattr(rid, "runtime_identity", lambda: result)
+    with pytest.raises(rws.PromptPrivacyError) as exc:
+        rws.require_runtime_identity()
+    assert exc.value.code == "runtime_unverified"
+
+
+def test_no_pointer_file_is_a_release_and_stays_open(tmp_path, clone, monkeypatch):
+    release = tmp_path / "release"
+    shutil.copytree(clone / REL, release / REL)
+    monkeypatch.setenv("BACH_CANONICAL_CLONE", str(tmp_path / "nirgends"))
+    result = rid.check_identity(release)
+    assert result["status"] == "unverified" and result["has_pointer"] is False
+    monkeypatch.setattr(rid, "runtime_identity", lambda: result)
+    rws.require_runtime_identity()  # wirft nicht
