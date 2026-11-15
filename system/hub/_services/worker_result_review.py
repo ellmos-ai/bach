@@ -4,6 +4,8 @@
 The intent is task metadata, not a second scheduler. A model response supplies
 only a verdict; task, revision, reviewer identity and independence are derived
 from controller-bound receipts. Public/read paths never create tables.
+
+Audit note (task-3618): paging/page-split review is NOT implemented here; there are no per-page digests (page_sha256) and no worker_result_review_pages table. No page-to-diff crypto chain exists; reviews bind only to the whole receipt via receipt_sha256 (schema), with diff_sha256 validated as receipt field. Oversized/tree-diff cut is handled by _TREE_DIFF_LIMIT.
 """
 from __future__ import annotations
 
