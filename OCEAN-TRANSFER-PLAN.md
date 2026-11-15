@@ -27,6 +27,7 @@ Der geplante annotierte Release `v3.15.0` **BACH meets Ocean – BACH fließt in
 - Gemeinsamer Installer mit getrennten Produktprofilen für BACH und Ocean. Ocean bleibt die einzige Engine für Fetch, Place, Activate und Rollback.
 - Erster begrenzter Modultransfer: `policy-registry` als lesender kanonischer Provider. Das umfasst Registry-, Quellen- und effektive Policy-Metadaten. Schreibende Governance ist eine getrennte, ausdrücklich freizugebende Fähigkeit.
 - Weitere Transfers sind geplant. Nach Zusammenführung gleicher Modulquellen sind 64 Folgeaufgaben in der TaskDB geplant; ihre Planung bestätigt keine Umsetzung.
+- Vorbereitung der OCEAN-Übernahme (Stand Tag v3.15.0-ocean-stack-m1): Auf dem Mac Studio werden die LaunchAgents com.bach.chat-tray, com.bach.git-harvester und com.bach.telegram-bot als .disabled-Plists im Quelllayout abgelegt; die Betriebsübernahme der drei Agents und der takeover_driver-Lease/Fencing-Mechanismus (system/hub/takeover_driver.py) werden über OCEAN-Transfer getrennt abgenommen.
 
 ## Ersttransfer: policy-registry
 

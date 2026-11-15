@@ -13,8 +13,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-DATA_DIR = Path(__file__).parent.parent / "data" / "githubbot_ocean"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR = Path(
+    os.environ.get(
+        "GITHUBBOT_OCEAN_DATA_DIR",
+        str(Path(__file__).parent.parent / "data" / "githubbot_ocean"),
+    )
+)
 STATE_PATH = DATA_DIR / "budget_state.json"
 
 def _load_state() -> dict[str, Any]:
@@ -25,6 +29,7 @@ def _load_state() -> dict[str, Any]:
     return {"budgets": {}}
 def _save_state(state: dict[str, Any]) -> None:
     """Speichere den Budgetstatus als JSON."""
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(state, indent=2))
 class BudgetController:
     """Track Budget Nutzung mit Kostenlimits.
@@ -62,7 +67,7 @@ class BudgetController:
         entry["telemetry"].append({
             "timestamp": self._now_iso(),
             "amount_cents": amount_cents,
-            "limit_after_spend": self.limit_cents - new_spent,
+            "limit_after_spend": new_spent,
         })
         _save_state(state)
         return True
