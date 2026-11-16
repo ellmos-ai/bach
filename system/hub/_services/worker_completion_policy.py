@@ -282,7 +282,7 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
             and review.get("review_task_id") > 0
             and type(review.get("reviewer_id")) is str
             and bool(review.get("reviewer_id")))
-        if bound_tree is not None and bound_tree.get("truncated") is True and review.get("status") == "approved":
+        if isinstance(bound_tree, dict) and bound_tree.get("truncated") is True and review.get("status") == "approved":
             # A cut package cannot carry an approval until a large-context or
             # paged review exists (#2582); the result keeps waiting, no correction.
             review_is_current = False

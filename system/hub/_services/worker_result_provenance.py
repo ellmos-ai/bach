@@ -59,7 +59,8 @@ def source_pin(record):
     if not isinstance(record, dict):
         return None
     scope = record.get("scope", {})
-    if scope.get("availability") not in {"recorded", "available"}:
+    if (scope.get("availability") not in {"recorded", "available"}
+            and scope.get("reason") not in {"scope_not_recorded", "current_git_unavailable"}):
         return None
     if source_kind(record) == "external_attested":
         from .worker_external_attestation import external_result_revision
@@ -77,7 +78,7 @@ def source_pin(record):
         return {"source_kind": "external_attested", **{key: data[key] for key in (
             "attestation_sha256", "attestation_event_id", "scope_receipt_sha256",
             "scope_event_id", "model_principal_id")}}
-    if source_kind(record) != "native":
+    if source_kind(record) not in ("native", "native_unscoped"):
         return None
     execution = record.get("execution", {})
     if (execution.get("availability") != "available"
@@ -85,6 +86,12 @@ def source_pin(record):
             or type(execution.get("execution_revision")) is not str
             or not _HEX.fullmatch(execution["execution_revision"])):
         return None
+    if (source_kind(record) == "native_unscoped"
+            or scope.get("availability") not in {"recorded", "available"}):
+        # Deterministic execution-bound pin without a recorded scope receipt
+        # (fresh run or current Git unavailable): no receipt keys by design.
+        return {"source_kind": "native_unscoped", "execution_id": execution["execution_id"],
+                "execution_revision": execution["execution_revision"], "slot_id": execution.get("slot_id")}
     receipt, event_id = scope.get("scope_receipt_sha256"), scope.get("scope_event_id")
     if (type(receipt) is not str or not _HEX.fullmatch(receipt)
             or type(event_id) is not int or event_id <= 0):
@@ -122,4 +129,4 @@ def current_result_revision(record):
     return _digest({"schema": "bach.worker-result-revision.v1",
         "submission_revision": record.get("submission_revision"),
         "execution_revision": pin["execution_revision"],
-        "scope_receipt_sha256": pin["scope_receipt_sha256"], "scope_event_id": pin["scope_event_id"]})
+        "scope_receipt_sha256": pin.get("scope_receipt_sha256"), "scope_event_id": pin.get("scope_event_id")})
