@@ -673,6 +673,28 @@ class TestWorkflowCandidates:
         assert resolved == workflow_file
         assert workflow_file in checked
 
+    def test_resolve_uppercase_workflow_path_to_lowercase_file(self, usecase, tmp_tuev):
+        _, db_path, wf_dir = tmp_tuev
+        workflow_file = wf_dir / "uppercase-flow.md"
+        workflow_file.write_text("# Uppercase Fallback", encoding="utf-8")
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO usecases (title, workflow_path, test_input, expected_output, created_by) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("Path-Case-Fallback", "skills/_workflows/UPPERCASE-FLOW.MD", "{}", "{}", "user"),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM usecases WHERE title = 'Path-Case-Fallback'"
+        ).fetchone()
+        resolved, checked = usecase._resolve_workflow_path(row, conn)
+        conn.close()
+
+        assert resolved == workflow_file
+        assert workflow_file in checked
+
     def test_candidates_generates_variants(self, seeded_usecase, tmp_tuev):
         _, db_path, _ = tmp_tuev
         conn = sqlite3.connect(str(db_path))
