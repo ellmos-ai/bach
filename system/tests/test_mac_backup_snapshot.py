@@ -19,11 +19,13 @@ if str(_SYSTEM_DIR) not in sys.path:
     sys.path.insert(0, str(_SYSTEM_DIR))
 
 from tools.mac_backup_snapshot import (  # noqa: E402
+    GATE_LIMITS,
     NAMED_REPOS,
     RESTORE_CONTRACT,
     UNNAMED_REPOS,
     create_git_bundle,
     create_zip_backup,
+    gates_report,
     run_backup,
     sha256_file,
     verify_manifest,
@@ -57,6 +59,20 @@ def git_repo(tmp_path):
     return repo
 
 
+def test_cli_gates_und_contract_ausgabe(capsys):
+    """CLI-Smoke: --gates und --print-contract liefern benannte Infos."""
+    from tools.mac_backup_snapshot import main
+
+    assert main(["--print-contract"]) == 0
+    out = capsys.readouterr().out
+    assert "File Restore Handler" in out
+
+    assert main(["--gates"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["task"] == 2635
+    assert data["open_gates"] == ["G1", "G2", "G3", "G4", "G5"]
+
+
 def test_named_repos_liste_exakt():
     assert len(NAMED_REPOS) == 4
     assert len(set(NAMED_REPOS)) == 4
@@ -86,6 +102,66 @@ def test_restore_contract_zitiert_hub_vertrag():
 
 
 @requires_git
+def test_deep_verify_roundtrip_ueber_manifest(tmp_path, git_repo):
+    """Deep-Verify: SHA + ZIP-CRC + Bundle-Refs je gesichertem Gegenstand."""
+    result = run_backup({NAMED_REPOS[0]: str(git_repo)}, tmp_path / "out", "td")
+
+    # Standard (ohne deep): Artefakt-Eintraege ok, weil SHA stimmt.
+    results = [i for i in verify_manifest(result["manifest_path"]) if i["kind"] in ("zip", "bundle")]
+    assert results and all(item["ok"] for item in results)
+    assert all(item["reason"] == "SHA256 stimmt" for item in results)
+
+    # Deep: ZIP-CRC/Mitglieder und Bundle-Refs zusaetzlich geprueft.
+    deep = verify_manifest(result["manifest_path"], deep=True)
+    by_kind = {}
+    for item in deep:
+        by_kind.setdefault(item["kind"], []).append(item)
+    assert all(item["ok"] for item in by_kind["zip"] + by_kind["bundle"])
+    assert "ZIP-Inhalt intakt" in by_kind["zip"][0]["reason"]
+    assert "Bundle enthaelt alle Refs" in by_kind["bundle"][0]["reason"]
+
+
+def test_deep_verify_erkennt_beschaedigtes_zip(tmp_path):
+    """Deep-Verify faellt auf FAIL, wenn ZIP nach Manifest CRC-Fehler hat."""
+    target = tmp_path / "demo.zip"
+    original = b"PK\x03\x04" + b"0" * 64  # gueltiger ZIP-Kopf, aber kein Zentralverzeichnis
+    target.write_bytes(original)
+    sha = hashlib.sha256(original).hexdigest()
+    entry = {
+        "repo": "demo", "kind": "zip", "path": str(target),
+        "bytes": len(original), "sha256": sha, "note": "",
+    }
+    manifest = tmp_path / "manifest-deep.json"
+    manifest.write_text(json.dumps({"entries": [entry]}), encoding="utf-8")
+
+    # Ohne deep: SHA stimmt -> ok (alter Stand).
+    assert verify_manifest(manifest)[0]["ok"] is True
+    # Deep: ZIP ist unlesbar -> ok=False mit Restore-Beleg-Begruendung.
+    deep = verify_manifest(manifest, deep=True)[0]
+    assert deep["ok"] is False
+    assert "Restore-Beleg unzulaenglich" in deep["reason"]
+    assert "ZIP nicht lesbar" in deep["reason"]
+
+
+def test_gates_report_listet_alle_gates_und_repos():
+    report = gates_report()
+    assert report["task"] == 2635
+    assert report["named_repos"] == NAMED_REPOS
+    assert set(report["unnamed_repos"]) == {"R5", "R6", "R7"}
+    assert all(v == "PENDING_IDENTIFICATION" for v in report["unnamed_repos"].values())
+    # Jeder Gate ist mit Status/Topic/Owner benannt und als OFFEN gekennzeichnet.
+    ids = [g["id"] for g in report["gates"]]
+    assert ids == ["G1", "G2", "G3", "G4", "G5"]
+    for gate in report["gates"]:
+        assert gate["status"] == "OFFEN"
+        assert gate["topic"] and gate["owner"]
+        assert gate["blockiert"]
+    assert report["open_gates"] == ids
+    assert report["restore_contract_ref"] == RESTORE_CONTRACT
+    # Gesamtzahl GATE_LIMITS == gemsensen Report-Gates.
+    assert len(GATE_LIMITS) == len(report["gates"])
+
+
 def test_unnamed_repos_werden_nicht_gesichert(tmp_path, git_repo):
     result = run_backup({"R5": str(git_repo)}, tmp_path / "out", "t6")
     r5 = [e for e in result["entries"] if e["repo"] == "R5"]

@@ -6,7 +6,8 @@ inkl. .git, fs_protection-Stil: keine Symlink-Verfolgung) und ein git
 bundle (git bundle create <file>.bundle --all), notiert beide Artefakte
 zusammen mit SHA256/Bytes/Timestamp/HEAD/Dirty im JSON-Manifest und
 prueft Manifeste wieder (Restore-Verify: SHA-Neuberechnung, Tamper- und
-Missing-Erkennung).
+Missing-Erkennung; optional --deep zusaetzlich ZIP-CRC/Mitglieder und
+"git bundle verify --all" je gesichertem Gegenstand).
 
 Regeln (Taskanalyse #2635):
 - KEINE Auto-Annahme von Host-Pfaden. Der Windows-Host ist von hier nicht
@@ -21,7 +22,18 @@ Regeln (Taskanalyse #2635):
 CLI:
   python system/tools/mac_backup_snapshot.py --inventory inventar.json --out backups --tag TAG
   python system/tools/mac_backup_snapshot.py --verify backups/manifest-TAG.json
+  python system/tools/mac_backup_snapshot.py --verify backups/manifest-TAG.json --deep
   python system/tools/mac_backup_snapshot.py --print-contract
+  python system/tools/mac_backup_snapshot.py --gates
+
+Abnahme-Nachweis (ohne Host-Zugriff sofort abfragbar):
+  --gates  gibt benannte Repos, offene Gates (G1-G5) und Restore-Vertrag als
+           JSON aus; --print-contract den zitierten Hub-Restore-Vertrag.
+           Ein echter Sicherungs-/Hash-/Restorebeleg je Repo entsteht erst mit
+           --inventory <echte Host-Pfade> + --verify <manifest> [--deep].
+           Ohne Host-Zugriff bleibt die Sicherung als skipped/PENDING
+           dokumentiert (Gates G1/G2/G3/G4/G5 offen).
+  python system/tools/mac_backup_snapshot.py --gates
 
 Inventar-Format (JSON-Objekt): {"<repo-name>": "<host-pfad oder UNBEKANNT>"}
 """
@@ -311,7 +323,49 @@ def _load_entries(manifest):
     return list(data)
 
 
-def verify_manifest(manifest):
+def _zip_member_names(path):
+    """Namen aller Einträge eines ZIPs oder None, wenn es nicht lesbar ist."""
+    try:
+        with zipfile.ZipFile(str(path)) as zf:
+            return zf.namelist()
+    except (zipfile.BadZipFile, OSError):
+        return None
+
+
+def _bundle_has_all_refs(path):
+    """(ok, reason) für git bundle verify --all.
+
+    Prueft, ob das Bundle alle Required-Refs enthaelt (vollständige History,
+    also wiederherstellbar). Bei fehlendem git oder Fehler: ok=False.
+    """
+    proc = subprocess.run(
+        ["git", "bundle", "verify", str(path)],
+        capture_output=True, text=True,
+    )
+    out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    ok = proc.returncode == 0
+    return ok, (out.splitlines()[0] if out else "git bundle verify ohne Ausgabe")
+
+
+def _verify_zip_content(path, entry):
+    """ZIP-Inhalts-Integritaet: CRC-Pruefung jedes Mitglieds + Repo-Kopfpaket."""
+    names = _zip_member_names(path)
+    if names is None:
+        return False, "ZIP nicht lesbar/beschaedigt"
+    try:
+        with zipfile.ZipFile(str(path)) as zf:
+            bad = zf.testzip()
+    except (zipfile.BadZipFile, OSError) as exc:
+        return False, "ZIP-Pruefung abgebrochen: {}".format(exc)
+    if bad is not None:
+        return False, "CRC-Fehler in ZIP-Mitglied: {}".format(bad)
+    repo_name = entry.get("repo") or ""
+    if repo_name and not any(str(n).startswith(repo_name + "/") for n in names):
+        return False, "ZIP enthaelt kein Repo-Verzeichnis {}/".format(repo_name)
+    return True, "ZIP-Inhalt intakt ({} Dateien, CRC geprueft)".format(len(names))
+
+
+def verify_manifest(manifest, deep=False):
     """Restore-Verify: pro Eintrag SHA256 neu berechnen und vergleichen.
 
     Rueckgabe: Liste von {"repo", "kind", "ok", "reason"}.
@@ -345,8 +399,82 @@ def verify_manifest(manifest):
         else:
             result["ok"] = True
             result["reason"] = "SHA256 stimmt"
+            # Restore-Verify (tief): ZIP-CRC und Bundle-Refs zusaetzlich pruefen.
+            if deep and entry.get("kind") == "zip":
+                ok, reason = _verify_zip_content(path, entry)
+                if not ok:
+                    result["ok"] = False
+                    result["reason"] = "SHA256 ok, aber Restore-Beleg unzulaenglich: {}".format(reason)
+                else:
+                    result["reason"] = "SHA256 stimmt; {}".format(reason)
+            elif deep and entry.get("kind") == "bundle":
+                ok, reason = _bundle_has_all_refs(path)
+                if not ok:
+                    result["ok"] = False
+                    result["reason"] = "SHA256 ok, aber Bundle nicht vollstaendig: {}".format(reason)
+                else:
+                    result["reason"] = "SHA256 stimmt; Bundle enthaelt alle Refs (klonbar)"
         results.append(result)
     return results
+
+
+# --- Gates / Abnahme-Transparenz --------------------------------------------
+
+# Freigabegrenzen (Task #2635): Was ohne weitere Nutzerfreigabe NICHT passiert.
+GATE_LIMITS = [
+    {
+        "id": "G1",
+        "status": "OFFEN",
+        "topic": "Identifikation R5/R6/R7 (unbenannte Repos mit uncommitteten Aenderungen)",
+        "owner": "Nutzer",
+        "blockiert": "Sicherung dieser drei Gegenstaende",
+    },
+    {
+        "id": "G2",
+        "status": "OFFEN",
+        "topic": "mac_mirror_push/Janitor bleibt bis akzeptiertem Mirror-Cutover aktiv",
+        "owner": "Service",
+        "blockiert": "Mirror-Push/Janitor-Lauf (nicht Teil der Sicherung)",
+    },
+    {
+        "id": "G3",
+        "status": "OFFEN",
+        "topic": "prune_old_backups erst nach nachgewiesener Sicherung + konkreter Freigabe + freigegebener Leerung",
+        "owner": "Nutzer",
+        "blockiert": "Altloeschung von Backups (Inventur raeumt nichts)",
+    },
+    {
+        "id": "G4",
+        "status": "OFFEN",
+        "topic": "Optionale OneDrive-Kopie ist laut Original eine unbeauftragte Produktentscheidung",
+        "owner": "Produkt",
+        "blockiert": "Zusaetzliche OneDrive-Kopie (nicht implizit erweitern)",
+    },
+    {
+        "id": "G5",
+        "status": "OFFEN",
+        "topic": "Fork-Push-/Loeschfreigabe",
+        "owner": "Nutzer",
+        "blockiert": "Fork-Push/Loeschung (aus Inventur nicht ableitbar)",
+    },
+]
+
+
+def gates_report():
+    """Abnahme-Transparenz: benannte Repos, Restore-Vertrag, offene Gates.
+
+    Rein lesend, keine Wirkung. Dient dem Nachweis, dass vor einem Lauf alle
+    noch offenen Nutzer-/Service-/Prune-Gates benannt sind.
+    """
+    return {
+        "task": 2635,
+        "tool": "mac_backup_snapshot",
+        "named_repos": list(NAMED_REPOS),
+        "unnamed_repos": {k: v["status"] for k, v in UNNAMED_REPOS.items()},
+        "restore_contract_ref": RESTORE_CONTRACT,
+        "gates": [dict(g) for g in GATE_LIMITS],
+        "open_gates": [g["id"] for g in GATE_LIMITS if g["status"] == "OFFEN"],
+    }
 
 
 # --- CLI --------------------------------------------------------------------
@@ -362,16 +490,33 @@ def main(argv=None):
     )
     parser.add_argument("--out", default="backups", help="Ausgabeordner fuer ZIP/Bundles/Manifest")
     parser.add_argument("--tag", default=None, help="Sicherungstag (Standard: UTC-Zeitstempel)")
-    parser.add_argument("--verify", help="Manifest-JSON pruefen (Restore-Verify) und Ergebnis melden")
-    parser.add_argument("--print-contract", action="store_true", help="RESTORE_CONTRACT ausgeben")
+    parser.add_argument(
+        "--verify", help="Manifest-JSON pruefen (Restore-Verify) und Ergebnis melden"
+    )
+    parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="Restore-Verify vertiefen: zusaetzlich ZIP-CRC/Mitglieder und git bundle verify --all",
+    )
+    parser.add_argument(
+        "--print-contract", action="store_true", help="RESTORE_CONTRACT ausgeben"
+    )
+    parser.add_argument(
+        "--gates", action="store_true",
+        help="Abnahme-Transparenz: benannte Repos, Restore-Vertrag, offene Gates (JSON)",
+    )
     args = parser.parse_args(argv)
 
     if args.print_contract:
         print(RESTORE_CONTRACT)
         return 0
 
+    if args.gates:
+        print(json.dumps(gates_report(), indent=2, ensure_ascii=True))
+        return 0
+
     if args.verify:
-        results = verify_manifest(args.verify)
+        results = verify_manifest(args.verify, deep=args.deep)
         for item in results:
             print("{} {} [{}]: {}".format(
                 "OK  " if item["ok"] else "FAIL",
