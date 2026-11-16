@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from hub._services import fackel  # noqa: E402
 
+_ORIG_METAL_BYTES = fackel._metal_bytes
+
 METAL = 26_800_603_136          # gemessen: recommendedMaxWorkingSetSize
 VRAM_27B_32K = 30_064_771_072   # gemessen: size_vram bei 32k Kontext
 VRAM_27B_8K = 22_393_706_992    # gemessen: size_vram bei kleinem Fenster
@@ -199,3 +201,16 @@ if __name__ == "__main__":
             print(f"FEHL  {name}: {type(e).__name__}: {e}")
     print(f"\n{'ALLE GRUEN' if not fails else str(fails) + ' FEHLGESCHLAGEN'}")
     sys.exit(1 if fails else 0)
+
+
+def test_echtes_metal_ctypes_vermeidet_swift_subprozess(monkeypatch):
+    monkeypatch.setattr(fackel.sys, "platform", "darwin")
+    monkeypatch.setattr(fackel, "_metal_cache", None)
+    monkeypatch.setattr(fackel, "_metal_ctypes_bytes", lambda: METAL)
+
+    def verboten(*_a, **_kw):
+        raise AssertionError("swift darf bei erfolgreichem ctypes-Pfad nicht starten")
+
+    monkeypatch.setattr(fackel.subprocess, "run", verboten)
+    assert _ORIG_METAL_BYTES() == METAL
+    assert fackel._metal_cache == METAL

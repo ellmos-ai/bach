@@ -99,8 +99,10 @@ except Exception as e:
 from hub._services.llm.model_backend import (
     CLIBackend,
     OllamaBackend,
+    OpenRouterBackend,
     backend_identifier,
     create_backend,
+    record_free_model_outcome,
 )
 from hub._services.chat.chat_runtime import (
     ChatRuntime,
@@ -3730,15 +3732,24 @@ _backends_pool: dict[str, Any] = {}
 _backends_pool_lock = threading.Lock()
 
 
-def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
+def _get_or_create_backend(
+    backend_type: str, model: str = "", *, run_id: str | None = None
+) -> Any:
     backend_key = (backend_type or "ollama").lower().strip()
+    normalized_model = (model or "").strip()
+    unpooled_free_run = (
+        backend_key == "openrouter"
+        and normalized_model in ("", "openrouter/free")
+        and run_id is not None
+    )
     cache_key = f"{backend_key}:{model}" if model else backend_key
 
     with _backends_pool_lock:
-        if cache_key in _backends_pool:
-            return _backends_pool[cache_key]
-        if backend_key in _backends_pool and not model:
-            return _backends_pool[backend_key]
+        if not unpooled_free_run:
+            if cache_key in _backends_pool:
+                return _backends_pool[cache_key]
+            if backend_key in _backends_pool and not model:
+                return _backends_pool[backend_key]
 
         credential_ref = None
         if backend_key in BACKEND_PRESETS:
@@ -3756,12 +3767,13 @@ def _get_or_create_backend(backend_type: str, model: str = "") -> Any:
                 config["default_model"] = model
 
         try:
-            # Free-Modell pro Telegram-Lauf pinnen (Rotation nur zwischen Laeufen)
-            config["run_id"] = _current_chat_run_id()
+            # Free-Modell pro Session/Task-Lauf pinnen (Rotation zwischen Laeufen)
+            config["run_id"] = run_id if unpooled_free_run else _current_chat_run_id()
             b = create_backend(config)
             from hub._services.llm.controller_route import bind_controller_backend
             bind_controller_backend(b, credential_ref=credential_ref)
-            _backends_pool[cache_key] = b
+            if not unpooled_free_run:
+                _backends_pool[cache_key] = b
             return b
         except Exception as e:
             log.warning("Konfiguriertes Backend %s konnte nicht erstellt werden", cache_key)
@@ -3854,7 +3866,28 @@ def _apply_slot_to_session(chat_id: str, session: Any, *, slot: dict | None = No
     slot_backend_type = slot.get("backend") or "ollama"
     slot_model = slot.get("model") or ""
 
-    target_backend = _get_or_create_backend(slot_backend_type, slot_model)
+    if (
+        slot_backend_type.lower().strip() == "openrouter"
+        and slot_model.strip() in ("", "openrouter/free")
+    ):
+        session_run_id = getattr(session, "_free_router_run_id", None)
+        if not isinstance(session_run_id, str) or not session_run_id:
+            session_run_id = uuid.uuid4().hex
+            session._free_router_run_id = session_run_id
+        existing_backend = getattr(session, "backend", None)
+        expected_default = slot_model.strip() or "openrouter/free"
+        if (
+            isinstance(existing_backend, OpenRouterBackend)
+            and getattr(existing_backend, "run_id", None) == session_run_id
+            and getattr(existing_backend, "default_model", "") == expected_default
+        ):
+            target_backend = existing_backend
+        else:
+            target_backend = _get_or_create_backend(
+                slot_backend_type, slot_model, run_id=session_run_id
+            )
+    else:
+        target_backend = _get_or_create_backend(slot_backend_type, slot_model)
     session.backend = target_backend
     if slot_model:
         session.model = slot_model
@@ -6610,6 +6643,28 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     from hub._services.llm.backend_errors import normalize_backend_error
                     detail = normalize_backend_error(getattr(ans, "backend_error", None))
                     failure_reason = getattr(ans, "reason_code", None)
+                    if (
+                        isinstance(target_backend, OpenRouterBackend)
+                        and str(model or "").strip() in ("", "openrouter/free")
+                        and (
+                            failure_reason in {
+                                "invalid_tool_call",
+                                "tool_denial_limit",
+                                "tool_denial_repeated",
+                            }
+                            or (isinstance(detail, dict) and detail.get("kind") == "tool_parse_error")
+                        )
+                    ):
+                        failed_model = (
+                            getattr(worker_session, "resolved_model", None)
+                            or getattr(target_backend, "last_resolved_model", None)
+                        )
+                        if (
+                            isinstance(failed_model, str)
+                            and failed_model.strip()
+                            and failed_model.strip() != "openrouter/free"
+                        ):
+                            record_free_model_outcome(failed_model.strip(), ok=False)
                     control.return_note = _worker_return_note(
                         detail, failure_reason, getattr(ans, "transient_failure", None),
                         task_id=control.task_binding.task_id)
@@ -6896,6 +6951,12 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 resolved = getattr(worker_session, "resolved_model", None)
                 if isinstance(resolved, str) and resolved.strip():
                     _update_worker_slot(control, {"resolved_model": resolved})
+                    if (
+                        isinstance(target_backend, OpenRouterBackend)
+                        and str(model or "").strip() in ("", "openrouter/free")
+                        and resolved.strip() != "openrouter/free"
+                    ):
+                        record_free_model_outcome(resolved.strip(), ok=True)
                 if control.persistent_core_intent_id is not None and backend_retries > 0:
                     previous = control.persistent_core_recovery_state
                     checkpoint = control.persistent_core_checkpoint

@@ -1741,6 +1741,59 @@ def _is_directory_redirect(path: Path) -> bool:
     return tag is None or bool(tag & 0x20000000)  # IO_REPARSE_TAG_NAME_SURROGATE
 
 
+def _remove_owned_pytest_run_tree(run: Path, run_anchor: tuple[int, int], verify_owner) -> None:
+    """Remove the owned per-invocation pytest basetemp tree without following links."""
+    uid = os.getuid()
+    verify_owner()
+    run_lstat = run.lstat()
+    if stat.S_ISLNK(run_lstat.st_mode) or (run_lstat.st_dev, run_lstat.st_ino) != run_anchor:
+        raise WorkerWriteGuardError("pytest-Rundirectory wurde ausgetauscht")
+    if (run_lstat.st_mode & 0o700) != 0o700:
+        os.chmod(run, 0o700)
+    for dirpath, dirnames, _ in os.walk(run, topdown=True, followlinks=False):
+        kept: list[str] = []
+        for dname in dirnames:
+            sub = _NATIVE_PATH(dirpath) / dname
+            info = sub.lstat()
+            if info.st_uid != uid:
+                raise WorkerWriteGuardError("Fremder Eintrag im pytest-Runverzeichnis bleibt gesperrt")
+            if stat.S_ISLNK(info.st_mode) or _is_directory_redirect(sub):
+                sub.unlink(missing_ok=True)
+                continue
+            if (info.st_mode & 0o700) != 0o700:
+                os.chmod(sub, 0o700)
+            kept.append(dname)
+        dirnames[:] = kept
+    for dirpath, dirnames, filenames in os.walk(run, topdown=False, followlinks=False):
+        verify_owner()
+        cur = _NATIVE_PATH(dirpath)
+        for fname in filenames:
+            entry = cur / fname
+            info = entry.lstat()
+            if info.st_uid != uid:
+                raise WorkerWriteGuardError("Fremder Eintrag im pytest-Runverzeichnis bleibt gesperrt")
+            if not stat.S_ISLNK(info.st_mode) and not (info.st_mode & stat.S_IWUSR):
+                try:
+                    os.chmod(entry, stat.S_IRUSR | stat.S_IWUSR)
+                except OSError:
+                    pass
+            entry.unlink(missing_ok=True)
+        for dname in dirnames:
+            sub = cur / dname
+            info = sub.lstat()
+            if info.st_uid != uid:
+                raise WorkerWriteGuardError("Fremder Eintrag im pytest-Runverzeichnis bleibt gesperrt")
+            if stat.S_ISLNK(info.st_mode) or _is_directory_redirect(sub):
+                sub.unlink(missing_ok=True)
+            else:
+                sub.rmdir()
+    verify_owner()
+    run_lstat = run.lstat()
+    if stat.S_ISLNK(run_lstat.st_mode) or (run_lstat.st_dev, run_lstat.st_ino) != run_anchor:
+        raise WorkerWriteGuardError("pytest-Rundirectory wurde ausgetauscht")
+    run.rmdir()
+
+
 def _cleanup_pytest_current_links(owner, result=None) -> None:
     """Unlink convenience pointers and recursively remove nested symlinks/junctions in pytest-temp."""
     if owner is None:
@@ -1817,12 +1870,15 @@ def _cleanup_pytest_current_links(owner, result=None) -> None:
                     nested.append(sub)
             except OSError:
                 pass
-    if not candidates and not nested:
-        return
-    if (getattr(result, "cleanup_confirmed", None) is not True
-            or getattr(result, "watchdog_joined", None) is not True
-            or getattr(result, "cleanup_scope", None) != "owned_posix_process_group"):
+    confirmed_posix_cleanup = (
+        getattr(result, "cleanup_confirmed", None) is True
+        and getattr(result, "watchdog_joined", None) is True
+        and getattr(result, "cleanup_scope", None) == "owned_posix_process_group"
+    )
+    if (candidates or nested) and not confirmed_posix_cleanup:
         raise WorkerWriteGuardError("Aktiver oder unbekannter pytest-Run darf nicht bereinigt werden")
+    if not confirmed_posix_cleanup:
+        return
     verify_owner()
     if (run.stat().st_dev, run.stat().st_ino) != run_anchor:
         raise WorkerWriteGuardError("pytest-Rundirectory wurde ausgetauscht")
@@ -1848,6 +1904,7 @@ def _cleanup_pytest_current_links(owner, result=None) -> None:
                 sub.unlink(missing_ok=True)
         except OSError:
             pass
+    _remove_owned_pytest_run_tree(run, run_anchor, verify_owner)
 
 
 def run_bound_check(binding, command: str, cwd, timeout=60, *, safe=False, return_result=False) -> str | SandboxResult:

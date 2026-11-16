@@ -1495,6 +1495,24 @@ class TestControlHandlerEndpoints:
         assert target["status"] == "idle"
         assert "Bereit (wiederhergestellt)" in target["current_activity"]
 
+    def test_reconcile_workers_heals_orphaned_buddha_always_on(self, tmp_path):
+        from hub._services.chat.slots_config import (
+            load_slots_config,
+            reconcile_workers,
+            update_slot,
+        )
+        cfg_file = tmp_path / "test_slots_buddha.json"
+        initialize_slots_config(str(cfg_file))
+        update_slot(
+            "buddha_always_on",
+            {"enabled": True, "status": "running", "current_activity": "Verwaist"},
+            path=str(cfg_file),
+        )
+        reconcile_workers(active_worker_ids=set(), path=str(cfg_file))
+        healed = load_slots_config(str(cfg_file))["slots"]["buddha_always_on"]
+        assert healed["status"] == "idle"
+        assert "Bereit (wiederhergestellt)" in healed["current_activity"]
+
     def test_reconcile_marks_only_wanted_running_workers_for_resume(self, tmp_path, caplog):
         """#2633: a worker that was running when the service ended is resumed later."""
         from hub._services.chat.slots_config import (
