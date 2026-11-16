@@ -1,77 +1,64 @@
 # MAC-ZWISCHENDEPLOY UND DEPLOY-GATE
 
-Design-Dokumentation. Definiert (a) einen Mechanismus für **regelmäßige, sichere Mac-Zwischendeploys** und (b) das **Deploy-Gate**, das vor jedem Deploy/Release verpflichtend ist. Stand: Mechanismen definiert (Design); Code-/Workflow-Umsetzung folgt in eigenen Aufgaben.
+Verbindliche Betriebsdefinition für (a) **regelmäßige, sichere Mac-Zwischendeploys** und (b) das **Deploy-Gate**, das vor jedem Deploy/Release verpflichtend ist. Historischer Erstellungsbezug: Worktree `task-3752` (BACH/Ocean #3752); Abgleich auf den real gemessenen Release-/Pin-Mechanismus (`D-20261107-004`, GUI-Kit `0.2.40` mit `51` HTML-Seiten).
 
-Arbeitsbaum: `~/services/bach-worktrees/task-3752` · Task: BACH/Ocean #3752.
+## 0. Ausgangslage & Einordnung
 
-## 0. Befund: Warum dieses Dokument
-
-- `docs/GUI_SOFTWARE_OCEAN_CATALOG.md` Z.52-97 verzeichnet Release-Pins (Commit, ZIP, SHA-256; Kit-Manifest 197 Dateien / 26 HTML-Seiten). Diese Pins sind **Quell-/Kit-Pins** und belegen **keine** Installation, keine LaunchAgent-Bindung und keine Live-Auslieferung auf dem Mac.
-- `docs/operations/` enthält derzeit nur `BACH-3.15.0-MILESTONE.md`, `MAC-CHAT-LAUNCHAGENTS.md`, `MAC-WORKER-HARVESTER.md`, `RELEASE-AUDIT-2026-10-07.md` und `watchdog-inference-unload.md` – **keine** Deploy-, Installer-, Ocean- oder Scheduler-Workflows; `.github/` existiert als CI-Ort.
-- Folge: Der regelmäßige, sichere Zwischendeploy auf dem Mac und das Gate davor waren nicht definiert. Diese Lücke schließt dieses Dokument (Kernaufgabe 7 der Task).
+- Quell-/Kit-Pins in `system/gui/gui-consumer.v1.json` und `system/gui/kit_manifest.json` fixieren zwar die Soll-Identität des geteilten `ellmos-system-gui`-Release (`version`, 40-stelligem Quell-Commit, ZIP-Archivname und `release_archive_sha256`), belegen für sich allein jedoch **keine** erfolgte Installation oder LaunchAgent-Bindung auf dem Mac. *(Historischer Vorstand zur Task-Anlage: `26` HTML-Seiten / `197` Dateien; aktueller verifizierter `0.2.40`-Stand: `51` HTML-Seiten / `413` gehashte `dist`-Dateien).*
+- Die operative Deploy-/Rollback-Grenze ist technisch über `system/tools/deploy_rollback_preflight.py`, `system/hub/_services/gui_contract_service.py` (`resolve_gui_distribution`, `get_pinned_kit_manifest`, `verify_installed_dist`) sowie das Live-Endpoint-Paar `GET /api/gui/kit-manifest` und `GET /api/gui/capabilities` verankert.
 
 ## 1. Mechanismus A: Regelmäßige, sichere Mac-Zwischendeploys
 
 ### 1.1 Pin-Tripel je Zwischendeploy
-- Pro Release/Zwischendeploy wird ein Tripel **Commit-Pin + ZIP + SHA-256** fixiert, im Muster der Catalog-Pins. Der Pin wird je Deploy versioniert abgelegt (Deploy-Eintrag).
+- Pro Release/Zwischendeploy wird ein verbindliches Pin-Tripel (**Quell-Commit + Release-ZIP + `release_archive_sha256`**) synchron in `system/gui/gui-consumer.v1.json`, `system/gui/kit_manifest.json` und `system/tests/test_gui_release_integrity.py` geführt (geprüft durch `verify_pin_parity()` in `system/tools/deploy_rollback_preflight.py`).
 
 ### 1.2 Versionsgebundene, unveränderliche Dist-Verzeichnisse
-- Das Dist-Kit wird in ein **unveränderliches, versionsgebundenes Verzeichnis** ausgelegt (Namensschema als Vorschlag: `~/services/bach-dist/<version>-<sha>/`; verbindlich ist das Prinzip: Versionskennung + Commit-Bezug, nach Erstdist inhaltlich unverändert).
-- Ein vorhandenes Auslieferungsverzeichnis wird **nicht überschrieben**. Umstellen des aktiven Bestands über Konfig-/Pin-Wechsel bzw. Atomtausch (z. B. Symlink-Swap), nie durch Inplace-Ersetzen.
+- Das entpackte Dist-Kit (`dist/` + `dist-manifest.json` nach Schema `ellmos-system-gui.dist.v1`) wird in ein **unveränderliches, versionsgebundenes Verzeichnis** ausgelegt: `shared-release-<version>-<sha12>/dist` (kein `~/services/bach-dist/`, kein Inplace-Überschreiben bestehender Stände).
+- Der aktive Bestand wird ausschließlich durch Umstellen der Umgebungsvariable `ELLMOS_SYSTEM_GUI_DIST` im zuständigen LaunchAgent auf das neue unveränderliche Release-Verzeichnis aktiviert (`resolve_gui_distribution()` bevorzugt diesen expliziten Pfad vor dem Legacy-Fallback `system/gui/web/dist`).
 
-### 1.3 LaunchAgent-Auslieferung
-- Auslieferung über LaunchAgent analog dem bestehenden Muster `docs/operations/MAC-CHAT-LAUNCHAGENTS.md`; die Agent-Konfiguration zeigt auf das versionsgebundene Dist-Verzeichnis und wird **pro Release versioniert** mitgeführt.
+### 1.3 LaunchAgent-Auslieferung (`com.bach.gui-server`)
+- Die Auslieferung auf dem Mac Studio erfolgt ausschließlich über `~/Library/LaunchAgents/com.bach.gui-server.plist` (`ELLMOS_SYSTEM_GUI_DIST=.../shared-release-<version>-<sha12>/dist`, danach `plutil -lint` und gezieltes `launchctl kickstart`/`bootstrap` nur für `com.bach.gui-server`).
+- **Harte Schutzgrenze:** `com.bach.telegram-bot`, `buddha_always_on` und `ollama` werden im GUI-Zwischendeploy **nicht** neu gestartet.
 
-### 1.4 Rollback-Satz
-- Jede Auslieferung erhält einen abgestimmten Rollback-Satz: **Pin + LaunchAgent-Konfiguration + vorherige Dist**. Rollback = Zurücksetzen des Pins/Symlinks auf die Vorversion, ohne neue Erzeugung.
+### 1.4 Rollback-Satz (ohne TaskDB-/Nutzerdaten-Berührung)
+- Vor jedem Mac-Rollout wird unter `~/compute/rollback-<YYYYMMDD>/` ein vollständiger Rollback-Satz gesichert: **vorheriger `bach`-HEAD, Kopie von `com.bach.gui-server.plist`, bisheriger `ELLMOS_SYSTEM_GUI_DIST`-Pfad/Release**.
+- Gemäß `RESTORABLE_PATHS_ALLOWLIST` in `system/tools/deploy_rollback_preflight.py` bleiben `~/.bach/bach.db`, `data/`, `user/`, `secrets/`, `.env` und `task_history` strikt vom Rollback ausgeschlossen. Rollback bedeutet lediglich Zurückschalten von `ELLMOS_SYSTEM_GUI_DIST` auf die vorherige unveränderliche Release-Dist und Neustart nur von `com.bach.gui-server`.
 
-### 1.5 Periodischer Scheduler statt manueller Aktion
-- Ein periodischer Scheduler prüft auf einen neuen, gate-freigegebenen Pin: bevorzugt GitHub Actions unter `.github/` (CI-Ort existiert dort schon), alternativ cron/launchd auf dem Mac.
-- Der Scheduler führt nur Prüfung und Vorbereitung aus; die Installation/Auslieferung erfolgt **nur nach bestandenem Deploy-Gate (Abschnitt 2)** und nie als unkontrollierte manuelle Aktion.
+### 1.5 Periodische Gate-Prüfung vor Auslieferung
+- Vor jeder Aktualisierung prüfen `deploy_rollback_preflight.py` (CI bzw. Host-Run) sowie `test_gui_release_integrity.py` die Pin-Parität zwischen `gui-consumer.v1.json` und `kit_manifest.json`. Eine Installation erfolgt erst nach bestandenem Deploy-Gate (Abschnitt 2).
 
 ## 2. Mechanismus B: Deploy-Gate (Pflicht vor jedem Deploy/Release)
 
 ### 2.1 Dist-Manifest-Check (technisch)
-1. **Separate Prüfung des Dist-Verzeichnisses**: vollständige Dateiliste + Datei-Hashes gegen das Kit-Manifest (197 Dateien / 26 HTML-Seiten). Commit- und ZIP-Pins allein genügen nicht.
-2. Bestätigung erst nach `GET /api/gui/kit-manifest` **und** `GET /api/gui/capabilities`: Commit passt, Verifikation erfolgreich, 26 HTML-Seiten erkannt.
-3. **Abweichung** (Datei fehlt, Hash weicht ab, falscher Commit, Seitenzahl abweichend) → die API meldet den Dist als **unverifiziert**; eine unverifizierte Dist ist install-verboten (Gate „rot“).
-- Der Live-Beleg der laufenden Auslieferung (system-explorer-Start im gebundenen Lauf) war nur alternativ prüfbar; er bleibt offener Punkt (Abschnitt 4).
+1. **Separate Byte- und Hash-Prüfung des Dist-Verzeichnisses**: `verify_installed_dist()` prüft alle Dateien in `dist/` und `dist-manifest.json` (`source_commit`, Schema `ellmos-system-gui.dist.v1`, 413 gehashte Dateien bei `0.2.40`, alle `51` HTML-Seiten) per SHA-256-Abgleich und Pfad-Sanitizing (keine Symlinks, keine unregistrierten Dateien).
+2. **Live-Readback nach LaunchAgent-Start**: Bestätigung erst nach `GET /api/health` (`ok`), `GET /api/gui/kit-manifest` und `GET /api/gui/capabilities`: `verified == true`, `installed_files_verified == true`, `dist_page_count == 51` und exakter `revision`-Match gegen den gepinnten `source_commit`.
+3. **Abweichung** (fehlende Datei, Hash-Abweichung, Symlink, falscher Commit oder Seitenzahl ≠ `51`) → die API meldet den Dist fail-closed als `unverified`; ein unverifizierter Dist führt zum sofortigen Abbruch und Rollback aus `~/compute/rollback-<YYYYMMDD>/`.
 
 ### 2.2 Unabhängige Freigabe (prozessual)
-- Laut `docs/operations/RELEASE-AUDIT-2026-10-07.md` Z.27-32: PR-Review, Integration und GitHub-Checks müssen den **tatsächlich gepushten Commit** prüfen; **lokale Tests ersetzen die unabhängige Freigabe nicht**.
-- **Kein Release-Tag/Upload ohne bestandene Gates.**
+- Laut `docs/operations/RELEASE-AUDIT-2026-10-07.md` Z. 27–32 prüfen PR-Review, Integration und GitHub-Checks den **tatsächlich gepushten Commit**; **lokale Tests ersetzen die unabhängige Freigabe nicht**.
+- **Kein öffentliches Release-Tag/Upload (`gh release create`) ohne bestandene Gates und explizite Nutzerfreigabe.**
 
 ### 2.3 Sicherheits-Gates
-- `BACH-SEC-DEPS-01`: Dependabot-Ergebnisse nach Integration prüfen (ausstehend, Audit Z.27-32).
-- `BACH-SEC-ROTATE-01`: Token-Rotation als Gate-Baustein einplanen (ausstehend, Audit Z.27-32).
+- `BACH-SEC-DEPS-01`: Dependabot-/Abhängigkeits-Checks vor öffentlicher Freigabe prüfen.
+- `BACH-SEC-ROTATE-01`: Token-/Credential-Rotation und Geheimnis-Scan einhalten.
 
 ### 2.4 Gate-Checkliste (operativ)
-Ein Deploy ist freigegeben, wenn alle Punkte erfüllt sind:
-1. Pin-Tripel (Commit, ZIP, SHA-256) fixiert (1.1).
-2. Dist unverändert in versionsgebundenem Verzeichnis; nichts überschrieben (1.2).
-3. Dist-Check: Dateiliste + Hashes vollständig gegen Kit-Manifest (2.1.1).
-4. `kit-manifest` + `capabilities` bestätigt Commit, Verifikation und 26 Seiten; sonst unverifiziert → Abbruch (2.1.2./2.1.3).
-5. Unabhängige Freigabe des gepushten Commits (Review/Integration/Checks) vorliegend (2.2).
-6. `BACH-SEC-DEPS-01` und `BACH-SEC-ROTATE-01` geprüft bzw. beachtet (2.3).
-7. Rollback-Satz gesichert: Pin + LaunchAgent-Konfiguration + Vorversion-Dist (1.4).
+Ein Zwischendeploy ist erst freigegeben, wenn alle Punkte erfüllt sind:
+1. Pin-Tripel (`source_commit`, `release_archive`, `release_archive_sha256`) konsistent in `gui-consumer.v1.json` und `kit_manifest.json` fixiert (1.1).
+2. Zielverzeichnis unveränderlich als `shared-release-<version>-<sha12>/dist` entpackt; kein Überschreiben alter Releases (1.2).
+3. Vollständige Dateilisten- und SHA-256-Prüfung per `verify_installed_dist()` / `dist-manifest.json` bestanden (2.1.1).
+4. Live-Readback `/api/health`, `/api/gui/kit-manifest` und `/api/gui/capabilities` bestätigt Commit, `verified: true`, `installed_files_verified: true` und `dist_page_count: 51`; andernfalls Abbruch & Rollback (2.1.2 / 2.1.3).
+5. Unabhängige Zweitreview-Freigabe des gepushten Commits + grüne GitHub-Checks vorliegend (2.2).
+6. `BACH-SEC-DEPS-01` und `BACH-SEC-ROTATE-01` beachtet (2.3).
+7. Rollback-Satz unter `~/compute/rollback-<YYYYMMDD>/` ohne Berührung von `bach.db`/Nutzerdaten gesichert (1.4).
 
-## 3. Pin- und Commit-Belege (Ist-Stand)
+## 3. Code- und Prüfbelege (Ist-Stand)
 
-- `docs/architecture/BACH20-01-INVENTAR.md` Z.30: system-explorer Pin `bd250b1a` = Soll, `hub/explorer_provider.py` + `system_audit.py` nativ, `BACH_USE_EXTERNAL_EXPLORER=0`, Status ✅.
-- `docs/architecture/MODULRUECKTRANSFER-ZERTIFIKAT-2026-09-12.md` Z.31: system-explorer `bd250b1a = bd250b1` ✅; offener Punkt verweist auf Plan 4.3.
-- `docs/architecture/BACH20-02-SYSTEMMANIFEST.md` Z.278-279: `pin_commit_soll = pin_commit_ist = bd250b1a` (Soll/Ist im Systemmanifest).
+- `system/hub/_services/gui_contract_service.py`: `resolve_gui_distribution()`, `get_pinned_kit_manifest()`, `verify_installed_dist()` (Vollhash-Prüfung, Symlink-/Traversal-Verbot).
+- `system/tools/deploy_rollback_preflight.py`: `verify_pin_parity()`, `validate_rollback_paths()` (schützt `bach.db`, `data/`, `user/`, `secrets/`).
+- `system/tests/test_gui_release_integrity.py` & `system/tests/test_deploy_rollback_preflight_3717.py`: Verifizieren Pin-Parität (`51` Seiten), Manifest-Schutz und Rollback-Grenzen.
+- Historischer Worker-Vorlauf (`task-3752`, `2026-11-10`): `python -m pytest -q system/tests/test_explorer_provider_wiring.py` (31 passed, `bd250b1a`-Inventarbeleg).
 
-Methodische Notiz zum Beleg: Im gebundenen Task-Lauf ist `git log` nicht ausführbar (`execute_command` erlaubt nur Prüfungen). Der Commit-Pin-Beleg wird daher alternativ geführt über das Systemmanifest (`pin_commit_soll = pin_commit_ist = bd250b1a`, Z.278-279) plus den nachstehenden Testlauf. Diese Doku dokumentiert genau das.
+## 4. Geltung
 
-## 4. Prüf-/Abnahmebeleg dieses Laufes
-
-- Test: `python -m pytest -q system/tests/test_explorer_provider_wiring.py` im Arbeitsbaum task-3752 → **Exitcode 0, 31 passed** (1 unkritische pytest-Warnung zu `confcutdir`). Bestätigt den Verdrahtungs-/Manifest-Bezug `bd250b1a`.
-- Blockaden dieses Laufes (dokumentiert, nicht versteckt):
-  - `git log` als Prüfung nicht erlaubt → alternativer Manifest-Beleg gemäß Abschnitt 3.
-  - Start des system-explorer im gebundenen Lauf nur alternativ möglich → Live-Sichtprüfung der Auslieferung bleibt offener Punkt.
-  - Original-Punkt 6 der Task (Lesezugriff auf Task 2052) nicht lesbar: `task_manage(action='detail', task_id=2052)` weist gebundene Läufe auf die eigene ID; der Punkt gilt als dokumentiert blockiert.
-- Folgearbeiten nach dieser Design-Doku (Umsetzung, je eigene Tasks): Implementierung des Manifest-/Hash-Checks samt „unverifiziert“-Meldung; Scheduler-Workflow unter `.github/` (bzw. launchd); versionierte LaunchAgent-Verwaltung; Rollback-Prozedur nach 1.4.
-
-## 5. Geltung
-
-Diese Datei ist die verbindliche Definition der Mechanismen für Mac-Zwischendeploys und das Deploy-Gate. Die Umsetzung (Code/Workflow) darf erst aktiviert werden, wenn alle Punkte der Gate-Checkliste (Abschnitt 2.4) operativ erfüllbar sind; bis dahin gilt: kein Deploy/Tag/Upload.
+Diese Datei dokumentiert den verbindlichen Mechanismus für sichere Mac-Zwischendeploys von `ellmos-system-gui` / BACH und das vorgeschaltete Deploy-Gate. Öffentliche Releases/Tags bleiben bis zum Bestehen aller öffentlichen Release-Gates (`RELEASE-AUDIT-2026-10-07.md`) separat gesperrt.
