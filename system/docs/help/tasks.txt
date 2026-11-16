@@ -6,7 +6,7 @@
 TASKS - Aufgaben-System
 =======================
 
-STAND: 2026-05-17
+STAND: 2026-08-26
 
 Das Task-System (Schicht 5) orchestriert die Arbeit zwischen User und
 Partner-Agenten (Claude, Gemini, etc.).
