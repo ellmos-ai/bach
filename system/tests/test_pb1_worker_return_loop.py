@@ -649,3 +649,219 @@ def test_decomposing_counts_as_progress(binding):  # noqa: F811
 def test_a_bare_add_is_no_progress(binding):  # noqa: F811
     binding.execute_task_manage({"action": "add", "title": "Rest: nur ein Folgetask"})
     assert binding._progress is False
+
+
+# --- 2026-11-16: task-scoped locks, lease-free host probes, and finish_task self-check ---
+
+def test_task_scoped_project_lock_skips_to_next_task_and_never_blocks_task(
+        admission, leased_binding, monkeypatch):  # noqa: F811
+    pytest.importorskip("taskplan.return_policy")
+    from hub._services.chat.worker_write_guard import WorkerWriteGuardError
+    control, _ = admission
+    worker = add_worker({"name": "Task lock skipper", "type": "continuous"})
+    update_slot(worker["id"], {"allowed_tools": ["task_manage", "start_task_worktree"], "allow_tools": True})
+    monkeypatch.setattr(control, "_wait_worker_cooldown", lambda ctrl, **_k: (ctrl.stop_event.set(), False)[1])
+    observed = _run_loop_once(
+        control, worker, leased_binding, monkeypatch,
+        WorkerWriteGuardError("Fremde oder unbekannte Zielrepo- oder Tasksperre blockiert"),
+    )
+    assert observed["finish"] == ["project_lock:task_scope"]
+    assert observed["waits"] == [], "a task/target-repo lock must not freeze the worker in host_precondition wait"
+    assert any("Zielrepo- oder Tasksperre aktiv" in text for text in observed["activity"])
+
+    # Even repeated temporary locks on a target repo must never permanently block the task.
+    client, tid = leased_binding._client, leased_binding.task_id
+    for i in range(7):
+        _cycle(client, tid, "project_lock:task_scope", f"lock-{i}")
+    assert client.task_snapshot(tid)["status"] == "pending"
+
+
+def test_host_precondition_probe_avoids_claiming_more_tasks_until_host_recovers(
+        admission, leased_binding, monkeypatch):  # noqa: F811
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard
+    from hub._services.chat.worker_write_guard import WorkerWriteGuardError
+    control, _ = admission
+    worker = add_worker({"name": "Probe before claim", "type": "continuous"})
+    update_slot(worker["id"], {"allowed_tools": ["task_manage", "start_task_worktree"], "allow_tools": True})
+
+    state = {"acquires": 0, "probes": 0, "waits": [], "finished": []}
+
+    def acquire(*_args):
+        state["acquires"] += 1
+        return leased_binding if state["acquires"] == 1 else None
+
+    def probe(_slot):
+        state["probes"] += 1
+        return "project_lock" if state["probes"] == 1 else None
+
+    def wait(ctrl, failures):
+        state["waits"].append((failures, control._host_precondition_delay(failures)))
+        if len(state["waits"]) >= 2:
+            ctrl.stop_event.set()
+            return False
+        return True
+
+    monkeypatch.setattr(control, "_acquire_worker_task", acquire)
+    monkeypatch.setattr(control, "_probe_host_scope_precondition", probe)
+    monkeypatch.setattr(control, "_wait_host_precondition", wait)
+    monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
+    monkeypatch.setattr(control, "finish_assignment",
+                        lambda *_a, **kw: state["finished"].append(kw.get("reason"))
+                        if kw.get("result") == "task_returned" else None)
+    monkeypatch.setattr(control.runtime, "session_store", object())
+    monkeypatch.setattr(control.runtime, "clear_session", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker_git, "start_task_worktree",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            WorkerWriteGuardError("Fremde oder unbekannte Projektsperre blockiert")))
+    monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope", lambda b, **_k: {
+        "availability": "available", "task_id": b.task_id,
+        "branch": f"refs/heads/bach-task/{b.task_id}", "source_pin": None})
+
+    response, code = control.start_worker_execution(worker["id"], start_request_id="9" * 32)
+    assert code in {200, 202}
+    run = control._WORKER_EXECUTIONS[worker["id"]]
+    run.thread.join(10)
+    assert not run.thread.is_alive()
+    # First iteration hit host_precondition:project_lock on claim #1; second iteration
+    # probed lease-free, saw project_lock still active, and backed off to attempt 2 WITHOUT a second claim!
+    assert state["acquires"] == 1
+    assert state["probes"] == 1
+    assert state["waits"] == [(1, 60), (2, 120)]
+    assert state["finished"] == ["host_precondition:project_lock"]
+
+
+def test_scan_locks_distinguishes_task_scoped_lock_from_parent_lock(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from hub._services.chat import worker_write_guard as guard
+
+    worktrees = tmp_path / "worktrees"
+    target = worktrees / "task-42"
+    target.mkdir(parents=True)
+    monkeypatch.setattr(guard, "_scanner_path", lambda: tmp_path / "scanner.py")
+
+    task_lock_payload = {
+        "checked": str(target.resolve()),
+        "twin_status": "not-applicable",
+        "descendants_complete": True,
+        "hook_guards": [],
+        "locks": [{"path": str((target / "LOCK.local.txt").resolve()), "scope": "local"}],
+    }
+    monkeypatch.setattr(guard, "_RUN",
+                        lambda *a, **k: SimpleNamespace(returncode=1, stdout=json.dumps(task_lock_payload)))
+    with pytest.raises(guard.WorkerWriteGuardError, match="Zielrepo- oder Tasksperre"):
+        guard._scan_locks(target, task_scoped_root=target)
+
+    # Negative control: a lock in the parent worktrees root still fails as a host-wide project lock.
+    parent_lock_payload = {
+        **task_lock_payload,
+        "locks": [{"path": str((worktrees / "LOCK.txt").resolve()), "scope": "project"}],
+    }
+    monkeypatch.setattr(guard, "_RUN",
+                        lambda *a, **k: SimpleNamespace(returncode=1, stdout=json.dumps(parent_lock_payload)))
+    with pytest.raises(guard.WorkerWriteGuardError, match="Projektsperre blockiert"):
+        guard._scan_locks(target, task_scoped_root=target)
+
+
+def test_finish_task_self_check_payload_passes_and_rejects_untrusted_fields():
+    import json
+    from hub._services.worker_completion_contract import evaluate_worker_self_check
+
+    valid = json.dumps({
+        "schema": "bach.worker-self-check.v1",
+        "complete": True,
+        "completed_work": " Stern-Lease-Tests repariert und verifiziert",
+        "pr_url": "https://github.com/ellmos-ai/bach/pull/734",
+        "commit": "0d734a296d9455770bfe2456fe79dc0a61db5e09",
+        "source_pin": {
+            "schema": "bach.task-public-source.v2",
+            "source_ref": "refs/heads/main",
+            "source_sha": "ab690d9d0a592040256dcbf9258df780b64e9fb4",
+            "verified_at": "2026-11-16T01:00:00+00:00",
+        },
+        "checks": ["Secrets-Scan und git diff --check bestanden", "Gebundener pytest-Lauf: Exitcode 0; 1 Testdateien"],
+        "remaining_required_work": [],
+    })
+    assert evaluate_worker_self_check(valid)["met"] is True
+
+    # Negative controls: unknown keys or malformed PR/commit fields still fail closed.
+    bad_extra = json.loads(valid)
+    bad_extra["extra"] = "forbidden"
+    assert evaluate_worker_self_check(json.dumps(bad_extra))["met"] is False
+
+    bad_pr = json.loads(valid)
+    bad_pr["pr_url"] = "https://evil.example/pull/1"
+    assert evaluate_worker_self_check(json.dumps(bad_pr))["met"] is False
+
+    bad_commit = json.loads(valid)
+    bad_commit["commit"] = "not-a-hex-oid"
+    assert evaluate_worker_self_check(json.dumps(bad_commit))["met"] is False
+
+
+def test_darwin_hydrate_argv_uses_posix_spawn_bootstrap_without_fork():
+    import sys
+    from hub._services.chat.worker_write_guard import _DARWIN_HYDRATE_BOOTSTRAP, _darwin_hydrate_argv
+
+    def fake_stdlib_run(*_a, **_k):
+        return None
+    fake_stdlib_run.__module__ = "subprocess"
+
+    base = [sys.executable, "/tmp/lock_scan.py", "--check-dir", "/tmp/x", "--json"]
+    wrapped = _darwin_hydrate_argv(base, run_fn=fake_stdlib_run, platform_name="darwin")
+    assert wrapped[:3] == [sys.executable, "-c", _DARWIN_HYDRATE_BOOTSTRAP]
+    assert wrapped[3:] == base[1:]
+
+    base_s = [sys.executable, "-S", "/tmp/lock_scan.py", "--check-dir", "/tmp/x", "--json"]
+    wrapped_s = _darwin_hydrate_argv(base_s, run_fn=fake_stdlib_run, platform_name="darwin")
+    assert wrapped_s[:4] == [sys.executable, "-S", "-c", _DARWIN_HYDRATE_BOOTSTRAP]
+    assert wrapped_s[4:] == base_s[2:]
+
+    # Mocked runners and non-darwin platforms leave argv untouched.
+    assert _darwin_hydrate_argv(base, run_fn=lambda *a, **k: None, platform_name="darwin") == base
+    assert _darwin_hydrate_argv(base, run_fn=fake_stdlib_run, platform_name="win32") == base
+
+
+def test_fresh_locks_keeps_worktrees_root_lock_host_wide_for_external_repo(tmp_path, monkeypatch):
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard as guard
+
+    canonical = (tmp_path / "canonical").resolve()
+    external = (tmp_path / "external").resolve()
+    worktrees = (tmp_path / "worktrees").resolve()
+    canonical.mkdir()
+    external.mkdir()
+    worktrees.mkdir()
+    missing_target = worktrees / "task-77"
+
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: canonical)
+    monkeypatch.setattr(worker_git, "_resolve_task_source", lambda tid, **_k: ("org/external", external, {}))
+
+    def fake_scan(path, *, main_repo=False, creation_anchor=None, task_scoped_root=None):
+        if path == canonical and main_repo:
+            return {"locks": []}
+        if path == external:
+            return {"locks": []}
+        if creation_anchor == worktrees:
+            raise guard.WorkerWriteGuardError("Fremde oder unbekannte Projektsperre blockiert")
+        raise AssertionError(f"unexpected scan: {path}")
+
+    monkeypatch.setattr(guard, "_scan_locks", fake_scan)
+    with pytest.raises(guard.WorkerWriteGuardError, match="^Fremde oder unbekannte Projektsperre blockiert$"):
+        guard._fresh_locks(external, worktrees, missing_target)
+
+
+def test_probe_host_scope_precondition_fails_closed_on_unexpected_errors(monkeypatch):
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard as guard
+
+    control = _controller()
+    slot = {"type": "continuous", "allowed_tools": ["task_manage", "start_task_worktree"]}
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: (_ for _ in ()).throw(OSError("missing root")))
+    assert control._probe_host_scope_precondition(slot) == "canonical_host_probe_failed"
+
+    monkeypatch.setattr(worker_git, "get_live_repo_root", lambda: guard._NATIVE_PATH("."))
+    monkeypatch.setattr(guard, "_scan_locks",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            guard.WorkerWriteGuardError("Sperrscan bestätigt nicht den angeforderten Pfad")))
+    assert control._probe_host_scope_precondition(slot) == "canonical_host_probe_failed"

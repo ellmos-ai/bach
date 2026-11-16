@@ -30,7 +30,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from hub._services.user_config_store import _exclusive_lock
 from hub._services.display_assets import TICKET_SYMBOL_IDS
@@ -488,13 +488,17 @@ def check_write_locks(path: Path) -> None:
         target = target.parent
     # --check-dir already includes all overlapping ancestor and twin locks.
     # Recursively scanning every ancestor also scans unrelated sibling trees.
-    result = subprocess.run([sys.executable, "-S", str(scanner), "--check-dir", str(target),
-                             "--strict", "--json"],
-                            capture_output=True, text=True, encoding="utf-8", timeout=15,
-                            env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
+    from hub._services.chat.worker_write_guard import _darwin_hydrate_argv
+    argv = _darwin_hydrate_argv(
+        [sys.executable, "-S", str(scanner), "--check-dir", str(target), "--strict", "--json"],
+        run_fn=subprocess.run,
+    )
     try:
+        result = subprocess.run(argv,
+                                capture_output=True, text=True, encoding="utf-8", timeout=15,
+                                env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"})
         state = json.loads(result.stdout)
-    except (ValueError, TypeError):
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
         raise PermissionError("Lock-Status konnte nicht bestätigt werden") from None
     if (not isinstance(state, dict) or result.returncode != 0
             or state.get("checked") != str(target.resolve())

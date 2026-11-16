@@ -8,8 +8,31 @@ import re
 SCHEMA = "bach.worker-task-contract.v1"
 SELF_CHECK_SCHEMA = "bach.worker-self-check.v1"
 _SELF_CHECK_EXAMPLES = {"konkrete erledigte arbeit", "konkrete prüfung"}
+_SELF_CHECK_REQUIRED_KEYS = frozenset({
+    "schema", "complete", "completed_work", "checks", "remaining_required_work",
+})
+_SELF_CHECK_OPTIONAL_KEYS = frozenset({"pr_url", "commit", "source_pin"})
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
+_GIT_OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_PR_URL = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*\Z")
 _PATH = re.compile(r"(?!/)(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9_./-]{1,240}\Z")
+
+
+def _valid_optional_finish_fields(value: dict) -> bool:
+    if "pr_url" in value:
+        if not isinstance(value["pr_url"], str) or not _PR_URL.fullmatch(value["pr_url"]):
+            return False
+    if "commit" in value:
+        if not isinstance(value["commit"], str) or not _GIT_OID.fullmatch(value["commit"]):
+            return False
+    if "source_pin" in value:
+        pin = value["source_pin"]
+        if (not isinstance(pin, dict)
+                or set(pin) != {"schema", "source_ref", "source_sha", "verified_at"}
+                or any(not isinstance(pin[k], str) or not pin[k].strip() for k in pin)
+                or not _GIT_OID.fullmatch(pin["source_sha"])):
+            return False
+    return True
 
 
 def evaluate_worker_self_check(result):
@@ -22,7 +45,9 @@ def evaluate_worker_self_check(result):
     except (TypeError, ValueError):
         return missing
     if (not isinstance(value, dict)
-            or set(value) != {"schema", "complete", "completed_work", "checks", "remaining_required_work"}
+            or not _SELF_CHECK_REQUIRED_KEYS <= set(value)
+            or not set(value) <= (_SELF_CHECK_REQUIRED_KEYS | _SELF_CHECK_OPTIONAL_KEYS)
+            or not _valid_optional_finish_fields(value)
             or value.get("schema") != SELF_CHECK_SCHEMA
             or value.get("complete") is not True
             or not isinstance(value.get("completed_work"), str)
