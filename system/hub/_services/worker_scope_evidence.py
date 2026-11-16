@@ -305,25 +305,23 @@ def _project_scope_record(data, *, repo_root=None, worktrees_dir=None) -> dict:
             or not _HEX.fullmatch(data["scope_receipt_sha256"])
             or not _snapshot_valid(data.get("snapshot"), data["task_id"])):
         return _unavailable("scope_evidence_invalid")
-    try:
-        current = snapshot_task_scope(data["task_id"], repo_root=repo_root,
-                                      worktrees_dir=worktrees_dir)
-    except Exception as _e4171:
-        return _unavailable("current_git_unavailable:" + repr(_e4171))
-    if not isinstance(current, dict):
-        return _unavailable("current_git_unavailable")
-    if current.get("availability") != "available":
+    current = snapshot_task_scope(
+        data["task_id"], repo_root=repo_root, worktrees_dir=worktrees_dir)
+    # Missing observation and proven drift are different facts: only the latter
+    # may obsolete a review child, so the reasons stay distinguishable.
+    if not isinstance(current, dict) or current.get("availability") != "available":
         return _unavailable("current_git_unavailable")
     if current != data["snapshot"]:
         return _unavailable("current_git_changed")
     execution_revision = data.get("execution_revision")
-    result_revision = (_digest({"schema": _REVISION_SCHEMA,
-                                "submission_revision": data["submission_revision"],
-                                "execution_revision": execution_revision,
-                                "scope_receipt_sha256": data["scope_receipt_sha256"],
-                                "scope_event_id": data["scope_event_id"]})
-                       if isinstance(execution_revision, str)
-                       and _HEX.fullmatch(execution_revision) else None)
+    if not (isinstance(execution_revision, str)
+            and _HEX.fullmatch(execution_revision)):
+        execution_revision = None
+    result_revision = _digest({"schema": _REVISION_SCHEMA,
+                               "submission_revision": data["submission_revision"],
+                               "execution_revision": execution_revision,
+                               "scope_receipt_sha256": data["scope_receipt_sha256"],
+                               "scope_event_id": data["scope_event_id"]})
     return {**data, "availability": "available", "result_revision": result_revision}
 
 

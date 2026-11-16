@@ -4,44 +4,44 @@
     "availability": "recorded",
     "task_id": 1,
     "result_id": 1,
-    "submission_revision": "sha256:bc2807eb32b2532629ec357b1b067e4c32e10fb0b3280fc793c96882a450eba2",
+    "submission_revision": "sha256:df01f7bad17a24cffe5f434f600a51415921faa46b3523992707289b9f48df61",
     "task_scope_version": "a2693d50835bbf588e9fe82cd35f2f5bba725d3cc33f169cc9de602592f645a5",
-    "scope_receipt_sha256": "e80f8c4e5c53de2d8ea33eaac6f7e5b8616265e6d5ab71de33045f95a921f4af",
+    "scope_receipt_sha256": "134a55f21b0c3736bb593e3ee50a8faa1afcf9afe8b5a110b8187b02d3f78393",
     "scope_event_id": 7,
     "snapshot": {
       "availability": "available",
       "branch": "refs/heads/bach-task/1",
       "clean_scope": "porcelain-v1-z-all-untracked-no-ignored",
-      "common_dir_sha256": "d1b40ad2677240dfc24b7cb9996c512ae8f87450484b7dd6845b8476b6bfb9ce",
-      "head_oid": "530cb96fedc4e760bd13be6539ea33d132df47dd",
+      "common_dir_sha256": "f1db8db5137305488c0c19ebeae1aa818e5708ea13b79a77e1e4832fadd5166e",
+      "head_oid": "244d3f1db884d99fea318bf71bcc95acee022444",
       "index_sha256": "9b1abc4b0d9ec6367fd2248bb5721665db7f0187f276a40ac4b409f37274fe3c",
       "origin": "https://github.com/ellmos-ai/bach",
-      "project_state_ref": "ae469cac91451cfe073d9de9b7edd6691ff5247f044e4fd72e236ae7ca0b9e84",
-      "repo_path_sha256": "d58f2317282bcff7cefc58f41436e9538c1947603f07b2d4c347eacff644002b",
+      "project_state_ref": "671c0aab51fe123ed3f0d1591caca3ba91d3eec54057f6d75d2f90adfc245829",
+      "repo_path_sha256": "d678efe1a5b221d50ec1ec58db4949624948e501a77606ffde987db43e015d83",
       "repository": "ellmos-ai/bach",
       "schema": "bach.task-scope-snapshot.v1",
       "source_pin": {
         "schema": "bach.task-public-source.v2",
         "source_ref": "refs/heads/main",
-        "source_sha": "530cb96fedc4e760bd13be6539ea33d132df47dd",
+        "source_sha": "244d3f1db884d99fea318bf71bcc95acee022444",
         "verified_at": "2026-10-15T12:00:00+00:00"
       },
       "status_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "task_id": 1,
       "tree_oid": "4b739bee50a4fde04ae26e4cdfa9c42447eb6c54",
-      "workspace_fingerprint": "a02d717b6b947b49fbb906c82be4ade2856b2a6a771c8743da42611703b42d30",
-      "worktree_path_sha256": "086f42893c0fc1d833d2a7a1ee36cb79e84253e6f5c64d44d3808674f8a3034e"
+      "workspace_fingerprint": "de400866a555ff858c69a2e1f98843bc819c31cb3a04bf3f8835f726631135ec",
+      "worktree_path_sha256": "265fd30b26122b92badb81392c33a1368cc59eba4a0877fdab30f8bca2c400f7"
     },
-    "execution_revision": "372dc8038d0bd21fa07f49cb922735bfd1aece10924394dce4d9beaced832ebe",
+    "execution_revision": "f63706e7600cc98fad80183a67f763a2d88cbdaa3397f657cfcdbf307668808a",
     "result_revision": null
   },
-  "parent_subrev": "sha256:bc2807eb32b2532629ec357b1b067e4c32e10fb0b3280fc793c96882a450eba2",
+  "parent_subrev": "sha256:df01f7bad17a24cffe5f434f600a51415921faa46b3523992707289b9f48df61",
   "parent_mr": {
     "schema": "bach.worker-result-review-evidence.v1",
     "availability": "recorded",
     "task_id": 1,
     "result_id": 1,
-    "result_revision": "3e9e4ecba0540eddc9dcba8fb93f57c460b0755322b7d168f822444bdb2b6d10",
+    "result_revision": "bf4b1f61a88a7f953a9c48c9ab31b9f154e7411a6bd828d5c6e56e4098c0961d",
     "review_task_id": 2,
     "child_result_id": 2,
     "reviewer_id": "principal:reviewer",
@@ -59,13 +59,13 @@
     "reason": "current_git_unavailable",
     "result_revision": null
   },
-  "proj_subrev": "sha256:bc2807eb32b2532629ec357b1b067e4c32e10fb0b3280fc793c96882a450eba2",
+  "proj_subrev": "sha256:df01f7bad17a24cffe5f434f600a51415921faa46b3523992707289b9f48df61",
   "proj_mr": {
     "schema": "bach.worker-result-review-evidence.v1",
     "availability": "unavailable",
     "task_id": 1,
     "result_id": 1,
-    "result_revision": "3e9e4ecba0540eddc9dcba8fb93f57c460b0755322b7d168f822444bdb2b6d10",
+    "result_revision": "bf4b1f61a88a7f953a9c48c9ab31b9f154e7411a6bd828d5c6e56e4098c0961d",
     "review_task_id": 2,
     "child_result_id": 2,
     "reviewer_id": "principal:reviewer",
@@ -78,8 +78,8 @@
     "reason": "review_scope_not_current"
   },
   "paths": {
-    "repo_root": "/Users/lukas/services/bach-worktrees/task-4171/.cache/.worker-check/pytest-temp/run-d67b978a814440deab5eb860bb049198/test_real_git_author_submissio0/repo",
-    "worktrees_dir": "/Users/lukas/services/bach-worktrees/task-4171/.cache/.worker-check/pytest-temp/run-d67b978a814440deab5eb860bb049198/test_real_git_author_submissio0/worktrees"
+    "repo_root": "/Users/lukas/services/bach-worktrees/task-4171/.cache/.worker-check/pytest-temp/run-d2425abd636b49198edf7b6481265ed8/test_real_git_author_submissio0/home/.bach/task-repo-sources/ellmos-ai/bach/244d3f1db884d99fea318bf71bcc95acee022444",
+    "worktrees_dir": "/Users/lukas/services/bach-worktrees/task-4171/.cache/.worker-check/pytest-temp/run-d2425abd636b49198edf7b6481265ed8/test_real_git_author_submissio0/worktrees"
   },
   "stub_probe": {},
   "direct_scope": {

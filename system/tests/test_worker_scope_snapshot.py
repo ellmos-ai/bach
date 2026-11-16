@@ -44,7 +44,7 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypat
     (repo / "README.md").write_text("public base\n", encoding="utf-8")
     _git(["add", "README.md"], repo)
     _git(["commit", "-m", "public base"], repo)
-    _git(["remote", "add", "origin", ORIGIN + ".git"], repo)
+    _git(["remote", "add", "origin", ORIGIN], repo)
     base_head = _git(["rev-parse", "HEAD"], repo).stdout.strip()
 
     target = worktrees / f"task-{task_id}"
@@ -94,7 +94,7 @@ def _new_scope_repo(base, *, task_id=TASK_ID, pinned=False, suffix="", monkeypat
         for p in (local_bach, sources_root, sources_root / "ellmos-ai", sources_root / "ellmos-ai" / "bach"):
             p.chmod(0o700)
         _git(["clone", "--quiet", str(repo), str(sha_dir)], local_bach)
-        _git(["remote", "set-url", "origin", ORIGIN + ".git"], sha_dir)
+        _git(["remote", "set-url", "origin", ORIGIN], sha_dir)
         sha_dir.chmod(0o700)
         _git(["worktree", "add", str(target), "-b", f"bach-task/{task_id}", base_head], sha_dir)
 

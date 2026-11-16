@@ -27,6 +27,9 @@ from .worker_result_provenance import author_principal, author_slot, source_kind
 _SEAL = object()
 _ACTOR = "native-result-review-controller"
 _INTENT_SCHEMA = "bach.worker-result-review-intent.v1"
+# Marker schema for unscoped intent targets; a leading space keeps it outside
+# the real schema namespace so ordinary scoped records never match it.
+_UNSCOPED_INTENT_SCHEMA = " bach-worker-intent-unscoped-placeholder.v1"
 _REVIEW_SCHEMA = "bach.worker-result-model-review.v1"
 _EXTERNAL_INTENT_SCHEMA = "bach.worker-result-review-intent.external-attested.v1"
 _EXTERNAL_REVIEW_SCHEMA = "bach.worker-result-model-review.external-attested.v1"
@@ -40,6 +43,13 @@ _PR_REFERENCE = re.compile(r"github\.com/[^/\s]+/[^/\s]+/pull/\d+", re.IGNORECAS
 # Bounded for small local reviewer contexts; a cut diff can never be approved.
 _TREE_DIFF_LIMIT = 40000
 _SOURCE = "worker-result-review:v1:"
+
+
+def _intent_schema(target):
+    """Schema tag of a review target (dict mappings and objects supported)."""
+    if isinstance(target, dict):
+        return (target or {}).get("schema")
+    return getattr(target, "schema", None)
 
 
 class ReviewGrant:
@@ -625,6 +635,10 @@ def prepare_review_task(conn, binding, *, repo_root=None, worktrees_dir=None):
             return None
         target = _target_record(conn, binding.task_id, repo_root=repo_root,
                                 worktrees_dir=worktrees_dir)
+        if target is None:
+            # A native result without a captured scope is reviewed by its tree diff.
+            target = _unscoped_target_record(conn, binding.task_id, repo_root=repo_root,
+                                             worktrees_dir=worktrees_dir)
         if (target is None or author_record["result_id"] != target["result_id"]
                 or source_kind(target) != "native"):
             return None
@@ -1500,8 +1514,24 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
             # Submit can already have recorded and completed this child.
             # Replays read only the existing verified receipt; a personally
             # accepted child without that receipt gains no review authority.
+            prior_receipt = None
+            if _table(conn, "worker_result_model_reviews"):
+                prior_receipt = _row(conn.execute("SELECT * FROM worker_result_model_reviews "
+                                                  "WHERE target_result_id=? ORDER BY event_id DESC LIMIT 1",
+                                                  (target["result_id"],)))
             previous = read_review_evidence(conn, target)
+            prior_tree = None
+            if prior_receipt is not None:
+                prior_receipt_body = json.loads(prior_receipt["receipt"])
+                if isinstance(prior_receipt_body, dict):
+                    prior_tree = copy.deepcopy(prior_receipt_body.get("tree_state"))
+            gate_tree = prior_tree
             if (previous.get("availability") == "recorded"
+                    and prior_receipt is not None
+                    and gate_tree is not None
+                    and _tree_unchanged(target["task_id"], tree_fingerprint(gate_tree),
+                                        repo_root=repo_root,
+                                        worktrees_dir=worktrees_dir)
                     and previous.get("review_task_id") == grant.task_id
                     and previous.get("child_result_id") == child.get("result_id")
                     and previous.get("result_revision") == grant.target_revision
@@ -1567,8 +1597,18 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                                    (target["result_id"], target["result_revision"])))
             if prior is not None:
                 conn.commit()
-                return (read_review_evidence(conn, target)
-                        if prior["review_task_id"] == grant.task_id else None)
+                prior_tree = None
+                prior_body = json.loads(prior["receipt"])
+                if isinstance(prior_body, dict):
+                    prior_tree = copy.deepcopy(prior_body.get("tree_state"))
+                if (prior["review_task_id"] != grant.task_id
+                        or prior_tree is None
+                        or not _tree_unchanged(target["task_id"],
+                                               tree_fingerprint(prior_tree),
+                                               repo_root=repo_root,
+                                               worktrees_dir=worktrees_dir)):
+                    return None
+                return read_review_evidence(conn, target)
             now = _utcnow()
             receipt = {"schema": (_EXTERNAL_REVIEW_SCHEMA if source_kind(target) == "external_attested" else _REVIEW_SCHEMA),
                        "target_task_id": target["task_id"],
@@ -1587,6 +1627,9 @@ def record_review(conn, binding, *, repo_root=None, worktrees_dir=None):
                        "review_slot_id": grant.slot_id, "reviewer_id": actual_principal,
                        "status": verdict["status"], "summary": verdict["summary"],
                        "reviewer_asserted_task_contract_met": verdict["task_contract_met"],
+                       "tree_state": (_tree_state(target["task_id"], repo_root=repo_root,
+                                                  worktrees_dir=worktrees_dir)
+                                      or target.get("tree_state")),
                        "policy_version": grant.policy_version,
                        "identity_version": grant.identity_version,
                        "recorded_at": _local_naive(now)}
@@ -1735,8 +1778,10 @@ def read_review_evidence(conn, record):
                 "status": receipt["status"], "summary": receipt["summary"],
                 "reviewer_asserted_task_contract_met": receipt["reviewer_asserted_task_contract_met"],
                 "independent": (receipt["review_generation"] != receipt["author_generation"]
+                    and receipt["reviewer_id"] != authority["author_id"]
                     and not _author_model_blocked(authority, receipt["reviewer_id"])),
-                "policy_eligible": receipt["reviewer_id"] in authority["eligible"],
+                "policy_eligible": (receipt["reviewer_id"] != authority["author_id"]
+                    and receipt["reviewer_id"] in authority["eligible"]),
                 "event_id": row["event_id"]}
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError,
             settings.PolicyUnavailable):

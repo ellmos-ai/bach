@@ -370,15 +370,12 @@ def project_external_attestation(data, *, repo_root=None, worktrees_dir=None):
     revision = external_result_revision(data)
     if revision is None:
         return _unavailable("external_attestation_not_recorded")
-    try:
-        task_id = data.get("task_id")
-        if type(task_id) is not int or task_id <= 0 or not _snapshot_valid(data.get("snapshot"), task_id):
-            return _unavailable("external_scope_invalid")
-        current = snapshot_task_scope(task_id, repo_root=repo_root, worktrees_dir=worktrees_dir)
-        if not _snapshot_valid(current, task_id):
-            return _unavailable("current_git_unavailable")
-        if current != data["snapshot"]:
-            return _unavailable("current_git_changed")
-        return {**data, "availability": "available", "result_revision": revision}
-    except Exception:
+    task_id = data.get("task_id")
+    if type(task_id) is not int or task_id <= 0 or not _snapshot_valid(data.get("snapshot"), task_id):
+        return _unavailable("external_scope_invalid")
+    current = snapshot_task_scope(task_id, repo_root=repo_root, worktrees_dir=worktrees_dir)
+    if not _snapshot_valid(current, task_id):
         return _unavailable("current_git_unavailable")
+    if current != data["snapshot"]:
+        return _unavailable("current_git_changed")
+    return {**data, "availability": "available", "result_revision": revision}

@@ -407,9 +407,11 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
     from hub import worker_git
     try:
         origin = worker_git._canonical_public_origin(
-            _scope_text(["remote", "get-url", "origin"], repo), task_repo.repository)
+            _scope_text(["remote", "get-url", "origin"], repo),
+            task_repo.repository)
         if worker_git._canonical_public_origin(
-                _scope_text(["remote", "get-url", "origin"], target), task_repo.repository) != origin:
+                _scope_text(["remote", "get-url", "origin"], target),
+                task_repo.repository) != origin:
             raise WorkerWriteGuardError("Git-Origin weicht ab")
     except (WorkerWriteGuardError, RuntimeError, OSError, ValueError):
         return _scope_unavailable("origin_unavailable")
@@ -528,6 +530,41 @@ def snapshot_task_scope(task_id, *, repo_root=None, worktrees_dir=None) -> dict:
         "status_sha256": snapshot["status_sha256"],
         "index_sha256": snapshot["index_sha256"]})
     return snapshot
+
+
+_TREE_DIFF_STATUS_SEPARATOR = "\n--bach-status--\n"
+
+
+def task_tree_diff(task_id: int, *, limit: int = 40000,
+                   repo_root=None, worktrees_dir=None) -> dict:
+    """Collect a bounded diff between the live-repo base and a task worktree.
+
+    Read-only observation of the registered task tree: returns the diff of the
+    task worktree HEAD against the live repository HEAD, cut to ``limit``
+    characters, together with the uncut length and a sha256 of the cut text.
+    Raises WorkerWriteGuardError/OSError/ValueError on any failure; callers are
+    expected to fall back to an unavailable state.
+    """
+    tid = _task_id(task_id)
+    repo, root = _paths(repo_root, worktrees_dir, task_id=tid)
+    target = _registered_tree(repo, root, tid)
+    base_oid = _run_readonly(["git", "rev-parse", "HEAD"], repo).strip()
+    head_oid = _run_readonly(["git", "rev-parse", "HEAD"], target).strip()
+    diff_text = _run_readonly(["git", "diff", base_oid, head_oid], target)
+    status_text = _run_readonly(
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all",
+         "--ignore-submodules=none"], target)
+    if status_text:
+        full = diff_text + _TREE_DIFF_STATUS_SEPARATOR + status_text
+    else:
+        full = diff_text
+    cutoff = full[:limit]
+    return {
+        "availability": "diff", "base_oid": base_oid, "head_oid": head_oid,
+        "diff": cutoff,
+        "diff_sha256": hashlib.sha256(cutoff.encode("utf-8")).hexdigest(),
+        "diff_chars": len(full), "truncated": len(full) > limit,
+    }
 
 
 _TASK_START_SCOPE_SCHEMA = "bach.task-start-scope.v1"
