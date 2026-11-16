@@ -27,9 +27,9 @@ from .worker_result_provenance import author_principal, author_slot, source_kind
 _SEAL = object()
 _ACTOR = "native-result-review-controller"
 _INTENT_SCHEMA = "bach.worker-result-review-intent.v1"
-# Marker schema for unscoped intent targets; a leading space keeps it outside
-# the real schema namespace so ordinary scoped records never match it.
-_UNSCOPED_INTENT_SCHEMA = " bach-worker-intent-unscoped-placeholder.v1"
+# Intent schema for unscoped targets, bound to the submission package so a
+# stale intent can never be mistaken for a current review target.
+_UNSCOPED_INTENT_SCHEMA = "bach.worker-result-review-intent.submission-bound.v1"
 _REVIEW_SCHEMA = "bach.worker-result-model-review.v1"
 _EXTERNAL_INTENT_SCHEMA = "bach.worker-result-review-intent.external-attested.v1"
 _EXTERNAL_REVIEW_SCHEMA = "bach.worker-result-model-review.external-attested.v1"
@@ -179,12 +179,16 @@ def _target_record(conn, task_id, *, repo_root=None, worktrees_dir=None):
         if (projected.get("status") != "review" or not isinstance(record, dict)
                 or record.get("reason") != "awaiting_review"
                 or record.get("submission", {}).get("availability") != "available"
-                or source_pin(record) is None
+                or _review_pin(record) is None
                 or (source_kind(record) == "native" and
                     (type(author_slot(record)) is not str or not author_slot(record)))
-                or record.get("scope", {}).get("availability") != "available"
                 or type(record.get("submission_revision")) is not str
-                or not _SUBMISSION_REVISION.fullmatch(record["submission_revision"])
+                or not _SUBMISSION_REVISION.fullmatch(record["submission_revision"])):
+            return None
+        # A captured code scope pins its own revisions; a native result without a
+        # scope is pinned by its execution evidence instead.
+        if source_pin(record) is not None and (
+                record.get("scope", {}).get("availability") != "available"
                 or not isinstance(record.get("result_revision"), str)
                 or not _HEX.fullmatch(record["result_revision"])):
             return None
@@ -195,10 +199,19 @@ def _target_record(conn, task_id, *, repo_root=None, worktrees_dir=None):
 
 def _unscoped_pin(record):
     """Pure facts of a native result without a captured code scope."""
-    if not isinstance(record, dict) or source_kind(record) != "native":
+    if not isinstance(record, dict) or source_kind(record) not in ("native", "unattested"):
         return None
     scope, execution = record.get("scope", {}), record.get("execution", {})
-    if (scope.get("availability") != "unavailable" or scope.get("reason") != "scope_not_recorded"
+    availability = scope.get("availability")
+    if availability == "available":
+        # A scope snapshot without receipt binding cannot be pinned by
+        # source_pin(); its native execution facts stay reviewable unscoped.
+        scope_ok = (type(scope.get("scope_receipt_sha256")) is not str
+                    and type(scope.get("scope_event_id")) is not int)
+    else:
+        scope_ok = (availability == "unavailable"
+                    and scope.get("reason") in ("scope_not_recorded", "current_git_unavailable"))
+    if (not scope_ok
             or execution.get("availability") != "available"
             or type(execution.get("execution_id")) is not str or not execution["execution_id"]
             or type(execution.get("execution_revision")) is not str
@@ -1347,7 +1360,7 @@ def _obsolete_target_reason(conn, found, grant, *, repo_root=None, worktrees_dir
         return ("target_revision_changed" if observed_tree is not None
                 and observed_tree != tree_fingerprint(intent["tree_state"]) else None)
     scope = target.get("scope", {})
-    if (scope.get("availability") == "recorded"
+    if (scope.get("availability") in ("available", "recorded")
             and type(scope.get("scope_receipt_sha256")) is str
             and _HEX.fullmatch(scope["scope_receipt_sha256"])
             and scope["scope_receipt_sha256"] != _intent_scope_sha(intent)):
@@ -1368,8 +1381,10 @@ def _obsolete_target_reason(conn, found, grant, *, repo_root=None, worktrees_dir
 
 def cancel_obsolete_review_child(conn, binding, *, repo_root=None, worktrees_dir=None):
     """Terminally park a released review child after proven target drift only."""
-    if conn.in_transaction or getattr(getattr(binding, "_client", None), "mode", None) != "local":
+    client_mode = getattr(getattr(binding, "_client", None), "mode", None)
+    if client_mode != "local":
         return None
+    conn.commit()  # release stale read snapshot before drift check
     grant = getattr(binding, "_review_grant", None)
     try:
         if (not _grant_valid(grant) or binding.task_id != grant.task_id
@@ -1448,6 +1463,7 @@ def cancel_obsolete_review_child(conn, binding, *, repo_root=None, worktrees_dir
                 {"status": "cancelled"}, changed_by=_ACTOR, now=_local_naive(now))
             status_event = _status_revision(conn, grant.task_id)
             receipt = {"schema": _OBSOLETE_SCHEMA, "reason": reason,
+                "availability": "cancelled",
                 "intent_sha256": current["row"]["intent_sha256"],
                 "target_task_id": grant.target_task_id,
                 "target_result_id": grant.target_result_id,

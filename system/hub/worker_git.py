@@ -623,12 +623,12 @@ def read_task_public_source_registration(repo: Path, target: Path, task_id: int 
         record.get("schema") in {_PUBLIC_SOURCE_SCHEMA, _LEGACY_PUBLIC_SOURCE_SCHEMA}
         and record.get("task_id") == str(task_id)
         and record.get("repository") == binding.repository
-        and record.get("origin") == origin == binding.origin
-        and record.get("source_ref") == f"refs/heads/{binding.default_branch}"
+        and record.get("origin") == origin == getattr(binding, "origin", None)
+        and record.get("source_ref") == f"refs/heads/{getattr(binding, 'default_branch', None)}"
         and (record.get("schema") != _LEGACY_PUBLIC_SOURCE_SCHEMA or binding.repository == _PUBLIC_REPO)
         and isinstance(record.get("source_sha"), str)
         and _PUBLIC_SHA.fullmatch(record["source_sha"])
-        and record.get("source_sha") == binding.source_sha
+        and record.get("source_sha") == getattr(binding, "source_sha", None)
         and record.get("visibility") == "public"
         and record.get("private") is False
         and record.get("metadata_verified") is True

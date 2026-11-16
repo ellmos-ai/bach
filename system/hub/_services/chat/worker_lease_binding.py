@@ -1488,6 +1488,23 @@ class WorkerLeaseBinding:
                 except LeaseSelfCheckRequiredError:
                     self._submission_expected = None
                     raise
+                except LeaseProtocolError as _exc:
+                    # Drift: Der Hub darf das Reviewziel zwischen Abgabe und
+                    # kanonischer Bestätigung bereits auf 'cancelled' gesetzt
+                    # haben (veraltetes administrative Reviewkind, Scope-Drift).
+                    # Dann ist die Abgabe administrativ storniert, nicht
+                    # protokollwidrig; die Meldung entspricht dem Ergebnis
+                    # eines bereits vorher stornierten Reviewkinds.
+                    try:
+                        _snapshot = self._client.task_snapshot(self.task_id)
+                    except Exception:
+                        raise _exc
+                    _snapshot_status = _snapshot.get("status") if isinstance(_snapshot, dict) else None
+                    if _snapshot_status == "cancelled":
+                        self._submission_expected = None
+                        return (f"Task #{self.task_id}: Review-Ziel nach Abgabe geändert; "
+                                "dieses administrative Reviewkind wurde storniert.")
+                    raise
                 if (not isinstance(release, WorkerResultAck)
                         or release.release.released is not True
                         or release.release.task_id != self.task_id or release.release.fence != self._ack.fence

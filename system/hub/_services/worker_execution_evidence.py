@@ -382,7 +382,11 @@ def read_execution_evidence(conn, record):
                 or not _HEX.fullmatch(receipt.get("request_sha256", ""))
                 or not _HEX.fullmatch(receipt.get("response_sha256", ""))
                 or not _HEX.fullmatch(receipt.get("input_task_version", ""))
-                or not row["started_event_id"] < row["terminal_event_id"] < row["link_event_id"]):
+                or not row["started_event_id"] < row["terminal_event_id"]):
+            return _unavailable("execution_evidence_invalid")
+        linked_id = row["link_event_id"]
+        if linked_id is not None and (not row["terminal_event_id"] < linked_id
+                or row["result_id"] is None or row["linked_at"] is None):
             return _unavailable("execution_evidence_invalid")
         for key in ("backend_id", "requested_model"):
             _metadata(receipt.get(key))
@@ -425,9 +429,15 @@ def read_execution_evidence(conn, record):
         linked = {"execution_id": row["id"], "execution_revision": revision,
             "result_id": record["result_id"], "submission_revision": record["submission_revision"],
             "submission_task_version": record["task_version"], "linked_at": row["linked_at"]}
-        if not (_event(conn, row["started_event_id"], row["task_id"], "worker_model_execution_start", started, receipt["started_at"])
-                and _event(conn, row["terminal_event_id"], row["task_id"], "worker_model_execution_terminal", terminal, receipt["returned_at"])
-                and _event(conn, row["link_event_id"], row["task_id"], "worker_result_execution_link", linked, row["linked_at"])):
+        # A receipt can be proven without a lease link event: the row itself binds
+        # the execution to the submitted result, so the link proof stays optional.
+        link_unproven = linked_id is None and (
+            row["result_id"] != record["result_id"]
+            or row["submission_revision"] != record["submission_revision"])
+        if (link_unproven
+                or not _event(conn, row["started_event_id"], row["task_id"], "worker_model_execution_start", started, receipt["started_at"])
+                or not _event(conn, row["terminal_event_id"], row["task_id"], "worker_model_execution_terminal", terminal, receipt["returned_at"])
+                or (linked_id is not None and not _event(conn, linked_id, row["task_id"], "worker_result_execution_link", linked, row["linked_at"]))):
             return _unavailable("execution_evidence_invalid")
         fields = ("execution_id", "backend_id", "requested_model", "observed_model", "slot_id",
                   "generation", "fence", "input_task_version", "request_sha256", "response_sha256", "started_at", "returned_at")

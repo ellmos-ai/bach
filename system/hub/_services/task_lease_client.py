@@ -647,9 +647,21 @@ class TaskLeaseClient:
         from .worker_result_review import record_review, cancel_obsolete_review_child
         conn = self._get_local_connection()
         try:
-            evidence = record_review(conn, binding)
+            # The drift proof needs the trusted repo/worktrees paths; resolve
+            # them here so the check does not silently degrade to no-proof
+            # (repo_root=None) in processes whose defaults do not resolve.
+            try:
+                from hub import worker_git
+
+                repo_root = worker_git.get_live_repo_root()
+                worktrees_dir = worker_git.get_worktrees_dir()
+            except Exception:
+                repo_root = None
+                worktrees_dir = None
+            evidence = cancel_obsolete_review_child(conn, binding, repo_root=repo_root,
+                                                    worktrees_dir=worktrees_dir)
             if evidence is None:
-                evidence = cancel_obsolete_review_child(conn, binding)
+                evidence = record_review(conn, binding)
         finally:
             if self._conn is None:
                 conn.close()

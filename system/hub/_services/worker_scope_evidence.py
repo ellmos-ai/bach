@@ -295,6 +295,14 @@ def read_scope_evidence(conn, record) -> dict:
 def _project_scope_record(data, *, repo_root=None, worktrees_dir=None) -> dict:
     if not isinstance(data, dict) or data.get("availability") != "recorded":
         if isinstance(data, dict) and data.get("schema") == _READ_SCHEMA:
+            revision = data.get("result_revision")
+            if data.get("availability") == "available":
+                # Projection stays idempotent for an already projected record,
+                # but an "available" scope that carries no receipt-bound
+                # revision must not be passed on as available-with-None.
+                if type(revision) is str and _HEX.fullmatch(revision):
+                    return {**data, "result_revision": revision}
+                return _unavailable("scope_not_recorded")
             return {**data, "result_revision": None}
         return _unavailable("scope_not_recorded")
     if (type(data.get("task_id")) is not int or data["task_id"] <= 0

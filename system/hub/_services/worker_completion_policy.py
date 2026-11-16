@@ -159,9 +159,43 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         record = projected["result"]
         revision = record.get("result_revision")
         bound_tree = None
-        if (type(revision) is not str or not _HEX.fullmatch(revision)
-                or record.get("scope", {}).get("availability") != "available"
-                or source_pin(record) is None):
+        if type(revision) is not str or not _HEX.fullmatch(revision):
+            from .worker_result_review import submission_bound_revision, _review_pin
+            review_ev = record.get("model_review")
+            if (isinstance(review_ev, dict) and review_ev.get("availability") == "available"
+                    and review_ev.get("target_kind") == "submission"
+                    and type(record.get("submission_revision")) is str
+                    and review_ev.get("target_submission_revision") == record["submission_revision"]
+                    and _review_pin(record) is not None):
+                candidate = submission_bound_revision(record, review_ev.get("target_tree"))
+                if candidate is not None:
+                    revision = candidate
+                    bound_tree = review_ev.get("target_tree")
+        from .worker_result_review import _review_pin, author_slot
+        pin = _review_pin(record)
+        scope = record.get("scope", {})
+        scope = scope if isinstance(scope, dict) else {}
+        # A native result whose code scope was never recorded stays reviewable as
+        # "unscoped" when its execution facts are complete. The projection marks
+        # exactly this case with reason "scope_not_recorded".
+        unscoped = scope.get("reason") in ("scope_not_recorded", "current_git_unavailable")
+        execution = record.get("execution", {})
+        execution = execution if isinstance(execution, dict) else {}
+        execution_revision = execution.get("execution_revision")
+        if (pin is None and unscoped and execution.get("availability") == "available"
+                and type(execution.get("execution_id")) is str and execution["execution_id"]
+                and type(execution_revision) is str and _HEX.fullmatch(execution_revision)):
+            pin = {"source_kind": "native_unscoped", "execution_id": execution["execution_id"],
+                   "execution_revision": execution_revision, "slot_id": author_slot(record)}
+        if pin is None:
+            return _unavailable(task_id, "full_result_revision_unavailable", record=record)
+        if bound_tree is None and pin.get("source_kind") == "native_unscoped":
+            bound_tree = "unscoped"
+            revision = pin["execution_revision"]
+        elif (bound_tree is None and not unscoped
+                and record.get("scope", {}).get("availability") != "available"):
+            return _unavailable(task_id, "full_result_revision_unavailable", record=record)
+        if type(revision) is not str or not _HEX.fullmatch(revision):
             return _unavailable(task_id, "full_result_revision_unavailable", record=record)
         task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
         if task is None or task.get("claim_id"):
@@ -186,17 +220,19 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
         if type(task.get("github_pr_review_required")) not in {type(None), int} or task.get("github_pr_review_required") not in {None, 0, 1}:
             return _unavailable(task_id, "github_gate_invalid", record=record)
         # This column is fixed before submission by task_content_version.
-        if bound_tree is not None and task.get("github_pr_review_required") not in (None, 0):
+        if (bound_tree is not None and bound_tree != "unscoped"
+                and task.get("github_pr_review_required") not in (None, 0)):
             return _unavailable(task_id, "github_gate_needs_scope", record=record)
         contract = evaluate_contract(task.get("completion_contract_json"), result=record["result"],
-                                     snapshot=record["scope"].get("snapshot"),
+                                     snapshot=(record["scope"].get("snapshot")
+                                               if bound_tree is None else None),
                                      repo_root=repo_root, worktrees_dir=worktrees_dir)
-        if bound_tree is not None:
+        if bound_tree is not None and bound_tree != "unscoped":
             from .worker_result_review import submission_bound_tree_current
             if not submission_bound_tree_current(conn, record, repo_root=repo_root,
                                                  worktrees_dir=worktrees_dir):
                 return _unavailable(task_id, "current_git_changed", record=record)
-        else:
+        elif bound_tree is None:
             from .chat.worker_write_guard import snapshot_task_scope
             if snapshot_task_scope(task_id, repo_root=repo_root,
                                    worktrees_dir=worktrees_dir) != record["scope"]["snapshot"]:
@@ -217,8 +253,14 @@ def evaluate_current_result(conn, task_id: int, *, repo_root=None, worktrees_dir
                 github_contract = json.loads(task.get("github_review_contract_json") or "")
             except (TypeError, ValueError):
                 github_contract = None
+            head_oid = (
+                ((record.get("scope") or {}).get("snapshot") or {}).get("head_oid")
+                if bound_tree is None
+                else (bound_tree.get("head_oid") if isinstance(bound_tree, dict) else None))
+            if type(head_oid) is not str or not _HEX.match(head_oid):
+                head_oid = None
             github = observe_github_review(github_contract,
-                head_oid=record["scope"]["snapshot"].get("head_oid"), task_id=str(task_id),
+                head_oid=head_oid, task_id=str(task_id),
                 result_revision=revision, observer=github_observer)
         review = record.get("model_review")
         if not isinstance(review, dict):

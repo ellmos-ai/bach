@@ -106,7 +106,9 @@ def author_principal(identity, record):
 
 
 def author_slot(record):
-    return record.get("execution", {}).get("slot_id") if source_kind(record) == "native" else None
+    if source_kind(record) not in ("native", "unattested"):
+        return None
+    return record.get("execution", {}).get("slot_id")
 
 
 def current_result_revision(record):
