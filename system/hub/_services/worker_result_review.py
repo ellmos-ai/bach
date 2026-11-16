@@ -926,6 +926,14 @@ def guard_review_dispatch(conn, binding, *, route, requested_model,
         if target_pair is None:
             return False
         target, authority = target_pair
+        parent = read_result(conn, grant.target_task_id)
+        ptarget = parent.get("result")
+        if (parent.get("status") != "review" or not isinstance(ptarget, dict)
+                or ptarget.get("result_id") != grant.target_result_id
+                or ptarget.get("submission_revision") != found["receipt"]["submission_revision"]
+                or not _intent_source_matches(found["receipt"], ptarget)
+                or ptarget.get("generation") != found["receipt"]["author_generation"]):
+            return False
         task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (grant.task_id,)))
         if (task is None or task["status"] != "in_progress"
                 or task.get("claim_fence") != binding._ack.fence
