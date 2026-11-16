@@ -1522,15 +1522,23 @@ def _finish_task(
     if (scope.get("availability") != "available" or scope.get("repository") != repo_binding.repository
             or not isinstance(scope.get("source_pin"), dict)):
         return {"success": False, "error": "Frische registrierte Taskscope vor Abgabe fehlt"}
+    clean_msg = (message or "").strip()
+    completed_work = (
+        clean_msg if len(clean_msg) >= 12
+        else f"Task #{task_id_str}: {clean_msg or 'PR aktualisiert'} ({pr_url})"
+    )[:1500]
     text = json.dumps({"schema": "bach.worker-self-check.v1", "complete": True,
-                       "completed_work": message, "pr_url": pr_url,
+                       "completed_work": completed_work, "pr_url": pr_url,
                        "commit": scope["head_oid"], "source_pin": scope["source_pin"],
                        "checks": ["Secrets-Scan und git diff --check bestanden", test_evidence],
                        "remaining_required_work": []}, ensure_ascii=False)
     from hub._services.task_result_service import validate_submission
     validate_submission({"generation": worker_task_binding._generation, "result": text},
                         max_chars=worker_task_binding.task_snapshot().get("result_max_chars"))
-    worker_task_binding.record_worktree_result(int(task_id_str), f"PR: {pr_url}")
+    pr_marker = f"PR: {pr_url}"
+    existing_desc = str(worker_task_binding.task_snapshot().get("description") or "")
+    if pr_marker not in existing_desc:
+        worker_task_binding.record_worktree_result(int(task_id_str), pr_marker)
     try:
         worker_task_binding.execute_task_manage({"action": "submit_result", "task_id": int(task_id_str),
                                                 "result": text})

@@ -203,7 +203,8 @@ class CanonicalLockGuard:
                 # locks of the file's directory and its ancestors still apply.
                 existing = existing.parent
             try:
-                result = subprocess.run(
+                from hub._services.chat.worker_write_guard import _darwin_hydrate_argv
+                argv = _darwin_hydrate_argv(
                     [
                         sys.executable,
                         "-S",
@@ -212,6 +213,10 @@ class CanonicalLockGuard:
                         str(existing),
                         "--json",
                     ],
+                    run_fn=subprocess.run,
+                )
+                result = subprocess.run(
+                    argv,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",

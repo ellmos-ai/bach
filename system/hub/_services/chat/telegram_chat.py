@@ -1465,14 +1465,16 @@ _HOST_PRECONDITION_CODES = {
     "Fremde oder unbekannte Projektsperre blockiert": "project_lock",
 }
 _HOST_PRECONDITION_ESCALATE_AFTER = 4  # ~15 min of backoff, then one resolver task
+_TASK_PROJECT_LOCK_DIAGNOSTIC = "Fremde oder unbekannte Zielrepo- oder Tasksperre blockiert"
 
 
 class TaskScopeUnavailable(RuntimeError):
     """Scope preparation failed; ``host_code`` names a fixed host-wide cause."""
 
-    def __init__(self, host_code=None):
+    def __init__(self, host_code=None, *, task_project_lock=False):
         super().__init__("Task-Arbeitsbaum vor Modellstart nicht bestätigt")
         self.host_code = host_code
+        self.task_project_lock = bool(task_project_lock)
 
 
 def _task_scope_failure_reason(exc):
@@ -1488,6 +1490,44 @@ def _host_precondition_code(exc):
     from hub._services.chat.worker_write_guard import WorkerWriteGuardError
     if isinstance(exc, WorkerWriteGuardError) and len(exc.args) == 1 and type(exc.args[0]) is str:
         return _HOST_PRECONDITION_CODES.get(exc.args[0])
+    return None
+
+
+def _is_task_project_lock(exc) -> bool:
+    from hub._services.chat.worker_write_guard import WorkerWriteGuardError
+    return (isinstance(exc, WorkerWriteGuardError)
+            and exc.args == (_TASK_PROJECT_LOCK_DIAGNOSTIC,))
+
+
+def _slot_needs_host_scope_guard(slot) -> bool:
+    allowed = slot.get("allowed_tools") if isinstance(slot, dict) else None
+    return (isinstance(slot, dict)
+            and slot.get("type") in {"continuous", "persistent"}
+            and isinstance(allowed, list) and bool(allowed))
+
+
+def _peer_waiting_host_precondition(control) -> bool:
+    with _WORKER_CONTROL_LOCK:
+        for other in _WORKER_CONTROLS.values():
+            if other is control or other.done_event.is_set() or other.stop_event.is_set():
+                continue
+            wait = other.precondition_wait
+            if isinstance(wait, dict) and wait.get("state") == "waiting_precondition":
+                return True
+    return False
+
+
+def _probe_host_scope_precondition(slot):
+    """Lease-free probe of canonical host lock/twin readiness before claiming."""
+    if not _slot_needs_host_scope_guard(slot):
+        return None
+    from hub import worker_git
+    from hub._services.chat import worker_write_guard
+    try:
+        canonical = worker_git.get_live_repo_root().resolve(strict=True)
+        worker_write_guard._scan_locks(canonical, main_repo=True)
+    except Exception as exc:
+        return _host_precondition_code(exc) or "canonical_host_probe_failed"
     return None
 
 
@@ -1574,9 +1614,12 @@ def _prepare_bound_task_scope(binding, slot):
     except Exception as exc:
         # Fixed-text RuntimeErrors name the failed check; other types may carry paths.
         host_code = _host_precondition_code(exc)
-        reason = f"host_precondition:{host_code}" if host_code else _task_scope_failure_reason(exc)
+        task_lock = _is_task_project_lock(exc)
+        reason = (f"host_precondition:{host_code}" if host_code
+                  else "project_lock:task_scope" if task_lock
+                  else _task_scope_failure_reason(exc))
         logger.warning("Task #%s: Arbeitsbaum nicht bestätigt (%s)", binding.task_id, reason)
-        raise TaskScopeUnavailable(host_code) from None
+        raise TaskScopeUnavailable(host_code, task_project_lock=task_lock) from None
 
 
 _PRIOR_EFFECT_LIMIT = 20
@@ -6378,6 +6421,32 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     # Record canonical result observations without making separate
                     # acceptance a prerequisite for the next queue acquisition.
                     _poll_worker_completion(control)
+                    if control.host_precondition_failures > 0 or _peer_waiting_host_precondition(control):
+                        probed_host_code = _probe_host_scope_precondition(current_slot)
+                        if probed_host_code:
+                            control.host_precondition_failures += 1
+                            failures = control.host_precondition_failures
+                            delay = _host_precondition_delay(failures)
+                            _set_precondition_wait(control, probed_host_code, failures, delay)
+                            _record_worker_activity(
+                                control,
+                                f"Host-Voraussetzung weiterhin nicht erfüllt ({probed_host_code}); keine neue Task-Lease gezogen",
+                                "pending",
+                            )
+                            if _update_worker_slot(control, {
+                                    "status": "running", "task_id": None,
+                                    "current_activity": f"Host-Voraussetzung fehlt ({probed_host_code}); "
+                                                        f"Versuch {failures}, nächster in {delay} s",
+                            }) is None:
+                                break
+                            if failures == _HOST_PRECONDITION_ESCALATE_AFTER:
+                                _open_worker_resolver(control, worker_id, probed_host_code)
+                            if not _wait_host_precondition(control, failures):
+                                break
+                            continue
+                        if control.host_precondition_failures > 0:
+                            control.host_precondition_failures = 0
+                            _set_precondition_wait(control, None)
                     control.task_binding = _acquire_worker_task(control, current_slot, worker_instance_id)
                     if control.task_binding is None:
                         from hub._services.chat.worker_queue_status import (
@@ -6473,7 +6542,9 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         # bach-task branch) and stays available for the next one.
                         # Same order as the final cleanup: settle renews first.
                         host_code = getattr(scope_error, "host_code", None)
+                        task_lock = bool(getattr(scope_error, "task_project_lock", False))
                         return_note = (f"host_precondition:{host_code}" if host_code
+                                       else "project_lock:task_scope" if task_lock
                                        else "task_scope_unavailable")
                         returned = control.task_binding.task_snapshot()
                         control.lease_supervisor.close()
@@ -6496,8 +6567,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         control.task_binding = None
                         if host_code:
                             # The host, not the task, is broken: do not take the next
-                            # task at once (PB-1: ~557 returns/h). The next acquisition
-                            # after the lease-free wait is the probe.
+                            # task at once (PB-1: ~557 returns/h). Subsequent retries
+                            # probe lease-free before claiming another task.
                             control.host_precondition_failures += 1
                             failures = control.host_precondition_failures
                             delay = _host_precondition_delay(failures)
@@ -6514,11 +6585,19 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             if not _wait_host_precondition(control, failures):
                                 break
                             continue
-                        _record_worker_activity(control,
-                            f"Task #{returned_id} zurückgegeben: Task-Arbeitsbaum nicht bereit",
-                            "pending")
+                        activity_msg = (
+                            f"Task #{returned_id} zurückgegeben: Zielrepo- oder Tasksperre aktiv"
+                            if task_lock
+                            else f"Task #{returned_id} zurückgegeben: Task-Arbeitsbaum nicht bereit"
+                        )
+                        slot_activity = (
+                            "Zielrepo- oder Tasksperre aktiv; suche nächste passende Aufgabe"
+                            if task_lock
+                            else "Task-Arbeitsbaum nicht bereit; suche nächste passende Aufgabe"
+                        )
+                        _record_worker_activity(control, activity_msg, "pending")
                         if _update_worker_slot(control, {"status": "running", "task_id": None,
-                                "current_activity": "Task-Arbeitsbaum nicht bereit; suche nächste passende Aufgabe"}) is None:
+                                "current_activity": slot_activity}) is None:
                             break
                         if not _wait_worker_cooldown(control, event_type="runs") or control.stop_event.wait(10):
                             break

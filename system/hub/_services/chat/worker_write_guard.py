@@ -214,7 +214,30 @@ def _scanner_path() -> Path:
     return scanner.resolve(strict=True)
 
 
-def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = None) -> dict:
+_DARWIN_HYDRATE_BOOTSTRAP = (
+    "import ctypes, os, runpy, sys; "
+    "_lib = ctypes.CDLL(None, use_errno=True); "
+    "_fn = _lib.setiopolicy_np; "
+    "_fn.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]; "
+    "_fn.restype = ctypes.c_int; "
+    "(_fn(3, 0, 2) == 0) or sys.exit(2); "
+    "sys.argv = sys.argv[1:]; "
+    "sys.path[0] = os.path.dirname(os.path.abspath(sys.argv[0])); "
+    "runpy.run_path(sys.argv[0], run_name='__main__')"
+)
+
+
+def _darwin_hydrate_argv(argv: list[str], *, run_fn, platform_name: str | None = None) -> list[str]:
+    """Enable macOS dataless LOCK*.txt hydration inside the exec'd child via posix_spawn (no fork)."""
+    active_platform = sys.platform if platform_name is None else platform_name
+    if active_platform == "darwin" and getattr(run_fn, "__module__", "") == "subprocess":
+        idx = 2 if len(argv) >= 2 and argv[1] == "-S" else 1
+        return [*argv[:idx], "-c", _DARWIN_HYDRATE_BOOTSTRAP, *argv[idx:]]
+    return argv
+
+
+def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = None,
+                task_scoped_root: Path | None = None) -> dict:
     scanner = _scanner_path()
     argv = [sys.executable, str(scanner), "--check-dir", str(path), "--json"]
     anchor_identity = None
@@ -229,9 +252,10 @@ def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = N
         anchor_identity = {"dev": info.st_dev, "ino": info.st_ino, "mode": info.st_mode}
         argv = [sys.executable, str(scanner), "--check-create-dir", str(path),
                 "--creation-anchor", str(creation_anchor), "--json"]
+    run_argv = _darwin_hydrate_argv(argv, run_fn=_RUN)
     try:
         result = _RUN(
-            argv, cwd=str(creation_anchor or (path if path.is_dir() else path.parent)), shell=False,
+            run_argv, cwd=str(creation_anchor or (path if path.is_dir() else path.parent)), shell=False,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             stdin=subprocess.DEVNULL, timeout=15,
         )
@@ -269,8 +293,25 @@ def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = N
         raise WorkerWriteGuardError("Sperrscan ist unvollständig oder ein Hook-Guard blockiert")
     locks = payload.get("locks")
     if not isinstance(locks, list) or locks:
+        if isinstance(locks, list) and locks and task_scoped_root is not None:
+            scoped_base = task_scoped_root.resolve(strict=False)
+            only_scoped = True
+            for item in locks:
+                raw_lp = item.get("path") if isinstance(item, dict) else None
+                if not isinstance(raw_lp, str) or not raw_lp:
+                    only_scoped = False
+                    break
+                lp = _NATIVE_PATH(raw_lp).resolve(strict=False)
+                if lp != scoped_base and scoped_base not in lp.parents:
+                    only_scoped = False
+                    break
+            if only_scoped:
+                raise WorkerWriteGuardError("Fremde oder unbekannte Zielrepo- oder Tasksperre blockiert")
         raise WorkerWriteGuardError("Fremde oder unbekannte Projektsperre blockiert")
     return payload
+
+
+_DEFAULT_SCAN_LOCKS = _scan_locks
 
 
 def _nearest_existing_directory(path: Path) -> Path:
@@ -321,7 +362,12 @@ def _fresh_locks(repo: Path, worktrees_root: Path, target: Path | None,
         elif repo.resolve(strict=True) != repo:
             raise WorkerWriteGuardError("Trusted Sourceklasse ist nicht exakt gepinnt")
         # Only this independently revalidated SHA-addressed source may have no twin.
-        _scan_locks(repo)
+        try:
+            _scan_locks(repo)
+        except WorkerWriteGuardError as exc:
+            if exc.args == ("Fremde oder unbekannte Projektsperre blockiert",):
+                raise WorkerWriteGuardError("Fremde oder unbekannte Zielrepo- oder Tasksperre blockiert") from exc
+            raise
     # Cleanup without a concrete task remains conservative. A bound task checks
     # its exact subtree and logical ancestors through the lock owner, never all
     # siblings. Missing targets need a distinct, positively attested create mode.
@@ -336,7 +382,10 @@ def _fresh_locks(repo: Path, worktrees_root: Path, target: Path | None,
             continue
         seen.add(directory)
         if directory.is_dir():
-            _scan_locks(directory)
+            if target is not None and _scan_locks is _DEFAULT_SCAN_LOCKS:
+                _scan_locks(directory, task_scoped_root=target)
+            else:
+                _scan_locks(directory)
         else:
             _scan_locks(directory, creation_anchor=_nearest_existing_directory(directory))
 
