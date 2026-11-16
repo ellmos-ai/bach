@@ -1262,8 +1262,15 @@ class WorkerLeaseBinding:
                     and not self._trace_completion_tokens
                     and self._model_execution_pending is None)
 
-    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref=""):
-        """Fence a Git result's content; review releases ownership without Done."""
+    def record_worktree_result(self, task_id, annotation, *, review=False, result_ref="", needs_split=False):
+        """Fence a Git result's content; review releases ownership without Done.
+
+        Idempotent: bereits enthaltene Annotationen (z.B. wiederholte "PR: <url>"
+        Eintraege nach generischem except) fuehren zu keinem erneuten Task-Update,
+        keiner erneuten Version-Adoption und keiner needs_split-Erhoehung.
+        needs_split (Default False) inkrementiert den Task-Zaehler nur bei echter
+        Aenderung; Bestaetigungspfad in worker_git uebergibt keinen kwarg.
+        """
         with self._lock:
             self.assert_active()
             if type(task_id) is not int or task_id != self.task_id or not isinstance(annotation, str) or not annotation:
@@ -1273,19 +1280,20 @@ class WorkerLeaseBinding:
                 if not isinstance(result_ref, str) or not re.fullmatch(
                         r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*", result_ref):
                     raise LeaseProtocolError("Bestätigte PR-Referenz fehlt")
-            previous = self._snapshot.get("description") or ""
-            description = str(previous) + ("\n\n" if previous else "") + annotation
-            changes = {"description": description}
-            if needs_split:
-                current = self._snapshot.get("needs_split", 0)
-                if current is None:
-                    current = 0
-                if type(current) is not int or current < 0:
-                    raise LeaseProtocolError("needs_split-Zähler ist ungültig")
-                changes["needs_split"] = current + 1
-            ack = self._operation(self._client.update, changes=changes)
-            self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
-            self._snapshot.update(changes)
+            previous = str(self._snapshot.get("description") or "")
+            if annotation not in previous:
+                description = previous + ("\n\n" if previous else "") + annotation
+                changes = {"description": description}
+                if needs_split:
+                    current = self._snapshot.get("needs_split", 0)
+                    if current is None:
+                        current = 0
+                    if type(current) is not int or current < 0:
+                        raise LeaseProtocolError("needs_split-Zähler ist ungültig")
+                    changes["needs_split"] = current + 1
+                ack = self._operation(self._client.update, changes=changes)
+                self._adopt_task_version(ack.task_version, previous_version=ack.previous_task_version)
+                self._snapshot.update(changes)
             if review:
                 release = self._operation(self._client.release, outcome="review", result_ref=result_ref)
                 if (not isinstance(release, LeaseReleaseAck) or release.released is not True
