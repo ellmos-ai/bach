@@ -42,7 +42,7 @@ def _marked_task(conn, count=1):
 def test_marker_is_native_and_incremented_atomically(task_db):
     task_id = _marked_task(task_db, 0)
     client = TaskLeaseClient(conn=task_db)
-    binding = _acquire(client, task_id, {"id": "slot"})
+    binding = _acquire(client, task_id, {"id": "slot", "model": "test-model"})
     binding.record_worktree_result(task_id, "[WIP] erster Stand", needs_split=True)
     snapshot = client.task_snapshot(task_id)
     assert snapshot["needs_split"] == 1
@@ -71,7 +71,7 @@ def test_divider_gets_marked_work_before_other_slots(task_db):
     task_db.execute("UPDATE tasks SET assigned_to='BACH'")
     task_db.commit()
     client = TaskLeaseClient(conn=task_db)
-    chosen = _acquire(client, marked, {"id": "divider", "role_id": "task-divider", "divider_available": True})
+    chosen = _acquire(client, marked, {"id": "divider", "role_id": "task-divider", "model": "test-model", "divider_available": True})
     assert chosen.task_id == marked
     assert ordinary != marked
 
@@ -82,7 +82,7 @@ def test_other_slot_skips_marked_work_while_divider_is_available(task_db):
     task_db.execute("UPDATE tasks SET assigned_to='BACH'")
     task_db.commit()
     client = TaskLeaseClient(conn=task_db)
-    chosen = _acquire(client, marked, {"id": "worker", "sub_mode": "task_worker", "divider_available": True})
+    chosen = _acquire(client, marked, {"id": "worker", "sub_mode": "task_worker", "model": "test-model", "divider_available": True})
     assert chosen.task_id == ordinary
 
 
@@ -92,7 +92,7 @@ def test_next_worker_splits_when_no_divider_is_available(task_db):
     task_db.execute("UPDATE tasks SET assigned_to='BACH'")
     task_db.commit()
     client = TaskLeaseClient(conn=task_db)
-    chosen = _acquire(client, marked, {"id": "worker", "sub_mode": "task_worker", "divider_available": False})
+    chosen = _acquire(client, marked, {"id": "worker", "sub_mode": "task_worker", "model": "test-model", "divider_available": False})
     assert chosen.task_id == marked
     prompt = _bound_worker_prompt(chosen, "Arbeite am WIP-Stand")
     assert "höchstens zwei Kontextübergaben" in prompt
@@ -102,7 +102,7 @@ def test_next_worker_splits_when_no_divider_is_available(task_db):
 def test_decompose_clears_marker_without_changing_assignment(task_db):
     task_id = _marked_task(task_db)
     client = TaskLeaseClient(conn=task_db)
-    binding = _acquire(client, task_id, {"id": "divider", "role_id": "task-divider", "divider_available": True})
+    binding = _acquire(client, task_id, {"id": "divider", "role_id": "task-divider", "model": "test-model", "divider_available": True})
     task_db.execute("ALTER TABLE tasks ADD COLUMN created_at TEXT")
     task_db.commit()
     binding.execute_task_manage({"action": "decompose", "task_id": task_id,

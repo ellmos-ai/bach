@@ -52,6 +52,9 @@ def _init_db(conn: sqlite3.Connection) -> None:
             changed_at TEXT NOT NULL
         )"""
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)"
+    )
     ensure_task_lease_schema(conn)
 
 

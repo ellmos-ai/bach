@@ -1165,16 +1165,22 @@ def _finish_task(
     from hub._services.chat.worker_repo_registry import resolve_task_repository
     try:
         repo_binding = resolve_task_repository(task_id_str)
-    except Exception as exc:
-        reason = str(exc) if type(exc).__name__ == "RepositoryBindingError" else "Trusted Task-Repo-Bindung ist nicht verfügbar"
-        return {"success": False, "error": reason}
-
-    try:
-        _, source, _ = _resolve_task_source(task_id_str, require_current=False)
-        _require_source_commit_identity(source, repo_binding.repository)
-        commit_identity = _require_source_commit_identity(target_dir, repo_binding.repository)
-    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
-        return {"success": False, "error": "Git-Autoridentität braucht kanonische Operator-Provisionierung"}
+    except Exception:
+        # Ohne Trusted-Registry-Bindung bleibt nur die explizite repo-lokale
+        # Identität des eigenen Worktrees; Registry-Pfad bleibt unverändert.
+        repo_binding = None
+    if repo_binding is not None:
+        try:
+            _, source, _ = _resolve_task_source(task_id_str, require_current=False)
+            _require_source_commit_identity(source, repo_binding.repository)
+            commit_identity = _require_source_commit_identity(target_dir, repo_binding.repository)
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+            return {"success": False, "error": "Git-Autoridentität braucht kanonische Operator-Provisionierung"}
+    else:
+        try:
+            commit_identity = _local_commit_identity(target_dir)
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError):
+            return {"success": False, "error": "Git-Autoridentität braucht kanonische Operator-Provisionierung"}
 
     # Revalidate before all pre-commit inspection; these commands use the
     # exact registered task tree, never a caller-provided cwd.

@@ -1443,6 +1443,29 @@ def _prepare_bound_task_scope(binding, slot):
         raise RuntimeError("Task-Arbeitsbaum vor Modellstart nicht bestÃ¤tigt") from None
 
 
+def _secure_context_wip(control, session, reason):
+    import re
+    from hub import worker_git
+    binding = control.task_binding
+    task_id = int(binding.task_id)
+    parts = [str(reason), "Keine abgeschlossene Übergabe"]
+    for entry in (list(getattr(session, "last_handoff_summary", None) or [])):
+        content = entry.get("content", "") if isinstance(entry, dict) else str(entry)
+        parts.append(re.sub(r"token=\S+", "token=[redacted]", str(content)))
+    parts.append("Lesespur:\n" + str(getattr(session, "last_handoff_read_trail", "") or ""))
+    annotation = "\n".join(parts)
+    worktree = worker_git.get_worktrees_dir() / f"task-{task_id}"
+    if worktree.exists():
+        files = worker_git.changed_worktree_files(worktree)
+        if files:
+            annotation += "\nGeänderte Dateien: " + ", ".join(files)
+        return worker_git.finish_task(
+            task_id, "Kontextgrenze: " + str(reason), is_wip=True, run_tests=False,
+            worker_task_binding=binding, result_annotation=annotation, needs_split=True)
+    binding.record_worktree_result(task_id, annotation, needs_split=True)
+    return {"success": True, "needs_split": True}
+
+
 def _bound_worker_prompt(binding, prompt):
     snapshot = binding.task_snapshot()
     grant = getattr(binding, "_review_grant", None)
