@@ -1416,6 +1416,8 @@ def cancel_obsolete_review_child(conn, binding, *, repo_root=None, worktrees_dir
                                          worktrees_dir=worktrees_dir)
         if reason is None:
             return None
+        if reason == "current_git_changed":
+            return None
         conn.execute("BEGIN IMMEDIATE")
         try:
             current = _intent(conn, grant.task_id)
@@ -1432,8 +1434,11 @@ def cancel_obsolete_review_child(conn, binding, *, repo_root=None, worktrees_dir
                        execution.get("execution_revision")
                     or fresh.get("execution", {}).get("response_sha256") !=
                        execution.get("response_sha256")
-                    or _obsolete_target_reason(conn, current, grant,
-                        repo_root=repo_root, worktrees_dir=worktrees_dir) != reason):
+                    or (recheck_reason := (
+                        _obsolete_target_reason(conn, current, grant,
+                            repo_root=repo_root, worktrees_dir=worktrees_dir)
+                        if current is not None else None)) != reason
+                    or recheck_reason == "current_git_changed"):
                 conn.rollback()
                 return None
             from hub.task_audit import apply_task_field_changes
