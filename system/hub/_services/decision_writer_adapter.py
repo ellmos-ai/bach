@@ -1,8 +1,9 @@
+# BACH Adapter: decision_writer
 # coding: utf-8
 """Schmaler BACH-Adapter für den vorhandenen DecisionClicker-Writer (v1.1.2).
 
 Stellt einen Writer-Eintrag für den Policy-Registry-Adapter bereit.
-Die GUI verlinkt mit http://127.0.0.1:8096; Vorschläge können über /api/new abgefragt werden.
+Die GUI verlinkt mit http://127.0.0.1:8096; Vorschläge können über /api/new eingereicht werden.
 
 Entscheidung: keine Proxy-/Einbettung, nur Loopback-Service; aktionsgebundene Bestätigung über die UI.
 """
@@ -23,20 +24,18 @@ class DecisionWriterAdapter:
     """Adapter für den DecisionClicker-Writer."""
 
     @staticmethod
-    def is_available(timeout: float = 2.0) -> tuple[bool, str]:
+    def is_available(timeout: float = 0.2) -> tuple[bool, str]:
         """Überprüft, ob der DecisionClicker-Dienst erreichbar ist.
-        Gibt (bool, Grund) zurück.
+        Gibt (bool, fester Grundcode) ohne rohe Exception-Texte zurück.
         """
         try:
             # Leichter Ping auf den UI-Endpunkt (schlüssellose Anfrage).
             resp = httpx.get(UI_URL, timeout=timeout, headers={"X-Requested-With": "BACH-Scan"})
-            # Wir akzeptieren jede Antwort; der spezifische Zweck ist lediglich die Konnektivität.
             if resp.status_code == 200:
                 return True, "ok"
-            else:
-                return False, f"status_code={resp.status_code}"
-        except Exception as exc:
-            return False, str(exc)
+            return False, f"status_code={resp.status_code}"
+        except Exception:
+            return False, "unreachable"
 
     @staticmethod
     def get_status() -> dict[str, Any]:
@@ -61,14 +60,16 @@ class DecisionWriterAdapter:
             resp = httpx.post(PROPOSAL_URL, json=payload, timeout=timeout)
             resp.raise_for_status()
             return resp.json()
-        except httpx.HTTPStatusError as e:
-            return {"error": "http_status", "detail": str(e)}
-        except Exception as exc:
-            return {"error": "request_failed", "detail": str(exc)}
+        except httpx.HTTPStatusError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            detail = f"status_code={status}" if isinstance(status, int) else "http_status"
+            return {"error": "http_status", "detail": detail}
+        except Exception:
+            return {"error": "request_failed", "detail": "unreachable"}
 
 
 # Modul-Ebene Fassade: der Policy-Registry-Adapter nutzt diese drei Funktionen.
-def is_available(timeout: float = 2.0) -> tuple[bool, str]:
+def is_available(timeout: float = 0.2) -> tuple[bool, str]:
     return DecisionWriterAdapter.is_available(timeout=timeout)
 
 

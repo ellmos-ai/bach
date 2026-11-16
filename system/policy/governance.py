@@ -115,6 +115,11 @@ DEFAULT_TRUST_PROFILES = {
         'capabilities': [],
         'description': 'Komplett gesperrt',
     },
+    'decision': {
+        'trust': 60,
+        'capabilities': ['db_read', 'file_read', 'hook_listen'],
+        'description': 'DecisionClicker-Writer (1.1.2) als Entscheidungsbundle; Adoption separat in der UI',
+    },
 }
 
 

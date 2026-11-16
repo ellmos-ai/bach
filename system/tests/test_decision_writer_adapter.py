@@ -28,6 +28,16 @@ class _FakeResponse:
                 response=httpx.Response(self.status_code),
             )
 
+    def json(self) -> dict[str, object]:
+        return {"ok": True}
+
+
+def test_constants():
+    assert dwa.ID == "decision-clicker"
+    assert dwa.VERSION == "1.1.2"
+    assert dwa.UI_URL == "http://127.0.0.1:8096"
+    assert dwa.PROPOSAL_URL == "http://127.0.0.1:8096/api/new"
+
 
 # --------------------------------------------------------------------------
 # is_available()
@@ -48,12 +58,13 @@ def test_is_available_status_code_503(monkeypatch):
 
 def test_is_available_exception(monkeypatch):
     def _boom(*a, **kw):
-        raise RuntimeError("connection refused")
+        raise RuntimeError("secret-internal-path /private/token")
 
     monkeypatch.setattr(dwa.httpx, "get", _boom)
     available, reason = dwa.is_available()
     assert available is False
-    assert reason == "connection refused"
+    assert reason == "unreachable"
+    assert "secret-internal-path" not in reason
 
 
 # --------------------------------------------------------------------------
@@ -92,13 +103,14 @@ def test_get_status_unavailable(monkeypatch):
 # --------------------------------------------------------------------------
 def test_post_proposal_request_failed(monkeypatch):
     def _boom(*a, **kw):
-        raise RuntimeError("kaputt")
+        raise RuntimeError("kaputt-secret-token")
 
     monkeypatch.setattr(dwa.httpx, "post", _boom)
     result = dwa.post_proposal({"title": "x"})
 
     assert result["error"] == "request_failed"
-    assert "detail" in result
+    assert result["detail"] == "unreachable"
+    assert "kaputt-secret-token" not in str(result)
 
 
 def test_post_proposal_http_status(monkeypatch):
@@ -109,7 +121,26 @@ def test_post_proposal_http_status(monkeypatch):
     result = dwa.post_proposal({"title": "x"})
 
     assert result["error"] == "http_status"
-    assert "detail" in result
+    assert result["detail"] == "status_code=500"
+
+
+def test_post_proposal_success(monkeypatch):
+    payload = {"title": "Decision", "context": {"step": 1}}
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class _JsonResp(_FakeResponse):
+        def json(self) -> dict[str, object]:
+            return payload
+
+    def _fake_post(url: str, **kwargs):
+        calls.append((url, kwargs))
+        return _JsonResp(200)
+
+    monkeypatch.setattr(dwa.httpx, "post", _fake_post)
+    result = dwa.post_proposal(payload)
+    assert result == payload
+    assert calls[0][0] == dwa.PROPOSAL_URL
+    assert calls[0][1]["json"] == payload
 
 
 def test_module_has_no_approve_entrypoint():

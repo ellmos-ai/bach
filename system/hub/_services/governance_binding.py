@@ -36,7 +36,14 @@ _TEXT = re.compile(r"^[^\x00-\x1f]{1,256}$")
 _ROLE_ORDER = {"global": 0, "role": 1, "agent": 2}
 
 # Lokaler Pin: DecisionClicker-Writer (1.1.2), separate explizite Adoption, kein zweiter Ledger.
-DECISION_WRITER = {"id": "decision-clicker", "version": "1.1.2", "sha256": "bc57916fc340374af80c46d1bbd6530cb9d8bfaa", "kind": "decision", "adoption": "adopted", "status": "active"}
+DECISION_WRITER = {
+    "id": "decision-clicker",
+    "version": "1.1.2",
+    "source_commit": "bc57916fc340374af80c46d1bbd6530cb9d8bfaa",
+    "kind": "decision",
+    "adoption": "adopted",
+    "status": "active",
+}
 
 
 
@@ -125,8 +132,6 @@ def _registry_index(observe: Callable | None) -> dict[str, dict]:
 
 
 def verify_ref(ref: dict, index: dict[str, dict]) -> None:
-    if (ref["id"], ref["version"], ref["sha256"]) == (DECISION_WRITER["id"], DECISION_WRITER["version"], DECISION_WRITER["sha256"]):
-        return  # lokaler Pin: DecisionClicker-Writer (1.1.2), separater Adoptionsschritt in der UI
     entry = index.get(ref["id"])
     if entry is None:
         raise GovernanceRejected("policy_ref_unknown")
