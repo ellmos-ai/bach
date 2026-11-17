@@ -948,6 +948,10 @@ class ChatRuntime(_ModuleChatRuntime):
         self._compute_turn_context = ContextVar(
             f"bach_compute_turn_context_{id(self)}", default=None
         )
+        self._model_warmup_context = ContextVar(
+            f"bach_model_warmup_context_{id(self)}", default=None
+        )
+        self._chat_warmup_lock = threading.Lock()
         self._task_completion_receipts: dict[str, list[int]] = {}
         self._task_completion_receipts_lock = threading.Lock()
         self.max_tool_rounds: int = limit("BACH_MAX_TOOL_ROUNDS")
@@ -1889,9 +1893,13 @@ class ChatRuntime(_ModuleChatRuntime):
                     and slot.get("model") == model
                     and slot.get("type") == "continuous"
                     and slot.get("enabled") is True)
-        # Only the pre-queue Buddha warmup may request the monitored cold start.
-        extra = ({"cold_start": True}
-                 if session is not None and getattr(session, "_buddha_cold_start", False) else {})
+        # Capability is bound to this exact task/caller/target, never a session flag.
+        warmup = self._active_model_warmup(backend, model, chat_id)
+        if warmup is not None:
+            problem = warmup["check"]()
+            if problem:
+                raise RuntimeError(problem)
+        extra = {"cold_start": True} if warmup is not None and warmup["allow_cold"] else {}
         receipt = (await probe(backend, model, reuse_running_server=True, **extra)
                    if reuse_running_server else await probe(backend, model, **extra))
         try:
@@ -1911,6 +1919,327 @@ class ChatRuntime(_ModuleChatRuntime):
             receipt, binding=binding, require_model_socket=require_socket)
         require_retryable(receipt)
         return receipt, binding
+
+    def _active_model_warmup(self, backend, model, chat_id):
+        grant = self._model_warmup_context.get()
+        if (grant is not None and grant["task"] is asyncio.current_task()
+                and grant["backend"] is backend and grant["model"] == model
+                and grant["chat_id"] == str(chat_id)):
+            return grant
+        return None
+
+    def _chat_warmup_guard(self, backend, model, *, chat_id, slot_reader, session=None,
+                           stop_event=None):
+        """Pin a native interactive profile and registry identity without mutating it."""
+        from hub._services.chat.slots_config import CORE_EDITABLE_FIELDS
+        from hub._services.chat.model_sockets import model_binding_for_call, profile_backend_matches
+
+        if not callable(slot_reader) or str(chat_id).startswith(("worker-", "agent:", "idle")):
+            raise RuntimeError("slot_unverified")
+        slot = slot_reader()
+        if (not isinstance(slot, dict) or slot.get("id") != "buddha_chat"
+                or slot.get("enabled") is not True or slot.get("model") != model
+                or not profile_backend_matches(slot.get("backend"), backend, model)
+                or not self._uses_local_compute(backend) or str(model).endswith(":cloud")):
+            raise RuntimeError("slot_changed")
+        keys = set(CORE_EDITABLE_FIELDS) | {"id", "enabled"}
+        pinned_slot = {key: copy.deepcopy(slot.get(key)) for key in keys}
+
+        def binding():
+            value = model_binding_for_call(
+                chat_id, "ollama", model, agent_id=slot["id"],
+                require_config=getattr(self, "require_model_socket_config", False))
+            return {k: v for k, v in value.items() if k != "configuration_version"} if value else None
+
+        pinned_binding = binding()
+
+        def check():
+            try:
+                if stop_event is not None and stop_event.is_set():
+                    return "stopped"
+                current = slot_reader()
+                if not isinstance(current, dict) or {
+                        key: current.get(key) for key in keys} != pinned_slot:
+                    return "slot_changed"
+                if session is not None:
+                    if self.sessions.get(str(chat_id)) is not session:
+                        return "session_changed"
+                    if (getattr(session, "worker_task_binding", None) is not None
+                            or getattr(session, "require_task_binding", False)):
+                        return "task_bound"
+                if binding() != pinned_binding:
+                    return "binding_changed"
+                from hub.compute_lock import get_fackel_preference
+                if get_fackel_preference(migrate=False) != "ollama":
+                    return "fackel_compute"
+                if self.compute_gate is not None and self.compute_gate(backend):
+                    return "compute_locked"
+            except Exception:
+                return "slot_unverified"
+            return None
+        return check
+
+    async def probe_chat_cold_start(self, backend, model, *, chat_id, slot_reader):
+        """GET-safe eligibility, including this process's cooldown; never create a session."""
+        from hub._services.chat.local_resource_reserve import probe
+        from hub._services.chat.local_model_admission import compose_admission_receipt
+        from hub._services.chat.model_sockets import model_binding_for_call
+
+        try:
+            check = self._chat_warmup_guard(
+                backend, model, chat_id=chat_id, slot_reader=slot_reader,
+                session=self.sessions.get(str(chat_id)))
+            problem = check()
+            if problem:
+                return {"state": problem, "admitted": False}
+            receipt = await probe(backend, model, cold_start=True)
+            binding = model_binding_for_call(
+                chat_id, "ollama", model, agent_id="buddha_chat",
+                require_config=getattr(self, "require_model_socket_config", False))
+            receipt = compose_admission_receipt(
+                receipt, binding=binding,
+                require_model_socket=getattr(self, "require_model_socket_config", False))
+            problem = check()
+            if problem:
+                return {"state": problem, "admitted": False}
+            return receipt
+        except Exception:
+            return {"state": "slot_unverified", "admitted": False}
+
+    async def warm_chat_ollama_model(self, backend, model, *, chat_id, slot_reader,
+                                     stop_event=None, deadline=None):
+        """A send-triggered empty warmup; no user prompt or transcript is accepted here."""
+        began = time.monotonic()
+        deadline = min(deadline if deadline is not None else began + 300.0, began + 300.0)
+        if not self._chat_warmup_lock.acquire(blocking=False):
+            return {"state": "warmup_busy"}
+        gate = self._chat_turn_gate(chat_id)
+        entered = False
+        token = None
+        try:
+            eligibility = await self.probe_chat_cold_start(
+                backend, model, chat_id=chat_id, slot_reader=slot_reader)
+            if eligibility.get("admitted") is not True:
+                return {"state": "capacity_wait"}
+            cold_gate = eligibility.get("cold_start")
+            if isinstance(cold_gate, dict):
+                deadline = min(deadline, began + cold_gate["max_load_seconds"])
+            # Block destructive clear/fork while loading, without granting any other turn
+            # this request's capability. Queue time consumes the foreground budget.
+            await self._enter_profile_turn(gate, deadline=deadline)
+            entered = True
+            session = self.get_session(chat_id)
+            check = self._chat_warmup_guard(
+                backend, model, chat_id=chat_id, slot_reader=slot_reader,
+                session=session, stop_event=stop_event)
+            problem = check()
+            if problem:
+                return {"state": problem}
+            token = self._compute_turn_context.set((str(chat_id), "foreground"))
+            result = await self._warm_ollama_model(
+                backend, model, chat_id=chat_id, check=check, deadline=deadline)
+            if result.get("state") not in {"loaded", "resident"}:
+                return result
+            # The call-scoped capability was reset by _warm_ollama_model before
+            # this ordinary admission. A loaded model must pass normally now.
+            problem = check()
+            if problem:
+                return {"state": problem}
+            if time.monotonic() >= deadline:
+                return {"state": "warmup_timeout"}
+            receipt, _binding = await self.prepare_inference_call(backend, model, chat_id=chat_id)
+            if time.monotonic() >= deadline:
+                return {"state": "warmup_timeout"}
+            if not isinstance(receipt, dict) or receipt.get("admitted") is not True:
+                return {"state": "capacity_wait"}
+            return {**result, "_deadline": deadline}
+        except TimeoutError:
+            return {"state": "warmup_timeout"}
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return {"state": "slot_unverified"}
+        finally:
+            if token is not None:
+                self._compute_turn_context.reset(token)
+            if entered:
+                self._leave_chat_turn(gate)
+            self._chat_warmup_lock.release()
+
+    async def _warm_ollama_model(self, backend, model, *, chat_id, check, deadline=None):
+        """Common supervised loader for native Always-On and interactive wrappers."""
+        began = time.monotonic()
+        grant = {"task": asyncio.current_task(), "backend": backend, "model": model,
+                 "chat_id": str(chat_id), "allow_cold": True, "started": False,
+                 "result": None, "deadline": deadline}
+        def bounded_check():
+            if deadline is not None and time.monotonic() >= deadline:
+                return "warmup_timeout"
+            problem = check()
+            if problem:
+                return problem
+            if not grant["started"] and time.monotonic() - began > 900.0:
+                return "queue_wait_exceeded"
+            return None
+        grant["check"] = bounded_check
+        token = self._model_warmup_context.set(grant)
+        try:
+            receipt, _binding = await self.prepare_inference_call(backend, model, chat_id=chat_id)
+            problem = bounded_check()
+            if problem:
+                return {"state": problem}
+            if not isinstance(receipt, dict) or receipt.get("state") == "external_target":
+                return {"state": "not_local"}
+            if receipt.get("admitted") is not True:
+                return {"state": "capacity_wait"}
+            if receipt.get("capacity_basis") == "resident_model":
+                return {"state": "resident"}
+            # A later re-probe may revoke, but never add unmonitored cold privilege.
+            grant["allow_cold"] = isinstance(receipt.get("cold_start"), dict)
+            await self._chat_with_compute_turn(backend, [], model=model, think=False)
+            return grant["result"] or {"state": "model_wait"}
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            problem = bounded_check()
+            return {"state": problem or (
+                "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait")}
+        finally:
+            self._model_warmup_context.reset(token)
+
+    async def _supervised_warmup_dispatch(self, dispatch, receipt, grant):
+        """Keep dispatch, final observation and abort cleanup under the same OS owner.
+
+        The backend coroutine stays in the owner task. monitor_load observes a
+        completion Future; cancelling it interrupts that task, not a new dispatch
+        task with copied HostInferenceGate credentials.
+        """
+        from hub._services.chat.buddha_cold_start import (
+            monitor_load, record_observation, resident_footprint, start_cooldown,
+            unload_exact_model)
+        gate = receipt.get("cold_start")
+        if isinstance(gate, dict) and grant["deadline"] is not None:
+            remaining = grant["deadline"] - time.monotonic()
+            if remaining <= 0:
+                grant["result"] = {"state": "warmup_timeout"}
+                return None
+            gate = {**gate, "max_load_seconds": min(gate["max_load_seconds"], remaining)}
+        owner = asyncio.current_task()
+        outcome = asyncio.get_running_loop().create_future()
+        interrupted = False
+        grant["started"] = True
+        stats = {}
+
+        def interrupt_owner(completion):
+            if completion.cancelled() and not owner.done() and not owner.cancelling():
+                owner.cancel()
+        outcome.add_done_callback(interrupt_owner)
+
+        async def observe():
+            if isinstance(gate, dict):
+                return await monitor_load(
+                    outcome, gate, hard_floor_bytes=gate["hard_floor_bytes"],
+                    check=grant["check"], stats=stats)
+            while not outcome.done():
+                await asyncio.wait({outcome}, timeout=0.1)
+                problem = grant["check"]()
+                if problem:
+                    outcome.cancel()
+                    return None, problem
+            try:
+                return outcome.result(), None
+            except (asyncio.CancelledError, Exception):
+                return None, "load_error:model_wait"
+
+        async def settle(task):
+            nonlocal interrupted
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    interrupted = True
+            return task.result()
+
+        observer = asyncio.create_task(observe())
+        try:
+            try:
+                result = await dispatch()
+                if not outcome.done():
+                    outcome.set_result(result)
+            except asyncio.CancelledError:
+                # A cancelled completion is monitor-owned; all other cancellation
+                # remains external and must propagate after cleanup settles.
+                interrupted = not outcome.cancelled()
+                if not outcome.done():
+                    outcome.cancel()
+            except Exception as exc:
+                if not outcome.done():
+                    outcome.set_exception(exc)
+            result, reason = await settle(observer)
+            reason = reason or grant["check"]()
+            if (not reason and ((isinstance(result, dict) and result.get("error"))
+                                or FailedAnswer.looks_like(result))):
+                reason = "load_error:model_wait"
+            if interrupted:
+                reason = reason or "stopped"
+            if reason:
+                cleaned = None
+                if isinstance(gate, dict):
+                    # Reuse watchdog intent format: an unverified unload leaves
+                    # the existing host gate fail-closed, including across restart.
+                    from hub._services.chat.host_inference_gate import HostInferenceGate
+                    from tools.maintenance.memory_pressure_unload_guard import record_intent, sync_directory
+                    root = HostInferenceGate().root
+                    pending = record_intent(root, grant["model"], gate["digest"])
+                    intent = pending.read_bytes()
+                    cleaned = await settle(asyncio.create_task(unload_exact_model(
+                        getattr(grant["backend"], "base_url", ""), grant["model"], gate["digest"])))
+                    if cleaned and pending.read_bytes() == intent:
+                        pending.unlink()
+                        sync_directory(root)
+                    if reason not in {"stopped", "stop_unverified", "slot_unverified", "slot_changed",
+                                      "session_changed", "binding_changed", "task_bound",
+                                      "fackel_unverified", "fackel_compute", "compute_locked"}:
+                        start_cooldown()
+                if interrupted:
+                    raise asyncio.CancelledError
+                # Consume only the cancellation initiated by our monitor.
+                if outcome.cancelled() and owner.cancelling():
+                    owner.uncancel()
+                if reason.startswith("load_error:"):
+                    state = reason.split(":", 1)[1]
+                elif reason in {"stopped", "stop_unverified", "slot_unverified", "slot_changed",
+                                "session_changed", "binding_changed", "task_bound",
+                                "fackel_unverified", "fackel_compute", "compute_locked", "warmup_timeout"}:
+                    state = reason
+                else:
+                    state = "cold_start_aborted"
+                grant["result"] = {"state": state, "cleanup_verified": cleaned}
+                if state == "cold_start_aborted":
+                    grant["result"]["reason"] = reason
+                    if isinstance(gate, dict):
+                        grant["result"]["baseline"] = gate["baseline"]
+                return result
+            if isinstance(gate, dict):
+                try:
+                    footprint = await resident_footprint(
+                        getattr(grant["backend"], "base_url", ""), grant["model"], gate["digest"])
+                    grant["result"] = {"state": "loaded", "observation": record_observation(
+                        grant["model"], gate["digest"], getattr(grant["backend"], "num_ctx", None),
+                        stats, gate["baseline"], footprint)}
+                except Exception:
+                    log.warning("Buddha-Ladebeobachtung konnte nicht gespeichert werden")
+            grant["result"] = grant["result"] or {"state": "loaded"}
+            return result
+        finally:
+            outcome.remove_done_callback(interrupt_owner)
+            # No observer or sampler is allowed to outlive the OS owner.
+            if not observer.done():
+                observer.cancel()
+                try:
+                    await settle(observer)
+                except asyncio.CancelledError:
+                    pass
 
     async def warm_buddha_ollama_model(self, backend, model, *, slot_reader, stop_event=None):
         """Load Buddha's exact local model before its first queue claim.
@@ -1982,111 +2311,9 @@ class ChatRuntime(_ModuleChatRuntime):
                 return {"state": problem}
 
             session._buddha_warmup_guard = check_warmup_binding
-            session._buddha_warmup_no_wait = True
-            session._buddha_cold_start = True
             context_token = self._compute_turn_context.set((worker_id, "background"))
-
-            try:
-                receipt, _binding = await self.prepare_inference_call(
-                    backend, model, chat_id=worker_id)
-            except Exception as exc:
-                problem = check_warmup_binding()
-                fallback = "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait"
-                return {"state": problem or fallback}
-
-            problem = check_warmup_binding()
-            if problem:
-                return {"state": problem}
-            if not isinstance(receipt, dict) or receipt.get("state") == "external_target":
-                return {"state": "not_local"}
-            if receipt.get("admitted") is not True:
-                return {"state": "capacity_wait"}
-            if receipt.get("capacity_basis") == "resident_model":
-                return {"state": "resident"}
-
-            load_started = asyncio.Event()
-            session._buddha_load_started = load_started
-            warmup = asyncio.create_task(self._chat_with_compute_turn(
-                backend, [], model=model, think=False))
-            gate = receipt.get("cold_start")
-            if not isinstance(gate, dict):
-                # No gate on the outer receipt: inner re-probes must not open one,
-                # otherwise a later gate would load without monitoring.
-                session._buddha_cold_start = False
-            if isinstance(gate, dict):
-                from hub._services.chat.buddha_cold_start import (
-                    monitor_load, record_observation, resident_footprint, start_cooldown,
-                    unload_exact_model)
-
-                load_stats = {}
-                try:
-                    _, reason = await monitor_load(
-                        warmup, gate, hard_floor_bytes=gate["hard_floor_bytes"],
-                        check=check_warmup_binding, stats=load_stats, load_started=load_started)
-                except asyncio.CancelledError:
-                    await asyncio.shield(unload_exact_model(
-                        getattr(backend, "base_url", ""), model, gate["digest"]))
-                    raise
-                if reason is not None:
-                    # Cleanup is only claimed once /api/ps no longer lists the model;
-                    # nothing is unloaded when the model call was never dispatched.
-                    cleaned = (await asyncio.shield(unload_exact_model(
-                        getattr(backend, "base_url", ""), model, gate["digest"]))
-                        if load_started.is_set() else None)
-                    if reason.startswith("load_error:") or reason not in {
-                            "stopped", "stop_unverified", "slot_unverified", "slot_changed",
-                            "task_bound", "fackel_unverified", "fackel_compute"}:
-                        start_cooldown()
-                    if reason.startswith("load_error:"):
-                        return {"state": reason.split(":", 1)[1], "cleanup_verified": cleaned}
-                    if reason in {"stopped", "stop_unverified", "slot_unverified", "slot_changed",
-                                  "task_bound", "fackel_unverified", "fackel_compute"}:
-                        return {"state": reason, "cleanup_verified": cleaned}
-                    return {"state": "cold_start_aborted", "reason": reason,
-                            "cleanup_verified": cleaned, "baseline": gate["baseline"]}
-            else:
-                while not warmup.done():
-                    await asyncio.wait({warmup}, timeout=0.1)
-                    problem = check_warmup_binding()
-                    if problem:
-                        warmup.cancel()
-                        try:
-                            await warmup
-                        except asyncio.CancelledError:
-                            pass
-                        except Exception:
-                            pass
-                        return {"state": problem}
-            try:
-                result = warmup.result()
-            except Exception as exc:
-                problem = check_warmup_binding()
-                fallback = "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait"
-                return {"state": problem or fallback}
-            problem = check_warmup_binding()
-            if problem:
-                if isinstance(gate, dict):
-                    # A stop or binding change right after a monitored load: unload it too.
-                    return {"state": problem, "cleanup_verified": await asyncio.shield(
-                        unload_exact_model(getattr(backend, "base_url", ""), model, gate["digest"]))}
-                return {"state": problem}
-            if (isinstance(result, dict) and result.get("error")) or FailedAnswer.looks_like(result):
-                if isinstance(gate, dict):
-                    start_cooldown()
-                    return {"state": "model_wait", "cleanup_verified": await asyncio.shield(
-                        unload_exact_model(getattr(backend, "base_url", ""), model, gate["digest"]))}
-                return {"state": "model_wait"}
-            if isinstance(gate, dict):
-                # Measured, not credited: a later start still needs its own admission.
-                try:
-                    footprint = await resident_footprint(
-                        getattr(backend, "base_url", ""), model, gate["digest"])
-                    return {"state": "loaded", "observation": record_observation(
-                        model, gate["digest"], getattr(backend, "num_ctx", None),
-                        load_stats, gate["baseline"], footprint)}
-                except Exception:
-                    log.warning("Buddha-Ladebeobachtung konnte nicht gespeichert werden")
-            return {"state": "loaded"}
+            return await self._warm_ollama_model(
+                backend, model, chat_id=worker_id, check=check_warmup_binding)
         finally:
             if context_token is not None:
                 self._compute_turn_context.reset(context_token)
@@ -2266,7 +2493,14 @@ class ChatRuntime(_ModuleChatRuntime):
         tool_rounds_enabled = kwargs.pop("_tool_rounds_enabled", None)
         completion_reserve = kwargs.pop("_completion_reserve", False)
         turn_context = self._compute_turn_context.get()
+        warmup = self._active_model_warmup(
+            backend, kwargs.get("model"),
+            turn_context[0] if turn_context else None)
         def check_binding():
+            if warmup is not None:
+                problem = warmup["check"]()
+                if problem:
+                    raise RuntimeError(problem)
             if turn_context:
                 session = self.get_session(turn_context[0])
                 if (getattr(session, "worker_task_binding", None) is not None
@@ -2672,6 +2906,9 @@ class ChatRuntime(_ModuleChatRuntime):
                                 load_signal = getattr(session, "_buddha_load_started", None) if session is not None else None
                                 if load_signal is not None:
                                     load_signal.set()
+                                if warmup is not None:
+                                    return await self._supervised_warmup_dispatch(
+                                        dispatch_model_call, receipt, warmup)
                                 return await dispatch_model_call()
                             finally:
                                 self._leave_compute_turn(self._compute_turn_gate)
@@ -2686,7 +2923,8 @@ class ChatRuntime(_ModuleChatRuntime):
                 # The host owner has been returned before reserve polling.
                 # We stay at this model-call boundary: previous tools and the
                 # task/session context are not replayed or reset.
-                if session is not None and getattr(session, "_buddha_warmup_no_wait", False):
+                if warmup is not None or (
+                        session is not None and getattr(session, "_buddha_warmup_no_wait", False)):
                     raise RuntimeError("buddha_warmup_capacity_wait")
                 with self._local_resource_waiters_lock:
                     self._local_resource_waiters[chat_id] = dict(receipt)
@@ -2813,8 +3051,10 @@ class ChatRuntime(_ModuleChatRuntime):
             await asyncio.sleep(0.025)
 
     @staticmethod
-    async def _enter_profile_turn(gate: _ChatTurnGate) -> None:
+    async def _enter_profile_turn(gate: _ChatTurnGate, *, deadline=None) -> None:
         while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("Foreground warmup budget exhausted")
             with gate.condition:
                 if not gate.clearing and gate.active_turns == 0:
                     gate.active_turns = 1

@@ -768,3 +768,175 @@ def test_control_api_allows_loopback_json_post(control_module):
     assert response.json() == {"ok": True, "mode": "safe"}
     assert response.headers["access-control-allow-origin"] == origin
     assert not thread.is_alive()
+
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_chat_capacity_wait_is_visible_before_any_turn(control_module, monkeypatch, method):
+    from hub._services.chat import local_resource_reserve as reserve
+
+    backend = OllamaBackend(default_model="example:large")
+    monkeypatch.setattr(control_module, "_snapshot_chat_backend",
+                        lambda *_args, **_kwargs: (backend, "example:large"))
+    monkeypatch.setattr(control_module, "_checked_backend_availability",
+                        lambda *_args: (True, "bereit"))
+    monkeypatch.setattr(control_module, "_profile_request", lambda *_args: None)
+    process = AsyncMock(return_value="must not run")
+    monkeypatch.setattr(control_module.runtime, "process", process)
+    probe = AsyncMock(return_value={
+        "state": "waiting_memory_reserve", "admitted": False, "retryable": True,
+        "memory_available_bytes": 18_342_100_992, "memory_required_bytes": 21_932_818_231,
+        "capacity_basis": "host_budget", "wait_seconds": 600,
+    })
+    monkeypatch.setattr(reserve, "probe", probe)
+    handler = control_module.ControlHandler.__new__(control_module.ControlHandler)
+    handler.path = "/api/readiness?chat_id=gui-web" if method == "GET" else "/api/chat"
+    handler.headers = {}
+    monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+    monkeypatch.setattr(handler, "_read_body", lambda: {"prompt": "synthetic", "chat_id": "gui-web"})
+    replies = []
+    monkeypatch.setattr(handler, "_json", lambda body, code=200: replies.append((body, code)))
+
+    getattr(handler, "do_" + method)()
+
+    body, status = replies[0]
+    assert status == (200 if method == "GET" else 503)
+    assert body.get("available", body.get("ok")) is False
+    assert body["reserve_state"] == "waiting_memory_reserve"
+    assert body["retryable"] is True
+    assert "Speicher" in body.get("status", body.get("error", ""))
+    assert "memory_available_bytes" not in body
+    process.assert_not_called()
+    probe.assert_awaited_once_with(backend, "example:large")
+
+
+@pytest.mark.parametrize("state", ["ready", "external_target", "not_configured", "disabled"])
+def test_chat_capacity_preflight_preserves_admitted_targets(control_module, monkeypatch, state):
+    from hub._services.chat import local_resource_reserve as reserve
+
+    backend = OllamaBackend(default_model="example:large")
+    probe = AsyncMock(return_value={"state": state, "admitted": True, "retryable": False})
+    monkeypatch.setattr(reserve, "probe", probe)
+
+    assert control_module._chat_resource_readiness(backend, "example:large") is None
+    probe.assert_awaited_once_with(backend, "example:large")
+
+
+def test_chat_capacity_preflight_does_not_probe_cloud_or_remote(control_module, monkeypatch):
+    from hub._services.chat import local_resource_reserve as reserve
+
+    probe = AsyncMock(side_effect=AssertionError("external inference must not use host reserve"))
+    monkeypatch.setattr(reserve, "probe", probe)
+    assert control_module._chat_resource_readiness(
+        OllamaBackend(default_model="example:cloud"), "example:cloud") is None
+    backend = OllamaBackend(base_url="http://remote.invalid:11434", default_model="example:large")
+    assert control_module._chat_resource_readiness(backend, "example:large") is None
+    probe.assert_not_called()
+
+
+def test_chat_capacity_probe_errors_are_retryable_and_sanitized(control_module, monkeypatch):
+    from hub._services.chat import local_resource_reserve as reserve
+
+    monkeypatch.setattr(reserve, "probe", AsyncMock(side_effect=RuntimeError("private provider body")))
+    result = control_module._chat_resource_readiness(OllamaBackend(), "example:large")
+    assert result["reserve_state"] == "unknown_resources"
+    assert result["retryable"] is True
+    assert "private" not in str(result)
+
+
+
+def test_readiness_reports_startable_without_warming_or_creating_session(control_module, monkeypatch):
+    from hub._services.chat import local_resource_reserve as reserve
+    backend = OllamaBackend(default_model="example:large")
+    monkeypatch.setattr(control_module, "_snapshot_chat_backend", lambda *_a, **_kw: (backend, "example:large"))
+    monkeypatch.setattr(control_module, "_checked_backend_availability", lambda *_a: (True, "bereit"))
+    monkeypatch.setattr(control_module, "_profile_request", lambda *_a: None)
+    monkeypatch.setattr(reserve, "probe", AsyncMock(return_value={
+        "state": "waiting_memory_reserve", "admitted": False, "retryable": True}))
+    eligibility = AsyncMock(return_value={"state": "ready", "admitted": True,
+        "capacity_basis": "cold_start_monitored", "cold_start": {"enabled": True}})
+    monkeypatch.setattr(control_module.runtime, "probe_chat_cold_start", eligibility, raising=False)
+    warmup = AsyncMock(side_effect=AssertionError("GET must never load"))
+    monkeypatch.setattr(control_module.runtime, "warm_chat_ollama_model", warmup, raising=False)
+    control_module.runtime.sessions.clear()
+    handler = control_module.ControlHandler.__new__(control_module.ControlHandler)
+    handler.path = "/api/readiness?chat_id=gui-web"
+    replies = []
+    monkeypatch.setattr(handler, "_json", lambda body, code=200: replies.append((body, code)))
+    handler.do_GET()
+    body, code = replies[0]
+    assert code == 200 and body["available"] is True and body["load_required"] is True
+    assert body["reserve_state"] == "cold_start_ready"
+    assert "Senden" in body["status"]
+    assert control_module.runtime.sessions == {}
+    warmup.assert_not_called()
+    eligibility.assert_awaited_once()
+
+
+@pytest.mark.parametrize("outcome", ["loaded", "cold_start_aborted", "revalidation"])
+def test_post_warmup_precedes_normal_admission_and_prompt(control_module, monkeypatch, outcome):
+    backend = OllamaBackend(default_model="example:large")
+    monkeypatch.setattr(control_module, "_snapshot_chat_backend", lambda *_a, **_kw: (backend, "example:large"))
+    monkeypatch.setattr(control_module, "_checked_backend_availability", lambda *_a: (True, "bereit"))
+    monkeypatch.setattr(control_module, "_profile_request", lambda *_a: None)
+    blocked = {"reserve_state": "waiting_memory_reserve", "reason_code": "local_reserve_waiting_memory_reserve",
+               "status": "memory wait", "retryable": True}
+    startable = {**blocked, "load_required": True, "reserve_state": "cold_start_ready"}
+    preflight = MagicMock(side_effect=[startable, blocked if outcome == "revalidation" else None])
+    monkeypatch.setattr(control_module, "_chat_resource_readiness", preflight)
+    events = []
+    async def warm(*_a, **_kw):
+        events.append("warm")
+        return {"state": "cold_start_aborted" if outcome == "cold_start_aborted" else "loaded"}
+    async def process(*_a, **_kw):
+        assert preflight.call_count == 2
+        events.append("process")
+        return "synthetic answer"
+    monkeypatch.setattr(control_module.runtime, "warm_chat_ollama_model", warm, raising=False)
+    monkeypatch.setattr(control_module.runtime, "process", process)
+    handler = control_module.ControlHandler.__new__(control_module.ControlHandler)
+    handler.path = "/api/chat"
+    handler.headers = {}
+    monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+    monkeypatch.setattr(handler, "_read_body", lambda: {"prompt": "synthetic", "chat_id": "gui-web"})
+    replies = []
+    monkeypatch.setattr(handler, "_json", lambda body, code=200: replies.append((body, code)))
+    handler.do_POST()
+    body, code = replies[0]
+    if outcome == "loaded":
+        assert code == 200 and events == ["warm", "process"]
+    else:
+        assert code == 503 and events == ["warm"] and body["ok"] is False
+    if outcome == "cold_start_aborted":
+        assert body["phase"] == "warmup" and body["warmup_state"] == "cold_start_aborted"
+
+
+
+def test_expired_warmup_never_accepts_prompt_after_loading(control_module, monkeypatch):
+    backend = OllamaBackend(default_model="example:large")
+    monkeypatch.setattr(control_module, "_snapshot_chat_backend", lambda *_a, **_kw: (backend, "example:large"))
+    monkeypatch.setattr(control_module, "_checked_backend_availability", lambda *_a: (True, "bereit"))
+    monkeypatch.setattr(control_module, "_profile_request", lambda *_a: None)
+    monkeypatch.setattr(control_module, "_chat_resource_readiness", lambda *_a, **_kw: {
+        "load_required": True, "status": "startable"})
+    clock = {"now": 0.0}
+    monkeypatch.setattr(control_module, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+    async def warm(*_a, **kwargs):
+        assert kwargs["deadline"] == 300.0
+        clock["now"] = 301.0
+        return {"state": "loaded"}
+    monkeypatch.setattr(control_module.runtime, "warm_chat_ollama_model", warm)
+    process = AsyncMock(return_value="must never be accepted")
+    monkeypatch.setattr(control_module.runtime, "process", process)
+    handler = control_module.ControlHandler.__new__(control_module.ControlHandler)
+    handler.path = "/api/chat"
+    handler.headers = {}
+    monkeypatch.setattr(handler, "_allow_json_post", lambda: True)
+    monkeypatch.setattr(handler, "_read_body", lambda: {"prompt": "synthetic", "chat_id": "gui-web"})
+    replies = []
+    monkeypatch.setattr(handler, "_json", lambda body, code=200: replies.append((body, code)))
+    handler.do_POST()
+    body, code = replies[0]
+    assert code == 503 and body["warmup_state"] == "warmup_timeout"
+    assert body["phase"] == "warmup"
+    process.assert_not_called()

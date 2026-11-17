@@ -5,8 +5,8 @@
   "status": "pinned_release",
   "source": {
     "repository": "ellmos-ai/ellmos-system-gui",
-    "commit": "48c841578d9d15383184ced20dcef0258171398f",
-    "archive_sha256": "872d098c89822e173fb1b49a13572683e32e9b0bddd5fa8a4e408dc7c17f9a4b",
+    "commit": "bc435e975c2263ae76d2801ac3e28ee5f53eaacc",
+    "archive_sha256": "06f792be811e2ad96fbee48e09eb2cfabb6aee8bacf62cc4419124da3bba77fe",
     "dist_manifest_schema": "ellmos-system-gui.dist.v1"
   },
   "required_backend_routes": [
@@ -15,7 +15,7 @@
     "/api/gui/capabilities"
   ],
   "installation_evidence": "Verify the served dist-manifest source_commit and every file hash against the pinned release artifact at deployment. A pin alone does not prove a live installation.",
-  "pinned_source_commit": "48c841578d9d15383184ced20dcef0258171398f",
-  "release_archive": "ellmos-system-gui-0.2.40-48c841578d9d.zip",
-  "release_archive_sha256": "872d098c89822e173fb1b49a13572683e32e9b0bddd5fa8a4e408dc7c17f9a4b"
+  "pinned_source_commit": "bc435e975c2263ae76d2801ac3e28ee5f53eaacc",
+  "release_archive": "ellmos-system-gui-0.2.40-bc435e975c22.zip",
+  "release_archive_sha256": "06f792be811e2ad96fbee48e09eb2cfabb6aee8bacf62cc4419124da3bba77fe"
 }

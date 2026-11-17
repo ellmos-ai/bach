@@ -1,6 +1,6 @@
 # Lokaler Worker-Harness (Buddha / Ollama)
 
-Stand 25.10.2026. Dieses Dokument beschreibt, wie BACH Aufgaben an ein lokales Modell (Buddha, `qwen3.8:27b-mlx` über Ollama auf dem Mac Studio) gibt, was dabei schiefgehen kann und **warum** die heutigen Einstellungen so gewählt sind. Es ist der Kern des lokalen Harnesses; Änderungen daran bitte hier nachtragen (Ist und Begründung).
+Fortgeschrieben am 17.11.2026; die ursprüngliche Messbasis stammt vom 25.10.2026. Dieses Dokument beschreibt, wie BACH Aufgaben an ein lokales Modell (Buddha, `qwen3.8:27b-mlx` über Ollama auf dem Mac Studio) gibt, was dabei schiefgehen kann und **warum** die heutigen Einstellungen so gewählt sind. Es ist der Kern des lokalen Harnesses; Änderungen daran bitte hier nachtragen (Ist und Begründung).
 
 Bauort heute: BACH-Kern (`system/hub/_services/chat/…`, `system/hub/_services/task_*`), Ausnahme nach MODUL-ZUORDNUNG. Ziel: Herauslösung als Modul `ellmos-worker` (Task #2493); das Dokument zieht dann mit.
 
@@ -166,3 +166,115 @@ Der Mac-Scanner (`BACH_LOCK_SCAN`) prüft das Live-Repo samt OneDrive-Zwilling u
 ## 10. Offene Aufgaben
 
 #2453 (Abschluss beim PR-Merge), #2454 (Review-Rückstau, Textweg), #2493 (Modul `ellmos-worker`), #2510 (Toolsets), #2518 (Rest: Server-Ablehnung bei decompose beendet die Bindung), #2537 (Lock-Scanner-Scope), #2503 (Cloud-Worker ab 1.11.).
+
+## 11. Interaktiver Start und Talk-Kontinuität (17.11.2026)
+
+### Ressourcenbereitschaft und kontrollierter Start beim Senden
+
+Ein erreichbarer Ollama-Dienst und ein installiertes Modell bedeuten noch nicht,
+dass das lokale Modell starten darf. Beim Befund am 17.11. war Qwen entladen,
+die Chat-Readiness meldete dennoch bereit. Die normale Reserveprüfung verweigerte
+den Start: rund 18,3 GB verfügbar gegenüber 21,9 GB erforderlichem Hostbudget.
+Eine anschließende rein lesende Coldstartprobe erlaubte mit den damaligen
+Hostwerten einen überwachten Ladeversuch. Dieser vorhandene Mechanismus war
+bisher nur an den Always-On-Worker angeschlossen.
+
+Readiness verwendet dieselbe native Ressourcenprüfung wie die Laufzeit und lädt
+selbst kein Modell. Bei regulär freier Reserve ist der Chat bereit. Bei einem
+zulässigen kontrollierten Kaltstart meldet er `readiness_state=startable`,
+`load_required=true` und „Startbar – Modell wird beim Senden geladen“.
+Dafür müssen auch die aktuelle Modell-/Slotbindung, Fackel/Compute-Freigabe und
+der Cooldown desselben Control-Prozesses passen. Andernfalls bleiben
+`available=false` und ein verständlicher Grund erhalten.
+
+Der authentisierte POST lädt erforderlichenfalls zuerst kontrolliert und ohne
+Nutzerprompt. Always-On und Chat verwenden dafür dieselbe überwachte Runtime-
+Funktion mit der vorhandenen Coldstartpolicy. Der temporäre Grant ist an den
+exakten asyncio-Task, Backendgegenstand, Modellnamen und Chat gebunden;
+parallele Requests und Child-Tasks erben keine Startrechte. Vor der eigentlichen
+Promptannahme sind die Sonderrechte zurückgesetzt, Binding und normale
+Ressourcenfreigabe werden erneut geprüft. Ein Ladefehler liefert HTTP 503 mit
+`phase=warmup`, `warmup_state`, `reason_code` und bereinigtem Hinweis.
+Der Prompt wird dann nicht an `runtime.process` übergeben.
+
+Backenddispatch, abschließendes Messsample und erforderliches verifiziertes
+Entladen bleiben vollständig unter derselben Hostownership. Ein anderer Kanal
+kann deshalb nicht vor der Bereinigung übernehmen. Ist das Entladen nicht
+bestätigt, hält ein Beleg im vorhandenen `unload-pending.json`-Format weitere
+Hostbesitzer geschlossen. Gespeicherte RAM-, Druck- und Swapgrenzen werden
+durch den Anschluss nicht abgesenkt; Cloud-/Remote-Backends bekommen keine
+neue lokale RAM-Sperre.
+
+Der Vordergrund-Warmup hat insgesamt höchstens 300 Sekunden einschließlich
+Queuezeit; eine strengere vorhandene Coldstartpolicy gilt weiterhin.
+Wartezeit verkürzt das restliche Ladebudget. Nach Fristablauf wird kein Prompt
+mehr angenommen. Die erforderliche Bereinigung darf länger dauern und behält
+ihre Hostownership. Die bestehenden Always-On-Budgets bleiben unverändert.
+
+Die Vorprüfung ist eine Momentaufnahme; Ressourcenänderungen werden weiterhin
+von der Laufzeit geprüft. Ihr asynchrones Fünfsekunden-Zeitbudget ist keine
+garantierte harte Wallclock-Grenze, weil eine begonnene Hostmessung beim
+Herunterfahren zu Ende läuft. Ebenso ist das Warmupbudget kein vollständiger
+HTTP-Abbruchvertrag: Ein Browser-/Proxy-Disconnect wird derzeit nicht
+automatisch zur Cancellation des synchronen Control-Handlers. Der begonnene
+Load bleibt begrenzt und überwacht. Explizite Coroutine-Cancellation und
+Cleanup sind abgesichert; die Kopplung an HTTP-Disconnect bleibt ein
+gesonderter Lifecycle-Folgeschritt.
+
+### Funkgerät verwendet die vorhandene Chat-Laufzeit
+
+Der Talk-Adapter in `system/gui/server.py` verwendet den gebundenen
+Systemsteckplatz und den authentisierten Chat-Control-Pfad. Eigene
+Ollama-Kandidatenlisten, Talk-Persona-Systemprompts, RAM-Verläufe und ein
+ungebundener globaler Fallback entfallen. Der vorhandene `ChatRuntime` übernimmt
+Modellwahl, Werkzeuge, Gates und den persistenten `SQLiteChatSessionStore`;
+Talk schreibt denselben Turn nicht zusätzlich.
+
+Eine Talk-Konversation ist serverseitig aus der authentisierten Geräte-ID
+und dem gebundenen Slot abgeleitet (`slot:<slot>:<32hex>`). Sie bleibt beim
+Neustart und bei Token-Erneuerung für dasselbe Gerät erhalten. Andere Geräte
+oder Slots erhalten andere Konversationen. Talk-Mutationen erfordern
+Geräteauthentisierung; fremde `chat_id`, `agent_id` und vorgegebene
+`model_response` werden nicht angenommen. Eine nicht bestätigte Auswahl
+Claude/Gemini/Codex wird mit HTTP 409 erklärt, statt ein anderes Modell unter
+diesem Namen antworten zu lassen.
+
+Jeder Turn hat einen isolierten Engine-/Reflexzustand. Die synchrone Inferenz
+läuft außerhalb des ASGI-Eventloops; eine inzwischen geänderte gemeinsame
+Konfiguration wird beim Abschluss nicht überschrieben. Die eingebettete
+Oberfläche und die tatsächlich ausgelieferten Astro-Clients zeigen Fehler,
+erhalten fehlgeschlagene oder inzwischen neu geschriebene Eingaben und
+verhindern doppelte Sendungen während eines laufenden Turns.
+Eine fehlende Antwort ist kein sicherer Nachweis, dass der Server den Auftrag
+nie erhalten hat. Ein späterer Audiofehler lässt die empfangene Textantwort
+sichtbar.
+
+Der Hauptchat beobachtet optional Readiness für dasselbe eingefrorene
+Chat-/Agentenziel wie der anschließende POST und zeigt den bevorstehenden
+Modellstart im vorhandenen Statusbereich. Ein Probeausfall unterbindet den
+maßgeblichen POST nicht. Der GUI-Verbrauch ist an den gemergten Source-Commit
+`bc435e975c2263ae76d2801ac3e28ee5f53eaacc` von
+`ellmos-system-gui` gebunden (PR #144, Version 0.2.40 mit Source-Suffix);
+der Pin allein beweist noch keine Live-Installation.
+
+### Eine persönliche Identität, getrennte Ausführung
+
+Der gemeinsame Runtime-Pfad führt keine globale Personenautorität ein und
+vereinigt keine privaten Chat-, Connector-, Talk- oder Worker-Verläufe.
+Talk-Altverläufe werden nicht automatisch in den neuen gerätegebundenen Thread
+übernommen. Das empfohlene Ziel sind dieselbe persönliche Identität und
+ausdrücklich freigegebene Erinnerungen über alle vier Zugänge.
+Besitzer-/Kanalzuordnung und Leserechte für gemeinsame Erinnerungen müssen
+dafür verbindlich sein. Ausführungsinstanz, Modell, Aufgabenbindung,
+private Kontexte und unabhängige Reviewer bleiben getrennt.
+
+Vorhandene Bausteine (`assistant-core`, `agents-heart`, ChatRuntime,
+SessionStore und MemoryHook) sollen weiterverwendet werden. Memory-Hooks
+werden durch dieses Paket nicht global aktiviert. Ein gemeinsamer
+Ausgabeformatvertrag für die frühere Talk-Sprach-/Kürzevorgabe bleibt ein
+abgegrenzter Folgeschritt.
+
+Nachverfolgung: BACH #4210 / Ocean #36 / T-20261117-737954250 und
+BACH #4211 / Ocean #37 / T-20261117-896285557; BACH PR #738 und GUI PR #144.
+Der größere Gedächtnisvertrag bleibt beim bestehenden Dachthema
+T-20260920-823767362.

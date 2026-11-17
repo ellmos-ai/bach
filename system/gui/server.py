@@ -42,6 +42,7 @@ from datetime import datetime, date
 from typing import Optional, List, Union
 
 import contextlib
+import contextvars
 from contextlib import asynccontextmanager
 
 # BACH imports
@@ -1834,6 +1835,10 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         if ((origin is not None and origin != same_origin)
                 or request.headers.get("sec-fetch-site") == "cross-site"):
             return JSONResponse(status_code=403, content={"detail": "Cross-origin API request denied"})
+
+        # Talk mutations can reach private runtime context and must authenticate.
+        if path.startswith("/api/talk/") and request.method not in {"GET", "HEAD"}:
+            return await self._require_device(request, call_next)
 
         # 2. Status & probe endpoints pass through
         if path in self.EXEMPT_API_PATHS or (path in {"/api/nav/config", "/api/domains/installed", "/api/domains/pins", "/api/gui/capabilities"} and request.method == "GET") or (path == "/api/permissions" and request.method in {"GET", "HEAD"}):
@@ -17226,26 +17231,6 @@ def _save_capability_permissions(perms: dict[str, bool]) -> dict[str, bool]:
 
 
 _TALK_CONFIG_FILE = Path.home() / ".bach" / "talk_config.json"
-_TALK_HISTORY: dict[str, list[dict[str, str]]] = {}
-
-_TALK_PERSONA_SYSTEM_PROMPTS = {
-    "buddha": (
-        "Du bist Buddha, der zentrale KI-Orchestrator und ruhige Begleiter im BACH/Ocean-System von Lukas. "
-        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
-    ),
-    "claude": (
-        "Du bist Claude im BACH/Ocean-Team von Lukas (Fokus: präzise Analyse, Architektur, Sorgfalt). "
-        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
-    ),
-    "gemini": (
-        "Du bist Gemini (Antigravity) im BACH/Ocean-Team von Lukas (Fokus: schnelle Umsetzung, UI/Design, System-Integration). "
-        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
-    ),
-    "codex": (
-        "Du bist Codex / GPT im BACH/Ocean-Team von Lukas (Fokus: Code, Infrastruktur, präzise Technik). "
-        "Du antwortest über das Live-Funkgerät (ELLMOS Talk / Walkie-Talkie)."
-    ),
-}
 
 
 def _strip_talk_control_tags(text: str) -> str:
@@ -17270,141 +17255,59 @@ def _infer_talk_control_tag(spoken: str) -> str:
     return '<talk_control {"emotion": "focused", "pattern": "wave", "emoji_overlay": "🎙️"} />'
 
 
+_TALK_CALLER_SCOPE = contextvars.ContextVar("bach_talk_caller_scope", default=None)
+
+
+def _talk_chat_scope(device: dict, bound_slot: str) -> str:
+    """Use the existing slot transcript store, partitioned by authenticated device.
+
+    Device IDs survive browser-session rotation. No caller-supplied transcript ID
+    or persona name can select another owner's history.
+    """
+    device_id = device.get("id") if isinstance(device, dict) else None
+    if type(device_id) is not int or device_id <= 0:
+        raise HTTPException(status_code=401, detail="Geräteanmeldung für Talk erforderlich")
+    if type(bound_slot) is not str or re.fullmatch(r"[A-Za-z0-9_-]{1,80}", bound_slot) is None:
+        raise HTTPException(status_code=409, detail="Talk-Steckplatz ist ungültig")
+    digest = hashlib.sha256(
+        f"bach.talk.device-slot.v1\\0{device_id}\\0{bound_slot}".encode("utf-8")
+    ).hexdigest()[:32]
+    return f"slot:{bound_slot}:{digest}"
+
+
 def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str = "de") -> str:
-    """Route ELLMOS Talk turns to a live LLM (Ollama fast path or BACH Chat-Control API)."""
-    norm_persona = (persona or "buddha").strip().lower()
-    norm_lang = (language or "de").strip().lower()
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        if norm_lang == "en":
-            return (
-                '<talk_control {"emotion": "curious", "pattern": "wave", "emoji_overlay": "✨"} /> '
-                f"[{norm_persona.capitalize()}] I heard you clearly. How would you like to proceed?"
-            )
-        return (
-            '<talk_control {"emotion": "curious", "pattern": "wave", "emoji_overlay": "✨"} /> '
-            f"[{norm_persona.capitalize()}] Ich habe dich klar verstanden. Wie wollen wir weitermachen?"
-        )
-
-    role_intro = _TALK_PERSONA_SYSTEM_PROMPTS.get(norm_persona, _TALK_PERSONA_SYSTEM_PROMPTS["buddha"])
-    lang_hint = "Antworte auf Englisch (English)." if norm_lang == "en" else "Antworte auf Deutsch."
-    sys_instruction = (
-        f"{role_intro} {lang_hint} "
-        "WICHTIG für das Funkgerät: Antworte natürlich, direkt und gesprochen-prägnant in 1 bis maximal 3 kurzen Sätzen "
-        "(reiner Fließtext zum direkten Vorlesen per Sprachausgabe, ohne XML/HTML-Tags, ohne Markdown-Tabellen, ohne Codeblöcke)."
-    )
-
-    raw_history = _TALK_HISTORY.setdefault(norm_persona, [])
-    history = [
-        {"role": h.get("role", "user"), "content": _strip_talk_control_tags(str(h.get("content") or ""))}
-        for h in raw_history
-        if _strip_talk_control_tags(str(h.get("content") or ""))
-    ]
-    _TALK_HISTORY[norm_persona] = history
-    messages = [{"role": "system", "content": sys_instruction}]
-    messages.extend(history[-6:])
-    messages.append({"role": "user", "content": prompt})
-
-    reply_text = ""
-
-    # 1. Fast path: local Ollama /api/chat (no multi-round tool loop latency)
-    ollama_base = os.environ.get("BACH_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+    """Use the canonical ChatRuntime; persona controls visuals, never model identity."""
+    chat_id = _TALK_CALLER_SCOPE.get()
+    if chat_id is None:
+        raise HTTPException(status_code=401, detail="Geräteanmeldung für Talk erforderlich")
+    base_url = _chat_control_base_url()
+    auth_header = get_control_api_auth_header()
+    if not base_url or not auth_header:
+        raise HTTPException(status_code=503, detail="Authentisierter Chatdienst für Talk nicht verfügbar")
     try:
-        with httpx.Client(timeout=90.0) as client:
-            tags_resp = client.get(f"{ollama_base}/api/tags")
-            if tags_resp.status_code == 200:
-                installed = [
-                    str(m.get("name") or "")
-                    for m in (tags_resp.json().get("models") or [])
-                    if isinstance(m, dict) and m.get("name")
-                ]
-                configured_primary = ""
-                if _TALK_SESSION_SINGLETON is not None:
-                    configured_primary = str(getattr(_TALK_SESSION_SINGLETON.state, "primary_model", "") or "").strip()
-                preferred_order = [
-                    m
-                    for m in [
-                        configured_primary,
-                        "qwen3.8:27b-mlx",
-                        "gpt-oss:120b-cloud",
-                        "qwen3:1.7b",
-                    ]
-                    if m
-                ]
-                candidates: list[str] = []
-                for m in preferred_order + installed:
-                    if m in installed and m not in candidates and "smollm2" not in m:
-                        candidates.append(m)
-                for chosen_model in candidates[:3]:
-                    try:
-                        think_param: bool | str = "low" if "gpt-oss" in chosen_model.lower() else False
-                        chat_resp = client.post(
-                            f"{ollama_base}/api/chat",
-                            json={
-                                "model": chosen_model,
-                                "stream": False,
-                                "think": think_param,
-                                "messages": messages,
-                                "options": {"num_predict": 800, "temperature": 0.5},
-                            },
-                        )
-                        if chat_resp.status_code == 200:
-                            msg_obj = chat_resp.json().get("message") or {}
-                            content = str(msg_obj.get("content") or "").strip()
-                            if "<think>" in content:
-                                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-                            content = _strip_talk_control_tags(content)
-                            if len(content) >= 2:
-                                reply_text = content
-                                break
-                    except Exception:
-                        continue
-    except Exception:
-        pass
-
-    # 2. Fallback: BACH Chat-Control API (/api/chat on port 8081)
-    if not reply_text:
-        base_url = _chat_control_base_url()
-        auth_header = get_control_api_auth_header()
-        if base_url and auth_header:
-            try:
-                compact_prompt = (
-                    f"[ELLMOS Talk Funkgerät · Persona: {norm_persona.capitalize()} · {lang_hint} "
-                    "Antworte direkt in 1-3 kurzen gesprochenen Sätzen ohne Tool-Aufrufe] "
-                    f"{prompt}"
-                )
-                with httpx.Client(timeout=25.0) as client:
-                    ctrl_resp = client.post(
-                        f"{base_url}/chat",
-                        headers={"Authorization": auth_header},
-                        json={"prompt": compact_prompt, "chat_id": "gui-web"},
-                    )
-                    if ctrl_resp.status_code == 200:
-                        payload = ctrl_resp.json()
-                        ans = _strip_talk_control_tags(str(payload.get("answer") or payload.get("response") or ""))
-                        if len(ans) >= 2:
-                            reply_text = ans
-            except Exception:
-                pass
-
-    if reply_text:
-        history.append({"role": "user", "content": prompt})
-        history.append({"role": "assistant", "content": reply_text})
-        if len(history) > 12:
-            del history[:-12]
-        from hub._services.chat.talk_history import record_talk_turn
-        record_talk_turn(norm_persona, prompt, reply_text)  # PB-2: Talk-Verlauf erscheint in der Verlaufsliste
-        ctrl_tag = _infer_talk_control_tag(reply_text)
-        return f"{ctrl_tag} {reply_text}"
-
-    if norm_lang == "en":
-        return (
-            '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "📡"} /> '
-            f"[{norm_persona.capitalize()}] Radio link active, but no language model backend responded."
-        )
-    return (
-        '<talk_control {"emotion": "alert", "pattern": "pulse", "emoji_overlay": "📡"} /> '
-        f"[{norm_persona.capitalize()}] Funkkanal steht, aber aktuell antwortet kein Sprachmodell-Backend."
-    )
+        with httpx.Client(timeout=_chat_proxy_timeout()) as client:
+            headers = {"Authorization": auth_header}
+            status_response = client.get(f"{base_url}/status", headers=headers)
+            status_payload = status_response.json()
+            if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
+                raise HTTPException(status_code=503, detail="Chatdienst-Identität für Talk nicht bestätigt")
+            response = client.post(
+                f"{base_url}/chat", headers=headers,
+                json={"prompt": prompt, "chat_id": chat_id},
+            )
+            payload = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Chatdienst für Talk nicht erreichbar") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=503, detail="Chatdienst lieferte keine gültige Talk-Antwort")
+    if response.status_code != 200 or payload.get("ok") is not True or payload.get("compute_locked"):
+        detail = str(payload.get("error") or payload.get("answer") or "Talk-Steckplatz ist nicht verfügbar")
+        status = response.status_code if response.status_code in {409, 423, 429, 503} else 503
+        raise HTTPException(status_code=status, detail=detail)
+    answer = _strip_talk_control_tags(str(payload.get("answer") or payload.get("response") or ""))
+    if not answer:
+        raise HTTPException(status_code=503, detail="Chatdienst lieferte eine leere Talk-Antwort")
+    return f"{_infer_talk_control_tag(answer)} {answer}"
 
 
 def _get_talk_session():
@@ -17702,6 +17605,8 @@ async def api_get_talk_config():
     perms = _load_capability_permissions()
     return {
         "schema": "ellmos.talk.config.v1",
+        "execution_binding": {"source": "system_slot", "slot_id": engine.state.bound_slot,
+                              "primary_model_override": False},
         "config": engine.state.as_dict(),
         "permissions": {
             "voice_tts": bool(perms.get("voice_tts", True)),
@@ -17733,7 +17638,7 @@ async def api_get_talk_config():
 
 @app.post("/api/talk/config")
 async def api_update_talk_config(payload: dict = Body(...)):
-    """Update `ellmos-talk` operating mode, primary/fast model bindings, wake-word, or summon policy."""
+    """Update Talk preferences; execution models remain owned by the bound system slot."""
     allowed_keys = {
         "persona",
         "language",
@@ -17760,6 +17665,8 @@ async def api_update_talk_config(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "schema": "ellmos.talk.config.v1",
+        "execution_binding": {"source": "system_slot", "slot_id": snapshot["bound_slot"],
+                              "primary_model_override": False},
         "updated": list(updates.keys()),
         "config": snapshot,
     }
@@ -17846,11 +17753,24 @@ async def api_talk_reflex(payload: dict = Body(...)):
 
 
 @app.post("/api/talk/turn")
-async def api_talk_turn(payload: dict = Body(...)):
+async def api_talk_turn(request: Request, payload: dict = Body(...)):
     """Process a live conversational turn through `ellmos-talk` (FastReflexLoop + DeepCortexLoop, #3764)."""
     from dataclasses import asdict
 
-    engine = _get_talk_session()
+    if {"model_response", "chat_id", "agent_id"}.intersection(payload):
+        raise HTTPException(status_code=400, detail="Talk-Kontext und Modellantwort werden serverseitig gebunden")
+    from copy import deepcopy
+    from hub._services.ocean_stack_bridge import load_talk_module
+
+    shared_engine = _get_talk_session()
+    state_snapshot = shared_engine.state
+    talk_mod = load_talk_module()
+    engine = talk_mod.TalkEngine(
+        initial_state=deepcopy(state_snapshot),
+        reflex=talk_mod.FastReflexLoop(model_name=state_snapshot.fast_relay_model),
+        cortex=talk_mod.DeepCortexLoop(responder=_talk_cortex_responder),
+    )
+    chat_id = _talk_chat_scope(getattr(request.state, "device", None), engine.state.bound_slot)
     user_utterance = str(
         payload.get("user_utterance")
         or payload.get("text")
@@ -17858,9 +17778,10 @@ async def api_talk_turn(payload: dict = Body(...)):
         or payload.get("message")
         or ""
     ).strip()
-    model_response = payload.get("model_response")
     persona = str(payload.get("persona") or "").strip().lower()
     language = str(payload.get("language") or "").strip().lower()
+    if (persona or engine.state.persona) != "buddha":
+        raise HTTPException(status_code=409, detail="Talk verwendet den konfigurierten Steckplatz; eine andere Modellperson ist nicht bestätigt. Bitte Buddha wählen und das Modell am Steckplatz konfigurieren.")
     is_explicit_stop = bool(
         re.fullmatch(r"(stop|stopp|halt|warte(?:\s+kurz)?|wait|pause)[.!?\s]*", user_utterance, flags=re.IGNORECASE)
     )
@@ -17873,10 +17794,14 @@ async def api_talk_turn(payload: dict = Body(...)):
         directive["language"] = language
     if directive:
         engine.update_visual_state(directive)
-    res = engine.process_turn(
-        user_utterance=user_utterance,
-        model_response=str(model_response) if model_response else None,
-    )
+    scope_token = _TALK_CALLER_SCOPE.set(chat_id)
+    try:
+        res = await asyncio.to_thread(engine.process_turn, user_utterance=user_utterance)
+    finally:
+        _TALK_CALLER_SCOPE.reset(scope_token)
+    # Never overwrite a config, summon, reflex or newer turn published in flight.
+    if shared_engine.state is state_snapshot:
+        shared_engine.state = engine.state
     reflex_dict = asdict(res.reflex)
     reflex_dict.setdefault("ack_text", res.reflex.backchannel_text or ("Verstanden." if engine.state.language != "en" else "Got it."))
     reflex_dict.setdefault("latency_target_ms", res.reflex.latency_budget_ms)
@@ -18106,7 +18031,7 @@ async def talk_visualizer_companion_page(request: Request = None):
     </div>
     <div class="controls">
       <select id="personaSelect" aria-label="Persona">
-        <option value="buddha">Buddha (Local MLX/Ollama)</option>
+        <option value="buddha">Buddha (konfigurierter Steckplatz)</option>
         <option value="gemini">Gemini</option>
         <option value="claude">Claude</option>
         <option value="codex">Codex / GPT</option>
@@ -18147,7 +18072,7 @@ async def talk_visualizer_companion_page(request: Request = None):
       Sprich oder tippe eine Nachricht – das Modell steuert Farben, Muster und Emotionen live über &lt;talk_control /&gt;.
     </div>
     <div class="input-row">
-      <input type="text" id="utteranceInput" placeholder="Sage etwas zu Buddha, Gemini, Claude oder Codex..." />
+      <input type="text" id="utteranceInput" placeholder="Nachricht an deinen Assistenten am konfigurierten Steckplatz..." />
       <button id="micBtn" title="Mikrofon-Spracheingabe starten">🎤</button>
       <button class="primary" id="sendBtn">Sprechen</button>
     </div>
@@ -18239,25 +18164,31 @@ async def talk_visualizer_companion_page(request: Request = None):
 
     async function sendTurn() {
       const input = document.getElementById('utteranceInput');
+      const button = document.getElementById('sendBtn');
       const text = input.value.trim();
-      if (!text) return;
+      if (!text || button.disabled) return;
       const persona = document.getElementById('personaSelect').value;
       const language = document.getElementById('langSelect').value;
-      const res = await fetch('/api/talk/turn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_utterance: text, persona, language })
-      });
-      const data = await res.json();
-      if (data.visual_state) applyVisualState(data.visual_state);
-      if (data.reflex) {
-        document.getElementById('reflexStatus').textContent =
-          'FastReflexLoop (' + data.reflex.latency_target_ms + 'ms): ' + (data.reflex.ack_text || 'ack');
-      }
-      const sentences = data.spoken_text || (data.sentences || []).join(' ');
-      document.getElementById('transcriptBox').textContent = sentences || text;
-      input.value = '';
-      if (sentences) {
+      button.disabled = true;
+      try {
+        const res = await fetch('/api/talk/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_utterance: text, persona, language })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error((data && (data.detail || data.error)) || ('Talk fehlgeschlagen (HTTP ' + res.status + ').'));
+        }
+        const sentences = data.spoken_text || (data.sentences || []).join(' ');
+        if (!sentences) throw new Error('Chatdienst lieferte keine gesprochene Antwort.');
+        if (data.visual_state) applyVisualState(data.visual_state);
+        if (data.reflex) {
+          document.getElementById('reflexStatus').textContent =
+            'FastReflexLoop (' + data.reflex.latency_target_ms + 'ms): ' + (data.reflex.ack_text || 'ack');
+        }
+        document.getElementById('transcriptBox').textContent = sentences;
+        if (input.value.trim() === text) input.value = '';
         let playedLocal = false;
         try {
           const ttsRes = await fetch('/api/voice/tts', {
@@ -18274,12 +18205,24 @@ async def talk_visualizer_companion_page(request: Request = None):
             }
           }
         } catch (_) {}
-        if (!playedLocal && 'speechSynthesis' in window) {
-          const utter = new SpeechSynthesisUtterance(sentences);
-          utter.lang = language === 'en' ? 'en-US' : 'de-DE';
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(utter);
+        try {
+          if (!playedLocal && 'speechSynthesis' in window) {
+            const utter = new SpeechSynthesisUtterance(sentences);
+            utter.lang = language === 'en' ? 'en-US' : 'de-DE';
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utter);
+          }
+        } catch (_) {
+          document.getElementById('reflexStatus').textContent =
+            'Antwort empfangen · Sprachausgabe fehlgeschlagen.';
         }
+      } catch (error) {
+        document.getElementById('transcriptBox').textContent =
+          'Talk: ' + (error.message || 'Verbindung fehlgeschlagen.');
+        document.getElementById('reflexStatus').textContent =
+          'Keine Antwort empfangen · Eingabe bleibt erhalten.';
+      } finally {
+        button.disabled = false;
       }
     }
 
