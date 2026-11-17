@@ -18220,7 +18220,7 @@ async def talk_visualizer_companion_page(request: Request = None):
         document.getElementById('transcriptBox').textContent =
           'Talk: ' + (error.message || 'Verbindung fehlgeschlagen.');
         document.getElementById('reflexStatus').textContent =
-          'Nicht zugestellt · Eingabe bleibt erhalten.';
+          'Keine Antwort empfangen · Eingabe bleibt erhalten.';
       } finally {
         button.disabled = false;
       }
