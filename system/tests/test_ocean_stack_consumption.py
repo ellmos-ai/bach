@@ -236,10 +236,16 @@ def test_bach_multimodal_and_embodied_gui_endpoints(tmp_path, monkeypatch):
     v_status = asyncio.run(server.api_voice_status())
     assert v_status["schema"] == "ellmos.voice-io.status.v1"
 
+    monkeypatch.setattr(server, "_TALK_CONFIG_FILE", tmp_path / "talk_config.json")
+    monkeypatch.setattr(server, "_TALK_SESSION_SINGLETON", None)
     t_status = asyncio.run(server.api_talk_status())
     assert t_status["persona"] == "buddha"
 
-    t_turn = asyncio.run(server.api_talk_turn({"user_utterance": "Hallo Buddha", "persona": "buddha", "language": "de"}))
+    from starlette.requests import Request
+    request = Request({"type": "http", "headers": []})
+    request.state.device = {"id": 7}
+    monkeypatch.setattr(server, "_talk_cortex_responder", lambda *args: "Synthetische Antwort.")
+    t_turn = asyncio.run(server.api_talk_turn(request, {"user_utterance": "Hallo Buddha", "persona": "buddha", "language": "de"}))
     assert "emotion" in t_turn["visual_state"]
     assert len(t_turn["sentences"]) >= 1
 

@@ -28,7 +28,9 @@ def test_talk_config_and_summon_endpoints(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "_TALK_CONFIG_FILE", tmp_path / "talk_config.json")
     server._TALK_SESSION_SINGLETON = None
 
-    client = TestClient(server.app)
+    monkeypatch.setattr(server, "validate_token",
+                        lambda token: {"id": 7} if token == "synthetic-talk-device" else None)
+    client = TestClient(server.app, headers={"Authorization": "Bearer synthetic-talk-device"})
     r_get = client.get("/api/talk/config")
     assert r_get.status_code == 200
     data = r_get.json()

@@ -46,38 +46,61 @@ def test_a_broken_store_never_breaks_the_talk_turn(tmp_path):
     record_talk_turn("buddha", "a", "b", store=missing)  # must not raise
 
 
-def test_a_spoken_turn_of_the_talk_responder_is_recorded(monkeypatch):
+def test_a_spoken_turn_uses_runtime_persistence_once_and_survives_restart(monkeypatch, store):
+    import asyncio
     from gui import server
+    from hub._services.chat.chat_runtime import ChatRuntime
     from hub._services.chat import talk_history
 
-    class _Resp:
+    seen_messages = []
+    class Backend:
+        def get_default_model(self):
+            return "synthetic-slot-model"
+
+        async def chat(self, messages, **kwargs):
+            seen_messages.append(messages)
+            return {"content": "Gern geschehen."}
+
+    runtime = ChatRuntime(Backend(), session_store=store)
+    class Response:
+        status_code = 200
         def __init__(self, payload):
-            self.status_code, self._payload = 200, payload
-
+            self.payload = payload
         def json(self):
-            return self._payload
+            return self.payload
 
-    class _Client:
-        def __init__(self, *a, **k):
+    class Client:
+        def __init__(self, **kwargs):
             pass
-
         def __enter__(self):
             return self
-
-        def __exit__(self, *a):
+        def __exit__(self, *args):
             return False
+        def get(self, url, **kwargs):
+            assert url == "http://control.invalid/api/status"
+            return Response({"ready": True})
+        def post(self, url, **kwargs):
+            assert url == "http://control.invalid/api/chat"
+            body = kwargs["json"]
+            answer = asyncio.run(runtime.process(body["prompt"], body["chat_id"]))
+            return Response({"ok": True, "answer": str(answer)})
 
-        def get(self, url, **k):
-            return _Resp({"models": [{"name": "qwen3.8:27b-mlx"}]})
-
-        def post(self, url, **k):
-            return _Resp({"message": {"content": "Gern geschehen."}})
-
-    seen = []
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(server.httpx, "Client", _Client)
-    monkeypatch.setattr(talk_history, "record_talk_turn", lambda *a, **k: seen.append(a))
-    server._TALK_HISTORY.clear()
-    out = server._talk_cortex_responder("Danke", "buddha", "de")
-    assert "Gern geschehen." in out
-    assert seen == [("buddha", "Danke", "Gern geschehen.")]
+    monkeypatch.setattr(server.httpx, "Client", Client)
+    monkeypatch.setattr(server, "_chat_control_base_url", lambda: "http://control.invalid/api")
+    monkeypatch.setattr(server, "get_control_api_auth_header", lambda: "Bearer synthetic-control")
+    monkeypatch.setattr(server, "_chat_control_payload_ready", lambda payload: payload == {"ready": True})
+    def no_second_writer(*args, **kwargs):
+        pytest.fail("Talk must not append a second copy after ChatRuntime persisted")
+    monkeypatch.setattr(talk_history, "record_talk_turn", no_second_writer)
+    chat_id = server._talk_chat_scope({"id": 7}, "buddha_chat")
+    token = server._TALK_CALLER_SCOPE.set(chat_id)
+    try:
+        assert "Gern geschehen." in server._talk_cortex_responder("Danke", "buddha", "de")
+        runtime = ChatRuntime(Backend(), session_store=SQLiteChatSessionStore(store.db_path))
+        assert "Gern geschehen." in server._talk_cortex_responder("Weiter", "buddha", "de")
+    finally:
+        server._TALK_CALLER_SCOPE.reset(token)
+    assert [m["content"] for m in store.load(chat_id)] == [
+        "Danke", "Gern geschehen.", "Weiter", "Gern geschehen."]
+    assert store.list_snapshot_page()["total"] == 1
+    assert any(m.get("content") == "Danke" for m in seen_messages[-1])
