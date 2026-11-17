@@ -34,7 +34,8 @@ BINDING_ACK_SCHEMA = "bach.maintenance-worker-binding-ack.v1"
 STATUS_SCHEMA = "bach.maintenance-status.v1"
 JOB_ID = "bach.docs.delta"
 JOB_IDS = {JOB_ID, *["bach.docs.routine." + name for name in ROUTINES]}
-STATES = {"running", "busy", "backoff", "storage_budget", "storage_reserve", "stopped"}
+STATES = {"running", "busy", "backoff", "storage_budget", "storage_reserve", "stopped",
+          "waiting_for_lock"}
 TASK_STATES = {
     "pending",
     "open",
@@ -44,6 +45,7 @@ TASK_STATES = {
     "completed",
     "cancelled",
     "blocked",
+    "archived",
 }
 
 
@@ -71,6 +73,7 @@ TRUSTED_LOCK_TOOLS = {
 }
 # Measured 14.11.2026 on the Mac: services/bach 1.4 s, ~/.bach 2.8 s per scan; 6 s was too tight.
 LOCK_SCAN_BUDGET_SECONDS = 20
+LOCK_WAIT_BUDGET_SECONDS = 1800
 
 
 def _safe_scalar(key, value):
@@ -169,12 +172,26 @@ def validate_config(config: dict) -> dict:
     return config
 
 
+class MaintenanceLockHeld(PermissionError):
+    """All required scans completed and at least one native lock was confirmed."""
+
+
+class MaintenanceLockWaitTimeout(RuntimeError):
+    """A confirmed lock did not clear within this service's bounded wait."""
+
+
 class CanonicalLockGuard:
     def __init__(self, config: dict):
         self.scanner = Path(config["lock_tools_root"]) / "lock_scan.py"
         self.roots = [Path(p) for p in config["protected_roots"]]
 
     def __call__(self, target: Path):
+        self._check([*self.roots, target], require_project_twin=True)
+
+    def runtime_status_guard(self, runtime, task_db):
+        return RuntimeStatusLockGuard(self, runtime, task_db)
+
+    def _check(self, targets, *, require_project_twin):
         if not self.scanner.is_file():
             raise PermissionError("maintenance_lock_unverified")
         utility = self.scanner.parent / "lock_utils.py"
@@ -193,71 +210,104 @@ class CanonicalLockGuard:
         except OSError:
             raise PermissionError("maintenance_lock_source_unverified") from None
         deadline = time.monotonic() + LOCK_SCAN_BUDGET_SECONDS
-        proven_twins = set()  # twins of roots[0], confirmed by the scanner itself
-        for path in dict.fromkeys([*self.roots, target]):
-            existing = path
+        proven_twins = set()
+        locked = False
+        for path in dict.fromkeys(targets):
+            existing = Path(path)
             while not existing.exists() and existing != existing.parent:
                 existing = existing.parent
             if existing.is_file():
-                # The scanner checks directories only ("target-not-found" for files);
-                # locks of the file's directory and its ancestors still apply.
                 existing = existing.parent
             try:
                 from hub._services.chat.worker_write_guard import _darwin_hydrate_argv
                 argv = _darwin_hydrate_argv(
-                    [
-                        sys.executable,
-                        "-S",
-                        str(self.scanner),
-                        "--check-dir",
-                        str(existing),
-                        "--json",
-                    ],
+                    [sys.executable, "-S", str(self.scanner),
+                     "--check-dir", str(existing), "--json"],
                     run_fn=subprocess.run,
                 )
                 result = subprocess.run(
-                    argv,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    timeout=max(0.01, deadline - time.monotonic()),
-                    check=False,
-                    env={
-                        **os.environ,
-                        "PYTHONIOENCODING": "utf-8",
-                        "PYTHONDONTWRITEBYTECODE": "1",
-                    },
+                    argv, capture_output=True, text=True, encoding="utf-8",
+                    timeout=max(0.01, deadline - time.monotonic()), check=False,
+                    env={**os.environ, "PYTHONIOENCODING": "utf-8",
+                         "PYTHONDONTWRITEBYTECODE": "1"},
                 )
+                if len(result.stdout.encode("utf-8")) > 65536:
+                    raise ValueError("scan budget")
                 value = json.loads(result.stdout)
             except (OSError, ValueError, subprocess.SubprocessError):
                 raise PermissionError("maintenance_lock_unverified") from None
-            twin_status = value.get("twin_status")
-            # A OneDrive pointer folder cannot resolve its own twin ("pointer-unresolved", exit 1).
-            # Accept that only for the folder the roots[0] scan already proved to be its twin;
-            # its own locks must still be empty.
-            known_pointer = twin_status == "pointer-unresolved" and existing.resolve() in proven_twins
+            if not isinstance(value, dict) or value.get("descendants_complete") is not True:
+                raise PermissionError("maintenance_locked_or_unknown")
+            checked = value.get("checked")
+            if (not isinstance(checked, str) or not Path(checked).is_absolute()
+                    or Path(checked).resolve() != existing.resolve()):
+                raise PermissionError("maintenance_lock_target_unverified")
+            locks = value.get("locks")
             if (
-                (result.returncode != 0 and not known_pointer)
-                or len(result.stdout.encode("utf-8")) > 65536
-                or value.get("locks") != []
-                or (twin_status not in {"ok", "not-applicable"} and not known_pointer)
+                not isinstance(locks, list) or len(locks) > 256
+                or any(not isinstance(item, dict)
+                       or not isinstance(item.get("path"), str)
+                       or not Path(item["path"]).is_absolute() for item in locks)
+                or value.get("hook_guards", []) != []
+                or type(result.returncode) is not int
             ):
                 raise PermissionError("maintenance_locked_or_unknown")
-            if Path(value.get("checked", "")).resolve() != existing.resolve():
-                raise PermissionError("maintenance_lock_target_unverified")
-            if path == self.roots[0]:
+            twin_status = value.get("twin_status")
+            known_pointer = (
+                result.returncode == 1 and twin_status == "pointer-unresolved"
+                and existing.resolve() in proven_twins
+            )
+            if (
+                (twin_status not in {"ok", "not-applicable"} and not known_pointer)
+                or (result.returncode == 0 and bool(locks))
+                or (result.returncode == 1 and not locks and not known_pointer)
+                or result.returncode not in (0, 1)
+            ):
+                raise PermissionError("maintenance_locked_or_unknown")
+            if require_project_twin and path == self.roots[0]:
                 twins = value.get("twins_checked")
                 if (
-                    value.get("twin_status") != "ok"
-                    or not isinstance(twins, list)
-                    or not twins
-                    or not any(
-                        Path(twin).resolve() in [p.resolve() for p in self.roots[1:]]
-                        for twin in twins
-                    )
+                    twin_status != "ok" or not isinstance(twins, list) or not twins
+                    or any(not isinstance(twin, str) or not Path(twin).is_absolute()
+                           for twin in twins)
+                    or not any(Path(twin).resolve() in
+                               [p.resolve() for p in self.roots[1:]] for twin in twins)
                 ):
                     raise PermissionError("maintenance_project_twin_unverified")
                 proven_twins = {Path(twin).resolve() for twin in twins}
+            locked = locked or bool(locks)
+        # Unknown on any required root wins over a lock seen on an earlier root.
+        if locked:
+            raise MaintenanceLockHeld("maintenance_lock_held")
+
+
+class RuntimeStatusLockGuard:
+    """Native target-only authority for local owner/status files, never work data."""
+
+    def __init__(self, work_guard, runtime, task_db):
+        if task_db is None:
+            raise ValueError("Canonical task database required for runtime status")
+        self.work_guard = work_guard
+        self.runtime = Path(runtime).expanduser()
+        task_db = Path(task_db).expanduser()
+        if (
+            not self.runtime.is_absolute() or not task_db.is_absolute()
+            or self.runtime.resolve() != (task_db.parent / "maintenance").resolve()
+            or any("onedrive" in part.casefold() for part in self.runtime.parts)
+            or any(p.is_symlink() for p in (task_db, *task_db.parents))
+        ):
+            raise ValueError("Canonical local maintenance runtime required")
+
+    def __call__(self, target):
+        target = Path(target)
+        if (
+            target.name not in {"owner.lock", "status.json", "status.tmp"}
+            or not target.is_absolute()
+            or any(p.is_symlink() for p in (target, *target.parents))
+            or target.parent.resolve() != self.runtime.resolve()
+        ):
+            raise PermissionError("maintenance_runtime_target_unverified")
+        self.work_guard._check([target], require_project_twin=False)
 
 
 @contextmanager
@@ -877,6 +927,11 @@ class MaintenanceRuntime:
         self.config = load_config(config_path)
         self.owner_path = config_path.resolve().parent / "owner.lock"
         self.guard = guard or CanonicalLockGuard(self.config)
+        runtime_guard_factory = getattr(self.guard, "runtime_status_guard", None)
+        self.runtime_guard = (
+            runtime_guard_factory(runtime, self.task_db)
+            if callable(runtime_guard_factory) else self.guard
+        )
         if root.resolve() != Path(self.config["protected_roots"][0]).resolve():
             raise ValueError("BACH root must be protected")
         self.clock = clock or (lambda: datetime.now(timezone.utc))
@@ -1380,73 +1435,108 @@ class MaintenanceRuntime:
         )
         return True
 
-    def serve(self, *, max_ticks=None):
-        self.failure_phase = "serve"
+    def _service_status(self, state):
         import psutil
 
+        waiting = state == "waiting_for_lock"
+        return {
+            "schema": STATUS_SCHEMA,
+            "pid": os.getpid(),
+            "service": "bach-docs-maintenance",
+            "root_id": hashlib.sha256(str(self.root.resolve()).encode()).hexdigest(),
+            "config_hash": hashlib.sha256(self.config_path.read_bytes()).hexdigest(),
+            "create_time": psutil.Process().create_time(),
+            "generation": self.generation,
+            "poll_seconds": self.config["poll_seconds"],
+            "observed_at": stamp(self.clock()),
+            "provider": "ellmos-scheduler",
+            "state": state,
+            "runs": [] if waiting else self.run_receipts(),
+            "semantic_review_completed": False,
+            "documentation": {} if waiting else read_state(self.runtime / "documentation.json"),
+            "jobs": [] if waiting else self.job_receipts(),
+        }
+
+    def _wait_for_lock(self):
+        self.failure_phase = "lock_wait"
+        now = time.monotonic()
+        if self._lock_wait_started is None:
+            self._lock_wait_started = now
+        remaining = LOCK_WAIT_BUDGET_SECONDS - (now - self._lock_wait_started)
+        if remaining <= 0:
+            raise MaintenanceLockWaitTimeout("maintenance_lock_wait_timeout")
+        delay = min(
+            remaining, self.config["poll_seconds"],
+            10 * 2 ** min(self._lock_wait_attempts, 5),
+        )
+        self._lock_wait_attempts += 1
+        return self.stop_event.wait(delay)
+
+    def serve(self, *, max_ticks=None):
+        self.failure_phase = "serve"
         if not self.config["enabled"]:
             raise RuntimeError("maintenance_not_activated")
         self._failure_owner_generation = None
-        self.failure_phase = "owner_acquire"
-        with process_owner(self.owner_path, self.guard):
-            self._failure_owner_generation = self.generation
-            self._owner_thread = threading.get_ident()
-            count = 0
-            current = None
+        self._lock_wait_started = None
+        self._lock_wait_attempts = 0
+        count = 0
+        # Injected guards retain their original contract; production uses the
+        # pinned target-only guard for this narrowly scoped local control plane.
+        status_guard = getattr(self, "runtime_guard", self.guard)
+        while not self.stop_event.is_set():
+            self.failure_phase = "owner_acquire"
             try:
-                while not self.stop_event.is_set():
-                    self.failure_phase = "binding_request"
-                    self._consume_provider_neutral_request()
-                    self.failure_phase = "config_reload"
-                    config = load_config(self.config_path)
-                    if config != self.config:
-                        raise RuntimeError(
-                            "maintenance_configuration_changed_restart_required"
-                        )
-                    self.failure_phase = "scheduler_tick"
-                    result = self.tick()
-                    current = {
-                        "schema": STATUS_SCHEMA,
-                        "pid": os.getpid(),
-                        "service": "bach-docs-maintenance",
-                        "root_id": hashlib.sha256(
-                            str(self.root.resolve()).encode()
-                        ).hexdigest(),
-                        "config_hash": hashlib.sha256(
-                            self.config_path.read_bytes()
-                        ).hexdigest(),
-                        "create_time": psutil.Process().create_time(),
-                        "generation": self.generation,
-                        "poll_seconds": self.config["poll_seconds"],
-                        "observed_at": stamp(self.clock()),
-                        "provider": "ellmos-scheduler",
-                        "state": result["state"],
-                        "runs": self.run_receipts(),
-                        "semantic_review_completed": False,
-                        "documentation": read_state(
-                            self.runtime / "documentation.json"
-                        ),
-                        "jobs": self.job_receipts(),
-                    }
-                    self.failure_phase = "status_write"
-                    _write_status(self.runtime / "status.json", current, self.guard)
-                    count += 1
-                    if max_ticks is not None and count >= max_ticks:
-                        break
-                    self.failure_phase = "poll_wait"
-                    self.stop_event.wait(self.config["poll_seconds"])
-            finally:
-                self._owner_thread = None
-                failed_phase = self.failure_phase
-                primary_active = sys.exc_info()[0] is not None
-                if current is not None:
-                    current.update(state="stopped", observed_at=stamp(self.clock()))
-                    self.failure_phase = "shutdown_status_write"
+                with process_owner(self.owner_path, status_guard):
+                    self._failure_owner_generation = self.generation
+                    self._owner_thread = threading.get_ident()
+                    current = None
                     try:
-                        _write_status(
-                            self.runtime / "status.json", current, self.guard
-                        )
-                    except Exception:
-                        if not primary_active:
-                            raise
-                self.failure_phase = failed_phase if primary_active else "serve"
+                        while not self.stop_event.is_set():
+                            try:
+                                self.failure_phase = "binding_request"
+                                self._consume_provider_neutral_request()
+                                self.failure_phase = "config_reload"
+                                config = load_config(self.config_path)
+                                if config != self.config:
+                                    raise RuntimeError(
+                                        "maintenance_configuration_changed_restart_required"
+                                    )
+                                self.failure_phase = "scheduler_tick"
+                                result = self.tick()
+                            except MaintenanceLockHeld:
+                                self.failure_phase = "lock_wait"
+                                current = self._service_status("waiting_for_lock")
+                                _write_status(self.runtime / "status.json", current, status_guard)
+                                if self._wait_for_lock():
+                                    break
+                                continue
+                            self._lock_wait_started = None
+                            self._lock_wait_attempts = 0
+                            current = self._service_status(result["state"])
+                            self.failure_phase = "status_write"
+                            _write_status(self.runtime / "status.json", current, status_guard)
+                            count += 1
+                            if max_ticks is not None and count >= max_ticks:
+                                break
+                            self.failure_phase = "poll_wait"
+                            self.stop_event.wait(self.config["poll_seconds"])
+                    finally:
+                        self._owner_thread = None
+                        failed_phase = self.failure_phase
+                        primary_active = sys.exc_info()[0] is not None
+                        if current is not None:
+                            current.update(state="stopped", observed_at=stamp(self.clock()))
+                            self.failure_phase = "shutdown_status_write"
+                            try:
+                                _write_status(self.runtime / "status.json", current, status_guard)
+                            except Exception:
+                                if not primary_active:
+                                    raise
+                        self.failure_phase = failed_phase if primary_active else "serve"
+                return
+            except MaintenanceLockHeld:
+                # The local runtime itself may be locked. No ownership/status
+                # write is permitted there; retry only the proven lock outcome.
+                self._failure_owner_generation = None
+                if self._wait_for_lock():
+                    return

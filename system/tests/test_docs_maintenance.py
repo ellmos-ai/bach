@@ -490,7 +490,10 @@ def _guard_with_fake_scanner(tmp_path, monkeypatch, answer):
         checked.append(target)
         returncode, fields = answer(target)
         return SimpleNamespace(
-            returncode=returncode, stdout=json.dumps({"checked": str(target), "locks": [], **fields})
+            returncode=returncode, stdout=json.dumps({
+                "checked": str(target), "locks": [], "hook_guards": [],
+                "descendants_complete": True, "twins_checked": [], **fields,
+            })
         )
 
     monkeypatch.setattr(runtime.subprocess, "run", fake_run)

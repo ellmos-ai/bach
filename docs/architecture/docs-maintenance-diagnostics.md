@@ -96,3 +96,55 @@ Ein Fehlerbeleg diagnostiziert einen fehlgeschlagenen Versuch, ersetzt aber
 weder Heartbeat noch last_success oder next_due. Ein erfolgreicher Delta-Dispatch
 belegt keine abgeschlossene fachliche Dokuprüfung oder Reparatur. Review und
 sichere fachliche Korrektur bleiben getrennte Schritte.
+
+
+## Bestätigtes Sperrwarten und lokale Betriebsbelege (#4220)
+
+Ein bestätigter Lock ist ein eigener Zustand. Der native Scanner muss aus einer
+gepinnten Quelle stammen und einen vollständigen Scan, das angefragte Ziel,
+gültige Twin-Nachweise und zum Ergebnis passende Exitcodes liefern. Ein Fehler
+auf einem späteren erforderlichen Wurzelpfad hat Vorrang vor einem zuvor
+gefundenen Lock. Fehlende Vollständigkeit, ungültige Daten, Timeout und unbekannte
+Zustände werden nicht in erwartetes Sperrwarten umgedeutet. Die eng begrenzte
+Ausnahme für einen bereits belegten OneDrive-Pointer akzeptiert nur den dafür
+vorgesehenen Exitcode 1.
+
+Die Prozess-Ownership und die redigierte Statusprojektion sind von der
+Arbeitsfreigabe getrennt. Ihr Zielguard darf ausschließlich `owner.lock`,
+`status.json` und `status.tmp` im kanonischen lokalen Wartungsverzeichnis neben
+der TaskDB freigeben. Er prüft dieses Ziel mit demselben gepinnten nativen
+Scanner vollständig; Symlinks und OneDrive-Runtime-Pfade sind ausgeschlossen.
+Er besitzt keine Befugnis für Scheduler-Datenbank, Dokumentationscursor,
+Konfiguration, Binding-Anfragen oder Taskdaten. Dafür bleibt der vollständige
+Arbeitsguard mit Repository und Projektzwilling verbindlich.
+
+Wenn der Arbeitsguard eine Sperre bestätigt, bleibt der alleinige lokale
+Prozess-Owner bestehen und veröffentlicht `state=waiting_for_lock`, sofern
+dessen eigener Runtime-Pfad frei ist. Dieser Zustand startet keine Jobs und
+liefert keine neuen Erfolgs- oder Reviewbelege. `running=true` bedeutet hier
+ausschließlich, dass Prozess und Lebenszeichen verifiziert wurden. Vor dem
+nächsten Arbeitsversuch wird die gesamte Arbeitsfreigabe erneut geprüft.
+
+Das Warten beginnt mit zehn Sekunden und wächst bis höchstens zum konfigurierten
+Pollintervall; ein kürzeres Pollintervall begrenzt schon den ersten Schritt.
+Eine zusammenhängende Wartephase hat ein Budget von 1.800 Sekunden zuzüglich
+der laufenden begrenzten Scan-/Statusoperation. Danach endet der Versuch mit
+`MaintenanceLockWaitTimeout` in der Phase `lock_wait`. Ein Stop-Signal
+unterbricht das Warten unmittelbar. Nur ein erfolgreich freigegebener Tick setzt
+das Wartebudget zurück. Ein unbekanntes Prüfergebnis beendet den Versuch sofort.
+
+Ist der Runtime-Pfad selbst gesperrt, werden weder ein neuer Owner noch neue
+Statusdateien geschrieben. Auch dann wird nur bei bestätigtem Lock begrenzt
+gewartet. Ohne gültigen aktuellen Beleg bleibt die Statusanzeige unverifiziert.
+Nach Neustart gelten dieselben Prüfungen und eine neue Ownergeneration;
+gespeicherte PID-Zahlen ersetzen die Betriebssystem-Ownership nicht.
+
+Archivierte native Aufgaben bleiben in der Dokumentationsprojektion sichtbar.
+`task_status=archived` ist ein bekannter Status, aber kein angenommener
+Ergebnisnachweis. Unbekannte Statuswerte bleiben ausgeschlossen. Dies behebt
+insbesondere den beobachteten Fall, in dem ein archivierter Routine-Task den
+gesamten aktuellen Dienstnachweis ungültig erscheinen ließ.
+
+Die bestehende Delta- und Routinefälligkeit wird durch diese Änderung nicht
+umgeschrieben. Catch-up- und Reihenfolgesemantik des Scheduler-Moduls sind eine
+gesonderte Frage.
