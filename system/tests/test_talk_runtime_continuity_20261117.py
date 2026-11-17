@@ -128,3 +128,149 @@ def test_compute_lock_is_failure_and_resets_request_scope(client, monkeypatch):
                          headers={"Authorization": "Bearer owner-token"})
     assert result.status_code == 503
     assert server._TALK_CALLER_SCOPE.get() is None
+
+def test_inflight_talk_keeps_event_loop_free_and_its_own_state(client, monkeypatch):
+    import asyncio
+    import threading
+    from starlette.requests import Request
+
+    started, release = threading.Event(), threading.Event()
+    observed_scope = []
+    def responder(*args):
+        observed_scope.append(server._TALK_CALLER_SCOPE.get())
+        started.set()
+        assert release.wait(2), "synthetic turn was not released"
+        return "Snapshot-Antwort."
+
+    monkeypatch.setattr(server, "_talk_cortex_responder", responder)
+    request = Request({"type": "http", "headers": []})
+    request.state.device = {"id": 7}
+    shared = server._get_talk_session()
+    initial_state = shared.state
+    initial_reflex = shared.reflex
+
+    async def scenario():
+        task = asyncio.create_task(server.api_talk_turn(request, {"text": "Langer Auftrag."}))
+        timer = threading.Timer(1, release.set)
+        timer.start()
+        try:
+            assert await asyncio.to_thread(started.wait, 1)
+            assert not task.done(), "Talk blocked the event loop until inference completed"
+            status = await server.api_talk_status()
+            assert status["persona"] == "buddha"
+            await server.api_update_talk_config({
+                "persona": "claude", "bound_slot": "buddha_talk",
+                "fast_relay_model": "changed-reflex",
+            })
+            release.set()
+            result = await task
+            assert result["visual_state"]["persona"] == initial_state.persona
+            assert result["visual_state"]["bound_slot"] == initial_state.bound_slot
+            assert result["visual_state"]["fast_relay_model"] == initial_state.fast_relay_model
+            assert shared.state.persona == "claude"
+            assert shared.state.bound_slot == "buddha_talk"
+            assert shared.reflex is initial_reflex
+            assert observed_scope == [server._talk_chat_scope({"id": 7}, initial_state.bound_slot)]
+        finally:
+            release.set()
+            timer.cancel()
+            await task
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("status", [401, 409, 503, "network"])
+def test_companion_client_keeps_input_and_shows_failure(status):
+    import asyncio
+    import json
+    import re
+    import shutil
+    import subprocess
+
+    html = asyncio.run(server.talk_visualizer_companion_page()).body.decode("utf-8")
+    start = html.index("    async function sendTurn() {")
+    end = html.index(chr(10) * 2 + "    document.getElementById('sendBtn')", start)
+    source = html[start:end]
+    node = shutil.which("node")
+    assert node, "Node is required to exercise the delivered companion client"
+    script = """
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const status = STATUS;
+const elements = {
+  utteranceInput: { value: 'Behalte meinen Auftrag' },
+  personaSelect: { value: 'buddha' },
+  langSelect: { value: 'de' },
+  transcriptBox: { textContent: '' },
+  reflexStatus: { textContent: '' },
+  sendBtn: { disabled: false },
+};
+let fetchCount = 0, spoken = 0, rendered = 0;
+const scope = {
+  document: { getElementById: id => elements[id] },
+  fetch: async () => {
+    fetchCount++;
+    if (status === 'network') throw new Error('Scoped network failure');
+    return {ok: false, status, json: async () => ({detail: 'Scoped failure ' + status})};
+  },
+  applyVisualState: () => { rendered++; },
+  window: { speechSynthesis: { cancel() {}, speak() { spoken++; } } },
+  SpeechSynthesisUtterance: function() {},
+};
+vm.runInNewContext(SOURCE + ';sendTurn()', scope).then(() => {
+  assert.equal(elements.utteranceInput.value, 'Behalte meinen Auftrag');
+  assert.match(elements.transcriptBox.textContent, /Scoped (?:network )?failure/);
+  assert.equal(fetchCount, 1);
+  assert.equal(spoken, 0);
+  assert.equal(rendered, 0);
+  assert.equal(elements.sendBtn.disabled, false);
+}).catch(error => { console.error(error); process.exitCode = 1; });
+""".replace("STATUS", json.dumps(status)).replace("SOURCE", json.dumps(source))
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_talk_config_labels_legacy_model_as_non_executing(client):
+    result = client.get("/api/talk/config")
+    assert result.status_code == 200
+    assert result.json()["execution_binding"] == {
+        "source": "system_slot", "slot_id": "buddha_chat", "primary_model_override": False,
+    }
+
+def test_companion_audio_failure_keeps_the_received_answer():
+    import asyncio
+    import json
+    import shutil
+    import subprocess
+
+    html = asyncio.run(server.talk_visualizer_companion_page()).body.decode("utf-8")
+    start = html.index("    async function sendTurn() {")
+    end = html.index(chr(10) * 2 + "    document.getElementById('sendBtn')", start)
+    script = """
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const elements = {
+  utteranceInput: { value: 'Mein Auftrag' }, personaSelect: {value: 'buddha'},
+  langSelect: {value: 'de'}, transcriptBox: {textContent: ''},
+  reflexStatus: {textContent: ''}, sendBtn: {disabled: false},
+};
+const scope = {
+  document: {getElementById: id => elements[id]},
+  fetch: async url => url === '/api/talk/turn'
+    ? {ok: true, json: async () => ({spoken_text: 'Empfangene Antwort.'})}
+    : {ok: false},
+  applyVisualState() {},
+  window: {speechSynthesis: {cancel() {}, speak() {throw new Error('synthetic audio error');}}},
+  SpeechSynthesisUtterance: function() {},
+};
+vm.runInNewContext(SOURCE + ';sendTurn()', scope).then(() => {
+  assert.equal(elements.utteranceInput.value, '');
+  assert.equal(elements.transcriptBox.textContent, 'Empfangene Antwort.');
+  assert.match(elements.reflexStatus.textContent, /Sprachausgabe/);
+  assert.equal(elements.sendBtn.disabled, false);
+}).catch(error => {console.error(error); process.exitCode = 1;});
+""".replace("SOURCE", json.dumps(html[start:end]))
+    node = shutil.which("node")
+    assert node
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr

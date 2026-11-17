@@ -17605,6 +17605,8 @@ async def api_get_talk_config():
     perms = _load_capability_permissions()
     return {
         "schema": "ellmos.talk.config.v1",
+        "execution_binding": {"source": "system_slot", "slot_id": engine.state.bound_slot,
+                              "primary_model_override": False},
         "config": engine.state.as_dict(),
         "permissions": {
             "voice_tts": bool(perms.get("voice_tts", True)),
@@ -17636,7 +17638,7 @@ async def api_get_talk_config():
 
 @app.post("/api/talk/config")
 async def api_update_talk_config(payload: dict = Body(...)):
-    """Update `ellmos-talk` operating mode, primary/fast model bindings, wake-word, or summon policy."""
+    """Update Talk preferences; execution models remain owned by the bound system slot."""
     allowed_keys = {
         "persona",
         "language",
@@ -17663,6 +17665,8 @@ async def api_update_talk_config(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "schema": "ellmos.talk.config.v1",
+        "execution_binding": {"source": "system_slot", "slot_id": snapshot["bound_slot"],
+                              "primary_model_override": False},
         "updated": list(updates.keys()),
         "config": snapshot,
     }
@@ -17755,7 +17759,17 @@ async def api_talk_turn(request: Request, payload: dict = Body(...)):
 
     if {"model_response", "chat_id", "agent_id"}.intersection(payload):
         raise HTTPException(status_code=400, detail="Talk-Kontext und Modellantwort werden serverseitig gebunden")
-    engine = _get_talk_session()
+    from copy import deepcopy
+    from hub._services.ocean_stack_bridge import load_talk_module
+
+    shared_engine = _get_talk_session()
+    state_snapshot = shared_engine.state
+    talk_mod = load_talk_module()
+    engine = talk_mod.TalkEngine(
+        initial_state=deepcopy(state_snapshot),
+        reflex=talk_mod.FastReflexLoop(model_name=state_snapshot.fast_relay_model),
+        cortex=talk_mod.DeepCortexLoop(responder=_talk_cortex_responder),
+    )
     chat_id = _talk_chat_scope(getattr(request.state, "device", None), engine.state.bound_slot)
     user_utterance = str(
         payload.get("user_utterance")
@@ -17782,9 +17796,12 @@ async def api_talk_turn(request: Request, payload: dict = Body(...)):
         engine.update_visual_state(directive)
     scope_token = _TALK_CALLER_SCOPE.set(chat_id)
     try:
-        res = engine.process_turn(user_utterance=user_utterance)
+        res = await asyncio.to_thread(engine.process_turn, user_utterance=user_utterance)
     finally:
         _TALK_CALLER_SCOPE.reset(scope_token)
+    # Never overwrite a config, summon, reflex or newer turn published in flight.
+    if shared_engine.state is state_snapshot:
+        shared_engine.state = engine.state
     reflex_dict = asdict(res.reflex)
     reflex_dict.setdefault("ack_text", res.reflex.backchannel_text or ("Verstanden." if engine.state.language != "en" else "Got it."))
     reflex_dict.setdefault("latency_target_ms", res.reflex.latency_budget_ms)
@@ -18014,7 +18031,7 @@ async def talk_visualizer_companion_page(request: Request = None):
     </div>
     <div class="controls">
       <select id="personaSelect" aria-label="Persona">
-        <option value="buddha">Buddha (Local MLX/Ollama)</option>
+        <option value="buddha">Buddha (konfigurierter Steckplatz)</option>
         <option value="gemini">Gemini</option>
         <option value="claude">Claude</option>
         <option value="codex">Codex / GPT</option>
@@ -18055,7 +18072,7 @@ async def talk_visualizer_companion_page(request: Request = None):
       Sprich oder tippe eine Nachricht – das Modell steuert Farben, Muster und Emotionen live über &lt;talk_control /&gt;.
     </div>
     <div class="input-row">
-      <input type="text" id="utteranceInput" placeholder="Sage etwas zu Buddha, Gemini, Claude oder Codex..." />
+      <input type="text" id="utteranceInput" placeholder="Nachricht an deinen Assistenten am konfigurierten Steckplatz..." />
       <button id="micBtn" title="Mikrofon-Spracheingabe starten">🎤</button>
       <button class="primary" id="sendBtn">Sprechen</button>
     </div>
@@ -18147,25 +18164,31 @@ async def talk_visualizer_companion_page(request: Request = None):
 
     async function sendTurn() {
       const input = document.getElementById('utteranceInput');
+      const button = document.getElementById('sendBtn');
       const text = input.value.trim();
-      if (!text) return;
+      if (!text || button.disabled) return;
       const persona = document.getElementById('personaSelect').value;
       const language = document.getElementById('langSelect').value;
-      const res = await fetch('/api/talk/turn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_utterance: text, persona, language })
-      });
-      const data = await res.json();
-      if (data.visual_state) applyVisualState(data.visual_state);
-      if (data.reflex) {
-        document.getElementById('reflexStatus').textContent =
-          'FastReflexLoop (' + data.reflex.latency_target_ms + 'ms): ' + (data.reflex.ack_text || 'ack');
-      }
-      const sentences = data.spoken_text || (data.sentences || []).join(' ');
-      document.getElementById('transcriptBox').textContent = sentences || text;
-      input.value = '';
-      if (sentences) {
+      button.disabled = true;
+      try {
+        const res = await fetch('/api/talk/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_utterance: text, persona, language })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error((data && (data.detail || data.error)) || ('Talk fehlgeschlagen (HTTP ' + res.status + ').'));
+        }
+        const sentences = data.spoken_text || (data.sentences || []).join(' ');
+        if (!sentences) throw new Error('Chatdienst lieferte keine gesprochene Antwort.');
+        if (data.visual_state) applyVisualState(data.visual_state);
+        if (data.reflex) {
+          document.getElementById('reflexStatus').textContent =
+            'FastReflexLoop (' + data.reflex.latency_target_ms + 'ms): ' + (data.reflex.ack_text || 'ack');
+        }
+        document.getElementById('transcriptBox').textContent = sentences;
+        if (input.value.trim() === text) input.value = '';
         let playedLocal = false;
         try {
           const ttsRes = await fetch('/api/voice/tts', {
@@ -18182,12 +18205,24 @@ async def talk_visualizer_companion_page(request: Request = None):
             }
           }
         } catch (_) {}
-        if (!playedLocal && 'speechSynthesis' in window) {
-          const utter = new SpeechSynthesisUtterance(sentences);
-          utter.lang = language === 'en' ? 'en-US' : 'de-DE';
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(utter);
+        try {
+          if (!playedLocal && 'speechSynthesis' in window) {
+            const utter = new SpeechSynthesisUtterance(sentences);
+            utter.lang = language === 'en' ? 'en-US' : 'de-DE';
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utter);
+          }
+        } catch (_) {
+          document.getElementById('reflexStatus').textContent =
+            'Antwort empfangen · Sprachausgabe fehlgeschlagen.';
         }
+      } catch (error) {
+        document.getElementById('transcriptBox').textContent =
+          'Talk: ' + (error.message || 'Verbindung fehlgeschlagen.');
+        document.getElementById('reflexStatus').textContent =
+          'Nicht zugestellt · Eingabe bleibt erhalten.';
+      } finally {
+        button.disabled = false;
       }
     }
 
