@@ -8,7 +8,7 @@ from typing import Any
 from .worker_tool_trace import (
     TraceIdentity, digest_json, digest_text, DiagnosticToolText, validate_diagnostic,
 )
-from .worker_tool_errors import ToolErrorText
+from .worker_tool_errors import CONFIRMED_REJECTION_REASONS, ToolErrorText
 
 
 class _TraceAckRejected(Exception):
@@ -70,6 +70,11 @@ def _result_diagnostic(name, result):
                 and result._reason in {"invalid_arguments", "command_not_authorized", "mode_not_authorized"}):
             return validate_diagnostic({"outcome_class": "policy_rejected",
                 "stage": "pre_dispatch_validation", "code": result._reason,
+                "sandbox_returncode": None})
+        if (result._effect_state in {"not_applied", "not_started"}
+                and result._reason in CONFIRMED_REJECTION_REASONS):
+            return validate_diagnostic({"outcome_class": "tool_rejected",
+                "stage": "tool_validation", "code": result._reason,
                 "sandbox_returncode": None})
         if result._code == "bach_tool_effect_unconfirmed":
             return validate_diagnostic({"outcome_class": "unconfirmed", "stage": "unknown",

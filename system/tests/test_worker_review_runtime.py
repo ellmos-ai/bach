@@ -706,3 +706,21 @@ def test_review_turn_takes_a_review_before_new_work(monkeypatch, review_availabl
         assert binding.task_id == REVIEW_TASK_ID and acquired[0][1] is not None
     else:
         assert binding.task_id == normal["id"] and acquired == [(normal["id"], None)]
+
+
+def test_unsuccessful_review_first_scan_does_not_repeat_reviews(monkeypatch):
+    review = _queue_task(REVIEW_TASK_ID, assigned_slot=CHAT_ID, required_model=MODEL)
+    client = _QueueProbeClient(ordinary=[], review=[review], grant_available=False)
+    reports = []
+    binding = WorkerLeaseBinding.acquire_next(
+        client, {"id": CHAT_ID, "model": MODEL, "pickup_filter": {"enabled": False}},
+        review_route={"backend_id": "openai", "route_sha256": "c" * 64},
+        review_requested_model=MODEL, worker_id=WORKER_ID, host=HOST, generation=GENERATION,
+        is_current=lambda: True, stop_event=threading.Event(), review_first=True,
+        observe_queue=reports.append)
+    assert binding is None
+    assert client.events.count("review_candidates") == 1
+    assert client.events.count(("grant", REVIEW_TASK_ID)) == 1
+    assert reports[0]["candidate_count"] == 1
+    assert reports[0]["scanned_pages"] == 2
+    assert reports[0]["rejected_counts"] == {"ownership": 1}

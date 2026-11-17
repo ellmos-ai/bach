@@ -491,7 +491,7 @@ class WorkerLeaseBinding:
             except LeaseDeniedError as exc:
                 if exc.reason not in ACQUIRE_DENIALS:
                     raise
-                observation.denied(exc.reason)
+                observation.denied(exc.reason, payload=exc.payload)
                 if exc.reason == "conflict":
                     raise  # A native no-grant conflict still stops this run.
                 if not callable(on_fixed_task_rejected):
@@ -552,18 +552,21 @@ class WorkerLeaseBinding:
                     continue
                 except LeaseDeniedError as exc:
                     if exc.reason == "conflict":
-                        observation.denied(exc.reason)
+                        observation.denied(exc.reason, payload=exc.payload)
                         raise  # A native no-grant conflict still stops this run.
                     # Task-specific denials (incl. an unresolved prior trace) skip only this task.
                     if exc.reason not in ACQUIRE_DENIALS:
                         raise
-                    observation.reject(exc.reason)
+                    observation.reject(exc.reason, payload=exc.payload)
             if not page["has_more"]:
-                reviewed = cls._acquire_review_next(client, slot, observation,
-                    review_route=review_route, review_requested_model=review_requested_model,
-                    **kwargs)
-                if reviewed is not None:
-                    return reviewed
+                # A review-first turn already exhausted this same canonical queue.
+                # Retrying it here duplicates denials and private grant checks.
+                if not review_first:
+                    reviewed = cls._acquire_review_next(client, slot, observation,
+                        review_route=review_route, review_requested_model=review_requested_model,
+                        **kwargs)
+                    if reviewed is not None:
+                        return reviewed
                 observation.waiting()
                 return None
             if not page["tasks"]:
@@ -640,11 +643,11 @@ class WorkerLeaseBinding:
                     observation.reject(exc.reason if exc.reason in _REPOSITORY_REJECTIONS else "changed_selection")
                 except LeaseDeniedError as exc:
                     if exc.reason == "conflict":
-                        observation.denied(exc.reason)
+                        observation.denied(exc.reason, payload=exc.payload)
                         raise
                     if exc.reason not in ACQUIRE_DENIALS:
                         raise
-                    observation.reject(exc.reason)
+                    observation.reject(exc.reason, payload=exc.payload)
             if not page["has_more"]:
                 return None
             if offset >= 100_000:

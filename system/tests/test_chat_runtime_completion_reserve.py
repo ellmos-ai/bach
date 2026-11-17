@@ -30,7 +30,9 @@ class _Binding:
         return TraceIdentity(self.task_id, 4, "worker-test@host", "generation-test",
                              "a" * 64, request_id, source, tool_name)
 
-    def trace_tool_phase(self, identity, phase, *, receipt_id=None, result_sha256=None):
+    def trace_tool_phase(self, identity, phase, *, receipt_id=None, result_sha256=None, diagnostic=None):
+        from hub._services.chat.worker_tool_trace import validate_diagnostic
+        validate_diagnostic(diagnostic)
         self.phases.append((phase, identity.tool_name))
         return {"accepted": True}
 

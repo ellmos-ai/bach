@@ -214,7 +214,7 @@ def test_rejected_fixed_assignment_is_released_and_next_task_is_claimed(mem_db, 
     assert isinstance(releases[0][2], str)
     report, = reports
     assert report["state"] == "acquired" and report["selected_task_id"] == available
-    assert report["rejected_counts"].get("not_claimable") == 1
+    assert report["rejected_counts"].get("status_not_claimable") == 1
 
 
 def test_rejected_fixed_assignment_continues_after_completion_guard(mem_db, monkeypatch):
@@ -276,7 +276,8 @@ def test_open_dependency_is_not_reported_as_a_successful_claim(mem_db):
     client=TaskLeaseClient(conn=mem_db)
     client.acquire(dependency,worker_id='foreign@HOST',host='HOST',now=T0)
     assert select(client, reports) is None
-    assert reports[0]["rejected_counts"] == {"not_claimable": 1, "held": 1}
+    assert reports[0]["rejected_counts"] == {"dependencies_unfinished": 1, "held": 1}
+    assert reports[0]["rejection_examples"]["dependencies_unfinished"] == [child]
     assert reports[0]["matched_count"] == reports[0]["attempted_count"] == 2
     assert reports[0]["reason"] == "acquire_denied"
 
@@ -435,3 +436,63 @@ def test_unresolved_prior_trace_skips_only_that_task(mem_db):
     report, = reports
     assert report["rejected_counts"] == {"unresolved_tool_trace": 1}
     assert project_queue_status(report)["rejected_counts"] == {"unresolved_tool_trace": 1}
+
+
+@pytest.mark.parametrize("payload, expected", [
+    ({"blocked_by": {"invalid": ["private-invalid-value"], "missing": [7], "unfinished": [8]}}, "dependencies_invalid"),
+    ({"blocked_by": {"invalid": [], "missing": [7], "unfinished": [8]}}, "dependencies_missing"),
+    ({"blocked_by": {"invalid": [], "missing": [], "unfinished": [8]}}, "dependencies_unfinished"),
+    ({"status": "done"}, "status_not_claimable"),
+    ({"status": "pending"}, "not_claimable"),
+    ({"blocked_by": {"unfinished": "private-invalid-shape"}}, "not_claimable"),
+])
+def test_native_claim_denials_have_bounded_concrete_reasons(payload, expected):
+    from hub._services.chat.worker_queue_status import acquire_rejection_reason
+    assert acquire_rejection_reason("not_claimable", payload) == expected
+    assert acquire_rejection_reason("held", payload) == "held"
+
+
+def test_rejection_examples_are_bounded_numeric_and_projected():
+    from hub._services.chat.worker_queue_status import QueueObservation, queue_waiting_activity
+    reports = []
+    observation = QueueObservation(SimpleNamespace(mode="local"), reports.append, clock=lambda: T0)
+    observation.record["scanned_pages"] = 1
+    for task_id in range(101, 108):
+        observation.candidate(task_id)
+        observation.reject("repository_unverified")
+    observation.waiting()
+    observation.publish()
+    report, = reports
+    assert report["rejection_examples"] == {"repository_unverified": [101, 102, 103, 104, 105]}
+    assert report["rejected_counts"] == {"repository_unverified": 7}
+    assert "#101" in queue_waiting_activity(report)
+    report["rejection_examples"]["repository_unverified"] = ["PRIVATE"]
+    assert project_queue_status(report) is None
+
+
+def test_denial_client_keeps_only_closed_dependency_causes():
+    client = object.__new__(TaskLeaseClient)
+    raw = {"reason": "not_claimable", "server_now": T0.isoformat(), "status": "pending",
+           "blocked_by": {"invalid": ["PRIVATE"], "missing": [41], "unfinished": [42]},
+           "lease_id": "PRIVATE", "detail": "PRIVATE"}
+    with pytest.raises(LeaseDeniedError) as error:
+        client._raise_denied(17, raw)
+    safe = error.value.payload
+    assert safe["dependency_blocks"] == {"invalid": True, "missing": True, "unfinished": True}
+    assert safe["status"] == "pending"
+    assert "PRIVATE" not in str(safe) and "blocked_by" not in safe
+    from hub._services.chat.worker_queue_status import acquire_rejection_reason
+    assert acquire_rejection_reason(error.value.reason, safe) == "dependencies_invalid"
+
+
+def test_denial_client_does_not_project_unknown_or_unvalidated_details():
+    client = object.__new__(TaskLeaseClient)
+    for raw in (
+        {"reason": "not_claimable", "server_now": "invalid", "blocked_by": {"missing": [1]}},
+        {"reason": "not_claimable", "server_now": T0.isoformat(), "status": "PRIVATE",
+         "blocked_by": {"missing": "PRIVATE", "invalid": {"secret": "PRIVATE"}}},
+    ):
+        with pytest.raises(LeaseDeniedError) as error:
+            client._raise_denied(17, raw)
+        assert "PRIVATE" not in str(error.value.payload)
+        assert "dependency_blocks" not in error.value.payload
