@@ -412,3 +412,135 @@ def test_unknown_task_status_remains_unverified(context):
     assert observed["running"] is False
     assert observed["reason"] == "maintenance_receipt_unverified"
     assert "unrecognized-private-value" not in json.dumps(observed)
+
+
+@pytest.mark.parametrize("kind", ["ordinary", "hardlink"])
+def test_status_never_overwrites_existing_temporary(context, monkeypatch, kind):
+    import os
+
+    service, _calls = service_for(context, monkeypatch)
+    status = context.area / "status.json"
+    status.write_text("previous status", encoding="utf-8")
+    victim = context.local / "protected-data.txt"
+    victim.write_text("unmodified external data", encoding="utf-8")
+    monkeypatch.setattr(runtime, "uuid4", lambda: SimpleNamespace(hex="a" * 32))
+    temporary = status.with_name("status." + "a" * 32 + ".tmp")
+    if kind == "hardlink":
+        os.link(victim, temporary)
+    else:
+        temporary.write_text("unmodified temporary", encoding="utf-8")
+    before = temporary.read_bytes()
+    with pytest.raises(OSError):
+        runtime._write_status(status, {"state": "waiting_for_lock"}, service.runtime_guard)
+    assert temporary.read_bytes() == before
+    assert victim.read_text(encoding="utf-8") == "unmodified external data"
+    assert status.read_text(encoding="utf-8") == "previous status"
+
+
+def test_status_replacement_preserves_external_hardlink_target(context, monkeypatch):
+    import os
+
+    service, _calls = service_for(context, monkeypatch)
+    status = context.area / "status.json"
+    victim = context.local / "protected-data.txt"
+    victim.write_text("unmodified external data", encoding="utf-8")
+    os.link(victim, status)
+    runtime._write_status(status, {"state": "waiting_for_lock"}, service.runtime_guard)
+    assert json.loads(status.read_text(encoding="utf-8"))["state"] == "waiting_for_lock"
+    assert victim.read_text(encoding="utf-8") == "unmodified external data"
+    assert status.stat().st_ino != victim.stat().st_ino
+
+
+def test_status_rejects_temporary_replacement_before_publish(context, monkeypatch):
+    import os
+
+    service, _calls = service_for(context, monkeypatch)
+    status = context.area / "status.json"
+    status.write_text("previous status", encoding="utf-8")
+    monkeypatch.setattr(runtime, "uuid4", lambda: SimpleNamespace(hex="a" * 32))
+    temporary = status.with_name("status." + "a" * 32 + ".tmp")
+    victim = context.local / "protected-data.txt"
+    victim.write_text("unmodified external data", encoding="utf-8")
+    visits = []
+
+    def guard(target):
+        service.runtime_guard(target)
+        visits.append(target)
+        if target == status and visits.count(status) == 2:
+            temporary.unlink()
+            os.link(victim, temporary)
+
+    with pytest.raises(PermissionError):
+        runtime._write_status(status, {"state": "waiting_for_lock"}, guard)
+    assert status.read_text(encoding="utf-8") == "previous status"
+    assert temporary.read_bytes() == victim.read_bytes() == b"unmodified external data"
+
+
+def test_owner_rejects_hardlink_without_entering_or_modifying(context, monkeypatch):
+    import os
+
+    service, _calls = service_for(context, monkeypatch)
+    victim = context.local / "protected-data.txt"
+    victim.write_bytes(b"unmodified external data")
+    os.link(victim, service.owner_path)
+    with pytest.raises(PermissionError):
+        with runtime.process_owner(service.owner_path, service.runtime_guard):
+            pytest.fail("Hardlinked owner file was accepted")
+    assert victim.read_bytes() == service.owner_path.read_bytes() == b"unmodified external data"
+
+
+def test_owner_reuses_existing_regular_single_link_file(context, monkeypatch):
+    service, _calls = service_for(context, monkeypatch)
+    service.owner_path.write_bytes(b"0")
+    original = service.owner_path.stat()
+    for _ in range(2):
+        with runtime.process_owner(service.owner_path, service.runtime_guard):
+            assert service.owner_path.read_bytes() == b"0"
+            assert service.owner_path.stat().st_ino == original.st_ino
+
+
+def test_lock_release_at_wait_deadline_cannot_dispatch(context, monkeypatch):
+    context.project_locked = True
+    service, calls = service_for(context, monkeypatch)
+    monkeypatch.setattr(runtime, "LOCK_WAIT_BUDGET_SECONDS", 10)
+    service.stop_event.callback = lambda _event: setattr(context, "project_locked", False)
+    with pytest.raises(runtime.MaintenanceLockWaitTimeout):
+        service.serve(max_ticks=1)
+    assert calls == []
+    assert context.clock.elapsed == 10
+    assert service.stop_event.waits == [10]
+    assert read_service(context)["state"] == "stopped"
+
+
+def test_initial_status_write_counts_towards_lock_wait_budget(context, monkeypatch):
+    context.project_locked = True
+    service, calls = service_for(context, monkeypatch)
+    monkeypatch.setattr(runtime, "LOCK_WAIT_BUDGET_SECONDS", 10)
+    original_write = runtime._write_status
+
+    def slow_status(path, value, guard):
+        if value["state"] == "waiting_for_lock":
+            context.clock.elapsed += 9
+        original_write(path, value, guard)
+
+    monkeypatch.setattr(runtime, "_write_status", slow_status)
+    with pytest.raises(runtime.MaintenanceLockWaitTimeout):
+        service.serve()
+    assert context.clock.elapsed == 10
+    assert service.stop_event.waits == [1]
+    assert calls == []
+
+
+def test_old_crash_temporary_does_not_block_new_status(context, monkeypatch):
+    service, _calls = service_for(context, monkeypatch)
+    previous = [
+        context.area / "status.tmp",
+        context.area / ("status." + "b" * 32 + ".tmp"),
+    ]
+    for path in previous:
+        path.write_bytes(b"preserve interrupted prior write")
+    runtime._write_status(context.area / "status.json",
+                          {"state": "waiting_for_lock"}, service.runtime_guard)
+    assert json.loads((context.area / "status.json").read_text())["state"] == "waiting_for_lock"
+    assert all(path.read_bytes() == b"preserve interrupted prior write" for path in previous)
+    assert sorted(p.name for p in context.area.glob("status.*.tmp")) == [previous[1].name]

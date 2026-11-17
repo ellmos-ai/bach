@@ -301,13 +301,28 @@ class RuntimeStatusLockGuard:
     def __call__(self, target):
         target = Path(target)
         if (
-            target.name not in {"owner.lock", "status.json", "status.tmp"}
+            (target.name not in {"owner.lock", "status.json"}
+             and re.fullmatch(r"status\.[a-f0-9]{32}\.tmp", target.name) is None)
             or not target.is_absolute()
             or any(p.is_symlink() for p in (target, *target.parents))
             or target.parent.resolve() != self.runtime.resolve()
         ):
             raise PermissionError("maintenance_runtime_target_unverified")
         self.work_guard._check([target], require_project_twin=False)
+
+
+def _verify_runtime_file(path: Path, opened):
+    """Bind a regular single-link file descriptor to its current directory entry."""
+    current = path.lstat()
+    if (
+        not stat.S_ISREG(opened.st_mode) or not stat.S_ISREG(current.st_mode)
+        or opened.st_nlink != 1 or current.st_nlink != 1
+        or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+        or any(p.is_symlink() for p in path.parents)
+        or (hasattr(os, "getuid") and
+            (opened.st_uid != os.getuid() or current.st_uid != os.getuid()))
+    ):
+        raise PermissionError("Invalid maintenance runtime file")
 
 
 @contextmanager
@@ -317,7 +332,10 @@ def process_owner(path: Path, guard):
     if path.is_symlink() or any(p.is_symlink() for p in path.parents):
         raise PermissionError("Invalid maintenance owner path")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as stream:
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags, 0o600)
+    with os.fdopen(fd, "r+b") as stream:
+        _verify_runtime_file(path, os.fstat(stream.fileno()))
         if os.name == "nt":
             import msvcrt
 
@@ -332,6 +350,7 @@ def process_owner(path: Path, guard):
 
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         try:
+            _verify_runtime_file(path, os.fstat(stream.fileno()))
             yield
         finally:
             if os.name == "nt":
@@ -343,21 +362,42 @@ def process_owner(path: Path, guard):
 
 def _write_status(path: Path, value: dict, guard):
     guard(path)
+    temporary = path.with_name(f"{path.stem}.{uuid4().hex}.tmp")
     if (
-        path.is_symlink()
-        or path.with_suffix(".tmp").is_symlink()
+        path.is_symlink() or temporary.is_symlink()
         or any(p.is_symlink() for p in path.parents)
     ):
         raise PermissionError("Invalid maintenance status path")
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    if len(encoded.encode("utf-8")) > 65536:
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    if len(encoded) > 65536:
         raise ValueError("Maintenance status exceeds budget")
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
     guard(temporary)
-    temporary.write_text(encoded, encoding="utf-8")
-    guard(path)
-    temporary.replace(path)
+    # Never truncate an existing entry: it may be another file's hardlink.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(temporary, flags, 0o600)
+    owned = os.fstat(fd)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            _verify_runtime_file(temporary, owned)
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+            _verify_runtime_file(temporary, os.fstat(stream.fileno()))
+        guard(path)
+        _verify_runtime_file(temporary, owned)
+        temporary.replace(path)
+    finally:
+        # Clean only our exact entry, and only while its native authority remains.
+        # A foreign replacement or unknown/locked runtime is left untouched.
+        try:
+            if temporary.exists():
+                _verify_runtime_file(temporary, owned)
+                guard(temporary)
+                _verify_runtime_file(temporary, owned)
+                temporary.unlink()
+        except (OSError, ValueError):
+            pass
 
 
 def readonly_status(
@@ -1138,6 +1178,7 @@ class MaintenanceRuntime:
 
     def _tick(self) -> dict:
         self.guard(self.state_db)
+        self._lock_wait_remaining()
         import psutil
 
         files = [
@@ -1173,6 +1214,7 @@ class MaintenanceRuntime:
             JOB_ID,
             *["bach.docs.routine." + value["name"] for value in self.definitions],
         ]
+        self._lock_wait_remaining()
         runs = self.adapter.service.tick(now=self.clock(), limit=1, job_ids=job_ids)
         if any(row.get("status") != "succeeded" for row in runs):
             from datetime import timedelta
@@ -1457,20 +1499,31 @@ class MaintenanceRuntime:
             "jobs": [] if waiting else self.job_receipts(),
         }
 
+    def _lock_wait_remaining(self, *, start=False):
+        started = getattr(self, "_lock_wait_started", None)
+        if started is None:
+            if not start:
+                return None
+            started = self._lock_wait_started = time.monotonic()
+        remaining = LOCK_WAIT_BUDGET_SECONDS - (time.monotonic() - started)
+        if remaining <= 0:
+            self.failure_phase = "lock_wait"
+            raise MaintenanceLockWaitTimeout("maintenance_lock_wait_timeout")
+        return remaining
+
     def _wait_for_lock(self):
         self.failure_phase = "lock_wait"
-        now = time.monotonic()
-        if self._lock_wait_started is None:
-            self._lock_wait_started = now
-        remaining = LOCK_WAIT_BUDGET_SECONDS - (now - self._lock_wait_started)
-        if remaining <= 0:
-            raise MaintenanceLockWaitTimeout("maintenance_lock_wait_timeout")
+        remaining = self._lock_wait_remaining(start=True)
         delay = min(
             remaining, self.config["poll_seconds"],
             10 * 2 ** min(self._lock_wait_attempts, 5),
         )
         self._lock_wait_attempts += 1
-        return self.stop_event.wait(delay)
+        if self.stop_event.wait(delay):
+            return True
+        # A lock released at the deadline must not permit one more work round.
+        self._lock_wait_remaining()
+        return False
 
     def serve(self, *, max_ticks=None):
         self.failure_phase = "serve"
@@ -1484,6 +1537,7 @@ class MaintenanceRuntime:
         # pinned target-only guard for this narrowly scoped local control plane.
         status_guard = getattr(self, "runtime_guard", self.guard)
         while not self.stop_event.is_set():
+            self._lock_wait_remaining()
             self.failure_phase = "owner_acquire"
             try:
                 with process_owner(self.owner_path, status_guard):
@@ -1493,6 +1547,7 @@ class MaintenanceRuntime:
                     try:
                         while not self.stop_event.is_set():
                             try:
+                                self._lock_wait_remaining()
                                 self.failure_phase = "binding_request"
                                 self._consume_provider_neutral_request()
                                 self.failure_phase = "config_reload"
@@ -1505,6 +1560,7 @@ class MaintenanceRuntime:
                                 result = self.tick()
                             except MaintenanceLockHeld:
                                 self.failure_phase = "lock_wait"
+                                self._lock_wait_remaining(start=True)
                                 current = self._service_status("waiting_for_lock")
                                 _write_status(self.runtime / "status.json", current, status_guard)
                                 if self._wait_for_lock():

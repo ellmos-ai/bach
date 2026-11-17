@@ -111,7 +111,7 @@ vorgesehenen Exitcode 1.
 
 Die Prozess-Ownership und die redigierte Statusprojektion sind von der
 Arbeitsfreigabe getrennt. Ihr Zielguard darf ausschließlich `owner.lock`,
-`status.json` und `status.tmp` im kanonischen lokalen Wartungsverzeichnis neben
+`status.json` und `status.<32 lowercase hex characters>.tmp` im kanonischen lokalen Wartungsverzeichnis neben
 der TaskDB freigeben. Er prüft dieses Ziel mit demselben gepinnten nativen
 Scanner vollständig; Symlinks und OneDrive-Runtime-Pfade sind ausgeschlossen.
 Er besitzt keine Befugnis für Scheduler-Datenbank, Dokumentationscursor,
@@ -148,3 +148,18 @@ gesamten aktuellen Dienstnachweis ungültig erscheinen ließ.
 Die bestehende Delta- und Routinefälligkeit wird durch diese Änderung nicht
 umgeschrieben. Catch-up- und Reihenfolgesemantik des Scheduler-Moduls sind eine
 gesonderte Frage.
+
+
+The status publisher opens its private temporary file exclusively (mode 0600),
+checks the regular single-link descriptor against the directory entry, fsyncs,
+and atomically replaces status.json. Existing temporary files are never truncated.
+Only the exact newly allocated temporary entry may be removed on cleanup, and only
+after the native runtime guard still approves. Interrupted older entries remain
+untouched and do not block the next status write. Existing owner files must be
+regular, single-link, owned by the current user and match the opened descriptor;
+a hardlinked or replaced owner is rejected before use.
+
+The 30-minute continuous lock-wait budget starts when the lock is confirmed,
+before publishing its status. It is checked again after every interruptible wait,
+before a new work round and after the work guard before dispatch; releasing a lock
+at the deadline cannot start one extra job.
