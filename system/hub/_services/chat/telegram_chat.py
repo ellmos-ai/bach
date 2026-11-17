@@ -5312,7 +5312,8 @@ def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, s
     return available is True, str(status or "nicht verfügbar")
 
 
-def _chat_resource_readiness(selected_backend, model: str) -> dict | None:
+def _chat_resource_readiness(selected_backend, model: str, *, chat_id=None,
+                             allow_cold_start=True) -> dict | None:
     """Read-only local capacity check; never load a model or queue a turn.
 
     Backend availability only proves that Ollama has the model. Use the same
@@ -5325,15 +5326,29 @@ def _chat_resource_readiness(selected_backend, model: str) -> dict | None:
     from hub._services.chat.local_resource_reserve import probe
 
     async def checked_probe():
-        return await asyncio.wait_for(probe(selected_backend, model), timeout=5.0)
+        receipt = await probe(selected_backend, model)
+        if (allow_cold_start and chat_id is not None
+                and receipt.get("state") == "waiting_memory_reserve"):
+            eligible = await runtime.probe_chat_cold_start(
+                selected_backend, model, chat_id=chat_id,
+                slot_reader=lambda: _resolve_slot_for_chat(str(chat_id)))
+            if (isinstance(eligible, dict) and eligible.get("admitted") is True
+                    and eligible.get("capacity_basis") == "cold_start_monitored"
+                    and isinstance(eligible.get("cold_start"), dict)):
+                return eligible
+        return receipt
 
     try:
-        receipt = asyncio.run(checked_probe())
+        receipt = asyncio.run(asyncio.wait_for(checked_probe(), timeout=5.0))
         if not isinstance(receipt, dict) or type(receipt.get("admitted")) is not bool:
             raise ValueError("invalid capacity receipt")
     except Exception:
         receipt = {"state": "unknown_resources", "admitted": False, "retryable": True}
     if receipt["admitted"]:
+        if receipt.get("capacity_basis") == "cold_start_monitored":
+            return {"reserve_state": "cold_start_ready", "readiness_state": "startable",
+                    "load_required": True, "retryable": True,
+                    "status": "Startbar - Modell wird beim Senden geladen"}
         return None
     reasons = {
         "waiting_memory_reserve": "Buddha kann momentan nicht starten: zu wenig freie Speicherreserve. Bitte später erneut senden.",
@@ -7972,10 +7987,11 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "backend_id": backend_identifier(selected_backend),
                 "model": model,
             }
-            capacity = _chat_resource_readiness(selected_backend, model) if available else None
+            capacity = _chat_resource_readiness(
+                selected_backend, model, chat_id=chat_id) if available else None
             if capacity is not None:
-                available = False
-                result.update(capacity, available=False)
+                available = capacity.get("load_required") is True
+                result.update(capacity, available=available)
             if agent_id is not None:
                 try:
                     binding, _text = _profile_request(agent_id, chat_id)
@@ -8428,15 +8444,59 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "error": f"Backend nicht verfügbar: {availability_status}",
                 }, 503)
                 return
-            capacity = _chat_resource_readiness(selected_backend, model)
-            if capacity is not None:
+            capacity = _chat_resource_readiness(selected_backend, model, chat_id=chat_id)
+            load_required = capacity is not None and capacity.get("load_required") is True
+            if capacity is not None and not load_required:
                 self._json({"ok": False, "error": capacity["status"],
                             **{key: value for key, value in capacity.items() if key != "status"}}, 503)
                 return
-            os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
+            initial_session = runtime.sessions.get(str(chat_id))
+            warmup_deadline = time.monotonic() + 300.0 if load_required else None
             try:
                 loop = asyncio.new_event_loop()
                 try:
+                    if load_required:
+                        warmup = loop.run_until_complete(runtime.warm_chat_ollama_model(
+                            selected_backend, model, chat_id=chat_id,
+                            slot_reader=lambda: _resolve_slot_for_chat(str(chat_id)),
+                            deadline=warmup_deadline))
+                        state = warmup.get("state") if isinstance(warmup, dict) else "model_wait"
+                        if isinstance(warmup, dict) and type(warmup.get("_deadline")) in (int, float):
+                            warmup_deadline = min(warmup_deadline, warmup["_deadline"])
+                        if time.monotonic() >= warmup_deadline:
+                            state = "warmup_timeout"
+                        if state not in {"loaded", "resident"}:
+                            known = {"warmup_busy", "cold_start_aborted", "capacity_wait", "model_wait",
+                                     "slot_unverified", "slot_changed", "session_changed", "binding_changed",
+                                     "task_bound", "fackel_compute", "compute_locked", "stopped",
+                                     "queue_wait_exceeded", "warmup_timeout"}
+                            state = state if state in known else "model_wait"
+                            self._json({"ok": False, "phase": "warmup", "warmup_state": state,
+                                        "reason_code": "chat_warmup_" + state, "retryable": True,
+                                        "error": ("Buddhas Modellstart hat das Zeitbudget ausgesch\u00f6pft. Bitte erneut versuchen."
+                                                  if state == "warmup_timeout" else
+                                                  "Buddha konnte das Modell nicht sicher laden. Bitte erneut versuchen.")}, 503)
+                            return
+                        # Reset capability precedes this normal capacity probe and
+                        # exact target/session readback; the prompt is still untouched.
+                        capacity = _chat_resource_readiness(
+                            selected_backend, model, chat_id=chat_id, allow_cold_start=False)
+                        current_backend, current_model = _snapshot_chat_backend(chat_id, read_only=True)
+                        if (current_backend is not selected_backend or current_model != model
+                                or runtime.sessions.get(str(chat_id)) is not initial_session):
+                            self._json({"ok": False, "phase": "warmup", "warmup_state": "binding_changed",
+                                        "retryable": True, "error": "Buddhas Modellbindung hat sich beim Laden ge\u00e4ndert."}, 503)
+                            return
+                        if capacity is not None:
+                            self._json({"ok": False, "phase": "warmup", "error": capacity["status"],
+                                        **{key: value for key, value in capacity.items() if key != "status"}}, 503)
+                            return
+                    if load_required and time.monotonic() >= warmup_deadline:
+                        self._json({"ok": False, "phase": "warmup", "warmup_state": "warmup_timeout",
+                                    "reason_code": "chat_warmup_warmup_timeout", "retryable": True,
+                                    "error": "Buddhas Modellstart hat das Zeitbudget ausgesch\u00f6pft. Bitte erneut versuchen."}, 503)
+                        return
+                    os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
                     process_kwargs = {"backend": selected_backend, "model": model}
                     if agent_context is not None:
                         process_kwargs["agent_context"] = agent_context
@@ -8444,6 +8504,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                         runtime.process(prompt, chat_id, **process_kwargs)
                     )
                 finally:
+                    loop.run_until_complete(loop.shutdown_asyncgens())
                     loop.close()
                 if not isinstance(answer, FailedAnswer):
                     response, status = _control_chat_response(answer)
