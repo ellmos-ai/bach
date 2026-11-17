@@ -12,6 +12,7 @@ import re
 import stat
 import hashlib
 import tempfile
+import sqlite3
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,10 @@ _MAX_REGISTRY_BYTES = 1_048_576
 
 class RepositoryBindingError(RuntimeError):
     """A trusted task repository or its source clone could not be confirmed."""
+
+    def __init__(self, message, *, reason_code="repository_unverified"):
+        super().__init__(message)
+        self.reason_code = reason_code
 
 
 @dataclass(frozen=True)
@@ -376,3 +381,264 @@ def source_clone_path(repository_id: str, source_sha: str, *, root: Path | None 
     if any(part in {".", ".."} for part in path.parts):
         raise RepositoryBindingError("Public-Source-Pfad ist ungültig")
     return path
+
+
+class _RegistryWriter:
+    """Existing operator fence shared by enrollment and native child inheritance."""
+
+    def __init__(self, expected_sha256=None):
+        self.path = registry_path()
+        self.marker = self.path.with_name(self.path.name + ".operator-lock")
+        self.expected = expected_sha256
+        self.descriptor = None
+        self.identity = None
+        self.before = None
+
+    def __enter__(self):
+        if self.expected is not None and (
+                type(self.expected) is not str or re.fullmatch(r"[0-9a-f]{64}", self.expected) is None):
+            raise RepositoryBindingError("Registry-CAS-Pin ist ungültig", reason_code="registry_changed")
+        self.before = _read_registry_bytes(self.path)
+        if self.expected is not None and hashlib.sha256(self.before).hexdigest() != self.expected:
+            raise RepositoryBindingError("Registry wurde geändert; frisch lesen", reason_code="registry_changed")
+        try:
+            self.descriptor = os.open(self.marker,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        except FileExistsError:
+            raise RepositoryBindingError("Registry-Schreibfence ist belegt", reason_code="registry_busy") from None
+        try:
+            self.identity = os.fstat(self.descriptor)
+            if (not stat.S_ISREG(self.identity.st_mode) or self.identity.st_nlink != 1
+                    or os.name != "nt" and (self.identity.st_uid != os.getuid()
+                                            or self.identity.st_mode & 0o077)):
+                raise RepositoryBindingError("Registry-Schreibfence ist ungültig", reason_code="registry_busy")
+            self.assert_current()
+            return self
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+
+    def assert_current(self):
+        try:
+            current = self.marker.lstat()
+            unchanged = (current.st_dev, current.st_ino) == (self.identity.st_dev, self.identity.st_ino)
+        except OSError:
+            unchanged = False
+        if not unchanged:
+            raise RepositoryBindingError("Registry-Schreibfence wurde geändert", reason_code="registry_changed")
+        if _read_registry_bytes(self.path) != self.before:
+            raise RepositoryBindingError("Registry-Preimage wurde geändert", reason_code="registry_changed")
+
+    def publish(self, value):
+        self.assert_current()
+        raw = (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+        if len(raw) > _MAX_REGISTRY_BYTES:
+            raise RepositoryBindingError("Registry überschreitet das Größenlimit", reason_code="registry_changed")
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=self.path.parent, prefix=".repo-inherit-", delete=False) as output:
+                temporary = Path(output.name)
+                os.chmod(temporary, 0o600)
+                output.write(raw)
+                output.flush()
+                os.fsync(output.fileno())
+            self.assert_current()
+            os.replace(temporary, self.path)
+            temporary = None
+            self.before = raw
+            if os.name != "nt":
+                directory = os.open(self.path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+            self.assert_current()
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def __exit__(self, *_):
+        if self.descriptor is None:
+            return
+        try:
+            try:
+                current = self.marker.lstat()
+            except OSError:
+                current = None
+            if (current is not None and self.identity is not None
+                    and (current.st_dev, current.st_ino) == (self.identity.st_dev, self.identity.st_ino)):
+                self.marker.unlink()
+        finally:
+            os.close(self.descriptor)
+            self.descriptor = None
+
+
+def _canonical_review_client(client):
+    from hub._services.task_lease_client import TaskLeaseClient
+    database = Path.home() / ".bach" / "bach.db"
+    if (type(client) is not TaskLeaseClient or client.mode != "local" or client._conn is not None
+            or client._db_path is not None and Path(client._db_path) != database
+            or getattr(client._get_local_connection, "__func__", None) is not TaskLeaseClient._get_local_connection):
+        raise RepositoryBindingError("Kanonischer lokaler Leadclient erforderlich", reason_code="canonical_lead_required")
+    try:
+        identity = database.lstat()
+        if (database.is_symlink() or database.resolve(strict=True) != database
+                or not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1
+                or os.name != "nt" and identity.st_uid != os.getuid()):
+            raise OSError
+    except OSError:
+        raise RepositoryBindingError("Kanonische Lead-Datei nicht bestätigt", reason_code="canonical_lead_required") from None
+    return database, identity
+
+
+def _assert_database_identity(database, identity):
+    try:
+        current = database.lstat()
+        valid = (stat.S_ISREG(current.st_mode) and current.st_nlink == 1
+                 and (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino))
+    except OSError:
+        valid = False
+    if not valid:
+        raise RepositoryBindingError("Kanonische Lead-Datei wurde geändert", reason_code="canonical_lead_required")
+
+
+def canonical_review_connection(conn):
+    """No side effects: a borrowed or test database must never write live registry state."""
+    database = Path.home() / ".bach" / "bach.db"
+    try:
+        files = [row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"]
+        return (not conn.in_transaction and files == [str(database)]
+                and database.is_file() and not database.is_symlink()
+                and database.resolve(strict=True) == database)
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
+        return False
+
+
+def _review_repository_evidence(conn, task_id, task_version):
+    from hub._services import worker_result_review as review
+    from hub._services.worker_result_provenance import source_kind
+    found = review._intent(conn, task_id)
+    if found is None:
+        raise RepositoryBindingError("Privater Review-Intent fehlt oder ist ungültig",
+                                     reason_code="review_provenance_unavailable")
+    task = found["task"]
+    if task.get("status") not in {"pending", "open"} or task.get("claim_id"):
+        raise RepositoryBindingError("Review ist nicht frei und ausstehend", reason_code="review_not_pending")
+    if review.task_content_version(task) != task_version:
+        raise RepositoryBindingError("Review-Auftragsversion wurde geändert", reason_code="review_provenance_changed")
+    pair = review._intent_target(conn, found)
+    if pair is None or source_kind(pair[0]) != "native":
+        raise RepositoryBindingError("Frische native Parent-/Result-Provenienz fehlt",
+                                     reason_code="review_provenance_unavailable")
+    target, authority = pair
+    pin = (found["row"]["intent_sha256"], target["task_id"], target["result_id"],
+           target["result_revision"], target["task_version"], task_version,
+           authority["policy_version"], authority["identity_version"])
+    return found, target, authority, pin
+
+
+def enroll_review_task_repository(client, review_task_id, *, task_version,
+                                  expected_registry_sha256, operator):
+    """Derive a native review's repository solely from its verified parent result.
+
+    It inherits the parent's immutable source pin; it never provisions a clone,
+    substitutes a current main revision, issues review grants or accepts results.
+    Canonical source checks happen outside SQLite transactions. Final intent,
+    task and result CAS run under the SQLite writer while the existing registry
+    operator fence is held. No alternate registry or caller-selected repo exists.
+    """
+    from hub import worker_git
+    from hub._services import worker_result_review as review
+    from .worker_write_guard import _scan_locks
+    tid = canonical_task_id(review_task_id)
+    if (type(task_version) is not str or re.fullmatch(r"[0-9a-f]{64}", task_version) is None
+            or type(operator) is not str
+            or re.fullmatch(r"operator:[A-Za-z0-9][A-Za-z0-9_.@-]{0,99}", operator) is None):
+        raise RepositoryBindingError("Review-Enrollment-Pins sind ungültig", reason_code="review_provenance_changed")
+    database, identity = _canonical_review_client(client)
+    conn = client._get_local_connection()
+    try:
+        with _RegistryWriter(expected_registry_sha256) as writer:
+            _assert_database_identity(database, identity)
+            found, target, authority, initial_pin = _review_repository_evidence(conn, tid, task_version)
+            data = load_registry()
+            parent = data["tasks"].get(str(target["task_id"]))
+            if parent is None:
+                raise RepositoryBindingError("Verifizierte Repository-Bindung des Elternresultats fehlt",
+                                             reason_code="parent_binding_missing")
+            repository = parent["repository"]
+            record = data["repositories"][repository]
+            parent_binding = RepositoryBinding(target["task_id"], repository, record["origin"],
+                record["default_branch"], parent["source_sha"], parent.get("task_version"))
+            existing = data["tasks"].get(str(tid))
+            if existing is not None and any(existing.get(key) != parent[key] for key in ("repository", "source_sha")):
+                raise RepositoryBindingError("Vorhandene Review-Bindung widerspricht dem Elternresultat",
+                                             reason_code="review_binding_conflict")
+
+            def verify_source():
+                try:
+                    source = worker_git._safe_source_clone_path(parent_binding)
+                    if source != source_clone_path(repository, parent_binding.source_sha):
+                        raise ValueError
+                    for path in (writer.path.parent, source):
+                        if _scan_locks(path).get("hook_guards") != []:
+                            raise ValueError
+                    proof = worker_git._validate_pinned_source_clone(source, parent_binding, require_current=False)
+                    expected = {"schema": "bach.task-public-source.v2", "repository": repository,
+                        "origin": parent_binding.origin, "source_sha": parent_binding.source_sha,
+                        "source_ref": "refs/heads/" + parent_binding.default_branch,
+                        "visibility": "public", "private": False, "metadata_verified": True, "ref_verified": True}
+                    if (not isinstance(proof, dict)
+                            or any(proof.get(k) != value for k, value in expected.items())
+                            or proof.get("private") is not False
+                            or proof.get("metadata_verified") is not True
+                            or proof.get("ref_verified") is not True):
+                        raise ValueError
+                    return proof
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError):
+                    raise RepositoryBindingError("Gepinnte Parent-Source ist nicht frisch bestätigt",
+                                                 reason_code="review_source_unverified") from None
+
+            verify_source()
+            proof = verify_source()
+            fresh_found, fresh_target, fresh_authority, fresh_pin = _review_repository_evidence(conn, tid, task_version)
+            if fresh_pin != initial_pin:
+                raise RepositoryBindingError("Review-Provenienz wurde vor Enrollment geändert",
+                                             reason_code="review_provenance_changed")
+            _assert_database_identity(database, identity)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # No Git, network or nested DB client reads while holding this writer.
+                current = review._intent(conn, tid)
+                if (current is None or current["row"]["intent_sha256"] != fresh_found["row"]["intent_sha256"]
+                        or review.task_content_version(current["task"]) != task_version
+                        or current["task"].get("status") not in {"pending", "open"}
+                        or current["task"].get("claim_id")
+                        or not review._same_target_db(conn, fresh_target, fresh_authority)):
+                    raise RepositoryBindingError("Review-/Parent-CAS ist nicht mehr aktuell",
+                                                 reason_code="review_provenance_changed")
+                _assert_database_identity(database, identity)
+                writer.assert_current()
+                if existing is None:
+                    registered_at = datetime.now(timezone.utc).isoformat()
+                    data["schema"] = ENROLLED_SCHEMA
+                    data["tasks"][str(tid)] = {
+                        "repository": repository, "source_sha": parent_binding.source_sha,
+                        "task_version": task_version, "operator": operator, "registered_at": registered_at,
+                        "source_proof_sha256": hashlib.sha256(json.dumps(
+                            proof, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+                    }
+                    writer.publish(data)
+            finally:
+                conn.rollback()  # Only held the writer for a cross-store CAS; no task changes.
+            observed = resolve_task_repository(tid)
+            if (observed.repository != repository or observed.source_sha != parent_binding.source_sha):
+                raise RepositoryBindingError("Review-Enrollment-Readback stimmt nicht", reason_code="registry_changed")
+            return {"state": "already_bound" if existing is not None else "enrolled",
+                    "task_id": tid, "parent_task_id": target["task_id"],
+                    "target_result_id": target["result_id"], "repository": repository,
+                    "source_sha": parent_binding.source_sha, "task_version": task_version,
+                    "registry_sha256": hashlib.sha256(_read_registry_bytes(writer.path)).hexdigest(),
+                    "task_mutated": False}
+    finally:
+        conn.close()

@@ -1714,70 +1714,57 @@ class WorkerLeaseBinding:
             raise LeaseProtocolError("Unbekannte Task-Aktion")
 
     def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None):
-        """Propagate verified parent repository binding to newly decomposed child tasks."""
+        """Serialize native child inheritance with the existing operator registry fence."""
         if not created_ids:
             return False
         try:
-            import json
-            import os
-            import tempfile
+            import logging
             from pathlib import Path
-
-            if registry_file is None:
-                # Only auto-mutate the live registry when bound to the canonical local DB.
-                if (getattr(self._client, "mode", None) != "local"
-                        or getattr(self._client, "_conn", None) is not None):
+            from .worker_repo_registry import (
+                ENROLLED_SCHEMA, RepositoryBindingError, _RegistryWriter,
+                canonical_task_id, load_registry, registry_path,
+            )
+            path = registry_path()
+            if registry_file is not None and Path(registry_file) != path:
+                return False
+            if (getattr(self._client, "mode", None) != "local"
+                    or getattr(self._client, "_conn", None) is not None):
+                return False
+            client_db = getattr(self._client, "_db_path", None)
+            if client_db is not None and Path(client_db) != Path.home() / ".bach" / "bach.db":
+                return False
+            with _RegistryWriter() as writer:
+                data = load_registry()
+                parent = data["tasks"].get(str(self.task_id))
+                if parent is None:
                     return False
-                canonical_db = Path.home() / ".bach" / "bach.db"
-                client_db = getattr(self._client, "_db_path", None)
-                if client_db is not None and Path(client_db).resolve(strict=False) != canonical_db.resolve(strict=False):
+                versions = {}
+                for child_id in created_ids:
+                    child_id = canonical_task_id(child_id)
+                    if str(child_id) in data["tasks"]:
+                        continue  # Never overwrite an existing child authority.
+                    snapshot = self._client._task_policy_snapshot(child_id)
+                    version = snapshot.get("task_version") if isinstance(snapshot, dict) else None
+                    if type(version) is not str or re.fullmatch(r"[0-9a-f]{64}", version) is None:
+                        raise RepositoryBindingError("Kindversion ist nicht bestätigt")
+                    versions[child_id] = version
+                    entry = {"repository": parent["repository"], "source_sha": parent["source_sha"]}
+                    if "source_proof_sha256" in parent:
+                        data["schema"] = ENROLLED_SCHEMA
+                        entry.update(task_version=version,
+                            operator=parent["operator"], registered_at=datetime.now(timezone.utc).isoformat(),
+                            source_proof_sha256=parent["source_proof_sha256"])
+                    data["tasks"][str(child_id)] = entry
+                if not versions:
                     return False
-                reg_path = Path.home() / ".bach" / "worker_repo_registry.v1.json"
-            else:
-                reg_path = Path(registry_file)
-
-            if not reg_path.is_file() or reg_path.is_symlink():
-                return False
-            data = json.loads(reg_path.read_text(encoding="utf-8"))
-            tasks_map = data.get("tasks")
-            if not isinstance(tasks_map, dict):
-                return False
-            parent_entry = tasks_map.get(str(self.task_id))
-            if not isinstance(parent_entry, dict) or "repository" not in parent_entry or "source_sha" not in parent_entry:
-                return False
-
-            now_iso = datetime.now(timezone.utc).isoformat()
-            changed = False
-            for cid in created_ids:
-                cid_str = str(int(cid))
-                if cid_str in tasks_map:
-                    continue
-                entry = {
-                    "repository": parent_entry["repository"],
-                    "source_sha": parent_entry["source_sha"],
-                }
-                if "source_proof_sha256" in parent_entry:
-                    snap_fn = getattr(self._client, "_task_policy_snapshot", None)
-                    child_snap = snap_fn(int(cid)) if callable(snap_fn) else None
-                    child_ver = child_snap.get("task_version") if isinstance(child_snap, dict) else None
-                    if isinstance(child_ver, str) and len(child_ver) == 64:
-                        entry["task_version"] = child_ver
-                        entry["operator"] = parent_entry.get("operator", "operator:decompose-inherit")
-                        entry["registered_at"] = now_iso
-                        entry["source_proof_sha256"] = parent_entry["source_proof_sha256"]
-                tasks_map[cid_str] = entry
-                changed = True
-
-            if not changed:
-                return False
-            raw = (json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
-            with tempfile.NamedTemporaryFile(dir=reg_path.parent, prefix=".repo-inherit-", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-                os.chmod(tmp_path, 0o600)
-                tmp.write(raw)
-                tmp.flush()
-                os.fsync(tmp.fileno())
-            os.replace(tmp_path, reg_path)
-            return True
-        except Exception:
+                for child_id, version in versions.items():
+                    if self._client._task_policy_snapshot(child_id).get("task_version") != version:
+                        raise RepositoryBindingError("Kindversion wurde vor Registry-CAS geändert")
+                writer.publish(data)
+                return True
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "worker_repository_inheritance task_id=%s reason_code=%s",
+                self.task_id, getattr(exc, "reason_code", "repository_inheritance_unavailable"))
             return False
