@@ -13,11 +13,13 @@ REJECTIONS = frozenset({
     "repository_capability_missing", "repository_unverified", "repository_not_allowed",
     "repository_changed",
     "ownership", "deferred_version", "changed_selection", "held", "not_claimable",
+    "dependencies_unfinished", "dependencies_missing", "dependencies_invalid", "status_not_claimable",
     "creator_priority", "stale_task_version", "already_held_by_caller",
     "completion_guard", "conflict", "unresolved_tool_trace",
 })
 # unresolved_tool_trace: a prior holder's tool effect is unknown; only that task waits for settlement.
 ACQUIRE_DENIALS = frozenset({"held", "not_claimable", "creator_priority",
+                           "dependencies_unfinished", "dependencies_missing", "dependencies_invalid", "status_not_claimable",
                            "stale_task_version", "already_held_by_caller",
                            "completion_guard", "conflict", "unresolved_tool_trace"})
 REASONS = frozenset({
@@ -29,6 +31,27 @@ _STATE_REASONS = {"acquired": {"task_acquired"},
                   "error": {"selection_error"}}
 _COUNTERS = ("candidate_count", "matched_count", "attempted_count", "scanned_pages")
 log = logging.getLogger(__name__)
+_MAX_REJECTION_EXAMPLES = 5
+
+
+def acquire_rejection_reason(reason, payload):
+    """Explain a native denial without changing its authority or echoing details."""
+    if reason != "not_claimable" or not isinstance(payload, dict):
+        return reason
+    blocks = payload.get("dependency_blocks")
+    if isinstance(blocks, dict):
+        for field in ("invalid", "missing", "unfinished"):
+            if blocks.get(field) is True:
+                return f"dependencies_{field}"
+    dependencies = payload.get("blocked_by")
+    if isinstance(dependencies, dict):
+        for field in ("invalid", "missing", "unfinished"):
+            values = dependencies.get(field)
+            if isinstance(values, list) and values:
+                return f"dependencies_{field}"
+    if payload.get("status") in ("done", "blocked", "review", "cancelled", "canceled", "closed", "failed"):
+        return "status_not_claimable"
+    return reason
 
 
 def project_selection_policy(raw):
@@ -94,6 +117,10 @@ def queue_waiting_activity(raw):
         "explicit_slot_required": "Slotzuweisung fehlt", "selection_policy_unavailable": "Auswahlpolicy ungeprüft", "ownership": "Zuständigkeit",
         "deferred_version": "unveränderte Rückgabe", "changed_selection": "Task geändert",
         "held": "fremde Lease", "not_claimable": "Status/Abhängigkeiten",
+        "dependencies_unfinished": "Abhängigkeiten offen",
+        "dependencies_missing": "Abhängigkeiten fehlen",
+        "dependencies_invalid": "Abhängigkeiten ungültig",
+        "status_not_claimable": "Status nicht übernehmbar",
         "creator_priority": "Creator-Schonfrist", "stale_task_version": "Taskversion",
         "already_held_by_caller": "bereits gehalten", "completion_guard": "Abschlussprüfung",
         "conflict": "Übernahmekonflikt",
@@ -103,7 +130,12 @@ def queue_waiting_activity(raw):
         "repository_changed": "Repo änderte sich vor Claim",
         "unresolved_tool_trace": "offene Werkzeugspur",
     }
-    reasons = ", ".join(f"{labels[key]}: {count}" for key, count in report["rejected_counts"].items())
+    reasons = []
+    for key, count in report["rejected_counts"].items():
+        examples = report.get("rejection_examples", {}).get(key, [])
+        suffix = " (" + ", ".join(f"#{task_id}" for task_id in examples[:3]) + ")" if examples else ""
+        reasons.append(f"{labels[key]}: {count}{suffix}")
+    reasons = ", ".join(reasons)
     prefix = "Keine offenen Kandidaten" if report["reason"] == "empty_queue" else "Keine übernehmbare Aufgabe"
     counts = f'{report["candidate_count"]} Kandidaten, {report["matched_count"]} Auswahlmatches'
     stamp = datetime.fromisoformat(report["observed_at"].replace("Z", "+00:00"))
@@ -151,6 +183,17 @@ def project_queue_status(raw):
         "scan_complete", *_COUNTERS,
     )}
     result["rejected_counts"] = dict(rejected)
+    examples = raw.get("rejection_examples")
+    if examples is not None:
+        if not isinstance(examples, dict) or set(examples) - set(rejected):
+            return None
+        for key, values in examples.items():
+            if (not isinstance(values, list)
+                    or len(values) > min(_MAX_REJECTION_EXAMPLES, rejected[key])
+                    or any(type(value) is not int or value <= 0 for value in values)
+                    or len(set(values)) != len(values)):
+                return None
+        result["rejection_examples"] = {key: list(values) for key, values in examples.items()}
     for key in ("last_candidate_task_id", "selected_task_id"):
         value = raw.get(key)
         if value is not None:
@@ -190,17 +233,23 @@ class QueueObservation:
             "schema": SCHEMA, "source": "canonical_task_api",
             "authority_mode": client.mode, "state": "error", "reason": "selection_error",
             "scan_complete": False, "candidate_count": 0, "matched_count": 0,
-            "attempted_count": 0, "scanned_pages": 0, "rejected_counts": {},
+            "attempted_count": 0, "scanned_pages": 0, "rejected_counts": {}, "rejection_examples": {},
         }
 
     def candidate(self, task_id):
         self.record["candidate_count"] += 1
         self.record["last_candidate_task_id"] = task_id
 
-    def reject(self, reason):
+    def reject(self, reason, *, payload=None):
+        reason = acquire_rejection_reason(reason, payload)
         assert reason in REJECTIONS
         counts = self.record["rejected_counts"]
         counts[reason] = counts.get(reason, 0) + 1
+        task_id = self.record.get("last_candidate_task_id")
+        if type(task_id) is int and task_id > 0:
+            examples = self.record["rejection_examples"].setdefault(reason, [])
+            if len(examples) < _MAX_REJECTION_EXAMPLES and task_id not in examples:
+                examples.append(task_id)
 
     def acquired(self, binding):
         self.record.update(state="acquired", reason="task_acquired", selected_task_id=binding.task_id)
@@ -210,8 +259,8 @@ class QueueObservation:
                   "selection_excluded" if not self.record["matched_count"] else "acquire_denied")
         self.record.update(state="waiting", reason=reason, scan_complete=True)
 
-    def denied(self, reason):
-        self.reject(reason)
+    def denied(self, reason, *, payload=None):
+        self.reject(reason, payload=payload)
         self.record.update(state="waiting", reason="acquire_denied")
 
     def publish(self):

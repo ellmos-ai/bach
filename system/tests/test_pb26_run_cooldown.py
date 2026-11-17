@@ -3,8 +3,8 @@
 Lukas, 08.11.2026: "nach abschluss eines laufes eine zwangspause einlegen lassen und nach
 cooldown wieder anfahren, das ist für einen hintergrundworker völlig okay". The admission
 lives in ocean-resources (``RunCooldownGate``); the worker only asks, waits with a visible
-reason and unloads its model once when the pause gets long. The Mac Studio swapped out
-198 to 1171 MiB/min on 08.11. while its pressure level stayed normal.
+reason; shared model retention remains with actual Ollama requests (BACH #4214).
+The Mac Studio swapped out 198 to 1171 MiB/min on 08.11. while pressure stayed normal.
 """
 import importlib
 import threading
@@ -16,7 +16,6 @@ from hub._services.chat import run_cooldown
 from hub._services.llm.model_backend import OllamaBackend, OpenRouterBackend
 from system.tests.test_pb26_idle_unload import MODEL, ollama  # noqa: F401 -- HTTP-recording fixture
 
-UNLOAD = ("unload", {"model": MODEL, "keep_alive": 0})
 REAL_OPEN_GATE = run_cooldown.open_gate  # conftest stubs it per test
 
 
@@ -62,14 +61,15 @@ def run(monkeypatch, ollama):  # noqa: F811
     return SimpleNamespace(worker=worker, updates=updates, gate=gate)
 
 
-def test_swap_cooldown_shows_reason_and_rate_unloads_once_and_resumes(run, ollama):  # noqa: F811
+def test_swap_cooldown_keeps_shared_model_retention_and_resumes(run, ollama):  # noqa: F811
     assert run.gate(ScriptedGate("cooldown:swap", "cooldown:swap", "cooldown:swap")) is True
-    assert ollama == [UNLOAD]  # a long pause unloads exactly once
+    assert ollama == []  # a long cooldown cannot revoke another caller's model use
     paused = [u for u in run.updates if u.get("current_activity", "").startswith("Abkühlpause (")]
     # "paused" + auto_paused needs pause_started_at; without it startup refuses (invalid_cooldown)
     assert len(paused) == 3 and all(u["status"] == "running" and "auto_paused" not in u for u in paused)
     assert "cooldown:swap" in paused[0]["current_activity"]
     assert "198 MiB/min" in paused[0]["current_activity"]
+    assert all("Modell entladen" not in update["current_activity"] for update in paused)
     assert run.updates[-1]["status"] == "running" and run.updates[-1]["auto_paused"] is False
 
 
@@ -144,6 +144,6 @@ def test_real_ram_distributor_gate_through_the_worker_wait(run, ollama, monkeypa
     gate = mod.RunCooldownGate(baseline=mod.StressSample(0.0, 0, 1, False),
                                policy=mod.RunCooldownPolicy(min_pause_seconds=0, unload_after_seconds=0))
     assert run.gate(gate, sampler=lambda: next(samples)) is True
-    assert ollama == [UNLOAD]
+    assert ollama == []
     assert "cooldown:swap" in run.updates[0]["current_activity"]
     assert "300 MiB/min" in run.updates[0]["current_activity"]

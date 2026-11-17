@@ -145,14 +145,21 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         from hub.compute_lock import (
+            ComputePauseError,
             check_compute_active,
             get_fackel_preference,
             pause_compute_jobs,
             resume_compute_jobs,
+            recover_paused_jobs,
+            has_pending_compute_pauses,
         )
         HAS_COMPUTE_LOCK = True
     except ImportError:
         HAS_COMPUTE_LOCK = False
+        class ComputePauseError(RuntimeError):
+            pass
+        def recover_paused_jobs(**kwargs): return []
+        def has_pending_compute_pauses(): return True
         def get_fackel_preference(): return "compute"
         def check_compute_active(): return False, {}
         def pause_compute_jobs(s): return []
@@ -306,16 +313,15 @@ def main(argv: list[str] | None = None) -> int:
             )
 
             paused_jobs = []
-            if compute_active and fackel_pref == "ollama":
-                paused_jobs = pause_compute_jobs(compute_status)
-                if paused_jobs:
-                    _log(workdir, f"Fackel steht auf 'ollama' - pausiere Rechenjobs ({paused_jobs}) fuer Inferenz")
-
             t0 = time.time()
             antwort = ""
             interrupted = False
             process_error: Exception | None = None
             try:
+                if compute_active and fackel_pref == "ollama":
+                    paused_jobs = pause_compute_jobs(compute_status)
+                    if paused_jobs:
+                        _log(workdir, f"Fackel steht auf 'ollama' - Rechenjobs ({paused_jobs}) bestätigt pausiert")
                 with tc.legacy_worker_binding(chat_id):
                     antwort = asyncio.run(
                         runtime.process(
@@ -325,6 +331,17 @@ def main(argv: list[str] | None = None) -> int:
                             work_priority="background",
                         )
                     )
+            except ComputePauseError as error:
+                process_error = error
+                _log(workdir, f"Compute-Pause nicht bestätigt ({error.reason}); keine Modellanfrage gestartet")
+                if error.paused_pids:
+                    try:
+                        recovered = recover_paused_jobs(
+                            ollama_url=getattr(runtime.backend, "base_url", "http://localhost:11434"),
+                            paused_pids=error.paused_pids)
+                        _log(workdir, f"Teilpause: bestätigt fortgesetzt {recovered}; offene Belege bleiben erhalten")
+                    except Exception as recovery_error:
+                        _log(workdir, f"Teilpause bleibt zur Prüfung erhalten ({type(recovery_error).__name__})")
             except KeyboardInterrupt:
                 interrupted = True
                 _log(workdir, "unterbrochen")
@@ -334,8 +351,10 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 if paused_jobs:
                     try:
-                        resume_compute_jobs(paused_jobs)
-                        _log(workdir, f"Rechenjobs ({paused_jobs}) fortgesetzt")
+                        resumed = resume_compute_jobs(paused_jobs) or []
+                        _log(workdir, f"Rechenjobs bestätigt fortgesetzt: {resumed}")
+                        if has_pending_compute_pauses():
+                            _log(workdir, "Weitere Pausenbelege bleiben zur Prüfung erhalten")
                     except Exception as re:
                         _log(workdir, f"Rechenjobs ({paused_jobs}) konnten nicht fortgesetzt werden: {re}")
 
@@ -384,7 +403,9 @@ def main(argv: list[str] | None = None) -> int:
                 except Exception as ae:
                     _log(workdir, f"Task #{t['id']} Endeprotokoll fehlgeschlagen: {ae}")
                 if args.einmal:
-                    return 0
+                    return 1 if isinstance(process_error, ComputePauseError) else 0
+                if isinstance(process_error, ComputePauseError):
+                    time.sleep(max(5, args.takt))
                 continue
 
             try:

@@ -70,6 +70,16 @@ _POLICY_REASONS = {
     "unsupported_action": frozenset({"not_applied"}),
 }
 
+# Closed public causes whose producer can prove that no operation was applied.
+# Trace consumers may display these; they are never effect/lease authority.
+CONFIRMED_REJECTION_REASONS = frozenset(
+    [reason for reason, effects in _POLICY_REASONS.items()
+     if effects <= {"not_applied", "not_started"}]
+    + [reason for _, reason, effects in _ERRORS.values()
+       if effects <= {"not_applied", "not_started"}]
+)
+
+
 def _error_spec(code, reason=None):
     if not isinstance(code, str):
         raise ToolErrorContractError("Unbekannter Werkzeugfehlercode")

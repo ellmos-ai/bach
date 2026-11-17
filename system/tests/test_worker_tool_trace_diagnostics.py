@@ -210,3 +210,29 @@ def test_append_only_trigger_and_read_only_projection(world):
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("DELETE FROM worker_tool_trace_events")
     conn.rollback()
+
+
+@pytest.mark.parametrize("tool, code, reason, expected", [
+    ("read_file", "tool_policy_denied", "path_not_authorized", "path_not_authorized"),
+    ("task_manage", "invalid_task_result", None, "result_validation_failed"),
+    ("write_file", "write_path_denied", None, "write_path_denied"),
+    ("read_file", "tool_policy_denied", "resource_not_found", "resource_not_found"),
+])
+def test_other_confirmed_tool_rejections_have_safe_trace_causes(world, tool, code, reason, expected):
+    _, client, identity, binding = world
+    private = "private-tool-arguments-and-result"
+    result = dispatch.execute_normal_tool(binding, tool, {"path": private},
+        lambda *_: ToolErrorText(private, code=code, reason=reason))
+    assert result.status == "returned"
+    assert dispatch.acknowledge_normal_tool_result(binding, result)
+    rows = client.tool_trace_events(identity.task_id, include_diagnostics=True)["events"]
+    assert rows[1]["diagnostic"] == {"outcome_class": "tool_rejected", "stage": "tool_validation",
+                                     "code": expected, "sandbox_returncode": None}
+    assert all(row["effect_status"] == "unknown" for row in rows)
+    assert private not in json.dumps(rows)
+
+
+def test_unknown_effect_or_plain_text_cannot_claim_confirmed_rejection():
+    unknown = ToolErrorText("private", code="tool_policy_denied", reason="resource_limit_exceeded")
+    assert dispatch._result_diagnostic("read_file", unknown) is None
+    assert dispatch._result_diagnostic("read_file", "BLOCKIERT: path_not_authorized") is None

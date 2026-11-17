@@ -20,11 +20,14 @@ Usage:
 """
 import json
 import logging
+import math
 import os
 import signal
 import subprocess
+import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -170,69 +173,342 @@ def _filter_stopped_jobs(status: dict) -> Tuple[bool, dict]:
     return True, filtered
 
 
-def pause_compute_jobs(status: dict) -> List[int]:
-    """Send SIGSTOP to all compute PIDs from status dict.
-
-    Returns list of successfully paused PIDs.
-    Saves paused PIDs to PAUSED_PIDS_FILE for crash recovery.
-    """
-    jobs = status.get("active_compute_jobs", [])
-    paused = []
-
-    for job in jobs:
-        pid = job.get("pid")
-        if not pid:
-            continue
-        try:
-            os.kill(pid, signal.SIGSTOP)
-            paused.append(pid)
-            log.info("SIGSTOP sent to PID %d (%s)", pid, job.get("name", "?"))
-        except ProcessLookupError:
-            log.warning("PID %d not found, skipping", pid)
-        except PermissionError:
-            log.warning("No permission to stop PID %d", pid)
-
-    if paused:
-        _save_paused_pids(paused)
-
-    return paused
+_PAUSE_SCHEMA = "bach.compute-pauses.v2"
+_PAUSE_STATES = {"paused", "pause_unconfirmed", "resume_unconfirmed",
+                 "identity_unverified", "legacy_unverified"}
+_PAUSE_MAX_BYTES = 131072
+_PROCESS_STATE_WAIT_SECONDS = 1.0
 
 
-def resume_compute_jobs(paused_pids: List[int]) -> None:
-    """Send SIGCONT to previously paused PIDs. Cleans up paused-pids file."""
-    for pid in paused_pids:
-        try:
-            os.kill(pid, signal.SIGCONT)
-            log.info("SIGCONT sent to PID %d", pid)
-        except ProcessLookupError:
-            log.warning("PID %d gone, skipping SIGCONT", pid)
-        except PermissionError:
-            log.warning("No permission to resume PID %d", pid)
-
-    _cleanup_paused_pids()
+class _PausedJobs(list):
+    """Preserve the public PID-list contract while binding the originating pause."""
+    def __init__(self, pids=(), receipts=()):
+        super().__init__(pids)
+        self.pause_receipts = tuple(dict(receipt) for receipt in receipts)
 
 
-def _save_paused_pids(pids: List[int]) -> None:
-    """Persist paused PIDs for crash recovery."""
-    path = _expand(PAUSED_PIDS_FILE)
+class ComputePauseError(RuntimeError):
+    """Pause admission failed; confirmed own partial pauses remain recoverable."""
+    def __init__(self, reason: str, paused_pids=None):
+        self.reason = reason
+        self.paused_pids = paused_pids if isinstance(paused_pids, _PausedJobs) else _PausedJobs()
+        super().__init__(f"compute_pause_unconfirmed:{reason}")
+
+
+def has_pending_compute_pauses() -> bool:
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({
-            "paused_pids": pids,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "source": "bach_telegram_bot",
-        }, indent=2), encoding="utf-8")
-    except OSError as e:
-        log.error("Failed to save paused PIDs: %s", e)
-
-
-def _cleanup_paused_pids() -> None:
-    """Remove the paused-pids file."""
-    path = _expand(PAUSED_PIDS_FILE)
-    try:
-        path.unlink(missing_ok=True)
+        _expand(PAUSED_PIDS_FILE).lstat()
+        return True
+    except FileNotFoundError:
+        return False
     except OSError:
-        pass
+        return True  # unreadable evidence is not proof of an empty pause set
+
+
+def _pause_identity(record: dict) -> dict:
+    return {key: record[key] for key in ("pid", "create_time", "pause_id")}
+
+
+def _read_paused_records(path: Path) -> list[dict]:
+    """Read owned identities; legacy PIDs never become signal authority."""
+    if path.is_symlink():
+        raise ValueError("linked_pause_receipt")
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(_PAUSE_MAX_BYTES + 1)
+    except FileNotFoundError:
+        return []
+    if len(raw) > _PAUSE_MAX_BYTES:
+        raise ValueError("pause_receipt_too_large")
+
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate_pause_field")
+            value[key] = item
+        return value
+
+    def invalid(_value):
+        raise ValueError("invalid_pause_number")
+
+    value = json.loads(raw, object_pairs_hook=unique, parse_constant=invalid)
+    if not isinstance(value, dict):
+        raise ValueError("invalid_pause_receipt")
+    pids = value.get("paused_pids")
+    if (not isinstance(pids, list) or len(pids) > 256
+            or any(type(pid) is not int or pid <= 0 for pid in pids)
+            or len(pids) != len(set(pids))):
+        raise ValueError("invalid_paused_pids")
+    if "schema" not in value:
+        return [{"pid": pid, "state": "legacy_unverified"} for pid in pids]
+    if value.get("schema") != _PAUSE_SCHEMA or value.get("source") != "bach_telegram_bot":
+        raise ValueError("unknown_pause_receipt")
+    records = value.get("processes")
+    if not isinstance(records, list) or len(records) != len(pids):
+        raise ValueError("invalid_process_records")
+    for pid, record in zip(pids, records):
+        if (not isinstance(record, dict) or type(record.get("pid")) is not int
+                or record["pid"] != pid or record.get("state") not in _PAUSE_STATES):
+            raise ValueError("invalid_process_record")
+        expected = {"pid", "state"} if record["state"] == "legacy_unverified" else {
+            "pid", "state", "create_time", "pause_id"}
+        if set(record) != expected:
+            raise ValueError("invalid_process_identity")
+        if "create_time" in record:
+            created = record["create_time"]
+            if type(created) not in (int, float) or not math.isfinite(created) or created <= 0:
+                raise ValueError("invalid_process_birth")
+            pause_id = record["pause_id"]
+            if (not isinstance(pause_id, str) or len(pause_id) != 32
+                    or any(char not in "0123456789abcdef" for char in pause_id)):
+                raise ValueError("invalid_pause_identity")
+    return [dict(record) for record in records]
+
+
+def _sync_pause_directory(path: Path) -> None:
+    if os.name != "nt":
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def _write_paused_records(path: Path, records: list[dict]) -> None:
+    """Persist an effect intent before signalling; never discard unresolved PIDs."""
+    if path.is_symlink():
+        raise ValueError("linked_pause_receipt")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not records:
+        path.unlink(missing_ok=True)
+        _sync_pause_directory(path.parent)
+        return
+    value = {"schema": _PAUSE_SCHEMA, "source": "bach_telegram_bot",
+             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+             "paused_pids": [record["pid"] for record in records], "processes": records,
+             "manual_review_required": any(record["state"] != "paused" for record in records)}
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", delete=False) as handle:
+            temporary = Path(handle.name)
+            json.dump(value, handle, indent=2, allow_nan=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        _sync_pause_directory(path.parent)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _process_for_pause_record(record: dict):
+    import psutil
+
+    if record["pid"] == os.getpid():
+        raise ValueError("self_process_refused")
+    process = psutil.Process(record["pid"])
+    created = process.create_time()
+    if (not process.is_running() or type(created) not in (int, float)
+            or not math.isfinite(created)
+            or abs(created - record["create_time"]) >= .001):
+        raise ValueError("process_identity_changed")
+    return process
+
+
+def _verified_process_status(process):
+    import psutil
+
+    status = process.status()
+    known = {value for name, value in vars(psutil).items()
+             if name.startswith("STATUS_") and isinstance(value, str)}
+    if not isinstance(status, str) or status not in known:
+        raise ValueError("process_state_unknown")
+    return status
+
+
+def _confirm_process_state(record: dict, *, stopped: bool) -> bool:
+    import psutil
+
+    deadline = time.monotonic() + _PROCESS_STATE_WAIT_SECONDS
+    while True:
+        try:
+            process = _process_for_pause_record(record)
+            status = _verified_process_status(process)
+        except psutil.NoSuchProcess:
+            return not stopped  # after SIGCONT, an exited original no longer needs recovery
+        if status in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}:
+            return not stopped
+        if status == psutil.STATUS_TRACING_STOP:
+            return False
+        if (status == psutil.STATUS_STOPPED) is stopped:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(.01)
+
+
+def pause_compute_jobs(status: dict) -> List[int]:
+    """Confirm every needed pause or raise with only confirmed partial ownership."""
+    import psutil
+    from hub._services.user_config_store import _exclusive_lock
+
+    paused, identities = [], []
+
+    def refuse(reason):
+        log.warning("compute_pause_deferred reason=%s confirmed_pauses=%d", reason, len(paused))
+        raise ComputePauseError(reason, _PausedJobs(paused, identities))
+
+    if not hasattr(signal, "SIGSTOP") or not hasattr(signal, "SIGCONT"):
+        refuse("unsupported_platform")
+    jobs = status.get("active_compute_jobs") if isinstance(status, dict) else None
+    if not isinstance(jobs, list) or len(jobs) > 256:
+        refuse("invalid_compute_status")
+    seen = set()
+    for job in jobs:
+        pid = job.get("pid") if isinstance(job, dict) else None
+        if type(pid) is not int or pid <= 0 or pid == os.getpid() or pid in seen:
+            refuse("invalid_compute_pid")
+        seen.add(pid)
+    if not jobs:
+        return _PausedJobs()
+
+    path = _expand(PAUSED_PIDS_FILE)
+    try:
+        with _exclusive_lock(path):
+            records = _read_paused_records(path)
+            for job in jobs:
+                pid = job["pid"]
+                if any(record["pid"] == pid for record in records):
+                    refuse("existing_pause_unresolved")
+                if len(records) >= 256:
+                    refuse("receipt_capacity")
+                try:
+                    process = psutil.Process(pid)
+                    created = process.create_time()
+                    if (not process.is_running() or type(created) not in (int, float)
+                            or not math.isfinite(created) or created <= 0):
+                        refuse("process_identity_unverified")
+                    state = _verified_process_status(process)
+                    if state in {psutil.STATUS_STOPPED, psutil.STATUS_TRACING_STOP}:
+                        refuse("process_already_stopped")
+                    if state in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}:
+                        continue
+                except psutil.NoSuchProcess:
+                    continue  # this declared job is confirmed gone
+                except ComputePauseError:
+                    raise
+                except Exception:
+                    refuse("process_identity_unverified")
+                record = {"pid": pid, "create_time": created,
+                          "pause_id": uuid.uuid4().hex, "state": "pause_unconfirmed"}
+                records.append(record)
+                try:
+                    _write_paused_records(path, records)
+                except Exception:
+                    refuse("pause_intent_unrecorded")
+                try:
+                    _process_for_pause_record(record).send_signal(signal.SIGSTOP)
+                    if not _confirm_process_state(record, stopped=True):
+                        refuse("pause_state_unconfirmed")
+                except ComputePauseError:
+                    raise
+                except Exception:
+                    refuse("pause_signal_unconfirmed")
+                record["state"] = "paused"
+                try:
+                    _write_paused_records(path, records)
+                except Exception:
+                    refuse("pause_confirmation_unrecorded")
+                paused.append(pid)
+                identities.append(_pause_identity(record))
+                log.info("compute_pause_confirmed pid=%d", pid)
+    except ComputePauseError:
+        raise
+    except Exception:
+        refuse("pause_receipt_unavailable")
+    return _PausedJobs(paused, identities)
+
+
+def _resume_owned_jobs(selected_pids: List[int] | None, *, expected_receipts=None) -> List[int]:
+    import psutil
+    from hub._services.user_config_store import _exclusive_lock
+
+    if not hasattr(signal, "SIGCONT"):
+        log.warning("compute_resume_deferred reason=unsupported_platform")
+        return []
+    path = _expand(PAUSED_PIDS_FILE)
+    resumed = []
+    try:
+        with _exclusive_lock(path):
+            records = _read_paused_records(path)
+            had_records = bool(records)
+            selected = {record["pid"] for record in records} if selected_pids is None else {
+                pid for pid in selected_pids if type(pid) is int and pid > 0}
+            for record in list(records):
+                pid = record["pid"]
+                if pid not in selected:
+                    continue
+                if expected_receipts is not None and not any(
+                        isinstance(expected, dict) and set(expected) == {"pid", "create_time", "pause_id"}
+                        and all(record.get(key) == value for key, value in expected.items())
+                        for expected in expected_receipts):
+                    log.warning("compute_resume_deferred pid=%d reason=pause_receipt_changed", pid)
+                    continue
+                if record["state"] not in {"paused", "resume_unconfirmed"}:
+                    log.warning("compute_resume_deferred pid=%d reason=%s manual_review_required=true",
+                                pid, record["state"])
+                    continue
+                try:
+                    process = _process_for_pause_record(record)
+                    status = _verified_process_status(process)
+                    if status == psutil.STATUS_TRACING_STOP:
+                        raise ValueError("process_traced")
+                except psutil.NoSuchProcess:
+                    records.remove(record)  # original process is confirmed gone; send no signal
+                    _write_paused_records(path, records)
+                    continue
+                except Exception as error:
+                    record["state"] = "identity_unverified"
+                    _write_paused_records(path, records)
+                    log.warning("compute_resume_deferred pid=%d reason=%s manual_review_required=true",
+                                pid, type(error).__name__)
+                    continue
+                if status != psutil.STATUS_STOPPED:
+                    records.remove(record)  # already resumed/ended; do not send SIGCONT again
+                    _write_paused_records(path, records)
+                    continue
+                if record["state"] == "resume_unconfirmed":
+                    log.warning("compute_resume_deferred pid=%d reason=resume_unconfirmed manual_review_required=true",
+                                pid)
+                    continue
+                record["state"] = "resume_unconfirmed"
+                _write_paused_records(path, records)
+                try:
+                    # psutil rechecks PID reuse at the signal boundary.
+                    process.send_signal(signal.SIGCONT)
+                    if not _confirm_process_state(record, stopped=False):
+                        raise RuntimeError("resume_state_unconfirmed")
+                    resumed.append(pid)
+                    records.remove(record)
+                    _write_paused_records(path, records)
+                    log.info("compute_resume_confirmed pid=%d", pid)
+                except Exception as error:
+                    log.warning("compute_resume_deferred pid=%d reason=%s manual_review_required=true",
+                                pid, type(error).__name__)
+            if had_records and not path.exists():
+                delete_session_flag()
+    except Exception as error:
+        log.warning("compute_resume_deferred reason=%s receipt_preserved=true", type(error).__name__)
+    return resumed
+
+
+def resume_compute_jobs(paused_pids: List[int]) -> List[int]:
+    """Explicit resume: only confirmed own pause identities authorize SIGCONT."""
+    expected = paused_pids.pause_receipts if isinstance(paused_pids, _PausedJobs) else None
+    return _resume_owned_jobs(paused_pids, expected_receipts=expected)
 
 
 def _pid_is_stopped(pid: int) -> bool:
@@ -250,39 +526,24 @@ def _pid_is_stopped(pid: int) -> bool:
         return False
 
 
-def recover_paused_jobs() -> List[int]:
-    """Crash recovery: resume any PIDs that are still stopped from a previous session.
+def recover_paused_jobs(ollama_url: str = "http://localhost:11434",
+                        paused_pids: List[int] | None = None) -> List[int]:
+    """Automatic recovery requires empty Ollama and confirmed own identities.
 
-    Called at bot startup. Returns list of resumed PIDs.
+    A partial-pause caller supplies its bound PID list; startup may reconcile
+    all owned receipts. An explicitly empty list never adopts other pauses.
     """
-    path = _expand(PAUSED_PIDS_FILE)
-    if not path.is_file():
+    if paused_pids is not None and not paused_pids:
         return []
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        log.warning("Could not read paused PIDs file: %s", e)
-        _cleanup_paused_pids()
+    if not has_pending_compute_pauses():
         return []
-
-    pids = data.get("paused_pids", [])
-    resumed = []
-
-    for pid in pids:
-        if _pid_is_stopped(pid):
-            try:
-                os.kill(pid, signal.SIGCONT)
-                resumed.append(pid)
-                log.info("Crash recovery: SIGCONT sent to PID %d", pid)
-            except (ProcessLookupError, PermissionError) as e:
-                log.warning("Crash recovery: could not resume PID %d: %s", pid, e)
-        else:
-            log.info("Crash recovery: PID %d not stopped (already running or gone)", pid)
-
-    _cleanup_paused_pids()
-    delete_session_flag()
-    return resumed
+    loaded = _check_model_loaded(ollama_url)
+    if loaded is not False:
+        reason = "ollama_state_unknown" if loaded is None else "model_resident"
+        log.warning("compute_recovery_deferred reason=%s receipt_preserved=true", reason)
+        return []
+    return (_resume_owned_jobs(None) if paused_pids is None
+            else resume_compute_jobs(paused_pids))
 
 
 SESSION_FLAG_PATH = "~/.memwatchdog/user_session_active.flag"
@@ -290,8 +551,7 @@ SESSION_FLAG_PATH = "~/.memwatchdog/user_session_active.flag"
 
 def get_effective_keep_alive(default: str = "5m") -> str:
     """Adaptive keep_alive: 5m when compute exists (running or paused), 30m otherwise."""
-    paused = _expand(PAUSED_PIDS_FILE)
-    if paused.is_file():
+    if has_pending_compute_pauses():
         return "5m"
     try:
         is_active, _ = check_compute_active()
@@ -361,6 +621,48 @@ def delete_session_flag() -> None:
         pass
 
 
+def _check_model_loaded(ollama_url: str) -> Optional[bool]:
+    """True: resident models; False: a validated empty list; None: unverified."""
+    import urllib.request
+
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate_ollama_field")
+            value[key] = item
+        return value
+
+    def invalid(_value):
+        raise ValueError("invalid_ollama_number")
+
+    try:
+        request = urllib.request.Request(f"{ollama_url.rstrip('/')}/api/ps")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(request, timeout=5) as response:
+            raw = response.read(262145)
+        if len(raw) > 262144:
+            return None
+        data = json.loads(raw, object_pairs_hook=unique, parse_constant=invalid)
+        if not isinstance(data, dict) or not isinstance(data.get("models"), list):
+            return None
+        models = data["models"]
+        if len(models) > 64:
+            return None
+        for model in models:
+            if not isinstance(model, dict):
+                return None
+            name = model.get("name")
+            if (not isinstance(name, str) or not name or len(name) > 512
+                    or name != name.strip() or any(ord(char) < 32 for char in name)):
+                return None
+        # Another model still consumes the same host RAM; absence of just the
+        # original target is not sufficient evidence to resume compute.
+        return bool(models)
+    except Exception:
+        return None
+
+
 def start_resume_monitor(
     model_name: str,
     paused_pids: List[int],
@@ -368,65 +670,73 @@ def start_resume_monitor(
     ollama_url: str = "http://localhost:11434",
     poll_interval: float = 30.0,
     idle_wait: float = 90.0,
-    timeout: float = 14400.0,  # 4 hours max
+    timeout: float = 14400.0,
 ) -> threading.Thread:
-    """Start a background thread that monitors Ollama model status.
+    """Resume own compute jobs only after sustained, confirmed model absence.
 
-    Waits for sustained model unload (idle_wait seconds of consecutive
-    empty /api/ps polls), then double-checks before sending SIGCONT.
+    Unknown observations reset the idle window. Timeout preserves the pause
+    receipts for explicit recovery; it never authorizes a signal or cleanup.
     """
-    def _check_model_loaded() -> bool:
-        import urllib.request
+    if any(type(value) not in (int, float) or not math.isfinite(value) or value <= 0
+           for value in (poll_interval, idle_wait, timeout)):
+        raise ValueError("Resume monitor durations must be positive and finite")
+    if isinstance(paused_pids, _PausedJobs):
+        observed_pauses = paused_pids.pause_receipts
+    else:
+        # Compatibility for callers holding a plain PID list: freeze the
+        # currently persisted ownership now, never adopt a later replacement.
+        from hub._services.user_config_store import _exclusive_lock
+        path = _expand(PAUSED_PIDS_FILE)
         try:
-            req = urllib.request.Request(f"{ollama_url}/api/ps")
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            loaded = [m.get("name", "") for m in data.get("models", [])]
-            for m in loaded:
-                if m == model_name or m.startswith(f"{model_name}:") or model_name.startswith(f"{m}:"):
-                    return True
-            return False
+            with _exclusive_lock(path):
+                observed_pauses = tuple(_pause_identity(record) for record in _read_paused_records(path)
+                                        if record["pid"] in paused_pids and record["state"] == "paused")
         except Exception:
-            return False
+            observed_pauses = ()
+            log.warning("compute_resume_deferred reason=pause_receipt_unverified")
+    owned_pids = _PausedJobs(paused_pids, observed_pauses)
 
     def _monitor():
-        start = time.time()
+        deadline = time.monotonic() + timeout
         unload_seen_at = None
-
-        while time.time() - start < timeout:
-            time.sleep(poll_interval)
-
-            if _check_model_loaded():
-                if unload_seen_at is not None:
-                    log.info("Model %s re-loaded during idle wait, resetting", model_name)
+        while time.monotonic() < deadline:
+            time.sleep(min(poll_interval, max(0, deadline - time.monotonic())))
+            if time.monotonic() >= deadline:
+                break
+            loaded = _check_model_loaded(ollama_url)
+            now = time.monotonic()
+            if now >= deadline:
+                break
+            if loaded is not False:
                 unload_seen_at = None
+                if loaded is None:
+                    log.warning("compute_resume_deferred reason=ollama_state_unknown")
                 continue
-
-            now = time.time()
             if unload_seen_at is None:
                 unload_seen_at = now
-                log.info("Model %s unloaded, starting idle wait (%.0fs)", model_name, idle_wait)
+                log.info("Ollama empty; starting compute idle wait (%.0fs)", idle_wait)
                 continue
-
             if now - unload_seen_at < idle_wait:
                 continue
-
+            remaining = deadline - time.monotonic()
+            if remaining <= 5:
+                break
             time.sleep(5)
-            if _check_model_loaded():
-                log.info("Model %s re-loaded during double-check, resetting", model_name)
+            loaded = _check_model_loaded(ollama_url)
+            if time.monotonic() >= deadline:
+                break
+            if loaded is not False:
                 unload_seen_at = None
                 continue
+            resumed = resume_compute_jobs(owned_pids)
+            if callback and resumed:
+                callback(resumed)
+            return
 
-            log.info("Model %s confirmed unloaded after %.0fs idle, resuming compute", model_name, idle_wait)
-            break
+        log.warning("compute_resume_deferred reason=monitor_timeout receipt_preserved=true model=%s",
+                    model_name)
 
-        delete_session_flag()
-        resume_compute_jobs(paused_pids)
-        if callback:
-            callback(paused_pids)
-
-    thread = threading.Thread(target=_monitor, daemon=True,
-                              name="compute-resume-monitor")
+    thread = threading.Thread(target=_monitor, daemon=True, name="compute-resume-monitor")
     thread.start()
     return thread
 

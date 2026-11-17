@@ -1695,6 +1695,21 @@ class TaskLeaseClient:
             else:
                 safe_payload["server_now"] = _format_denial_utc(server_now)
 
+        if reason == "not_claimable":
+            # Observation only: preserve the finite cause while never relaying
+            # arbitrary dependency tokens, task text, or lease material.
+            status = payload.get("status")
+            if type(status) is str and status in {
+                    "pending", "open", "in_progress", "review", "blocked",
+                    "done", "cancelled", "canceled", "closed", "failed"}:
+                safe_payload["status"] = status
+            blocked_by = payload.get("blocked_by")
+            if isinstance(blocked_by, dict):
+                blocks = {field: isinstance(blocked_by.get(field), list) and bool(blocked_by[field])
+                          for field in ("invalid", "missing", "unfinished")}
+                if any(blocks.values()):
+                    safe_payload["dependency_blocks"] = blocks
+
         classes = {"stale_fence": LeaseStaleFenceError, "expired": LeaseExpiredError,
                    "max_total_reached": LeaseMaxTotalReachedError}
         raise classes.get(reason, LeaseDeniedError)(task_id, reason, safe_payload)

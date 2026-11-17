@@ -40,6 +40,9 @@ def validate_diagnostic(value):
         ("outcome_class", "stage", "code", "sandbox_returncode"))
     if any(type(v) is not str for v in (outcome, stage, code)):
         raise WorkerToolTraceError("Ungültige Werkzeugdiagnose")
+    from .worker_tool_errors import CONFIRMED_REJECTION_REASONS
+    rejected = (outcome == "tool_rejected" and stage == "tool_validation"
+                and code in CONFIRMED_REJECTION_REASONS and exit_code is None)
     policy = (outcome == "policy_rejected" and stage == "pre_dispatch_validation"
               and code in _POLICY_CODES and exit_code is None)
     unknown = (outcome == "unconfirmed" and stage == "unknown"
@@ -47,7 +50,7 @@ def validate_diagnostic(value):
     terminal = (outcome == "sandbox_terminal" and stage == "sandbox_execution"
                 and code == "sandbox_exit" and type(exit_code) is int
                 and -(2 ** 31) <= exit_code < 2 ** 32)
-    if not (policy or unknown or terminal):
+    if not (policy or rejected or unknown or terminal):
         raise WorkerToolTraceError("Inkonsistente Werkzeugdiagnose")
     return dict(value)
 

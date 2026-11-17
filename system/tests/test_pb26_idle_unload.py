@@ -1,14 +1,11 @@
-"""PB-26 (T-20261107-173490917): unload the local model once the worker queue is empty.
+"""Shared local model retention after a worker's queue becomes idle.
 
-Lukas, 07.11.2026: "solange arbeit in der bach queue ist" the model stays; "wenn keine
-aufgaben da sind sollte tatsächlich ein entladen folgen". Measured on the Mac Studio the
-same day: qwen3.8:27b-mlx holds 27.5 GB at num_ctx 16384 and BACH sends keep_alive 30m,
-so an idle queue kept the model resident for another half hour.
-
-Contract: a verified "no claimable task" observation sends exactly one
-``keep_alive: 0`` per idle period; the next acquired task re-arms it and its model call
-loads the model again through the normal reserve gate.
+BACH #4214: queue ownership is not model ownership. Empty-worker polls must not
+unload a model shared with chat or another worker, nor refresh its expiry.
+Actual inference and empty warmup requests retain the existing finite adaptive
+keep_alive (5m with compute competition, 30m otherwise).
 """
+import asyncio
 import importlib
 import json
 import sqlite3
@@ -46,6 +43,13 @@ def ollama(monkeypatch):
         if request.url.path == "/api/generate":
             events.append(("unload", json.loads(request.content)))
             return httpx.Response(200, json={"done": True, "done_reason": "unload"})
+        if request.url.path == "/api/chat":
+            payload = json.loads(request.content)
+            events.append(("chat_request", payload))
+            reply = {"model": MODEL, "message": {"role": "assistant", "content": "OK"},
+                     "done": True, "done_reason": "stop" if payload["messages"] else "load"}
+            return httpx.Response(200, content=json.dumps(reply) + "\n",
+                                  headers={"Content-Type": "application/x-ndjson"})
         events.append(("unexpected", request.url.path))
         return httpx.Response(500)
     monkeypatch.setattr(httpx, "Client", lambda **kw: real_sync(transport=httpx.MockTransport(reply), **kw))
@@ -99,6 +103,11 @@ def worker(tmp_path, monkeypatch, ollama):
     monkeypatch.setattr(control, "runtime", runtime)
     monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, MODEL))
     monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *a, **kw: True)
+    # This fixture performs only native task handback; its model is mocked and
+    # never edits files. Git provisioning has dedicated scope tests and must
+    # not inspect the developer's live repository locks during this test.
+    monkeypatch.setattr(control, "_prepare_bound_task_scope",
+                        lambda binding, _slot: binding.assert_active())
 
     async def process(*_args, **_kwargs):
         # The model works on the bound task and hands it back open, the most
@@ -136,37 +145,86 @@ def worker(tmp_path, monkeypatch, ollama):
         conn.close()
 
 
-def test_empty_queue_unloads_the_model_exactly_once(worker, ollama):
+def test_empty_queue_preserves_shared_model_retention(worker, ollama):
     worker.run()
-    assert ollama == [("unload", {"model": MODEL, "keep_alive": 0})]
+    assert ollama == []
 
 
-def test_no_unload_while_work_is_queued_only_after_the_last_task(worker, ollama):
+def test_queue_drain_does_not_unload_after_the_last_task(worker, ollama):
     worker.add(41)
     worker.run()
-    assert ollama == [("chat", None), ("unload", {"model": MODEL, "keep_alive": 0})], worker.trace
+    assert ollama == [("chat", None)], worker.trace
 
 
-def test_one_unload_per_idle_period_and_never_without_a_verified_empty_queue(ollama):
+def test_idle_polls_never_unload_or_extend_model_retention(ollama):
     control = _controller()
-    run = control._WorkerControl(worker_id="w")
+    run = control._WorkerControl(worker_id="w", queue_status=dict(WAITING))
     backend = OllamaBackend(default_model=MODEL)
-    run.queue_status = dict(WAITING)
-    for _ in range(3):  # three empty polls, one unload
-        control._unload_idle_worker_model(run, backend, MODEL)
-    assert ollama == [("unload", {"model": MODEL, "keep_alive": 0})]
-    run.idle_model_unloaded = False  # the worker acquired a task in between
-    control._unload_idle_worker_model(run, backend, MODEL)
-    assert len(ollama) == 2
+    for _ in range(3):
+        control._observe_idle_model_retention(run, backend, MODEL)
+    assert run.idle_retention_reported is True
+    assert ollama == []  # no unload and no keep_alive refresh on empty polls
 
-    ollama.clear()
+    run.idle_retention_reported = False  # a task was acquired between idle periods
+    control._observe_idle_model_retention(run, backend, MODEL)
+    assert run.idle_retention_reported is True
+    assert ollama == []
+
     for status in (None, {**WAITING, "state": "error", "reason": "selection_error",
                           "scan_complete": False, "scanned_pages": 0}):
         fresh = control._WorkerControl(worker_id="w", queue_status=status)
-        control._unload_idle_worker_model(fresh, backend, MODEL)  # unverified queue: keep the model
+        control._observe_idle_model_retention(fresh, backend, MODEL)
+        assert fresh.idle_retention_reported is False
     for model in ("glm-5.3:cloud", "gpt-oss:120b-cloud"):
         fresh = control._WorkerControl(worker_id="w", queue_status=dict(WAITING))
-        control._unload_idle_worker_model(fresh, backend, model)  # cloud models hold no local memory
+        control._observe_idle_model_retention(fresh, backend, model)
+        assert fresh.idle_retention_reported is False
     fresh = control._WorkerControl(worker_id="w", queue_status=dict(WAITING))
-    control._unload_idle_worker_model(fresh, OpenRouterBackend.__new__(OpenRouterBackend), MODEL)
+    control._observe_idle_model_retention(fresh, OpenRouterBackend.__new__(OpenRouterBackend), MODEL)
+    assert fresh.idle_retention_reported is False
     assert ollama == []
+
+
+def test_idle_worker_cannot_unload_an_active_foreground_model(ollama, tmp_path, monkeypatch):
+    from hub._services.chat.host_inference_gate import HostInferenceGate
+
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    control = _controller()
+    worker = control._WorkerControl(worker_id="idle-worker", queue_status=dict(WAITING))
+    backend = OllamaBackend(default_model=MODEL)
+    gate = HostInferenceGate()
+
+    async def foreground():
+        async with gate.turn("user-chat", "foreground"):
+            control._observe_idle_model_retention(worker, backend, MODEL)
+            assert gate.status()["active"] is True
+            assert gate.status()["chat_id"] == "user-chat"
+            assert ollama == []
+
+    asyncio.run(foreground())
+
+
+@pytest.mark.parametrize("compute_active,compute_paused,expected", [
+    (False, False, "30m"), (True, False, "5m"), (False, True, "5m"),
+])
+@pytest.mark.parametrize("messages", [[], [{"role": "user", "content": "Hello"}]])
+def test_real_requests_keep_finite_adaptive_retention_and_idle_poll_leaves_it_alone(
+        ollama, monkeypatch, tmp_path, compute_active, compute_paused, expected, messages):
+    from hub import compute_lock
+
+    paused = tmp_path / "paused.json"
+    if compute_paused:
+        paused.write_text("{}")
+    monkeypatch.setattr(compute_lock, "PAUSED_PIDS_FILE", str(paused))
+    monkeypatch.setattr(compute_lock, "check_compute_active", lambda: (compute_active, {}))
+    backend = OllamaBackend(default_model=MODEL)
+    answer = asyncio.run(backend.chat(messages, think=False, model=MODEL))
+    assert not answer.get("error")
+    assert len(ollama) == 1 and ollama[0][0] == "chat_request"
+    assert ollama[0][1]["keep_alive"] == expected
+
+    control = _controller()
+    worker = control._WorkerControl(worker_id="idle-worker", queue_status=dict(WAITING))
+    for _ in range(3):
+        control._observe_idle_model_retention(worker, backend, MODEL)
+    assert len(ollama) == 1  # finite expiry remains owned by the actual model request

@@ -155,8 +155,9 @@ from hub._services.chat.slots_config import (
 # Compute Lock (optional — graceful if not available)
 try:
     from hub.compute_lock import (
-        DEFAULT_CHECK_SCRIPT, DEFAULT_LOCK_PATH,
+        DEFAULT_CHECK_SCRIPT, DEFAULT_LOCK_PATH, ComputePauseError,
         check_compute_active, pause_compute_jobs, resume_compute_jobs,
+        has_pending_compute_pauses,
         start_resume_monitor, recover_paused_jobs, format_status_message,
         write_session_flag, delete_session_flag,
         set_inferenz_active, get_effective_keep_alive_seconds,
@@ -165,6 +166,10 @@ try:
     HAS_COMPUTE_LOCK = True
 except ImportError:
     HAS_COMPUTE_LOCK = False
+    class ComputePauseError(RuntimeError):
+        pass
+    def has_pending_compute_pauses():
+        return True
     DEFAULT_LOCK_PATH = "~/.memwatchdog/compute_active.lock"
     DEFAULT_CHECK_SCRIPT = ""
     def get_fackel_preference(path=None):
@@ -325,7 +330,7 @@ class _WorkerControl:
     task_result_bindings: dict[int, Any] = field(default_factory=dict)
     completion_poll_blocked: dict[int, bool] = field(default_factory=dict)
     queue_status: Any = None
-    idle_model_unloaded: bool = False  # PB-26: one keep_alive 0 per idle period
+    idle_retention_reported: bool = False  # one observation per verified idle period
     lease_supervisor: Any = None
     supports_step_actions: bool = False
     run_receipt_fields: Optional[Dict[str, Any]] = None
@@ -1259,25 +1264,23 @@ def _task_divider_available():
         return True
 
 
-def _unload_idle_worker_model(control, backend, model):
-    """PB-26 (Lukas 07.11.2026): no claimable task left -> unload the local model once.
+def _observe_idle_model_retention(control, backend, model):
+    """An idle worker cannot revoke the shared model's native retention.
 
-    While the queue has work the model stays resident. Only a verified
-    "waiting" observation of the real selector counts as empty; an unread or
-    failed queue keeps the status quo. The next acquired task re-arms this and
-    its model call loads the model again through the normal reserve gate.
+    One worker's verified waiting state does not prove that chat or another
+    worker has finished using the model. Actual Ollama requests already carry
+    the adaptive, finite keep_alive policy; only observe the idle transition
+    here, without unloading or sending a request that would reset that timer.
     """
     from hub._services.chat.worker_queue_status import project_queue_status
-    if control.idle_model_unloaded or not run_cooldown.is_local_model(backend, model):
+    if control.idle_retention_reported or not run_cooldown.is_local_model(backend, model):
         return  # cloud models hold no local memory
     report = project_queue_status(control.queue_status)
     if report is None or report["state"] != "waiting":
         return
-    # ponytail: unloads the shared model even if the chat or another local worker
-    # still uses it; that caller reloads once. Per-model usage count if that bites.
-    control.idle_model_unloaded = True
-    unloaded = backend.unload(model)
-    log.info("idle_model_unload worker_id=%s model=%s ok=%s", control.worker_id, model, unloaded)
+    control.idle_retention_reported = True
+    log.info("idle_model_retention worker_id=%s model=%s policy=adaptive_keep_alive",
+             control.worker_id, model)
 
 
 def _acquire_worker_task(control, slot, physical_worker_id):
@@ -2699,15 +2702,14 @@ def _wait_run_cooldown(control: _WorkerControl, gate, ended_at: float, backend, 
 
     "nach abschluss eines laufes eine zwangspause einlegen lassen und nach cooldown
     wieder anfahren". The reason (``cooldown:swap|thermal|min``) and the swap-out
-    rate stay visible in the worker status; a pause longer than the policy's
-    ``unload_after_seconds`` unloads the local model once. A failed measurement only
-    drops its own criterion, the minimum pause remains.
+    rate stay visible in the worker status. A cooldown owns no exclusive model
+    residence: the shared model keeps its existing adaptive Ollama keep_alive.
+    A failed measurement only drops its own criterion; the minimum pause remains.
     """
     if gate is None:
         return True
     gate, sampler = gate
     reason = None
-    unloaded = False
     while True:
         try:
             sample = sampler()
@@ -2723,17 +2725,11 @@ def _wait_run_cooldown(control: _WorkerControl, gate, ended_at: float, backend, 
             log.info("run_cooldown worker_id=%s reason=%s swapout_mib_per_min=%s",
                      control.worker_id, reason, "unknown" if rate is None else f"{rate:.1f}")
             _record_worker_activity(control, f"Abkühlpause ({reason})", "ok")
-        if (not unloaded and reason != "cooldown:min"
-                and time.monotonic() - ended_at >= gate.policy.unload_after_seconds):
-            unloaded = True
-            ok = backend.unload(model)
-            log.info("cooldown_model_unload worker_id=%s model=%s ok=%s", control.worker_id, model, ok)
         # Stays "running": "paused" + auto_paused without pause_started_at is refused
         # at startup (invalid_cooldown), so a restart during the cooldown kept Buddha off.
         if _update_worker_slot(control, {
             "status": "running",
-            "current_activity": f"Abkühlpause ({reason}), Swap-Schreibrate {shown}"
-                                + ("; Modell entladen" if unloaded else ""),
+            "current_activity": f"Abkühlpause ({reason}), Swap-Schreibrate {shown}",
         }) is None:
             return False
         if control.stop_event.wait(_RUN_COOLDOWN_POLL_SECONDS):
@@ -4468,6 +4464,48 @@ async def _admit_chat_for_compute(chat_id: str):
     return backend, model, local
 
 
+def _recover_compute_at_startup():
+    try:
+        resumed = recover_paused_jobs()
+        if resumed:
+            log.info("Crash recovery: resumed PIDs %s", resumed)
+            print(f"Compute Lock: {len(resumed)} Jobs nach Crash resumed: {resumed}")
+        if has_pending_compute_pauses():
+            print("Compute Lock: Recovery ausstehend; Pausenbelege bleiben zur Prüfung erhalten")
+        elif not resumed:
+            print("Compute Lock: kein Crash-Recovery noetig")
+    except Exception as error:
+        log.warning("Crash recovery failed: %s", type(error).__name__)
+
+
+async def _report_compute_pause_failure(update, error, selected_backend):
+    """An unconfirmed/partial pause must never reach a model request."""
+    log.warning("compute_pause_admission_denied reason=%s confirmed_pauses=%d",
+                error.reason, len(error.paused_pids))
+    recovered = []
+    if error.paused_pids:
+        try:
+            recovered = recover_paused_jobs(
+                ollama_url=getattr(selected_backend, "base_url", "http://localhost:11434"),
+                paused_pids=error.paused_pids)
+        except Exception:
+            log.warning("partial_compute_pause_recovery_deferred receipt_preserved=true")
+    message = "Compute-Pause nicht vollständig bestätigt. Die Anfrage wurde nicht gestartet."
+    if recovered:
+        message += f" {len(recovered)} bereits pausierte Jobs sind bestätigt fortgesetzt."
+    if has_pending_compute_pauses():
+        message += " Offene Pausenbelege bleiben zur Prüfung erhalten."
+    await update.message.reply_text(message)
+
+
+async def _report_failed_chat_compute_resume(update, paused):
+    resumed = resume_compute_jobs(paused) or []
+    message = f"Anfrage fehlgeschlagen. Bestätigt fortgesetzt: {len(resumed)} Compute-Jobs."
+    if has_pending_compute_pauses():
+        message += " Weitere Pausenbelege bleiben zur Prüfung erhalten."
+    await update.message.reply_text(message)
+
+
 async def _handle_pending_action(chat_id: str, text: str, update: Update) -> bool:
     """Handle JA/NEIN reply to a pending compute lock question.
 
@@ -4496,7 +4534,11 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
 
         if uses_local_compute:
             await update.message.reply_text("Pausiere Compute-Jobs...")
-        paused = pause_compute_jobs(status) if uses_local_compute else []
+        try:
+            paused = pause_compute_jobs(status) if uses_local_compute else []
+        except ComputePauseError as error:
+            await _report_compute_pause_failure(update, error, selected_backend)
+            return True
 
         if not paused:
             await update.message.reply_text(
@@ -4539,11 +4581,7 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
         if paused:
             if not success:
                 log.info("Chat inference failed after pause, resuming compute jobs immediately: %s", paused)
-                delete_session_flag()
-                resume_compute_jobs(paused)
-                await update.message.reply_text(
-                    "Anfrage fehlgeschlagen. Pausierte Compute-Jobs wurden wieder fortgesetzt."
-                )
+                await _report_failed_chat_compute_resume(update, paused)
             else:
                 ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
 
@@ -4610,7 +4648,11 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pref = get_fackel_preference()
             if pref == "ollama":
                 cl_cfg = CONFIG.get("compute_lock", {})
-                paused = pause_compute_jobs(status)
+                try:
+                    paused = pause_compute_jobs(status)
+                except ComputePauseError as error:
+                    await _report_compute_pause_failure(update, error, selected_backend)
+                    return
                 if paused:
                     pid_str = ", ".join(str(p) for p in paused)
                     await update.message.reply_text(
@@ -4641,11 +4683,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if paused:
                     if not success:
                         log.info("Chat inference failed after auto-pause, resuming compute jobs: %s", paused)
-                        delete_session_flag()
-                        resume_compute_jobs(paused)
-                        await update.message.reply_text(
-                            "Anfrage fehlgeschlagen. Pausierte Compute-Jobs wurden wieder fortgesetzt."
-                        )
+                        await _report_failed_chat_compute_resume(update, paused)
                     else:
                         ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
 
@@ -6510,7 +6548,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             queue_waiting_activity,
                         )
                         waiting_activity = queue_waiting_activity(control.queue_status)
-                        _unload_idle_worker_model(control, target_backend, model)
+                        _observe_idle_model_retention(control, target_backend, model)
                         if current_slot.get("type") not in {"continuous", "persistent"}:
                             _update_worker_slot(control, {"status": "idle", "current_activity": waiting_activity})
                             return
@@ -6519,7 +6557,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             break
                         continue
                     newly_acquired_binding = control.task_binding
-                    control.idle_model_unloaded = False  # work again: the next empty queue unloads
+                    control.idle_retention_reported = False  # work again: observe the next idle transition
                     if (control.model_request_budget is not None
                             and control.task_binding.task_id != control.model_request_budget.task_id):
                         raise RuntimeError("budget_fixed_task_conflict")
@@ -10055,15 +10093,7 @@ def main():
 
     # Crash recovery: resume any compute jobs stopped by a previous bot session
     if HAS_COMPUTE_LOCK and CONFIG.get("compute_lock", {}).get("enabled", False):
-        try:
-            resumed = recover_paused_jobs()
-            if resumed:
-                log.info("Crash recovery: resumed PIDs %s", resumed)
-                print(f"Compute Lock: {len(resumed)} Jobs nach Crash resumed: {resumed}")
-            else:
-                print("Compute Lock: kein Crash-Recovery noetig")
-        except Exception as e:
-            log.warning("Crash recovery failed: %s", e)
+        _recover_compute_at_startup()
 
     disabled, reason = should_disable_telegram_bot()
     if disabled:
