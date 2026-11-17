@@ -32,7 +32,7 @@ def test_worker_decompose_rejects_already_decomposed_task_but_allows_fresh_subta
     assert not re.search(r"\[In \d+ Teilaufgaben zerlegt: \[", fresh_subtask_desc)
 
 
-def test_inherit_decomposed_subtask_bindings_propagates_parent_repo_pin_for_add_and_decompose(tmp_path, monkeypatch):
+def test_unproven_client_cannot_inherit_repository_authority(tmp_path, monkeypatch):
     from pathlib import Path
     monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
     local = tmp_path / '.bach'
@@ -72,10 +72,6 @@ def test_inherit_decomposed_subtask_bindings_propagates_parent_repo_pin_for_add_
     binding._ack = SimpleNamespace(task_id=2690)
     binding._client = DummyClient()
 
-    # Single follow-up task from action='add' inherits parent repo binding
-    ok = binding._inherit_decomposed_subtask_bindings((3320,), registry_file=reg_file)
-    assert ok is True
-    updated = json.loads(reg_file.read_text(encoding="utf-8"))
-    assert updated["tasks"]["3320"]["repository"] == "ellmos-ai/bach"
-    assert updated["tasks"]["3320"]["source_sha"] == "be6253571111f21e66c15ad422ea0c98f3d0d82a"
-    assert updated["tasks"]["3320"]["task_version"] == f"{3320:064x}"
+    before = reg_file.read_bytes()
+    assert binding._inherit_decomposed_subtask_bindings((3320,), registry_file=reg_file) is False
+    assert reg_file.read_bytes() == before

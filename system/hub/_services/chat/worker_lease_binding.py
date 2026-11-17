@@ -159,6 +159,7 @@ class WorkerLeaseBinding:
         self._scope_captured_result_id = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
+        self._repository_inheritance_state = None
         # Only native, versioned update ACKs may move a running budget's task pin.
         self._budget_version_transitions = []
         # Cumulative for this lease, not reset by model block boundaries.
@@ -1655,6 +1656,14 @@ class WorkerLeaseBinding:
                         raise LeaseProtocolError("Unbekannte Teilaufgabenfelder")
                     if self._capability_denials:
                         raise WorkerTaskManageArgumentError("followup_capability_missing")
+                    pending = self._repository_inheritance_state == "unavailable"
+                    if pending or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[",
+                                            str(self._snapshot.get("description") or "")):
+                        self._inherit_decomposed_subtask_bindings(None)
+                        if (self._repository_inheritance_state == "unavailable"
+                                or self._repository_inheritance_state == "bound"
+                                and (pending or self._repository_inheritance_changed)):
+                            return self._repository_inheritance_message()
                     subtasks = [{key: value for key, value in args.items() if key in fields}]
                     close_parent = False
                 else:
@@ -1668,6 +1677,9 @@ class WorkerLeaseBinding:
                         raise WorkerTaskManageArgumentError("decompose_parent")
                     if (self._decomposition_receipt is not None
                             or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[", str(self._snapshot.get("description") or ""))):
+                        if (self._inherit_decomposed_subtask_bindings(None)
+                                or self._repository_inheritance_state == "unavailable"):
+                            return self._repository_inheritance_message()
                         raise WorkerTaskManageArgumentError("decompose_already_decomposed")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in (
@@ -1692,7 +1704,6 @@ class WorkerLeaseBinding:
                         "task_id": self.task_id, "previous_version": previous_version,
                         "created_ids": tuple(ack.created_ids), "parent_closed": ack.parent_closed,
                     }
-                self._inherit_decomposed_subtask_bindings(ack.created_ids)
                 self._adopt_task_version(ack.task_version, previous_version=previous_version)
                 new_ids = [value for value in ack.created_ids if value not in ack.reused_ids]
                 notes = f"\n[In {len(new_ids)} Teilaufgaben zerlegt: {new_ids}]" if new_ids else ""
@@ -1702,6 +1713,9 @@ class WorkerLeaseBinding:
                 if ack.parent_closed:
                     self.invalidate("decompose_closed_parent")
                     raise LeaseProtocolError("Zerlegung hat unerlaubt den Parent abgeschlossen")
+                self._inherit_decomposed_subtask_bindings(ack.created_ids)
+                if self._repository_inheritance_state == "unavailable":
+                    return self._repository_inheritance_message()
                 if action == "add":
                     if ack.created_ids[0] in ack.reused_ids:
                         return (f"Task #{ack.created_ids[0]} besteht bereits als offene Teilaufgabe mit gleichem "
@@ -1713,58 +1727,44 @@ class WorkerLeaseBinding:
                         f"IDs {list(ack.created_ids)}{reused_note}")
             raise LeaseProtocolError("Unbekannte Task-Aktion")
 
+    def _repository_inheritance_message(self):
+        if getattr(self, "_repository_inheritance_state", None) == "bound":
+            return (f"Task #{self.task_id}: Repository-Bindungen bestätigt für native Teilaufgaben "
+                    f"{list(self._repository_inheritance_ids)}; keine neuen Teilaufgaben angelegt.")
+        reason = getattr(self, "_repository_inheritance_reason", "repository_inheritance_unavailable")
+        return (f"Task #{self.task_id}: Teilaufgaben sind bereits angelegt; Repository-Bindungen noch nicht bestätigt "
+                f"({reason}). Nach Behebung des Blockers den identischen Aufruf wiederholen; "
+                "es werden dabei keine neuen Teilaufgaben erzeugt. Historische Belege ohne Kind-Pins "
+                "benötigen die bestehende Lead-Operator-Reparatur.")
+
     def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None):
-        """Serialize native child inheritance with the existing operator registry fence."""
-        if not created_ids:
-            return False
+        """Retry only the durable native decomposition, with current holder/child CAS."""
+        from pathlib import Path
+        from hub._services.task_lease_client import TaskLeaseClient
+        from .worker_repo_registry import registry_path, inherit_decomposed_task_repositories
+        self._repository_inheritance_state = "not_required"
+        self._repository_inheritance_reason = None
+        self._repository_inheritance_ids = ()
+        self._repository_inheritance_changed = False
+        path = registry_path()
+        if (registry_file is not None and Path(registry_file) != path
+                or created_ids is not None and not created_ids
+                or type(self._client) is not TaskLeaseClient
+                or self._client.mode != "local" or self._client._conn is not None
+                or not path.exists() and not path.is_symlink()):
+            return False  # No positive binding claim on unsupported or legacy routes.
         try:
-            import logging
-            from pathlib import Path
-            from .worker_repo_registry import (
-                ENROLLED_SCHEMA, RepositoryBindingError, _RegistryWriter,
-                canonical_task_id, load_registry, registry_path,
-            )
-            path = registry_path()
-            if registry_file is not None and Path(registry_file) != path:
-                return False
-            if (getattr(self._client, "mode", None) != "local"
-                    or getattr(self._client, "_conn", None) is not None):
-                return False
-            client_db = getattr(self._client, "_db_path", None)
-            if client_db is not None and Path(client_db) != Path.home() / ".bach" / "bach.db":
-                return False
-            with _RegistryWriter() as writer:
-                data = load_registry()
-                parent = data["tasks"].get(str(self.task_id))
-                if parent is None:
-                    return False
-                versions = {}
-                for child_id in created_ids:
-                    child_id = canonical_task_id(child_id)
-                    if str(child_id) in data["tasks"]:
-                        continue  # Never overwrite an existing child authority.
-                    snapshot = self._client._task_policy_snapshot(child_id)
-                    version = snapshot.get("task_version") if isinstance(snapshot, dict) else None
-                    if type(version) is not str or re.fullmatch(r"[0-9a-f]{64}", version) is None:
-                        raise RepositoryBindingError("Kindversion ist nicht bestätigt")
-                    versions[child_id] = version
-                    entry = {"repository": parent["repository"], "source_sha": parent["source_sha"]}
-                    if "source_proof_sha256" in parent:
-                        data["schema"] = ENROLLED_SCHEMA
-                        entry.update(task_version=version,
-                            operator=parent["operator"], registered_at=datetime.now(timezone.utc).isoformat(),
-                            source_proof_sha256=parent["source_proof_sha256"])
-                    data["tasks"][str(child_id)] = entry
-                if not versions:
-                    return False
-                for child_id, version in versions.items():
-                    if self._client._task_policy_snapshot(child_id).get("task_version") != version:
-                        raise RepositoryBindingError("Kindversion wurde vor Registry-CAS geändert")
-                writer.publish(data)
-                return True
+            result = inherit_decomposed_task_repositories(self, expected_child_ids=created_ids)
+            self._repository_inheritance_state = result["state"]
+            self._repository_inheritance_ids = result["created_ids"]
+            self._repository_inheritance_changed = result["changed"]
+            if created_ids is None and result["changed"]:
+                self._progress = True  # Confirmed repair, never a repeated bare add.
+            return result["state"] == "bound"
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning(
-                "worker_repository_inheritance task_id=%s reason_code=%s",
-                self.task_id, getattr(exc, "reason_code", "repository_inheritance_unavailable"))
+            self._repository_inheritance_state = "unavailable"
+            self._repository_inheritance_reason = getattr(
+                exc, "reason_code", "repository_inheritance_unavailable")
+            log.warning("worker_repository_inheritance task_id=%s reason_code=%s",
+                        self.task_id, self._repository_inheritance_reason)
             return False

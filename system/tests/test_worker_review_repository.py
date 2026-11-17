@@ -239,3 +239,186 @@ def test_native_creator_exposes_binding_failure_without_accepting_or_granting(re
     assert w["registry"].read_bytes() == before
     assert w["client"].read(result["review_task_id"]).leased is False
     assert w["client"].task_snapshot(result["review_task_id"])["status"] == "pending"
+
+
+@pytest.mark.parametrize("revision", [None, 0, "", "z" * 64])
+def test_review_enrollment_requires_an_explicit_valid_registry_cas(registry_world, revision):
+    w = registry_world
+    before = w["registry"].read_bytes()
+    with pytest.raises(registry.RepositoryBindingError) as raised:
+        registry.enroll_review_task_repository(w["client"], w["child"]["review_task_id"],
+            task_version=w["child"]["task_version"], expected_registry_sha256=revision,
+            operator="operator:test-review")
+    assert raised.value.reason_code == "registry_changed"
+    assert w["registry"].read_bytes() == before
+
+
+def test_native_registry_fence_is_checked_before_any_marker_creation(registry_world, monkeypatch):
+    from hub._services.chat import worker_write_guard
+    w = registry_world
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    original_open = registry.os.open
+    marker_opens = []
+    def watched_open(path, flags, *args, **kwargs):
+        if Path(path) == marker:
+            marker_opens.append(flags)
+        return original_open(path, flags, *args, **kwargs)
+    monkeypatch.setattr(registry.os, "open", watched_open)
+    monkeypatch.setattr(worker_write_guard, "_scan_locks",
+                        lambda *args, **kwargs: {"locks": [], "hook_guards": ["locked"]})
+    before = w["registry"].read_bytes()
+    with pytest.raises(registry.RepositoryBindingError):
+        enroll(w)
+    assert marker_opens == []
+    assert w["registry"].read_bytes() == before
+
+
+@pytest.fixture(params=["legacy", "enrolled"])
+def decomposition_world(registry_world, request):
+    import threading
+    w = registry_world
+    with sqlite3.connect(w["database"]) as conn:
+        parent = conn.execute(
+            "INSERT INTO tasks(title,status,description,category,assigned_to,creation_origin) "
+            "VALUES('Native decomposition','pending','Parent instructions','INBOX','OLLAMA','user')").lastrowid
+    rewrite_registry(w, lambda data: data["tasks"].update({
+        str(parent): dict(data["tasks"][str(w["task_id"])])}))
+    if request.param == "enrolled":
+        def modern(data):
+            data["schema"] = registry.ENROLLED_SCHEMA
+            data["tasks"][str(parent)].update(
+                task_version=w["client"].task_snapshot(parent)["task_version"],
+                operator="operator:test-decompose", registered_at="2026-11-17T23:00:00+00:00",
+                source_proof_sha256="f" * 64)
+        rewrite_registry(w, modern)
+    binding = WorkerLeaseBinding.acquire(w["client"], parent, worker_id="decompose@test",
+        host="test", generation="decompose-generation", is_current=lambda: True,
+        stop_event=threading.Event())
+    request = {"action": "decompose", "task_id": parent, "close_parent": False,
+               "subtasks": [{"title": "Exact confirmed child"}]}
+    return {**w, "parent": parent, "decomposer": binding, "request": request}
+
+
+def child_receipt(world):
+    with sqlite3.connect(world["database"]) as conn:
+        raw = conn.execute(
+            "SELECT new_value FROM task_history WHERE task_id=? AND action='lease_decompose' "
+            "ORDER BY id DESC LIMIT 1", (world["parent"],)).fetchone()[0]
+    return json.loads(raw)
+
+
+def test_decomposition_busy_registry_is_visible_and_same_request_retries_without_new_children(decomposition_world):
+    w = decomposition_world
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    marker.touch(mode=0o600)
+    try:
+        first = w["decomposer"].execute_task_manage(w["request"])
+    finally:
+        marker.unlink()
+    assert "noch nicht bestätigt" in first
+    receipt = child_receipt(w)
+    child = receipt["created_ids"][0]
+    assert receipt["child_task_versions"][str(child)] == w["client"].task_snapshot(child)["task_version"]
+    with sqlite3.connect(w["database"]) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    second = w["decomposer"].execute_task_manage(w["request"])
+    assert "Repository-Bindungen bestätigt" in second
+    assert registry.resolve_task_repository(child).repository == "ellmos-ai/bach"
+    third = w["decomposer"].execute_task_manage(w["request"])
+    assert "keine neuen Teilaufgaben" in third
+    with sqlite3.connect(w["database"]) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == count
+        assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=? AND action='lease_decompose'",
+                            (w["parent"],)).fetchone()[0] == 1
+
+
+def test_decomposition_repairs_after_process_loss_from_native_history_and_fresh_lease(decomposition_world):
+    import threading
+    w = decomposition_world
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    marker.touch(mode=0o600)
+    try:
+        w["decomposer"].execute_task_manage(w["request"])
+    finally:
+        marker.unlink()
+    receipt = child_receipt(w)
+    before = w["registry"].read_bytes()
+    ack = w["decomposer"]._ack
+    w["client"].release(w["parent"], lease_id=ack.lease_id, fence=ack.fence,
+                       task_version=ack.task_version, outcome="return")
+    fresh = WorkerLeaseBinding.acquire(w["client"], w["parent"], worker_id="new-process@test",
+        host="test", generation="new-process-generation", is_current=lambda: True,
+        stop_event=threading.Event())
+    assert fresh._decomposition_receipt is None
+    result = fresh.execute_task_manage(w["request"])
+    assert "Repository-Bindungen bestätigt" in result
+    assert w["registry"].read_bytes() != before
+    assert registry.resolve_task_repository(receipt["created_ids"][0]).repository == "ellmos-ai/bach"
+    assert child_receipt(w) == receipt
+
+
+@pytest.mark.parametrize("changed", ["child", "parent_lease"])
+def test_decomposition_retry_never_publishes_with_changed_child_or_parent_lease(decomposition_world, changed):
+    w = decomposition_world
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    marker.touch(mode=0o600)
+    try:
+        w["decomposer"].execute_task_manage(w["request"])
+    finally:
+        marker.unlink()
+    child = child_receipt(w)["created_ids"][0]
+    if changed == "child":
+        mutate_database(w, "UPDATE tasks SET description='changed after child creation' WHERE id=?", (child,))
+    else:
+        mutate_database(w, "UPDATE tasks SET claim_fence=claim_fence+1 WHERE id=?", (w["parent"],))
+    before = w["registry"].read_bytes()
+    result = w["decomposer"].execute_task_manage(w["request"])
+    assert "noch nicht bestätigt" in result
+    assert w["registry"].read_bytes() == before
+
+
+def test_historical_decomposition_without_child_pins_has_existing_explicit_operator_repair(decomposition_world):
+    w = decomposition_world
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    marker.touch(mode=0o600)
+    try:
+        w["decomposer"].execute_task_manage(w["request"])
+    finally:
+        marker.unlink()
+    receipt = child_receipt(w)
+    receipt.pop("child_task_versions")
+    mutate_database(w, "UPDATE task_history SET new_value=? WHERE task_id=? AND action='lease_decompose'",
+                    (json.dumps(receipt), w["parent"]))
+    before = w["registry"].read_bytes()
+    result = w["decomposer"].execute_task_manage(w["request"])
+    assert "decomposition_receipt_legacy" in result
+    assert w["registry"].read_bytes() == before
+    # Existing canonical operator API: IDs originate in the durable native receipt.
+    for tid in receipt["created_ids"]:
+        snapshot = w["client"].task_snapshot(tid)
+        repaired = registry.enroll_task_repository(w["client"], tid,
+            repository="ellmos-ai/bach", task_version=snapshot["task_version"],
+            source_sha=w["source_sha"],
+            expected_registry_sha256=hashlib.sha256(w["registry"].read_bytes()).hexdigest(),
+            operator="operator:test-repair")
+        assert repaired["task_mutated"] is False
+        assert registry.resolve_task_repository(tid).repository == "ellmos-ai/bach"
+    assert "Repository-Bindungen bestätigt" in w["decomposer"].execute_task_manage(w["request"])
+
+
+def test_decomposition_publish_reserves_the_native_sqlite_writer(decomposition_world, monkeypatch):
+    w = decomposition_world
+    original = registry._RegistryWriter.publish
+    probes = []
+    def publish(writer, value):
+        with sqlite3.connect(w["database"], timeout=.01) as rival:
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                rival.execute("UPDATE tasks SET description='racing writer' WHERE id=?", (w["parent"],))
+        probes.append(True)
+        return original(writer, value)
+    monkeypatch.setattr(registry._RegistryWriter, "publish", publish)
+    result = w["decomposer"].execute_task_manage(w["request"])
+    assert "noch nicht bestätigt" not in result
+    assert probes == [True]
+    child = child_receipt(w)["created_ids"][0]
+    assert registry.resolve_task_repository(child).repository == "ellmos-ai/bach"

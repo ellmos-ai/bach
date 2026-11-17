@@ -21,3 +21,24 @@ Success exposes `enrolled` or `already_bound`. Existing matching bindings are id
 ## Verification
 
 `system/tests/test_worker_review_repository.py` uses actual native review intents and result evidence copied into a private test HOME. Coverage includes successful inheritance without task/grant changes, idempotency, missing parent bindings, damaged intent, changed parent result, occupied child, conflicting registry mapping, stale registry SHA, shared fence contention with decomposition, source verification failure, a parent mutation during verification, and visible native-controller failure. Physical source validation is isolated behind the native source-owner seam; existing source-owner tests remain responsible for Git/public-origin verification.
+
+## Decomposition contention and restart recovery
+
+The common writer checks the native lock state of the registry directory before creating its cooperative marker and again after obtaining it. The expected registry digest is mandatory at the review enrollment API; only the shared internal writer permits an omitted expected digest for an already verified native decomposition.
+
+A successful native `lease_decompose` event now records each confirmed child's content version in the existing `task_history` row, in the same transaction as child creation and the parent update. The binding does not silently discard a failed registry inheritance. Its tool result reports that children already exist and repository bindings are still unconfirmed, including a closed reason code. Retry follows resolution of the reported blocker.
+
+An identical decomposition call repairs only the children identified by the durable native event. It never creates those children again. After a process restart, a fresh worker can reconstruct that same event under its new valid parent lease. Before publication, the registry owner verifies the current parent lease/fence and exact parent content version, the unchanged native event and every child's recorded content version. These checks and publication hold the canonical SQLite writer together with the shared registry fence. Changed child versions, an obsolete parent lease, a changed event, active/unavailable locks or conflicting existing child bindings remain blocked. A completed repair reports the verified bindings and explicitly says no new children were created.
+
+Legacy v1 and enrolled v2 repository registries both work. Child versions come directly from canonical task rows and the native event, so a missing child policy projection is not substituted with guessed authority. Existing child bindings are preserved and must match the parent's repository and source pin.
+
+### Historical events without child-version pins
+
+An older native event may lack `child_task_versions`. If any child still lacks a verified registry binding, automatic repair returns `decomposition_receipt_legacy`; it does not claim success after losing an in-memory ACK. The existing explicit lead-operator path remains available:
+
+1. Read the canonical parent's native `task_history` event with action `lease_decompose` and its confirmed child IDs. Do not obtain these IDs from task description markers.
+2. Verify the intended mapping against the parent's trusted registry binding, refresh the child's native content version and verify the public source using the existing source owner.
+3. Call the existing `enroll_task_repository(client, child_id, repository=..., task_version=..., source_sha=..., expected_registry_sha256=..., operator="operator:<identity>")` on the canonical local lead. Re-read the registry digest for each operation. That API retains its public/current-source verification and mutates no task or lease.
+4. Repeat native decomposition recovery. When all actual trusted child bindings now match the parent, the historical event can confirm them without publishing guessed pins.
+
+The regression test `test_historical_decomposition_without_child_pins_has_existing_explicit_operator_repair` executes this existing operator route and confirms the subsequent native readback. Further tests cover v1/v2 registries, repeated calls without duplicate children/events, restart with a fresh lease, changed child versions, changed parent fences and a rival SQLite writer blocked at registry publication.

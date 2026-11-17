@@ -401,6 +401,7 @@ class _RegistryWriter:
         self.before = _read_registry_bytes(self.path)
         if self.expected is not None and hashlib.sha256(self.before).hexdigest() != self.expected:
             raise RepositoryBindingError("Registry wurde geändert; frisch lesen", reason_code="registry_changed")
+        self.check_fences()  # No marker creation beneath an already active native lock.
         try:
             self.descriptor = os.open(self.marker,
                 os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600)
@@ -412,16 +413,28 @@ class _RegistryWriter:
                     or os.name != "nt" and (self.identity.st_uid != os.getuid()
                                             or self.identity.st_mode & 0o077)):
                 raise RepositoryBindingError("Registry-Schreibfence ist ungültig", reason_code="registry_busy")
+            self.check_fences()
             self.assert_current()
             return self
         except BaseException:
             self.__exit__(None, None, None)
             raise
 
+    def check_fences(self):
+        from .worker_write_guard import _scan_locks
+        try:
+            if _scan_locks(self.path.parent).get("hook_guards") != []:
+                raise ValueError
+        except Exception:
+            raise RepositoryBindingError("Native Registry-Sperrprüfung nicht bestätigt",
+                                         reason_code="registry_fence_unavailable") from None
+
     def assert_current(self):
         try:
             current = self.marker.lstat()
-            unchanged = (current.st_dev, current.st_ino) == (self.identity.st_dev, self.identity.st_ino)
+            unchanged = ((current.st_dev, current.st_ino) == (self.identity.st_dev, self.identity.st_ino)
+                         and stat.S_ISREG(current.st_mode) and current.st_nlink == 1
+                         and (os.name == "nt" or current.st_uid == os.getuid() and not current.st_mode & 0o077))
         except OSError:
             unchanged = False
         if not unchanged:
@@ -555,6 +568,10 @@ def enroll_review_task_repository(client, review_task_id, *, task_version,
             or type(operator) is not str
             or re.fullmatch(r"operator:[A-Za-z0-9][A-Za-z0-9_.@-]{0,99}", operator) is None):
         raise RepositoryBindingError("Review-Enrollment-Pins sind ungültig", reason_code="review_provenance_changed")
+    if (type(expected_registry_sha256) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", expected_registry_sha256) is None):
+        raise RepositoryBindingError("Expliziter Registry-CAS-Pin fehlt oder ist ungültig",
+                                     reason_code="registry_changed")
     database, identity = _canonical_review_client(client)
     conn = client._get_local_connection()
     try:
@@ -640,5 +657,128 @@ def enroll_review_task_repository(client, review_task_id, *, task_version,
                     "source_sha": parent_binding.source_sha, "task_version": task_version,
                     "registry_sha256": hashlib.sha256(_read_registry_bytes(writer.path)).hexdigest(),
                     "task_mutated": False}
+    finally:
+        conn.close()
+
+
+def _native_decomposition_receipt(conn, task_id, task_version):
+    """Read the existing native audit relation, never IDs asserted by task text."""
+    from hub._services import task_lease as native
+    row = conn.execute(
+        "SELECT id,new_value FROM task_history WHERE task_id=? AND action='lease_decompose' "
+        "AND field_changed='lease' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+    try:
+        if row is None or type(row[1]) is not str or len(row[1]) > 65536:
+            raise ValueError
+        record = json.loads(row[1], object_pairs_hook=_json_no_duplicates)
+        children = record["created_ids"]
+        if (not isinstance(record, dict) or record.get("parent_closed") is not False
+                or type(record.get("fence")) is not int or record["fence"] <= 0
+                or record.get("task_version") != task_version
+                or not isinstance(children, list) or not 1 <= len(children) <= 100
+                or len(set(children)) != len(children)
+                or any(type(tid) is not int or canonical_task_id(tid) != tid for tid in children)
+                or not isinstance(record.get("reused_ids"), list)
+                or any(tid not in children for tid in record["reused_ids"])
+                or any(type(record.get(key)) is not str
+                       or re.fullmatch(r"[0-9a-f]{64}", record[key]) is None
+                       for key in ("previous_task_version", "task_version"))):
+            raise ValueError
+        versions = record.get("child_task_versions")
+        if versions is not None and (not isinstance(versions, dict)
+                or set(versions) != {str(tid) for tid in children}
+                or any(type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None
+                       for value in versions.values())):
+            raise ValueError
+        return {**record, "event_id": row[0],
+                "event_sha256": hashlib.sha256(row[1].encode()).hexdigest()}
+    except (TypeError, ValueError, KeyError, RepositoryBindingError):
+        raise RepositoryBindingError("Nativer Zerlegungsbeleg fehlt oder ist nicht aktuell",
+                                     reason_code="decomposition_receipt_unavailable") from None
+
+
+def inherit_decomposed_task_repositories(binding, *, expected_child_ids=None):
+    """Complete an existing native decomposition under fresh holder and child CAS.
+
+    A process restart may use the durable native lease_decompose event, but needs
+    a fresh canonical parent lease and the exact parent/child content pins. It
+    cannot choose other IDs, repositories, source pins or a different database.
+    """
+    from .worker_lease_binding import WorkerLeaseBinding
+    from hub._services import task_lease as native
+    if type(binding) is not WorkerLeaseBinding:
+        raise RepositoryBindingError("Native Parentbindung fehlt", reason_code="parent_lease_unconfirmed")
+    binding.assert_active(soft=True)
+    client = binding._client
+    database, identity = _canonical_review_client(client)
+    version = binding._snapshot["task_version"]
+    conn = client._get_local_connection()
+    try:
+        receipt = _native_decomposition_receipt(conn, binding.task_id, version)
+        children = tuple(receipt["created_ids"])
+        if expected_child_ids is not None and tuple(expected_child_ids) != children:
+            raise RepositoryBindingError("Kind-IDs widersprechen dem nativen Beleg",
+                                         reason_code="decomposition_receipt_unavailable")
+        def holder_check():
+            binding._assert_authority_active(soft=True)
+            _assert_database_identity(database, identity)
+            _parent, problem = native._load_for_holder(conn, binding.task_id,
+                binding._ack.lease_id, binding._ack.fence, binding._clock(),
+                native.LeaseConfig.from_env(), version)
+            if problem:
+                raise RepositoryBindingError("Aktuelle Parent-Lease nicht bestätigt",
+                                             reason_code="parent_lease_unconfirmed")
+
+        holder_check()
+        with _RegistryWriter() as writer:
+            data = load_registry()
+            parent = data["tasks"].get(str(binding.task_id))
+            if parent is None:
+                raise RepositoryBindingError("Parent-Repository-Bindung fehlt",
+                                             reason_code="parent_binding_missing")
+            writer.check_fences()
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                holder_check()
+                fresh = _native_decomposition_receipt(conn, binding.task_id, version)
+                if fresh != receipt:
+                    raise RepositoryBindingError("Zerlegungsbeleg wurde geändert",
+                                                 reason_code="decomposition_receipt_changed")
+                changed = False
+                for child_id in children:
+                    row = native._row(conn, child_id)
+                    versions = receipt.get("child_task_versions")
+                    if row is None or (versions is not None
+                            and native.task_content_version(row) != versions[str(child_id)]):
+                        raise RepositoryBindingError("Kindversion wurde geändert",
+                                                     reason_code="child_version_changed")
+                    existing = data["tasks"].get(str(child_id))
+                    if existing is not None:
+                        if any(existing.get(key) != parent[key] for key in ("repository", "source_sha")):
+                            raise RepositoryBindingError("Vorhandene Kindbindung widerspricht dem Parent",
+                                                         reason_code="child_binding_conflict")
+                        continue
+                    if versions is None:
+                        raise RepositoryBindingError("Historischer Zerlegungsbeleg braucht explizite Operatorreparatur",
+                                                     reason_code="decomposition_receipt_legacy")
+                    if row.get("status") not in {"pending", "open"} or row.get("claim_id"):
+                        raise RepositoryBindingError("Kind ist nicht frei und ausstehend",
+                                                     reason_code="child_not_pending")
+                    entry = {"repository": parent["repository"], "source_sha": parent["source_sha"]}
+                    if "source_proof_sha256" in parent:
+                        data["schema"] = ENROLLED_SCHEMA
+                        entry.update(task_version=receipt["child_task_versions"][str(child_id)],
+                            operator=parent["operator"], registered_at=datetime.now(timezone.utc).isoformat(),
+                            source_proof_sha256=parent["source_proof_sha256"])
+                    data["tasks"][str(child_id)] = entry
+                    changed = True
+                holder_check()
+                writer.assert_current()
+                if changed:
+                    writer.publish(data)
+            finally:
+                conn.rollback()
+            return {"state": "bound", "task_id": binding.task_id, "created_ids": children,
+                    "task_version": version, "event_id": receipt["event_id"], "changed": changed}
     finally:
         conn.close()

@@ -1254,7 +1254,9 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
             return _deny(task_id, "stale_fence", now)
         _history(conn, task_id, "lease_decompose", parent.get("claimed_by") or "lease-holder", now,
                  {"fence": fence, "created_ids": created, "reused_ids": reused, "parent_closed": close_parent,
-                  "previous_task_version": task_version, "task_version": version})
+                  "previous_task_version": task_version, "task_version": version,
+                  "child_task_versions": {str(child_id): task_content_version(_row(conn, child_id))
+                                          for child_id in created}})
         payload = {"decomposed": True, "task_id": task_id, "created_ids": created, "reused_ids": reused,
                    "created_count": len(created), "parent_closed": close_parent,
                    "fence": fence, "task_version": version, "server_now": _fmt(now)}
