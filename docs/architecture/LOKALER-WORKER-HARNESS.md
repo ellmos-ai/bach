@@ -1,6 +1,6 @@
 # Lokaler Worker-Harness (Buddha / Ollama)
 
-Stand 25.10.2026. Dieses Dokument beschreibt, wie BACH Aufgaben an ein lokales Modell (Buddha, `qwen3.8:27b-mlx` über Ollama auf dem Mac Studio) gibt, was dabei schiefgehen kann und **warum** die heutigen Einstellungen so gewählt sind. Es ist der Kern des lokalen Harnesses; Änderungen daran bitte hier nachtragen (Ist und Begründung).
+Fortgeschrieben am 17.11.2026; die ursprüngliche Messbasis stammt vom 25.10.2026. Dieses Dokument beschreibt, wie BACH Aufgaben an ein lokales Modell (Buddha, `qwen3.8:27b-mlx` über Ollama auf dem Mac Studio) gibt, was dabei schiefgehen kann und **warum** die heutigen Einstellungen so gewählt sind. Es ist der Kern des lokalen Harnesses; Änderungen daran bitte hier nachtragen (Ist und Begründung).
 
 Bauort heute: BACH-Kern (`system/hub/_services/chat/…`, `system/hub/_services/task_*`), Ausnahme nach MODUL-ZUORDNUNG. Ziel: Herauslösung als Modul `ellmos-worker` (Task #2493); das Dokument zieht dann mit.
 
@@ -166,3 +166,74 @@ Der Mac-Scanner (`BACH_LOCK_SCAN`) prüft das Live-Repo samt OneDrive-Zwilling u
 ## 10. Offene Aufgaben
 
 #2453 (Abschluss beim PR-Merge), #2454 (Review-Rückstau, Textweg), #2493 (Modul `ellmos-worker`), #2510 (Toolsets), #2518 (Rest: Server-Ablehnung bei decompose beendet die Bindung), #2537 (Lock-Scanner-Scope), #2503 (Cloud-Worker ab 1.11.).
+
+
+## 11. Interaktiver Start und Talk-Kontinuität (17.11.2026)
+
+### Ressourcenbereitschaft vor einem Chat-Turn
+
+Ein erreichbarer Ollama-Dienst und ein installiertes Modell bedeuten noch nicht,
+dass das lokale Modell starten darf. Beim Befund am 17.11. war Qwen entladen,
+die Chat-Readiness meldete dennoch bereit. Die native Reserveprüfung verweigerte
+den Start: rund 18,3 GB verfügbar gegenüber 21,9 GB erforderlichem Hostbudget.
+Die nachgelagerte Laufzeit konnte dadurch bis zum regulären Reserve-Wartefenster
+warten, ohne dem Nutzer vor der Annahme den wirklichen Grund zu zeigen.
+
+`_chat_resource_readiness` in `telegram_chat.py` verwendet deshalb vor der
+Bereitschaftsanzeige und vor der interaktiven Annahme dieselbe native
+`local_resource_reserve.probe` wie die Laufzeit. Bei gesperrter lokaler
+Inferenz meldet die API `available=false` beziehungsweise HTTP 503 mit
+`reason_code`, `reserve_state`, `retryable` und einem verständlichen Hinweis.
+Ein abgewiesener Turn wird dabei nicht an `runtime.process` übergeben und nicht
+als wartender Auftrag gespeichert; der Nutzer muss später erneut senden.
+
+Backend-, Slot-, Authentisierungs- und Laufzeitprüfungen bleiben wirksam.
+Die Vorprüfung ist eine Momentaufnahme: Ändern sich Ressourcen anschließend,
+entscheidet weiterhin die Laufzeit. Der asynchrone Probe-Aufruf hat ein
+Fünfsekunden-Zeitbudget, aber keine garantierte harte Wallclock-Grenze, da ein
+bereits gestarteter Hostmessungs-Thread beim Herunterfahren zu Ende läuft.
+Cloud- und entfernte Backends erhalten durch diese Änderung keine lokale
+RAM-Sperre. Die bestehende kontrollierte Cold-Start-Ausnahme gehört zum
+Always-On-Warmup; sie wird für Chat nicht still freigeschaltet. Ein interaktiver
+Warmup mit Lastüberwachung wäre ein gesonderter Folgeschritt.
+
+### Funkgerät verwendet die vorhandene Chat-Laufzeit
+
+Der Talk-Adapter in `system/gui/server.py` verwendet den gebundenen
+Systemsteckplatz und den authentisierten Chat-Control-Pfad. Eigene
+Ollama-Kandidatenlisten, Talk-Persona-Systemprompts, RAM-Verläufe und ein
+ungebundener globaler Fallback entfallen. Der vorhandene `ChatRuntime` übernimmt
+Modellwahl, Werkzeuge, Gates und den persistenten `SQLiteChatSessionStore`;
+Talk schreibt denselben Turn nicht zusätzlich.
+
+Eine Talk-Konversation ist serverseitig aus der authentisierten Geräte-ID
+und dem gebundenen Slot abgeleitet (`slot:<slot>:<32hex>`). Sie bleibt beim
+Neustart und bei Token-Erneuerung für dasselbe Gerät erhalten. Andere Geräte
+oder Slots erhalten andere Konversationen. Talk-Mutationen erfordern
+Geräteauthentisierung; fremde `chat_id`, `agent_id` und vorgegebene
+`model_response` werden nicht angenommen. Eine nicht bestätigte Auswahl
+Claude/Gemini/Codex wird mit HTTP 409 erklärt, statt ein anderes Modell unter
+diesem Namen antworten zu lassen.
+
+### Eine persönliche Identität, getrennte Ausführung
+
+Der gemeinsame Runtime-Pfad ist ein begrenzter Integrationsschritt. Er führt
+keine globale Personenautorität ein und vereinigt keine privaten Chat-,
+Connector-, Talk- oder Worker-Verläufe. Bereits vorhandene Talk-Altverläufe
+werden nicht automatisch in den neuen gerätegebundenen Thread übernommen.
+
+Das empfohlene Ziel sind dieselbe persönliche Identität und ausdrücklich
+freigegebene Erinnerungen über Chat, Connector, Talk und Hintergrundarbeit.
+Dafür müssen Besitzer- und Kanalzuordnung sowie Leserechte für gemeinsame
+Erinnerungen zuerst verbindlich sein. Ausführungsinstanz, Modell,
+Aufgabenbindung, private Kontexte und unabhängige Reviewer bleiben getrennt.
+Vorhandene Bausteine (`assistant-core`, `agents-heart`, ChatRuntime,
+SessionStore und MemoryHook) sollen dafür weiterverwendet werden; ein weiterer
+Agent allein schafft diese Kontinuität nicht. Memory-Hooks werden durch diesen
+Fix nicht global aktiviert. Der frühere Talk-spezifische Sprach-/Kürze-Prompt
+ist nicht Teil der gemeinsamen Identität; ein Ausgabeformatvertrag über die
+kanonische Runtime bleibt ein abgegrenzter Folgeschritt.
+
+Nachverfolgung: BACH #4210 / Ocean #36 / T-20261117-737954250 und
+BACH #4211 / Ocean #37 / T-20261117-896285557. Der größere Gedächtnisvertrag
+bleibt beim bestehenden Dachthema T-20260920-823767362.
