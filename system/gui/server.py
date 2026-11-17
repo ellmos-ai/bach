@@ -53,6 +53,9 @@ from hub.task_audit import apply_task_field_changes, claim_task_atomic, GateReop
 from hub._services.chat.control_auth import get_control_api_auth_header
 from gui.config import settings
 from gui.console import mount_console
+from gui.api.task_dates import (
+    validate_task_date_filters, task_created_day, task_created_sort_key,
+)
 
 # Nutzerentscheid D-20260906-002 (2026-09-11) = B: Neue Tasks gehen per Default an den
 # Idle-Worker; persoenliche Aufgaben weist der Nutzer bewusst "user" zu (Auswahlfeld in
@@ -2572,7 +2575,10 @@ async def api_get_tasks(
     priority: str = None,
     limit: int = 100,
     offset: int = 0,
-    q: str = None
+    q: str = None,
+    created_from: str = None,
+    created_to: str = None,
+    sort: str = "priority"
 ):
     """Liefert Tasks mit kombiniertem Filter vor Zählung und Pagination."""
     if assignment_group not in {"all", "user", "auto", "unassigned"}:
@@ -2581,7 +2587,13 @@ async def api_get_tasks(
     if len(q) > 200:
         raise HTTPException(400, "Suchbegriff zu lang")
     try:
+        created_from, created_to, sort = validate_task_date_filters(created_from, created_to, sort)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    try:
         conn = get_bach_db()
+        conn.create_function("bach_task_created_day", 1, task_created_day, deterministic=True)
+        conn.create_function("bach_task_created_key", 1, task_created_sort_key, deterministic=True)
 
         # Status-Filter: unterstützt kommaseparierte Werte und Aliase
         # (z.B. "in_progress,progress" oder "done,completed,closed")
@@ -2661,17 +2673,33 @@ async def api_get_tasks(
                 query += " AND UPPER(priority) = UPPER(?)"
                 params.append(priority)
 
+        # Inclusive stored calendar days: historical naive timestamps have no
+        # reliable common timezone, so do not reinterpret or migrate them here.
+        if created_from:
+            query += " AND bach_task_created_day(created_at) >= ?"
+            params.append(created_from)
+        if created_to:
+            query += " AND bach_task_created_day(created_at) <= ?"
+            params.append(created_to)
+
         # Keep count as the returned page size; total describes the same filters
         # before pagination (the dashboard only requests five recent tasks).
         total = conn.execute(
             query.replace("SELECT *", "SELECT COUNT(*)", 1), params
         ).fetchone()[0]
-        query += """ ORDER BY CASE
-            WHEN UPPER(TRIM(priority)) IN ('P1','1','HIGH','HOCH','KRITISCH') THEN 1
-            WHEN UPPER(TRIM(priority)) IN ('P2','2','MEDIUM','MITTEL','WICHTIG') THEN 2
-            WHEN UPPER(TRIM(priority)) IN ('P3','3','LOW','NIEDRIG','NORMAL') THEN 3
-            WHEN UPPER(TRIM(priority)) IN ('P4','4','MINIMAL') THEN 4
-            ELSE 5 END ASC, created_at DESC, id DESC LIMIT ? OFFSET ?"""
+        # Only fixed, validated choices enter ORDER BY. A stable ID tie-breaker
+        # prevents equal timestamps changing order between consecutive pages.
+        date_key = "bach_task_created_key(created_at)"
+        direction = "ASC" if sort == "created_asc" else "DESC"
+        order = f"{date_key} IS NULL ASC, {date_key} {direction}, id {direction}"
+        if sort == "priority":
+            order = """CASE
+                WHEN UPPER(TRIM(priority)) IN ('P1','1','HIGH','HOCH','KRITISCH') THEN 1
+                WHEN UPPER(TRIM(priority)) IN ('P2','2','MEDIUM','MITTEL','WICHTIG') THEN 2
+                WHEN UPPER(TRIM(priority)) IN ('P3','3','LOW','NIEDRIG','NORMAL') THEN 3
+                WHEN UPPER(TRIM(priority)) IN ('P4','4','MINIMAL') THEN 4
+                ELSE 5 END ASC, """ + order
+        query += " ORDER BY " + order + " LIMIT ? OFFSET ?"
         params.extend((limit + 1 if limit > 0 else limit, max(0, offset)))
 
         rows = conn.execute(query, params).fetchall()
@@ -2695,7 +2723,9 @@ async def api_get_tasks(
         conn.close()
         return {"success": True, "tasks": tasks, "count": len(tasks), "total": total, "has_more": has_more,
                 "offset": max(0, offset),
-                "applied_filters": {"assignment_group": assignment_group, "status": status, "q": q}}
+                "applied_filters": {"assignment_group": assignment_group, "status": status, "q": q,
+                                    "created_from": created_from, "created_to": created_to, "sort": sort,
+                                    "created_date_semantics": "stored_calendar"}}
     except Exception as e:
         return {"success": False, "error": public_error_message()}
 
