@@ -5312,6 +5312,48 @@ def _checked_backend_availability(selected_backend, model: str) -> tuple[bool, s
     return available is True, str(status or "nicht verfügbar")
 
 
+def _chat_resource_readiness(selected_backend, model: str) -> dict | None:
+    """Read-only local capacity check; never load a model or queue a turn.
+
+    Backend availability only proves that Ollama has the model. Use the same
+    reserve probe as inference so exact resident model/context credits apply.
+    This is a snapshot: runtime still revalidates all gates before dispatch.
+    """
+    if (not ChatRuntime._uses_local_compute(selected_backend)
+            or str(model).lower().endswith(":cloud")):
+        return None
+    from hub._services.chat.local_resource_reserve import probe
+
+    async def checked_probe():
+        return await asyncio.wait_for(probe(selected_backend, model), timeout=5.0)
+
+    try:
+        receipt = asyncio.run(checked_probe())
+        if not isinstance(receipt, dict) or type(receipt.get("admitted")) is not bool:
+            raise ValueError("invalid capacity receipt")
+    except Exception:
+        receipt = {"state": "unknown_resources", "admitted": False, "retryable": True}
+    if receipt["admitted"]:
+        return None
+    reasons = {
+        "waiting_memory_reserve": "Buddha kann momentan nicht starten: zu wenig freie Speicherreserve. Bitte später erneut senden.",
+        "waiting_disk_reserve": "Buddha kann momentan nicht starten: zu wenig freier Speicherplatz. Bitte später erneut senden.",
+        "unknown_model_observation": "Buddhas Modellstatus ist vorübergehend nicht prüfbar. Bitte erneut versuchen.",
+        "unknown_resources": "Buddhas Ressourcenfreigabe ist vorübergehend nicht prüfbar. Bitte erneut versuchen.",
+        "budget_exceeds_host": "Buddhas Modellbudget überschreitet den verfügbaren Arbeitsspeicher des Hosts.",
+        "model_budget_conflict": "Buddhas Modell und Ressourcenbudget stimmen nicht überein.",
+        "missing_model_budget": "Für Buddhas Modell fehlt ein bestätigtes Ressourcenbudget.",
+        "invalid_policy": "Buddhas Ressourcenfreigabe ist nicht gültig.",
+        "unknown_model": "Buddhas Modell ist nicht bestätigt.",
+        "unsupported_provider": "Für diesen Anbieter ist die lokale Ressourcenfreigabe nicht verfügbar.",
+    }
+    state = receipt.get("state")
+    if state not in reasons:
+        state = "unknown_resources"
+    return {"reserve_state": state, "reason_code": "local_reserve_" + state,
+            "retryable": receipt.get("retryable") is True, "status": reasons[state]}
+
+
 _BACKEND_INVENTORY_TTL_SECONDS = 30.0
 _backend_inventory_lock = threading.Lock()
 _backend_inventory_cache = {
@@ -7930,6 +7972,10 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "backend_id": backend_identifier(selected_backend),
                 "model": model,
             }
+            capacity = _chat_resource_readiness(selected_backend, model) if available else None
+            if capacity is not None:
+                available = False
+                result.update(capacity, available=False)
             if agent_id is not None:
                 try:
                     binding, _text = _profile_request(agent_id, chat_id)
@@ -8381,6 +8427,11 @@ class ControlHandler(BaseHTTPRequestHandler):
                     "ok": False,
                     "error": f"Backend nicht verfügbar: {availability_status}",
                 }, 503)
+                return
+            capacity = _chat_resource_readiness(selected_backend, model)
+            if capacity is not None:
+                self._json({"ok": False, "error": capacity["status"],
+                            **{key: value for key, value in capacity.items() if key != "status"}}, 503)
                 return
             os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
             try:
