@@ -462,3 +462,128 @@ def test_core_profile_rebind_dispatches_only_the_atomically_bound_local_target(n
     assert asyncio.run(local_call(runtime, backend, "buddha_chat", "changed:8b")) == "answer"
     backend.chat.assert_awaited_once()
     assert not HostInferenceGate().status()["active"]
+
+
+@pytest.mark.parametrize("confirmed_partial", [False, True])
+@pytest.mark.parametrize("entrypoint", ["automatic", "confirmation"])
+def test_unconfirmed_compute_pause_never_dispatches_chat(
+        native_caller, monkeypatch, confirmed_partial, entrypoint):
+    from hub import compute_lock
+    import time
+
+    control, runtime, backend, _ = native_caller
+    owned = compute_lock._PausedJobs(
+        [101] if confirmed_partial else [],
+        [{"pid": 101, "create_time": 100.0, "pause_id": "a" * 32}] if confirmed_partial else [])
+    refusal = compute_lock.ComputePauseError("pause_signal_unconfirmed", owned)
+    pauses, recoveries = [], []
+    def failed_pause(status):
+        pauses.append(status)
+        raise refusal
+    def recover(**kwargs):
+        recoveries.append(kwargs)
+        return []
+    process = AsyncMock()
+    monkeypatch.setattr(runtime, "process", process)
+    monkeypatch.setattr(control, "_admit_chat_for_compute",
+                        AsyncMock(return_value=(backend, "selected-model", True)))
+    monkeypatch.setattr(control, "_owner_check", lambda _update: True)
+    monkeypatch.setattr(control, "_compute_lock_enabled", lambda *_args: True)
+    monkeypatch.setattr(control, "check_compute_active", lambda **_kwargs: (
+        True, {"active_compute_jobs": [{"pid": 101}]}))
+    monkeypatch.setattr(control, "get_fackel_preference", lambda: "ollama")
+    monkeypatch.setattr(control, "pause_compute_jobs", failed_pause)
+    monkeypatch.setattr(control, "recover_paused_jobs", recover)
+    monkeypatch.setattr(control, "has_pending_compute_pauses", lambda: confirmed_partial)
+    monkeypatch.setattr(control, "_pending_actions", {})
+    monkeypatch.setattr(control, "write_session_flag",
+                        lambda *_args, **_kwargs: pytest.fail("failed pause cannot start an inference session"))
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=12345),
+        message=SimpleNamespace(text="Auftrag", reply_text=AsyncMock()))
+    if entrypoint == "confirmation":
+        control._pending_actions["12345"] = {
+            "status": {"active_compute_jobs": [{"pid": 101}]},
+            "text": "Auftrag", "timestamp": time.time()}
+        assert asyncio.run(control._handle_pending_action("12345", "JA", update))
+    else:
+        asyncio.run(control.handle_message(update, object()))
+    assert len(pauses) == 1
+    process.assert_not_awaited()
+    assert "Anfrage wurde nicht gestartet" in update.message.reply_text.call_args.args[0]
+    if confirmed_partial:
+        assert len(recoveries) == 1 and recoveries[0]["paused_pids"] is owned
+        assert recoveries[0]["ollama_url"] == backend.base_url
+    else:
+        assert recoveries == []
+
+
+@pytest.mark.parametrize("confirmed_partial", [False, True])
+def test_cli_worker_returns_task_without_model_call_when_compute_pause_is_unconfirmed(
+        native_caller, tmp_path, monkeypatch, confirmed_partial):
+    from contextlib import nullcontext
+    from hub import compute_lock
+    from hub._services import agents_heart, fackel
+    from hub._services.chat import task_runner, worker
+
+    control, runtime, backend, _ = native_caller
+    owned = compute_lock._PausedJobs(
+        [101] if confirmed_partial else [],
+        [{"pid": 101, "create_time": 100.0, "pause_id": "a" * 32}] if confirmed_partial else [])
+    refusal = compute_lock.ComputePauseError("pause_signal_unconfirmed", owned)
+    commands, recoveries, finished = [], [], []
+    process = AsyncMock()
+    monkeypatch.setattr(runtime, "process", process)
+    monkeypatch.setattr(runtime, "get_session",
+                        lambda _chat: SimpleNamespace(model="test:model", backend=backend))
+    monkeypatch.setattr(control, "legacy_worker_binding", lambda _chat: nullcontext())
+    monkeypatch.setattr(control, "_global_defaults", {})
+    monkeypatch.setattr(slots, "get_slot", lambda _slot: {"enabled": True})
+    monkeypatch.setattr(slots, "is_slot_paused", lambda _slot: False)
+    monkeypatch.setattr(task_runner, "offene_tasks",
+                        lambda *_args, **_kwargs: [{"id": 7, "title": "Synthetic compute-pause admission"}])
+    monkeypatch.setattr(task_runner, "markiere_erledigt",
+                        lambda *_args: pytest.fail("failed pause cannot complete work"))
+    monkeypatch.setattr(fackel, "passt", lambda **_kwargs: True)
+    monkeypatch.setattr(compute_lock, "check_compute_active",
+                        lambda: (True, {"active_compute_jobs": [{"pid": 101}]}))
+    monkeypatch.setattr(compute_lock, "get_fackel_preference", lambda: "ollama")
+    def failed_pause(_status):
+        raise refusal
+    monkeypatch.setattr(compute_lock, "pause_compute_jobs", failed_pause)
+    monkeypatch.setattr(compute_lock, "recover_paused_jobs",
+                        lambda **kwargs: recoveries.append(kwargs) or [])
+    monkeypatch.setattr(compute_lock, "resume_compute_jobs",
+                        lambda *_args: pytest.fail("a failed partial pause cannot enter unconditional finally resume"))
+    monkeypatch.setattr(agents_heart, "begin_assignment", lambda **_kwargs: object())
+    monkeypatch.setattr(agents_heart, "finish_assignment",
+                        lambda *_args, **kwargs: finished.append(kwargs))
+    def command(argv, **_kwargs):
+        commands.append(argv)
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(worker.subprocess, "run", command)
+    monkeypatch.setattr(worker, "state_schreiben", lambda *_args: True)
+    monkeypatch.setattr(worker.sys, "path", list(worker.sys.path))
+    monkeypatch.chdir(tmp_path)
+    assert worker.main(["--category", "synthetic", "--workdir", str(tmp_path / "work"),
+                        "--model", "test:model", "--db", str(tmp_path / "unused.db"),
+                        "--einmal"]) == 1
+    process.assert_not_awaited()
+    assert [argv[3] for argv in commands] == ["claim", "release"]
+    assert finished[-1]["status"] == "error"
+    assert finished[-1]["reason"] == "ComputePauseError"
+    if confirmed_partial:
+        assert len(recoveries) == 1 and recoveries[0]["paused_pids"] is owned
+    else:
+        assert recoveries == []
+
+
+@pytest.mark.parametrize("resumed", [[], [101]])
+def test_startup_recovery_keeps_pending_pauses_visible(native_caller, monkeypatch, capsys, resumed):
+    control, _, _, _ = native_caller
+    monkeypatch.setattr(control, "recover_paused_jobs", lambda: resumed)
+    monkeypatch.setattr(control, "has_pending_compute_pauses", lambda: True)
+    control._recover_compute_at_startup()
+    output = capsys.readouterr().out
+    assert "Recovery ausstehend" in output
+    assert "kein Crash-Recovery" not in output

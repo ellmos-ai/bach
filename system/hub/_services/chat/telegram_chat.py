@@ -155,8 +155,9 @@ from hub._services.chat.slots_config import (
 # Compute Lock (optional — graceful if not available)
 try:
     from hub.compute_lock import (
-        DEFAULT_CHECK_SCRIPT, DEFAULT_LOCK_PATH,
+        DEFAULT_CHECK_SCRIPT, DEFAULT_LOCK_PATH, ComputePauseError,
         check_compute_active, pause_compute_jobs, resume_compute_jobs,
+        has_pending_compute_pauses,
         start_resume_monitor, recover_paused_jobs, format_status_message,
         write_session_flag, delete_session_flag,
         set_inferenz_active, get_effective_keep_alive_seconds,
@@ -165,6 +166,10 @@ try:
     HAS_COMPUTE_LOCK = True
 except ImportError:
     HAS_COMPUTE_LOCK = False
+    class ComputePauseError(RuntimeError):
+        pass
+    def has_pending_compute_pauses():
+        return True
     DEFAULT_LOCK_PATH = "~/.memwatchdog/compute_active.lock"
     DEFAULT_CHECK_SCRIPT = ""
     def get_fackel_preference(path=None):
@@ -4459,6 +4464,48 @@ async def _admit_chat_for_compute(chat_id: str):
     return backend, model, local
 
 
+def _recover_compute_at_startup():
+    try:
+        resumed = recover_paused_jobs()
+        if resumed:
+            log.info("Crash recovery: resumed PIDs %s", resumed)
+            print(f"Compute Lock: {len(resumed)} Jobs nach Crash resumed: {resumed}")
+        if has_pending_compute_pauses():
+            print("Compute Lock: Recovery ausstehend; Pausenbelege bleiben zur Prüfung erhalten")
+        elif not resumed:
+            print("Compute Lock: kein Crash-Recovery noetig")
+    except Exception as error:
+        log.warning("Crash recovery failed: %s", type(error).__name__)
+
+
+async def _report_compute_pause_failure(update, error, selected_backend):
+    """An unconfirmed/partial pause must never reach a model request."""
+    log.warning("compute_pause_admission_denied reason=%s confirmed_pauses=%d",
+                error.reason, len(error.paused_pids))
+    recovered = []
+    if error.paused_pids:
+        try:
+            recovered = recover_paused_jobs(
+                ollama_url=getattr(selected_backend, "base_url", "http://localhost:11434"),
+                paused_pids=error.paused_pids)
+        except Exception:
+            log.warning("partial_compute_pause_recovery_deferred receipt_preserved=true")
+    message = "Compute-Pause nicht vollständig bestätigt. Die Anfrage wurde nicht gestartet."
+    if recovered:
+        message += f" {len(recovered)} bereits pausierte Jobs sind bestätigt fortgesetzt."
+    if has_pending_compute_pauses():
+        message += " Offene Pausenbelege bleiben zur Prüfung erhalten."
+    await update.message.reply_text(message)
+
+
+async def _report_failed_chat_compute_resume(update, paused):
+    resumed = resume_compute_jobs(paused) or []
+    message = f"Anfrage fehlgeschlagen. Bestätigt fortgesetzt: {len(resumed)} Compute-Jobs."
+    if has_pending_compute_pauses():
+        message += " Weitere Pausenbelege bleiben zur Prüfung erhalten."
+    await update.message.reply_text(message)
+
+
 async def _handle_pending_action(chat_id: str, text: str, update: Update) -> bool:
     """Handle JA/NEIN reply to a pending compute lock question.
 
@@ -4487,7 +4534,11 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
 
         if uses_local_compute:
             await update.message.reply_text("Pausiere Compute-Jobs...")
-        paused = pause_compute_jobs(status) if uses_local_compute else []
+        try:
+            paused = pause_compute_jobs(status) if uses_local_compute else []
+        except ComputePauseError as error:
+            await _report_compute_pause_failure(update, error, selected_backend)
+            return True
 
         if not paused:
             await update.message.reply_text(
@@ -4530,11 +4581,7 @@ async def _handle_pending_action(chat_id: str, text: str, update: Update) -> boo
         if paused:
             if not success:
                 log.info("Chat inference failed after pause, resuming compute jobs immediately: %s", paused)
-                delete_session_flag()
-                resume_compute_jobs(paused)
-                await update.message.reply_text(
-                    "Anfrage fehlgeschlagen. Pausierte Compute-Jobs wurden wieder fortgesetzt."
-                )
+                await _report_failed_chat_compute_resume(update, paused)
             else:
                 ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
 
@@ -4601,7 +4648,11 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pref = get_fackel_preference()
             if pref == "ollama":
                 cl_cfg = CONFIG.get("compute_lock", {})
-                paused = pause_compute_jobs(status)
+                try:
+                    paused = pause_compute_jobs(status)
+                except ComputePauseError as error:
+                    await _report_compute_pause_failure(update, error, selected_backend)
+                    return
                 if paused:
                     pid_str = ", ".join(str(p) for p in paused)
                     await update.message.reply_text(
@@ -4632,11 +4683,7 @@ async def handle_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if paused:
                     if not success:
                         log.info("Chat inference failed after auto-pause, resuming compute jobs: %s", paused)
-                        delete_session_flag()
-                        resume_compute_jobs(paused)
-                        await update.message.reply_text(
-                            "Anfrage fehlgeschlagen. Pausierte Compute-Jobs wurden wieder fortgesetzt."
-                        )
+                        await _report_failed_chat_compute_resume(update, paused)
                     else:
                         ollama_url = getattr(runtime.backend, "base_url", "http://localhost:11434")
 
@@ -10046,15 +10093,7 @@ def main():
 
     # Crash recovery: resume any compute jobs stopped by a previous bot session
     if HAS_COMPUTE_LOCK and CONFIG.get("compute_lock", {}).get("enabled", False):
-        try:
-            resumed = recover_paused_jobs()
-            if resumed:
-                log.info("Crash recovery: resumed PIDs %s", resumed)
-                print(f"Compute Lock: {len(resumed)} Jobs nach Crash resumed: {resumed}")
-            else:
-                print("Compute Lock: kein Crash-Recovery noetig")
-        except Exception as e:
-            log.warning("Crash recovery failed: %s", e)
+        _recover_compute_at_startup()
 
     disabled, reason = should_disable_telegram_bot()
     if disabled:
