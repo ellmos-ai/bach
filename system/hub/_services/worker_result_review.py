@@ -977,10 +977,10 @@ def _grant_valid(grant):
         return False
 
 
-def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, route,
+def _review_eligibility(conn, task_id, *, worker_id, host, generation, slot_id, route,
                        requested_model, is_current, stop_event, clock,
                        repo_root=None, worktrees_dir=None):
-    """Authorize one local controller generation for an existing pending task."""
+    """Read the same private review authority without constructing a grant."""
     if (conn.in_transaction or type(task_id) is not int or task_id <= 0
             or not all(type(value) is str and value and value == value.strip()
                        for value in (worker_id, host, generation, slot_id, requested_model))
@@ -1013,6 +1013,24 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
         if (task.get("assigned_slot") not in (None, "", slot_id)
                 or task.get("required_model") not in (None, "", requested_model)):
             return None
+        return found, target, authority, principal, route
+    except (sqlite3.Error, ValueError, TypeError, KeyError, settings.PolicyUnavailable):
+        return None
+
+
+def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, route,
+                       requested_model, is_current, stop_event, clock,
+                       repo_root=None, worktrees_dir=None):
+    """Authorize one local controller generation for an existing pending task."""
+    checked = _review_eligibility(conn, task_id, worker_id=worker_id, host=host,
+        generation=generation, slot_id=slot_id, route=route, requested_model=requested_model,
+        is_current=is_current, stop_event=stop_event, clock=clock,
+        repo_root=repo_root, worktrees_dir=worktrees_dir)
+    if checked is None:
+        return None
+    found, target, authority, principal, route = checked
+    task = found["task"]
+    try:
         return ReviewGrant(_seal=_SEAL, task_id=task_id,
             task_version=task_content_version(task),
             target_task_id=target["task_id"], target_result_id=target["result_id"],
@@ -1028,8 +1046,13 @@ def issue_review_grant(conn, task_id, *, worker_id, host, generation, slot_id, r
             policy_version=authority["policy_version"],
             identity_version=authority["identity_version"],
             _is_current=is_current, _stop_event=stop_event)
-    except (sqlite3.Error, ValueError, TypeError, KeyError, settings.PolicyUnavailable):
+    except (ValueError, TypeError, KeyError):
         return None
+
+
+def review_eligible(conn, task_id, **kwargs):
+    """Prospective eligibility only; no review capability or task mutation."""
+    return _review_eligibility(conn, task_id, **kwargs) is not None
 
 
 def validate_review_acquire(conn, task, *, worker_id, host, grant, now):

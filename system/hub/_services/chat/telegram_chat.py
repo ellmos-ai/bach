@@ -1283,6 +1283,38 @@ def _observe_idle_model_retention(control, backend, model):
              control.worker_id, model)
 
 
+def _preflight_worker_queue(control, slot, physical_worker_id):
+    """Observe canonical queue eligibility before an optional idle model warmup."""
+    from hub._services.chat.worker_queue_preflight import QueuePreflight, preflight_worker_queue
+    from hub._services.llm.controller_route import route_snapshot
+    def is_current():
+        return (_WORKER_CONTROLS.get(control.worker_id) is control
+                and not control.done_event.is_set())
+    try:
+        control.slot_policy_reader()
+        host = socket.gethostname()
+        expected_worker = f"{physical_worker_id}@{host}"
+        if control.lease_worker_id not in (None, "", expected_worker):
+            return QueuePreflight()
+        scope_deferrals = getattr(control, "scope_preparation_deferrals", None)
+        deferred = (scope_deferrals.combined(control.deferred_task_versions)
+                    if isinstance(scope_deferrals, ScopePreparationDeferrals)
+                    else control.deferred_task_versions)
+        result = preflight_worker_queue(_native_task_client(), slot,
+            worker_id=expected_worker, host=host, generation=control.generation,
+            is_current=is_current, stop_event=control.stop_event, deferred_versions=deferred,
+            review_route=route_snapshot(getattr(control, "_review_backend", None)),
+            review_requested_model=getattr(control, "_review_requested_model", None))
+        control.slot_policy_reader()
+        if not is_current() or control.stop_event.is_set():
+            return QueuePreflight()
+        if isinstance(scope_deferrals, ScopePreparationDeferrals):
+            scope_deferrals.after_exhausted_preflight(result)
+        return result
+    except Exception:
+        return QueuePreflight()
+
+
 def _acquire_worker_task(control, slot, physical_worker_id):
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
     from hub._services.task_lease_client import LeaseDeniedError
@@ -6317,6 +6349,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
         current_assignment = board_assignment
         assignment_task_id = w.get("task_id") or 0
         assignment_open = board_assignment is not None
+        from hub._services.chat.worker_queue_preflight import QueueChangeObserver
+        queue_changes = QueueChangeObserver(_native_task_client)
         try:
             if not _await_worker_startup_admission(control):
                 return
@@ -6456,13 +6490,62 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 with _WORKER_CONTROL_LOCK:
                     control.supports_step_actions = not getattr(target_backend, "manages_own_tools", False)
 
+                # Capture before any independent scan: a concurrent commit must
+                # remain visible when the queue starts waiting.
+                queue_revision = (queue_changes.revision()
+                    if control.task_binding is None or control.task_binding.closed else None)
+                if control.task_binding is None or control.task_binding.closed:
+                    _retain_worker_task_receipts(control)
+                    if control.lease_supervisor is not None:
+                        control.lease_supervisor.close()
+                        control.lease_supervisor = None
+                    # Record canonical result observations without making separate
+                    # acceptance a prerequisite for the next queue acquisition.
+                    _poll_worker_completion(control)
+                    if control.host_precondition_failures > 0 or _peer_waiting_host_precondition(control):
+                        probed_host_code = _probe_host_scope_precondition(current_slot)
+                        if probed_host_code:
+                            control.host_precondition_failures += 1
+                            failures = control.host_precondition_failures
+                            delay = _host_precondition_delay(failures)
+                            _set_precondition_wait(control, probed_host_code, failures, delay)
+                            _record_worker_activity(
+                                control,
+                                f"Host-Voraussetzung weiterhin nicht erfüllt ({probed_host_code}); keine neue Task-Lease gezogen",
+                                "pending",
+                            )
+                            if _update_worker_slot(control, {
+                                    "status": "running", "task_id": None,
+                                    "current_activity": f"Host-Voraussetzung fehlt ({probed_host_code}); "
+                                                        f"Versuch {failures}, nächster in {delay} s",
+                            }) is None:
+                                break
+                            if failures == _HOST_PRECONDITION_ESCALATE_AFTER:
+                                _open_worker_resolver(control, worker_id, probed_host_code)
+                            if not _wait_host_precondition(control, failures):
+                                break
+                            continue
+                        if control.host_precondition_failures > 0:
+                            control.host_precondition_failures = 0
+                            _set_precondition_wait(control, None)
+
                 if worker_id == "buddha_always_on" and not buddha_warmup_complete:
                     if ((control.task_binding is not None and not control.task_binding.closed)
-                            or run_count > 0):
-                        # A resumed task owns its model call; only a fresh idle
-                        # Always-On generation gets a pre-queue warmup.
+                            or run_count > 0
+                            or current_slot.get("task_id") not in (None, "", 0, "0")):
+                        # Fixed pins/recovery stay in native Acquire. Their task
+                        # turn owns model admission; a hint never releases a pin.
                         buddha_warmup_complete = True
                     else:
+                        preflight = _preflight_worker_queue(control, current_slot, worker_instance_id)
+                        if not preflight.eligible:
+                            if _update_worker_slot(control, {
+                                    "status": "running", "current_activity": preflight.activity,
+                            }) is None:
+                                break
+                            if queue_changes.wait(control.stop_event, queue_revision, timeout=10):
+                                break
+                            continue
                         warmup_loop = asyncio.new_event_loop()
                         try:
                             warmup = warmup_loop.run_until_complete(
@@ -6509,39 +6592,6 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             continue
 
                 if control.task_binding is None or control.task_binding.closed:
-                    _retain_worker_task_receipts(control)
-                    if control.lease_supervisor is not None:
-                        control.lease_supervisor.close()
-                        control.lease_supervisor = None
-                    # Record canonical result observations without making separate
-                    # acceptance a prerequisite for the next queue acquisition.
-                    _poll_worker_completion(control)
-                    if control.host_precondition_failures > 0 or _peer_waiting_host_precondition(control):
-                        probed_host_code = _probe_host_scope_precondition(current_slot)
-                        if probed_host_code:
-                            control.host_precondition_failures += 1
-                            failures = control.host_precondition_failures
-                            delay = _host_precondition_delay(failures)
-                            _set_precondition_wait(control, probed_host_code, failures, delay)
-                            _record_worker_activity(
-                                control,
-                                f"Host-Voraussetzung weiterhin nicht erfüllt ({probed_host_code}); keine neue Task-Lease gezogen",
-                                "pending",
-                            )
-                            if _update_worker_slot(control, {
-                                    "status": "running", "task_id": None,
-                                    "current_activity": f"Host-Voraussetzung fehlt ({probed_host_code}); "
-                                                        f"Versuch {failures}, nächster in {delay} s",
-                            }) is None:
-                                break
-                            if failures == _HOST_PRECONDITION_ESCALATE_AFTER:
-                                _open_worker_resolver(control, worker_id, probed_host_code)
-                            if not _wait_host_precondition(control, failures):
-                                break
-                            continue
-                        if control.host_precondition_failures > 0:
-                            control.host_precondition_failures = 0
-                            _set_precondition_wait(control, None)
                     control.task_binding = _acquire_worker_task(control, current_slot, worker_instance_id)
                     if control.task_binding is None:
                         from hub._services.chat.worker_queue_status import (
@@ -6553,7 +6603,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             _update_worker_slot(control, {"status": "idle", "current_activity": waiting_activity})
                             return
                         _update_worker_slot(control, {"current_activity": waiting_activity})
-                        if control.stop_event.wait(10):
+                        if queue_changes.wait(control.stop_event, queue_revision, timeout=10):
                             break
                         continue
                     newly_acquired_binding = control.task_binding
@@ -7329,6 +7379,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 _update_worker_slot(control, {"status": "error", "current_activity": f"Fehler: {exc}"})
                 _record_worker_activity(control, f"Fehler: {exc}", "error")
         finally:
+            queue_changes.close()
             persistent_lease_returned = False
             persistent_assignment_finished = False
             # Cleanup failures cannot skip assignment closure, registry removal,

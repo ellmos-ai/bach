@@ -739,6 +739,9 @@ def startup(admission, monkeypatch):
     monkeypatch.setattr(agent_manage_service, "verified_local_agent_model", lambda *_: True)
     monkeypatch.setattr(control, "begin_assignment", lambda **kw: kw)
     monkeypatch.setattr(control, "finish_assignment", lambda *_a, **_kw: None)
+    from hub._services.chat.worker_queue_preflight import QueuePreflight
+    monkeypatch.setattr(control, "_preflight_worker_queue",
+                        lambda *_: QueuePreflight(eligible=True, state="eligible"))
     slots.update_slot("buddha_always_on", {"backend": "ollama", "status": "idle"})
     yield control, slots
     for execution in tuple(control._WORKER_EXECUTIONS.values()):
@@ -788,6 +791,11 @@ def test_buddha_start_warms_model_before_first_queue_claim(startup, monkeypatch)
         claim_seen.set()
         return None
 
+    from hub._services.chat.worker_queue_preflight import QueuePreflight
+    def preflight(*_args):
+        observed.append(("preflight",))
+        return QueuePreflight(eligible=True, state="eligible")
+    monkeypatch.setattr(control, "_preflight_worker_queue", preflight)
     monkeypatch.setattr(control.runtime, "warm_buddha_ollama_model", warmup)
     monkeypatch.setattr(control, "_acquire_worker_task", claim)
     result = control._resume_always_on_at_startup(threading.Event())
@@ -796,8 +804,8 @@ def test_buddha_start_warms_model_before_first_queue_claim(startup, monkeypatch)
     execution = control._WORKER_EXECUTIONS["buddha_always_on"]
     execution.thread.join(3)
     assert not execution.thread.is_alive()
-    assert observed[0][0] == "warmup" and observed[1] == ("claim",)
-    assert observed[0][3] == "buddha_always_on" and observed[0][4] is False
+    assert [item[0] for item in observed] == ["preflight", "warmup", "claim"]
+    assert observed[1][3] == "buddha_always_on" and observed[1][4] is False
 
 
 @pytest.mark.parametrize("changes", [
@@ -1428,3 +1436,79 @@ def test_startup_monitor_runs_the_restart_resume(startup, monkeypatch):
         assert called.is_set() and server.worker_restart_resume_result == []
     finally:
         server.server_close()
+
+
+@pytest.mark.parametrize("state", ["waiting", "unavailable"])
+def test_buddha_idle_preflight_never_warms_or_claims_without_work(startup, monkeypatch, state):
+    from hub._services.chat.worker_queue_preflight import QueuePreflight
+    control, _slots = startup
+    observed = threading.Event()
+    calls = []
+
+    def preflight(*_args):
+        calls.append("preflight")
+        observed.set()
+        return QueuePreflight(scan_complete=state == "waiting", state=state)
+
+    async def forbidden_warmup(*_args, **_kwargs):
+        calls.append("warmup")
+        raise AssertionError("Empty queue must not warm a model")
+
+    monkeypatch.setattr(control, "_preflight_worker_queue", preflight)
+    monkeypatch.setattr(control.runtime, "warm_buddha_ollama_model", forbidden_warmup)
+    monkeypatch.setattr(control, "_acquire_worker_task", lambda *_: calls.append("claim"))
+    result = control._resume_always_on_at_startup(threading.Event())
+    assert result["state"] == "admitted"
+    assert observed.wait(5)
+    execution = control._WORKER_EXECUTIONS["buddha_always_on"]
+    execution.stop_event.set()
+    execution.thread.join(3)
+    assert not execution.thread.is_alive()
+    assert calls == ["preflight"]
+
+
+def test_fixed_terminal_pin_reaches_native_recovery_without_warmup(
+        real_acquire_before_fixture, startup, mem_db, tmp_path, monkeypatch):
+    import sqlite3
+    from hub._services.task_lease_client import TaskLeaseClient
+    from hub._services import skill_source_service
+    control, slots = startup
+    mem_db.execute("INSERT INTO tasks(id,title,status) VALUES(42,'Prior terminal task','done')")
+    mem_db.commit()
+    database = tmp_path / "recovery.db"
+    with sqlite3.connect(database) as copied:
+        mem_db.backup(copied)
+    client = TaskLeaseClient(db_path=database)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    monkeypatch.setattr(skill_source_service, "check_write_locks",
+                        lambda target: None if Path(target) == Path(slots.DEFAULT_SLOTS_FILE)
+                        else (_ for _ in ()).throw(AssertionError("Unexpected write path")))
+    slots.update_slot("buddha_always_on", {"task_id": 42, "status": "idle"})
+    observed = []
+    settled = threading.Event()
+
+    def actual_recovery(execution, slot, physical_id):
+        observed.append("native_acquire")
+        answer = real_acquire_before_fixture(execution, slot, physical_id)
+        execution.stop_event.set()
+        settled.set()
+        return answer
+
+    async def forbidden_warmup(*_args, **_kwargs):
+        observed.append("warmup")
+        raise AssertionError("Fixed recovery owns its native route")
+
+    monkeypatch.setattr(control, "_preflight_worker_queue",
+                        lambda *_: observed.append("preflight"))
+    monkeypatch.setattr(control.runtime, "warm_buddha_ollama_model", forbidden_warmup)
+    monkeypatch.setattr(control, "_acquire_worker_task", actual_recovery)
+    result = control._resume_always_on_at_startup(threading.Event())
+    assert result["state"] == "admitted"
+    assert settled.wait(5)
+    execution = control._WORKER_EXECUTIONS["buddha_always_on"]
+    execution.thread.join(3)
+    assert not execution.thread.is_alive()
+    assert observed == ["native_acquire"]
+    assert slots.get_always_on_execution_slot()["task_id"] is None
+    assert client.task_snapshot(42)["status"] == "done"
+    assert client.read(42).leased is False
