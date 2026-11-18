@@ -1569,7 +1569,13 @@ class TaskLeaseClient:
         headers = {"X-Lease-Id": lease_id} if lease_id else None
         body = {"lease_id": lease_id} if self.mode == "local" else None
         data = self._call("read", task_id, body, config=config, now=now, headers=headers)
-        return self._holder_readback(data, task_id)
+        if type(data.get("leased")) is not bool or type(data.get("fence")) is not int or data["fence"] < 0:
+            raise LeaseProtocolError("Ungültiger Lease-Readback")
+        _version(data.get("task_version"))
+        return LeaseHolderView(task_id=task_id, status=data.get("status"), leased=data["leased"],
+            fence=data["fence"], legacy=data.get("legacy") is True, server_now=data["server_now"],
+            holder=data.get("holder"), issued_at=data.get("issued_at"), expires_at=data.get("expires_at"),
+            ttl_profile=data.get("ttl_profile"), own=data.get("own") is True, task_version=data.get("task_version"))
 
     @staticmethod
     def _holder_readback(data, task_id):
