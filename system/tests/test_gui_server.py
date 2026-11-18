@@ -698,6 +698,17 @@ def test_http_disconnect_real_gui_control_tcp_and_reconnect(
     import socket
     import uvicorn
     from gui import server as gui
+    from hub._services.chat import slots_config
+
+    slot_file = tmp_path / "native-slots.json"
+    assert not slot_file.exists()
+    monkeypatch.setenv("BACH_SLOTS_CONFIG_PATH", str(slot_file))
+    monkeypatch.setattr(slots_config, "DEFAULT_SLOTS_FILE", str(slot_file))
+    # The real Control binder must read this test-owned native system slot.
+    slot_config = slots_config.load_slots_config(str(slot_file))
+    slot_config["slots"]["buddha_chat"].update(backend="ollama", model="m")
+    slots_config.save_slots_config(slot_config, str(slot_file))
+    assert slots_config.get_system_slot("buddha_chat")["model"] == "m"
 
     async def scenario():
         consumed = threading.Event()
