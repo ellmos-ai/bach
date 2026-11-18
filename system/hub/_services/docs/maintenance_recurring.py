@@ -10,6 +10,8 @@ from pathlib import Path
 from .maintenance_dispatch import read_state, stamp, write_state
 
 ROUTINES = ("help_forensic", "roadmap_review", "doc_freshness", "docs_changelog_review")
+# Terminal lifecycle is not semantic acceptance of the previous result.
+_TERMINAL_TASK_STATES = frozenset({"done", "completed", "cancelled", "archived"})
 
 
 def routine_definitions(root: Path, now: datetime) -> list[dict]:
@@ -68,7 +70,7 @@ def dispatch_routine(dispatcher, definition, *, scheduled_for):
     old = entries.get(name)
     if old:
         old.update(dispatcher._task_state(old))
-        if old["task_status"] not in {"done", "completed", "cancelled"}:
+        if old["task_status"] not in _TERMINAL_TASK_STATES:
             write_state(dispatcher.state_path, state, dispatcher.guard)
             return {
                 "state": "waiting_review_or_work",
@@ -87,7 +89,7 @@ def dispatch_routine(dispatcher, definition, *, scheduled_for):
         raise RuntimeError("legacy_documentation_lookup_budget")
     if any(
         row.get("title") == title
-        and row.get("status") not in {"done", "completed", "cancelled"}
+        and row.get("status") not in _TERMINAL_TASK_STATES
         for row in candidates
     ):
         return {
