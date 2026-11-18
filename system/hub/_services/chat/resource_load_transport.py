@@ -1,3 +1,4 @@
+# BACH Adapter: resource_load_transport
 # SPDX-License-Identifier: MIT
 """Concrete staged warmup transport evidence under the native inference owner."""
 from __future__ import annotations
