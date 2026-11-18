@@ -123,14 +123,16 @@ def test_real_runtime_resource_grant_wraps_existing_inference_gate(tmp_path, mon
     events = []
     @asynccontextmanager
     async def resource(*args, check_ready=None, **kwargs):
+        assert events == ["reserve"]  # Read-only target classification precedes ownership.
         events.append("resource_grant")
+        check_ready()
         try:
             yield check_ready
         finally:
             events.append("resource_end")
     @asynccontextmanager
     async def inference(self, *args, **kwargs):
-        assert events == ["resource_grant", "reserve"]
+        assert events == ["reserve", "resource_grant"]
         events.append("inference_lock")
         try:
             yield
@@ -150,4 +152,39 @@ def test_real_runtime_resource_grant_wraps_existing_inference_gate(tmp_path, mon
     monkeypatch.setattr(runtime, "prepare_inference_call", prepare)
     monkeypatch.setattr(backend, "chat", chat)
     asyncio.run(runtime._chat_with_compute_turn(backend, []))
-    assert events == ["resource_grant", "reserve", "inference_lock", "reserve", "model", "inference_unlock", "resource_end"]
+    assert events == ["reserve", "resource_grant", "inference_lock", "reserve", "model", "inference_unlock", "resource_end"]
+
+
+def test_local_binding_revocation_during_broker_admission_prevents_dispatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BACH_RESOURCE_BROKER_CONFIG", "/fixture/client.json")
+    from hub._services.chat import host_inference_gate, local_resource_reserve
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.model_backend import OllamaBackend
+    backend = OllamaBackend(base_url="http://127.0.0.1:11434")
+    runtime = ChatRuntime(backend)
+    valid = [True]
+    events = []
+    def binding(*args):
+        if not valid[0]:
+            raise RuntimeError("model_socket_binding_unavailable")
+    async def prepare(*args, **kwargs):
+        events.append("probe")
+        return {"admitted": True, "state": "admitted", "policy_version": "fixture"}, None
+    @asynccontextmanager
+    async def resource(*args, check_ready=None, **kwargs):
+        check_ready()
+        events.append("resource_wait")
+        valid[0] = False
+        yield check_ready
+    def forbidden(*args, **kwargs):
+        pytest.fail("revoked local model reached ownership or dispatch")
+    monkeypatch.setattr(runtime, "_model_binding_for_session", binding)
+    monkeypatch.setattr(runtime, "prepare_inference_call", prepare)
+    monkeypatch.setattr(local_resource_reserve, "read_policy", lambda: ({}, "fixture"))
+    monkeypatch.setattr(bridge, "resource_model_turn", resource)
+    monkeypatch.setattr(host_inference_gate.HostInferenceGate, "turn", forbidden)
+    monkeypatch.setattr(backend, "chat", forbidden)
+    with pytest.raises(RuntimeError, match="model_socket_binding_unavailable"):
+        asyncio.run(runtime._chat_with_compute_turn(backend, []))
+    assert events == ["probe", "resource_wait"]

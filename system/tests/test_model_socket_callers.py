@@ -407,8 +407,11 @@ def test_empty_dialog_does_not_rebind_profile_during_metadata_probe(native_calle
 
 
 @pytest.mark.parametrize("model", ["remote-alias", "remote:cloud"])
-def test_native_cloud_handler_ignores_local_compute_without_pausing_jobs(native_caller, monkeypatch, model):
+@pytest.mark.parametrize("broker_enabled", [False, True])
+def test_native_cloud_handler_ignores_local_compute_without_pausing_jobs(
+        native_caller, monkeypatch, model, broker_enabled):
     from hub._services.chat import local_resource_reserve as reserve
+    from hub._services.chat import resource_host_client as broker
 
     control, runtime, backend, _ = native_caller
     config = slots.load_slots_config()
@@ -430,6 +433,11 @@ def test_native_cloud_handler_ignores_local_compute_without_pausing_jobs(native_
     monkeypatch.setattr(control, "_pending_actions", {})
     def forbidden(*args, **kwargs):
         pytest.fail("An external model must not change local compute jobs or inference flags")
+    if broker_enabled:
+        monkeypatch.setenv("BACH_RESOURCE_BROKER_CONFIG", "/fixture/unneeded-resource-host.json")
+    else:
+        monkeypatch.delenv("BACH_RESOURCE_BROKER_CONFIG", raising=False)
+    monkeypatch.setattr(broker, "load_verified", forbidden)
     monkeypatch.setattr(control, "pause_compute_jobs", forbidden)
     monkeypatch.setattr(control, "write_session_flag", forbidden)
     monkeypatch.setattr(control, "set_inferenz_active", forbidden)

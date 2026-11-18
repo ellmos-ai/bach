@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from contextlib import AsyncExitStack
 from contextvars import ContextVar
 import hashlib
 import ipaddress
@@ -2848,19 +2849,18 @@ class ChatRuntime(_ModuleChatRuntime):
                 raise LocalReserveError("Lokale Ressourcenfreigabe: resource_policy_changed")
 
         from hub._services.chat.resource_host_client import resource_model_turn
-        # The resource host can checkpoint a waiting compute consumer before
-        # local reserve polling. Its grant is acquired before inference.lock and
-        # its end_turn runs only after that native gate has been returned.
-        async with resource_model_turn(
-                backend, selected_model, chat_id, priority,
-                check_ready=check_local_ready) as broker_ready:
-            guard["check_ready"] = broker_ready or check_local_ready
+        # Classify the actual target before requesting local ownership: even a
+        # loopback Ollama endpoint can proxy a metadata-confirmed cloud alias.
+        # Local grants still precede inference.lock, and end_turn follows its
+        # release. The owner always takes a fresh reserve observation below.
+        async with AsyncExitStack() as resources:
+            broker_entered = False
             try:
                 while True:
-                    guard["check_ready"]()
+                    check_binding()
                     receipt, _ = await self.prepare_inference_call(
                         backend, selected_model, chat_id=chat_id if turn_context else None)
-                    guard["check_ready"]()
+                    check_binding()
                     if receipt is None:
                         return await dispatch_model_call()
                     if not policy_bound:
@@ -2873,6 +2873,13 @@ class ChatRuntime(_ModuleChatRuntime):
                             self._local_resource_waiters.pop(chat_id, None)
                         return await dispatch_model_call()
                     require_retryable(receipt)
+                    if not broker_entered:
+                        broker_ready = await resources.enter_async_context(resource_model_turn(
+                            backend, selected_model, chat_id, priority,
+                            check_ready=check_local_ready))
+                        guard["check_ready"] = broker_ready or check_local_ready
+                        broker_entered = True
+                    guard["check_ready"]()
                     binding = getattr(session, "worker_task_binding", None) if session is not None else None
                     pre_effect_receipt = self._persistent_core_pre_effect_reserve_receipt(
                         session=session, binding=binding, backend=backend, model=selected_model,
