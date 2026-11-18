@@ -518,10 +518,10 @@ def test_initial_status_write_counts_towards_lock_wait_budget(context, monkeypat
     monkeypatch.setattr(runtime, "LOCK_WAIT_BUDGET_SECONDS", 10)
     original_write = runtime._write_status
 
-    def slow_status(path, value, guard):
+    def slow_status(path, value, guard, **kwargs):
         if value["state"] == "waiting_for_lock":
             context.clock.elapsed += 9
-        original_write(path, value, guard)
+        original_write(path, value, guard, **kwargs)
 
     monkeypatch.setattr(runtime, "_write_status", slow_status)
     with pytest.raises(runtime.MaintenanceLockWaitTimeout):

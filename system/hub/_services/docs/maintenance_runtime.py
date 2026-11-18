@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -33,6 +34,7 @@ BINDING_REQUEST_SCHEMA = "bach.maintenance-worker-binding-request.v1"
 BINDING_ACK_SCHEMA = "bach.maintenance-worker-binding-ack.v1"
 STATUS_SCHEMA = "bach.maintenance-status.v1"
 JOB_ID = "bach.docs.delta"
+HEARTBEAT_INTERVAL_SECONDS = 15
 JOB_IDS = {JOB_ID, *["bach.docs.routine." + name for name in ROUTINES]}
 STATES = {"running", "busy", "backoff", "storage_budget", "storage_reserve", "stopped",
           "waiting_for_lock"}
@@ -349,9 +351,14 @@ def process_owner(path: Path, guard):
             import fcntl
 
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        try:
+        def verify_owner():
+            if stream.closed:
+                raise PermissionError("Maintenance owner already released")
             _verify_runtime_file(path, os.fstat(stream.fileno()))
-            yield
+
+        try:
+            verify_owner()
+            yield verify_owner
         finally:
             if os.name == "nt":
                 stream.seek(0)
@@ -360,7 +367,7 @@ def process_owner(path: Path, guard):
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-def _write_status(path: Path, value: dict, guard):
+def _write_status(path: Path, value: dict, guard, *, clock=None, verify_owner=None):
     guard(path)
     temporary = path.with_name(f"{path.stem}.{uuid4().hex}.tmp")
     if (
@@ -380,13 +387,23 @@ def _write_status(path: Path, value: dict, guard):
     try:
         with os.fdopen(fd, "wb") as stream:
             _verify_runtime_file(temporary, owned)
+            guard(path)
+            _verify_runtime_file(temporary, os.fstat(stream.fileno()))
+            if verify_owner is not None:
+                verify_owner()
+            if clock is not None:
+                # Liveness is observed after the potentially slow native scans.
+                payload = {**value, "observed_at": stamp(clock())}
+                encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+                if len(encoded) > 65536:
+                    raise ValueError("Maintenance status exceeds budget")
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
             _verify_runtime_file(temporary, os.fstat(stream.fileno()))
-        guard(path)
-        _verify_runtime_file(temporary, owned)
-        temporary.replace(path)
+            if verify_owner is not None:
+                verify_owner()
+            temporary.replace(path)
     finally:
         # Clean only our exact entry, and only while its native authority remains.
         # A foreign replacement or unknown/locked runtime is left untouched.
@@ -398,6 +415,80 @@ def _write_status(path: Path, value: dict, guard):
                 temporary.unlink()
         except (OSError, ValueError):
             pass
+
+
+class _OwnerHeartbeat:
+    """Publish liveness only while the exact process-owner descriptor is held.
+
+    The serving thread supplies actual work receipts. The heartbeat never reads
+    the scheduler/task stores or infers progress from a live process.
+    """
+
+    def __init__(self, service, verify_owner, status_guard):
+        self.service = service
+        self.verify_owner = verify_owner
+        self.status_guard = status_guard
+        self._write_lock = threading.RLock()
+        self._stopped = threading.Event()
+        self._thread = None
+        self._snapshot = None
+        self._error = None
+
+    def guard(self, target):
+        self.verify_owner()
+        self.status_guard(target)
+        # The native scan can take time; a replaced owner inode grants nothing.
+        self.verify_owner()
+
+    def _write_locked(self):
+        value = copy.deepcopy(self._snapshot)
+        value["observed_at"] = stamp(self.service.clock())
+        value["stop_requested"] = self.service.stop_event.is_set()
+        _write_status(
+            self.service.runtime / "status.json", value, self.guard,
+            clock=self.service.clock, verify_owner=self.verify_owner,
+        )
+
+    def raise_if_failed(self):
+        with self._write_lock:
+            if self._error is not None:
+                self.service.failure_phase = "status_write"
+                raise self._error
+
+    def publish(self, value):
+        with self._write_lock:
+            self.raise_if_failed()
+            self._snapshot = copy.deepcopy(value)
+            self._snapshot.setdefault("receipts_observed_at", value["observed_at"])
+            self._write_locked()
+
+    def start(self, value):
+        self.publish(value)
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"maintenance-heartbeat-{self.service.generation[:8]}",
+            daemon=False,
+        )
+        self._thread.start()
+
+    def _run(self):
+        interval = min(HEARTBEAT_INTERVAL_SECONDS, self.service.config["poll_seconds"])
+        while not self._stopped.wait(interval):
+            with self._write_lock:
+                if self._stopped.is_set():
+                    return
+                try:
+                    self._write_locked()
+                except BaseException as error:  # noqa: BLE001 - re-raised in the owner thread
+                    self._error = error
+                    self.service.stop_event.set()
+                    return
+
+    def stop(self):
+        self._stopped.set()
+        if self._thread is not None and self._thread.ident is not None:
+            # Never release the OS owner while a writer can still publish.
+            self._thread.join()
 
 
 def readonly_status(
@@ -465,6 +556,12 @@ def readonly_status(
         observed = datetime.fromisoformat(value["observed_at"])
         if observed.tzinfo is None:
             raise ValueError("Invalid maintenance time")
+        if "receipts_observed_at" in value:
+            receipts_at = datetime.fromisoformat(value["receipts_observed_at"])
+            if receipts_at.tzinfo is None or receipts_at > observed:
+                raise ValueError("Invalid maintenance receipt observation time")
+        if "stop_requested" in value and type(value["stop_requested"]) is not bool:
+            raise ValueError("Invalid maintenance stop state")
         age = (current - observed).total_seconds()
         command = process.cmdline()
         expected = root / "system/tools/maintenance/scheduler_maintenance.py"
@@ -497,6 +594,8 @@ def readonly_status(
             "generation",
             "poll_seconds",
             "observed_at",
+            "receipts_observed_at",
+            "stop_requested",
             "provider",
             "state",
             "runs",
@@ -1556,12 +1655,17 @@ class MaintenanceRuntime:
             self._lock_wait_remaining()
             self.failure_phase = "owner_acquire"
             try:
-                with process_owner(self.owner_path, status_guard):
+                with process_owner(self.owner_path, status_guard) as verify_owner:
                     self._failure_owner_generation = self.generation
                     self._owner_thread = threading.get_ident()
+                    heartbeat = _OwnerHeartbeat(self, verify_owner, status_guard)
                     current = None
                     try:
+                        current = self._service_status("running")
+                        self.failure_phase = "status_write"
+                        heartbeat.start(current)
                         while not self.stop_event.is_set():
+                            heartbeat.raise_if_failed()
                             try:
                                 self._lock_wait_remaining()
                                 self.failure_phase = "binding_request"
@@ -1572,13 +1676,15 @@ class MaintenanceRuntime:
                                     raise RuntimeError(
                                         "maintenance_configuration_changed_restart_required"
                                     )
+                                heartbeat.raise_if_failed()
                                 self.failure_phase = "scheduler_tick"
                                 result = self.tick()
+                                heartbeat.raise_if_failed()
                             except MaintenanceLockHeld:
                                 self.failure_phase = "lock_wait"
                                 self._lock_wait_remaining(start=True)
                                 current = self._service_status("waiting_for_lock")
-                                _write_status(self.runtime / "status.json", current, status_guard)
+                                heartbeat.publish(current)
                                 if self._wait_for_lock():
                                     break
                                 continue
@@ -1586,25 +1692,34 @@ class MaintenanceRuntime:
                             self._lock_wait_attempts = 0
                             current = self._service_status(result["state"])
                             self.failure_phase = "status_write"
-                            _write_status(self.runtime / "status.json", current, status_guard)
+                            heartbeat.publish(current)
                             count += 1
                             if max_ticks is not None and count >= max_ticks:
                                 break
                             self.failure_phase = "poll_wait"
                             self.stop_event.wait(self.config["poll_seconds"])
+                        heartbeat.raise_if_failed()
                     finally:
-                        self._owner_thread = None
-                        failed_phase = self.failure_phase
-                        primary_active = sys.exc_info()[0] is not None
-                        if current is not None:
-                            current.update(state="stopped", observed_at=stamp(self.clock()))
-                            self.failure_phase = "shutdown_status_write"
-                            try:
-                                _write_status(self.runtime / "status.json", current, status_guard)
-                            except Exception:
-                                if not primary_active:
-                                    raise
-                        self.failure_phase = failed_phase if primary_active else "serve"
+                        try:
+                            heartbeat.stop()
+                            if sys.exc_info()[0] is None:
+                                heartbeat.raise_if_failed()
+                        finally:
+                            self._owner_thread = None
+                            failed_phase = self.failure_phase
+                            primary_active = sys.exc_info()[0] is not None
+                            if current is not None:
+                                current.update(state="stopped", observed_at=stamp(self.clock()))
+                                self.failure_phase = "shutdown_status_write"
+                                try:
+                                    _write_status(
+                                        self.runtime / "status.json", current, heartbeat.guard,
+                                        clock=self.clock, verify_owner=verify_owner,
+                                    )
+                                except Exception:
+                                    if not primary_active:
+                                        raise
+                            self.failure_phase = failed_phase if primary_active else "serve"
                 return
             except MaintenanceLockHeld:
                 # The local runtime itself may be locked. No ownership/status
