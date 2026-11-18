@@ -472,7 +472,105 @@ class TaskLeaseClient:
         conn.execute("PRAGMA busy_timeout = 30000")
         return conn
 
-    def _task_policy_snapshot(self, task_id):
+    def _local_observation_path(self):
+        """Resolve this authority's file for read-only hints; never a worker projection."""
+        if self.mode != "local" or self._conn is not None:
+            return None
+        return (self._db_path or Path.home() / ".bach" / "bach.db").absolute()
+
+    def _get_local_observation_connection(self):
+        """Short read-only observation, without migration or database creation."""
+        if self.mode != "local":
+            raise LeaseProtocolError("Lokale Beobachtung braucht den kanonischen Lead")
+        if self._conn is not None:
+            if self._conn.in_transaction:
+                raise LeaseProtocolError("Task-Beobachtung braucht bestätigte Daten")
+            return self._conn  # Isolated/embedded caller owns its connection.
+        path = self._local_observation_path()
+        conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True,
+                               timeout=.2, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        return conn
+
+    def _preflight_task_readiness(self, task_id, *, task_version, worker_id, review=False):
+        """Pure prospective denial checks; no Acquire, schema writes or grants."""
+        _identity(task_id)
+        if self.mode == "remote":
+            # Remote profiles retain the canonical HTTP authority. Its Acquire
+            # still owns private trace/creator checks not exposed by read APIs.
+            snapshot = self.task_snapshot(task_id)
+            lease = self.read(task_id)
+            if snapshot["task_version"] != task_version or lease.task_version != task_version:
+                return "stale_task_version"
+            if lease.leased:
+                return "held"
+            if snapshot["status"] not in {"pending", "open", "in_progress"}:
+                return "status_not_claimable"
+            from .task_schema import parse_task_dependency_ids
+            dependencies, invalid = parse_task_dependency_ids(snapshot.get("depends_on"))
+            if invalid:
+                return "dependencies_invalid"
+            for dependency in dependencies:
+                try:
+                    dependency_state = self.task_snapshot(dependency)
+                except LeaseError:
+                    return "dependencies_missing"
+                if dependency_state["status"] != "done":
+                    return "dependencies_unfinished"
+            return None
+        from . import task_lease as native
+        from hub._services.chat.worker_tool_trace import task_trace_recovery_state
+        conn = self._get_local_observation_connection()
+        try:
+            conn.execute("BEGIN")  # Short read transaction for native trace consistency.
+            row = native._row(conn, task_id)
+            if row is None or native.task_content_version(row) != task_version:
+                return "stale_task_version"
+            now = datetime.now(timezone.utc)
+            config = native.LeaseConfig.from_env()
+            if native._lease_state(row, now, config)["live"]:
+                return "held"
+            status = row.get("status")
+            if (status in native.TERMINAL_STATUSES
+                    or status not in native.CLAIMABLE_STATUSES and status != "in_progress"):
+                return "status_not_claimable"
+            dependencies = native.inspect_task_dependencies(conn, row.get("depends_on"))
+            if dependencies["blocked"]:
+                for reason in ("invalid", "missing", "unfinished"):
+                    if dependencies[reason]:
+                        return "dependencies_" + reason
+                return "not_claimable"
+            trace = task_trace_recovery_state(conn, task_id)
+            if trace == "unresolved":
+                return "unresolved_tool_trace"
+            if trace not in {"legacy", "clear"}:
+                raise LeaseProtocolError("Werkzeugspur nicht bestätigt")
+            created = native.parse_ts(row.get("created_at"))
+            window = native._creator_window_seconds(conn, task_id, config) if created else 0
+            if (created is not None and window > 0 and created <= now + timedelta(seconds=60)
+                    and now < created + timedelta(seconds=window)
+                    and not native._is_creator(worker_id, row.get("created_by")) and not review):
+                return "creator_priority"
+            return None
+        finally:
+            conn.rollback()
+            if self._conn is None:
+                conn.close()
+
+    def _review_eligible(self, task_id, **kwargs):
+        """Grant-free local review observation using the actual private authority."""
+        if self.mode != "local":
+            return False
+        from .worker_result_review import review_eligible
+        conn = self._get_local_observation_connection()
+        try:
+            return review_eligible(conn, task_id, clock=lambda: datetime.now(timezone.utc), **kwargs)
+        finally:
+            if self._conn is None:
+                conn.close()
+
+    def _task_policy_snapshot(self, task_id, *, _read_only=False):
         """Canonical persisted policy at the same task authority, no ensure_schema."""
         _identity(task_id)
         if self.mode == "remote":
@@ -481,7 +579,8 @@ class TaskLeaseClient:
                 self._raise_denied(task_id, data)
             return data
         from .worker_policy_settings import read_task_policy
-        conn = self._get_local_connection()
+        conn = (self._get_local_observation_connection() if _read_only
+                else self._get_local_connection())
         try:
             return read_task_policy(task_id, conn=conn)
         finally:
@@ -615,7 +714,7 @@ class TaskLeaseClient:
             if self._conn is None:
                 conn.close()
 
-    def _review_candidates(self, limit=100, offset=0):
+    def _review_candidates(self, limit=100, offset=0, *, _read_only=False):
         """Read pending review jobs locally; remote leads carry no private grant authority."""
         if (type(limit) is not int or not 1 <= limit <= 100
                 or type(offset) is not int or offset < 0):
@@ -623,7 +722,8 @@ class TaskLeaseClient:
         if self.mode != "local":
             return {"tasks": [], "has_more": False, "offset": offset}
         from .worker_result_review import list_review_candidates
-        conn = self._get_local_connection()
+        conn = (self._get_local_observation_connection() if _read_only
+                else self._get_local_connection())
         try:
             raw = list_review_candidates(conn, limit=limit, offset=offset)
             has_more = False
@@ -1227,7 +1327,7 @@ class TaskLeaseClient:
         _version(data.get("next_task_version"), required=True)
         return data
 
-    def task_candidates(self, *, limit=100, offset=0):
+    def task_candidates(self, *, limit=100, offset=0, _read_only=False):
         """Canonical pending/open/in-progress page; Acquire decides claimability."""
         if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
             raise LeaseProtocolError("Ungültige Task-Seite")
@@ -1238,9 +1338,10 @@ class TaskLeaseClient:
             if status != 200:
                 self._raise_denied(0, data)
         else:
-            conn = self._get_local_connection()
+            conn = (self._get_local_observation_connection() if _read_only else self._get_local_connection())
             try:
-                ensure_task_lease_schema(conn)
+                if not _read_only:
+                    ensure_task_lease_schema(conn)
                 where = "LOWER(TRIM(status)) IN ('pending', 'open', 'in_progress', 'progress')"
                 # Legacy isolated schemas need not have created_at.
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}

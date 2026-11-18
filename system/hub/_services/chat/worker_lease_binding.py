@@ -254,7 +254,7 @@ class WorkerLeaseBinding:
         return {key: copy.deepcopy(slot[key]) for key in fields if key in slot}
 
     @staticmethod
-    def _effective_selection_policy_snapshot(client, snapshot, slot):
+    def _effective_selection_policy_snapshot(client, snapshot, slot, *, _read_only=False):
         """Read the stored global/task policy and bind its exact digest to this task version."""
         if (getattr(client, "mode", None) not in {"local", "remote"}
                 or not isinstance(snapshot, dict) or not isinstance(slot, dict)
@@ -268,7 +268,8 @@ class WorkerLeaseBinding:
             reader = getattr(client, "_task_policy_snapshot", None)
             if not callable(reader):
                 return None
-            stored = reader(snapshot["id"])
+            stored = (reader(snapshot["id"], _read_only=True) if _read_only
+                      else reader(snapshot["id"]))
             if (not isinstance(stored, dict) or stored.get("schema") != TASK_SCHEMA
                     or stored.get("availability") != "available"
                     or type(stored.get("task_id")) is not int
@@ -304,6 +305,9 @@ class WorkerLeaseBinding:
                 "configuration_version": configuration_version,
             }
         except Exception:
+            if _read_only:
+                # Observation failures must keep the prospective scan incomplete.
+                raise
             return None
 
 

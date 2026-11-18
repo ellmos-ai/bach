@@ -44,6 +44,16 @@ class ScopePreparationDeferrals:
         checked = project_queue_status(record)
         if checked is None or checked['state'] != 'waiting' or checked['scan_complete'] is not True:
             return ()
+        return self._expire_preparation_skips()
+
+    def after_exhausted_preflight(self, result) -> tuple[int, ...]:
+        from .worker_queue_preflight import QueuePreflight
+        if (not isinstance(result, QueuePreflight) or result.eligible
+                or result.scan_complete is not True or result.state != "waiting"):
+            return ()
+        return self._expire_preparation_skips()
+
+    def _expire_preparation_skips(self) -> tuple[int, ...]:
         now = self.clock()
         if not math.isfinite(now):
             return ()
