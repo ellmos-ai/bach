@@ -65,6 +65,7 @@ def routine_definitions(root: Path, now: datetime) -> list[dict]:
 def dispatch_routine(dispatcher, definition, *, scheduled_for):
     dispatcher.guard(dispatcher.root)
     state = read_state(dispatcher.state_path)
+    dispatcher._reconcile_native(state, "routine")
     entries = state.setdefault("routines", {})
     name = definition["name"]
     old = entries.get(name)
@@ -120,6 +121,8 @@ def dispatch_routine(dispatcher, definition, *, scheduled_for):
         description + occurrence,
         priority=definition["priority"],
         previous_description=previous_description + occurrence,
+        producer_spec={"kind": "routine", "name": name, "occurrence": epoch,
+                       "revision": revision},
     )
     item = {
         "revision": revision,

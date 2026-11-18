@@ -350,8 +350,11 @@ class TaskHandler(BaseHandler):
         
         return title.strip()
     
-    def _add(self, args: List[str], dry_run: bool = False) -> Tuple[bool, str]:
-        """Task hinzufuegen"""
+    def _add(self, args: List[str], dry_run: bool = False, *, _maintenance_request=None) -> Tuple[bool, str]:
+        """Task hinzufuegen; private maintenance receipts share the local INSERT."""
+        if _maintenance_request is not None:
+            from ._services.docs import maintenance_task_provenance as producer
+            producer.check_create_request(_maintenance_request, args)
         clean_args = [a for a in args if a not in ("--local", "--offline", "--remote")]
         force_remote = "--remote" in args
         force_local = "--local" in args or "--offline" in args
@@ -571,17 +574,30 @@ class TaskHandler(BaseHandler):
                 f"  (Wird bei erreichbarem Rheingold-Server automatisch synchronisiert via 'bach task sync')"
             )
 
-        with self._get_db() as conn:
+        local_connection = self._get_db() if _maintenance_request is None else producer.create_connection(
+            _maintenance_request, self, {
+                "title": title, "priority": priority, "category": category, "description": description,
+                "due_date": due_date, "required_model": required_model, "assigned_slot": assigned_slot,
+                "result_max_chars": result_max_chars, "assigned_to": assigned_to,
+                "creation_origin": creation_origin,
+            })
+        with local_connection as conn:
             ensure_task_due_date(conn)
             ensure_task_slot_columns(conn)
             ensure_task_creation_origin(conn)
             ensure_task_result_contract_columns(conn)
+            if _maintenance_request is not None:
+                existing_id = producer.existing_creation(conn, _maintenance_request)
+                if existing_id is not None:
+                    return True, f"[OK] Task {existing_id} bereits nativ angelegt: {title}"
             cursor = conn.execute(f"""
                 INSERT INTO tasks
                     (title, priority, category, description, status, due_date, required_model, assigned_slot, result_max_chars, created_at, creation_origin{assignment_column})
                 VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), ?{assignment_value})
             """, (title, priority, category, description, due_date, required_model, assigned_slot, result_max_chars, creation_origin, *assignment_params))
             task_id = cursor.lastrowid
+            if _maintenance_request is not None:
+                producer._record_intent(conn, _maintenance_request, task_id)
             conn.commit()
 
         # Hook: after_task_create

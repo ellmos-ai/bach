@@ -204,6 +204,24 @@ class DocumentationDispatcher:
         self.binding = binding or {}
         if set(self.binding) - {"assigned_slot", "required_model"}:
             raise ValueError("Invalid documentation worker binding")
+        from .maintenance_task_provenance import native_producer_for
+        self.producer = native_producer_for(task_api, root, guard)
+
+    def _reconcile_native(self, state, kind):
+        if self.producer is None:
+            return
+        key = "packages" if kind == "delta" else "routines"
+        entries = state.setdefault(key, {})
+        for name, reference in self.producer.references(kind):
+            previous = entries.get(name)
+            if previous and previous["task_id"] != reference["task_id"]:
+                previous.update(self._task_state(previous))
+                if previous["task_status"] not in {"done", "completed", "cancelled", "archived"}:
+                    raise RuntimeError("maintenance_reference_conflict")
+            entries[name] = reference
+        for item in entries.values():
+            item.update(self._task_state(item))
+            self.producer.confirm_reference(item)
 
     def _task_state(self, item: dict) -> dict:
         from hub._services.task_lease_client import LeaseProtocolError
@@ -313,7 +331,13 @@ class DocumentationDispatcher:
             "tatsächlicher Dokurepair und persönliche Ergebnisfreigabe sind getrennte Schritte."
         )
 
-    def _ensure_task(self, title, description, *, priority="P2", previous_description=None):
+    def _ensure_task(self, title, description, *, priority="P2", previous_description=None,
+                     producer_spec=None):
+        if self.producer is not None:
+            if producer_spec is None:
+                raise RuntimeError("maintenance_provenance_unavailable")
+            return self.producer.ensure(title=title, description=description, priority=priority,
+                                        binding=self.binding, **producer_spec)
         matches = self.tasks.list(status=None, filter_text=title, limit=20)
         exact = [row for row in matches if row.get("title") == title]
         if len(exact) > 1:
@@ -374,6 +398,7 @@ class DocumentationDispatcher:
     def dispatch(self) -> dict:
         self.guard(self.root)
         state = read_state(self.state_path)
+        self._reconcile_native(state, "delta")
         now = self.clock()
         revision, files = self.snapshot(self.root, state.get("source_revision"))
         changed = packages_for(files)
@@ -404,6 +429,8 @@ class DocumentationDispatcher:
                 title,
                 self._analysis_description(package, revision, names),
                 previous_description=self._description(package, revision, names),
+                producer_spec={"kind": "delta", "name": package, "occurrence": revision,
+                               "revision": revision},
             )
             item = {
                 "revision": revision,

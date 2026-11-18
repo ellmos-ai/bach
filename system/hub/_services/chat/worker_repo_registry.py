@@ -814,3 +814,103 @@ def inherit_decomposed_task_repositories(binding, *, expected_child_ids=None,
                     "request_matches": matching_request, "changed": changed}
     finally:
         conn.close()
+
+
+def enroll_maintenance_task_repository(client, task_id, *, expected_registry_sha256):
+    """Enroll only an atomically recorded native documentation producer task.
+
+    The private receipt supplies repository, source and the original task pin.
+    Public project/source/title fields and cache references confer no authority.
+    Existing matching bindings remain complete after ordinary task edits. An
+    unbound task needs its original version, a free pending state and fresh CAS.
+    """
+    from hub._services.docs import maintenance_task_provenance as producer
+    from hub._services.task_lease import task_content_version
+    tid = canonical_task_id(task_id)
+    if (type(expected_registry_sha256) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", expected_registry_sha256) is None):
+        raise RepositoryBindingError("registry_changed", reason_code="registry_changed")
+    database, identity = _canonical_review_client(client)
+    try:
+        conn = sqlite3.connect(database.as_uri() + "?mode=rw", uri=True, timeout=5.0)
+    except sqlite3.Error:
+        raise RepositoryBindingError("canonical_lead_required", reason_code="canonical_lead_required") from None
+    conn.row_factory = sqlite3.Row
+
+    def evidence():
+        found = producer._read_intent(conn, tid)
+        if found is None:
+            raise RepositoryBindingError("maintenance_provenance_unavailable",
+                                         reason_code="maintenance_provenance_unavailable")
+        return found
+
+    def require_pending(found):
+        task, intent = found["task"], found["intent"]
+        if task.get("status") not in {"pending", "open"} or task.get("claim_id"):
+            raise RepositoryBindingError("maintenance_task_not_pending",
+                                         reason_code="maintenance_task_not_pending")
+        if task_content_version(task) != intent["task_version"]:
+            raise RepositoryBindingError("maintenance_task_version_changed",
+                                         reason_code="maintenance_task_version_changed")
+
+    try:
+        with _RegistryWriter(expected_registry_sha256) as writer:
+            _assert_database_identity(database, identity)
+            found = evidence()
+            intent = found["intent"]
+            data = load_registry()
+            repository = intent["repository"]
+            if data["repositories"].get(repository) != intent["repository_record"]:
+                raise RepositoryBindingError("maintenance_source_unverified",
+                                             reason_code="maintenance_source_unverified")
+            existing = data["tasks"].get(str(tid))
+            if existing is not None:
+                if (existing["repository"] != repository
+                        or existing["source_sha"] != intent["revision"]):
+                    raise RepositoryBindingError("maintenance_binding_conflict",
+                                                 reason_code="maintenance_binding_conflict")
+                writer.assert_current()
+                _assert_database_identity(database, identity)
+                return {"state": "already_bound", "task_id": tid, "repository": repository,
+                        "source_sha": intent["revision"], "task_mutated": False}
+            require_pending(found)
+            # This immutable pin was proved current by the producer before the
+            # native create commit; subsequent main drift never repins the task.
+            producer._verify_source(intent, require_current=False)
+            writer.check_fences()
+            fresh = evidence()
+            if fresh["row"]["intent_sha256"] != found["row"]["intent_sha256"]:
+                raise RepositoryBindingError("maintenance_provenance_changed",
+                                             reason_code="maintenance_provenance_changed")
+            require_pending(fresh)
+            producer._verify_source(intent, require_current=False)
+            _assert_database_identity(database, identity)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                current = evidence()
+                if current["row"]["intent_sha256"] != found["row"]["intent_sha256"]:
+                    raise RepositoryBindingError("maintenance_provenance_changed",
+                                                 reason_code="maintenance_provenance_changed")
+                require_pending(current)
+                _assert_database_identity(database, identity)
+                writer.assert_current()
+                data["schema"] = ENROLLED_SCHEMA
+                data["tasks"][str(tid)] = {
+                    "repository": repository, "source_sha": intent["revision"],
+                    "task_version": intent["task_version"],
+                    "operator": "operator:native-docs-maintenance",
+                    "registered_at": datetime.now(timezone.utc).isoformat(),
+                    "source_proof_sha256": producer._digest(intent["source_proof"]),
+                }
+                writer.publish(data)
+            finally:
+                conn.rollback()  # Cross-store CAS only: no task or lease mutation.
+            observed = resolve_task_repository(tid)
+            if (observed.repository != repository or observed.source_sha != intent["revision"]):
+                raise RepositoryBindingError("registry_changed", reason_code="registry_changed")
+            return {"state": "enrolled", "task_id": tid, "repository": repository,
+                    "source_sha": intent["revision"], "task_version": intent["task_version"],
+                    "registry_sha256": hashlib.sha256(_read_registry_bytes(writer.path)).hexdigest(),
+                    "task_mutated": False}
+    finally:
+        conn.close()
