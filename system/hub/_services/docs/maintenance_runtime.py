@@ -367,7 +367,8 @@ def process_owner(path: Path, guard):
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-def _write_status(path: Path, value: dict, guard, *, clock=None, verify_owner=None):
+def _write_status(path: Path, value: dict, guard, *, clock=None, verify_owner=None) -> bool:
+    """Publish only after durable bytes and fresh authority; defer stale candidates."""
     guard(path)
     temporary = path.with_name(f"{path.stem}.{uuid4().hex}.tmp")
     if (
@@ -387,23 +388,31 @@ def _write_status(path: Path, value: dict, guard, *, clock=None, verify_owner=No
     try:
         with os.fdopen(fd, "wb") as stream:
             _verify_runtime_file(temporary, owned)
-            guard(path)
-            _verify_runtime_file(temporary, os.fstat(stream.fileno()))
             if verify_owner is not None:
                 verify_owner()
             if clock is not None:
-                # Liveness is observed after the potentially slow native scans.
-                payload = {**value, "observed_at": stamp(clock())}
+                # These are the actual observation time and bytes being synced.
+                observed = clock()
+                payload = {**value, "observed_at": stamp(observed)}
                 encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
                 if len(encoded) > 65536:
                     raise ValueError("Maintenance status exceeds budget")
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
+            # Locks and destination safety can change during the durable write.
+            guard(path)
             _verify_runtime_file(temporary, os.fstat(stream.fileno()))
             if verify_owner is not None:
                 verify_owner()
+            if clock is not None:
+                age = (clock() - observed).total_seconds()
+                if not 0 <= age <= 2 * value["poll_seconds"] + 30:
+                    # Keep the old receipt. The next regular heartbeat starts
+                    # a new guarded attempt; never refresh unsynced bytes.
+                    return False
             temporary.replace(path)
+            return True
     finally:
         # Clean only our exact entry, and only while its native authority remains.
         # A foreign replacement or unknown/locked runtime is left untouched.

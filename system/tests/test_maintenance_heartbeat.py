@@ -165,7 +165,7 @@ def test_long_dispatch_keeps_owner_live_without_advancing_work_receipts(tmp_path
 
 
 def test_slow_final_status_guard_does_not_publish_an_old_heartbeat(tmp_path, monkeypatch):
-    """A scan that finishes late must not make its new receipt stale on arrival."""
+    """Withhold a stale candidate; the next regular attempt must revalidate fully."""
     ctx = service_fixture(tmp_path, monkeypatch)
     first_guard, release_first = threading.Event(), threading.Event()
     next_guard, release_next = threading.Event(), threading.Event()
@@ -193,9 +193,17 @@ def test_slow_final_status_guard_does_not_publish_an_old_heartbeat(tmp_path, mon
         release_first.set()
         assert next_guard.wait(3)
         raw = json.loads((ctx.area / "status.json").read_text(encoding="utf-8"))
+        assert raw["observed_at"] == "2026-11-18T03:00:00+00:00"
+        assert raw["receipts_observed_at"] == "2026-11-18T03:00:00+00:00"
+        assert ctx.read()["running"] is False
+        assert list(ctx.area.glob("status.*.tmp")) == []
+        release_next.set()
+        assert wait_until(lambda: ctx.read().get("running") is True)
+        assert status_visits >= 4, "Next attempt omitted its final destination guard"
+        raw = json.loads((ctx.area / "status.json").read_text(encoding="utf-8"))
         assert raw["observed_at"] == "2026-11-18T03:04:00+00:00"
         assert raw["receipts_observed_at"] == "2026-11-18T03:00:00+00:00"
-        assert ctx.read()["running"] is True
+        assert raw["runs"][0]["finished_at"] == OLD_SUCCESS
     finally:
         ctx.service.stop_event.set()
         release_first.set()
@@ -494,3 +502,89 @@ def test_last_heartbeat_failure_is_not_lost_during_shutdown(tmp_path, monkeypatc
     assert ctx.service.failure_phase == "status_write"
     assert ctx.read()["state"] == "stopped"
     assert all(not thread.is_alive() for thread in ctx.callers)
+
+
+@pytest.mark.parametrize("late_change", ["native_guard_lock", "status_symlink"])
+def test_status_publication_rechecks_native_destination_guard_after_fsync(
+    tmp_path, monkeypatch, late_change,
+):
+    """A lock or foreign target created during durable writing must survive."""
+    area = tmp_path / "maintenance"
+    area.mkdir()
+    status = area / "status.json"
+    status.write_text("pre-existing status", encoding="utf-8")
+    foreign = tmp_path / "foreign-status"
+    foreign.write_text("foreign status", encoding="utf-8")
+    lock = area / "LOCK.fixture.txt"
+    scans = []
+
+    class WorkGuard:
+        def _check(self, paths, *, require_project_twin):
+            assert require_project_twin is False
+            scans.append((paths[0].name, lock.exists()))
+            if lock.exists():
+                raise runtime.MaintenanceLockHeld("confirmed isolated runtime lock")
+
+    guard = runtime.RuntimeStatusLockGuard(WorkGuard(), area, tmp_path / "bach.db")
+    real_fsync = os.fsync
+
+    def change_during_fsync(fd):
+        real_fsync(fd)
+        if late_change == "native_guard_lock":
+            lock.touch()
+        else:
+            status.unlink()
+            status.symlink_to(foreign)
+
+    with runtime.process_owner(area / "owner.lock", guard) as verify:
+        monkeypatch.setattr(runtime.os, "fsync", change_during_fsync)
+        with pytest.raises((PermissionError, runtime.MaintenanceLockHeld)):
+            runtime._write_status(
+                status, {"state": "running", "poll_seconds": 60}, guard,
+                clock=Clock(), verify_owner=verify,
+            )
+
+    assert foreign.read_text(encoding="utf-8") == "foreign status"
+    if late_change == "native_guard_lock":
+        assert ("status.json", True) in scans
+        assert status.read_text(encoding="utf-8") == "pre-existing status"
+    else:
+        assert status.is_symlink()
+        assert status.read_text(encoding="utf-8") == "foreign status"
+
+
+@pytest.mark.parametrize(("guard_delay", "publish"), [(150, True), (151, False), (-1, False)])
+def test_late_guard_preserves_honest_timestamp_and_existing_freshness_bound(
+    tmp_path, monkeypatch, guard_delay, publish,
+):
+    clock = Clock()
+    path = tmp_path / "status.json"
+    original = b"previous receipt"
+    path.write_bytes(original)
+    destination_checks = 0
+    fsyncs = []
+    real_fsync = os.fsync
+
+    def fsync(fd):
+        real_fsync(fd)
+        fsyncs.append(fd)
+
+    def guard(target):
+        nonlocal destination_checks
+        if target == path:
+            destination_checks += 1
+            if destination_checks == 2:
+                assert len(fsyncs) == 1, "Final guard ran before durable writing"
+                clock.advance(guard_delay)
+
+    monkeypatch.setattr(runtime.os, "fsync", fsync)
+    result = runtime._write_status(
+        path, {"state": "running", "poll_seconds": 60}, guard, clock=clock,
+    )
+    assert destination_checks == 2, "A slow guard caused an internal retry loop"
+    assert result is publish
+    assert list(tmp_path.glob("status.*.tmp")) == []
+    if publish:
+        assert json.loads(path.read_text())["observed_at"] == NOW.isoformat()
+    else:
+        assert path.read_bytes() == original
