@@ -7,57 +7,30 @@ The optional provider must be an exact canonical VCS installation, not a name ma
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import os
 import time
-from importlib import metadata, util
 from pathlib import Path
-from urllib.parse import urlsplit
 
-PIN = "217f2ff48910202e88d869886771af136f24eef1"
-VERSION = "0.1.2"
-REPOSITORY = "https://github.com/ellmos-ai/open-ocean"
+from hub._services.ocean_resources_provider import (
+    REPOSITORY,
+    VERSION,
+    PipelineProviderUnavailable,
+    load_verified,
+    pin,
+)
+
+__all__ = ["OPERATIONS", "PIN", "REPOSITORY", "VERSION", "PipelineProviderUnavailable", "observe"]
+
+PIN = pin()["commit"]
 OPERATIONS = frozenset({"resources", "catalog", "host", "capacity", "shadow"})
-
-
-class PipelineProviderUnavailable(RuntimeError):
-    pass
 
 
 def _provider():
     if os.environ.get("BACH_PIPELINE_COORDINATION_ENABLED") != "1":
         raise PipelineProviderUnavailable("pipeline_coordination_disabled")
-    try:
-        dist = metadata.distribution("open-ocean")
-        direct = json.loads(dist.read_text("direct_url.json") or "{}")
-        url = urlsplit(direct.get("url", ""))
-        vcs = direct.get("vcs_info", {})
-        if (
-            dist.version != VERSION
-            or url.scheme != "https" or url.netloc != "github.com"
-            or url.query or url.fragment
-            or url.path.removesuffix(".git") != "/ellmos-ai/open-ocean"
-            or vcs.get("vcs") != "git" or vcs.get("commit_id") != PIN
-        ):
-            raise PipelineProviderUnavailable("pipeline_provider_provenance_mismatch")
-        spec = util.find_spec("ocean_resources")
-        expected = Path(dist.locate_file("ocean_resources/__init__.py")).resolve()
-        if not spec or not spec.origin or Path(spec.origin).resolve() != expected or not expected.is_file():
-            raise PipelineProviderUnavailable("pipeline_provider_import_mismatch")
-        modules = {}
-        for name in ("ocean_resources", "ocean_resources.host", "ocean_resources.capacity",
-                     "ocean_resources.pipelines", "ocean_resources.__main__"):
-            module = importlib.import_module(name)
-            relative = name.replace(".", "/") + ".py" if "." in name else "ocean_resources/__init__.py"
-            if Path(module.__file__).resolve() != Path(dist.locate_file(relative)).resolve():
-                raise PipelineProviderUnavailable("pipeline_provider_import_mismatch")
-            modules[name] = module
-        return modules
-    except PipelineProviderUnavailable:
-        raise
-    except Exception as exc:
-        raise PipelineProviderUnavailable("pipeline_provider_unavailable") from exc
+    return load_verified(("ocean_resources", "ocean_resources.host", "ocean_resources.capacity",
+                          "ocean_resources.pipelines", "ocean_resources.__main__"))
 
 
 def _read_json(path):
@@ -88,7 +61,7 @@ def observe(operation: str, args=()) -> tuple[bool, dict]:
     """Same structured, read-only result for handler, CLI and bach_api."""
     envelope = {
         "schema": "bach.ocean-pipeline-observation.v1", "read_only": True,
-        "start_authorized": False, "provider": {"id": "open-ocean", "source_commit": PIN},
+        "start_authorized": False, "provider": {"id": "ocean-resources", "source_commit": PIN},
     }
     if operation not in OPERATIONS:
         return False, {**envelope, "state": "HOLD", "reason": "unknown_read_only_operation"}
