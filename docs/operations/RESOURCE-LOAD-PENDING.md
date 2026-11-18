@@ -88,6 +88,22 @@ Inferenzowner noch gehalten wird. Eine verzögerte alte Ladeerlaubnis kann dadur
 nicht zwischen Abwesenheitsbeleg und Abschluss erneut ausgeführt werden.
 Gewöhnliches `end_turn` darf einen gestuften Ladeversuch nicht abschließen.
 
+Der konkrete Ollama-Chattransport prüft den nativen Ladebeleg nach der Backend-
+und HTTP-Clientvorbereitung sowie nach dem dauerhaften Schreiben des
+`dispatch_pending`-Intents vor dem POST erneut. Diese letzte Prüfung erlaubt
+ausschließlich den exakten opaken Dispatchhandle des weiterhin gehaltenen Owners;
+ohne diesen Handle blockiert jeder offene Intent wie bisher. Der Ladeauftrag
+übernimmt nur eindeutig positive Keep-alive-Werte (ganze Sekunden oder
+ganzzahlige s/m/h-Dauern); Null und unklare Werte erlauben keinen Entladeeffekt.
+Proxies aus der Umgebung und HTTP-Weiterleitungen sind für diesen Transport
+deaktiviert. Nur ein vollständig bis EOF gelesener, eindeutig dekodierter
+Abschluss mit dem exakten Modell, literalem `done=true` und `done_reason=load`
+bestätigt den Lade-Transport. Weitere nichtleere Daten nach dem Abschluss
+widersprechen diesem Nachweis und lassen den Intent bestehen.
+Die bloße Abwesenheit eines Intents gilt nicht als Abschlussnachweis.
+Cancellation, Timeout, EOF, widersprüchliche oder fehlerhafte JSON-Daten lassen
+den Intent bestehen; auch eine neue Ownergeneration darf dann nicht entladen.
+
 Ein unbeendeter Inferenz-Dispatch blockiert diesen Ablauf. Fehlender ACK,
 Prozesswechsel, ungültige Messung, Deadline-/Leaseablauf nach möglichem POST oder
 Crash führen zu `RECOVERY_HOLD`. Fristablauf ist keine RAM-Rückgabe. Der Controller

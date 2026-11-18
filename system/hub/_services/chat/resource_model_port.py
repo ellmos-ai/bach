@@ -143,7 +143,7 @@ class GuardedModelPort:
         except Exception as exc:
             raise ModelReturnUnconfirmed("model_load_native_proof_unavailable") from exc
 
-    def check_load_under_owner(self, spec, permit, *, authority=None):
+    def check_load_under_owner(self, spec, permit, *, authority=None, dispatch_handle=None):
         from hub._services.chat.local_resource_reserve import read_policy
         from hub._services.chat.resource_load_pending import (
             REVIEWED_POLICY_SHA256,
@@ -160,8 +160,17 @@ class GuardedModelPort:
                 verifier.require_dispatch_permission(permit, **authority, clock=self.clock)
             except Exception as exc:
                 raise ModelReturnUnconfirmed("model_load_live_authority_unproved") from exc
+        def dispatch_binding():
+            current = HostInferenceGate.current_owner()._check_owned_record()
+            if current is not held:
+                raise ModelReturnUnconfirmed("model_load_dispatch_owner_changed")
+            pending = "dispatch_pending" in current.record
+            if (pending and (dispatch_handle is None or current.dispatch_handle is not dispatch_handle)
+                    or not pending and dispatch_handle is not None):
+                raise ModelReturnUnconfirmed("model_load_dispatch_binding_changed")
         current_permission()
-        if ("dispatch_pending" in held.record or held.record.get("model_target", {}).get("model") != spec.model
+        dispatch_binding()
+        if (held.record.get("model_target", {}).get("model") != spec.model
                 or permit.get("phase") != "MAY_LOAD" or permit.get("workload_sha256") != spec.fingerprint()
                 or permit.get("policy_sha256") != REVIEWED_POLICY_SHA256
                 or read_policy()[1] != REVIEWED_POLICY_SHA256 or self.clock() >= permit["deadline"]
@@ -179,7 +188,7 @@ class GuardedModelPort:
         # Policy/process reads can block. Cancellation, lease expiry and writer
         # retirement during those reads must close dispatch under this owner.
         current_permission()
-        HostInferenceGate.current_owner()._check_owned_record()
+        dispatch_binding()
 
     def abort_load(self, spec, expected_process, check_owned, *, accept=None):
         try:

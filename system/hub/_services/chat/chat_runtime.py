@@ -2167,9 +2167,11 @@ class ChatRuntime(_ModuleChatRuntime):
         observer = asyncio.create_task(observe())
         try:
             try:
-                if grant.get("resource_load_ticket") is not None:
-                    grant["resource_load_check"]()
-                result = await dispatch()
+                from hub._services.chat.resource_load_transport import staged_warmup_transport
+                with staged_warmup_transport(grant) as load_transport:
+                    if grant.get("resource_load_ticket") is not None:
+                        grant["resource_load_check"]()
+                    result = await dispatch()
                 if not outcome.done():
                     outcome.set_result(result)
             except asyncio.CancelledError:
@@ -2244,7 +2246,8 @@ class ChatRuntime(_ModuleChatRuntime):
             if grant.get("resource_load_ticket") is not None:
                 from hub._services.chat.host_inference_gate import HostInferenceGate
                 held = HostInferenceGate.current_owner()._check_owned_record()
-                if "dispatch_pending" in held.record:
+                if (load_transport is None or not load_transport.confirmed
+                        or "dispatch_pending" in held.record):
                     raise RuntimeError("resource_model_dispatch_unconfirmed")
                 grant["resource_load_ticket"]["transport_terminal"] = True
             grant["result"] = grant["result"] or {"state": "loaded"}

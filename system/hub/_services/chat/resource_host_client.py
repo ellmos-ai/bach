@@ -110,8 +110,8 @@ async def resource_model_turn(backend, model, chat_id, priority, *, check_ready=
                     raise ResourceHostUnavailable("resource_model_load_binding_changed")
                 warmup["resource_load_ticket"] = ticket
                 authority = {k: getattr(client, k) for k in ("authority_id", "host_id", "client_id")}
-                warmup["resource_load_check"] = lambda: GuardedModelPort().check_load_under_owner(
-                    spec, permit, authority=authority)
+                warmup["resource_load_check"] = lambda *, dispatch_handle=None: GuardedModelPort().check_load_under_owner(
+                    spec, permit, authority=authority, dispatch_handle=dispatch_handle)
             def guarded_ready():
                 ready()
                 renewal = ticket.get("renewal") if isinstance(ticket, dict) else None
