@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
@@ -48,7 +49,7 @@ def _target(backend, model, models):
 
 
 @asynccontextmanager
-async def resource_model_turn(backend, model, chat_id, priority, *, check_ready=None):
+async def resource_model_turn(backend, model, chat_id, priority, *, check_ready=None, warmup=None):
     """Acquire before reserve polling/inference.lock; release after leaving it.
 
     An unset configuration preserves the existing path. An explicitly configured
@@ -81,11 +82,62 @@ async def resource_model_turn(backend, model, chat_id, priority, *, check_ready=
             check_ready()
         if _target(backend, model, models) != target:
             raise ResourceHostUnavailable("resource_model_endpoint_changed")
-    # Never use private chat content/identifiers as the native workload identity.
-    async with modules["ocean_resources.model_client"].model_turn(
-            client, target["socket_id"], "bach-model", priority, check_ready=ready):
-        from hub._services.chat.resource_model_port import GuardedModelPort
-        spec = modules["ocean_resources.model_executor"].ModelSpec(**{k: v for k, v in target.items() if k != "socket_id"})
-        await asyncio.to_thread(GuardedModelPort().verify_available, spec)
-        ready()
-        yield ready
+    # Only the runtime's existing call-scoped, checked warmup capability may
+    # request staged loading. Ordinary turns retain full-profile admission.
+    staged = warmup is not None and warmup.get("allow_cold") is True
+    if staged and (warmup.get("task") is not asyncio.current_task()
+            or warmup.get("backend") is not backend or warmup.get("model") != model
+            or warmup.get("chat_id") != str(chat_id) or not callable(warmup.get("check"))
+            or not target.get("load_policy_sha256") or backend.num_ctx != target["context_tokens"]):
+        raise ResourceHostUnavailable("resource_model_load_not_authorized")
+    factory = modules["ocean_resources.model_client"].model_turn
+    if staged:
+        extra = await asyncio.to_thread(load_verified, ("ocean_resources.model_load_client",))
+        factory = extra["ocean_resources.model_load_client"].model_load_turn
+    from hub._services.chat.resource_model_port import GuardedModelPort
+    spec = modules["ocean_resources.model_executor"].ModelSpec(**{
+        k: target[k] for k in ("model", "digest", "context_tokens", "port")})
+    ticket = None
+    try:
+        # Never use private chat content/identifiers as the native workload ID.
+        async with factory(client, target["socket_id"], "bach-model", priority,
+                           check_ready=ready) as ticket:
+            await asyncio.to_thread(GuardedModelPort().verify_available, spec)
+            if staged:
+                permit = ticket["permit"]
+                if (permit["policy_sha256"] != target["load_policy_sha256"]
+                        or permit["spec"] != {k: target[k] for k in ("model", "digest", "context_tokens", "port")}):
+                    raise ResourceHostUnavailable("resource_model_load_binding_changed")
+                warmup["resource_load_ticket"] = ticket
+                authority = {k: getattr(client, k) for k in ("authority_id", "host_id", "client_id")}
+                warmup["resource_load_check"] = lambda: GuardedModelPort().check_load_under_owner(
+                    spec, permit, authority=authority)
+            def guarded_ready():
+                ready()
+                renewal = ticket.get("renewal") if isinstance(ticket, dict) else None
+                if renewal is not None and renewal.done():
+                    raise ResourceHostUnavailable("resource_model_lease_unavailable")
+                if staged:
+                    from hub._services.chat.local_resource_reserve import read_policy
+                    if (warmup["check"]() or time.monotonic() >= ticket["permit"]["deadline"]
+                            or read_policy()[1] != ticket["permit"]["policy_sha256"]):
+                        raise ResourceHostUnavailable("resource_model_load_capability_changed")
+            guarded_ready()
+            yield guarded_ready
+            if staged:
+                guarded_ready()
+                ticket["successful"] = (isinstance(warmup.get("result"), dict)
+                                          and warmup["result"].get("state") == "loaded"
+                                          and ticket.get("transport_terminal") is True)
+        if staged and not ticket["successful"] and isinstance(warmup.get("result"), dict):
+            if warmup["result"].get("state") == "loaded":
+                warmup["result"]["state"] = "resource_load_aborted"
+            warmup["result"]["cleanup_verified"] = ticket.get("completion", {}).get("state") == "RETURN_REQUESTED"
+    except Exception as exc:
+        if staged and ticket is not None and ticket.get("permit"):
+            if ticket.get("completion", {}).get("state") == "RETURN_REQUESTED":
+                warmup["result"] = {"state": "resource_load_aborted", "cleanup_verified": True}
+                raise ResourceHostUnavailable("resource_load_aborted") from exc
+            warmup["result"] = {"state": "resource_recovery_hold", "cleanup_verified": False}
+            raise ResourceHostUnavailable("resource_load_recovery_hold") from exc
+        raise

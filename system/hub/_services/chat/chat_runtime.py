@@ -2103,6 +2103,8 @@ class ChatRuntime(_ModuleChatRuntime):
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if isinstance(grant.get("result"), dict) and grant["result"].get("state") in {"resource_recovery_hold", "resource_load_aborted"}:
+                return grant["result"]
             problem = bounded_check()
             return {"state": problem or (
                 "capacity_wait" if str(exc) == "buddha_warmup_capacity_wait" else "model_wait")}
@@ -2165,6 +2167,8 @@ class ChatRuntime(_ModuleChatRuntime):
         observer = asyncio.create_task(observe())
         try:
             try:
+                if grant.get("resource_load_ticket") is not None:
+                    grant["resource_load_check"]()
                 result = await dispatch()
                 if not outcome.done():
                     outcome.set_result(result)
@@ -2186,7 +2190,13 @@ class ChatRuntime(_ModuleChatRuntime):
                 reason = reason or "stopped"
             if reason:
                 cleaned = None
-                if isinstance(gate, dict):
+                if grant.get("resource_load_ticket") is not None:
+                    # Ocean settles the exact staged attempt after this owner is
+                    # returned. Its GuardedModelPort requires terminal transport,
+                    # process identity, ACK and absence; no legacy unload here.
+                    if isinstance(gate, dict):
+                        start_cooldown()
+                elif isinstance(gate, dict):
                     # Reuse watchdog intent format: an unverified unload leaves
                     # the existing host gate fail-closed, including across restart.
                     from hub._services.chat.host_inference_gate import HostInferenceGate
@@ -2231,6 +2241,12 @@ class ChatRuntime(_ModuleChatRuntime):
                         stats, gate["baseline"], footprint)}
                 except Exception:
                     log.warning("Buddha-Ladebeobachtung konnte nicht gespeichert werden")
+            if grant.get("resource_load_ticket") is not None:
+                from hub._services.chat.host_inference_gate import HostInferenceGate
+                held = HostInferenceGate.current_owner()._check_owned_record()
+                if "dispatch_pending" in held.record:
+                    raise RuntimeError("resource_model_dispatch_unconfirmed")
+                grant["resource_load_ticket"]["transport_terminal"] = True
             grant["result"] = grant["result"] or {"state": "loaded"}
             return result
         finally:
@@ -2877,7 +2893,8 @@ class ChatRuntime(_ModuleChatRuntime):
                     if not broker_entered:
                         broker_ready = await resources.enter_async_context(resource_model_turn(
                             backend, selected_model, chat_id, priority,
-                            check_ready=check_local_ready))
+                            check_ready=check_local_ready,
+                            **({"warmup": warmup} if warmup is not None else {})))
                         guard["check_ready"] = broker_ready or check_local_ready
                         broker_entered = True
                     guard["check_ready"]()
