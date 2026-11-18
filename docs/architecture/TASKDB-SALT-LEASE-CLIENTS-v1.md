@@ -143,3 +143,50 @@ except LeaseError as err:
 - Nach einer offenen Zerlegung gilt die neue bestätigte Version; die alte Version darf nicht für Folgeaktionen verwendet werden. Für neue Aufgaben vor der Ausführung Inhalts-Snapshot und Version zusammen lesen.
 
 Die Prüfnachweise verwenden temporäre SQLite-Dateien, Fake-Transporte und die isolierte FastAPI-App. Das ist keine Installation oder Abnahme des festen Mac-Leads, nativer Running-Worker oder Ocean-Provider.
+
+
+## Lokale Own-Beobachtung ohne Schreibsperre (#4241)
+
+`TaskLeaseClient.observe_owned_task(task_id, *, lease_id, fence, task_version)`
+beobachtet eine bereits bestehende eigene Lease und den zugehörigen Task gemeinsam.
+Das Ergebnis `OwnedTaskObservation` enthält `task` (derselbe bereinigte
+Task-Snapshot wie bei `task_snapshot`) und `lease` (`LeaseHolderView`).
+`lease.server_now` ist die native Beobachtungszeit; Capability, Fence und
+Auftragsversion müssen vollständig angegeben werden.
+
+Der öffentliche Port ist ausschließlich für den konfigurierten lokalen Lead oder
+eine ausdrücklich isolierte Authority bestimmt. Er öffnet die bestehende
+Authority über den vorhandenen Beobachtungspfad mit SQLite `mode=ro` und
+`query_only=ON`. Eine kurze, verzögerte Lesetransaktion prüft das vorhandene
+native Lease-Schema und liest den Task genau einmal. Dieselbe Zeile durchläuft
+die gemeinsame native Halter-/Ablauf-/Versionsprüfung und die bestehende öffentliche
+Serialisierung. Es gibt kein Schema-Ensure, kein `BEGIN IMMEDIATE`, keinen
+Acquire/Renew, keine Datenbankerstellung und keine Änderung des Grant-Caches.
+
+Ein fehlendes oder unvollständiges Lease-Schema wird abgelehnt, nicht repariert.
+Unpassende Capability/Fence, Ablauf und veränderte Auftragsversion werden über
+die vorhandenen nativen Denial-Typen zurückgegeben; unlesbare Authority oder
+nicht bestätigbare Metadaten bleiben Fehler. Worker-/HTTP-Profile dürfen weder
+auf eine lokale Projektion noch auf einen erfundenen Offline-Endpunkt ausweichen.
+Übergebene Verbindungen sind für diesen Port ausgeschlossen, damit sein
+Nur-Lese-Vertrag unabhängig von einer fremden offenen Transaktion oder deren
+Schreibrechten bleibt. Der eingeschränkte `TaskResultServiceClient` erhält
+keinen Zugriff auf diesen allgemeinen Task-Port.
+
+Die Beobachtung ist kein Lease-ACK und erteilt keine neue Schreibberechtigung.
+Sie gilt für ihren Beobachtungszeitpunkt. Ein Deployment muss die kanonische
+Datenbankdatei, den erwarteten Actor/Host, aktuelle Dienst- und Sperridentitäten
+sowie eine ausreichende verbleibende Lease-Frist zusätzlich prüfen. Jede spätere
+Task-Mutation bleibt eine native Operation mit frischem Fence-/Versionsvergleich.
+Die bestehenden APIs `read` und `task_snapshot` behalten ihr bisheriges Verhalten.
+
+„Nur-Lese“ bezeichnet hier die logische SQL-Authority: keine DML-/DDL-Anweisung,
+keine Writer-Reservation und keine Änderung an Task, Lease oder Auftragsversion.
+SQLite darf dabei seine regulären WAL-Locking- und Koordinationsdateien
+(`-wal`/`-shm`) anlegen oder aktualisieren, etwa wenn der letzte Writer zuvor
+sauber geschlossen wurde. Absolute Dateisystem-Unveränderlichkeit wird nicht
+zugesichert. `immutable=1` und `nolock=1` sind kein zulässiger Ersatz, weil sie
+die erforderliche Sicht auf eine veränderliche Authority und deren Synchronisation
+schwächen würden. Die Cold-WAL-Fixture prüft den erfolgreichen Own-Snapshot nach
+Entfernung der alten Sidecars, unveränderte logische Daten und Schema-/Taskversionen
+sowie das Fehlen von SQL-Schreiboperationen und `BEGIN IMMEDIATE`.

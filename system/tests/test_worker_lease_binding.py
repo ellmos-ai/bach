@@ -1,6 +1,12 @@
 """Private native worker binding: isolated authority, generation and receipts."""
 import json
 import threading
+import sqlite3
+import uuid
+from datetime import datetime, timedelta, timezone
+from hub._services import task_lease as native
+from hub._services import task_lease_client as client_module
+from hub._services.task_lease_client import LeaseDeniedError, LeaseStaleFenceError, LeaseExpiredError
 from pathlib import Path
 
 import pytest
@@ -1082,3 +1088,275 @@ def test_mutation_with_text_task_id_names_the_own_id(binding):
                                      "close_parent": False, "subtasks": [{"title": "Kind"}]})
     assert exc.value.reason == "mutation_scope" and "als Zahl" in exc.value.user_message
     binding.assert_active()
+
+
+# Native TaskLeaseClient ownership snapshots share this lease-authority CI scope.
+def _observe_owned_fixture(a, **override):
+    args = {"lease_id": a["capability"], "fence": 3, "task_version": a["version"]}
+    args.update(override)
+    return a["client"].observe_owned_task(1, **args)
+
+
+class TestReadOnlyOwnedTaskObservation:
+    """Observe existing capability/fence/content authority without SQL writes."""
+
+    @pytest.fixture
+    def authority(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(client_module, "get_lead_config",
+                            lambda: {"mode": "isolated", "lead_url": None})
+        path = tmp_path / "authority.sqlite"
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""CREATE TABLE tasks (
+            id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT,
+            priority TEXT, created_by TEXT, source TEXT, depends_on TEXT)""")
+        native.ensure_task_lease_schema(conn)
+        conn.execute("INSERT INTO tasks(id,title,description,status) VALUES(1,'Fixture','Original','in_progress')")
+        conn.commit()
+        row = dict(conn.execute("SELECT * FROM tasks WHERE id=1").fetchone())
+        version = native.task_content_version(row)
+        now = datetime.now(timezone.utc)
+        capability = str(uuid.uuid4())
+        conn.execute("""UPDATE tasks SET claim_id=?, claim_fence=3,
+            claimed_by='fixture@mac-studio', claim_host='mac-studio',
+            claim_issued_at=?, claim_expires_at=?, claim_ttl_profile='L',
+            claim_task_version=? WHERE id=1""",
+            (capability, (now-timedelta(minutes=1)).isoformat(),
+             (now+timedelta(hours=1)).isoformat(), version))
+        conn.commit()
+        yield {"path": path, "conn": conn, "capability": capability,
+               "version": version, "client": TaskLeaseClient(db_path=path)}
+        conn.close()
+
+    def test_existing_read_is_not_the_required_readonly_observation(self, authority):
+        """Concrete baseline: even an already migrated DB enters BEGIN IMMEDIATE."""
+        a = authority
+        conn = sqlite3.connect(a["path"].as_uri()+"?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=ON")
+        statements = []
+        conn.set_trace_callback(statements.append)
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                TaskLeaseClient(conn=conn).read(1, lease_id=a["capability"])
+            assert any("BEGIN IMMEDIATE" in sql.upper() for sql in statements)
+        finally:
+            conn.close()
+
+    def test_public_observation_works_while_other_writer_holds_reserved_lock(self, authority):
+        a = authority
+        a["conn"].execute("BEGIN IMMEDIATE")
+        try:
+            result = _observe_owned_fixture(a)
+            assert result.lease.own is True
+            assert result.lease.leased is True
+            assert result.lease.fence == 3
+            assert result.lease.task_version == result.task["task_version"] == a["version"]
+            assert result.task["description"] == "Original"
+        finally:
+            a["conn"].rollback()
+
+    def test_no_schema_ensure_write_statement_or_grant(self, authority, monkeypatch):
+        a = authority
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("observation invoked schema initialization")
+        monkeypatch.setattr(native, "ensure_task_lease_schema", forbidden)
+        monkeypatch.setattr(client_module, "ensure_task_lease_schema", forbidden)
+        original_connect = sqlite3.connect
+        statements, changes, seen_connections = [], [], []
+        def audited_connect(*args, **kwargs):
+            assert "mode=ro" in str(args[0]) and kwargs.get("uri") is True
+            conn = original_connect(*args, **kwargs)
+            conn.set_trace_callback(statements.append)
+            seen_connections.append(conn)
+            return conn
+        monkeypatch.setattr(client_module.sqlite3, "connect", audited_connect)
+        before = a["conn"].total_changes
+        result = _observe_owned_fixture(a)
+        assert a["conn"].total_changes == before
+        assert a["client"]._held == {}
+        assert not any(sql.lstrip().upper().startswith((
+            "INSERT", "UPDATE", "DELETE", "ALTER", "CREATE", "DROP",
+            "REPLACE", "VACUUM", "ATTACH", "BEGIN IMMEDIATE")) for sql in statements)
+        selects = [s for s in statements if s.upper().startswith("SELECT * FROM TASKS WHERE")]
+        assert len(selects) == 1
+        public = json.dumps({"task": result.task, "lease": result.lease.__dict__})
+        assert a["capability"] not in public
+        assert not {"claim_id", "claim_request_id", "claim_task_version"} & set(result.task)
+
+    @pytest.mark.parametrize("change,expected", [
+        ({"lease_id": "00000000-0000-4000-8000-000000000001"}, LeaseStaleFenceError),
+        ({"fence": 4}, LeaseStaleFenceError),
+        ({"task_version": "a"*64}, LeaseDeniedError),
+    ])
+    def test_wrong_authority_is_denied_without_writes(self, authority, change, expected):
+        before = authority["conn"].total_changes
+        with pytest.raises(expected) as error:
+            _observe_owned_fixture(authority, **change)
+        assert authority["conn"].total_changes == before
+        assert authority["capability"] not in str(error.value)
+
+    def test_expired_lease_is_denied(self, authority):
+        authority["conn"].execute("UPDATE tasks SET claim_expires_at=? WHERE id=1",
+            ((datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat(),))
+        authority["conn"].commit()
+        with pytest.raises(LeaseExpiredError):
+            _observe_owned_fixture(authority)
+
+    def test_content_change_and_stale_stored_claim_version_are_denied(self, authority):
+        a = authority
+        a["conn"].execute("UPDATE tasks SET description='Changed' WHERE id=1")
+        a["conn"].commit()
+        with pytest.raises(LeaseDeniedError) as error:
+            _observe_owned_fixture(a)
+        assert error.value.reason == "stale_task_version"
+
+    def test_snapshot_and_lease_use_same_row_even_if_another_writer_changes_content(self, authority, monkeypatch):
+        a = authority
+        original = native._load_for_holder
+        calls = []
+        def changed_after_read(*args, **kwargs):
+            row, problem = original(*args, **kwargs)
+            calls.append(row["description"])
+            a["conn"].execute("UPDATE tasks SET description='Concurrent' WHERE id=1")
+            a["conn"].commit()
+            return row, problem
+        monkeypatch.setattr(native, "_load_for_holder", changed_after_read)
+        observed = _observe_owned_fixture(a)
+        assert calls == ["Original"]
+        assert observed.task["description"] == "Original"
+        assert observed.task["task_version"] == observed.lease.task_version == a["version"]
+        monkeypatch.setattr(native, "_load_for_holder", original)
+        with pytest.raises(LeaseDeniedError):
+            _observe_owned_fixture(a)
+
+    @pytest.mark.parametrize("broken", ["missing_column", "view", "empty"])
+    def test_unknown_schema_is_not_initialized(self, tmp_path, monkeypatch, broken):
+        monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+        path = tmp_path / "incomplete.sqlite"
+        conn = sqlite3.connect(path)
+        if broken == "missing_column":
+            conn.execute("CREATE TABLE tasks(id INTEGER PRIMARY KEY,status TEXT,title TEXT)")
+        elif broken == "view":
+            conn.execute("CREATE VIEW tasks AS SELECT 1 AS id, 'in_progress' AS status")
+        conn.commit()
+        original_schema = conn.execute("SELECT type,name,sql FROM sqlite_master ORDER BY name").fetchall()
+        client = TaskLeaseClient(db_path=path)
+        with pytest.raises(LeaseProtocolError):
+            client.observe_owned_task(1, lease_id=str(uuid.uuid4()), fence=1, task_version="a"*64)
+        assert conn.execute("SELECT type,name,sql FROM sqlite_master ORDER BY name").fetchall() == original_schema
+        conn.close()
+
+    def test_missing_database_is_not_created(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+        path = tmp_path / "missing.sqlite"
+        client = TaskLeaseClient(db_path=path)
+        with pytest.raises(LeaseConnectionError):
+            client.observe_owned_task(1, lease_id=str(uuid.uuid4()), fence=1, task_version="a"*64)
+        assert not path.exists()
+
+    def test_worker_role_has_no_local_observation_fallback(self, authority, monkeypatch):
+        monkeypatch.setattr(client_module, "get_lead_config",
+            lambda: {"mode": "worker", "lead_url": "https://lead.invalid"})
+        client = TaskLeaseClient(db_path=authority["path"], device_token="fixture-only")
+        monkeypatch.setattr(client, "_http_request",
+                            lambda *_a, **_k: pytest.fail("observation must not invent remote fallback"))
+        with pytest.raises(LeaseProtocolError):
+            client.observe_owned_task(1, lease_id=authority["capability"],
+                                      fence=3, task_version=authority["version"])
+
+    def test_borrowed_connection_is_rejected_and_left_open(self, authority):
+        a = authority
+        client = TaskLeaseClient(conn=a["conn"])
+        with pytest.raises(LeaseProtocolError):
+            client.observe_owned_task(1, lease_id=a["capability"], fence=3, task_version=a["version"])
+        assert a["conn"].execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+
+    @pytest.mark.parametrize("change", [
+        {"lease_id": "not-a-capability"}, {"fence": True}, {"fence": 0},
+        {"task_version": None}, {"task_version": "unknown"},
+    ])
+    def test_malformed_preconditions_are_rejected(self, authority, change):
+        with pytest.raises(LeaseProtocolError):
+            _observe_owned_fixture(authority, **change)
+
+    @pytest.mark.parametrize("column,value", [
+        ("claim_issued_at", "2099-01-01T00:00:00Z"),
+        ("claim_expires_at", "not-a-timestamp"),
+        ("claim_id", None),
+        ("claim_fence", -1),
+    ])
+    def test_malformed_native_authority_is_not_accepted(self, authority, column, value):
+        authority["conn"].execute("UPDATE tasks SET "+column+"=? WHERE id=1", (value,))
+        authority["conn"].commit()
+        with pytest.raises((LeaseProtocolError, LeaseDeniedError)):
+            _observe_owned_fixture(authority)
+
+    def test_result_service_client_cannot_observe_general_task_authority(self, authority):
+        client = client_module.TaskResultServiceClient(
+            db_path=authority["path"], service_id="fixture", service_token="a"*43)
+        with pytest.raises(LeaseProtocolError):
+            client.observe_owned_task(1, lease_id=authority["capability"],
+                                      fence=3, task_version=authority["version"])
+
+    @pytest.mark.parametrize("change", [{"lease_id": None}, {"fence": None}])
+    def test_missing_ownership_precondition_is_rejected(self, authority, change):
+        with pytest.raises(LeaseProtocolError):
+            _observe_owned_fixture(authority, **change)
+
+    @pytest.mark.parametrize("column,value", [
+        ("claim_fence", 3.5), ("claim_fence", "unconfirmed"),
+        ("claim_issued_at", None), ("claim_host", None), ("claimed_by", ""),
+    ])
+    def test_malformed_holder_metadata_is_not_an_observation(self, authority, column, value):
+        authority["conn"].execute("UPDATE tasks SET "+column+"=? WHERE id=1", (value,))
+        authority["conn"].commit()
+        with pytest.raises((LeaseProtocolError, LeaseDeniedError)):
+            _observe_owned_fixture(authority)
+
+    def test_cold_wal_observation_preserves_logical_authority(self, authority, monkeypatch):
+        """Normal SQLite WAL coordination is allowed; authority writes are not."""
+        a = authority
+        schema = a["conn"].execute(
+            "SELECT type,name,sql FROM sqlite_master ORDER BY name").fetchall()
+        before = dict(a["conn"].execute("SELECT * FROM tasks WHERE id=1").fetchone())
+        a["conn"].close()  # Last writer checkpoints and removes the WAL sidecars.
+        sidecars = [a["path"].with_name(a["path"].name + suffix) for suffix in ("-wal", "-shm")]
+        assert not any(path.exists() for path in sidecars)
+        main_bytes = a["path"].read_bytes()
+        statements, coordination = [], []
+        original_connect = sqlite3.connect
+        original_holder = native._load_for_holder
+
+        def audited_connect(*args, **kwargs):
+            assert "?mode=ro" in str(args[0]) and kwargs.get("uri") is True
+            assert "immutable" not in str(args[0]) and "nolock" not in str(args[0])
+            conn = original_connect(*args, **kwargs)
+            conn.set_trace_callback(statements.append)
+            return conn
+
+        def observed_holder(*args, **kwargs):
+            result = original_holder(*args, **kwargs)
+            coordination.append({path.name: path.exists() for path in sidecars})
+            return result
+
+        monkeypatch.setattr(client_module.sqlite3, "connect", audited_connect)
+        monkeypatch.setattr(native, "_load_for_holder", observed_holder)
+        result = _observe_owned_fixture(a)
+        assert result.task["task_version"] == result.lease.task_version == a["version"]
+        assert result.lease.own and result.lease.fence == 3
+        assert a["path"].read_bytes() == main_bytes
+        assert coordination and set(coordination[0]) == {path.name for path in sidecars}
+        # Sidecar creation/retention varies with SQLite and filesystem state. Their
+        # existence is not a grant or a logical mutation and is deliberately allowed.
+        print(json.dumps({"sqlite_version": sqlite3.sqlite_version,
+                          "cold_wal_coordination": coordination[0]}, sort_keys=True))
+        with original_connect(a["path"].as_uri() + "?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            assert dict(conn.execute("SELECT * FROM tasks WHERE id=1").fetchone()) == before
+            assert [tuple(row) for row in conn.execute(
+                "SELECT type,name,sql FROM sqlite_master ORDER BY name")] == [tuple(row) for row in schema]
+        assert not any(sql.lstrip().upper().startswith((
+            "INSERT", "UPDATE", "DELETE", "ALTER", "CREATE", "DROP",
+            "REPLACE", "VACUUM", "ATTACH", "BEGIN IMMEDIATE")) for sql in statements)

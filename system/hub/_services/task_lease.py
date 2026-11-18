@@ -11,7 +11,7 @@ Grundsätze (Vertrag §3-§11):
   stabile ``tasks.id``.
 * **Serverzeit.** Der Lead bestimmt alle Zeitpunkte (UTC) und das TTL-Profil.
   Jede Antwort trägt ``server_now``.
-* **Atomar.** Jede Operation läuft in einer eigenen ``BEGIN IMMEDIATE``-
+* **Atomar.** Jede Mutation läuft in einer eigenen ``BEGIN IMMEDIATE``-
   Transaktion. Prüfung und Schreiben erfolgen unter derselben Schreibsperre;
   der abschließende UPDATE prüft Fence bzw. Vorzustand zusätzlich im WHERE.
 * **Fencing.** ``claim_fence`` steigt bei jedem erfolgreichen Acquire um 1
@@ -709,16 +709,8 @@ def _acquire_lease(conn: sqlite3.Connection, task_id: int, *, worker_id: str, ho
     return LeaseResult(ack)
 
 
-def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None = None,
-               config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
-    """Vertrag §5.2. Holder-Ansicht ohne lease_id; ``own`` nur bei passender lease_id."""
-    cfg = config or LeaseConfig.from_env()
-    task_id = _validate_task_id(task_id)
-    ensure_task_lease_schema(conn)
-    now = now or _utcnow()
-    row = _row(conn, task_id)
-    if row is None:
-        raise TaskNotFound(task_id)
+def _lease_read_payload(task_id, row, now, cfg, lease_id=None):
+    """Serialize the same public holder view for reads and own observations."""
     state = _lease_state(row, now, cfg)
     payload: dict[str, Any] = {
         "task_id": task_id,
@@ -738,7 +730,58 @@ def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None =
         })
         if lease_id and state["kind"] == "lease" and lease_id == row.get("claim_id"):
             payload["own"] = True
-    return LeaseResult(payload)
+    return payload
+
+
+def read_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str | None = None,
+               config: LeaseConfig | None = None, now: datetime | None = None) -> LeaseResult:
+    """Vertrag §5.2. Holder-Ansicht ohne lease_id; own nur bei passender lease_id."""
+    cfg = config or LeaseConfig.from_env()
+    task_id = _validate_task_id(task_id)
+    ensure_task_lease_schema(conn)
+    now = now or _utcnow()
+    row = _row(conn, task_id)
+    if row is None:
+        raise TaskNotFound(task_id)
+    return LeaseResult(_lease_read_payload(task_id, row, now, cfg, lease_id))
+
+
+def _observe_owned_task(conn, task_id, *, lease_id, fence, task_version):
+    """SDK-only observation of an existing authority, never a grant or migration.
+
+    The SDK supplies its fresh mode=ro connection. A deferred read transaction
+    keeps the schema check and one holder/content row in the same snapshot.
+    """
+    task_id = _validate_task_id(task_id)
+    lease_id, fence = _validate_lease_ref(lease_id, fence)
+    _validate_task_version(task_version, required=True)
+    if conn.in_transaction or conn.execute("PRAGMA query_only").fetchone()[0] != 1:
+        raise LeaseValidationError("Own-Beobachtung braucht eine frische Nur-Lese-Verbindung")
+    cfg = LeaseConfig.from_env()
+    conn.execute("BEGIN")
+    try:
+        table = conn.execute(
+            "SELECT type FROM main.sqlite_master WHERE name = 'tasks'"
+        ).fetchone()
+        columns = {row[1]: row for row in conn.execute("PRAGMA main.table_info(tasks)")}
+        required = {"id", "status", "claimed_by", "claimed_at"} | {
+            name for name, _declaration in LEASE_COLUMNS
+        }
+        if (not table or table[0] != "table" or not required <= columns.keys()
+                or str(columns["id"][2]).upper() != "INTEGER"
+                or [name for name, col in columns.items() if col[5]] != ["id"]):
+            raise LeaseValidationError("Vollständiges natives Task-Lease-Schema erforderlich")
+        now = _utcnow()
+        row, reason = _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version)
+        if reason:
+            return None, _deny(task_id, reason, now)
+        # SQLite's dynamic typing must not weaken the holder's exact fence.
+        if type(row.get("claim_fence")) is not int or row["claim_fence"] != fence:
+            raise LeaseValidationError("Ungültiger nativer Lease-Fence")
+        payload = _lease_read_payload(task_id, row, now, cfg, lease_id)
+        return row, LeaseResult(payload)
+    finally:
+        conn.rollback()
 
 
 def read_worker_leases(conn: sqlite3.Connection, worker_id: str, *,
@@ -767,7 +810,7 @@ def read_worker_leases(conn: sqlite3.Connection, worker_id: str, *,
 
 
 def _load_for_holder(conn, task_id, lease_id, fence, now, cfg, task_version=None):
-    """Gemeinsame Prüfung für renew/release unter Schreibsperre."""
+    """Gemeinsame Halterprüfung; mutierende Aufrufer halten die Schreibsperre."""
     row = _row(conn, task_id)
     if row is None:
         raise TaskNotFound(task_id)
