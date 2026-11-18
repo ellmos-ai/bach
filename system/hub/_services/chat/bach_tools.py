@@ -1420,6 +1420,44 @@ def _review_tool_grants(binding, grants):
     return grants
 
 
+def _review_task_tools(tools, binding):
+    """Describe the existing private review contract; never add authority."""
+    grant = getattr(binding, "_review_grant", None)
+    if grant is None:
+        return tools
+    own, target = getattr(binding, "task_id", None), getattr(grant, "target_task_id", None)
+    if any(type(value) is not int or value <= 0 for value in (own, target)):
+        return []
+    tools = copy.deepcopy(tools)
+    for tool in tools:
+        function = tool["function"]
+        if function["name"] != "task_manage":
+            continue
+        function["description"] = (
+            "Gebundenes Review: detail der eigenen oder Zieltask; submit_result nur "
+            "an die eigene Reviewtask mit unverändertem strukturiertem Reviewurteil. "
+            "Kein complete, done, update, add, list oder decompose.")
+        function["parameters"] = {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["detail", "submit_result"]},
+                "task_id": {"type": "integer", "enum": sorted({own, target})},
+                "result": {"type": "string", "description":
+                           "Nur submit_result: strukturiertes Urteil nach dem nativen Reviewvertrag."},
+            },
+            "required": ["action", "task_id"],
+            "additionalProperties": False,
+            "anyOf": [
+                {"properties": {"action": {"enum": ["detail"]}},
+                 "not": {"required": ["result"]}},
+                {"properties": {"action": {"enum": ["submit_result"]},
+                                "task_id": {"enum": [own]}},
+                 "required": ["result"]},
+            ],
+        }
+    return tools
+
+
 def _tool_policy_denial(reason: str, text: str) -> ToolErrorText:
     """Return an explicit finite policy denial; never infer from text."""
     return ToolErrorText(text, code="tool_policy_denied", reason=reason)
@@ -2951,6 +2989,7 @@ class BachToolProvider:
                 return []
         m = self._mode(mode)
         tools = tools_for_mode(m, bound_worker=self._worker_task_binding is not None)
+        tools = _review_task_tools(tools, self._worker_task_binding)
         if self._allowed_tools is None:
             return tools
         filtered = [tool for tool in tools if tool["function"]["name"] in self._allowed_tools]

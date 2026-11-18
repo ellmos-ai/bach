@@ -65,6 +65,9 @@ def _result_diagnostic(name, result):
     if type(result) is DiagnosticToolText:
         return validate_diagnostic(result._trace_diagnostic)
     if type(result) is ToolErrorText:
+        if result._code == "task_operation_unconfirmed" and result._effect_state == "unknown":
+            return validate_diagnostic({"outcome_class": "unconfirmed", "stage": "unknown",
+                "code": "execution_unconfirmed", "sandbox_returncode": None})
         if (name == "execute_command" and result._code == "tool_policy_denied"
                 and result._effect_state == "not_applied"
                 and result._reason in {"invalid_arguments", "command_not_authorized", "mode_not_authorized"}):
@@ -136,6 +139,14 @@ def execute_normal_tool(
     except Exception:  # noqa: BLE001 - serializer/sink details stay private; outcome is unknown
         _quarantine_then_invalidate(binding, "trace_sink_unavailable")
         return TracedToolOutcome(status="unknown", error_code="trace_sink_unavailable")
+
+    if (type(result) is ToolErrorText and result._code == "task_operation_unconfirmed"
+            and result._effect_state == "unknown"):
+        # A returned display value is not confirmation of an operation. Keep its
+        # durable hash/diagnosis, but never ACK consumption or offer a replay.
+        reason = "task_operation_unconfirmed"
+        _quarantine_then_invalidate(binding, reason)
+        return TracedToolOutcome(status="unknown", error_code=reason)
 
     return TracedToolOutcome(
         status="returned",

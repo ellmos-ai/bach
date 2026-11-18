@@ -87,6 +87,8 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "decompose_fields": 'Zerlegung: task_manage(action="decompose", task_id=<ID>, subtasks=[{"title":"Kind","description":"Arbeit"}], close_parent=false); keine fremden Felder. ' + TASK_CUT_RULE_SHORT,
         "decompose_parent": 'Bei decompose close_parent=false verwenden; danach offenen Rest mit submit_result(..., complete=false) zurückgeben.',
         "decomposed_parent_completion": 'Zerlegung ist kein Abschluss: Gib für einen zerlegten Eltern-Task complete=false mit dem Teilstand an.',
+        "review_detail_shape": 'Reviewdetail nur mit action="detail" und numerischer task_id der eigenen oder Zieltask anfordern; keine weiteren Felder.',
+        "review_submit_shape": 'Review erlaubt nur detail oder eigenes submit_result mit genau action, task_id und result; complete und andere Taskaktionen sind hier nicht erlaubt.',
         "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
         "decompose_already_decomposed": 'Diese Aufgabe wurde bereits in Teilaufgaben zerlegt; keine erneute Zerlegung anlegen, sondern Zwischenstand mit submit_result(complete=false) zurückgeben.',
@@ -1484,7 +1486,7 @@ class WorkerLeaseBinding:
                     if (set(args) != {"action", "task_id"}
                             or type(args.get("task_id")) is not int
                             or args["task_id"] not in {self.task_id, self._review_grant.target_task_id}):
-                        raise LeaseProtocolError("Reviewdetail ist auf die eigene und Zieltask begrenzt")
+                        raise WorkerTaskManageArgumentError("review_detail_shape")
                     snapshot = (self.task_snapshot() if args["task_id"] == self.task_id
                                 else self._client.task_snapshot(args["task_id"]))
                     allowed = ("id", "title", "description", "category", "priority", "project", "status")
@@ -1493,7 +1495,7 @@ class WorkerLeaseBinding:
                         or set(args) != {"action", "task_id", "result"}
                         or type(args.get("task_id")) is not int
                         or args["task_id"] != self.task_id):
-                    raise LeaseProtocolError("Reviewtask erlaubt nur eigenes Detail oder eigenes submit_result")
+                    raise WorkerTaskManageArgumentError("review_submit_shape")
                 # A review child must not be released for arbitrary prose. The
                 # actual backend return was confirmed before normal tool dispatch;
                 # its one submit call must match the proposed result byte for byte.
