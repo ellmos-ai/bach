@@ -1175,3 +1175,65 @@ def test_truncated_package_cannot_carry_an_approval(worker_context, tmp_path, mo
     assert evaluation["result_binding"] == "submission"
     # Policy level: only the complete package can complete (the PR rule applies on top).
     assert (evaluation["decision"]["state"] == "completed") is (limit is None)
+
+
+
+@pytest.mark.parametrize("completion_reserve", [False, True])
+def test_review_task_schema_follows_runtime_route_without_completion_fields(review_world, monkeypatch, completion_reserve):
+    from hub._services.chat.bach_tools import BachToolProvider
+    from hub._services.chat.chat_runtime import ChatRuntime, ChatSession
+    from hub._services.llm.model_backend import OllamaBackend
+
+    child, _stop = _review_reader(review_world, monkeypatch)
+    backend = OllamaBackend(default_model=REVIEW_MODEL)
+    runtime = ChatRuntime(backend)
+    session = ChatSession()
+    session.worker_task_binding = child
+    session.allowed_tools = {"read_file", "search_text", "task_manage"}
+    session.allow_tools = True
+    session.mode = "safe"
+    tools = runtime._bound_worker_tools_for_request(
+        session, backend, enabled=True, completion_reserve=completion_reserve)
+    schema = next(t["function"]["parameters"] for t in tools if t["function"]["name"] == "task_manage")
+    assert set(schema["properties"]["action"]["enum"]) == (
+        {"submit_result"} if completion_reserve else {"detail", "submit_result"})
+    assert set(schema["properties"]) == {"action", "task_id", "result"}
+    assert schema["additionalProperties"] is False
+    assert set(schema["properties"]["task_id"]["enum"]) == {child.task_id, review_world["task_id"]}
+    # Review narrowing must not mutate the global schema reused by normal callers.
+    ordinary = BachToolProvider(allowed_tools={"task_manage"}).get_tools("safe")
+    generic = next(t["function"]["parameters"] for t in ordinary
+                   if t["function"]["name"] == "task_manage")
+    assert "complete" in generic["properties"]
+    assert "update" in generic["properties"]["action"]["enum"]
+
+
+
+@pytest.mark.parametrize("action", ["list", "update", "done", "submit_result_extra"])
+def test_known_review_action_shape_is_pre_effect_argument_error(review_world, monkeypatch, action):
+    from hub._services.chat import bach_tools
+    from hub._services.chat.worker_tool_errors import ToolErrorText
+    child, _stop = _review_reader(review_world, monkeypatch)
+    args = {"action": action, "task_id": child.task_id, "result": "synthetic verdict"}
+    if action == "submit_result_extra":
+        args.update(action="submit_result", complete=True)
+    result = bach_tools.exec_tool("task_manage", args, "safe", worker_task_binding=child,
+                                  require_task_binding=True, allowed_tools={"task_manage"})
+    assert type(result) is ToolErrorText
+    assert result._code == "invalid_task_arguments"
+    assert result._effect_state == "not_applied"
+    assert child._active is True and child._client.read(child.task_id, now=T0).leased
+
+
+def test_generic_review_sdk_protocol_error_remains_unknown(review_world, monkeypatch):
+    from hub._services.chat import bach_tools
+    from hub._services.chat.worker_tool_errors import ToolErrorText
+    child, _stop = _review_reader(review_world, monkeypatch)
+    def uncertain(*_a, **_kw):
+        raise LeaseProtocolError("synthetic private SDK failure")
+    monkeypatch.setattr(child, "execute_task_manage", uncertain)
+    result = bach_tools.exec_tool("task_manage", {"action": "detail", "task_id": child.task_id}, "safe",
+        worker_task_binding=child, require_task_binding=True, allowed_tools={"task_manage"})
+    assert type(result) is ToolErrorText
+    assert result._code == "task_operation_unconfirmed" and result._effect_state == "unknown"
+    assert "synthetic private" not in str(result)

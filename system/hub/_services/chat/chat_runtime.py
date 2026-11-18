@@ -579,6 +579,7 @@ _SAFE_FAILURE_REASON_CODES = frozenset({
     "tool_call_limit",
     "tool_denial_limit",
     "tool_denial_repeated",
+    "task_operation_unconfirmed",
     "local_reserve_invalid_policy",
     "local_reserve_unknown_model",
     "local_reserve_unsupported_provider",
@@ -3963,6 +3964,12 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                                 f"{FailedAnswer.PREFIX}Werkzeugaufruf ungültig: Argumente sind kein JSON-Objekt",
                                 reason_code="invalid_tool_call",
                             )
+                        if traced_outcome.error_code == "task_operation_unconfirmed":
+                            # The adapter attempted canonical quarantine before
+                            # invalidation. No denial count or further dispatch.
+                            return FailedAnswer(
+                                "Werkzeugwirkung ist ungeklärt; vor Wiederaufnahme nativ prüfen.",
+                                reason_code=traced_outcome.error_code)
                         binding.invalidate("tool_outcome_unconfirmed")
                         return FailedAnswer(
                             "Worker-Werkzeugnachweis fehlt oder Werkzeugwirkung ist ungeklärt"

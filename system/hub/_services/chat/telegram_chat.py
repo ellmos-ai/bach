@@ -6820,6 +6820,15 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         and control.persistent_core_intent_id is None
                     )
                     if not (_is_correction_ctx_err or _is_deadline_err) or control.stop_event.is_set():
+                        # SDK ACK loss may revoke authority before this guard.
+                        # Preserve only the typed, bounded diagnostic; never
+                        # bypass the guard or claim a native Return/Quarantine ACK.
+                        if (type(ans) is FailedAnswer
+                                and ans.reason_code == "task_operation_unconfirmed"):
+                            _record_worker_activity(
+                                control, "Taskoperation nicht bestätigt; Task-Lease kanonisch prüfen",
+                                "error", {"reason_code": "task_operation_unconfirmed"},
+                            )
                         raise _turn_lease_exc
                     _ret_note = "task_context_unavailable" if _is_correction_ctx_err else "total_deadline"
                     returned = control.task_binding.task_snapshot()
@@ -6922,7 +6931,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             "local_reserve_unsupported_provider", "local_reserve_missing_model_budget",
                             "local_reserve_model_budget_conflict", "local_reserve_budget_exceeds_host",
                             "local_reserve_resource_policy_changed", "local_reserve_reserve_wait_expired",
-                            "local_reserve_reserve_wait_lease_return_required"}:
+                            "local_reserve_reserve_wait_lease_return_required",
+                            "task_operation_unconfirmed"}:
                         activity_details["reason_code"] = failure_reason
                     _record_worker_activity(
                         control,

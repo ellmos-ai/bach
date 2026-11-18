@@ -1682,3 +1682,93 @@ def test_rejected_tool_call_returns_task_or_shows_reason(tmp_path, monkeypatch, 
             control._WORKER_EXECUTIONS[ident].stop_event.set()
             thread.join(5)
         conn.close()
+
+
+
+def test_sdk_deactivated_unknown_is_visible_in_activity_without_release_replay(tmp_path, monkeypatch):
+    import uuid
+    from datetime import datetime, timedelta, timezone
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import TaskLeaseClient, LeaseDeniedError
+    from hub._services.chat.worker_tool_errors import ToolErrorText
+    from hub._services.chat import chat_runtime as runtime_module
+    from system.tests.test_task_lease_client import _init_db
+
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = _add_test_worker({"name": "Synthetic unknown SDK", "type": "continuous"},
+                            path, monkeypatch=monkeypatch, control=control)
+    model = "synthetic:cloud"
+    slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
+                             "mode": "safe", "pause_after": 0, "max_tool_rounds": 5}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+                 "VALUES (42,'Synthetic unknown SDK','pending','P1','INBOX','BACH',?)", (ident,))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    releases = []
+    original_release = client.release
+    def release(*args, **kwargs):
+        releases.append(True)
+        return original_release(*args, **kwargs)
+    monkeypatch.setattr(client, "release", release)
+    backend = OllamaBackend(default_model=model)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
+    monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *_a: "")
+    monkeypatch.setattr(control, "runtime", runtime)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *_a, **_kw: (backend, model))
+    monkeypatch.setattr(control, "_wait_worker_cooldown", lambda *_a, **_kw: True)
+    operations = []
+    def sdk_operation(name, args, *_a, **kwargs):
+        operations.append(name)
+        binding = kwargs["worker_task_binding"]
+        # A real SDK boundary can revoke local authority before returning its
+        # typed uncertain result. The controller must not invent a later release.
+        binding.invalidate("tool_outcome_unconfirmed")
+        return ToolErrorText("synthetic-private-SDK-error", code="task_operation_unconfirmed")
+    monkeypatch.setattr(runtime_module, "exec_tool", sdk_operation)
+    calls = []
+    real_client = httpx.AsyncClient
+    def reply(request):
+        calls.append(True)
+        return httpx.Response(200, text=json.dumps({"message": {"role": "assistant", "content": "",
+            "tool_calls": [{"function": {"name": "task_manage", "arguments": {
+                "action": "submit_result", "task_id": 42, "result": "synthetic", "complete": True}}}]},
+            "done": True}) + "\n")
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kw: real_client(transport=httpx.MockTransport(reply), **kw))
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        thread = control._WORKER_EXECUTIONS[ident].thread
+        thread.join(8)
+        assert not thread.is_alive()
+        assert calls == [True] and operations == ["task_manage"] and releases == []
+        assert conn.execute("SELECT COUNT(*) FROM task_history WHERE task_id=42 AND action='lease_release'").fetchone()[0] == 0
+        events = slots.get_activity_history(path=path)
+        assert any(e.get("details", {}).get("reason_code") == "task_operation_unconfirmed"
+                   for e in events)
+        assert "synthetic-private-SDK-error" not in json.dumps(events)
+        snapshot = client.task_snapshot(42)
+        with pytest.raises(LeaseDeniedError) as denied:
+            client.acquire(42, worker_id="foreign@HOST", host="HOST",
+                request_id=uuid.uuid4().hex, task_version=snapshot["task_version"],
+                result_generation=uuid.uuid4().hex,
+                now=datetime.now(timezone.utc) + timedelta(hours=2))
+        assert denied.value.reason == "unresolved_tool_trace"
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()
