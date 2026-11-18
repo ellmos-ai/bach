@@ -210,3 +210,17 @@ Claims und erfolgreichem Zwischenlauf. Der gepinnte Folgestand wählt alle
 ausstehenden Wiederholungen unabhängig vom regulären Fälligkeitszeiger aus
 und erhält den Fortschritt bereits zugelassener Termine. Erfolgreiche
 Zwischenläufe werden weder wiederholt noch als ausgelassen mitgezählt.
+
+
+## Archived routine rounds (BACH #4226)
+
+An archived task closes its previous maintenance round, just like a completed or
+cancelled lifecycle state. It does not prove that its result was accepted.
+The next native scheduler occurrence may create one new routine task. Replaying
+the same occurrence still recovers the existing task and never reopens or
+duplicates it. Existing pending, in-progress, blocked or review work continues
+to hold the routine. The same terminal classification applies to legacy-title
+lookup; an archived legacy task does not permanently suppress future rounds.
+
+The observed production example was roadmap task #2225. This change does not
+modify that task, its review outcome, routine cadence or scheduler due times.
