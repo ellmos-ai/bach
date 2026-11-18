@@ -49,6 +49,7 @@ try:
         decompose_lease,
         parse_ts,
         read_lease,
+        _observe_owned_task,
         release_lease,
         renew_lease,
         update_lease,
@@ -67,6 +68,7 @@ except ImportError:  # pragma: no cover
         decompose_lease,
         parse_ts,
         read_lease,
+        _observe_owned_task,
         release_lease,
         renew_lease,
         update_lease,
@@ -362,6 +364,14 @@ class LeaseHolderView:
     ttl_profile: str | None = None
     own: bool = False
     task_version: str | None = None
+
+
+@dataclass(frozen=True)
+class OwnedTaskObservation:
+    """One capability-free native task/lease snapshot; never a lease grant."""
+
+    task: dict[str, Any]
+    lease: LeaseHolderView
 
 
 @dataclass(frozen=True)
@@ -950,6 +960,53 @@ class TaskLeaseClient:
         return {key: value for key, value in data.items()
                 if key not in {"claim_id", "claim_request_id", "claim_task_version"}}
 
+    def observe_owned_task(self, task_id, *, lease_id, fence, task_version):
+        """Read one current owned lease and its task without schema/claim writes.
+
+        Local Lead/isolated authority only; no HTTP or projection fallback, no
+        supplied connection, no grant cache and no replacement for a write CAS.
+        """
+        _identity(task_id, lease_id, fence)
+        _version(task_version, required=True)
+        if lease_id is None or fence is None:
+            raise LeaseProtocolError("Own-Beobachtung braucht Capability und Fence")
+        if self.mode != "local" or self._conn is not None:
+            raise LeaseProtocolError("Own-Beobachtung braucht eine eigene lokale Nur-Lese-Verbindung")
+        conn = None
+        try:
+            conn = self._get_local_observation_connection()
+            row, result = _observe_owned_task(conn, task_id, lease_id=lease_id,
+                                              fence=fence, task_version=task_version)
+        except (LeaseValidationError, TaskNotFound, ValueError, TypeError, KeyError):
+            raise LeaseProtocolError("Native Own-Beobachtung nicht bestätigt") from None
+        except sqlite3.DatabaseError:
+            raise LeaseConnectionError("Lokale Task-Authority nicht lesbar") from None
+        finally:
+            if conn is not None:
+                conn.close()
+        if result.http_status != 200:
+            self._raise_denied(task_id, result.payload)
+        data = result.payload
+        if (not isinstance(data, dict) or type(data.get("task_id")) is not int
+                or data["task_id"] != task_id):
+            raise LeaseProtocolError("Own-Beobachtung passt nicht zur angefragten Task")
+        view = self._holder_readback(data, task_id)
+        observed_at = _wire_time(view.server_now)
+        issued_at = _wire_time(view.issued_at)
+        expires_at = _wire_time(view.expires_at)
+        if (not view.own or not view.leased or view.legacy or view.status != "in_progress"
+                or view.fence != fence or view.task_version != task_version
+                or not issued_at <= observed_at < expires_at
+                or not isinstance(view.holder, dict)
+                or not all(isinstance(view.holder.get(key), str) and view.holder[key].strip()
+                           for key in ("worker_id", "host"))
+                or not isinstance(view.ttl_profile, str) or not view.ttl_profile):
+            raise LeaseProtocolError("Own-Beobachtung bestätigt keinen lebenden nativen Halter")
+        task = self._public_snapshot({**row, "task_version": data["task_version"]}, task_id)
+        if task.get("status") != view.status:
+            raise LeaseProtocolError("Task und Lease stammen nicht aus derselben Beobachtung")
+        return OwnedTaskObservation(task=task, lease=view)
+
     def task_snapshot(self, task_id):
         """Read canonical content and version together, without bearer capabilities."""
         _identity(task_id)
@@ -1512,6 +1569,10 @@ class TaskLeaseClient:
         headers = {"X-Lease-Id": lease_id} if lease_id else None
         body = {"lease_id": lease_id} if self.mode == "local" else None
         data = self._call("read", task_id, body, config=config, now=now, headers=headers)
+        return self._holder_readback(data, task_id)
+
+    @staticmethod
+    def _holder_readback(data, task_id):
         if type(data.get("leased")) is not bool or type(data.get("fence")) is not int or data["fence"] < 0:
             raise LeaseProtocolError("Ungültiger Lease-Readback")
         _version(data.get("task_version"))
@@ -1866,6 +1927,7 @@ class TaskResultServiceClient(TaskLeaseClient):
     _call = _deny_general_task_api
     _acquire_native_creator = _deny_general_task_api
     task_snapshot = _deny_general_task_api
+    observe_owned_task = _deny_general_task_api
     task_capabilities = _deny_general_task_api
     task_correction_context = _deny_general_task_api
     task_candidates = _deny_general_task_api
