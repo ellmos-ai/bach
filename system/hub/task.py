@@ -465,7 +465,8 @@ class TaskHandler(BaseHandler):
         assignment_params = (assigned_to,) if assigned_to is not None else ()
 
         # Multi-Host Federation aktiv nur wenn als Worker mit festgelegtem Lead konfiguriert (oder --remote)
-        if not is_isolated_test and not force_local and (lead_cfg["mode"] == "worker" or force_remote):
+        if (_maintenance_request is None and not is_isolated_test and not force_local
+                and (lead_cfg["mode"] == "worker" or force_remote)):
             try:
                 if not force_local:
                     rheingold_url = get_rheingold_url(timeout=1.2)
@@ -550,7 +551,7 @@ class TaskHandler(BaseHandler):
             except Exception as e:
                 if force_remote:
                     return False, f"Rheingold-Fehler: {e}"
-        elif "--offline" in args:
+        elif _maintenance_request is None and "--offline" in args:
             # Expliziter Offline-Entwurf auch im isolierten Modus
             draft_hash = generate_draft_hash(title, category)
             with self._get_db() as conn:

@@ -105,7 +105,10 @@ def dispatch_routine(dispatcher, definition, *, scheduled_for):
         or datetime.fromisoformat(scheduled_for).tzinfo is None
     ):
         raise ValueError("Native routine occurrence required")
-    epoch = scheduled_for
+    # Match the private operation key and its request fields even when UTC has
+    # equivalent spellings. The legacy task API keeps its existing title format.
+    epoch = (datetime.fromisoformat(scheduled_for).astimezone(timezone.utc).isoformat()
+             if dispatcher.producer is not None else scheduled_for)
     epoch_id = hashlib.sha256(str(epoch).encode()).hexdigest()[:12]
     root_id = hashlib.sha256(str(dispatcher.root.resolve()).encode()).hexdigest()[:8]
     task_title = f"Doku-Routine {name} {root_id} {epoch_id}"

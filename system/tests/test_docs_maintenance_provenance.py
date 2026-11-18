@@ -493,3 +493,137 @@ def test_completed_edited_routine_allows_a_distinct_later_operation(native):
     assert later["task_id"] != first["task_id"]
     assert len(native.rows()) == 2
     registry.resolve_task_repository(later["task_id"])
+
+
+def _producer_request(native, **changes):
+    return {"kind": "delta", "name": "root", "occurrence": native.revision,
+            "revision": native.revision, "title": "Native producer request CAS",
+            "description": "Original bounded analysis", "priority": "P2",
+            "binding": {}, **changes}
+
+
+@pytest.mark.parametrize("changes", [
+    {"description": "Different requested analysis"},
+    {"priority": "P1"},
+    {"title": "Different requested title"},
+    {"binding": {"assigned_slot": "buddha_always_on"}},
+    {"binding": {"required_model": "fixture-model"}},
+])
+@pytest.mark.parametrize("bound", [False, True])
+def test_same_operation_requires_same_request_before_any_enrollment(native, monkeypatch, changes, bound):
+    owner = native.dispatcher().producer
+    payload = _producer_request(native)
+    enroll = registry.enroll_maintenance_task_repository
+    if not bound:
+        def busy(*_args, **_kwargs):
+            raise registry.RepositoryBindingError("registry_busy", reason_code="registry_busy")
+
+        monkeypatch.setattr(registry, "enroll_maintenance_task_repository", busy)
+        with pytest.raises(RuntimeError, match="registry_busy"):
+            owner.ensure(**payload)
+        monkeypatch.setattr(registry, "enroll_maintenance_task_repository", enroll)
+    else:
+        owner.ensure(**payload)
+    before = native.rows()
+    registered = registry.registry_path().read_bytes()
+    with pytest.raises(registry.RepositoryBindingError, match="maintenance_operation_conflict"):
+        native.dispatcher().producer.ensure(**{**payload, **changes})
+    assert native.rows() == before
+    assert len(native.rows("maintenance_task_intents")) == 1
+    assert registry.registry_path().read_bytes() == registered
+
+
+def test_identical_request_replay_keeps_confirmed_pin_after_main_and_task_drift(native):
+    owner = native.dispatcher().producer
+    payload = _producer_request(native)
+    task_id, action = owner.ensure(**payload)
+    assert action == "created"
+    with sqlite3.connect(native.db) as conn:
+        conn.execute("UPDATE tasks SET description=description||' accepted clarification' WHERE id=?", (task_id,))
+    (native.root / "docs/README.md").write_text("Later integrated root\n")
+    _git(native.root, "add", "docs/README.md")
+    _git(native.root, "commit", "-m", "Later integrated root")
+    before = registry.registry_path().read_bytes()
+    assert native.dispatcher().producer.ensure(**payload) == (task_id, "recovered")
+    assert registry.registry_path().read_bytes() == before
+    assert registry.resolve_task_repository(task_id).source_sha == native.revision
+    assert len(native.rows()) == 1
+
+
+@pytest.mark.parametrize("remote_available", [False, True])
+def test_role_loss_cannot_route_private_request_to_federation_or_draft(native, monkeypatch, remote_available):
+    from hub import task, rheingold
+    from hub._services.docs import maintenance_task_provenance as producer
+    permit = producer.check_create_request
+    lookups, posts = [], []
+
+    def change_role(request, args):
+        permit(request, args)
+        monkeypatch.delenv("BACH_RHEINGOLD_DISABLED", raising=False)
+        monkeypatch.setattr(native.handler, "_canonical_db", native.db)
+        monkeypatch.setattr(rheingold, "get_lead_config", lambda: {"mode": "worker"})
+        monkeypatch.setattr(task, "get_lead_config", lambda: {"mode": "worker"})
+
+    def remote_url(**kwargs):
+        lookups.append(True)
+        return "https://fixture.invalid" if remote_available else None
+
+    def post(url, payload):
+        posts.append(payload)
+        return True, {"id": 5991}
+
+    monkeypatch.setattr(producer, "check_create_request", change_role)
+    monkeypatch.setattr(task, "get_rheingold_url", remote_url)
+    monkeypatch.setattr(task, "post_task_to_rheingold", post)
+    with pytest.raises(registry.RepositoryBindingError):
+        native.dispatcher().producer.ensure(**_producer_request(native))
+    assert lookups == [] and posts == []
+    assert native.rows() == []
+    assert registry.load_registry()["tasks"] == {}
+
+
+def test_role_loss_inside_native_create_rolls_back_task_and_receipt(native, monkeypatch):
+    from hub import rheingold
+    from hub._services.docs import maintenance_task_provenance as producer
+    record = producer._record_intent
+
+    def lose_role(conn, request, task_id):
+        monkeypatch.setattr(rheingold, "get_lead_config", lambda: {"mode": "worker"})
+        return record(conn, request, task_id)
+
+    monkeypatch.setattr(producer, "_record_intent", lose_role)
+    with pytest.raises(registry.RepositoryBindingError, match="maintenance_provenance_unavailable"):
+        native.dispatcher().producer.ensure(**_producer_request(native))
+    assert native.rows() == []
+    assert registry.load_registry()["tasks"] == {}
+
+
+@pytest.mark.parametrize("change", ["head", "origin", "dirty", "native_fence"])
+def test_new_task_rechecks_live_source_and_fences_after_external_proof(native, monkeypatch, change):
+    from hub import worker_git
+    owner = native.dispatcher().producer
+    changed = []
+
+    def guard(_):
+        if changed and change == "native_fence":
+            raise RuntimeError("native_root_fence_held")
+
+    def metadata(*args):
+        if not changed:
+            if change in {"head", "dirty"}:
+                (native.root / "docs/README.md").write_text("Changed during source attestation\n")
+                if change == "head":
+                    _git(native.root, "add", "docs/README.md")
+                    _git(native.root, "commit", "-m", "Concurrent live source advancement")
+            elif change == "origin":
+                _git(native.root, "remote", "set-url", "origin", "https://github.com/ellmos-ai/open-ocean")
+            changed.append(change)
+        return {"source_sha": native.revision}
+
+    owner.guard = guard
+    monkeypatch.setattr(worker_git, "_public_default_branch_metadata", metadata)
+    reason = "native_root_fence_held" if change == "native_fence" else "maintenance_source_unverified"
+    with pytest.raises(RuntimeError, match=reason):
+        owner.ensure(**_producer_request(native))
+    assert changed == [change] and native.rows() == []
+    assert registry.load_registry()["tasks"] == {}

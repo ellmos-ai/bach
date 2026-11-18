@@ -133,6 +133,9 @@ def _record_intent(conn, request, task_id):
     """Called only inside TaskHandler's native create transaction."""
     if type(request) is not _CreateRequest or request._seal is not _SEAL or not conn.in_transaction:
         raise _error("maintenance_provenance_unavailable")
+    _require_local_role()
+    if request.intent.get("request_sha256") != _digest(request.fields):
+        raise _error("maintenance_operation_conflict")
     task = _row(conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
     intent = {**request.intent, "task_id": task_id, "task_version": task_content_version(task),
               "created_at": datetime.now(timezone.utc).isoformat()}
@@ -145,6 +148,7 @@ def _record_intent(conn, request, task_id):
          _json(intent), digest, event_id))
     request.writer.assert_current()
     registry._assert_database_identity(request.database, request.identity)
+    _require_local_role()
 
 
 class _CreateRequest:
@@ -158,22 +162,28 @@ class _CreateRequest:
         raise TypeError("Private maintenance request cannot be serialized")
 
 
-def check_create_request(request, args):
+def _require_local_role():
     from hub.rheingold import get_lead_config
-    if (type(request) is not _CreateRequest or request._seal is not _SEAL
-            or any(flag in args for flag in ("--remote", "--offline", "--local"))
-            or get_lead_config().get("mode") not in {"lead", "isolated"}):
+    if get_lead_config().get("mode") not in {"lead", "isolated"}:
         raise _error("maintenance_provenance_unavailable")
+
+
+def check_create_request(request, args):
+    if (type(request) is not _CreateRequest or request._seal is not _SEAL
+            or any(flag in args for flag in ("--remote", "--offline", "--local"))):
+        raise _error("maintenance_provenance_unavailable")
+    _require_local_role()
 
 
 @contextmanager
 def create_connection(request, handler, fields):
     """Internal TaskHandler seam; never a public CLI/API argument."""
-    from hub.rheingold import get_lead_config
     if (type(request) is not _CreateRequest or request._seal is not _SEAL
-            or Path(handler.db_path) != request.database
-            or fields != request.fields or get_lead_config().get("mode") not in {"lead", "isolated"}):
+            or Path(handler.db_path) != request.database or fields != request.fields):
         raise _error("maintenance_provenance_unavailable")
+    if request.intent.get("request_sha256") != _digest(fields):
+        raise _error("maintenance_operation_conflict")
+    _require_local_role()
     registry._assert_database_identity(request.database, request.identity)
     request.writer.assert_current()
     with _connection(write=True) as (conn, path, identity):
@@ -182,6 +192,7 @@ def create_connection(request, handler, fields):
             raise _error("canonical_lead_required")
         conn.execute("BEGIN IMMEDIATE")
         try:
+            _require_local_role()
             conn.execute(_DDL)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_maintenance_task_owner "
                          "ON maintenance_task_intents(root_id,kind,name,task_id)")
@@ -190,11 +201,15 @@ def create_connection(request, handler, fields):
             conn.rollback()
 
 
+def _require_same_request(found, request_sha256):
+    if found["intent"]["request_sha256"] != request_sha256:
+        raise _error("maintenance_operation_conflict")
+
+
 def existing_creation(conn, request):
     found = _operation(conn, request.intent["operation_id"])
     if found is not None:
-        if found["intent"]["request_sha256"] != request.intent["request_sha256"]:
-            raise _error("maintenance_operation_conflict")
+        _require_same_request(found, _digest(request.fields))
         return found["intent"]["task_id"]
     rows = conn.execute("SELECT p.task_id FROM maintenance_task_intents p JOIN tasks t ON t.id=p.task_id "
         "WHERE p.root_id=? AND p.kind=? AND p.name=? AND t.status NOT IN ('done','completed','cancelled','archived')",
@@ -254,6 +269,21 @@ class NativeMaintenanceProducer:
             raise _error("maintenance_root_unverified")
         self.guard(self.root)
 
+    def _verify_root_source(self, record, revision):
+        from hub import worker_git
+        try:
+            def matches():
+                return (worker_git._canonical_public_origin(worker_git._git_text(self.root, "origin"),
+                                                             _REPOSITORY) == record["origin"]
+                        and worker_git._git_text(self.root, "head") == revision)
+            if not matches():
+                raise ValueError
+            worker_git._assert_source_clone_clean(self.root)
+            if not matches():
+                raise ValueError
+        except (RuntimeError, OSError, ValueError):
+            raise _error("maintenance_source_unverified") from None
+
     def _enroll(self, task_id):
         from hub._services.task_lease_client import TaskLeaseClient
         return registry.enroll_maintenance_task_repository(
@@ -261,7 +291,6 @@ class NativeMaintenanceProducer:
                 registry._read_registry_bytes(registry.registry_path())).hexdigest())
 
     def ensure(self, *, kind, name, occurrence, revision, title, description, priority, binding):
-        from hub import worker_git
         import bach_api
         self._check_root()
         if (kind not in _NAMES or name not in _NAMES[kind]
@@ -277,16 +306,17 @@ class NativeMaintenanceProducer:
             occurrence = when.astimezone(timezone.utc).isoformat()
         operation = {"root_id": self.root_id, "kind": kind, "name": name, "occurrence": occurrence}
         operation_id = _digest(operation)
-        with _connection() as (conn, _, _):
-            found = _operation(conn, operation_id)
-        if found is not None:
-            self._enroll(found["intent"]["task_id"])
-            return found["intent"]["task_id"], "recovered"
         fields = {"title": title, "priority": priority, "category": "WORKER",
                   "description": description, "due_date": None,
                   "required_model": binding.get("required_model") or None,
                   "assigned_slot": binding.get("assigned_slot") or None,
                   "result_max_chars": None, "assigned_to": "BACH", "creation_origin": _ACTOR}
+        with _connection() as (conn, _, _):
+            found = _operation(conn, operation_id)
+        if found is not None:
+            _require_same_request(found, _digest(fields))
+            self._enroll(found["intent"]["task_id"])
+            return found["intent"]["task_id"], "recovered"
         _, database, identity = _canonical()
         expected = hashlib.sha256(registry._read_registry_bytes(registry.registry_path())).hexdigest()
         with registry._RegistryWriter(expected) as writer:
@@ -298,19 +328,14 @@ class NativeMaintenanceProducer:
                       "operation_id": operation_id, "revision": revision,
                       "repository": _REPOSITORY, "repository_record": record,
                       "request_sha256": _digest(fields)}
-            # The trusted root and exact current public clone must agree. Never clone here.
-            try:
-                origin = worker_git._canonical_public_origin(worker_git._git_text(self.root, "origin"),
-                                                             _REPOSITORY)
-                if origin != record["origin"] or worker_git._git_text(self.root, "head") != revision:
-                    raise ValueError
-                worker_git._assert_source_clone_clean(self.root)
-            except (RuntimeError, OSError, ValueError):
-                raise _error("maintenance_source_unverified") from None
+            # External attestation can outlive a deployment or origin/worktree change.
+            # Recheck the live root and all native fences before the private create.
+            self._verify_root_source(record, revision)
             intent["source_proof"] = _verify_source(intent, require_current=True)
             self._check_root()
             writer.check_fences()
             writer.assert_current()
+            self._verify_root_source(record, revision)
             handler = bach_api.get_app().get_handler("task")
             from hub.task import TaskHandler
             if type(handler) is not TaskHandler:

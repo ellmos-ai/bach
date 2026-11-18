@@ -186,6 +186,26 @@ normalerweise zu idle beziehungsweise waiting_review_or_work führen würde.
 Fehler bleiben native fehlgeschlagene Schedulerläufe mit konkretem Grund;
 ein erzeugter Task allein gilt nicht als erfolgreich zugeordnet.
 
+
+Ein erneutes ensure mit derselben Operations-ID muss genau denselben
+normalisierten Create-Auftrag enthalten: Titel, Beschreibung, Priorität,
+Modell-/Slotbindung und die übrigen nativen Create-Felder. Jede Abweichung
+endet vor Enrollment mit maintenance_operation_conflict, auch wenn der
+ursprüngliche Create-Commit bereits bestätigt wurde. Die separate
+references-Rekonstruktion nimmt keinen neuen Auftrag entgegen; sie liest nur
+den dauerhaften nativen Beleg und erhält dessen bestätigten immutable Pin.
+Ein später legitimer Task-Edit wird damit weder überschrieben noch als neuer
+Create-Auftrag ausgegeben. Äquivalente UTC-Schreibweisen einer nativen
+Routine werden für Operations-ID, Titel und Beschreibung gleich normalisiert.
+
+Private Producer-Aufrufe können keine Federation-, Mirror- oder Offline-
+Entwurfszweige betreten. Ein Verlust der lokalen Lead-/Isolated-Rolle wird
+an den nativen Transaktionsgrenzen erneut geprüft und lässt keine Task oder
+halben Producer-Beleg zurück. Nach einer externen Sourcebestätigung prüft
+der Producer Live-HEAD, Origin, sauberen Worktree und native Fences erneut,
+bevor er eine neue Task anlegt. Die Wiederaufnahme eines bereits bestätigten
+Belegs verlangt weiterhin kein Repinning auf einen späteren Mainstand.
+
 ### Kontrollierter Backfill des belegten Altbestands
 
 Der erstmalig bestätigte Bestand umfasst **nur** die Task-IDs
