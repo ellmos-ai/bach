@@ -1681,7 +1681,10 @@ class WorkerLeaseBinding:
                 prior_decomposition = (self._decomposition_receipt is not None
                     or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[",
                                  str(self._snapshot.get("description") or "")))
-                if prior_decomposition or self._repository_inheritance_state in {"pending", "unavailable"}:
+                # Add consults native history even when a description marker was
+                # removed; legacy marker text alone is never a pending receipt.
+                if (action == "add" or prior_decomposition
+                        or self._repository_inheritance_state in {"pending", "unavailable"}):
                     recovery = self._resume_repository_inheritance(
                         {"subtasks": subtasks, "close_parent": close_parent,
                          "sequential": args.get("sequential", False)},
@@ -1730,6 +1733,9 @@ class WorkerLeaseBinding:
         self._inherit_decomposed_subtask_bindings(None, operation=operation, inspect_only=True)
         state = self._repository_inheritance_state
         if state == "not_required":
+            return None
+        if (state == "absent" and allow_new_operation
+                and self._decomposition_receipt is None):
             return None
         matches = self._repository_inheritance_request_matches
         if state == "bound":
@@ -1794,6 +1800,10 @@ class WorkerLeaseBinding:
             self._repository_inheritance_state = "unavailable"
             self._repository_inheritance_reason = getattr(
                 exc, "reason_code", "repository_inheritance_unavailable")
+            if (inspect_only
+                    and self._repository_inheritance_reason == "decomposition_receipt_missing"):
+                self._repository_inheritance_state = "absent"
+                return False
             log.warning("worker_repository_inheritance task_id=%s reason_code=%s",
                         self.task_id, self._repository_inheritance_reason)
             return False

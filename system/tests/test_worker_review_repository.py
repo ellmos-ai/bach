@@ -561,3 +561,49 @@ def test_pending_historical_operation_without_signature_has_explicit_operator_re
     new = child_receipt(w)
     assert new["created_ids"] != old["created_ids"]
     assert registry.resolve_task_repository(new["created_ids"][0]).repository == "ellmos-ai/bach"
+
+
+@pytest.mark.parametrize("history", ["absent", "invalid", "invalid_field", "pending_without_marker"])
+def test_new_add_uses_native_history_not_legacy_description_markers(decomposition_world, history):
+    import threading
+    w = decomposition_world
+    if history != "absent":
+        marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+        marker.touch(mode=0o600)
+        try:
+            w["decomposer"].execute_task_manage(w["request"])
+        finally:
+            marker.unlink()
+    ack = w["decomposer"]._ack
+    w["client"].release(w["parent"], lease_id=ack.lease_id, fence=ack.fence,
+                        task_version=ack.task_version, outcome="return")
+    with sqlite3.connect(w["database"]) as conn:
+        description = ("Prior legacy decomposition\n[In 1 Teilaufgaben zerlegt: [1]]"
+                       if history != "pending_without_marker" else "Ordinary parent instructions")
+        conn.execute("UPDATE tasks SET description=? WHERE id=?", (description, w["parent"]))
+        if history == "absent":
+            assert conn.execute(
+                "SELECT COUNT(*) FROM task_history WHERE task_id=? AND action='lease_decompose'",
+                (w["parent"],)).fetchone()[0] == 0
+        elif history == "invalid":
+            conn.execute("UPDATE task_history SET new_value='invalid native record' "
+                         "WHERE task_id=? AND action='lease_decompose'", (w["parent"],))
+        elif history == "invalid_field":
+            conn.execute("UPDATE task_history SET field_changed='not-a-native-receipt' "
+                         "WHERE task_id=? AND action='lease_decompose'", (w["parent"],))
+    fresh = WorkerLeaseBinding.acquire(w["client"], w["parent"],
+        worker_id="legacy-marker@test", host="test", generation="legacy-marker-generation",
+        is_current=lambda: True, stop_event=threading.Event())
+    before = w["registry"].read_bytes()
+    result = fresh.execute_task_manage({"action": "add", "title": "New distinct legacy follow-up"})
+    with sqlite3.connect(w["database"]) as conn:
+        rows = conn.execute("SELECT id FROM tasks WHERE title='New distinct legacy follow-up'").fetchall()
+    if history == "absent":
+        assert len(rows) == 1, result
+        assert registry.resolve_task_repository(rows[0][0]).repository == "ellmos-ai/bach"
+    else:
+        assert rows == [], result
+        reason = ("decomposition_receipt_unavailable" if history in {"invalid", "invalid_field"}
+                  else "repository_inheritance_pending")
+        assert reason in result
+        assert w["registry"].read_bytes() == before

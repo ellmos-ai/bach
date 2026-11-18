@@ -665,10 +665,14 @@ def _native_decomposition_receipt(conn, task_id, task_version=None):
     """Read the existing native audit relation, never IDs asserted by task text."""
     from hub._services import task_lease as native
     row = conn.execute(
-        "SELECT id,new_value FROM task_history WHERE task_id=? AND action='lease_decompose' "
-        "AND field_changed='lease' ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+        "SELECT id,new_value,field_changed FROM task_history "
+        "WHERE task_id=? AND action='lease_decompose' ORDER BY id DESC LIMIT 1",
+        (task_id,)).fetchone()
+    if row is None:
+        raise RepositoryBindingError("Kein nativer Zerlegungsbeleg vorhanden",
+                                     reason_code="decomposition_receipt_missing")
     try:
-        if row is None or type(row[1]) is not str or len(row[1]) > 65536:
+        if row[2] != "lease" or type(row[1]) is not str or len(row[1]) > 65536:
             raise ValueError
         record = json.loads(row[1], object_pairs_hook=_json_no_duplicates)
         children = record["created_ids"]
