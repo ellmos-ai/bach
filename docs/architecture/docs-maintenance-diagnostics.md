@@ -96,3 +96,131 @@ Ein Fehlerbeleg diagnostiziert einen fehlgeschlagenen Versuch, ersetzt aber
 weder Heartbeat noch last_success oder next_due. Ein erfolgreicher Delta-Dispatch
 belegt keine abgeschlossene fachliche Dokuprüfung oder Reparatur. Review und
 sichere fachliche Korrektur bleiben getrennte Schritte.
+
+
+## Bestätigtes Sperrwarten und lokale Betriebsbelege (#4220)
+
+Ein bestätigter Lock ist ein eigener Zustand. Der native Scanner muss aus einer
+gepinnten Quelle stammen und einen vollständigen Scan, das angefragte Ziel,
+gültige Twin-Nachweise und zum Ergebnis passende Exitcodes liefern. Ein Fehler
+auf einem späteren erforderlichen Wurzelpfad hat Vorrang vor einem zuvor
+gefundenen Lock. Fehlende Vollständigkeit, ungültige Daten, Timeout und unbekannte
+Zustände werden nicht in erwartetes Sperrwarten umgedeutet. Die eng begrenzte
+Ausnahme für einen bereits belegten OneDrive-Pointer akzeptiert nur den dafür
+vorgesehenen Exitcode 1.
+
+Die Prozess-Ownership und die redigierte Statusprojektion sind von der
+Arbeitsfreigabe getrennt. Ihr Zielguard darf ausschließlich `owner.lock`,
+`status.json` und `status.<32 lowercase hex characters>.tmp` im kanonischen lokalen Wartungsverzeichnis neben
+der TaskDB freigeben. Er prüft dieses Ziel mit demselben gepinnten nativen
+Scanner vollständig; Symlinks und OneDrive-Runtime-Pfade sind ausgeschlossen.
+Er besitzt keine Befugnis für Scheduler-Datenbank, Dokumentationscursor,
+Konfiguration, Binding-Anfragen oder Taskdaten. Dafür bleibt der vollständige
+Arbeitsguard mit Repository und Projektzwilling verbindlich.
+
+Wenn der Arbeitsguard eine Sperre bestätigt, bleibt der alleinige lokale
+Prozess-Owner bestehen und veröffentlicht `state=waiting_for_lock`, sofern
+dessen eigener Runtime-Pfad frei ist. Dieser Zustand startet keine Jobs und
+liefert keine neuen Erfolgs- oder Reviewbelege. `running=true` bedeutet hier
+ausschließlich, dass Prozess und Lebenszeichen verifiziert wurden. Vor dem
+nächsten Arbeitsversuch wird die gesamte Arbeitsfreigabe erneut geprüft.
+
+Das Warten beginnt mit zehn Sekunden und wächst bis höchstens zum konfigurierten
+Pollintervall; ein kürzeres Pollintervall begrenzt schon den ersten Schritt.
+Eine zusammenhängende Wartephase hat ein Budget von 1.800 Sekunden zuzüglich
+der laufenden begrenzten Scan-/Statusoperation. Danach endet der Versuch mit
+`MaintenanceLockWaitTimeout` in der Phase `lock_wait`. Ein Stop-Signal
+unterbricht das Warten unmittelbar. Nur ein erfolgreich freigegebener Tick setzt
+das Wartebudget zurück. Ein unbekanntes Prüfergebnis beendet den Versuch sofort.
+
+Ist der Runtime-Pfad selbst gesperrt, werden weder ein neuer Owner noch neue
+Statusdateien geschrieben. Auch dann wird nur bei bestätigtem Lock begrenzt
+gewartet. Ohne gültigen aktuellen Beleg bleibt die Statusanzeige unverifiziert.
+Nach Neustart gelten dieselben Prüfungen und eine neue Ownergeneration;
+gespeicherte PID-Zahlen ersetzen die Betriebssystem-Ownership nicht.
+
+Archivierte native Aufgaben bleiben in der Dokumentationsprojektion sichtbar.
+`task_status=archived` ist ein bekannter Status, aber kein angenommener
+Ergebnisnachweis. Unbekannte Statuswerte bleiben ausgeschlossen. Dies behebt
+insbesondere den beobachteten Fall, in dem ein archivierter Routine-Task den
+gesamten aktuellen Dienstnachweis ungültig erscheinen ließ.
+
+Die bestehende Delta- und Routinefälligkeit wird durch diese Änderung nicht
+umgeschrieben. Catch-up- und Reihenfolgesemantik des Scheduler-Moduls sind eine
+gesonderte Frage.
+
+
+The status publisher opens its private temporary file exclusively (mode 0600),
+checks the regular single-link descriptor against the directory entry, fsyncs,
+and atomically replaces status.json. Existing temporary files are never truncated.
+Only the exact newly allocated temporary entry may be removed on cleanup, and only
+after the native runtime guard still approves. Interrupted older entries remain
+untouched and do not block the next status write. Existing owner files must be
+regular, single-link, owned by the current user and match the opened descriptor;
+a hardlinked or replaced owner is rejected before use.
+
+The 30-minute continuous lock-wait budget starts when the lock is confirmed,
+before publishing its status. It is checked again after every interruptible wait,
+before a new work round and after the work guard before dispatch; releasing a lock
+at the deadline cannot start one extra job.
+
+## Verpasste Delta-Intervalle (BACH #4225 / Ocean #49)
+
+Die Delta-Prüfung prüft idempotent den aktuellen Repository-Zustand und verwendet
+ab Scheduler 0.3.7 ausdrücklich die native Policy coalesce_latest. Nach längeren
+Unterbrechungen fasst ein Claim frühere unbeanspruchte Delta-Termine zusammen.
+Der Zeitanker bleibt erhalten; das nächste limit=1-Fenster kann anschließend
+eine andere fällige Routine aufnehmen.
+
+Die vier Routinen behalten replay und ihre bestehenden Intervalle von
+14/14/60/30 Tagen. Ein bereits beanspruchter, später abgelaufener Delta-Lauf wird
+mit seinem ursprünglichen Termin wiederholt. Zusammengefasste Termine erscheinen
+nicht als einzelne ausgeführte oder erfolgreiche Läufe. Die Modulhistorie führt
+coalesced_from und coalesced_count am tatsächlich beanspruchten Lauf.
+
+create_documentation_scheduler prüft den exakten Capability-Vertrag
+ellmos.scheduler.misfire-policy.v1 vor der Adapterkonstruktion. Ein altes Modul
+wird mit scheduler_misfire_policy_unavailable abgewiesen. Die Wartung prüft die
+bestehende Delta-Definition und ändert ausschließlich die Policy über den nativen
+CAS mit beobachteter Generation und bisheriger Policy. Ein aktiver Claim oder
+eine inzwischen geänderte Version verhindert die Umstellung. Es gibt keine
+direkte SQL-Korrektur und keinen manuellen Sprung von Fristdaten.
+
+### Aktivierungsreihenfolge
+
+Zuerst den separat geprüften Scheduler-Commit installieren, dann den BACH-Commit
+mit exakt darauf zeigendem Dependency-Pin. Vor Aktivierung Installationsprovenienz,
+Importpfad, Capability und den einzigen Runtime-Owner prüfen. Die native Migration
+muss ohne konkurrierenden aktiven Claim erfolgen; bei Konflikt frisch beobachten.
+Modul und Adapter wurden auf einer isolierten Kopie des historischen
+f2740ba7-Zustands geprüft. Die Kopie hatte neun Jobs und 5500 Laufbelege;
+Schema- und Policy-Migration erhielten alle bisherigen Termine und Laufbelege.
+Nur die Delta-Policy änderte sich. Zwei synthetische lokale Probeläufe belegten
+danach Delta und eine fällige Routine. Dabei wurde keine native Task-API benutzt.
+
+Ein altes Modul berücksichtigt die neue Policy nicht. Daher zuerst den Owner
+koordiniert anhalten und den Policy-/Build-Rollback explizit planen; keine
+parallelen alten und neuen Writer. Der getestete Quellcodezustand ersetzt
+keinen Nachweis einer aktivierten Installation.
+
+Geprüfter Scheduler-Quellcommit für diesen Anschluss: 698b22ceccde4f83c2680d2d957e394317667869 (0.3.7). Der Dependency-Pin in requirements.txt bezeichnet genau diesen Stand.
+
+Die unabhängige Prüfung ergänzte einen Fall mit getrennten abgelaufenen
+Claims und erfolgreichem Zwischenlauf. Der gepinnte Folgestand wählt alle
+ausstehenden Wiederholungen unabhängig vom regulären Fälligkeitszeiger aus
+und erhält den Fortschritt bereits zugelassener Termine. Erfolgreiche
+Zwischenläufe werden weder wiederholt noch als ausgelassen mitgezählt.
+
+
+## Archived routine rounds (BACH #4226)
+
+An archived task closes its previous maintenance round, just like a completed or
+cancelled lifecycle state. It does not prove that its result was accepted.
+The next native scheduler occurrence may create one new routine task. Replaying
+the same occurrence still recovers the existing task and never reopens or
+duplicates it. Existing pending, in-progress, blocked or review work continues
+to hold the routine. The same terminal classification applies to legacy-title
+lookup; an archived legacy task does not permanently suppress future rounds.
+
+The observed production example was roadmap task #2225. This change does not
+modify that task, its review outcome, routine cadence or scheduler due times.

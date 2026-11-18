@@ -490,7 +490,10 @@ def _guard_with_fake_scanner(tmp_path, monkeypatch, answer):
         checked.append(target)
         returncode, fields = answer(target)
         return SimpleNamespace(
-            returncode=returncode, stdout=json.dumps({"checked": str(target), "locks": [], **fields})
+            returncode=returncode, stdout=json.dumps({
+                "checked": str(target), "locks": [], "hook_guards": [],
+                "descendants_complete": True, "twins_checked": [], **fields,
+            })
         )
 
     monkeypatch.setattr(runtime.subprocess, "run", fake_run)
@@ -2306,3 +2309,85 @@ def test_provider_neutral_request_cannot_change_other_config_fields(
     assert config_path.read_bytes() == before_bytes
     assert service.config["poll_seconds"] == 60
     assert service.dispatcher.binding == json.loads(before_bytes)["worker_binding"]
+
+
+def test_recurring_archived_round_allows_only_new_occurrence(fixture):
+    from datetime import timedelta
+    from hub._services.docs.maintenance_recurring import dispatch_routine
+
+    dispatcher, tasks = fixture
+    definition = {
+        "name": "roadmap_review",
+        "legacy_title": "Existing roadmap review",
+        "priority": "P2",
+        "dispatch_marker": NOW.isoformat(),
+    }
+    first = dispatch_routine(dispatcher, definition, scheduled_for=NOW.isoformat())
+    assert first["state"] == "dispatched"
+    tasks.rows[0]["status"] = "archived"
+    original = dict(tasks.rows[0])
+    dispatcher.result_reader = lambda task_id: result(
+        task_id, status="archived" if task_id == first["task_id"] else "pending"
+    )
+
+    repeated = dispatch_routine(dispatcher, definition, scheduled_for=NOW.isoformat())
+    assert repeated["state"] == "dispatched"
+    assert repeated["dispatch_action"] == "recovered"
+    assert repeated["task_id"] == first["task_id"]
+    assert tasks.adds == 1
+    assert repeated["semantic_review_completed"] is False
+
+    next_due = (NOW + timedelta(days=14)).isoformat()
+    following = dispatch_routine(dispatcher, definition, scheduled_for=next_due)
+    assert following["state"] == "dispatched"
+    assert following["task_id"] != first["task_id"]
+    assert following["semantic_review_completed"] is False
+    assert tasks.adds == 2
+    assert tasks.rows[0] == original
+    current = read_state(dispatcher.state_path)["routines"]["roadmap_review"]
+    assert current["scheduled_for"] == next_due
+    assert current["task_status"] == "pending"
+    assert current["result_accepted"] is False
+    assert current["result_id"] is None
+    again = dispatch_routine(dispatcher, definition, scheduled_for=next_due)
+    assert again["state"] == "waiting_review_or_work"
+    assert tasks.adds == 2
+
+
+def test_recurring_archived_legacy_task_is_not_active_work(fixture):
+    from hub._services.docs.maintenance_recurring import dispatch_routine
+
+    dispatcher, tasks = fixture
+    original = {"id": 40, "title": "Existing roadmap review", "status": "archived"}
+    tasks.rows.append(dict(original))
+    definition = {
+        "name": "roadmap_review",
+        "legacy_title": original["title"],
+        "priority": "P2",
+        "dispatch_marker": NOW.isoformat(),
+    }
+
+    observed = dispatch_routine(dispatcher, definition, scheduled_for=NOW.isoformat())
+    assert observed["state"] == "dispatched"
+    assert observed["semantic_review_completed"] is False
+    assert tasks.adds == 1
+    assert tasks.rows[0] == original
+
+
+@pytest.mark.parametrize("status", ["pending", "in_progress", "review", "blocked"])
+def test_recurring_nonterminal_round_still_waits(fixture, status):
+    from hub._services.docs.maintenance_recurring import dispatch_routine
+
+    dispatcher, tasks = fixture
+    definition = {
+        "name": "roadmap_review",
+        "legacy_title": "Existing roadmap review",
+        "priority": "P2",
+        "dispatch_marker": NOW.isoformat(),
+    }
+    dispatch_routine(dispatcher, definition, scheduled_for=NOW.isoformat())
+    dispatcher.result_reader = lambda task_id: result(task_id, status=status)
+    observed = dispatch_routine(dispatcher, definition, scheduled_for=NOW.isoformat())
+    assert observed["state"] == "waiting_review_or_work"
+    assert observed["semantic_review_completed"] is False
+    assert tasks.adds == 1

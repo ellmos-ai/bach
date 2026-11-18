@@ -15,6 +15,7 @@ FAILURE_PHASES = {
     "config_load",
     "runtime_init",
     "owner_acquire",
+    "lock_wait",
     "config_reload",
     "scheduler_tick",
     "status_write",

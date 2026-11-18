@@ -142,3 +142,32 @@ identity (`BACH_RUNTIME_DIR/local-inference` or `~/.bach/runtime/local-inference
 and durable `unload-pending.json` coordination so the existing Mac Studio
 watchdog cannot race active BACH inference turns while `ocean-resources` takes
 over upstream unload policy selection.
+
+## Preparing the watchdog wiring (Task #4217)
+
+The versioned `system/tools/maintenance/watchdog_unload_patch.py` prepares a
+new shell source image without changing the running watchdog or starting any
+service. Supply the full source SHA-256, absolute interpreter and helper paths,
+and an output path that does not yet exist. The tool also verifies the reviewed
+old unload-function digest. A different function, duplicate definition, stale
+source, or ambiguous path is rejected instead of guessed.
+
+The prepared function invokes the existing guard with `-I -B`, the canonical
+runtime root, the current session flag, and the original pressure thresholds.
+Shell arguments are quoted; the helper exit status is preserved. Missing or
+failing helpers have no direct-HTTP fallback. All bytes outside the unload
+function, including compute escalation and recovery, remain unchanged.
+
+The emitted JSON is an artifact receipt with `applied: false`. Deployment must
+still recheck the source preimage and the project fences, preserve a byte-exact
+rollback copy, and follow the caller-inventory and activation order above. A
+prepared artifact is not proof of a running service update.
+
+Some legacy watchdog versions clear their paused-action list at process start.
+For those versions, a routine restart is admissible only after a fresh readback
+confirms that the relevant pause and overflow records are empty and that no
+registered job depends on their preservation. Otherwise preserve and resolve
+that ownership first; the patch tool does not clear, restore, or signal jobs.
+The local host source remains authoritative; update only its declared additive
+mirror, not older similarly named copies or unrelated research results. Keep
+operator locks outside directories copied by a broad mirror job.
