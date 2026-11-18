@@ -149,9 +149,9 @@ class HttpRequest:
                 self._client_closed and (not self._response_open or self._response_closed)
             )
 
-    def provider_returned(self, result, *, instrumented):
+    def provider_returned(self, result, *, instrumented, capture_partial=True):
         with self.lock:
-            if isinstance(result, dict):
+            if capture_partial and isinstance(result, dict):
                 content = result.get("content")
                 if isinstance(content, str) and content:
                     self.partial = content

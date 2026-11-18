@@ -6709,7 +6709,13 @@ class _GuiHttpChatRequest:
                 stopped = asyncio.create_task(self.disconnected.wait())
                 done, _ = await asyncio.wait({operation, stopped}, return_when=asyncio.FIRST_COMPLETED)
                 if operation in done:
-                    return operation.result()
+                    try:
+                        return operation.result()
+                    except httpx.HTTPError:
+                        if not self.disconnected.is_set():
+                            raise
+                        # Failed I/O does not prove Control/provider completion.
+                        # Only the already confirmed ASGI signal authorizes cancel.
                 await self._cancel(base_url, authorization)
                 raise self._disconnected_error()
         except (httpx.HTTPError, ValueError) as exc:

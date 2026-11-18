@@ -2531,6 +2531,7 @@ class ChatRuntime(_ModuleChatRuntime):
         """Hold the local-compute gate for one model call, then yield to waiters."""
         tool_rounds_enabled = kwargs.pop("_tool_rounds_enabled", None)
         completion_reserve = kwargs.pop("_completion_reserve", False)
+        capture_http_partial = kwargs.pop("_http_capture_partial", True)
         turn_context = self._compute_turn_context.get()
         warmup = self._active_model_warmup(
             backend, kwargs.get("model"),
@@ -2783,7 +2784,9 @@ class ChatRuntime(_ModuleChatRuntime):
                                 call_kwargs["cancel_event"] = http_request.cancel_event
                                 call_kwargs["lifecycle_observer"] = http_request.observe
                             result = await backend.chat(*args, **call_kwargs)
-                            http_request.provider_returned(result, instrumented=instrumented)
+                            http_request.provider_returned(
+                                result, instrumented=instrumented,
+                                capture_partial=capture_http_partial)
                             if http_request.stop_event.is_set():
                                 result = {**result, "error": "HTTP-Anfrage wurde beendet",
                                           "reason_code": "http_disconnect", "tool_calls": None}
@@ -4332,6 +4335,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 
     async def _summarize(self, session: ChatSession, *, backend=None,
                          model: str = ""):
+        http_request = current_http_request()
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
         if len(session.messages) < 6:
@@ -4357,7 +4361,10 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session, selected_backend, selected_model,
                 prompt,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
+                _http_capture_partial=False,
             )
+            if http_request is not None and http_request.stop_event.is_set():
+                raise HttpRequestDisconnected()
             if result.get("error"):
                 raise RuntimeError(str(result["error"]))
             summary = result.get("content", "")[:500]
@@ -4368,11 +4375,17 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 except Exception:
                     pass
 
+            if http_request is not None and http_request.stop_event.is_set():
+                raise HttpRequestDisconnected()
             session.messages = [
                 {"role": "system", "content": f"Bisheriger Kontext: {summary}"}
             ] + recent
+        except HttpRequestDisconnected:
+            raise
         except ModelRequestBudgetError:
             raise
         except Exception:
+            if http_request is not None and http_request.stop_event.is_set():
+                raise HttpRequestDisconnected() from None
             if selected_model != "glm-5.3:cloud":
                 session.messages = recent

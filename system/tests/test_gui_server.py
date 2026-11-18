@@ -1173,3 +1173,120 @@ def test_http_disconnect_preserves_positive_native_worker_trace_contract(http_di
     assert contract["schema"] == "bach.worker-tool-trace.v1"
     assert len(contract["source_sha256"]) == 64
     int(contract["source_sha256"], 16)
+
+
+@pytest.mark.parametrize("confirmed_disconnect", [True, False])
+def test_simultaneous_http_disconnect_and_control_transport_error(monkeypatch, confirmed_disconnect):
+    """A failed completed I/O task is not a successful Control completion."""
+    from starlette.requests import Request
+
+    async def scenario():
+        cancels = []
+        binding = {"device_id": "7", "chat_id": "gui-web", "service_instance": "epoch",
+                   "request_id": "a" * 48, "cancel_token": "b" * 48, "slot_binding": "c" * 64}
+        async def receive():
+            assert confirmed_disconnect
+            return {"type": "http.disconnect"}
+        request = Request({"type": "http", "method": "POST", "headers": [],
+                           "state": {"device": {"id": 7}}}, receive=receive)
+        bridge = server._GuiHttpChatRequest(request)
+        async def upstream(request):
+            if request.url.path == "/api/status":
+                return httpx.Response(200, json={"service": "bach-chat-control", "telegram_verified": False})
+            payload = json.loads(request.content)
+            if request.url.path == "/api/chat/request":
+                if payload["action"] == "inspect":
+                    return httpx.Response(200, json={"ok": True, "version": 1, "service_instance": "epoch"})
+                if payload["action"] == "prepare":
+                    return httpx.Response(200, json={"ok": True, "binding": binding})
+                cancels.append(payload)
+                return httpx.Response(200, json={"ok": True, "state": "aborting", "cleanup_complete": False})
+            if confirmed_disconnect:
+                # Consume the actual ASGI message before finishing the same
+                # transport task with an error; both waiters are now ready.
+                await bridge.watch()
+            raise httpx.ReadError("isolated Control transport failure", request=request)
+        real_client = httpx.AsyncClient
+        monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(
+            transport=httpx.MockTransport(upstream), **kw))
+        monkeypatch.setattr(server, "_chat_control_base_url", lambda: "http://control.invalid/api")
+        monkeypatch.setattr(server, "get_control_api_auth_header", lambda: "Bearer internal-only")
+        with pytest.raises(server.HTTPException) as error:
+            await bridge.post({"prompt": "test", "chat_id": "gui-web"})
+        assert error.value.status_code == (499 if confirmed_disconnect else 503)
+        assert cancels == ([{"action": "cancel", "binding": binding}] if confirmed_disconnect else [])
+        if confirmed_disconnect:
+            assert error.value.detail["cleanup_complete"] is False
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("stop_result", ["exception", "partial_result"])
+def test_http_disconnect_during_summary_preserves_history_and_hides_internal_partial(
+    disconnect_control_server, http_disconnect_control_module, monkeypatch, tmp_path, stop_result,
+):
+    """A cancelled internal call cannot become a user answer or discard old turns."""
+    from hub._services.chat.http_request_control import HttpRequestDisconnected
+
+    chat_id = "http-summary-fixture"
+    backend = OllamaBackend(default_model="m")
+    runtime = _http_disconnect_runtime(http_disconnect_control_module, monkeypatch, tmp_path, backend)
+    runtime.MAX_MESSAGES = 1
+    history = [
+        {"role": "user" if index % 2 == 0 else "assistant", "content": f"Prior turn {index}"}
+        for index in range(6)
+    ]
+    session = runtime.get_session(chat_id)
+    session.messages = list(history)
+    runtime._persist_session(chat_id, session)
+    history = runtime.session_store.load(chat_id)
+    session.messages = list(history)
+    started = threading.Event()
+    calls = []
+
+    async def summary(messages, **kwargs):
+        assert "_http_capture_partial" not in kwargs
+        calls.append(messages)
+        assert messages[0]["content"] == "Fasse den Gesprächsverlauf in 2-3 Sätzen zusammen."
+        started.set()
+        await kwargs["cancel_event"].wait()
+        if stop_result == "exception":
+            raise HttpRequestDisconnected()
+        return {"content": "INTERNAL SUMMARY FRAGMENT", "error": "request stopped",
+                "reason_code": "http_disconnect", "tool_calls": None}
+
+    monkeypatch.setattr(backend, "chat", summary)
+    binding = _prepare_http_request(disconnect_control_server, http_disconnect_control_module,
+                                    chat_id=chat_id)
+
+    async def scenario():
+        async with httpx.AsyncClient(headers={"Authorization": "Bearer test-control-token"}) as client:
+            pending = asyncio.create_task(client.post(disconnect_control_server + "/chat", json={
+                "prompt": "Keep the accepted new prompt", "chat_id": chat_id,
+                "_http_request": binding}, timeout=5))
+            try:
+                assert await asyncio.to_thread(started.wait, 2), "internal summary did not start"
+                cancelled = await client.post(disconnect_control_server + "/chat/request",
+                    json={"action": "cancel", "binding": binding}, timeout=2)
+                assert cancelled.status_code == 200
+                response = await asyncio.wait_for(pending, 2)
+                assert response.status_code == 502, response.text
+                assert response.json()["reason_code"] == "http_disconnect"
+                state = (await client.post(disconnect_control_server + "/chat/request",
+                    json={"action": "status", "binding": binding})).json()
+                assert state["state"] == "aborted" and state["persisted"] is True
+                assert state["cleanup_complete"] is False  # This fake provider supplies no close proof.
+                stored = runtime.session_store.load(chat_id)
+                assert all("INTERNAL SUMMARY FRAGMENT" not in item["content"] for item in stored)
+                assert stored[:len(history)] == history
+                assert len(stored) == len(history) + 2
+                assert stored[-2] == {"role": "user", "content": "Keep the accepted new prompt"}
+                assert stored[-1]["answer_status"] == "failed"
+                assert stored[-1]["reason_code"] == "http_disconnect"
+                assert session.messages[:len(history)] == history
+                assert len(session.messages) == len(stored)
+                assert str(session.messages[-1]["content"]) == stored[-1]["content"]
+                assert len(calls) == 1, "the user-answer dispatch must not start after the summary stop"
+            finally:
+                await asyncio.gather(pending, return_exceptions=True)
+
+    asyncio.run(scenario())

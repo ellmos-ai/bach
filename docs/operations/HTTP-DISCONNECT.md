@@ -92,3 +92,10 @@ Trace-Checkpoints. `ChatRuntime._process_turn` und `_tool_loop_impl` ändern bew
 bestehenden Runtime-Trace-Fingerprint; alte Checkpoints werden nicht still umgeschrieben.
 Der separate physische LOAD_PENDING-Vertrag und dessen deaktivierte Capability bleiben
 unverändert.
+
+
+## Cancellation at internal boundaries
+
+A GUI-to-Control transport error alone does not authorize cancellation. When the GUI has already observed its ASGI disconnect, a transport error completing in the same event-loop turn still sends the exact private cancel RPC. A missing cancellation receipt continues to mean cleanup is unconfirmed.
+
+An internal pre-answer summary never supplies the user-facing partial answer. A confirmed stop propagates before reducing the conversation history, including the normal summary-error fallback. The runtime preserves the previous turns and the accepted prompt, and persists one failed assistant result with `reason_code=http_disconnect`. Ordinary summary fallback behavior remains unchanged when no request stop is confirmed.
