@@ -37,7 +37,7 @@ def test_typed_task_operation_unknown_effect_is_held_before_consumption_ack(bind
 
 
 def test_unknown_effect_without_quarantine_ack_does_not_invent_blocked(binding, monkeypatch):
-    monkeypatch.setattr(binding, "quarantine_lease", lambda: False)
+    monkeypatch.setattr(binding, "quarantine_lease", lambda **_kw: False)
     outcome = execute_normal_tool(binding, "task_manage", {"action": "submit_result"},
         lambda *_: ToolErrorText("synthetic", code="task_operation_unconfirmed"))
     assert outcome.status == "unknown" and binding._active is False
@@ -171,3 +171,21 @@ def test_diagnostic_observation_does_not_establish_task_operation_authority(bind
     assert outcome.status == "returned" and acknowledge_normal_tool_result(binding, outcome)
     assert binding._active and binding._client.read(binding.task_id).leased
     assert _phases(binding) == ["started", "returned", "acknowledged"]
+
+
+
+def test_confirmed_task_unknown_quarantine_records_bounded_native_note(binding):
+    outcome = execute_normal_tool(binding, "task_manage", {"action": "submit_result"},
+        lambda *_: ToolErrorText("synthetic-private-result", code="task_operation_unconfirmed"))
+    assert outcome.status == "unknown" and binding._quarantine_ack is not None
+    conn = binding._client._get_local_connection()
+    try:
+        notes = [json.loads(row["new_value"])["note"] for row in conn.execute(
+            "SELECT new_value FROM task_history WHERE task_id=? AND action='lease_release'",
+            (binding.task_id,))]
+    finally:
+        conn.close()
+    assert len(notes) == 1 and "task_operation_unconfirmed" in notes[0]
+    assert notes[0].startswith("backend_error_after_tool_dispatch:")
+    assert "synthetic-private" not in notes[0]
+    assert _phases(binding) == ["started", "returned"]

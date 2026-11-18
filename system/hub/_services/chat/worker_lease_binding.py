@@ -1248,7 +1248,7 @@ class WorkerLeaseBinding:
             self.assert_active()
             return bound_task_command(operation, arguments, self)
 
-    def quarantine_lease(self):
+    def quarantine_lease(self, *, reason_code=None):
         """Block uncertain tool work canonically; never requeue it as pending."""
         with self._lock:
             if not self._active or self._closed or not self._is_current():
@@ -1256,7 +1256,10 @@ class WorkerLeaseBinding:
             try:
                 ack = self._operation(
                     self._client.release, outcome="blocked", check_policy=False,
-                    note="backend_error_after_tool_dispatch: Toolwirkungen vor Wiederaufnahme prüfen",
+                    note=("backend_error_after_tool_dispatch: task_operation_unconfirmed; "
+                          "Toolwirkungen vor Wiederaufnahme prüfen"
+                          if reason_code == "task_operation_unconfirmed" else
+                          "backend_error_after_tool_dispatch: Toolwirkungen vor Wiederaufnahme prüfen"),
                 )
                 if (not isinstance(ack, LeaseReleaseAck) or ack.released is not True
                         or type(ack.task_id) is not int or type(ack.fence) is not int

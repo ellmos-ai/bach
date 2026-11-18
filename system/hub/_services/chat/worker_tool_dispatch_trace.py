@@ -41,7 +41,10 @@ def _quarantine_then_invalidate(binding: Any, reason: str) -> None:
     # Do not log arbitrary quarantine details or claim a blocked ACK without one.
     try:
         if getattr(binding, "closed", False) is not True:
-            binding.quarantine_lease()
+            if reason == "task_operation_unconfirmed":
+                binding.quarantine_lease(reason_code=reason)
+            else:
+                binding.quarantine_lease()
     except Exception:  # noqa: BLE001,S110 - redacted quarantine failure; no blocked claim
         # The caller receives only the original failed/unknown outcome. A missing
         # quarantine ACK is not evidence that the canonical task is blocked.
