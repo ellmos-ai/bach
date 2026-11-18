@@ -1,3 +1,4 @@
+# BACH Adapter: resource_model_port
 # SPDX-License-Identifier: MIT
 """Exact-model cooperative return through BACH's existing inference protocol.
 

@@ -1,3 +1,4 @@
+# BACH Adapter: ocean_resources_provider
 # SPDX-License-Identifier: MIT
 """Pinned canonical extracted distribution, shared by read-only and native adapters."""
 from __future__ import annotations

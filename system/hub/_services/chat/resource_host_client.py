@@ -1,3 +1,4 @@
+# BACH Adapter: resource_host_client
 # SPDX-License-Identifier: MIT
 """BACH's native model-call boundary over the configured Ocean host authority."""
 from __future__ import annotations
