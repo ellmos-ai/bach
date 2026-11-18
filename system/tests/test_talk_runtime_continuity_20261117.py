@@ -34,10 +34,22 @@ def install_control(monkeypatch, response=None, status=200):
         assert request.headers["authorization"] == "Bearer internal-control"
         if request.url.path == "/api/status":
             return httpx.Response(200, json={"ready": True})
+        if request.url.path == "/api/chat/request":
+            import json, uuid
+            body = json.loads(request.content)
+            if body["action"] == "inspect":
+                return httpx.Response(200, json={"ok": True, "version": 1, "service_instance": "test-epoch"})
+            if body["action"] == "prepare":
+                return httpx.Response(200, json={"ok": True, "binding": {
+                    "device_id": body["device_id"], "chat_id": body["chat_id"],
+                    "service_instance": "test-epoch", "request_id": uuid.uuid4().hex,
+                    "cancel_token": uuid.uuid4().hex, "slot_binding": "a" * 64}})
         return httpx.Response(status, json=response or {"ok": True, "answer": "Kanonische Antwort."})
     transport = httpx.MockTransport(handler)
     real_client = httpx.Client
     monkeypatch.setattr(server.httpx, "Client", lambda **kw: real_client(transport=transport, **kw))
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(server.httpx, "AsyncClient", lambda **kw: real_async_client(transport=transport, **kw))
     monkeypatch.setattr(server, "_chat_control_payload_ready", lambda payload: payload == {"ready": True})
     return calls
 
@@ -54,7 +66,9 @@ def test_talk_uses_control_with_durable_device_slot_scope(client, monkeypatch):
     assert body["prompt"] == "Merke meinen Kontext."
     assert body["chat_id"].startswith("slot:buddha_chat:")
     assert len(body["chat_id"].rsplit(":", 1)[1]) == 32
-    assert set(body) == {"prompt", "chat_id"}
+    assert set(body) == {"prompt", "chat_id", "_http_request"}
+    assert body["_http_request"]["device_id"] == "7"
+    assert body["_http_request"]["chat_id"] == body["chat_id"]
     # A restarted visual engine and another valid credential for the same device
     # must address the same runtime transcript; another device must not.
     monkeypatch.setattr(server, "_TALK_SESSION_SINGLETON", None)
@@ -92,7 +106,7 @@ def test_talk_control_failure_is_not_spoken_as_success(client, monkeypatch):
                          headers={"Authorization": "Bearer owner-token"})
     assert result.status_code == 503
     assert "Systemsteckplatz" in result.json()["detail"]
-    assert len(calls) == 2
+    assert [r.url.path for r in calls] == ["/api/status", "/api/chat/request", "/api/chat/request", "/api/chat"]
 
 
 def test_unbound_responder_cannot_infer(monkeypatch):
@@ -143,7 +157,13 @@ def test_inflight_talk_keeps_event_loop_free_and_its_own_state(client, monkeypat
         return "Snapshot-Antwort."
 
     monkeypatch.setattr(server, "_talk_cortex_responder", responder)
-    request = Request({"type": "http", "headers": []})
+    received = []
+    async def receive():
+        if not received:
+            received.append(True)
+            return {"type": "http.request", "body": b"{}", "more_body": False}
+        await asyncio.Future()
+    request = Request({"type": "http", "headers": []}, receive=receive)
     request.state.device = {"id": 7}
     shared = server._get_talk_session()
     initial_state = shared.state

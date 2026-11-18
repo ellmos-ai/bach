@@ -14,6 +14,7 @@ Verwendung:
     # result = {'content': '...', 'tool_calls': [...] or None}
 """
 import asyncio
+from contextlib import asynccontextmanager
 import errno
 import json
 import logging
@@ -34,6 +35,70 @@ from hub._services.model_provenance import reported_model
 
 
 log = logging.getLogger(__name__)
+
+
+class _OllamaRequestStopped(Exception):
+    """Only the exact event supplied for this provider request can raise this."""
+
+
+def _observe_ollama_request(observer, phase, **details):
+    if observer is not None:
+        try:
+            observer(phase, **details)
+        except BaseException:
+            # Advisory lifecycle projection must not prevent physical cleanup.
+            pass
+
+
+async def _await_ollama_operation(operation, cancel_event, observer=None):
+    """Interrupt one private transport operation, never a shared runtime/client."""
+    if cancel_event is None:
+        return await operation()
+    if not isinstance(cancel_event, asyncio.Event):
+        raise TypeError("cancel_event muss ein asyncio.Event sein")
+    if cancel_event.is_set():
+        _observe_ollama_request(observer, "request_aborted", reason="worker_stop")
+        raise _OllamaRequestStopped
+    active = asyncio.create_task(operation())
+    stopped = asyncio.create_task(cancel_event.wait())
+    try:
+        done, _ = await asyncio.wait({active, stopped}, return_when=asyncio.FIRST_COMPLETED)
+        # Keep an acquired response/line if both events arrived together; its
+        # caller owns cleanup and checks stop before the next operation.
+        if active in done:
+            return await active
+        active.cancel()
+        await asyncio.gather(active, return_exceptions=True)
+        _observe_ollama_request(observer, "request_aborted", reason="worker_stop")
+        raise _OllamaRequestStopped
+    finally:
+        for task in (active, stopped):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(active, stopped, return_exceptions=True)
+
+
+@asynccontextmanager
+async def _ollama_client_scope(manager, observer):
+    client = await manager.__aenter__()
+    _observe_ollama_request(observer, "transport_open")
+    try:
+        yield client
+    finally:
+        await manager.__aexit__(*sys.exc_info())
+        _observe_ollama_request(observer, "client_cleanup_complete")
+
+
+@asynccontextmanager
+async def _ollama_response_scope(manager, cancel_event, observer):
+    _observe_ollama_request(observer, "awaiting_response_headers")
+    response = await _await_ollama_operation(manager.__aenter__, cancel_event, observer)
+    _observe_ollama_request(observer, "response_headers_received")
+    try:
+        yield response
+    finally:
+        await manager.__aexit__(*sys.exc_info())
+        _observe_ollama_request(observer, "response_cleanup_complete")
 
 
 def _probe_model_api(
@@ -388,17 +453,20 @@ class OllamaBackend(ModelBackend):
         staged_load = staged_chat_transport()
         transport_options = ({"trust_env": False, "follow_redirects": False}
                              if staged_load is not None else {})
-        async with httpx.AsyncClient(timeout=timeouts, **transport_options) as client:
+        async with _ollama_client_scope(
+                httpx.AsyncClient(timeout=timeouts, **transport_options), lifecycle_observer) as client:
             if staged_load is not None:
                 staged_load.begin(self, f"{self.base_url}/api/chat", payload)
             try:
-                async with client.stream(
+                async with _ollama_response_scope(client.stream(
                     "POST", f"{self.base_url}/api/chat", json=payload
-                ) as response:
+                ), cancel_event, lifecycle_observer) as response:
                     if response.status_code >= 400:
                         from hub._services.llm.backend_errors import classify_ollama_error, read_error_payload
                         error_budget = min(read_timeout, max(0, total_cap - (time.time() - started))) if total_cap > 0 else read_timeout
-                        detail = classify_ollama_error(await read_error_payload(response, timeout_seconds=error_budget),
+                        detail = classify_ollama_error(await _await_ollama_operation(
+                            lambda: read_error_payload(response, timeout_seconds=error_budget),
+                            cancel_event, lifecycle_observer),
                             status_code=response.status_code,
                             retry_after=response.headers.get("Retry-After"))
                         return aborted("HTTPStatusError: " + detail["message"], backend_error=detail)
@@ -406,7 +474,8 @@ class OllamaBackend(ModelBackend):
                     lines = response.aiter_lines().__aiter__()
                     while True:
                         try:
-                            line = await lines.__anext__()
+                            line = await _await_ollama_operation(
+                                lines.__anext__, cancel_event, lifecycle_observer)
                         except StopAsyncIteration:
                             break
                         except httpx.ReadTimeout as exc:
@@ -426,7 +495,8 @@ class OllamaBackend(ModelBackend):
                                         f"{timeout_error}; Gesamtdeckel "
                                         f"{total_cap}s erreicht"
                                     )
-                                if not await self._lebt(client, selected_model):
+                                if not await _await_ollama_operation(
+                                    lambda: self._lebt(client, selected_model), cancel_event, lifecycle_observer):
                                     break
                                 probes += 1
                                 last_activity = now
@@ -440,6 +510,8 @@ class OllamaBackend(ModelBackend):
 
                         now = time.time()
                         if line.strip():
+                            if chunk_count == 0:
+                                _observe_ollama_request(lifecycle_observer, "first_stream_chunk_received")
                             chunk_count = min(chunk_count + 1, 1_000_000)
                             last_activity = now
                             probes = 0
@@ -478,6 +550,7 @@ class OllamaBackend(ModelBackend):
                                 done_reason = chunk.get("done_reason")
                                 completed = True
                                 if staged_load is None:
+                                    _observe_ollama_request(lifecycle_observer, "response_completed")
                                     break
                                 # A staged load is one complete HTTP response.
                                 # Drain to EOF; conflicting tail or read/close
@@ -494,6 +567,9 @@ class OllamaBackend(ModelBackend):
                                 f"Ollama antwortet seit {idle}s nicht und meldet "
                                 "unser Modell nicht mehr"
                             )
+            except _OllamaRequestStopped:
+                return {**aborted("Providerrequest gebunden abgebrochen"),
+                        "provider_request_aborted": "worker_stop"}
             except httpx.HTTPError as exc:
                 return aborted(
                     f"{type(exc).__name__}: {exc}".rstrip(": "),

@@ -6591,11 +6591,171 @@ async def chat_page():
     raise HTTPException(status_code=404, detail="Template chat.html nicht gefunden")
 
 
+import contextvars as _http_contextvars
+
+_TALK_HTTP_BRIDGE = _http_contextvars.ContextVar("talk_http_bridge", default=None)
+
+
+class _GuiHttpChatRequest:
+    """One authenticated ASGI request and its private Control capability."""
+    def __init__(self, request):
+        device = getattr(request.state, "device", None)
+        identity = device.get("id") if isinstance(device, dict) else None
+        if type(identity) not in (str, int) or not str(identity):
+            raise HTTPException(status_code=401, detail="Geräteanmeldung für Chat erforderlich")
+        self.device_id = str(identity)
+        self.request = request
+        self.loop = asyncio.get_running_loop()
+        self.disconnected = asyncio.Event()
+        self.binding = None
+        self.cancel_receipt = None
+
+    async def watch(self):
+        # The body has been consumed. This is now the sole ASGI receive owner.
+        while True:
+            message = await self.request.receive()
+            if message["type"] == "http.disconnect":
+                self.disconnected.set()
+                return
+
+    async def _setup_request(self, operation):
+        """Stop this pre-dispatch HTTP wait; no model POST exists yet."""
+        if self.disconnected.is_set():
+            raise self._disconnected_error()
+        active = asyncio.create_task(operation())
+        stopped = asyncio.create_task(self.disconnected.wait())
+        try:
+            done, _ = await asyncio.wait({active, stopped}, return_when=asyncio.FIRST_COMPLETED)
+            if active in done:
+                return active.result()
+            raise self._disconnected_error()
+        finally:
+            for task in (active, stopped):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(active, stopped, return_exceptions=True)
+
+    async def _cancel(self, base_url, authorization):
+        # This budget bounds the ACK, not native cleanup or resource ownership.
+        try:
+            async with httpx.AsyncClient(timeout=2.0, trust_env=False) as client:
+                response = await asyncio.wait_for(client.request(
+                    "POST", f"{base_url}/chat/request",
+                    headers={"authorization": authorization},
+                    json={"action": "cancel", "binding": self.binding}), timeout=2.0)
+                if response.status_code == 200:
+                    receipt = response.json()
+                    if isinstance(receipt, dict) and receipt.get("ok") is True:
+                        self.cancel_receipt = receipt
+        except (httpx.HTTPError, ValueError, asyncio.TimeoutError):
+            pass
+
+    def _disconnected_error(self):
+        receipt = self.cancel_receipt or {}
+        return HTTPException(status_code=499, detail={
+            "reason_code": "http_disconnect",
+            "cleanup_complete": (receipt.get("cleanup_complete") is True
+                                 and receipt.get("state") in {"finished", "aborted", "failed"}),
+            "persisted": receipt.get("persisted") is True,
+        })
+
+    async def post(self, payload, *, headers=None, params=None):
+        if type(payload) is not dict or "_http_request" in payload:
+            raise HTTPException(status_code=400, detail="HTTP-Anfragebindung wird serverseitig erzeugt")
+        base_url = _chat_control_base_url()
+        authorization = get_control_api_auth_header()
+        if not base_url or not authorization:
+            raise HTTPException(status_code=503, detail="Authentisierter Chatdienst nicht verfügbar")
+        private_headers = {"authorization": authorization}
+        if headers and headers.get("x-delegation-depth"):
+            private_headers["x-delegation-depth"] = headers["x-delegation-depth"]
+        operation = stopped = None
+        try:
+            async with httpx.AsyncClient(timeout=_chat_proxy_timeout(), trust_env=False) as client:
+                status = await self._setup_request(
+                    lambda: client.get(f"{base_url}/status", headers=private_headers))
+                if status.status_code != 200 or not _chat_control_payload_ready(status.json()):
+                    raise HTTPException(status_code=503, detail="Chatdienst-Identität nicht bestätigt")
+                capability = await self._setup_request(lambda: client.request(
+                    "POST", f"{base_url}/chat/request",
+                    headers=private_headers, json={"action": "inspect"}))
+                protocol = capability.json()
+                if (capability.status_code != 200 or not isinstance(protocol, dict)
+                        or protocol.get("ok") is not True or protocol.get("version") != 1
+                        or not isinstance(protocol.get("service_instance"), str)):
+                    raise HTTPException(status_code=503, detail="HTTP-Abbruchvertrag des Chatdienstes nicht bestätigt")
+                prepared = await self._setup_request(lambda: client.request("POST", f"{base_url}/chat/request",
+                    headers=private_headers, json={
+                        "action": "prepare", "device_id": self.device_id,
+                        "chat_id": payload.get("chat_id", "api-delegate"),
+                        "service_instance": protocol["service_instance"],
+                    }))
+                preparation = prepared.json()
+                binding = preparation.get("binding") if isinstance(preparation, dict) else None
+                if (prepared.status_code != 200 or not isinstance(preparation, dict)
+                        or preparation.get("ok") is not True
+                        or type(binding) is not dict
+                        or binding.get("device_id") != self.device_id
+                        or binding.get("chat_id") != payload.get("chat_id", "api-delegate")
+                        or binding.get("service_instance") != protocol["service_instance"]):
+                    raise HTTPException(status_code=503, detail="Private HTTP-Anfragebindung nicht bestätigt")
+                self.binding = binding
+                if self.disconnected.is_set():
+                    await self._cancel(base_url, authorization)
+                    raise self._disconnected_error()
+                operation = asyncio.create_task(client.request(
+                    "POST", f"{base_url}/chat", headers=private_headers, params=params,
+                    json={**payload, "_http_request": binding}))
+                stopped = asyncio.create_task(self.disconnected.wait())
+                done, _ = await asyncio.wait({operation, stopped}, return_when=asyncio.FIRST_COMPLETED)
+                if operation in done:
+                    try:
+                        return operation.result()
+                    except httpx.HTTPError:
+                        if not self.disconnected.is_set():
+                            raise
+                        # Failed I/O does not prove Control/provider completion.
+                        # Only the already confirmed ASGI signal authorizes cancel.
+                await self._cancel(base_url, authorization)
+                raise self._disconnected_error()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Chatdienst nicht erreichbar") from exc
+        finally:
+            # Only this GUI-to-Control connection is closed here. The explicit
+            # private cancel above owns the actual provider stop in Control.
+            for task in (operation, stopped):
+                if task is not None and not task.done():
+                    task.cancel()
+            if operation is not None or stopped is not None:
+                await asyncio.gather(*(t for t in (operation, stopped) if t is not None),
+                                     return_exceptions=True)
+
+
+async def _http_chat_proxy(request):
+    try:
+        payload = json.loads(await request.body())
+    except (ValueError, UnicodeError):
+        raise HTTPException(status_code=400, detail="JSON-Objekt erforderlich")
+    if type(payload) is not dict or "_http_request" in payload:
+        raise HTTPException(status_code=400, detail="HTTP-Anfragebindung wird serverseitig erzeugt")
+    bridge = _GuiHttpChatRequest(request)
+    watcher = asyncio.create_task(bridge.watch())
+    try:
+        response = await bridge.post(payload, headers=request.headers, params=request.query_params)
+        return Response(content=response.content, status_code=response.status_code,
+                        headers={"content-type": response.headers.get("content-type", "application/json")})
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+
+
 @app.api_route("/api/chat-control/{control_path:path}", methods=["GET", "POST"])
 async def chat_control_proxy(control_path: str, request: Request):
     """Bind the GUI chat to Startspine's resolved local Control port."""
     if control_path not in CHAT_CONTROL_PATHS:
         raise HTTPException(status_code=404, detail="Unbekannter Chat-Control-Pfad")
+    if control_path == "chat" and request.method == "POST":
+        return await _http_chat_proxy(request)
     base_url = _chat_control_base_url()
     if not base_url:
         raise HTTPException(status_code=503, detail="Chatdienst nicht registriert")
@@ -17315,17 +17475,25 @@ def _talk_cortex_responder(prompt: str, persona: str = "buddha", language: str =
     if not base_url or not auth_header:
         raise HTTPException(status_code=503, detail="Authentisierter Chatdienst für Talk nicht verfügbar")
     try:
-        with httpx.Client(timeout=_chat_proxy_timeout()) as client:
-            headers = {"Authorization": auth_header}
-            status_response = client.get(f"{base_url}/status", headers=headers)
-            status_payload = status_response.json()
-            if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
-                raise HTTPException(status_code=503, detail="Chatdienst-Identität für Talk nicht bestätigt")
-            response = client.post(
-                f"{base_url}/chat", headers=headers,
-                json={"prompt": prompt, "chat_id": chat_id},
-            )
+        bridge = _TALK_HTTP_BRIDGE.get()
+        if bridge is not None:
+            # The worker thread waits for the GUI event loop's private HTTP
+            # operation; cancelling to_thread alone would not stop sync HTTPX.
+            response = asyncio.run_coroutine_threadsafe(
+                bridge.post({"prompt": prompt, "chat_id": chat_id}), bridge.loop).result()
             payload = response.json()
+        else:
+            with httpx.Client(timeout=_chat_proxy_timeout()) as client:
+                headers = {"Authorization": auth_header}
+                status_response = client.get(f"{base_url}/status", headers=headers)
+                status_payload = status_response.json()
+                if status_response.status_code != 200 or not _chat_control_payload_ready(status_payload):
+                    raise HTTPException(status_code=503, detail="Chatdienst-Identität für Talk nicht bestätigt")
+                response = client.post(
+                    f"{base_url}/chat", headers=headers,
+                    json={"prompt": prompt, "chat_id": chat_id},
+                )
+                payload = response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status_code=503, detail="Chatdienst für Talk nicht erreichbar") from exc
     if not isinstance(payload, dict):
@@ -17824,11 +17992,31 @@ async def api_talk_turn(request: Request, payload: dict = Body(...)):
         directive["language"] = language
     if directive:
         engine.update_visual_state(directive)
+    await request.body()
+    bridge = _GuiHttpChatRequest(request)
+    watcher = asyncio.create_task(bridge.watch())
     scope_token = _TALK_CALLER_SCOPE.set(chat_id)
+    bridge_token = _TALK_HTTP_BRIDGE.set(bridge)
+    worker = asyncio.create_task(asyncio.to_thread(engine.process_turn, user_utterance=user_utterance))
     try:
-        res = await asyncio.to_thread(engine.process_turn, user_utterance=user_utterance)
+        try:
+            res = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # Keep ownership until the real thread has ended. No late thread
+            # may publish a success or overwrite the shared visual state.
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    continue
+            raise
+        if bridge.disconnected.is_set():
+            raise bridge._disconnected_error()
     finally:
+        _TALK_HTTP_BRIDGE.reset(bridge_token)
         _TALK_CALLER_SCOPE.reset(scope_token)
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
     # Never overwrite a config, summon, reflex or newer turn published in flight.
     if shared_engine.state is state_snapshot:
         shared_engine.state = engine.state

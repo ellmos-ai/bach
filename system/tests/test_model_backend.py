@@ -1565,3 +1565,85 @@ def test_omitted_port_matches_exact_http_default_permit(monkeypatch, tmp_path):
     assert ("post", True) in events
     assert not gate.status()["dispatch_pending"]
     assert ticket.get("transport_terminal") is True
+
+
+@pytest.mark.parametrize("stalled_phase", ["before_headers", "empty_stream", "partial", "error_body"])
+def test_http_disconnect_stops_own_stalled_ollama_transport(monkeypatch, stalled_phase):
+    """A private stop must end the real socket and retain already read output."""
+    monkeypatch.setattr(_staged_compute_lock, "get_effective_keep_alive", lambda **kw: "5m")
+
+    async def scenario():
+        sent = asyncio.Event()
+        consumed = asyncio.Event()
+        disconnected = asyncio.Event()
+        handlers = set()
+        original_lines = httpx.Response.aiter_lines
+
+        async def observed_lines(response):
+            async for line in original_lines(response):
+                yield line
+                consumed.set()
+        monkeypatch.setattr(httpx.Response, "aiter_lines", observed_lines)
+
+        async def serve(reader, writer):
+            current = asyncio.current_task()
+            handlers.add(current)
+            try:
+                header = await reader.readuntil(b"\r\n\r\n")
+                length = next(int(line.split(b":", 1)[1]) for line in header.split(b"\r\n")
+                              if line.lower().startswith(b"content-length:"))
+                await reader.readexactly(length)
+                if stalled_phase != "before_headers":
+                    status = b"400 Bad Request" if stalled_phase == "error_body" else b"200 OK"
+                    writer.write(b"HTTP/1.1 " + status + b"\r\nContent-Type: application/x-ndjson\r\n"
+                                 b"Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
+                    if stalled_phase == "partial":
+                        body = (json.dumps({"model": "m", "message": {"role": "assistant",
+                            "content": "Erhaltene Teilantwort"}, "done": False}) + "\n").encode()
+                        writer.write(("%x\r\n" % len(body)).encode() + body + b"\r\n")
+                    await writer.drain()
+                sent.set()
+                assert await reader.read() == b""
+                disconnected.set()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+                handlers.discard(current)
+
+        server = await asyncio.start_server(serve, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        event = asyncio.Event()
+        phases = []
+        backend = OllamaBackend(base_url=f"http://127.0.0.1:{port}", default_model="m")
+        task = asyncio.create_task(backend.chat([{"role": "user", "content": "test"}],
+            cancel_event=event, lifecycle_observer=lambda phase, **kw: phases.append((phase, kw))))
+        ended = False
+        result = None
+        try:
+            await asyncio.wait_for(sent.wait(), 2)
+            if stalled_phase == "partial":
+                await asyncio.wait_for(consumed.wait(), 2)
+            event.set()
+            done, _ = await asyncio.wait({task}, timeout=1)
+            ended = task in done
+            if ended:
+                result = task.result()
+                await asyncio.wait_for(disconnected.wait(), 1)
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            server.close()
+            await server.wait_closed()
+            if handlers:
+                await asyncio.wait_for(asyncio.gather(*tuple(handlers), return_exceptions=True), 2)
+        assert ended, "private cancel_event did not terminate the actual stalled Ollama request"
+        assert result["provider_request_aborted"] == "worker_stop"
+        assert result.get("error")
+        assert result["content"] == ("Erhaltene Teilantwort" if stalled_phase == "partial" else "")
+        assert disconnected.is_set(), "the request-private TCP transport remained open"
+        assert ("request_aborted", {"reason": "worker_stop"}) in phases
+        assert any(phase == "client_cleanup_complete" for phase, _ in phases)
+        assert not any(phase == "response_completed" for phase, _ in phases)
+
+    asyncio.run(scenario())
