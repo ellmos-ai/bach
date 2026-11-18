@@ -85,7 +85,8 @@ def test_staged_bridge_binds_warmup_and_confirms_only_after_owner_exit(monkeypat
         events.append("native-proof" if ticket["successful"] else "guarded-abort")
         ticket["completion"] = {"state": "RUNNING" if ticket["successful"] else "RETURN_REQUESTED"}
     modules = {
-        "ocean_resources.configuration": SimpleNamespace(read_client=lambda _: ("fixture", [target])),
+        "ocean_resources.configuration": SimpleNamespace(read_client=lambda _: (
+            SimpleNamespace(authority_id="authority", host_id="host", client_id="bach"), [target])),
         "ocean_resources.model_client": SimpleNamespace(model_turn=lambda *a, **kw: pytest.fail("full grant used for staged load")),
         "ocean_resources.model_executor": SimpleNamespace(ModelSpec=lambda **kw: SimpleNamespace(**kw)),
         "ocean_resources.model_load_client": SimpleNamespace(model_load_turn=staged),
@@ -110,6 +111,118 @@ def test_staged_bridge_binds_warmup_and_confirms_only_after_owner_exit(monkeypat
 
 def test_model_loading_capability_is_unavailable_for_current_native_accounting():
     assert GuardedModelPort.supports_load_pending is False
+
+
+def test_cached_load_fields_without_live_authority_never_dispatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path))
+    spec = SimpleNamespace(model="fixture:1", digest="a" * 64, port=11434, fingerprint=lambda: "f" * 64)
+    permit = {"phase": "MAY_LOAD", "workload_sha256": spec.fingerprint(),
+              "policy_sha256": loading.REVIEWED_POLICY_SHA256, "deadline": 110.0,
+              "baseline": {"process": {"pid": 10, "created_at": 2.0, "boot_time": 1.0}}}
+    async def scenario():
+        async with HostInferenceGate().turn("fixture", "background", model_target={
+                "socket_id": "s", "binding_id": "b", "agent_id": "a", "backend": "ollama", "model": spec.model}):
+            with pytest.raises(ModelReturnUnconfirmed, match="live_authority"):
+                GuardedModelPort(transport=lambda *args: pytest.fail("unproved authority reached metadata"),
+                                 clock=lambda: 100).check_load_under_owner(spec, permit)
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("when", ["metadata", "intent"])
+def test_abort_rechecks_process_after_metadata_and_durable_intent(tmp_path, monkeypatch, when):
+    from tools.maintenance import memory_pressure_unload_guard as unload
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path))
+    spec = SimpleNamespace(model="fixture:1", digest="a" * 64, port=11434)
+    expected = {"pid": 10, "created_at": 2.0, "boot_time": 1.0}
+    process, posts = [expected], []
+    def change():
+        process[0] = {**expected, "pid": 11, "created_at": 3.0}
+    def transport(_, path, payload):
+        if path == "/api/version": return {"version": "0.33.3"}
+        if path == "/api/tags": return {"models": [{"name": spec.model, "digest": spec.digest}]}
+        if path == "/api/ps":
+            if when == "metadata": change()
+            return {"models": [{"name": spec.model, "digest": spec.digest, "size": 10}]}
+        posts.append(payload)
+        return {"done": True, "done_reason": "unload"}
+    original = unload.record_intent
+    def changed_after_intent(*args):
+        result = original(*args)
+        if when == "intent": change()
+        return result
+    monkeypatch.setattr(unload, "record_intent", changed_after_intent)
+    monkeypatch.setattr(loading, "native_model_process", lambda _: (process[0], 10))
+    with pytest.raises(ModelReturnUnconfirmed, match="process_identity"):
+        GuardedModelPort(transport=transport).abort_load(spec, expected, lambda: None)
+    assert posts == []
+
+
+@pytest.mark.parametrize("resident_initially", [False, True])
+def test_abort_terminal_commit_remains_inside_the_native_owner(tmp_path, monkeypatch, resident_initially):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path))
+    spec = SimpleNamespace(model="fixture:1", digest="a" * 64, port=11434)
+    expected = {"pid": 10, "created_at": 2.0, "boot_time": 1.0}
+    resident, phases = [resident_initially], []
+    def transport(_, path, payload):
+        if path == "/api/version": return {"version": "0.33.3"}
+        if path == "/api/tags": return {"models": [{"name": spec.model, "digest": spec.digest}]}
+        if path == "/api/ps": return {"models": [{"name": spec.model, "digest": spec.digest, "size": 10}] if resident[0] else []}
+        resident[0] = False
+        return {"done": True, "done_reason": "unload"}
+    def accept():
+        held = HostInferenceGate.current_owner()._check_owned_record()
+        assert held.record["chat_id"] == "resource-model-return"
+        phases.append("ABORTED-under-owner")
+    monkeypatch.setattr(loading, "native_model_process", lambda _: (expected, 10))
+    GuardedModelPort(transport=transport).abort_load(spec, expected, lambda: None, accept=accept)
+    assert phases == ["ABORTED-under-owner"]
+    assert not HostInferenceGate().status()["active"]
+
+
+@pytest.mark.parametrize("failure", [None, "authority", "process", "deadline", "policy"])
+def test_load_rechecks_native_permission_after_slow_metadata(tmp_path, monkeypatch, failure):
+    from hub._services import ocean_resources_provider
+    from hub._services.chat import local_resource_reserve
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path))
+    spec = SimpleNamespace(model="fixture:1", digest="a" * 64, port=11434, fingerprint=lambda: "f" * 64)
+    expected = {"pid": 10, "created_at": 2.0, "boot_time": 1.0}
+    state = {"metadata_done": False, "time": 100}
+    permit = {"phase": "MAY_LOAD", "workload_sha256": spec.fingerprint(),
+              "policy_sha256": loading.REVIEWED_POLICY_SHA256, "deadline": 110.0,
+              "baseline": {"process": expected}, "writer_readback": {"fixture": True}}
+    authority = {"host_id": "fixture-host", "authority_id": "fixture-writer", "client_id": "fixture-client"}
+    checks, posts = [], []
+    def verify(actual, **kwargs):
+        assert actual is permit and {k: kwargs[k] for k in authority} == authority
+        checks.append(state["metadata_done"])
+        if failure == "authority" and state["metadata_done"]:
+            raise RuntimeError("fixture native authority became terminal")
+    monkeypatch.setattr(ocean_resources_provider, "load_verified", lambda _: {
+        "ocean_resources.model_dispatch": SimpleNamespace(require_dispatch_permission=verify)})
+    monkeypatch.setattr(loading, "native_model_process", lambda _: (
+        {**expected, "created_at": 3.0} if failure == "process" and state["metadata_done"] else expected, 10))
+    monkeypatch.setattr(local_resource_reserve, "read_policy", lambda: ({},
+        "f" * 64 if failure == "policy" and state["metadata_done"] else loading.REVIEWED_POLICY_SHA256))
+    def transport(_, path, payload):
+        assert payload is None
+        if path == "/api/version": return {"version": "0.33.3"}
+        if path == "/api/tags": return {"models": [{"name": spec.model, "digest": spec.digest}]}
+        state["metadata_done"] = True
+        if failure == "deadline": state["time"] = 110
+        return {"models": []}
+    async def scenario():
+        async with HostInferenceGate().turn("fixture", "background", model_target={
+                "socket_id": "s", "binding_id": "b", "agent_id": "a", "backend": "ollama", "model": spec.model}):
+            port = GuardedModelPort(transport=transport, clock=lambda: state["time"])
+            if failure:
+                with pytest.raises(ModelReturnUnconfirmed):
+                    port.check_load_under_owner(spec, permit, authority=authority)
+            else:
+                port.check_load_under_owner(spec, permit, authority=authority)
+                posts.append("fixture-only dispatch permitted")
+    asyncio.run(scenario())
+    assert checks == [False, True]
+    assert bool(posts) is (failure is None)
 
 
 @pytest.mark.parametrize("failure", [None, "second_model", "context", "process", "policy", "unknown"])

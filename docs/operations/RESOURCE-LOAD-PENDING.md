@@ -6,6 +6,16 @@ Backend, Modell, Chat und Laufzeitprüfung gebundenen Warmup-Berechtigung an. Ei
 normaler Chat- oder Compute-Auftrag bekommt dadurch keine zusätzliche RAM-Freigabe.
 Der bisherige Betrieb ohne `BACH_RESOURCE_BROKER_CONFIG` bleibt bestehen.
 
+Eine gespeicherte `MAY_LOAD`-Antwort reicht vor dem POST nicht aus. Unter dem
+tatsächlichen Inferenzowner liest BACH das aktuelle private Hostjournal erneut:
+derselbe exklusiv belegte Inode, lebender Writer mit PID/Erstellzeit/Bootkennung,
+aktuelle Writer-Epoche, exakter Grant, Request, Versuch, Execution, Clientlease
+und frisches Profil müssen übereinstimmen. Nach der Profilprüfung folgt ein
+weiterer Journalreadback. Teilweise geschriebene, ersetzte, abgelaufene oder
+terminale Belege blockieren. Diese Prüfung verwendet keinen Controller-HTTP-Aufruf
+unter dem Inferenzowner. Ein neuer Writer bewahrt ungeklärte Reservierungen,
+erhält aber auch beim Wiederöffnen im selben Prozess eine neue Epoche.
+
 ## Aktuelle Aktivierungsgrenze
 
 `GuardedModelPort.supports_load_pending` ist absichtlich `False`. Ollama 0.33.3
@@ -68,6 +78,13 @@ Im neuen gestuften Pfad wird der alte Warmup-Entladehelfer nicht verwendet.
 den bestehenden `unload-pending`-Intent, sendet höchstens einen POST, verlangt
 `done=true` und `done_reason=unload`, beobachtet die exakte Abwesenheit und prüft
 die Prozessidentität erneut. Erst dann wird der Intent dauerhaft entfernt.
+
+Nach den Metadaten und dem dauerhaften Intent wird die Prozessidentität noch vor
+dem POST frisch geprüft. Der Host schreibt auch bei bereits bewiesener Abwesenheit
+`ABORTED` über einen verpflichtenden lokalen Callback, während derselbe
+Inferenzowner noch gehalten wird. Eine verzögerte alte Ladeerlaubnis kann dadurch
+nicht zwischen Abwesenheitsbeleg und Abschluss erneut ausgeführt werden.
+Gewöhnliches `end_turn` darf einen gestuften Ladeversuch nicht abschließen.
 
 Ein unbeendeter Inferenz-Dispatch blockiert diesen Ablauf. Fehlender ACK,
 Prozesswechsel, ungültige Messung, Deadline-/Leaseablauf nach möglichem POST oder

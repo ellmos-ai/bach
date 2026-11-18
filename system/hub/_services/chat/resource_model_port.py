@@ -143,10 +143,21 @@ class GuardedModelPort:
         except Exception as exc:
             raise ModelReturnUnconfirmed("model_load_native_proof_unavailable") from exc
 
-    def check_load_under_owner(self, spec, permit):
+    def check_load_under_owner(self, spec, permit, *, authority=None):
         from hub._services.chat.resource_load_pending import native_model_process, REVIEWED_POLICY_SHA256
         from hub._services.chat.local_resource_reserve import read_policy
+        from hub._services.ocean_resources_provider import load_verified
+        if (not isinstance(authority, dict) or set(authority) != {"authority_id", "host_id", "client_id"}
+                or not isinstance(permit, dict) or "writer_readback" not in permit):
+            raise ModelReturnUnconfirmed("model_load_live_authority_required")
         held = HostInferenceGate.current_owner()._check_owned_record()
+        verifier = load_verified(("ocean_resources.model_dispatch",))["ocean_resources.model_dispatch"]
+        def current_permission():
+            try:
+                verifier.require_dispatch_permission(permit, **authority, clock=self.clock)
+            except Exception as exc:
+                raise ModelReturnUnconfirmed("model_load_live_authority_unproved") from exc
+        current_permission()
         if ("dispatch_pending" in held.record or held.record.get("model_target", {}).get("model") != spec.model
                 or permit.get("phase") != "MAY_LOAD" or permit.get("workload_sha256") != spec.fingerprint()
                 or permit.get("policy_sha256") != REVIEWED_POLICY_SHA256
@@ -159,17 +170,21 @@ class GuardedModelPort:
         self._target(spec, snapshot, residency=True)
         if snapshot["models"]:
             raise ModelReturnUnconfirmed("model_load_requires_exclusive_absence")
+        current_permission()
+        if (self.clock() >= permit["deadline"] or read_policy()[1] != REVIEWED_POLICY_SHA256
+                or native_model_process(spec)[0] != permit["baseline"]["process"]):
+            raise ModelReturnUnconfirmed("model_load_permission_changed_before_post")
         HostInferenceGate.current_owner()._check_owned_record()
 
-    def abort_load(self, spec, expected_process, check_owned):
+    def abort_load(self, spec, expected_process, check_owned, *, accept=None):
         try:
-            asyncio.run(self._unload(spec, check_owned, expected_process=expected_process))
+            asyncio.run(self._unload(spec, check_owned, expected_process=expected_process, accept=accept))
         except Exception as exc:
             if isinstance(exc, ModelReturnUnconfirmed):
                 raise
             raise ModelReturnUnconfirmed("model_load_abort_unconfirmed") from exc
 
-    async def _unload(self, spec, check_owned, *, expected_process=None):
+    async def _unload(self, spec, check_owned, *, expected_process=None, accept=None):
         from tools.maintenance.memory_pressure_unload_guard import (
             record_intent,
             sync_directory,
@@ -196,10 +211,17 @@ class GuardedModelPort:
             if target is None:
                 if expected_process is not None and native_model_process(spec)[0] != expected_process:
                     raise ModelReturnUnconfirmed("model_load_process_identity_changed")
+                ready()
+                HostInferenceGate.current_owner()._check_owned_record()
+                if accept is not None:
+                    accept()
                 return
             ready()
             pending = record_intent(gate.root, spec.model, spec.digest)
             ready()
+            if expected_process is not None and native_model_process(spec)[0] != expected_process:
+                raise ModelReturnUnconfirmed("model_load_process_identity_changed")
+            HostInferenceGate.current_owner()._check_owned_record()
             response = self._api(spec, "/api/generate", deadline,
                                  {"model": spec.model, "keep_alive": 0, "stream": False})
             if response.get("done") is not True or response.get("done_reason") != "unload":
@@ -218,3 +240,7 @@ class GuardedModelPort:
                 raise ModelReturnUnconfirmed("model_load_process_identity_changed")
             pending.unlink()
             sync_directory(gate.root)
+            ready()
+            HostInferenceGate.current_owner()._check_owned_record()
+            if accept is not None:
+                accept()
