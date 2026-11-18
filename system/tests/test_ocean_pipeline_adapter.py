@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Shared read-only BACH/Ocean boundary; never a production DB or queue."""
+import hashlib
+import importlib.util
 import json
 import sqlite3
 import sys
@@ -13,7 +15,20 @@ if str(SYSTEM_ROOT) not in sys.path:
     sys.path.insert(0, str(SYSTEM_ROOT))
 
 from hub._services import ocean_pipeline_adapter as adapter
+from hub._services import ocean_resources_provider as provider
 from hub.pipeline import PipelineCoordinationHandler, _handle_pipeline
+
+
+def _native_cli():
+    # The repository-root bach.py is a launcher shim. Bind the real system CLI
+    # explicitly so pytest's import path cannot turn this into a shim-only test.
+    name = "_ocean_test_native_bach_cli"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, SYSTEM_ROOT / "bach.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +40,7 @@ def no_database(monkeypatch):
 
 def test_disabled_provider_is_explicit_hold_and_never_imports_ocean(monkeypatch):
     monkeypatch.delenv("BACH_PIPELINE_COORDINATION_ENABLED", raising=False)
-    monkeypatch.setattr(adapter.metadata, "distribution", lambda name: pytest.fail("disabled provider lookup"))
+    monkeypatch.setattr(provider.metadata, "distribution", lambda name: pytest.fail("disabled provider lookup"))
     success, report = adapter.observe("catalog")
     assert not success and report["state"] == "HOLD"
     assert report["reason"] == "pipeline_coordination_disabled"
@@ -42,10 +57,11 @@ def test_foreign_or_wrong_provider_rejected_before_import(monkeypatch, url, comm
     monkeypatch.setenv("BACH_PIPELINE_COORDINATION_ENABLED", "1")
     direct = {"url": url, "vcs_info": {"vcs": "git", "commit_id": commit}}
     dist = SimpleNamespace(version=version, read_text=lambda _: json.dumps(direct))
-    monkeypatch.setattr(adapter.metadata, "distribution", lambda _: dist)
-    monkeypatch.setattr(adapter.util, "find_spec", lambda _: pytest.fail("unverified provider import"))
+    monkeypatch.setattr(provider.metadata, "distribution", lambda _: dist)
+    monkeypatch.setattr(provider.util, "find_spec", lambda _: pytest.fail("unverified provider import"))
     success, report = adapter.observe("catalog")
-    assert not success and report["reason"] == "pipeline_provider_provenance_mismatch"
+    assert not success and report["reason"] == ("resource_provider_version_mismatch" if version != adapter.VERSION
+                                               else "resource_provider_provenance_mismatch")
 
 
 def test_shadowed_import_is_rejected_before_loading_provider(monkeypatch, tmp_path):
@@ -53,10 +69,17 @@ def test_shadowed_import_is_rejected_before_loading_provider(monkeypatch, tmp_pa
     direct = {"url": adapter.REPOSITORY + ".git", "vcs_info": {"vcs": "git", "commit_id": adapter.PIN}}
     dist = SimpleNamespace(version=adapter.VERSION, read_text=lambda _: json.dumps(direct),
                            locate_file=lambda path: tmp_path / path)
-    monkeypatch.setattr(adapter.metadata, "distribution", lambda _: dist)
-    monkeypatch.setattr(adapter.util, "find_spec", lambda _: SimpleNamespace(origin=str(tmp_path / "foreign.py")))
+    package = tmp_path / "ocean_resources"
+    package.mkdir()
+    source = package / "__init__.py"
+    source.write_text("# isolated provider fixture\n")
+    expected = provider.pin()
+    expected["files"] = {"ocean_resources/__init__.py": hashlib.sha256(source.read_bytes()).hexdigest()}
+    monkeypatch.setattr(provider, "pin", lambda: expected)
+    monkeypatch.setattr(provider.metadata, "distribution", lambda _: dist)
+    monkeypatch.setattr(provider.util, "find_spec", lambda _: SimpleNamespace(origin=str(tmp_path / "foreign.py")))
     success, report = adapter.observe("catalog")
-    assert not success and report["reason"] == "pipeline_provider_import_mismatch"
+    assert not success and report["reason"] == "resource_provider_import_mismatch"
 
 
 @pytest.mark.parametrize("operation,args", [
@@ -136,7 +159,7 @@ def test_structured_api_and_cli_share_real_provider_without_session(installed_pr
 @pytest.mark.parametrize("command", ["pipeline", "--pipeline"])
 @pytest.mark.parametrize("operation", ["resources", "catalog", "host", "capacity", "shadow"])
 def test_real_cli_entrypoint_bypasses_all_startup_before_provider_gate(monkeypatch, capsys, command, operation):
-    import bach as cli
+    cli = _native_cli()
 
     def refuse(*args, **kwargs):
         pytest.fail("read-only pipeline command reached global BACH startup")
@@ -157,7 +180,7 @@ def test_real_cli_entrypoint_bypasses_all_startup_before_provider_gate(monkeypat
 
 
 def test_real_cli_entrypoint_uses_pinned_provider_without_startup(installed_provider, monkeypatch, capsys):
-    import bach as cli
+    cli = _native_cli()
 
     def refuse(*args, **kwargs):
         pytest.fail("read-only pipeline command reached global BACH startup")
@@ -197,7 +220,7 @@ def test_native_capacity_api_uses_same_pinned_observer_without_db(installed_prov
 
 
 def test_real_cli_capacity_bypasses_startup_with_pinned_native_sensor(installed_provider, tmp_path, monkeypatch, capsys):
-    import bach as cli
+    cli = _native_cli()
     def refuse(*args, **kwargs):
         pytest.fail("capacity command reached global BACH startup")
     for name in ("get_logger", "_run_prosync_startup", "_track_activity", "_get_app", "_run_injectors"):
