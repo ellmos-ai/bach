@@ -164,6 +164,53 @@ before publishing its status. It is checked again after every interruptible wait
 before a new work round and after the work guard before dispatch; releasing a lock
 at the deadline cannot start one extra job.
 
+## Verpasste Delta-Intervalle (BACH #4225 / Ocean #49)
+
+Die Delta-Prüfung prüft idempotent den aktuellen Repository-Zustand und verwendet
+ab Scheduler 0.3.7 ausdrücklich die native Policy coalesce_latest. Nach längeren
+Unterbrechungen fasst ein Claim frühere unbeanspruchte Delta-Termine zusammen.
+Der Zeitanker bleibt erhalten; das nächste limit=1-Fenster kann anschließend
+eine andere fällige Routine aufnehmen.
+
+Die vier Routinen behalten replay und ihre bestehenden Intervalle von
+14/14/60/30 Tagen. Ein bereits beanspruchter, später abgelaufener Delta-Lauf wird
+mit seinem ursprünglichen Termin wiederholt. Zusammengefasste Termine erscheinen
+nicht als einzelne ausgeführte oder erfolgreiche Läufe. Die Modulhistorie führt
+coalesced_from und coalesced_count am tatsächlich beanspruchten Lauf.
+
+create_documentation_scheduler prüft den exakten Capability-Vertrag
+ellmos.scheduler.misfire-policy.v1 vor der Adapterkonstruktion. Ein altes Modul
+wird mit scheduler_misfire_policy_unavailable abgewiesen. Die Wartung prüft die
+bestehende Delta-Definition und ändert ausschließlich die Policy über den nativen
+CAS mit beobachteter Generation und bisheriger Policy. Ein aktiver Claim oder
+eine inzwischen geänderte Version verhindert die Umstellung. Es gibt keine
+direkte SQL-Korrektur und keinen manuellen Sprung von Fristdaten.
+
+### Aktivierungsreihenfolge
+
+Zuerst den separat geprüften Scheduler-Commit installieren, dann den BACH-Commit
+mit exakt darauf zeigendem Dependency-Pin. Vor Aktivierung Installationsprovenienz,
+Importpfad, Capability und den einzigen Runtime-Owner prüfen. Die native Migration
+muss ohne konkurrierenden aktiven Claim erfolgen; bei Konflikt frisch beobachten.
+Modul und Adapter wurden auf einer isolierten Kopie des historischen
+f2740ba7-Zustands geprüft. Die Kopie hatte neun Jobs und 5500 Laufbelege;
+Schema- und Policy-Migration erhielten alle bisherigen Termine und Laufbelege.
+Nur die Delta-Policy änderte sich. Zwei synthetische lokale Probeläufe belegten
+danach Delta und eine fällige Routine. Dabei wurde keine native Task-API benutzt.
+
+Ein altes Modul berücksichtigt die neue Policy nicht. Daher zuerst den Owner
+koordiniert anhalten und den Policy-/Build-Rollback explizit planen; keine
+parallelen alten und neuen Writer. Der getestete Quellcodezustand ersetzt
+keinen Nachweis einer aktivierten Installation.
+
+Geprüfter Scheduler-Quellcommit für diesen Anschluss: 698b22ceccde4f83c2680d2d957e394317667869 (0.3.7). Der Dependency-Pin in requirements.txt bezeichnet genau diesen Stand.
+
+Die unabhängige Prüfung ergänzte einen Fall mit getrennten abgelaufenen
+Claims und erfolgreichem Zwischenlauf. Der gepinnte Folgestand wählt alle
+ausstehenden Wiederholungen unabhängig vom regulären Fälligkeitszeiger aus
+und erhält den Fortschritt bereits zugelassener Termine. Erfolgreiche
+Zwischenläufe werden weder wiederholt noch als ausgelassen mitgezählt.
+
 
 ## Archived routine rounds (BACH #4226)
 

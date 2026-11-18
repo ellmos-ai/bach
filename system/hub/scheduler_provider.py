@@ -94,6 +94,13 @@ def create_documentation_scheduler(
     if not probe_scheduler_provider().external:
         raise RuntimeError("External scheduler unavailable or rollback requested")
     module = load_external_scheduler()
+    # Check before adapter construction: older modules must not create/migrate
+    # state and then silently retain the starvation-prone replay behavior.
+    if (
+        getattr(module, "MISFIRE_POLICY_SCHEMA", None) != "ellmos.scheduler.misfire-policy.v1"
+        or not callable(getattr(getattr(module, "SchedulerStore", None), "set_misfire_policy", None))
+    ):
+        raise RuntimeError("scheduler_misfire_policy_unavailable")
     registry = module.ExecutorRegistry(include_standard=False)
 
     def execute(payload, timeout_seconds):
