@@ -144,8 +144,11 @@ class GuardedModelPort:
             raise ModelReturnUnconfirmed("model_load_native_proof_unavailable") from exc
 
     def check_load_under_owner(self, spec, permit, *, authority=None):
-        from hub._services.chat.resource_load_pending import native_model_process, REVIEWED_POLICY_SHA256
         from hub._services.chat.local_resource_reserve import read_policy
+        from hub._services.chat.resource_load_pending import (
+            REVIEWED_POLICY_SHA256,
+            native_model_process,
+        )
         from hub._services.ocean_resources_provider import load_verified
         if (not isinstance(authority, dict) or set(authority) != {"authority_id", "host_id", "client_id"}
                 or not isinstance(permit, dict) or "writer_readback" not in permit):
@@ -170,10 +173,12 @@ class GuardedModelPort:
         self._target(spec, snapshot, residency=True)
         if snapshot["models"]:
             raise ModelReturnUnconfirmed("model_load_requires_exclusive_absence")
-        current_permission()
         if (self.clock() >= permit["deadline"] or read_policy()[1] != REVIEWED_POLICY_SHA256
                 or native_model_process(spec)[0] != permit["baseline"]["process"]):
             raise ModelReturnUnconfirmed("model_load_permission_changed_before_post")
+        # Policy/process reads can block. Cancellation, lease expiry and writer
+        # retirement during those reads must close dispatch under this owner.
+        current_permission()
         HostInferenceGate.current_owner()._check_owned_record()
 
     def abort_load(self, spec, expected_process, check_owned, *, accept=None):
@@ -200,7 +205,9 @@ class GuardedModelPort:
         async with gate.turn("resource-model-return", "background", check_ready=ready):
             ready()
             if expected_process is not None:
-                from hub._services.chat.resource_load_pending import native_model_process
+                from hub._services.chat.resource_load_pending import (
+                    native_model_process,
+                )
                 if native_model_process(spec)[0] != expected_process:
                     raise ModelReturnUnconfirmed("model_load_process_identity_changed")
             self._available(spec, deadline)

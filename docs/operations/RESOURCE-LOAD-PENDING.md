@@ -59,6 +59,8 @@ Aktivierungsfenster.
 4. BACH prüft diese Bindung erneut unter dem vorhandenen `HostInferenceGate` und
    verwendet seinen überwachten Warmup. Ein fremder/zweiter Resident, geänderter
    Prozess, andere Policy oder eine veränderte Laufzeitberechtigung blockiert.
+   Der letzte aktuelle Journal-/Leasebeleg folgt auf die potenziell langsamen
+   Policy-/Prozessabfragen, damit ein währenddessen widerrufener Auftrag sperrt.
 5. Erst nach terminalem Transport und Verlassen des BACH-Inferenzowners prüft der
    Hostport das Ergebnis unabhängig unter einem eigenen Inferenzowner. Er schreibt
    `RUNNING` unter demselben Owner, der die Abschlussmessung schützt. Vollprofil,
@@ -94,6 +96,13 @@ behält den Grant und das Journal; ein neuer Writer darf diese nicht automatisch
 Phase und Versuchsbinding zur gezielten nativen Klärung. Ein vor POST noch rein
 vorbereiteter Auftrag kann erst nach geprüfter Abwesenheit und dem normalen
 Rückgabeprotokoll beendet werden.
+
+Die Authority schreibt das neue Epochfeld `writer_active` auch für gewöhnliche
+Jobs. Beide bisherigen Journalformen bleiben lesbar; offene Reservierungen
+bleiben beim Übergang erhalten. Ein älterer Paketstand kann die neue Form jedoch
+ablehnen. Ein Downgrade braucht deshalb einen unabhängig geprüften dauerhaften
+Journal-/Lifecycleübergang. Epochfelder oder offene Grants werden dafür nicht
+stillschweigend entfernt, und die native Sperre wird nicht vorgezogen freigegeben.
 
 Die Clienttransporte bleiben auch über wiederholte Coroutine-Cancellation hinweg
 erhalten. Submit und Begin werden vor Cleanup abgeschlossen; verlorene Antworten

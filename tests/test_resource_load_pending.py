@@ -221,7 +221,7 @@ def test_load_rechecks_native_permission_after_slow_metadata(tmp_path, monkeypat
                 port.check_load_under_owner(spec, permit, authority=authority)
                 posts.append("fixture-only dispatch permitted")
     asyncio.run(scenario())
-    assert checks == [False, True]
+    assert checks == ([False] if failure in {"process", "deadline", "policy"} else [False, True])
     assert bool(posts) is (failure is None)
 
 
